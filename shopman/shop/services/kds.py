@@ -983,11 +983,7 @@ def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
     blocked = recall_block_reason(source)
     if blocked:
         raise TicketRecallBlocked(blocked)
-    ticket.status = "in_progress"
-    ticket.completed_at = None
-    ticket.completed_by = ""
-    ticket.completed_via = ""
-    ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
+    ticket.save(update_fields=ticket.undo_completion(actor=actor))
 
     order = source if isinstance(source, Order) else None
     if (
@@ -1023,7 +1019,8 @@ def _acknowledge_ticket_locked(ticket, *, source, actor: str) -> bool:
     if ticket.status != "cancelled" or ticket.acknowledged_at is not None:
         return False
     ticket.acknowledged_at = timezone.now()
-    ticket.save(update_fields=["acknowledged_at"])
+    ticket.acknowledged_by = str(actor or "")[:150]
+    ticket.save(update_fields=["acknowledged_at", "acknowledged_by"])
     logger.info("kds_ack ticket=%d session=%s actor=%s", ticket.pk, ticket.session_key, actor)
     return True
 

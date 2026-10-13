@@ -27,6 +27,8 @@ from shopman.backstage.projections.kds import (
     KDSChangeProjection,
     KDSCustomerOrderProjection,
     KDSCustomerStatusProjection,
+    KDSHistoryEntryProjection,
+    KDSHistoryProjection,
     KDSInstanceSummaryProjection,
     KDSItemProjection,
     KDSTicketProjection,
@@ -42,6 +44,8 @@ CONTRACT_DATACLASSES = (
     KDSTicketProjection,
     KDSInstanceSummaryProjection,
     KDSBoardProjection,
+    KDSHistoryEntryProjection,
+    KDSHistoryProjection,
     KDSCustomerOrderProjection,
     KDSCustomerStatusProjection,
 )

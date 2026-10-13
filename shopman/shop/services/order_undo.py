@@ -193,7 +193,9 @@ def undo_auto_ready(order, *, token: str, actor: str, expected_revision: str | N
 
         from shopman.shop.adapters import kds as kds_adapter
 
-        reopened = kds_adapter.reopen_done_tickets(order.session_key, record.get("ticket_ids") or [])
+        reopened = kds_adapter.reopen_done_tickets(
+            order.session_key, record.get("ticket_ids") or [], actor=actor
+        )
         clear_auto_ready(order)
         order.transition_status(Order.Status.PREPARING, actor=actor)
         order.emit_event("auto_ready_undone", actor=actor, payload={"ticket_ids": reopened})

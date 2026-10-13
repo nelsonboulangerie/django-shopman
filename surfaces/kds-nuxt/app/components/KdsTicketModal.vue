@@ -7,7 +7,12 @@
 // O gesto daqui é outro: "Declarar volumes" (quem embalou declara, onde estiver;
 // decisão do dono, 04/10/2026). O mesmo do Gestor: − N +, Gravar, zero apaga. Só no
 // ticket de pedido (`volumes_order_ref`); comanda ainda sem pedido não tem onde gravar.
-import type { KDSTicketProjection } from "~/types/kds";
+//
+// Aberto pelo Histórico de hoje (`history`), o detalhe é SÓ LEITURA: no lugar do relógio
+// e da barra de prazo (que contariam até agora) entra a trilha do pedido e o tempo de
+// preparo. Volumes continuam enquanto o pedido está na casa (o mesmo corte do Reabrir):
+// embalar vem depois do Pronto.
+import type { KDSHistoryEntryProjection, KDSTicketProjection } from "~/types/kds";
 import {
   elapsedLabel,
   lucideIcon,
@@ -25,12 +30,16 @@ const props = withDefaults(
     ticket: KDSTicketProjection | null;
     /** Gravando os volumes (o Gravar espera). */
     volumesBusy?: boolean;
+    /** Aberto pelo Histórico de hoje: só leitura, com a trilha do pedido. */
+    history?: KDSHistoryEntryProjection | null;
   }>(),
-  { volumesBusy: false },
+  { volumesBusy: false, history: null },
 );
 const emit = defineEmits<{ "update:open": [boolean]; volumes: [number] }>();
 
-const canDeclareVolumes = computed(() => Boolean(props.ticket?.volumes_order_ref));
+const canDeclareVolumes = computed(
+  () => Boolean(props.ticket?.volumes_order_ref) && (!props.history || props.history.can_reopen),
+);
 const volumesEditing = ref(false);
 const volumesDraft = ref(0);
 watch(() => [props.open, props.ticket?.pk], () => { volumesEditing.value = false; });
@@ -122,7 +131,7 @@ const fill = computed(() =>
               {{ ticket.customer_name }}
             </p>
             <p
-              v-if="ticket.started_by"
+              v-if="ticket.started_by && !history"
               class="mt-1 op-label text-muted-foreground"
               data-kds-started
             >
@@ -130,6 +139,19 @@ const fill = computed(() =>
             </p>
           </div>
           <div
+            v-if="history"
+            class="flex shrink-0 flex-col items-end gap-0.5 px-1 py-2 text-right"
+            data-kds-ticket-history-prep
+          >
+            <span v-if="history.prep_display" class="text-2xl font-bold tabular-nums leading-none">{{
+              history.prep_display
+            }}</span>
+            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">{{
+              history.state === "cancelled" ? "Cancelado" : "Preparo"
+            }}</span>
+          </div>
+          <div
+            v-else
             class="flex shrink-0 flex-col items-end gap-0.5 rounded-md border px-3 py-2 text-right"
             :class="timerClasses"
           >
@@ -156,8 +178,27 @@ const fill = computed(() =>
             @click="$emit('update:open', false)"
           />
         </div>
+        <!-- no histórico: a trilha do pedido, no lugar da barra de prazo -->
+        <div v-if="history" class="flex flex-col gap-1 px-5 pb-4" data-kds-ticket-history-trail>
+          <p class="op-label text-muted-foreground">{{ history.steps.join(" · ") }}</p>
+          <p
+            v-for="(line, i) in history.undone"
+            :key="i"
+            class="flex items-start gap-1 op-label text-warning"
+          >
+            <Icon name="lucide:undo-2" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <span class="min-w-0">{{ line }}</span>
+          </p>
+          <p
+            v-if="!history.can_reopen && history.reopen_block_reason"
+            class="flex items-start gap-1 op-label text-muted-foreground"
+          >
+            <Icon name="lucide:lock" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <span class="min-w-0">{{ history.reopen_block_reason }}</span>
+          </p>
+        </div>
         <!-- time-to-SLA fill bar -->
-        <div class="h-1.5 w-full bg-white/5" aria-hidden="true">
+        <div v-else class="h-1.5 w-full bg-white/5" aria-hidden="true">
           <div
             class="h-full rounded-r-full transition-[width] duration-500"
             :class="barFill"

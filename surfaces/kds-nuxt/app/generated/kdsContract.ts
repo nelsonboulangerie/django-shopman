@@ -75,6 +75,27 @@ export interface KDSBoardProjection {
   sound_enabled: boolean;
 }
 
+/** Um pedido que passou pela estação hoje e já saiu do quadro (Histórico de hoje). */
+export interface KDSHistoryEntryProjection {
+  ticket: KDSTicketProjection;
+  state: string;
+  items_summary: string;
+  steps: string[];
+  undone: string[];
+  prep_display: string;
+  can_reopen: boolean;
+  reopen_block_reason: string;
+}
+
+/** O Histórico de hoje de uma estação (``GET kds/<ref>/history/``). */
+export interface KDSHistoryProjection {
+  instance_ref: string;
+  instance_name: string;
+  entries: KDSHistoryEntryProjection[];
+  total: number;
+  query: string;
+}
+
 /** Privacy-safe order status for a customer-facing ready board. */
 export interface KDSCustomerOrderProjection {
   ref: string;

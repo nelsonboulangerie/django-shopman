@@ -136,6 +136,17 @@ class KDSTicket(models.Model):
         "ciente em", null=True, blank=True,
         help_text="Operador deu baixa no card cancelado — sai do board.",
     )
+    # QUEM deu "Recebi o cancelamento" (o login do operador). O Histórico de hoje
+    # da estação diz "ciente 21:47 Ana"; antes só a hora ficava gravada.
+    acknowledged_by = models.CharField("ciente por", max_length=150, blank=True, default="")
+    # Cada Pronto desfeito (a estação reabriu o ticket, ou o Gestor desfez o pronto
+    # automático): o Pronto que existia e quem o desfez. Reabrir apaga
+    # ``completed_at/by/via`` do ticket, e sem esta lista o Pronto desfeito sumia sem
+    # rastro. ``[{completed_at, completed_by, completed_via, undone_at, undone_by}]``,
+    # datas ISO; o Histórico de hoje mostra "Pronto 21:51 → desfeito 21:58 Ana".
+    # Mora no ticket (e não no ``Order.data``) porque o ticket de comanda ainda sem
+    # pedido também se reabre, e a ``Session`` não leva o registro para o pedido.
+    reopenings = models.JSONField("Prontos desfeitos", default=list, blank=True)
     # "Visto" da estação (K20): o aviso de pedido novo (ou de cancelamento) para
     # em TODAS as telas da estação juntas, porque fica gravado aqui e não em cada
     # dispositivo. No cancelado, vale o "Visto" posterior ao ``cancelled_at``.
@@ -158,6 +169,30 @@ class KDSTicket(models.Model):
 
     def __str__(self):
         return f"KDS #{self.pk} · {self.session_key} → {self.kds_instance.ref}"
+
+    def undo_completion(self, *, actor: str) -> list[str]:
+        """Volta o ticket concluído ao preparo, guardando o Pronto que existia.
+
+        Não salva: devolve os ``update_fields`` para quem chama (que já travou a
+        origem e o ticket) gravar junto do resto.
+        """
+        from django.utils import timezone
+
+        self.reopenings = [
+            *(self.reopenings or []),
+            {
+                "completed_at": self.completed_at.isoformat() if self.completed_at else "",
+                "completed_by": self.completed_by,
+                "completed_via": self.completed_via,
+                "undone_at": timezone.now().isoformat(),
+                "undone_by": str(actor or "")[:150],
+            },
+        ]
+        self.status = "in_progress"
+        self.completed_at = None
+        self.completed_by = ""
+        self.completed_via = ""
+        return ["status", "completed_at", "completed_by", "completed_via", "reopenings"]
 
     def save(self, *args, **kwargs):
         if self._state.adding and not self.known_ref and self.session_key:
