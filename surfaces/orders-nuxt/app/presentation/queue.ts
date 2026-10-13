@@ -318,6 +318,27 @@ export function queueGesture(item: QueueItem): QueueGesture {
   // com o gesto do cartão: a linha oferece "Responder", que é um link.
   if (!item.kind || item.kind === "negotiation")
     return { primary: null, secondary: null, shortcut: "" };
+  // O aceite que não chegou ao iFood: o gesto é reenviar, não avançar o pedido.
+  if (item.kind === "ifood_accept") {
+    const retry = (item.card.actions ?? []).find(
+      (a) => a.ref === "ifood-accept-retry",
+    );
+    if (!retry) return { primary: null, secondary: null, shortcut: "" };
+    return {
+      primary: {
+        ref: "ifood_accept_retry",
+        label: retry.label,
+        icon: retry.enabled ? "lucide:refresh-cw" : "lucide:clock",
+        priority: retry.enabled ? "primary" : "secondary",
+        needsInput: false,
+        disabled: !retry.enabled,
+        reason: retry.reason,
+        verb: retry.label,
+      },
+      secondary: null,
+      shortcut: "Enter",
+    };
+  }
   const affordances = cardAffordances(item.card);
   const primary =
     affordances.find((aff) => aff.priority === "primary" || aff.disabled) ??

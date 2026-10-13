@@ -443,6 +443,11 @@ class OrderCardProjection:
     # uma linha escrita como instrução. Vazia no caso normal.
     ifood_remote_ahead_label: str = ""
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # O aceite saiu daqui e não chegou ao iFood (P1-3): o card avisa, mantém o
+    # prazo do iFood contando fora de ``new`` e oferece ``ifood-accept-retry``.
+    # ``ifood_accept_notice`` é a frase inteira do aviso; vazia no caso normal.
+    ifood_accept_failed: bool = False
+    ifood_accept_notice: str = ""
     # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
     # operável como qualquer outro e por isso tem de dizer, na tela, que é de
     # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
@@ -700,6 +705,9 @@ class OperatorOrderProjection:
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # O mesmo aviso do card (P1-3): o aceite não chegou ao iFood.
+    ifood_accept_failed: bool = False
+    ifood_accept_notice: str = ""
     # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
     # operável como qualquer outro e por isso tem de dizer, na tela, que é de
     # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
@@ -1055,6 +1063,10 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar NFC-e", enabled=authorized,
             reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.", method="POST", idempotency="required",
             payload_schema={"base_revision": fiscal_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    from shopman.shop.services import ifood_accept_sync
+
+    accept = ifood_accept_sync.state_for(order)
+    extra_actions.extend(_ifood_accept_actions(order, accept, user))
     if method == "link":
         from shopman.shop.services import notification as notification_svc
 
@@ -1082,7 +1094,8 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         **_courier_change_fields(order),
         **_equipment_fields(order),
         **_payment_link_fields(order, method),
-        **_detail_deadline(order),
+        **_detail_deadline(order, accept),
+        **_ifood_accept_fields(order, accept),
         card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         store_location=_store_location(),
     )
@@ -1169,10 +1182,11 @@ def _courier_actions(order: Order, user, courier_block: dict | None, *, authoriz
     return [action for action in extra_actions if refs is None or action.ref in refs]
 
 
-def _detail_deadline(order: Order) -> dict[str, str]:
-    """O prazo da confirmação do pedido novo, pela mesma régua do cartão."""
+def _detail_deadline(order: Order, accept=None) -> dict[str, str]:
+    """O prazo da confirmação, pela mesma régua do cartão (o do iFood segue no aceite que não chegou)."""
     if order.status != Order.Status.NEW:
-        return {}
+        external = _external_deadline(order, accept)
+        return {"confirmation_deadline_iso": external[0], "confirmation_action": external[1]} if external else {}
     deadline = _confirmation_deadlines([order.ref]).get(order.ref) or _external_deadline(order)
     return {"confirmation_deadline_iso": deadline[0], "confirmation_action": deadline[1]} if deadline else {}
 
@@ -1674,6 +1688,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     method_labels = {method: payment_method_label(method) for method in methods}
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
+    from shopman.shop.services import ifood_accept_sync
+
+    # O aceite que não chegou ao iFood (P1-3): uma consulta para a tela inteira.
+    accept_batch = ifood_accept_sync.latest_directives(
+        [o.ref for o in all_orders if o.channel_ref == "ifood" and o.status != "new"]
+    )
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
     courier_change = operator_orders.courier_change_by_order([o.ref for o in all_orders if _is_delivery(o)])
     # Encomenda para data futura não é trabalho do dia — vive no grupo "Agendados",
@@ -1683,7 +1703,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
@@ -1696,7 +1716,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
     ready_moments = ready_moments_for(ready_orders)
     expectation = prep_expectation(now=timezone.now())
-    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -1704,15 +1724,15 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
-    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1730,7 +1750,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
-            _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
+            _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
             for o in all_orders if o.channel_ref == "ifood" and ((o.data or {}).get("ifood") or {}).get("handshake_pending")
         ),
         intake=intake,
@@ -1763,16 +1783,42 @@ def _channel_display_id(order) -> str:
     return "" if str(order.ref or "").upper().endswith(f"-{display_id.upper()}") else display_id
 
 
-def _external_deadline(order) -> tuple[str, str] | None:
-    """Prazo do marketplace (ISO, ação) enquanto o pedido ainda espera confirmação.
+def _external_deadline(order, accept=None) -> tuple[str, str] | None:
+    """Prazo do marketplace (ISO, ação) enquanto o iFood ainda espera a confirmação.
 
     Gravado na ingestão em ``data.ifood.confirm_by``. Vencido, quem cancela é o
     marketplace — daí a ação ser ``cancel``, igual ao timer de ``auto_cancel``.
+    Vale em ``new`` e também depois do aceite local enquanto o ``confirm`` não
+    chegou ao iFood (``accept.failed``, P1-3): para o iFood o pedido continua sem
+    aceite, e o relógio dele continua correndo com a cozinha trabalhando.
     """
-    if order.status != "new":
+    if order.status != "new" and not (accept is not None and accept.failed):
         return None
     confirm_by = str(((order.data or {}).get("ifood") or {}).get("confirm_by") or "").strip()
     return (confirm_by, "cancel") if confirm_by else None
+
+
+def _ifood_accept_fields(order, sync) -> dict:
+    """Os campos do aviso "o iFood ainda não recebeu o aceite" (card e detalhe)."""
+    if not sync.failed:
+        return {}
+    from shopman.shop.services import ifood_accept_sync
+
+    return {"ifood_accept_failed": True, "ifood_accept_notice": ifood_accept_sync.notice_text(order)}
+
+
+def _ifood_accept_actions(order, sync, user) -> tuple[Action, ...]:
+    """``ifood-accept-retry``: reenvia o ``confirm``. Só existe quando o aceite falhou."""
+    if not sync.failed:
+        return ()
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    return (Action(
+        ref="ifood-accept-retry", kind="mutation", label="Tentar de novo", priority="primary",
+        enabled=authorized,
+        reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.",
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": sync.revision, "expected_actor_id": getattr(user, "pk", None)},
+    ),)
 
 
 def _confirmation_deadlines(refs: list[str]) -> dict[str, tuple[str, str]]:
@@ -1916,6 +1962,7 @@ def items_summary(items) -> str:
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
+    accept_batch: dict | None = None,
     courier_change: dict[str, tuple[int, int | None]] | None = None,
     waitlist_states: dict[str, str] | None = None,
     user=None,
@@ -1977,6 +2024,10 @@ def _build_card(
     danfe = order_danfe.card_state(order, reads=danfe_reads, now=now)
 
     actions = operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config)
+    from shopman.shop.services import ifood_accept_sync
+
+    accept = ifood_accept_sync.state_for(order, batch=accept_batch)
+    external_deadline = _external_deadline(order, accept)
     # Reuse only this read's canonical action revisions; commands still recompute under lock.
     revision_actions = {"advance": {"advance", "confirm", "reject"}, "kitchen_note": {"notes"}, "assignment": {"assign", "unassign"}}
     revisions = {}
@@ -1987,7 +2038,7 @@ def _build_card(
     card = OrderCardProjection(
         ref=order.ref,
         status=order.status,
-        actions=(*actions, *_cash_settlement_actions(order, user, cash_context)),
+        actions=(*actions, *_cash_settlement_actions(order, user, cash_context), *_ifood_accept_actions(order, accept, user)),
         revisions=revisions,
         status_label=status_labels[order.status] if status_labels is not None else order_status_label(order.status),
         status_color=status_color(order.status),
@@ -2025,6 +2076,7 @@ def _build_card(
         ifood_schedule_label=ifood_projection.schedule_label(order),
         ifood_remote_ahead_label=ifood_projection.remote_ahead_label(order),
         ifood_negotiations=negotiations(order, user=user),
+        **_ifood_accept_fields(order, accept),
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
@@ -2045,8 +2097,8 @@ def _build_card(
         awaiting_work_orders=_awaiting_work_orders(order),
         # Directive agendada (canais da casa) ou prazo do marketplace (iFood): o card
         # conta um prazo só, porque para quem opera a pergunta é uma só — quanto falta.
-        confirmation_deadline_iso=(deadline or _external_deadline(order) or ("", ""))[0],
-        confirmation_action=(deadline or _external_deadline(order) or ("", ""))[1],
+        confirmation_deadline_iso=(deadline or external_deadline or ("", ""))[0],
+        confirmation_action=(deadline or external_deadline or ("", ""))[1],
         card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         channel_display_id=_channel_display_id(order),
         courier_status=_card_courier_status(order),
@@ -2904,6 +2956,10 @@ _EVENT_LABELS = {
     "handoff_refused": "Saída não gravada",
     "auto_ready_undone": "Pronto automático desfeito",
     "volumes_declared": "Volumes declarados",
+    "ifood_accept_failed": "O aceite não chegou ao iFood",
+    "ifood_accept_retried": "Aceite enviado de novo ao iFood",
+    "ifood_accept_sent": "O iFood recebeu o aceite",
+    "ifood_accept_confirmed": "O iFood confirmou o pedido",
     "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
 }

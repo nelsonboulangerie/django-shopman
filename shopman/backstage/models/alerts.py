@@ -320,6 +320,11 @@ class OperatorAlert(models.Model):
         # tem minutos para responder; sem resposta, o iFood aplica a ação de prazo
         # dele. Tem `respond_by`: o Gestor interrompe a tela até alguém ver.
         ("ifood_negotiation_open", "iFood: negociação esperando resposta"),
+        # O aceite saiu daqui e não chegou ao iFood (o ``confirm`` falhou): a cozinha
+        # trabalha e o iFood cancela sozinho no prazo dele. Tem `respond_by` (o prazo
+        # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
+        # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
+        ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -385,6 +390,7 @@ class OperatorAlert(models.Model):
         "concierge_handoff",
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
+        "ifood_accept_not_delivered",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)

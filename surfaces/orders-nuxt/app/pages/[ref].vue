@@ -14,6 +14,7 @@ import {
   cardAuthorizationNotice,
   changeBackSuggestionQ,
   confirmationRemainingLabel,
+  ifoodAcceptNotice,
   lucideIcon,
   realtimeIndicator,
   splitRef,
@@ -73,6 +74,7 @@ const {
   undoHandoff,
   undoReady,
   requeueFiscal,
+  retryIFoodAccept,
   resendPaymentLink,
   saveNotes,
   addComment,
@@ -97,12 +99,19 @@ const { realtime } = useOrderEvents(orderRef.value, () => refresh());
 // primeira pintura: mesmo que o navegador já tenha rolado pelo `#`, o teclado vai para
 // a decisão (o `reveal` explícito; a fonte reativa pularia o foco com o bloco à vista).
 const IFOOD_NEGOTIATIONS = "ifood-negotiations";
-const focusKey = computed(() =>
-  route.hash === `#${IFOOD_NEGOTIATIONS}` &&
-  order.value?.ifood_negotiations?.length
-    ? IFOOD_NEGOTIATIONS
-    : null,
-);
+// O aviso "o aceite não chegou ao iFood" chega com `#ifood-accept`: o foco vai ao
+// Tentar de novo, com o prazo do iFood à vista.
+const IFOOD_ACCEPT = "ifood-accept";
+const focusKey = computed(() => {
+  if (
+    route.hash === `#${IFOOD_NEGOTIATIONS}` &&
+    order.value?.ifood_negotiations?.length
+  )
+    return IFOOD_NEGOTIATIONS;
+  if (route.hash === `#${IFOOD_ACCEPT}` && order.value?.ifood_accept_failed)
+    return IFOOD_ACCEPT;
+  return null;
+});
 const { reveal } = useNextFocus();
 watch(
   focusKey,
@@ -677,8 +686,13 @@ const thumbAction = computed(() => {
   };
 });
 // O estado escrito que vale em toda largura (as pílulas de pagamento são só do celular).
+// O aceite que não chegou ao iFood (P1-3): o fato, o prazo dele contando e o reenvio.
+const acceptNotice = computed(() =>
+  order.value ? ifoodAcceptNotice(order.value, nowMs.value) : null,
+);
 const stateInEveryWidth = computed(() =>
   Boolean(
+    acceptNotice.value ||
     deadlineText.value ||
       undo.value ||
       (advanceAction.value &&
@@ -743,6 +757,9 @@ const deadlineText = computed(() => {
     nowMs.value,
   );
   if (!left || left === "0:00") return null;
+  // Aceito aqui e sem o aceite lá: quem cancela é o iFood, e o aviso do aceite
+  // (abaixo) já conta o mesmo prazo com o gesto ao lado.
+  if (o.ifood_accept_failed) return null;
   return o.confirmation_action === "cancel"
     ? { before: "Cancela sozinho em", left, after: "se ninguém aceitar." }
     : { before: "Confirma sozinho em", left, after: "se ninguém recusar." };
@@ -1092,6 +1109,36 @@ const outside = useOutsideStore(
                 "
               />
             </div>
+            <NuxtAlert
+              v-if="acceptNotice"
+              id="ifood-accept"
+              data-focus-target="ifood-accept"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-send"
+              :title="acceptNotice.title"
+              :description="acceptNotice.description"
+              :actions="
+                alertActions('error', acceptNotice.action
+                  ? [
+                      Object.assign(
+                        {
+                          icon: 'i-lucide-refresh-cw',
+                          label: acceptNotice.action.label,
+                          disabled: busy || !acceptNotice.action.enabled,
+                          onClick: () => retryIFoodAccept(),
+                        },
+                        {
+                          title: acceptNotice.action.reason || undefined,
+                          'data-ifood-accept-retry': '',
+                          'data-focus-control': '',
+                        },
+                      ),
+                    ]
+                  : [])
+              "
+              data-ifood-accept
+            />
             <NuxtAlert
               v-if="deadlineText"
               color="warning"

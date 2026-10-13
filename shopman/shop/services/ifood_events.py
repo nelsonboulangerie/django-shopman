@@ -50,7 +50,7 @@ import threading
 from django.conf import settings
 
 from shopman.shop.services import fiscal as fiscal_service
-from shopman.shop.services import ifood_http, ifood_ingest, ifood_orders, webhook_idempotency
+from shopman.shop.services import ifood_accept_sync, ifood_http, ifood_ingest, ifood_orders, webhook_idempotency
 
 logger = logging.getLogger(__name__)
 
@@ -838,6 +838,8 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
             # O fato é gravado ANTES de qualquer transição, para o aviso dela não
             # ecoar ao iFood o que veio dele.
             _record_remote(order, marker, event_id)
+            # O iFood tem o aceite: o aviso de "não recebeu o aceite" perde o objeto.
+            ifood_accept_sync.on_remote_confirmed(order)
             if not already_applied and order.status != expected:
                 # ACK é "armazenei", não "apliquei" (doc do polling). O fato fica no
                 # pedido e a reconciliação o aplica quando o estado local chegar lá

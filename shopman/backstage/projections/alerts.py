@@ -190,12 +190,14 @@ _SURFACE_URL_KEYS = {"orders": "gestor"}
 #: Onde, dentro do pedido, mora o gesto do aviso (âncora do detalhe).
 _ORDER_DETAIL_ANCHORS = {
     "ifood_negotiation_open": "ifood-negotiations",
+    "ifood_accept_not_delivered": "ifood-accept",
 }
 
 #: O rótulo do botão quando o aviso leva ao pedido: diz aonde leva, não "resolver".
 _ORDER_LABELS = {
     "ifood_negotiation_open": "Responder",
     "card_authorization_expiring": "Aceitar ou recusar",
+    "ifood_accept_not_delivered": "Abrir e tentar de novo",
 }
 
 

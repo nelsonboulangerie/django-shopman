@@ -22,6 +22,7 @@ import {
   cardClock,
   cardSeal,
   channelLabel,
+  ifoodAcceptNotice,
   onRoadLine,
   packLabel,
   primaryVerb,
@@ -200,6 +201,38 @@ const notices = computed<CardNotice[]>(() => {
       attrs: { "data-test-order-notice": "" },
     });
   if (handoff.value) return out;
+  // O aceite saiu daqui e não chegou ao iFood: a cozinha trabalha e o iFood cancela
+  // no prazo dele (o mesmo do canto do cartão). Vermelho, com o reenvio no aviso.
+  const ifoodAccept = ifoodAcceptNotice(card, nowMs.value);
+  if (ifoodAccept)
+    out.push({
+      key: "ifood-accept",
+      color: "error",
+      icon: "i-lucide-send",
+      label: ifoodAccept.label,
+      title: ifoodAccept.title,
+      description: ifoodAccept.description,
+      actions: ifoodAccept.action
+        ? [
+            action(
+              {
+                icon: "i-lucide-refresh-cw",
+                label: ifoodAccept.action.label,
+                disabled: props.busy || !ifoodAccept.action.enabled,
+                onClick: () => emit("action", "ifood_accept_retry"),
+              },
+              {
+                "aria-label": `${ifoodAccept.action.label}: enviar o aceite do pedido ${code.value.code} ao iFood`,
+                ...(ifoodAccept.action.reason
+                  ? { title: ifoodAccept.action.reason }
+                  : {}),
+                "data-ifood-accept-retry": "",
+              },
+            ),
+          ]
+        : [],
+      attrs: { "data-ifood-accept": "" },
+    });
   // Cartão autorizado esperando aceite: a reserva vence no Stripe. O aviso traz o
   // prazo e os dois gestos que o resolvem, na cor do aviso (D8).
   const cardAuth = cardAuthorizationNotice(

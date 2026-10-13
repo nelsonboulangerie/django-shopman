@@ -18,7 +18,7 @@ from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransie
 from shopman.orderman.models import Directive
 
 from shopman.shop.directives import IFOOD_STATUS_CALLBACK
-from shopman.shop.services import ifood_callbacks, ifood_cancellation, ifood_ingest
+from shopman.shop.services import ifood_accept_sync, ifood_callbacks, ifood_cancellation, ifood_ingest
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,16 @@ class IFoodStatusCallbackHandler:
                 ifood_cancellation.record_result(payload, state="error", retryable=exc.retryable)
                 error = DirectiveTransientError if exc.retryable else DirectiveTerminalError
                 raise error("Falha no envio da solicitação de cancelamento ao iFood.") from exc
+            if status == ifood_accept_sync.ACCEPT_STATUS and order is not None:
+                # O aceite não chegou: a cozinha trabalha e o iFood cancela no prazo
+                # dele. Aviso específico, apontando o pedido, já na primeira falha.
+                ifood_accept_sync.on_attempt_failed(order, message)
             raise DirectiveTransientError(str(exc)) from exc
 
         if cancellation_request and sent:
             ifood_cancellation.record_result(payload, state="sent")
+        if sent and status == ifood_accept_sync.ACCEPT_STATUS and order is not None:
+            ifood_accept_sync.on_sent(order, message)
 
         if not sent:
             logger.info("ifood_status: no iFood action for status=%s (order %s)", status, order_id)

@@ -71,6 +71,8 @@ def _alert(alert_type: str, order_ref: str = "") -> OperatorAlert:
         ("catalog_hidden_by_inactive_collection", "", "orders", "/catalog", "Abrir o Catálogo"),
         # Negociação do iFood: o pedido, já no bloco da resposta.
         ("ifood_negotiation_open", "IF-9", "orders", "/IF-9#ifood-negotiations", "Responder"),
+        # O aceite que não chegou ao iFood: o pedido, já no aviso com o Tentar de novo.
+        ("ifood_accept_not_delivered", "IF-9", "orders", "/IF-9#ifood-accept", "Abrir e tentar de novo"),
     ),
 )
 def test_o_aviso_leva_aonde_se_resolve(alert_type, order_ref, surface, href, label):
