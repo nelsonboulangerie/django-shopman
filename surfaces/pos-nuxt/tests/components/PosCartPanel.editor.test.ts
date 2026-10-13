@@ -192,7 +192,7 @@ describe("PosCartPanel — a grade de controles da comanda", () => {
     expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(false);
     expect(wrapper.findAll("[data-pos-ticket-foot] [data-pos-control-cell]")).toHaveLength(2);
     expect(wrapper.find("[data-pos-tab-transfer]").text()).toContain("Transferir itens");
-    expect(wrapper.find("[data-pos-foot-hint]").text()).toBe("Toque num item para mudar quantidade, desconto ou observação.");
+    expect(wrapper.find("[data-pos-foot-hint]").text()).toBe("Toque num item: quantidade, desconto, observação.");
   });
 
   it("Transferir no pé abre o mesmo diálogo do F10 (sem marcas, a escolha é lá); Dividir conta não existe na venda", async () => {

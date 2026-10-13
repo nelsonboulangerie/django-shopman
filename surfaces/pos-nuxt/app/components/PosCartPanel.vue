@@ -1884,7 +1884,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <h3 v-if="sheet" class="op-title tnum [overflow-wrap:anywhere]" data-pos-sheet-title>{{ tabTitle ? `${tabTitle} · ` : "" }}{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
             <div v-else class="flex items-baseline gap-x-1.5 whitespace-nowrap">
               <h3 class="op-title tnum" data-pos-ticket-count>{{ cartUnits }} {{ cartUnits === 1 ? "item" : "itens" }}</h3>
-              <span v-if="items.length" class="hidden op-micro text-muted-foreground tnum @min-[23rem]:inline">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</span>
+              <span v-if="items.length" class="hidden op-micro text-muted-foreground tnum @min-[27rem]:inline">em {{ items.length }} {{ items.length === 1 ? "linha" : "linhas" }}</span>
             </div>
             <!-- A cozinha em palavra: o que falta e o que já foi. Sem conexão, o motivo. -->
             <p v-if="fireBar.visible && (kitchenStateText || offline)" class="flex items-center gap-x-1.5 op-micro whitespace-nowrap text-muted-foreground" data-pos-kitchen-state>
@@ -1907,7 +1907,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             data-pos-auto-fire
             :data-auto-fire="autoFire ? 'on' : 'off'"
           >
-            <span class="hidden op-micro text-muted-foreground @min-[25rem]:inline" aria-hidden="true">Envio</span>
+            <span class="hidden op-micro text-muted-foreground @min-[24rem]:inline" aria-hidden="true">Envio</span>
             <NuxtFieldGroup :aria-label="`Envio à cozinha: ${autoFire ? 'Auto' : 'Manual'}`" data-pos-auto-fire-control>
               <NuxtButton
                 v-for="option in AUTO_FIRE_OPTIONS"
@@ -2058,8 +2058,11 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             :data-pos-line-marked="isSelected(item.line_id) ? '' : undefined"
           >
             <span
-              class="absolute inset-y-0 left-0 z-10 flex w-7 items-center justify-center transition-opacity motion-reduce:transition-none"
-              :class="blockVisible || coarsePointer || isSelected(item.line_id) ? 'opacity-100' : 'opacity-0 group-hover/line:opacity-100 group-focus-within/line:opacity-100'"
+              class="absolute inset-y-0 left-0 z-10 flex w-7 justify-center transition-opacity motion-reduce:transition-none"
+              :class="[
+                blockVisible || coarsePointer || isSelected(item.line_id) ? 'opacity-100' : 'opacity-0 group-hover/line:opacity-100 group-focus-within/line:opacity-100',
+                layoutB && selectedLineId === item.line_id ? 'items-start pt-4' : 'items-center',
+              ]"
               :data-pos-line-mark="item.line_id"
               @click.stop.prevent="toggleSelect(item.line_id, $event.shiftKey)"
             >
@@ -2403,7 +2406,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         <template v-if="tabRows.length && (!blockVisible || touchEditor)">
           <p v-if="!blockVisible && !sheet && items.length" class="flex items-center gap-1.5 op-micro text-muted-foreground" data-pos-foot-hint>
             <Icon name="lucide:pointer" class="size-3.5 shrink-0" aria-hidden="true" />
-            <span>Toque num item para mudar quantidade, desconto ou observação.</span>
+            <span>Toque num item: quantidade, desconto, observação.</span>
           </p>
           <ReuseControlGrid :rows="tabRows" block="tab" />
         </template>

@@ -720,8 +720,9 @@ async function changeAutoFire(on: boolean) {
   }
 }
 // PRÉVIA DAS ALTERNATIVAS DA COLUNA (dono, 13/10/2026): `?comanda=b` mostra a B, só em
-// desenvolvimento (a prévia com o mock). Escolhida a alternativa, a chave sai.
-const ticketActionsLayout = import.meta.dev && useRoute().query.comanda === "b" ? "b" : "a";
+// desenvolvimento ou na prévia com o mock (NUXT_PUBLIC_POS_PREVIEW_LAYOUTS=1). Escolhida
+// a alternativa, a chave sai.
+const ticketActionsLayout = (import.meta.dev || Boolean(useRuntimeConfig().public.posPreviewLayouts)) && useRoute().query.comanda === "b" ? "b" : "a";
 let autoFireTimer: ReturnType<typeof setTimeout> | null = null;
 // A coluna segura o relógio enquanto há rascunho aberto (desconto, observação) ou
 // linhas marcadas: a linha não vai à cozinha no meio da observação sendo escrita.
