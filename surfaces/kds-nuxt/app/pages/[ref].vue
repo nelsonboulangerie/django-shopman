@@ -169,6 +169,9 @@ const liveLabel = computed(() => {
   if (error.value) return "Sem conexão";
   return realtime.value === "polling" ? "Atualiza sozinho a cada 15 s" : liveCue.value.label;
 });
+const liveShortLabel = computed(() =>
+  !error.value && realtime.value === "polling" ? "A cada 15 s" : "",
+);
 
 // Densidade da estação (Ajustes): quão estreito o ticket pode ser.
 const { density, option: densityOption } = useKdsDensity();
@@ -513,7 +516,7 @@ function clearSearchAndFilter() {
       desk-only-filters
     >
       <template #status>
-        <OperatorLiveStatus :tone="liveTone" :time="lastRead" :label="liveLabel" :detail="liveCue.title" />
+        <OperatorLiveStatus :tone="liveTone" :time="lastRead" :label="liveLabel" :short-label="liveShortLabel" :detail="liveCue.title" />
       </template>
       <template #search>
         <OperatorSuiteSearch

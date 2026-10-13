@@ -678,6 +678,9 @@ const liveTone = computed(() =>
         : "calm",
 );
 const liveLabel = computed(() => realtimeIndicator(realtime.value).label);
+const liveShortLabel = computed(() =>
+  error.value ? "" : realtimeIndicator(realtime.value).shortLabel,
+);
 const liveDetail = computed(() => realtimeIndicator(realtime.value).title);
 // A hora sai do relógio do navegador (fuso de quem opera), nunca do servidor no SSR.
 const clockReady = ref(false);
@@ -775,11 +778,14 @@ const outside = useOutsideStore(
           :label="order.status_label"
           data-detail-status
         />
-        <span class="hidden md:inline-flex">
+        <!-- `min-w-0`: sem ele o invólucro segura a largura do rótulo completo e o
+             selo não encolhe (cortava "Atualiza sozinho a cada" a 800 px). -->
+        <span class="hidden min-w-0 md:inline-flex">
           <OperatorLiveStatus
             :tone="liveTone"
             :time="readClock"
             :label="error ? 'Atualização falhou' : liveLabel"
+            :short-label="liveShortLabel"
             :detail="liveDetail"
           />
         </span>

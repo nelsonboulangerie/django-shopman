@@ -286,6 +286,8 @@ export const QUEUE_POLL_MS = 30_000;
 
 /** O selo do cabeçalho: a cadência por extenso (a voz aprovada, "Atualiza sozinho a cada 30 s"). */
 export const HUB_REFRESH_LABEL = `Atualiza sozinho a cada ${QUEUE_POLL_MS / 1000} s`;
+/** O curto do mesmo selo, quando a barra aperta (kit `OperatorLiveStatus`, degrau 2). */
+export const HUB_REFRESH_SHORT_LABEL = `A cada ${QUEUE_POLL_MS / 1000} s`;
 
 /** "10:42": a hora de uma leitura, no fuso do dispositivo (o da loja). */
 export function readClockLabel(ms: number, timeZone?: string): string {

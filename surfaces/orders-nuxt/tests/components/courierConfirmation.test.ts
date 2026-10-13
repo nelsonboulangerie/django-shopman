@@ -123,6 +123,21 @@ describe('chamada sem resposta da TaOn', () => {
     } finally { wrapper.unmount(); }
   });
 
+  it('é cautela, não erro: aviso e botão no tom de atenção, e o selo do cabeçalho sai', async () => {
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch-again', enabled: true };
+    const wrapper = mount(Panel, { props: { courier, busy: false, dispatchAgainAction: action },
+      global: { stubs: { Icon: true } } });
+    try {
+      const alert = wrapper.get('[data-courier-no-answer]');
+      expect(alert.attributes('color')).toBe('warning');
+      expect(alert.attributes('role')).toBe('status');
+      const button = alert.findAll('button').find(item => item.text() === 'Chamar de novo')!;
+      expect(button.attributes('color')).toBe('warning');
+      // O selo repetia o assunto do aviso logo abaixo: com o aviso na tela, ele sai.
+      expect(wrapper.text()).not.toContain('Sem resposta da TaOn');
+    } finally { wrapper.unmount(); }
+  });
+
   it('bloqueado pela Action, não emite', async () => {
     const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch-again', enabled: false, reason: 'Sem permissão para esta ação.' };
     const wrapper = mount(Panel, { props: { courier, busy: false, dispatchAgainAction: action },

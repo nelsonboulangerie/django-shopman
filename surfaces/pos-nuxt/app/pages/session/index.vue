@@ -585,6 +585,7 @@ async function confirmClose() {
             :tone="liveStatus.view.value.tone"
             :time="liveStatus.time.value"
             :label="liveStatus.view.value.label"
+            :short-label="liveStatus.view.value.shortLabel"
             :detail="liveStatus.view.value.detail"
           />
         </template>
