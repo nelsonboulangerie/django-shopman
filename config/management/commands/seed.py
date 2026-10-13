@@ -2027,6 +2027,8 @@ class Command(BaseCommand):
             "https://img.nelsonboulangerie.com.br/products",
         ).rstrip("/")
         IMG = image_base
+        from config.product_photos import hosted_photo_url
+
         UNSPLASH = "https://images.unsplash.com"
 
         def unsplash(photo_id: str) -> str:
@@ -2771,7 +2773,10 @@ class Command(BaseCommand):
                     "is_published": sku not in sem_ficha and sku not in fora_da_loja,
                     "is_sellable": sellable,
                     "availability_policy": AvailabilityPolicy.PLANNED_OK,
-                    "image_url": image,
+                    # A tabela de fotos no host dedicado vence o placeholder de fora
+                    # (config/product_photos.py; o banco vivo vai pelo
+                    # `relocate_product_images`).
+                    "image_url": hosted_photo_url(sku, IMG) or image,
                     "unit_weight_g": weight_g,
                     "storage_tip": storage,
                 },
