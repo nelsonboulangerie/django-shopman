@@ -18,13 +18,14 @@ describe("ticketColumn — marcar sem modo", () => {
     expect([...markRange(items, new Set(), "a", "c")]).toEqual(["a", "b", "c"]);
     expect([...markRange(items, new Set(), "d", "b")].sort()).toEqual(["b", "c", "d"]);
   });
-  it("o título do bloco diz linhas, itens e valor", () => {
-    expect(markedSummary(items, new Set(["a", "b"])).title).toBe("2 linhas marcadas · 3 itens · R$ 15,00".replace(" ", " ") === "" ? "" : markedSummary(items, new Set(["a", "b"])).title);
+  it("o título do bloco diz itens (nunca linhas) e o valor", () => {
     const summary = markedSummary(items, new Set(["a", "b"]));
     expect(summary.lines).toBe(2);
     expect(summary.units).toBe(3);
     expect(summary.totalQ).toBe(1500);
-    expect(summary.title.startsWith("2 linhas marcadas · 3 itens · ")).toBe(true);
+    expect(summary.headline).toBe("3 itens marcados");
+    expect(summary.totalDisplay.replace(/\s/g, " ")).toBe("R$ 15,00");
+    expect(markedSummary(items, new Set(["a"])).headline).toBe("1 item marcado");
   });
 });
 
@@ -33,31 +34,21 @@ describe("ticketColumn — o pé segue o foco", () => {
   it("sem marcas: a comanda, com a contagem", () => {
     expect(fireCellView(base)).toMatchObject({ label: "Enviar à cozinha", shortLabel: "Enviar", count: 4, onlyMarked: false });
   });
-  it("com marcas: 'Enviar 3 marcadas', sem chip", () => {
-    expect(fireCellView({ ...base, markedLines: 3, markedFirable: 3 })).toMatchObject({ label: "Enviar 3 marcadas", count: 0, onlyMarked: true, disabled: false });
-    expect(fireCellView({ ...base, markedLines: 2, markedFirable: 1 }).label).toBe("Enviar 1 marcada");
-    expect(fireCellView({ ...base, markedLines: 2, markedFirable: 0 })).toMatchObject({ label: "Marcadas já enviadas", disabled: true });
+  it("com marcas: 'Enviar marcados', sem chip (o título do bloco diz quantos)", () => {
+    expect(fireCellView({ ...base, markedLines: 3, markedFirable: 3 })).toMatchObject({ label: "Enviar marcados", shortLabel: "Enviar", count: 0, onlyMarked: true, disabled: false });
+    expect(fireCellView({ ...base, markedLines: 1, markedFirable: 1 })).toMatchObject({ label: "Enviar marcados", onlyMarked: true });
+    expect(fireCellView({ ...base, markedLines: 2, markedFirable: 1 }).title).toContain("que ainda não foram");
+    expect(fireCellView({ ...base, markedLines: 2, markedFirable: 0 })).toMatchObject({ label: "Marcados já na cozinha", disabled: true });
   });
   it("sem conexão: apagado com o motivo", () => {
     expect(fireCellView({ ...base, offline: true })).toMatchObject({ disabled: true, title: "Cozinha sem conexão: avise de voz" });
   });
 });
 
-describe("ticketColumn — a cozinha em palavra, com o quando", () => {
-  it("diz o modo do envio (Auto ou Manual), e o motivo sem conexão", () => {
-    expect(kitchenStateView({ unfired: 4, fired: 1, autoFire: true, offline: false })).toMatchObject({
-      counts: "4 a enviar · 1 na cozinha",
-      auto: { full: "Envio: Auto", short: "Envio: Auto" },
-      linksToSettings: true,
-    });
-    expect(kitchenStateView({ unfired: 4, fired: 0, autoFire: false, offline: false })).toMatchObject({
-      auto: { full: "Envio: Manual", short: "Envio: Manual" },
-      linksToSettings: true,
-    });
-    expect(kitchenStateView({ unfired: 3, fired: 0, autoFire: true, offline: true })).toMatchObject({
-      auto: { full: "cozinha sem conexão: avise de voz" },
-      linksToSettings: false,
-    });
+describe("ticketColumn — a cozinha em palavra", () => {
+  it("diz o que falta e o que já foi (o modo do envio é controle, não frase)", () => {
+    expect(kitchenStateView({ unfired: 4, fired: 1 })).toEqual({ counts: "4 a enviar · 1 na cozinha" });
+    expect(kitchenStateView({ unfired: 0, fired: 0 })).toEqual({ counts: "" });
   });
 });
 

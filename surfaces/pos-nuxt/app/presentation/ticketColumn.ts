@@ -49,8 +49,10 @@ export interface MarkedSummary {
   lines: number;
   units: number;
   totalQ: number;
-  /** "3 linhas marcadas · 5 itens · R$ 61,70": o objeto do bloco, no título. */
-  title: string;
+  /** "5 itens marcados": o objeto do bloco, em ITENS (a grandeza da casa, nunca linhas). */
+  headline: string;
+  /** O valor das marcadas, ao lado do título. */
+  totalDisplay: string;
   /** Alguma marcada é peça pesada: no lote, o desconto é só em % (R$ viraria por quilo). */
   hasWeighed: boolean;
 }
@@ -64,7 +66,8 @@ export function markedSummary(items: readonly POSCartItem[], marked: ReadonlySet
     lines,
     units,
     totalQ,
-    title: `${lines} ${lines === 1 ? "linha marcada" : "linhas marcadas"} · ${units} ${units === 1 ? "item" : "itens"} · ${formatBRL(totalQ)}`,
+    headline: units === 1 ? "1 item marcado" : `${units} itens marcados`,
+    totalDisplay: formatBRL(totalQ),
     hasWeighed: chosen.some((item) => isWeighedLine(item)),
   };
 }
@@ -101,22 +104,26 @@ export function fireCellView(input: FireCellInput): FireCellView {
     const n = input.markedFirable;
     if (!n) {
       return {
-        label: "Marcadas já enviadas",
-        shortLabel: "Enviadas",
+        label: "Marcados já na cozinha",
+        shortLabel: "Na cozinha",
         count: 0,
         disabled: true,
-        title: "As linhas marcadas já estão na cozinha",
+        title: "Os itens marcados já estão na cozinha",
         onlyMarked: true,
       };
     }
+    // O título do bloco já diz quantos; o botão diz o alcance ("os marcados"), e a dica
+    // avisa quando parte deles já foi.
     return {
-      label: `Enviar ${n} ${n === 1 ? "marcada" : "marcadas"}`,
-      shortLabel: `Enviar ${n}`,
+      label: "Enviar marcados",
+      shortLabel: "Enviar",
       count: 0,
       disabled: input.disabled || input.offline,
       title: input.offline
         ? "Cozinha sem conexão: avise de voz"
-        : `Enviar à cozinha só ${n === 1 ? "a linha marcada" : `as ${n} linhas marcadas`} (F9)`,
+        : n < input.markedLines
+          ? "Enviar à cozinha os marcados que ainda não foram (F9)"
+          : "Enviar à cozinha só os marcados (F9)",
       onlyMarked: true,
     };
   }
@@ -137,34 +144,16 @@ export function fireCellView(input: FireCellInput): FireCellView {
 export interface KitchenStateView {
   /** "10 a enviar · 1 na cozinha" */
   counts: string;
-  /** O envio automático, com o QUANDO; ou o motivo de a cozinha não receber agora. */
-  /** `wide`: a frase inteira só cabe na coluna larga (30 rem); abaixo, a curta. */
-  auto: { full: string; short: string; tone: "muted" | "warning"; wide: boolean };
-  /** O toque leva aos Ajustes (só o envio automático; sem conexão não leva a nada). */
-  linksToSettings: boolean;
 }
 
 /**
- * O estado da cozinha em palavra: o que falta, o que já foi e o modo do envio, "Envio:
- * Auto" ou "Envio: Manual" (dono, 13/10/2026). O QUANDO do Auto (ao sair da comanda ou
- * depois de 90 s sem mudança, o relógio de `pages/index.vue`) mora na dica do toque.
+ * O estado da cozinha em palavra: o que falta e o que já foi. O modo do envio (Auto ·
+ * Manual) é um controle no cabeçalho (dono, 13/10/2026), não uma frase; sem conexão, o
+ * cabeçalho diz o motivo ao lado.
  */
-export function kitchenStateView(args: { unfired: number; fired: number; autoFire: boolean; offline: boolean }): KitchenStateView {
+export function kitchenStateView(args: { unfired: number; fired: number }): KitchenStateView {
   const parts: string[] = [];
   if (args.unfired) parts.push(`${args.unfired} a enviar`);
   if (args.fired) parts.push(`${args.fired} na cozinha`);
-  if (args.offline) {
-    return {
-      counts: parts.join(" · "),
-      auto: { full: "cozinha sem conexão: avise de voz", short: "cozinha sem conexão", tone: "warning", wide: false },
-      linksToSettings: false,
-    };
-  }
-  return {
-    counts: parts.join(" · "),
-    auto: args.autoFire
-      ? { full: "Envio: Auto", short: "Envio: Auto", tone: "muted", wide: false }
-      : { full: "Envio: Manual", short: "Envio: Manual", tone: "muted", wide: false },
-    linksToSettings: true,
-  };
+  return { counts: parts.join(" · ") };
 }

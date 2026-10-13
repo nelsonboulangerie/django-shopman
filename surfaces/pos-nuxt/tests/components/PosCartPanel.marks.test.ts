@@ -44,6 +44,10 @@ function props(overrides: Record<string, unknown> = {}) {
   };
 }
 type Wrapper = Awaited<ReturnType<typeof mountSuspended>>;
+/** Tocar a linha marca só ela e abre o bloco dela (dono, 13/10/2026). */
+async function open(wrapper: Wrapper, name = "Café") {
+  await wrapper.find(`[aria-label="Editar ${name}"]`).trigger("click");
+}
 async function mark(wrapper: Wrapper, lineId: string, shiftKey = false) {
   await wrapper.find(`[data-pos-line-mark="${lineId}"]`).trigger("click", { shiftKey });
 }
@@ -59,56 +63,55 @@ describe("PosCartPanel — marcar sem modo", () => {
     expect(wrapper.find("[data-pos-ticket-header]").text()).toContain("4 itens");
   });
 
-  it("marcar vira o bloco das marcadas com o objeto no título (a marca é literal: só a clicada)", async () => {
+  it("uma marca é o bloco de uma linha (com a quantidade); duas viram o bloco dos marcados, com o objeto em itens", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    // No balcão o editor nasce aberto na última lançada (Café).
-    expect(block(wrapper).attributes("data-pos-block")).toBe("line");
+    // Nada marcado ao abrir: o bloco não existe.
+    expect(block(wrapper).exists()).toBe(false);
     await mark(wrapper, "L-PAO");
-    expect(block(wrapper).attributes("data-pos-block")).toBe("marked");
+    expect(block(wrapper).attributes("data-pos-block")).toBe("line");
     expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(1);
     await mark(wrapper, "L-CAFE");
     expect(block(wrapper).attributes("data-pos-block")).toBe("marked");
-    expect(wrapper.find("[data-pos-marked-title]").text()).toBe(`2 linhas marcadas · 3 itens · ${formatBRL(1100)}`);
-    expect(wrapper.find('[data-pos-line-mark="L-CAFE"]').exists()).toBe(true);
+    expect(wrapper.find("[data-pos-marked-title]").text().replace(/\s/g, " ")).toBe(`3 itens marcados· ${formatBRL(1100)}`.replace(/\s/g, " "));
     expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(2);
   });
 
-  it("as posições não mudam: Remover, Desconto e Observação no mesmo lugar; Transferir segue o foco no pé, sem repetir", async () => {
+  it("as posições não mudam: um lugar só para tudo o que age nos marcados, Enviar | Transferir por último", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    const cells = () => wrapper.findAll("[data-pos-controls-block] [data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"));
+    const cells = () => wrapper.findAll("[data-pos-line-editor] [data-pos-controls-block] [data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"));
+    await mark(wrapper, "L-CAFE");
     expect(cells()).toEqual(["qty", "remove", "discount", "note", "fire", "transfer"]);
     await mark(wrapper, "L-PAO");
-    await mark(wrapper, "L-CAFE");
     expect(cells()).toEqual(["remove", "discount", "note", "fire", "transfer"]);
     expect(wrapper.findAll("[data-pos-tab-transfer], [data-pos-batch-move]")).toHaveLength(1);
-    expect(wrapper.find("[data-pos-tab-transfer]").text()).toContain("Transferir 2 marcadas");
+    expect(wrapper.find("[data-pos-tab-transfer]").text()).toContain("Transferir marcados");
     await wrapper.find("[data-pos-tab-transfer]").trigger("click");
     expect(wrapper.emitted("move")?.[0]).toEqual([["L-PAO", "L-CAFE"]]);
   });
 
-  it("desmarcar a última volta ao editor da linha aberta", async () => {
+  it("desmarcar a última fecha o bloco; o pé volta a valer para a comanda", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
     await mark(wrapper, "L-CAFE");
     await mark(wrapper, "L-QUICHE");
-    expect(wrapper.find("[data-pos-marked-title]").text()).toContain("3 linhas marcadas");
+    expect(wrapper.find("[data-pos-marked-title]").text()).toContain("4 itens marcados");
     await mark(wrapper, "L-CAFE");
     await mark(wrapper, "L-PAO");
-    expect(wrapper.find("[data-pos-marked-title]").text()).toContain("1 linha marcada");
+    expect(wrapper.find("[data-pos-line-editor-title]").text()).toContain("Quiche");
     await mark(wrapper, "L-QUICHE");
-    expect(block(wrapper).attributes("data-pos-block")).toBe("line");
-    expect(wrapper.find("[data-pos-line-editor-title]").text()).toContain("Café");
+    expect(block(wrapper).exists()).toBe(false);
+    expect(wrapper.find("[data-pos-ticket-foot] [data-pos-tab-transfer]").text()).toContain("Transferir itens");
   });
 
   it("Shift + clique marca o intervalo; Esc desmarca tudo", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props(), attachTo: document.body });
     await wrapper.find('[data-item-select="L-PAO"]').trigger("click");
     await mark(wrapper, "L-CAFE", true);
-    expect(wrapper.find("[data-pos-marked-title]").text()).toContain("3 linhas marcadas");
+    expect(wrapper.find("[data-pos-marked-title]").text()).toContain("4 itens marcados");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await wrapper.vm.$nextTick();
     expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(0);
-    expect(block(wrapper).attributes("data-pos-block")).toBe("line");
+    expect(block(wrapper).exists()).toBe(false);
   });
 
   it("Espaço na linha em foco marca, como a caixa", async () => {
@@ -137,12 +140,12 @@ describe("PosCartPanel — marcar sem modo", () => {
 });
 
 describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
-  it("com marcas, Enviar diz 'Enviar N marcadas' e envia só elas; o Pagamento segue a comanda inteira", async () => {
+  it("com marcas, Enviar diz 'Enviar marcados' e envia só eles; o Pagamento segue a comanda inteira", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await mark(wrapper, "L-PAO");
     await mark(wrapper, "L-CAFE");
     const fire = wrapper.find("[data-pos-fire]");
-    expect(fire.text()).toContain("Enviar 2 marcadas");
+    expect(fire.text()).toContain("Enviar marcados");
     expect(wrapper.find("[data-pos-primary]").text()).toContain(formatBRL(3590));
     await fire.trigger("click");
     expect(wrapper.emitted("fire")).toBeUndefined();
@@ -182,7 +185,7 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
     });
     await wrapper.find('[data-item-select="L-PAO"]').trigger("click");
     await mark(wrapper, "L-CAFE");
-    expect(wrapper.find("[data-pos-fire]").text()).toContain("Marcadas já enviadas");
+    expect(wrapper.find("[data-pos-fire]").text()).toContain("Marcados já na cozinha");
     expect(wrapper.find("[data-pos-fire]").attributes("disabled")).toBeDefined();
   });
 
@@ -234,7 +237,7 @@ describe("PosCartPanel — o pé segue o foco; o Pagamento não", () => {
     await mark(wrapper, "L-PAO");
     await mark(wrapper, "L-CAFE");
     await wrapper.find("[data-pos-line-note]").trigger("click");
-    expect(wrapper.find("[data-pos-note-help]").text()).toContain("2 linhas marcadas");
+    expect(wrapper.find("[data-pos-note-help]").text()).toContain("todos os marcados");
     await wrapper.find("[data-pos-note-panel] textarea").setValue("para viagem");
     await wrapper.find("[data-pos-edit-apply]").trigger("click");
     expect(wrapper.emitted("setNotes")).toEqual([["L-PAO", "para viagem"], ["L-CAFE", "para viagem"]]);
@@ -271,6 +274,7 @@ describe("PosCartPanel — a porta da comanda e as do raro", () => {
 
   it("a linha aberta tem ⋯ com o raro dela; a expansão só lê", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper);
     expect(wrapper.find("[data-pos-line-menu]").exists()).toBe(true);
     await wrapper.find('[data-item-select="L-CAFE"]').trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.find('[role="region"]').findAll("button")).toHaveLength(0);
@@ -282,6 +286,7 @@ describe("PosCartPanel — a linha que já está na cozinha", () => {
 
   it("+ numa linha enviada vai numa linha NOVA, a enviar, e o editor segue a nova", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: fired }) });
+    await open(wrapper, "Croissant");
     await wrapper.find('[aria-label="Aumentar"]').trigger("click");
     expect(wrapper.emitted("increment")).toBeUndefined();
     const [lineId, qty, done] = wrapper.emitted("addLike")![0]! as [string, number, (id: string) => void];
@@ -294,6 +299,7 @@ describe("PosCartPanel — a linha que já está na cozinha", () => {
 
   it("observação nova numa linha enviada oferece reenviar, na cor do aviso, e se dispensa", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: fired }) });
+    await open(wrapper, "Croissant");
     await wrapper.find("[data-pos-line-note]").trigger("click");
     await wrapper.find("[data-pos-note-panel] textarea").setValue("sem manteiga");
     await wrapper.find("[data-pos-edit-apply]").trigger("click");
@@ -309,6 +315,7 @@ describe("PosCartPanel — a linha que já está na cozinha", () => {
 describe("PosCartPanel — sem conexão", () => {
   it("o que precisa do servidor fica apagado com o motivo; quantidade e observação seguem", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ offline: true }) });
+    await open(wrapper);
     expect(wrapper.find("[data-pos-kitchen-offline]").text()).toContain("cozinha sem conexão");
     expect(wrapper.find("[data-pos-fire]").attributes("disabled")).toBeDefined();
     expect(wrapper.find("[data-pos-line-discount]").attributes("disabled")).toBeDefined();
@@ -318,22 +325,32 @@ describe("PosCartPanel — sem conexão", () => {
   });
 });
 
-describe("PosCartPanel — Envio: Auto ou Manual", () => {
-  it("ligado: o cabeçalho diz 'Envio: Auto' (o quando na dica), e a linha diz que vai sozinha", async () => {
+describe("PosCartPanel — Envio: Auto · Manual, um controle de verdade (dono, 13/10)", () => {
+  it("ligado: Auto pressionado, a dica diz o quando e o alcance, e a linha diz que vai sozinha", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ autoFire: true, autoFireSkus: ["PAO"], kitchenStations: { PAO: "Forno", CAFE: "Bar" } }),
     });
     const auto = wrapper.find("[data-pos-auto-fire]");
-    expect(auto.attributes("aria-label")).toBe("Envio: Auto");
+    expect(auto.attributes("data-auto-fire")).toBe("on");
     expect(auto.attributes("title")).toContain("90 s");
+    expect(auto.attributes("title")).toContain("Forno e Bar, em todas as comandas");
+    expect(wrapper.find('[data-pos-auto-fire-option="auto"]').attributes("aria-pressed")).toBe("true");
     expect(wrapper.text()).toContain("vai sozinho");
     expect(wrapper.text()).toContain("vai à cozinha");
+    // Tocar o que já está escolhido não faz nada; tocar o outro pede a troca.
+    await wrapper.find('[data-pos-auto-fire-option="auto"]').trigger("click");
+    expect(wrapper.emitted("autoFireChange")).toBeUndefined();
+    await wrapper.find('[data-pos-auto-fire-option="manual"]').trigger("click");
+    expect(wrapper.emitted("autoFireChange")).toEqual([[false]]);
   });
-  it("desligado: 'Envio: Manual', nunca 'desligado'", async () => {
+  it("desligado: Manual pressionado, nunca 'desligado'; sem conexão, o controle apaga", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ autoFire: false }) });
-    const auto = wrapper.find("[data-pos-auto-fire]");
-    expect(auto.attributes("aria-label")).toBe("Envio: Manual");
+    expect(wrapper.find('[data-pos-auto-fire-option="manual"]').attributes("aria-pressed")).toBe("true");
     expect(wrapper.find("[data-pos-ticket-header]").text()).not.toContain("desligado");
+    await wrapper.find('[data-pos-auto-fire-option="auto"]').trigger("click");
+    expect(wrapper.emitted("autoFireChange")).toEqual([[true]]);
+    const offline = await mountSuspended(PosCartPanel, { props: props({ autoFire: false, offline: true }) });
+    expect(offline.find('[data-pos-auto-fire-option="auto"]').attributes("disabled")).toBeDefined();
   });
 });
 
@@ -343,6 +360,7 @@ describe("PosCartPanel — decisão 5: linha da cozinha que sai ou diminui cance
 
   it("diminuir cancela na cozinha só a diferença e a coluna diz em palavra", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent()] }) });
+    await open(wrapper, "Croissant");
     await wrapper.find('[aria-label="Diminuir"]').trigger("click");
     expect(wrapper.emitted("decrement")).toEqual([["L-CROISSANT"]]);
     const [entries, done] = wrapper.emitted("cancelInKitchen")![0]! as [Array<{ lineId: string; units?: number }>, (ok: boolean) => void];
@@ -365,6 +383,7 @@ describe("PosCartPanel — decisão 5: linha da cozinha que sai ou diminui cance
 
   it("remover uma linha enviada confirma 'Remover e cancelar na cozinha' e cancela a linha inteira", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent()] }) });
+    await open(wrapper, "Croissant");
     await wrapper.find("[data-pos-line-remove]").trigger("click");
     expect(document.body.textContent).toContain("sai da conta e é cancelado na cozinha");
     const confirm = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Remover e cancelar na cozinha"));
@@ -382,6 +401,7 @@ describe("PosCartPanel — decisão 5: linha da cozinha que sai ou diminui cance
 
   it("item pronto sai só da conta, e a coluna diz isso", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent({ kitchen_status: "done" })] }) });
+    await open(wrapper, "Croissant");
     await wrapper.find('[aria-label="Diminuir"]').trigger("click");
     expect(wrapper.emitted("cancelInKitchen")).toBeUndefined();
     expect(toastCalls.at(-1)![0]).toBe("Croissant já estava pronto: saiu só da conta.");
@@ -389,6 +409,7 @@ describe("PosCartPanel — decisão 5: linha da cozinha que sai ou diminui cance
 
   it("se a cozinha não recebe, a coluna manda avisar de voz", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [sent()] }) });
+    await open(wrapper, "Croissant");
     await wrapper.find('[aria-label="Diminuir"]').trigger("click");
     (wrapper.emitted("cancelInKitchen")![0]![1] as (ok: boolean) => void)(false);
     expect(toastCalls.at(-1)![0]).toBe("Croissant saiu da conta, mas a cozinha não recebeu o cancelamento: avise de voz.");

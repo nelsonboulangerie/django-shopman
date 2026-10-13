@@ -41,33 +41,44 @@ function props(overrides: Record<string, unknown> = {}) {
   };
 }
 
+type Wrapper = Awaited<ReturnType<typeof mountSuspended>>;
+/** Tocar a linha marca só ela e abre o bloco dela (dono, 13/10/2026). */
+async function open(wrapper: Wrapper, name = "Café") {
+  await wrapper.find(`[aria-label="Editar ${name}"]`).trigger("click");
+}
+
 function press(key: string) {
   document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 }
 
 describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
-  it("abre para a última lançada, diz o que edita, e Fechar devolve a lista inteira", async () => {
+  it("nada marcado ao abrir; tocar a linha marca só ela e abre o bloco dela; o ✕ desmarca", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     const editor = () => wrapper.find("[data-pos-line-editor]");
+    expect(editor().exists()).toBe(false);
+    await open(wrapper);
     expect(editor().exists()).toBe(true);
-    expect(editor().text()).toContain("Editando");
+    expect(wrapper.find('[data-pos-line-mark="L-CAFE"] [role="checkbox"]').attributes("aria-checked")).toBe("true");
     expect(editor().text()).toContain("Café");
     expect(editor().text()).toContain(`${formatBRL(300)} cada`);
     await wrapper.find("[data-pos-line-editor-close]").trigger("click");
     expect(editor().exists()).toBe(false);
-    // Tocar uma linha reabre o editor DELA.
-    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
+    // Tocar outra linha abre o bloco DELA (marca só ela).
+    await open(wrapper, "Pão");
     expect(editor().text()).toContain("Pão");
+    expect(wrapper.findAll("[data-pos-line-marked]")).toHaveLength(1);
   });
 
-  it("Esc fecha o editor; o próximo dígito do teclado físico o traz de volta e edita a linha", async () => {
+  it("Esc desmarca; sem nada marcado, o dígito do teclado físico vai à última lançada SEM marcá-la", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper, "Pão");
     press("Escape");
     await wrapper.vm.$nextTick();
     expect(wrapper.find("[data-pos-line-editor]").exists()).toBe(false);
     press("3");
     await wrapper.vm.$nextTick();
-    expect(wrapper.find("[data-pos-line-editor]").exists()).toBe(true);
+    // O F9 de quem lança e digita continua mandando a comanda inteira.
+    expect(wrapper.find("[data-pos-line-editor]").exists()).toBe(false);
     expect(wrapper.emitted("setQty")?.[0]).toEqual(["L-CAFE", 3]);
   });
 
@@ -82,6 +93,7 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
 
   it("↑↓ trocam a linha do editor quando o foco não está num campo", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper);
     press("ArrowUp");
     await wrapper.vm.$nextTick();
     expect(wrapper.find("[data-pos-line-editor]").text()).toContain("Pão");
@@ -89,8 +101,8 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
 
   it("no balcão (sem toque) o numérico da tela só aparece no desconto", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper);
     expect(wrapper.find("[data-pos-line-numpad]").exists()).toBe(false);
-    expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Digite a quantidade");
     await wrapper.find("[data-pos-line-discount]").trigger("click");
     expect(wrapper.find("[data-pos-line-numpad]").exists()).toBe(true);
     expect(wrapper.find("[data-pos-discount-panel]").exists()).toBe(true);
@@ -158,25 +170,29 @@ describe("PosCartPanel — editor da linha sob demanda (v4)", () => {
   });
 });
 
-// A GRADE DE CONTROLES (dono, 10/10): o bloco da linha (quantidade | Remover;
-// Desconto | Observação) só com a linha aberta; o bloco da comanda (Enviar à cozinha |
-// Dividir) sempre, logo acima do Pagamento.
+// A GRADE DE CONTROLES (dono, 10/10; um lugar só, 13/10): com algo marcado, o bloco tem
+// tudo o que age nos marcados (quantidade | Remover; Desconto | Observação; Enviar |
+// Transferir); sem nada marcado, o pé tem Enviar | Transferir da comanda inteira.
 describe("PosCartPanel — a grade de controles da comanda", () => {
-  it("linha aberta: quantidade | Remover, Desconto | Observação; e a comanda embaixo", async () => {
+  it("linha marcada: quantidade | Remover, Desconto | Observação, Enviar | Transferir, tudo no bloco", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper);
     const line = wrapper.find("[data-pos-controls-block='line']");
     expect(line.findAll("[data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"))).toEqual(["qty", "remove", "discount", "note"]);
-    const tab = wrapper.find("[data-pos-ticket-foot] [data-pos-controls-block='tab']");
+    const tab = wrapper.find("[data-pos-line-editor] [data-pos-controls-block='tab']");
     expect(tab.findAll("[data-pos-control-cell]").map((c) => c.attributes("data-pos-control-cell"))).toEqual(["fire", "transfer"]);
-    // A dica do teclado mora no cabeçalho do editor, não no pé.
-    expect(wrapper.find("[data-pos-line-editor] [data-pos-keyboard-hint]").exists()).toBe(true);
+    expect(wrapper.find("[data-pos-ticket-foot] [data-pos-controls-block='tab']").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-fire]").text()).toContain("Enviar marcados");
+    // Sem dica de teclado escrita: as teclas moram nos botões.
+    expect(wrapper.find("[data-pos-keyboard-hint]").exists()).toBe(false);
   });
 
-  it("sem linha aberta, só Enviar | Transferir, no mesmo lugar", async () => {
+  it("sem nada marcado, o pé diz o que vale para a comanda: Enviar à cozinha | Transferir itens", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    await wrapper.find("[data-pos-line-editor-close]").trigger("click");
     expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(false);
     expect(wrapper.findAll("[data-pos-ticket-foot] [data-pos-control-cell]")).toHaveLength(2);
+    expect(wrapper.find("[data-pos-tab-transfer]").text()).toContain("Transferir itens");
+    expect(wrapper.find("[data-pos-foot-hint]").text()).toBe("Toque num item para mudar quantidade, desconto ou observação.");
   });
 
   it("Transferir no pé abre o mesmo diálogo do F10 (sem marcas, a escolha é lá); Dividir conta não existe na venda", async () => {
@@ -215,6 +231,7 @@ describe("PosCartPanel — a grade de controles da comanda", () => {
 describe("PosCartPanel — a edição da linha é sempre no editor", () => {
   it("observação: escrita no editor, Aplicar grava, sem modal", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper);
     await wrapper.find("[data-pos-line-note]").trigger("click");
     expect(wrapper.find("[data-pos-controls-block='line']").exists()).toBe(false);
     const panel = wrapper.find("[data-pos-note-panel]");
@@ -228,6 +245,7 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
 
   it("observação: Cancelar devolve a grade sem gravar", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper);
     await wrapper.find("[data-pos-line-note]").trigger("click");
     await wrapper.find("[data-pos-note-panel] textarea").setValue("x");
     await wrapper.find("[data-pos-edit-cancel]").trigger("click");
@@ -237,6 +255,7 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
 
   it("desconto: formato em duas colunas, rascunho até Aplicar; Cancelar não grava", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await open(wrapper);
     await wrapper.find("[data-pos-line-discount]").trigger("click");
     const panel = wrapper.find("[data-pos-discount-panel]");
     expect(panel.exists()).toBe(true);
@@ -250,11 +269,13 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
     expect(wrapper.emitted("setDiscount")?.[0]?.slice(0, 2)).toEqual(["L-CAFE", 5]);
   });
 
-  it("a dica do teclado diz o que as teclas fazem agora", async () => {
+  it("as teclas moram nos botões, não numa frase: Remover diz Del, Enviar F9, Transferir F10", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Digite a quantidade");
-    await wrapper.find("[data-pos-line-discount]").trigger("click");
-    expect(wrapper.find("[data-pos-keyboard-hint]").text()).toContain("Enter aplica");
+    await open(wrapper);
+    expect(wrapper.find("[data-pos-keyboard-hint]").exists()).toBe(false);
+    expect(wrapper.find("[data-pos-line-remove]").attributes("aria-keyshortcuts")).toBe("Delete");
+    expect(wrapper.find("[data-pos-fire]").attributes("aria-keyshortcuts")).toBe("F9");
+    expect(wrapper.find("[data-pos-tab-transfer]").attributes("aria-keyshortcuts")).toBe("F10");
   });
 
 });
