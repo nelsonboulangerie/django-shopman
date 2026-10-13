@@ -586,12 +586,25 @@ describe("rowsToCsv", () => {
     const [header, line] = csv.split("\n");
     expect(header).toContain("Código");
     expect(header).toContain("Atendente");
-    expect(line).toContain('"A"');
+    expect(line!.split(";")[0]).toBe("A");
     expect(line).toContain('"Ana ""Bela"""'); // doubled quotes
-    expect(line).toContain('"Léo"');
+    expect(line).toContain(";Léo");
   });
   it("is just a header when there are no rows", () => {
     expect(rowsToCsv([]).split("\n")).toHaveLength(1);
+  });
+  // A planilha em português lê a vírgula como decimal: o separador é ponto e vírgula,
+  // e a marca de ordem de bytes abre o UTF-8 com acento certo (o escritor do kit,
+  // `readingCsvText`, o mesmo do "Exportar CSV deste quadro").
+  it("sai como a planilha em português lê: ';' entre colunas, vírgula no valor, BOM", () => {
+    const csv = rowsToCsv([
+      { card: card({ ref: "A", total_display: "R$ 1.234,50" }), zoneKey: "intake" as const, zoneTitle: "Entrada" },
+    ]);
+    expect(csv.startsWith("﻿")).toBe(true);
+    const [header, line] = csv.slice(1).split("\n");
+    expect(header).toBe("Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente");
+    expect(line!.split(";")).toHaveLength(8);
+    expect(line).toContain(";R$ 1.234,50;");
   });
 });
 

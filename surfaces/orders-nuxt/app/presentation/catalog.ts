@@ -9,6 +9,7 @@ import type {
   SurfaceProjection,
   SurfaceSyncStatus,
 } from "~/types/catalog";
+import { readingCsvMoney, readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
 
 export type CellState = "available" | "paused" | "unpublished" | "absent";
 
@@ -345,31 +346,22 @@ export function catalogCsv(
   rows: CatalogRowProjection[],
   surfaces: SurfaceProjection[],
 ): string {
-  const esc = (value: unknown) =>
-    `"${String(value ?? "").replace(/"/g, '""')}"`;
-  const header = [
-    "Produto",
-    "SKU",
-    "Preço",
-    "Coleção",
-    ...surfaces.map((s) => s.name),
-  ];
-  const body = rows.map((row) => {
-    const bySurface = new Map(
-      row.cells.map((cell) => [cell.surface_ref, cell]),
-    );
-    return [
-      row.name,
-      row.sku,
-      row.base_price_display,
-      row.primary_collection_name,
-      ...surfaces.map((s) => {
-        const cell = bySurface.get(s.ref);
-        return cell ? cellView(row, cell).label : "";
-      }),
-    ]
-      .map(esc)
-      .join(",");
+  // Escrito pelo kit (`readingCsvText`): ";" entre colunas e BOM, como a planilha em
+  // português lê; o preço sai como número em reais ("18,00"), para a planilha somar.
+  return readingCsvText({
+    header: ["Produto", "SKU", "Preço (R$)", "Coleção", ...surfaces.map((s) => s.name)],
+    rows: rows.map((row) => {
+      const bySurface = new Map(row.cells.map((cell) => [cell.surface_ref, cell]));
+      return [
+        row.name,
+        row.sku,
+        readingCsvMoney(row.base_price_q / 100),
+        row.primary_collection_name ?? "",
+        ...surfaces.map((s) => {
+          const cell = bySurface.get(s.ref);
+          return cell ? cellView(row, cell).label : "";
+        }),
+      ];
+    }),
   });
-  return [header.map(esc).join(","), ...body].join("\n");
 }

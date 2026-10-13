@@ -14,6 +14,7 @@ import type {
 // Moram no kit (`operator-kit/app/presentation/orderDetail.ts`) porque o detalhe
 // do pedido é o mesmo no Gestor e no PDV; o board lê as mesmas peças.
 import { joinFacts } from "../../../operator-kit/app/presentation/orderDetail";
+import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
 
 export {
   joinFacts,
@@ -645,34 +646,22 @@ export function flattenZones(zones: ZoneView[]): FlatRow[] {
 
 /** Serialise the (already triaged) queue rows to CSV — the operator's "saída"
  *  for a shift handover or a quick print. Pure so the columns/escaping are
- *  testable; the page owns the download. */
+ *  testable; the page owns the download. Escrito pelo kit (`readingCsvText`):
+ *  ";" entre colunas e BOM, como a planilha em português lê. */
 export function rowsToCsv(rows: FlatRow[]): string {
-  const header = [
-    "Código",
-    "Situação",
-    "Canal",
-    "Cliente",
-    "Itens",
-    "Total",
-    "Tempo",
-    "Atendente",
-  ];
-  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const body = rows.map((r) =>
-    [
+  return readingCsvText({
+    header: ["Código", "Situação", "Canal", "Cliente", "Itens", "Total", "Tempo", "Atendente"],
+    rows: rows.map((r) => [
       r.card.ref,
       r.zoneTitle,
       channelLabel(r.card.channel_ref),
-      r.card.customer_name,
-      r.card.items_summary,
-      r.card.total_display,
+      r.card.customer_name ?? "",
+      r.card.items_summary ?? "",
+      r.card.total_display ?? "",
       elapsedLabel(r.card.elapsed_seconds),
-      r.card.assigned_operator,
-    ]
-      .map(esc)
-      .join(","),
-  );
-  return [header.map(esc).join(","), ...body].join("\n");
+      r.card.assigned_operator ?? "",
+    ]),
+  });
 }
 
 // ── Keyboard shortcuts (Arc 3) ──────────────────────────────────────────────
