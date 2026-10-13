@@ -73,6 +73,7 @@ import {
   allowsNewTab,
   buildMovePayload,
   filterTargets,
+  freeSpotOptions,
   freezesPriceOnMove,
   linesToMove,
   moveLineId,
@@ -926,6 +927,32 @@ describe("presentation/moveLines — Transferir, a ação única (dono, N=1, 13/
     expect(linesToMove(items, ["L2"]).map(moveLineId)).toEqual(["L2"]);
     expect(linesToMove(items, []).map(moveLineId)).toEqual(["L1", "L2"]);
     expect(movingSummary(items).units).toBe(3);
+  });
+
+  it("a mesa do Salão é destino: ocupada leva à comanda dela, livre abre a nova já nela (dono, M=1)", () => {
+    const spots = [
+      { ref: "M4", label: "Mesa 4", short_label: "M4", area: "Salão", kind: "table" },
+      { ref: "M5", label: "Mesa 5", short_label: "M5", area: "Salão", kind: "table" },
+      { ref: "M7", label: "Mesa 7", short_label: "M7", area: "Salão", kind: "table" },
+    ];
+    const seatedTabs = [
+      { ref: "00000012", display_ref: "12", session_key: "s12", state: "in_use", customer_name: "", seating_spot_ref: "M4" },
+      { ref: "00000013", display_ref: "13", session_key: "s13", state: "in_use", customer_name: "", seating_spot_ref: "M7" },
+    ] as unknown as POSTabProjection[];
+    const seatedOptions = moveTargetOptions(seatedTabs, "s13", spots);
+    const free = freeSpotOptions(spots, seatedTabs, "M7");
+    expect(seatedOptions.map((o) => o.title)).toEqual(["Mesa 4 (#12)"]);
+    expect(free.map((o) => o.title)).toEqual(["Mesa 5"]);
+    const at = (input: string) =>
+      resolveDestination({ input, options: seatedOptions, spots: free, sourceDisplay: "13", sourceSpotKeys: ["Mesa 7", "M7"], suggested: "13-2", allowsNew: true, allowsExisting: true });
+    expect(at("mesa 4")).toEqual({ kind: "existing", sessionKey: "s12", title: "Mesa 4 (#12)" });
+    expect(at("M5")).toEqual({ kind: "new", tabRef: "13-2", title: "13-2", spotRef: "M5", spotTitle: "Mesa 5" });
+    expect(at("Mesa 7")).toMatchObject({ kind: "invalid" });
+    expect(transferCta({ units: 3, all: false, destination: at("mesa 4"), sourceTitle: "#13" })).toBe("Levar 3 itens para a Mesa 4 (#12)");
+    expect(transferCta({ units: 2, all: false, destination: at("mesa 5"), sourceTitle: "#13" })).toBe("Separar 2 itens na comanda nova 13-2 (Mesa 5)");
+    const items = [cartItem({ sku: "CR", line_id: "L1" }), cartItem({ sku: "PC", line_id: "L2" })];
+    expect(buildMovePayload({ items, lineIds: ["L1"], destination: at("mesa 5") }))
+      .toEqual({ mode: "split", lineIds: ["L1"], toTabRef: "13-2", seatingSpotRef: "M5" });
   });
 
   it("o botão diz o resultado em palavras", () => {

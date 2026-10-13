@@ -93,7 +93,7 @@ def test_recusa_da_regra_no_commit_vira_recusa_do_pdv(minimum, monkeypatch):
         ("delivery_zone_not_covered", {}, "delivery_address", "delivery_address", 422),
         ("delivery_zone_unverified", {}, "delivery_address", "delivery_address", 422),
         ("delivery_address_mismatch", {}, "delivery_address", "delivery_address", 422),
-        ("delivery_tax_id_required", {"field": "fiscal_tax_id"}, "fiscal_tax_id", "receipt", 422),
+        ("delivery_tax_id_invalid", {"field": "fiscal_tax_id"}, "fiscal_tax_id", "receipt", 422),
         ("price_missing", {}, "items", "cart", 422),
         ("stale_checks", {}, "", "cart", 409),
     ],

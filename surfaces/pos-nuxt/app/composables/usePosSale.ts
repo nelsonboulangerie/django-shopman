@@ -3479,6 +3479,7 @@ export function usePosSale(deps: PosSaleDeps) {
     lineIds: string[];
     toTabRef?: string;
     toSessionKey?: string;
+    seatingSpotRef?: string;
     closeSource?: boolean;
   }) {
     if (!cart.tabSessionKey) return;
@@ -3492,6 +3493,7 @@ export function usePosSale(deps: PosSaleDeps) {
       };
       if (payload.toTabRef) body.to_tab_ref = payload.toTabRef;
       if (payload.toSessionKey) body.to_session_key = payload.toSessionKey;
+      if (payload.seatingSpotRef) body.seating_spot_ref = payload.seatingSpotRef;
       const targetRef = payload.toTabRef || otherOpenTabs.value.find(tab => tab.session_key === payload.toSessionKey)?.ref;
       if (targetRef) {
         try {

@@ -12,7 +12,7 @@
 // chama a Action `move_tab_lines`. O Core congela o preço de cada linha como foi cobrado
 // na origem; este módulo só deixa a tela dizer isso, nunca reprecifica.
 
-import type { POSCartItem, POSTabProjection } from "~/types/pos";
+import type { POSCartItem, POSSeatingSpotOption, POSTabProjection } from "~/types/pos";
 import { countUnits } from "~/presentation/selection";
 import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
 
@@ -86,11 +86,20 @@ export function sourceReleasedMessage(tabTitle: string): string {
 
 export interface MoveTargetOption {
   sessionKey: string;
-  /** "#12" ou "Mesa 6": o que o operador lê e o que o leitor bipa. */
+  /** "#12", "Mesa 6" ou "Mesa 4 (#12)": o que o operador lê e o que o CTA diz. */
   title: string;
   /** "#12 · Ana Souza": o botão da lista. */
   label: string;
-  /** O que casa com a digitação: número sem zeros, nome em minúsculas. */
+  /** O que casa com a digitação: número sem zeros, nomes em minúsculas (o da comanda e
+   *  o da mesa dela, inteiro e curto). */
+  keys: string[];
+}
+
+/** Uma mesa LIVRE do Salão (dono, M=1, 13/10/2026): escolhida, a comanda nova nasce nela. */
+export interface MoveSpotOption {
+  spotRef: string;
+  /** "Mesa 4". */
+  title: string;
   keys: string[];
 }
 
@@ -99,46 +108,73 @@ function matchKey(value: string): string {
   return /^\d+$/.test(raw) ? raw.replace(/^0+(?=\d)/, "") : raw;
 }
 
-/** As comandas EM USO (com sessão aberta), menos a de origem. */
-export function moveTargetOptions(tabs: readonly POSTabProjection[], sourceSessionKey = ""): MoveTargetOption[] {
+function spotKeys(spot: POSSeatingSpotOption | undefined): string[] {
+  return spot ? [matchKey(spot.label), matchKey(spot.short_label)].filter(Boolean) : [];
+}
+
+/** As comandas EM USO (com sessão aberta), menos a de origem. A que está numa mesa diz
+ *  a mesa primeiro ("Mesa 4 (#12)") e casa também com o nome da mesa. */
+export function moveTargetOptions(
+  tabs: readonly POSTabProjection[],
+  sourceSessionKey = "",
+  spots: readonly POSSeatingSpotOption[] = [],
+): MoveTargetOption[] {
+  const byRef = new Map(spots.map((spot) => [spot.ref, spot]));
   return tabs
     .filter((tab) => tab.session_key && tab.session_key !== sourceSessionKey)
     .map((tab) => {
-      const title = tabLabel(tab.display_ref || tab.ref);
+      const tabTitle = tabLabel(tab.display_ref || tab.ref);
+      const spot = tab.seating_spot_ref ? byRef.get(tab.seating_spot_ref) : undefined;
+      const title = spot && matchKey(spot.label) !== matchKey(tab.display_ref) ? `${spot.label} (${tabTitle})` : tabTitle;
       return {
         sessionKey: tab.session_key,
         title,
         label: tab.customer_name ? `${title} · ${tab.customer_name}` : title,
-        keys: [matchKey(tab.display_ref), matchKey(tab.ref)].filter(Boolean),
+        keys: [matchKey(tab.display_ref), matchKey(tab.ref), ...spotKeys(spot)].filter(Boolean),
       };
     });
 }
 
-/** As comandas da lista que casam com o que está no campo (começo do número ou do
- *  nome, ou do cliente). Com o campo vazio, no nome sugerido, ou sem nenhuma que case
- *  (um nome novo), todas: a lista nunca some de quem quer escolher. */
-export function filterTargets(options: readonly MoveTargetOption[], query: string, suggested: string): MoveTargetOption[] {
+/** As mesas LIVRES do Salão de hoje: nenhuma comanda aberta nelas (nem a de origem). */
+export function freeSpotOptions(
+  spots: readonly POSSeatingSpotOption[],
+  tabs: readonly POSTabProjection[],
+  sourceSpotRef = "",
+): MoveSpotOption[] {
+  const taken = new Set([sourceSpotRef, ...tabs.filter((tab) => tab.session_key).map((tab) => tab.seating_spot_ref || "")].filter(Boolean));
+  return spots
+    .filter((spot) => !taken.has(spot.ref))
+    .map((spot) => ({ spotRef: spot.ref, title: spot.label, keys: spotKeys(spot) }));
+}
+
+/** As opções da lista que casam com o que está no campo (começo do número ou do nome,
+ *  ou do cliente). Com o campo vazio, no nome sugerido, ou sem nenhuma que case (um nome
+ *  novo), todas: a lista nunca some de quem quer escolher. */
+export function filterTargets<T extends { keys: string[]; title: string; label?: string }>(options: readonly T[], query: string, suggested: string): T[] {
   const q = matchKey(query);
   if (!q || q === matchKey(suggested)) return [...options];
-  const hits = options.filter((option) => option.keys.some((key) => key.startsWith(q)) || option.label.toLowerCase().includes(q));
+  const hits = options.filter((option) => option.keys.some((key) => key.startsWith(q)) || (option.label || option.title).toLowerCase().includes(q));
   return hits.length ? hits : [...options];
 }
 
 export type MoveDestination =
   | { kind: "existing"; sessionKey: string; title: string }
-  | { kind: "new"; tabRef: string; title: string }
+  | { kind: "new"; tabRef: string; title: string; spotRef?: string; spotTitle?: string }
   | { kind: "invalid"; reason: string };
 
 /**
- * O que o campo quer dizer AGORA: uma comanda em uso (casou o número ou o nome
- * inteiro), uma comanda nova com esse nome, ou nada que se possa usar (com o motivo
- * em palavras). A barra o servidor recusa; aqui a recusa vem antes, com o formato
- * que funciona.
+ * O que o campo quer dizer AGORA: uma comanda em uso (casou o número, o nome ou a mesa
+ * dela), uma mesa livre (a comanda nova nasce nela, com o nome sugerido), uma comanda
+ * nova com esse nome, ou nada que se possa usar (com o motivo em palavras). A barra o
+ * servidor recusa; aqui a recusa vem antes, com o formato que funciona.
  */
 export function resolveDestination(args: {
   input: string;
   options: readonly MoveTargetOption[];
+  spots?: readonly MoveSpotOption[];
   sourceDisplay: string;
+  /** As chaves da mesa da comanda de origem (o nome dela não é destino). */
+  sourceSpotKeys?: readonly string[];
   suggested: string;
   allowsNew: boolean;
   allowsExisting: boolean;
@@ -146,13 +182,20 @@ export function resolveDestination(args: {
   const raw = String(args.input || "").trim().replace(/^#/, "");
   if (!raw) return { kind: "invalid", reason: "Diga para qual comanda os itens vão." };
   const key = matchKey(raw);
-  if (key === matchKey(args.sourceDisplay)) {
+  if (key === matchKey(args.sourceDisplay) || (args.sourceSpotKeys || []).map(matchKey).includes(key)) {
     return { kind: "invalid", reason: "É a própria comanda. Escolha outra ou dê um nome novo." };
   }
   const existing = args.options.find((option) => option.keys.includes(key));
   if (existing) {
     if (!args.allowsExisting) return { kind: "invalid", reason: "Este canal não leva itens para uma comanda em uso." };
     return { kind: "existing", sessionKey: existing.sessionKey, title: existing.title };
+  }
+  const spot = (args.spots || []).find((option) => option.keys.includes(key));
+  if (spot) {
+    if (!args.allowsNew) return { kind: "invalid", reason: "Este canal não abre comanda nova pela transferência." };
+    const name = args.suggested || "";
+    if (!name) return { kind: "invalid", reason: "Dê um nome para a comanda nova." };
+    return { kind: "new", tabRef: name, title: tabLabel(name), spotRef: spot.spotRef, spotTitle: spot.title };
   }
   if (/[/\\?#%]/.test(raw)) {
     return { kind: "invalid", reason: `A comanda não pode ter barra. Use um hífen, por exemplo ${args.suggested || "13-2"}.` };
@@ -174,9 +217,10 @@ export function transferCta(args: { units: number; all: boolean; destination: Mo
       ? `Levar tudo para a ${destination.title} e liberar a ${args.sourceTitle}`
       : `Levar ${amount} para a ${destination.title}`;
   }
+  const where = destination.spotTitle ? `comanda nova ${destination.title} (${destination.spotTitle})` : `comanda nova ${destination.title}`;
   return args.all
-    ? `Levar tudo para a comanda nova ${destination.title} e liberar a ${args.sourceTitle}`
-    : `Separar ${amount} na comanda nova ${destination.title}`;
+    ? `Levar tudo para a ${where} e liberar a ${args.sourceTitle}`
+    : `Separar ${amount} na ${where}`;
 }
 
 export interface MovePayload {
@@ -184,6 +228,8 @@ export interface MovePayload {
   lineIds: string[];
   toTabRef?: string;
   toSessionKey?: string;
+  /** A mesa livre onde a comanda nova nasce (dono, M=1). */
+  seatingSpotRef?: string;
   closeSource?: boolean;
 }
 
@@ -202,7 +248,8 @@ export function buildMovePayload(args: {
   if (args.destination.kind === "existing") {
     return { mode: "transfer", lineIds: args.lineIds, toSessionKey: args.destination.sessionKey, ...closeSource };
   }
-  return { mode: "split", lineIds: args.lineIds, toTabRef: args.destination.tabRef, ...closeSource };
+  const seated = args.destination.spotRef ? { seatingSpotRef: args.destination.spotRef } : {};
+  return { mode: "split", lineIds: args.lineIds, toTabRef: args.destination.tabRef, ...seated, ...closeSource };
 }
 
 /** "3 itens: 2× Croissant, 1× Pain au chocolat" (o que vai, numa frase). */

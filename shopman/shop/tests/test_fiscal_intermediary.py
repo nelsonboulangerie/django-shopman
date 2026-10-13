@@ -1014,42 +1014,72 @@ def test_an_invalid_document_from_the_platform_is_not_treated_as_no_document():
     assert result.error_code == "focus_nfe_invalid_payload"
 
 
-@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES, SHOPMAN_FOCUS_NFE=_focus_settings())
-def test_an_own_channel_delivery_without_a_tax_id_still_refuses_and_screams():
-    """A regra presencial é SÓ do canal intermediado.
-
-    Nos canais próprios o dono decidiu o contrário (CPF exigido na entrada do
-    pedido de entrega). Se uma entrega sem CPF chegar à emissão mesmo assim,
-    ela continua recusada antes do HTTP, com a razão legível.
-    """
+def _own_channel_delivery(ref: str, *, tax_id: str = ""):
     Channel.objects.get_or_create(ref="web", defaults={"name": "Loja"})
-    order = Order.objects.create(
-        ref="ORD-WEB-DELIVERY-SEM-CPF", channel_ref="web",
-        status=Order.Status.COMPLETED, total_q=3800,
-        data={
-            "fulfillment_type": "delivery",
-            "payment": {"method": "pix", "amount_q": 3800},
-            "delivery_address_structured": {
-                "route": "Rua X", "street_number": "123", "neighborhood": "Centro",
-                "city": "Londrina", "state_code": "PR", "postal_code": "86010000",
-            },
+    data = {
+        "fulfillment_type": "delivery",
+        "payment": {"method": "pix", "amount_q": 3800},
+        "delivery_address_structured": {
+            "route": "Rua X", "street_number": "123", "neighborhood": "Centro",
+            "city": "Londrina", "state_code": "PR", "postal_code": "86010000",
         },
+    }
+    if tax_id:
+        data["fiscal"] = {"tax_id": tax_id}
+    order = Order.objects.create(
+        ref=ref, channel_ref="web", status=Order.Status.COMPLETED, total_q=3800, data=data,
     )
     OrderItem.objects.create(order=order, line_id="1", sku="PAO-001", name="Pão",
                              qty=1, unit_price_q=3000, line_total_q=3000)
     OrderItem.objects.create(order=order, line_id="2", sku="__DELIVERY_FEE__", name="Taxa de entrega",
-                             qty=1, unit_price_q=800, line_total_q=800)
+                             qty=1, unit_price_q=800, line_total_q=800,
+                             meta={"type": "delivery_fee"})
+    return order
 
-    assert fiscal_intermediary.issues_as_presential(order, requested_tax_id="") is False
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES, SHOPMAN_FOCUS_NFE=_focus_settings())
+def test_an_own_channel_delivery_without_a_tax_id_is_a_presential_note():
+    """Decisão do dono (13/10/2026): a praxe do delivery vale para TODO canal.
+
+    Entrega da casa sem CPF/CNPJ sai como o iFood sem CPF: presencial
+    (``indPres=1``), consumidor não identificado, sem grupo de entrega nem
+    destinatário. A taxa da casa não some: vira outras despesas.
+    """
+    order = _own_channel_delivery("ORD-WEB-DELIVERY-SEM-CPF")
+
+    assert fiscal.delivery_issues_as_presential(order, requested_tax_id="") is True
+    emission = _classify(fiscal.build_emission_payload(order))
+    assert emission["delivery"] is None
+    assert [i["sku"] for i in emission["items"]] == ["PAO-001", "__OTHER_EXPENSE__"]
+
+    result, sent = _emit_captured(emission)
+
+    assert result.success is True
+    assert sent["presenca_comprador"] == "1"
+    assert sent["modalidade_frete"] == "9"
+    for field in _DELIVERY_ONLY_FIELDS:
+        assert field not in sent, field
+    assert sent["valor_outras_despesas"] == "8.00"
+    assert sent["valor_total"] == "38.00"
+
+
+@override_settings(SHOPMAN_FISCAL_INTERMEDIARIES=INTERMEDIARIES, SHOPMAN_FOCUS_NFE=_focus_settings())
+def test_an_own_channel_delivery_with_a_tax_id_keeps_the_home_delivery_note():
+    """Com CPF, a entrega da casa continua com a nota de entrega (``indPres=4``)."""
+    order = _own_channel_delivery("ORD-WEB-DELIVERY-COM-CPF", tax_id="52998224725")
+
+    assert fiscal.delivery_issues_as_presential(order, requested_tax_id="52998224725") is False
     emission = _classify(fiscal.build_emission_payload(order))
     assert emission["delivery"] is not None
 
     result, sent = _emit_captured(emission)
 
-    assert sent is None
-    assert result.success is False
-    assert result.error_code == "focus_nfe_invalid_payload"
-    assert "CPF/CNPJ solicitado para a nota" in result.error_message
+    assert result.success is True
+    assert sent["presenca_comprador"] == "4"
+    assert sent["cpf_destinatario"] == "52998224725"
+    assert sent["logradouro_destinatario"] == "Rua X"
+    assert sent["valor_frete"] == "8.00"
+    assert "valor_outras_despesas" not in sent
 
 
 def test_the_adapter_refuses_other_expenses_on_a_home_delivery_note():

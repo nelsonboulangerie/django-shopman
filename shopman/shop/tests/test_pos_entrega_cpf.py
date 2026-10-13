@@ -1,9 +1,9 @@
-"""PDV: entrega com nota não fecha sem "CPF na nota" e endereço completo.
+"""PDV: entrega sem "CPF na nota" fecha e a nota sai presencial; endereço continua exigido.
 
-A trava é a mesma do commit (``DeliveryFiscalIdentityRule``), perguntada antes
-para a recusa chegar ao campo que o operador conserta. A review publica a
-exigência (``delivery_tax_id_required``) para a tela travar o botão ao vivo, já
-que digitar o CPF não refaz a review.
+Decisão do dono (13/10/2026, substitui a de 24/09): a praxe do delivery vale
+para todos os canais. A trava é a mesma do commit (``DeliveryFiscalIdentityRule``),
+perguntada antes para a recusa chegar ao campo que o operador conserta: CPF
+errado e endereço incompleto. Sem CPF, nada se recusa pelo documento.
 """
 
 from __future__ import annotations
@@ -53,25 +53,30 @@ def _receipt_only(request_id):
     }]
 
 
-def test_entrega_a_receber_na_porta_sem_cpf_nao_fecha(counter, emits):  # noqa: F811
+def test_entrega_a_receber_na_porta_sem_cpf_fecha_com_nota_presencial(counter, emits):  # noqa: F811
+    operator, shift = counter
+    result = _close(operator, _delivery_payload(shift, client_request_id="cpf-1", delivery_address_structured=ADDRESS))
+    order = Order.objects.get(ref=result.order_ref)
+    assert not (order.data.get("fiscal") or {}).get("tax_id")
+
+    assert fiscal.delivery_issues_as_presential(order, requested_tax_id="") is True
+    emission = fiscal.build_emission_payload(order)
+    assert emission["delivery"] is None
+    assert not emission["customer"].get("tax_id")
+    assert all(item["sku"] != "__DELIVERY_FEE__" for item in emission["items"])
+
+
+def test_cpf_errado_nao_fecha_e_aponta_o_campo(counter, emits):  # noqa: F811
     operator, shift = counter
     with pytest.raises(PosIntentError) as exc:
-        _close(operator, _delivery_payload(shift, client_request_id="cpf-1", delivery_address_structured=ADDRESS))
-    assert exc.value.code == "delivery_tax_id_required"
+        _close(operator, _delivery_payload(
+            shift, client_request_id="cpf-2", fiscal_tax_id="52998224700",
+            delivery_address_structured=ADDRESS,
+        ))
+    # O PDV confere o dígito antes da régua da entrega (``invalid_fiscal_tax_id``).
+    assert exc.value.code == "invalid_fiscal_tax_id"
     assert exc.value.field == "fiscal_tax_id"
-    assert exc.value.focus == "receipt"
-    assert "retirada continua" in exc.value.recovery
     assert not Order.objects.exists()
-
-
-def test_review_publica_a_exigencia_sem_travar_a_conta(counter, emits):  # noqa: F811
-    operator, shift = counter
-    review = _review(operator, _delivery_payload(shift, client_request_id="cpf-2", delivery_address_structured=ADDRESS))
-    assert review.delivery_tax_id_required is True
-    assert review.total_q > 0
-
-    pickup = _review(operator, _delivery_payload(shift, client_request_id="cpf-3", fulfillment_type="pickup"))
-    assert pickup.delivery_tax_id_required is False
 
 
 def test_review_avisa_endereco_incompleto_para_a_nota(counter, emits):  # noqa: F811
@@ -104,6 +109,8 @@ def test_entrega_com_cpf_e_endereco_completo_fecha(counter, emits):  # noqa: F81
     ))
     order = Order.objects.get(ref=result.order_ref)
     assert order.data["fiscal"]["tax_id"] == CPF
+    assert fiscal.delivery_issues_as_presential(order, requested_tax_id=CPF) is False
+    assert fiscal.build_emission_payload(order)["delivery"] is not None
 
 
 def test_entrega_sem_nota_prevista_fecha_sem_cpf(counter, monkeypatch, settings):  # noqa: F811

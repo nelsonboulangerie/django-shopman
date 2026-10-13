@@ -4,6 +4,7 @@ import {
   cepDigits,
   looksLikeCep,
   maskCepInput,
+  nextEmptyAddressField,
   structuredFromPlaceFields,
   structuredFromViaCep,
 } from "../app/presentation/address";
@@ -90,5 +91,30 @@ describe("presentation/address — Google Places (New)", () => {
     expect(address.street_number).toBe("");
     expect(address.is_verified).toBe(false);
     expect(address.place_id).toBeNull();
+  });
+});
+
+describe("presentation/address — o próximo campo vazio", () => {
+  const vazio = { address: "", number: "", neighborhood: "", complement: "", instructions: "" };
+
+  it("endereço recém-chegado da busca: o primeiro vazio desde o começo", () => {
+    expect(nextEmptyAddressField(null, { ...vazio, address: "Rua Pará", neighborhood: "Centro" })).toBe("number");
+    expect(nextEmptyAddressField(null, { ...vazio, address: "Rua Pará", number: "86", neighborhood: "Centro" })).toBe("complement");
+    // CEP de cidade inteira (sem rua): a vez é da própria busca.
+    expect(nextEmptyAddressField(null, { ...vazio, neighborhood: "Centro" })).toBe("address");
+  });
+
+  it("Enter num campo olha só para a frente e pula os preenchidos", () => {
+    const values = { ...vazio, address: "Rua Pará", neighborhood: "Centro" };
+    expect(nextEmptyAddressField("address", values)).toBe("number");
+    expect(nextEmptyAddressField("number", values)).toBe("complement");
+    expect(nextEmptyAddressField("complement", values)).toBe("instructions");
+    expect(nextEmptyAddressField("instructions", values)).toBeNull();
+  });
+
+  it("espaço em branco conta como vazio; nada adiante é null", () => {
+    expect(nextEmptyAddressField("address", { ...vazio, address: "Rua", number: "  " })).toBe("number");
+    const cheio = { address: "Rua", number: "1", neighborhood: "B", complement: "C", instructions: "I" };
+    expect(nextEmptyAddressField(null, cheio)).toBeNull();
   });
 });

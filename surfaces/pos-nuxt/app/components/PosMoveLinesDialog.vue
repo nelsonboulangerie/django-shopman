@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import type { POSCartItem, POSTabProjection } from "~/types/pos";
+import type { POSCartItem, POSSeatingSpotOption, POSTabProjection } from "~/types/pos";
 import {
   allowsExistingTab,
   allowsNewTab,
   buildMovePayload,
   filterTargets,
+  freeSpotOptions,
   freezesPriceOnMove,
   linesToMove,
   type MovePayload,
@@ -25,6 +26,11 @@ const props = defineProps<{
   tabDisplay: string;
   /** A sessão da comanda de origem (fica fora da lista de destinos). */
   sourceSessionKey?: string;
+  /** A mesa da comanda de origem ("" sem mesa): não é destino nem mesa livre. */
+  sourceSpotRef?: string;
+  /** As mesas do Salão de hoje (dono, M=1): a ocupada leva à comanda dela; a livre abre a
+   *  comanda nova já nela. */
+  seatingSpots?: POSSeatingSpotOption[];
   items: POSCartItem[];
   /** O nome que a comanda nova recebe se ninguém mudar ("13-2", ou o próximo livre). */
   suggestedNewTabRef: string;
@@ -51,12 +57,21 @@ const lines = computed(() => linesToMove(props.items, props.preselected));
 const lineIds = computed(() => lines.value.map(moveLineId));
 const all = computed(() => movesEverything(props.items, lineIds.value));
 const summary = computed(() => movingSummary(lines.value));
-const options = computed(() => moveTargetOptions(props.otherTabs, props.sourceSessionKey));
+const spots = computed(() => props.seatingSpots || []);
+const options = computed(() => moveTargetOptions(props.otherTabs, props.sourceSessionKey, spots.value));
+const freeSpots = computed(() => freeSpotOptions(spots.value, props.otherTabs, props.sourceSpotRef));
+const sourceSpotKeys = computed(() => {
+  const spot = spots.value.find((entry) => entry.ref === props.sourceSpotRef);
+  return spot ? [spot.label, spot.short_label].filter(Boolean) : [];
+});
 const shown = computed(() => filterTargets(options.value, destinationInput.value, props.suggestedNewTabRef));
+const shownSpots = computed(() => filterTargets(freeSpots.value, destinationInput.value, props.suggestedNewTabRef));
 const destination = computed(() =>
   resolveDestination({
     input: destinationInput.value,
     options: options.value,
+    spots: freeSpots.value,
+    sourceSpotKeys: sourceSpotKeys.value,
     sourceDisplay: props.tabDisplay,
     suggested: props.suggestedNewTabRef,
     allowsNew: allowsNewTab(props.capability),
@@ -140,7 +155,10 @@ function submit() {
             data-pos-move-destination-state
             :data-destination-kind="destination.kind"
           >
-            <template v-if="destination.kind === 'new'">
+            <template v-if="destination.kind === 'new' && destination.spotTitle">
+              <Icon name="lucide:armchair" class="size-3.5 shrink-0" aria-hidden="true" />Comanda nova {{ destination.title }}, já na {{ destination.spotTitle }}.
+            </template>
+            <template v-else-if="destination.kind === 'new'">
               <Icon name="lucide:plus" class="size-3.5 shrink-0" aria-hidden="true" />Comanda nova {{ destination.title }}. Para outra, bipe ou escolha abaixo.
             </template>
             <template v-else-if="destination.kind === 'existing'">
@@ -163,6 +181,24 @@ function submit() {
               :aria-pressed="destination.kind === 'existing' && destination.sessionKey === option.sessionKey"
               :data-pos-move-target="option.sessionKey"
               @click="pick(option.title)"
+            />
+          </div>
+        </div>
+
+        <!-- As MESAS LIVRES do Salão (dono, M=1): a comanda nova nasce na escolhida. -->
+        <div v-if="shownSpots.length" class="grid gap-1.5">
+          <span class="op-micro text-muted-foreground">Mesas livres</span>
+          <div class="flex flex-wrap gap-2" data-pos-move-spots>
+            <NuxtButton
+              v-for="spot in shownSpots"
+              :key="spot.spotRef"
+              color="neutral"
+              :variant="destination.kind === 'new' && destination.spotRef === spot.spotRef ? 'solid' : 'outline'"
+              icon="i-lucide-armchair"
+              :label="spot.title"
+              :aria-pressed="destination.kind === 'new' && destination.spotRef === spot.spotRef"
+              :data-pos-move-spot="spot.spotRef"
+              @click="pick(spot.title)"
             />
           </div>
         </div>

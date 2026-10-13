@@ -603,8 +603,6 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,
-        # Entrega com nota exige CPF/CNPJ: a tela trava o fechamento sem ele.
-        "delivery_tax_id_required": review.delivery_tax_id_required,
     }
 
 
@@ -5605,11 +5603,22 @@ class POSTabMoveLinesView(APIView):
     def post(self, request):
         body = request.data if hasattr(request, "data") else {}
         try:
+            # A MESA COMO DESTINO (dono, M=1, 13/10/2026): a comanda nova já nasce na mesa
+            # livre escolhida. Que a mesa esteja no salão de hoje é conferido aqui (o
+            # shop não lê o cadastro do backstage); que esteja livre, no serviço.
+            seating_spot_ref = str(body.get("seating_spot_ref") or "").strip()
+            seating_spot_label = ""
+            if seating_spot_ref:
+                from shopman.backstage.services.pos_seating import spot_label_today
+
+                seating_spot_label = spot_label_today(seating_spot_ref)
             result = pos_tabs_service.move_pos_tab_lines(
                 channel_ref=POS_CHANNEL_REF,
                 from_session_key=str(body.get("from_session_key") or "").strip(),
                 to_session_key=str(body.get("to_session_key") or "").strip(),
                 to_tab_ref=str(body.get("to_tab_ref") or "").strip(),
+                seating_spot_ref=seating_spot_ref,
+                seating_spot_label=seating_spot_label,
                 line_ids=body.get("line_ids") or [],
                 close_source_when_empty=as_bool(body, "close_source_when_empty", default=False),
                 actor=_actor_pos(request),

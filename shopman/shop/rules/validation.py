@@ -200,11 +200,12 @@ class PricedItemsRule(BaseRule):
 
 
 class DeliveryFiscalIdentityRule(BaseRule):
-    """Entrega com NFC-e não entra sem CPF/CNPJ válido e endereço completo.
+    """Entrega com NFC-e não entra com CPF/CNPJ inválido nem sem endereço completo.
 
-    Decisão do dono, 24/09/2026: a SEFAZ recusa a nota de entrega sem isso
-    (787/788), e a recusa aparecia na emissão, com o entregador na rua. Aqui
-    ela aparece na porta. A régua é a da emissão e a pergunta "vai ter nota?"
+    A SEFAZ recusa a nota de entrega sem destinatário e endereço (787/788), e a
+    recusa aparecia na emissão, com o entregador na rua. Aqui ela aparece na
+    porta. Sem CPF/CNPJ a entrega entra: a nota sai presencial, consumidor não
+    identificado (decisão do dono, 13/10/2026, que substitui a de 24/09). A régua é a da emissão e a pergunta "vai ter nota?"
     é a do resolver fiscal (``services/delivery_fiscal_identity``).
 
     Registrado sempre (``handlers._register_validators``), fora do

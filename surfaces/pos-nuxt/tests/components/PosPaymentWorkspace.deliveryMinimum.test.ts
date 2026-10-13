@@ -20,7 +20,6 @@ function deliveryProps(overrides: Record<string, unknown> = {}) {
     customerName: "Ana",
     customerPhone: "43999990001",
     review: review({
-      delivery_tax_id_required: false,
       warnings: [{ code: "below_delivery_minimum", field: "items", message: MINIMUM }],
     }),
     paymentTenders: [cash],
@@ -49,7 +48,7 @@ describe("PosPaymentWorkspace — mínimo de entrega", () => {
 
   it("sem o aviso da review, libera", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
-      props: deliveryProps({ review: review({ delivery_tax_id_required: false }) }),
+      props: deliveryProps({ review: review() }),
     });
     expect(wrapper.text()).not.toContain("Pedido mínimo para entrega");
     expect(cta(wrapper)?.attributes("disabled")).toBeUndefined();

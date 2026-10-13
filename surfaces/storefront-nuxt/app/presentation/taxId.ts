@@ -1,20 +1,18 @@
 /**
  * CPF/CNPJ da nota fiscal, do lado da tela.
  *
- * Decisões do dono (24 e 25/09/2026): a nota da entrega a domicílio não sai
- * sem o CPF ou CNPJ de quem compra (a SEFAZ recusa, 787/788), então a loja pede
- * o documento no passo do endereço, em TODA entrega. Sem ele a entrega não
- * fecha; a retirada continua aberta, e nela o documento é o "CPF na nota?" do
- * balcão, opcional. Aqui só se confere o que foi digitado, cedo e no campo,
- * com as MESMAS frases da recusa do servidor.
+ * Decisão do dono (13/10/2026, substitui a de 24/09): o documento é OPCIONAL
+ * em toda venda, inclusive na entrega. Entrega sem CPF ou CNPJ sai com a nota
+ * presencial, consumidor não identificado (a praxe do delivery); com ele, a
+ * nota de entrega a domicílio. Aqui só se confere o que foi digitado, cedo e
+ * no campo, com a MESMA frase da recusa do servidor.
  *
  * Os nomes ficam em português porque `cpf` e `cnpj` são nome próprio de
  * documento brasileiro.
  */
 
-export const TAX_ID_REQUIRED_MESSAGE = 'Para entregar, precisamos do CPF ou CNPJ para a nota fiscal.'
 export const TAX_ID_INVALID_MESSAGE = 'Confira o CPF ou CNPJ: os números não conferem.'
-export const TAX_ID_WHY = 'A nota fiscal vai junto com a entrega e precisa do CPF ou CNPJ de quem compra.'
+export const TAX_ID_WHY = 'Informe se quiser a nota fiscal no seu CPF ou CNPJ.'
 // Retirada: o "CPF na nota?" do balcão. A nota sai de qualquer jeito; o
 // documento só vai nela se a pessoa pedir.
 export const PICKUP_TAX_ID_WHY = 'Opcional. Informe se quiser a nota fiscal no seu CPF ou CNPJ.'
@@ -70,12 +68,12 @@ export function formatTaxId (value: string | null | undefined): string {
 /**
  * O erro do campo, ou `''` quando pode seguir.
  *
- * Vazio só é erro quando a entrega PEDE o documento. Digitado errado é erro
- * sempre: CPF informado já é pedido de nota, e o servidor recusa.
+ * Vazio nunca é erro: o documento é opcional. Digitado errado é erro sempre:
+ * CPF informado já é pedido de nota, e o servidor recusa.
  */
-export function deliveryTaxIdError (value: string | null | undefined, required: boolean): string {
+export function taxIdError (value: string | null | undefined): string {
   const digits = taxIdDigits(value)
-  if (!digits) return required ? TAX_ID_REQUIRED_MESSAGE : ''
+  if (!digits) return ''
   return isValidTaxId(digits) ? '' : TAX_ID_INVALID_MESSAGE
 }
 
