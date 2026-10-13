@@ -70,10 +70,6 @@ export default defineNuxtConfig({
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL ||
         process.env.NUXT_DJANGO_BASE_URL ||
         "http://127.0.0.1:8000",
-      // PRÉVIA das alternativas da coluna da comanda (dono, 13/10/2026): com
-      // NUXT_PUBLIC_POS_PREVIEW_LAYOUTS=1 (só na prévia com o mock), `?comanda=b`
-      // mostra a alternativa B. Escolhida a alternativa, a chave sai.
-      posPreviewLayouts: false,
     },
   },
 

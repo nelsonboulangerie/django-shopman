@@ -105,12 +105,6 @@ const props = defineProps<{
   quickPayments?: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }>;
   /** O Envio (Auto · Manual) está sendo gravado nas estações. */
   autoFireBusy?: boolean;
-  /**
-   * PRÉVIA DAS ALTERNATIVAS (dono, 13/10/2026; só em desenvolvimento, `?comanda=b`):
-   * onde moram as ações sobre as marcadas. "a" (padrão): o bloco único embaixo, junto
-   * do Pagamento. "b": a barra das marcadas no alto da lista, com a quantidade na linha.
-   */
-  actionsLayout?: "a" | "b";
 }>();
 // Folha aberta: PIX e Maquininha são o gesto principal; o dinheiro (V6-CAIXA)
 // vem embaixo, secundário.
@@ -518,7 +512,6 @@ const [DefineFireButton, ReuseFireButton] = createReusableTemplate();
 const [DefineBlockTitle, ReuseBlockTitle] = createReusableTemplate();
 const [DefineEditPanels, ReuseEditPanels] = createReusableTemplate();
 const [DefineBlockNotices, ReuseBlockNotices] = createReusableTemplate();
-const [DefineQtyStepper, ReuseQtyStepper] = createReusableTemplate();
 const [DefineControlGrid, ReuseControlGrid] = createReusableTemplate<{ rows: ControlCell[][]; block: "line" | "marked" | "tab" }>();
 // O estado da cozinha em palavra (o que falta e o que já foi), no lugar do botão
 // apagado de quando não há nada a enviar.
@@ -548,20 +541,6 @@ const transferFit = computed(() => {
     ? { label: "Transferir marcados", shortLabel: "Transferir", icon: "i-lucide-arrow-right-left" }
     : { label: "Transferir itens", shortLabel: "Transferir", icon: "i-lucide-arrow-right-left" };
 });
-// B: a fileira de ajuste da barra do alto (Desconto | Observação | Remover); sem
-// desconto e observação de item (edição de encomenda), só Remover.
-const barAdjustCells = computed<Array<"discount" | "note" | "remove">>(() =>
-  lineAdjustmentsBlocked.value ? ["remove"] : ["discount", "note", "remove"],
-);
-const barAdjustActions = computed(() =>
-  barAdjustCells.value.map((cell) =>
-    cell === "discount"
-      ? { label: selectMode.value ? "Desconto" : discountButtonLabel.value, shortLabel: (!selectMode.value && discountShortLabel.value) || undefined, icon: "i-lucide-percent" }
-      : cell === "note"
-        ? { label: "Observação", shortLabel: "Obs.", icon: "i-lucide-message-square-text" }
-        : { ...REMOVE_FIT, shortcut: coarsePointer.value ? undefined : "Del" },
-  ),
-);
 const lineRows = computed<ControlCell[][]>(() => {
   if (!lineControlsInGrid.value) return [];
   return lineAdjustmentsBlocked.value ? [["qty", "remove"]] : [["qty", "remove"], ["discount", "note"]];
@@ -633,9 +612,6 @@ const autoFireTitle = computed(() => {
     ? `Envio Auto: os itens a enviar vão sozinhos ao sair da comanda ou depois de 90 s sem mudança.${where}`
     : `Envio Manual: os itens só vão à cozinha no Enviar.${where}`;
 });
-// A ALTERNATIVA B (prévia): a barra das marcadas mora no alto, com a mouse e o teclado.
-// No toque e na folha, o bloco embaixo é o mesmo nas duas (o polegar mora embaixo).
-const layoutB = computed(() => props.actionsLayout === "b" && !coarsePointer.value && !props.sheet);
 const autoFireSkuSet = computed(() => new Set(props.autoFireSkus || []));
 
 // A folha fechada é a barra da ação do momento (`OperatorActionBar`): a linha de
@@ -1556,7 +1532,54 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           :data-pos-control-cell="cell"
         >
           <template v-if="cell === 'qty' && activeItem">
-            <ReuseQtyStepper />
+            <p
+              v-if="isWeighedLine(activeItem)"
+              class="flex h-full items-center op-micro text-muted-foreground"
+            >Peça pesada: para trocar, remova e lance a outra etiqueta.</p>
+            <NuxtFieldGroup
+              v-else
+              class="flex h-full w-full"
+              :aria-label="`Quantidade de ${activeItem.name}`"
+              title="Quantidade: −/+ ou digite"
+              data-pos-line-qty
+            >
+              <NuxtButton
+                :size="controlSize"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-minus"
+                square
+                aria-label="Diminuir"
+                :disabled="mutationBusy"
+                @click="bump(activeItem.line_id, 'decrement')"
+              />
+              <NuxtButton
+                :size="controlSize"
+                color="neutral"
+                variant="outline"
+                class="min-w-0 flex-1 justify-center op-title tnum"
+                active-color="primary"
+                active-variant="solid"
+                :active="numpadMode === 'qty' && !numpadFresh"
+                :aria-label="`Editar quantidade de ${activeItem.name}`"
+                :disabled="mutationBusy"
+                :label="String(activeItem.qty)"
+                @click="
+                  selectLine(activeItem.line_id);
+                  setMode('qty');
+                "
+              />
+              <NuxtButton
+                :size="controlSize"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-plus"
+                square
+                aria-label="Aumentar"
+                :disabled="mutationBusy"
+                @click="bump(activeItem.line_id, 'increment')"
+              />
+            </NuxtFieldGroup>
           </template>
           <div v-else-if="cell === 'remove' && (activeItem || selectMode)" class="op-fit-scope h-full w-full">
             <OperatorButton
@@ -1649,60 +1672,6 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
        esquerda amarra o título às caixas da lista; uma linha diz o nome e o preço,
        várias dizem quantos itens e quanto. O ✕ desmarca (Esc); o ⋯ guarda o raro. Sem
        dica de teclado escrita: as teclas moram nos botões e nas dicas. -->
-  <!-- A QUANTIDADE da linha marcada: − número +, ou o aviso da peça pesada. Mora na
-       grade do bloco (A) ou dentro da própria linha (B). -->
-  <DefineQtyStepper>
-    <template v-if="activeItem">
-    <p
-      v-if="isWeighedLine(activeItem)"
-      class="flex h-full items-center op-micro text-muted-foreground"
-    >Peça pesada: para trocar, remova e lance a outra etiqueta.</p>
-    <NuxtFieldGroup
-      v-else
-      class="flex h-full w-full"
-      :aria-label="`Quantidade de ${activeItem.name}`"
-      title="Quantidade: −/+ ou digite"
-      data-pos-line-qty
-    >
-      <NuxtButton
-        :size="controlSize"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-minus"
-        square
-        aria-label="Diminuir"
-        :disabled="mutationBusy"
-        @click="bump(activeItem.line_id, 'decrement')"
-      />
-      <NuxtButton
-        :size="controlSize"
-        color="neutral"
-        variant="outline"
-        class="min-w-0 flex-1 justify-center op-title tnum"
-        active-color="primary"
-        active-variant="solid"
-        :active="numpadMode === 'qty' && !numpadFresh"
-        :aria-label="`Editar quantidade de ${activeItem.name}`"
-        :disabled="mutationBusy"
-        :label="String(activeItem.qty)"
-        @click="
-          selectLine(activeItem.line_id);
-          setMode('qty');
-        "
-      />
-      <NuxtButton
-        :size="controlSize"
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-plus"
-        square
-        aria-label="Aumentar"
-        :disabled="mutationBusy"
-        @click="bump(activeItem.line_id, 'increment')"
-      />
-    </NuxtFieldGroup>
-    </template>
-  </DefineQtyStepper>
   <DefineBlockTitle>
     <div class="flex items-start gap-2" data-pos-block-title>
       <Icon name="lucide:square-check" class="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
@@ -1946,85 +1915,6 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         </div>
       </header>
 
-      <!-- B · A BARRA DAS MARCADAS NO ALTO (alternativa B, prévia; mouse e teclado): com
-           algo marcado, logo abaixo do cabeçalho, onde o olho está ao marcar. O título diz
-           o objeto; a primeira fileira leva para fora da comanda (Enviar | Transferir), a
-           segunda ajusta (Desconto | Observação | Remover). A quantidade da única marcada
-           mora na própria linha. Desconto e observação abrem aqui, com Cancelar e Aplicar. -->
-      <section
-        v-if="blockVisible && layoutB"
-        class="shrink-0 border-b-2 border-primary bg-card px-3 pt-2 pb-2 shadow-[0_10px_24px_rgb(0_0_0/.08)]"
-        :aria-label="selectMode ? 'Itens marcados' : 'Item marcado'"
-        data-pos-line-editor
-        :data-pos-block="selectMode ? 'marked' : 'line'"
-        data-pos-actions-layout="b"
-      >
-        <ReuseBlockTitle />
-        <div class="mt-2 grid gap-2">
-          <ReuseEditPanels />
-          <template v-if="!lineEditing">
-            <ReuseControlGrid v-if="tabRows.length" :rows="tabRows" block="tab" />
-            <OperatorFitGroup
-              :actions="barAdjustActions"
-              :size="controlSize"
-              equal
-              class="grid gap-2"
-              :class="barAdjustCells.length === 3 ? 'grid-cols-3' : 'grid-cols-1'"
-              data-pos-ticket-controls
-              data-pos-controls-block="adjust"
-            >
-              <div v-for="cell in barAdjustCells" :key="cell" class="min-w-0" :data-pos-control-cell="cell">
-                <OperatorButton
-                  v-if="cell === 'discount'"
-                  :label="selectMode ? 'Desconto' : discountButtonLabel"
-                  :short-label="(!selectMode && discountShortLabel) || undefined"
-                  icon="i-lucide-percent"
-                  :size="controlSize"
-                  color="neutral"
-                  variant="outline"
-                  block
-                  class="h-full justify-center"
-                  :disabled="mutationBusy || offline"
-                  :title="offline ? 'Desconto volta com a conexão' : undefined"
-                  data-pos-line-discount
-                  @click="toggleDiscount"
-                />
-                <OperatorButton
-                  v-else-if="cell === 'note'"
-                  label="Observação"
-                  short-label="Obs."
-                  icon="i-lucide-message-square-text"
-                  :size="controlSize"
-                  color="neutral"
-                  variant="outline"
-                  block
-                  class="h-full justify-center"
-                  :disabled="mutationBusy"
-                  data-pos-line-note
-                  @click="chooseMode('note')"
-                />
-                <OperatorButton
-                  v-else
-                  v-bind="REMOVE_FIT"
-                  :size="controlSize"
-                  color="error"
-                  variant="outline"
-                  block
-                  class="h-full justify-center bg-default font-semibold"
-                  :shortcut="coarsePointer ? undefined : 'Del'"
-                  aria-keyshortcuts="Delete"
-                  :title="selectMode ? 'Remover os marcados (Del), com confirmação e desfazer' : 'Remover (Del), com confirmação e desfazer'"
-                  :disabled="mutationBusy"
-                  data-pos-line-remove
-                  @click="selectMode ? batchRemove() : activeItem && askRemove(activeItem.line_id)"
-                />
-              </div>
-            </OperatorFitGroup>
-          </template>
-        </div>
-        <ReuseBlockNotices />
-      </section>
-
       <div
         ref="receiptList"
         class="min-h-0 flex-1 overflow-y-auto"
@@ -2058,11 +1948,8 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             :data-pos-line-marked="isSelected(item.line_id) ? '' : undefined"
           >
             <span
-              class="absolute inset-y-0 left-0 z-10 flex w-7 justify-center transition-opacity motion-reduce:transition-none"
-              :class="[
-                blockVisible || coarsePointer || isSelected(item.line_id) ? 'opacity-100' : 'opacity-0 group-hover/line:opacity-100 group-focus-within/line:opacity-100',
-                layoutB && selectedLineId === item.line_id ? 'items-start pt-4' : 'items-center',
-              ]"
+              class="absolute inset-y-0 left-0 z-10 flex w-7 items-center justify-center transition-opacity motion-reduce:transition-none"
+              :class="blockVisible || coarsePointer || isSelected(item.line_id) ? 'opacity-100' : 'opacity-0 group-hover/line:opacity-100 group-focus-within/line:opacity-100'"
               :data-pos-line-mark="item.line_id"
               @click.stop.prevent="toggleSelect(item.line_id, $event.shiftKey)"
             >
@@ -2149,14 +2036,6 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 formatBRL(lineTotalQ(item))
               }}</strong>
             </NuxtButton>
-            <!-- B: a quantidade da única marcada mora NA LINHA, sob o nome. -->
-            <div
-              v-if="layoutB && selectedLineId === item.line_id"
-              class="flex w-full justify-end px-3.5 pb-2 pl-[4.25rem]"
-              data-pos-inline-qty
-            >
-              <div class="w-40"><ReuseQtyStepper /></div>
-            </div>
             <div
               v-if="expandedLineId === item.line_id"
               :id="detailsId(item.line_id)"
@@ -2215,7 +2094,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         <MoreBelow contained surface="card" />
       </div>
 
-      <!-- Z3 · O BLOCO DAS MARCADAS (alternativa A, e o toque e a folha nas duas): colado
+      <!-- Z3 · O BLOCO DAS MARCADAS (dono escolheu este desenho, 13/10/2026): colado
            no Pagamento, só com algo marcado. UM LUGAR SÓ para tudo o que age nos itens
            marcados (dono, 13/10): o título diz o objeto e a grade tem os verbos em posição
            fixa, por frequência e consequência. Uma linha: Quantidade | Remover; várias:
@@ -2223,12 +2102,11 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
            mesma altura de sempre (sem marcas, eles moram no pé, com a comanda inteira).
            Desconto e observação abrem AQUI, no lugar da grade, com Cancelar e Aplicar. -->
       <section
-        v-if="blockVisible && !layoutB"
+        v-if="blockVisible"
         class="shrink-0 border-t-2 border-primary bg-card px-3 pt-2 pb-2 shadow-[0_-10px_24px_rgb(0_0_0/.10)]"
         :aria-label="selectMode ? 'Itens marcados' : 'Item marcado'"
         data-pos-line-editor
         :data-pos-block="selectMode ? 'marked' : 'line'"
-        data-pos-actions-layout="a"
       >
         <!-- TOQUE (v4 tablet b): um instrumento só. A caixa grande mostra o número; o
              numérico 3×4 escreve nele; a coluna à direita tem Desconto, Observação,
@@ -2396,13 +2274,13 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
       <div
         v-else
         class="grid shrink-0 gap-2.5 px-3 pb-3"
-        :class="blockVisible && !layoutB ? 'pt-0' : 'border-t border-border pt-3'"
+        :class="blockVisible ? 'pt-0' : 'border-t border-border pt-3'"
         data-pos-ticket-foot
       >
         <!-- SEM NADA MARCADO, o pé diz o que vale para a comanda inteira: Enviar à cozinha
              (com a contagem do que falta) e Transferir itens (o diálogo pergunta quais), e
              uma linha diz como chegar ao resto. Com marcas, esses dois moram no bloco das
-             marcadas, na mesma altura (A), ou na barra delas, no alto (B). -->
+             marcadas, na mesma altura. -->
         <template v-if="tabRows.length && (!blockVisible || touchEditor)">
           <p v-if="!blockVisible && !sheet && items.length" class="flex items-center gap-1.5 op-micro text-muted-foreground" data-pos-foot-hint>
             <Icon name="lucide:pointer" class="size-3.5 shrink-0" aria-hidden="true" />

@@ -514,36 +514,3 @@ test("a caixa de marcar aparece marcada no mesmo quadro do clique, e só ela", a
   expect(await tickedInNextFrame(1)).toEqual({ checked: "false", marked: 1 });
 });
 
-// ALTERNATIVA B (prévia, `?comanda=b`, dono 13/10/2026): a barra dos marcados no alto da
-// lista e a quantidade na linha. Nas quatro larguras e nas três colunas, nada corta e
-// nada se sobrepõe, com uma e com três marcadas.
-for (const width of ["min", "default", "max"] as const) {
-  for (const size of SIZES) {
-    test(`alternativa B ${size.width}x${size.height} (coluna ${width}): barra no alto e quantidade na linha, nada corta`, async ({ page }) => {
-      await page.setViewportSize(size);
-      if (width !== "default") {
-        await page.context().addCookies([{
-          name: "pos-sale-sidebar-ticket",
-          value: encodeURIComponent(JSON.stringify({ size: TICKET_REM[width], collapsed: false })),
-          url: `http://127.0.0.1:${process.env.POS_GEOMETRY_PORT || 33032}`,
-        }]);
-      }
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto("/?comanda=b");
-      await page.getByRole("button", { name: /#13/ }).first().click();
-      const rows = page.locator("[data-pos-ticket-column] [data-item-select]");
-      await expect(rows).toHaveCount(9);
-      await rows.nth(4).click();
-      await expect(page.locator("[data-pos-actions-layout='b']")).toBeVisible();
-      await expect(page.locator("[data-pos-inline-qty]")).toBeVisible();
-      await page.evaluate(() => document.fonts.ready);
-      expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
-      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(1).click();
-      await page.locator("[data-pos-ticket-column] [data-pos-line-mark]").nth(2).click();
-      await expect(page.locator("[data-pos-marked-title]")).toContainText("itens marcados");
-      await expect(page.locator("[data-pos-inline-qty]")).toHaveCount(0);
-      expect(await scan(page, ["[data-pos-ticket-column]"])).toEqual([]);
-      expect(await headerStep(page, "[data-pos-ticket-header]")).toBeLessThanOrEqual(0.5);
-    });
-  }
-}
