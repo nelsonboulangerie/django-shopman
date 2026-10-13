@@ -60,6 +60,27 @@ function requestCancel() {
   emit("cancel");
 }
 
+// Chamar entregador abre corrida paga na central → confirm de 1 toque, com a
+// pergunta inteira (quem vem, para qual pedido, quem paga) vinda do servidor.
+const confirmingDispatch = ref(false);
+const dispatchQuestion = computed(() =>
+  String(props.dispatchAction?.confirmation?.description ?? ""),
+);
+watch(
+  () => JSON.stringify(props.dispatchAction?.payload_schema),
+  () => {
+    confirmingDispatch.value = false;
+  },
+);
+function requestDispatch() {
+  if (!confirmingDispatch.value) {
+    confirmingDispatch.value = true;
+    return;
+  }
+  confirmingDispatch.value = false;
+  emit("dispatch");
+}
+
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 </script>
 
@@ -207,6 +228,14 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
       </div>
 
       <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
+        <p
+          v-if="confirmingDispatch && dispatchQuestion"
+          class="text-sm"
+          role="status"
+          data-testid="courier-dispatch-question"
+        >
+          {{ dispatchQuestion }}
+        </p>
         <div class="flex flex-wrap gap-2">
           <NuxtButton
             v-if="courier.can_dispatch"
@@ -224,11 +253,14 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
                 : 'i-lucide-send'
             "
             :label="
-              hasRide || courier.attempts_count > 0
-                ? 'Chamar outro entregador'
-                : 'Chamar entregador'
+              confirmingDispatch
+                ? 'Confirmar chamada'
+                : hasRide || courier.attempts_count > 0
+                  ? 'Chamar outro entregador'
+                  : 'Chamar entregador'
             "
-            @click="emit('dispatch')"
+            @blur="confirmingDispatch = false"
+            @click="requestDispatch"
           />
           <NuxtButton
             v-if="courier.can_quote"

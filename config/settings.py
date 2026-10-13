@@ -953,6 +953,9 @@ if SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED:
 # delivery tem fulfillment.courier="auto". Sem credenciais o deploy-check
 # SHOPMAN_E011 bloqueia produção. Ver docs/plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md.
 SHOPMAN_MACHINE = {
+    # Nome da central contratada, como o operador a conhece (ex.: "TaOn"). Só
+    # copy: entra na pergunta de "Chamar entregador". Vazio: "central de entregas".
+    "company_name": os.environ.get("MACHINE_COMPANY_NAME", "").strip(),
     "base_url": os.environ.get("MACHINE_API_BASE", "https://api.taximachine.com.br/api/integracao"),
     "details_base": os.environ.get("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/api/integracao/v1"),
     "username": os.environ.get("MACHINE_API_USER", "").strip(),

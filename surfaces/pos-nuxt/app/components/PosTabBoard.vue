@@ -58,6 +58,9 @@ function openNextFree() {
 // pode receber); "em uso" recede em neutro (ocupada, em andamento, sem ação).
 function cardTone(view: TabCardView): string {
   if (view.selected) return "border-primary bg-primary/5";
+  // Pronta vence o "não pago": toda pronta foi disparada e não paga, e o que o
+  // balcão precisa fazer agora é chamar o cliente.
+  if (view.kitchenReady) return "border-success bg-success/15";
   if (view.isUnpaid) return "border-warning/40 bg-warning/10";
   if (view.isFree) return "border-success/45 bg-success/5";
   return "";
@@ -209,7 +212,16 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         <div class="flex items-center justify-between gap-2">
           <span class="truncate font-semibold tabular-nums" :title="tabTitleView(view.displayRef, '').title">{{ tabTitleView(view.displayRef, "").title }}</span>
           <span
-            v-if="view.isUnpaid"
+            v-if="view.kitchenReady"
+            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-success px-1.5 py-0.5 text-xs font-semibold text-success-foreground"
+            title="A cozinha terminou tudo desta comanda"
+            data-tab-kitchen-ready
+          >
+            <Icon name="lucide:bell-ring" class="size-3" />
+            Pronta
+          </span>
+          <span
+            v-else-if="view.isUnpaid"
             class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
             title="Disparado para a cozinha e ainda não pago"
           >

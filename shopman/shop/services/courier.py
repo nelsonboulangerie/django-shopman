@@ -73,9 +73,43 @@ def has_active_ride(order) -> bool:
     return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
 
 
+def house_dispatches(order) -> bool:
+    """A casa pode chamar entregador para este pedido? Falha fechado.
+
+    Só quando a entrega é compromisso da casa
+    (:func:`order_helpers.delivery_ownership` == ``"house"``). Entrega do
+    marketplace (iFood com ``delivered_by=IFOOD``) já tem entregador vindo pelo
+    app dele; responsável não informado é falta de prova, e falta de prova não
+    abre corrida paga. Pedido do canal iFood sem o bloco ``data["ifood"]``
+    também fica de fora: o canal é de marketplace, e só o ``MERCHANT`` explícito
+    diz que quem leva é a casa.
+    """
+    from shopman.shop.services.order_helpers import delivery_ownership
+
+    if delivery_ownership(order) != "house":
+        return False
+    if (order.channel_ref or "") == "ifood":
+        facts = (order.data or {}).get("ifood")
+        return isinstance(facts, dict) and str(facts.get("delivered_by") or "").strip().upper() == "MERCHANT"
+    return True
+
+
+def not_house_dispatch_message(order) -> str:
+    """Por que este pedido não aceita entregador da casa, em palavras do operador."""
+    from shopman.shop.services.order_helpers import delivery_ownership
+
+    if delivery_ownership(order) == "marketplace":
+        return "Quem entrega este pedido é o iFood. O entregador vem pelo app do iFood."
+    return "O iFood não informou quem entrega este pedido. Chamar entregador vale só para entrega da casa."
+
+
 def is_enabled_for(order) -> bool:
-    """Adapter configurado + pedido é entrega. (O "auto" por canal é gate do lifecycle.)"""
-    return get_adapter("courier") is not None and get_fulfillment_type(order) == "delivery"
+    """Adapter configurado + entrega da casa. (O "auto" por canal é gate do lifecycle.)"""
+    return (
+        get_adapter("courier") is not None
+        and get_fulfillment_type(order) == "delivery"
+        and house_dispatches(order)
+    )
 
 
 # ── Payload Machine ─────────────────────────────────────────────────
@@ -305,6 +339,8 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
         raise ValueError("Nenhum adapter de courier configurado.")
     if get_fulfillment_type(order) != "delivery":
         raise ValueError("Re-despacho só se aplica a pedidos de entrega.")
+    if not house_dispatches(order):
+        raise ValueError(not_house_dispatch_message(order))
     if order.status not in (Order.Status.READY, Order.Status.DISPATCHED):
         raise ValueError("Re-despacho só é possível com o pedido pronto ou em entrega.")
     if has_active_ride(order):

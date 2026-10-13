@@ -19,14 +19,9 @@ import {
   scanTimeout,
   type ScanState,
 } from "~/presentation/ticketScan";
+import { POS_READY_NOTES } from "~/presentation/readySound";
 import type { POSKitchenTicketReceipt } from "~/types/pos";
 
-/** A figura do "pronto": duas notas subindo, curtas — a casa comemorando, sem
- *  a fanfarra do KDS (quem lê o papel está no balcão, não na cozinha). */
-const READY_NOTES = [
-  { f: 783.99, t: 0, d: 0.35 },
-  { f: 1174.66, t: 0.1, d: 0.6 },
-];
 /** Algo deu errado: uma nota só, grave. */
 const REFUSED_NOTES = [{ f: 311.13, t: 0, d: 0.5 }];
 
@@ -79,7 +74,7 @@ export function useKitchenTicketScanner(options: {
   enabled: () => boolean;
 }) {
   const { call } = usePosAction();
-  const { beep: beepReady } = useAlertSound("pos_ticket_scan_sound", { notes: READY_NOTES });
+  const { beep: beepReady } = useAlertSound("pos_ticket_scan_sound", { notes: POS_READY_NOTES });
   const { beep: beepRefused } = useAlertSound("pos_ticket_scan_sound", { notes: REFUSED_NOTES });
 
   let state: ScanState = EMPTY_SCAN;

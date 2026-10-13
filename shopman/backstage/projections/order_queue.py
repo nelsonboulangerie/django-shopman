@@ -997,6 +997,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
             reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
                 "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
             method="POST", idempotency="required",
+            confirmation={"required": True, "description": _courier_dispatch_question(order)},
             payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
         extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
             enabled=authorized and courier_block["can_dispatch_again"],
@@ -1117,6 +1118,20 @@ COURIER_STATUS_LABELS = {
 }
 
 
+def _courier_dispatch_question(order: Order) -> str:
+    """A pergunta do toque de confirmação: quem vem, para qual pedido, quem paga.
+
+    O nome da central é configuração do deployment (``SHOPMAN_MACHINE["company_name"]``),
+    nunca código; sem ele, a frase diz "da central de entregas".
+    """
+    from django.conf import settings
+
+    company = str((getattr(settings, "SHOPMAN_MACHINE", {}) or {}).get("company_name") or "").strip()
+    who = f"da {company}" if company else "da central de entregas"
+    return (f"Chamar um entregador {who} para o pedido {operator_orders.short_ref(order.ref)}? "
+            "A corrida é cobrada da casa.")
+
+
 #: A última chamada à TaOn ficou sem resposta: não se sabe se a corrida abriu lá.
 COURIER_NO_ANSWER_MESSAGE = "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu."
 
@@ -1148,6 +1163,14 @@ def _courier_block(order: Order) -> dict | None:
         block = data.get("courier") if isinstance(data.get("courier"), dict) else {}
         adapter_on = get_adapter("courier") is not None
         if not block and not adapter_on:
+            return None
+
+        from shopman.shop.services.courier import house_dispatches
+
+        # Entrega do marketplace nunca oferece Chamar/Cotar (falha fechado; o
+        # servidor recusa também em ``courier.redispatch``).
+        house = house_dispatches(order)
+        if not block and not house:
             return None
 
         ride_status = str(block.get("status") or "")
@@ -1207,8 +1230,8 @@ def _courier_block(order: Order) -> dict | None:
             "position": position,
             "error": error,
             "can_quote": can_quote(order),
-            "can_dispatch": adapter_on and not active and order_can_ride and unresolved is None,
-            "can_dispatch_again": adapter_on and not active and order_can_ride and unresolved is not None,
+            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
+            "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
         }
     except Exception:

@@ -509,6 +509,32 @@ class POSFireTabTests(TestCase):
         after = {t.ref: t for t in build_pos_tabs(channel_ref="pdv")}
         assert after["00002001"].fired is True
 
+    def test_tab_board_says_ready_when_the_kitchen_finishes_everything(self) -> None:
+        # A comanda fica "Pronta" no quadro do PDV só com TODO ticket vivo no
+        # Pronto; o cancelado não segura (decisão do dono, 13/10/2026).
+        from shopman.backstage.projections.pos import build_pos_tabs
+        from shopman.shop.services import kds as kds_core
+
+        session = self._open_tab_with_two_items()
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        [ticket] = KDSTicket.objects.filter(session_key=session.session_key)
+        KDSTicket.objects.create(
+            session_key=session.session_key, kds_instance=ticket.kds_instance, items=[], status="cancelled",
+            cancelled_at=timezone.now(), acknowledged_at=timezone.now(),  # a cozinha já deu a ciência
+        )
+
+        def ready() -> bool:
+            return {t.ref: t for t in build_pos_tabs(channel_ref="pdv")}["00002001"].kitchen_ready
+
+        self.assertFalse(ready())
+        kds_core.start_ticket(ticket, actor="rafael")
+        self.assertFalse(ready())
+        kds_core.complete_ticket(KDSTicket.objects.get(pk=ticket.pk), actor="rafael")
+        self.assertTrue(ready())
+
     def test_fire_unknown_tab_raises(self) -> None:
         from shopman.shop.services.pos_intent import PosIntentError
 
