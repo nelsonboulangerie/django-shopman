@@ -201,7 +201,7 @@ async function callAgain() {
               {{ noFreeMachineSentence(equipmentOptions ?? []) }}
             </p>
           </template>
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-2" data-pos-courier-confirm-actions>
             <NuxtButton
               type="button"
               icon="i-lucide-send"

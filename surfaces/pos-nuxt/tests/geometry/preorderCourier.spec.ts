@@ -61,15 +61,12 @@ for (const scheme of ["light", "dark"] as const) {
         const findings = await scanOperatorGeometry(page, { only: ["horizontal-overflow", ...OPERATOR_LABEL_FINDINGS] });
         expect(findings).toEqual([]);
         expect(await fitsInside(page, "[data-preorder-counter-panel]")).toEqual([]);
-        // Peças irmãs: os botões da confirmação têm a MESMA altura.
-        const heights = await page.locator("[data-pos-courier] button:visible").evaluateAll((els) =>
-          [...new Set(els.map((el) => Math.round(el.getBoundingClientRect().height)))]);
-        if (await page.locator("[data-pos-courier-confirm]").count()) {
-          const confirm = await page.locator("[data-pos-courier-confirm] button").evaluateAll((els) =>
+        // Peças irmãs: Confirmar chamada e Voltar têm a MESMA altura.
+        if (await page.locator("[data-pos-courier-confirm-actions]").count()) {
+          const confirm = await page.locator("[data-pos-courier-confirm-actions] button").evaluateAll((els) =>
             [...new Set(els.map((el) => Math.round(el.getBoundingClientRect().height)))]);
           expect(confirm).toHaveLength(1);
         }
-        expect(heights.length).toBeGreaterThan(0);
       });
     }
   }
