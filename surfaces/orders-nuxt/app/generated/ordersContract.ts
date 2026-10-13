@@ -535,6 +535,9 @@ export interface PreorderCardProjection {
   items_summary: string;
   items_count: number;
   ticket_printed: boolean;
+  courier_label: string;
+  courier_tone: string;
+  courier_call: boolean;
 }
 
 /** Entregar no balcão: "Entregar" (pago) ou "Receber e entregar" (com saldo). */

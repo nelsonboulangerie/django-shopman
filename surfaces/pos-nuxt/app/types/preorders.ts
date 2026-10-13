@@ -52,6 +52,15 @@ export interface PreorderCard {
   items_count: number;
   /** A Via Pedido já saiu (o carimbo `ticket_printed_at`). */
   ticket_printed: boolean;
+  /**
+   * A corrida do entregador (TaOn) numa linha, lida do bloco do Gestor
+   * (`preorders.courier_line`): "Entregador não chamado", "Procurando
+   * entregador", "Não atendida"... "" quando não há o que dizer.
+   */
+  courier_label?: string;
+  courier_tone?: "" | "neutral" | "info" | "success" | "warning" | "danger";
+  /** O detalhe oferece "Chamar entregador" ou "Chamar de novo" agora. */
+  courier_call?: boolean;
 }
 
 export interface PreorderDay {
@@ -125,10 +134,45 @@ export interface PreorderCounter {
  */
 export interface PreorderDetail extends OperatorOrderDetail {
   counter: PreorderCounter;
+  /**
+   * A corrida do entregador: o MESMO bloco do Gestor (`order_queue._courier_block`).
+   * `null` quando não se aplica (retirada, entrega do marketplace, TaOn desligada).
+   */
+  courier?: PreorderCourier | null;
+  /** As maquininhas da casa (e quem está na rua com elas), para a custódia da chamada. */
+  equipment_options?: PreorderEquipmentOption[];
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
   /** Os motivos prontos de cancelar, os mesmos do Gestor (Admin, `Shop.cancellation_presets`). */
   cancellation_presets: ReasonPresetGroup[];
+}
+
+/** O bloco da corrida — espelho do `CourierBlock` do Gestor (`orders-nuxt/types/orders.ts`). */
+export interface PreorderCourier {
+  provider: string;
+  /** A letra da TaOn (D/G/P/U procurando, A/S aceita, E coletou, F entregue, N/C não concluída). */
+  status: string;
+  status_label: string;
+  active: boolean;
+  driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string } | null;
+  tracking_url: string;
+  confirmation_code: string;
+  attempts_count: number;
+  error: { message: string; at: string } | null;
+  can_dispatch: boolean;
+  /** A última chamada ficou sem resposta da TaOn: "Chamar de novo" libera e chama outra. */
+  can_dispatch_again?: boolean;
+  /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
+  custody?: { change_out_suggested_q: number; needs_machine: boolean; recorded: boolean };
+}
+
+/** Uma maquininha da casa (`card_machine:<ref>`), livre ou na rua com um pedido. */
+export interface PreorderEquipmentOption {
+  ref: string;
+  label: string;
+  enabled?: boolean;
+  reason?: string;
+  order_ref?: string;
 }
 
 /** `GET /api/v1/backstage/pos/preorders/<ref>/` — o envelope de leitura do Gestor. */

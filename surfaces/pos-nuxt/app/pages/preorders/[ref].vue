@@ -19,6 +19,8 @@
 //   entregar, a tela diz por quê em vez de mostrar botão apagado. **Editar** abre
 //   a própria tela de venda em modo edição (`/?edit=<ref>`); com a NFC-e já
 //   autorizada o servidor fecha a edição e o gesto vira **Cancelar e refazer**;
+// - o ENTREGADOR (TaOn) na encomenda de entrega da casa (`PosCourierPanel`): o
+//   estado da corrida e o Chamar, com o bloco e as ações do Gestor (dono, 13/10);
 // - o atalho **Comentar no histórico**, que leva ao campo do kit;
 // - uma etiqueta de estado só, a do balcão (P5 do dono, 02/10): o resumo do kit
 //   vem sem a etiqueta de status do pedido (`show-status`), que o Gestor mantém;
@@ -31,7 +33,8 @@ import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
-import { canComment, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
+import { courierPanelVisible } from "~/presentation/courier";
+import { canComment, detailAction, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 
 const route = useRoute();
@@ -244,6 +247,20 @@ function goBack() {
               icon="i-lucide-info"
               :title="counter.hand_over.block_reason"
               data-preorder-hand-over-blocked
+            />
+
+            <!-- O ENTREGADOR (TaOn), na encomenda de entrega da casa: o estado da
+                 corrida e o Chamar, com o bloco e as ações do Gestor (dono, 13/10). -->
+            <PosCourierPanel
+              v-if="courierPanelVisible(detail.courier)"
+              :courier="detail.courier!"
+              :card="card"
+              :busy="actions.busy.value"
+              :dispatch-action="detailAction(detail, 'courier-dispatch')"
+              :dispatch-again-action="detailAction(detail, 'courier-dispatch-again')"
+              :equipment-options="detail.equipment_options"
+              @dispatch="actions.courierDispatch"
+              @dispatch-again="actions.courierDispatchAgain"
             />
 
             <!-- Os gestos de uso médio, lado a lado e menores que o principal: cada um

@@ -22,6 +22,8 @@ export interface OrderDetailAction {
   enabled: boolean;
   reason: string;
   payload_schema: Record<string, unknown>;
+  /** A pergunta da confirmação, quando o gesto pede uma (a frase é do servidor). */
+  confirmation?: { required?: boolean; description?: string } | null;
 }
 
 /** Um item do pedido que VALE agora (com os ajustes). */

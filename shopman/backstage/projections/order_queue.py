@@ -731,6 +731,9 @@ _ORDERS_FLOW_OFF = {
 #: As ações do detalhe que o balcão executa (o resto do fluxo é do Gestor).
 _POS_DETAIL_ACTIONS = frozenset({"comment"})
 
+#: As ações da corrida que o balcão executa: chamar e chamar de novo.
+_POS_COURIER_ACTIONS = frozenset({"courier-dispatch", "courier-dispatch-again"})
+
 
 @dataclass(frozen=True)
 class OrderQueueProjection:
@@ -976,13 +979,20 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     if context == "pos":
         from shopman.backstage.projections import preorders
 
+        # A corrida do entregador (TaOn): o MESMO bloco e as MESMAS ações do Gestor,
+        # para a encomenda de entrega da casa (decisão do dono, 13/10/2026).
+        courier_block = _courier_block(order)
+        pos_authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
         return OperatorOrderProjection(
             **common,
             **_ORDERS_FLOW_OFF,
-            actions=tuple(
-                action for action in operator_orders.operational_actions(order, user=user)
-                if action.ref in _POS_DETAIL_ACTIONS
+            actions=(
+                *(action for action in operator_orders.operational_actions(order, user=user)
+                  if action.ref in _POS_DETAIL_ACTIONS),
+                *_courier_actions(order, user, courier_block, authorized=pos_authorized, refs=_POS_COURIER_ACTIONS),
             ),
+            courier=courier_block,
+            **_equipment_fields(order),
             # A prova de envio do link fica (é leitura); o reenvio é do Gestor.
             payment_link_notice=_payment_link_fields(order, method).get("payment_link_notice", ""),
             counter=preorders.build_counter_block(order, user=user),
@@ -1007,35 +1017,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     )
     extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
     courier_block = _courier_block(order)
-    if courier_block:
-        from shopman.shop.services.courier import dispatch_revision
-
-        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
-            enabled=authorized and courier_block["can_dispatch"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
-            method="POST", idempotency="required",
-            confirmation={"required": True, "description": _courier_dispatch_question(order)},
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
-            enabled=authorized and courier_block["can_dispatch_again"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_dispatch_again"] else "Não há chamada sem resposta da TaOn neste pedido."),
-            method="POST", idempotency="required",
-            confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
-            enabled=authorized and courier_block["can_cancel"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
-            method="POST", idempotency="required", confirmation={"required": True},
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
-            enabled=authorized and courier_block["can_quote"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
-            method="POST", idempotency="required",
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
@@ -1094,6 +1076,46 @@ def _store_location() -> dict[str, float] | None:
     if shop is None or shop.latitude is None or shop.longitude is None:
         return None
     return {"lat": float(shop.latitude), "lng": float(shop.longitude), "radius_m": float(STORE_RADIUS_METERS)}
+
+
+def _courier_actions(order: Order, user, courier_block: dict | None, *, authorized: bool, refs=None) -> list[Action]:
+    """As ações da corrida do entregador, as MESMAS no Gestor e no PDV.
+
+    ``refs`` filtra quais (o balcão chama e chama de novo; cancelar e cotar a
+    corrida ficam no Gestor). Sem bloco (retirada, marketplace, sem TaOn), nada.
+    """
+    if not courier_block:
+        return []
+    from shopman.shop.services.courier import dispatch_revision
+
+    extra_actions: list[Action] = []
+    extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
+        enabled=authorized and courier_block["can_dispatch"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+        method="POST", idempotency="required",
+        confirmation={"required": True, "description": _courier_dispatch_question(order)},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
+        enabled=authorized and courier_block["can_dispatch_again"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_dispatch_again"] else "Não há chamada sem resposta da TaOn neste pedido."),
+        method="POST", idempotency="required",
+        confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
+        enabled=authorized and courier_block["can_cancel"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
+        method="POST", idempotency="required", confirmation={"required": True},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
+        enabled=authorized and courier_block["can_quote"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    return [action for action in extra_actions if refs is None or action.ref in refs]
 
 
 def _detail_deadline(order: Order) -> dict[str, str]:
