@@ -213,6 +213,21 @@ const confirmDiscard = useConfirm();
 
 // "Chamar de novo": a frase da confirmação vem do servidor (a Action), uma só.
 const confirmDispatchAgain = useConfirm();
+// A cotação diz que está cotando, e a falha vira aviso no painel do entregador.
+const quoting = ref(false);
+const quoteError = ref("");
+async function onCourierQuote() {
+  if (quoting.value) return;
+  quoting.value = true;
+  quoteError.value = "";
+  try {
+    if (!(await courierQuote()))
+      quoteError.value =
+        mutationError.value || "Tente de novo em instantes.";
+  } finally {
+    quoting.value = false;
+  }
+}
 async function onCourierDispatchAgain() {
   const action = order.value?.actions?.find(
     (item) => item.ref === "courier-dispatch-again",
@@ -1094,7 +1109,10 @@ const outside = useOutsideStore(
                 (action) => action.ref === 'courier-dispatch-again',
               )
             "
-            @quote="courierQuote"
+            :quoting="quoting"
+            :quote-error="quoteError"
+            @quote="onCourierQuote"
+            @dismiss-quote-error="quoteError = ''"
             @dispatch="courierDispatch"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
