@@ -6,9 +6,12 @@
 import type { KDSIndexResponse } from "~/types/kds";
 import { EXIT_STATION_TYPE, gestorExitUrl, stationCountWord } from "~/presentation/exitStation";
 
-const { data, pending } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
+const { data, pending, error, refresh } = useFetch<KDSIndexResponse>("/api/v1/backstage/kds/", {
   key: "kds-index",
 });
+// A recusa do servidor (sem permissão, estação travada) não é "nenhuma estação": a lista
+// veio vazia porque não veio. A frase do servidor diz o que houve.
+const errorDetail = computed(() => (error.value ? httpErrorMessage(error.value, "") : ""));
 const instances = computed(() => data.value?.instances ?? []);
 const exitUrl = gestorExitUrl(String(useRuntimeConfig().public.ordersUrl || ""));
 const { station } = useKdsStation();
@@ -38,6 +41,13 @@ function typeIcon(type: string): string {
       <div class="mx-auto flex w-full max-w-5xl flex-col gap-3 p-4 md:p-6">
         <p class="op-label text-muted-foreground">Escolha a estação que esta tela mostra.</p>
         <OperatorScreenState v-if="pending && !instances.length" state="loading" what="as estações" />
+        <OperatorScreenState
+          v-else-if="error && !instances.length"
+          state="error"
+          what="as estações"
+          :description="errorDetail"
+          @retry="refresh()"
+        />
         <OperatorScreenState
           v-else-if="!instances.length"
           state="empty"

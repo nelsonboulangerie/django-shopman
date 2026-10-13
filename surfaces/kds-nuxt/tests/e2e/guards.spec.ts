@@ -23,6 +23,14 @@ test.describe("KDS — gate de operador", () => {
     await expect(page.getByRole("complementary", { name: "Navegação do aplicativo" })).toBeVisible();
   });
 
+  test("operador sem permissão → a recusa do servidor, nunca 'nenhuma estação cadastrada'", async ({ page, context }) => {
+    await context.addCookies([authed, { ...authed, name: "e2e_kds", value: "forbidden" }]);
+    await page.goto("/");
+    await expect(page.getByText("Não foi possível carregar as estações")).toBeVisible();
+    await expect(page.getByText("Operador sem permissão para esta ação.")).toBeVisible();
+    await expect(page.getByText("Nenhuma estação cadastrada")).toHaveCount(0);
+  });
+
   test("navegação pelas estações reais: a bancada pelo nome, Saída no Gestor, sem item Preparo", async ({ page, context }) => {
     await context.addCookies([authed]);
     await page.goto("/bancada");
