@@ -499,28 +499,72 @@ def test_channel_config_validates_courier_values():
 
 
 @pytest.mark.parametrize("status", ["E", "F"])
-def test_repeated_external_fact_keeps_custody_refusal_until_operator_resolves(status, django_user_model):
+def test_collection_dispatches_with_cash_at_the_door_without_inventing_custody(status):
+    """Decisão do dono (13/10/2026): a coleta da TaOn despacha também com cobrança na porta."""
+    from shopman.cashman.models import Entry
+
+    order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 10000},
+                            courier={"id_mch": "LAB-RIDE", "status": "A"})
+    courier.apply_status(order, status, source="poll")
+    courier.apply_status(order, status, source="poll")  # replay: no-op
+    order.refresh_from_db()
+    assert order.status in ({"dispatched"} if status == "E" else {"delivered", "completed"})
+    assert order.data["dispatch"]["collector"] == "courier_partner"
+    # Fato externo não lança troco da gaveta.
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).exists()
+    assert order.events.filter(type="courier_status").count() == 1
+    if status == "E":
+        assert courier.get_block(order)["door_charge"] == {"cash_q": 5000, "change_for_q": 10000, "card_q": 0}
+
+
+def test_collection_dispatches_card_at_the_door_without_reserving_a_house_machine():
+    order = _delivery_order(payment={"method": "credit", "collection": "on_delivery"},
+                            courier={"id_mch": "LAB-CARD", "status": "A"})
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert order.status == "dispatched"
+    assert "device_ref" not in order.data["dispatch"]
+    assert courier.get_block(order)["door_charge"] == {"cash_q": 0, "change_for_q": 0, "card_q": 5000}
+
+
+def test_operator_dispatch_before_collection_keeps_drawer_change(django_user_model):
+    """Troco da gaveta que vai com o entregador da TaOn: despacha no Gestor antes da coleta."""
     from shopman.cashman import services as cash
 
     from shopman.shop.services import operator_orders
 
     order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 5500},
                             courier={"id_mch": "LAB-RIDE", "status": "A"})
-    for _ in range(2):
-        with pytest.raises(operator_orders.ChangeOutRequired):
-            courier.apply_status(order, status, source="poll")
-        order.refresh_from_db()
-        assert order.status == "ready"
-        assert courier.get_block(order)["status"] == status
-    assert order.events.filter(type="courier_status").count() == 1
-    # An explicit synthetic operator/custody action, never an invented provider cash movement.
     user = django_user_model.objects.create_user(username="custodian")
     shift = cash.open_shift(operator=user, float_q=1000)
     operator_orders.advance_order(order, actor=user.username, change_out_q=500, cash_shift=shift)
-    courier.apply_status(order, status, source="poll")
+    courier.apply_status(order, "E", source="poll")
     order.refresh_from_db()
-    assert order.status in ({"dispatched"} if status == "E" else {"delivered", "completed"})
-    assert order.events.filter(type="courier_status").count() == 1
+    assert order.status == "dispatched"
+    assert "collector" not in order.data.get("dispatch", {})
+    assert operator_orders.courier_change(order).out_q == 500
+
+
+@pytest.mark.parametrize(("payment", "expected"), [
+    ({"method": "cash", "collection": "on_delivery", "change_for_q": 10000},
+     "Pedido 1 · Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00"),
+    ({"method": "cash", "collection": "on_delivery"},
+     "Pedido 1 · Cobrar R$ 50,00 em dinheiro · sem troco"),
+    ({"method": "debit", "collection": "on_delivery"},
+     "Pedido 1 · Cobrar R$ 50,00 no cartão (maquininha)"),
+    ({"method": "mixed", "collection": "on_delivery", "change_for_q": 5000, "tenders": [
+        {"method": "cash", "amount_q": 3000, "collection": "on_delivery", "status": "pending"},
+        {"method": "credit", "amount_q": 2000, "collection": "on_delivery", "status": "pending"}]},
+     "Pedido 1 · Cobrar R$ 30,00 em dinheiro · troco para R$ 50,00 · Cobrar R$ 20,00 no cartão (maquininha)"),
+    ({"method": "pix", "status": "captured"}, "Pedido 1 · Pago, não cobrar"),
+    ({"method": "cash", "collection": "on_delivery", "cod_settled_at": "2026-10-13T12:00:00+00:00"},
+     "Pedido 1 · Pago, não cobrar"),
+])
+def test_ride_observation_says_what_to_charge_at_the_door(shop, payment, expected):
+    order = _delivery_order(ref="CR-1", payment=payment)
+    body = courier.build_machine_payload(order)
+    assert body["paradas"][0]["observacao_parada"] == expected
+    assert body["paradas"][0]["id_externo"] == "CR-1"
 
 
 def test_terminal_fact_recovers_local_failure_without_polling_provider(monkeypatch):

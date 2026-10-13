@@ -7,6 +7,7 @@ docs/reference/data-schemas.md), espelha na timeline do pedido e emite SSE.
 
 Transições de pedido derivadas do status da corrida:
   E (coletou)   → advance_order  → DISPATCHED → notificação "saiu para entrega"
+                  (também com cobrança na porta, que foi na observação da corrida)
   F (finalizou) → confirm_received → DELIVERED → notificação "entregue"
   N/C (falhou)  → OperatorAlert + re-despacho manual habilitado no gestor
 
@@ -78,6 +79,57 @@ def is_enabled_for(order) -> bool:
     return get_adapter("courier") is not None and get_fulfillment_type(order) == "delivery"
 
 
+# ── Cobrança na porta ───────────────────────────────────────────────
+
+
+def door_charge(order) -> dict:
+    """O que o entregador da TaOn cobra na porta, em centavos.
+
+    ``{"cash_q", "change_for_q", "card_q"}``: a parcela em dinheiro, com quanto o
+    cliente disse que paga (zero quando não pediu troco ou pediu abaixo da
+    parcela) e a parcela no cartão. Tudo zero quando o pagamento já entrou.
+    A casa não tem entregador próprio (decisão do dono, 13/10/2026): toda
+    cobrança na porta sai com a corrida, e é esta a régua que vai na observação.
+    """
+    from shopman.shop.services import operator_orders
+
+    payment = (order.data or {}).get("payment") or {}
+    if payment.get("cod_settled_at"):
+        return {"cash_q": 0, "change_for_q": 0, "card_q": 0}
+    cash_q = operator_orders.cash_due_on_delivery_q(order)
+    change_for_q = operator_orders._change_for_q(order) if cash_q > 0 else 0
+    return {
+        "cash_q": cash_q,
+        "change_for_q": change_for_q if change_for_q > cash_q else 0,
+        "card_q": operator_orders.card_due_on_delivery_q(order),
+    }
+
+
+def door_charge_note(order) -> str:
+    """A observação da corrida: o pedido e a cobrança na porta, numa linha.
+
+    ``Pedido A47 · Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00``,
+    ``Pedido A47 · Cobrar R$ 58,00 no cartão (maquininha)`` ou
+    ``Pedido A47 · Pago, não cobrar``. O entregador lê no celular, na porta.
+    """
+    from shopman.utils.monetary import format_money
+
+    from shopman.shop.services.operator_orders import short_ref
+
+    charge = door_charge(order)
+    parts = [f"Pedido {short_ref(order.ref)}"]
+    if charge["cash_q"] > 0:
+        parts.append(f"Cobrar R$ {format_money(charge['cash_q'])} em dinheiro")
+        parts.append(
+            f"troco para R$ {format_money(charge['change_for_q'])}" if charge["change_for_q"] else "sem troco"
+        )
+    if charge["card_q"] > 0:
+        parts.append(f"Cobrar R$ {format_money(charge['card_q'])} no cartão (maquininha)")
+    if len(parts) == 1:
+        parts.append("Pago, não cobrar")
+    return " · ".join(parts)
+
+
 # ── Payload Machine ─────────────────────────────────────────────────
 
 
@@ -109,7 +161,7 @@ def build_machine_payload(order) -> dict:
         "estado_parada": handoff["state_code"],
         "referencia_parada": handoff["delivery_instructions"],
         "id_externo": order.ref,
-        "observacao_parada": f"Pedido {order.ref}",
+        "observacao_parada": door_charge_note(order),
         "nome_cliente_parada": handoff["customer_name"],
         "telefone_cliente_parada": handoff["customer_phone"],
     }
@@ -428,6 +480,8 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             block.update(status=status, last_event_at=now_iso, last_source=source)
             if status == "E":
                 block.setdefault("dispatched_at", now_iso)
+                # A cobrança que saiu com o entregador da TaOn, registrada na coleta.
+                block.setdefault("door_charge", door_charge(order))
             if status == "F":
                 block["finished_at"] = now_iso
             order.emit_event(event_type=_STATUS_EVENT, actor=source,
@@ -458,9 +512,13 @@ def recover_local_status(order, *, ride_id: str) -> None:
         return
     status = block.get("status")
     if status in ("E", "F") and order.status == Order.Status.READY:
+        # A coleta despacha também com cobrança na porta (decisão do dono,
+        # 13/10/2026): a cobrança foi na observação e fica em ``door_charge``.
+        # Se a casa despachou antes no Gestor, com troco ou maquininha, o
+        # pedido já não está pronto e nada aqui roda.
         operator_orders.advance_order(
             order, actor="courier:machine", target_status=Order.Status.DISPATCHED,
-            expected_courier_id=ride_id,
+            expected_courier_id=ride_id, partner_collects=True,
         )
     if status == "F":
         operator_orders.confirm_received(order, actor="courier:machine", expected_courier_id=ride_id)
@@ -516,14 +574,14 @@ def _alert_ride_failed(order, status: str) -> None:
     if status == "N":
         alert_type, message = (
             "courier_not_attended",
-            f"Nenhum entregador aceitou a corrida do pedido {order.ref}. "
-            "Abra o pedido e chame outro entregador, ou leve com um entregador da casa.",
+            f"Nenhum entregador da TaOn aceitou a corrida do pedido {order.ref}. "
+            "Abra o pedido e chame o entregador de novo.",
         )
     else:
         alert_type, message = (
             "courier_ride_cancelled",
-            f"A central cancelou a corrida do pedido {order.ref}. "
-            "Abra o pedido e chame outro entregador, ou leve com um entregador da casa.",
+            f"A TaOn cancelou a corrida do pedido {order.ref}. "
+            "Abra o pedido e chame o entregador de novo.",
         )
     try:
         alert_adapter.create(alert_type, "warning", message, order_ref=order.ref)

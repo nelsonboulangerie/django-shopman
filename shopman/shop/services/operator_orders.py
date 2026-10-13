@@ -405,8 +405,20 @@ def advance_order(
     undo_window: bool = False,
     handoff_token: str | None = None,
     expedite_only: bool = False,
+    partner_collects: bool = False,
 ) -> str:
     """Advance an order through the operator lifecycle.
+
+    ``partner_collects``: a coleta veio da corrida da TaOn (status ``E``). A
+    casa não tem entregador próprio (decisão do dono, 13/10/2026) e a coleta
+    despacha também com cobrança na porta: o que cobrar, em que forma e o troco
+    para quanto já estão no pedido e foram na observação da corrida
+    (``courier.door_charge_note``), e a coleta os registra em
+    ``courier.door_charge``. Fato externo não inventa custódia: a coleta não
+    lança troco da gaveta nem reserva maquininha, e grava
+    ``dispatch.collector = "courier_partner"``. Troco da gaveta ou maquininha
+    da casa que vão com o entregador da TaOn se registram despachando no
+    Gestor antes da coleta (aí o pedido já saiu e a coleta é no-op).
 
     ``expedite_only``: quem toca só expede (``expedites_only``). A régua de
     ``expedite_refusal`` é aplicada aqui, sob o lock, na linha travada.
@@ -481,7 +493,10 @@ def advance_order(
 
     dispatching = next_status == Order.Status.DISPATCHED and get_fulfillment_type(order) == "delivery"
     change_out = 0
-    if dispatching:
+    partner_dispatch = dispatching and partner_collects
+    if partner_dispatch:
+        taken, trip, device_fields = [], "", {}
+    elif dispatching:
         suggested_q = change_out_suggested_q(order)
         if change_out_q is None and suggested_q > 0:
             raise ChangeOutRequired(suggested_q)
@@ -534,6 +549,19 @@ def advance_order(
             # Saindo do pronto com a janela do pronto automático aberta: o
             # aviso de pronto sai agora, antes do aviso da saída.
             order_undo.release_ready_hold(order)
+        if partner_dispatch:
+            # Coleta da TaOn sem custódia registrada no Gestor: nada de gaveta
+            # nem de maquininha lançado por fato externo. Gravado ANTES da
+            # transição, que é o que a trava de maquininha (``guard_dispatch``)
+            # consulta.
+            data = dict(order.data or {})
+            data["dispatch"] = {
+                **dict(data.get("dispatch") or {}),
+                "collector": "courier_partner",
+                "collector_at": timezone_now_iso(),
+            }
+            order.data = data
+            order.save(update_fields=["data", "updated_at"])
         if taken or trip:
             # Custódia da maquininha: o despacho registra o que saiu;
             # "onde está agora" é derivado (saiu e ainda não voltou). Não é
@@ -949,6 +977,25 @@ def cash_due_on_delivery_q(order: Order) -> int:
     if tenders:
         return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") == "cash")
     if payment.get("method") not in {"cash", "mixed"}:
+        return 0
+    from shopman.shop.services import order_composition
+
+    return order_composition.effective_total_q(order)
+
+
+def card_due_on_delivery_q(order: Order) -> int:
+    """Quanto desta entrega será cobrado no CARTÃO (maquininha) na porta, em centavos.
+
+    Mesma régua de ``cash_due_on_delivery_q``: as linhas respondem quando
+    existem; sem elas, o método do topo responde pelo pedido inteiro.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    if get_fulfillment_type(order) != "delivery" or payment.get("collection") != "on_delivery":
+        return 0
+    tenders = payment.get("tenders") or []
+    if tenders:
+        return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") in {"credit", "debit"})
+    if payment.get("method") not in {"credit", "debit"}:
         return 0
     from shopman.shop.services import order_composition
 
