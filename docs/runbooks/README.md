@@ -55,6 +55,7 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 - [Go-live — checklist de cutover (staging → produção)](go-live-cutover.md)
 - [Go-live: o delta do spec no dia D (chave a chave, com script de conferência)](go-live-delta-do-spec.md)
 - [Roteiros da QA física, do ensaio geral e do canário de um](qa-fisica-e-canario.md)
+- [Ensaio geral da virada (banco copiado, app local com o spec do dia D, travas, gates e a volta, sem tocar o vivo)](ensaio-geral-da-virada.md)
 - [Ligar o Sentry (error tracking)](ativar-sentry.md)
 - [Guardar arquivos no Cloudflare R2: o que o dono faz](r2-passo-a-passo-do-dono.md)
 - [Conferir o spec antes de `doctl apps update`](conferir-spec-digitalocean.md)

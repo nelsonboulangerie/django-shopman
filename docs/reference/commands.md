@@ -1688,6 +1688,11 @@ make production-readiness target=1 context=shopman-do-app-admin json=1
 make production-readiness target=1 context=shopman-do-app-admin baseline=~/golive-spec-antes.yaml
 ```
 
+No **ensaio geral da virada** o mesmo gate roda contra o spec do dia D gerado
+fora do vivo (`scripts/golive_ensaio.py depois`) e contra o app local com o
+banco restaurado (`target_spec=<depois.ensaio.yaml> target_url=http://127.0.0.1:37210`).
+Roteiro em [ensaio-geral-da-virada.md](../runbooks/ensaio-geral-da-virada.md).
+
 ---
 
 ### export_backup
