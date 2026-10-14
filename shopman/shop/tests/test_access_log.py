@@ -32,6 +32,8 @@ def _middleware(response, settings, *, resolve_path: str | None = None):
 @pytest.fixture(autouse=True)
 def _capture_access_logger(caplog):
     # `shopman` não propaga para a raiz (config/settings.py), onde o caplog escuta.
+    # Quando outra suíte do mesmo processo religa a propagação, o registro chega
+    # pelos dois caminhos: `_records` conta cada registro uma vez só.
     logger = logging.getLogger("shopman.access")
     logger.addHandler(caplog.handler)
     yield
@@ -39,7 +41,13 @@ def _capture_access_logger(caplog):
 
 
 def _records(caplog):
-    return [record for record in caplog.records if record.name == "shopman.access"]
+    seen: set[int] = set()
+    out = []
+    for record in caplog.records:
+        if record.name == "shopman.access" and id(record) not in seen:
+            seen.add(id(record))
+            out.append(record)
+    return out
 
 
 def test_off_by_default_leaves_the_chain(settings):
