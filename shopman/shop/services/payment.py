@@ -2517,6 +2517,14 @@ def _adapter_config(order, *, method: str) -> dict:
     config: dict = {}
     if method == "pix":
         config["pix_timeout_minutes"] = cfg.payment.timeout_minutes
+        if _is_pos_remote_order(order):
+            # Pix de ENCOMENDA anotada no PDV: o cliente paga depois, de casa, e
+            # o pedido pode ser para a semana que vem. O prazo do Pix de balcão
+            # (minutos, cliente na frente do caixa) cancelava a encomenda antes
+            # de ele abrir o celular. A cobrança remota da encomenda já tem prazo
+            # decidido, o do LINK: ``min(agora + janela do canal, corte do
+            # atendimento)``. O Pix segue o mesmo relógio (P2-26).
+            config["pix_timeout_minutes"] = _link_deadline_minutes(order, cfg)
         # Constraint: o botão "Simular pagamento" (SHOPMAN_EXPOSE_MOCK_CAPTURE)
         # e o auto-confirm se contradizem — o timer de segundos sempre ganha a
         # corrida do dedo e anula a afordância manual em silêncio. Com o botão
@@ -2557,6 +2565,30 @@ def _adapter_config(order, *, method: str) -> dict:
         capture_method = str(stripe_config.get("capture_method") or "manual").strip().lower()
         config["capture_method"] = capture_method if capture_method in {"automatic", "manual"} else "manual"
     return config
+
+
+def _is_pos_remote_order(order) -> bool:
+    """Pedido do PDV que o cliente NÃO leva agora: encomenda, entrega, data futura."""
+    from shopman.shop.services.order_helpers import is_counter_takeaway
+
+    data = getattr(order, "data", None) or {}
+    return data.get("origin_channel") == "pos" and not is_counter_takeaway(order)
+
+
+def _link_deadline_minutes(order, cfg) -> int:
+    """O prazo do link deste pedido, em minutos inteiros contados de agora.
+
+    Arredonda para BAIXO: o Pix nunca vence depois do corte do atendimento.
+    """
+    from shopman.shop.adapters._payment_link import link_expires_at
+
+    now = timezone.now()
+    expires_at = link_expires_at(
+        now,
+        timeout_minutes=cfg.payment.link_timeout_minutes,
+        expires_by=payment_deadline.service_cutoff(order, now=now),
+    )
+    return max(1, int((expires_at - now).total_seconds() // 60))
 
 
 def _payman_intent_captured(intent_ref: str) -> bool:
