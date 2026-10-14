@@ -406,13 +406,16 @@ antecipada pelos marcos invertidos (horário − tempo de chegada) é pós-go-li
 2. **Identificação** por código no WhatsApp/SMS; o telefone é o do login
    (`shopman/storefront/api/views.py:121-133`).
 3. **Quando:** horários de retirada pela prontidão dos produtos (`pickup_slots.py:304`).
-4. **Pagamento:** Pix ou cartão (Stripe). Cartão **autoriza** no pedido; Pix **ainda não**.
+4. **Pagamento ao pedir** (ADR-036, 14/10): Pix ou cartão (Stripe), sem "pagar na entrega".
+   O Pix nasce no pedido (10 min para pagar, com o cliente na tela); o cartão **autoriza** no
+   pedido e é cobrado no aceite.
 5. **Pedido criado** (`new`), aviso `order_received`; o total visto é travado
    (`checkout.py:174-189`). O cliente vai a `/pedido/<ref>` (SSE).
-6. **Gestor:** som insistente, card na Entrada; o operador **Aceita** (`confirm_order`,
-   `operator_orders.py:136-161`). Sem ação em 10 min: alerta de pedido parado.
-7. **No aceite:** cartão é capturado; o **Pix é gerado agora** e enviado (`payment_requested`)
-   com **10 minutos** para pagar (`lifecycle.py:477-491`).
+6. **Gestor:** som insistente, card na Entrada com "cancela sozinho em"; o operador **Aceita**
+   (`confirm_order`). Prazo de aceite: 30 min de loja aberta (`auto_cancel`); aos 10, o aviso
+   "se ninguém aceitar até HH:MM, ele é cancelado sozinho e o que o cliente pagou é devolvido".
+   Recusou ou venceu: cancelado, Pix estornado ou cartão anulado, cliente avisado dos dois.
+7. **No aceite:** o cartão é capturado; o Pix já entrou.
 8. **Pago:** o Gestor mostra; o operador dá **Iniciar preparo** (`prep_start=operator`) → KDS →
    Pronto → `order_ready_pickup`.
 9. **Cliente chega:** Gestor/Saída **Marcar como retirado** → `completed`, NFC-e.
@@ -438,7 +441,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 
 | Situação | Como reage | Onde | Estado |
 |---|---|---|---|
-| Pedido feito de noite, aceito na abertura | o Pix nasce no aceite e vence em 10 min, sem lembrete; o cliente fora da tela perde o pedido | `lifecycle.py:477-491`; `payment_efi.py:340-345`; `payment_reminder` nunca agendado | **ATRITO grave (P1-5)** |
+| Pedido feito de noite, aceito na abertura | paga ao pedir; o prazo de aceite começa na abertura | ADR-036; migração `shop.0094` | OK (P1-5), em PR |
 | Cartão autorizado e ninguém aceita | preso sem prazo; a autorização vence no Stripe (~7 dias) | `handlers/payment_timeout.py:62-63` | LACUNA (P1-4), em PR #1732 |
 | Pedido editado em `new` antes do Pix | o Pix sai com o total selado antigo | `payment.py:111` | **LACUNA a provar (P0-6)**, em PR #1736 |
 | Pix venceu | cancela; dois avisos (vencido + cancelado) | `payment_timeout.py:85-97` | ATRITO (P2) |
@@ -446,7 +449,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Cliente quer cancelar | sozinho em `new`/`accepted` sem captura; pago vira solicitação ao gerente | `payment.py:1582-1595`; `cancellation_requests.py` | OK |
 | Xepa | só no balcão (decisão de 14/10, Pergunta 3 = 1): fora do WhatsApp, do site e do iFood, e a loja não anuncia | `rules/pricing.py` (`channels_required`); migração `shop.0093` | OK (P1-14) |
 | `bootstrap_whatsapp_channel` | recria o canal com `auto_confirm`, contra a decisão da migração 0054 | `bootstrap_whatsapp_channel.py:32` | LACUNA (P1-15), resolvida em #1718 |
-| Pagar na entrega pelo site | não existe (`cash` fora dos métodos do canal) | `views.py:161-165`; `config.py:512` | decisão (Pergunta 2) |
+| Pagar na entrega pelo site | não existe, por decisão (Pergunta 2 = 1, 14/10) | ADR-036 | OK |
 | Horário de entrega do site | só confere "já passou", não a grade | `views.py:273-285` | ATRITO (P2) |
 | Link do entregador na página do pedido | não aparece (só no aviso) | `order_tracking.py:1477-1482` | LACUNA (P1-11), resolvida em #1718 |
 | Texto residual "CPF obrigatório na entrega" | comentário e prompt da concierge | `checkoutPayload.ts:30`; `concierge/tools.py:1374` | ATRITO (P2) |
@@ -459,7 +462,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Taxa e mínimo à vista antes de pagar | motor de taxa | `finalizar.vue:1568-1645` | OK |
 | Total travado | `expected_total_q` + revisão | `checkout.py:91-189` | OK |
 | Confirmação por pessoa | `manual` + alerta 10 min | `seed.py:6450` | OK |
-| Pagar sem perder o pedido | Pix nasce no aceite com 10 min | `lifecycle.py:477-491` | **ATRITO** |
+| Pagar sem perder o pedido | paga ao pedir; prazo de aceite com estorno automático | ADR-036 | OK, em PR |
 | Avisos por transição | §1.5 | — | OK, com lacunas de estorno/devolução |
 | Pronto ≠ saiu | `order_tracking.py:1133-1160` | — | OK |
 | Tempo real para o cliente | SSE `order-<ref>` | `pedido/[ref]/index.vue:183-217` | OK |
@@ -582,7 +585,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 |---|---|---|---|---|
 | P1-3 · **em PR #1733** | Aceite do iFood que não chegou é invisível; o iFood cancela em 8 min com a cozinha trabalhando | `handlers/ifood_status.py:74`; `order_queue.py:1673` | Card diz "O iFood ainda não recebeu o aceite" com **Tentar de novo**, até o sinal confirmar; o prazo continua contando no card | S |
 | P1-4 · **em PR #1732** | Cartão autorizado sem aceite fica preso; a autorização vence no Stripe | `payment_timeout.py:62-63` | Alerta ao operador antes de a autorização vencer, com Aceitar/Recusar; ao recusar, a autorização é liberada | S |
-| P1-5 | Loja online: Pix nasce no aceite e vence em 10 min sem lembrete; pedido noturno morre | `lifecycle.py:477-491`; `payment_reminder` nunca agendado | Depende da Pergunta 1. Em qualquer resposta: agendar `payment_reminder` e dar ao Pix do aceite um prazo próprio | S |
+| P1-5 · **em PR** | Loja online: Pix nasce no aceite e vence em 10 min sem lembrete; pedido noturno morre | `lifecycle.py:477-491`; `payment_reminder` nunca agendado | Pergunta 1 = 1 (14/10): paga ao pedir, prazo de aceite de 30 min de loja aberta, estorno automático (ADR-036) | S |
 | P1-6 · **em PR #1723** | PDV, entrega fora da área: a revisão diz que não bloqueia, o fechamento recusa, a taxa manual não resolve | `pos.py:898-910`; `validation.py:270` | A regra respeita a taxa manual do PDV (o combinado da porta é do operador, como a própria revisão diz) | S |
 | P1-7 · **em PR #1734** | Encomenda no dia vai à cozinha com Pix/link pendente; Pix em pagamento misto liquida pela palavra do operador | `pos.py:2199-2296`; `pos.py:3967-3971` | "Enviar à cozinha" pergunta antes de mandar pedido não pago; Pix no misto espera a confirmação do Pix (ou é recusado no misto, como no modo de teste) | S |
 | P1-8 · **em PR #1727** | Encomenda de retirada: "Entregar" no PDV exige `ready`, que o PDV não marca | `operator_orders.py:1419-1427` | "Entregar" aceita pedido aceito/em preparo e conclui (fecha os tickets abertos com alarde no KDS) | S |
@@ -628,11 +631,16 @@ num aviso e vence em 10 min). Quem pediu à noite e não viu o aviso de manhã p
   automático. O cliente resolve tudo numa ida.
 - **2:** mantém pagar depois do aceite, com prazo maior e lembrete.
 
+**Decidido (14/10/2026): 1.** Paga ao pedir; recusou ou não aceitou a tempo, estorno automático.
+Nota do dono: "se os estornos ficarem constantes, reavaliar". ADR-036.
+
 **2. Loja online: oferecer "pagar na entrega" (dinheiro ou maquininha com o entregador da TaOn)?**
 Hoje só no PDV.
 - **1 (recomendo):** não. Pedido remoto pago antes não arrisca corrida paga para pedido que não
   se confirma (a mesma regra da chamada antecipada: "só pedido já pago chama antes").
 - **2:** sim.
+
+**Decidido (14/10/2026): 1.** Sem "pagar na entrega" no site. ADR-036.
 
 **3. Xepa (Happy Hour): onde vale?** Hoje vale no balcão e no WhatsApp, e não no site.
 - **1 (recomendo):** só no balcão. É liquidação de fim de dia de quem está na loja.

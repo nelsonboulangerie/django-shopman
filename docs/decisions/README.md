@@ -67,6 +67,7 @@ pegue o próximo livre e acrescente uma linha aqui.
 | [026](adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md) | Concierge de WhatsApp: a língua é do modelo, o dinheiro é do código |
 | [034](adr-034-legal-archive-cited-by-the-order.md) | O pedido cita a versão de Termos e Privacidade que valia, numa cópia permanente que não muda |
 | [035](adr-035-entrega-sem-cpf-sai-presencial.md) | Entrega sem CPF é aceita em todo canal, e a NFC-e sai presencial (consumidor não identificado) |
+| [036](adr-036-loja-online-paga-ao-pedir.md) | Loja online paga ao pedir, com prazo de aceite e estorno automático ("se os estornos ficarem constantes, reavaliar") |
 
 ## B.I. e operação continuada
 

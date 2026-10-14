@@ -142,6 +142,11 @@ def watch(order) -> None:
     intent = _authorized_card_intent(order)
     if intent is None:
         return
+    # Canal com prazo de aceite (loja online, ADR-036): a autorização é o
+    # pagamento chegando, e o prazo da loja começa aqui.
+    from shopman.shop.lifecycle import start_acceptance_deadline
+
+    start_acceptance_deadline(order)
     deadline = intent_expires_at(intent)
     if deadline is None:
         return

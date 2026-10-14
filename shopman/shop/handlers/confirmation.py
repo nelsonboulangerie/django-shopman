@@ -91,7 +91,7 @@ class ConfirmationTimeoutHandler:
             ensure_confirmable(order)
             _transition_if_still_new(order, Order.Status.ACCEPTED)
         elif action == "cancel":
-            if _transition_if_still_new(order, Order.Status.CANCELLED):
+            if _cancel_if_still_new(order):
                 logger.info(
                     "confirmation.timeout: auto-cancelled order %s (auto_cancel mode)",
                     order_ref,
@@ -119,6 +119,33 @@ def _transition_if_still_new(order, target) -> bool:
         ensure_confirmable(order)
     order.transition_status(target, actor="confirmation.timeout")
     return True
+
+
+#: Código de máquina do cancelamento por prazo de aceite vencido. O cliente lê o
+#: texto revisado da chave ``store_did_not_confirm`` (``services/cancel_reasons``).
+CONFIRMATION_TIMEOUT_REASON = "confirmation_timeout"
+
+
+@transaction.atomic
+def _cancel_if_still_new(order) -> bool:
+    """Ninguém aceitou a tempo: cancela pelo serviço único, que devolve o dinheiro.
+
+    O ``cancel`` grava o motivo antes da transição; o ``_on_cancelled`` anula a
+    autorização do cartão no Stripe (e grita se não conseguir, #1732), estorna o
+    Pix capturado (o cliente recebe ``payment_refunded``) e avisa o cancelamento
+    com o texto da chave do motivo. A checagem de ``new`` é na linha travada:
+    ``accepted → cancelled`` também é transição válida, e um aceite no último
+    segundo não pode ser desfeito pelo relógio.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.cancellation import cancel
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if order.status != Order.Status.NEW:
+        return False
+    return cancel(order, reason=CONFIRMATION_TIMEOUT_REASON, actor="confirmation.timeout")
 
 
 class StaleNewOrderAlertHandler:
@@ -158,14 +185,27 @@ class StaleNewOrderAlertHandler:
             # Operador já resolveu — nada a fazer.
             return
 
+        deadline = _parse_deadline(payload.get("deadline_at"))
+        if deadline:
+            # Prazo de aceite (``auto_cancel``): vencido, o pedido é cancelado e o
+            # que o cliente pagou volta para ele. O Gestor lê o relógio e a consequência.
+            clock = timezone.localtime(deadline).strftime("%H:%M")
+            message = (
+                f"O pedido {order.ref} espera aceite. Se ninguém aceitar até {clock}, ele é "
+                "cancelado sozinho e o que o cliente pagou é devolvido."
+            )
+        else:
+            message = (
+                f"O pedido {order.ref} espera aceite há tempo demais. Aceite ou recuse no quadro; "
+                "o cliente está esperando a resposta."
+            )
         try:
             from shopman.shop.adapters import alert as alert_adapter
 
             alert_adapter.create(
                 "stale_new_order",
                 "warning",
-                f"O pedido {order.ref} espera aceite há tempo demais. Aceite ou recuse no quadro; "
-                "o cliente está esperando a resposta.",
+                message,
                 order_ref=order.ref,
             )
         except Exception as exc:

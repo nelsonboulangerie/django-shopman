@@ -66,7 +66,20 @@ OPERATOR_CANCEL_REASONS: tuple[CancelReason, ...] = (
     ),
 )
 
-_BY_KEY = {reason.key: reason for reason in OPERATOR_CANCEL_REASONS}
+#: Motivos que só o sistema grava: não aparecem na lista do operador, mas o
+#: cliente lê o texto revisado deles como lê o de qualquer outro.
+AUTOMATIC_CANCEL_REASONS: tuple[CancelReason, ...] = (
+    # Loja online paga ao pedir (decisão do dono, 14/10/2026): o prazo de aceite
+    # venceu sem ninguém aceitar. O dinheiro volta no aviso próprio do estorno.
+    CancelReason(
+        key="store_did_not_confirm",
+        label="A loja não aceitou a tempo",
+        customer_text="Não conseguimos confirmar seu pedido dentro do prazo.",
+    ),
+)
+
+_BY_KEY = {reason.key: reason for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)}
+_OPERATOR_KEYS = frozenset(reason.key for reason in OPERATOR_CANCEL_REASONS)
 
 # Códigos de máquina dos cancelamentos automáticos → chave da lista.
 _MACHINE_REASON_KEYS = {
@@ -74,6 +87,7 @@ _MACHINE_REASON_KEYS = {
     "pix_timeout": "payment_not_confirmed",
     "card_timeout": "payment_not_confirmed",
     "customer_requested": "customer_request",
+    "confirmation_timeout": "store_did_not_confirm",
 }
 
 MISSING_REASON_MESSAGE = "Escolha o motivo do cancelamento."
@@ -89,7 +103,7 @@ def validation_message(key: str) -> str:
     key = str(key or "").strip()
     if not key:
         return MISSING_REASON_MESSAGE
-    if key not in _BY_KEY:
+    if key not in _OPERATOR_KEYS:
         return UNKNOWN_REASON_MESSAGE
     return ""
 
@@ -112,6 +126,7 @@ def customer_text(order_data: dict | None) -> str:
 
 
 __all__ = [
+    "AUTOMATIC_CANCEL_REASONS",
     "OPERATOR_CANCEL_REASONS",
     "OTHER",
     "CancelReason",
