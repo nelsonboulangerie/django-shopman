@@ -159,7 +159,7 @@ class OperatorAlert(models.Model):
         ("fiscal_payment_mismatch", "NFC-e barrada: pagamento abaixo do total"),
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
         ("fiscal_cancel_failed", "Cancelamento da NFC-e falhou"),
-        ("fiscal_return_note_due", "Nota de estorno a encaminhar ao contador"),
+        ("fiscal_return_note_due", "Nota de estorno para o contador"),
         # Venda por marketplace indo para a nota sem identificar quem intermediou
         # (Ajuste SINIEF 22/20). A nota sai VÁLIDA e fora da regra — defeito que
         # não reclama sozinho —, e o que falta é configuração, não retry.

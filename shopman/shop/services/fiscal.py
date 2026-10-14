@@ -924,18 +924,29 @@ RETURN_NOTE_ALERT_TYPE = "fiscal_return_note_due"
 #: por pendência aberta, para não abrir a mesma duas vezes.
 RETURN_NOTES_KEY = "nfce_return_notes"
 
-#: Por que o cancelamento não serve, na língua do aviso.
-_RETURN_NOTE_DOORS = {
-    "goods_dispatched": "a mercadoria já saiu da loja",
-    "partial_return": "a devolução é parcial e o resto da venda continua valendo",
+#: O que houve, na primeira frase do aviso.
+_RETURN_NOTE_FACTS = {
+    "window_closed": "Passou o prazo de cancelar a NFC-e.",
+    "goods_dispatched": "A mercadoria já saiu, e a NFC-e não pode mais ser cancelada.",
+    "partial_return": "Devolução de parte da venda: a NFC-e não pode ser cancelada.",
 }
 
+_MONTH_NAMES = (
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+)
 
-def _return_note_door(reason: str) -> str:
-    if reason in _RETURN_NOTE_DOORS:
-        return _RETURN_NOTE_DOORS[reason]
-    minutes = cancellation_window_minutes()
-    return f"o prazo de cancelamento ({minutes} minutos depois da autorização) já passou"
+
+def _return_note_deadline(order) -> str:
+    """Até quando: o fim do mês da venda, por extenso; passado ele, já."""
+    if not order.created_at:
+        return "Envie ao contador:"
+    sale = timezone.localtime(order.created_at)
+    today = timezone.localdate()
+    month = _MONTH_NAMES[sale.month - 1]
+    if (today.year, today.month) > (sale.year, sale.month):
+        return f"Envie ao contador agora (a venda é de {month}):"
+    return f"Envie ao contador até o fim de {month}:"
 
 
 def _qty_text(value) -> str:
@@ -956,10 +967,10 @@ def _return_note_lines(order, record: dict | None) -> tuple[list[str], int]:
         lines = []
         for item in record.get("items") or []:
             name = names.get(item.get("line_id")) or item.get("sku") or ""
-            lines.append(f"{_qty_text(item.get('qty'))} × {name} (R$ {format_money(int(item.get('refund_q') or 0))})")
+            lines.append(f"{_qty_text(item.get('qty'))} × {name}, R$ {format_money(int(item.get('refund_q') or 0))}")
         return lines, int(record.get("refund_total_q") or 0)
     lines = [
-        f"{_qty_text(item.qty)} × {item.name} (R$ {format_money(item.line_total_q)})"
+        f"{_qty_text(item.qty)} × {item.name}, R$ {format_money(item.line_total_q)}"
         for item in order_composition.effective_items(order)
     ]
     return lines, note_base_q(order)
@@ -1026,21 +1037,21 @@ def open_return_note(order, *, return_index: int | None = None) -> bool:
 
     order.data = data
     lines, amount_q = _return_note_lines(locked, record)
-    sale_month = timezone.localtime(locked.created_at).strftime("%m/%Y") if locked.created_at else ""
-    month = f" ({sale_month})" if sale_month else ""
     logger.warning("fiscal.return_note_due order=%s source=%s reason=%s", locked.ref, source, reason)
+    # Uma frase com o fato e o gesto; depois os dados, um por linha. O pedido
+    # não se repete: o aviso já o mostra no rodapé.
     create_operator_alert(
         type=RETURN_NOTE_ALERT_TYPE,
         severity="warning",
-        message=(
-            f"A NFC-e do pedido {locked.ref} não pode ser cancelada: {_return_note_door(reason)}. "
-            "O caminho é a nota de estorno, que o sistema ainda não emite. "
-            f"Encaminhe ao contador, de preferência dentro do mês da venda{month}: "
-            f"o pedido {locked.ref}; a chave da NFC-e {access_key}; "
-            f"os itens devolvidos: {', '.join(lines) or 'todos os do pedido'}; "
-            f"o valor de R$ {format_money(amount_q)}; "
-            f"e o motivo: {_return_note_reason_text(locked, record)}."
-        ),
+        message="\n".join((
+            f"{_RETURN_NOTE_FACTS.get(reason, _RETURN_NOTE_FACTS['window_closed'])} "
+            f"{_return_note_deadline(locked)}",
+            "Chave:",
+            access_key,
+            f"Devolvido: {' · '.join(lines) or 'todos os itens do pedido'}",
+            f"Total: R$ {format_money(amount_q)}",
+            f"Motivo: {_return_note_reason_text(locked, record)}",
+        )),
         order_ref=locked.ref,
         dedupe_key=f"{RETURN_NOTE_ALERT_TYPE}:{locked.ref}:{source}",
     )

@@ -343,6 +343,18 @@ export interface InboxAlertView {
 }
 
 /**
+ * O texto do aviso na caixa: a mensagem, o rodapé (hora e pedido) e "visto". A mensagem
+ * pode vir em linhas (a frase do que fazer e, embaixo, os dados um por linha, como a
+ * nota de estorno): aí o rodapé desce para uma linha própria, em vez de grudar no
+ * último dado. Quem desenha preserva as quebras (`whitespace-pre-line`).
+ */
+export function inboxAlertDescription(alert: Pick<InboxAlertView, "message" | "meta" | "seen">): string {
+  const footer = [alert.meta, alert.seen ? "visto" : ""].filter(Boolean).join(" · ");
+  if (!footer) return alert.message;
+  return `${alert.message}${alert.message.includes("\n") ? "\n" : " · "}${footer}`;
+}
+
+/**
  * Um alerta da operação escrito para a caixa de Avisos: a gravidade como tom (crítico e
  * erro são o vermelho de "bloqueado com motivo"; aviso, o âmbar), o lugar exato quando o
  * servidor o oferece, o gesto que resolve ali mesmo quando o servidor o oferece (P2-19:

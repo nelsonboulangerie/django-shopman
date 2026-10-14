@@ -122,18 +122,22 @@ def test_cancelled_past_the_window_opens_the_return_note_instead_of_cancelling(f
     alert = _return_note_alerts(order).get()
     assert alert.severity == "warning"
     assert alert.audience == "orders"
-    message = alert.message
-    assert "o prazo de cancelamento (30 minutos depois da autorização) já passou" in message
-    assert "nota de estorno" in message
-    assert "Encaminhe ao contador" in message
-    # O roteiro: pedido, chave, itens e valores, motivo.
-    assert f"o pedido {order.ref}" in message
-    assert ACCESS_KEY in message
-    assert "2 × Croissant (R$ 18,00)" in message
-    assert "1 × Baguete (R$ 9,00)" in message
-    assert "R$ 27,00" in message
-    assert "o motivo: O cliente pediu" in message
-    assert "—" not in message
+    from shopman.backstage.projections.alerts import readable_message
+
+    lines = readable_message(alert.message).split("\n")
+    month = fiscal._MONTH_NAMES[timezone.localtime(order.created_at).month - 1]
+    # Primeiro o fato e o gesto, numa frase; depois os dados, um por linha.
+    assert lines == [
+        f"Passou o prazo de cancelar a NFC-e. Envie ao contador até o fim de {month}:",
+        "Chave:",
+        ACCESS_KEY,
+        "Devolvido: 2 × Croissant, R$ 18,00 · 1 × Baguete, R$ 9,00",
+        "Total: R$ 27,00",
+        "Motivo: O cliente pediu",
+    ]
+    # O pedido está no rodapé do aviso; o corpo não o repete. Sem travessão.
+    assert order.ref not in readable_message(alert.message)
+    assert "—" not in alert.message
     order.refresh_from_db()
     [note] = order.data[fiscal.RETURN_NOTES_KEY]
     assert note["source"] == "order"
@@ -152,9 +156,9 @@ def test_returned_after_the_goods_left_never_tries_to_cancel(fiscal_backend_conf
 
     assert not _cancel_directives(order).exists()
     message = _return_note_alerts(order).get().message
-    assert "a mercadoria já saiu da loja" in message
+    assert message.startswith("A mercadoria já saiu, e a NFC-e não pode mais ser cancelada.")
     assert "prazo" not in message
-    assert "o motivo: Cliente recusou na porta" in message
+    assert "Motivo: Cliente recusou na porta" in message
     order.refresh_from_db()
     assert order.data[fiscal.RETURN_NOTES_KEY][0]["reason"] == "goods_dispatched"
 
@@ -188,6 +192,19 @@ def test_a_cancelled_note_opens_no_return_note(fiscal_backend_configured):
 
     assert fiscal.open_return_note(order) is False
     assert not _return_note_alerts(order).exists()
+
+
+def test_a_sale_from_a_closed_month_asks_for_now(fiscal_backend_configured):
+    """O mês da venda já fechou: "até o fim de setembro" seria um prazo vencido."""
+    order = _order(minutes_ago=45)
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(days=62))
+    order.refresh_from_db()
+
+    fiscal.cancel(order)
+
+    first_line = _return_note_alerts(order).get().message.split("\n")[0]
+    assert "Envie ao contador agora (a venda é de " in first_line
+    assert "até o fim" not in first_line
 
 
 # ── a fila que segurou o cancelamento além da janela ─────────────────────────
@@ -241,11 +258,11 @@ def test_partial_return_opens_the_return_note_for_the_returned_part(fiscal_backe
 
     assert not _cancel_directives(order).exists()
     message = _return_note_alerts(order).get().message
-    assert "a devolução é parcial e o resto da venda continua valendo" in message
-    assert "1 × Croissant (R$ 9,00)" in message
+    assert message.startswith("Devolução de parte da venda: a NFC-e não pode ser cancelada.")
+    assert "Devolvido: 1 × Croissant, R$ 9,00\n" in message
     assert "Baguete" not in message
-    assert "o valor de R$ 9,00" in message
-    assert "o motivo: Croissant queimado" in message
+    assert "Total: R$ 9,00" in message
+    assert "Motivo: Croissant queimado" in message
     order.refresh_from_db()
     assert order.data[fiscal.RETURN_NOTES_KEY][0]["source"] == "return:0"
 
@@ -265,7 +282,7 @@ def test_the_return_note_reaches_the_order_manager_with_open_and_seen(fiscal_bac
         alerts=rows, counts=alert_service.active_counts(scope="orders"),
     )
     [row] = [a for a in projection.alerts if a.type == fiscal.RETURN_NOTE_ALERT_TYPE]
-    assert row.subject == "Nota de estorno a encaminhar ao contador"
+    assert row.subject == "Nota de estorno para o contador"
     kinds = {action.kind: action for action in row.actions}
     assert kinds["open_alert_context"].href == f"/{order.ref}"
     assert kinds["open_alert_context"].label == "Abrir o pedido"
