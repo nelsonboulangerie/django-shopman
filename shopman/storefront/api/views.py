@@ -271,9 +271,22 @@ class CheckoutView(APIView):
                     )
 
         if fulfillment_type == "delivery" and delivery_time_slot and delivery_date:
-            # Aba antiga do checkout: slot de entrega de HOJE que já passou
-            # não vira pedido impossível para a operação.
-            slot_error = _delivery_slot_in_past_error(delivery_time_slot, delivery_date)
+            # A janela de entrega que o cliente escolheu tem de estar na grade do
+            # dia: a MESMA que a tela oferece e que a concierge confere (meia hora
+            # hoje, turno na encomenda). Recusa a janela que já passou (aba antiga
+            # do checkout) e a que a casa não oferece (o turno de retirada que o
+            # site gravava sozinho, um par de horas inventado).
+            from datetime import date as _date
+
+            from shopman.shop.services.fulfillment_window import delivery_window_error
+
+            try:
+                _delivery_day = _date.fromisoformat(delivery_date)
+            except ValueError:
+                _delivery_day = None
+            slot_error = (
+                delivery_window_error(_delivery_day, delivery_time_slot) if _delivery_day is not None else None
+            )
             if slot_error:
                 return Response(
                     {
@@ -634,31 +647,6 @@ def _closed_shop_hint() -> dict:
             or "Você pode encomendar para o próximo dia disponível."
         )
     return hint
-
-
-def _delivery_slot_in_past_error(slot: str, delivery_date: str) -> str | None:
-    """Slot "HH:MM-HH:MM" de HOJE cujo fim já passou → erro acionável."""
-    import re
-    from datetime import date as _date
-
-    match = re.match(r"^\s*(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\s*$", slot or "")
-    if not match:
-        return None  # formato livre (ex.: "manhã") — sem eixo de hora para validar
-    try:
-        if _date.fromisoformat(delivery_date) != timezone.localdate():
-            return None
-    except ValueError:
-        return None
-    start = (int(match.group(1)), int(match.group(2)))
-    end = (int(match.group(3)), int(match.group(4)))
-    if end <= start:
-        # Slot cruza a meia-noite (ex.: 22:00-02:00): o fim é amanhã, então
-        # nunca "já passou" hoje. Sem eixo confiável — não bloquear.
-        return None
-    now_local = timezone.localtime()
-    if (now_local.hour, now_local.minute) >= end:
-        return "Esse horário já passou. Escolha outro horário de entrega."
-    return None
 
 
 _STRUCTURED_ADDRESS_FIELDS = (

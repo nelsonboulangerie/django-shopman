@@ -904,6 +904,9 @@ export interface CheckoutProjection {
   has_delivery: boolean
   pickup_slots: PickupSlotProjection[]
   earliest_slot_ref: string | null
+  /** Janelas de entrega da data pedida: a grade da concierge, conferida no commit. */
+  delivery_windows: PickupSlotProjection[]
+  earliest_delivery_window_ref: string | null
   loyalty_balance_q: number
   loyalty_value_display: string | null
   max_preorder_days: number

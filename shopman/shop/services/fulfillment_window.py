@@ -274,6 +274,71 @@ def _local_today(*, now: datetime | None = None, shop=None) -> date:
     return timezone.localdate()
 
 
+def delivery_windows_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict]:
+    """A grade de ENTREGA que o cliente escolhe sozinho: a mesma no site e no WhatsApp.
+
+    Meia hora para hoje, turno canônico para encomenda (``_grid_for``). É a
+    ÚNICA fonte das janelas de entrega das superfícies de cliente: a loja
+    (``finalizar``) e a concierge leem daqui, e o servidor confere contra daqui
+    (``delivery_window_error``). Duas grades, uma em cada superfície, seriam o
+    cliente combinando "14:00 às 14:30" pelo WhatsApp e não achando o horário no
+    site, ou o contrário.
+
+    Lista vazia: não há entrega neste dia (fechado, feriado, ou o expediente de
+    hoje já não comporta a antecedência mínima).
+    """
+    return [
+        {"ref": str(slot.get("ref") or ""), "label": str(slot.get("label") or "").strip() or str(slot.get("ref") or "")}
+        for slot in _grid_for(day, now=now, shop=shop)
+        if slot.get("ref")
+    ]
+
+
+DELIVERY_WINDOW_PASSED = "Esse horário de entrega já não dá para hoje. Escolha um horário mais tarde ou outra data."
+DELIVERY_WINDOW_UNKNOWN = "Esse horário não está na lista de entrega desse dia. Escolha um dos horários da lista."
+
+
+def delivery_window_error(day: date, window_ref: str, *, now: datetime | None = None, shop=None) -> str | None:
+    """Erro em português de balcão quando a janela de entrega NÃO está na grade.
+
+    Vale para o que o CLIENTE escolhe sozinho (site e concierge). Diferente de
+    ``validate``, aqui o expediente fecha a porta: o cliente não tem a dona do
+    lado para combinar fora da grade, e uma janela que a casa não oferece é
+    promessa que ninguém assumiu.
+
+    - Janela em branco passa: "a combinar" (mesma regra de ``validate``).
+    - Janela de hoje que a grade já cortou (passou, ou cai dentro da antecedência
+      mínima) → ``DELIVERY_WINDOW_PASSED``.
+    - Qualquer outro ref fora da grade do dia (o "slot-09" de retirada num dia
+      de hoje, um par de horas inventado, um turno numa data sem expediente)
+      → ``DELIVERY_WINDOW_UNKNOWN``.
+
+    A prontidão dos itens NÃO é conferida aqui: ela é de ``validate``, no commit,
+    para toda superfície.
+    """
+    ref = str(window_ref or "").strip()
+    if not ref:
+        return None
+    if ref in {w["ref"] for w in delivery_windows_for(day, now=now, shop=shop)}:
+        return None
+    if day == _local_today(now=now, shop=shop):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        # As meias horas do dia INTEIRO: lidas a partir da véspera, o relógio não
+        # corta nada. Se o ref está nelas e não na grade de agora, foi o relógio
+        # que o tirou.
+        eve = datetime.combine(day - timedelta(days=1), time(12, 0))
+        if timezone.is_naive(eve):
+            eve = timezone.make_aware(eve)
+        from shopman.shop.services import business_calendar
+
+        if ref in {w.get("ref") for w in business_calendar.delivery_slots_for(day, now=eve, shop=shop)}:
+            return DELIVERY_WINDOW_PASSED
+    return DELIVERY_WINDOW_UNKNOWN
+
+
 #: Frase única para "não consegui apurar a prontidão". Não é "sem restrição".
 UNKNOWN_READINESS = "Não deu para conferir o preparo agora. Tente de novo."
 

@@ -166,6 +166,13 @@ class CheckoutProjection:
     prefill_tax_id_source: str = ""
     offer_save_tax_id: bool = False
 
+    # Janelas de ENTREGA da data pedida: a mesma grade da concierge
+    # (``fulfillment_window.delivery_windows_for``: meia hora hoje, turno na
+    # encomenda), anotadas com a prontidão do carrinho. O servidor confere a
+    # escolha contra esta grade no commit (decisão do dono, 14/10/2026).
+    delivery_windows: tuple[PickupSlotProjection, ...] = ()
+    earliest_delivery_window_ref: str | None = None
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Builder
@@ -226,10 +233,8 @@ def build_checkout(
     )
     policy = resolve_channel_policy(interaction.channel_ref)
     payment_methods = _payment_methods(channel_ref)
-    pickup_slots, earliest_slot_ref = _pickup_slots(
-        cart,
-        delivery_date=_delivery_date_from_context(request, delivery_date),
-    )
+    requested_date = _delivery_date_from_context(request, delivery_date)
+    pickup_slots, earliest_slot_ref = _pickup_slots(cart, delivery_date=requested_date)
     max_preorder_days, closed_dates, support_whatsapp_url = _shop_config()
     available_dates, closed_weekdays = checkout_projection.availability_dates(max_preorder_days)
 
@@ -239,6 +244,9 @@ def build_checkout(
     prefill = _delivery_tax_id_prefill(customer_info=customer_info, reduced=reduced_identity)
 
     fulfillment_options = policy.fulfillment_types
+    delivery_windows, earliest_delivery_window_ref = (
+        _delivery_windows(cart, delivery_date=requested_date) if "delivery" in fulfillment_options else ((), None)
+    )
     remembered_fulfillment = str(remembered_defaults.get("fulfillment_type") or "")
     default_fulfillment_type = (
         remembered_fulfillment
@@ -266,6 +274,8 @@ def build_checkout(
     enabled_slot_refs = {slot.ref for slot in pickup_slots if slot.enabled}
     if remembered_slot in enabled_slot_refs:
         earliest_slot_ref = remembered_slot
+    if remembered_slot in {window.ref for window in delivery_windows if window.enabled}:
+        earliest_delivery_window_ref = remembered_slot
 
     return CheckoutProjection(
         copy=_checkout_copy(),
@@ -305,6 +315,8 @@ def build_checkout(
         card_provider=_card_provider(),
         stripe_test_cards=_stripe_test_cards(),
         default_ddd=get_default_ddd(),
+        delivery_windows=delivery_windows,
+        earliest_delivery_window_ref=earliest_delivery_window_ref,
         prefill_tax_id=prefill.tax_id,
         prefill_tax_id_source=prefill.source,
         offer_save_tax_id=not reduced_identity and prefill.source != FROM_DOCUMENT,
@@ -587,6 +599,49 @@ def _pickup_slots(
     except Exception:
         logger.debug("checkout_projection_slots_failed", exc_info=True)
         return (), None
+
+
+def _delivery_windows(
+    cart: CartProjection,
+    *,
+    delivery_date: str = "",
+) -> tuple[tuple[PickupSlotProjection, ...], str | None]:
+    """As janelas de entrega da data pedida (hoje, sem data), anotadas para o carrinho.
+
+    ``annotate`` lê a mesma grade de ``fulfillment_window.delivery_windows_for``,
+    a que a concierge oferece e que o commit confere; a anotação (janela apagada com o
+    motivo, "X sai às 12:00") é a mesma da retirada.
+    """
+    from datetime import date as _date
+
+    from django.utils import timezone
+
+    from shopman.shop.services import fulfillment_window
+
+    try:
+        day = _date.fromisoformat(delivery_date) if delivery_date else timezone.localdate()
+    except ValueError:
+        day = timezone.localdate()
+    try:
+        context = fulfillment_window.annotate(day, [item.sku for item in cart.items])
+    except Exception:
+        # Sem grade não há janela a escolher, e o servidor recusaria qualquer
+        # uma: a tela precisa saber que a leitura falhou, não só ver a lista vazia.
+        logger.warning("checkout_projection_delivery_windows_failed", exc_info=True)
+        return (), None
+    earliest = context.get("earliest_ref") or None
+    windows = tuple(
+        PickupSlotProjection(
+            ref=str(window.get("ref") or ""),
+            label=str(window.get("label") or ""),
+            starts_at=str(window.get("starts_at") or ""),
+            enabled=bool(window.get("enabled", True)),
+            reason=str(window.get("reason") or ""),
+            is_earliest=str(window.get("ref") or "") == earliest,
+        )
+        for window in context.get("windows") or []
+    )
+    return windows, earliest
 
 
 def _delivery_date_from_context(request: HttpRequest, delivery_date: str | None) -> str:
