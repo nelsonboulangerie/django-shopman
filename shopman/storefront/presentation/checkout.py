@@ -143,6 +143,9 @@ class CheckoutProjection:
     # Fulfillment contextual hints shown below the pickup/delivery chips
     pickup_hint: str = ""
     delivery_hint: str = ""
+    # Economia do grupo, pronta para a tela ("Hoje você economizou R$ X por ser
+    # [grupo]"). Vazia quando não houve desconto do grupo.
+    group_savings_message: str = ""
 
     # Provedor de cartão (Stripe/Efí) p/ o storefront dar previsibilidade no
     # checkout ("pagamento seguro via X"). Vazio quando não há provedor real
@@ -312,6 +315,7 @@ def build_checkout(
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",
         delivery_hint=_delivery_hint(cart),
+        group_savings_message=cart.group_savings_message,
         card_provider=_card_provider(),
         stripe_test_cards=_stripe_test_cards(),
         default_ddd=get_default_ddd(),

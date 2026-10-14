@@ -144,3 +144,26 @@ def test_the_store_warns_before_the_price_changes(client, equipe_discount):
     # Cliente comum não vê aviso nenhum — a dica é sobre o benefício dele.
     other = client.__class__()
     assert other.get("/api/v1/storefront/checkout/").json()["checkout"]["delivery_hint"] == ""
+
+
+def test_checkout_tells_the_group_savings(client, equipe_discount):
+    """Com economia > 0, o checkout diz quanto e por qual grupo."""
+    _seed()
+    staff = _staff_customer()
+    J.authenticate(client, staff)
+    J.set_cart_qty(client, SKU, 1)
+
+    checkout = client.get("/api/v1/storefront/checkout/").json()["checkout"]
+
+    # 1000 − 30% = 700; economia de R$ 3,00.
+    assert checkout["group_savings_message"] == "Hoje você economizou R$ 3,00 por ser da Equipe"
+
+
+def test_checkout_has_no_savings_message_without_the_group(client):
+    """Cliente comum não recebe mensagem de economia de grupo."""
+    _seed()
+    J.set_cart_qty(client, SKU, 1)
+
+    checkout = client.get("/api/v1/storefront/checkout/").json()["checkout"]
+
+    assert checkout["group_savings_message"] == ""

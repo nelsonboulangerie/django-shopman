@@ -219,6 +219,8 @@ class CartProjection:
     actions: tuple[Action, ...]
     revision: int = 0
     draft_context: str = ""
+    # Economia do grupo (texto por grupo, Admin). Vazia quando não houve.
+    group_savings_message: str = ""
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -315,6 +317,7 @@ def build_cart(
         free_delivery_progress=free_delivery,
         upsell=upsell,
         actions=actions,
+        group_savings_message=data.group_savings_message,
     )
 
 

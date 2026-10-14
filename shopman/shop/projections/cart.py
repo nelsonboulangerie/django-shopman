@@ -194,6 +194,9 @@ class CartProjection:
     can_checkout: bool
     revision: int = 0
     checkout_block_reason: str = ""  # "" | "empty" | "unavailable" | "below_minimum"
+    # Mensagem de economia do grupo (texto por grupo, editável no Admin). Vazia
+    # quando não houve desconto de grupo.
+    group_savings_message: str = ""
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -357,6 +360,7 @@ def build_cart(
         upsell=upsell,
         can_checkout=can_checkout,
         checkout_block_reason=block_reason,
+        group_savings_message=str((discount_data.get("savings") or {}).get("message") or ""),
     )
 
 

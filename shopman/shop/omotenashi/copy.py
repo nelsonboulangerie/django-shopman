@@ -172,6 +172,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CHECKOUT_LOYALTY_SAVINGS_PREFIX": {
         WILDCARD: {WILDCARD: CopyEntry(message="Seus pontos cobrem até")},
     },
+    # Mensagem de economia do grupo comercial. O texto por grupo é
+    # PriceTier.metadata.savings_message; este é o padrão. {amount} e {group}
+    # são interpolados pelo modifier (decisão do dono, 14/10/2026).
+    "CHECKOUT_GROUP_SAVINGS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Hoje você economizou {amount} por ser {group}")},
+    },
     "CHECKOUT_CONFIRM_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar pedido")},
     },
