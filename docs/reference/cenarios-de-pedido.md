@@ -145,8 +145,8 @@ commit por `expected_total_q` (`packages/orderman/.../services/commit.py:355-362
 balcão sem comanda** (§8, P0-1: resolvido em #1722, o fechamento agora recusa com `total_changed`).
 
 Taxa de entrega: zona `exclude` → zona `override` → faixa de distância → padrão; frete grátis
-por limiar ou promoção (`modifiers.py:1096-1261`); vira a linha `__DELIVERY_FEE__`, que é o que
-se cobra. Pedido mínimo e zona checados no commit (`shopman/shop/rules/validation.py:241-308`).
+por limiar ou promoção (`modifiers.resolve_delivery_fee_waiver`, a mesma função na loja e no
+PDV); vira a linha `__DELIVERY_FEE__`, que é o que se cobra. Pedido mínimo e zona checados no commit (`shopman/shop/rules/validation.py:241-308`).
 A cotação da TaOn é custo interno da casa (`services/courier.py:227`), não entra no preço.
 
 ### 1.5 Avisos ao cliente
@@ -323,7 +323,7 @@ o topo).
 | Fora da área de entrega | a revisão diz "não bloqueia", o fechamento recusa, e taxa digitada à mão não resolve | `pos.py:898-910`; `validation.py:270` | ATRITO (P1-6), em PR #1723 |
 | Pix de encomenda | vence no prazo do Pix (10 a 60 min) e cancela a encomenda, avisando o cliente | `payment_efi.py:340-345`; `handlers/payment_timeout.py` | ATRITO (P2) |
 | Entrega no balcão não imprime a DANFE sozinha | reimprimir à mão | `usePosPreorderActions` | ATRITO (P2) |
-| Promoção de frete grátis | ignorada no PDV | `pos.py:3634` | ATRITO (P2) |
+| Promoção de frete grátis | vale no PDV pelo mesmo motor da loja (canal, valor mínimo, grupo de clientes); a revisão diz "Grátis" e o nome da promoção | `pos._delivery_fee_waiver`; `modifiers.resolve_delivery_fee_waiver` | OK (P2-21), em PR #1775 |
 | Corrida não atendida (N) ou cancelada (C) | alerta, custódia volta, "Chamar de novo" | `courier.py:587-660`, #1696, #1708 | OK |
 | Cancelar com corrida aberta | corrida cancelada antes da coleta; depois, alerta crítico | `courier.py:501` | OK |
 | Editar a encomenda | comanda virtual; diferença a mais vira saldo, a menos volta no mesmo meio; com nota autorizada, "Cancelar e refazer" | `order_edit.py:1-40`; `ops:3012-3058` | OK |
@@ -606,7 +606,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 | P2-18 | Produção sem SSE | `useProductionBoard.ts:3` | Assinar `backstage-production` | S |
 | P2-19 | Gestor sem "Imprimir Via Pedido"; alerta sem ação direta | `order_queue.py`; `projections/alerts.py:254` | Botão de via; Aceitar no alerta de pedido parado | S |
 | P2-20 | `docs/guides/lifecycle.md` fala em `CONFIRMED` | — | Trocar por `accepted` | XS |
-| P2-21 | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Cupom: trocado por desconto automático por grupo de clientes (dono, 14/10/2026; `test_pos_desconto_por_grupo.py`). Frete grátis no motor do PDV segue aberto | M |
+| P2-21 · **frete grátis: em PR #1775** | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Cupom: trocado por desconto automático por grupo de clientes (dono, 14/10/2026; `test_pos_desconto_por_grupo.py`). Frete grátis: a promoção de frete vale no PDV pelo mesmo motor da loja (`test_pos_frete_gratis_promocao.py`) | M |
 | P2-22 | Teto do desconto manual soma a taxa de entrega | `pos.py:3247`, `:3471` | Subtotal só de mercadoria (pendência de uma linha já registrada) | XS |
 | P2-23 | Conta na casa sem limite nem cobrança | `services/house_account.py` | Limite por cliente e lista "a cobrar" | M |
 | P2-24 | E-mail de alerta crítico com trava por tipo | `critical_alerts.py:29-37` | Trava por tipo + pedido | XS |

@@ -960,6 +960,18 @@ export interface POSScheduleResponse {
   readiness_unavailable: boolean;
 }
 
+/** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção
+ *  `promotion_name`; `threshold`: compras a partir de `threshold_q`.
+ *  `base_fee_q` é a taxa sem a renúncia. */
+export interface POSDeliveryFeeWaiverProjection {
+  reason: "promotion" | "threshold";
+  promotion_name: string;
+  threshold_q: number;
+  base_fee_q: number;
+  threshold_display?: string;
+  base_fee_display?: string;
+}
+
 export interface POSSaleReviewProjection {
   intent_version: string;
   tab_ref: string;
@@ -1002,6 +1014,9 @@ export interface POSSaleReviewProjection {
    * "default" · "manual" (exceção do operador) · "blocked" (fora da área). */
   delivery_fee_source: string;
   delivery_distance_km: number | null;
+  /** Frete grátis (ou abatido) pela loja, e por qual regra; `null` sem renúncia.
+   *  Opcional: a revisão sem conexão não sabe de promoção. */
+  delivery_fee_waiver?: POSDeliveryFeeWaiverProjection | null;
   /** A data que o servidor usou — em branco no pedido, é hoje pelo relógio da loja. */
   delivery_date: string;
   /** Janelas de meia hora do expediente daquele dia. Vazio = não há janela. */

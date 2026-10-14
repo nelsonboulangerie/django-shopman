@@ -53,6 +53,7 @@ import {
 } from "~/presentation/payment";
 import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
 import { lineQtyLabel, lineUnits } from "~/presentation/weighed";
+import { deliveryFeeWaiverShort } from "~/presentation/deliveryFeeWaiver";
 import {
   lineDiscountBadge,
   lineListTotalDisplay,
@@ -1849,11 +1850,13 @@ defineExpose({
             <!-- O BLOCO DE TOTAIS só existe quando há o que EXPLICAR: sem
                  desconto e sem taxa, o total é a soma das linhas e o herói já o
                  diz em 96px — repeti-lo aqui é uma linha que não informa nada.
+                 Frete grátis pela loja conta como o que explicar (P2-21): a
+                 entrega sem taxa diz "Grátis" e por qual regra.
                  Quando aparece, FECHA a própria conta (termina no Total): um
                  bloco que abre a aritmética e não a fecha obriga o operador a
                  somar de cabeça com o cliente perguntando. -->
             <dl
-              v-if="review && (review.discount_q > 0 || review.delivery_fee_q > 0)"
+              v-if="review && (review.discount_q > 0 || review.delivery_fee_q > 0 || review.delivery_fee_waiver)"
               class="grid gap-1 border-t px-3 py-2 text-sm"
             >
               <!-- CADA DESCONTO NA SUA LINHA, com o escopo no rótulo.
@@ -1898,9 +1901,15 @@ defineExpose({
                   <dt>Descontos</dt>
                   <dd class="tabular-nums">−{{ review.discount_display }}</dd>
                 </div>
-                <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">
+                <div v-if="review.delivery_fee_q > 0 || review.delivery_fee_waiver" class="flex flex-wrap items-baseline justify-between gap-x-2" data-pos-delivery-fee-row>
                   <dt class="text-muted-foreground">Taxa de entrega</dt>
-                  <dd class="tabular-nums">{{ review.delivery_fee_display }}</dd>
+                  <dd class="tabular-nums">{{ review.delivery_fee_q > 0 ? review.delivery_fee_display : "Grátis" }}</dd>
+                  <!-- Por que a taxa saiu grátis (ou menor): a regra da loja que
+                       renunciou, pelo nome. O operador responde ao cliente sem
+                       abrir o Admin (P2-21). -->
+                  <dd v-if="review.delivery_fee_waiver" class="basis-full text-xs text-primary">
+                    {{ deliveryFeeWaiverShort(review.delivery_fee_waiver) }}
+                  </dd>
                 </div>
                 <div class="flex items-baseline justify-between gap-2 border-t pt-1 font-semibold">
                   <dt>Total</dt>
@@ -2083,6 +2092,7 @@ defineExpose({
     :delivery-fee-override-input="deliveryFeeOverrideInput"
     :delivery-fee-q="deliveryFeeQ"
     :delivery-fee-source="deliveryFeeSource"
+    :delivery-fee-waiver="review?.delivery_fee_waiver ?? null"
     :delivery-fee-status="review ? 'resolved' : reviewFailed ? 'failed' : 'calculating'"
     :delivery-distance-km="deliveryDistanceKm"
     :order-notes="orderNotes"

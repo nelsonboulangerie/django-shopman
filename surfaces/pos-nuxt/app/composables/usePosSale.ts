@@ -848,6 +848,7 @@ export function usePosSale(deps: PosSaleDeps) {
   );
   const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
   const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
+  const deliveryFeeWaiver = computed(() => review.value?.delivery_fee_waiver ?? null);
   // A review (que resolve a taxa) só roda no pagamento. Fora dele, a tela de
   // Recebimento diz isso, em vez de mostrar R$ 0,00 como se fosse a taxa.
   const deliveryFeeStatus = computed<"resolved" | "calculating" | "failed" | "at_payment">(() => {
@@ -4024,6 +4025,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // entrega — o que o servidor respondeu, para a tela PERGUNTAR em vez de pedir
     deliveryFeeQ,
     deliveryFeeSource,
+    deliveryFeeWaiver,
     deliveryFeeStatus,
     deliveryDistanceKm,
     deliverySlots,

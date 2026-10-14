@@ -117,6 +117,11 @@ class PosSaleReview:
     #: "" · "zone" · "distance" · "default" · "manual" · "blocked"
     delivery_fee_source: str = ""
     delivery_distance_km: float | None = None
+    #: Frete grátis (ou abatido) pela loja: ``{reason, promotion_name,
+    #: threshold_q, base_fee_q}``, ou ``None``. ``reason`` é ``"promotion"`` ou
+    #: ``"threshold"``; ``base_fee_q`` é a taxa sem a renúncia. O operador vê que o
+    #: frete saiu grátis e por quê (P2-21).
+    delivery_fee_waiver: dict | None = None
     #: A data que o servidor usou — em branco no pedido, é HOJE (o relógio da
     #: loja, não o do dispositivo do balcão).
     delivery_date: str = ""
@@ -363,6 +368,7 @@ def close_sale(
         else:
             # As linhas não somam o total cobrado: o navegador não decide preço.
             offline_at = None
+    _stamp_pricing_channel(payload, channel)
     _refuse_priceless_items(payload, channel=channel)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
     # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
@@ -895,6 +901,7 @@ def review_sale(
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     require_receipt_identity_choice(payload)
     channel, config = _channel_and_config(channel_ref)
+    _stamp_pricing_channel(payload, channel)
     weighed_sale.apply_to_payload(payload, channel=channel)
     _refuse_priceless_items(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
@@ -1124,6 +1131,7 @@ def review_sale(
         warnings=tuple(warnings),
         delivery_fee_source=delivery.source,
         delivery_distance_km=delivery.distance_km,
+        delivery_fee_waiver=_waiver_review(delivery),
         delivery_date=delivery_day.isoformat() if delivery_day else "",
         delivery_slots=delivery_slots,
         delivery_earliest_slot=delivery_earliest_slot,
@@ -1168,6 +1176,18 @@ def _review_priced_lines(payload: dict, priced: dict[int, dict]) -> tuple[dict, 
             "meta": {"_list_q": list_q, **({"_disc": disc} if disc else {})},
         })
     return tuple(lines)
+
+
+def _waiver_review(delivery: DeliveryFeeResolution) -> dict | None:
+    waiver = delivery.waiver
+    if waiver is None or delivery.source in ("manual", "blocked"):
+        return None
+    return {
+        "reason": waiver.reason,
+        "promotion_name": waiver.promotion_name,
+        "threshold_q": waiver.threshold_q,
+        "base_fee_q": waiver.base_fee_q,
+    }
 
 
 def _schedule_review_context(payload: dict):
@@ -1781,6 +1801,7 @@ def save_pos_tab(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
+    _stamp_pricing_channel(payload, channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     from shopman.shop.services import pos_edit_session
 
@@ -3898,6 +3919,9 @@ class DeliveryFeeResolution:
     #: O ENDEREÇO está fora da área, mesmo quando a taxa é a combinada à mão.
     #: ``blocked`` diz "não há taxa da loja"; isto diz "a loja não entrega ali".
     out_of_area: bool = False
+    #: A renúncia de frete que a loja aplicou (``modifiers.DeliveryFeeWaiver``),
+    #: ou ``None``: frete grátis por valor de compra ou por promoção, e qual.
+    waiver: object | None = None
 
 
 #: Onde a resolução fica guardada DENTRO do payload. O payload atravessa a
@@ -3906,6 +3930,17 @@ class DeliveryFeeResolution:
 #: leitura. A técnica é escrever no próprio payload em vez de devolver um
 #: segundo dado para todo chamador carregar adiante.
 _DELIVERY_FEE_RESOLUTION_KEY = "_resolved_delivery_fee"
+
+#: O canal da venda, carimbado no payload na entrada (revisão, fechamento,
+#: comanda). A promoção de frete grátis tem escopo por canal, e o payload é tudo
+#: o que a resolução da taxa recebe. Sem o carimbo, promoção nenhuma entra:
+#: canal vazio não filtra, e a promoção só da loja online valeria no balcão.
+_PRICING_CHANNEL_KEY = "_pricing_channel_ref"
+
+
+def _stamp_pricing_channel(payload: dict, channel: Channel) -> None:
+    payload[_PRICING_CHANNEL_KEY] = channel.ref
+    payload.pop(_DELIVERY_FEE_RESOLUTION_KEY, None)
 
 
 def _resolve_delivery_fee(payload: dict) -> DeliveryFeeResolution:
@@ -3937,6 +3972,7 @@ def _resolve_delivery_fee(payload: dict) -> DeliveryFeeResolution:
 
 def resolve_delivery_fee(
     *, address_structured: dict | None, address_text: str = "", merchandise_q: int, override_q=None,
+    channel_ref: str = "", customer_ref: str = "",
 ) -> DeliveryFeeResolution:
     """A taxa de entrega pelo MESMO motor da venda, para quem não tem um carrinho do PDV.
 
@@ -3944,13 +3980,17 @@ def resolve_delivery_fee(
     entrega paga a taxa que a venda cobraria para aquele endereço — zona,
     faixa de distância e frete grátis acima de um valor —, ou a exceção que o
     operador assume (``override_q``). ``merchandise_q`` é o valor dos produtos,
-    que decide o frete grátis.
+    que decide o frete grátis. ``channel_ref`` e ``customer_ref`` são o canal e o
+    cliente do pedido, para a promoção de frete grátis (escopo por canal e por
+    grupo de clientes); sem canal, só o limiar da loja entra.
     """
     payload: dict = {
         "fulfillment_type": "delivery",
         "delivery_address_structured": dict(address_structured or {}),
         "delivery_address": str(address_text or ""),
         "items": [{"sku": "_merchandise", "qty": 1, "unit_price_q": max(0, int(merchandise_q or 0))}],
+        _PRICING_CHANNEL_KEY: str(channel_ref or ""),
+        "customer_ref": str(customer_ref or ""),
     }
     if override_q not in (None, ""):
         payload["delivery_fee_override_q"] = override_q
@@ -3996,8 +4036,11 @@ def _compute_engine_delivery_fee(payload: dict) -> DeliveryFeeResolution:
     source = "zone" if postal_code or neighborhood else "distance"
     if distance_km is None and not (postal_code or neighborhood):
         source = "default"
-    fee_q = _waive_delivery_fee_if_due(base_fee_q, _payload_subtotal_q(payload) - _payload_discount_q(payload))
-    return DeliveryFeeResolution(fee_q=fee_q, source=source, distance_km=distance_km)
+    waiver = _delivery_fee_waiver(base_fee_q, payload)
+    return DeliveryFeeResolution(
+        fee_q=waiver.fee_q, source=source, distance_km=distance_km,
+        waiver=waiver if waiver.reason else None,
+    )
 
 
 def _delivery_address_text(payload: dict, address: dict) -> str:
@@ -4008,22 +4051,36 @@ def _delivery_address_text(payload: dict, address: dict) -> str:
     ).strip()
 
 
-def _waive_delivery_fee_if_due(base_fee_q: int, merchandise_q: int) -> int:
-    """Frete grátis acima de um valor — o limiar permanente da loja.
+def _delivery_fee_waiver(base_fee_q: int, payload: dict):
+    """Frete grátis pelo MESMO motor da loja: o limiar e a promoção (P2-21).
 
-    A promoção `free_delivery` (que depende de cupom e de canal) fica de fora de
-    propósito: ela mora na sessão, é reavaliada no kernel, e trazê-la para cá
-    criaria a segunda opinião que este trabalho está justamente removendo. O que
-    entra aqui é a política que não depende de contexto nenhum.
+    A promoção `free_delivery` ficava de fora ("mora na sessão, é reavaliada no
+    kernel"), e a linha de taxa que o PDV põe no pedido é manual, então o kernel
+    nunca a reavaliava: a loja dava o frete e o balcão cobrava. Agora a renúncia
+    é ``modifiers.resolve_delivery_fee_waiver``, a função que o
+    ``DeliveryFeeModifier`` chama, com o canal da venda (escopo da promoção) e o
+    cliente identificado (grupo de clientes, aniversário).
+
+    A base é a mercadoria líquida do desconto: a mesma soma que o limiar sempre
+    mediu no balcão.
     """
-    if base_fee_q <= 0:
-        return base_fee_q
-    from shopman.shop.projections.cart import shop_rule_q
+    from shopman.shop.modifiers import resolve_delivery_fee_waiver
 
-    free_above_q = shop_rule_q("free_delivery_above_q")
-    if free_above_q and merchandise_q >= free_above_q:
-        return 0
-    return base_fee_q
+    return resolve_delivery_fee_waiver(
+        base_fee_q,
+        merchandise_q=_payload_subtotal_q(payload) - _payload_discount_q(payload),
+        channel_ref=str(payload.get(_PRICING_CHANNEL_KEY) or ""),
+        customer_ref=_payload_pricing_customer_ref(payload),
+    )
+
+
+def _payload_pricing_customer_ref(payload: dict) -> str:
+    """O cliente da venda, para a elegibilidade da promoção: o ref, ou o telefone."""
+    ref = str(payload.get("customer_ref") or "").strip()
+    if ref:
+        return ref
+    customer = resolve_customer(str(payload.get("customer_phone") or "").strip())
+    return str(getattr(customer, "ref", "") or "")
 
 
 def _payload_delivery_fee_q(payload: dict) -> int:

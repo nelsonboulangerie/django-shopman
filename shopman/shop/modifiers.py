@@ -1345,17 +1345,12 @@ class DeliveryFeeModifier:
 
     @staticmethod
     def _effective_fee_q(base_fee_q: int, session: Any, *, channel: Any = None, now: datetime | None = None) -> int:
-        """A taxa efetiva: a renúncia que renuncia MAIS, entre duas políticas.
-
-        Duas políticas, **um dono**. O limiar permanente (`free_delivery_above_q`, de
-        `Shop.defaults`) e a promoção `free_delivery` ativa. Isto não é segundo dono da
-        taxa — é um dono lendo duas políticas, e vence a que renuncia mais, na mesma
-        convenção best-wins que o projeto já usa para desconto.
+        """A taxa efetiva da sessão: ``resolve_delivery_fee_waiver`` sobre o carrinho.
 
         Entrega grátis é renúncia AQUI, nunca linha de desconto: a linha
         `__DELIVERY_FEE__` é blindada contra desconto em dez pontos deste arquivo, e é
         essa invariante que mantém a taxa com um dono. E o resultado sai certo de
-        graça — taxa zerada REMOVE a linha em vez de gerar uma de R$ 0,00.
+        graça: taxa zerada REMOVE a linha em vez de gerar uma de R$ 0,00.
         """
         if base_fee_q <= 0:
             return base_fee_q
@@ -1370,95 +1365,146 @@ class DeliveryFeeModifier:
         # Cupom promocional NÃO conta pros thresholds de frete grátis: aplicar uma
         # cortesia não pode tirar a elegibilidade do cliente. Mesma base que a
         # projeção do carrinho (``threshold_base_q``, cart.py) e o gate de mínimo
-        # de entrega (validation.py) — senão a tela diz "frete grátis" e o modifier
+        # de entrega (validation.py), senão a tela diz "frete grátis" e o modifier
         # cobra a taxa. O preço por lote continua contando (é venda real).
         coupon_discount_q = int(((session.pricing or {}).get("coupon") or {}).get("discount_q") or 0)
-        threshold_base_q = subtotal_q + coupon_discount_q
+        data = session.data or {}
+        # O cupom já está resolvido em `session.data` quando a taxa é calculada:
+        # este modifier roda em order=70, cinquenta slots depois do desconto (20).
+        return resolve_delivery_fee_waiver(
+            base_fee_q,
+            merchandise_q=subtotal_q + coupon_discount_q,
+            channel_ref=getattr(channel, "ref", "") or "",
+            customer_ref=(data.get("customer") or {}).get("ref") or "",
+            coupon_code=data.get("coupon_code") or "",
+            now=now,
+        ).fee_q
 
-        candidates = [base_fee_q]
 
-        # Política 1: o limiar permanente da loja.
-        from shopman.shop.projections.cart import shop_rule_q
+@dataclass(frozen=True)
+class DeliveryFeeWaiver:
+    """A taxa que sobra depois da renúncia, e QUAL política renunciou.
 
-        free_above_q = shop_rule_q("free_delivery_above_q")
-        if free_above_q and threshold_base_q >= free_above_q:
-            candidates.append(0)
+    ``reason``: ``""`` (nada renunciou) · ``"threshold"`` (o limiar permanente
+    da loja, ``threshold_q``) · ``"promotion"`` (a promoção ``promotion_name``).
+    """
 
-        # Política 2: promoção de entrega grátis (automática ou por cupom). O
-        # encanamento já existia: este modifier roda em order=70, cinquenta slots
-        # depois do desconto (order=20), então o cupom já está resolvido em
-        # `session.data` quando a taxa é calculada.
-        waived = DeliveryFeeModifier._promotional_fee_q(
-            base_fee_q, session, channel=channel, subtotal_q=threshold_base_q, now=now
+    fee_q: int
+    base_fee_q: int = 0
+    reason: str = ""
+    promotion_name: str = ""
+    threshold_q: int = 0
+
+
+def resolve_delivery_fee_waiver(
+    base_fee_q: int,
+    *,
+    merchandise_q: int,
+    channel_ref: str,
+    customer_ref: str = "",
+    coupon_code: str = "",
+    now: datetime | None = None,
+) -> DeliveryFeeWaiver:
+    """A renúncia de frete que renuncia MAIS, entre duas políticas. Um motor, todo canal.
+
+    Duas políticas, **um dono**. O limiar permanente (`free_delivery_above_q`, de
+    `Shop.defaults`) e a promoção `free_delivery` ativa NO CANAL (automática ou por
+    cupom). Vence a que renuncia mais, na convenção best-wins do desconto. É a
+    mesma função para a sessão da loja (``DeliveryFeeModifier``) e para a revisão
+    do PDV (``pos._compute_engine_delivery_fee``): o PDV não tem sessão até fechar,
+    e uma cópia da regra lá seria a segunda opinião sobre o frete (P2-21).
+
+    ``channel_ref`` é obrigatório de propósito: vazio, ``get_active_promotions``
+    não filtra, e a promoção só da loja online valeria em todo canal.
+    """
+    if base_fee_q <= 0:
+        return DeliveryFeeWaiver(fee_q=base_fee_q, base_fee_q=base_fee_q)
+
+    best = DeliveryFeeWaiver(fee_q=base_fee_q, base_fee_q=base_fee_q)
+
+    # Política 1: o limiar permanente da loja.
+    from shopman.shop.projections.cart import shop_rule_q
+
+    free_above_q = shop_rule_q("free_delivery_above_q")
+    if free_above_q and merchandise_q >= free_above_q:
+        best = DeliveryFeeWaiver(fee_q=0, base_fee_q=base_fee_q, reason="threshold", threshold_q=free_above_q)
+
+    # Política 2: promoção de entrega grátis. No empate, a promoção nomeia a
+    # renúncia: é ela que o operador procura quando o frete sai grátis.
+    if channel_ref:
+        promoted = _best_free_delivery_promotion(
+            base_fee_q, channel_ref=channel_ref, merchandise_q=merchandise_q,
+            customer_ref=customer_ref, coupon_code=coupon_code, now=now,
         )
-        if waived is not None:
-            candidates.append(waived)
-
-        return min(candidates)
-
-    @staticmethod
-    def _promotional_fee_q(base_fee_q: int, session: Any, *, channel, subtotal_q: int, now: datetime | None = None):
-        """A taxa que sobra depois da promoção de entrega grátis, ou ``None``.
-
-        ``value`` é o TETO da renúncia: `0` isenta o frete todo, `> 0` isenta até
-        aquele valor e o cliente paga a diferença — "entrega grátis até R$ 8,00".
-        """
-        from django.utils import timezone as tz
-
-        from shopman.shop.models import Promotion
-        from shopman.shop.services import promotions as promotion_service
-
-        channel_ref = getattr(channel, "ref", "") or ""
-        now = now or tz.now()
-
-        found = [
-            promo
-            for promo in promotion_service.get_active_promotions(now, channel_ref=channel_ref)
-            if promo.type == Promotion.FREE_DELIVERY
-        ]
-        coupon_code = (session.data or {}).get("coupon_code")
-        if coupon_code:
-            promo = promotion_service.get_coupon_promotion(
-                coupon_code, now, channel_ref=channel_ref
+        if promoted is not None and promoted[0] <= best.fee_q:
+            remaining, promo = promoted
+            best = DeliveryFeeWaiver(
+                fee_q=remaining, base_fee_q=base_fee_q, reason="promotion",
+                promotion_name=str(getattr(promo, "name", "") or ""),
             )
-            if promo is not None and promo.type == Promotion.FREE_DELIVERY:
-                found.append(promo)
+    return best
 
-        best = None
-        for promo in found:
-            if not DeliveryFeeModifier._promotion_covers_order(promo, session, subtotal_q):
-                continue
-            cap_q = int(promo.value or 0)
-            remaining = 0 if cap_q <= 0 else max(0, base_fee_q - cap_q)
-            best = remaining if best is None else min(best, remaining)
-        return best
 
-    @staticmethod
-    def _promotion_covers_order(promo, session: Any, subtotal_q: int) -> bool:
-        """Os eixos de elegibilidade que fazem sentido para uma renúncia de frete.
+def _best_free_delivery_promotion(
+    base_fee_q: int, *, channel_ref: str, merchandise_q: int, customer_ref: str, coupon_code: str,
+    now: datetime | None,
+):
+    """``(taxa que sobra, promoção)`` da promoção de entrega grátis que mais renuncia, ou ``None``.
 
-        `skus`/`collections` NÃO entram: renúncia de frete é do pedido, não do item —
-        "frete grátis se levar croissant" seria outra feature, e inventá-la aqui é
-        inventar pedido que não houve.
-        """
-        from shopman.shop.services.cart import customer_eligible_for_promotion
+    ``value`` é o TETO da renúncia: `0` isenta o frete todo, `> 0` isenta até
+    aquele valor e o cliente paga a diferença ("entrega grátis até R$ 8,00").
+    """
+    from django.utils import timezone as tz
 
-        if int(promo.min_order_q or 0) > subtotal_q:
+    from shopman.shop.models import Promotion
+    from shopman.shop.services import promotions as promotion_service
+
+    now = now or tz.now()
+    found = [
+        promo
+        for promo in promotion_service.get_active_promotions(now, channel_ref=channel_ref)
+        if promo.type == Promotion.FREE_DELIVERY
+    ]
+    if coupon_code:
+        promo = promotion_service.get_coupon_promotion(coupon_code, now, channel_ref=channel_ref)
+        if promo is not None and promo.type == Promotion.FREE_DELIVERY:
+            found.append(promo)
+
+    best = None
+    for promo in found:
+        if not _free_delivery_covers_order(promo, customer_ref=customer_ref, merchandise_q=merchandise_q):
+            continue
+        cap_q = int(promo.value or 0)
+        remaining = 0 if cap_q <= 0 else max(0, base_fee_q - cap_q)
+        if best is None or remaining < best[0]:
+            best = (remaining, promo)
+    return best
+
+
+def _free_delivery_covers_order(promo, *, customer_ref: str, merchandise_q: int) -> bool:
+    """Os eixos de elegibilidade que fazem sentido para uma renúncia de frete.
+
+    `skus`/`collections` NÃO entram: renúncia de frete é do pedido, não do item.
+    "Frete grátis se levar croissant" seria outra feature, e inventá-la aqui é
+    inventar pedido que não houve.
+    """
+    from shopman.shop.services.cart import customer_eligible_for_promotion
+
+    if int(promo.min_order_q or 0) > merchandise_q:
+        return False
+
+    types = [str(t).strip() for t in (promo.fulfillment_types or []) if str(t).strip()]
+    if types and "delivery" not in types:
+        return False
+
+    if promo.customer_segments or promo.birthday_only:
+        from shopman.guestman.models import Customer
+
+        customer = Customer.objects.filter(ref=customer_ref).first() if customer_ref else None
+        if not customer_eligible_for_promotion(customer, promo):
             return False
 
-        types = [str(t).strip() for t in (promo.fulfillment_types or []) if str(t).strip()]
-        if types and "delivery" not in types:
-            return False
-
-        if promo.customer_segments or promo.birthday_only:
-            from shopman.guestman.models import Customer
-
-            ref = ((session.data or {}).get("customer") or {}).get("ref") or ""
-            customer = Customer.objects.filter(ref=ref).first() if ref else None
-            if not customer_eligible_for_promotion(customer, promo):
-                return False
-
-        return True
+    return True
 
 
 class LoyaltyRedeemModifier:
