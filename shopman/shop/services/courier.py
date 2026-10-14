@@ -177,6 +177,48 @@ def door_charge_note(order) -> str:
     return " · ".join(parts)
 
 
+def ride_note(body: dict) -> str:
+    """A observação que um corpo de ``/abrirSolicitacao`` leva ao entregador."""
+    stops = body.get("paradas") if isinstance(body, dict) else None
+    stop = stops[0] if isinstance(stops, list) and stops and isinstance(stops[0], dict) else {}
+    return str(stop.get("observacao_parada") or "")
+
+
+def _charge_part(note: str) -> str:
+    """A observação sem o "Pedido A47 · " do começo: só a cobrança."""
+    head, sep, rest = note.partition(" · ")
+    return rest if sep and head.startswith("Pedido ") else note
+
+
+def charge_outdated(order) -> dict | None:
+    """A corrida aberta leva uma cobrança que o pedido já não diz.
+
+    A TaOn não altera a observação de uma corrida aberta (a API só abre,
+    consulta e cancela). Editar o pedido depois da chamada (itens, troco, forma
+    de pagar, pagamento que entrou) muda o que o entregador deve cobrar, e a
+    observação que ele lê no celular fica para trás. Compara a observação que
+    foi (``courier.door_charge_note``, gravada na abertura) com a de agora.
+
+    ``{"sent", "current", "collected"}`` (só a cobrança, sem o número do
+    pedido), ou ``None`` quando bate, quando não há corrida ativa, ou quando a
+    corrida não guardou o que levou.
+    """
+    if not has_active_ride(order):
+        return None
+    block = get_block(order)
+    sent = str(block.get("door_charge_note") or "")
+    if not sent:
+        return None
+    current = door_charge_note(order)
+    if sent == current:
+        return None
+    return {
+        "sent": _charge_part(sent),
+        "current": _charge_part(current),
+        "collected": block.get("status") not in CANCELLABLE_STATUSES,
+    }
+
+
 # ── Payload Machine ─────────────────────────────────────────────────
 
 
@@ -593,7 +635,7 @@ def _archive_current_ride(block: dict) -> None:
     )
     block["attempts"] = attempts
     for key in ("id_mch", "status", "status_at", "dispatched_at", "finished_at", "driver",
-                "tracking_url", "confirmation_code", "final_value_q", "progress", "sync"):
+                "tracking_url", "confirmation_code", "final_value_q", "progress", "sync", "door_charge_note"):
         block.pop(key, None)
 
 

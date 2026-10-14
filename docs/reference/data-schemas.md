@@ -410,6 +410,7 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2},  // custo interno (centavos)
   "final_value_q": null,           // finished.final_value convertido p/ centavos
   "door_charge": {"cash_q": 5800, "change_for_q": 10000, "card_q": 0},  // cobrança na porta registrada na coleta (E); a mesma régua da observação da corrida (`courier.door_charge`)
+  "door_charge_note": "Pedido A47 · Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00",  // a observação que FOI à TaOn na abertura (recibo `dispatch_attempt.note`); a TaOn não altera corrida aberta, e `courier.charge_outdated` compara com a de agora para o aviso "O pedido mudou depois da chamada" (Gestor e PDV); sai no arquivamento
   "last_event_at": "iso",
   "last_source": "webhook",        // "webhook" | "poll" | "dispatch" | "operator:<nome>"
   "status_at": {"D": "iso", "A": "iso", "S": "iso", "E": "iso"},  // 1ª vez de cada letra (D na abertura); o B.I. mede daqui a chegada do entregador
@@ -2702,7 +2703,7 @@ cancelada, encolheu); o KDS o mostra como qualquer cancelamento, com "Recebi o c
 
 `Directive.payload.dispatch_attempt` é escrito pelo CourierDispatchHandler: `state`
 (`started`, `unknown`, `not_applied`, `accepted`, `inert`), `started_at`, `updated_at`,
-`fingerprint` do payload exato e, quando recebido, `courier_ref`. Não duplica endereço/
+`fingerprint` do payload exato, `note` (a observação da parada que foi à TaOn, adotada em `courier.door_charge_note`) e, quando recebido, `courier_ref`. Não duplica endereço/
 telefone. A tentativa started é persistida antes do POST; accepted com referência é
 persistido antes da adoção local. Retry de accepted só adota o fato; started/unknown
 não repete POST sem consulta confiável homologada. Sem essa consulta, alerta e detalhe do

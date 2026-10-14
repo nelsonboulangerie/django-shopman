@@ -989,3 +989,72 @@ def test_ensaio_a_seco_despacho_status_e_cancelamento(shop):
     order.refresh_from_db()
     assert courier_mock.rides()[ride]["status"] == "C"
     assert not courier.has_active_ride(order)
+
+
+# ── Edição depois da chamada (P2-28) ────────────────────────────────
+
+
+def _cod_order(ref="CR-EDIT") -> Order:
+    order = _delivery_order(ref=ref, status=Order.Status.PREPARING, payment={
+        "method": "cash", "collection": "on_delivery", "change_for_q": 10000})
+    courier.request_dispatch(order, actor="test")
+    _run_dispatch(order)
+    return order
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_keeps_the_observation_it_carried(shop):
+    """A corrida guarda a observação que foi à TaOn: é com ela que o entregador cobra."""
+    order = _cod_order()
+    block = courier.get_block(order)
+    sent = courier_mock.rides()[block["id_mch"]]["payload"]["paradas"][0]["observacao_parada"]
+    assert block["door_charge_note"] == sent
+    assert "troco para R$ 100,00" in sent
+    assert courier.charge_outdated(order) is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_editing_the_charge_after_the_call_flags_the_ride(shop):
+    """Troco ou forma de pagar mudou com a corrida aberta: a TaOn não altera a
+    observação, e a tela precisa dizer que o entregador vai cobrar o antigo."""
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _cod_order()
+    merge_order_data(order, {"payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order) == {
+        "sent": "Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00",
+        "current": "Cobrar R$ 50,00 em dinheiro · sem troco",
+        "collected": False,
+    }
+
+    merge_order_data(order, {"payment": {"method": "debit", "collection": "on_delivery"}})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order)["current"] == "Cobrar R$ 50,00 no cartão (maquininha)"
+
+    # Coletou: cancelar já não serve, a tela pede o telefone.
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert courier.charge_outdated(order)["collected"] is True
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_new_call_after_cancel_carries_the_new_charge(shop):
+    """Cancelar e chamar de novo: a corrida nova leva a cobrança de agora."""
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _cod_order()
+    merge_order_data(order, {"payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}})
+    order.refresh_from_db()
+    CourierCancelHandler().handle(message=courier.cancel_ride(order, actor="maria"), ctx={})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order) is None
+    assert "door_charge_note" not in courier.get_block(order)
+
+    Directive.objects.filter(topic=COURIER_DISPATCH).update(status=Directive.Status.DONE)
+    CourierDispatchHandler().handle(message=courier.redispatch(order, actor="operator:maria"), ctx={})
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert block["door_charge_note"].endswith("Cobrar R$ 50,00 em dinheiro · sem troco")
+    assert courier.charge_outdated(order) is None

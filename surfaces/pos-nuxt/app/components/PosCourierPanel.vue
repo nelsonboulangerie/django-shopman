@@ -17,6 +17,7 @@
 // (a frase do painel, `GESTOR_ONLY_COURIER_LINE`).
 import type { OrderDetailAction } from "../../../operator-kit/app/types/orderDetail";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
+import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 import {
   courierBadgeColor as badgeColor,
   courierCallLabel,
@@ -54,6 +55,10 @@ const staleDismissedFor = ref("");
 const showStale = computed(
   () => Boolean(progress.value.stale) && staleDismissedFor.value !== (props.courier.sync_since ?? ""),
 );
+
+// O pedido mudou depois da chamada (editar a encomenda é daqui): a corrida leva a
+// cobrança antiga, e cancelar para chamar de novo é no Gestor (P2-28).
+const chargeNotice = computed(() => courierChargeNotice(props.courier.charge_outdated, { cancelHere: false }));
 
 // ── Chamar: confirmação inline (a pergunta e a custódia) ──
 const confirming = ref(false);
@@ -166,6 +171,17 @@ async function callAgain() {
         title="Falha ao abrir a corrida"
         :description="courier.error.message"
         data-pos-courier-error
+      />
+
+      <NuxtAlert
+        v-if="chargeNotice"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-receipt-text"
+        :title="chargeNotice.title"
+        :description="chargeNotice.description"
+        role="status"
+        data-pos-courier-charge-outdated
       />
 
       <!-- Quem vem buscar, e o código que ele confere. -->

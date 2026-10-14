@@ -6,6 +6,7 @@
 
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
 import type { KeyedReason } from "../../../operator-kit/app/types/reason";
+import type { CourierChargeOutdated } from "../../../operator-kit/app/presentation/courierCharge";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -170,6 +171,8 @@ export interface PreorderCourier {
   can_dispatch_again?: boolean;
   /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
   custody?: { change_out_suggested_q: number; needs_machine: boolean; recorded: boolean };
+  /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
+  charge_outdated?: CourierChargeOutdated | null;
 }
 
 /** Uma maquininha da casa (`card_machine:<ref>`), livre ou na rua com um pedido. */

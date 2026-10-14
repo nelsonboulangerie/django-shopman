@@ -1284,7 +1284,7 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import can_quote, latest_cancellation, unresolved_dispatch
+        from shopman.shop.services.courier import can_quote, charge_outdated, latest_cancellation, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
         cancellation = latest_cancellation(order) if active else None
@@ -1339,6 +1339,9 @@ def _courier_block(order: Order) -> dict | None:
             # O que a chamada pergunta: troco da gaveta e maquininha da casa
             # que vão com o entregador da TaOn (``partner_custody_asks``).
             "custody": operator_orders.partner_custody_asks(order),
+            # O pedido mudou depois da chamada e a observação da corrida (o que
+            # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
+            "charge_outdated": charge_outdated(order),
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
