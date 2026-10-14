@@ -323,7 +323,7 @@ o topo).
 | Fora da área de entrega | a revisão diz "não bloqueia", o fechamento recusa, e taxa digitada à mão não resolve | `pos.py:898-910`; `validation.py:270` | ATRITO (P1-6), em PR #1723 |
 | Pix de encomenda | vence no prazo do Pix (10 a 60 min) e cancela a encomenda, avisando o cliente | `payment_efi.py:340-345`; `handlers/payment_timeout.py` | ATRITO (P2) |
 | Entrega no balcão não imprime a DANFE sozinha | reimprimir à mão | `usePosPreorderActions` | ATRITO (P2) |
-| Promoção de frete grátis | vale no PDV pelo mesmo motor da loja (canal, valor mínimo, grupo de clientes); a revisão diz "Grátis" e o nome da promoção | `pos._delivery_fee_waiver`; `modifiers.resolve_delivery_fee_waiver` | OK (P2-21) |
+| Promoção de frete grátis | vale no PDV pelo mesmo motor da loja (canal, valor mínimo, grupo de clientes); a revisão diz "Grátis" e o nome da promoção | `pos._delivery_fee_waiver`; `modifiers.resolve_delivery_fee_waiver` | OK (P2-21), em PR #1775 |
 | Corrida não atendida (N) ou cancelada (C) | alerta, custódia volta, "Chamar de novo" | `courier.py:587-660`, #1696, #1708 | OK |
 | Cancelar com corrida aberta | corrida cancelada antes da coleta; depois, alerta crítico | `courier.py:501` | OK |
 | Editar a encomenda | comanda virtual; diferença a mais vira saldo, a menos volta no mesmo meio; com nota autorizada, "Cancelar e refazer" | `order_edit.py:1-40`; `ops:3012-3058` | OK |
