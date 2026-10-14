@@ -76,6 +76,27 @@ AUTOMATIC_CANCEL_REASONS: tuple[CancelReason, ...] = (
         label="A loja não aceitou a tempo",
         customer_text="Não conseguimos confirmar seu pedido dentro do prazo.",
     ),
+    # O prazo do pagamento digital venceu sem pagamento (``payment.timeout``). É o
+    # ÚNICO aviso que o cliente recebe nesse caso (P1-9, 14/10/2026): diz o que
+    # aconteceu com o dinheiro (nada foi cobrado) e o que fazer se ainda quiser.
+    # O "nada foi cobrado" é sempre verdade aqui: o handler só cancela depois de o
+    # gateway responder "não pago".
+    CancelReason(
+        key="pix_expired",
+        label="O Pix venceu",
+        customer_text=(
+            "O Pix venceu e nada foi cobrado. "
+            "Se ainda quiser, é só fazer um novo pedido."
+        ),
+    ),
+    CancelReason(
+        key="payment_deadline_passed",
+        label="O prazo do pagamento acabou",
+        customer_text=(
+            "O prazo para pagar acabou e nada foi cobrado. "
+            "Se ainda quiser, é só fazer um novo pedido."
+        ),
+    ),
 )
 
 _BY_KEY = {reason.key: reason for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)}
@@ -83,9 +104,9 @@ _OPERATOR_KEYS = frozenset(reason.key for reason in OPERATOR_CANCEL_REASONS)
 
 # Códigos de máquina dos cancelamentos automáticos → chave da lista.
 _MACHINE_REASON_KEYS = {
-    "payment_timeout": "payment_not_confirmed",
-    "pix_timeout": "payment_not_confirmed",
-    "card_timeout": "payment_not_confirmed",
+    "payment_timeout": "payment_deadline_passed",
+    "pix_timeout": "pix_expired",
+    "card_timeout": "payment_deadline_passed",
     "customer_requested": "customer_request",
     "confirmation_timeout": "store_did_not_confirm",
 }
@@ -120,6 +141,11 @@ def reason_key_of(order_data: dict | None) -> str:
     return reason.key if reason else reason_key_for(data.get("cancellation_reason"))
 
 
+def payment_deadline_reason_key(method: str) -> str:
+    """A chave do prazo de pagamento vencido: o Pix tem frase própria."""
+    return "pix_expired" if str(method or "").strip().lower() == "pix" else "payment_deadline_passed"
+
+
 def customer_text(order_data: dict | None) -> str:
     """O texto que o cliente lê sobre o motivo do cancelamento deste pedido."""
     return _BY_KEY[reason_key_of(order_data)].customer_text
@@ -132,6 +158,7 @@ __all__ = [
     "CancelReason",
     "cancel_reason",
     "customer_text",
+    "payment_deadline_reason_key",
     "reason_key_for",
     "reason_key_of",
     "validation_message",

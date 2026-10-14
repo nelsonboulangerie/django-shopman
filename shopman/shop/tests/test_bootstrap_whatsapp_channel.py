@@ -1,4 +1,4 @@
-"""``bootstrap_whatsapp_channel``: liga canal e vitrine no banco vivo, sem reseed."""
+"""``bootstrap_whatsapp_channel``: liga canal e vitrine espelhada no banco vivo, sem reseed."""
 
 from __future__ import annotations
 
@@ -38,13 +38,14 @@ def test_cria_canal_e_espelha_a_vitrine_da_loja(web_listing):
     assert channel.config["payment"]["timing"] == "at_commit"
     assert channel.config["payment"]["method"] == ["pix", "card"]
     assert channel.config["notifications"]["backend"] == "manychat"
+    assert channel.config["pricing"] == {"listing_from": "web"}
 
     listing = Listing.objects.get(ref="whatsapp")
     items = {i.product.sku: i for i in ListingItem.objects.filter(listing=listing).select_related("product")}
     assert set(items) == {"PAO", "BOLO"}
     assert items["PAO"].price_q == 550 and items["PAO"].is_published is True
     assert items["BOLO"].price_q == 4500 and items["BOLO"].is_published is False and items["BOLO"].is_sellable is False
-    assert "criado" in out and "2 item(ns)" in out
+    assert "criado" in out and "2 novo(s)" in out
 
 
 def test_segunda_rodada_nao_muda_nada(web_listing):
@@ -53,10 +54,10 @@ def test_segunda_rodada_nao_muda_nada(web_listing):
     out = _run()
     after = list(ListingItem.objects.filter(listing__ref="whatsapp").values_list("id", "price_q"))
     assert before == after
-    assert "nada a fazer" in out and "nada a copiar" in out
+    assert "nada a fazer" in out and "nada a alinhar" in out
 
 
-def test_nao_sobrescreve_edicao_do_admin_e_copia_so_o_que_falta(web_listing):
+def test_nao_sobrescreve_edicao_do_admin_no_canal_e_alinha_a_vitrine(web_listing):
     Channel.objects.create(
         ref="whatsapp", name="Zap", is_active=False,
         config={"payment": {"timing": "post_commit", "timeout_minutes": 30}, "confirmation": {"mode": "manual"}},
@@ -74,9 +75,34 @@ def test_nao_sobrescreve_edicao_do_admin_e_copia_so_o_que_falta(web_listing):
     assert channel.config["payment"] == {"timing": "post_commit", "timeout_minutes": 30, "method": ["pix", "card"]}
     assert channel.config["confirmation"] == {"mode": "manual"}
     assert channel.config["notifications"] == {"backend": "manychat"}
+    assert channel.config["pricing"] == {"listing_from": "web"}
 
+    # A vitrine espelha: o preço que só o WhatsApp tinha vira o do site.
     items = {i.product.sku: i.price_q for i in ListingItem.objects.filter(listing=whatsapp).select_related("product")}
-    assert items == {"PAO": 999, "BOLO": 4500}
+    assert items == {"PAO": 550, "BOLO": 4500}
+
+
+def test_depois_do_bootstrap_o_site_chega_ao_whatsapp_sem_rodar_nada(web_listing):
+    _run()
+    item = ListingItem.objects.get(listing=web_listing, product__sku="PAO")
+    item.price_q = 620
+    item.save()
+
+    assert ListingItem.objects.get(listing__ref="whatsapp", product__sku="PAO").price_q == 620
+
+
+def test_ponteiro_vazio_no_canal_mantem_vitrine_propria(web_listing):
+    Channel.objects.create(
+        ref="whatsapp", name="WhatsApp", is_active=True, config={"pricing": {"listing_from": ""}},
+    )
+    whatsapp = Listing.objects.create(ref="whatsapp", name="WhatsApp")
+    ListingItem.objects.create(listing=whatsapp, product=Product.objects.get(sku="PAO"), price_q=999)
+
+    out = _run()
+
+    assert Channel.objects.get(ref="whatsapp").config["pricing"] == {"listing_from": ""}
+    assert list(ListingItem.objects.filter(listing=whatsapp).values_list("price_q", flat=True)) == [999]
+    assert "própria" in out
 
 
 def test_dry_run_nao_grava(web_listing):

@@ -247,7 +247,8 @@ O que o `expires_at` liga (a máquina já existia; faltava o campo):
    a mesma nota de rodapé;
 2. `_schedule_payment_timeout` agenda a Directive `payment.timeout` com `available_at=expires_at`;
 3. `PaymentTimeoutHandler` re-agenda se chamado cedo, **pergunta ao gateway** antes de cancelar e só
-   cancela com resposta "não pago" — aí libera o estoque e envia `payment_expired`;
+   cancela com resposta "não pago" — aí libera o estoque e o cliente recebe **um** aviso, o `order_cancelled`
+   com a frase do prazo vencido (`cancel_reasons`: `pix_expired` ou `payment_deadline_passed`);
 4. `reconcile_payments` re-arma o timeout de intent vencido cuja directive se perdeu;
 5. a reconciliação diária acusa `expired_payment_link` (warning) para o que escapar.
 

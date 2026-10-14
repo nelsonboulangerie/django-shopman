@@ -318,6 +318,12 @@ class ChannelConfig:
         # valor até 2%"; padrão 2,5%, decidido por ele no mesmo dia). Aceita decimal;
         # 0 desliga. O desconto entra como cupom de uso único,
         # pelo mesmo caminho do cupom do site (``storefront/concierge/discount.py``).
+        listing_from: str = ""
+        # Ref do canal cuja VITRINE este canal espelha: mesmos itens, mesmo preço,
+        # mesmas flags, sempre (``services/listing_mirror.py``). Vazio = vitrine
+        # própria. Lido CRU do ``Channel.config`` (sem a cascata da loja): é
+        # decisão de um canal, nunca default da casa. O WhatsApp aponta para a
+        # loja online (P1-14).
 
     # ── 7. Editing ──
 

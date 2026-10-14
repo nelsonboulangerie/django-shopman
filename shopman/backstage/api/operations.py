@@ -564,6 +564,16 @@ def _cash_shift_required_response() -> Response:
     )
 
 
+def _delivery_fee_waiver_payload(waiver: dict | None) -> dict | None:
+    if not waiver:
+        return None
+    return {
+        **waiver,
+        "threshold_display": f"R$ {format_money(int(waiver.get('threshold_q') or 0))}",
+        "base_fee_display": f"R$ {format_money(int(waiver.get('base_fee_q') or 0))}",
+    }
+
+
 def _pos_sale_review_payload(review) -> dict:
     return {
         "intent_version": review.intent_version,
@@ -604,6 +614,9 @@ def _pos_sale_review_payload(review) -> dict:
         # os horários vêm do expediente do dia. A tela pergunta; não inventa.
         "delivery_fee_source": review.delivery_fee_source,
         "delivery_distance_km": review.delivery_distance_km,
+        # Frete grátis (ou abatido) pela loja e por qual regra: a promoção pelo
+        # nome, ou o valor mínimo da compra. A tela diz isso ao operador.
+        "delivery_fee_waiver": _delivery_fee_waiver_payload(review.delivery_fee_waiver),
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,

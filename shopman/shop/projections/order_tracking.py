@@ -974,13 +974,14 @@ def _build_promise(
     # ── 1. TERMINAL — o pedido acabou; nada mais importa ────────────
     if payment_expired:
         # Prazo do Pix vencido e pedido cancelado: expiração é mais específica
-        # que "cancelado" genérico, então vem antes.
+        # que "cancelado" genérico, então vem antes. O aviso que o cliente recebe
+        # é UM só, o ``order_cancelled`` com a frase do prazo vencido (P1-9).
         return promise(
             state="payment_expired",
             tone="danger",
             deadline_kind="payment",
             requires_active_notification=True,
-            notification_topic="payment_expired",
+            notification_topic="order_cancelled",
         )
     terminal_tone = {
         "delivered": "success",
@@ -1006,7 +1007,7 @@ def _build_promise(
             tone="danger",
             deadline_kind="payment",
             requires_active_notification=True,
-            notification_topic="payment_expired",
+            notification_topic="order_cancelled",
         )
 
     # Daqui para frente: status ∈ {new, accepted, preparing, ready, dispatched}.

@@ -537,6 +537,15 @@ class NFCeCancelHandler:
         if order.data.get("nfce_cancelled"):
             return
 
+        # A fila pode ter segurado o pedido além da janela (worker parado,
+        # retry): fora dela, tentar só colhe a recusa da SEFAZ. Vira a
+        # pendência da nota de estorno, como no ``fiscal.cancel``.
+        from shopman.shop.services import fiscal
+
+        if fiscal.cancellation_path(order)["path"] == fiscal.RETURN_NOTE:
+            fiscal.open_return_note(order)
+            return
+
         result = self.backend.cancel(reference=order_ref, reason=reason)
 
         if result.success:

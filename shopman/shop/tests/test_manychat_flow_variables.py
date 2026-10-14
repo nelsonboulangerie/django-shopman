@@ -402,7 +402,7 @@ def with_order_flow(db):
     """Flows dos três links pessoais, cada um com seu contrato mínimo."""
     from shopman.shop.models import NotificationTemplate
 
-    for event in ("order_accepted", "payment_requested", "payment_expired"):
+    for event in ("order_accepted", "payment_requested", "waitlist_released"):
         NotificationTemplate.objects.create(
             event=event, subject="x", body="y",
             whatsapp_flow_ns=f"content20260101120000_{event}",
@@ -448,7 +448,7 @@ def test_order_buttons_use_the_safe_raw_ref_never_personal_access_links(
     calls.clear()
     assert mc.send(
         "+5543981234567",
-        "payment_expired",
+        "waitlist_released",
         {
             "order_ref": "NB-1042",
             "customer_name": "Cliente",

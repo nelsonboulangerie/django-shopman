@@ -335,18 +335,22 @@ def resolve_payment_timeout_if_due(order) -> bool:
 
     payment_service.cancel(order, reason="payment_timeout")
 
-    from shopman.shop.services import notification
+    from shopman.shop.services import cancel_reasons
     from shopman.shop.services.cancellation import cancel
 
+    # Um aviso só ao cliente: o ``order_cancelled`` do lifecycle, com a frase do
+    # prazo vencido (mesmo caminho de ``handlers/payment_timeout``).
     cancelled = cancel(
         order,
         reason="payment_timeout",
         actor="payment.timeout",
-        extra_data={"payment_timeout_at": timezone.now().isoformat()},
+        extra_data={
+            "payment_timeout_at": timezone.now().isoformat(),
+            "cancellation_reason_key": cancel_reasons.payment_deadline_reason_key(method),
+        },
         expected_unpaid_intent_ref=str(payment.get("intent_ref") or ""),
     )
     if cancelled:
-        notification.send(order, "payment_expired")
         order.refresh_from_db()
     return cancelled
 

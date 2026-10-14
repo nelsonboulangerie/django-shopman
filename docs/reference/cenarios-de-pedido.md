@@ -11,7 +11,7 @@ dito, por execução (pytest). Linha de código envelhece: quando o número não
 nome da função.
 
 **Rodada final do estado (14/10/2026):** cada marca da §8 foi conferida em `origin/main`
-(`7cbc718b1`) contra o PR mergeado que ela cita. As linhas das seções 1 a 7 seguem descrevendo o
+(`2131aec35`) contra o PR mergeado que ela cita. As linhas das seções 1 a 7 seguem descrevendo o
 achado de 13/10; a marca no fim da linha diz o que já mudou.
 
 **Legenda:** **OK** funciona e é liso · **ATRITO** funciona, mas cobra esforço, atenção ou
@@ -126,8 +126,9 @@ decidida, E013). **O iFood (`external`) não caía em nenhum dos quatro** (§8, 
 
 Sem CPF na entrega, a nota sai presencial (`indPres=1`, taxa da casa em `vOutro`,
 `fiscal.py:503-528`). Cancelar nota só em 30 min e com a mercadoria na casa
-(`cancellation_path`, `fiscal.py:194`); fora disso o caminho legal é nota de estorno, que o
-sistema não emite (§8, P1-12, não delegado).
+(`cancellation_path`); fora disso o caminho legal é nota de estorno, que o sistema ainda não
+emite: o cancelamento nem é tentado e abre a pendência "nota de estorno" no Gestor, com o que
+juntar para o contador (`fiscal.open_return_note`; §8, P1-12, resolvido #1774).
 
 ### 1.4 Pagamento
 
@@ -149,8 +150,8 @@ commit por `expected_total_q` (`packages/orderman/.../services/commit.py:355-362
 balcão sem comanda** (§8, P0-1: resolvido em #1722, o fechamento agora recusa com `total_changed`).
 
 Taxa de entrega: zona `exclude` → zona `override` → faixa de distância → padrão; frete grátis
-por limiar ou promoção (`modifiers.py:1096-1261`); vira a linha `__DELIVERY_FEE__`, que é o que
-se cobra. Pedido mínimo e zona checados no commit (`shopman/shop/rules/validation.py:241-308`).
+por limiar ou promoção (`modifiers.resolve_delivery_fee_waiver`, a mesma função na loja e no
+PDV); vira a linha `__DELIVERY_FEE__`, que é o que se cobra. Pedido mínimo e zona checados no commit (`shopman/shop/rules/validation.py:241-308`).
 A cotação da TaOn é custo interno da casa (`services/courier.py:227`), não entra no preço.
 
 ### 1.5 Avisos ao cliente
@@ -171,7 +172,7 @@ Eventos (`notification.send`), cadeia por canal na §1.1. Textos em
 | `order_dispatched` | saiu, com link do entregador (#1690) | OK; modelo Meta com rastreio espera medir o link da TaOn |
 | `order_delivered` | entregue | OK |
 | `order_cancelled` | cancelado | OK; o motivo vem da lista e o texto ao cliente é revisado (§8, P1-10: resolvido #1730) |
-| `payment_expired` | Pix venceu | ATRITO: chega junto com `order_cancelled` (dois avisos) |
+| ~~`payment_expired`~~ | Pix venceu | OK desde #1773: evento aposentado; sai um aviso só, o `order_cancelled` com a frase do prazo ("O Pix venceu e nada foi cobrado…"; era ATRITO: dois avisos; §8, P1-9) |
 | `payment_refunded` | estorno | OK desde #1720 (era LACUNA: texto existia, ninguém enviava; §8, P1-9) |
 | `order_returned` | devolução | OK desde #1720 (era LACUNA: sem texto; §8, P1-9) |
 | `order_rescheduled`, `preorder_reminder`, `order_updated` | encomenda reagendada, véspera, editada | OK (templates de encomenda esperam a revisão do dono) |
@@ -327,7 +328,7 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 | Fora da área de entrega | a revisão diz "não bloqueia", o fechamento recusa, e taxa digitada à mão não resolve | `pos.py:898-910`; `validation.py:270` | ATRITO (P1-6), resolvido #1723 |
 | Pix de encomenda | vence no prazo do Pix (10 a 60 min) e cancela a encomenda, avisando o cliente | `payment_efi.py:340-345`; `handlers/payment_timeout.py` | ATRITO (P2-26), resolvido #1747 |
 | Entrega no balcão não imprime a DANFE sozinha | reimprimir à mão | `usePosPreorderActions` | ATRITO (P2-27), resolvido #1750 |
-| Promoção de frete grátis | ignorada no PDV | `pos.py:3634` | ATRITO (P2-21), em andamento |
+| Promoção de frete grátis | vale no PDV pelo mesmo motor da loja (canal, valor mínimo, grupo de clientes); a revisão diz "Grátis" e o nome da promoção | `pos._delivery_fee_waiver`; `modifiers.resolve_delivery_fee_waiver` | OK (P2-21), resolvido #1775 |
 | Corrida não atendida (N) ou cancelada (C) | alerta, custódia volta, "Chamar de novo" | `courier.py:587-660`, #1696, #1708 | OK |
 | Cancelar com corrida aberta | corrida cancelada antes da coleta; depois, alerta crítico | `courier.py:501` | OK |
 | Editar a encomenda | comanda virtual; diferença a mais vira saldo, a menos volta no mesmo meio; com nota autorizada, "Cancelar e refazer" | `order_edit.py:1-40`; `ops:3012-3058` | OK |
@@ -448,7 +449,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Pedido feito de noite, aceito na abertura | paga ao pedir; o prazo de aceite começa na abertura | ADR-036; migração `shop.0094` | OK (P1-5), resolvido #1769 |
 | Cartão autorizado e ninguém aceita | preso sem prazo; a autorização vence no Stripe (~7 dias) | `handlers/payment_timeout.py:62-63` | LACUNA (P1-4), resolvida #1732 |
 | Pedido editado em `new` antes do Pix | o Pix sai com o total selado antigo | `payment.py:111` | **LACUNA a provar (P0-6)**, resolvida #1736 |
-| Pix venceu | cancela; dois avisos (vencido + cancelado) | `payment_timeout.py:85-97` | ATRITO (resto do P1-9), não delegado |
+| Pix venceu | cancela; um aviso só (`order_cancelled` com a frase do prazo, `cancel_reasons.pix_expired`) | `handlers/payment_timeout.py`; `customer_orders.resolve_payment_timeout_if_due` | OK (P1-9), resolvido #1773 (eram dois avisos) |
 | Pago depois de cancelado | estorno + alerta; o cliente não é avisado do estorno | `lifecycle.py:554-557` | ATRITO (P1-9), resolvido #1720 |
 | Cliente quer cancelar | sozinho em `new`/`accepted` sem captura; pago vira solicitação ao gerente | `payment.py:1582-1595`; `cancellation_requests.py` | OK |
 | Xepa | só no balcão (decisão de 14/10, Pergunta 3 = 1): fora do WhatsApp, do site e do iFood, e a loja não anuncia | `rules/pricing.py` (`channels_required`); migração `shop.0093` | OK (P1-14), resolvido #1760 |
@@ -563,7 +564,7 @@ da encomenda, estorno de Pix/cartão no cancelamento.
 **P0**: quebra ou dinheiro errado. **P1**: atrito grave ou risco operacional. **P2**: melhoria.
 
 **Estado (rodada final, 14/10/2026):** a coluna `#` diz **resolvido #N** quando o PR está
-mergeado no `main` (conferido em `7cbc718b1`), **na fila #N** quando está na fila de merge,
+mergeado no `main` (conferido em `2131aec35`), **na fila #N** quando está na fila de merge,
 **não delegado** quando ninguém pegou e **espera decisão** quando falta a palavra do dono. O
 texto da linha é o achado original e não foi reescrito.
 Tamanho: **XS** (< 1 h) · **S** (meio dia) · **M** (1 a 2 dias) · **L** (mais).
@@ -594,12 +595,12 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 | P1-6 · **resolvido #1723** | PDV, entrega fora da área: a revisão diz que não bloqueia, o fechamento recusa, a taxa manual não resolve | `pos.py:898-910`; `validation.py:270` | A regra respeita a taxa manual do PDV (o combinado da porta é do operador, como a própria revisão diz) | S |
 | P1-7 · **resolvido #1734** | Encomenda no dia vai à cozinha com Pix/link pendente; Pix em pagamento misto liquida pela palavra do operador | `pos.py:2199-2296`; `pos.py:3967-3971` | "Enviar à cozinha" pergunta antes de mandar pedido não pago; Pix no misto espera a confirmação do Pix (ou é recusado no misto, como no modo de teste) | S |
 | P1-8 · **resolvido #1727** | Encomenda de retirada: "Entregar" no PDV exige `ready`, que o PDV não marca | `operator_orders.py:1419-1427` | "Entregar" aceita pedido aceito/em preparo e conclui (fecha os tickets abertos com alarde no KDS) | S |
-| P1-9 · **resolvido #1720; aviso único no Pix vencido não delegado** | Cliente não é avisado do estorno; devolução sem texto | `payment_refunded` sem emissor; `notification_copy.py` | Emitir `payment_refunded` no estorno concluído; texto de `order_returned`; um aviso só no Pix vencido | S |
+| P1-9 · **resolvido #1720 + #1773** | Cliente não é avisado do estorno; devolução sem texto | `payment_refunded` sem emissor; `notification_copy.py` | Emitir `payment_refunded` no estorno concluído; texto de `order_returned`; um aviso só no Pix vencido | S |
 | P1-10 · **resolvido #1730** | Motivo do cancelamento é opcional e vai literal ao cliente | `backstage/api/operations.py:2268-2312` | Separar "motivo (interno)" de "mensagem ao cliente (opcional)"; sem mensagem, o texto padrão | S |
 | P1-11 · **resolvido #1718** | Link do entregador da TaOn não aparece na página do pedido | `order_tracking.py:1477-1482`; `courier.py:700` | A projeção lê `order.data.courier.tracking_url` | XS |
-| P1-12 · **não delegado** | Nota fora da janela de 30 min ou depois da saída: o sistema tenta cancelar e só alerta; não há nota de estorno, e toda devolução cai aí | `fiscal.py:854`; `handlers/fiscal.py:517-575` | Fora da janela, não tentar cancelar: abrir a pendência "nota de estorno" com o roteiro do contador (até a emissão automática existir) | M |
+| P1-12 · **resolvido #1774** | Nota fora da janela de 30 min ou depois da saída: o sistema tenta cancelar e só alerta; não há nota de estorno, e toda devolução cai aí | `fiscal.py:854`; `handlers/fiscal.py:517-575` | Fora da janela (ou com a mercadoria fora, ou devolução parcial), não tentar cancelar: abrir a pendência "nota de estorno" no Gestor, com o roteiro do que juntar para o contador (`fiscal.open_return_note`, aviso `fiscal_return_note_due`). Emissão automática da nota de estorno fica para depois da resposta do contador | M |
 | P1-13 · **resolvido #1737** | Conferência de volumes no despacho: nada impede a sacola de um pedido sair com outro | `receipt_escpos.py:706` | QR de conferência em cada Via Pedido ("pedido + volume k de N"); a Saída bipa e diz "2 de 3 sacolas conferidas"; despachar com falta **avisa**, não bloqueia | M |
-| P1-14 · **Xepa resolvida #1760; vitrine do WhatsApp não delegada** | Xepa vale no WhatsApp e não no site; vitrine do WhatsApp copiada uma vez | `seed.py:8758-8765`; `bootstrap_whatsapp_channel.py:105-152` | Xepa só no balcão (Pergunta 3 = 1, 14/10), migração `shop.0093`. Resta a vitrine do WhatsApp espelhar a do site | S |
+| P1-14 · **resolvido #1760 + #1772** | Xepa vale no WhatsApp e não no site; vitrine do WhatsApp copiada uma vez | `seed.py:8758-8765`; `bootstrap_whatsapp_channel.py:105-152` | Xepa só no balcão (Pergunta 3 = 1, 14/10), migração `shop.0093` (#1760). A vitrine do WhatsApp espelha a do site pelo ponteiro `pricing.listing_from` no canal: toda mudança no site chega sozinha, o Catálogo não edita o espelho (`shop/services/listing_mirror.py`, #1772) | S |
 | P1-15 · **resolvido #1718** | `bootstrap_whatsapp_channel` recria o autoaceite | `bootstrap_whatsapp_channel.py:32` | Config igual ao seed (`manual`) | XS |
 
 ### P2
@@ -611,7 +612,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 | P2-18 · **resolvido #1754** | Produção sem SSE | `useProductionBoard.ts:3` | Assinar `backstage-production` | S |
 | P2-19 · **resolvido #1752 (via), #1762 (Aceitar no alerta)** | Gestor sem "Imprimir Via Pedido"; alerta sem ação direta | `order_queue.py`; `projections/alerts.py:254` | Botão de via; Aceitar no alerta de pedido parado | S |
 | P2-20 · **resolvido #1741** | `docs/guides/lifecycle.md` fala em `CONFIRMED` | — | Trocar por `accepted` | XS |
-| P2-21 · **cupom: resolvido #1766, como desconto por grupo (decisão 6 = 1); frete grátis no PDV: em andamento** | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Cupom: trocado por desconto automático por grupo de clientes (dono, 14/10/2026; `test_pos_desconto_por_grupo.py`). Frete grátis no motor do PDV segue aberto | M |
+| P2-21 · **resolvido #1766 (cupom, como desconto por grupo; decisão 6 = 1), #1775 (frete grátis)** | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Cupom: trocado por desconto automático por grupo de clientes (dono, 14/10/2026; `test_pos_desconto_por_grupo.py`). Frete grátis: a promoção de frete vale no PDV pelo mesmo motor da loja (`test_pos_frete_gratis_promocao.py`) | M |
 | P2-22 · **resolvido #1746** | Teto do desconto manual soma a taxa de entrega | `pos.py:3247`, `:3471` | Subtotal só de mercadoria (pendência de uma linha já registrada) | XS |
 | P2-23 · **resolvido #1764** | Conta na casa sem limite nem cobrança | `services/house_account.py` | Limite por cliente e lista "a cobrar" | M |
 | P2-24 · **resolvido #1742** | E-mail de alerta crítico com trava por tipo | `critical_alerts.py:29-37` | Trava por tipo + pedido | XS |
@@ -667,13 +668,14 @@ Hoje só no PDV.
 
 ## 10. O que falta
 
-Conferido em `origin/main` (`7cbc718b1`), 14/10/2026. Tudo o mais da §8 está resolvido.
+Conferido em `origin/main` (`2131aec35`), 14/10/2026: todo P0, P1 e P2 da §8 está resolvido,
+com o PR mergeado. O que segue não é código pronto para escrever: espera a janela da virada ou
+a resposta do contador.
 
 | Item | Estado | O que é |
 |---|---|---|
-| P1-12 | não delegado | Nota fora da janela de 30 min ou depois da saída: abrir a pendência "nota de estorno" com o roteiro do contador, em vez de tentar cancelar e só alertar |
-| P1-14 (resto) | não delegado | Vitrine do WhatsApp espelhar a do site (hoje é copiada uma vez pelo `bootstrap_whatsapp_channel`) |
-| P1-9 (resto) | não delegado | Pix vencido manda dois avisos (vencido e cancelado); a proposta era um só. Ficou fora do #1720 |
-| P2-21 (cupom) | resolvido #1766 | Desconto automático por grupo de clientes no PDV (decisão 6 = 1) |
-| P2-21 (frete grátis) | em andamento | Promoção de frete grátis ignorada no motor do PDV |
 | P0-3 no vivo | espera a janela do dono | O código está no `main` (#1719); falta o resolver `intermediated_sale` na env `SHOPMAN_FISCAL_EMISSION_RESOLVER` do spec vivo, junto do delta do go-live |
+| P1-12, emissão da nota de estorno | espera o contador | Desde #1774 o sistema abre a pendência "nota de estorno" no Gestor com o que juntar; emitir a nota fica para depois de o contador dizer qual procedimento quer |
+| Prazo de cancelar a NFC-e | espera o contador | `docs/reference/fiscal-parametrizacao-nfce.md` §5 diz 24 h; o código e este mapa usam 30 min (`SHOPMAN_NFCE_CANCELLATION_WINDOW_MINUTES`, RICMS/PR art. 35). Confirmar qual vale, sem mudar nada antes da resposta |
+| Devolução depois da venda (§2.3) | ATRITO sem número | Só no Gestor; não entrou na §8 como item |
+| iFood, mudança de endereço (§6.3) | ATRITO sem número | Só alerta; quem entrega é o iFood |

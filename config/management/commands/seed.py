@@ -3498,7 +3498,9 @@ class Command(BaseCommand):
             defaults={"name": "Loja online", "is_active": True, "priority": 7},
         )
         # WhatsApp: a vitrine do concierge. Espelha a loja online (mesmo recorte,
-        # mesmo preço) porque é o mesmo cliente remoto, só que conversando.
+        # mesmo preço) porque é o mesmo cliente remoto, só que conversando. Quem
+        # a preenche é o espelho (`pricing.listing_from` no canal, mais abaixo):
+        # o laço de itens daqui não a toca.
         whatsapp, _ = Listing.objects.update_or_create(
             ref="whatsapp",
             defaults={"name": "WhatsApp", "is_active": True, "priority": 5},
@@ -3517,7 +3519,7 @@ class Command(BaseCommand):
         # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
         so_no_balcao = {"HOL", "BRBB", "PIT"}
 
-        for listing_obj in [pdv, ifood, web, whatsapp]:
+        for listing_obj in [pdv, ifood, web]:
             ListingItem.objects.filter(listing=listing_obj).delete()
             markup = Decimal(markup_map[listing_obj.ref]) / 100
             for _sku, product in products.items():
@@ -6485,6 +6487,11 @@ class Command(BaseCommand):
             "notifications": _remote_notifications,
             "stock": _remote_stock,
             "waitlist": _remote_waitlist,
+            # A vitrine do WhatsApp É a da loja online: mesmo cliente remoto, só
+            # que conversando. O ponteiro mantém as duas iguais sempre
+            # (`shop/services/listing_mirror.py`, P1-14); no Catálogo o WhatsApp
+            # não tem edição própria.
+            "pricing": {"listing_from": STOREFRONT_REF},
         }
         channels_data = [
             # (ref, name, display_order, is_active, config_overrides)

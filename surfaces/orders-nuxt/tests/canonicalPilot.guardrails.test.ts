@@ -244,6 +244,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       // O PIN da suíte (dono, 10/10/2026): o campo só mostra (casas sem a opacidade
       // de desabilitado, bolinha do tamanho do texto) e fica no centro.
       "operator-kit/OperatorPinPad.vue",
+      // A caixa de Avisos (P1-12, 14/10/2026): a descrição preserva as quebras de
+      // linha, para o aviso que traz os dados um por linha (a nota de estorno).
+      "operator-kit/OperatorInbox.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),

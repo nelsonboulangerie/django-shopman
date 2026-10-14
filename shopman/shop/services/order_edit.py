@@ -745,6 +745,7 @@ def _receiving(order, fulfillment, before: str, fee_lines, products_q: int, next
 
     resolution = resolve_delivery_fee(
         address_structured=structured, address_text=address_text, merchandise_q=products_q, override_q=override_q,
+        channel_ref=order.channel_ref, customer_ref=str((data.get("customer") or {}).get("ref") or ""),
     )
     if resolution.blocked:
         raise EditRefused(

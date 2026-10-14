@@ -257,6 +257,10 @@ def _register_fiscal_publication_gate() -> None:
 
     fiscal_gate.connect()
 
+    # Depois do porteiro fiscal: o espelho grava pelo mesmo save() e passa por ele.
+    from shopman.shop.handlers import listing_mirror as listing_mirror_handler
+    listing_mirror_handler.connect()
+
     from shopman.shop.handlers import access_link as access_link_handler
     access_link_handler.connect()
 

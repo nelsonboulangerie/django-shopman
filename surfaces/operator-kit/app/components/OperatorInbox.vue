@@ -21,6 +21,7 @@ import {
   signInSummary,
 } from "../presentation/notifications";
 import {
+  inboxAlertDescription,
   inboxAriaLabel,
   inboxBadge,
   inboxTotal,
@@ -213,7 +214,8 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             :color="alertColor(alert.tone)"
             :variant="alert.seen ? 'subtle' : 'soft'"
             :title="alert.eyebrow || undefined"
-            :description="`${alert.message}${alert.meta ? ` · ${alert.meta}` : ''}${alert.seen ? ' · visto' : ''}`"
+            :description="inboxAlertDescription(alert)"
+            :ui="{ description: 'whitespace-pre-line' }"
             :data-alert-seen="alert.seen ? '' : undefined"
             data-operator-inbox-alert
           >

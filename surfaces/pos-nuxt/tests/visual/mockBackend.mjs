@@ -195,6 +195,10 @@ const OUT_OF_AREA = SALE && process.env.MOCK_OUT_OF_AREA === "1";
 // Prévia da conta na casa acima do limite (MOCK_ACCOUNT_LIMIT=1): a review pede o
 // gerente e diz em aberto, limite e quanto a venda passa. Fora da flag, nada muda.
 const ACCOUNT_LIMIT = SALE && process.env.MOCK_ACCOUNT_LIMIT === "1";
+// Prévia do frete grátis pela promoção (MOCK_FREE_DELIVERY=1, P2-21): a comanda 12 é
+// uma entrega no Centro, e a review diz que a "Frete de verão" levou a taxa de R$ 8,00.
+// Fora da flag, nada muda.
+const FREE_DELIVERY = SALE && process.env.MOCK_FREE_DELIVERY === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -519,6 +523,18 @@ function tabPayload(ref) {
     customer_ref: inUse ? "C-1" : full ? "C-13" : "",
     customer_tax_id: "", customer_email: "", fulfillment_type: delivery ? "delivery" : "", delivery_address: "",
     delivery_address_structured: {}, delivery_date: delivery ? TOMORROW : "", delivery_time_slot: "", delivery_fee_override_q: null,
+    ...(FREE_DELIVERY && inUse
+      ? {
+          sales_mode: "order", customer_phone: "43999887766", fulfillment_type: "delivery",
+          delivery_address: "Rua Pará", delivery_street_number: "86", delivery_neighborhood: "Centro",
+          delivery_address_structured: {
+            formatted_address: "Rua Pará, 86 - Centro, Londrina - PR",
+            route: "Rua Pará", street_number: "86", neighborhood: "Centro",
+            city: "Londrina", state_code: "PR", postal_code: "86010-000",
+          },
+          delivery_date: TODAY,
+        }
+      : {}),
     ...(OUT_OF_AREA && inUse
       ? {
           sales_mode: "order", customer_phone: "43999887766", fulfillment_type: "delivery",
@@ -580,6 +596,15 @@ function review(body) {
           requires_manager_approval: true,
           approval_reasons: ["house_account_over_limit"],
           house_account_limit: { balance_q: 18000, limit_q: 20000, charge_q: subtotal, over_q: Math.max(1, 18000 + subtotal - 20000) },
+        }
+      : {}),
+    ...(FREE_DELIVERY && body?.fulfillment_type === "delivery" && body?.delivery_fee_override_q == null
+      ? {
+          delivery_fee_source: "zone", delivery_fee_q: 0, delivery_fee_display: brl(0),
+          delivery_fee_waiver: {
+            reason: "promotion", promotion_name: "Frete de verão", threshold_q: 0, base_fee_q: 800,
+            threshold_display: brl(0), base_fee_display: brl(800),
+          },
         }
       : {}),
     ...(OUT_OF_AREA && body?.fulfillment_type === "delivery"

@@ -53,7 +53,6 @@ WHATSAPP_EVENT_LABELS = {
     "payment_link_sent": "Link de pagamento enviado",
     "payment_confirmed": "Pagamento confirmado",
     "payment_reminder": "Lembrete de pagamento",
-    "payment_expired": "Prazo de pagamento encerrado",
     "payment_failed": "Falha ao gerar pagamento",
     "payment_refunded": "Reembolso processado",
     "waitlist_available": "Vaga da fila disponível",

@@ -61,14 +61,42 @@ def _all_channel_refs() -> list[str]:
     from shopman.shop.models import Channel
 
     # O fan-out de "todos os canais" escreve preço e publicação — coisas que canal
-    # `display` não tem. Seleção por política (ADR-018 §8).
-    return list(
-        Channel.objects.filter(
+    # `display` não tem. Seleção por política (ADR-018 §8). Canal cuja vitrine
+    # espelha outra (``pricing.listing_from``) fica de fora: ele acompanha a fonte.
+    from shopman.shop.services import listing_mirror
+
+    return [
+        ref
+        for ref, config in Channel.objects.filter(
             is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
         )
         .order_by("display_order", "id")
-        .values_list("ref", flat=True)
+        .values_list("ref", "config")
+        if not listing_mirror.source_ref_from_config(config)
+    ]
+
+
+def _refuse_mirror_surface(surface_ref: str) -> None:
+    """Vitrine espelhada não tem edição própria: a mudança é feita na fonte."""
+    from shopman.shop.models import Channel
+    from shopman.shop.services import listing_mirror
+
+    source = listing_mirror.source_ref(surface_ref)
+    if not source:
+        return
+    names = dict(Channel.objects.filter(ref__in=[surface_ref, source]).values_list("ref", "name"))
+    raise CatalogError(
+        f"A vitrine de {names.get(surface_ref, surface_ref)} segue a de "
+        f"{names.get(source, source)}. Altere o produto lá."
     )
+
+
+def _realign_mirrors(refs) -> None:
+    """Escrita em lote não dispara signal: o espelho da superfície acompanha aqui."""
+    from shopman.shop.services import listing_mirror
+
+    for ref in sorted(set(refs)):
+        listing_mirror.realign(ref)
 
 
 def _is_display_surface(surface_ref: str) -> bool:
@@ -166,6 +194,7 @@ def set_cell(
             {"is_sellable": sku not in (((channel.config or {}).get("display") or {}).get("paused_skus") or [])})
         display_service.set_item_paused(surface_ref, sku, paused=not patch["is_sellable"])
         return SimpleNamespace(is_published=True, is_sellable=patch["is_sellable"], price_q=None)
+    _refuse_mirror_surface(surface_ref)
     listing = Listing.objects.select_for_update().filter(ref=surface_ref).first()
     item = ListingItem.objects.select_for_update().filter(listing=listing, product=product).order_by("min_qty", "pk").first()
     if item is None:
@@ -257,6 +286,8 @@ def bulk_set(
 
     from shopman.shop.services.fiscal_catalog import validate_listing_item_publication
 
+    if surface_ref != ALL_SURFACES:
+        _refuse_mirror_surface(surface_ref)
     refs = _all_channel_refs() if surface_ref == ALL_SURFACES else [surface_ref]
     with transaction.atomic():
         # Same lock order as the exact price preview. Every selected destination
@@ -288,6 +319,7 @@ def bulk_set(
             validate_listing_item_publication(item)
         count = bulk_update_with_history(items, ListingItem, list(updates), default_user=audit_user,
                                          default_change_reason=f"{audit_reason}:after")
+        _realign_mirrors(refs)
         from shopman.offerman.conf import get_projection_backend
 
         from shopman.shop.handlers.catalog_projection import enqueue_project
@@ -370,6 +402,7 @@ def bulk_price(
         return 0
     if surface_ref == ALL_SURFACES:
         return sum(bulk_price(skus, ref, op=op, value=value, actor=actor) for ref in _all_channel_refs())
+    _refuse_mirror_surface(surface_ref)
 
     # tier base (menor min_qty) por SKU — 1 célula por produto, como a matriz mostra.
     items = (
@@ -391,6 +424,7 @@ def bulk_price(
 
     if changed:
         ListingItem.objects.bulk_update(changed, ["price_q"])
+        _realign_mirrors([surface_ref])
         _reconcile_if_projected(surface_ref)
         _notify_surface(surface_ref)
     return len(changed)
@@ -1497,6 +1531,8 @@ def _bulk_selection(data: dict, *, lock: bool, allow_display: bool = False):
     surface = data.get("surface_ref")
     if not isinstance(surface, str) or not surface:
         raise CatalogError("surface_ref é obrigatório.")
+    if surface != ALL_SURFACES:
+        _refuse_mirror_surface(surface)
     refs = _all_channel_refs() if surface == ALL_SURFACES else [surface]
     channels = Channel.objects.filter(ref__in=refs).order_by("pk")
     if lock:
@@ -1603,6 +1639,7 @@ def apply_bulk_price_intention(data: dict, *, actor_id: int) -> dict:
         changed.append(item)
         surfaces.add(cell["surface_ref"])
     ListingItem.objects.bulk_update(changed, ["price_q"])
+    _realign_mirrors(surfaces)
     for cell in preview["cells"]:
         if cell["before_q"] == cell["after_q"] or get_projection_backend(cell["surface_ref"]) is None:
             continue

@@ -822,7 +822,6 @@ checkout_defaults:
 | `order_delivered`    | Pedido entregue                     |
 | `order_cancelled`    | Pedido cancelado                    |
 | `payment_confirmed`  | Pagamento confirmado                |
-| `payment_expired`    | Pagamento expirado                  |
 | `stock_alert`        | Alerta de estoque baixo             |
 
 ### Cadeia de Resolução
