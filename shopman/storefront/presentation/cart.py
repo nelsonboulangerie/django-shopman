@@ -47,6 +47,9 @@ class DiscountLineProjection:
     label: str
     amount_q: int
     amount_display: str
+    # A promoção vencedora é restrita à retirada: o checkout avisa antes de o
+    # cliente trocar para entrega.
+    requires_pickup: bool = False
 
 
 @dataclass(frozen=True)
@@ -384,6 +387,7 @@ def _present_discount_line(dl: cart_data.CartDiscountLineProjection) -> Discount
         label=f"Cupom {dl.name}" if dl.is_coupon else dl.name,
         amount_q=dl.amount_q,
         amount_display=_money(dl.amount_q),
+        requires_pickup=dl.requires_pickup,
     )
 
 

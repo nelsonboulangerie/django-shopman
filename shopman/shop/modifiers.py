@@ -10,7 +10,6 @@ Execution order:
   10  pricing.item          — base price from backend (qty-aware)
   20  shop.discount         — promotions + coupons (maior desconto ganha)
   50  pricing.session_total — recalculate total
-  60  shop.employee_discount
   70  shop.delivery_fee     — taxa de entrega por zona (só delivery)
   80  shop.loyalty_redeem   — loyalty points redemption (post-pricing)
   85  shop.manual_discount  — desconto manual (POS)
@@ -43,7 +42,6 @@ from shopman.utils.monetary import monetary_div, monetary_mult
 logger = logging.getLogger(__name__)
 
 # ── Configurable defaults ──────────────────────────────────────────
-DEFAULT_EMPLOYEE_DISCOUNT_PERCENT = 20
 DEFAULT_AVAILABILITY_DISCOUNT_PERCENT = 50
 DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT = 25
 DEFAULT_TIME_WINDOW_START = "17:30"
@@ -431,7 +429,7 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
         pricing["discount"] = disc
         if t == "coupon" and pricing.get("coupon"):
             pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
-    elif t in ("lot_discount", "employee_discount", "happy_hour"):
+    elif t in ("lot_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
             new_total = int(entry.get("total_discount_q", 0)) - monetary_mult(qty, int(prior.get("amount_q", 0)))
@@ -842,7 +840,7 @@ class DiscountModifier:
 
             # Find best discount candidate
             best_discount_q = 0
-            best_source = None  # (type, name)
+            best_source = None  # (type, name, promo)
 
             # Only PERCENT discounts compete per-line: a percentage is intrinsically
             # per-unit. FIXED discounts are order-level and applied once, after this
@@ -858,7 +856,7 @@ class DiscountModifier:
                 discount_q = self._calc_discount(promo, price_q)
                 if discount_q > best_discount_q:
                     best_discount_q = discount_q
-                    best_source = ("promotion", promo.name, promo.pk)
+                    best_source = ("promotion", promo.name, promo)
 
             # Evaluate coupon
             if coupon_promo and coupon_promo.type == "percent":
@@ -867,7 +865,7 @@ class DiscountModifier:
                         coupon_discount_q = self._calc_discount(coupon_promo, price_q)
                         if coupon_discount_q >= best_discount_q:
                             best_discount_q = coupon_discount_q
-                            best_source = ("coupon", coupon_code, None)
+                            best_source = ("coupon", coupon_code, coupon_promo)
 
             # Evaluate operator manual per-line discount (percent), best wins.
             if manual_allowed:
@@ -884,7 +882,7 @@ class DiscountModifier:
                 item["unit_price_q"] = list_q - best_discount_q
                 item["line_total_q"] = monetary_mult(_qty_decimal(item), item["unit_price_q"])
 
-                source_type, source_name, source_id = best_source
+                source_type, source_name, source_promo = best_source
                 # Fonte durável do desconto vencedor da linha: ``meta._disc`` (para o
                 # árbitro flat reconciliar em "maior ganha") + ``discounts_applied``
                 # (abaixo) que vira ``pricing["discount"]``. ``modifiers_applied`` foi
@@ -907,6 +905,7 @@ class DiscountModifier:
                     "original_price_q": price_q,
                     "discount_q": best_discount_q,
                     "qty": _qty_json(qty),
+                    "fulfillment_types": list(getattr(source_promo, "fulfillment_types", None) or []),
                 })
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
@@ -956,6 +955,7 @@ class DiscountModifier:
                     "original_price_q": 0,
                     "discount_q": applied_q,
                     "qty": 1,
+                    "fulfillment_types": list(getattr(fixed_promo, "fulfillment_types", None) or []),
                 })
                 if src_type == "coupon":
                     total_coupon_discount_q += applied_q
@@ -1058,8 +1058,12 @@ class DiscountModifier:
             if fulfillment_type:
                 if fulfillment_type not in promo.fulfillment_types:
                     return False
-            else:
-                # fulfillment_type not chosen yet — don't pre-apply fulfillment-restricted promos
+            elif "pickup" not in promo.fulfillment_types:
+                # Sem o tipo escolhido, a promoção que NÃO vale na retirada (só
+                # entrega) não pré-aplica: o desconto apareceria e sumiria ao
+                # trocar para retirada. A restrita à RETIRADA vale, porque retirada
+                # é o padrão da casa até alguém escolher entrega — é assim que o
+                # benefício da Equipe sempre apareceu.
                 return False
         if promo.skus and sku not in promo.skus:
             return False
@@ -1125,8 +1129,8 @@ class DiscountModifier:
 
         1. **Carimbava ``meta["_disc"]``** — não carimbava. Os outros descontos
            passam todos por ``_stamp_disc``, e é dali que ``_reverse_prior_pricing``
-           descobre o que abater quando um desconto flat (funcionário, happy hour)
-           vence a linha depois. Sem o carimbo, o flat vencia, o preço da linha caía
+           descobre o que abater quando um desconto flat (happy hour) vence a
+           linha depois. Sem o carimbo, o flat vencia, o preço da linha caía
            de novo e o fixo continuava inteiro em ``pricing["discount"]`` e em
            ``pricing["coupon"]``: a tela dizia "Cupom aplicado, desconto de R$ 5,00"
            e "de R$ 94,00 por R$ 71,20" num pedido de lista R$ 89,00. O cliente
@@ -1165,72 +1169,6 @@ class DiscountModifier:
             return min(int(round(value * 100)), price_q)
         return min(monetary_div(int(round(price_q * value)), 100), price_q)
 
-
-
-class EmployeeDiscountModifier:
-    """
-    Discount for employees (the customer's price tier is "staff").
-
-    Percentage is configurable via channel config rules.employee_discount_percent
-    or SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT setting (default 20).
-
-    "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
-    bate o desconto já aplicado (promo) — nunca compõe.
-    """
-
-    code = "shop.employee_discount"
-    order = 60  # After canonical pricing (10, 50), before session total recalc
-
-    def __init__(
-        self,
-        *,
-        discount_percent: int = DEFAULT_EMPLOYEE_DISCOUNT_PERCENT,
-        pickup_only: bool = True,
-    ):
-        self.discount_percent = discount_percent
-        # Fallback quando não há RuleConfig; a regra no admin é a fonte real.
-        self.pickup_only = pickup_only
-
-    def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        from shopman.shop.rules.engine import get_rule_params
-
-        rule_params = get_rule_params("employee_discount")
-
-        data = session.data or {}
-        price_tier = data.get("customer", {}).get("price_tier", "")
-        # Benefício, não canal: com entrega o preço de funcionário viajaria para
-        # qualquer endereço, sem ninguém ver. Retirando, alguém entrega na mão.
-        pickup_only = rule_params.get("pickup_only", self.pickup_only)
-        delivering = pickup_only and data.get("fulfillment_type") == "delivery"
-
-        # QUAL tier marca funcionário é decisão da regra no admin, não um
-        # literal daqui — era "staff" cravado e o parâmetro ficava decorativo
-        # (achado da faxina 2026-08-13: one question, one owner).
-        employee_tier = rule_params.get("price_tier", "staff")
-
-        if price_tier != employee_tier or delivering:
-            # Deixou de ser o tier de funcionário (ou trocou para entrega):
-            # limpa transparência residual de uma passagem anterior.
-            pricing = session.pricing or {}
-            if pricing.pop("employee_discount", None) is not None:
-                session.pricing = pricing
-                session.save(update_fields=["pricing"])
-            return
-
-        config = getattr(channel, "config", None) or {}
-        channel_rules = config.get("rules", {})
-        if "employee_discount_percent" in channel_rules:
-            percent = channel_rules["employee_discount_percent"]
-        else:
-            percent = rule_params.get("discount_percent", self.discount_percent)
-
-        _apply_flat_best_wins(
-            session,
-            percent=percent,
-            disc_type="employee_discount",
-            label="Desconto funcionário",
-            pricing_key="employee_discount",
-        )
 
 
 _ZONE_MODE_EXCLUDE = "exclude"

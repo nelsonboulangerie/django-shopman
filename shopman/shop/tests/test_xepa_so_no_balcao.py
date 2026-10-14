@@ -79,15 +79,15 @@ def test_outras_regras_sem_canal_continuam_valendo_em_todos(canais):
     from shopman.shop.rules.engine import get_channel_rule_params
 
     RuleConfig.objects.create(
-        ref="employee_discount",
-        rule_path="shopman.shop.rules.pricing.EmployeeRule",
-        label="Desconto Funcionário",
-        params={"discount_percent": 20, "price_tier": "staff"},
+        ref="business_hours",
+        rule_path="shopman.shop.rules.validation.BusinessHoursRule",
+        label="Horário de Funcionamento",
+        params={},
         enabled=True,
     )
     cache.clear()
 
-    assert get_channel_rule_params("employee_discount", "whatsapp") is not None
+    assert get_channel_rule_params("business_hours", "whatsapp") is not None
 
 
 def test_seed_lista_a_xepa_so_no_pdv():
@@ -106,9 +106,9 @@ def test_seed_lista_a_xepa_so_no_pdv():
 def test_migracao_tira_a_xepa_do_whatsapp_e_do_ifood(canais):
     rule = _xepa(canais["pdv"], canais["whatsapp"], canais["ifood"])
     outra = RuleConfig.objects.create(
-        ref="employee_discount",
-        rule_path="shopman.shop.rules.pricing.EmployeeRule",
-        label="Desconto Funcionário",
+        ref="business_hours",
+        rule_path="shopman.shop.rules.validation.BusinessHoursRule",
+        label="Horário de Funcionamento",
         params={},
     )
     outra.channels.set([canais["whatsapp"]])

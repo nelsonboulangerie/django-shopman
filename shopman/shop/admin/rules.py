@@ -1,6 +1,6 @@
 """Admin for RuleConfig — configurable rules via Unfold.
 
-Regras de preço conhecidas (happy_hour, employee_discount) editam
+Regras de preço conhecidas (happy_hour) editam
 ``params`` como campos tipados (percentual, horários); o JSON cru fica só para
 regras sem schema. Os modifiers continuam lendo ``params`` igual — só a EDIÇÃO
 muda. Ver ``shopman/shop/rules/params_schema.py``.

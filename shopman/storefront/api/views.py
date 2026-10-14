@@ -53,9 +53,9 @@ def _cart_data(request):
 # projeção e o commit discordarem: a tela mostrava o desconto e o envio cobrava
 # cheio, com a guarda de preço recusando o pedido.
 #
-# O guarda do benefício de funcionário NÃO mora aqui — mora na regra
-# (``EmployeeRule.pickup_only``), que é onde a política pertence e onde o dono
-# pode mexer sem código.
+# O guarda do benefício de retirada NÃO mora aqui — mora na promoção do grupo
+# (``Promotion.fulfillment_types = ["pickup"]``), que é onde a política pertence
+# e onde o dono pode mexer sem código.
 #
 # Nome e telefone não entram: o cliente os reescreve no formulário a cada envio,
 # então vêm do payload.

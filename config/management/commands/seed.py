@@ -8756,13 +8756,6 @@ class Command(BaseCommand):
 
         RULE_CONFIGS = [
             {
-                "ref": "employee_discount",
-                "rule_path": "shopman.shop.rules.pricing.EmployeeRule",
-                "label": "Desconto Funcionário",
-                "params": {"discount_percent": 20, "price_tier": "staff"},
-                "priority": 60,
-            },
-            {
                 "ref": "happy_hour",
                 "rule_path": "shopman.shop.rules.pricing.HappyHourRule",
                 "label": "Hora da Xepa",

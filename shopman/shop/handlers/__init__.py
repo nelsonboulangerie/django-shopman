@@ -78,7 +78,6 @@ ALL_HANDLERS = [
     # Pricing modifiers (via shopman.modifiers)
     "shopman.shop.modifiers.DeliveryFeeModifier",
     "shopman.shop.modifiers.DiscountModifier",
-    "shopman.shop.modifiers.EmployeeDiscountModifier",
     "shopman.shop.modifiers.LotDiscountModifier",
     "shopman.shop.modifiers.LoyaltyRedeemModifier",
     "shopman.shop.modifiers.ManualDiscountModifier",
@@ -324,7 +323,6 @@ def _register_pricing_modifiers() -> None:
         CustomerPricingModifier,
         DeliveryFeeModifier,
         DiscountModifier,
-        EmployeeDiscountModifier,
         LotDiscountModifier,
         LoyaltyRedeemModifier,
         ManualDiscountModifier,
@@ -340,7 +338,6 @@ def _register_pricing_modifiers() -> None:
         LotDiscountModifier(),
         DiscountModifier(),
         SessionTotalModifier(),
-        EmployeeDiscountModifier(),
         DeliveryFeeModifier(),
         LoyaltyRedeemModifier(),
         ManualDiscountModifier(),

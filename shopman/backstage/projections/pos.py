@@ -2852,7 +2852,7 @@ def _tab_payload_line_discount(item: dict) -> dict | None:
 #: O rótulo sempre esteve no dado (`meta._disc.label`); morria neste filtro.
 #: ``manual`` fica fora de propósito: tem badge próprio, com o motivo digitado.
 _AUTO_PRICING_DISCOUNT_TYPES = frozenset({
-    "lot_discount", "happy_hour", "employee_discount", "promotion", "coupon",
+    "lot_discount", "happy_hour", "promotion", "coupon",
 })
 
 

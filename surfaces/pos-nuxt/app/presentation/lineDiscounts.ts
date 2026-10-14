@@ -1,7 +1,7 @@
 // Presentation — transparência de desconto por linha (o caso Batard R$ 13,00 → R$ 11,05).
 //
 // O kernel carimba na linha o desconto automático vencedor (lote/liquidação,
-// happy hour, funcionário) e o payload da comanda o expõe como
+// happy hour, grupo de clientes) e o payload da comanda o expõe como
 // `pricing_discount` (tipo + rótulo de cliente + valor). Aqui vive só a DECISÃO
 // de badge: preferir o percentual ("Liquidação −15%") e cair no valor em R$
 // quando o percentual não fecha limpo. É o mesmo idioma visual da tela do

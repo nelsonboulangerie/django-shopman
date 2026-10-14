@@ -89,11 +89,23 @@ class DiscountStackingAuditTests(TestCase):
     def _line(self, session: Session):
         return next(i for i in session.items if i.get("sku") == self.product.sku)
 
-    # ── HOLE: employee discount must NOT compound on a promo line (best-wins) ─
-    def test_employee_does_not_compound_on_promotion(self) -> None:
+    # ── HOLE: group discount must NOT compound on a promo line (best-wins) ───
+    def test_group_discount_does_not_compound_on_promotion(self) -> None:
+        from shopman.guestman.models import PriceTier
         from shopman.shop.models import Promotion
 
         now = timezone.now()
+        PriceTier.objects.create(ref="staff", name="Equipe")
+        Promotion.objects.create(
+            ref="grupo-staff",
+            name="Equipe",
+            type=Promotion.PERCENT,
+            value=20,
+            customer_segments=["staff"],
+            is_active=True,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=1),
+        )
         Promotion.objects.create(
             ref="promo-30",
             name="Promo 30",
@@ -106,7 +118,7 @@ class DiscountStackingAuditTests(TestCase):
         cache.clear()
 
         key = self._open_session()
-        # Link a staff customer so the employee discount (20%) fires.
+        # Link a staff customer so the group discount (20%) fires.
         ModifyService.modify_session(
             session_key=key, channel_ref="web",
             ops=[{"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}}],
@@ -116,19 +128,19 @@ class DiscountStackingAuditTests(TestCase):
             ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
         )
         unit = self._line(session)["unit_price_q"]
-        # Best-wins: max(30% promo, 20% employee) = 30% → 700. Bug compounds:
-        # 1000→700 (promo)→560 (−20% employee on the reduced price).
-        self.assertEqual(unit, 700, f"employee compounded on promo: got {unit}, expected 700")
+        # Best-wins: max(30% promo, 20% grupo) = 30% → 700. Bug compounds:
+        # 1000→700 (promo)→560 (−20% do grupo sobre o preço reduzido).
+        self.assertEqual(unit, 700, f"desconto do grupo compôs na promo: got {unit}, expected 700")
 
     # ── HOLE: desconto de valor FIXO substituído deixava valor fantasma ───────
-    def test_employee_beating_a_fixed_coupon_leaves_no_phantom_discount(self) -> None:
-        """Cupom de valor FIXO perdendo para o desconto de funcionário some da tela.
+    def test_group_beating_a_fixed_coupon_leaves_no_phantom_discount(self) -> None:
+        """Cupom de valor FIXO perdendo para o desconto do GRUPO some da tela.
 
         Este caso faltava na suíte: os testes de "maior desconto ganha" compõem
         PERCENTUAL × PERCENTUAL, onde ``meta["_disc"]`` sempre existe. O rateio do
         desconto de PEDIDO era o único que não passava por ``_stamp_disc``, então
-        ``_reverse_prior_pricing`` não achava nada para abater: o funcionário vencia,
-        o preço da linha caía de novo, e o fixo continuava inteiro em
+        ``_reverse_prior_pricing`` não achava nada para abater: o desconto do grupo
+        vencia, o preço da linha caía de novo, e o fixo continuava inteiro em
         ``pricing["discount"]`` E em ``pricing["coupon"]``.
 
         Duas consequências, ambas de dinheiro: a tela somava um desconto que não
@@ -136,9 +148,21 @@ class DiscountStackingAuditTests(TestCase):
         ``pricing["coupon"]["discount_q"] > 0`` faz o lifecycle CONSUMIR o cupom, de
         modo que o cliente queimava um cupom de uso único que não lhe deu nada.
         """
+        from shopman.guestman.models import PriceTier
         from shopman.shop.models import Coupon, Promotion
 
         now = timezone.now()
+        PriceTier.objects.create(ref="staff", name="Equipe")
+        Promotion.objects.create(
+            ref="grupo-staff",
+            name="Equipe",
+            type=Promotion.PERCENT,
+            value=20,
+            customer_segments=["staff"],
+            is_active=True,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=1),
+        )
         promo = Promotion.objects.create(
             ref="fixo-1",
             name="Fixo R$1",
@@ -166,11 +190,10 @@ class DiscountStackingAuditTests(TestCase):
 
         pricing = session.pricing or {}
         line = self._line(session)
-        # Funcionário (20% de R$10 = R$2) vence o fixo (R$1) — sem composição.
+        # Grupo (20% de R$10 = R$2) vence o fixo (R$1) — sem composição.
         self.assertEqual(line["unit_price_q"], 800)
-        self.assertEqual(pricing.get("employee_discount", {}).get("total_discount_q"), 200)
+        self.assertEqual(pricing.get("discount", {}).get("total_discount_q"), 200)
         # O fixo perdeu: não pode sobrar NADA dele na transparência.
-        self.assertEqual(pricing.get("discount", {}).get("total_discount_q"), 0)
         self.assertEqual(pricing.get("coupon", {}).get("discount_q"), 0)
         # A soma dos descontos declarados == o que o total de fato caiu.
         charged = sum(int(i.get("line_total_q", 0)) for i in session.items)
@@ -180,7 +203,7 @@ class DiscountStackingAuditTests(TestCase):
     def _declared_discount_q(pricing: dict) -> int:
         """Tudo que a tela declara como desconto (``coupon`` é recorte de ``discount``)."""
         total = int((pricing.get("discount") or {}).get("total_discount_q") or 0)
-        for key in ("lot_discount", "employee_discount", "happy_hour", "loyalty_redeem", "manual_discount"):
+        for key in ("lot_discount", "happy_hour", "loyalty_redeem", "manual_discount"):
             total += int((pricing.get(key) or {}).get("total_discount_q") or 0)
         return total
 
