@@ -100,10 +100,18 @@ export interface CollectionProjection {
   product_count: number;
 }
 
+// Contagens por opção das facetas de lista, do recorte ATUAL (o servidor conta,
+// nunca a página). A seleção da própria dimensão fica fora da conta.
+export interface CatalogFacets {
+  stock: Record<string, number>;
+  sync_status: Record<string, number>;
+}
+
 export interface CatalogMatrixProjection {
   surfaces: SurfaceProjection[];
   rows: CatalogRowProjection[];
   collections: CollectionProjection[];
+  facets: CatalogFacets;
   // Produtos à venda sem vocação, da loja inteira (não do recorte de coleção).
   vocation_pending: VocationPending[];
   // Paginação/filtro/ordenação no SERVIDOR (onda 1, fatia B): a matriz não vem

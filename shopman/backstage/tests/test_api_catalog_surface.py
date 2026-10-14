@@ -821,7 +821,14 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "surfaces", "rows", "collections", "vocation_pending",
         # Paginação/filtro/ordenação no servidor (onda 1, fatia B).
         "total", "page", "page_size", "has_next", "order", "query",
+        # Contagens por opção das facetas de multi-escolha (onda 1, fatia B).
+        "facets",
     }
+
+    # Contrato das contagens: chaves dos valores de cada faceta de lista.
+    assert set(matrix["facets"]) == {"stock", "sync_status"}
+    assert set(matrix["facets"]["stock"]) == {"ok", "low", "out"}
+    assert set(matrix["facets"]["sync_status"]) == {"synced", "pending", "error", "never"}
 
     surface = matrix["surfaces"][0]
     assert set(surface) == {
