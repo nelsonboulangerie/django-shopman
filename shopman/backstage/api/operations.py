@@ -106,6 +106,7 @@ from shopman.backstage.projections.pos import (
     build_pos_customer_search,
     build_pos_shift_summary,
     build_pos_tabs,
+    review_line_prices,
 )
 from shopman.backstage.projections.pos_payment_delivery import build_pos_payment_delivery
 from shopman.backstage.projections.production import (
@@ -603,6 +604,10 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,
+        # Venda sem comanda: o que cada linha cobra e o desconto automático que a
+        # venceu ("Aliança Francesa −10%"), no formato do eco do salvar da comanda.
+        # Com comanda vem vazio: quem diz é o salvar.
+        "line_prices": review_line_prices(getattr(review, "priced_lines", ())),
     }
 
 

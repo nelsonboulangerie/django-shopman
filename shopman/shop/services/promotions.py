@@ -40,6 +40,61 @@ def get_active_promotions(now, *, channel_ref: str = "") -> list[Any]:
     return [p for p in promotions if p.applies_to_channel(channel_ref)]
 
 
+#: O prefixo do ``Promotion.ref`` do desconto de um grupo de clientes (``PriceTier``).
+#: Um grupo tem UM desconto automático; o ref deriva do grupo para o Admin achar a
+#: promoção que edita sem guardar ponteiro em lugar nenhum.
+GROUP_DISCOUNT_REF_PREFIX = "grupo-"
+
+
+def group_discount_ref(price_tier_ref: str) -> str:
+    return f"{GROUP_DISCOUNT_REF_PREFIX}{price_tier_ref}"
+
+
+def customer_group_promotion(price_tier_ref: str, *, channel_ref: str, now=None) -> Any | None:
+    """A promoção automática que o GRUPO do cliente ganha neste canal, ou ``None``.
+
+    É a mesma promoção que o ``DiscountModifier`` aplica sozinho no reprice (casa
+    ``customer_segments`` com a faixa do cliente): aqui ela só é NOMEADA, para o
+    balcão saber que o desconto vai entrar. Aniversariante fica de fora (tem aviso
+    próprio), e promoção de SKU/coleção também vale: o rótulo diz o grupo, a linha
+    diz em quais itens o desconto entrou.
+
+    Com mais de uma, ganha a de maior percentual; o valor fixo só quando não há
+    percentual. É o rótulo do balcão, não a conta: a conta é do motor, item a item.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.models import Promotion
+
+    tier = str(price_tier_ref or "").strip()
+    if not tier:
+        return None
+    candidates = [
+        promo
+        for promo in get_active_promotions(now or timezone.now(), channel_ref=channel_ref)
+        if not promo.birthday_only
+        and promo.type in (Promotion.PERCENT, Promotion.FIXED)
+        and int(promo.value or 0) > 0
+        and tier in (promo.customer_segments or [])
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda promo: (promo.type == Promotion.PERCENT, int(promo.value or 0)))
+
+
+def group_discount_label(promo: Any) -> str:
+    """"Aliança Francesa · 10%" ou "Aliança Francesa · R$ 2,00"."""
+    from shopman.utils.monetary import format_money
+
+    from shopman.shop.models import Promotion
+
+    if promo is None:
+        return ""
+    value = int(promo.value or 0)
+    amount = f"{min(value, 100)}%" if promo.type == Promotion.PERCENT else f"R$ {format_money(value)}"
+    return f"{promo.name} · {amount}"
+
+
 def get_coupon_promotion(code: str, now, *, channel_ref: str = "") -> Any | None:
     """A promoção atrelada ao cupom, se válida e alcançável neste canal."""
     from shopman.shop.models import Coupon

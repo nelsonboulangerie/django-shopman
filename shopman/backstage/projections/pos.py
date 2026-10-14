@@ -386,6 +386,11 @@ class POSCustomerLookupProjection:
     # Sem a flag o PDV nem mostra a opção: dado opcional faz a tela crescer.
     house_account: bool = False
     account_balance_q: int = 0
+    #: O desconto automático do GRUPO do cliente neste balcão ("Aliança Francesa ·
+    #: 10%"). É a promoção que o Core aplica sozinha no reprice (``customer_segments``
+    #: casa a faixa); aqui ela só ganha nome, para o operador saber que vai entrar.
+    #: Vazio = o grupo do cliente não tem desconto no PDV, e a tela não promete nada.
+    group_discount_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -1118,7 +1123,22 @@ def _customer_lookup_projection(customer, fallback_phone: str = "") -> POSCustom
         ),
         house_account=eligible,
         account_balance_q=house_account.balance_q(customer.ref) if eligible else 0,
+        group_discount_label=_group_discount_label(tier_ref),
     )
+
+
+def _group_discount_label(tier_ref: str) -> str:
+    """O nome do desconto do grupo do cliente no PDV, ou "" (ver ``group_discount_label``)."""
+    if not tier_ref:
+        return ""
+    from shopman.shop.services import promotions as promotion_service
+
+    try:
+        promo = promotion_service.customer_group_promotion(tier_ref, channel_ref=POS_CHANNEL_REF)
+    except Exception:  # silêncio-deliberado: sem rótulo, a tela não promete desconto; o motor aplica igual
+        logger.debug("pos_lookup_group_discount_failed tier=%s", tier_ref, exc_info=True)
+        return ""
+    return promotion_service.group_discount_label(promo)
 
 
 def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSearchResult, ...]:
@@ -2934,6 +2954,20 @@ def tab_line_prices(session: Session) -> dict[str, dict]:
         item["line_id"]: _tab_line_price_fields(item, manual_originals)
         for item in (session.items or [])
         if item.get("line_id") and not _is_delivery_fee_item(item)
+    }
+
+
+def review_line_prices(priced_lines) -> dict[str, dict]:
+    """``line_id -> preço cobrado`` da venda SEM comanda, a partir da revisão.
+
+    Mesmo formato do eco do salvar (:func:`tab_line_prices`): as linhas que a
+    revisão devolve (``PosSaleReview.priced_lines``) já têm o feitio da linha da
+    comanda, e o desconto manual já foi decidido contra o automático ali.
+    """
+    return {
+        line["line_id"]: _tab_line_price_fields(line, {})
+        for line in (priced_lines or ())
+        if line.get("line_id")
     }
 
 
