@@ -122,7 +122,7 @@ Coordenar o Shopman da Nelson Boulangerie até a virada para produção.
   - Caixas Presente: **entram** no Dia 1.
   - Demais itens: aceitos como recomendado (estoque por contagem; cupons desligados;
     custo de insumos depois; fichas como estão; Yooga mantém; ensaio no vivo antes).
-    Catálogo (B5): reenviado em 14/10 (rec. 1: sessão de 2 h com a fila de divergências do
+    Catálogo (B5): **1** (14/10): sessão de 2 h com a fila de divergências do
     catálogo consolidado e inventário na véspera; 2: abrir com o seed e corrigir aberto).
 - Alterações no alpha que esperam: pedido mínimo de entrega está em 0 desde a prova
   da TaOn de 13/10 e **volta a R$ 25** (Admin, "Pedidos e entrega") quando a prova
@@ -212,9 +212,30 @@ um cadastro espartano: à altura da UX da suíte.
 - Falta, a confirmar com inventário: **criar produto** do zero no Nuxt (hoje o
   painel edita), grupos de clientes (só Admin), e o que mais só existe no Admin.
 
+**Por que importa (dono, 14/10):** é o caminho para o gerente e o dono corrigirem tudo
+direto no sistema, inclusive a fila de divergências do catálogo do Dia 1 (B5 = 1) e os
+grupos de preço da §7.1.
+
+**O que todo cadastro precisa ter (requisitos do dono, 14/10):**
+- **Ações em lote** sobre a seleção (publicar, pausar, mudar grupo, aplicar ajuste,
+  apagar com confirmar + Desfazer).
+- **Edição em massa tipo tabelão:** grade editável célula a célula, com colar de
+  planilha, desfazer e salvar em lote (o catálogo do Gestor já é o embrião).
+- Filtros, busca e ordenação em toda lista.
+- **Listas sensíveis a data** (pedidos, compras, produções, validades, preços com
+  vigência) abrem ordenadas e filtradas pela data, com atalhos de período.
+- **Duplicar registro** (produto, receita, insumo, fornecedor, grupo) como gesto de
+  primeira classe.
+- **Exportar e importar** (CSV/planilha, pt-BR: vírgula decimal, como o #1670), com prévia
+  do que muda e relatório de erro por linha antes de gravar.
+- À altura da suíte: peças do `operator-kit` (OperatorTable, BulkBar, FilterPanel,
+  QuickFilters, RecordNav, ActionBar) e o checklist D1 a D12. O que faltar no kit nasce
+  no kit, uma vez, e serve a todos os cadastros.
+
 **Primeiro passo:** um agente faz o inventário campo a campo (o que o Admin edita
-e o Nuxt não) para produto, receita, insumo, cliente, fornecedor e grupo, e propõe
-as ondas. A proposta vai ao dono em 1/2, com capturas, antes do código.
+e o Nuxt não) para produto, receita, insumo, cliente, fornecedor e grupo, mais o que o
+kit já oferece para cada requisito acima, e propõe as ondas (a primeira: catálogo de
+produtos, por causa do B5). A proposta vai ao dono em 1/2, com capturas, antes do código.
 
 ## 8. Pendências que dependem do dono
 
