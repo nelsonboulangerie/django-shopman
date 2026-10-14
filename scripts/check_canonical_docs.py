@@ -381,6 +381,10 @@ def _job_matrix(block: list[str]) -> dict[str, list[str]]:
     return matrix
 
 
+def _render_matrix_name(name: str, values: dict[str, str]) -> str:
+    return MATRIX_REF_RE.sub(lambda match: values[match.group(1)], name)
+
+
 def _job_check_names(job_id: str, block: list[str]) -> set[str]:
     """Nomes de check que um job publica, como o GitHub os monta."""
     name = job_id
@@ -406,10 +410,7 @@ def _job_check_names(job_id: str, block: list[str]) -> set[str]:
         if unknown:
             raise ValueError(f"job {job_id}: unsupported dynamic surface axes {unknown}")
         return {
-            MATRIX_REF_RE.sub(
-                lambda match: surface_id if match.group(1) == "id" else surface["dir"],
-                name,
-            )
+            _render_matrix_name(name, {"id": surface_id, "dir": surface["dir"]})
             for surface_id, surface in selected
         }
     matrix = _job_matrix(block)
