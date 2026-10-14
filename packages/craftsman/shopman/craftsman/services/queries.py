@@ -132,12 +132,27 @@ class CraftQueries:
         explodida), então o motivo não tem onde aparecer por linha — quem
         mostra a explicação é a projection, no cabeçalho.
         """
-        from shopman.craftsman.models import WorkOrder
+        from django.db.models import Prefetch
+        from shopman.craftsman.models import RecipeItem, WorkOrder
 
-        orders = WorkOrder.objects.filter(
-            status__in=[WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED],
-            target_date=date,
-        ).select_related("recipe").prefetch_related("recipe__items")
+        # Os itens são filtrados e ordenados NO prefetch: um filter dentro do
+        # laço abriria um queryset novo e voltaria ao banco uma vez por WO. O
+        # to_attr entrega a lista pronta em recipe.need_items; o cache do manager
+        # fica intocado de propósito, porque quem consome é só este laço.
+        orders = (
+            WorkOrder.objects.filter(
+                status__in=[WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED],
+                target_date=date,
+            )
+            .select_related("recipe")
+            .prefetch_related(
+                Prefetch(
+                    "recipe__items",
+                    queryset=RecipeItem.objects.filter(is_optional=False).order_by("sort_order"),
+                    to_attr="need_items",
+                )
+            )
+        )
 
         # Necessidade IMEDIATA (um nível de BOM), agregada por (insumo, unidade).
         # Agregar antes de explodir é o que permite orçar a margem na fornada
@@ -149,7 +164,7 @@ class CraftQueries:
             recipe = wo.recipe
             coefficient = wo.quantity / recipe.batch_size
             counted_output = _is_counted_output(recipe)
-            for ri in recipe.items.filter(is_optional=False).order_by("sort_order"):
+            for ri in recipe.need_items:
                 key = (ri.input_sku, ri.unit)
                 immediate[key] = immediate.get(key, Decimal("0")) + ri.quantity * coefficient
                 if yield_margin and counted_output and _margin_applies(ri):
