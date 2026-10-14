@@ -119,12 +119,13 @@ def test_estorno_do_cartao_diz_que_volta_na_fatura():
 
 @_MOCK_ADAPTERS
 def test_estorno_sem_gateway_nao_avisa_como_se_o_sistema_tivesse_devolvido():
-    # Maquininha / cobrança externa: o livro registra, mas quem devolve é gente.
+    # Maquininha / cobrança externa: quem devolve é gente. O livro só registra no
+    # "Estornei na maquininha" (P0-2), e nenhum aviso sai antes disso.
     order = _paid_order("ORD-RF-EXT", method="external", gateway="")
 
     payment_service.refund(order)
 
-    assert PaymentService.refunded_total(f"INT-{order.ref}") == 5000
+    assert PaymentService.refunded_total(f"INT-{order.ref}") == 0
     assert not _refund_notices(order.ref).exists()
 
 

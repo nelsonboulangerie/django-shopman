@@ -271,6 +271,22 @@ const ORDER_BY_KEY = new Map();
 // natureza, para a Sessão de caixa, o Fim do dia e o Relatório terem o que mostrar.
 // `MOCK_DAY_CLOSED=1` serve o dia já fechado (o quadro do dia, com as tabelas).
 const DAY_CLOSED = process.env.MOCK_DAY_CLOSED === "1";
+// `MOCK_CARD_MACHINE_REFUNDS=1`: estornos na maquininha esperando o "Estornei"
+// (venda cancelada no crédito, com NSU; devolução de parte de uma venda no débito).
+const CARD_MACHINE_REFUNDS = SALE && process.env.MOCK_CARD_MACHINE_REFUNDS === "1"
+  ? [
+    {
+      order_ref: "PDV-260929-K7Q", amount_q: 3450, amount_display: "R$ 34,50", customer_name: "Marina Lopes",
+      method_label: "Crédito", reason: "cancelled", reason_label: "Venda cancelada",
+      lookup_display: "Aprovado em 29/09 às 09:41 · NSU 004512",
+    },
+    {
+      order_ref: "PDV-260928-B2M", amount_q: 1200, amount_display: "R$ 12,00", customer_name: "",
+      method_label: "Débito", reason: "partial_return", reason_label: "Devolução de parte da venda",
+      lookup_display: "Aprovado em 28/09 às 16:05",
+    },
+  ]
+  : [];
 if (SALE) {
   pos.checkout.capabilities.cash_management = {
     enabled: true,
@@ -289,7 +305,7 @@ if (SALE) {
       { ref: "CR-1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [1000, 500], note: "", requested_by: "Ana", requested_at: "2026-09-29T10:12:00-03:00" },
     ],
     pending_cash_refunds: [],
-    pending_card_machine_refunds: [],
+    pending_card_machine_refunds: CARD_MACHINE_REFUNDS,
     account_balances: [
       { customer_ref: "C-9", customer_name: "Carlos Mendes", balance_q: 4200, balance_display: "R$ 42,00", intents: 2, oldest_at: "" },
     ],

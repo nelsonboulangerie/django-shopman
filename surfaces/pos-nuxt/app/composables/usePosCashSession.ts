@@ -396,7 +396,8 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
     });
   }
 
-  // Estorno na maquininha de encomenda que ficou mais barata (WP-E6): o sistema
+  // Estorno na maquininha (venda cancelada ou devolvida, encomenda que ficou
+  // mais barata; WP-E6 e P0-2): o sistema
   // não fala com a maquininha, então o operador estorna NELA e registra aqui,
   // com o PIN do gerente (volta dinheiro para o cartão do cliente). Nada sai da
   // gaveta — a gaveta não abre.

@@ -242,8 +242,9 @@ class POSPendingCashRefundProjection:
 
 @dataclass(frozen=True)
 class POSPendingCardMachineRefundProjection:
-    """Encomenda reduzida paga na maquininha: o estorno é feito NA maquininha.
+    """Venda paga na maquininha que precisa de estorno NA maquininha.
 
+    Cancelada, devolvida (toda ou em parte) ou encomenda que ficou mais barata.
     O sistema não fala com a maquininha (o cartão do balcão é atestado), então o
     estorno também é: o operador estorna nela e toca "Estornei na maquininha", e
     só então o Payman registra. Até lá a pendência fica no *Precisa de você*.
@@ -254,6 +255,12 @@ class POSPendingCardMachineRefundProjection:
     amount_display: str
     customer_name: str
     method_label: str  # "Crédito" · "Débito" · "Cartão"
+    #: ``cancelled`` · ``returned`` · ``partial_return`` · ``reduced``.
+    reason: str = "reduced"
+    reason_label: str = ""  # "Venda cancelada" · "Venda devolvida" · ...
+    #: Como achar a transação na maquininha: hora da aprovação, NSU e
+    #: autorização quando houver ("Aprovado em 13/10 às 14:32 · NSU 123456").
+    lookup_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -2247,10 +2254,30 @@ def _pending_cash_refunds(cash_shift) -> tuple[POSPendingCashRefundProjection, .
     )
 
 
-_CARD_MACHINE_METHOD_LABELS = {"credit": "Crédito", "debit": "Débito"}
+_CARD_MACHINE_METHOD_LABELS = {"credit": "Crédito", "debit": "Débito", "pix": "Pix"}
+
+
+def _card_machine_lookup_display(item) -> str:
+    from django.utils.dateparse import parse_datetime
+
+    parts = []
+    paid_at = parse_datetime(item.paid_at) if item.paid_at else None
+    if paid_at is not None:
+        parts.append(f"Aprovado em {timezone.localtime(paid_at).strftime('%d/%m às %H:%M')}")
+    if item.nsu:
+        parts.append(f"NSU {item.nsu}")
+    if item.authorization:
+        parts.append(f"Autorização {item.authorization}")
+    return " · ".join(parts)
 
 
 def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefundProjection, ...]:
+    """Todas as pendências da maquininha, de qualquer canal.
+
+    A devolução em dinheiro é da gaveta deste terminal; o estorno na maquininha
+    não: a entrega cobrada no cartão do entregador também se estorna no balcão,
+    e o pedido cancelado no Gestor de noite aparece aqui de manhã.
+    """
     from shopman.shop.services import payment as payment_service
 
     return tuple(
@@ -2260,8 +2287,11 @@ def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefu
             amount_display=f"R$ {format_money(item.amount_q)}",
             customer_name=item.customer_name,
             method_label=_CARD_MACHINE_METHOD_LABELS.get(item.method, "Cartão"),
+            reason=item.reason,
+            reason_label=payment_service.CARD_MACHINE_REFUND_REASONS.get(item.reason, "").capitalize(),
+            lookup_display=_card_machine_lookup_display(item),
         )
-        for item in payment_service.pending_card_machine_refunds(channel_ref=cash_shift.terminal.channel_ref)
+        for item in payment_service.pending_card_machine_refunds()
     )
 
 

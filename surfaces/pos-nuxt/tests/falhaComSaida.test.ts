@@ -47,7 +47,7 @@ import { describe, expect, it } from "vitest";
 
 /** O que conta como saída: um verbo que o operador pode executar agora. */
 const GESTO =
-  /\b(tente|tenta|confira|confirme|avise|chame|peça|refaça|digite|atualize|reabra|feche|corrija|cancele|siga|repetir|repita|identifique|configure|reinicie|escolha|informe|aguarde|volte|busque|selecione|copie|mande|reimprima)\b/i;
+  /\b(tente|tenta|confira|confirme|avise|chame|peça|refaça|digite|atualize|reabra|feche|corrija|cancele|siga|repetir|repita|identifique|configure|reinicie|escolha|informe|aguarde|volte|busque|selecione|copie|mande|reimprima|estorne)\b/i;
 
 // ───────────────────────────────────────────────────────────────────────────
 // A varredura

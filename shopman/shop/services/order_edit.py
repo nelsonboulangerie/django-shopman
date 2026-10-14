@@ -116,7 +116,7 @@ ROUTE_GATEWAY = "gateway"
 ROUTE_CARD_MACHINE = "card_machine"
 ROUTE_ACCOUNT = "account"
 
-_CARD_MACHINE_METHODS = frozenset({"credit", "debit", "external"})
+CARD_MACHINE_METHODS = frozenset({"credit", "debit", "external"})
 _COUNTER_METHODS = frozenset({"cash", "credit", "debit"})
 
 
@@ -903,7 +903,7 @@ def refund_route(intent) -> str:
         return ROUTE_CASH
     if method == "account":
         return ROUTE_ACCOUNT
-    if method in _CARD_MACHINE_METHODS:
+    if method in CARD_MACHINE_METHODS:
         return ROUTE_CARD_MACHINE
     if not intent.gateway:
         # Pix/cartão ATESTADOS no balcão (venda mista): não há gateway, a prova
@@ -1047,7 +1047,7 @@ def _tender_route(tender: dict) -> str:
     method = str(tender.get("method") or "")
     if method == "cash":
         return ROUTE_CASH
-    if method in _CARD_MACHINE_METHODS or str(tender.get("collection") or "") == "terminal":
+    if method in CARD_MACHINE_METHODS or str(tender.get("collection") or "") == "terminal":
         return ROUTE_CARD_MACHINE
     return ROUTE_GATEWAY
 

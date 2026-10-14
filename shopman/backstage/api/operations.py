@@ -6139,6 +6139,36 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
         )
 
 
+def _card_machine_refund_due(order_ref: str) -> dict | None:
+    """O estorno que a venda cancelada deixa para a maquininha, para a tela dizer na hora.
+
+    ``None`` quando nada foi pela maquininha. A pendência em si é derivada e
+    mora na Sessão de caixa; isto só é a frase do momento do cancelamento.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import payment as payment_service
+
+    order = Order.objects.filter(ref=order_ref).first()
+    if order is None:
+        return None
+    try:
+        amount_q, refs = payment_service.card_machine_refund_due(order)
+    except Exception:
+        logger.warning("pos_cancel_card_machine_due_failed order=%s", order_ref, exc_info=True)
+        return None
+    if amount_q <= 0:
+        return None
+    from shopman.payman import PaymentService
+
+    method = str(getattr(PaymentService.get(refs[-1]), "method", "") or "")
+    return {
+        "amount_q": amount_q,
+        "amount_display": f"R$ {format_money(amount_q)}",
+        "method_label": payment_service.CARD_MACHINE_METHOD_WORDS.get(method, "cartão"),
+    }
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -6188,4 +6218,4 @@ class POSCancelRecentSaleView(APIView):
             return Response({"detail": str(exc)}, status=404)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=422)
-        return Response({"ok": True, "order_ref": order_ref})
+        return Response({"ok": True, "order_ref": order_ref, "card_machine_refund": _card_machine_refund_due(order_ref)})
