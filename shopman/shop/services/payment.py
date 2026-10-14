@@ -496,13 +496,17 @@ def settle_terminal_tenders(order) -> dict[str, str]:
                 gateway_data={"collection": "terminal", "terminal_ref": _terminal_ref(order)},
             )
         else:
+            gateway_data = {"collection": "terminal", "terminal_ref": _terminal_ref(order)}
+            if method == "pix":
+                # Quem atestou o Pix que o provedor não viu (gesto "Recebi o Pix").
+                gateway_data.update(_pix_confirmation(payment_data))
             intent = PaymentService.settle(
                 order.ref,
                 amount_q,
                 method,
                 currency="BRL",
                 idempotency_key=idempotency_key,
-                gateway_data={"collection": "terminal", "terminal_ref": _terminal_ref(order)},
+                gateway_data=gateway_data,
                 asserted_at_terminal=gateway_method,
             )
         settled[method] = intent.ref
@@ -516,6 +520,19 @@ def settle_terminal_tenders(order) -> dict[str, str]:
     if settled:
         _persist_tender_intents(order, payment_data=payment_data, settled=settled, single=not mixed)
     return settled
+
+
+def _pix_confirmation(payment_data: dict) -> dict:
+    """``{pix_confirmed_by, pix_confirmed_at}`` da linha de Pix atestada, ou ``{}``."""
+    for tender in payment_data.get("tenders") or []:
+        if not isinstance(tender, dict) or str(tender.get("method") or "").strip().lower() != "pix":
+            continue
+        if tender.get("pix_confirmed_by"):
+            return {
+                "pix_confirmed_by": str(tender["pix_confirmed_by"]),
+                "pix_confirmed_at": str(tender.get("pix_confirmed_at") or ""),
+            }
+    return {}
 
 
 def _terminal_amounts_by_method(order, *, payment_data: dict) -> dict[str, int]:

@@ -188,6 +188,10 @@ const SEATING = SALE && process.env.MOCK_SEATING === "1";
 // Os selos do quadro (só na prévia): a 14 com a cozinha toda no Pronto ("Tudo pronto")
 // e a 13 enviada à cozinha e não paga ("Não pago").
 const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
+// Prévia da encomenda do dia (MOCK_PREORDER=1): a comanda 13 vira encomenda de
+// retirada para hoje. Com MOCK_FIRE=preorder_unpaid o "Enviar à cozinha" recusa como
+// o servidor (encomenda cobra antes); sem ele, envia. Fora das flags, nada muda.
+const PREORDER = SALE && process.env.MOCK_PREORDER === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -423,6 +427,7 @@ function tabPayload(ref) {
   const inUse = ref === "12";
   const full = ref === "13";
   const saved = SAVED_ITEMS.get(ref);
+  const preorder = PREORDER && full;
   return {
     revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
     tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
@@ -436,6 +441,7 @@ function tabPayload(ref) {
     customer_ref: inUse ? "C-1" : full ? "C-13" : "",
     customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
     delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
+    ...(preorder ? { sales_mode: "order", fulfillment_type: "pickup", delivery_date: TODAY } : {}),
   };
 }
 function review(body) {
@@ -733,6 +739,29 @@ createServer((req, res) => {
         if (body?.to_tab_ref) TRANSFERRED_FROM.set(to, from);
         const closed = Boolean(body?.close_source_when_empty) && rest.length === 0;
         send(res, 200, { ok: true, source_closed: closed, source: closed ? null : { ...tabPayload(from), items: rest }, target: tabPayload(to) });
+      });
+      return;
+    }
+    if (path === "/api/v1/backstage/pos/tabs/fire/") {
+      void readBody(req).then((body) => {
+        const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";
+        if (process.env.MOCK_FIRE === "preorder_unpaid" && tabPayload(ref).sales_mode === "order") {
+          const error = {
+            code: "preorder_unpaid",
+            message: "Esta encomenda ainda não foi paga. Ela vai à cozinha sozinha quando o pagamento entrar.",
+            field: "payment", focus: "payment",
+            recovery: "Para receber na retirada ou na entrega, marque isso no Pagamento e envie de novo.",
+          };
+          return send(res, 422, { detail: error.message, error });
+        }
+        const ids = new Set(body?.line_ids || []);
+        const before = SAVED_ITEMS.get(ref) ?? tabPayload(ref).items;
+        const items = before.map((item) => (ids.size && !ids.has(item.line_id)) || item.fired
+          ? item
+          : { ...item, fired: true, fired_qty: item.qty, kitchen_status: "queued" });
+        SAVED_ITEMS.set(ref, items);
+        const fired = items.filter((item) => item.fired).map((item) => item.line_id);
+        send(res, 200, { ok: true, fired_count: 1, fired_lines: fired, tab: { ...tabPayload(ref), items } });
       });
       return;
     }

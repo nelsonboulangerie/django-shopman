@@ -1641,3 +1641,54 @@ it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(w.text()).not.toContain("Como o cliente vai receber?");
 });
+
+// P1-7: o Pix da venda mista não liquida pela palavra solta. Antes de validar, o
+// mesmo degrau da maquininha pede a conferência, e o botão diz o que afirma.
+describe("Pix na venda mista: Recebi o Pix", () => {
+  afterEach(() => { document.body.innerHTML = ""; });
+  const mixed = [
+    { method: "cash", amount_q: 200, collection: "terminal" as const },
+    { method: "pix", amount_q: 800, collection: "terminal" as const },
+  ];
+
+  it("Validar abre a conferência do Pix; confirmar marca e só então submete", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentTenders: mixed, paymentCovered: true, paymentRemainingQ: 0 }),
+    });
+    await cta(w)!.trigger("click");
+    await w.vm.$nextTick();
+    expect(w.emitted("submit")).toBeUndefined();
+    expect(document.body.textContent).toContain("Confira o Pix");
+    const confirm = document.querySelector<HTMLButtonElement>("[data-pos-machine-charged]")!;
+    expect(confirm.textContent).toContain("Recebi o Pix");
+    confirm.click();
+    await w.vm.$nextTick();
+    expect(w.emitted("confirmPix")).toHaveLength(1);
+    expect(w.emitted("submit")).toHaveLength(1);
+  });
+
+  it("Pix sozinho segue sem o gesto: quem confirma é o provedor", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" as const }],
+        paymentCovered: true, paymentRemainingQ: 0,
+      }),
+    });
+    await cta(w)!.trigger("click");
+    expect(w.emitted("submit")).toHaveLength(1);
+    expect(w.emitted("confirmPix")).toBeUndefined();
+  });
+
+  it("encomenda já na cozinha não valida com Pix pendente (gêmea de preorder_fired_unpaid)", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        salesMode: "order",
+        items: [item({ sku: "QUICHE", name: "Quiche", fired: true, fired_qty: 1 })],
+        paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" as const }],
+        paymentCovered: true, paymentRemainingQ: 0,
+      }),
+    });
+    expect(cta(w)!.attributes("disabled")).toBeDefined();
+    expect(w.text()).toContain("Esta encomenda já está na cozinha.");
+  });
+});

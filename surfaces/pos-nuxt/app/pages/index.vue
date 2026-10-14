@@ -242,6 +242,7 @@ const {
   submitMove,
   fireTab,
   unfireTab,
+  confirmPixTenders,
   unfireSelected,
   renameTab,
   openCancelSaleDialog,
@@ -1518,6 +1519,7 @@ onBeforeUnmount(() => {
         :review-failure-reason="reviewFailureReason"
         @back="checkoutMode = false"
         @submit="submitSale"
+        @confirm-pix="confirmPixTenders"
         @add-tender="addTender"
         @remove-tender="removeTender"
         @select-tender="selectTender"

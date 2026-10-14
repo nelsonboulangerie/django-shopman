@@ -127,7 +127,7 @@ def test_venda_mista_dinheiro_mais_pix_atestado_nao_e_falso_positivo(counter):
         client_request_id="c2",
         payment_tenders=[
             {"method": "cash", "amount_q": 200, "collection": "terminal"},
-            {"method": "pix", "amount_q": 1000, "collection": "terminal"},
+            {"method": "pix", "amount_q": 1000, "collection": "terminal", "pix_confirmed": True},
         ],
     )
     pix = PaymentIntent.objects.get(order_ref=result.order_ref, method="pix")
@@ -279,7 +279,7 @@ def test_cancelamento_de_venda_mista_devolve_so_o_dinheiro_da_gaveta(counter, dj
         client_request_id="c5",
         payment_tenders=[
             {"method": "cash", "amount_q": 200, "collection": "terminal"},
-            {"method": "pix", "amount_q": 1000, "collection": "terminal"},
+            {"method": "pix", "amount_q": 1000, "collection": "terminal", "pix_confirmed": True},
         ],
     )
     with django_capture_on_commit_callbacks(execute=True):
