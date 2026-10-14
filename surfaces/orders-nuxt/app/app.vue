@@ -68,7 +68,7 @@ async function restoreAuthenticatedWorkspace() {
 }
 
 const { sections, current } = useGestorSections();
-const { alerts, activeCount, ack } = useAlerts();
+const { alerts, activeCount, ack, accept, isAccepting } = useAlerts();
 provideOperatorInboxAlerts(() => ({
   title: "Gerais",
   emptyText: "Nenhum alerta de pedido agora.",
@@ -78,6 +78,12 @@ provideOperatorInboxAlerts(() => ({
     const alert = alerts.value.find((item) => item.pk === key);
     if (alert) return ack(alert);
   },
+  // O gesto direto do aviso (P2-19: "Aceitar" no pedido parado sem aceite).
+  act: async (key) => {
+    const alert = alerts.value.find((item) => item.pk === key);
+    if (alert) await accept(alert);
+  },
+  isPending: (key) => isAccepting(Number(key)),
 }));
 
 useOperatorWindowTitle();

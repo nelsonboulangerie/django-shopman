@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // O aviso que não espera (decisão do dono, 07/10/2026): quando a causa tem prazo, a tela
 // para até alguém ver. "Resolver" leva ao lugar exato; "Visto" registra a ciência e
-// libera a tela, e o aviso volta num ritmo proporcional ao que falta
+// libera a tela; e quando o servidor oferece o gesto que resolve ali mesmo (P2-19:
+// "Aceitar" no pedido parado), ele é o botão principal e "Resolver" vira contorno, e o aviso volta num ritmo proporcional ao que falta
 // (`reminderIntervalMs`, dono, 08/10/2026) até a causa acabar.
 //
 // Lê num relance, sempre na mesma ordem (dono, 08/10/2026): de onde vem, o assunto,
@@ -13,7 +14,10 @@
 import { useNow } from "@vueuse/core";
 import { computed, onBeforeUnmount, onMounted } from "vue";
 
-import { useOperatorInboxAlerts } from "../composables/useSuiteChrome";
+import {
+  useOperatorInboxAlerts,
+  type OperatorInboxAlert,
+} from "../composables/useSuiteChrome";
 import {
   reminderIntervalMs,
   respondInLabel,
@@ -48,11 +52,47 @@ async function seen() {
   if (!blocking.value) return;
   await source.value?.ack?.(blocking.value.key);
 }
+/** O app sabe executar o gesto direto deste aviso? */
+const canAct = computed(() =>
+  Boolean(blocking.value?.actLabel && source.value?.act),
+);
+async function actNow() {
+  const alert = blocking.value;
+  if (!alert) return;
+  await source.value?.act?.(alert.key);
+}
 async function resolveNow() {
   const alert = blocking.value;
   if (!alert) return;
   await source.value?.ack?.(alert.key);
   if (alert.href) await navigateTo(alert.href);
+}
+
+/** O lembrete leva os mesmos gestos da janela: o direto primeiro, depois o lugar. */
+function reminderActions(alert: OperatorInboxAlert) {
+  const list = [
+    ...(alert.actLabel && source.value?.act
+      ? [
+          {
+            label: alert.actLabel,
+            color: "error" as const,
+            variant: "solid" as const,
+            onClick: () => void source.value?.act?.(alert.key),
+          },
+        ]
+      : []),
+    ...(alert.href
+      ? [
+          {
+            label: alert.hrefLabel || "Abrir",
+            to: alert.href,
+            color: "error" as const,
+            variant: "outline" as const,
+          },
+        ]
+      : []),
+  ];
+  return list.length ? list : undefined;
 }
 
 const nextReminder = new Map<string | number, number>();
@@ -78,16 +118,7 @@ function remind() {
       color: "error",
       icon: "i-lucide-alarm-clock",
       duration: 15_000,
-      actions: alert.href
-        ? [
-            {
-              label: alert.hrefLabel || "Abrir",
-              to: alert.href,
-              color: "error",
-              variant: "outline",
-            },
-          ]
-        : undefined,
+      actions: reminderActions(alert),
     });
   }
 }
@@ -150,7 +181,14 @@ onBeforeUnmount(() => {
     </template>
     <!-- 5 o que fazer. -->
     <template #footer>
-      <div class="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+      <div
+        class="grid w-full gap-2"
+        :class="
+          canAct
+            ? 'grid-cols-3'
+            : 'grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
+        "
+      >
         <NuxtButton
           block
           color="neutral"
@@ -162,13 +200,25 @@ onBeforeUnmount(() => {
         />
         <NuxtButton
           block
-          color="primary"
+          :color="canAct ? 'neutral' : 'primary'"
+          :variant="canAct ? 'outline' : 'solid'"
           icon="i-lucide-arrow-right"
           :label="blocking?.hrefLabel || 'Resolver agora'"
           :disabled="pending"
-          :loading="pending"
+          :loading="pending && !canAct"
           data-operator-urgent-resolve
           @click="resolveNow"
+        />
+        <NuxtButton
+          v-if="canAct"
+          block
+          color="primary"
+          icon="i-lucide-check"
+          :label="blocking?.actLabel"
+          :disabled="pending"
+          :loading="pending"
+          data-operator-urgent-act
+          @click="actNow"
         />
       </div>
     </template>

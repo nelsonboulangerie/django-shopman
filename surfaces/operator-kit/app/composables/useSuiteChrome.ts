@@ -39,6 +39,8 @@ export interface OperatorInboxAlert {
   /** Leva ao lugar exato. */
   href?: string;
   hrefLabel?: string;
+  /** O gesto que resolve ali mesmo ("Aceitar"); o app executa por `act`. */
+  actLabel?: string;
   /** O servidor oferece "Visto" para este alerta. */
   canAck?: boolean;
   /** Prazo em que a causa decide sozinha (ISO). Com prazo e sem Visto, o
@@ -61,6 +63,8 @@ export interface OperatorInboxAlertSource {
   /** Quantos contam no selo (ativos). */
   count: number;
   ack?: (key: string | number) => void | Promise<void>;
+  /** Executa o gesto direto do alerta (`actLabel`). Sem ele, o botão não aparece. */
+  act?: (key: string | number) => void | Promise<void>;
   isPending?: (key: string | number) => boolean;
 }
 

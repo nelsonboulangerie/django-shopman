@@ -206,6 +206,35 @@ describe("Avisos: um selo para a caixa inteira", () => {
   });
 });
 
+describe("o aviso com a ação pronta (P2-19 do mapa de cenários)", () => {
+  const base = {
+    pk: 19, type_label: "Pedido parado aguardando confirmação", severity: "warning", severity_label: "Aviso",
+    message: "O pedido W19 espera aceite.", order_ref: "W19", created_at_display: "21:55",
+  };
+
+  it("o gesto que resolve (source_alert_effect=resolves) vira actLabel, ao lado do Abrir e do Visto", () => {
+    const view = operatorAlertToInbox({
+      ...base,
+      actions: [
+        { kind: "confirm_order", enabled: true, label: "Aceitar", href: "/api/v1/backstage/orders/W19/confirm/", source_alert_effect: "resolves" },
+        { kind: "open_alert_context", enabled: true, label: "Abrir o pedido", href: "/W19", source_alert_effect: "keeps_open" },
+        { kind: "acknowledge_alert", enabled: true, label: "Visto", source_alert_effect: "acknowledges" },
+      ],
+    });
+    expect(view).toMatchObject({ actLabel: "Aceitar", href: "/W19", hrefLabel: "Abrir o pedido", canAck: true });
+  });
+
+  it("sem o gesto do servidor (ou travado), não há actLabel", () => {
+    expect(operatorAlertToInbox({ ...base, actions: [] }).actLabel).toBeUndefined();
+    expect(
+      operatorAlertToInbox({
+        ...base,
+        actions: [{ kind: "confirm_order", enabled: false, label: "Aceitar", source_alert_effect: "resolves" }],
+      }).actLabel,
+    ).toBeUndefined();
+  });
+});
+
 describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => {
   const NOW = Date.parse("2026-10-07T15:00:00Z");
   const at = (minutes: number) => new Date(NOW + minutes * 60_000).toISOString();
