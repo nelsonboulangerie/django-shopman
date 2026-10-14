@@ -515,6 +515,7 @@ Antes de alterar qualquer coisa no Core, **compreenda como ele já resolve o pro
 
 ## Referências
 
+- [docs/plans/COORDENACAO-GO-LIVE.md](docs/plans/COORDENACAO-GO-LIVE.md) — **Quem assume a coordenação lê primeiro**: papel, regras dos agentes, checklist de design D1–D12, estado, decisões do dono e frentes abertas até o go-live
 - [docs/reference/data-schemas.md](docs/reference/data-schemas.md) — **Obrigatório**: inventário de chaves em Session.data, Order.data, Directive.payload
 - [docs/guides/lifecycle.md](docs/guides/lifecycle.md) — Guia da arquitetura: Lifecycle, Services, Adapters, Rules
 - [docs/ROADMAP.md](docs/ROADMAP.md) — Visão geral de próximos passos e ideias futuras
