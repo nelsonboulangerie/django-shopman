@@ -54,7 +54,7 @@ export function courierCallLabel(courier: Pick<PreorderCourier, "status" | "atte
 /** "Moto Honda CG · ABC1D23": o que o balcão confere quando o entregador chega. */
 export function vehicleLine(driver: PreorderCourier["driver"]): string {
   if (!driver) return "";
-  return [driver.vehicle_model, driver.vehicle_plate].filter(Boolean).join(" · ");
+  return [driver.vehicle_model, driver.vehicle_color, driver.vehicle_plate].filter(Boolean).join(" · ");
 }
 
 /** `tel:` só com os dígitos (e o +). */

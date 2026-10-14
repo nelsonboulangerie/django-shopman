@@ -58,6 +58,7 @@ export type CourierBlock = {
     phone: string;
     vehicle_plate: string;
     vehicle_model: string;
+    vehicle_color?: string;
   } | null;
   tracking_url: string;
   confirmation_code: string;
@@ -67,6 +68,14 @@ export type CourierBlock = {
   dispatched_at: string;
   finished_at: string;
   attempts_count: number;
+  /** Andamento lido da TaOn, em instantes ISO (`courier.progress_view`); a tela conta os minutos. */
+  pickup_eta_at?: string;
+  arrived_pickup_at?: string;
+  picked_up_at?: string;
+  delivery_eta_at?: string;
+  arrived_dropoff_at?: string;
+  /** Desde quando a TaOn não informa a corrida (vazio com a leitura em dia). */
+  sync_since?: string;
   position: { lat: string; lng: string } | null;
   error: { message: string; at: string } | null;
   can_quote: boolean;

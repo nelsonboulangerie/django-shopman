@@ -21,6 +21,7 @@ import type {
   EquipmentOptionProjection,
 } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
+import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 
 const props = defineProps<{
   courier: CourierBlock;
@@ -183,6 +184,26 @@ const quoteActions = computed(() => [
 ]);
 
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
+
+// O andamento (chega para coletar, entrega prevista) anda com o relógio da
+// tela entre uma leitura e outra; a leitura nova chega por SSE.
+const progress = computed(() => courierProgress(props.courier, nowMs.value));
+// "Sem notícias da TaOn" se dispensa, e volta se a falha recomeçar.
+const staleDismissedFor = ref("");
+const showStale = computed(
+  () =>
+    Boolean(progress.value.stale) &&
+    staleDismissedFor.value !== (props.courier.sync_since ?? ""),
+);
+const vehicle = computed(() =>
+  [
+    props.courier.driver?.vehicle_model,
+    props.courier.driver?.vehicle_color,
+    props.courier.driver?.vehicle_plate,
+  ]
+    .filter(Boolean)
+    .join(" · "),
+);
 </script>
 
 <template>
@@ -223,7 +244,41 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
         </span>
       </div>
 
+      <!-- o andamento: quando chega para coletar e quando a entrega está prevista -->
+      <div
+        v-if="progress.pickup || progress.delivery"
+        class="flex flex-col gap-0.5"
+        data-testid="courier-progress"
+      >
+        <p v-if="progress.pickup" class="font-medium tabular-nums" role="status">
+          {{ progress.pickup }}
+        </p>
+        <!-- Depois da coleta a entrega prevista é a linha principal. -->
+        <p
+          v-if="progress.delivery"
+          class="tabular-nums"
+          :class="
+            progress.pickup ? 'text-sm text-muted-foreground' : 'font-medium'
+          "
+        >
+          {{ progress.delivery }}
+        </p>
+      </div>
+
       <div class="flex flex-col gap-3">
+        <!-- a TaOn parou de informar a corrida: o que está na tela pode estar parado -->
+        <NuxtAlert
+          v-if="showStale"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-cloud-off"
+          :title="progress.stale"
+          description="O status na tela pode estar parado. Confira no painel da TaOn."
+          close
+          data-testid="courier-stale"
+          @update:open="staleDismissedFor = courier.sync_since ?? ''"
+        />
+
         <!-- lembrete: já dá para chamar o entregador? -->
         <NuxtAlert
           v-if="reminderLine"
@@ -304,17 +359,11 @@ const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
                 variant="ghost"
               />
               <p
-                v-if="
-                  courier.driver.vehicle_model || courier.driver.vehicle_plate
-                "
+                v-if="vehicle"
                 class="flex items-center gap-1.5 text-muted-foreground"
               >
                 <Icon name="lucide:bike" class="size-4" />
-                {{
-                  [courier.driver.vehicle_model, courier.driver.vehicle_plate]
-                    .filter(Boolean)
-                    .join(" · ")
-                }}
+                {{ vehicle }}
               </p>
             </div></template
           >

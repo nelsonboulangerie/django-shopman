@@ -540,7 +540,18 @@ function rideBlock(ref) {
     can_quote: false, can_dispatch: !active && !ride.noAnswer && ride.status !== "delivered",
     can_dispatch_again: Boolean(ride.noAnswer), can_cancel: false,
     custody: ride.custody || { change_out_suggested_q: 0, needs_machine: false, recorded: false },
+    // O andamento lido da TaOn (instantes ISO; a tela conta os minutos).
+    ...rideProgress(status, ref),
   };
+}
+
+const minutesFromNow = (minutes) => new Date(Date.now() + minutes * 60_000).toISOString();
+function rideProgress(status, ref) {
+  if (status === "A") return { pickup_eta_at: minutesFromNow(7), delivery_eta_at: minutesFromNow(16) };
+  if (status === "E") return { picked_up_at: minutesFromNow(-2), delivery_eta_at: minutesFromNow(7) };
+  // NB-1057: a TaOn parou de informar a corrida.
+  if (ref === "NB-1057") return { sync_since: minutesFromNow(-4) };
+  return {};
 }
 
 function rideCard(ref) {

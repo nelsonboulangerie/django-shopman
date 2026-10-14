@@ -15,6 +15,7 @@
 //
 // Cancelar e cotar a corrida ficam no Gestor.
 import type { OrderDetailAction } from "../../../operator-kit/app/types/orderDetail";
+import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import {
   courierBadgeColor as badgeColor,
   courierCallLabel,
@@ -44,6 +45,15 @@ const emit = defineEmits<{
 const driver = computed(() => (props.courier.driver?.name ? props.courier.driver : null));
 const vehicle = computed(() => vehicleLine(props.courier.driver));
 const noAnswer = computed(() => Boolean(props.courier.can_dispatch_again));
+
+// O andamento da TaOn (a mesma frase do Gestor): quando chega para coletar,
+// quando a entrega está prevista e, se a TaOn parou de informar, desde quando.
+const nowMs = useNowTick();
+const progress = computed(() => courierProgress(props.courier, nowMs.value));
+const staleDismissedFor = ref("");
+const showStale = computed(
+  () => Boolean(progress.value.stale) && staleDismissedFor.value !== (props.courier.sync_since ?? ""),
+);
 
 // ── Chamar: confirmação inline (a pergunta e a custódia) ──
 const confirming = ref(false);
@@ -100,6 +110,29 @@ async function callAgain() {
           data-pos-courier-state
         />
       </div>
+
+      <div v-if="progress.pickup || progress.delivery" class="grid gap-0.5" data-pos-courier-progress>
+        <p v-if="progress.pickup" class="text-sm font-medium tabular-nums" role="status">{{ progress.pickup }}</p>
+        <p
+          v-if="progress.delivery"
+          class="text-sm tabular-nums"
+          :class="progress.pickup ? 'text-muted' : 'font-medium'"
+        >
+          {{ progress.delivery }}
+        </p>
+      </div>
+
+      <NuxtAlert
+        v-if="showStale"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-cloud-off"
+        :title="progress.stale"
+        description="O status na tela pode estar parado. Confira no painel da TaOn."
+        close
+        data-pos-courier-stale
+        @update:open="staleDismissedFor = courier.sync_since ?? ''"
+      />
 
       <!-- A TaOn não respondeu à última chamada: cautela, não erro da casa. O gesto
            acompanha a cor do aviso. -->
