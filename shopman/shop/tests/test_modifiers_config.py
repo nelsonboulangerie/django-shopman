@@ -221,74 +221,7 @@ class TestTimeWindowDiscountModifier:
         assert session.items[0]["unit_price_q"] == 1000  # channel-scoped out
 
 
-# ─── EmployeeDiscountModifier ───────────────────────────────────────────────
 
-
-class TestEmployeeModifierRuleConfig:
-    @pytest.fixture
-    def modifier(self):
-        from shopman.shop.modifiers import EmployeeDiscountModifier
-        return EmployeeDiscountModifier()
-
-    def _staff_session(self):
-        return _make_session(data={"customer": {"price_tier": "staff"}})
-
-    def test_reads_percent_from_ruleconfig(self, modifier):
-        session = self._staff_session()
-        channel = _make_channel()
-        with patch("shopman.shop.rules.engine.get_rule_params", return_value={"discount_percent": 30}):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 700  # 1000 - 30%
-
-    def test_channel_config_overrides_ruleconfig(self, modifier):
-        session = self._staff_session()
-        channel = _make_channel(rules={"employee_discount_percent": 40})
-        with patch("shopman.shop.rules.engine.get_rule_params", return_value={"discount_percent": 30}):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 600  # 1000 - 40%
-
-    def test_falls_back_to_default_when_no_ruleconfig(self, modifier):
-        session = self._staff_session()
-        channel = _make_channel()
-        with patch("shopman.shop.rules.engine.get_rule_params", return_value={}):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 800  # 1000 - 20% (default)
-
-    def test_non_staff_not_affected(self, modifier):
-        session = _make_session(data={"customer": {"price_tier": "regular"}})
-        channel = _make_channel()
-        with patch("shopman.shop.rules.engine.get_rule_params", return_value={"discount_percent": 30}):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 1000  # not staff, not touched
-
-    def test_employee_tier_comes_from_ruleconfig_not_a_literal(self, modifier):
-        """O parâmetro ``price_tier`` da regra é o DONO da pergunta "qual tier
-        marca funcionário" — era um literal "staff" cravado e o parâmetro ficava
-        decorativo (achado da faxina 2026-08-13; one question, one owner)."""
-        channel = _make_channel()
-        params = {"discount_percent": 30, "price_tier": "vip"}
-
-        # O tier configurado ganha o desconto…
-        session = _make_session(data={"customer": {"price_tier": "vip"}})
-        with patch("shopman.shop.rules.engine.get_rule_params", return_value=params):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 700  # 1000 - 30%
-
-        # …e "staff" deixa de ser mágico quando a regra aponta outro tier.
-        session = self._staff_session()
-        with patch("shopman.shop.rules.engine.get_rule_params", return_value=params):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 1000
-
-    def test_modifier_records_discount_in_meta_and_pricing(self, modifier):
-        # A transparência durável vive em ``meta["_disc"]`` (modifiers_applied não
-        # sobrevive ao normalize) e em ``session.pricing["employee_discount"]``.
-        session = self._staff_session()
-        channel = _make_channel()
-        with patch("shopman.shop.rules.engine.get_rule_params", return_value={"discount_percent": 20}):
-            modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["meta"]["_disc"]["type"] == "employee_discount"
-        assert session.pricing["employee_discount"]["total_discount_q"] == 200
 
 
 

@@ -364,6 +364,16 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     out += _double(f"TOTAL R$ {format_money(order_composition.effective_total_q(order))}")
     out += _line("")
 
+    # Economia do grupo: o texto por grupo foi congelado no snapshot do pedido,
+    # então a segunda via diz o mesmo amanhã (a mensagem lê o snapshot, nunca o
+    # cadastro vivo).
+    snapshot_discount = (((order.snapshot or {}).get("pricing") or {}).get("discount") or {})
+    savings_message = str((snapshot_discount.get("savings") or {}).get("message") or "").strip()
+    if savings_message:
+        for pedaco in _wrap(savings_message, COLUMNS):
+            out += _line(pedaco)
+        out += _rule()
+
     payment = data.get("payment") or {}
     tenders = [
         tender for tender in (payment.get("tenders") or []) if isinstance(tender, dict) and tender.get("amount_q")
@@ -683,6 +693,13 @@ def order_ticket(
     out += _line("")
     out += _double(f"TOTAL R$ {format_money(order_composition.effective_total_q(order))}")
     out += _line("")
+
+    snapshot_discount = (((order.snapshot or {}).get("pricing") or {}).get("discount") or {})
+    savings_message = str((snapshot_discount.get("savings") or {}).get("message") or "").strip()
+    if savings_message:
+        for pedaco in _wrap(savings_message, COLUMNS):
+            out += _line(pedaco)
+        out += _rule()
 
     payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}
     metodo = str(payment.get("method") or "")

@@ -47,6 +47,9 @@ class DiscountLineProjection:
     label: str
     amount_q: int
     amount_display: str
+    # A promoção vencedora é restrita à retirada: o checkout avisa antes de o
+    # cliente trocar para entrega.
+    requires_pickup: bool = False
 
 
 @dataclass(frozen=True)
@@ -216,6 +219,8 @@ class CartProjection:
     actions: tuple[Action, ...]
     revision: int = 0
     draft_context: str = ""
+    # Economia do grupo (texto por grupo, Admin). Vazia quando não houve.
+    group_savings_message: str = ""
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -312,6 +317,7 @@ def build_cart(
         free_delivery_progress=free_delivery,
         upsell=upsell,
         actions=actions,
+        group_savings_message=data.group_savings_message,
     )
 
 
@@ -384,6 +390,7 @@ def _present_discount_line(dl: cart_data.CartDiscountLineProjection) -> Discount
         label=f"Cupom {dl.name}" if dl.is_coupon else dl.name,
         amount_q=dl.amount_q,
         amount_display=_money(dl.amount_q),
+        requires_pickup=dl.requires_pickup,
     )
 
 

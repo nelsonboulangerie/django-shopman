@@ -729,7 +729,7 @@ export interface POSCartItem {
    *  medido por unidade contra o preço de etiqueta. */
   discount?: { value: number; reason: string; type?: "percent" | "fixed" };
   /** Desconto AUTOMÁTICO de pricing que venceu a linha (lote/liquidação, happy
-   *  hour, funcionário), carimbado pelo kernel e exposto pelo payload da
+   *  hour, grupo de clientes), carimbado pelo kernel e exposto pelo payload da
    *  comanda. Informativo: o `price_q` da linha já vem reduzido. */
   pricing_discount?: { type: string; label: string; amount_q: number; percent: number } | null;
   /** Preço de ETIQUETA por unidade, antes de qualquer desconto. Igual a

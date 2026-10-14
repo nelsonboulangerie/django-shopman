@@ -664,6 +664,18 @@ Escrito uma única vez por `CommitService._do_commit()`.
 | `seed_namespace` | `string` | seed | QA/auditoria | Grupo deterministico do seed, ex: `"security_reliability_edges"` |
 | `seed_key` | `string` | seed | seed idempotente, QA/auditoria | Chave unica do cenario seed para evitar duplicacao em reruns |
 
+### `pricing.discount` — desconto por linha, tipo e economia do grupo
+
+O mesmo bloco vive em `Session.pricing` durante o rascunho e é selado em
+`Order.snapshot["pricing"]` no commit (`shop/modifiers.py`, `DiscountModifier`).
+É a transparência que a comanda, a sacola e o comprovante leem.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `total_discount_q` | `int` | Soma do desconto (centavos) de todos os registros `items`. |
+| `items[]` | `list[dict]` | Um registro por desconto vencedor: `{line_id, sku, type, name, original_price_q, discount_q, qty, discount_kind?, fulfillment_types?}`. `type` `"promotion"` | `"coupon"` | `"manual"`; `discount_kind` (equipe/parceiro/...) só quando o desconto veio do PRÓPRIO grupo do cliente (promoção `grupo-<ref>`); `fulfillment_types` presente quando a promoção é restrita a canal de entrega/retirada (ex.: `["pickup"]`). |
+| `savings` | `dict` ou ausente | A economia DO GRUPO consolidada para a mensagem ao cliente: `{amount_q, group, kind, message}` (presente só quando `amount_q > 0`). `message` já vem renderizada do `PriceTier.metadata.savings_message` ou do copy `CHECKOUT_GROUP_SAVINGS`. O comprovante e o checkout leem daqui, do snapshot imutável do pedido. |
+
 ### Exemplo completo
 
 ```json
@@ -1671,6 +1683,24 @@ Adapters aceitos por tipo:
 ### Prioridade de resolução
 
 `Shop.integrations` → `settings.SHOPMAN_*_ADAPTERS` → defaults de código.
+
+---
+
+## guestman.PriceTier.metadata
+
+O grupo comercial do cliente (`PriceTier`) já carrega a tabela de preço em
+`listing_ref` e o desconto do grupo numa `Promotion` derivada (`grupo-<ref>`).
+Estas chaves são o que o grupo ganha ALÉM do preço: classificação do desconto
+para o B.I., arredondamento do preço final e o texto da economia. Contexto
+comercial, sem campo novo no Core (decisão do dono, 14/10/2026).
+
+**Campo**: `PriceTier.metadata` (JSONField, `shopman/guestman/models/price_tier.py`).
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `discount_kind` | `str` | **Admin** (campo "Tipo do desconto" no form do grupo, `shop/admin/price_tier.py`) | `shop/modifiers.py` (grava em `pricing.discount.items[].discount_kind`) e o B.I. | Classificação do desconto do grupo para medir desconto por tipo (`equipe`, `parceiro`, ...). Texto livre, curto, sem acento obrigatório; vazio = desconhecido. Só o desconto do PRÓPRIO grupo (a promoção `grupo-<ref>`) recebe o tipo; promoção de segmento avulsa não. |
+| `rounding` | `int` (centavos) | **Admin** (campo "Arredondar o preço final") | `shop/modifiers.py` | Passo do arredondamento do preço UNITÁRIO final do desconto do grupo, em centavos. `50` = arredonda para o R$ 0,00 ou R$ 0,50 mais próximo (sobe ou desce até R$ 0,25). `0` desliga. Ausente = `50` (regra da casa, decisão do dono 14/10/2026). Só vale no desconto percentual do grupo; o valor fixo de pedido não tem preço unitário a arredondar. |
+| `savings_message` | `str` | **Admin** (campo "Mensagem de economia" no form do grupo) | `shop/modifiers.py` (renderiza em `pricing.discount.savings.message`) → checkout e comprovante | Texto que o cliente lê quando economizou pelo grupo, com os marcadores `{amount}` (R$ formatado) e `{group}` (nome do grupo). Ex: `"Hoje você economizou {amount} por ser {group}"`. Vazio cai no copy global `CHECKOUT_GROUP_SAVINGS`. |
 
 ---
 

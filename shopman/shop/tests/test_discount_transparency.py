@@ -80,19 +80,19 @@ class CartDiscountTransparencyTests(TestCase):
         labels = [dl.name for dl in data.discount_lines]
         self.assertIn("Happy Hour", labels)
 
-    def test_employee_discount_appears_in_discount_lines(self) -> None:
-        """Employee pricing key aggregated into cart discount_lines."""
+    def test_manual_discount_appears_in_discount_lines(self) -> None:
+        """Manual pricing key aggregated into cart discount_lines."""
         session = _make_session_with_pricing(
             sku=self.product.sku,
             qty=1,
             unit_price_q=700,
-            pricing_extra={"employee_discount": {"total_discount_q": 300, "label": "Desconto funcionário"}},
+            pricing_extra={"manual_discount": {"total_discount_q": 300, "label": "Desconto do operador"}},
         )
         data = self._build_cart(session)
 
         self.assertTrue(data.discount_total_q > 0)
         labels = [dl.name for dl in data.discount_lines]
-        self.assertIn("Desconto funcionário", labels)
+        self.assertIn("Desconto do operador", labels)
 
     def test_no_modifier_no_discount_lines(self) -> None:
         """Items with no pricing discounts have no discount_lines."""

@@ -217,7 +217,7 @@ class ItemPricingModifier:
 
             # Árbitro "maior desconto ganha": carimba o preço de LISTA (pré-desconto)
             # e zera o vencedor da rodada. Os descontos por-linha (promo,
-            # funcionário, happy hour) calculam sobre ``_list_q`` e só vencem se
+            # grupo, happy hour) calculam sobre ``_list_q`` e só vencem se
             # baterem o ``_disc`` atual — nunca compõem sobre um preço já reduzido.
             # ``meta`` sobrevive ao ``_normalize_items``; ``modifiers_applied`` NÃO.
             meta = item.get("meta")
@@ -266,7 +266,7 @@ def _products_with_line_options(items) -> dict:
 
 class SessionTotalModifier:
     """Recalcula o total da sessão. Ordem 90 — DEPOIS de todos os descontos
-    (funcionário 60, happy hour 65, taxa 70, loyalty 80, manual 85), senão
+    (happy hour 65, taxa 70, loyalty 80, manual 85), senão
     ``pricing["total_q"]`` fica defasado (S2 da DISCOUNT-AUDIT). O total cobrado
     canônico segue sendo ``sum(line_total_q)``/``order.total_q``; esta chave é
     conveniência de leitura e agora reflete o valor final."""

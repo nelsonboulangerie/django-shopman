@@ -36,6 +36,9 @@ from unfold.widgets import (
     UnfoldAdminCheckboxSelectMultipleWidget,
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminRadioSelectWidget,
+    UnfoldAdminTextareaWidget,
+    UnfoldAdminTextInputWidget,
+    UnfoldBooleanSwitchWidget,
 )
 
 from shopman.shop.models import Channel, Promotion
@@ -88,6 +91,31 @@ class PriceTierGroupDiscountForm(forms.ModelForm):
         widget=UnfoldAdminCheckboxSelectMultipleWidget,
         help_text="Nenhum marcado: vale em todos os canais.",
     )
+    group_pickup_only = forms.BooleanField(
+        label="Só na retirada",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text="Com entrega, o desconto do grupo não vale. É o guarda do benefício da Equipe.",
+    )
+    group_discount_kind = forms.CharField(
+        label="Tipo do desconto",
+        required=False,
+        max_length=40,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="Para o B.I. medir desconto por tipo. Ex: equipe, parceiro.",
+    )
+    group_rounding = forms.BooleanField(
+        label="Arredondar o preço final",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text="Arredonda o preço de cada item para o R$ 0,00 ou R$ 0,50 mais próximo.",
+    )
+    group_savings_message = forms.CharField(
+        label="Mensagem de economia",
+        required=False,
+        widget=UnfoldAdminTextareaWidget(attrs={"rows": 2}),
+        help_text='Texto do checkout e do comprovante. Use {amount} para o valor e {group} para o nome do grupo. Ex: "Hoje você economizou {amount} por ser {group}".',
+    )
 
     class Meta:
         model = PriceTier
@@ -96,6 +124,13 @@ class PriceTierGroupDiscountForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         promo = _group_promotion(getattr(self.instance, "ref", "") if self.instance.pk else "")
+        metadata = (getattr(self.instance, "metadata", None) or {}) if self.instance.pk else {}
+        self.fields["group_discount_kind"].initial = metadata.get("discount_kind", "")
+        self.fields["group_rounding"].initial = int(metadata.get("rounding", 50) or 0) > 0
+        self.fields["group_savings_message"].initial = metadata.get("savings_message", "")
+        self.fields["group_pickup_only"].initial = bool(
+            promo is not None and list(promo.fulfillment_types or []) == ["pickup"]
+        )
         if promo is not None and promo.is_active:
             self.fields["group_discount_type"].initial = promo.type
             self.fields["group_discount_value"].initial = (
@@ -129,6 +164,28 @@ class PriceTierGroupDiscountForm(forms.ModelForm):
         return int((value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def _metadata_with_group_settings(metadata: dict, form: PriceTierGroupDiscountForm) -> dict:
+    """Aplica as chaves do grupo (B.I., arredondamento e economia) ao metadata.
+
+    O campo ``metadata`` cru do form continua sendo a base; estas três chaves são
+    o atalho editável e têm dono único aqui. Chave vazia sai do metadata para o
+    padrão do motor voltar a valer (nada de ``""`` fingindo configuração).
+    """
+    merged = dict(metadata or {})
+    kind = (form.cleaned_data.get("group_discount_kind") or "").strip()
+    if kind:
+        merged["discount_kind"] = kind
+    else:
+        merged.pop("discount_kind", None)
+    merged["rounding"] = 50 if form.cleaned_data.get("group_rounding") else 0
+    savings = (form.cleaned_data.get("group_savings_message") or "").strip()
+    if savings:
+        merged["savings_message"] = savings
+    else:
+        merged.pop("savings_message", None)
+    return merged
+
+
 def sync_group_discount(tier: PriceTier, form: PriceTierGroupDiscountForm, *, previous_ref: str = "") -> Promotion | None:
     """Grava a promoção do grupo a partir do formulário. Devolve a promoção (ou None)."""
     kind = form.cleaned_data.get("group_discount_type") or NO_DISCOUNT
@@ -151,6 +208,9 @@ def sync_group_discount(tier: PriceTier, form: PriceTierGroupDiscountForm, *, pr
     if promo.valid_from > timezone.now():
         promo.valid_from = timezone.now()
     promo.is_active = True
+    # "Só na retirada" é o guarda do benefício, não um parâmetro decorativo: a
+    # promoção restrita a retirada não casa quando o fulfillment é entrega.
+    promo.fulfillment_types = ["pickup"] if form.cleaned_data.get("group_pickup_only") else []
     promo.save()
     promo.channels.set(form.cleaned_data.get("group_discount_channels") or [])
     return promo
@@ -170,7 +230,15 @@ class PriceTierAdmin(_GuestmanPriceTierAdmin):
         (
             "Desconto automático",
             {
-                "fields": ("group_discount_type", "group_discount_value", "group_discount_channels"),
+                "fields": (
+                    "group_discount_type",
+                    "group_discount_value",
+                    "group_discount_channels",
+                    "group_pickup_only",
+                    "group_discount_kind",
+                    "group_rounding",
+                    "group_savings_message",
+                ),
                 "description": (
                     "Quem é deste grupo ganha o desconto sozinho quando é identificado na venda. "
                     "Ele disputa com os outros descontos automáticos da linha e o maior ganha: não soma."
@@ -183,6 +251,10 @@ class PriceTierAdmin(_GuestmanPriceTierAdmin):
         previous_ref = form.initial.get("ref", "") if change else ""
         with transaction.atomic():
             super().save_model(request, obj, form, change)
+            merged = _metadata_with_group_settings(obj.metadata or {}, form)
+            if merged != (obj.metadata or {}):
+                obj.metadata = merged
+                obj.save(update_fields=["metadata"])
             sync_group_discount(obj, form, previous_ref=previous_ref)
 
     def get_queryset(self, request):

@@ -91,7 +91,15 @@ def balcao(client):
     terminal = Terminal.default()
     bind_station(client, terminal.ref)
     shift = cash.open_shift(operator=operator, terminal=terminal, float_q=0)
-    tier = PriceTier.objects.create(ref="alianca-francesa", name="Aliança Francesa")
+    tier = PriceTier.objects.create(
+        ref="alianca-francesa",
+        name="Aliança Francesa",
+        metadata={
+            "discount_kind": "parceiro",
+            "rounding": 50,
+            "savings_message": "Hoje você economizou {amount} por ser da Aliança Francesa",
+        },
+    )
     aluno = Customer.objects.create(ref="ALUNO", first_name="Louise", phone="+5543999990010", price_tier=tier)
     yield {"client": client, "shift": shift, "aluno": aluno, "tier": tier}
     cache.clear()
@@ -124,13 +132,15 @@ def test_aluno_identificado_ganha_o_desconto_e_a_linha_diz_qual(balcao):
 
     assert response.status_code == 200, response.content
     review = response.json()["review"]
-    assert review["total_q"] == 1440  # 2 x R$ 7,20
+    # 800 − 10% = 720 → arredonda para R$ 7,00 (o R$ 0,50 mais próximo).
+    assert review["total_q"] == 1400  # 2 x R$ 7,00
     # O desconto do grupo não é desconto do operador: não pede gerente.
     assert review["discount_q"] == 0
     assert review["line_prices"]["L1"] == {
-        "charged_price_q": 720,
+        "charged_price_q": 700,
         "list_price_q": 800,
-        "pricing_discount": {"type": "promotion", "label": "Aliança Francesa", "amount_q": 80, "percent": 10},
+        # O percentual não fecha limpo (100/800 = 12,5%): a tela mostra o R$.
+        "pricing_discount": {"type": "promotion", "label": "Aliança Francesa", "amount_q": 100, "percent": 0},
     }
 
 
@@ -199,7 +209,7 @@ def test_comanda_com_o_aluno_mostra_o_desconto_no_eco_do_salvar(balcao):
 
     assert saved.status_code == 200, saved.content
     assert saved.json()["line_prices"]["L1"]["pricing_discount"]["label"] == "Aliança Francesa"
-    assert saved.json()["line_prices"]["L1"]["charged_price_q"] == 720
+    assert saved.json()["line_prices"]["L1"]["charged_price_q"] == 700
 
 
 # ── O pedido guarda o desconto, para medir depois ───────────────────────────
@@ -224,12 +234,20 @@ def test_o_pedido_registra_o_desconto_do_grupo(balcao):
     )
 
     order = Order.objects.get(ref=result.order_ref)
-    assert order.total_q == 1440
+    assert order.total_q == 1400
     (record,) = order.snapshot["pricing"]["discount"]["items"]
     assert record["type"] == "promotion"
     assert record["name"] == "Aliança Francesa"
-    assert record["discount_q"] == 80
+    assert record["discount_q"] == 100
+    # O tipo do desconto vai para o B.I. ler desconto por tipo.
+    assert record["discount_kind"] == "parceiro"
     assert order.data["customer"]["price_tier"] == "alianca-francesa"
+    # E a economia do grupo, com o texto do grupo, no snapshot imutável.
+    savings = order.snapshot["pricing"]["discount"]["savings"]
+    assert savings["amount_q"] == 200
+    assert savings["group"] == "Aliança Francesa"
+    assert savings["kind"] == "parceiro"
+    assert savings["message"] == "Hoje você economizou R$ 2,00 por ser da Aliança Francesa"
 
 
 # ── Maior desconto ganha: não soma com a Xepa ───────────────────────────────
@@ -310,6 +328,7 @@ def _tier_form(**overrides) -> dict:
         "group_discount_type": "percent",
         "group_discount_value": "10",
         "group_discount_channels": [str(Channel.objects.get(ref="pdv").pk)],
+        "group_rounding": "on",
         **overrides,
     }
 
@@ -333,6 +352,30 @@ def test_admin_cadastra_o_grupo_com_desconto_no_balcao(gestor):
     assert [c.ref for c in promo.channels.all()] == ["pdv"]
     assert promo.is_active
     assert promo.valid_from <= timezone.now() <= promo.valid_until
+
+
+def test_admin_grava_tipo_arredondamento_e_mensagem_do_grupo(gestor):
+    """As chaves do grupo (B.I., arredondamento, economia e retirada) vão ao metadata."""
+    response = gestor.post(
+        reverse("admin:guestman_pricetier_add"),
+        _tier_form(
+            name="Equipe",
+            ref="staff",
+            group_discount_type="percent",
+            group_discount_value="30",
+            group_pickup_only="on",
+            group_discount_kind="equipe",
+            group_savings_message="Hoje você economizou {amount} por ser da Equipe",
+        ),
+    )
+
+    assert response.status_code == 302, _errors(response)
+    tier = PriceTier.objects.get(ref="staff")
+    assert tier.metadata["discount_kind"] == "equipe"
+    assert tier.metadata["rounding"] == 50
+    assert tier.metadata["savings_message"] == "Hoje você economizou {amount} por ser da Equipe"
+    promo = Promotion.objects.get(ref="grupo-staff")
+    assert promo.fulfillment_types == ["pickup"]
 
 
 def test_admin_desconto_em_reais_por_pedido(gestor):

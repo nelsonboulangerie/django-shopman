@@ -18,44 +18,6 @@ from datetime import time
 from shopman.shop.rules import BaseRule
 
 
-class EmployeeRule(BaseRule):
-    """Desconto para funcionários (faixa de preço == staff).
-
-    ``pickup_only`` é o guarda que separa benefício de canal: o funcionário
-    compra pelo site com o desconto, mas precisa **retirar**. Com entrega, o
-    preço de funcionário viajaria para qualquer endereço — e aí o benefício
-    deixa de ser "o pão dele" e vira um canal de preço para terceiros, sem
-    ninguém ver. No balcão isso não acontece porque alguém entrega na mão.
-
-    Novo parâmetro entra com default: ``RuleConfig`` antigo (sem a chave no JSON)
-    continua instanciando. O caminho contrário — chave nos DADOS que a classe não
-    conhece — é FATAL por decisão (reafirmada 2026-08-13): a regra roda exatamente
-    como configurada ou não roda; o conserto de rename é migração de dados (0010).
-    O que o incidente `da69c714` mudou foi o barulho, não o contrato: a regra que
-    não carrega fica vermelha no ``rules.load`` do release-readiness e na coluna
-    "carrega?" do Admin, em vez de sumir num WARNING de log.
-
-    ``price_tier`` diz QUAL tier marca funcionário — e é consumido de verdade
-    pelo ``EmployeeDiscountModifier`` (era literal cravado; faxina 2026-08-13).
-    """
-
-    code = "shop.employee_discount"
-    label = "Desconto Funcionário"
-    rule_type = "modifier"
-    default_params = {"discount_percent": 20, "price_tier": "staff", "pickup_only": True}
-
-    def __init__(
-        self,
-        *,
-        discount_percent: int = 20,
-        price_tier: str = "staff",
-        pickup_only: bool = True,
-    ):
-        self.discount_percent = discount_percent
-        self.price_tier = price_tier
-        self.pickup_only = pickup_only
-
-
 class HappyHourRule(BaseRule):
     """Desconto por horário (Happy Hour, a "Hora da Xepa" da casa).
 

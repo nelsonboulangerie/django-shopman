@@ -6,7 +6,7 @@ plano de QA em uma asserção executável.
 
 Estrutura (espelha o roteiro de QA):
 
-    PRICING & PROMOTIONS  ....  happy hour, funcionário, quantidade,
+    PRICING & PROMOTIONS  ....  happy hour, grupo de clientes, quantidade,
                                 melhor-desconto, cupom esgotado, total <= 0
     ESTOQUE & PRODUÇÃO    ....  hold exato, planejado (encomenda), sem produção,
                                 expiração, cancelamento, perecível vs não-perecível
@@ -196,7 +196,6 @@ def _unit_price(session, sku):
 
 # Dotted paths dos rules (gate dos modifiers)
 HAPPY_RULE = "shopman.shop.rules.pricing.HappyHourRule"
-EMPLOYEE_RULE = "shopman.shop.rules.pricing.EmployeeRule"
 
 PERCENT = "percent"
 FIXED = "fixed"
@@ -269,18 +268,18 @@ class TestHappyHour:
         # No minuto exato do fim NÃO vale mais.
         assert self._apply_at(18, 0, start="17:30", end="18:00") == 1000
 
-    def test_happy_hour_does_not_compound_on_employee_line(self):
-        """Maior desconto ganha: uma linha já com desconto de funcionário (20% →
-        800) NÃO recebe happy hour de 20% por cima (empate → não substitui)."""
+    def test_happy_hour_does_not_compound_on_a_discounted_line(self):
+        """Maior desconto ganha: uma linha já com desconto de 20% (800) NÃO recebe
+        happy hour de 20% por cima (empate → não substitui)."""
         from shopman.shop.modifiers import TimeWindowDiscountModifier
 
         session = SimpleNamespace(
             items=[{
                 "sku": "P", "unit_price_q": 800, "qty": 1,
-                "meta": {"_list_q": 1000, "_disc": {"type": "employee_discount", "amount_q": 200}},
+                "meta": {"_list_q": 1000, "_disc": {"type": "lot_discount", "amount_q": 200}},
             }],
             data={},
-            pricing={"employee_discount": {"total_discount_q": 200, "label": "Desconto funcionário"}},
+            pricing={"lot_discount": {"total_discount_q": 200, "label": "Liquidação"}},
         )
         session.update_items = lambda items: None
         session.save = lambda **kw: None
@@ -296,16 +295,19 @@ class TestHappyHour:
         assert session.items[0]["unit_price_q"] == 800  # sem composição
 
 
-class TestEmployeeDiscount:
-    """3. Desconto de funcionário (faixa de preço == staff)."""
+class TestGroupDiscount:
+    """3. Desconto do grupo comercial (PriceTier + promoção do grupo)."""
 
-    def _staff_session(self, price_tier="staff", price_q=1000, percent=20):
+    def _group_session(self, price_tier="staff", price_q=1000, percent=20):
+        from shopman.guestman.models import PriceTier
+
         from shopman.shop.services import sessions
 
         _shop()
         _channel("web")
         _product("PAO", price_q)
-        _rule("employee_discount", EMPLOYEE_RULE, {"discount_percent": percent})
+        PriceTier.objects.create(ref="staff", name="Equipe")
+        _promotion("Equipe", ptype=PERCENT, value=percent, customer_segments=["staff"])
         s = sessions.create_session("web")
         return _reprice(
             s,
@@ -315,30 +317,33 @@ class TestEmployeeDiscount:
             ],
         )
 
-    def test_staff_gets_discount(self):
-        s = self._staff_session(price_tier="staff", percent=20)
+    def test_group_member_gets_discount(self):
+        s = self._group_session(price_tier="staff", percent=20)
         assert _unit_price(s, "PAO") == 800
 
-    def test_non_staff_no_discount(self):
-        """Cliente comum não recebe o desconto de funcionário (é gated por grupo,
-        não por cupom 'FUNCIONARIO' — não existe cupom de funcionário no modelo)."""
-        s = self._staff_session(price_tier="regular", percent=20)
+    def test_non_member_no_discount(self):
+        """Cliente de fora do grupo não recebe o desconto (é gated pelo grupo)."""
+        s = self._group_session(price_tier="regular", percent=20)
         assert _unit_price(s, "PAO") == 1000
 
-    def test_staff_plus_promo_best_wins_no_stack(self):
-        """DECISÃO DE PRODUTO (maior desconto ganha): staff + promoção NÃO acumulam.
+    def test_group_plus_promo_best_wins_no_stack(self):
+        """DECISÃO DE PRODUTO (maior desconto ganha): grupo + promoção NÃO acumulam.
 
-        A promoção desconta 50% (1000 → 500); o funcionário (20%) calcula sobre a
-        LISTA e só substituiria se batesse os 50% — como 20% < 50%, a promoção vence
-        e o preço fica 500 (antes empilhava). Ver docs/plans/DISCOUNT-AUDIT-2026-08.md.
+        A promoção desconta 50% (1000 → 500); o desconto do grupo (20%) calcula
+        sobre a LISTA e só substituiria se batesse os 50% — como 20% < 50%, a
+        promoção vence e o preço fica 500 (antes empilhava). Ver
+        docs/plans/DISCOUNT-AUDIT-2026-08.md.
         """
+        from shopman.guestman.models import PriceTier
+
         from shopman.shop.services import sessions
 
         _shop()
         _channel("web")
         _product("PAO-PROMO-STAFF", 1000)
         _promotion("Promo 50", ptype=PERCENT, value=50, skus=["PAO-PROMO-STAFF"])
-        _rule("employee_discount", EMPLOYEE_RULE, {"discount_percent": 20})
+        PriceTier.objects.create(ref="staff", name="Equipe")
+        _promotion("Equipe", ptype=PERCENT, value=20, customer_segments=["staff"])
         s = sessions.create_session("web")
         s = _reprice(
             s,
@@ -347,7 +352,7 @@ class TestEmployeeDiscount:
                 {"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}},
             ],
         )
-        assert _unit_price(s, "PAO-PROMO-STAFF") == 500  # promo vence; funcionário não empilha
+        assert _unit_price(s, "PAO-PROMO-STAFF") == 500  # promo vence; grupo não empilha
 
 
 class TestQuantityPromotion:
