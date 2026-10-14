@@ -561,3 +561,23 @@ def test_run_command_lost_in_the_live_app_fails():
         unit="componentes",
     )
     assert any("services/web" in line and "run_command" in line for line in problems)
+
+
+def test_fiscal_resolver_pending_for_the_owner_window_is_declared_and_matches_the_file():
+    """O arquivo já traz o resolver do iFood (ADR-035); o vivo, só na janela do dono.
+
+    A declaração prende o valor do arquivo ao que o arquivo diz de fato: se
+    alguém mexer em um sem o outro, a divergência volta a acusar.
+    """
+    import yaml
+
+    key = "SHOPMAN_FISCAL_EMISSION_RESOLVER"
+    live_value, file_value, _ = drift.EXPECTED_VALUE_DIVERGENCE[key]
+    spec = yaml.safe_load((_SCRIPT.parents[1] / ".do" / "app.alpha-subdomains.yaml").read_text(encoding="utf-8"))
+    in_file = {e["key"]: e for e in spec["envs"]}[key]["value"]
+    assert in_file == file_value
+    assert file_value.endswith(",shopman.shop.fiscal_resolvers.intermediated_sale")
+    assert "intermediated_sale" not in live_value
+    problems, expected = _compare_app_envs({key: _env(key, live_value)}, {key: _env(key, file_value)})
+    assert problems == []
+    assert len(expected) == 1

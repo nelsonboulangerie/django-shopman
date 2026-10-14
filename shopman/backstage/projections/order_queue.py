@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -43,6 +43,7 @@ from shopman.backstage.projections.order_attention import (
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
+from shopman.backstage.services.courier_reminder import CourierReminderProjection, courier_reminder
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -483,6 +484,10 @@ class OrderCardProjection:
     # Na Cozinha (aceito ou em preparo): quando deve ficar pronto, pelo início real e
     # pelo tempo que os preparos estão levando agora (G10, ``order_attention.ready_eta``).
     ready_eta_iso: str = ""
+    # Lembrete TEMPORÁRIO de chamar o entregador (``services.courier_reminder``):
+    # entrega da casa em preparo sem corrida pedida. A tela mostra o aviso quando o
+    # relógio passa de ``due_at_iso``. ``None`` quando não cabe.
+    courier_reminder: CourierReminderProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -743,6 +748,9 @@ _ORDERS_FLOW_OFF = {
 #: As ações do detalhe que o balcão executa (o resto do fluxo é do Gestor).
 _POS_DETAIL_ACTIONS = frozenset({"comment"})
 
+#: As ações da corrida que o balcão executa: chamar e chamar de novo.
+_POS_COURIER_ACTIONS = frozenset({"courier-dispatch", "courier-dispatch-again"})
+
 
 @dataclass(frozen=True)
 class OrderQueueProjection:
@@ -988,13 +996,20 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     if context == "pos":
         from shopman.backstage.projections import preorders
 
+        # A corrida do entregador (TaOn): o MESMO bloco e as MESMAS ações do Gestor,
+        # para a encomenda de entrega da casa (decisão do dono, 13/10/2026).
+        courier_block = _courier_block(order)
+        pos_authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
         return OperatorOrderProjection(
             **common,
             **_ORDERS_FLOW_OFF,
-            actions=tuple(
-                action for action in operator_orders.operational_actions(order, user=user)
-                if action.ref in _POS_DETAIL_ACTIONS
+            actions=(
+                *(action for action in operator_orders.operational_actions(order, user=user)
+                  if action.ref in _POS_DETAIL_ACTIONS),
+                *_courier_actions(order, user, courier_block, authorized=pos_authorized, refs=_POS_COURIER_ACTIONS),
             ),
+            courier=courier_block,
+            **_equipment_fields(order),
             # A prova de envio do link fica (é leitura); o reenvio é do Gestor.
             payment_link_notice=_payment_link_fields(order, method).get("payment_link_notice", ""),
             counter=preorders.build_counter_block(order, user=user),
@@ -1020,35 +1035,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     )
     extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
     courier_block = _courier_block(order)
-    if courier_block:
-        from shopman.shop.services.courier import dispatch_revision
-
-        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
-            enabled=authorized and courier_block["can_dispatch"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
-            method="POST", idempotency="required",
-            confirmation={"required": True, "description": _courier_dispatch_question(order)},
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
-            enabled=authorized and courier_block["can_dispatch_again"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_dispatch_again"] else "Não há chamada sem resposta da TaOn neste pedido."),
-            method="POST", idempotency="required",
-            confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
-            enabled=authorized and courier_block["can_cancel"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
-            method="POST", idempotency="required", confirmation={"required": True},
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
-            enabled=authorized and courier_block["can_quote"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
-            method="POST", idempotency="required",
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
@@ -1110,6 +1097,46 @@ def _store_location() -> dict[str, float] | None:
     return {"lat": float(shop.latitude), "lng": float(shop.longitude), "radius_m": float(STORE_RADIUS_METERS)}
 
 
+def _courier_actions(order: Order, user, courier_block: dict | None, *, authorized: bool, refs=None) -> list[Action]:
+    """As ações da corrida do entregador, as MESMAS no Gestor e no PDV.
+
+    ``refs`` filtra quais (o balcão chama e chama de novo; cancelar e cotar a
+    corrida ficam no Gestor). Sem bloco (retirada, marketplace, sem TaOn), nada.
+    """
+    if not courier_block:
+        return []
+    from shopman.shop.services.courier import dispatch_revision
+
+    extra_actions: list[Action] = []
+    extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
+        enabled=authorized and courier_block["can_dispatch"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+        method="POST", idempotency="required",
+        confirmation={"required": True, "description": _courier_dispatch_question(order)},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
+        enabled=authorized and courier_block["can_dispatch_again"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_dispatch_again"] else "Não há chamada sem resposta da TaOn neste pedido."),
+        method="POST", idempotency="required",
+        confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
+        enabled=authorized and courier_block["can_cancel"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
+        method="POST", idempotency="required", confirmation={"required": True},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
+        enabled=authorized and courier_block["can_quote"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    return [action for action in extra_actions if refs is None or action.ref in refs]
+
+
 def _detail_deadline(order: Order) -> dict[str, str]:
     """O prazo da confirmação do pedido novo, pela mesma régua do cartão."""
     if order.status != Order.Status.NEW:
@@ -1141,7 +1168,9 @@ COURIER_STATUS_LABELS = {
     "G": "Aguardando aceite",
     "P": "Procurando entregador",
     "A": "Entregador a caminho da loja",
-    "S": "Entregador na loja",
+    # S é "em espera": o entregador aceitou e termina outra entrega antes.
+    # "Na loja" é a chegada (``progress.arrived_pickup_at``), não esta letra.
+    "S": "Entregador vem após outra entrega",
     "E": "Saiu para entrega",
     "F": "Entregue",
     "N": "Não atendida",
@@ -1197,7 +1226,7 @@ def _courier_block(order: Order) -> dict | None:
         if not block and not adapter_on:
             return None
 
-        from shopman.shop.services.courier import house_dispatches
+        from shopman.shop.services.courier import RIDE_ORDER_STATUSES, house_dispatches
 
         # Entrega do marketplace nunca oferece Chamar/Cotar (falha fechado; o
         # servidor recusa também em ``courier.redispatch``).
@@ -1207,7 +1236,7 @@ def _courier_block(order: Order) -> dict | None:
 
         ride_status = str(block.get("status") or "")
         active = bool(block.get("id_mch")) and ride_status not in TERMINAL_STATUSES
-        order_can_ride = order.status in (Order.Status.READY, Order.Status.DISPATCHED)
+        order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
         estimate_display = ""
@@ -1241,10 +1270,18 @@ def _courier_block(order: Order) -> dict | None:
             if not cancellation_pending:
                 error = {"message": cancellation.last_error or "Solicitação não aplicada. Confira o estado atual antes de tentar novamente.",
                     "at": cancellation.updated_at.isoformat()}
+        from shopman.shop.services.courier import progress_view
+
+        progress = progress_view(block)
+        status_label = COURIER_STATUS_LABELS.get(ride_status, "")
+        if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
+            status_label = "Entregador na loja"
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
-            "status_label": "Sem resposta da TaOn" if unresolved is not None else COURIER_STATUS_LABELS.get(ride_status, ""),
+            "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
+            # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
+            **progress,
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             "tracking_url": str(block.get("tracking_url") or ""),
@@ -1265,6 +1302,8 @@ def _courier_block(order: Order) -> dict | None:
             "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
             "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
+            # O lembrete temporário de chamar (o mesmo do cartão), ou ``None``.
+            "reminder": asdict(reminder) if (reminder := courier_reminder(order)) is not None else None,
             # O que a chamada pergunta: troco da gaveta e maquininha da casa
             # que vão com o entregador da TaOn (``partner_custody_asks``).
             "custody": operator_orders.partner_custody_asks(order),
@@ -1989,6 +2028,7 @@ def _build_card(
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
+        courier_reminder=courier_reminder(order) if order.status == Order.Status.PREPARING else None,
     )
     attention = card_attention(order, card, channel_config)
     if expectation is not None:

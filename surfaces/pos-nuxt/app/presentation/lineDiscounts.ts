@@ -137,3 +137,48 @@ export function lineListTotalQ(item: POSCartItem): number {
 export function lineSavingsQ(item: POSCartItem): number {
   return Math.max(0, lineListTotalQ(item) - lineTotalQ(item));
 }
+
+/** O que a linha cobra por unidade, segundo o servidor, no eco de cada gravação. */
+export type POSLinePrice = Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount">;
+
+/** O preço por unidade que a linha passa a cobrar com o desconto manual que ela
+ *  tem AGORA, pela régua do kernel: etiqueta menos o MAIOR entre o manual e o
+ *  automático conhecido (um desconto por item, o maior ganha).
+ *
+ *  É a resposta instantânea do toque em Aplicar. Sem ela, o total da linha
+ *  esperava o servidor, e o servidor só o devolvia ao reabrir a comanda: o dono
+ *  deu R$ 1,00 numa linha e o total só mudou quando recarregou a página
+ *  (13/10/2026). O eco da gravação (`applyLinePrices`) confirma logo depois.
+ *
+ *  O automático conhecido é o que venceu a linha (`pricing_discount`). Um
+ *  automático que o manual anterior tinha batido não aparece aqui; nesse caso
+ *  raro o eco corrige o número em seguida.
+ */
+export function manualDiscountChargedQ(item: POSCartItem): number {
+  const listQ = lineListUnitQ(item);
+  const autoQ = Math.max(0, item.pricing_discount?.amount_q || 0);
+  return Math.max(0, listQ - Math.max(manualDiscountPerUnitQ(item), autoQ));
+}
+
+/** Aplica o preço que o servidor diz que cada linha cobra (eco do salvar).
+ *  Só escreve o que mudou: cada escrita na linha reagenda a gravação. */
+export function applyLinePrices(
+  items: POSCartItem[],
+  linePrices: Record<string, POSLinePrice> | undefined | null,
+): void {
+  if (!linePrices) return;
+  for (const item of items) {
+    const price = linePrices[item.line_id];
+    if (!price) continue;
+    if (typeof price.charged_price_q === "number" && item.charged_price_q !== price.charged_price_q) {
+      item.charged_price_q = price.charged_price_q;
+    }
+    if (typeof price.list_price_q === "number" && item.list_price_q !== price.list_price_q) {
+      item.list_price_q = price.list_price_q;
+    }
+    const next = price.pricing_discount ?? null;
+    if (JSON.stringify(item.pricing_discount ?? null) !== JSON.stringify(next)) {
+      item.pricing_discount = next;
+    }
+  }
+}

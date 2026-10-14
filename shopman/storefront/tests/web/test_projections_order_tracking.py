@@ -536,6 +536,59 @@ class TestOrderProgressSteps:
         assert "Confirme aqui quando receber" in proj.promise.message
         assert "avisamos" not in proj.promise.message.lower()
 
+    def _dispatch_with_courier(self, order, courier: dict):
+        order.data = {"fulfillment_type": "delivery", "courier": courier}
+        order.save(update_fields=["data"])
+        for status in ("accepted", "preparing", "ready", "dispatched"):
+            order.transition_status(status, actor="test")
+        order.refresh_from_db()
+        return build_order_tracking(order)
+
+    def test_dispatched_with_courier_link_offers_follow_the_courier(self, order):
+        """P1-11: o link da TaOn ia só no aviso do WhatsApp; a página não o mostrava."""
+        proj = self._dispatch_with_courier(
+            order,
+            {"provider": "machine", "id_mch": "184532", "status": "E", "tracking_url": "https://taon.example/r/abc"},
+        )
+
+        actions = {action.ref: action for action in proj.promise.actions}
+        assert "track_courier" in actions
+        track = actions["track_courier"]
+        assert track.kind == "external"
+        assert track.href == "https://taon.example/r/abc"
+        assert track.label == "Acompanhar o entregador"
+        assert track.priority == "secondary"
+        # "Recebi meu pedido" continua sendo o gesto principal.
+        assert proj.promise.actions[0].ref == "confirm_received"
+
+    @pytest.mark.parametrize(
+        "courier",
+        [
+            {"status": "E", "tracking_url": ""},
+            {"status": "F", "tracking_url": "https://taon.example/r/abc"},
+            {"status": "E", "tracking_url": "javascript:alert(1)"},
+        ],
+        ids=["sem-link", "corrida-finalizada", "link-nao-http"],
+    )
+    def test_no_usable_courier_link_no_follow_button(self, order, courier):
+        proj = self._dispatch_with_courier(order, courier)
+
+        assert "track_courier" not in {action.ref for action in proj.promise.actions}
+
+    def test_courier_link_waits_for_the_order_to_leave(self, order):
+        order.data = {
+            "fulfillment_type": "delivery",
+            "courier": {"status": "A", "tracking_url": "https://taon.example/r/abc"},
+        }
+        order.save(update_fields=["data"])
+        for status in ("accepted", "preparing", "ready"):
+            order.transition_status(status, actor="test")
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert "track_courier" not in {action.ref for action in proj.promise.actions}
+
     def test_cancelled_order_has_cancelled_terminal_step(self, order):
         order.transition_status("cancelled", actor="test")
         order.refresh_from_db()

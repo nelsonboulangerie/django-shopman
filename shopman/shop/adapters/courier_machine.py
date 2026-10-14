@@ -239,6 +239,208 @@ def get_details(courier_ref: str) -> dict:
     return _request("GET", f"/request/{courier_ref}", base=_details_base())
 
 
+# ── Leitura da corrida (o que o polling aplica) ─────────────────────
+
+#: ``status_label``/``full_code`` da Machine → letra de estado. Os eventos
+#: (``ARRIVED_AT_LOCATION``, ``STOP_FINISHED``...) não são estado e ficam de fora.
+_LABEL_TO_STATUS = {
+    "DISTRIBUTING": "D",
+    "WAITING_ACCEPTANCE": "G",
+    "PENDING": "P",
+    "ON_HOLD": "S",
+    "NOT_SERVED": "N",
+    "ACCEPTED": "A",
+    "IN_PROGRESS": "E",
+    "CANCELLED": "C",
+    "FINISHED": "F",
+    "GROUPED": "U",
+}
+
+RIDE_STATUSES = frozenset(_LABEL_TO_STATUS.values())
+
+#: Ordem da leitura. Medido no alpha em 13/10/2026: ``/solicitacaoStatus``
+#: devolveu 400 ``[67] O usuário informado não pode realizar essa operação.``
+#: em toda batida da primeira corrida real, e o status ficou parado em D. As
+#: outras duas vias leem a mesma corrida; a que responder vence e é lembrada.
+READ_VIAS = ("details", "listing", "status")
+
+_READ_VIA_CACHE_KEY = "courier:machine:read_via"
+
+
+def _text(value) -> str:
+    return "" if value in (None, "") else str(value).strip()
+
+
+def _number(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _iso_plus_seconds(iso: str, seconds: float | None) -> str:
+    if not iso or seconds is None:
+        return ""
+    from datetime import timedelta
+
+    from django.utils.dateparse import parse_datetime
+
+    moment = parse_datetime(iso.replace("Z", "+00:00")) if isinstance(iso, str) else None
+    if moment is None:
+        return ""
+    return (moment + timedelta(seconds=seconds)).isoformat()
+
+
+def _status_letter(*candidates) -> str:
+    for candidate in candidates:
+        code = _text(candidate).upper()
+        if code in RIDE_STATUSES:
+            return code
+        if code in _LABEL_TO_STATUS:
+            return _LABEL_TO_STATUS[code]
+    return ""
+
+
+def _driver(name, phone, plate, model, color="") -> dict | None:
+    driver = {
+        "name": _text(name),
+        "phone": _text(phone),
+        "vehicle_plate": _text(plate),
+        "vehicle_model": _text(model),
+        "vehicle_color": _text(color),
+    }
+    return driver if driver["name"] else None
+
+
+def snapshot_from_details(payload: dict) -> dict:
+    """``GET /v1/request/{id}`` → a leitura normalizada da corrida.
+
+    ``progress.accept_eta_seconds`` é o "tempo até o local de coleta" do painel
+    da TaOn no aceite; ``pickup_arrival`` é a chegada à loja;
+    ``start_trip`` é a coleta; ``estimated_duration_minutes`` é a viagem.
+    """
+    payload = payload if isinstance(payload, dict) else {}
+    progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
+    finished = payload.get("finished") if isinstance(payload.get("finished"), dict) else {}
+    raw_driver = payload.get("driver") if isinstance(payload.get("driver"), dict) else {}
+    cancellations = [c for c in payload.get("cancellation") or [] if isinstance(c, dict)]
+
+    status = _status_letter(payload.get("short_code"), payload.get("full_code"))
+    if not status:
+        # Código de evento (chegada, parada) no lugar do estado: o progresso diz qual é.
+        if _text(finished.get("finished_at")):
+            status = "F"
+        elif cancellations:
+            status = "C"
+        elif _text(progress.get("start_trip")):
+            status = "E"
+        elif _text(progress.get("accepted_at")):
+            status = "A"
+
+    accepted_at = _text(progress.get("accepted_at"))
+    eta_seconds = _number(progress.get("accept_eta_seconds"))
+    final_value = finished.get("final_value")
+    cancelled = cancellations[-1] if cancellations else {}
+    return {
+        "status": status,
+        "driver": _driver(raw_driver.get("name"), raw_driver.get("phone"),
+                          raw_driver.get("vehicle_plate"), raw_driver.get("vehicle_model")),
+        "progress": {
+            "accepted_at": accepted_at,
+            "pickup_eta_at": _iso_plus_seconds(accepted_at, eta_seconds),
+            "pickup_eta_minutes": round(eta_seconds / 60) if eta_seconds is not None else None,
+            "pickup_km": _number(progress.get("accept_eta_km")),
+            "near_pickup_at": _text(progress.get("arrival_at_surroundings")),
+            "arrived_pickup_at": _text(progress.get("pickup_arrival")),
+            "picked_up_at": _text(progress.get("start_trip")),
+            "trip_minutes": _number(progress.get("estimated_duration_minutes")),
+            "trip_km": _number(progress.get("estimated_distance_km")),
+            "finished_at": _text(finished.get("finished_at")),
+            "cancelled_at": _text(cancelled.get("cancelled_at")),
+            "cancelled_reason": _text(cancelled.get("cancelled_reason")),
+        },
+        "final_value_q": _to_q(final_value) if final_value not in (None, "") else None,
+    }
+
+
+def snapshot_from_listing(row: dict) -> dict:
+    """Uma linha de ``GET /solicitacao?id=`` → a mesma leitura normalizada.
+
+    A listagem não traz a estimativa de chegada à coleta; traz o aceite, a
+    chegada ao local, o início, o entregador e o valor.
+    """
+    row = row if isinstance(row, dict) else {}
+    final = row.get("valor_corrida")
+    finished_at = _text(row.get("data_hora_finalizacao_utc"))
+    return {
+        "status": _status_letter(row.get("status_solicitacao")),
+        "driver": _driver(row.get("nome_condutor"), row.get("telefone_condutor"),
+                          row.get("placa_veiculo"), row.get("veiculo"), row.get("cor_veiculo")),
+        "progress": {
+            "accepted_at": _text(row.get("data_hora_aceite_utc")),
+            "pickup_eta_at": "",
+            "pickup_eta_minutes": None,
+            "pickup_km": _number(row.get("distancia_coleta_km")),
+            "near_pickup_at": "",
+            "arrived_pickup_at": _text(row.get("data_hora_chegada_local_utc")),
+            "picked_up_at": _text(row.get("data_hora_inicio")),
+            "trip_minutes": None,
+            "trip_km": None,
+            "finished_at": finished_at,
+            "cancelled_at": _text(row.get("data_hora_cancelamento_utc")),
+            "cancelled_reason": "",
+        },
+        "final_value_q": _to_q(final) if finished_at and final not in (None, "") else None,
+    }
+
+
+def _read_via(via: str, courier_ref: str) -> dict:
+    if via == "details":
+        return snapshot_from_details(get_details(courier_ref))
+    if via == "listing":
+        rows = _request("GET", "/solicitacao", params={"id": courier_ref})
+        rows = rows if isinstance(rows, list) else [rows]
+        row = next((r for r in rows if isinstance(r, dict) and _text(r.get("id")) == str(courier_ref)), None)
+        if row is None:
+            raise CourierError(f"A listagem não trouxe a corrida {courier_ref}", transient=False)
+        return snapshot_from_listing(row)
+    return {"status": _status_letter(get_status(courier_ref)), "driver": None, "progress": {}, "final_value_q": None}
+
+
+def read_ride(courier_ref: str) -> dict:
+    """Lê a corrida pela primeira via que responder (só GET).
+
+    Devolve ``{status, driver, progress, final_value_q, via}``; ``{}`` quando
+    inerte. Levanta :class:`CourierError` só quando as três vias falham, com o
+    erro de cada uma: é esse fato que o polling mostra ao operador.
+    """
+    if _inert():
+        return {}
+    from django.core.cache import cache
+
+    preferred = cache.get(_READ_VIA_CACHE_KEY)
+    order = [preferred, *[v for v in READ_VIAS if v != preferred]] if preferred in READ_VIAS else list(READ_VIAS)
+    errors: list[CourierError] = []
+    for via in order:
+        try:
+            snapshot = _read_via(via, courier_ref)
+        except CourierError as exc:
+            errors.append(exc)
+            continue
+        if not snapshot.get("status"):
+            errors.append(CourierError(f"{via}: resposta sem status", transient=False))
+            continue
+        cache.set(_READ_VIA_CACHE_KEY, via, 3600)
+        if errors:
+            logger.warning("courier.read_fallback id_mch=%s via=%s antes=%s", courier_ref, via,
+                           " | ".join(str(e) for e in errors))
+        return {**snapshot, "via": via}
+    raise CourierError(
+        " | ".join(str(e) for e in errors) or "Nenhuma leitura da corrida respondeu.",
+        transient=any(e.transient for e in errors),
+    )
+
+
 def get_position(courier_ref: str) -> dict | None:
     """Posição do entregador (GET /posicaoCondutor). None fora da fase ativa."""
     if _inert():
@@ -279,6 +481,18 @@ def tracking_links(courier_ref: str) -> list[dict]:
     if isinstance(response, dict) and response.get("link"):
         return [{"parada_id": "", "link_rastreio": str(response["link"]), "codigo_confirmacao": None}]
     return response if isinstance(response, list) else []
+
+
+def list_webhooks() -> list[dict]:
+    """Webhooks cadastrados (GET /listarWebhook, só leitura).
+
+    Em 01/10/2026 a produção respondeu ``{"webhooks": [], "quantidade_webhooks": 0}``.
+    """
+    if _inert():
+        return []
+    response = _request("GET", "/listarWebhook")
+    items = response.get("webhooks") if isinstance(response, dict) else response
+    return [item for item in (items or []) if isinstance(item, dict)]
 
 
 def register_webhook(url: str, *, kind: str) -> bool:

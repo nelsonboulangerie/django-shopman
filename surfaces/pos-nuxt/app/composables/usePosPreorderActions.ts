@@ -36,6 +36,9 @@ export interface ManagerChallenge {
  *   com a base que o servidor mandou na ação `comment` do detalhe — é o contexto
  *   "pos" que a oferece, e só ela.
  *
+ * - **Chamar entregador** e **Chamar de novo** (TaOn): as MESMAS rotas e ações do
+ *   Gestor, só na encomenda de entrega da casa (o servidor decide quando).
+ *
  * Depois de qualquer gesto, a leitura canônica é refeita (`refresh`).
  */
 export function usePosPreorderActions(options: {
@@ -209,9 +212,41 @@ export function usePosPreorderActions(options: {
     }
   }
 
+  /**
+   * Chamar o entregador (TaOn): a MESMA rota do Gestor (`/orders/<ref>/courier-dispatch/`
+   * ou, depois de uma chamada sem resposta, `/courier-dispatch-again/`), com a base
+   * que o servidor mandou na ação. A custódia (troco da gaveta, maquininha) vai no
+   * mesmo corpo do Gestor. A corrida se acompanha pelo SSE dos pedidos.
+   */
+  async function courier(ref: "courier-dispatch" | "courier-dispatch-again", custody: { change_out?: string; equipment?: string[] } = {}): Promise<boolean> {
+    const detail = options.detail.value;
+    const offered = detailAction(detail, ref);
+    if (!detail || !offered?.enabled || busy.value) return false;
+    busy.value = true;
+    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.ref)}/${ref}/`;
+    const payload = { ...offered.payload_schema, ...custody };
+    try {
+      await action.call(path, { body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) } });
+      lastAttempt = null;
+      toast.success("Pedido de entregador enviado à TaOn.");
+      await options.refresh();
+      return true;
+    } catch (error) {
+      toast.error(`${httpErrorMessage(error, "Não deu para chamar o entregador.")} Confira a encomenda e tente de novo.`);
+      await options.refresh();
+      return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   function dismissManagerChallenge() {
     managerChallenge.value = null;
   }
 
-  return { busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, comment, dismissManagerChallenge };
+  return {
+    busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, comment, dismissManagerChallenge,
+    courierDispatch: (custody: { change_out?: string; equipment?: string[] } = {}) => courier("courier-dispatch", custody),
+    courierDispatchAgain: () => courier("courier-dispatch-again"),
+  };
 }

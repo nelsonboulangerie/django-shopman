@@ -237,7 +237,19 @@ def test_hora_fora_da_janela_segue_a_regra_de_sempre(balcao):
     _happy_hour()
 
     # Velha demais (antes do turno e de 24 h): precificada no envio, como sempre.
-    result = _send(balcao, at=_at(17, 30), client_request_id="pos:velha", **_offline(_at(15, day=-2)))
+    # O envio precificado agora dá R$ 7,20, e a tela tinha cobrado R$ 12,00: a
+    # venda é recusada com ``total_changed`` (P0-1), em vez de o pagamento ser
+    # reescrito calado. A fila oferece "Enviar com R$ 7,20" e reenvia.
+    with pytest.raises(PosIntentError) as refused:
+        _send(balcao, at=_at(17, 30), client_request_id="pos:velha", **_offline(_at(15, day=-2)))
+    assert refused.value.code == "total_changed"
+    assert refused.value.context == {"old_total_q": 1200, "new_total_q": 720}
+    assert not Order.objects.filter(data__client_request_id="pos:velha").exists()
+
+    result = _send(
+        balcao, at=_at(17, 31), client_request_id="pos:velha",
+        **_offline(_at(15, day=-2), expected_total_q=720),
+    )
 
     order = Order.objects.get(ref=result.order_ref)
     assert order.total_q == 720

@@ -66,6 +66,20 @@ def test_default_resolver_is_on_request_or_tax_id():
     assert emission_resolver(_order(fiscal={}, customer={})) is False
 
 
+def test_intermediated_sale_emits_for_the_declared_marketplace_without_document():
+    # O iFood paga ``external``, sem tender: nenhum resolver de forma de
+    # pagamento o enxerga, e o pedido sem CPF não pedia nota (P0-3, ADR-035).
+    ifood = _order(channel_ref="ifood", payment={"method": "external"}, fulfillment_type="delivery")
+    assert fiscal_resolvers.eletronic_payment(ifood) is False
+    assert fiscal_resolvers.on_request_or_tax_id(ifood) is False
+    assert fiscal_resolvers.intermediated_sale(ifood) is True
+    # A venda direta não é intermediada.
+    assert fiscal_resolvers.intermediated_sale(_order(channel_ref="web", payment={"method": "pix"})) is False
+    # Quem é marketplace é o deployment, não o nome do canal.
+    with override_settings(SHOPMAN_FISCAL_INTERMEDIARIES={}):
+        assert fiscal_resolvers.intermediated_sale(ifood) is False
+
+
 def test_example_eletronic_payment():
     r = fiscal_resolvers.eletronic_payment
     assert r(_order(payment={"method": "pix"})) is True

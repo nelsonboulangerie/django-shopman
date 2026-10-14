@@ -44,6 +44,7 @@ WHATSAPP_EVENT_LABELS = {
     "order_dispatched": "Pedido saiu para entrega",
     "order_delivered": "Pedido entregue",
     "order_cancelled": "Pedido cancelado",
+    "order_returned": "Pedido devolvido",
     "preorder_reminder": "Lembrete da encomenda",
     "order_rescheduled": "Nova data da encomenda",
     "order_updated": "Encomenda atualizada",

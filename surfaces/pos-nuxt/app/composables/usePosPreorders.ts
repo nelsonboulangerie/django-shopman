@@ -9,6 +9,8 @@ const AHEAD_KEY = "pos-preorders-ahead";
 const PERIOD_KEY = "pos-preorders-period";
 /** O resultado da busca "Cliente veio buscar". */
 const SEARCH_KEY = "pos-preorders-search";
+/** O detalhe de uma encomenda (uma chave por ref). */
+const DETAIL_KEY_PREFIX = "pos-preorder:";
 
 /**
  * As leituras que o evento de pedido refaz: o selo, o período e a busca que
@@ -94,11 +96,30 @@ export function usePosPreorderSearch(options: { query: Ref<string>; includeCompl
  */
 export function usePosPreorderDetail(ref: Ref<string>) {
   const apiPath = useApiPath();
+  const key = `${DETAIL_KEY_PREFIX}${ref.value}`;
   const { data, pending, error, refresh } = useFetch<PreorderDetailResponse>(
     () => apiPath(`/api/v1/backstage/pos/preorders/${encodeURIComponent(ref.value)}/`),
-    { key: `pos-preorder:${ref.value}`, credentials: "include", server: false, lazy: true },
+    { key, credentials: "include", server: false, lazy: true },
   );
+  // O detalhe aberto entra nas leituras que o evento de pedido refaz: a corrida
+  // do entregador (aceita, coletou, ninguém aceitou) muda sem o pedido mudar de
+  // status, e o balcão precisa ver na hora (ADR-016).
+  const open = useOpenPreorderDetailKey();
+  open.value = key;
+  onScopeDispose(() => {
+    if (open.value === key) open.value = "";
+  });
   return { detail: computed(() => data.value?.order ?? null), pending, error, refresh };
+}
+
+/** A chave da leitura do detalhe que está na tela ("" quando nenhum). */
+function useOpenPreorderDetailKey() {
+  return useState<string>("pos-preorder-open-detail", () => "");
+}
+
+/** As leituras que o evento de pedido refaz agora: as da lista e o detalhe aberto. */
+export function preordersLiveKeys(openDetailKey: string): string[] {
+  return openDetailKey ? [...PREORDERS_LIVE_KEYS, openDetailKey] : [...PREORDERS_LIVE_KEYS];
 }
 
 function isDenied(error: unknown): boolean {
@@ -115,7 +136,8 @@ function isDenied(error: unknown): boolean {
  *   lembrada em `useState`, para o item não piscar a cada troca de tela.
  * - **SSE primeiro** (ADR-016): o canal dos pedidos (`/sse/orders`, o mesmo do
  *   Gestor) avisa que um pedido nasceu, mudou ou foi pago, e o aviso refaz as
- *   leituras canônicas das Encomendas que estão na tela (`PREORDERS_LIVE_KEYS`).
+ *   leituras canônicas das Encomendas que estão na tela (`PREORDERS_LIVE_KEYS` e
+ *   o detalhe aberto, onde a corrida do entregador muda sem o pedido mudar).
  *   Sem stream de pé, o fallback é calmo: a cada 2 minutos, e ao voltar à aba.
  */
 export function usePosPreordersRail() {
@@ -129,9 +151,10 @@ export function usePosPreordersRail() {
   watch(list, (value) => { if (value) allowed.value = true; }, { immediate: true });
   watch(error, (value) => { if (isDenied(value)) allowed.value = false; }, { immediate: true });
 
+  const openDetail = useOpenPreorderDetailKey();
   usePosEvents(
     () => {
-      if (allowed.value) void refreshNuxtData(PREORDERS_LIVE_KEYS);
+      if (allowed.value) void refreshNuxtData(preordersLiveKeys(openDetail.value));
       // Sem resposta boa ainda (rede caiu na primeira leitura): tenta de novo no
       // tick calmo. Recusa de permissão não se repete.
       else if (!isDenied(error.value)) void refresh();

@@ -18,7 +18,9 @@
 // - o saldo na forma única do "A receber" (`TO_RECEIVE_CLASS`);
 // - o selo de situação (a peça do kit, `toneBadge`) só quando diz o que o
 //   dinheiro não diz: "Pronto", "Saiu para entrega", "Entregue";
-// - "Via impressa" escrita, além do ícone.
+// - "Via impressa" escrita, além do ícone;
+// - na entrega da casa, a corrida do entregador numa linha ("Entregador não
+//   chamado", "Procurando entregador", "Não atendida"): o chamar mora no detalhe.
 //
 // Na semana o card também se ARRASTA para outro dia (`movable`): o invólucro é que
 // se pega, e o link não (senão o navegador arrastaria o endereço). O gesto
@@ -26,6 +28,7 @@
 // dele (botão dentro de link não é HTML válido nem alvo de toque honesto).
 import { toneBadge } from "../../../operator-kit/app/presentation/orderDetail";
 import { fulfillmentIcon } from "~/presentation/orderTickets";
+import { COURIER_TEXT, courierRowLine } from "~/presentation/courier";
 import { preorderDetailPath } from "~/presentation/preorderDetail";
 import {
   PRINTED_LABEL,
@@ -62,6 +65,10 @@ const moneyClass = computed(() => (balanceStandsOut(props.card)
   : "text-xs tabular-nums text-muted-foreground"));
 const detailLine = computed(() => rowDetailLine(props.card, props.showDate));
 const pills = computed(() => phoneCardPills(props.card));
+// A corrida do entregador (TaOn), na encomenda de entrega da casa: a frase e o tom
+// são do servidor; o texto na cor do tom (o neutro, discreto).
+const courierLine = computed(() => courierRowLine(props.card));
+const courierClass = computed(() => COURIER_TEXT[courierLine.value?.tone ?? "neutral"]);
 </script>
 
 <template>
@@ -73,7 +80,7 @@ const pills = computed(() => phoneCardPills(props.card));
   >
     <NuxtLink
       :to="preorderDetailPath(card.ref, back)"
-      class="flex min-h-8 min-w-0 flex-1 items-start gap-3 p-3 text-left focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+      class="grid min-h-8 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1 p-3 text-left focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none md:grid-cols-[auto_minmax(5rem,1fr)_auto]"
       :class="slots.aside ? 'rounded-l-md' : 'rounded-md'"
       :draggable="movable ? 'false' : undefined"
       :data-preorder="card.ref"
@@ -93,6 +100,15 @@ const pills = computed(() => phoneCardPills(props.card));
         <span class="flex min-w-0 items-start gap-1 op-micro text-muted-foreground">
           <Icon :name="fulfillmentIcon(card.fulfillment_type)" class="size-3.5 shrink-0" aria-hidden="true" />
           <span class="min-w-0 break-words">{{ [card.fulfillment_label, card.items_summary].filter(Boolean).join(" · ") }}</span>
+        </span>
+        <span
+          v-if="courierLine"
+          class="flex min-w-0 items-center gap-1 op-micro font-medium"
+          :class="courierClass"
+          data-preorder-courier
+        >
+          <Icon name="lucide:bike" class="size-3.5 shrink-0" aria-hidden="true" />
+          <span class="min-w-0 break-words">{{ courierLine.label }}</span>
         </span>
         <span class="flex flex-wrap gap-1">
           <span
@@ -143,6 +159,17 @@ const pills = computed(() => phoneCardPills(props.card));
           {{ PRINTED_LABEL }}
         </span>
       </span>
+      <!-- A corrida do entregador numa linha inteira, sob quem e o dinheiro: a frase
+           não se espreme na coluna do nome. -->
+      <p
+        v-if="courierLine"
+        class="col-span-2 col-start-2 flex items-center gap-1 text-xs font-medium max-md:hidden"
+        :class="courierClass"
+        data-preorder-courier
+      >
+        <Icon name="lucide:bike" class="size-3.5 shrink-0" aria-hidden="true" />
+        <span class="min-w-0 break-words">{{ courierLine.label }}</span>
+      </p>
     </NuxtLink>
     <div v-if="slots.aside" class="flex shrink-0 items-start max-md:hidden">
       <slot name="aside" />

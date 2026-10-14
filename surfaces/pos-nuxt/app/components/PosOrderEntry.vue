@@ -76,8 +76,8 @@ function isReady(key: OrderSetupStepKey) {
   return steps.value.find((step) => step.key === key)?.ready ?? false;
 }
 
-// "Hoje · horário a combinar" já diz; um dia futuro sem janela, não.
-const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.scheduleLabel.includes("a combinar"));
+// "Hoje, o quanto antes" já diz; um dia futuro sem janela, não.
+const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.scheduleLabel.includes("o quanto antes"));
 </script>
 
 <template>

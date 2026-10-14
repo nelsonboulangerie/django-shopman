@@ -80,6 +80,7 @@ class Rule:
     - ``absent``: a chave não pode existir;
     - ``prefix``: valor (não secreto) começa com ``value``;
     - ``present``: a chave existe com valor (segredo ou não);
+    - ``includes``: lista separada por vírgula (não secreta) que contém ``value``;
     - ``rotated``: segredo presente E com cifrado diferente do ``--baseline``.
     """
 
@@ -95,6 +96,7 @@ class Rule:
             "absent": "ausente",
             "prefix": f"{self.value}… (o dono cola)",
             "present": "presente (não muda)",
+            "includes": f"contém {self.value}",
             "rotated": "segredo NOVO (o dono cola no painel)",
         }[self.kind]
 
@@ -122,6 +124,7 @@ _PIX_EFI = "shopman.shop.adapters.payment_efi"
 _STRIPE = "shopman.shop.adapters.payment_stripe"
 _FOCUS = "shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend"
 _HMAC_COMPONENTS = ("web-operator", "web-storefront", "release")
+_INTERMEDIATED = "shopman.shop.fiscal_resolvers.intermediated_sale"
 
 #: A tabela do dia D. Mesma ordem e mesmas chaves de
 #: ``docs/runbooks/go-live-delta-do-spec.md`` (o teste confere).
@@ -146,13 +149,15 @@ DELTA: tuple[Row, ...] = (
     Row("FOCUS_NFE_TOKEN", Rule("rotated"), grupo="money"),
     Row("SHOPMAN_ADMIN_REQUIRE_2FA", Rule("true"), grupo="cutover"),
     Row("SHOPMAN_GO_LIVE", Rule("true"), grupo="cutover"),
+    # A venda pelo iFood sem CPF emite NFC-e presencial (ADR-035). O vivo de 10/10
+    # tem os quatro resolvers da casa e nenhum que enxergue o pagamento ``external``.
+    Row("SHOPMAN_FISCAL_EMISSION_RESOLVER", Rule("includes", _INTERMEDIATED), grupo="money"),
     # ── O que já está no valor de produção e não pode sair dele ─────────────
     Row("DJANGO_DEBUG", Rule("off"), grupo="profile"),
     Row("DJANGO_SECURE_SSL_REDIRECT", Rule("true")),
     Row("SHOPMAN_CARD_ADAPTER", Rule("equals", _STRIPE), grupo="profile"),
     Row("SHOPMAN_LINK_ADAPTER", Rule("equals_or_absent", _STRIPE), grupo="money"),
     Row("SHOPMAN_FISCAL_ADAPTER", Rule("equals", _FOCUS), grupo="money"),
-    Row("SHOPMAN_FISCAL_EMISSION_RESOLVER", Rule("present"), grupo="money"),
     Row("FOCUS_NFE_BASE_URL", Rule("absent"), grupo="money"),
     Row("SHOPMAN_EXPOSE_DEBUG_OTP", Rule("off"), Rule("off"), grupo="profile"),
     Row("SHOPMAN_STAGING_AUTOPILOT", Rule("off"), Rule("off"), grupo="profile"),
@@ -241,6 +246,12 @@ def satisfied(rule: Rule, entry: dict | None, baseline: dict | None) -> bool | N
         return entry is not None and (raw or "").strip().startswith(rule.value)
     if rule.kind == "present":
         return entry is not None and bool((raw or "").strip())
+    if rule.kind == "includes":
+        if entry is None:
+            return False
+        if _is_secret(entry):
+            return None
+        return rule.value in {p.strip() for p in (raw or "").split(",") if p.strip()}
     if rule.kind == "rotated":
         if entry is None or not (raw or "").strip():
             return False
@@ -318,6 +329,8 @@ def paste_line(finding: Finding) -> str:
         return f"{key} = {rule.value}… (colar o valor do painel do provedor)"
     if rule.kind == "rotated":
         return f"{key} = valor novo, tipo Encrypt (colar o de produção do provedor)"
+    if rule.kind == "includes":
+        return f"{key}: acrescentar ,{rule.value} ao fim do valor de hoje (sem tirar nada)"
     return f"{key}: presente com valor (hoje falta)"
 
 

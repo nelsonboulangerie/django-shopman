@@ -515,6 +515,93 @@ const preorderDetail = {
   ],
 };
 
+// O ENTREGADOR (TaOn) nas encomendas de entrega da casa (dono, 13/10/2026), só na
+// prévia (`MOCK_SCENARIO=sale`): um cartão por estado da corrida, com o bloco
+// `courier` e as ações do Gestor. Chamar e Chamar de novo mudam o estado aqui (a
+// TaOn nunca é chamada: é o mock).
+const DRIVER = { name: "Carlos Mendes", phone: "(43) 99876-1234", vehicle_model: "Moto Honda CG 160", vehicle_plate: "BRA2E19" };
+const RIDES = {
+  "NB-1051": { name: "Bruno Lima", start: "14:00", window: "14h às 15h", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 2000, needs_machine: false, recorded: false }, call: true, balance: 4400 },
+  "NB-1052": { name: "Fernanda Okumura de Albuquerque", start: "14:30", window: "14h30 às 15h30", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 0, needs_machine: true, recorded: false }, call: true, balance: 9800 },
+  "NB-1053": { name: "Gustavo Reis", start: "13:00", window: "13h às 14h", status: "ready", situation: "ready", courier: { status: "A", id_mch: "R-53", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-53", confirmation_code: "4821" } },
+  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", id_mch: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" } },
+  "NB-1055": { name: "Igor Tavares", start: "15:00", window: "15h às 16h", status: "ready", situation: "ready", courier: { status: "N", id_mch: "R-55" }, call: true, attempts: 1 },
+  "NB-1056": { name: "Joana Ribeiro", start: "15:30", window: "15h30 às 16h30", status: "ready", situation: "ready", courier: {}, noAnswer: true },
+  "NB-1057": { name: "Lucas Ferraz", start: "16:00", window: "16h às 17h", status: "ready", situation: "ready", courier: { status: "P", id_mch: "R-57" } },
+};
+const COURIER_LABELS = { D: "Procurando entregador", G: "Aguardando aceite", P: "Procurando entregador", A: "Entregador a caminho da loja", S: "Entregador na loja", E: "Saiu para entrega", F: "Entregue", N: "Não atendida", C: "Corrida cancelada" };
+const COURIER_TONES = { N: "danger", C: "danger", F: "success", A: "info", S: "info", E: "info" };
+const SITUATION_LABELS = { ready: "Pronto", out_for_delivery: "Saiu para entrega" };
+const NO_ANSWER = "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu.";
+
+function rideBlock(ref) {
+  const ride = RIDES[ref];
+  const c = ride.courier;
+  const status = c.status || "";
+  const active = Boolean(c.id_mch) && !["F", "N", "C"].includes(status);
+  return {
+    provider: "machine", status, status_label: ride.noAnswer ? "Sem resposta da TaOn" : COURIER_LABELS[status] || "",
+    active, driver: c.driver || null, tracking_url: c.tracking_url || "", confirmation_code: c.confirmation_code || "",
+    estimate_display: "", final_value_display: "", requested_at: "", dispatched_at: "", finished_at: "",
+    attempts_count: ride.attempts || 0, position: null,
+    error: ride.noAnswer ? { message: NO_ANSWER, at: `${TODAY}T15:20:00Z` } : null,
+    can_quote: false, can_dispatch: !active && !ride.noAnswer && ride.status !== "delivered",
+    can_dispatch_again: Boolean(ride.noAnswer), can_cancel: false,
+    custody: ride.custody || { change_out_suggested_q: 0, needs_machine: false, recorded: false },
+  };
+}
+
+function rideCard(ref) {
+  const ride = RIDES[ref];
+  const block = rideBlock(ref);
+  const label = block.can_dispatch_again ? block.status_label
+    : block.status ? block.status_label
+      : block.can_dispatch ? "Entregador não chamado" : "";
+  const tone = block.can_dispatch_again ? "warning" : block.status ? COURIER_TONES[block.status] || "neutral" : block.can_dispatch ? "warning" : "";
+  const balance = ride.balance ?? 0;
+  return card({
+    ref, customer_name: ride.name, channel_ref: "pdv", channel_label: "PDV",
+    fulfillment_type: "delivery", fulfillment_label: "Entrega", window_label: ride.window, window_start: ride.start,
+    status: ride.status, situation: ride.situation, situation_label: SITUATION_LABELS[ride.situation] || "",
+    payment_state: balance ? "to_receive" : "paid", total_q: 9800, total_display: "R$ 98,00",
+    balance_q: balance, balance_display: brl(balance), items_summary: "1× Quiche de alho-poró · 2× Baguete",
+    items_count: 3, courier_label: label, courier_tone: tone, courier_call: block.can_dispatch || block.can_dispatch_again,
+  });
+}
+
+function rideDetail(ref) {
+  const block = rideBlock(ref);
+  const theCard = rideCard(ref);
+  const action = (actionRef, label, enabled, description) => ({
+    ref: actionRef, kind: "mutation", label, enabled, reason: enabled ? "" : "Confira o estado do pedido e da corrida antes de despachar.",
+    method: "POST", idempotency: "required", confirmation: { required: true, description },
+    payload_schema: { base_revision: `rev-${ref}`, expected_actor_id: 7 },
+  });
+  return {
+    ...preorderDetail, ref, status: RIDES[ref].status, status_label: "Pronto", channel_ref: "pdv", channel_icon: "storefront",
+    customer_name: RIDES[ref].name, fulfillment_type: "delivery", fulfillment_label: "Entrega",
+    delivery_address: "Rua das Flores, 123 · Centro · Londrina", payment_method_label: "Dinheiro na entrega",
+    items: preorderDetail.items.slice(0, 3), customer_note: "",
+    actions: [
+      ...preorderDetail.actions,
+      action("courier-dispatch", "Chamar entregador", block.can_dispatch, `Chamar um entregador da TaOn para o pedido ${ref.replace("NB-", "")}? A corrida é cobrada da casa.`),
+      action("courier-dispatch-again", "Chamar de novo", block.can_dispatch_again, "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."),
+    ],
+    courier: block,
+    equipment_options: [
+      { ref: "card_machine:MAQ-1", label: "Maquininha 1", enabled: true, reason: "", order_ref: "" },
+      { ref: "card_machine:MAQ-3", label: "Maquininha Azul", enabled: true, reason: "", order_ref: "" },
+      { ref: "card_machine:MAQ-2", label: "Maquininha 2", enabled: false, reason: "Na rua com o pedido 1043", order_ref: "NB-1043" },
+    ],
+    counter: {
+      ...preorderDetail.counter, card: theCard,
+      hand_over: { ...preorderDetail.counter.hand_over, allowed: false, block_reason: "Esta encomenda é para entregar no endereço: a saída é pelo Gestor de pedidos." },
+    },
+  };
+}
+
+if (SALE) for (const ref of Object.keys(RIDES)) orders.push(rideCard(ref));
+
 // PDV › Ajustes (`/api/v1/backstage/pos/settings/`): as quatro abas leem a mesma
 // resposta. Sem ela o mock devolvia `{}` e Impressoras caía em erro de página.
 const settings = {
@@ -710,6 +797,24 @@ createServer((req, res) => {
       completed: [],
     });
     return;
+  }
+  if (SALE) {
+    const ride = path.match(/^\/api\/v1\/backstage\/pos\/preorders\/(NB-105\d)\/$/);
+    if (ride && RIDES[ride[1]]) {
+      send(res, 200, { order: rideDetail(ride[1]), generated_at: `${TODAY}T12:00:00Z`, contract_version: 1 });
+      return;
+    }
+    const call = path.match(/^\/api\/v1\/backstage\/orders\/(NB-105\d)\/(courier-dispatch|courier-dispatch-again)\/$/);
+    if (call && RIDES[call[1]]) {
+      const ride = RIDES[call[1]];
+      if (call[2] === "courier-dispatch") ride.attempts = (ride.attempts || 0) + (ride.courier.status ? 1 : 0);
+      ride.noAnswer = false;
+      ride.courier = { status: "P", id_mch: `R-${call[1]}` };
+      const index = orders.findIndex((order) => order.ref === call[1]);
+      if (index >= 0) orders[index] = rideCard(call[1]);
+      send(res, 200, { ok: true, ref: call[1], outcome: "applied", directive_id: 1, status: "queued" });
+      return;
+    }
   }
   // O detalhe de uma encomenda (S5: o painel do Balcão nos cinco tamanhos).
   if (path === "/api/v1/backstage/pos/preorders/NB-1042/") {

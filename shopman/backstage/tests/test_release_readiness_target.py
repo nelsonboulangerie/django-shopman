@@ -87,6 +87,10 @@ _FLIPPED = {
     "STRIPE_PUBLISHABLE_KEY": "pk_live_abc",
     "SHOPMAN_ADMIN_REQUIRE_2FA": "true",
     "SHOPMAN_GO_LIVE": "true",
+    # ADR-035: o dia D acrescenta o resolver do intermediador (iFood sem CPF).
+    "SHOPMAN_FISCAL_EMISSION_RESOLVER": (
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.intermediated_sale"
+    ),
     **{key: f"EV[1:depois-{key}]" for key in _ROTATED},
 }
 

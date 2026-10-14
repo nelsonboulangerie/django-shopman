@@ -338,6 +338,7 @@ function actionIcon (action: Action) {
   if (action.ref === 'reorder') return 'lucide:rotate-ccw'
   if (action.ref === 'pay_now' || action.ref.includes('payment')) return 'lucide:credit-card'
   if (action.ref === 'confirm_received') return 'lucide:package-check'
+  if (action.ref === 'track_courier') return 'lucide:map-pin'
   return 'lucide:arrow-right'
 }
 
@@ -659,6 +660,18 @@ useSeoMeta({
                       <UiButton
                         v-else-if="action.kind === 'link' && action.href"
                         :to="actionRoute(action)"
+                        :icon="actionIcon(action)"
+                      >
+                        {{ action.label }}
+                      </UiButton>
+                      <!-- Link de fora da loja (o rastreio do entregador da TaOn):
+                           abre em outra aba para o acompanhamento seguir aberto. -->
+                      <UiButton
+                        v-else-if="action.kind === 'external' && action.href"
+                        :href="action.href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        :variant="action.priority === 'primary' ? 'default' : 'outline'"
                         :icon="actionIcon(action)"
                       >
                         {{ action.label }}

@@ -1143,7 +1143,8 @@ def _build_promise(
     if order.status == "dispatched":
         # Produto saiu, courier terceirizado, sem rastreio nem detecção de
         # chegada. Não prometemos "avisamos quando chegar": damos janela estimada
-        # e deixamos o cliente fechar o loop ("Recebi").
+        # e deixamos o cliente fechar o loop ("Recebi"). Quando a corrida é da
+        # TaOn e ela deu o link da parada, o cliente segue o entregador por ele.
         actions: tuple[Action, ...] = ()
         if is_delivery:
             actions = (
@@ -1162,6 +1163,18 @@ def _build_promise(
                     idempotency="required",
                 ),
             )
+            courier_url = _courier_tracking_url(order)
+            if courier_url:
+                actions += (
+                    _action(
+                        ref="track_courier",
+                        kind="external",
+                        label=_copy_title("TRACKING_ACTION_TRACK_COURIER", "Acompanhar o entregador"),
+                        priority="secondary",
+                        href=courier_url,
+                        idempotency="none",
+                    ),
+                )
         return promise(
             state="dispatched",
             tone="info",
@@ -1173,6 +1186,29 @@ def _build_promise(
 
     # ── 6. REPOUSO — recebido (fallback) ────────────────────────────
     return promise(state="received", tone="info")
+
+
+#: Letras da corrida (Machine) em que ela já acabou: finalizada, não atendida,
+#: cancelada. O link da parada deixa de mostrar o entregador.
+_COURIER_ENDED_STATUSES = frozenset({"F", "N", "C"})
+
+
+def _courier_tracking_url(order) -> str:
+    """O link da TaOn para o cliente seguir o entregador, ou ``""``.
+
+    Vem de ``order.data.courier.tracking_url`` (gravado no aceite da corrida,
+    ``services/courier._enrich_accepted``), o mesmo que vai no aviso de saída.
+    Só link http(s): o valor vem de terceiro e vira ``href`` na página.
+    """
+    courier = (order.data or {}).get("courier")
+    if not isinstance(courier, dict):
+        return ""
+    if str(courier.get("status") or "") in _COURIER_ENDED_STATUSES:
+        return ""
+    url = str(courier.get("tracking_url") or "").strip()
+    if not url.lower().startswith(("https://", "http://")):
+        return ""
+    return url
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:

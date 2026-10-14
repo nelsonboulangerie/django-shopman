@@ -33,6 +33,7 @@ TEXT_MIGRATIONS = [
     import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes"),
     import_module("shopman.shop.migrations.0079_confirmado_com_todo_carinho"),
     import_module("shopman.shop.migrations.0082_access_link_button_copy"),
+    import_module("shopman.shop.migrations.0092_avisos_de_estorno_e_devolucao"),
 ]
 DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
 REVISED = import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes")
@@ -81,7 +82,15 @@ def test_status_note_do_cancelamento_diz_o_motivo_ou_aponta_o_pedido():
 
 def test_status_note_so_existe_onde_o_texto_a_usa():
     users = {e for e, c in notification_copy.CUSTOMER_COPY.items() if "{status_note}" in c["body"]}
-    assert users == {"order_preparing", "order_cancelled", "order_rejected", "order_rescheduled", "order_updated"}
+    assert users == {
+        "order_preparing",
+        "order_cancelled",
+        "order_rejected",
+        "order_rescheduled",
+        "order_updated",
+        "payment_refunded",
+        "order_returned",
+    }
 
 
 # ── 2. Fonte única ────────────────────────────────────────────────────────────

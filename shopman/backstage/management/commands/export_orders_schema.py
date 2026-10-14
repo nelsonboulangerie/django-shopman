@@ -109,6 +109,7 @@ from shopman.backstage.projections.preorders import (
     PreorderHandOverProjection,
     PreorderRescheduleProjection,
 )
+from shopman.backstage.services.courier_reminder import CourierReminderProjection
 from shopman.shop.projections.types import Action, OrderItemProjection, TimelineEventProjection
 
 #: Generated artifact, relative to the repository root (``BASE_DIR``).
@@ -154,6 +155,7 @@ CONTRACT_DATACLASSES = (
     UndoProjection,
     KitchenStationProjection,
     KitchenProgressProjection,
+    CourierReminderProjection,
     OrderCardProjection,
     PreorderCardProjection,
     PreorderHandOverProjection,
