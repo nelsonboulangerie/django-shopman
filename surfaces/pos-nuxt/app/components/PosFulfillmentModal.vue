@@ -125,7 +125,7 @@ const deliveryFeeNote = computed(() => {
     case "default":
       return "Taxa padrão da loja: não deu para medir a distância deste endereço.";
     case "blocked":
-      return "Este endereço está fora da área de entrega.";
+      return "Fora da área de entrega. Para entregar, combine o valor com o cliente.";
     case "manual":
       return "Valor combinado para esta entrega.";
     default:

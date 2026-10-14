@@ -318,7 +318,8 @@ const reviewWarnings = computed(() => {
       // Endereço incompleto para a nota e mínimo de entrega: quem fala é o
       // bloqueio do Validar.
       && w.code !== "delivery_address_incomplete"
-      && w.code !== "below_delivery_minimum",
+      && w.code !== "below_delivery_minimum"
+      && w.code !== "delivery_out_of_area",
   );
   return fromServer;
 });
@@ -884,6 +885,26 @@ const ctaBlock = computed<{
       hint: "Acrescente itens até o mínimo, ou troque a entrega por retirada.",
       actions: [
         { label: "Acrescentar itens", run: returnToCart },
+        { label: "Trocar para retirada", run: () => { fulfillmentSheetOpen.value = true; } },
+      ],
+    };
+  }
+  // `delivery_out_of_area`: fora da área, a entrega só fecha com a taxa
+  // combinada à mão (o pedido guarda quem combinou). A mesma regra do
+  // fechamento, dita aqui com as duas saídas.
+  const outOfArea = props.review?.warnings?.find((w) => w.code === "delivery_out_of_area");
+  if (props.fulfillmentType === "delivery" && outOfArea && !props.deliveryFeeOverride) {
+    return {
+      message: outOfArea.message,
+      hint: "Para entregar, combine a taxa com o cliente. Ou troque para retirada.",
+      actions: [
+        {
+          label: "Combinar taxa",
+          run: () => {
+            emit("update:deliveryFeeOverride", true);
+            fulfillmentSheetOpen.value = true;
+          },
+        },
         { label: "Trocar para retirada", run: () => { fulfillmentSheetOpen.value = true; } },
       ],
     };
