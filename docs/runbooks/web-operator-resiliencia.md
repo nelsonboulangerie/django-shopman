@@ -245,12 +245,39 @@ O que olhar no log (`shopman.shop.pool_liveness`):
 
 `0` em qualquer das duas envs desliga a regra.
 
+### Um contrato, três sondas
+
+As três rotas continuam com os mesmos endereços, rate limit, payload enxuto e
+sem evidência privada, mas desde o Watchman executam os mesmos plugins disponíveis
+no diagnóstico local e na CI:
+
+| Perfil Watchman | Rota pública | Checks |
+|---|---|---|
+| `liveness` | `/health/live/` | processo + pool travado |
+| `platform_readiness` | `/health/database/` | round-trip pelo banco deste processo |
+| `readiness` | `/health/ready/` e `/ready/` | banco, cache, migrations e fila/workers |
+
+O diagnóstico completo não precisa simular requests nem conhecer funções privadas:
+
+```bash
+python manage.py watchman check --profile diagnostic --format json
+python manage.py watchman list --format json
+python manage.py watchman explain pool --format json
+```
+
+O comando inclui evidência e remediação para o operador. As rotas públicas seguem
+mostrando apenas `ok`, `fail` ou `skipped`. Exceção do próprio check vira
+`unknown` no relatório protegido e `skipped` na sonda; nunca pede reinício por
+erro do observador.
+
 ### Testes
 
-`shopman/shop/tests/test_self_healing.py` (gate de runtime): pool real esgotado com
+`shopman/shop/tests/test_self_healing.py` e
+`shopman/shop/tests/test_watchman_integration.py` (gate de runtime): pool real esgotado com
 banco de pé → liveness 503, e devolver as conexões → 200; pool esgotado com o banco
 inalcançável → liveness 200; prazo do stream encerra e libera a vaga; sessão acima do
-teto recebe 429 sem tocar o stream.
+teto recebe 429 sem tocar o stream; registry, CLI e rotas executam os mesmos perfis,
+com evidência redigida na superfície pública.
 
 ## 4. Duas instâncias no `web-operator`: não adotado (decisão do dono 13/10)
 

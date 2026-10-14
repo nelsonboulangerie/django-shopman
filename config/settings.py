@@ -320,6 +320,7 @@ INSTALLED_APPS = [
     # Shopman core apps
     "shopman.refs",
     "shopman.utils",
+    "shopman.watchman",
     "shopman.offerman",
     "shopman.stockman",
     "shopman.craftsman",
@@ -364,6 +365,26 @@ INSTALLED_APPS = [
     # Optional instance/distribution apps
     *SHOPMAN_INSTANCE_APPS,
 ]
+
+# Watchman is the shared execution contract for local probes, CI diagnostics and
+# management commands. The Shopman-specific adapters are optional contribs of the
+# reusable package; public URLs and their rate limiter remain in shopman.shop.
+WATCHMAN = {
+    "CHECKS": [
+        "shopman.watchman.checks.ProcessCheck",
+        "shopman.watchman.contrib.shopman.PoolCheck",
+        "shopman.watchman.contrib.shopman.DatabaseCheck",
+        "shopman.watchman.contrib.shopman.CacheCheck",
+        "shopman.watchman.contrib.shopman.MigrationsCheck",
+        "shopman.watchman.contrib.shopman.QueueCheck",
+    ],
+    "PROFILES": {
+        "liveness": ["process", "pool"],
+        "platform_readiness": ["database"],
+        "readiness": ["database", "cache", "migrations", "queue"],
+        "diagnostic": ["process", "pool", "database", "cache", "migrations", "queue"],
+    },
+}
 
 MIDDLEWARE = [
     # Primeiro da cadeia: mede o request inteiro e vê o status final, inclusive o
