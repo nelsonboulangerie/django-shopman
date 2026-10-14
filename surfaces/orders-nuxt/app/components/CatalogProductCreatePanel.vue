@@ -75,7 +75,6 @@ const form = reactive({
 
 const gtin = ref("");
 const accepted = ref<Set<string>>(new Set());
-const photoInput = ref<HTMLInputElement | null>(null);
 const photoBusy = ref(false);
 const photoError = ref("");
 const photoOriginal = ref("");
@@ -337,19 +336,22 @@ function submit() {
         <NuxtCard v-if="!isDuplicate && !intent" variant="soft">
           <div class="flex flex-col gap-2">
             <p class="text-sm font-medium">O que você vai cadastrar?</p>
-            <button
+            <NuxtButton
               v-for="option in intents"
               :key="option.value"
-              type="button"
-              class="rounded-md border border-default p-3 text-left hover:bg-elevated"
+              color="neutral"
+              variant="outline"
+              class="w-full justify-start"
               :data-intent="option.value"
               @click="intent = option.value"
             >
-              <span class="block text-sm font-medium">{{ option.label }}</span>
-              <span class="block text-xs text-muted-foreground">{{
-                option.help
-              }}</span>
-            </button>
+              <span class="block text-left">
+                <span class="block text-sm font-medium">{{ option.label }}</span>
+                <span class="block text-xs text-muted-foreground">{{
+                  option.help
+                }}</span>
+              </span>
+            </NuxtButton>
           </div>
         </NuxtCard>
         <NuxtCard v-if="!isDuplicate && intent === 'insumo'" variant="soft">
@@ -498,24 +500,18 @@ function submit() {
           variant="soft"
         >
           <div class="flex flex-col gap-3">
-            <div class="flex items-center justify-between gap-2">
-              <p class="text-sm font-medium">Foto do produto</p>
-              <NuxtButton
-                color="neutral"
-                variant="outline"
-                label="Escolher foto"
-                icon="i-lucide-image-up"
-                :loading="photoBusy"
-                @click="photoInput?.click()"
+            <NuxtFormField
+              label="Foto do produto"
+              hint="Escolha uma imagem para padronizar."
+            >
+              <NuxtInput
+                type="file"
+                accept="image/*"
+                :disabled="photoBusy"
+                data-testid="create-photo-input"
+                @change="onPhotoPicked"
               />
-            </div>
-            <input
-              ref="photoInput"
-              type="file"
-              accept="image/*"
-              class="hidden"
-              @change="onPhotoPicked"
-            />
+            </NuxtFormField>
             <p class="text-xs text-muted-foreground">
               O ajuste é determinístico: recorta a borda, enquadra e afina. Não
               inventa o produto.

@@ -38,6 +38,15 @@ watch(
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
 
+const columnId = (ref: string) => `surface_${ref.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+const bulkColumns = computed(() => [
+  { id: "product", header: "Produto", enableHiding: false },
+  ...props.surfaces.map((surface) => ({
+    id: columnId(surface.ref),
+    header: surface.short_name,
+  })),
+]);
+
 function cellFor(row: CatalogRowProjection, surfaceRef: string) {
   return row.cells.find((cell) => cell.surface_ref === surfaceRef);
 }
@@ -174,78 +183,66 @@ function save() {
           icon="i-lucide-clipboard-paste"
           description="Toque num preço e cole a coluna da planilha. Preço vazio volta ao valor atual; nada é gravado antes de salvar."
         />
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm" data-bulk-grid>
-            <thead>
-              <tr class="text-left text-muted-foreground">
-                <th class="sticky left-0 bg-default p-2">Produto</th>
-                <th
-                  v-for="surface in surfaces"
-                  :key="surface.ref"
-                  class="min-w-48 p-2"
-                >
-                  {{ surface.short_name }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in rows"
-                :key="row.sku"
-                class="border-t border-default"
-              >
-                <th class="sticky left-0 bg-default p-2 text-left font-medium">
-                  {{ row.name }}
-                  <span class="block text-xs text-muted-foreground">{{
-                    row.sku
-                  }}</span>
-                </th>
-                <td
-                  v-for="surface in surfaces"
-                  :key="surface.ref"
-                  class="p-2 align-top"
-                >
-                  <div class="flex flex-col gap-1">
-                    <NuxtInput
-                      :model-value="priceText(row, surface.ref)"
-                      inputmode="decimal"
-                      size="sm"
-                      :aria-label="`Preço de ${row.name} em ${surface.name}`"
-                      :data-cell="`${row.sku}|${surface.ref}|price`"
-                      @update:model-value="
-                        (value: string | number) =>
-                          onPrice(row, surface.ref, String(value))
-                      "
-                      @blur="onPriceBlur(row, surface.ref)"
-                      @paste="
-                        (event: ClipboardEvent) =>
-                          onPaste(row, surface.ref, event)
-                      "
-                    />
-                    <div class="flex items-center gap-2">
-                      <NuxtCheckbox
-                        :model-value="flagValue(row, surface.ref, 'published')"
-                        label="Exibido"
-                        @update:model-value="
-                          (value: boolean | 'indeterminate') =>
-                            setFlag(row, surface.ref, 'published', value === true)
-                        "
-                      />
-                      <NuxtCheckbox
-                        :model-value="flagValue(row, surface.ref, 'sellable')"
-                        label="Vendável"
-                        @update:model-value="
-                          (value: boolean | 'indeterminate') =>
-                            setFlag(row, surface.ref, 'sellable', value === true)
-                        "
-                      />
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <OperatorTable
+          :data="rows"
+          :columns="bulkColumns"
+          :row-key="(row: CatalogRowProjection) => row.sku"
+          caption="Tabelão de preços e publicação por canal"
+          data-bulk-grid
+        >
+          <template #product-cell="{ row: tableRow }">
+            <template v-for="row in [tableRow.original]" :key="row.sku">
+              <div class="font-medium">
+                {{ row.name }}
+                <span class="block text-xs text-muted-foreground">{{
+                  row.sku
+                }}</span>
+              </div>
+            </template>
+          </template>
+          <template
+            v-for="surface in surfaces"
+            :key="`cell-${surface.ref}`"
+            #[`${columnId(surface.ref)}-cell`]="{ row: tableRow }"
+          >
+            <template v-for="row in [tableRow.original]" :key="row.sku">
+              <div class="flex flex-col gap-1">
+                <NuxtInput
+                  :model-value="priceText(row, surface.ref)"
+                  inputmode="decimal"
+                  :aria-label="`Preço de ${row.name} em ${surface.name}`"
+                  :data-cell="`${row.sku}|${surface.ref}|price`"
+                  @update:model-value="
+                    (value: string | number) =>
+                      onPrice(row, surface.ref, String(value))
+                  "
+                  @blur="onPriceBlur(row, surface.ref)"
+                  @paste="
+                    (event: ClipboardEvent) => onPaste(row, surface.ref, event)
+                  "
+                />
+                <div class="flex items-center gap-2">
+                  <NuxtCheckbox
+                    :model-value="flagValue(row, surface.ref, 'published')"
+                    label="Exibido"
+                    @update:model-value="
+                      (value: boolean | 'indeterminate') =>
+                        setFlag(row, surface.ref, 'published', value === true)
+                    "
+                  />
+                  <NuxtCheckbox
+                    :model-value="flagValue(row, surface.ref, 'sellable')"
+                    label="Vendável"
+                    @update:model-value="
+                      (value: boolean | 'indeterminate') =>
+                        setFlag(row, surface.ref, 'sellable', value === true)
+                    "
+                  />
+                </div>
+              </div>
+            </template>
+          </template>
+        </OperatorTable>
       </div>
     </template>
     <template #footer>

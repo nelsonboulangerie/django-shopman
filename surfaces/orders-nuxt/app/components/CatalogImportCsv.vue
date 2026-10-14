@@ -20,7 +20,6 @@ const emit = defineEmits<{
 
 const csv = ref("");
 const fileName = ref("");
-const fileInput = ref<HTMLInputElement | null>(null);
 
 function reset() {
   csv.value = "";
@@ -54,6 +53,21 @@ const errorCount = computed(() => props.preview?.errors.length ?? 0);
 
 const money = (q: number) =>
   (q / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const previewRows = computed(() =>
+  (props.preview?.changes ?? []).map((change) => ({
+    sku: change.sku,
+    action: change.action === "new" ? "Novo" : "Atualiza",
+    name: change.name,
+    before: change.before ? money(change.before.base_price_q) : "",
+  })),
+);
+const previewColumns = [
+  { id: "sku", header: "SKU", accessorKey: "sku" },
+  { id: "action", header: "Ação", accessorKey: "action" },
+  { id: "name", header: "Nome", accessorKey: "name" },
+  { id: "before", header: "Preço atual", accessorKey: "before" },
+];
 </script>
 
 <template>
@@ -79,25 +93,21 @@ const money = (q: number) =>
           icon="i-lucide-circle-alert"
           :description="error"
         />
-        <div class="flex items-center gap-2">
-          <NuxtButton
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-file-up"
-            label="Escolher arquivo CSV"
-            :loading="previewBusy"
-            data-import-pick
-            @click="fileInput?.click()"
-          />
-          <span class="text-sm text-muted-foreground">{{ fileName }}</span>
-          <input
-            ref="fileInput"
+        <NuxtFormField
+          label="Arquivo CSV"
+          hint="Separador ponto e vírgula; vírgula decimal."
+        >
+          <NuxtInput
             type="file"
             accept=".csv,text/csv"
-            class="hidden"
+            :disabled="previewBusy"
+            data-import-pick
             @change="onFile"
           />
-        </div>
+        </NuxtFormField>
+        <p v-if="fileName" class="text-sm text-muted-foreground">
+          {{ fileName }}
+        </p>
 
         <NuxtCard v-if="preview" variant="outline">
           <div class="flex flex-col gap-3">
@@ -120,34 +130,14 @@ const money = (q: number) =>
                 Linha {{ item.row }}: {{ item.detail }}
               </li>
             </ul>
-            <div class="max-h-72 overflow-y-auto">
-              <table class="w-full text-xs">
-                <thead class="text-left text-muted-foreground">
-                  <tr>
-                    <th class="p-1">SKU</th>
-                    <th class="p-1">Ação</th>
-                    <th class="p-1">Nome</th>
-                    <th class="p-1">Preço atual</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="change in preview.changes"
-                    :key="change.sku"
-                    class="border-t border-default"
-                  >
-                    <td class="p-1">{{ change.sku }}</td>
-                    <td class="p-1">
-                      {{ change.action === "new" ? "Novo" : "Atualiza" }}
-                    </td>
-                    <td class="p-1">{{ change.name }}</td>
-                    <td class="p-1 tabular-nums">
-                      {{ change.before ? money(change.before.base_price_q) : "" }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <OperatorTable
+              :data="previewRows"
+              :columns="previewColumns"
+              :row-key="(row) => row.sku"
+              caption="Mudanças da importação"
+              in-card
+              data-import-preview
+            />
           </div>
         </NuxtCard>
       </div>

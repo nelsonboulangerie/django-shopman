@@ -1446,8 +1446,8 @@ useHead({ title: "Catálogo" });
       <template #filter-panel>
         <!-- Faceta que filtraria só a página saiu do ar; o porquê fica visível. -->
         <p class="mb-2 text-xs text-muted-foreground" data-filter-note>
-          Envio, estoque e dados sociais ainda não filtram o catálogo inteiro
-          paginado. Eles voltam quando passarem para o servidor.
+          Envio, estoque e dados sociais ainda não filtram a lista inteira.
+          Eles voltam quando o filtro alcançar todos os produtos.
         </p>
         <OperatorFilterPanel
           v-model="filters"
