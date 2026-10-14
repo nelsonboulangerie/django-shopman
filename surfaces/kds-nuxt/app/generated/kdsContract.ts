@@ -48,6 +48,8 @@ export interface KDSTicketProjection {
   started_at_display: string;
   is_preorder: boolean;
   due_time_display: string;
+  due_clock_display: string;
+  due_in_seconds: number | null;
   seen: boolean;
   changes: KDSChangeProjection[];
   change_ticket_pks: number[];

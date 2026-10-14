@@ -14,11 +14,11 @@
 // embalar vem depois do Pronto.
 import type { KDSHistoryEntryProjection, KDSTicketProjection } from "~/types/kds";
 import {
-  elapsedLabel,
   lucideIcon,
   slaPercent,
   splitRef,
   targetLabel,
+  ticketClockLabel,
   ticketTone,
   toneBar,
   toneTimer,
@@ -73,8 +73,14 @@ const description = computed(() => {
   return `${t.customer_name || "Sem cliente"}: ${t.status_label}, ${count}.`;
 });
 const fill = computed(() =>
+  // Com hora combinada a barra não mede a meta da estação desde a madrugada: cheia
+  // quando a hora passou, vazia antes dela (a cor já diz).
   props.ticket
-    ? slaPercent(props.ticket.elapsed_seconds, props.ticket.target_seconds)
+    ? props.ticket.due_clock_display
+      ? (props.ticket.due_in_seconds ?? 1) > 0
+        ? 0
+        : 100
+      : slaPercent(props.ticket.elapsed_seconds, props.ticket.target_seconds)
     : 0,
 );
 </script>
@@ -158,11 +164,11 @@ const fill = computed(() =>
             <span
               class="flex items-center gap-1 text-3xl font-bold tabular-nums leading-none"
             >
-              <Icon name="lucide:timer" class="size-5 opacity-70" />
-              {{ elapsedLabel(ticket.elapsed_seconds) }}
+              <Icon :name="ticket.due_clock_display ? 'lucide:calendar-clock' : 'lucide:timer'" class="size-5 opacity-70" />
+              {{ ticketClockLabel(ticket) }}
             </span>
             <span
-              v-if="ticket.target_seconds"
+              v-if="ticket.target_seconds && !ticket.due_clock_display"
               class="text-xs font-medium uppercase tracking-wide opacity-60"
             >
               Alvo {{ targetLabel(ticket.target_seconds) }}
