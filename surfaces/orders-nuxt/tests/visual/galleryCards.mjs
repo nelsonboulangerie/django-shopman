@@ -124,6 +124,12 @@ export function galleryQueue(base) {
       can_settle_delivery_cash: true,
       actions: [action("advance", "Entregar a Gabriela"), action("settle-delivery-cash", "Receber", { priority: "secondary" }), ...menu],
     }),
+    make("T11", { attention: "handoff", goal_label: "no balcão",
+      status: "ready", status_label: "Pronto", channel_ref: "ifood", customer_name: "Larissa",
+      ready_at_iso: iso(-60), ifood_schedule_label: "Retirada às 19:40", ifood_pickup_code: "5170",
+      payment_method_label: "Pago no iFood", payment_tone: "success",
+      actions: [action("advance", "Entregar a Larissa"), ...menu],
+    }),
     make("H09", {
       status: "completed", status_label: "Entregue", customer_name: "Heitor", ready_at_iso: iso(-300),
       undo: { kind: "handoff", label: "Entregue às 15:00", detail: "O aviso ao cliente sai quando o prazo acabar.",

@@ -189,9 +189,26 @@ def _map_delivery(order: dict) -> dict:
         "city": address.get("city", ""),
         "state": address.get("state", ""),
         "scheduled_at": delivery.get("deliveryDateTime", ""),
+        "takeout_at": _takeout_at(order),
         "pickup_code": delivery.get("pickupCode", ""),
         "delivered_by": delivery.get("deliveredBy", ""),
     }
+
+
+def _takeout_at(order: dict) -> str:
+    """Quando o cliente vem buscar (``takeout.takeoutDateTime``), em UTC ISO.
+
+    Só pedido de retirada traz o bloco. Valor sem fuso ou malformado fica como
+    veio (diagnóstico), e quem mostra não o lê: mesma régua de ``map_schedule``.
+    """
+    from shopman.shop.services.ifood_schedule import _parse
+
+    takeout = order.get("takeout") if isinstance(order.get("takeout"), dict) else {}
+    raw = takeout.get("takeoutDateTime")
+    if not raw:
+        return ""
+    parsed = _parse(raw)
+    return parsed.isoformat() if parsed else str(raw)
 
 
 def _compose_address(address: dict) -> str:
