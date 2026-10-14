@@ -27,6 +27,7 @@ _spec.loader.exec_module(guard)
 
 FILES = (
     "surfaces/registry.json",
+    "surfaces/contracts.json",
     ".github/dependabot.yml",
     ".github/workflows/surfaces-gate.yml",
     "Makefile",
@@ -105,8 +106,8 @@ def test_a_new_registry_entry_lists_every_place_that_still_lacks_it(repo: Path):
     reported = {error.split(":", 1)[0].split(" (")[0] for error in guard.run(repo)}
     assert reported == {
         "surfaces/",
+        "surfaces/contracts.json",
         ".github/dependabot.yml",
-        ".github/workflows/surfaces-gate.yml",
         "Makefile",
         "surfaces/operator-router/groups.json",
         "surfaces/Dockerfile.operator-group",
