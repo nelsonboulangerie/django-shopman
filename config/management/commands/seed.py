@@ -6501,6 +6501,14 @@ class Command(BaseCommand):
             # iFood ficam no default "auto" (operador presente / marketplace).
             (STOREFRONT_REF, "Loja online", 2, True, {
                 **_remote_config,
+                # Loja online PAGA AO PEDIR, como no WhatsApp (decisão do dono,
+                # 14/10/2026, L1=1): o Pix/cartão nasce no pedido, sem "pagar na
+                # entrega" no site (L2=1). A loja tem 30 min de loja aberta para
+                # aceitar (aviso no Gestor aos 10); recusou ou venceu, o pedido é
+                # cancelado e o dinheiro volta sozinho. Nota do dono: "se os
+                # estornos ficarem constantes, reavaliar". Banco vivo: shop.0094.
+                "confirmation": {"mode": "auto_cancel", "timeout_minutes": 30, "stale_new_alert_minutes": 10},
+                "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
                 "short_name": "Site",
                 "order_ref_prefix": "NB",
                 "fulfillment": {"prep_start": "operator", "equipment": ["card_machine"]},

@@ -331,7 +331,7 @@ for key in (
 | `customer_ref` | `string` | CustomerIdentificationHandler | CheckoutInferDefaultsHandler | Ref do Customer criado/encontrado |
 | `fulfillment_created` | `bool` | FulfillmentCreateHandler | FulfillmentCreateHandler (idempotência) | Flag: Fulfillment object criado |
 | `cancellation_reason` | `string` | PixTimeoutHandler, PaymentTimeoutHandler, ConfirmationTimeoutHandler, OrderCancelView, GestorOrderRejectView | hooks._on_cancelled, `fiscal.cancel` (justificativa) | Motivo (auditoria): `"pix_timeout"`, `"card_timeout"`, `"confirmation_timeout"`, `"customer_requested"`, o rótulo do motivo escolhido pelo operador (cancelar) ou o texto da recusa / a descrição do iFood. **Pode conter código de máquina — nunca exibir ao cliente.** |
-| `cancellation_reason_key` | `string` | `cancellation.cancel` (sempre: a do operador, ou a derivada do código de máquina por `cancel_reasons.reason_key_for`) | `lifecycle._on_cancelled`, `notification._status_note`, `order_tracking` | Chave estável do motivo, da lista única `shopman/shop/services/cancel_reasons.py`: `out_of_stock`, `cannot_deliver`, `customer_request`, `payment_not_confirmed`, `store_closing`, `other`. O cliente lê o **texto revisado da chave** na notificação `order_cancelled` (`{status_note}`) e na página do pedido (lá, `other` e Pix vencido não mostram motivo). Obrigatória no cancelar do operador (`OrderCancelView`, erro `{detail, field: "reason_key", errors}`), exceto no iFood, onde o motivo é o código do iFood e a chave fica `other`. Automáticos: `payment_timeout`/`pix_timeout`/`card_timeout` → `payment_not_confirmed`; `customer_requested` → `customer_request`; o resto → `other` |
+| `cancellation_reason_key` | `string` | `cancellation.cancel` (sempre: a do operador, ou a derivada do código de máquina por `cancel_reasons.reason_key_for`) | `lifecycle._on_cancelled`, `notification._status_note`, `order_tracking` | Chave estável do motivo, da lista única `shopman/shop/services/cancel_reasons.py`: `out_of_stock`, `cannot_deliver`, `customer_request`, `payment_not_confirmed`, `store_closing`, `other`. O cliente lê o **texto revisado da chave** na notificação `order_cancelled` (`{status_note}`) e na página do pedido (lá, `other` e Pix vencido não mostram motivo). Obrigatória no cancelar do operador (`OrderCancelView`, erro `{detail, field: "reason_key", errors}`), exceto no iFood, onde o motivo é o código do iFood e a chave fica `other`. Automáticos: `payment_timeout`/`pix_timeout`/`card_timeout` → `payment_not_confirmed`; `customer_requested` → `customer_request`; `confirmation_timeout` → `store_did_not_confirm` (só do sistema, fora da lista do operador: "Não conseguimos confirmar seu pedido dentro do prazo."); o resto → `other` |
 | `cancellation_internal_note` | `string` | `operator_orders.cancel_order` (via OrderCancelView `internal_note`) | auditoria (histórico do pedido) | Observação livre do operador no cancelar. **Interna: nunca vai ao cliente** (nem na notificação, nem na página do pedido). Ausente quando o operador não escreveu nada |
 | `rejected_by` | `string` | GestorOrderRejectView | — | Username do operador que rejeitou |
 | `card_authorization_expired_at` | `string` | `services/card_authorization.expire` (Directive `payment.card_authorization_watch`) | auditoria | ISO datetime em que o pedido foi cancelado porque a autorização do cartão (captura manual) venceu no Stripe sem aceite. Vem com `cancellation_reason="card_authorization_expired"` e `cancellation_note` (o motivo que o cliente lê). Nada foi cobrado: o intent fica `cancelled` no Payman |
@@ -737,6 +737,15 @@ Write-back: `holds` (list de hold objects do backend)
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks._on_order_created | ConfirmationTimeoutHandler |
 | `expires_at` | `string` | hooks._on_order_created | ConfirmationTimeoutHandler |
+| `action` | `string` | `lifecycle._schedule_confirmation_timeout` | ConfirmationTimeoutHandler: `"confirm"` (`auto_confirm`) ou `"cancel"` (`auto_cancel`). No `cancel` o pedido ainda `new` sai por `cancellation.cancel` com `cancellation_reason="confirmation_timeout"` (chave `store_did_not_confirm`): o dinheiro volta (Pix estornado, cartão anulado no Stripe) |
+
+#### `order.stale_new_alert`
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `lifecycle._handle_confirmation` (`manual`), `lifecycle._schedule_stale_alert_before_deadline` (`auto_cancel`) | StaleNewOrderAlertHandler |
+| `alert_at` | `string` (ISO) | idem | StaleNewOrderAlertHandler |
+| `deadline_at` | `string` (ISO) | `lifecycle._schedule_stale_alert_before_deadline` | StaleNewOrderAlertHandler: o aviso diz até quando aceitar e que, vencido, o pedido é cancelado e o pagamento devolvido. Só no `auto_cancel`; anda junto quando o prazo é reagendado |
 
 #### `preorder.activate`
 
@@ -1258,7 +1267,7 @@ Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 |-------|------|---------|-----------|
 | `mode` | `string` | `"immediate"` | `"immediate"` (auto-confirma), `"auto_confirm"` (auto-confirma após timeout), `"auto_cancel"` (cancela após timeout), `"manual"` (aguarda) |
 | `timeout_minutes` | `int` | `5` | Timeout para modes auto_confirm/auto_cancel |
-| `stale_new_alert_minutes` | `int` | `0` | Opt-in para `mode="manual"`: após X minutos em NEW sem decisão, dispara `OperatorAlert("stale_new_order")`. No iFood tem de ser MENOR que `external_sla_minutes`, senão o alerta toca com o pedido já cancelado (estava 20 contra 8 até 19/09/2026) |
+| `stale_new_alert_minutes` | `int` | `0` | Opt-in para `mode="manual"`: após X minutos em NEW sem decisão, dispara `OperatorAlert("stale_new_order")`. No `auto_cancel` (loja online) o aviso sai X minutos depois do início do prazo de aceite (em horário de loja aberta) e diz até quando; tem de ser MENOR que `timeout_minutes`. No iFood tem de ser MENOR que `external_sla_minutes`, senão o alerta toca com o pedido já cancelado (estava 20 contra 8 até 19/09/2026) |
 | `external_sla_minutes` | `int` | `0` | Prazo que o MARKETPLACE impõe para confirmar, contado do `createdAt` dele. Vencido, quem cancela é o marketplace. Gravado no pedido como `ifood.confirm_by` e contado no card. `0` = sem SLA externo (todo canal da casa). iFood: 8 (documentado; medido a 8min10s em 19/09/2026) |
 
 Lido por: `hooks._on_order_created`, `ConfirmationTimeoutHandler`, `confirmation.py` helpers, `CheckoutView`, `TrackingView`.

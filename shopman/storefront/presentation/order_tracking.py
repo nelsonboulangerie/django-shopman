@@ -953,7 +953,7 @@ def _promise_copy(
         if payment_confirmed:
             return title, copy.message(
                 "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID",
-                "Pagamento recebido. Estamos conferindo a disponibilidade.",
+                "Pagamento recebido. Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.",
             )
         return title, copy.message(
             "TRACKING_PROMISE_AVAILABILITY_MESSAGE",
@@ -992,7 +992,7 @@ def _promise_copy(
             return copy.title("TRACKING_PROMISE_PAYMENT_TITLE", "Pagamento recebido"), message
         message = (
             copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW",
-                         "Estamos conferindo a disponibilidade.")
+                         "Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")
             if status == "new"
             else copy.message("TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED",
                               "Pedido aceito. Acompanhe o andamento por aqui.")

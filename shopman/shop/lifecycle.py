@@ -164,6 +164,11 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
     if (_payment_is_captured(order) if payment_reads is None else
             payment_gate.payment_is_captured(order, payment_reads=payment_reads)):
         return
+    if method == "card" and not config_failed and _card_authorization_is_held(order, payment_reads=payment_reads):
+        # Cartão autorizado no pedido (captura manual): o dinheiro está reservado
+        # e o aceite é que cobra (``_on_accepted`` → ``payment.capture``). Exigir
+        # captura ANTES do aceite travava o pedido: ninguém conseguia aceitar.
+        return
 
     raise InvalidTransition(
         code="payment_not_captured",
@@ -176,6 +181,18 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
             "intent_ref": intent_ref,
         },
     )
+
+
+def _card_authorization_is_held(order, *, payment_reads=None) -> bool:
+    """O cartão do pedido está autorizado (reservado, ainda não cobrado)?"""
+    try:
+        status = payment.get_payment_status(order) if payment_reads is None else (
+            payment.get_payment_status(order, payment_reads=payment_reads)
+        )
+    except Exception:
+        logger.warning("lifecycle.card_authorization_lookup_failed order=%s", order.ref, exc_info=True)
+        return False
+    return str(status or "").lower() == "authorized"
 
 
 def secure_stock(order) -> None:
@@ -828,6 +845,8 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
         return
 
     if mode in ("auto_confirm", "auto_cancel"):
+        # O prazo da loja só começa quando o dinheiro chega: o Pix capturado
+        # (``_on_paid``) ou o cartão autorizado (``start_acceptance_deadline``).
         action = "confirm" if mode == "auto_confirm" else "cancel"
         if _requires_captured_payment_before_confirmation(order, config) and not _payment_is_captured(order):
             return
@@ -846,6 +865,26 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
             },
             available_at=alert_at,
         )
+
+
+def start_acceptance_deadline(order) -> None:
+    """O cartão foi autorizado: começa o prazo de aceite da loja (``auto_cancel``).
+
+    O Pix começa o prazo no ``_on_paid``; o cartão de captura manual nunca passa
+    por lá antes do aceite (a cobrança É o aceite), então quem registra a
+    autorização chama aqui (``card_authorization.watch``). Loja online paga ao
+    pedir (ADR-036): sem isto, o cartão autorizado esperava sem prazo.
+    """
+    if order.status != Order.Status.NEW:
+        return
+    try:
+        config = ChannelConfig.for_channel(order.channel_ref)
+    except Exception:
+        logger.warning("lifecycle.acceptance_deadline_config_failed order=%s", order.ref, exc_info=True)
+        return
+    if config.confirmation.mode != "auto_cancel":
+        return
+    _schedule_confirmation_timeout(order, config, action="cancel", source="card_authorized")
 
 
 def _payment_is_captured(order) -> bool:
@@ -1168,13 +1207,51 @@ def _schedule_confirmation_timeout(
         existing.payload = payload
         existing.available_at = expires_at
         existing.save(update_fields=["payload", "available_at", "updated_at"])
-        return existing
+        timer = existing
+    else:
+        timer = Directive.objects.create(
+            topic="confirmation.timeout",
+            payload=payload,
+            available_at=expires_at,
+        )
+    if action == "cancel":
+        _schedule_stale_alert_before_deadline(order, config, deadline=expires_at)
+    return timer
 
-    return Directive.objects.create(
-        topic="confirmation.timeout",
-        payload=payload,
-        available_at=expires_at,
+
+def _schedule_stale_alert_before_deadline(order, config: ChannelConfig, *, deadline) -> None:
+    """O aviso de pedido parado DENTRO do prazo de aceite, dizendo até quando.
+
+    No ``auto_cancel`` o pedido some sozinho no fim do prazo (e o dinheiro volta
+    ao cliente): o Gestor precisa saber antes. O aviso sai ``stale_new_alert_minutes``
+    depois do início do prazo (em horário de loja aberta, como o próprio prazo) e
+    anda junto quando o prazo é reagendado (o pagamento chegou).
+    """
+    stale_minutes = int(getattr(config.confirmation, "stale_new_alert_minutes", 0) or 0)
+    timeout_minutes = int(config.confirmation.timeout_minutes or 0)
+    if stale_minutes <= 0 or stale_minutes >= timeout_minutes:
+        return
+    alert_at = deadline - timedelta(minutes=timeout_minutes - stale_minutes)
+    payload = {
+        "order_ref": order.ref,
+        "alert_at": alert_at.isoformat(),
+        "deadline_at": deadline.isoformat(),
+    }
+    existing = (
+        Directive.objects.filter(
+            topic="order.stale_new_alert",
+            payload__order_ref=order.ref,
+            status="queued",
+        )
+        .order_by("available_at", "id")
+        .first()
     )
+    if existing:
+        existing.payload = payload
+        existing.available_at = alert_at
+        existing.save(update_fields=["payload", "available_at", "updated_at"])
+        return
+    Directive.objects.create(topic="order.stale_new_alert", payload=payload, available_at=alert_at)
 
 
 def _check_availability(order, config: ChannelConfig) -> bool:
