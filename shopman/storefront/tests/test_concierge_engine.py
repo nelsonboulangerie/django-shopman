@@ -500,6 +500,18 @@ def test_fulfillment_tools_obey_the_canonical_channel_policy(ctx):
     assert selected["error"] == "fulfillment_unavailable"
 
 
+def test_delivery_slots_are_the_same_grid_the_site_offers(ctx):
+    """P2-30a: a concierge e o site leem a MESMA grade de entrega (turno na encomenda)."""
+    from shopman.shop.services.fulfillment_window import delivery_windows_for
+
+    tomorrow = _tomorrow()
+    slots = tools.list_fulfillment_slots(ctx, tomorrow, "delivery")
+
+    assert slots["ok"], slots
+    assert slots["delivery_slots"] == delivery_windows_for(date.fromisoformat(tomorrow))
+    assert [s["ref"] for s in slots["delivery_slots"]] == ["slot-09", "slot-12", "slot-15"]
+
+
 def test_set_item_reserves_stock_and_tells_the_real_balance(ctx, conversation):
     ok = tools.set_item(ctx, SKU, 3)
     assert ok["ok"] and ok["lines"][0]["qty"] == 3

@@ -12,7 +12,10 @@ import {
   isCustomCheckoutDate,
   notesToggleState,
   paymentMethodHint,
-  reconciledPickupSlotRef,
+  reconciledWindowRef,
+  checkoutWindows,
+  earliestCheckoutWindowRef,
+  canContinueCheckoutWhen,
   shouldOfferPickupSwap,
   weekdayDateLabel
 } from '../app/utils/checkoutFlow'
@@ -100,9 +103,11 @@ describe('checkout flow view model', () => {
   })
 
   it('reconciles stale pickup slots against the current projected slots', () => {
-    expect(reconciledPickupSlotRef('pickup', 'slot-early', slots, null)).toBe('slot-late')
-    expect(reconciledPickupSlotRef('pickup', '', slots, 'slot-late')).toBe('slot-late')
-    expect(reconciledPickupSlotRef('delivery', 'slot-early', slots, null)).toBe('slot-early')
+    expect(reconciledWindowRef('slot-early', slots, null)).toBe('slot-late')
+    expect(reconciledWindowRef('', slots, 'slot-late')).toBe('slot-late')
+    // Turno de retirada herdado não viaja na entrega: fora da grade, vale a mais cedo dela.
+    expect(reconciledWindowRef('slot-09', [{ ...slots[1]!, ref: '14:00-14:30' }], null)).toBe('14:00-14:30')
+    expect(reconciledWindowRef('slot-09', [], null)).toBe('')
   })
 })
 
@@ -208,5 +213,36 @@ describe('notesToggleState', () => {
 
   it('keeps an earlier stash when closing again without new text', () => {
     expect(notesToggleState(false, '   ', 'nota antiga')).toEqual({ notes: '', stashed: 'nota antiga' })
+  })
+})
+
+describe('janela de entrega (P2-30a)', () => {
+  const pickup = slots
+  const delivery: PickupSlotProjection[] = [
+    { ref: '14:00-14:30', label: '14:00 às 14:30', starts_at: '', enabled: true, reason: '', is_earliest: true }
+  ]
+  const projection = {
+    pickup_slots: pickup,
+    delivery_windows: delivery,
+    earliest_slot_ref: 'slot-late',
+    earliest_delivery_window_ref: '14:00-14:30'
+  }
+  const bounds = { todayValue: '2026-05-20', maxDateValue: '2026-05-30' }
+
+  it('a entrega lê a grade de entrega, nunca os turnos de retirada', () => {
+    expect(checkoutWindows(projection, 'delivery')).toBe(delivery)
+    expect(checkoutWindows(projection, 'pickup')).toBe(pickup)
+    expect(earliestCheckoutWindowRef(projection, 'delivery')).toBe('14:00-14:30')
+    expect(earliestCheckoutWindowRef(projection, 'pickup')).toBe('slot-late')
+  })
+
+  it('entrega só segue com uma janela escolhida e habilitada', () => {
+    const form = { delivery_date: '2026-05-21', delivery_time_slot: '', fulfillment_type: 'delivery' as const }
+    expect(canContinueCheckoutWhen(form, delivery, null, bounds, [])).toBe(false)
+    expect(canContinueCheckoutWhen({ ...form, delivery_time_slot: '14:00-14:30' }, delivery, delivery[0]!, bounds, [])).toBe(true)
+    // Dia sem grade de entrega: não segue (o servidor recusaria).
+    expect(canContinueCheckoutWhen(form, [], null, bounds, [])).toBe(false)
+    // Retirada sem turnos configurados continua livre, como antes.
+    expect(canContinueCheckoutWhen({ ...form, fulfillment_type: 'pickup' }, [], null, bounds, [])).toBe(true)
   })
 })

@@ -393,6 +393,22 @@ def annotate_slots_for_checkout(cart_skus: list[str], *, delivery_date: str = ""
     }
 
 
+def annotate_delivery_windows_for_checkout(cart_skus: list[str], *, delivery_date: str = "") -> dict:
+    """As janelas de ENTREGA da data pedida (hoje, sem data), anotadas para o carrinho.
+
+    A grade é ``fulfillment_window.delivery_windows_for`` (meia hora hoje, turno
+    na encomenda), a mesma da concierge e a que o commit confere com
+    ``delivery_window_error``. Devolve o contexto de ``fulfillment_window.annotate``.
+    """
+    from shopman.shop.services import fulfillment_window
+
+    try:
+        day = date.fromisoformat(delivery_date) if delivery_date else _local_date()
+    except ValueError:
+        day = _local_date()
+    return fulfillment_window.annotate(day, list(cart_skus or []))
+
+
 def _find_slot_by_ref(slots: list[dict], ref: str) -> dict | None:
     for s in slots:
         if s["ref"] == ref:

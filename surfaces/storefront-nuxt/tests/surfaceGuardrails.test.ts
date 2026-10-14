@@ -342,7 +342,7 @@ describe('surface UX guardrails', () => {
     expect(checkoutFlow).toContain('export function checkoutSteps')
     expect(checkoutFlow).toContain('export function checkoutStepState')
     expect(checkoutFlow).toContain('export function checkoutStepHeaderSummary')
-    expect(checkoutFlow).toContain('export function reconciledPickupSlotRef')
+    expect(checkoutFlow).toContain('export function reconciledWindowRef')
     expect(checkout).toContain('validateContact')
     expect(checkout).toContain('contactEditing')
     expect(checkout).toContain('phoneDisplay')
