@@ -408,7 +408,7 @@ export function attentionTiles(input: {
       key: "attention:refunds",
       icon: "lucide:rotate-ccw",
       label: refunds === 1 ? "Devolução em dinheiro" : "Devoluções em dinheiro",
-      description: "Venda cancelada ou encomenda mais barata · o dinheiro sai desta gaveta com PIN do gerente",
+      description: "Entregar ao cliente · PIN do gerente",
       disabled: false,
       tone: "attention",
       badge: String(refunds),

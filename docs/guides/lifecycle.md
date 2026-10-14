@@ -80,12 +80,12 @@ O comportamento de cada canal é 100% configurado via `ChannelConfig` — sem cl
    │
 3. dispatch() em lifecycle.py:
    ├── config = ChannelConfig.for_channel(order.channel_ref)
-   └── Chama phase handler: _on_commit(order, config), _on_confirmed(order, config), etc.
+   └── Chama phase handler: _on_commit(order, config), _on_accepted(order, config), etc.
    │
 4. Phase handler chama services baseado em config:
    ├── config.payment.timing == "at_commit" → payment.initiate(order)
    ├── config.fulfillment.timing == "post_commit" → fulfillment.create(order)
-   ├── config.confirmation.mode == "immediate" → order.transition_status(CONFIRMED)
+   ├── config.confirmation.mode == "immediate" → order.transition_status(ACCEPTED)
    └── config.stock.check_on_commit → availability.check() por SKU
 ```
 
@@ -95,7 +95,7 @@ O comportamento de cada canal é 100% configurado via `ChannelConfig` — sem cl
 |---------|-------|------|
 | `payment.timing` | `"external"` | nenhum payment.initiate |
 | `payment.timing` | `"at_commit"` | payment.initiate em on_commit |
-| `payment.timing` | `"post_commit"` | payment.initiate em on_confirmed (padrão) |
+| `payment.timing` | `"post_commit"` | payment.initiate em on_accepted (padrão) |
 | `fulfillment.timing` | `"at_commit"` | fulfillment.create em on_commit |
 | `fulfillment.timing` | `"post_commit"` | fulfillment.create em on_ready (padrão) |
 | `fulfillment.timing` | `"external"` | nenhum fulfillment.create |
@@ -110,8 +110,8 @@ O comportamento de cada canal é 100% configurado via `ChannelConfig` — sem cl
 | Fase | Trigger | Ações |
 |------|---------|-------|
 | `on_commit` | Order criada | `customer.ensure()`, `stock.hold()`, `loyalty.redeem()`, `handle_confirmation()` |
-| (guard) | Antes de CONFIRMED | `ensure_confirmable()` — exige `availability_decision.approved == True` em `order.data`. Sem decisão positiva, `InvalidTransition("availability_not_approved")`. Exceção: canais com `payment.timing == "external"` (marketplace). Ver §Availability Approval abaixo |
-| `on_confirmed` | Status → CONFIRMED | `payment.initiate()` (se post_commit), `stock.fulfill()` (se counter), `notification.send` |
+| (guard) | Antes de ACCEPTED | `ensure_confirmable()` — exige `availability_decision.approved == True` em `order.data`. Sem decisão positiva, `InvalidTransition("availability_not_approved")`. Exceção: canais com `payment.timing == "external"` (marketplace). Ver §Availability Approval abaixo |
+| `on_accepted` | Status → ACCEPTED | `payment.initiate()` (se post_commit), `stock.fulfill()` (se counter), `notification.send` |
 | `on_paid` | Webhook de pagamento | `fiscal.emit_on_payment()` (PDV: balcão emite; encomenda espera a saída), `stock.fulfill()`, `notification.send("payment_confirmed")` |
 | `on_preparing` | Status → PREPARING | `kds.dispatch()`, `notification.send` |
 | `on_ready` | Status → READY | `fiscal.emit_for_delivery_handoff()` (entrega da casa: a nota nasce com a sacola pronta), `fulfillment.create()` (se post_commit), `notification.send` |
@@ -131,7 +131,7 @@ a Via Recibo, e a nota sai na retirada (`COMPLETED`) ou com a sacola da entrega
 
 ### Availability Approval (Guard de Confirmação)
 
-Antes de transitar para CONFIRMED, todo pedido deve ter uma decisão positiva de disponibilidade em `order.data["availability_decision"]`. Isso é enforced por `ensure_confirmable()` em `lifecycle.py`.
+Antes de transitar para ACCEPTED, todo pedido deve ter uma decisão positiva de disponibilidade em `order.data["availability_decision"]`. Isso é enforced por `ensure_confirmable()` em `lifecycle.py`.
 
 **Fluxo:**
 

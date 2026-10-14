@@ -321,6 +321,15 @@ const CARD_MACHINE_REFUNDS = SALE && process.env.MOCK_CARD_MACHINE_REFUNDS === "
     },
   ]
   : [];
+// `MOCK_CASH_REFUNDS=1`: devoluções em dinheiro esperando o "Devolvi em dinheiro".
+const CASH_REFUNDS = SALE && process.env.MOCK_CASH_REFUNDS === "1"
+  ? [
+    {
+      order_ref: "PDV-260929-H3D", amount_q: 1200, amount_display: "R$ 12,00", customer_name: "Paulo Reis",
+      cancelled_at: "", reason: "partial_return", reason_label: "Devolução de parte da venda",
+    },
+  ]
+  : [];
 if (SALE) {
   pos.checkout.capabilities.cash_management = {
     enabled: true,
@@ -338,7 +347,7 @@ if (SALE) {
     pending_change_requests: [
       { ref: "CR-1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [1000, 500], note: "", requested_by: "Ana", requested_at: "2026-09-29T10:12:00-03:00" },
     ],
-    pending_cash_refunds: [],
+    pending_cash_refunds: CASH_REFUNDS,
     pending_card_machine_refunds: CARD_MACHINE_REFUNDS,
     account_balances: [
       { customer_ref: "C-9", customer_name: "Carlos Mendes", balance_q: 4200, balance_display: "R$ 42,00", intents: 2, oldest_at: "" },
@@ -469,12 +478,27 @@ const TABS = SALE
 const SAVED_ITEMS = new Map();
 // O rastro da comanda nova criada pelo Transferir (ref nova -> ref de origem).
 const TRANSFERRED_FROM = new Map();
+// Prévia do ENDEREÇO DE ENTREGA (`MOCK_ADDRESS=1`): a comanda 12 vira encomenda com
+// entrega para amanhã, e o F7 abre o Recebimento direto no endereço. `MOCK_MAPS=1`
+// liga a busca do Google e a confirmação do ponto no mapa (a página de prévia injeta
+// um Google falso: a chave aqui não é de verdade). Sem as variáveis, nada muda.
+const ADDRESS = SALE && process.env.MOCK_ADDRESS === "1";
+const MAPS = ADDRESS && process.env.MOCK_MAPS === "1";
+if (ADDRESS) {
+  pos.checkout.capabilities.address_autocomplete = {
+    enabled: MAPS, provider: "google_places", public_api_key: MAPS ? "mock-browser-key" : "",
+    language: "pt-BR", region: "BR", countries: ["br"], types: ["address"], fields: [], structured_fields: [],
+    reverse_geocode_action_ref: "reverse_geocode", shop_latitude: -23.31, shop_longitude: -51.16, bias_radius_m: 15000,
+    map_confirmation_enabled: MAPS,
+  };
+}
 function tabPayload(ref) {
   const inUse = ref === "12";
   const full = ref === "13";
   const saved = SAVED_ITEMS.get(ref);
+  const delivery = ADDRESS && inUse;
   return {
-    revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
+    revision: "rev-1", sales_mode: delivery ? "order" : "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
     tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
     transferred_from: TRANSFERRED_FROM.has(ref)
       ? { tab_display: TRANSFERRED_FROM.get(ref), label: `Transf. da #${TRANSFERRED_FROM.get(ref)}`, title: `Transferida da comanda #${TRANSFERRED_FROM.get(ref)}` }
@@ -484,8 +508,8 @@ function tabPayload(ref) {
     // tela segura o salvamento ("Não salvo") até alguém concluir o cadastro.
     customer_name: inUse ? "Ana Souza" : full ? "Roberto Albuquerque" : "",
     customer_ref: inUse ? "C-1" : full ? "C-13" : "",
-    customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
-    delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
+    customer_tax_id: "", customer_email: "", fulfillment_type: delivery ? "delivery" : "", delivery_address: "",
+    delivery_address_structured: {}, delivery_date: delivery ? TOMORROW : "", delivery_time_slot: "", delivery_fee_override_q: null,
     ...(OUT_OF_AREA && inUse
       ? {
           sales_mode: "order", customer_phone: "43999887766", fulfillment_type: "delivery",
@@ -833,7 +857,7 @@ createServer((req, res) => {
   if (SALE) {
     const open = path.match(/^\/api\/v1\/backstage\/pos\/tabs\/([^/]+)\/open\/$/);
     if (open) {
-      send(res, 200, tabPayload(decodeURIComponent(open[1])));
+      send(res, 200, withPreorder(tabPayload(decodeURIComponent(open[1]))));
       return;
     }
     if (path === "/api/v1/backstage/pos/tabs/save/") {
@@ -847,7 +871,7 @@ createServer((req, res) => {
         }));
         SAVED_ITEMS.set(ref, items);
         // O eco do salvar diz o que cada linha cobra (o desconto do grupo, como o servidor).
-        send(res, 200, { ...tabPayload(ref), items, ...(GROUP ? { line_prices: groupLinePrices(body) } : {}) });
+        send(res, 200, withPreorder({ ...tabPayload(ref), items, ...(GROUP ? { line_prices: groupLinePrices(body) } : {}) }));
       });
       return;
     }
@@ -867,6 +891,29 @@ createServer((req, res) => {
         if (body?.to_tab_ref) TRANSFERRED_FROM.set(to, from);
         const closed = Boolean(body?.close_source_when_empty) && rest.length === 0;
         send(res, 200, { ok: true, source_closed: closed, source: closed ? null : { ...tabPayload(from), items: rest }, target: tabPayload(to) });
+      });
+      return;
+    }
+    if (path === "/api/v1/backstage/pos/tabs/fire/") {
+      void readBody(req).then((body) => {
+        const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";
+        if (process.env.MOCK_FIRE === "preorder_unpaid" && withPreorder(tabPayload(ref)).sales_mode === "order") {
+          const error = {
+            code: "preorder_unpaid",
+            message: "Esta encomenda ainda não foi paga. Ela vai à cozinha sozinha quando o pagamento entrar.",
+            field: "payment", focus: "payment",
+            recovery: "Para receber na retirada ou na entrega, marque isso no Pagamento e envie de novo.",
+          };
+          return send(res, 422, { detail: error.message, error });
+        }
+        const ids = new Set(body?.line_ids || []);
+        const before = SAVED_ITEMS.get(ref) ?? tabPayload(ref).items;
+        const items = before.map((item) => (ids.size && !ids.has(item.line_id)) || item.fired
+          ? item
+          : { ...item, fired: true, fired_qty: item.qty, kitchen_status: "queued" });
+        SAVED_ITEMS.set(ref, items);
+        const fired = items.filter((item) => item.fired).map((item) => item.line_id);
+        send(res, 200, { ok: true, fired_count: 1, fired_lines: fired, tab: withPreorder({ ...tabPayload(ref), items }) });
       });
       return;
     }
@@ -996,6 +1043,14 @@ createServer((req, res) => {
     send(res, 200, seating);
     return;
   }
+  // O servidor descreve o ponto que o operador arrastou no mapa.
+  if (ADDRESS && path === "/api/v1/geocode/reverse/") {
+    send(res, 200, {
+      formatted_address: "Rua Sergipe, 640 - Centro, Londrina - PR", route: "Rua Sergipe", street_number: "640",
+      neighborhood: "Centro", city: "Londrina", state_code: "PR", postal_code: "86010-360",
+    });
+    return;
+  }
   if (path.includes("/events/")) {
     res.statusCode = 204;
     res.end();
@@ -1005,3 +1060,11 @@ createServer((req, res) => {
 }).listen(port, "127.0.0.1", () => {
   console.log(`[pos-visual-mock] listening on http://127.0.0.1:${port}`);
 });
+
+// Prévia da encomenda do dia (MOCK_PREORDER=1): a comanda 13 vira encomenda de
+// retirada para hoje. Com MOCK_FIRE=preorder_unpaid o "Enviar à cozinha" recusa como
+// o servidor (encomenda cobra antes); sem ele, envia. Fora das flags, nada muda.
+function withPreorder(payload) {
+  if (!(SALE && process.env.MOCK_PREORDER === "1" && payload.tab_ref === "13")) return payload;
+  return { ...payload, sales_mode: "order", fulfillment_type: "pickup", delivery_date: TODAY };
+}

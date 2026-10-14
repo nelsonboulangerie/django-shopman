@@ -105,6 +105,20 @@ def test_order_by_ref(client, maria_order):
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_ifood_order_by_its_number_when_the_ref_was_drawn(client):
+    """P2-29: sufixo ocupado, o ref é sorteado; o número do iFood continua achando."""
+    Order.objects.create(
+        ref="IFOOD-261013-D09",
+        channel_ref="ifood",
+        status="preparing",
+        total_q=1300,
+        data={"customer": {"name": "Cliente iFood"}, "ifood": {"display_id": "4994"}},
+    )
+    search = _search(client, _admin(), "4994")
+    assert [r["key"] for r in _group(search, "orders")] == ["order:IFOOD-261013-D09"]
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_open_preorder_links_to_the_pos(client, maria_order):
     search = _search(client, _admin(), "Maria")
     [preorder] = _group(search, "preorders")

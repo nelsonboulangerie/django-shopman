@@ -49,7 +49,10 @@ function unidades(qty: number): string {
  * virou artefato interno, que ninguém fala em voz alta. O botão de enviar já
  * conta unidades; esta frase concorda com ele.
  */
-export function kitchenHandoffNote(items: POSCartItem[], options: { deferred?: boolean } = {}): string {
+export function kitchenHandoffNote(
+  items: POSCartItem[],
+  options: { deferred?: boolean; waitsPayment?: boolean } = {},
+): string {
   if (!items.length) return "";
   const naCozinha = firedKitchenQty(items);
   const aEnviar = unfiredCount(items);
@@ -60,12 +63,39 @@ export function kitchenHandoffNote(items: POSCartItem[], options: { deferred?: b
     if (options.deferred) {
       return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha no dia da encomenda.`;
     }
+    // Encomenda cobrada por Pix ou link: o pedido espera o dinheiro entrar
+    // (`lifecycle._on_accepted` segura o KDS do não pago; `_on_paid` solta).
+    if (options.waitsPayment) {
+      return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha quando o pagamento entrar.`;
+    }
     return `Ao finalizar, ${aEnviar === 1 ? "o item vai" : `os ${aEnviar} itens vão`} para a cozinha.`;
   }
   if (aEnviar) {
     return `${unidades(naCozinha)} já ${naCozinha === 1 ? "está" : "estão"} na cozinha; mais ${aEnviar === 1 ? "1 vai" : `${aEnviar} vão`} ao finalizar.`;
   }
   return naCozinha === 1 ? "O item já está na cozinha." : `Os ${naCozinha} itens já estão na cozinha.`;
+}
+
+export interface FireRefusalView {
+  title: string;
+  description: string;
+  /** A saída de um toque: abrir o Pagamento para cobrar a encomenda. */
+  action: { label: string; opens: "payment" };
+}
+
+/**
+ * A recusa do "Enviar à cozinha" que tem saída própria: a encomenda ainda não
+ * foi paga (`preorder_unpaid`, política da casa: encomenda cobra antes). O
+ * operador não precisa adivinhar o próximo passo; o aviso o leva ao Pagamento.
+ * Outras recusas seguem pelo aviso de erro de sempre (`null`).
+ */
+export function fireRefusalView(failure: { code?: string; message?: string; recovery?: string } | null | undefined): FireRefusalView | null {
+  if (failure?.code !== "preorder_unpaid") return null;
+  return {
+    title: failure.message || "Esta encomenda ainda não foi paga.",
+    description: failure.recovery || "Cobre no Pagamento.",
+    action: { label: "Abrir Pagamento", opens: "payment" },
+  };
 }
 
 /**

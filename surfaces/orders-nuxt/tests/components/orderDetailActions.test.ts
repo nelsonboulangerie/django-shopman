@@ -46,6 +46,9 @@ vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.
 vi.stubGlobal("useOrderEvents", () => ({ realtime: ref("polling") }));
 vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
+vi.stubGlobal("useVolumeCheck", () => ({
+  state: ref({ conference: null, alarm: null }), check: vi.fn(), switchTo: vi.fn(), dismissAlarm: vi.fn(), end: vi.fn(),
+}));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useNowTick", () => ref(Date.now()));
 vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));

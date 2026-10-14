@@ -181,6 +181,9 @@ class POSFireTabTests(TestCase):
             "pos": {**((session.data or {}).get("pos") or {}), "sales_mode": "order"},
             "fulfillment_type": "pickup",
             "delivery_date": delivery_day.isoformat(),
+            # Paga na retirada (presencial): a única encomenda que vai à cozinha
+            # antes de o dinheiro entrar. Ver ``test_encomenda_do_dia_*``.
+            "payment": {**((session.data or {}).get("payment") or {}), "collection": "on_delivery"},
         }
         session.save(update_fields=["data"])
 
@@ -217,6 +220,66 @@ class POSFireTabTests(TestCase):
 
         self.assertEqual(result.fired_count, 1)
         self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 1)
+
+    def _same_day_preorder(self, *, collection: str, method: str = "pix") -> Session:
+        session = self._open_tab_with_two_items()
+        session.data = {
+            **(session.data or {}),
+            "pos": {**((session.data or {}).get("pos") or {}), "sales_mode": "order"},
+            "fulfillment_type": "pickup",
+            "delivery_date": timezone.localdate().isoformat(),
+            "payment": {"method": method, "collection": collection},
+        }
+        session.save(update_fields=["data"])
+        return session
+
+    def test_encomenda_do_dia_cobrada_agora_nao_vai_a_cozinha_antes_de_paga(self) -> None:
+        """P1-7: encomenda cobra antes. Pix ou link ainda por pagar não fazem trabalho.
+
+        A comanda de encomenda é anotada antes de cobrar. Enviar à cozinha agora e
+        fechar com Pix ou link deixava os tickets na cozinha com a cobrança pendente:
+        o lifecycle segura o KDS do pedido não pago, mas o atalho da comanda corria
+        antes do pedido existir.
+        """
+        from shopman.shop.services.pos_intent import PosIntentError
+
+        session = self._same_day_preorder(collection="terminal")
+        for method in ("pix", "link", "cash"):
+            with self.subTest(method=method):
+                session.data = {**session.data, "payment": {"method": method, "collection": "terminal"}}
+                session.save(update_fields=["data"])
+                with self.assertRaises(PosIntentError) as raised:
+                    pos_service.fire_pos_tab(
+                        channel_ref="pdv", session_key=session.session_key,
+                        actor="pos:alice", operator_username="alice",
+                    )
+                error = raised.exception
+                self.assertEqual(error.code, "preorder_unpaid")
+                self.assertEqual(error.focus, "payment")
+                self.assertIn("ainda não foi paga", error.message)
+                self.assertNotIn("—", error.message + error.recovery)
+                self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 0)
+                session.refresh_from_db()
+                self.assertFalse((session.data or {}).get("fired_lines"))
+
+    def test_encomenda_do_dia_paga_na_retirada_vai_a_cozinha(self) -> None:
+        """Receber na retirada (dinheiro ou maquininha) é decisão da casa: não trava."""
+        session = self._same_day_preorder(collection="on_delivery", method="cash")
+        result = pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertGreaterEqual(result.fired_count, 1)
+        self.assertEqual(sorted(result.fired_lines), ["L-A", "L-B"])
+
+    def test_comanda_de_balcao_continua_indo_a_cozinha_sem_pagar(self) -> None:
+        """A comanda de balcão (consumo na casa) não é encomenda: segue como sempre."""
+        session = self._open_tab_with_two_items()
+        result = pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertEqual(sorted(result.fired_lines), ["L-A", "L-B"])
 
     def test_pedir_mais_do_mesmo_item_vira_uma_linha_nova_na_cozinha(self) -> None:
         """O segundo chá. Ele é uma LINHA, não uma unidade a mais na primeira.

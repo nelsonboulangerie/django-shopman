@@ -619,12 +619,17 @@ def _tenders(raw) -> list[dict] | None:
         amount_q = _nonnegative_int(tender.get("amount_q"), f"payment_tenders.{idx}.amount_q")
         if amount_q <= 0:
             continue
-        tenders.append({
+        entry = {
             "method": _payment_method(tender.get("method") or "external"),
             "amount_q": amount_q,
             "collection": _payment_collection(tender.get("collection") or "terminal"),
             "reference": _text(tender.get("reference"), limit=120),
-        })
+        }
+        # O gesto "Recebi o Pix" da venda mista (P1-7). Só o booleano viaja: quem e
+        # quando são carimbados no servidor, nunca aceitos do navegador.
+        if entry["method"] == "pix" and tender.get("pix_confirmed") is True:
+            entry["pix_confirmed"] = True
+        tenders.append(entry)
     return tenders
 
 

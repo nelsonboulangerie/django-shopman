@@ -42,6 +42,7 @@ import {
   withExpectedTotal,
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
+import { fireRefusalView } from "~/presentation/kitchen";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } from "~/presentation/productOptions";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
@@ -65,6 +66,7 @@ import {
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
 import { saleTotalView } from "~/presentation/saleTotal";
+import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
 import {
   applyLinePrices,
@@ -714,7 +716,7 @@ export function usePosSale(deps: PosSaleDeps) {
     orderNotes: "",
     paymentMethod: "",
     paymentCollection: "terminal" as PaymentCollection,
-    paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; _virgin?: boolean }>,
+    paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; pix_confirmed?: boolean; _virgin?: boolean }>,
     tenderedAmountInput: "",
     /** "Troco para quanto?" do dinheiro na entrega (entrada livre, "50" / "50,00"). */
     changeForInput: "",
@@ -1142,6 +1144,17 @@ export function usePosSale(deps: PosSaleDeps) {
       selectedTenderIndex.value = cart.paymentTenders.length - 1;
     }
     tenderEntry.value = null;
+  }
+
+  /**
+   * O gesto "Recebi o Pix" da venda mista (P1-7): o operador conferiu que o Pix
+   * entrou. Marca as linhas de Pix logo antes de validar; o servidor recusa o
+   * Pix misto sem a marca (`pix_mixed_unconfirmed`) e carimba quem e quando.
+   */
+  function confirmPixTenders() {
+    for (const tender of cart.paymentTenders) {
+      if (tender.method === "pix") tender.pix_confirmed = true;
+    }
   }
 
   function selectTender(index: number) {
@@ -1888,14 +1901,18 @@ export function usePosSale(deps: PosSaleDeps) {
       delivery_instructions: cart.deliveryInstructions.trim() || cart.deliveryAddressStructured.delivery_instructions || "",
       reference: cart.deliveryInstructions.trim() || cart.deliveryAddressStructured.reference || "",
     };
-    const deliveryAddressParts = [
-      structured.formatted_address || "",
-      structured.route || "",
-      structured.street_number || "",
-      structured.neighborhood || "",
-    ]
-      .filter(Boolean);
-    const deliveryAddress = structured.formatted_address || deliveryAddressParts.join(", ");
+    // A linha do endereço é RECOMPOSTA dos campos, como na loja (`addressForm`):
+    // a do Google ficava velha no instante em que o operador corrigia o número, e
+    // era ela que ia para o pedido, a nota e o entregador.
+    structured.formatted_address = composedAddressLine({
+      ...emptyAddressDraft(),
+      route: structured.route || "",
+      street_number: structured.street_number || "",
+      neighborhood: structured.neighborhood || "",
+      city: structured.city || "",
+      state_code: structured.state_code || "",
+    }) || structured.formatted_address || "";
+    const deliveryAddress = structured.formatted_address;
     const discountValueNum = Number(String(cart.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
     const manualDiscount = discountValueNum > 0
       ? { type: cart.discountType, value: discountValueNum, reason: cart.discountReason || "cortesia" }
@@ -3618,6 +3635,16 @@ export function usePosSale(deps: PosSaleDeps) {
       await refresh();
       return true;
     } catch (error) {
+      // Encomenda ainda não paga (`preorder_unpaid`): não é falha, é a política da
+      // casa (encomenda cobra antes). O aviso diz por quê e leva ao Pagamento.
+      const refusal = fireRefusalView((httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error);
+      if (refusal) {
+        toast.warning(refusal.title, {
+          description: refusal.description,
+          action: { label: refusal.action.label, onClick: () => { void prepareCheckout(); } },
+        });
+        return false;
+      }
       // "a comanda recusa o envio repetido" é fato, não conforto: o envio que deu
       // certo muda a revisão da comanda, e o `expected_revision` desta chamada
       // recusa a segunda com `tab_revision_conflict` (api/pos_concurrency.py).
@@ -4093,6 +4120,7 @@ export function usePosSale(deps: PosSaleDeps) {
     submitMove,
     fireTab,
     unfireTab,
+    confirmPixTenders,
     unfireSelected,
     renameTab,
     openCancelSaleDialog,

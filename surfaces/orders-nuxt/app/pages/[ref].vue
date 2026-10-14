@@ -490,6 +490,13 @@ async function submitDispatch(value: string | null) {
 
 // Estação travada pelo servidor: não é "pedido não encontrado".
 const { denied: stationLocked } = useStationLock();
+// Conferência das sacolas (P1-13): no detalhe, toda sacola bipada é conferida
+// contra ESTE pedido; a de outro pedido é o aviso forte.
+const volumeCheck = useVolumeCheck({
+  fixedRef: () => orderRef.value,
+  enabled: () => !stationLocked.value,
+  onChecked: () => refresh(),
+});
 
 // ── O cabeçalho de uma linha e o gesto do momento (G14/G15) ─────────────────
 // A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
@@ -953,6 +960,12 @@ const outside = useOutsideStore(
     <div
       class="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-auto p-4 *:shrink-0 sm:p-6"
     >
+      <VolumeCheckBar
+        :state="volumeCheck.state.value"
+        fixed
+        @dismiss-alarm="volumeCheck.dismissAlarm"
+        @end="volumeCheck.end"
+      />
       <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
       <NuxtAlert
         v-if="outside.askConsent.value"

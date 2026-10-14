@@ -2,7 +2,7 @@ import type { ComputedRef, Ref } from "vue";
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import { handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
+import { danfeExpected, handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
 import type {
   PreorderDetail,
   PreorderHandOverResponse,
@@ -48,6 +48,9 @@ export function usePosPreorderActions(options: {
 }) {
   const action = usePosAction();
   const drawer = useCounterAgent(options.pos);
+  // A espera da nota NÃO para quando o operador sai do detalhe: quem levou a
+  // mercadoria leva a DANFE (a espera tem fim, ~90s).
+  const danfe = usePosDanfePrint(options.pos, drawer);
   const busy = ref(false);
   const managerChallenge = ref<ManagerChallenge | null>(null);
   // O cliente pagou online antes de o balcão receber: o aviso fica na tela até a
@@ -80,6 +83,13 @@ export function usePosPreorderActions(options: {
       if (body.tenders?.some((tender) => tender.method === "cash")) void drawer.kick("preorder_cash");
       paidOnline.value = "";
       toast.success(handOverDoneMessage(response?.received_q ?? 0));
+      // A nota da retirada nasce na entrega: a DANFE sai sozinha na bobina
+      // quando autoriza, como na venda de balcão (P2-27). Sem impressora nesta
+      // estação, não há o que esperar; o detalhe já diz que o papel sai no
+      // balcão que tem impressora.
+      if (danfeExpected(response?.fiscal_state) && drawer.canPrint.value) {
+        void danfe.printWhenAuthorized(detail.ref);
+      }
       await options.refresh();
       return true;
     } catch (error) {

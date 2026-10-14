@@ -235,6 +235,84 @@ export function machineTenderLines(lines: TenderLineView[]): TenderLineView[] {
 }
 
 /**
+ * O Pix que o OPERADOR atesta — o da venda mista (P1-7).
+ *
+ * Pix sozinho (ou dividido só em Pix) vai ao provedor, e é ele quem confirma. Na
+ * venda mista não há provedor: o cliente paga no QR da casa ou na maquininha, e o
+ * servidor só liquida a linha com o gesto "Recebi o Pix" (`pix_confirmed`,
+ * recusa `pix_mixed_unconfirmed`). Esta lista decide quem entra nesse gesto.
+ */
+export function attestedPixLines(lines: TenderLineView[]): TenderLineView[] {
+  const mixed = new Set(lines.map((line) => line.method)).size > 1;
+  return mixed ? lines.filter((line) => line.method === "pix") : [];
+}
+
+export interface PaymentConfirmView {
+  title: string;
+  description: string;
+  cta: string;
+}
+
+/**
+ * O último degrau antes de validar: o que o operador confere com as próprias
+ * mãos. A maquininha (digitar o valor) e o Pix da venda mista (ver o dinheiro
+ * entrar) são o mesmo gesto de conferência, num diálogo só, e o botão diz
+ * exatamente o que ele afirma.
+ */
+export function paymentConfirmView(options: { machine: number; pix: number }): PaymentConfirmView {
+  if (options.pix && !options.machine) {
+    return {
+      title: "Confira o Pix",
+      description: "Veja no app do banco ou na maquininha se o valor entrou.",
+      cta: "Recebi o Pix",
+    };
+  }
+  if (options.pix) {
+    return {
+      title: "Confira o pagamento",
+      description: "Passe o cartão na maquininha e veja se o Pix entrou.",
+      cta: "Cobrei e recebi o Pix",
+    };
+  }
+  return {
+    title: "Passe na maquininha",
+    description: "Digite este valor no terminal e conclua a operação com o cliente.",
+    cta: "OK, cobrei na maquininha",
+  };
+}
+
+const PROVIDER_CONFIRMED_METHODS = new Set(["pix", "link", "card"]);
+
+/**
+ * A cobrança fica esperando o PROVEDOR (Pix ou link da venda inteira)? Então o
+ * dinheiro ainda não entrou quando a venda valida, e a encomenda só vai à
+ * cozinha quando ele entrar (`lifecycle._on_paid`).
+ */
+export function chargeWaitsForProvider(options: {
+  collection: "terminal" | "on_delivery";
+  methods: string[];
+}): boolean {
+  if (options.collection !== "terminal") return false;
+  const methods = new Set(options.methods);
+  const [only] = [...methods];
+  return methods.size === 1 && !!only && PROVIDER_CONFIRMED_METHODS.has(only);
+}
+
+/**
+ * A gêmea de `preorder_fired_unpaid`: encomenda que JÁ está na cozinha não
+ * valida com Pix ou link pendentes. A cozinha trabalharia para um pagamento que
+ * talvez não venha.
+ */
+export function firedPreorderBlocksPendingCharge(options: {
+  salesMode?: "counter" | "order";
+  anyFired: boolean;
+  collection: "terminal" | "on_delivery";
+  methods: string[];
+}): boolean {
+  return options.salesMode === "order" && options.anyFired && chargeWaitsForProvider(options);
+}
+
+/**
  * A cédula como o operador a chama: "R$ 50", não "R$ 50,00".
  *
  * Centavo em nota é ruído — não existe cédula quebrada, e o `,00` repetido seis

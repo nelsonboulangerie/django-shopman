@@ -30,7 +30,9 @@ export default defineConfig({
       port: backendPort,
       reuseExistingServer: false,
       timeout: 30_000,
-      env: { MOCK_PORT: String(backendPort), MOCK_TODAY: "2026-09-29", MOCK_SCENARIO: "sale" },
+      // `MOCK_ADDRESS`: a comanda 12 abre como encomenda com entrega, para a trava do
+      // endereço (`deliveryAddress.spec.ts`); a 13, da trava da comanda, não muda.
+      env: { MOCK_PORT: String(backendPort), MOCK_TODAY: "2026-09-29", MOCK_SCENARIO: "sale", MOCK_ADDRESS: "1" },
     },
     {
       command:

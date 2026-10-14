@@ -287,8 +287,12 @@ export interface POSPendingCashRefundProjection {
   amount_display: string;
   customer_name: string;
   cancelled_at: string;
-  /** "cancelled" (venda cancelada: devolve tudo) · "reduced" (encomenda que ficou mais barata: a diferença). */
-  reason?: "cancelled" | "reduced";
+  /**
+   * "cancelled" / "returned" (venda cancelada ou devolvida inteira: devolve tudo) ·
+   * "partial_return" (devolução de parte da venda) · "reduced" (encomenda que ficou
+   * mais barata): esses dois devolvem a diferença.
+   */
+  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
   reason_label?: string;
 }
 
@@ -375,6 +379,8 @@ export interface POSAddressAutocompleteProjection {
   shop_latitude: number | null;
   shop_longitude: number | null;
   bias_radius_m: number;
+  /** A loja confirma o ponto no mapa depois da sugestão (a mesma chave do site). */
+  map_confirmation_enabled?: boolean;
 }
 
 export interface StructuredAddressProjection {
@@ -768,6 +774,9 @@ export interface POSPaymentTenderDraft {
   amount_q: number;
   collection: PosPaymentCollection;
   reference?: string;
+  /** O gesto "Recebi o Pix" da venda mista (P1-7): o operador conferiu que o Pix
+   *  entrou. Só o booleano viaja; quem e quando o servidor carimba. */
+  pix_confirmed?: boolean;
   /** Internal: amount is still the untouched system auto-fill (first cédula
    *  replaces it). Stripped before the intent — never sent to the server. */
   _virgin?: boolean;

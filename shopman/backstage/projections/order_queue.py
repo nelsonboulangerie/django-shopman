@@ -49,7 +49,7 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
-from shopman.shop.services import operator_orders, order_composition
+from shopman.shop.services import operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
 
@@ -471,6 +471,13 @@ class OrderCardProjection:
     # 0 = ninguém declarou: o cartão mostra a contagem de itens, nunca um volume
     # deduzido.
     volumes: int = 0
+    # Conferência das sacolas no despacho (``shop.services.volume_check``): quantas
+    # o leitor da Saída já bipou, valendo para o total atual (declarado, ou 1).
+    # 0 = ninguém conferiu (o cartão não fala da conferência). ``volume_check_label``
+    # é a frase pronta ("2 de 3 sacolas conferidas"); vazia quando não começou.
+    volumes_checked: int = 0
+    volumes_to_check: int = 0
+    volume_check_label: str = ""
     # Quando o pedido ficou PRONTO desta vez (a última entrada em READY no log de
     # eventos; ``Order.ready_at`` guarda só a primeira, e o pronto desfeito volta).
     # Vazio fora de READY. É o "pronto há N min" do cartão e da Fila.
@@ -2006,6 +2013,9 @@ def _build_card(
         next_action_label=next_label,
         undo=_undo_projection(order),
         volumes=_declared_volumes(order),
+        volumes_checked=len(volume_check.checked_volumes(order)),
+        volumes_to_check=volume_check.declared_total(order),
+        volume_check_label=volume_check.progress_label(order),
         ready_at_iso=_ready_moment_iso(order, ready_moments),
         dispatched_at_iso=order.dispatched_at.isoformat() if order.dispatched_at and order.status in ("dispatched", "delivered") else "",
         payment_method=method,

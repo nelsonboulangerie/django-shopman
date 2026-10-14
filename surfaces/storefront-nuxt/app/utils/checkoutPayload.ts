@@ -27,9 +27,10 @@ export interface CheckoutFormState {
   // agenda do cliente sempre; este toggle controla só os padrões (qual endereço
   // vem escolhido, forma de pagamento, horário).
   save_as_default: boolean
-  // CPF/CNPJ na nota (vira `fiscal.tax_id` no pedido). Na entrega é
-  // obrigatório; na retirada é o "CPF na nota?" do balcão, e só vai se a pessoa
-  // ligou `fiscal_tax_id_on_pickup`. Nunca vai para o rascunho do localStorage:
+  // CPF/CNPJ na nota (vira `fiscal.tax_id` no pedido). Opcional nos dois
+  // recebimentos (ADR-035): na entrega, sem ele a nota sai presencial, sem
+  // identificar o consumidor; na retirada é o "CPF na nota?" do balcão, e só vai
+  // se a pessoa ligou `fiscal_tax_id_on_pickup`. Nunca vai para o rascunho do localStorage:
   // documento não fica guardado no aparelho.
   fiscal_tax_id: string
   fiscal_tax_id_on_pickup: boolean
