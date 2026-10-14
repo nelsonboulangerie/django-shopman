@@ -45,6 +45,8 @@ describe("a corrida leva a cobrança antiga", () => {
     const w = mountPanel();
     try {
       expect(w.find("[data-courier-charge-cancel]").exists()).toBe(true);
+      // um lugar só: o botão de baixo espera o aviso armar a confirmação
+      expect(buttons(w, "Solicitar cancelamento")).toHaveLength(1);
       await w.get("[data-courier-charge-cancel]").trigger("click");
       expect(w.emitted("cancel")).toBeUndefined();
       expect(w.find("[data-courier-charge-cancel]").exists()).toBe(false);
@@ -62,10 +64,11 @@ describe("a corrida leva a cobrança antiga", () => {
     } finally { w.unmount(); }
   });
 
-  it("cobrança em dia, sem aviso", () => {
+  it("cobrança em dia, sem aviso e com o Solicitar cancelamento de sempre", () => {
     const w = mountPanel({ charge_outdated: null });
     try {
       expect(w.find("[data-courier-charge-outdated]").exists()).toBe(false);
+      expect(buttons(w, "Solicitar cancelamento")).toHaveLength(1);
     } finally { w.unmount(); }
   });
 });

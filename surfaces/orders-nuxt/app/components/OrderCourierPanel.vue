@@ -87,9 +87,15 @@ function requestCancel() {
 const chargeNotice = computed(() =>
   courierChargeNotice(props.courier.charge_outdated, { cancelHere: true }),
 );
+// O aviso leva o gesto: o botão de baixo só volta para confirmar (um lugar só).
+const chargeOffersCancel = computed(
+  () =>
+    Boolean(chargeNotice.value) &&
+    props.courier.can_cancel &&
+    !props.courier.charge_outdated?.collected,
+);
 const chargeActions = computed(() => [
-  props.courier.can_cancel &&
-    !props.courier.charge_outdated?.collected &&
+  chargeOffersCancel.value &&
     !confirmingCancel.value && {
       label: "Solicitar cancelamento",
       icon: "i-lucide-ban",
@@ -573,7 +579,7 @@ const vehicle = computed(() =>
             @click="emit('quote')"
           />
           <NuxtButton
-            v-if="courier.can_cancel"
+            v-if="courier.can_cancel && (!chargeOffersCancel || confirmingCancel)"
             type="button"
             :disabled="busy || !cancelAction?.enabled"
             icon="i-lucide-ban"
