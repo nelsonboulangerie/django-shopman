@@ -155,6 +155,15 @@ O SSE devolve a conexão depois de cada leitura (`shopman/shop/eventstream.py`).
 isso, cada `EventSource` aberto segurava uma conexão a vida inteira, e com pool isso
 esgota o pool: na bancada, 8 streams levaram as 8 conexões e o 9º cliente caiu.
 
+Request cancelado no meio (cliente fechou a aba, o BFF abortou o upstream) deixa a
+conexão que a thread do request abriu DEPOIS do `request_finished` fora do alcance do
+Django. Com pool, cada uma dessas é uma conexão a menos para sempre; foi o que derrubou
+o `web-operator` em 14/10/2026 (`PoolTimeout` em todo request até o restart). O
+`shopman/shop/orphan_connections.py` devolve ao pool, no começo de cada request, a
+conexão cuja thread dona já morreu, e loga `db_connection_orphan_reclaimed count=N`.
+Algumas por hora é o normal de clientes desistindo; centenas por minuto, ou
+`PoolTimeout` voltando, é sinal de outro vazamento (thread viva segurando conexão).
+
 O pool é só para a aplicação. **Cópia do banco (`pg_dump`/`pg_restore`) vai pela
 conexão direta** (porta `25060`, banco `shopman`), nunca pelo pool (`25061`): em modo
 transaction o `pg_dump` deixa `search_path=''` numa conexão de servidor que o próximo

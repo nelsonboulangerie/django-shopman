@@ -41,6 +41,12 @@ class ShopmanConfig(AppConfig):
         # 0. Register system checks
         import shopman.shop.checks  # noqa: F401
 
+        # 0a. Conexão de banco cuja thread morreu volta ao pool (request cancelado
+        #     no meio sob ASGI; ver shop/orphan_connections.py).
+        from shopman.shop import orphan_connections
+
+        orphan_connections.connect()
+
         # 0b. Dashboard do Admin: template próprio, registrado explicitamente.
         #     "admin/index.html" de app é sombreado pelo do Unfold (que vem
         #     antes em INSTALLED_APPS), então o nome precisa ser exclusivo.
