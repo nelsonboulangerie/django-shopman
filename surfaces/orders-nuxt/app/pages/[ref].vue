@@ -23,6 +23,8 @@ import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import { onMounted, onBeforeUnmount } from "vue";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
+import { orderTicketMenuItem } from "~/presentation/orderTicket";
+import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { CancellationReason } from "~/types/orders";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
@@ -57,6 +59,7 @@ function recordLocation(ref_: string) {
 const {
   readMetadata,
   order,
+  deviceAgent,
   pending,
   error,
   refresh,
@@ -84,6 +87,9 @@ const {
   authorize,
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
+
+// A Via Pedido (P2-19): o mesmo papel do PDV, pela impressora desta estação.
+const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
@@ -514,6 +520,17 @@ const detailMenuItems = computed(() => [
           disabled: busy.value || !menuAdvance.value.enabled,
           title: menuAdvance.value.reason || undefined,
           onSelect: onMenuAdvance,
+        },
+      ]
+    : []),
+  ...(order.value
+    ? [
+        {
+          ...orderTicketMenuItem(deviceAgent.value, {
+            printing: ticketPrinter.isPrinting(order.value.ref),
+          }),
+          "data-action": "order-ticket",
+          onSelect: () => menuDo(() => ticketPrinter.print(orderRef.value)),
         },
       ]
     : []),
