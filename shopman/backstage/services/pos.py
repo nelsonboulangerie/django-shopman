@@ -422,10 +422,20 @@ def unlock_drawer(
     )
 
 
+#: O motivo da linha ``refund`` no livro do turno, por ``payment.refund_reason``.
+_CASH_REFUND_LEDGER_REASONS = {
+    "cancelled": "devolução de venda cancelada",
+    "returned": "devolução de venda devolvida",
+    "partial_return": "devolução de parte da venda",
+    "reduced": "devolução da diferença da encomenda editada",
+}
+
+
 def refund_cash(
     *, operator, order_ref: str, manager_approval: dict | None = None, terminal_ref: str = ""
 ) -> int:
-    """Devolve ao cliente o dinheiro de uma venda cancelada (ou a diferença de uma encomenda reduzida).
+    """Devolve ao cliente o dinheiro de uma venda cancelada ou devolvida (toda ou em parte), ou a
+    diferença de uma encomenda reduzida. É o "Devolvi em dinheiro" da Sessão de caixa.
 
     Cancelar não é devolver: o cancel (PDV fora da janela, gestor, de noite)
     deixa o dinheiro pendente; este é o gesto físico, com turno aberto e PIN de
@@ -448,13 +458,13 @@ def refund_cash(
         raise POSError("Pedido não encontrado.")
     cancelled = order.status in {Order.Status.CANCELLED, Order.Status.RETURNED}
     if not cancelled and payment_service.overpaid_q(order) <= 0:
-        raise POSError("Só se devolve dinheiro de venda cancelada ou de encomenda que ficou mais barata.")
+        raise POSError("Só se devolve dinheiro de venda cancelada, devolvida ou de encomenda que ficou mais barata.")
     refunded_q = payment_service.refund_cash(
         order,
         shift=shift,
         actor=operator,
         approved_by=approved_by,
-        reason="devolução de venda cancelada" if cancelled else "devolução da diferença da encomenda editada",
+        reason=_CASH_REFUND_LEDGER_REASONS.get(payment_service.refund_reason(order), "devolução de venda cancelada"),
     )
     if refunded_q <= 0:
         raise POSError("Esta venda não tem dinheiro pendente de devolução.")

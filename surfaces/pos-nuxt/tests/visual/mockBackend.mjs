@@ -287,6 +287,15 @@ const CARD_MACHINE_REFUNDS = SALE && process.env.MOCK_CARD_MACHINE_REFUNDS === "
     },
   ]
   : [];
+// `MOCK_CASH_REFUNDS=1`: devoluções em dinheiro esperando o "Devolvi em dinheiro".
+const CASH_REFUNDS = SALE && process.env.MOCK_CASH_REFUNDS === "1"
+  ? [
+    {
+      order_ref: "PDV-260929-H3D", amount_q: 1200, amount_display: "R$ 12,00", customer_name: "Paulo Reis",
+      cancelled_at: "", reason: "partial_return", reason_label: "Devolução de parte da venda",
+    },
+  ]
+  : [];
 if (SALE) {
   pos.checkout.capabilities.cash_management = {
     enabled: true,
@@ -304,7 +313,7 @@ if (SALE) {
     pending_change_requests: [
       { ref: "CR-1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [1000, 500], note: "", requested_by: "Ana", requested_at: "2026-09-29T10:12:00-03:00" },
     ],
-    pending_cash_refunds: [],
+    pending_cash_refunds: CASH_REFUNDS,
     pending_card_machine_refunds: CARD_MACHINE_REFUNDS,
     account_balances: [
       { customer_ref: "C-9", customer_name: "Carlos Mendes", balance_q: 4200, balance_display: "R$ 42,00", intents: 2, oldest_at: "" },
