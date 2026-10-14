@@ -16,6 +16,8 @@ import type {
 import type {
   AiAssistResponse,
   AssistableField,
+  BulkCell,
+  BulkCellsResponse,
   CatalogMatrixProjection,
   CatalogMatrixResponse,
   CreateProductPayload,
@@ -58,6 +60,8 @@ export function useCatalogMatrix(
   list: CatalogListOptions = {},
 ) {
   const intentions = useOrderIntention();
+  const { data: operatorSession } =
+    useNuxtData<{ operator?: { id: number } }>("operator-session");
   const detailActions = new Map<string, Action>();
   const productConflicts = ref<Record<string, ProductEditConflict>>({});
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
@@ -842,6 +846,56 @@ export function useCatalogMatrix(
   // e a tela mostra o aviso: a capability é degradável, não caminho crítico.
   // Grava a foto no storage default e devolve a URL. Sem storage o servidor
   // responde 503 e o painel avisa: a capability é degradável.
+  // ── tabelão: salvar o lote numa ida (fatia C) ──────────────────────────────
+  // A intenção é a mesma das outras escritas; o lote inteiro vai num POST só.
+  async function saveCells(cells: BulkCell[]): Promise<BulkCellsResponse | null> {
+    const key = "catalog:cells";
+    if (!cells.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    const action = {
+      ref: "edit-cells",
+      kind: "mutation",
+      label: "Salvar células",
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: `catalog-batch-${Date.now()}` ,
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/cells/",
+        action,
+        { cells } as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      const body = result as unknown as BulkCellsResponse;
+      const changed = body.applied?.length ?? 0;
+      if (body.conflicts?.length || body.errors?.length) {
+        errorMsg.value =
+          "Lote aplicado em parte. Confira as linhas marcadas antes de repetir.";
+      } else {
+        useSonner.success(`${changed} célula(s) atualizada(s).`);
+      }
+      return body;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível salvar o lote. Tente de novo.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
   async function uploadPhoto(image: string, filename = ""): Promise<string> {
     const response = await $fetch<{ url: string; name: string }>(
       "/api/v1/backstage/catalog/product/photo/upload/",
@@ -897,5 +951,6 @@ export function useCatalogMatrix(
     duplicateProduct,
     enhancePhoto,
     uploadPhoto,
+    saveCells,
   };
 }

@@ -447,6 +447,36 @@ export interface CreateProductResponse {
   enrichment?: EnrichmentAcceptResult;
 }
 
+// Tabelão: uma célula do lote que vai para POST catalog/cells/ numa ida.
+export interface BulkCell {
+  sku: string;
+  surface_ref: string;
+  price_q?: number;
+  is_published?: boolean;
+  is_sellable?: boolean;
+  base_revisions?: Record<string, string>;
+}
+
+export interface BulkCellsResponse {
+  ok: boolean;
+  outcome: string;
+  applied: {
+    index: number;
+    sku: string;
+    surface_ref: string;
+    price_q: number | null;
+    is_published: boolean;
+    is_sellable: boolean;
+  }[];
+  conflicts: {
+    index: number;
+    sku: string;
+    surface_ref: string;
+    detail: string;
+    conflicting_fields?: string[];
+  }[];
+  errors: { index: number; sku: string; surface_ref: string; detail: string }[];
+}
 export interface PhotoEnhanceResponse {
   provider: string;
   media_type: string;

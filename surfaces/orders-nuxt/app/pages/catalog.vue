@@ -33,8 +33,9 @@ import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/f
 import type {
   AssistableField,
   CatalogRowProjection,
-  CollectionProjection,
+  BulkCell,
   CatalogOrder,
+  CollectionProjection,
   CreateProductPayload,
   DuplicateSnapshot,
   ProductDetailPatch,
@@ -113,6 +114,7 @@ const {
   duplicateProduct,
   enhancePhoto,
   uploadPhoto,
+  saveCells,
 } = useCatalogMatrix(collectionRef, {
   search: searchTerm,
   page: catalogPage,
@@ -1199,6 +1201,12 @@ async function lookupDraft(gtin: string) {
   }
 }
 
+// Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
+const bulkGridOpen = ref(false);
+async function saveBulkCells(cells: BulkCell[]) {
+  const result = await saveCells(cells);
+  if (result) bulkGridOpen.value = false;
+}
 async function saveNewProduct(payload: CreateProductPayload) {
   createError.value = "";
   createBusy.value = true;
@@ -1363,6 +1371,15 @@ useHead({ title: "Catálogo" });
         />
       </template>
       <template #actions>
+        <NuxtButton
+          icon="i-lucide-table-2"
+          label="Tabelão"
+          color="neutral"
+          variant="outline"
+          :disabled="!rows.length"
+          data-testid="catalog-bulk-grid"
+          @click="bulkGridOpen = true"
+        />
         <NuxtButton
           icon="i-lucide-plus"
           label="Novo produto"
@@ -2195,6 +2212,21 @@ useHead({ title: "Catálogo" });
       "
       @lookup="lookupDraft"
       @save="saveNewProduct"
+    />
+
+    <!-- tabelão: preço e flags por superfície, com colar/desfazer/salvar em lote. -->
+    <CatalogBulkGrid
+      :open="bulkGridOpen"
+      :rows="rows"
+      :surfaces="surfaces"
+      :busy="isBusy('catalog:cells')"
+      :error="errorMsg"
+      @update:open="
+        (value) => {
+          if (!value) bulkGridOpen = false;
+        }
+      "
+      @save="saveBulkCells"
     />
     <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
     <NuxtModal
