@@ -371,12 +371,17 @@ def test_venda_mista_com_nota_maior_registra_o_troco_que_o_operador_devolveu(cou
 
 def test_pix_numa_venda_mista_e_atestado_no_balcao(counter):
     """Pix dentro de mista não passa por gateway (QR estático): o intent nasce
-    atestado, e a reconciliação vê que foi o balcão, não o gateway."""
+    atestado, e a reconciliação vê que foi o balcão, não o gateway.
+
+    P1-7: o atestado é um GESTO, com autor e hora. O operador confirma "Recebi o
+    Pix" (``pix_confirmed``) e o servidor carimba quem e quando na linha do
+    pedido e no intent; a palavra solta não liquida mais nada.
+    """
     result = counter.close(
         client_request_id="c4",
         payment_tenders=[
             {"method": "cash", "amount_q": 200, "collection": "terminal"},
-            {"method": "pix", "amount_q": 1000, "collection": "terminal"},
+            {"method": "pix", "amount_q": 1000, "collection": "terminal", "pix_confirmed": True},
         ],
     )
 
@@ -384,8 +389,54 @@ def test_pix_numa_venda_mista_e_atestado_no_balcao(counter):
     assert pix.status == PaymentIntent.Status.CAPTURED
     assert pix.gateway == ""
     assert pix.gateway_data["asserted_at_terminal"] is True
+    assert pix.gateway_data["pix_confirmed_by"] == "marina"
+    assert pix.gateway_data["pix_confirmed_at"]
+    order = Order.objects.get(ref=result.order_ref)
+    (pix_line,) = [t for t in order.data["payment"]["tenders"] if t["method"] == "pix"]
+    assert pix_line["pix_confirmed_by"] == "marina"
+    assert pix_line["pix_confirmed_at"]
+    assert pix_line["amount_q"] == 1000
     (line,) = counter.sale_lines()
     assert line.amount_q == 200
+
+
+def test_pix_numa_venda_mista_sem_confirmacao_e_recusado_antes_do_commit(counter):
+    """P1-7: Pix no misto não liquida pela palavra do operador.
+
+    Sem o gesto "Recebi o Pix", o servidor recusa antes de nascer pedido, intent
+    ou linha no livro do turno. O dinheiro da outra linha não segura a venda.
+    """
+    with pytest.raises(PosIntentError) as caught:
+        counter.close(
+            client_request_id="c4-sem-gesto",
+            payment_tenders=[
+                {"method": "cash", "amount_q": 200, "collection": "terminal"},
+                {"method": "pix", "amount_q": 1000, "collection": "terminal"},
+            ],
+        )
+
+    assert caught.value.code == "pix_mixed_unconfirmed"
+    assert caught.value.field == "payment_tenders.1.pix_confirmed"
+    assert caught.value.focus == "payment"
+    assert "—" not in caught.value.message + caught.value.recovery
+    assert not Order.objects.exists()
+    assert not PaymentIntent.objects.exists()
+    assert counter.sale_lines() == []
+
+
+def test_pix_dividido_sozinho_continua_indo_ao_gateway_sem_gesto(counter):
+    """Dividir a conta só em Pix não é misto: é Pix da venda inteira, pelo gateway."""
+    with _MOCK_ADAPTERS:
+        result = counter.close(
+            client_request_id="c4-pix-dividido",
+            payment_tenders=[
+                {"method": "pix", "amount_q": 600, "collection": "terminal"},
+                {"method": "pix", "amount_q": 600, "collection": "terminal"},
+            ],
+        )
+    order = Order.objects.get(ref=result.order_ref)
+    assert order.data["payment"].get("intent_ref")
+    assert not PaymentIntent.objects.filter(order_ref=result.order_ref, gateway="").exists()
 
 
 def test_entrega_paga_na_porta_e_venda_deste_turno_sem_dinheiro_ainda(counter):
@@ -1170,3 +1221,61 @@ def test_equipment_return_from_stale_order_preserves_payment_confirmation(counte
     with pytest.raises(ValueError, match="já foi acertado"):
         operator_orders.settle_delivery_cash(stale, cash_shift=counter.shift, actor="pos:marina")
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1
+
+
+# ── P1-7: encomenda já na cozinha não fecha com cobrança digital pendente ────
+
+
+def _preorder_tab_fired(counter) -> str:
+    """Comanda de encomenda do dia, combinada para pagar na retirada, já na cozinha."""
+    from shopman.backstage.models import KDSInstance, POSTab
+    from shopman.backstage.projections.pos import build_open_tab
+
+    POSTab.objects.create(ref="00002001", label="2001")
+    KDSInstance.objects.create(ref="cozinha", name="Cozinha", type="picking")
+    session_key = build_open_tab(pos_service.open_pos_tab(
+        channel_ref="pdv", tab_ref="2001", actor="pos:marina", operator_username="marina",
+    ))["tab_session_key"]
+    pos_service.save_pos_tab(
+        channel_ref="pdv",
+        payload={
+            "items": [{"line_id": "L-1", "sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
+            "tab_ref": "2001",
+            "tab_session_key": session_key,
+            "payment_method": "cash",
+            "payment_collection": "on_delivery",
+            **_encomenda(),
+        },
+        actor="pos:marina", operator_username="marina",
+    )
+    fired = pos_service.fire_pos_tab(
+        channel_ref="pdv", session_key=session_key, actor="pos:marina", operator_username="marina",
+    )
+    assert fired.fired_lines == ("L-1",)
+    return session_key
+
+
+@_MOCK_ADAPTERS
+def test_encomenda_ja_na_cozinha_nao_fecha_com_pix_pendente(counter):
+    """Mandou à cozinha combinando pagar na retirada e, na hora de fechar, trocou
+    para Pix: a cozinha já trabalha e a cobrança ficaria pendente. Recusado; em
+    dinheiro, fecha."""
+    session_key = _preorder_tab_fired(counter)
+    base = {
+        "items": [{"line_id": "L-1", "sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
+        "tab_ref": "2001",
+        "tab_session_key": session_key,
+        "customer_phone": "+5543999990001",
+        **_encomenda(),
+    }
+
+    for method in ("pix", "link"):
+        with pytest.raises(PosIntentError) as caught:
+            counter.close(client_request_id=f"fired-{method}", **base, payment_method=method)
+        assert caught.value.code == "preorder_fired_unpaid"
+        assert caught.value.focus == "payment"
+        assert "—" not in caught.value.message + caught.value.recovery
+    assert not Order.objects.exists()
+
+    result = counter.close(client_request_id="fired-cash", **base, payment_method="cash")
+    assert Order.objects.filter(ref=result.order_ref).exists()

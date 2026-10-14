@@ -77,6 +77,7 @@ export function resolvePayment(tenders: POSPaymentTenderDraft[], totalQ: number)
       amount_q: t.amount_q,
       collection: t.collection,
       ...(t.reference ? { reference: t.reference } : {}),
+      ...(t.method === "pix" && t.pix_confirmed ? { pix_confirmed: true } : {}),
     }));
     return { paymentMethod: "mixed", paymentTenders: clean, tenderedQ: null };
   }

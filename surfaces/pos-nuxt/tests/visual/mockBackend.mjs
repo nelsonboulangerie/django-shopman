@@ -802,7 +802,7 @@ createServer((req, res) => {
   if (SALE) {
     const open = path.match(/^\/api\/v1\/backstage\/pos\/tabs\/([^/]+)\/open\/$/);
     if (open) {
-      send(res, 200, tabPayload(decodeURIComponent(open[1])));
+      send(res, 200, withPreorder(tabPayload(decodeURIComponent(open[1]))));
       return;
     }
     if (path === "/api/v1/backstage/pos/tabs/save/") {
@@ -815,7 +815,7 @@ createServer((req, res) => {
           line_id: item.line_id, sku: item.sku, name: item.name, qty: item.qty, price_q: item.unit_price_q, notes: item.notes || "",
         }));
         SAVED_ITEMS.set(ref, items);
-        send(res, 200, { ...tabPayload(ref), items });
+        send(res, 200, withPreorder({ ...tabPayload(ref), items }));
       });
       return;
     }
@@ -835,6 +835,29 @@ createServer((req, res) => {
         if (body?.to_tab_ref) TRANSFERRED_FROM.set(to, from);
         const closed = Boolean(body?.close_source_when_empty) && rest.length === 0;
         send(res, 200, { ok: true, source_closed: closed, source: closed ? null : { ...tabPayload(from), items: rest }, target: tabPayload(to) });
+      });
+      return;
+    }
+    if (path === "/api/v1/backstage/pos/tabs/fire/") {
+      void readBody(req).then((body) => {
+        const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";
+        if (process.env.MOCK_FIRE === "preorder_unpaid" && withPreorder(tabPayload(ref)).sales_mode === "order") {
+          const error = {
+            code: "preorder_unpaid",
+            message: "Esta encomenda ainda não foi paga. Ela vai à cozinha sozinha quando o pagamento entrar.",
+            field: "payment", focus: "payment",
+            recovery: "Para receber na retirada ou na entrega, marque isso no Pagamento e envie de novo.",
+          };
+          return send(res, 422, { detail: error.message, error });
+        }
+        const ids = new Set(body?.line_ids || []);
+        const before = SAVED_ITEMS.get(ref) ?? tabPayload(ref).items;
+        const items = before.map((item) => (ids.size && !ids.has(item.line_id)) || item.fired
+          ? item
+          : { ...item, fired: true, fired_qty: item.qty, kitchen_status: "queued" });
+        SAVED_ITEMS.set(ref, items);
+        const fired = items.filter((item) => item.fired).map((item) => item.line_id);
+        send(res, 200, { ok: true, fired_count: 1, fired_lines: fired, tab: withPreorder({ ...tabPayload(ref), items }) });
       });
       return;
     }
@@ -965,3 +988,11 @@ createServer((req, res) => {
 }).listen(port, "127.0.0.1", () => {
   console.log(`[pos-visual-mock] listening on http://127.0.0.1:${port}`);
 });
+
+// Prévia da encomenda do dia (MOCK_PREORDER=1): a comanda 13 vira encomenda de
+// retirada para hoje. Com MOCK_FIRE=preorder_unpaid o "Enviar à cozinha" recusa como
+// o servidor (encomenda cobra antes); sem ele, envia. Fora das flags, nada muda.
+function withPreorder(payload) {
+  if (!(SALE && process.env.MOCK_PREORDER === "1" && payload.tab_ref === "13")) return payload;
+  return { ...payload, sales_mode: "order", fulfillment_type: "pickup", delivery_date: TODAY };
+}

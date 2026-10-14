@@ -387,6 +387,8 @@ def close_sale(
         tenders=[t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)],
     )
     _enforce_pix_payment_policy(payload)
+    _require_confirmed_pix_in_mixed(payload)
+    _refuse_pending_charge_on_fired_preorder(payload, channel_ref=channel.ref)
     # A partir daqui é uma transação só, e ela existe por causa de um defeito:
     # ``client_request_id`` era conferido com um SELECT solto e os ops eram
     # montados de um estado lido antes. Duas requests com a MESMA chave passavam
@@ -1563,6 +1565,72 @@ def _payload_payment_method_set(payload: dict) -> set[str]:
     return {_normalize_payment_method(payload.get("payment_method"))}
 
 
+def _refuse_pending_charge_on_fired_preorder(payload: dict, *, channel_ref: str) -> None:
+    """A gêmea, no fechamento, de ``_refuse_unpaid_preorder_fire``.
+
+    A comanda de encomenda só vai à cozinha antes de paga quando a casa combinou
+    receber na retirada ou na entrega. Se, depois do envio, o operador fecha com
+    Pix ou link sozinhos (cobrança que só o provedor confirma), a cozinha
+    trabalharia para um pagamento pendente, o buraco que a régua do envio fecha.
+    Recusa antes do commit; dinheiro, maquininha ou o pagamento na retirada
+    seguem valendo.
+    """
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
+    if sales_mode(payload) != "order":
+        return
+    methods = _payload_payment_method_set(payload)
+    if len(methods) != 1 or not methods & {"pix", "link", "card"}:
+        return
+    if _payload_payment_collection(payload, _payload_fulfillment_type(payload)) != "terminal":
+        return
+    session = _payload_open_tab_session(channel_ref=channel_ref, payload=payload)
+    if session is None:
+        return
+    from shopman.shop.services import kds as kds_service
+
+    if not kds_service.fired_line_ids(session.session_key):
+        return
+    raise PosIntentError(
+        code="preorder_fired_unpaid",
+        message="Esta encomenda já está na cozinha. Pix e link ficam pendentes até o cliente pagar.",
+        field="payment_method",
+        focus="payment",
+        recovery="Receba agora em dinheiro ou cartão na maquininha, ou marque o pagamento na retirada ou na entrega.",
+    )
+
+
+def _require_confirmed_pix_in_mixed(payload: dict) -> None:
+    """Pix numa venda mista só liquida com o gesto "Recebi o Pix" (P1-7).
+
+    Na venda mista o Pix não passa pelo provedor: o cliente paga no QR da casa ou
+    na maquininha, e o intent nasce atestado no balcão (``settle_terminal_tenders``).
+    Antes bastava a linha existir, e a palavra do operador virava dinheiro
+    capturado. Agora a linha tem de trazer ``pix_confirmed``, que a tela só manda
+    depois de o operador conferir e tocar em "Recebi o Pix"; quem e quando são
+    carimbados no servidor (``build_session_ops``). Pix sozinho (ou dividido só em
+    Pix) continua no provedor, que é quem confirma.
+    """
+    tenders = [t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)]
+    methods = {_normalize_payment_method(t.get("method")) for t in tenders if _int_q(t.get("amount_q")) > 0}
+    if "pix" not in methods or len(methods) < 2:
+        return
+    for idx, tender in enumerate(tenders):
+        if _normalize_payment_method(tender.get("method")) != "pix" or _int_q(tender.get("amount_q")) <= 0:
+            continue
+        if str(tender.get("collection") or "terminal").strip().lower() != "terminal":
+            continue
+        if tender.get("pix_confirmed") is True:
+            continue
+        raise PosIntentError(
+            code="pix_mixed_unconfirmed",
+            message=f"Confira se o Pix de R$ {format_money(_int_q(tender.get('amount_q')))} entrou antes de concluir.",
+            field=f"payment_tenders.{idx}.pix_confirmed",
+            focus="payment",
+            recovery="Veja no app do banco ou na maquininha e toque em Recebi o Pix.",
+        )
+
+
 def _require_customer_if_scheduled(payload: dict) -> None:
     """Pedido combinado, inclusive hoje, e entrega exigem identificação."""
     if not _fulfillment_requires_customer(payload):
@@ -2252,6 +2320,42 @@ def _session_to_fire_lines(session: Session) -> list[dict]:
     return lines
 
 
+def _session_is_preorder(session: Session) -> bool:
+    from shopman.shop.services.pos_sales_mode import sales_mode, session_sales_payload
+
+    return sales_mode(session_sales_payload(session)) == "order"
+
+
+def _session_collects_at_handoff(session: Session) -> bool:
+    payment = (session.data or {}).get("payment") or {}
+    return str(payment.get("collection") or "").strip().lower() == "on_delivery"
+
+
+def _refuse_unpaid_preorder_fire(session: Session) -> None:
+    """Encomenda cobra antes (política da casa, 28/08/2026): sem pagamento, sem cozinha.
+
+    A comanda de encomenda é anotada ANTES de cobrar, então ela nunca está paga
+    quando o operador toca em Enviar. Cobrada no balcão (Pix, link, cartão ou
+    dinheiro), o pedido vai à cozinha sozinho quando o dinheiro entra
+    (``lifecycle._on_accepted``/``_on_paid``). Mandar antes deixava os tickets na
+    cozinha com o Pix ou o link ainda por pagar, porque o lifecycle só segura o
+    KDS do PEDIDO, e o atalho da comanda corre antes de o pedido existir.
+
+    A exceção é a da casa: receber NA retirada ou NA entrega (dinheiro ou
+    maquininha, ``payment.collection == "on_delivery"``). Ali o pagamento depois
+    do trabalho é o combinado, como na régua de saída (``payment_gate``).
+    """
+    if not _session_is_preorder(session) or _session_collects_at_handoff(session):
+        return
+    raise PosIntentError(
+        code="preorder_unpaid",
+        message="Esta encomenda ainda não foi paga. Ela vai à cozinha sozinha quando o pagamento entrar.",
+        field="payment",
+        focus="payment",
+        recovery="Para receber na retirada ou na entrega, marque isso no Pagamento e envie de novo.",
+    )
+
+
 def fire_pos_tab(
     *,
     channel_ref: str,
@@ -2328,6 +2432,7 @@ def fire_pos_tab(
                     "today": today.isoformat(),
                 },
             )
+    _refuse_unpaid_preorder_fire(session)
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -2839,6 +2944,13 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     if payment_collection == "on_delivery" and change_for_q > 0:
         ops.append({"op": "set_data", "path": "payment.change_for_q", "value": change_for_q})
     if tenders:
+        # O gesto "Recebi o Pix" ganha autor e hora AQUI, no servidor: é o
+        # registro de quem atestou o dinheiro que o provedor não confirmou.
+        confirmed_at = timezone.now().isoformat()
+        for tender in tenders:
+            if tender.get("pix_confirmed") is True:
+                tender["pix_confirmed_by"] = operator_username
+                tender["pix_confirmed_at"] = confirmed_at
         ops.append({"op": "set_data", "path": "payment.tenders", "value": tenders})
     cash_received_q = _cash_received_q(tenders)
     if cash_received_q > 0:
@@ -3930,6 +4042,8 @@ def _payload_tenders(
             reference = str(tender.get("reference") or "").strip()
             if reference:
                 entry["reference"] = reference[:120]
+            if method == "pix" and tender.get("pix_confirmed") is True:
+                entry["pix_confirmed"] = True
             if pos_terminal_ref and entry["collection"] == "terminal":
                 entry["terminal_ref"] = pos_terminal_ref
             if entry["collection"] == "terminal":

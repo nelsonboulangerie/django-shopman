@@ -765,6 +765,9 @@ export interface POSPaymentTenderDraft {
   amount_q: number;
   collection: PosPaymentCollection;
   reference?: string;
+  /** O gesto "Recebi o Pix" da venda mista (P1-7): o operador conferiu que o Pix
+   *  entrou. Só o booleano viaja; quem e quando o servidor carimba. */
+  pix_confirmed?: boolean;
   /** Internal: amount is still the untouched system auto-fill (first cédula
    *  replaces it). Stripped before the intent — never sent to the server. */
   _virgin?: boolean;
