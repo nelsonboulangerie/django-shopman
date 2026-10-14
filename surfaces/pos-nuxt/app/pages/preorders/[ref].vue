@@ -279,7 +279,7 @@ function goBack() {
                 v-if="counter.reschedule.allowed"
                 color="neutral"
                 variant="outline"
-                class="flex-auto justify-center"
+                class="min-h-11 flex-auto justify-center"
                 icon="i-lucide-calendar-clock"
                 label="Reagendar"
                 :disabled="actions.busy.value"
@@ -292,7 +292,7 @@ function goBack() {
               <NuxtButton
                 color="neutral"
                 variant="outline"
-                class="flex-auto justify-center"
+                class="min-h-11 flex-auto justify-center"
                 icon="i-lucide-printer"
                 :label="counter.ticket_printed ? 'Imprimir 2ª via' : 'Imprimir Via Pedido'"
                 :disabled="!!tickets.printingRef.value"
@@ -304,7 +304,7 @@ function goBack() {
                 v-if="counter.edit.allowed"
                 color="neutral"
                 variant="outline"
-                class="flex-auto justify-center"
+                class="min-h-11 flex-auto justify-center"
                 icon="i-lucide-pencil"
                 label="Editar encomenda"
                 :disabled="actions.busy.value"
@@ -315,7 +315,7 @@ function goBack() {
                 v-else-if="counter.edit.cancel_and_redo && counter.cancel.allowed"
                 color="neutral"
                 variant="outline"
-                class="flex-auto justify-center"
+                class="min-h-11 flex-auto justify-center"
                 icon="i-lucide-rotate-ccw"
                 label="Cancelar e refazer"
                 :disabled="actions.busy.value"
@@ -339,7 +339,7 @@ function goBack() {
               color="neutral"
               variant="ghost"
               block
-              class="justify-start"
+              class="min-h-11 justify-start"
               icon="i-lucide-message-square-plus"
               label="Comentar no histórico"
               data-preorder-comment-shortcut
@@ -352,7 +352,7 @@ function goBack() {
                 color="error"
                 variant="ghost"
                 block
-                class="justify-start"
+                class="min-h-11 justify-start"
                 icon="i-lucide-x"
                 label="Cancelar encomenda"
                 :disabled="actions.busy.value"

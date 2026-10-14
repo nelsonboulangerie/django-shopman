@@ -38,7 +38,8 @@ describe("casca do kitchensink", () => {
     expect(config).toContain("ssr: true");
     expect(config).toContain("operatorSecurityHeaders: true");
     expect(config).toContain("operatorUpstreamFailFast: true");
-    expect(config).toContain('process.env.NODE_ENV !== "production"');
+    expect(config).toContain('process.env.SHOPMAN_ENVIRONMENT === "test"');
+    expect(config).not.toContain('process.env.NODE_ENV !== "production"');
     expect(config).toContain('app: "kitchensink"');
   });
 

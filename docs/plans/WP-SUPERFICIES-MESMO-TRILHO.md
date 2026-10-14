@@ -5,6 +5,11 @@
 > WP é independente do WP-WATCHMAN: aqui o objeto observado é a fábrica das
 > superfícies, não a saúde do Django em produção.
 
+> **Implementado em 14/10/2026.** O laudo causal, os experimentos e o inventário
+> final estão em `docs/reports/superficies-mesmo-trilho-2026-10-14.md`. Exceções
+> temporárias remanescentes são dados versionados, têm responsável e vencem em
+> 14/11/2026; o gate recusa exceção vencida.
+
 ## 1. Decisão
 
 Os apps não terão dez receitas implícitas de build, teste e evidência. Todos passam

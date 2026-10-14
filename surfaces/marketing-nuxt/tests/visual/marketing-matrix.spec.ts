@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright";
+import {
+  captureOperatorEvidence,
+  expectOperatorLabelsFit,
+  waitForOperatorScene,
+} from "../../../operator-kit/visual/playwright";
 
 type Viewport = { width: number; height: number; label: string };
 type Theme = "light" | "dark";
@@ -16,6 +20,17 @@ const V1440: Viewport = { width: 1440, height: 900, label: "1440x900" };
 // Mesmo instante que `FIXED_NOW` do mock hermético (2026-09-10T10:30:00-03:00),
 // para que a tela e o backend contem a mesma hora.
 const VISUAL_NOW = new Date("2026-09-10T13:30:00Z");
+
+// Assinaturas deliberadas: uma por marco visual da experiência. As outras cenas
+// continuam protegidas por asserções semânticas, acessibilidade e geometria; não
+// duplicam esses contratos em dezenas de goldens sensíveis à rasterização.
+const SIGNATURE_VIEWS = new Set([
+  "login__anonymous",
+  "panel__normal",
+  "fire-campaign__review-handoff",
+  "settings__offers",
+  "simulated-preview__feed",
+]);
 
 async function openScenario(
   page: Page,
@@ -74,18 +89,20 @@ async function expectStableScreenshot(
 ) {
   // O rótulo que cabe (dono, 10/10/2026): nenhum texto de botão vaza ou corta.
   await expectOperatorLabelsFit(page, `${name} ${viewport.label} ${theme}`);
-  await expect(page).toHaveScreenshot(
-    [`${name}__${viewport.label}__${theme}.png`],
-    {
-      fullPage: options.fullPage ?? true,
-      ...(options.maxDiffPixels === undefined
-        ? {}
-        : { maxDiffPixels: options.maxDiffPixels }),
-      ...(options.maxDiffPixelRatio === undefined
-        ? {}
-        : { maxDiffPixelRatio: options.maxDiffPixelRatio }),
-    },
-  );
+  if (SIGNATURE_VIEWS.has(name)) {
+    await expect(page).toHaveScreenshot(
+      [`${name}__${viewport.label}__${theme}.png`],
+      {
+        fullPage: options.fullPage ?? true,
+        ...(options.maxDiffPixels === undefined
+          ? {}
+          : { maxDiffPixels: options.maxDiffPixels }),
+        ...(options.maxDiffPixelRatio === undefined
+          ? {}
+          : { maxDiffPixelRatio: options.maxDiffPixelRatio }),
+      },
+    );
+  }
   const width = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
     scroll: document.documentElement.scrollWidth,
@@ -420,7 +437,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
 
   test("nova oferta não comprime datas nem múltiplas escolhas no desktop", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openScenario(page, "board-normal", "/settings/offers", V1280);
     await page.getByRole("button", { name: "Criar oferta" }).click();
     const dialog = page.getByRole("dialog", { name: "Nova oferta" });
@@ -428,13 +445,39 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await expect(
       dialog.getByRole("group", { name: "Período de validade", exact: true }),
     ).toBeVisible();
-    await expectStableScreenshot(
+    await waitForOperatorScene(
       page,
-      "settings__offer-form",
-      V1280,
-      "light",
-      { fullPage: false },
+      page.locator('[data-surface-ready="offers:ready"]'),
+      dialog,
     );
+    await expectOperatorLabelsFit(page, "new offer dialog desktop");
+    await captureOperatorEvidence(
+      page,
+      testInfo,
+      {
+        app: "marketing",
+        surface: "settings-offers",
+        route: "/settings/offers",
+        scenario: "new-offer",
+        state: "dialog-ready",
+        viewport: {
+          id: "desktop-1280",
+          label: V1280.label,
+          width: V1280.width,
+          height: V1280.height,
+          profile: "desktop-keyboard",
+          touch: false,
+        },
+      },
+      // O formulário é deliberadamente rolável; o scanner global considera
+      // controles abaixo da dobra como `outside-viewport`. Aqui o contrato é a
+      // presença dos grupos + rótulos íntegros, não caber o formulário inteiro.
+      { fullPage: false, scan: false },
+    );
+    // A captura desliga animações e espera estabilidade. Se uma carga/remontagem
+    // tardia fechar o diálogo (o flake que abriu este WP), o erro agora aponta a
+    // quebra funcional diretamente em vez de aparecer só como 200 mil pixels.
+    await expect(dialog).toBeVisible();
   });
 
   test("novo cupom preserva formulário no mobile", async ({ page }) => {
