@@ -7,11 +7,7 @@ import { materialPath } from "~/presentation/purchaseSections";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{ supplier: Supplier }>();
-const { costs, materials, conversions } = usePurchaseDesk();
-
-// Pessoa de contato é cadastro: se edita no Admin. O aviso leva direto ao fornecedor lá.
-const adminBase = String(useRuntimeConfig().public.djangoBaseUrl || "").replace(/\/$/, "");
-const adminUrl = computed(() => `${adminBase}/admin/buyman/supplier/?q=${encodeURIComponent(props.supplier.ref)}`);
+const { costs, materials, conversions, openSupplierEdit } = usePurchaseDesk();
 
 // Contato inativo continua no cadastro (histórico), mas não na tela de quem vai ligar hoje.
 const activeContacts = computed(() => props.supplier.contacts.filter((person) => person.isActive));
@@ -68,11 +64,11 @@ const portfolio = computed(() =>
         variant="subtle"
         color="warning"
         :title="supplier.contact ? `Sem contato comercial: o pedido de compra vai para a central (${supplier.contact}).` : 'Sem contato e sem central: o pedido de compra não tem para onde ir.'"
-        description="Contatos se cadastram no Admin."
-        :actions="alertActions('warning', [{ label: 'Cadastrar contato no Admin', to: adminUrl, target: '_blank' }])"
+        description="Cadastre o contato no próprio fornecedor, em Editar."
+        :actions="alertActions('warning', [{ label: 'Cadastrar contato', onClick: () => openSupplierEdit(supplier.ref) }])"
       />
       <p v-else class="mt-1 text-xs text-muted">
-        O pedido de compra vai para <span class="font-semibold text-default">{{ supplier.orderContactName }}</span>. Contatos se cadastram no Admin.
+        O pedido de compra vai para <span class="font-semibold text-default">{{ supplier.orderContactName }}</span>.
       </p>
       <ul v-if="activeContacts.length" class="mt-2 space-y-2">
         <li v-for="person in activeContacts" :key="person.id">

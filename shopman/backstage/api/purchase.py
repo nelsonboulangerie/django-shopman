@@ -10,6 +10,7 @@ from shopman.backstage.api.projections import projection_data
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.backstage.projections.purchase_count import build_purchase_count
 from shopman.backstage.services import purchase as purchase_service
+from shopman.backstage.services import purchase_catalog as purchase_catalog_service
 from shopman.backstage.services import purchase_count as purchase_count_service
 from shopman.backstage.services.purchase import PurchaseError
 
@@ -330,3 +331,191 @@ class PurchaseRequestCancelView(APIView):
         except PurchaseError as exc:
             return _error_response(exc)
         return _purchase_response(projection, message="Pedido cancelado aqui. Avise o fornecedor.")
+
+# ── Cadastro da Base: insumo, fornecedor, contato e conversão ───────────────
+# O Compras já operava; cadastrar o insumo e o fornecedor ainda mandava o
+# gestor ao Admin. Estes endpoints chamam `services.purchase_catalog`, que
+# compõe o Buyman sem tocar no Core, e devolvem a projeção inteira como as
+# demais ações do Compras.
+
+
+class PurchaseMaterialView(APIView):
+    """Cria um insumo do zero (Base > Insumos > Novo insumo)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Create a purchasable material",
+        responses={200: OpenApiResponse(description="Material created and projection refreshed.")},
+    )
+    def post(self, request):
+        data = dict(request.data or {})
+        try:
+            projection = purchase_catalog_service.create_material(data, user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        name = str(data.get("name") or "").strip()
+        return _purchase_response(projection, message=f"Insumo {name} criado." if name else "Insumo criado.")
+
+
+class PurchaseMaterialDetailView(APIView):
+    """Edita o cadastro do insumo. O SKU não muda por aqui."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Update a purchasable material",
+        responses={200: OpenApiResponse(description="Material saved and projection refreshed.")},
+    )
+    def post(self, request, material_sku: str):
+        try:
+            projection = purchase_catalog_service.update_material(
+                material_sku, dict(request.data or {}), user=request.user,
+            )
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message="Insumo salvo.")
+
+
+class PurchaseMaterialDuplicateView(APIView):
+    """Duplica o conteúdo copiável do insumo num SKU novo."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Duplicate a purchasable material into a new SKU",
+        responses={200: OpenApiResponse(description="Copy created and projection refreshed.")},
+    )
+    def post(self, request, material_sku: str):
+        data = dict(request.data or {})
+        try:
+            projection = purchase_catalog_service.duplicate_material(material_sku, data, user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        new_sku = str(data.get("sku") or "").strip()
+        return _purchase_response(projection, message=f"Cópia criada: {new_sku}." if new_sku else "Insumo duplicado.")
+
+
+class PurchaseSupplierView(APIView):
+    """Cria um fornecedor (Base > Fornecedores > Novo fornecedor)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Create a supplier",
+        responses={200: OpenApiResponse(description="Supplier created and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            projection = purchase_catalog_service.create_supplier(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message="Fornecedor cadastrado.")
+
+
+class PurchaseSupplierDetailView(APIView):
+    """Edita o cadastro do fornecedor. A referência não muda por aqui."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Update a supplier",
+        responses={200: OpenApiResponse(description="Supplier saved and projection refreshed.")},
+    )
+    def post(self, request, ref: str):
+        try:
+            projection = purchase_catalog_service.update_supplier(ref, dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message="Fornecedor salvo.")
+
+
+class PurchaseSupplierDuplicateView(APIView):
+    """Duplica o fornecedor, com os contatos e os termos comerciais."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Duplicate a supplier into a new reference",
+        responses={200: OpenApiResponse(description="Copy created and projection refreshed.")},
+    )
+    def post(self, request, ref: str):
+        try:
+            projection = purchase_catalog_service.duplicate_supplier(ref, dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message="Cópia do fornecedor criada.")
+
+
+class PurchaseSupplierContactView(APIView):
+    """Adiciona a pessoa que atende no fornecedor."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Create a supplier contact",
+        responses={200: OpenApiResponse(description="Contact created and projection refreshed.")},
+    )
+    def post(self, request, ref: str):
+        try:
+            projection = purchase_catalog_service.create_supplier_contact(ref, dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message="Contato adicionado.")
+
+
+class PurchaseContactView(APIView):
+    """Edita a pessoa do fornecedor, inclusive para aposentá-la."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Update a supplier contact",
+        responses={200: OpenApiResponse(description="Contact saved and projection refreshed.")},
+    )
+    def post(self, request, contact_id: int):
+        try:
+            projection = purchase_catalog_service.update_supplier_contact(
+                contact_id, dict(request.data or {}), user=request.user,
+            )
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message="Contato salvo.")
+
+
+class PurchaseConversionDetailView(APIView):
+    """Edita uma conversão já declarada (fator, rótulo, tipo, dono, situação)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Update a declared material conversion",
+        responses={200: OpenApiResponse(description="Conversion saved and projection refreshed.")},
+    )
+    def post(self, request, conversion_id: int):
+        try:
+            projection, message = purchase_catalog_service.update_conversion(
+                conversion_id, dict(request.data or {}), user=request.user,
+            )
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return _purchase_response(projection, message=message)
+

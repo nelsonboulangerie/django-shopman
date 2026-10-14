@@ -131,6 +131,10 @@ class SupplierProjection:
     tradeName: str
     displayName: str
     document: str
+    #: E-mail e telefone da central, os campos que o cadastro do Compras edita.
+    #: contact continua sendo o texto que a ficha mostra.
+    email: str
+    phone: str
     contact: str
     #: As pessoas cadastradas. Vazio significa que tudo cai na central da empresa.
     contacts: tuple[SupplierContactProjection, ...]
@@ -672,6 +676,8 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
         tradeName=supplier.trade_name,
         displayName=supplier.display_name,
         document=supplier.document,
+        email=supplier.email,
+        phone=supplier.phone,
         contact=contact,
         contacts=contacts,
         orderContactName=order_contact.name if order_contact else "",

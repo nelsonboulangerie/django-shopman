@@ -1,6 +1,6 @@
 // O estado do insumo e do pedido de compra em selo (`NuxtBadge`, sem `variant`: o tema
 // dá `soft`). Uma cor e uma palavra por estado, em toda tela do Compras.
-import type { MaterialTone, PurchaseRequestStatus } from "~/types/purchase";
+import type { MaterialTone, PurchaseRequestStatus, Supplier } from "~/types/purchase";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 
 type BadgeColor = "neutral" | "primary" | "info" | "success" | "warning" | "error";
@@ -90,3 +90,49 @@ export function matchesMaterialFilters(
     (!categories.length || categories.includes(material.category))
   );
 }
+
+// ── Os recortes de Base · Fornecedores ──────────────────────────────────────
+// Situação (Ativo/Inativo) e a pergunta que o comprador faz antes de apertar
+// enviar: este fornecedor tem para quem mandar o pedido?
+
+/** As dimensões do painel, com quantos fornecedores casam cada opção. */
+export function supplierDimensions(suppliers: readonly Supplier[]): FilterDimension[] {
+  const active = suppliers.filter((supplier) => supplier.isActive).length;
+  const withContact = suppliers.filter((supplier) => Boolean(supplier.orderContactName)).length;
+  return [
+    {
+      id: "status",
+      label: "Situação",
+      type: "multi-select",
+      options: [
+        { value: "active", label: "Ativo", count: active },
+        { value: "inactive", label: "Inativo", count: suppliers.length - active },
+      ],
+    },
+    {
+      id: "contact",
+      label: "Contato comercial",
+      type: "multi-select",
+      options: [
+        { value: "with", label: "Com contato comercial", count: withContact },
+        { value: "without", label: "Sem contato comercial", count: suppliers.length - withContact },
+      ],
+    },
+  ];
+}
+
+/** O fornecedor casa o recorte? Dentro de uma dimensão, OU; entre dimensões, E. */
+export function matchesSupplierFilters(
+  supplier: Pick<Supplier, "isActive" | "orderContactName">,
+  filters: ActiveFilters,
+): boolean {
+  const status = filters.status ?? [];
+  const contact = filters.contact ?? [];
+  const statusValue = supplier.isActive ? "active" : "inactive";
+  const contactValue = supplier.orderContactName ? "with" : "without";
+  return (
+    (!status.length || status.includes(statusValue)) &&
+    (!contact.length || contact.includes(contactValue))
+  );
+}
+

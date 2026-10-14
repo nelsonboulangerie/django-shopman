@@ -1,5 +1,14 @@
 import type {
+  PurchaseContactUpsertPayload,
+  PurchaseConversionUpsertPayload,
+  PurchaseFormMode,
+  PurchaseMaterialDuplicatePayload,
+  PurchaseMaterialPatchPayload,
+  PurchaseMaterialUpsertPayload,
   PurchaseOpeningPayload,
+  PurchaseSupplierDuplicatePayload,
+  PurchaseSupplierPatchPayload,
+  PurchaseSupplierUpsertPayload,
   PurchaseView,
   PurchaseBaseView,
   PurchaseRequestStatus,
@@ -91,6 +100,8 @@ export function usePurchaseDesk() {
   // O recorte de Base · Insumos (o painel de filtros): mora no estado da sessão, não na
   // URL, porque abrir o insumo ao lado troca a rota e o recorte precisa ficar.
   const materialFilters = useState<ActiveFilters>("purchase-material-filters", () => ({}));
+  // O recorte de Base · Fornecedores: Situação e "tem contato comercial?".
+  const supplierFilters = useState<ActiveFilters>("purchase-supplier-filters", () => ({}));
   const selectedMaterialSku = useState("purchase-selected-material", () => "");
   const selectedSupplierRef = useState("purchase-selected-supplier", () => "");
   const noteMaterialSku = useState("purchase-note-material", () => "");
@@ -1205,11 +1216,155 @@ export function usePurchaseDesk() {
     }
   }
 
+  // ── Cadastro da Base (criar, editar e duplicar) ──────────────────────────
+  // O painel é dono do formulário; aqui mora o fetch e o que a projeção faz
+  // depois. O estado do painel é da sessão, como o resto do Compras.
+  const materialForm = useState<{ open: boolean; mode: PurchaseFormMode; sku: string }>(
+    "purchase-material-form",
+    () => ({ open: false, mode: "create", sku: "" }),
+  );
+  const supplierForm = useState<{ open: boolean; mode: PurchaseFormMode; ref: string }>(
+    "purchase-supplier-form",
+    () => ({ open: false, mode: "create", ref: "" }),
+  );
+
+  const materialFormSource = computed(
+    () => materials.value.find((material) => material.sku === materialForm.value.sku) ?? null,
+  );
+  const supplierFormSource = computed(
+    () => suppliers.value.find((supplier) => supplier.ref === supplierForm.value.ref) ?? null,
+  );
+  const materialCategories = computed(() =>
+    [...new Set(enrichedMaterials.value.map((material) => material.category).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, "pt-BR"),
+    ),
+  );
+  const materialFormConversions = computed(() =>
+    conversions.value.filter((row) => row.materialSku === materialForm.value.sku),
+  );
+  const materialFormCosts = computed(() => costs.value.filter((row) => row.materialSku === materialForm.value.sku));
+
+  function openMaterialCreate() {
+    materialForm.value = { open: true, mode: "create", sku: "" };
+  }
+  function openMaterialEdit(sku: string) {
+    materialForm.value = { open: true, mode: "edit", sku };
+  }
+  function openMaterialDuplicate(sku: string) {
+    materialForm.value = { open: true, mode: "duplicate", sku };
+  }
+  function closeMaterialForm() {
+    materialForm.value = { ...materialForm.value, open: false };
+  }
+  function openSupplierCreate() {
+    supplierForm.value = { open: true, mode: "create", ref: "" };
+  }
+  function openSupplierEdit(ref: string) {
+    supplierForm.value = { open: true, mode: "edit", ref };
+  }
+  function openSupplierDuplicate(ref: string) {
+    supplierForm.value = { open: true, mode: "duplicate", ref };
+  }
+  function closeSupplierForm() {
+    supplierForm.value = { ...supplierForm.value, open: false };
+  }
+
+  async function saveMaterial(payload: Record<string, unknown>): Promise<string | null> {
+    const mode = materialForm.value.mode;
+    const sku = materialForm.value.sku;
+    const response = await runBackendAction(() => {
+      if (mode === "create") return api.createMaterial(payload as unknown as PurchaseMaterialUpsertPayload);
+      if (mode === "duplicate") return api.duplicateMaterial(sku, payload as unknown as PurchaseMaterialDuplicatePayload);
+      return api.updateMaterial(sku, payload as unknown as PurchaseMaterialPatchPayload);
+    });
+    if (!response) return null;
+    const savedSku = mode === "edit" ? sku : String((payload as { sku?: string }).sku ?? sku);
+    selectedMaterialSku.value = savedSku;
+    closeMaterialForm();
+    return savedSku;
+  }
+
+  async function saveSupplier(payload: Record<string, unknown>): Promise<string | null> {
+    const mode = supplierForm.value.mode;
+    const ref = supplierForm.value.ref;
+    const response = await runBackendAction(() => {
+      if (mode === "create") return api.createSupplier(payload as unknown as PurchaseSupplierUpsertPayload);
+      if (mode === "duplicate") return api.duplicateSupplier(ref, payload as unknown as PurchaseSupplierDuplicatePayload);
+      return api.updateSupplier(ref, payload as unknown as PurchaseSupplierPatchPayload);
+    });
+    if (!response) return null;
+    let savedRef = mode === "create" ? String((payload as { ref?: string }).ref ?? "").trim() : ref;
+    if (!savedRef) {
+      const name = String((payload as { name?: string }).name ?? "").trim();
+      savedRef = suppliers.value.find((supplier) => supplier.name === name)?.ref ?? "";
+    }
+    if (savedRef) selectedSupplierRef.value = savedRef;
+    closeSupplierForm();
+    return savedRef;
+  }
+
+  async function saveMaterialConversion(payload: PurchaseConversionUpsertPayload & { conversionId: string | null }) {
+    const materialSku = materialForm.value.sku || selectedMaterialSku.value;
+    if (!materialSku) return false;
+    const response = await runBackendAction(() =>
+      payload.conversionId
+        ? api.updateConversion(payload.conversionId, {
+            label: payload.label,
+            factor: payload.factor,
+            kind: payload.kind,
+            supplierRef: payload.supplierRef,
+            isActive: payload.isActive,
+          })
+        : api.declareConversion({
+            materialSku,
+            supplierRef: payload.supplierRef ?? "",
+            label: payload.label,
+            factor: payload.factor,
+            kind: payload.kind,
+          }),
+    );
+    return Boolean(response);
+  }
+
+  async function saveMaterialCost(payload: {
+    supplierRef: string;
+    conversionId: string | null;
+    costInput: string;
+    makePreferred: boolean;
+  }) {
+    const materialSku = materialForm.value.sku || selectedMaterialSku.value;
+    if (!materialSku) return false;
+    const response = await runBackendAction(() => api.upsertCost({ materialSku, ...payload }));
+    return Boolean(response);
+  }
+
+  async function saveSupplierContact(payload: PurchaseContactUpsertPayload & { contactId: string | null }) {
+    const ref = supplierForm.value.ref || selectedSupplierRef.value;
+    const body: PurchaseContactUpsertPayload = {
+      name: payload.name,
+      role: payload.role,
+      email: payload.email,
+      phone: payload.phone,
+      notes: payload.notes,
+      isPrimary: payload.isPrimary,
+      isActive: payload.isActive,
+    };
+    const response = await runBackendAction(() =>
+      payload.contactId
+        ? api.updateContact(payload.contactId, body)
+        : ref
+          ? api.createSupplierContact(ref, body)
+          : Promise.reject(new Error("Sem fornecedor para o contato.")),
+    );
+    return Boolean(response);
+  }
+
   return {
     view,
     baseView,
     query,
     materialFilters,
+    supplierFilters,
     selectedMaterialSku,
     selectedSupplierRef,
     noteMaterialSku,
@@ -1336,5 +1491,25 @@ export function usePurchaseDesk() {
     setPreferredCost,
     saveQuote,
     costPerBaseUnitQ,
+    materialForm,
+    supplierForm,
+    materialFormSource,
+    supplierFormSource,
+    materialCategories,
+    materialFormConversions,
+    materialFormCosts,
+    openMaterialCreate,
+    openMaterialEdit,
+    openMaterialDuplicate,
+    closeMaterialForm,
+    openSupplierCreate,
+    openSupplierEdit,
+    openSupplierDuplicate,
+    closeSupplierForm,
+    saveMaterial,
+    saveSupplier,
+    saveMaterialConversion,
+    saveMaterialCost,
+    saveSupplierContact,
   };
 }

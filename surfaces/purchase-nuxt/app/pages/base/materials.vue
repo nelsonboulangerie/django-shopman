@@ -36,6 +36,16 @@ const {
   selectMaterial,
   readonlyFallback,
   actionPending,
+  actionError,
+  materialForm,
+  materialFormSource,
+  materialFormConversions,
+  materialFormCosts,
+  materialCategories,
+  openMaterialCreate,
+  saveMaterial,
+  saveMaterialConversion,
+  saveMaterialCost,
   refresh,
 } = usePurchaseDesk();
 
@@ -156,9 +166,15 @@ const alerts = computed(() => {
 });
 
 const headerActions = [
+  { label: "Novo insumo", icon: "i-lucide-plus", onSelect: () => openMaterialCreate() },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
   { label: "Contagem de estoque", icon: "i-lucide-clipboard-check", to: baseSectionPath("count") },
 ];
+
+async function onSubmitMaterial(payload: Record<string, unknown>) {
+  const sku = await saveMaterial(payload);
+  if (sku) await navigateTo(materialPath(sku));
+}
 
 const saving = ref(false);
 async function onSaveMinStock() {
@@ -319,6 +335,22 @@ const saveLabel = computed(() =>
       :action="{ label: saveLabel, icon: 'i-lucide-check', loading: saving, disabled: readonlyFallback || actionPending, onSelect: () => void onSaveMinStock() }"
       :secondary="{ label: 'Limpar', onSelect: () => clearMinStock() }"
       context-label="Zero apaga o mínimo do insumo"
+    />
+
+    <PurchaseMaterialFormPanel
+      :open="materialForm.open"
+      :mode="materialForm.mode"
+      :source="materialFormSource"
+      :categories="materialCategories"
+      :suppliers="suppliers"
+      :conversions="materialFormConversions"
+      :costs="materialFormCosts"
+      :busy="actionPending"
+      :error="actionError"
+      @update:open="materialForm.open = $event"
+      @save="onSubmitMaterial"
+      @save-conversion="(payload) => saveMaterialConversion(payload)"
+      @save-cost="(payload) => saveMaterialCost(payload)"
     />
   </main>
 </template>

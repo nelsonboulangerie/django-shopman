@@ -131,7 +131,10 @@ export interface Supplier {
   // Como a casa chama este fornecedor: fantasia, senao a razao social.
   displayName: string;
   document: string;
-  // A central da empresa. So vale quando nao ha ninguem cadastrado.
+  // E-mail e telefone da central: os campos que o cadastro do Compras edita.
+  email: string;
+  phone: string;
+  // O texto que a ficha mostra como central (e-mail ou telefone).
   contact: string;
   contacts: SupplierContact[];
   // Quem receberia o pedido de compra HOJE. Vazio = cai na central.
@@ -723,3 +726,71 @@ export interface ReceiptConferenceTally {
   missingExpiry: number;
   label: string;
 }
+
+// ── Cadastro da Base (criar, editar e duplicar) ─────────────────────────────
+// O Compras já operava; o cadastro morava no Admin. Estes contratos são os do
+// casco de cadastro da suíte (OperatorFormShell), com o que a tela é dona do
+// payload; o servidor valida e devolve a projeção inteira.
+
+export interface PurchaseMaterialUpsertPayload {
+  sku: string;
+  name: string;
+  unit: MaterialUnit;
+  shelfLifeDays: number | null;
+  isActive: boolean;
+  category: string;
+}
+
+/** Editar não muda o SKU: renomear identificador é gesto do Admin. */
+export type PurchaseMaterialPatchPayload = Partial<Omit<PurchaseMaterialUpsertPayload, "sku">>;
+
+export interface PurchaseMaterialDuplicatePayload {
+  sku: string;
+  name: string;
+}
+
+export interface PurchaseSupplierUpsertPayload {
+  ref: string;
+  name: string;
+  tradeName: string;
+  document: string;
+  email: string;
+  phone: string;
+  isActive: boolean;
+  leadTimeDays: number;
+  paymentTerm: string;
+}
+
+/** Editar não muda a referência: renomear identificador é gesto do Admin. */
+export type PurchaseSupplierPatchPayload = Partial<Omit<PurchaseSupplierUpsertPayload, "ref">>;
+
+export interface PurchaseSupplierDuplicatePayload {
+  ref: string;
+  name: string;
+}
+
+export interface PurchaseContactUpsertPayload {
+  name: string;
+  role: SupplierContact["role"];
+  email: string;
+  phone: string;
+  notes: string;
+  isPrimary: boolean;
+  isActive: boolean;
+}
+
+export type PurchaseContactPatchPayload = Partial<PurchaseContactUpsertPayload>;
+
+export interface PurchaseConversionUpsertPayload {
+  label: string;
+  factor: string;
+  kind: ConversionKind;
+  supplierRef: string | null;
+  isActive: boolean;
+}
+
+export type PurchaseConversionPatchPayload = Partial<PurchaseConversionUpsertPayload>;
+
+/** O cadastro que o painel de edição está editando (ou o original da cópia). */
+export type PurchaseFormMode = "create" | "edit" | "duplicate";
+
