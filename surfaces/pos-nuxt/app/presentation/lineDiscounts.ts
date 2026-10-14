@@ -182,3 +182,15 @@ export function applyLinePrices(
     }
   }
 }
+
+/** As linhas SEM o eco de preço do servidor, para a chave que decide rever o total.
+ *
+ *  A revisão da venda sem comanda devolve o que cada linha cobra (o desconto do
+ *  grupo do cliente, a Xepa) e a tela grava isso na linha. Se esses campos
+ *  entrassem na chave, gravar o eco pediria outra revisão, e a tela voltaria a
+ *  dizer "Calculando…" depois de cada resposta. Eles não mudam o total: é o
+ *  servidor que os calcula a partir do resto da linha.
+ */
+export function linesWithoutServerPrices(items: readonly POSCartItem[]): Array<Partial<POSCartItem>> {
+  return items.map(({ charged_price_q: _charged, list_price_q: _list, pricing_discount: _auto, ...rest }) => rest);
+}

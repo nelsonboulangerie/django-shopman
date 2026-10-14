@@ -259,7 +259,7 @@ Não existe no modo balcão por desenho (`pos_sales_mode.py:78-84`): entrega é 
 | Pix no pagamento misto | liquida pela palavra do operador | `pos.py:3967-3971` | ATRITO (P1-7) |
 | Desconto manual acima do teto | PIN de gerente; o teto inclui a taxa de entrega no subtotal | `pos.py:3247`, `:3471` | ATRITO (P2) |
 | Sem conexão | fila local, dinheiro/maquininha offline, envio na volta, preço da hora da venda | #1634, #1635 | OK |
-| Cupom | não há campo de cupom no PDV | `surfaces/pos-nuxt/app` | LACUNA (P2) |
+| Cupom | não há campo de cupom no PDV. Decisão do dono (14/10/2026): no balcão o desconto é do GRUPO do cliente (faixa de preço com desconto automático no Admin), não cupom; identificar o cliente basta | `shop/admin/price_tier.py`; `services/promotions.py` (`customer_group_promotion`); `pos.py` (`_review_priced_lines`) | RESOLVIDO por outro caminho |
 | Devolução depois da venda | só no Gestor | — | ATRITO (P2) |
 
 ### 2.4 Matriz
@@ -597,7 +597,7 @@ na entrega, lembrete: #1712, #1711, #1704; "O quanto antes" e cotação em desta
 | P2-18 | Produção sem SSE | `useProductionBoard.ts:3` | Assinar `backstage-production` | S |
 | P2-19 | Gestor sem "Imprimir Via Pedido"; alerta sem ação direta | `order_queue.py`; `projections/alerts.py:254` | Botão de via; Aceitar no alerta de pedido parado | S |
 | P2-20 | `docs/guides/lifecycle.md` fala em `CONFIRMED` | — | Trocar por `accepted` | XS |
-| P2-21 | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Campo de cupom na revisão; promoção de frete no motor do PDV | M |
+| P2-21 | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Cupom: trocado por desconto automático por grupo de clientes (dono, 14/10/2026; `test_pos_desconto_por_grupo.py`). Frete grátis no motor do PDV segue aberto | M |
 | P2-22 | Teto do desconto manual soma a taxa de entrega | `pos.py:3247`, `:3471` | Subtotal só de mercadoria (pendência de uma linha já registrada) | XS |
 | P2-23 | Conta na casa sem limite nem cobrança | `services/house_account.py` | Limite por cliente e lista "a cobrar" | M |
 | P2-24 | E-mail de alerta crítico com trava por tipo | `critical_alerts.py:29-37` | Trava por tipo + pedido | XS |

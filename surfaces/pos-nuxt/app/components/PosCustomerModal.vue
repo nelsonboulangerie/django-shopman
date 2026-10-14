@@ -809,10 +809,18 @@ const newCustomerNote = computed(() => {
 
             <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
                  Restrição alimentar é SEGURANÇA — sempre visível, cor funcional. -->
-            <div v-if="hasCustomer && (customerLookup?.dietary_restrictions || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month)" class="flex flex-wrap items-center gap-2">
+            <div v-if="hasCustomer && (customerLookup?.dietary_restrictions || customerLookup?.group_discount_label || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month)" class="flex flex-wrap items-center gap-2">
               <span v-if="customerLookup?.dietary_restrictions" class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
                 <Icon name="lucide:triangle-alert" class="size-3.5" /> {{ customerLookup.dietary_restrictions }}
               </span>
+              <!-- O grupo do cliente tem desconto no balcão: o motor aplica sozinho. -->
+              <UiBadge
+                v-if="customerLookup?.group_discount_label"
+                variant="secondary"
+                :title="`Desconto do grupo ${customerLookup.group_discount_label}, aplicado sozinho na venda`"
+              >
+                <Icon name="lucide:tag" /> {{ customerLookup.group_discount_label }}
+              </UiBadge>
               <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                 🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
               </span>

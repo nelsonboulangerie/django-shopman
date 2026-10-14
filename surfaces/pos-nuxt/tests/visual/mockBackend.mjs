@@ -500,10 +500,41 @@ function tabPayload(ref) {
       : {}),
   };
 }
+// `MOCK_GROUP=1`: a aluna da Aliança Francesa (ref ALUNO) ganha 10% em cada item,
+// sozinha, quando é identificada na venda sem comanda. A revisão devolve o que cada
+// linha cobra (`line_prices`), como o servidor. Sem a variável, nada muda.
+const GROUP = SALE && process.env.MOCK_GROUP === "1";
+const ALUNO = {
+  ref: "ALUNO", name: "Louise Martin", phone: "+5543999990010", email: "", tax_id: "", fiscal_prefs: {},
+  notes: "", dietary_restrictions: "", birthday_display: "", is_birthday_today: false, is_birthday_month: false,
+  birthday_promo_label: "", price_tier: "alianca-francesa", is_staff: false, default_address: null,
+  saved_addresses: [], house_account: false, account_balance_q: 0,
+  memory: { total_orders: 4, average_order_display: "R$ 21,40", favorite_product: "Café coado", favorite_item: {}, last_order_items: [] },
+  group_discount_label: "Aliança Francesa · 10%",
+};
+function groupLinePrices(body) {
+  const member = GROUP && body?.customer_ref === ALUNO.ref;
+  const prices = {};
+  for (const item of Array.isArray(body?.items) ? body.items : []) {
+    const list = Number(item.unit_price_q || 0);
+    const off = member ? Math.round(list / 10) : 0;
+    prices[item.line_id] = {
+      charged_price_q: list - off,
+      list_price_q: list,
+      pricing_discount: off ? { type: "promotion", label: "Aliança Francesa", amount_q: off, percent: 10 } : null,
+    };
+  }
+  return prices;
+}
 function review(body) {
   const items = Array.isArray(body?.items) ? body.items : [];
-  const subtotal = items.reduce((sum, item) => sum + Number(item.unit_price_q || 0) * Number(item.qty || 0), 0);
+  const linePrices = GROUP ? groupLinePrices(body) : {};
+  const subtotal = items.reduce(
+    (sum, item) => sum + Number(linePrices[item.line_id]?.charged_price_q ?? item.unit_price_q ?? 0) * Number(item.qty || 0),
+    0,
+  );
   return {
+    ...(GROUP ? { line_prices: linePrices } : {}),
     intent_version: "1", tab_ref: body?.tab_ref || "", subtotal_q: subtotal, subtotal_display: brl(subtotal),
     discount_q: 0, discount_display: brl(0), line_discount_q: 0, line_discount_display: brl(0),
     order_discount_q: 0, order_discount_display: brl(0), delivery_fee_q: 0, delivery_fee_display: brl(0),
@@ -856,6 +887,14 @@ createServer((req, res) => {
         SAVED_ITEMS.set(ref, items);
         send(res, 200, { ok: true, cancelled: 1, trimmed: 0, fired_lines: [], tab: { ...tabPayload(ref), items } });
       });
+      return;
+    }
+    if (GROUP && path === "/api/v1/backstage/pos/customer/search/") {
+      send(res, 200, { results: [{ ref: ALUNO.ref, name: ALUNO.name, phone: ALUNO.phone, document: "", email: "" }] });
+      return;
+    }
+    if (GROUP && path === "/api/v1/backstage/pos/customer/lookup/") {
+      send(res, 200, { customer: ALUNO });
       return;
     }
     if (path === "/api/v1/backstage/pos/sale/review/") {
