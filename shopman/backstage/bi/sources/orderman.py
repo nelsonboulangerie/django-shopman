@@ -15,6 +15,38 @@ from shopman.backstage.bi.canonical import CanonicalPayment, CanonicalSale, Cano
 SOURCE = "shopman"
 
 
+def _discount_by_kind(data: dict) -> tuple[tuple[tuple[str, int], ...], int]:
+    """O desconto do pedido por TIPO de grupo, lido do snapshot do motor de preço.
+
+    A fonte é 'pricing.discount.items[]' (cada registro traz 'discount_q' por
+    unidade e 'qty') e o total é 'pricing.discount.savings.amount_q', que o MESMO
+    motor grava. Os dois são lidos de campos diferentes de propósito: o teste do
+    B.I. prova que a soma por tipo bate com o total registrado.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    from shopman.utils.monetary import monetary_mult
+
+    discount = ((data or {}).get("pricing") or {}).get("discount") or {}
+    totals: dict[str, int] = {}
+    for record in discount.get("items") or []:
+        kind = str(record.get("discount_kind") or "").strip()
+        if not kind:
+            continue
+        try:
+            qty = Decimal(str(record.get("qty", 1)))
+        except (InvalidOperation, TypeError, ValueError):
+            qty = Decimal("1")
+        amount = monetary_mult(qty, int(record.get("discount_q", 0) or 0))
+        totals[kind] = totals.get(kind, 0) + amount
+    savings = discount.get("savings") or {}
+    total = int(savings.get("amount_q") or 0) if isinstance(savings, dict) else 0
+    if not total:
+        # Sem o bloco 'savings' o total ainda é a soma dos tipos; não vira zero.
+        total = sum(totals.values())
+    return tuple(sorted(totals.items())), total
+
+
 def _excluded_statuses():
     from shopman.orderman.models import Order
 
@@ -71,6 +103,7 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
         is_cash = any(entry.method == "cash" for entry in payments) or int(
             payment.get("cash_received_q") or 0
         ) > 0
+        discount_by_kind, discount_kind_total_q = _discount_by_kind(data)
         sales.append(
             CanonicalSale(
                 source=SOURCE,
@@ -85,6 +118,8 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
                 payment_known=bool(payment.get("method")),
                 is_cash=is_cash,
                 change_q=None if payment.get("change_q") is None else int(payment["change_q"]),
+                discount_by_kind=discount_by_kind,
+                discount_kind_total_q=discount_kind_total_q,
             )
         )
     return sales, cancelled

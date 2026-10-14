@@ -57,6 +57,12 @@ class CanonicalSale:
     payment_known: bool  # a forma é conhecida (nativo: sempre que há método; histórico: vocabulário casou)
     is_cash: bool  # houve dinheiro em espécie (qualquer parcela)
     change_q: int | None  # troco devolvido, medido; None = não medido ou a fonte não tem (histórico)
+    #: Desconto por TIPO de grupo (discount_kind), em centavos, ordenado por tipo.
+    #: Só o nativo registra; o histórico não tem essa dimensão e fica vazio.
+    discount_by_kind: tuple[tuple[str, int], ...] = ()
+    #: Total dos descontos que carregam tipo, como o motor de preço o registrou
+    #: (pricing.discount.savings.amount_q). É o invariante da soma acima.
+    discount_kind_total_q: int = 0
 
 
 @dataclass(frozen=True, slots=True)
