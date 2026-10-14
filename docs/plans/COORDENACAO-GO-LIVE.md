@@ -123,7 +123,7 @@ Coordenar o Shopman da Nelson Boulangerie até a virada para produção.
   - Demais itens: aceitos como recomendado (estoque por contagem; cupons desligados;
     custo de insumos depois; fichas como estão; Yooga mantém; ensaio no vivo antes).
     Catálogo (B5): **1** (14/10): sessão de 2 h com a fila de divergências do
-    catálogo consolidado e inventário na véspera; 2: abrir com o seed e corrigir aberto).
+    catálogo consolidado e inventário na véspera.
 - Alterações no alpha que esperam: pedido mínimo de entrega está em 0 desde a prova
   da TaOn de 13/10 e **volta a R$ 25** (Admin, "Pedidos e entrega") quando a prova
   terminar.
