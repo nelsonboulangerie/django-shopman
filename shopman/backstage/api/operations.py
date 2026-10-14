@@ -2961,7 +2961,10 @@ class POSPreorderHandOverView(APIView):
                 logger.warning("pos_preorder_hand_over_failed order=%s", order.ref, exc_info=True)
                 return _falha_do_caixa(exc, "Não deu para entregar a encomenda.")
             order.refresh_from_db()
-            return Response({"ok": True, "ref": order.ref, "received_q": received_q, "status": order.status})
+            # Onde a NFC-e está depois da entrega (ela nasce na conclusão da
+            # retirada): é o que diz ao balcão se há DANFE a esperar e imprimir.
+            return Response({"ok": True, "ref": order.ref, "received_q": received_q, "status": order.status,
+                "fiscal_state": _fiscal_state(order)})
 
         def executar_com_takeover():
             # O claim remoto durável abaixo nasce ANTES desta primeira chamada ao

@@ -21,6 +21,8 @@ const printOne = vi.fn().mockResolvedValue(true);
 const printBatch = vi.fn().mockResolvedValue(true);
 const call = vi.fn();
 const kick = vi.fn().mockResolvedValue(true);
+const agentPrint = vi.fn().mockResolvedValue({ status: "printed", detail: "" });
+const danfeFetched = vi.fn();
 
 mockNuxtImport("usePosTerminal", () => async () => ({
   pos: computed(() => makeProjection({ has_open_cash_session: true })),
@@ -29,7 +31,7 @@ mockNuxtImport("usePosTerminal", () => async () => ({
 }));
 mockNuxtImport("useOperatorLock", () => () => ({ operator: ref({ name: "Ana" }), lock: vi.fn() }));
 mockNuxtImport("usePosAction", () => () => ({ call }));
-mockNuxtImport("useCounterAgent", () => () => ({ kick }));
+mockNuxtImport("useCounterAgent", () => () => ({ kick, print: agentPrint, canPrint: ref(true) }));
 mockNuxtImport("usePosOrderTickets", () => () => ({
   printOne,
   printBatch,
@@ -91,6 +93,11 @@ registerEndpoint("/api/v1/backstage/pos/preorders/NB-7/", () => ({
   generated_at: "2026-09-26T12:00:00Z",
   contract_version: 1,
 }));
+// A DANFE da encomenda entregue: o servidor compõe a bobina (P2-27).
+registerEndpoint("/api/v1/backstage/pos/orders/NB-7/danfe-escpos/", () => {
+  danfeFetched();
+  return { ok: true, payload_b64: "REFORkU=", title: "danfe:NB-7", reprint: false };
+});
 registerEndpoint("/api/v1/backstage/pos/schedule/", () => ({
   ok: true, today: "2026-09-26", date: "2026-09-26", max_preorder_days: 30,
   available_dates: ["2026-09-26", "2026-09-27", "2026-09-28"],
@@ -166,6 +173,8 @@ beforeEach(() => {
   call.mockReset();
   call.mockResolvedValue({ ok: true, received_q: 3600, status: "completed" });
   kick.mockClear();
+  agentPrint.mockClear();
+  danfeFetched.mockClear();
   navigate.mockClear();
   route.query = {};
 });
@@ -329,6 +338,32 @@ describe("Detalhe — receber e entregar", () => {
     expect(wrapper.find("[data-preorder-paid-online]").text()).toContain("acabou de pagar online");
     expect(wrapper.find("[data-preorder-hand-over]").text()).toBe("Entregar");
     expect(kick).not.toHaveBeenCalled();
+  });
+
+  it("P2-27: entregue com a nota na fila, a DANFE sai sozinha na bobina, como na venda de balcão", async () => {
+    call.mockResolvedValue({ ok: true, ref: "NB-7", received_q: 3600, status: "completed", fiscal_state: "queued" });
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await settle();
+    await flushPromises();
+
+    expect(danfeFetched).toHaveBeenCalledTimes(1);
+    expect(agentPrint).toHaveBeenCalledWith("REFORkU=", "danfe:NB-7");
+  });
+
+  it("P2-27: sem nota esperada, entregar não espera nem imprime DANFE", async () => {
+    call.mockResolvedValue({ ok: true, ref: "NB-7", received_q: 3600, status: "completed", fiscal_state: "not_expected" });
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await settle();
+    body().querySelector<HTMLButtonElement>("[data-preorder-hand-over-confirm]")!.click();
+    await settle();
+    await flushPromises();
+
+    expect(danfeFetched).not.toHaveBeenCalled();
+    expect(agentPrint).not.toHaveBeenCalled();
   });
 
   it("quando não pode entregar, diz por quê em vez de mostrar botão apagado", async () => {

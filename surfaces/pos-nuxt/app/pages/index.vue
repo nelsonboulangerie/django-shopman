@@ -465,7 +465,7 @@ const printingReceipt = ref(false);
 const printingDanfe = ref(false);
 const { printOne: printOrderTicket, printingRef: printingOrderRef } = usePosOrderTickets(pos);
 
-async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos" | "danfe-escpos") {
+async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos") {
   return await $fetch<{ payload_b64: string; title: string }>(
     apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/${endpoint}/`),
     { credentials: "include" },
@@ -493,86 +493,46 @@ async function printReceipt() {
   window.print();
 }
 
-// A nota aberta na tela (host do Django): a mesma DANFE da bobina, em formato de
-// leitura. Porta secundária — link só para quem o servidor diz que entra.
-function danfeScreenUrl(orderRef: string): string {
-  return `${djangoOrigin.value}/fiscal/danfe/${encodeURIComponent(orderRef)}/`;
-}
+// A DANFE na bobina: o MESMO caminho da encomenda entregue no balcão
+// (`usePosDanfePrint`). A nota aberta na tela (host do Django) é a porta
+// secundária: link só para quem o servidor diz que entra.
+const danfePrint = usePosDanfePrint(pos, agent);
+const danfeScreenUrl = danfePrint.screenUrl;
+const danfeFallbackToast = (orderRef: string, reason: string) => danfePrint.fallbackToast(orderRef, reason);
 
 // IMPRESSÃO AUTOMÁTICA — o switch "Imprimir nota?" promete bobina sem clique, e
 // esta é a parte que cumpre. Não dá para imprimir no fechamento: a NFC-e é
-// assíncrona e no instante da tela de confirmação ela ainda não autorizou (o
-// endpoint responde 409 até lá). Então a tela espera a nota ficar pronta.
-//
-// Espera com fim: ~90s (30 tentativas de 3s). Nota que demora mais que isso não
-// vai aparecer enquanto o cliente está no balcão, e insistir para sempre
-// deixaria um timer vivo atrás de cada venda. Quando desiste, não desiste
-// calado — cai no MESMO aviso do caminho manual, que já diz o próximo passo
-// (reimprimir nas Últimas vendas).
-const AUTO_PRINT_TRIES = 30;
-const AUTO_PRINT_INTERVAL_MS = 3000;
-let autoPrintTimer: ReturnType<typeof setTimeout> | null = null;
-
-function stopAutoPrint() {
-  if (autoPrintTimer) clearTimeout(autoPrintTimer);
-  autoPrintTimer = null;
-}
-
-async function autoPrintDanfe(orderRef: string, tries = 0) {
-  if (!import.meta.client) return;
-  // Saiu da tela de resultado (nova venda) — a promessa era daquela venda, mas
-  // a impressão segue: quem pediu papel quer papel, esteja o operador onde
-  // estiver. Só paramos se a página inteira sair.
-  try {
-    const danfe = await fetchPrintable(orderRef, "danfe-escpos");
-    // O 409 virou 200: a nota EXISTE. A tela de resultado promove "NFC-e na
-    // fila…" para "Imprimir DANFE" — por existência, não por previsão.
-    markFiscalState(orderRef, "authorized");
-    const outcome = await agent.print(danfe.payload_b64, danfe.title);
-    if (outcome.status === "printed") {
-      toast.success("DANFE impressa.");
-      return;
-    }
-    danfeFallbackToast(orderRef, outcome.detail || "impressão indisponível nesta estação");
-  } catch {
-    // 409 enquanto a SEFAZ não autoriza: tentar de novo é o comportamento certo.
-    if (tries + 1 < AUTO_PRINT_TRIES) {
-      autoPrintTimer = setTimeout(() => autoPrintDanfe(orderRef, tries + 1), AUTO_PRINT_INTERVAL_MS);
-      return;
-    }
-    danfeFallbackToast(orderRef, "a nota demorou mais que o esperado para autorizar");
-  }
-}
-
-// A venda fechou pedindo papel: começa a esperar a nota. Sem nota esperada
-// (dinheiro sem CPF, por exemplo) não há o que imprimir — e prometer papel ali
-// seria mentir duas vezes.
+// assíncrona e no instante da tela de confirmação ela ainda não autorizou. A
+// espera (com fim) mora em `usePosDanfePrint`. Saiu da tela de resultado (nova
+// venda): a impressão daquela venda segue, quem pediu papel quer papel.
 //
 // A espera começa quando a nota está NA FILA. Aguardando o Pix (`awaiting_
 // payment`) ela nem foi pedida — insistir no 409 durante toda a espera do Pix
 // esgotava as 30 tentativas e desistia com "a nota demorou", mentindo. Quando
 // o polling do Pix confirma, o estado vira `queued` e a espera começa aqui.
 // A promoção para `authorized` (o próprio auto-print) NÃO reinicia a espera.
+// Sem nota esperada (dinheiro sem CPF, por exemplo) não há o que imprimir.
 watch(
   () => [result.value?.orderRef, result.value?.fiscalState] as const,
   ([orderRef, fiscalState], previous) => {
     const [previousRef, previousState] = previous ?? [undefined, undefined];
-    if (orderRef !== previousRef) stopAutoPrint();
+    if (orderRef !== previousRef) danfePrint.stop();
     if (!orderRef || !result.value?.wantsPrintedInvoice) return;
     if (fiscalState !== "queued") return;
     if (orderRef === previousRef && previousState === "queued") return;
-    stopAutoPrint();
-    autoPrintDanfe(orderRef);
+    // O 409 virou 200: a tela de resultado promove "NFC-e na fila…" para
+    // "Imprimir DANFE", por existência, não por previsão.
+    void danfePrint.printWhenAuthorized(orderRef, { onAuthorized: () => markFiscalState(orderRef, "authorized") });
   },
 );
-onBeforeUnmount(stopAutoPrint);
+onBeforeUnmount(danfePrint.stop);
 
 async function printDanfe() {
   if (!import.meta.client || !result.value) return;
   const orderRef = result.value.orderRef;
   printingDanfe.value = true;
   try {
-    const danfe = await fetchPrintable(orderRef, "danfe-escpos");
+    const danfe = await danfePrint.fetchDanfe(orderRef);
     markFiscalState(orderRef, "authorized");
     const outcome = await agent.print(danfe.payload_b64, danfe.title);
     if (outcome.status === "printed") {
@@ -583,25 +543,10 @@ async function printDanfe() {
   } catch (error) {
     // 409 = a emissão é assíncrona e a nota ainda não autorizou.
     // Fragmento: entra dentro de "A DANFE não saiu na bobina: …", e é o
-    // `danfeFallbackToast` que traz a saída (ver a nota dele logo abaixo).
+    // `fallbackToast` que traz a saída.
     danfeFallbackToast(orderRef, httpErrorMessage(error, "a DANFE não ficou pronta"));
   } finally {
     printingDanfe.value = false;
-  }
-}
-
-// Falha nunca termina em "indisponível" seco: quem tem acesso ganha a nota na
-// tela como ação; quem não tem ganha o próximo passo.
-function danfeFallbackToast(orderRef: string, reason: string) {
-  if (pos.value?.danfe_screen_allowed && djangoOrigin.value) {
-    toast.error(`A DANFE não saiu na bobina: ${reason}`, {
-      action: {
-        label: "Ver a nota na tela",
-        onClick: () => window.open(danfeScreenUrl(orderRef), "_blank", "noopener"),
-      },
-    });
-  } else {
-    toast.error(`A DANFE não saiu na bobina: ${reason}. Reimprima nas últimas vendas quando o agente voltar.`);
   }
 }
 
