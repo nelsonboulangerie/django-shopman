@@ -180,7 +180,10 @@ class RuleConfigAdmin(ModelAdmin):
             params_section,
             ("Canais", {
                 "fields": ("channels",),
-                "description": "Canais onde esta regra se aplica. Vazio = todos os canais.",
+                "description": (
+                    "Canais onde esta regra se aplica. Vazio = todos os canais, "
+                    "menos no desconto por horário (Hora da Xepa): sem canal, ele não vale em lugar nenhum."
+                ),
             }),
         ]
 

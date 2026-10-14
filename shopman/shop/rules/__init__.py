@@ -17,3 +17,7 @@ class BaseRule:
     code: str = ""
     label: str = ""
     rule_type: str = ""
+    #: ``RuleConfig.channels`` vazio quer dizer "todos os canais" — salvo quando a
+    #: regra declara ``channels_required``: aí vazio quer dizer "nenhum", e ela só
+    #: vale onde estiver listada (``engine.get_channel_rule_params``).
+    channels_required: bool = False

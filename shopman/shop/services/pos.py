@@ -92,6 +92,11 @@ class PosSaleReview:
     # a tela chutava "descontos acima de R$ X" mesmo quando o gatilho tinha sido
     # outro, e o gerente autorizava sem saber o que estava autorizando.
     approval_reasons: tuple[str, ...] = ()
+    #: Conta na casa acima do limite: ``{balance_q, limit_q, charge_q, over_q}``
+    #: (ver ``house_account.over_limit``), ou ``None``. Vem junto do motivo
+    #: ``house_account_over_limit`` para o gerente ver o saldo de hoje, o limite
+    #: e quanto esta venda passa ANTES de assinar.
+    house_account_limit: dict | None = None
     warnings: tuple[dict, ...] = ()
     # OS DOIS ESCOPOS DO DESCONTO, separados.
     #
@@ -1040,7 +1045,10 @@ def review_sale(
     if pix_warning is not None:
         warnings.append(pix_warning)
 
-    approval_reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
+    account_excess = _house_account_excess(payload, total_q=total_q)
+    approval_reasons = _approval_reasons(
+        discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess,
+    )
 
     # Aviso não-bloqueante de disponibilidade: no balcão a venda vale mesmo sem
     # estoque (a mercadoria já saiu da vitrine e o canal não auto-rejeita), mas
@@ -1112,6 +1120,7 @@ def review_sale(
         receipt_channels=tuple(payload.get("receipt_channels") or ()),
         fiscal_tax_id_requested=bool(str(payload.get("fiscal_tax_id") or "").strip()),
         approval_reasons=tuple(approval_reasons),
+        house_account_limit=account_excess.as_dict() if account_excess is not None else None,
         warnings=tuple(warnings),
         delivery_fee_source=delivery.source,
         delivery_distance_km=delivery.distance_km,
@@ -3003,6 +3012,16 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     cash_received_q = _cash_received_q(tenders)
     if cash_received_q > 0:
         ops.append({"op": "set_data", "path": "payment.cash_received_q", "value": cash_received_q})
+    # Conta na casa acima do limite: o gerente VERIFICADO assinou (é a mesma
+    # assinatura da venda, ``approved_by``), e o pedido guarda o que ele viu.
+    if approved_by:
+        account_excess = _house_account_excess(payload, total_q=total_q)
+        if account_excess is not None:
+            ops.append({
+                "op": "set_data",
+                "path": "payment.house_account_over_limit",
+                "value": {**account_excess.as_dict(), "approved_by": approved_by},
+            })
 
     # EMITIR OU NÃO NÃO É ESCOLHA DE QUEM ESTÁ NO CAIXA. Havia um toggle "Emitir
     # nota fiscal" na tela, e ele não era só ruído: como o CPF só virava
@@ -3176,7 +3195,7 @@ def _verify_manager_badge(badge: str, *, operator_username: str = ""):
     return user
 
 
-def _approval_reasons(*, discount_q: int, threshold_q: int) -> list[str]:
+def _approval_reasons(*, discount_q: int, threshold_q: int, account_excess=None) -> list[str]:
     """Os gatilhos que chamaram o gerente, na ordem em que a tela deve contá-los.
 
     Publicado na review para o diálogo de autorização dizer o que está sendo
@@ -3192,7 +3211,46 @@ def _approval_reasons(*, discount_q: int, threshold_q: int) -> list[str]:
     reasons: list[str] = []
     if threshold_q > 0 and discount_q > threshold_q:
         reasons.append("discount_over_threshold")
+    # Conta na casa com limite (opcional, do cadastro do cliente): a venda em
+    # conta que levaria o saldo acima dele não é recusada, é assinada.
+    if account_excess is not None:
+        reasons.append("house_account_over_limit")
     return reasons
+
+
+def _payload_account_charge_q(payload: dict, *, total_q: int) -> int:
+    """Quanto desta venda vai para a conta do cliente ("em conta").
+
+    Mesma leitura do ``_payload_tenders``: com linhas de pagamento, a soma das
+    linhas ``account``; sem elas, a venda inteira quando o método é ``account``.
+    """
+    raw = [t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)]
+    if raw:
+        return sum(
+            max(0, _int_q(t.get("amount_q")))
+            for t in raw
+            if _normalize_payment_method(t.get("method")) == "account"
+        )
+    if _normalize_payment_method(payload.get("payment_method") or "cash") == "account":
+        return max(0, int(total_q or 0))
+    return 0
+
+
+def _house_account_excess(payload: dict, *, total_q: int):
+    """A venda em conta passa do limite do cliente? ``AccountLimitExcess`` ou ``None``.
+
+    Só pergunta quando há algo indo para a conta de um cliente elegível; o
+    porteiro da elegibilidade continua sendo ``_require_house_account_if_on_account``.
+    """
+    charge_q = _payload_account_charge_q(payload, total_q=total_q)
+    if charge_q <= 0:
+        return None
+    from shopman.shop.services import house_account
+
+    customer_ref = str(payload.get("customer_ref") or "").strip()
+    if not house_account.is_eligible(customer_ref):
+        return None
+    return house_account.over_limit(customer_ref, charge_q)
 
 
 def validate_manager_approval(payload: dict, *, operator_username: str):
@@ -3212,9 +3270,14 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     """
     threshold_q = discount_approval_threshold_q()
     discount_q = _payload_discount_q(payload)
-    reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
+    account_excess = _house_account_excess(payload, total_q=_payload_total_q(payload))
+    reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess)
     if not reasons:
         return None
+    if reasons == ["house_account_over_limit"]:
+        recovery_invalid = "Revise o gerente e o PIN, ou receba parte da venda em outro meio de pagamento."
+    else:
+        recovery_invalid = "Revise o gerente e o PIN, ou reduza o desconto / ajuste o preço."
 
     # A copy viaja junto com a delegação. O desafio é o mesmo, mas o que o operador
     # pode FAZER a respeito não é: no caixa ele chama o gerente; aqui ele também pode
@@ -3227,14 +3290,15 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
         recovery_required=(
             "Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de finalizar."
         ),
-        recovery_invalid="Revise o gerente e o PIN, ou reduza o desconto / ajuste o preço.",
+        recovery_invalid=recovery_invalid,
     )
     logger.info(
-        "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s",
+        "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s account_over_q=%s",
         operator_username,
         approver.get_username(),
         discount_q,
         ",".join(reasons),
+        account_excess.over_q if account_excess is not None else 0,
     )
     return approver
 

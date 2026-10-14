@@ -40,7 +40,9 @@ import {
   weekdayDateLabel,
   paymentMethodLabel as resolvePaymentMethodLabel,
   quickCheckoutDateOptions,
-  reconciledPickupSlotRef,
+  checkoutWindows,
+  earliestCheckoutWindowRef,
+  reconciledWindowRef,
   selectedPickupSlot,
   shouldOfferPickupSwap,
   whenSummary as buildWhenSummary,
@@ -432,7 +434,18 @@ const pixProviderTestMessage = computed(() => {
 const submitDisabled = computed(() =>
   !action.value?.enabled || !!cart.value?.is_empty || submitting.value || pixProviderTestExceeded.value
 )
-const slots = computed(() => checkout.value?.pickup_slots || [])
+// Retirada mostra os turnos de retirada; entrega, a grade de entrega (a mesma da
+// concierge). O resto da tela trata as duas do mesmo jeito.
+const slots = computed(() => checkoutWindows(checkout.value, state.fulfillment_type))
+const isDeliveryWindows = computed(() => state.fulfillment_type === 'delivery')
+// Na grade de entrega o motivo da janela apagada é um só (o item que segura o
+// pedido): sai uma vez acima da grade, não repetido em cada célula.
+const deliveryWindowsReason = computed(() => {
+  if (!isDeliveryWindows.value) return ''
+  const reason = slots.value.find(slot => !slot.enabled && slot.reason)?.reason || ''
+  if (!reason) return ''
+  return slots.value.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
+})
 const selectedSlot = computed(() => selectedPickupSlot(slots.value, state.delivery_time_slot))
 const paymentMethodLabel = computed(() => resolvePaymentMethodLabel(checkout.value, state.payment_method))
 const selectedSlotLabel = computed(() => selectedSlot.value?.label || state.delivery_time_slot || '')
@@ -710,11 +723,10 @@ function pickDeliveryDate (value: string) {
 }
 
 function reconcileDeliverySlot () {
-  const nextSlotRef = reconciledPickupSlotRef(
-    state.fulfillment_type,
+  const nextSlotRef = reconciledWindowRef(
     state.delivery_time_slot,
     slots.value,
-    checkout.value?.earliest_slot_ref
+    earliestCheckoutWindowRef(checkout.value, state.fulfillment_type)
   )
   if (nextSlotRef !== state.delivery_time_slot) state.delivery_time_slot = nextSlotRef
 }
@@ -727,7 +739,6 @@ watch(() => checkout.value, value => {
   if (!value) return
   const fulfillments = availableFulfillmentOptions(value)
   const methods = value.payment_methods || []
-  const projectedSlots = value.pickup_slots || []
 
   setFromServer(value.cart)
   // Fidelidade: a sessão é a fonte única. Espelha o estado aplicado no cart
@@ -752,7 +763,6 @@ watch(() => checkout.value, value => {
   // entrega e vale; a pessoa troca aqui para a nota sair no documento de outra
   // pessoa. Nunca sobre o que já digitou.
   if (!state.fiscal_tax_id && value.prefill_tax_id) state.fiscal_tax_id = formatTaxId(value.prefill_tax_id)
-  if (!state.delivery_time_slot) state.delivery_time_slot = value.earliest_slot_ref || projectedSlots.find(slot => slot.enabled)?.ref || ''
   if (!checkoutHydrated && !hasRestoredCheckoutDraft) {
     state.fulfillment_type = fulfillments.includes(value.default_fulfillment_type)
       ? value.default_fulfillment_type
@@ -1020,8 +1030,9 @@ function validateWhenStep (): boolean {
   delete errors.delivery_time_slot
   if (!state.delivery_date) errors.delivery_date = checkout.value?.copy.when_required || 'Escolha a data.'
   if (state.delivery_date && isCheckoutDateUnavailable(state.delivery_date, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) errors.delivery_date = 'Escolha uma data disponível.'
-  if (state.fulfillment_type === 'pickup' && slots.value.length && !state.delivery_time_slot) errors.delivery_time_slot = 'Escolha um horário.'
-  if (state.fulfillment_type === 'pickup' && state.delivery_time_slot && !selectedSlot.value?.enabled) {
+  if (state.delivery_date && isDeliveryWindows.value && !slots.value.length) errors.delivery_time_slot = 'Não há horário de entrega nesse dia. Escolha outra data.'
+  if (slots.value.length && !state.delivery_time_slot) errors.delivery_time_slot = 'Escolha um horário.'
+  if (state.delivery_time_slot && slots.value.length && !selectedSlot.value?.enabled) {
     errors.delivery_time_slot = selectedSlot.value?.reason || 'Escolha um horário disponível.'
   }
   fieldErrors.value = errors
@@ -1768,6 +1779,47 @@ useSeoMeta({
                   </UiRadioGroup>
                   <UiFieldError v-if="fieldErrors.delivery_date" :errors="fieldErrors.delivery_date" />
                   <p v-if="deliveryDateHint" class="shop-meta text-muted-foreground" data-checkout-preorder-hint>{{ deliveryDateHint }}</p>
+                </div>
+
+                <!-- Entrega: o cliente escolhe a janela na grade da casa (a mesma da
+                     concierge, conferida no commit). Meia hora hoje vira uma grade
+                     compacta de células iguais; o motivo da janela apagada sai uma
+                     vez acima dela. -->
+                <div v-if="isDeliveryWindows && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
+                  <UiLabel>Horário da entrega</UiLabel>
+                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-delivery-windows-empty>
+                    Não há horário de entrega nesse dia. Escolha outra data.
+                  </p>
+                  <template v-else>
+                    <p v-if="deliveryWindowsReason" class="shop-meta text-muted-foreground">
+                      {{ deliveryWindowsReason }}
+                    </p>
+                    <UiRadioGroup v-model="state.delivery_time_slot" class="grid grid-cols-2 gap-2">
+                      <UiFieldLabel
+                        v-for="slot in slots"
+                        :key="slot.ref"
+                        :for="`checkout-window-${slot.ref}`"
+                        class="bg-card has-data-[state=checked]:bg-card has-data-[state=checked]:ring-1 has-data-[state=checked]:ring-primary"
+                        :class="!slot.enabled ? 'opacity-50' : ''"
+                        :title="slot.enabled ? slot.label : `${slot.label}: ${slot.reason}`"
+                      >
+                        <UiField orientation="horizontal" :data-disabled="!slot.enabled || undefined">
+                          <UiRadioGroupItem
+                            :id="`checkout-window-${slot.ref}`"
+                            :value="slot.ref"
+                            :disabled="!slot.enabled"
+                            :aria-label="slot.enabled ? slot.label : `${slot.label}: ${slot.reason}`"
+                          />
+                          <UiFieldContent>
+                            <UiFieldTitle class="whitespace-nowrap">
+                              <span :class="!slot.enabled ? 'line-through' : ''">{{ slot.label }}</span>
+                            </UiFieldTitle>
+                          </UiFieldContent>
+                        </UiField>
+                      </UiFieldLabel>
+                    </UiRadioGroup>
+                  </template>
+                  <UiFieldError v-if="fieldErrors.delivery_time_slot" :errors="fieldErrors.delivery_time_slot" />
                 </div>
 
                 <div v-if="state.fulfillment_type === 'pickup' && slots.length" class="space-y-2">

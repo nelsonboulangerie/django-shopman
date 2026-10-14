@@ -192,6 +192,9 @@ const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
 // entrega para um endereço fora da área. A review diz a regra do fechamento até a taxa
 // ser combinada; depois, quem combinou. Fora da flag, nada muda.
 const OUT_OF_AREA = SALE && process.env.MOCK_OUT_OF_AREA === "1";
+// Prévia da conta na casa acima do limite (MOCK_ACCOUNT_LIMIT=1): a review pede o
+// gerente e diz em aberto, limite e quanto a venda passa. Fora da flag, nada muda.
+const ACCOUNT_LIMIT = SALE && process.env.MOCK_ACCOUNT_LIMIT === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -413,6 +416,12 @@ const SALE_ITEMS = [
   { line_id: "L-aaaa0002", sku: "PAIN-CHOC", name: "Pain au chocolat", price_q: 1290, qty: 1, notes: "" },
   { line_id: "L-aaaa0003", sku: "CAFE-COADO", name: "Café coado", price_q: 690, qty: 2, notes: "" },
 ];
+// A prévia do desconto da linha (MOCK_LINE_DISCOUNT=1): R$ 1,00 POR UNIDADE em três
+// cafés, e 10% no croissant. O selo diz "por unidade · na linha" (dono, 14/10/2026).
+if (SALE && process.env.MOCK_LINE_DISCOUNT === "1") {
+  SALE_ITEMS[0] = { ...SALE_ITEMS[0], list_price_q: 1150, charged_price_q: 1035, discount: { type: "percent", value: 10, reason: "cortesia" } };
+  SALE_ITEMS[2] = { ...SALE_ITEMS[2], qty: 3, list_price_q: 690, charged_price_q: 590, discount: { type: "fixed", value: 1, reason: "cortesia" } };
+}
 // A comanda CHEIA (13): nove linhas, nomes compridos, uma já na cozinha e três que
 // esperam o envio. É o retrato da coluna da comanda apertada (pedido do dono, 10/10).
 const FULL_ITEMS = [
@@ -566,6 +575,13 @@ function review(body) {
     tender_total_q: 0, tender_total_display: brl(0), tender_count: 0, tendered_q: 0, tendered_amount_display: brl(0),
     change_q: 0, change_display: brl(0), requires_manager_approval: false, manager_approval_threshold_q: 0,
     approval_reasons: [], lines: [],
+    ...(ACCOUNT_LIMIT && subtotal > 0
+      ? {
+          requires_manager_approval: true,
+          approval_reasons: ["house_account_over_limit"],
+          house_account_limit: { balance_q: 18000, limit_q: 20000, charge_q: subtotal, over_q: Math.max(1, 18000 + subtotal - 20000) },
+        }
+      : {}),
     ...(OUT_OF_AREA && body?.fulfillment_type === "delivery"
       ? body?.delivery_fee_override_q == null
         ? {
@@ -662,7 +678,8 @@ const RIDES = {
   "NB-1051": { name: "Bruno Lima", start: "14:00", window: "14h às 15h", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 2000, needs_machine: false, recorded: false }, call: true, balance: 4400 },
   "NB-1052": { name: "Fernanda Okumura de Albuquerque", start: "14:30", window: "14h30 às 15h30", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 0, needs_machine: true, recorded: false }, call: true, balance: 9800 },
   "NB-1053": { name: "Gustavo Reis", start: "13:00", window: "13h às 14h", status: "ready", situation: "ready", courier: { status: "A", id_mch: "R-53", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-53", confirmation_code: "4821" } },
-  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", id_mch: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" } },
+  // Na rua com a maquininha e o troco: "Entregador voltou" confere a lista e fecha a saída.
+  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", id_mch: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" }, returnLines: ["A Maquininha Azul", "R$ 120,00 em dinheiro: R$ 98,00 do pedido + R$ 22,00 de troco"] },
   "NB-1055": { name: "Igor Tavares", start: "15:00", window: "15h às 16h", status: "ready", situation: "ready", courier: { status: "N", id_mch: "R-55" }, call: true, attempts: 1 },
   "NB-1056": { name: "Joana Ribeiro", start: "15:30", window: "15h30 às 16h30", status: "ready", situation: "ready", courier: {}, noAnswer: true },
   "NB-1057": { name: "Lucas Ferraz", start: "16:00", window: "16h às 17h", status: "ready", situation: "ready", courier: { status: "P", id_mch: "R-57" } },
@@ -684,7 +701,9 @@ function rideBlock(ref) {
     attempts_count: ride.attempts || 0, position: null,
     error: ride.noAnswer ? { message: NO_ANSWER, at: `${TODAY}T15:20:00Z` } : null,
     can_quote: false, can_dispatch: !active && !ride.noAnswer && ride.status !== "delivered",
-    can_dispatch_again: Boolean(ride.noAnswer), can_cancel: false,
+    can_dispatch_again: Boolean(ride.noAnswer),
+    // Antes da coleta (a régua da central): procurando, aceita, a caminho.
+    can_cancel: active && ["D", "G", "P", "U", "A", "S"].includes(status),
     custody: ride.custody || { change_out_suggested_q: 0, needs_machine: false, recorded: false },
     // O andamento lido da TaOn (instantes ISO; a tela conta os minutos).
     ...rideProgress(status, ref),
@@ -735,8 +754,13 @@ function rideDetail(ref) {
       ...preorderDetail.actions,
       action("courier-dispatch", "Chamar entregador", block.can_dispatch, `Chamar um entregador da TaOn para o pedido ${ref.replace("NB-", "")}? A corrida é cobrada da casa.`),
       action("courier-dispatch-again", "Chamar de novo", block.can_dispatch_again, "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."),
+      { ...action("courier-cancel", "Solicitar cancelamento da corrida", block.can_cancel), confirmation: { required: true } },
+      ...(RIDES[ref].returnLines && !RIDES[ref].returned
+        ? [{ ...action("courier-back", "Entregador voltou", true), priority: "primary", confirmation: { required: true } }]
+        : []),
     ],
     courier: block,
+    courier_return_lines: RIDES[ref].returnLines && !RIDES[ref].returned ? RIDES[ref].returnLines : [],
     equipment_options: [
       { ref: "card_machine:MAQ-1", label: "Maquininha 1", enabled: true, reason: "", order_ref: "" },
       { ref: "card_machine:MAQ-3", label: "Maquininha Azul", enabled: true, reason: "", order_ref: "" },
@@ -983,6 +1007,17 @@ createServer((req, res) => {
     const ride = path.match(/^\/api\/v1\/backstage\/pos\/preorders\/(NB-105\d)\/$/);
     if (ride && RIDES[ride[1]]) {
       send(res, 200, { order: rideDetail(ride[1]), generated_at: `${TODAY}T12:00:00Z`, contract_version: 1 });
+      return;
+    }
+    // Cancelar a corrida e "Entregador voltou" (as rotas do Gestor): o mock só muda o estado.
+    const rideGesture = path.match(/^\/api\/v1\/backstage\/orders\/(NB-105\d)\/(courier-cancel|courier-back)\/$/);
+    if (rideGesture && RIDES[rideGesture[1]]) {
+      const ride = RIDES[rideGesture[1]];
+      if (rideGesture[2] === "courier-cancel") ride.courier = { status: "C", id_mch: ride.courier.id_mch };
+      else ride.returned = true;
+      const index = orders.findIndex((order) => order.ref === rideGesture[1]);
+      if (index >= 0) orders[index] = rideCard(rideGesture[1]);
+      send(res, 200, { ok: true, ref: rideGesture[1], outcome: "applied" });
       return;
     }
     const call = path.match(/^\/api\/v1\/backstage\/orders\/(NB-105\d)\/(courier-dispatch|courier-dispatch-again)\/$/);

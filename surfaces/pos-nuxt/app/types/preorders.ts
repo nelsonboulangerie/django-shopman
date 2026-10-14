@@ -6,6 +6,7 @@
 
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
 import type { KeyedReason } from "../../../operator-kit/app/types/reason";
+import type { CourierChargeOutdated } from "../../../operator-kit/app/presentation/courierCharge";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -141,6 +142,9 @@ export interface PreorderDetail extends OperatorOrderDetail {
   courier?: PreorderCourier | null;
   /** As maquininhas da casa (e quem está na rua com elas), para a custódia da chamada. */
   equipment_options?: PreorderEquipmentOption[];
+  /** "Entregador voltou": o que a mão do operador deve receber (a lista do diálogo do
+   *  Gestor, `order_queue._trip_fields`). Vazio quando não há saída aberta. */
+  courier_return_lines?: string[];
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
   /** Os motivos de cancelar: a lista única do backend, a mesma do Gestor (`cancel_reasons`). */
@@ -168,8 +172,12 @@ export interface PreorderCourier {
   can_dispatch: boolean;
   /** A última chamada ficou sem resposta da TaOn: "Chamar de novo" libera e chama outra. */
   can_dispatch_again?: boolean;
+  /** A corrida pode ser cancelada (antes da coleta, régua da central). */
+  can_cancel?: boolean;
   /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
   custody?: { change_out_suggested_q: number; needs_machine: boolean; recorded: boolean };
+  /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
+  charge_outdated?: CourierChargeOutdated | null;
 }
 
 /** Uma maquininha da casa (`card_machine:<ref>`), livre ou na rua com um pedido. */

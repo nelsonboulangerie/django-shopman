@@ -117,12 +117,6 @@ export interface CatalogProjection {
   sections: CatalogSectionProjection[]
   featured: CatalogItemProjection[]
   active_category_ref: string | null
-  happy_hour: {
-    active: boolean
-    discount_percent: number
-    start: string
-    end: string
-  } | null
   favorite_category_ref: string | null
   has_items: boolean
   // Copy de vitrine vazia / busca sem resultado (backend); opcional + fallback na tela.
@@ -904,6 +898,9 @@ export interface CheckoutProjection {
   has_delivery: boolean
   pickup_slots: PickupSlotProjection[]
   earliest_slot_ref: string | null
+  /** Janelas de entrega da data pedida: a grade da concierge, conferida no commit. */
+  delivery_windows: PickupSlotProjection[]
+  earliest_delivery_window_ref: string | null
   loyalty_balance_q: number
   loyalty_value_display: string | null
   max_preorder_days: number

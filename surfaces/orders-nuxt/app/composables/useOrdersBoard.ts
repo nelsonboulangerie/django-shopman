@@ -581,6 +581,7 @@ export function useOrdersBoard() {
           "undo-handoff",
           "undo-ready",
           "volumes",
+          "ifood-accept-retry",
         ].includes(action)
       ) {
         const card = [
@@ -685,6 +686,8 @@ export function useOrdersBoard() {
   // o pronto que veio sozinho da Cozinha. O servidor só aceita dentro do prazo.
   const undoHandoff = (ref_: string) => act(ref_, "undo-handoff");
   const undoReady = (ref_: string) => act(ref_, "undo-ready");
+  // O aceite que não chegou ao iFood: o servidor põe o ``confirm`` para sair agora.
+  const retryIFoodAccept = (ref_: string) => act(ref_, "ifood-accept-retry");
   // A maquininha voltou com o entregador (pedido que a levou no despacho).
   const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
   // "Entregador voltou": fecha a saída inteira (entrega, dinheiro, troco e maquininha).
@@ -802,6 +805,7 @@ export function useOrdersBoard() {
     undoHandoff,
     undoReady,
     dismissCourierReminder,
+    retryIFoodAccept,
     markStationReady,
     recallStation,
     soundOn,

@@ -14,7 +14,9 @@ import {
   courierChangeLine,
   danfeOffer,
   enterAdvances,
+  nextActionLabel,
   orderReadback,
+  orderTicketLabel,
   paymentFailed,
   pixAwaiting,
   type PixPollStatus,
@@ -38,7 +40,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  /** Sai para o quadro de comandas (F2 também). */
   newSale: [];
+  /** ENCOMENDA: abre a próxima encomenda, como a "Nova encomenda" da seção. */
+  newOrder: [];
   printReceipt: [];
   printDanfe: [];
   /** ENCOMENDA: a ficha do pedido para o painel de parede. */
@@ -65,6 +70,8 @@ const courierChange = computed(() => courierChangeLine(props.result.courierChang
 // A DANFE por EXISTÊNCIA da nota, não por previsão (ver `danfeOffer`).
 const danfe = computed(() => danfeOffer(props.result.fiscalState));
 const pixPending = computed(() => pixAwaiting(props.result.payment, props.pixStatus));
+const isOrder = computed(() => props.result.salesMode === "order");
+const ctaLabel = computed(() => nextActionLabel(props.result.salesMode, pixPending.value));
 const enterHint = computed(() => enterAdvances({
   changeQ: props.result.changeQ,
   payment: props.result.payment,
@@ -109,6 +116,12 @@ onBeforeUnmount(() => cancelCountdown());
 function onNewSale() {
   cancelCountdown();
   emit("newSale");
+}
+
+function onPrimary() {
+  cancelCountdown();
+  if (isOrder.value) emit("newOrder");
+  else emit("newSale");
 }
 </script>
 
@@ -259,9 +272,11 @@ function onNewSale() {
          disputando a mesma linha. Os handlers são os de sempre (agente do balcão). -->
     <div class="grid justify-items-center gap-3">
       <!-- CTA dominante -->
-      <UiButton size="lg" class="h-14 min-w-64 gap-2 text-base" @click="onNewSale">
-        {{ pixPending ? "Nova venda mesmo assim" : "Nova venda" }}
-        <OperatorKbd variant="inverse" aria-hidden="true">F2</OperatorKbd>
+      <!-- Na encomenda o CTA é a próxima encomenda; o F2 (volta às comandas)
+           desce para as terciárias, com a tecla à vista. -->
+      <UiButton size="lg" class="h-14 min-w-64 gap-2 text-base" data-sale-result-next @click="onPrimary">
+        {{ ctaLabel }}
+        <OperatorKbd v-if="!isOrder" variant="inverse" aria-hidden="true">F2</OperatorKbd>
       </UiButton>
       <p v-if="countdown > 0" class="text-xs text-muted-foreground" role="status">
         Nova venda em {{ countdown }}s · toque em qualquer lugar para ficar
@@ -277,18 +292,20 @@ function onNewSale() {
            retirada). Navegar para outro app não é papel e desce para as
            terciárias. -->
       <div class="flex flex-wrap items-center justify-center gap-2">
-        <UiButton variant="outline" size="sm" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
-          <Icon name="lucide:printer" class="size-4" />
-          Via Recibo
-        </UiButton>
+        <!-- ENCOMENDA: a Via Pedido vem primeiro, é o papel que segue com ela. -->
         <UiButton
-          v-if="result.salesMode === 'order'"
+          v-if="isOrder"
           variant="outline" size="sm" class="gap-1.5"
           :disabled="printingTicket"
+          data-sale-result-ticket
           @click="emit('printTicket')"
         >
           <Icon name="lucide:printer" class="size-4" />
-          {{ printingTicket ? "Imprimindo…" : "Via Pedido" }}
+          {{ orderTicketLabel(Boolean(printingTicket)) }}
+        </UiButton>
+        <UiButton variant="outline" size="sm" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
+          <Icon name="lucide:printer" class="size-4" />
+          Via Recibo
         </UiButton>
         <!-- A DANFE só é botão vivo quando a nota EXISTE. Na fila, o botão
              fica desabilitado e a impressão automática o promove quando o 409
@@ -316,6 +333,18 @@ function onNewSale() {
 
       <!-- Terciárias: discretas, alinhadas num único grupo -->
       <div class="flex flex-wrap items-center justify-center gap-2">
+        <UiButton
+          v-if="isOrder"
+          variant="ghost"
+          size="sm"
+          class="gap-1.5 text-muted-foreground hover:text-foreground"
+          data-sale-result-to-tabs
+          @click="onNewSale"
+        >
+          <Icon name="lucide:layout-grid" class="size-4" />
+          Voltar às comandas
+          <OperatorKbd aria-hidden="true">F2</OperatorKbd>
+        </UiButton>
         <UiButton
           v-if="result.salesMode === 'order'"
           variant="ghost"

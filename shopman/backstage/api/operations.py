@@ -594,6 +594,9 @@ def _pos_sale_review_payload(review) -> dict:
         "requires_manager_approval": review.requires_manager_approval,
         "manager_approval_threshold_q": review.manager_approval_threshold_q,
         "approval_reasons": list(review.approval_reasons),
+        # Conta na casa acima do limite: saldo de hoje, limite e quanto passa,
+        # para o aviso e o diálogo do gerente dizerem o que ele assina.
+        "house_account_limit": review.house_account_limit,
         "receipt_channels": list(review.receipt_channels),
         "fiscal_tax_id_requested": review.fiscal_tax_id_requested,
         "warnings": list(review.warnings),
@@ -1825,7 +1828,9 @@ class OrderDetailView(OperationalObservationMixin, APIView):
         # chamada por card viraria enxurrada no provedor.
         _reconcile_payment_if_due(order)
         proj = build_operator_order(order, user=request.user)
-        return Response(read_data(order=projection_data(proj)))
+        # A impressora desta estação, a mesma que o quadro recebe: o "Imprimir Via
+        # Pedido" do detalhe sai por ela (P2-19).
+        return Response(read_data(order=projection_data(proj), device_agent=_station_device_agent(request)))
 
 
 @extend_schema_view(
@@ -2501,6 +2506,41 @@ class OrderRequeueFiscalView(_OrderActionBase):
             return {"effect_status": "queued", "directive_id": directive.pk}
 
         return self._context_response(request, order, "requeue-fiscal", {}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Send the order acceptance (confirm) to iFood again, when it did not reach iFood",
+        responses={
+            200: OpenApiResponse(description="The acceptance is queued to go out now."),
+            400: OpenApiResponse(description="Refused: {detail}: iFood already has it, or nothing to retry."),
+            409: OpenApiResponse(description="The acceptance state changed since it was read."),
+        },
+    ),
+)
+class OrderIFoodAcceptRetryView(_OrderActionBase):
+    """Tentar de novo: o aceite que não chegou ao iFood (P1-3) — ``ifood_accept_sync.retry``."""
+
+    intention_operation = "ifood-accept-retry"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+
+        def execute(base):
+            from shopman.shop.services import ifood_accept_sync
+
+            try:
+                directive = ifood_accept_sync.retry(order, actor=_actor(request), expected_revision=base)
+            except ifood_accept_sync.AcceptRetryStale as exc:
+                raise OrderConflict(str(exc)) from exc
+            except ifood_accept_sync.AcceptRetryRefused as exc:
+                raise OrderError(str(exc)) from exc
+            return {"effect_status": "queued", "directive_id": directive.pk}
+
+        return self._context_response(request, order, "ifood-accept-retry", {}, execute)
 
 
 @extend_schema_view(

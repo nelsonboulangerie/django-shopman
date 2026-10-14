@@ -9,7 +9,7 @@ não toca banco, não tem side effect. O relógio entra por ``now`` para o teste
 não depender do horário da máquina.
 
 Mecânicas cobertas (FOMO-MARKETING-SPECS §1): F1 (últimas unidades),
-F5 (saiu do forno), F13 (promoção expirando), F14 (happy hour), F16 (quanta
+F5 (saiu do forno), F13 (promoção expirando), F16 (quanta
 gente quer) e F17 (quantos saíram hoje).
 """
 
@@ -39,7 +39,6 @@ PRIORITY_FRESH = 1
 PRIORITY_LOW_STOCK = 1
 PRIORITY_DEMAND = 2
 PRIORITY_PROMO = 3
-PRIORITY_HAPPY_HOUR = 3
 PRIORITY_SOLD_TODAY = 4
 
 
@@ -72,8 +71,8 @@ def badges_for_product(
 
     Args:
         sku: SKU do produto (entra no ``meta`` para o cliente correlacionar).
-        availability: estado de estoque — ``available_qty``,
-            ``has_happy_hour``, ``happy_hour_end``.
+        availability: estado de estoque — ``available_qty``. A Hora da Xepa não
+            vira selo aqui: ela vale só no balcão (decisão do dono, 14/10/2026).
         production: última fornada concluída — ``finished_at`` (datetime ou ISO)
             e, opcionalmente, ``quantity``. ``None`` quando não houve fornada.
         promotions: promoções ativas do SKU, cada uma com ``valid_until`` e ``name``.
@@ -94,7 +93,6 @@ def badges_for_product(
     badges.extend(_low_stock(sku, availability, channel_config))
     badges.extend(_demand(sku, availability, social_proof))
     badges.extend(_promo_countdown(sku, promotions, now))
-    badges.extend(_happy_hour(sku, availability))
     badges.extend(_sold_today(sku, social_proof))
 
     ordered = sorted(badges, key=lambda badge: badge.priority)
@@ -219,22 +217,6 @@ def _promo_countdown(sku: str, promotions, now: datetime) -> list[FomoBadge]:
             )
         )
     return badges
-
-
-def _happy_hour(sku: str, availability: dict) -> list[FomoBadge]:
-    """F14 — janela de desconto por horário, visível enquanto está valendo."""
-    if not availability.get("has_happy_hour"):
-        return []
-    end = str(availability.get("happy_hour_end") or "").strip()
-    label = f"Happy Hour até {end}" if end else "Happy Hour agora"
-    return [
-        FomoBadge(
-            type="happy_hour",
-            label=label,
-            priority=PRIORITY_HAPPY_HOUR,
-            meta={"sku": sku, "end": end},
-        )
-    ]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

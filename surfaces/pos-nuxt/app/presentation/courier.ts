@@ -1,7 +1,8 @@
 // O ENTREGADOR (TaOn) no balcão — a encomenda de entrega da casa (dono, 13/10/2026).
 //
-// A régua é do servidor: o bloco `courier` e as ações `courier-dispatch` /
-// `courier-dispatch-again` são os MESMOS do Gestor (`order_queue._courier_block`),
+// A régua é do servidor: o bloco `courier` e as ações `courier-dispatch`,
+// `courier-dispatch-again`, `courier-cancel` e `courier-back` são os MESMOS do
+// Gestor (`order_queue._courier_block`, `_courier_actions`, `operational_actions`),
 // e a frase de cada estado também (`status_label`; na lista, `courier_label` com o
 // tom). Aqui só se decide o que a tela mostra com o que veio.
 import type { PreorderCard, PreorderCourier, PreorderEquipmentOption } from "~/types/preorders";
@@ -37,8 +38,9 @@ export function courierBadgeColor(tone: string | undefined): "neutral" | "info" 
   return "neutral";
 }
 
-/** O que, com a TaOn, ainda é só do Gestor de pedidos: a frase curta do painel. */
-export const GESTOR_ONLY_COURIER_LINE = "No Gestor de pedidos: cancelar a corrida e registrar a volta do troco ou da maquininha.";
+/** O que a volta do entregador NÃO resolve no balcão: o acerto à mão quando o que
+ *  voltou não bate com a lista. É o "Voltou diferente" do Gestor, que mora lá. */
+export const COURIER_BACK_DIFFERENT_LINE = "Voltou diferente? O acerto à mão é no Gestor de pedidos.";
 
 /** O aviso "a saída é pelo Gestor" sai quando o PDV já oferece o Entregador: ele
  *  contradiz a tela. Sem o painel (TaOn desligada), o aviso continua. */

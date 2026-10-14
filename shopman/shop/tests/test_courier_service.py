@@ -587,6 +587,69 @@ def test_sync_stores_the_ride_progress_and_the_screen_view(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_progress_advances_the_status_when_the_letter_lags(shop):
+    """13/10/2026, PDV-261013-L34: a letra ficou em D e o progresso já dizia aceite, coleta e fim."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "D")  # a letra não sai de D na corrida inteira
+
+    courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z"})
+    _beat(order)
+    assert courier.get_block(order)["status"] == "A"
+    assert order.status == Order.Status.READY
+
+    courier_mock.set_progress(ride, {"arrived_pickup_at": "2026-10-13T19:44:24Z",
+                                     "picked_up_at": "2026-10-13T19:45:52Z"})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "E"
+    assert block["status_at"]["E"] == "2026-10-13T19:45:52Z"
+    assert "door_charge" in block
+    assert order.status == Order.Status.DISPATCHED
+
+    courier_mock.set_progress(ride, {"finished_at": "2026-10-13T19:55:36Z"})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "F"
+    assert block["status_at"] == {
+        "D": block["status_at"]["D"],
+        "A": "2026-10-13T19:42:38Z",
+        "E": "2026-10-13T19:45:52Z",
+        "F": "2026-10-13T19:55:36Z",
+    }
+    assert order.status in (Order.Status.DELIVERED, Order.Status.COMPLETED)
+    assert not Directive.objects.filter(
+        topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED
+    ).exists()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_finish_read_in_one_beat_passes_through_the_collection(shop):
+    """Só o fim apareceu numa batida: a coleta pulada entra antes, com a cobrança da porta."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "D")
+    courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z",
+                                     "picked_up_at": "2026-10-13T19:45:52Z",
+                                     "finished_at": "2026-10-13T19:55:36Z"})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "F"
+    assert set(block["status_at"]) == {"D", "A", "E", "F"}
+    assert block["dispatched_at"]
+    assert "door_charge" in block
+
+
+def test_reading_never_moves_the_status_back():
+    progress = {"accepted_at": "2026-10-13T19:42:38Z"}
+    assert courier.statuses_from_reading("A", "D", progress) == []
+    assert courier.statuses_from_reading("A", "S", progress) == [("S", None)]
+    assert courier.statuses_from_reading("D", "D", {}) == [("D", None)]
+    assert courier.statuses_from_reading("D", "N", progress) == [("N", None)]
+    assert courier.statuses_from_reading("A", "", {"accepted_at": "x", "cancelled_at": "y"}) == [("C", "y")]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_unchanged_reading_does_not_rewrite_the_order(shop):
     order = _dispatched_order(shop)
     ride = courier.get_block(order)["id_mch"]
@@ -989,3 +1052,72 @@ def test_ensaio_a_seco_despacho_status_e_cancelamento(shop):
     order.refresh_from_db()
     assert courier_mock.rides()[ride]["status"] == "C"
     assert not courier.has_active_ride(order)
+
+
+# ── Edição depois da chamada (P2-28) ────────────────────────────────
+
+
+def _cod_order(ref="CR-EDIT") -> Order:
+    order = _delivery_order(ref=ref, status=Order.Status.PREPARING, payment={
+        "method": "cash", "collection": "on_delivery", "change_for_q": 10000})
+    courier.request_dispatch(order, actor="test")
+    _run_dispatch(order)
+    return order
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_keeps_the_observation_it_carried(shop):
+    """A corrida guarda a observação que foi à TaOn: é com ela que o entregador cobra."""
+    order = _cod_order()
+    block = courier.get_block(order)
+    sent = courier_mock.rides()[block["id_mch"]]["payload"]["paradas"][0]["observacao_parada"]
+    assert block["door_charge_note"] == sent
+    assert "troco para R$ 100,00" in sent
+    assert courier.charge_outdated(order) is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_editing_the_charge_after_the_call_flags_the_ride(shop):
+    """Troco ou forma de pagar mudou com a corrida aberta: a TaOn não altera a
+    observação, e a tela precisa dizer que o entregador vai cobrar o antigo."""
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _cod_order()
+    merge_order_data(order, {"payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order) == {
+        "sent": "Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00",
+        "current": "Cobrar R$ 50,00 em dinheiro · sem troco",
+        "collected": False,
+    }
+
+    merge_order_data(order, {"payment": {"method": "debit", "collection": "on_delivery"}})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order)["current"] == "Cobrar R$ 50,00 no cartão (maquininha)"
+
+    # Coletou: cancelar já não serve, a tela pede o telefone.
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert courier.charge_outdated(order)["collected"] is True
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_new_call_after_cancel_carries_the_new_charge(shop):
+    """Cancelar e chamar de novo: a corrida nova leva a cobrança de agora."""
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _cod_order()
+    merge_order_data(order, {"payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}})
+    order.refresh_from_db()
+    CourierCancelHandler().handle(message=courier.cancel_ride(order, actor="maria"), ctx={})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order) is None
+    assert "door_charge_note" not in courier.get_block(order)
+
+    Directive.objects.filter(topic=COURIER_DISPATCH).update(status=Directive.Status.DONE)
+    CourierDispatchHandler().handle(message=courier.redispatch(order, actor="operator:maria"), ctx={})
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert block["door_charge_note"].endswith("Cobrar R$ 50,00 em dinheiro · sem troco")
+    assert courier.charge_outdated(order) is None

@@ -564,7 +564,8 @@ describe("PosCartPanel — acordeão", () => {
     expect(wrapper.find('[role="region"]').exists()).toBe(false);
     await wrapper.find('[aria-label="Editar Pão"]').trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.text()).toContain("Editado por ana");
-    expect(wrapper.find('[title="Cortesia −10%"]').exists()).toBe(true);
+    // Em % o selo diz também o valor na linha (dono, 14/10/2026).
+    expect(wrapper.find(`[title="Cortesia −10% · −${formatBRL(50)} na linha"]`).exists()).toBe(true);
   });
 });
 

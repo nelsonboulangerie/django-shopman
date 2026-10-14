@@ -1,4 +1,4 @@
-"""PDV: "Chamar entregador" (TaOn) na encomenda de entrega da casa (dono, 13/10/2026).
+"""PDV: o entregador (TaOn) na encomenda de entrega da casa (dono, 13/10 e 14/10/2026).
 
 O balcão não tem régua própria: o detalhe da encomenda (contexto "pos") traz o
 MESMO bloco ``courier`` e as MESMAS ações ``courier-dispatch`` /
@@ -55,7 +55,7 @@ def caixa(client):
     return client, user
 
 
-def _delivery(ref="PDV-ENT", *, status=Order.Status.READY, channel_ref="pdv", **extra) -> Order:
+def _delivery(ref="PDV-ENT", *, status=Order.Status.READY, channel_ref="pdv", total_q=1500, **extra) -> Order:
     data = {
         "fulfillment_type": "delivery",
         "origin_channel": "pos",
@@ -68,9 +68,9 @@ def _delivery(ref="PDV-ENT", *, status=Order.Status.READY, channel_ref="pdv", **
     }
     data.update(extra)
     order = Order.objects.create(ref=ref, channel_ref=channel_ref, session_key=f"S-{ref}", status=status,
-        snapshot={"items": []}, total_q=1500, data=data)
+        snapshot={"items": []}, total_q=total_q, data=data)
     OrderItem.objects.create(order=order, line_id="1", sku="SKU", name="Produto", qty=1,
-        unit_price_q=1500, line_total_q=1500)
+        unit_price_q=total_q, line_total_q=total_q)
     return order
 
 
@@ -105,9 +105,12 @@ def test_o_detalhe_da_encomenda_de_entrega_pronta_oferece_chamar(caixa, shop):
     # A MESMA pergunta do Gestor, do servidor.
     assert dispatch["confirmation"]["description"].startswith("Chamar um entregador")
     assert "cobrada da casa" in dispatch["confirmation"]["description"]
-    # O balcão chama e chama de novo; cancelar e cotar a corrida ficam no Gestor.
-    assert _action(detail, "courier-cancel") is None
+    # O balcão chama, chama de novo e cancela a corrida (P=1, 14/10/2026); cotar
+    # fica no Gestor. Sem corrida aberta, cancelar vem apagado (régua do Gestor).
+    assert _action(detail, "courier-cancel")["enabled"] is False
     assert _action(detail, "courier-quote") is None
+    # Nada saiu: "Entregador voltou" não existe.
+    assert _action(detail, "courier-back") is None
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -248,3 +251,103 @@ def test_o_canal_cadastrado_fala_o_nome_do_cadastro(caixa, shop):
     _delivery()
 
     assert _detail(client, "PDV-ENT")["channel_name"] == "Balcão da loja"
+
+
+# ── Cancelar a corrida e "Entregador voltou" no balcão (dono, P=1, 14/10/2026) ──
+
+
+def _open_ride(client, ref, **custody):
+    """O caixa chama pela rota do Gestor e o worker abre a corrida (mock): status P."""
+    from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
+
+    schema = _action(_detail(client, ref), "courier-dispatch")["payload_schema"]
+    response = client.post(reverse("api-backstage-order-courier-dispatch", args=[ref]), {**schema, **custody},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=f"pdv-chamar-{ref}")
+    assert response.status_code == 200, response.content
+    CourierDispatchHandler().handle(
+        message=Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref=ref).latest("pk"), ctx={})
+    return Order.objects.get(ref=ref)
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_antes_da_coleta_o_balcao_cancela_a_corrida_pela_rota_do_gestor(caixa, shop):
+    from shopman.shop.directives import COURIER_CANCEL
+
+    client, _ = caixa
+    _delivery(payment={"method": "pix", "status": "captured"})
+    _open_ride(client, "PDV-ENT")
+
+    pos = _detail(client, "PDV-ENT")
+    gestor = client.get(reverse("api-backstage-order-detail", args=["PDV-ENT"])).json()["order"]
+    cancel = _action(pos, "courier-cancel")
+    # A MESMA ação do Gestor: régua, permissão, confirmação e base.
+    assert cancel == _action(gestor, "courier-cancel")
+    assert cancel["enabled"] is True
+    assert cancel["confirmation"]["required"] is True
+
+    response = client.post(reverse("api-backstage-order-courier-cancel", args=["PDV-ENT"]), cancel["payload_schema"],
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="pdv-cancelar")
+    assert response.status_code == 200, response.content
+    assert Directive.objects.filter(topic=COURIER_CANCEL, payload__order_ref="PDV-ENT").count() == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_depois_da_coleta_cancelar_vem_apagado(caixa, shop):
+    from shopman.shop.services import courier
+
+    client, _ = caixa
+    _delivery(payment={"method": "pix", "status": "captured"})
+    order = _open_ride(client, "PDV-ENT")
+    courier.apply_status(order, "E", source="webhook")
+
+    cancel = _action(_detail(client, "PDV-ENT"), "courier-cancel")
+    assert cancel["enabled"] is False
+    assert cancel["reason"]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_entregador_voltou_no_balcao_fecha_o_acerto_do_troco_com_o_servico_do_gestor(caixa, shop):
+    from shopman.cashman import services as cash
+
+    from shopman.shop.services import courier, operator_orders
+
+    client, user = caixa
+    cash.open_shift(operator=user, float_q=10000)
+    _delivery(total_q=7400, payment={"method": "cash", "collection": "on_delivery", "change_for_q": 10000})
+    order = _open_ride(client, "PDV-ENT", change_out="26,00")
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert order.status == Order.Status.DISPATCHED
+
+    pos = _detail(client, "PDV-ENT")
+    gestor = client.get(reverse("api-backstage-order-detail", args=["PDV-ENT"])).json()["order"]
+    back = _action(pos, "courier-back")
+    assert back == _action(gestor, "courier-back")
+    assert (back["label"], back["enabled"]) == ("Entregador voltou", True)
+    # O que a mão deve receber: a mesma lista do diálogo do Gestor.
+    assert pos["courier_return_lines"] == gestor["courier_return_lines"]
+    assert pos["courier_return_lines"]
+
+    response = client.post(reverse("api-backstage-order-courier-back", args=["PDV-ENT"]), back["payload_schema"],
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY="pdv-voltou")
+    assert response.status_code == 200, response.content
+    order.refresh_from_db()
+    assert order.data["payment"]["cod_settled_at"]
+    assert operator_orders.courier_change(order).back_q == 2600
+    assert order.data["dispatch"]["courier_back_at"]
+    # Fechada a saída, o gesto some.
+    assert _action(_detail(client, "PDV-ENT"), "courier-back") is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_sem_gerenciar_pedidos_cancelar_e_voltou_vem_apagados(client, shop):
+    """A mesma permissão do Gestor (``manage_orders``), no balcão e na rota."""
+    user = _operator("operate_pos")
+    client.force_login(user)
+    _delivery()
+
+    for route in ("api-backstage-order-courier-cancel", "api-backstage-order-courier-back"):
+        response = client.post(reverse(route, args=["PDV-ENT"]),
+            {"expected_actor_id": user.pk, "base_revision": "x"}, content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=f"pdv-sem-permissao-{route}")
+        assert response.status_code == 403

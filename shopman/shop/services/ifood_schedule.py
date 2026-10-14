@@ -80,6 +80,20 @@ def preparation_start(order) -> datetime | None:
     return _validated_start(order) if is_scheduled(order) else None
 
 
+def delivery_start(order) -> datetime | None:
+    """Início da janela de entrega que o iFood prometeu ao cliente (UTC).
+
+    ``None`` fora do agendado ou com agendamento ilegível: a mesma validação de
+    :func:`preparation_start`, para as duas horas nunca discordarem.
+    """
+    if not is_scheduled(order):
+        return None
+    schedule = ((order.data or {}).get("ifood") or {}).get("schedule") or {}
+    if _validate_schedule(schedule) is None:
+        return None
+    return _parse(schedule.get("delivery_start_at"))
+
+
 def block_reason(order, *, now: datetime | None = None) -> str:
     """Human reason preventing physical work; confirmation remains allowed."""
     if not is_scheduled(order):

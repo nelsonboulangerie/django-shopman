@@ -146,6 +146,17 @@ def notify_late_ticket(ticket) -> int:
         return 0
     elapsed = max(0, int((timezone.now() - ticket.created_at).total_seconds() // 60))
     code = _order_code(ticket)
+    promised = ticket_promised_at(ticket)
+    if promised is not None:
+        if timezone.now() < promised:
+            return 0
+        clock = timezone.localtime(promised)
+        clock_label = f"{clock.hour}h" if clock.minute == 0 else f"{clock.hour}h{clock.minute:02d}"
+        title = f"Atrasado: {code} era para as {clock_label}"
+        message = f"{_station_label(instance)}, combinado para as {clock_label}. {_items_line(ticket)}"
+    else:
+        title = f"Atrasado: {code} passou de {target} min"
+        message = f"{_station_label(instance)}, {elapsed} min (meta {target}). {_items_line(ticket)}"
     managers = get_user_model().objects.with_perm(
         LATE_PERMISSION,
         is_active=True,
@@ -156,8 +167,8 @@ def notify_late_ticket(ticket) -> int:
         result = create_condition_alert(
             user=manager,
             category=NotificationCategory.KITCHEN,
-            title=f"Atrasado: {code} passou de {target} min",
-            message=f"{_station_label(instance)}, {elapsed} min (meta {target}). {_items_line(ticket)}",
+            title=title,
+            message=message,
             source_condition=KDS_TICKET_LATE,
             source_ref=source_ref(ticket.pk),
             source_version=1,
@@ -217,11 +228,31 @@ def deep_link(value: str) -> str:
 
 
 def late_check_at(ticket) -> datetime | None:
-    """Quando o ticket estoura a meta da estação (``None`` sem meta)."""
+    """Quando o ticket fica atrasado (``None`` sem prazo).
+
+    Com hora combinada com o cliente, é ela: a encomenda chega à cozinha às
+    00:05 e a meta da estação contada dali avisaria a gerente de um atraso às
+    00:15 num pedido para as 17h (P2-16). Sem hora combinada, a meta da estação.
+    """
+    promised = ticket_promised_at(ticket)
+    if promised is not None:
+        return promised
     target = int(ticket.kds_instance.target_time_minutes or 0)
     if target <= 0:
         return None
     return ticket.created_at + timedelta(minutes=target)
+
+
+def ticket_promised_at(ticket) -> datetime | None:
+    """A hora combinada do pedido (ou da comanda) deste ticket; ``None`` sem ela."""
+    from shopman.orderman.models import Order, Session
+
+    from shopman.shop.services.fulfillment_window import promised_at
+
+    source = Order.objects.filter(session_key=ticket.session_key).order_by("-id").first()
+    if source is None:
+        source = Session.objects.filter(session_key=ticket.session_key).order_by("-id").first()
+    return promised_at(source)
 
 
 def _resolve(condition: str, ticket_pk: int, *, outcome_code: str) -> int:

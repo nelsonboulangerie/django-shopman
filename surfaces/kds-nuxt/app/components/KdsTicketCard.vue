@@ -7,7 +7,7 @@
 //   nota 6: sem canal, telefone nem cliente; só a encomenda diz o cliente, com quem a
 //   hora foi combinada); "iniciado por Rafael às 21:56 · retira às 22:30" logo abaixo
 //   quando houver (nota 7); à direita o relógio (o tempo contra a meta num número só, a cor diz se
-//   está no prazo) e a pílula do estado ("Atrasado", "Novo", "Em preparo",
+//   está no prazo; com hora combinada, "para 17h", P2-16) e a pílula do estado ("Atrasado", "Novo", "Em preparo",
 //   "Bloqueado").
 // - TAREFA (meio): os itens, inteiros. Nome e observação quebram linha, e o card
 //   cresce o quanto precisar; ticket longo deixa a linha da grade mais alta em vez de
@@ -41,7 +41,6 @@ import {
   cancelledHeadline,
   cardScale,
   changeIcon,
-  elapsedLabel,
   KDS_ARM_DELAY_MS,
   KDS_UNDO_WINDOW_MS,
   pillClass,
@@ -49,6 +48,7 @@ import {
   cardActionLabel,
   thumbActionLabel,
   ticketAction,
+  ticketClockLabel,
   ticketOverline,
   ticketPill,
   ticketStartLine,
@@ -292,11 +292,11 @@ const d = computed(() => ({
               :class="[timerChip, d.timerH, d.timer]"
             >
               <Icon
-                name="lucide:timer"
+                :name="ticket.due_clock_display ? 'lucide:calendar-clock' : 'lucide:timer'"
                 class="size-5 shrink-0"
                 :class="tone === 'ok' ? 'text-muted-foreground' : ''"
               />
-              {{ elapsedLabel(ticket.elapsed_seconds) }}
+              <span data-kds-clock>{{ ticketClockLabel(ticket) }}</span>
             </span>
             <span
               v-if="pill"
@@ -315,7 +315,12 @@ const d = computed(() => ({
           class="flex min-w-0 items-start gap-1.5 op-micro text-muted-foreground"
           data-kds-started
         >
-          <Icon name="lucide:user-round" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <!-- Sem ninguém ter iniciado, a linha é só a hora combinada: o ícone é o da agenda. -->
+          <Icon
+            :name="ticket.started_by ? 'lucide:user-round' : 'lucide:calendar-clock'"
+            class="mt-px size-3.5 shrink-0"
+            aria-hidden="true"
+          />
           <span class="min-w-0 break-words">{{ startLine }}</span>
         </p>
 

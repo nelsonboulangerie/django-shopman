@@ -164,3 +164,36 @@ def test_batched_board_retains_ifood_payment_evidence():
     assert not hasattr(card, "ifood_payment_summary")
     detail = order_queue.build_operator_order(Order.objects.get(ref="IFOOD-BOARD"))
     assert detail.ifood_payment_summary == ("Pagamento pendente no iFood: R$ 30,00",)
+
+
+# ── P2-29: a hora da retirada (``takeout.takeoutDateTime``) ──────────────────
+
+
+def _takeout(takeout_at, *, timing="IMMEDIATE", fulfillment="pickup"):
+    return SimpleNamespace(
+        channel_ref="ifood", status="accepted", total_q=3000,
+        data={"fulfillment_type": fulfillment, "ifood": {"order_timing": timing, "takeout_at": takeout_at}},
+    )
+
+
+def test_immediate_takeout_shows_when_the_customer_comes():
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    today = timezone.localtime().replace(hour=19, minute=40, second=0, microsecond=0)
+    assert ifood.schedule_label(_takeout(today.isoformat())) == "Retirada às 19:40"
+    other_day = today + timedelta(days=1)
+    assert ifood.schedule_label(_takeout(other_day.isoformat())) == f"Retirada {other_day:%d/%m} às 19:40"
+    assert f"Retirada prevista: {today:%d/%m/%Y} às 19:40" in ifood.operation_summary(_takeout(today.isoformat()))
+
+
+def test_takeout_time_is_silent_when_scheduled_delivery_or_without_timezone():
+    from django.utils import timezone
+
+    aware = timezone.now().isoformat()
+    assert ifood.schedule_label(_takeout(aware, fulfillment="delivery")) == ""
+    assert ifood.schedule_label(_takeout("2026-10-13T22:40:00")) == ""
+    assert ifood.schedule_label(_takeout("")) == ""
+    assert ifood.schedule_label(_takeout(aware, timing="SCHEDULED")) == "Agendado"
+    assert not any("Retirada prevista" in line for line in ifood.operation_summary(_takeout(aware, timing="SCHEDULED")))

@@ -177,6 +177,65 @@ export function cardAuthorizationNotice(
   };
 }
 
+// ── O aceite que não chegou ao iFood (P1-3) ────────────────────────────────
+
+export interface IFoodAcceptNotice {
+  /** Rótulo curto da pílula do cartão. */
+  label: string;
+  title: string;
+  /** O prazo do iFood contando, ou a frase do servidor quando não há prazo. */
+  description: string;
+  /** A ação do aviso: reenviar o aceite. Desligada traz o motivo. */
+  action: { label: string; enabled: boolean; reason: string } | null;
+}
+
+type AcceptSource = Pick<
+  OrderCardProjection,
+  | "ifood_accept_failed"
+  | "ifood_accept_notice"
+  | "confirmation_deadline_iso"
+  | "confirmation_action"
+  | "actions"
+>;
+
+/** O aviso "O iFood ainda não recebeu o aceite", com o prazo dele contando.
+ *
+ *  Sem o aviso, o pedido aceito aqui parecia resolvido: a cozinha trabalhava e o
+ *  iFood cancelava sozinho no fim do prazo dele. O prazo é o mesmo do canto do
+ *  cartão (``confirmation_deadline_iso``), que o servidor mantém enquanto o aceite
+ *  não chega; a frase diz quanto falta, sem o operador ter de somar. */
+export function ifoodAcceptNotice(
+  card: AcceptSource,
+  nowMs: number,
+): IFoodAcceptNotice | null {
+  if (!card.ifood_accept_failed) return null;
+  const projected = (card.actions ?? []).find(
+    (a) => a.ref === "ifood-accept-retry",
+  );
+  const left =
+    card.confirmation_action === "cancel"
+      ? confirmationRemainingLabel(card.confirmation_deadline_iso, nowMs)
+      : "";
+  let description = card.ifood_accept_notice;
+  if (left && left !== "0:00")
+    description = `A cozinha segue com o pedido. Se o aceite não chegar em ${left}, o iFood cancela sozinho.`;
+  else if (left)
+    description =
+      "O prazo do iFood para o aceite acabou. Confira no iFood se o pedido segue ativo.";
+  return {
+    label: "Aceite não chegou",
+    title: "O iFood ainda não recebeu o aceite",
+    description,
+    action: projected
+      ? {
+          label: projected.label || "Tentar de novo",
+          enabled: projected.enabled,
+          reason: projected.reason ?? "",
+        }
+      : null,
+  };
+}
+
 // ── O sistema fez · desfazer (SUITE-UX §5.1) ───────────────────────────────
 
 export interface UndoLine {
@@ -376,7 +435,8 @@ export type AffordanceRef =
   | "undo_handoff"
   | "undo_ready"
   // O "Dispensar" do lembrete de chamar o entregador (aviso do cartão, não botão largo).
-  | "dismiss_courier_reminder";
+  | "dismiss_courier_reminder"
+  | "ifood_accept_retry";
 
 export interface Affordance {
   ref: AffordanceRef;

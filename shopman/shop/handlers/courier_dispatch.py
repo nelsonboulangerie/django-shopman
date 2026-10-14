@@ -92,7 +92,10 @@ class CourierDispatchHandler:
                     return
                 # Use the freshly locked order, never the pre-estimate snapshot.
                 body = courier.build_machine_payload(order)
-                self._set_attempt(message, "started", fingerprint=mutation_fingerprint(body), started_at=timezone.now().isoformat())
+                # A observação que vai à TaOn fica no recibo: a corrida aberta
+                # guarda a cobrança que o entregador leva (``courier.charge_outdated``).
+                self._set_attempt(message, "started", fingerprint=mutation_fingerprint(body), started_at=timezone.now().isoformat(),
+                    note=courier.ride_note(body))
         if blocked_elsewhere:
             raise DirectiveTerminalError("Outro despacho exige verificação; esta tarefa não chamou a central.")
         if blocked:
@@ -155,6 +158,11 @@ class CourierDispatchHandler:
             opened_at = timezone.now().isoformat()
             block.update(provider="machine", id_mch=courier_ref, status="D", status_at={"D": opened_at},
                 requested_at=opened_at, last_event_at=opened_at, last_source="dispatch")
+            note = str(((message.payload or {}).get("dispatch_attempt") or {}).get("note") or "")
+            if note:
+                block["door_charge_note"] = note
+            else:
+                block.pop("door_charge_note", None)
             block.pop("error", None)
             courier._save_block(order, block, emit={"kind": "dispatched", "status": "D"})
             order.emit_event(event_type="courier_ride_opened", actor=str((message.payload or {}).get("actor") or "courier.dispatch"), payload={"id_mch": courier_ref})

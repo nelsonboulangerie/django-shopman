@@ -54,6 +54,8 @@ describe("OperatorSonner", () => {
       "--error-text": "var(--destructive-foreground)",
       "--warning-bg": "var(--warning)",
       "--warning-text": "var(--warning-foreground)",
+      "--info-bg": "var(--info)",
+      "--info-text": "var(--info-foreground)",
     });
   });
 });

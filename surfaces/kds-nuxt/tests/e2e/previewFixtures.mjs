@@ -116,6 +116,20 @@ export const PREP_TICKETS = [
     test_order_label: "Pedido de teste do iFood",
     items: [item("1", "Baguete tradicional (NÃO ENTREGAR)")],
   }),
+  // P2-16: encomenda das 15h. O ticket nasce às 00:05 (despertador da encomenda); o
+  // prazo é a hora combinada, e o relógio diz "para 15h" em vez de 8h25 corridas.
+  ticket({
+    pk: 108,
+    order_ref: "WEB-260919-0102",
+    customer_name: "Café Parisiense",
+    is_preorder: true,
+    created_at_display: "00:05",
+    elapsed_seconds: 30300,
+    due_time_display: "retira a partir das 15h",
+    due_clock_display: "15h",
+    due_in_seconds: 23400,
+    items: [item("2", "Bolo de cenoura"), item("12", "Pão de queijo")],
+  }),
 ];
 
 /** A estação dos alarmes: o que mudou depois de chegar à cozinha. */

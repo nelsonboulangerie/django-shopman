@@ -237,10 +237,12 @@ def test_o_pedido_registra_o_desconto_do_grupo(balcao):
 
 def test_na_xepa_o_maior_desconto_ganha_e_nao_soma(balcao):
     _group_discount()
-    RuleConfig.objects.create(
+    xepa = RuleConfig.objects.create(
         ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
         label="Hora da Xepa", params={"discount_percent": 40, "start": "17:00", "end": "18:00"}, enabled=True,
     )
+    # A Xepa só vale nos canais listados (sem canal, em lugar nenhum).
+    xepa.channels.add(Channel.objects.get(ref="pdv"))
     cache.clear()
 
     with patch("django.utils.timezone.now", return_value=datetime(2026, 10, 14, 17, 30, tzinfo=BRT)):

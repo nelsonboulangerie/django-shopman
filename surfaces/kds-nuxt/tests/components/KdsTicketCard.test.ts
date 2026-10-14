@@ -61,6 +61,8 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     started_at_display: "",
     is_preorder: false,
     due_time_display: "",
+    due_clock_display: "",
+    due_in_seconds: null,
     seen: false,
     changes: [],
     change_ticket_pks: [],
@@ -407,6 +409,21 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     });
     expect(w.get("[data-kds-started]").text()).toBe("iniciado por Rafael às 21:56 · retira às 22:30");
     expect(mountCard({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
+  });
+
+  it("P2-16: a encomenda das 17h mostra no relógio para quando é, não o tempo desde as 00:05", () => {
+    const w = mountCard({
+      ticket: ticket({
+        is_preorder: true,
+        elapsed_seconds: 35_700,
+        due_clock_display: "17h",
+        due_in_seconds: 25_200,
+        due_time_display: "retira a partir das 17h",
+      }),
+    });
+    expect(w.get("[data-kds-clock]").text()).toBe("para 17h");
+    expect(w.get("[data-kds-started]").text()).toBe("retira a partir das 17h");
+    expect(mountCard({ ticket: ticket({ elapsed_seconds: 1440 }) }).get("[data-kds-clock]").text()).toBe("24m");
   });
 
   it("no celular o ato e o Desfazer moram na base da página; o card só apaga", () => {

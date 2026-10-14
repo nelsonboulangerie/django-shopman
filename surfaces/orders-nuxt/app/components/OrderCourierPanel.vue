@@ -20,6 +20,7 @@ import type {
 } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
+import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 
 const props = defineProps<{
   courier: CourierBlock;
@@ -79,6 +80,30 @@ function requestCancel() {
   confirmingCancel.value = false;
   emit("cancel");
 }
+
+// O pedido mudou depois da chamada e a corrida leva a cobrança antiga (P2-28): o
+// aviso amarelo leva o "Solicitar cancelamento", que arma a MESMA confirmação de
+// baixo; cancelada a corrida, o "Chamar entregador" de sempre leva a cobrança nova.
+const chargeNotice = computed(() =>
+  courierChargeNotice(props.courier.charge_outdated, { cancelHere: true }),
+);
+// O aviso leva o gesto: o botão de baixo só volta para confirmar (um lugar só).
+const chargeOffersCancel = computed(
+  () =>
+    Boolean(chargeNotice.value) &&
+    props.courier.can_cancel &&
+    !props.courier.charge_outdated?.collected,
+);
+const chargeActions = computed(() => [
+  chargeOffersCancel.value &&
+    !confirmingCancel.value && {
+      label: "Solicitar cancelamento",
+      icon: "i-lucide-ban",
+      disabled: props.busy || !props.cancelAction?.enabled,
+      onClick: requestCancel,
+      ...{ "data-courier-charge-cancel": "" },
+    },
+]);
 
 // Chamar entregador abre corrida paga na central → confirm de 1 toque, com a
 // pergunta inteira (quem vem, para qual pedido, quem paga) vinda do servidor.
@@ -327,6 +352,19 @@ const vehicle = computed(() =>
           :description="courier.error.message"
         />
 
+        <!-- o pedido mudou depois da chamada: a corrida leva a cobrança antiga -->
+        <NuxtAlert
+          v-if="chargeNotice"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-receipt-text"
+          :title="chargeNotice.title"
+          :description="chargeNotice.description"
+          :actions="alertActions('warning', chargeActions)"
+          role="status"
+          data-courier-charge-outdated
+        />
+
         <!-- timeline compacta da corrida -->
         <NuxtTimeline
           v-if="steps.length"
@@ -541,7 +579,7 @@ const vehicle = computed(() =>
             @click="emit('quote')"
           />
           <NuxtButton
-            v-if="courier.can_cancel"
+            v-if="courier.can_cancel && (!chargeOffersCancel || confirmingCancel)"
             type="button"
             :disabled="busy || !cancelAction?.enabled"
             icon="i-lucide-ban"

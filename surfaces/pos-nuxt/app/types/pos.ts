@@ -991,6 +991,9 @@ export interface POSSaleReviewProjection {
   manager_approval_threshold_q: number;
   /** Por que o gerente foi chamado — o diálogo de autorização diz o que assinar. */
   approval_reasons: string[];
+  /** Conta na casa acima do limite (motivo `house_account_over_limit`): saldo
+   *  em aberto antes da venda, limite, o que a venda põe na conta e quanto passa. */
+  house_account_limit?: { balance_q: number; limit_q: number; charge_q: number; over_q: number } | null;
   receipt_channels: string[];
   /** Vai sair nota com CPF? (o consumidor pediu o documento nesta venda) */
   fiscal_tax_id_requested: boolean;

@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.stockman import stock
 from shopman.stockman.models import Hold, Position, PositionKind
@@ -26,9 +27,18 @@ from shopman.storefront.tests.web.conftest import _ensure_listing_item
 
 pytestmark = pytest.mark.django_db
 
-TODAY = date.today()
-TOMORROW = TODAY + timedelta(days=1)
-DAY_AFTER = TODAY + timedelta(days=2)
+# O dia se lê na hora do TESTE, não na coleta: perto da meia-noite a coleta cai
+# num dia e o teste no outro, e a "fornada de amanhã" vira a de hoje.
+def _today() -> date:
+    return timezone.localdate()
+
+
+def _tomorrow() -> date:
+    return _today() + timedelta(days=1)
+
+
+def _day_after() -> date:
+    return _today() + timedelta(days=2)
 
 
 def _position():
@@ -100,7 +110,7 @@ class TestTheCartRefusesASecondDate:
         self, client, shop_window, product, croissant,
     ):
         _ready(product, "5")
-        _plan(croissant, "4", TOMORROW)
+        _plan(croissant, "4", _tomorrow())
         assert _set_qty(client, product.sku, 2).status_code == 200
 
         refused = _set_qty(client, croissant.sku, 1)
@@ -109,8 +119,8 @@ class TestTheCartRefusesASecondDate:
         body = refused.json()
         assert body["error_code"] == "cart_date_mismatch"
         assert body["sku"] == croissant.sku
-        assert body["cart_date"] == TODAY.isoformat()
-        assert body["item_date"] == TOMORROW.isoformat()
+        assert body["cart_date"] == _today().isoformat()
+        assert body["item_date"] == _tomorrow().isoformat()
         assert "outro pedido" in body["detail"], body["detail"]
         assert "Croissant" in body["detail"]
         assert "amanhã" in body["detail"] and "hoje" in body["detail"]
@@ -124,7 +134,7 @@ class TestTheCartRefusesASecondDate:
     def test_ready_item_does_not_join_a_cart_waiting_for_tomorrows_batch(
         self, client, shop_window, product, croissant,
     ):
-        _plan(croissant, "4", TOMORROW)
+        _plan(croissant, "4", _tomorrow())
         _ready(product, "5")
         assert _set_qty(client, croissant.sku, 2).status_code == 200
 
@@ -133,22 +143,22 @@ class TestTheCartRefusesASecondDate:
         assert refused.status_code == 409, refused.content[:400]
         body = refused.json()
         assert body["error_code"] == "cart_date_mismatch"
-        assert body["cart_date"] == TOMORROW.isoformat()
-        assert body["item_date"] == TODAY.isoformat()
+        assert body["cart_date"] == _tomorrow().isoformat()
+        assert body["item_date"] == _today().isoformat()
         assert _active_holds(product.sku) == []
         assert _cart_skus(client) == {croissant.sku: 2}
 
     def test_two_different_batch_days_are_two_orders(
         self, client, shop_window, croissant, baguette,
     ):
-        _plan(croissant, "4", TOMORROW)
-        _plan(baguette, "4", DAY_AFTER)
+        _plan(croissant, "4", _tomorrow())
+        _plan(baguette, "4", _day_after())
         assert _set_qty(client, croissant.sku, 1).status_code == 200
 
         refused = _set_qty(client, baguette.sku, 1)
 
         assert refused.status_code == 409, refused.content[:400]
-        assert refused.json()["item_date"] == DAY_AFTER.isoformat()
+        assert refused.json()["item_date"] == _day_after().isoformat()
         assert _active_holds(baguette.sku) == []
 
 
@@ -163,21 +173,21 @@ class TestTheSameDateStillFits:
     def test_two_items_of_the_same_batch_share_its_day(
         self, client, shop_window, croissant, baguette,
     ):
-        _plan(croissant, "4", TOMORROW)
-        _plan(baguette, "4", TOMORROW)
+        _plan(croissant, "4", _tomorrow())
+        _plan(baguette, "4", _tomorrow())
         assert _set_qty(client, croissant.sku, 1).status_code == 200
         assert _set_qty(client, baguette.sku, 1).status_code == 200
-        assert {h.target_date for h in Hold.objects.active()} == {TOMORROW}
+        assert {h.target_date for h in Hold.objects.active()} == {_tomorrow()}
 
     def test_emptying_the_cart_frees_the_date(self, client, shop_window, product, croissant):
         """A data é da sacola enquanto ela tem reserva; esvaziou, a próxima escolhe."""
         _ready(product, "5")
-        _plan(croissant, "4", TOMORROW)
+        _plan(croissant, "4", _tomorrow())
         assert _set_qty(client, product.sku, 1).status_code == 200
         assert _set_qty(client, product.sku, 0).status_code == 200
 
         assert _set_qty(client, croissant.sku, 1).status_code == 200
-        assert {h.target_date for h in _active_holds(croissant.sku)} == {TOMORROW}
+        assert {h.target_date for h in _active_holds(croissant.sku)} == {_tomorrow()}
 
     def test_without_the_waitlist_everything_is_today(self, client, channel, product, croissant):
         """Fila desligada: toda reserva é para hoje, e a regra nunca morde."""

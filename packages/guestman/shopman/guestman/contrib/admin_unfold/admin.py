@@ -10,6 +10,7 @@ the Unfold versions.
 from __future__ import annotations
 
 import csv
+from decimal import Decimal
 
 from django import forms
 from django.apps import apps
@@ -38,7 +39,12 @@ from taggit.forms import TagWidgetMixin
 from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.dropdown_filters import ChoicesDropdownFilter
 from unfold.decorators import display
-from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget, UnfoldBooleanSwitchWidget
+from unfold.widgets import (
+    UnfoldAdminDecimalFieldWidget,
+    UnfoldAdminRadioSelectWidget,
+    UnfoldAdminTextInputWidget,
+    UnfoldBooleanSwitchWidget,
+)
 
 
 class UnfoldTagWidget(TagWidgetMixin, UnfoldAdminTextInputWidget):
@@ -252,6 +258,21 @@ class CustomerForm(forms.ModelForm):
         widget=UnfoldBooleanSwitchWidget,
         help_text=_("O cliente pode comprar \"em conta\" no PDV e acertar por período. Não se divulga; é por cliente."),
     )
+    # Limite OPCIONAL da conta (decisão do dono, 14/10/2026): em reais na tela,
+    # centavos em ``metadata.house_account_limit_q``. Em branco = sem limite, e
+    # nada muda. Com limite, a venda em conta que passaria dele pede o PIN do
+    # gerente no PDV (``shop/services/house_account.over_limit``).
+    house_account_limit = forms.DecimalField(
+        label=_("Limite da conta (R$)"),
+        required=False,
+        min_value=Decimal("0.01"),
+        max_digits=10,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text=_(
+            "Em branco, sem limite. Com limite, a venda em conta que passar dele pede o PIN do gerente no PDV."
+        ),
+    )
     # Preferências fiscais persistentes — mesma chave que o PDV lê/edita
     # (metadata.fiscal_prefs). O balcão liga/desliga no painel do cliente; aqui
     # é a paridade de config do cadastro completo.
@@ -278,6 +299,9 @@ class CustomerForm(forms.ModelForm):
         if instance is not None:
             metadata = instance.metadata or {}
             self.fields["house_account"].initial = bool(metadata.get("house_account"))
+            limit_q = metadata.get("house_account_limit_q")
+            if isinstance(limit_q, int) and not isinstance(limit_q, bool) and limit_q > 0:
+                self.fields["house_account_limit"].initial = Decimal(limit_q) / 100
             prefs = metadata.get("fiscal_prefs") or {}
             self.fields["fiscal_cpf_na_nota"].initial = bool(prefs.get("cpf_na_nota"))
             self.fields["fiscal_email_receipt"].initial = bool(prefs.get("email_receipt"))
@@ -289,6 +313,11 @@ class CustomerForm(forms.ModelForm):
             metadata["house_account"] = True
         else:
             metadata.pop("house_account", None)
+        limit = self.cleaned_data.get("house_account_limit")
+        if limit:
+            metadata["house_account_limit_q"] = int((limit * 100).to_integral_value())
+        else:
+            metadata.pop("house_account_limit_q", None)
         prefs = {
             "cpf_na_nota": bool(self.cleaned_data.get("fiscal_cpf_na_nota")),
             "email_receipt": bool(self.cleaned_data.get("fiscal_email_receipt")),
@@ -375,7 +404,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
             },
         ),
         ("Contato", {"fields": ["email", "phone"]}),
-        ("Segmentação", {"fields": ["price_tier", "tags", "house_account", "fiscal_cpf_na_nota", "fiscal_email_receipt", "notes"]}),
+        ("Segmentação", {"fields": ["price_tier", "tags", "house_account", "house_account_limit", "fiscal_cpf_na_nota", "fiscal_email_receipt", "notes"]}),
         (
             "Sistema",
             {

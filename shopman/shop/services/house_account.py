@@ -7,6 +7,10 @@ Três perguntas, três donos, sem tabela de saldo:
 
 - **Elegibilidade** é do cliente (guestman): ``Customer.metadata.house_account``
   (bool), escrito pelo Admin. Este módulo só lê.
+- **Limite** (opcional) também é do cliente: ``Customer.metadata.house_account_limit_q``
+  (centavos), escrito pelo Admin. Ausente = sem limite, e nada muda. Com limite,
+  a venda em conta que levaria o saldo acima dele não é recusada: pede o PIN do
+  gerente no PDV (``over_limit`` diz quanto passa; quem cobra é o ``pos``).
 - **Quanto deve** é do Payman: Σ dos intents ``account`` autorizados e não
   capturados do cliente (``PaymentService.account_balance_q``). Derivado.
 - **O acerto** é deste orquestrador: captura os intents mais antigos até o
@@ -55,6 +59,71 @@ def require_eligible(customer_ref: str | None) -> None:
         raise HouseAccountError("Venda em conta exige o cliente identificado.")
     if not is_eligible(customer_ref):
         raise HouseAccountError("Este cliente não tem conta na casa.")
+
+
+def limit_q(customer_ref: str | None) -> int | None:
+    """O limite da conta do cliente, em centavos, ou ``None`` (sem limite).
+
+    Só vale o inteiro positivo de ``Customer.metadata.house_account_limit_q``;
+    qualquer outra coisa é "sem limite", que é o comportamento de antes.
+    """
+    ref = str(customer_ref or "").strip()
+    if not ref:
+        return None
+    try:
+        from shopman.guestman.models import Customer
+    except ImportError:
+        return None
+    customer = Customer.objects.filter(ref=ref).only("metadata").first()
+    if customer is None:
+        return None
+    raw = (customer.metadata or {}).get("house_account_limit_q")
+    if isinstance(raw, bool):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+@dataclass(frozen=True)
+class AccountLimitExcess:
+    """A venda em conta passaria do limite: os números que a tela mostra ao gerente."""
+
+    customer_ref: str
+    balance_q: int  # o saldo devedor HOJE, antes desta venda
+    limit_q: int
+    charge_q: int  # o que esta venda põe na conta
+    over_q: int  # quanto o saldo passaria do limite
+
+    def as_dict(self) -> dict:
+        return {
+            "balance_q": self.balance_q,
+            "limit_q": self.limit_q,
+            "charge_q": self.charge_q,
+            "over_q": self.over_q,
+        }
+
+
+def over_limit(customer_ref: str | None, charge_q: int) -> AccountLimitExcess | None:
+    """Esta venda em conta levaria o saldo acima do limite? ``None`` quando não.
+
+    Sem limite definido, ou sem nada indo para a conta, a resposta é ``None``:
+    o limite é opcional e, ausente, nada muda. Exatamente no limite ainda cabe.
+    """
+    ref = str(customer_ref or "").strip()
+    charge_q = int(charge_q or 0)
+    if not ref or charge_q <= 0:
+        return None
+    limit = limit_q(ref)
+    if limit is None:
+        return None
+    balance = balance_q(ref)
+    over = balance + charge_q - limit
+    if over <= 0:
+        return None
+    return AccountLimitExcess(customer_ref=ref, balance_q=balance, limit_q=limit, charge_q=charge_q, over_q=over)
 
 
 def balance_q(customer_ref: str) -> int:

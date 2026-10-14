@@ -13,14 +13,20 @@
 // - **Chamar de novo**, dentro do aviso, quando a última chamada ficou sem
 //   resposta: a confirmação é a do diálogo da casa, com a frase do servidor.
 //
-// Cancelar a corrida e registrar a volta do troco ou da maquininha ficam no Gestor
-// (a frase do painel, `GESTOR_ONLY_COURIER_LINE`).
+// - **Cancelar a corrida** (dono, P=1, 14/10/2026), antes da coleta: a ação
+//   `courier-cancel` do Gestor, com a mesma confirmação de dois toques;
+// - **Entregador voltou** (idem): a ação `courier-back` do Gestor, que fecha a
+//   saída (entrega, dinheiro, troco e maquininha) depois de conferir a lista do que
+//   deve estar na mão (`courier_return_lines`, a mesma do diálogo do Gestor).
+//
+// Cotar a corrida e o acerto à mão do que voltou diferente ficam no Gestor.
 import type { OrderDetailAction } from "../../../operator-kit/app/types/orderDetail";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
+import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 import {
   courierBadgeColor as badgeColor,
+  COURIER_BACK_DIFFERENT_LINE,
   courierCallLabel,
-  GESTOR_ONLY_COURIER_LINE,
   custodyBody,
   noFreeMachineSentence,
   telHref,
@@ -35,11 +41,17 @@ const props = defineProps<{
   busy: boolean;
   dispatchAction?: OrderDetailAction;
   dispatchAgainAction?: OrderDetailAction;
+  cancelAction?: OrderDetailAction;
+  backAction?: OrderDetailAction;
+  /** O que a mão deve receber quando o entregador volta (lista do servidor). */
+  returnLines?: string[];
   equipmentOptions?: PreorderEquipmentOption[];
 }>();
 const emit = defineEmits<{
   dispatch: [custody: { change_out?: string; equipment?: string[] }];
   dispatchAgain: [];
+  cancel: [];
+  back: [];
 }>();
 
 const driver = computed(() => (props.courier.driver?.name ? props.courier.driver : null));
@@ -54,6 +66,10 @@ const staleDismissedFor = ref("");
 const showStale = computed(
   () => Boolean(progress.value.stale) && staleDismissedFor.value !== (props.courier.sync_since ?? ""),
 );
+
+// O pedido mudou depois da chamada (editar a encomenda é daqui): a corrida leva a
+// cobrança antiga, e cancelar para chamar de novo é no Gestor (P2-28).
+const chargeNotice = computed(() => courierChargeNotice(props.courier.charge_outdated, { cancelHere: false }));
 
 // ── Chamar: confirmação inline (a pergunta e a custódia) ──
 const confirming = ref(false);
@@ -80,6 +96,27 @@ function confirmCall() {
   if (machineMissing.value) return;
   confirming.value = false;
   emit("dispatch", custodyBody(custody.value, { changeOut: changeOut.value, machineRef: machineRef.value }));
+}
+
+// ── Cancelar a corrida: o toque de confirmação do Gestor (dois toques) ──
+const confirmingCancel = ref(false);
+watch(() => JSON.stringify(props.cancelAction?.payload_schema), () => { confirmingCancel.value = false; });
+const showsCancel = computed(() => Boolean(props.courier.can_cancel && props.cancelAction));
+function requestCancel() {
+  if (!confirmingCancel.value) {
+    confirmingCancel.value = true;
+    return;
+  }
+  confirmingCancel.value = false;
+  emit("cancel");
+}
+
+// ── Entregador voltou: conferir a lista, depois fechar a saída ──
+const confirmingBack = ref(false);
+watch(() => JSON.stringify(props.backAction?.payload_schema), () => { confirmingBack.value = false; });
+function confirmBack() {
+  confirmingBack.value = false;
+  emit("back");
 }
 
 // ── Chamar de novo: o diálogo da casa, com a frase do servidor ──
@@ -168,6 +205,17 @@ async function callAgain() {
         data-pos-courier-error
       />
 
+      <NuxtAlert
+        v-if="chargeNotice"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-receipt-text"
+        :title="chargeNotice.title"
+        :description="chargeNotice.description"
+        role="status"
+        data-pos-courier-charge-outdated
+      />
+
       <!-- Quem vem buscar, e o código que ele confere. -->
       <div v-if="driver || courier.confirmation_code" class="grid gap-1" data-pos-courier-driver>
         <p v-if="driver" class="flex items-center gap-1.5 text-sm font-medium">
@@ -207,8 +255,65 @@ async function callAgain() {
         />
       </div>
 
-      <!-- Com a corrida pedida, o que ainda é só do Gestor, numa frase. -->
-      <p v-if="courier.status" class="text-sm text-muted" data-pos-courier-gestor>{{ GESTOR_ONLY_COURIER_LINE }}</p>
+      <!-- Entregador voltou: a lista do que deve estar na mão, e um toque fecha a
+           saída. O que voltou diferente se acerta no Gestor. -->
+      <template v-if="backAction">
+        <div v-if="confirmingBack" class="grid gap-3" data-pos-courier-back-confirm>
+          <div class="grid gap-1">
+            <p class="text-sm font-medium">Confira o que voltou:</p>
+            <ul v-if="returnLines?.length" class="list-inside list-disc text-sm" data-pos-courier-back-lines>
+              <li v-for="line in returnLines" :key="line">{{ line }}</li>
+            </ul>
+            <p class="text-sm text-muted" data-pos-courier-back-different>{{ COURIER_BACK_DIFFERENT_LINE }}</p>
+          </div>
+          <div class="flex flex-wrap gap-2" data-pos-courier-back-actions>
+            <NuxtButton
+              type="button"
+              icon="i-lucide-check"
+              label="Conferido"
+              :disabled="busy || !backAction.enabled"
+              data-pos-courier-back-done
+              @click="confirmBack"
+            />
+            <NuxtButton
+              type="button"
+              color="neutral"
+              variant="outline"
+              label="Voltar"
+              data-pos-courier-back-cancel
+              @click="confirmingBack = false"
+            />
+          </div>
+        </div>
+        <div v-else>
+          <NuxtButton
+            type="button"
+            icon="i-lucide-undo-2"
+            :label="backAction.label || 'Entregador voltou'"
+            :disabled="busy || !backAction.enabled"
+            :title="backAction.enabled ? undefined : backAction.reason || undefined"
+            data-pos-courier-returned
+            @click="confirmingBack = true"
+          />
+        </div>
+      </template>
+
+      <!-- Cancelar a corrida, antes da coleta: o segundo toque confirma (o mesmo
+           gesto do Gestor); sair do botão desarma. -->
+      <div v-if="showsCancel">
+        <NuxtButton
+          type="button"
+          color="error"
+          variant="outline"
+          icon="i-lucide-ban"
+          :label="confirmingCancel ? 'Confirmar o cancelamento?' : 'Cancelar a corrida'"
+          :disabled="busy || !cancelAction?.enabled"
+          :title="cancelAction?.enabled ? undefined : cancelAction?.reason || undefined"
+          data-pos-courier-cancel
+          @blur="confirmingCancel = false"
+          @click="requestCancel"
+        />
+      </div>
 
       <!-- Chamar: o toque arma a confirmação, com a pergunta inteira do servidor e
            a custódia que sai com o entregador. -->

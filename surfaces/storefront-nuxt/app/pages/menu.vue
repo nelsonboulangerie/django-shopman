@@ -615,11 +615,6 @@ useHead({
             </UiAlertDescription>
           </UiAlert>
 
-          <UiAlert v-if="catalog.happy_hour?.active" variant="warning" icon="lucide:badge-percent">
-            <UiAlertTitle>Happy hour ativo</UiAlertTitle>
-            <UiAlertDescription>{{ catalog.happy_hour.discount_percent }}% de desconto aplicado no cardápio.</UiAlertDescription>
-          </UiAlert>
-
           <section data-menu-results class="min-w-0 scroll-mt-40 space-y-4">
             <!-- Mostrar só disponíveis: padrão da casa, chave do cliente. -->
             <div

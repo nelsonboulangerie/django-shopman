@@ -267,13 +267,38 @@ export function firstEnabledPickupSlot (slots: PickupSlotProjection[]): PickupSl
   return enabledPickupSlots(slots)[0] || null
 }
 
-export function reconciledPickupSlotRef (
-  fulfillmentType: FulfillmentType,
+/**
+ * As janelas que valem para o recebimento escolhido. Retirada lê os turnos de
+ * retirada; entrega lê a grade de entrega (a mesma da concierge: meia hora hoje,
+ * turno na encomenda), que o servidor confere no commit.
+ */
+export function checkoutWindows (
+  checkout: Pick<CheckoutProjection, 'pickup_slots' | 'delivery_windows'> | null | undefined,
+  fulfillmentType: FulfillmentType
+): PickupSlotProjection[] {
+  if (fulfillmentType === 'delivery') return checkout?.delivery_windows || []
+  return checkout?.pickup_slots || []
+}
+
+export function earliestCheckoutWindowRef (
+  checkout: Pick<CheckoutProjection, 'earliest_slot_ref' | 'earliest_delivery_window_ref'> | null | undefined,
+  fulfillmentType: FulfillmentType
+): string | null {
+  if (fulfillmentType === 'delivery') return checkout?.earliest_delivery_window_ref || null
+  return checkout?.earliest_slot_ref || null
+}
+
+/**
+ * A janela que fica escolhida depois que a grade muda (data, recebimento,
+ * carrinho). A do cliente fica enquanto continuar na grade e habilitada; senão
+ * vale a mais cedo. Grade vazia não deixa nada escolhido: um turno de retirada
+ * herdado não pode viajar num pedido de entrega.
+ */
+export function reconciledWindowRef (
   currentSlotRef: string,
   slots: PickupSlotProjection[],
   earliestSlotRef: string | null | undefined
 ): string {
-  if (fulfillmentType !== 'pickup') return currentSlotRef
   if (!slots.length) return ''
   const selected = selectedPickupSlot(slots, currentSlotRef)
   if (currentSlotRef && selected?.enabled) return currentSlotRef
@@ -337,7 +362,6 @@ export function checkoutStepSummary ({
 
 export function activeCheckoutStepSummary ({
   step,
-  form,
   availableFulfillment,
   savedAddressesCount,
   fulfillmentLabel,
@@ -346,7 +370,7 @@ export function activeCheckoutStepSummary ({
 }: CheckoutStepSummaryInput): string {
   if (step === 'fulfillment') return availableFulfillment.length > 1 ? 'Retirada ou entrega' : fulfillmentLabel
   if (step === 'address') return savedAddressesCount ? 'Escolha ou informe o endereço' : 'Informe o endereço'
-  if (step === 'when') return form.fulfillment_type === 'delivery' ? 'Escolha a data' : 'Escolha data e horário'
+  if (step === 'when') return 'Escolha data e horário'
   return action?.reason && !action.enabled ? action.reason : paymentMethodLabel || 'Forma de pagamento'
 }
 
@@ -445,7 +469,8 @@ export function canContinueCheckoutWhen (
   closedWeekdays: number[] | readonly number[] = []
 ): boolean {
   if (!form.delivery_date || isCheckoutDateUnavailable(form.delivery_date, bounds, closedDates, closedWeekdays)) return false
-  if (form.fulfillment_type !== 'pickup' || !slots.length) return true
+  // Entrega sem janela no dia não segue: o servidor recusaria, e a escolha é do cliente.
+  if (!slots.length) return form.fulfillment_type !== 'delivery'
   return !!selectedSlot?.enabled
 }
 

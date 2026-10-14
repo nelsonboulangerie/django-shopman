@@ -190,12 +190,14 @@ _SURFACE_URL_KEYS = {"orders": "gestor"}
 #: Onde, dentro do pedido, mora o gesto do aviso (âncora do detalhe).
 _ORDER_DETAIL_ANCHORS = {
     "ifood_negotiation_open": "ifood-negotiations",
+    "ifood_accept_not_delivered": "ifood-accept",
 }
 
 #: O rótulo do botão quando o aviso leva ao pedido: diz aonde leva, não "resolver".
 _ORDER_LABELS = {
     "ifood_negotiation_open": "Responder",
     "card_authorization_expiring": "Aceitar ou recusar",
+    "ifood_accept_not_delivered": "Abrir e tentar de novo",
 }
 
 
@@ -209,11 +211,38 @@ def _catalog_product_href(alert) -> str:
     return f"/catalog?{urlencode({'sku': sku, 'tab': 'social'})}" if sku else ""
 
 
+def _ifood_binding_href(alert) -> str:
+    """Item do iFood sem produto da casa: a revisão de vínculos, filtrada pelo item.
+
+    É lá que cada item do iFood se liga a um produto (``channel_health``: "Revisar
+    vínculos"). O filtro é o NOME do item, que é o que a revisão mostra; sem o
+    item no pedido, o código que veio.
+    """
+    from shopman.orderman.models import Order, OrderItem
+
+    from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
+    from shopman.shop.services.stock import UNKNOWN_SKU_ALERT_TYPE, unknown_sku_alert_sku
+
+    if alert.type != UNKNOWN_SKU_ALERT_TYPE or not alert.order_ref:
+        return ""
+    row = Order.objects.filter(ref=alert.order_ref).values_list("pk", "channel_ref").first()
+    if row is None or row[1] != IFOOD_CHANNEL_REF:
+        return ""
+    sku = unknown_sku_alert_sku(alert.message)
+    name = OrderItem.objects.filter(order_id=row[0], sku=sku).values_list("name", flat=True).first() if sku else None
+    needle = str(name or sku or "").strip()
+    path = f"/channels/{quote(IFOOD_CHANNEL_REF, safe='')}/catalog"
+    return f"{path}?{urlencode({'q': needle})}" if needle else path
+
+
 def _home_for(alert, *, target_date: str) -> tuple[str, str, str] | None:
     """(app, caminho com o filtro do registro, rótulo) de onde o aviso se resolve."""
     catalog_href = _catalog_product_href(alert)
     if catalog_href:
         return ("orders", catalog_href, "Conferir o GTIN no Catálogo")
+    binding_href = _ifood_binding_href(alert)
+    if binding_href:
+        return ("orders", binding_href, "Revisar vínculos do iFood")
     home = _ALERT_HOMES.get(alert.type)
     if home is not None:
         surface, path, label = home

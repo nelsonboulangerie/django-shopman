@@ -8756,13 +8756,13 @@ class Command(BaseCommand):
             if created:
                 count += 1
 
-        # Happy Hour ("Hora da Xepa") is an in-store, end-of-day clearance —
-        # it must NOT touch the online storefront (where listed prices would
-        # diverge from the cart). Scope the rule to every non-web channel; an
-        # empty channel set would mean "all channels", including web.
+        # A Hora da Xepa é liquidação de fim de dia de quem está na loja: vale SÓ
+        # no balcão (decisão do dono, 14/10/2026). Nem site, nem WhatsApp, nem
+        # iFood. A regra exige canal listado (``HappyHourRule.channels_required``):
+        # sem o PDV aqui, ela não valeria em lugar nenhum.
         happy_hour = rules_by_ref.get("happy_hour")
         if happy_hour is not None:
-            happy_hour.channels.set(Channel.objects.exclude(ref="web"))
+            happy_hour.channels.set(Channel.objects.filter(ref="pdv"))
 
         self.stdout.write(f"  ✅ {len(RULE_CONFIGS)} rule configs ({count} novos)")
 

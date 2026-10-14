@@ -26,6 +26,7 @@ ended up adopting only one of them.
 from __future__ import annotations
 
 import logging
+import re
 from decimal import Decimal
 
 from django.utils import timezone
@@ -176,7 +177,16 @@ def hold(order, *, require_all: bool = False) -> None:
                         raise _unknown_sku_error(item, comp_sku)
                     # Pedido já existe (caminho brando pós-commit, ex.: canal
                     # externo) — não dá para recusar; alertar o operador.
-                    _alert_unknown_sku(order, comp_sku)
+                    _alert_unknown_sku(order, comp_sku, item)
+                hold_ids.append({"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True})
+                continue
+            # O mesmo SKU fora do catálogo, quando o Stockman o lê como pausado
+            # (o contrato de oferta não o conhece): a reserva falharia com
+            # ``product_not_found`` e o aviso diria "sem reserva" sem dizer por
+            # quê. No pedido que já existe (iFood: item sem ``externalCode`` ou
+            # com código velho), é o aviso de SKU fora do catálogo, com o item.
+            if not require_all and not allow_untracked and _sku_absent_from_catalog(comp_sku):
+                _alert_unknown_sku(order, comp_sku, item)
                 hold_ids.append({"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True})
                 continue
 
@@ -709,6 +719,22 @@ def _reconcile_decrease(adapter, order, sku, qty, entries, summary, *, hold_kwar
 # ── helpers ──
 
 
+def _sku_absent_from_catalog(sku: str) -> bool:
+    """True só quando o contrato de catálogo RESPONDE que não conhece o SKU.
+
+    O avesso de :func:`_sku_known_to_catalog` para o caminho brando: lá, a
+    dúvida exige a reserva; aqui, a dúvida também (contrato que não responde
+    não autoriza pular a reserva, que segue tentando e avisando se falhar).
+    """
+    from shopman.stockman.adapters.sku_validation import get_sku_validator
+
+    try:
+        return get_sku_validator().get_sku_info(sku) is None
+    except Exception:
+        logger.warning("stock.sku_catalog_lookup_failed sku=%s", sku, exc_info=True)
+        return False
+
+
 def _sku_known_to_catalog(sku: str) -> bool:
     """True quando o SKU existe no contrato de catálogo (offering).
 
@@ -824,21 +850,49 @@ def _lead_time_error(order, item: dict, comp_sku: str, earliest):
     )
 
 
-def _alert_unknown_sku(order, sku: str) -> None:
+def _alert_unknown_sku(order, sku: str, item: dict | None = None) -> None:
     """Pedido já commitado (caminho brando) carregou SKU fora do catálogo em
-    canal gated — o operador precisa saber que não há reserva possível."""
+    canal gated — o operador precisa saber que não há reserva possível.
+
+    No iFood o SKU é o ``externalCode`` do item; sem ele, a ingestão usa o id da
+    linha (``ifood_orders._map_items``). O aviso diz QUAL item e qual dos dois
+    casos, porque o conserto é ligar o item do iFood a um produto da casa
+    (``backstage.projections.alerts`` leva à revisão de vínculos do canal).
+    """
+    from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
     from shopman.shop.services.observability import create_operator_alert
 
+    item = item or {}
+    name = str(item.get("name") or "").strip()
+    if getattr(order, "channel_ref", "") == IFOOD_CHANNEL_REF and name:
+        why = "veio sem código externo" if sku == str(item.get("line_id") or "") else f"veio com o código {sku}"
+        message = (
+            f'Pedido {order.ref}: o item "{name}" do iFood {why} e não tem produto da casa ligado. '
+            "Saiu sem reserva de estoque."
+        )
+    else:
+        message = (
+            f"Pedido {order.ref} contém SKU fora do catálogo ({sku}) em canal "
+            "que não permite item sem reserva. Conferir o pedido."
+        )
     create_operator_alert(
         type="stock_unknown_sku",
         severity="warning",
-        message=(
-            f"Pedido {order.ref} contém SKU fora do catálogo ({sku}) em canal "
-            "que não permite item sem reserva. Conferir o pedido."
-        ),
+        message=message,
         order_ref=order.ref,
-        dedupe_key=f"stock_unknown_sku:{order.ref}:{sku}",
+        dedupe_key=f"{UNKNOWN_SKU_ALERT_TYPE}:{order.ref}:{sku}",
     )
+
+
+#: O tipo do aviso e o marcador do SKU na mensagem (o sufixo de dedupe).
+UNKNOWN_SKU_ALERT_TYPE = "stock_unknown_sku"
+_UNKNOWN_SKU_MARK = re.compile(r"stock_unknown_sku:[^:\s]+:(\S+)")
+
+
+def unknown_sku_alert_sku(message: str) -> str:
+    """O SKU de um aviso ``stock_unknown_sku``, lido do marcador; ``""`` sem ele."""
+    match = _UNKNOWN_SKU_MARK.search(str(message or ""))
+    return match.group(1) if match else ""
 
 
 def _alert_hold_gap(order, sku: str, qty, error_code) -> None:

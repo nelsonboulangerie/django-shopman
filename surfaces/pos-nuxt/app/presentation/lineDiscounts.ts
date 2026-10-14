@@ -9,7 +9,7 @@
 
 import type { POSCartItem } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
-import { lineAmountQ } from "~/presentation/weighed";
+import { isWeighedLine, lineAmountQ } from "~/presentation/weighed";
 
 /** "Liquidação −15%" (ou "Liquidação −R$ 1,95"). "" quando não há desconto automático. */
 export function pricingDiscountBadge(item: POSCartItem): string {
@@ -193,4 +193,103 @@ export function applyLinePrices(
  */
 export function linesWithoutServerPrices(items: readonly POSCartItem[]): Array<Partial<POSCartItem>> {
   return items.map(({ charged_price_q: _charged, list_price_q: _list, pricing_discount: _auto, ...rest }) => rest);
+}
+
+/** O alcance de um desconto de linha: quanto ele tira por unidade e na linha. */
+export type DiscountReach = {
+  /** Quanto sai de CADA unidade, em centavos. */
+  perUnitQ: number;
+  /** Quanto sai da linha inteira, em centavos. */
+  lineQ: number;
+  /** O percentual, quando o desconto foi dado em %. `null` quando foi em R$. */
+  percent: number | null;
+  /** A linha tem mais de uma unidade (a peça pesada nunca tem). */
+  multiUnit: boolean;
+};
+
+function percentText(percent: number): string {
+  return `${String(Math.round(percent * 100) / 100).replace(".", ",")}%`;
+}
+
+/** O alcance dito por extenso, pela régua do kernel (`_calc_manual`: o desconto em
+ *  R$ é POR UNIDADE).
+ *
+ *  Em R$ numa linha de 3: "R$ 1,00 por unidade · R$ 3,00 na linha". Sem isso o
+ *  operador lia "R$ 1,00" e esperava R$ 1,00 a menos na linha (dono, 14/10/2026).
+ *  Em %: "10% · R$ 2,07 na linha", porque percentual sozinho não diz quanto saiu.
+ *  Em R$ numa linha de 1, o valor basta: por unidade e na linha são o mesmo número.
+ *  `sign` é o "−" do selo; o editor fala sem ele (ali o assunto já é o desconto).
+ */
+export function discountReachText(reach: DiscountReach, sign = ""): string {
+  if (reach.perUnitQ <= 0) return "";
+  if (reach.percent !== null && reach.percent > 0) {
+    return `${sign}${percentText(reach.percent)} · ${sign}${formatBRL(reach.lineQ)} na linha`;
+  }
+  if (!reach.multiUnit) return `${sign}${formatBRL(reach.perUnitQ)}`;
+  return `${sign}${formatBRL(reach.perUnitQ)} por unidade · ${sign}${formatBRL(reach.lineQ)} na linha`;
+}
+
+/** Quanto sai da linha quando cada unidade perde `perUnitQ`, com o arredondamento
+ *  da peça pesada (o kernel multiplica o preço já descontado pelo peso). */
+function lineReachQ(listQ: number, perUnitQ: number, item: Pick<POSCartItem, "qty" | "weighed">): number {
+  return Math.max(0, lineAmountQ(listQ, item) - lineAmountQ(listQ - perUnitQ, item));
+}
+
+/** O alcance do desconto que VENCEU a linha, medido no que o servidor cobra.
+ *  O mesmo vencedor do selo (`lineDiscountBadge`): o automático, se houver, senão o
+ *  manual. `null` quando a linha não tem desconto. */
+export function lineDiscountReach(item: POSCartItem): DiscountReach | null {
+  const auto = pricingDiscountBadge(item) ? item.pricing_discount! : null;
+  const manualQ = manualDiscountPerUnitQ(item);
+  if (!auto && manualQ <= 0) return null;
+  const listQ = lineListUnitQ(item);
+  const measuredQ = typeof item.list_price_q === "number" ? listQ - unitChargedQ(item) : 0;
+  const perUnitQ = measuredQ > 0 ? measuredQ : auto ? Math.max(0, auto.amount_q) : manualQ;
+  if (perUnitQ <= 0) return null;
+  const percent = auto
+    ? auto.percent > 0 ? auto.percent : null
+    : item.discount?.type === "fixed" ? null : item.discount?.value || null;
+  const savedQ = lineSavingsQ(item);
+  return {
+    perUnitQ,
+    lineQ: savedQ > 0 ? savedQ : lineReachQ(listQ, perUnitQ, item),
+    percent,
+    multiUnit: !isWeighedLine(item) && item.qty > 1,
+  };
+}
+
+/** O selo da linha, sem o motivo: "−R$ 1,00 por unidade · −R$ 3,00 na linha". */
+export function lineDiscountFact(item: POSCartItem): string {
+  const reach = lineDiscountReach(item);
+  return reach ? discountReachText(reach, "−") : "";
+}
+
+/** O detalhe da linha, com o motivo: "Cortesia −R$ 1,00 por unidade · −R$ 3,00 na linha". */
+export function lineDiscountDetail(item: POSCartItem, reasons: readonly DiscountReasonOption[] = []): string {
+  const fact = lineDiscountFact(item);
+  if (!fact) return "";
+  const label = pricingDiscountBadge(item)
+    ? item.pricing_discount?.label || "Desconto"
+    : reasons.find((option) => option.ref === item.discount?.reason)?.label || item.discount?.reason || "Desconto";
+  return `${label} ${fact}`;
+}
+
+/** O alcance do desconto que o operador está DIGITANDO, antes do Aplicar: a mesma
+ *  conta do kernel sobre a etiqueta da linha. `null` sem valor. */
+export function draftDiscountReach(
+  item: POSCartItem,
+  kind: "percent" | "fixed",
+  value: number,
+): DiscountReach | null {
+  if (!(value > 0)) return null;
+  const listQ = lineListUnitQ(item);
+  const askedQ = kind === "fixed" ? Math.round(value * 100) : Math.round((listQ * value) / 100);
+  const perUnitQ = Math.min(askedQ, listQ);
+  if (perUnitQ <= 0) return null;
+  return {
+    perUnitQ,
+    lineQ: lineReachQ(listQ, perUnitQ, item),
+    percent: kind === "percent" ? value : null,
+    multiUnit: !isWeighedLine(item) && item.qty > 1,
+  };
 }

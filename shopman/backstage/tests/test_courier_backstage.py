@@ -387,3 +387,26 @@ def test_queued_dispatch_for_ifood_delivery_never_reaches_the_central(shop):
     task.refresh_from_db()
     assert task.payload["dispatch_attempt"]["state"] == "not_applied"
     assert not courier_mock.rides()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_detail_says_the_ride_carries_the_old_charge(client, operator, shop):
+    """P2-28: o pedido mudou depois da chamada; a tela mostra o que a corrida leva e o de agora."""
+    from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 2000})
+    courier.request_dispatch(order, actor="test")
+    CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
+    order.refresh_from_db()
+    client.force_login(operator)
+    assert _detail(client, order.ref)["courier"]["charge_outdated"] is None
+
+    merge_order_data(order, {"payment": {"method": "credit", "collection": "on_delivery"}})
+    block = _detail(client, order.ref)["courier"]
+    assert block["charge_outdated"] == {
+        "sent": "Cobrar R$ 15,00 em dinheiro · troco para R$ 20,00",
+        "current": "Cobrar R$ 15,00 no cartão (maquininha)",
+        "collected": False,
+    }
+    assert block["can_cancel"] is True

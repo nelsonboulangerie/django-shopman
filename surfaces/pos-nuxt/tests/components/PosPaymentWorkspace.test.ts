@@ -1054,6 +1054,23 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     expect(avisos(wrapper).text()).toContain(`Desconto acima de ${formatBRL(5000)}.`);
   });
 
+  it("conta na casa acima do limite: o aviso diz em aberto, limite e quanto passa", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        review: review({
+          requires_manager_approval: true,
+          approval_reasons: ["house_account_over_limit"],
+          house_account_limit: { balance_q: 18000, limit_q: 20000, charge_q: 5000, over_q: 3000 },
+        }),
+      }),
+    });
+    const text = avisos(wrapper).text();
+    expect(text).toContain("Esta venda precisa de um gerente.");
+    expect(text).toContain(
+      `Conta na casa acima do limite. Em aberto ${formatBRL(18000)}, limite ${formatBRL(20000)}: esta venda passa ${formatBRL(3000)}.`,
+    );
+  });
+
   it("avisos de pagamento do servidor não sobrevivem: a tela responde por eles ao vivo", async () => {
     // A review só é refeita quando o CARRINHO muda. Um aviso "os pagamentos não
     // cobrem o total" ficava congelado dez centímetros acima de um "Restante

@@ -184,8 +184,11 @@ def test_system_actor_has_no_name_on_the_line(station):
 
 
 def test_search_by_code_reaches_the_whole_day_and_limit_caps(station):
+    # Ancorado em 0h de hoje, não em "agora": "agora - n segundos" cai em ontem
+    # quando o teste roda logo depois da meia-noite.
+    start_of_today = _at(0, 0)
     for n in range(HISTORY_LIMIT + 5):
-        _ticket(station, _order(f"PDV-{n:04d}"), completed_at=timezone.now() - timedelta(seconds=n))
+        _ticket(station, _order(f"PDV-{n:04d}"), completed_at=start_of_today + timedelta(seconds=n))
 
     history = build_kds_history(station.ref)
     assert len(history.entries) == HISTORY_LIMIT

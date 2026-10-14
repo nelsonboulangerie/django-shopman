@@ -46,6 +46,10 @@ export default defineNuxtConfig({
         },
       },
     ],
+    // O `Toaster` (e a folha do vue-sonner) é registrado pelos apps; o harness do
+    // catálogo o registra sozinho para a bancada do aviso passageiro medir o
+    // `OperatorSonner` de verdade (`catalog/OperatorKitToastPage.vue`).
+    ...(process.env.OPERATOR_KIT_CATALOG === "1" ? ["vue-sonner/nuxt"] : []),
   ],
 
   // Imports usados pelos próprios componentes do layer. O toast continua sob
@@ -92,6 +96,13 @@ export default defineNuxtConfig({
               name: "operator-kit-catalog-phone-header",
               path: "/__operator_kit_catalog/phone-header",
               file: fileURLToPath(new URL("./catalog/OperatorKitPhoneHeaderPage.vue", import.meta.url)),
+            });
+            // A bancada do aviso passageiro (a ação na cor do aviso), medida por
+            // `tests/catalog/toast-action.spec.ts`.
+            pages.push({
+              name: "operator-kit-catalog-toast",
+              path: "/__operator_kit_catalog/toast",
+              file: fileURLToPath(new URL("./catalog/OperatorKitToastPage.vue", import.meta.url)),
             });
           },
         }
