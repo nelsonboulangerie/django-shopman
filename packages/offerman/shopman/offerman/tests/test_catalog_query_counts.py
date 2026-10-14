@@ -1,10 +1,10 @@
-"""Custo de leitura do catalogo: a contagem de consultas nao cresce com o numero de produtos.
+"""Custo de leitura do catálogo: a contagem de consultas não cresce com o número de produtos.
 
-O caminho quente do catalogo (projecao de listing e adapters de SKU/produto para Stockman
+O caminho quente do catálogo (projeção de listing e adapters de SKU/produto para Stockman
 e Craftsman) prefetcha ``collection_items__collection``. O ``.filter(is_primary=True)``
-dentro do laco descartava o cache e voltava ao banco uma vez por produto; a correcao varre
-as linhas prefetchadas em Python. Estes testes sao a trava: se a contagem voltar a crescer
-com N, o custo do catalogo inteiro volta junto.
+dentro do laço descartava o cache e voltava ao banco uma vez por produto; a correção varre
+as linhas prefetchadas em Python. Estes testes são a trava: se a contagem voltar a crescer
+com N, o custo do catálogo inteiro volta junto.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.django_db
 
 
 def _seed_products(listing, collection, count, *, start=0, prefix="P", keywords=()):
-    """Cria ``count`` produtos com colecao primaria, keywords e item de listing."""
+    """Cria ``count`` produtos com coleção primária, keywords e item de listing."""
     products = []
     for index in range(start, start + count):
         product = Product.objects.create(
@@ -68,7 +68,7 @@ class TestGetProjectionItemsQueryCount:
         assert len(small) == 2
         assert len(big) == 30
         assert len(thirty.captured_queries) == len(two.captured_queries), (
-            "A projecao do listing consulta em numero fixo; crescer com os produtos e o "
+            "A projeção do listing consulta em número fixo; crescer com os produtos é o "
             "N+1 de collection_items/keywords."
         )
         assert len(thirty.captured_queries) <= 6
@@ -82,8 +82,8 @@ class TestGetProjectionItemsQueryCount:
             ref="primary", name="Primary", is_active=True, sort_order=9
         )
         product = Product.objects.create(sku="PARITY", name="Paridade", base_price_q=700)
-        # Nao-primario com sort_order MENOR: a escolha e por is_primary, nao pela
-        # primeira linha da colecao em ordem global.
+        # Não-primário com sort_order MENOR: a escolha é por is_primary, não pela
+        # primeira linha da coleção em ordem global.
         CollectionItem.objects.create(
             collection=secondary, product=product, is_primary=False, sort_order=0
         )

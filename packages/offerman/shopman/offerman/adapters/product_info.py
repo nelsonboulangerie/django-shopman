@@ -95,8 +95,8 @@ class ProductInfoBackend:
         for sku in skus:
             if sku in found:
                 p = found[sku]
-                # Scan the prefetched rows: .filter(is_primary=True) would
-                # discard the prefetch and re-query once per product.
+                # Varre as linhas prefetchadas: .filter(is_primary=True)
+                # descartaria o prefetch e voltaria ao banco por produto.
                 primary_item = next(
                     (ci for ci in p.collection_items.all() if ci.is_primary), None
                 )
@@ -137,7 +137,7 @@ class ProductInfoBackend:
 
         result = []
         for p in qs:
-            # Prefetched above; scan in Python instead of re-querying per product.
+            # Prefetchado acima; varre em Python em vez de consultar por produto.
             primary_item = next(
                 (ci for ci in p.collection_items.all() if ci.is_primary), None
             )

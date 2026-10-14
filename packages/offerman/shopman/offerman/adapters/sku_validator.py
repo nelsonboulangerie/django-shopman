@@ -169,7 +169,7 @@ class SkuValidator:
 
         result = []
         for p in qs:
-            # Prefetched above; scan in Python instead of re-querying per product.
+            # Prefetchado acima; varre em Python em vez de consultar por produto.
             primary_item = next(
                 (ci for ci in p.collection_items.all() if ci.is_primary), None
             )

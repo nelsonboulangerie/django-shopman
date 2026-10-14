@@ -416,12 +416,12 @@ class CatalogService:
 
             product = item.product
             primary_collection = None
-            # The queryset prefetches product__collection_items__collection;
-            # scanning the cached rows keeps the primary-collection choice without
-            # .filter(is_primary=True), which would discard the prefetch and
-            # re-query once per product. CollectionItem.Meta.ordering is
-            # sort_order, and at most one item per product is primary (partial
-            # unique constraint), so the first primary seen is .first().
+            # A queryset prefetcha product__collection_items__collection; varrer as
+            # linhas cacheadas preserva a escolha da coleção principal sem
+            # .filter(is_primary=True), que descartaria o prefetch e voltaria ao
+            # banco uma vez por produto. CollectionItem.Meta.ordering é sort_order
+            # e no máximo um item por produto é primary (constraint parcial),
+            # então o primeiro primary visto é exatamente o .first() anterior.
             primary_item = next(
                 (ci for ci in product.collection_items.all() if ci.is_primary), None
             )
@@ -442,8 +442,8 @@ class CatalogService:
                 is_sellable=product.is_sellable and item.is_sellable,
                 category=primary_collection,
                 image_url=product.image_url or None,
-                # names() clones the queryset and re-queries; iterating the
-                # prefetched tags yields the same names without the extra query.
+                # names() clona a queryset e volta ao banco; iterar as tags
+                # prefetchadas devolve os mesmos nomes sem a consulta extra.
                 keywords=[tag.name for tag in product.keywords.all()],
                 metadata={
                     "listing_ref": listing.ref,
