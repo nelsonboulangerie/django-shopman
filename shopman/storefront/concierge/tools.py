@@ -1367,12 +1367,14 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES
 
         if getattr(exc, "code", "") in REFUSAL_CODES:
-            # A nota da entrega não sai sem CPF e endereço completo. O modelo
-            # precisa saber O QUE pedir, não que "não deu".
+            # A porta recusa CPF/CNPJ informado e INVÁLIDO, ou endereço
+            # incompleto. CPF em branco passa: a nota sai presencial (ADR-035).
+            # O modelo precisa saber O QUE consertar, não que "não deu".
             return _error(
                 exc.code,
-                f"{exc.message} Peça o CPF ou CNPJ ao cliente e grave com set_fulfillment (tax_id); "
-                "se o endereço estiver incompleto, ofereça o site (send_web_link) ou a retirada.",
+                f"{exc.message} Se o CPF ou CNPJ está errado, peça o número certo ao cliente ou siga sem ele "
+                "(set_fulfillment com tax_id); se o endereço estiver incompleto, ofereça o site "
+                "(send_web_link) ou a retirada.",
             )
         if getattr(exc, "code", "") == "total_changed":
             return _error("revision_conflict", "O total mudou. Confira a diferença antes de confirmar.", facts=getattr(exc, "context", {}))
@@ -1930,7 +1932,7 @@ TOOL_SPECS: list[dict] = [
                 "delivery_date": {"type": "string", "description": "AAAA-MM-DD ou \"\"."},
                 "slot_ref": {"type": "string", "description": "Ref do horário, ou \"\"."},
                 "address": {"type": "string", "description": "Endereço escrito pelo cliente (entrega), ou \"\"."},
-                "tax_id": {"type": "string", "description": "CPF ou CNPJ do cliente para a nota fiscal da entrega (obrigatório para entregar), ou \"\"."},
+                "tax_id": {"type": "string", "description": "CPF ou CNPJ do cliente para a nota fiscal da entrega (opcional: sem ele a nota sai sem identificar o consumidor), ou \"\"."},
                 "use_shared_location": {"type": "boolean", "description": "true quando o cliente enviou a localização pelo WhatsApp e ela é o endereço da entrega."},
                 "street": {"type": "string", "description": "Rua dita/corrigida pelo cliente, ou \"\"."},
                 "street_number": {"type": "string", "description": "Número da casa/prédio (ou \"S/N\" se o cliente disser que não tem), ou \"\"."},

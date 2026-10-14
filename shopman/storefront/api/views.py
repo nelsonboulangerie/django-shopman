@@ -308,9 +308,9 @@ class CheckoutView(APIView):
                 )
 
         # CPF/CNPJ na nota: validado AQUI, no campo, antes de qualquer outra
-        # coisa do pedido. Na entrega, se ele é exigido é pergunta da trava do
-        # commit (a mesma regra da emissão); na retirada é o "CPF na nota?" do
-        # balcão, opcional (decisão do dono, 25/09/2026). Se veio, tem de estar certo.
+        # coisa do pedido. Opcional nos dois recebimentos: na entrega, sem ele a
+        # nota sai presencial (ADR-035); na retirada é o "CPF na nota?" do
+        # balcão (decisão do dono, 25/09/2026). Se veio, tem de estar certo.
         from shopman.utils.documents import is_valid_tax_id
 
         fiscal_tax_id = "".join(ch for ch in validated_data.get("fiscal_tax_id", "") if ch.isdigit())
