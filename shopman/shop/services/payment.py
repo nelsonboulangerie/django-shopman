@@ -1575,7 +1575,9 @@ def _ifood_balance_due_q(order, total_q: int) -> int | None:
     from shopman.shop.services.ifood_ingest import payment_status_from_payload
 
     payments = ((order.data or {}).get("ifood") or {}).get("payments") or {}
-    status = payment_status_from_payload(payments, int(order.total_q or 0))
+    # O total EFETIVO, não o selado: o pedido que o cliente alterou no iFood é
+    # pago pelo total novo (``ifood.payments`` é relido no ORDER_PATCHED).
+    status = payment_status_from_payload(payments, int(total_q or 0))
     if status == "paid":
         return 0
     if status == "pending":
