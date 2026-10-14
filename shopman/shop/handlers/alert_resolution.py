@@ -35,6 +35,7 @@ RESOLVED_BY_AUTHORIZATION = (
 RESOLVED_BY_LEAVING_NEW = (
     "stale_new_order",
     "payment_awaiting_confirmation",
+    "card_authorization_expiring",
 )
 
 #: A corrida da central: a entrega terminou ou o pedido acabou.

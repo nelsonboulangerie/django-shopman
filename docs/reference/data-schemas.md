@@ -333,6 +333,7 @@ for key in (
 | `cancellation_reason` | `string` | PixTimeoutHandler, PaymentTimeoutHandler, ConfirmationTimeoutHandler, OrderCancelView, GestorOrderRejectView | hooks._on_cancelled | Motivo (auditoria): `"pix_timeout"`, `"card_timeout"`, `"confirmation_timeout"`, `"customer_requested"`, texto livre. **Pode conter código de máquina — nunca exibir ao cliente.** |
 | `cancellation_note` | `string` | `operator_orders.cancel_order` (via OrderCancelView `customer_note`) | `lifecycle._on_cancelled` | Justificativa **voltada ao cliente**, escrita/escolhida pelo operador (preset). Só existe em cancelamento por operador com motivo informado; entra na notificação `order_cancelled` como `{status_note}` ("Motivo: …."; sem motivo, "Os detalhes estão no pedido."). Ausente ⇒ mensagem genérica. Distinta de `cancellation_reason` (que carrega códigos de máquina) |
 | `rejected_by` | `string` | GestorOrderRejectView | — | Username do operador que rejeitou |
+| `card_authorization_expired_at` | `string` | `services/card_authorization.expire` (Directive `payment.card_authorization_watch`) | auditoria | ISO datetime em que o pedido foi cancelado porque a autorização do cartão (captura manual) venceu no Stripe sem aceite. Vem com `cancellation_reason="card_authorization_expired"` e `cancellation_note` (o motivo que o cliente lê). Nada foi cobrado: o intent fica `cancelled` no Payman |
 | `reschedule_history` | `list[dict]` | `shop.services.reschedule.reschedule` (API `POST orders/<ref>/reschedule/`), sob lock do pedido | trilha/auditoria; histórico do pedido (evento `order_rescheduled`) | Cada troca da data/janela combinada, na ordem: `{from_date, from_slot, to_date, to_slot, actor, at, reason}` — datas ISO (`from_date` pode ser `""` quando não havia data), janelas no formato de `delivery_time_slot` (`""` = a combinar), `at` ISO datetime, `reason` texto do operador (pode ser `""`). Append-only; o reagendamento também reescreve `delivery_date`, `delivery_time_slot` e `is_preorder` (recalculado contra hoje). Reenviar a MESMA data/janela não acrescenta linha (idempotente) |
 | _(edição da encomenda)_ | — | `shop.services.order_edit.edit` (API `POST orders/<ref>/edit/`, prévia em `POST orders/<ref>/edit/preview/`), sob lock do pedido, numa transação | todos os leitores de pedido | **Não cria chave nova de estado**: reescreve as que já existem. `adjustment` (itens/total, acima); `order_notes` (a observação do cliente; vazia ⇒ removida); retirada ↔ entrega: `fulfillment_type`, `delivery_address`, `delivery_address_structured`, `delivery_fee_q`, `delivery_fee_override_q`, `delivery_distance_km` (removidas quando vira retirada), `fiscal.tax_id` (o CPF/CNPJ da nota, opcional; informado, tem de ser válido, régua de 13/10); `payment` segue a invariante do valor final: `amount_q` vira o total novo, a linha recebida pelo meio que devolve encolhe junto, a linha pendente única passa a valer o saldo, e o pagamento digital já capturado vira linha `received` explícita (+ a pendente do saldo, `collection: "on_delivery"`, `method: "mixed"`) quando sobra saldo a receber. A data/janela vai pelo `services.reschedule` (acrescenta `reschedule_history`, `reason: "edição da encomenda"`, sem aviso próprio). Trilha: evento `order_edited` no OrderEvent (`source` = `pos:edit` no balcão, `concierge:add` quando a Concierge acrescenta a pedido do cliente, com `actor: "concierge"`; o Gestor mostra "Itens acrescentados pela Concierge a pedido do cliente") `{source, revision, previous_total_q, total_q, diff, settlement: {kind, amount_q, method}, customer_note, notes?, fulfillment?, delivery_fee?, schedule?, approved_by?}` — `settlement.kind` ∈ `none`, `collect`, `refund_gateway`, `refund_cash`, `refund_card_machine`. Estorno registrado na maquininha: evento `card_machine_refund_recorded` `{amount_q, reason, approved_by}` (quem registrou é o `actor` do evento, e a hora é a do evento; `reason` ∈ `cancelled`, `returned`, `partial_return`, `reduced`). O mesmo gesto fecha a pendência de venda paga na maquininha **cancelada ou devolvida** (toda ou em parte): `payment.refund` não estorna crédito/débito/externo nem pix/cartão atestados no balcão; a pendência é derivada (`payment.pending_card_machine_refunds`, `card_machine_refund_due`), o aviso `card_machine_refund_due` vai ao Gestor e só o "Estornei na maquininha" grava o `REFUND` no Payman (P0-2, 13/10/2026) |
 | `kitchen_note` | `string` | OrderNotesView (`operator_orders.save_kitchen_note`) | OperatorOrderProjection (`kitchen_note`), KDS ticket (`kitchen_note`) | Nota da cozinha escrita pelo operador no gestor (tags pré-configuradas `Shop.kitchen_note_tags` anexadas + texto livre). **Exibida no ticket do KDS** para a produção. Distinta da `order_notes` (nota do cliente, do checkout) e dos `operator_comment` do histórico |
@@ -810,6 +811,26 @@ Write-back: `transaction_id` (string)
 | `intent_ref` | `string` | hooks | PaymentTimeoutHandler |
 | `expires_at` | `string` | hooks | PaymentTimeoutHandler |
 | `method` | `string` | hooks | PaymentTimeoutHandler (default `"card"`) |
+
+#### `payment.card_authorization_watch`
+
+Vigia do cartão da loja online autorizado (captura manual) e ainda sem aceite
+(`services/card_authorization`, `handlers/card_authorization`). Agendada uma vez por
+intent (`dedupe_key = card-authorization:<pedido>:<intent>`) quando a autorização chega
+(webhook do Stripe ou a conciliação que pergunta ao gateway) com o pedido em `new`. O
+prazo é o `capture_before` do Stripe quando gravado em `PaymentIntent.gateway_data`;
+senão `authorized_at + 7 dias`. Paradas: 1 h depois da autorização (`stuck`, aviso
+`card_authorization_expiring` warning), 24 h antes do vencimento (`last_call`, o mesmo
+tipo em `error` com `respond_by` = prazo) e no vencimento (`expire`: o Stripe confirma
+`canceled` ⇒ intent `cancelled`, pedido cancelado sem cobrança, cliente avisado, alerta
+crítico `card_authorization_expired`; ainda `requires_capture` ⇒ pergunta de novo em 1 h).
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `card_authorization.watch` | CardAuthorizationWatchHandler |
+| `intent_ref` | `string` | `card_authorization.watch` | CardAuthorizationWatchHandler (outro intent no pedido ⇒ noop) |
+| `expires_at` | `string` | `card_authorization.watch` / handler (reagendamento) | auditoria (o handler relê o prazo do intent a cada parada) |
+| `stage` | `string` | `card_authorization.watch` / handler | CardAuthorizationWatchHandler: `stuck` → `last_call` → `expire` |
 
 #### `payment.refund`
 
@@ -1973,6 +1994,7 @@ guarda é o "de onde veio" e o "o que está em curso".
 | `asserted_at_terminal` | `bool` | `PaymentService.settle` (via `services/payment.py::settle_terminal_tenders`) | reconciliação, estorno | `True` quando um método COM gateway (pix, cartão) foi **atestado por gente** no balcão — QR estático, maquininha avulsa numa venda mista. Distingue "capturado pelo gateway" de "afirmado pelo operador", e é o que faz o estorno saber que não há gateway para chamar. |
 | `settled_with`, `settled_by`, `customer_ref` | `str` | `services/house_account.py` | acerto de conta, livro-caixa | Como e por quem a conta em aberto foi acertada, e de qual cliente ela é. |
 | `smoke` | `bool` | `services/gateway_smoke.py` | smoke de gateway | Intent de teste de fumaça; nunca é venda. |
+| `capture_before` | `int` (epoch) ou `str` ISO | ninguém hoje (reservado ao Stripe: `charge.payment_method_details.card.capture_before`) | `services/card_authorization.intent_expires_at` | Até quando a autorização de cartão com captura manual vale. Presente, vence a janela padrão; ausente, o prazo é `authorized_at + 7 dias` (`AUTHORIZATION_WINDOW`). O `checkout.session.completed` não traz a cobrança, e buscar a cobrança só para isto seria uma chamada a mais por pedido. |
 | **`disputes`** | `dict[str, dict]` | `adapters/payment_stripe.py::handle_dispute_event` | operador (alerta `payment_disputed`), suporte | **Disputas em curso e encerradas, por id do gateway** (`du_…`). Só o desfecho `lost` vira `PaymentTransaction(CHARGEBACK)`; o resto é risco, não livro. Cada valor: `{status, amount_q, currency, reason, charge_id, evidence_due_by, funds_withdrawn, funds_reinstated, last_event, updated_at}`. `status` é o do Stripe (`warning_*`, `needs_response`, `under_review`, `won`, `lost`, `prevented`) e é **grudento quando terminal** — evento fora de ordem não reabre disputa encerrada. Pix não popula: a Efí não publica evento de MED (ver docstring de `shopman/shop/webhooks/efi.py`). |
 
 ---

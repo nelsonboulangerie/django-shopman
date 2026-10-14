@@ -32,6 +32,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.confirmation.ConfirmationTimeoutHandler",
     "shopman.shop.handlers.confirmation.StaleNewOrderAlertHandler",
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
+    "shopman.shop.handlers.card_authorization.CardAuthorizationWatchHandler",
     # Production
     "shopman.shop.handlers.production_alerts.ProductionLateCheckHandler",
     # Cozinha (avisos no bolso: pedido novo e atraso)
@@ -182,8 +183,10 @@ def _register_preorder_handler() -> None:
 
 
 def _register_payment_timeout_handler() -> None:
+    from shopman.shop.handlers.card_authorization import CardAuthorizationWatchHandler
     from shopman.shop.handlers.payment_timeout import PaymentTimeoutHandler
     registry.register_directive_handler(PaymentTimeoutHandler())
+    registry.register_directive_handler(CardAuthorizationWatchHandler())
 
 
 def _register_payment_refund_handler() -> None:

@@ -11,6 +11,7 @@ import OrderNotificationReceipts from "~/components/OrderNotificationReceipts.vu
 // (useOrderDetail); as ações vão pelo proxy do Django e a leitura se refaz.
 import {
   appendTag,
+  cardAuthorizationNotice,
   changeBackSuggestionQ,
   confirmationRemainingLabel,
   lucideIcon,
@@ -733,6 +734,34 @@ const deadlineText = computed(() => {
     ? { before: "Cancela sozinho em", left, after: "se ninguém aceitar." }
     : { before: "Confirma sozinho em", left, after: "se ninguém recusar." };
 });
+// Cartão autorizado esperando aceite: o prazo da reserva e os dois gestos (P1-4).
+const cardAuth = computed(() =>
+  cardAuthorizationNotice(
+    order.value?.card_authorization_expires_iso,
+    nowMs.value,
+  ),
+);
+const cardAuthActions = computed(() => {
+  const notice = cardAuth.value;
+  if (!notice || notice.expired) return [];
+  const p = primary.value;
+  return [
+    p?.key === "confirm" && {
+      label: "Aceitar",
+      icon: "i-lucide-check",
+      disabled: busy.value || !p.enabled,
+      onClick: () => runPrimary(),
+      ...{ "data-card-authorization-accept": "" },
+    },
+    rejectAction.value && {
+      label: "Recusar",
+      icon: "i-lucide-x",
+      disabled: busy.value || !rejectAction.value.enabled,
+      onClick: () => openDialog("reject"),
+      ...{ "data-card-authorization-reject": "" },
+    },
+  ];
+});
 // Bilhete de volta: quem veio de outro app (`?back=<url>&back_label=<texto>`) volta para
 // onde estava. Só endereço http(s); sem os dois parâmetros, nada aparece.
 const returnTicket = computed(() => {
@@ -952,6 +981,16 @@ const outside = useOutsideStore(
           },
         ])"
         data-outside-band
+      />
+      <NuxtAlert
+        v-if="order && cardAuth"
+        :color="cardAuth.tone"
+        variant="subtle"
+        icon="i-lucide-credit-card"
+        :title="cardAuth.title"
+        :description="cardAuth.description"
+        :actions="alertActions(cardAuth.tone, cardAuthActions)"
+        data-card-authorization
       />
 
       <div

@@ -708,7 +708,27 @@ def _settle_cancelled_payment(order) -> None:
     """Cancel unpaid intents and refund any captured balance for cancelled orders."""
     reason = str((order.data or {}).get("cancellation_reason") or "order_cancelled")
     payment.cancel(order, reason=reason)
+    _alert_if_card_authorization_held(order)
     payment.refund(order)
+
+
+def _alert_if_card_authorization_held(order) -> None:
+    """Recusou e o Stripe não anulou: o valor segue reservado no cartão do cliente.
+
+    ``payment.cancel`` engole a falha do gateway (o cancelamento do pedido não
+    pode desfazer-se por isso), e a reserva ficava presa até o Stripe vencer a
+    autorização, sete dias depois, sem ninguém saber.
+    """
+    payment_data = (order.data or {}).get("payment") or {}
+    if str(payment_data.get("method") or "").lower() != "card":
+        return
+    if (payment.get_payment_status(order) or "").lower() != "authorized":
+        return
+    from shopman.shop.services import card_authorization
+
+    card_authorization.alert_release_failed(
+        order, intent_ref=str(payment_data.get("intent_ref") or ""),
+    )
 
 
 def _on_returned(order, config: ChannelConfig) -> None:
