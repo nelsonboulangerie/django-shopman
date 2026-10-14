@@ -35,6 +35,7 @@ import { computed, onBeforeUnmount } from "vue";
 import { danfeLine } from "~/presentation/danfe";
 import { COURIER_CALL_HASH, courierReminderLine } from "~/presentation/courier";
 import { kitchenChips } from "~/presentation/kitchen";
+import { cardCheckBadge } from "~/presentation/volumeCheck";
 import OrderCardMenu from "./OrderCardMenu.vue";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
@@ -72,6 +73,8 @@ const emit = defineEmits<{
 
 const code = computed(() => splitRef(props.card.ref));
 const pack = computed(() => packLabel(props.card));
+// A conferência das sacolas (P1-13), só depois da primeira bipada.
+const checkBadge = computed(() => cardCheckBadge(props.card));
 const nowMs = useNowTick(() => props.card.server_now_iso);
 const clock = computed(() => cardClock(props.card, nowMs.value));
 const seal = computed(() => cardSeal(props.card, { next: props.next }));
@@ -571,6 +574,13 @@ function nuxtIcon(icon: string): string {
             icon="i-lucide-package"
             :label="pack"
             :data-card-pack="card.volumes ? 'volumes' : 'items'"
+          />
+          <NuxtBadge
+            v-if="checkBadge"
+            :color="checkBadge.complete ? 'primary' : 'neutral'"
+            :icon="checkBadge.complete ? 'i-lucide-package-check' : 'i-lucide-scan-barcode'"
+            :label="checkBadge.label"
+            :data-card-volume-check="checkBadge.complete ? 'complete' : 'partial'"
           />
           <NuxtBadge
             v-if="card.is_preorder"

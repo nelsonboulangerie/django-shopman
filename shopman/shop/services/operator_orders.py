@@ -584,6 +584,10 @@ def advance_order(
         # (alerta por pedido) — sem barrar. Dentro da transação de propósito: se
         # a transição não acontecer, o aviso dela também não fica.
         fiscal_service.alert_handoff_without_nfce(order, target_status=next_status)
+        # Conferência de sacolas pela metade: o mesmo grito sem portão.
+        from shopman.shop.services import volume_check
+
+        volume_check.alert_if_unchecked(order, target_status=next_status)
         order.transition_status(next_status, actor=actor)
         if next_status in _KITCHEN_FINISHED_STATUSES:
             # "Marcar pronto" por fora do KDS: quem avançou afirmou que a cozinha

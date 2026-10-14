@@ -315,7 +315,7 @@ def _publish_for_order(order_ref: str, *, event_type: str, payload: dict) -> Non
 
 
 def _on_order_context_event(sender, instance, created, **kwargs):
-    if not created or instance.type not in {"kitchen_note_changed", "order_assigned", "order_unassigned", "operator_comment", "equipment_returned", "payment_collected", "handoff_requested", "handoff_undone", "handoff_refused", "auto_ready_undone", "volumes_declared"}:
+    if not created or instance.type not in {"kitchen_note_changed", "order_assigned", "order_unassigned", "operator_comment", "equipment_returned", "payment_collected", "handoff_requested", "handoff_undone", "handoff_refused", "auto_ready_undone", "volumes_declared", "volume_checked", "volume_check_wrong_bag"}:
         return
     order = instance.order
     # Operational context is private: no customer tracking channel or note text.

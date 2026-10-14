@@ -180,6 +180,12 @@ watch(
   { deep: true },
 );
 const queueViewport = ref<HTMLElement | null>(null);
+// Conferência das sacolas (P1-13): o leitor do posto Saída bipa o QR da Via
+// Pedido em qualquer ponto do quadro. Só avisa; a saída segue no cartão.
+const volumeCheck = useVolumeCheck({
+  enabled: () => !stationLocked.value,
+  onChecked: () => refresh(),
+});
 function rememberPosition(event: Event) {
   context.state.value.scrollTop = (
     event.currentTarget as HTMLElement
@@ -1785,6 +1791,12 @@ function printQueue() {
           :class="pullRefreshing ? 'motion-safe:animate-spin' : ''"
         />{{ pullText }}
       </p>
+      <VolumeCheckBar
+        :state="volumeCheck.state.value"
+        @switch="volumeCheck.switchTo"
+        @dismiss-alarm="volumeCheck.dismissAlarm"
+        @end="volumeCheck.end"
+      />
       <!-- A fila é lida só no cliente (`server: false`): o servidor e a hidratação
            desenham o esqueleto também, senão o cliente hidratava um nó que o servidor
            não mandou. -->

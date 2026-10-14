@@ -3829,6 +3829,40 @@ class OrderVolumesView(_OrderActionBase):
         return self._context_response(request, order, "volumes", {"volumes": volumes, "surface": surface}, lambda base: orders_service.save_volumes(order, volumes=volumes, expected_revision=base, actor=_actor(request), surface=surface))
 
 
+class OrderVolumeCheckView(APIView):
+    """Bipar a sacola na Saída: confere o volume pelo QR da Via Pedido (P1-13).
+
+    ``code`` é o que o leitor digitou; ``expected_ref``, o pedido em conferência
+    (o detalhe aberto, ou o primeiro bipado no quadro). Responde sempre 200 com o
+    resultado (``outcome``): a bipada nunca segura o despacho, só diz o que achou.
+    Sacola de outro pedido volta como ``other_order``, com a frase forte.
+    """
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def post(self, request):
+        from shopman.shop.services import volume_check
+
+        code = request.data.get("code")
+        if not isinstance(code, str) or not code.strip():
+            return Response({"detail": "Leia o QR da sacola.", "field": "code", "errors": {"code": ["Leia o QR da sacola."]}}, status=400)
+        expected = request.data.get("expected_ref") or ""
+        if not isinstance(expected, str):
+            return Response({"detail": "Pedido inválido.", "field": "expected_ref", "errors": {"expected_ref": ["Pedido inválido."]}}, status=400)
+        result = volume_check.check_volume(code[:96], actor=_actor(request), expected_ref=expected[:64])
+        return Response({
+            "outcome": result.outcome,
+            "message": result.message,
+            "order_ref": result.order_ref,
+            "expected_ref": result.expected_ref,
+            "volume": result.k,
+            "volumes": result.n,
+            "checked": result.checked,
+            "total": result.total,
+            "complete": result.complete,
+        })
+
+
 def _operator_identity(request) -> tuple[int, str]:
     """A quem creditar a retirada de um pedido — que é quem está logado.
 

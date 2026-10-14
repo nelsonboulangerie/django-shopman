@@ -175,6 +175,9 @@ class OperatorAlert(models.Model):
         # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
         # barrar é do dono.
         ("fiscal_handoff_without_nfce", "Pedido saiu sem NFC-e autorizada"),
+        # Conferência de sacolas começada e não terminada na saída: o pedido
+        # saiu com volume sem bipar. Aviso, nunca portão (a mesma régua da nota).
+        ("dispatch_unchecked_volumes", "Pedido saiu com sacola sem conferir"),
         # A SEFAZ recusou o GTIN de um produto: a nota já foi reemitida "SEM
         # GTIN" (a venda não espera) e o produto ficou marcado
         # (``metadata.gtin_nf_rejected``). O que sobra é gente conferir o
