@@ -44,7 +44,7 @@ const description = computed(() =>
     ? "Escolha o motivo que o iFood exige. Ele é enviado ao iFood."
     : props.mode === "reject"
       ? "Informe o motivo. O cliente recebe o aviso com ele."
-      : "Escolha o motivo. O cliente recebe o aviso com a frase dele.",
+      : "Escolha o motivo. O cliente recebe o aviso com a frase do motivo.",
 );
 </script>
 
@@ -53,7 +53,7 @@ const description = computed(() =>
     :open="open"
     :title="title"
     :description="description"
-    :confirm-label="mode === 'reject' ? 'Recusar pedido' : 'Confirmar'"
+    :confirm-label="mode === 'reject' ? 'Recusar pedido' : 'Cancelar pedido'"
     :required="mode === 'reject'"
     :presets="keyed ? [] : presets"
     :keyed-reasons="keyed ? cancelReasons : []"

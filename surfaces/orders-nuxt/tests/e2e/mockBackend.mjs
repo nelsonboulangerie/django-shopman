@@ -132,6 +132,7 @@ const DETAIL_EXTRA = {
   items: [{ sku: "PAO", name: "Pão", qty: "1", unit_price_display: "R$ 16,00", total_display: "R$ 16,00" }],
   timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [], equipment_out: [],
   cancellation_presets: [], kitchen_note_tags: [], customer_profile: null,
+  can_cancel: true, cancel_requires_approval: false,
   // A lista única de motivos de cancelar (`shop/services/cancel_reasons.py`).
   cancel_reasons: [
     { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },

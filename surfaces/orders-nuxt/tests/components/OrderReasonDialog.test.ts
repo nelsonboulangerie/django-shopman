@@ -116,7 +116,7 @@ describe("OrderReasonDialog — iFood (marketplace)", () => {
 
   it("cancelar de iFood também usa o seletor obrigatório", async () => {
     const w = mountDialog({ mode: "cancel", reasons });
-    const btn = confirmBtn(w, "Confirmar");
+    const btn = confirmBtn(w, "Cancelar pedido");
     expect(btn.attributes("disabled")).toBeDefined();
     await w.find("select").setValue("A");
     await btn.trigger("click");
@@ -151,7 +151,7 @@ describe("OrderReasonDialog — cancelar em canal comum (lista única, P1-10)", 
     const w = mountDialog({ mode: "cancel", cancelReasons, presets: [{ label: "", presets: ["Preset da recusa"] }] }, { attachTo: document.body });
     expect(w.text()).not.toContain("Preset da recusa");
     expect(w.text()).toContain("Observação interna (opcional)");
-    const btn = confirmBtn(w, "Confirmar");
+    const btn = confirmBtn(w, "Cancelar pedido");
     expect(btn.attributes("disabled")).toBeDefined();
     await w.find("textarea").setValue("Faltou farinha");
     expect(btn.attributes("disabled")).toBeDefined();
@@ -256,11 +256,11 @@ describe("OrderReasonDialog — estados", () => {
 describe("motivos indisponíveis", () => {
   it("bloqueia cancelar durante leitura e não converte vazio iFood em texto livre", () => {
     const loading = mountDialog({ mode: "cancel", loading: true });
-    expect(confirmBtn(loading, "Confirmar").attributes("disabled")).toBeDefined();
+    expect(confirmBtn(loading, "Cancelar pedido").attributes("disabled")).toBeDefined();
     const empty = mountDialog({ mode: "cancel", marketplace: true, reasons: [] });
     expect(empty.find("textarea").exists()).toBe(false);
     expect(empty.text()).toContain("não oferece motivos");
-    expect(confirmBtn(empty, "Confirmar").attributes("disabled")).toBeDefined();
+    expect(confirmBtn(empty, "Cancelar pedido").attributes("disabled")).toBeDefined();
   });
   it("mantém seleção no erro e permite consultar novamente sem reabrir", async () => {
     const w = mountDialog({ marketplace: true, reasons: [{ code: "A", description: "Motivo" }] });
