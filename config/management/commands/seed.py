@@ -6230,9 +6230,30 @@ class Command(BaseCommand):
             ref="atacado",
             defaults={"name": "Atacado"},
         )
+        # Grupos comerciais com desconto automático (dono, 14/10/2026): o
+        # desconto de cada um é a promoção `grupo-<ref>` logo abaixo, e o metadata
+        # diz o tipo (B.I.), o arredondamento e a mensagem de economia.
         staff_tier, _ = PriceTier.objects.update_or_create(
             ref="staff",
-            defaults={"name": "Funcionarios"},
+            defaults={
+                "name": "Equipe",
+                "metadata": {
+                    "discount_kind": "equipe",
+                    "rounding": 50,
+                    "savings_message": "Hoje você economizou {amount} por ser da Equipe",
+                },
+            },
+        )
+        PriceTier.objects.update_or_create(
+            ref="alianca-francesa",
+            defaults={
+                "name": "Aliança Francesa",
+                "metadata": {
+                    "discount_kind": "parceiro",
+                    "rounding": 50,
+                    "savings_message": "Hoje você economizou {amount} por ser da Aliança Francesa",
+                },
+            },
         )
 
         customers_data = [
@@ -8138,6 +8159,34 @@ class Command(BaseCommand):
                 "valid_from": now,
                 "valid_until": now + timedelta(days=365),
                 "customer_segments": ["staff"],
+                "is_active": True,
+            },
+        )
+
+        # Grupos comerciais: o desconto do PriceTier, derivado pelo Admin do grupo
+        # (ref `grupo-<ref>`). A Equipe é −30% e SÓ NA RETIRADA; a Aliança é −15%.
+        Promotion.objects.update_or_create(
+            ref="grupo-staff",
+            defaults={
+                "name": "Equipe",
+                "type": Promotion.PERCENT,
+                "value": 30,
+                "valid_from": now,
+                "valid_until": now + timedelta(days=3650),
+                "customer_segments": ["staff"],
+                "fulfillment_types": ["pickup"],
+                "is_active": True,
+            },
+        )
+        Promotion.objects.update_or_create(
+            ref="grupo-alianca-francesa",
+            defaults={
+                "name": "Aliança Francesa",
+                "type": Promotion.PERCENT,
+                "value": 15,
+                "valid_from": now,
+                "valid_until": now + timedelta(days=3650),
+                "customer_segments": ["alianca-francesa"],
                 "is_active": True,
             },
         )
