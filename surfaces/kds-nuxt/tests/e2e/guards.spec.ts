@@ -51,6 +51,28 @@ test.describe("KDS — split operador vs público", () => {
     await expect(page.getByRole("heading", { name: "Entre para operar" })).toHaveCount(0);
     await expect(page.locator("[data-operator-suite-shell]")).toHaveCount(0);
   });
+
+  test("/pickup CHAMA: o número que fica pronto entra em destaque e o destaque passa", async ({ page, request }) => {
+    const mock = `http://127.0.0.1:${process.env.KDS_E2E_MOCK_PORT || "8798"}`;
+    await request.post(`${mock}/__mock/pickup-reset`);
+    await page.clock.install();
+    await page.goto("/pickup");
+    const readyColumn = page.locator("section", { hasText: "Pronto para retirar" });
+    const card = (code: string) => readyColumn.locator("article", { hasText: code });
+    await expect(card("0006")).toBeVisible();
+    // O que já estava pronto quando o painel abriu não chama.
+    await expect(page.locator("article[data-calling]")).toHaveCount(0);
+
+    await request.post(`${mock}/__mock/pickup-ready`);
+    // Sem o SSE (o mock não tem stream), o poll de reserva traz a mudança.
+    await page.clock.runFor(31_000);
+    await expect(card("0007")).toHaveAttribute("data-calling", "true");
+    await expect(card("0006")).not.toHaveAttribute("data-calling", "true");
+
+    await page.clock.runFor(11_000);
+    await expect(page.locator("article[data-calling]")).toHaveCount(0);
+    await request.post(`${mock}/__mock/pickup-reset`);
+  });
 });
 
 // NOTA: o KDS NÃO tem 404 para path de um segmento — `pages/[ref].vue` é a rota dinâmica
