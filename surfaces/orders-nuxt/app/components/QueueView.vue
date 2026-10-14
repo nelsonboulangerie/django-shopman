@@ -401,6 +401,38 @@ function switchHint(row: {
                   >no prazo, o iFood decide sem a loja</span
                 >
               </template>
+              <template v-else-if="item.kind === 'ifood_accept'">
+                <NuxtBadge
+                  color="error"
+                  icon="i-lucide-send"
+                  label="Aceite não chegou ao iFood"
+                  data-queue-ifood-accept
+                />
+                <span
+                  v-if="
+                    item.card.confirmation_deadline_iso &&
+                    confirmationRemainingLabel(
+                      item.card.confirmation_deadline_iso,
+                      nowMs,
+                    ) !== '0:00'
+                  "
+                  class="op-micro text-muted-foreground"
+                  data-queue-deadline
+                >
+                  o iFood cancela sozinho em
+                  <span class="font-semibold tnum text-foreground">{{
+                    confirmationRemainingLabel(
+                      item.card.confirmation_deadline_iso,
+                      nowMs,
+                    )
+                  }}</span>
+                </span>
+                <span
+                  v-else-if="item.card.confirmation_deadline_iso"
+                  class="op-micro text-muted-foreground"
+                  >confira no iFood se o pedido segue ativo</span
+                >
+              </template>
               <template v-else-if="item.kind === 'confirm'">
                 <NuxtBadge color="primary" label="Novo" />
                 <!-- cartão autorizado: a reserva vence no Stripe (P1-4) -->
@@ -587,7 +619,11 @@ function switchHint(row: {
                             )
                   "
                   :color="
-                    queueGesture(item).primary!.disabled ? 'neutral' : 'primary'
+                    queueGesture(item).primary!.disabled
+                      ? 'neutral'
+                      : item.kind === 'ifood_accept'
+                        ? 'error'
+                        : 'primary'
                   "
                   :variant="
                     queueGesture(item).primary!.disabled ? 'outline' : 'solid'

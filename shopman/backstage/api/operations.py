@@ -2506,6 +2506,41 @@ class OrderRequeueFiscalView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Send the order acceptance (confirm) to iFood again, when it did not reach iFood",
+        responses={
+            200: OpenApiResponse(description="The acceptance is queued to go out now."),
+            400: OpenApiResponse(description="Refused: {detail}: iFood already has it, or nothing to retry."),
+            409: OpenApiResponse(description="The acceptance state changed since it was read."),
+        },
+    ),
+)
+class OrderIFoodAcceptRetryView(_OrderActionBase):
+    """Tentar de novo: o aceite que não chegou ao iFood (P1-3) — ``ifood_accept_sync.retry``."""
+
+    intention_operation = "ifood-accept-retry"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+
+        def execute(base):
+            from shopman.shop.services import ifood_accept_sync
+
+            try:
+                directive = ifood_accept_sync.retry(order, actor=_actor(request), expected_revision=base)
+            except ifood_accept_sync.AcceptRetryStale as exc:
+                raise OrderConflict(str(exc)) from exc
+            except ifood_accept_sync.AcceptRetryRefused as exc:
+                raise OrderError(str(exc)) from exc
+            return {"effect_status": "queued", "directive_id": directive.pk}
+
+        return self._context_response(request, order, "ifood-accept-retry", {}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Reschedule the agreed date/window of an order (moves alarm, reminder, stock and production)",
         responses={
             200: OpenApiResponse(description="Order rescheduled (or already on that date/window)."),

@@ -506,3 +506,46 @@ describe("OrderCard: quem embalou declara os volumes", () => {
     expect(w.get("[data-card-volumes]").attributes("disabled")).toBeDefined();
   });
 });
+
+describe("o aceite que não chegou ao iFood (P1-3)", () => {
+  const failed = (over: Partial<OrderCardProjection> = {}) =>
+    card({
+      channel_ref: "ifood",
+      status: "preparing",
+      status_label: "Em preparo",
+      ifood_accept_failed: true,
+      ifood_accept_notice:
+        "O iFood ainda não recebeu o aceite do pedido WEB-20260625-0007.",
+      confirmation_deadline_iso: new Date(nowMs.value + 272_000).toISOString(),
+      confirmation_action: "cancel",
+      ...over,
+      actions: [
+        {
+          ref: "ifood-accept-retry",
+          kind: "mutation",
+          label: "Tentar de novo",
+          priority: "primary",
+          enabled: true,
+          reason: "",
+        },
+      ] as OrderCardProjection["actions"],
+    });
+
+  it("vira pílula vermelha com o prazo do iFood e o Tentar de novo na cor do aviso", async () => {
+    const w = mountCard({ card: failed() });
+    expect(w.get('[data-card-notice="ifood-accept"]').text()).toBe(
+      "Aceite não chegou",
+    );
+    await openNotice(w, "ifood-accept");
+    const alert = w.get("[data-ifood-accept]");
+    expect(alert.text()).toContain("O iFood ainda não recebeu o aceite");
+    expect(alert.text()).toContain("em 4:32, o iFood cancela sozinho");
+    await w.get("[data-ifood-accept-retry]").trigger("click");
+    expect(w.emitted("action")).toEqual([["ifood_accept_retry"]]);
+  });
+
+  it("não aparece quando o iFood recebeu o aceite", () => {
+    const w = mountCard({ card: failed({ ifood_accept_failed: false }) });
+    expect(w.find('[data-card-notice="ifood-accept"]').exists()).toBe(false);
+  });
+});

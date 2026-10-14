@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 #: O fato humano que o pedido espera, ou ``""`` quando não espera ninguém.
 ATTENTION_KINDS = (
     "negotiation",   # responder a negociação do iFood antes do prazo dele
+    "ifood_accept",  # o aceite não chegou ao iFood: tentar de novo antes do prazo dele
     "confirm",       # aceitar ou recusar o pedido novo
     "blocked",       # bloqueado por um fato de fora (pagamento): avança sozinho
     "start",         # iniciar o preparo (canal com ``prep_start=operator``)
@@ -121,6 +122,10 @@ def attention_kind(order: Order, card) -> str:
     # pedido já entregue (o cliente reclama depois).
     if any(negotiation.can_respond for negotiation in (card.ifood_negotiations or ())):
         return "negotiation"
+    # O aceite não chegou ao iFood: a cozinha trabalha e o iFood cancela no prazo
+    # dele. Vence as etapas da casa, porque sem ele elas viram desperdício.
+    if getattr(card, "ifood_accept_failed", False):
+        return "ifood_accept"
     status = card.status
     advance = _action(card, "advance")
     advance_ready = bool(advance and advance.enabled and advance.priority == "primary")
@@ -165,6 +170,25 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
             "attention_since_iso": _iso(received),
             "goal_minutes": goal,
             "goal_label": f"responder até {timezone.localtime(expires):%H:%M}",
+        }
+    if kind == "ifood_accept":
+        from shopman.shop.services import ifood_accept_sync
+
+        expires = ifood_accept_sync.deadline(order)
+        if expires is not None:
+            # O relógio é o do iFood: conta do ``createdAt`` deles até o prazo.
+            goal = max(1, math.ceil((expires - order.created_at).total_seconds() / 60))
+            return {
+                "attention": kind,
+                "attention_since_iso": _iso(order.created_at),
+                "goal_minutes": goal,
+                "goal_label": f"aceite até {timezone.localtime(expires):%H:%M}",
+            }
+        return {
+            "attention": kind,
+            "attention_since_iso": _iso(order.created_at),
+            "goal_minutes": CONFIRM_GOAL_MINUTES,
+            "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
         }
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
         goal, since = _confirmation_goal(channel_config), order.created_at

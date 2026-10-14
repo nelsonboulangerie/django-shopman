@@ -500,6 +500,8 @@ export interface OrderCardProjection {
   ifood_schedule_label: string;
   ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
+  ifood_accept_failed: boolean;
+  ifood_accept_notice: string;
   test_order_label: string;
   test_order_notice: string;
   danfe_printable: boolean;
@@ -679,6 +681,8 @@ export interface OperatorOrderProjection {
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_negotiations: IFoodNegotiationProjection[];
+  ifood_accept_failed: boolean;
+  ifood_accept_notice: string;
   test_order_label: string;
   test_order_notice: string;
   context: string;

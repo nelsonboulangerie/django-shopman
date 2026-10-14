@@ -111,6 +111,7 @@ export function useOrderDetail(orderRef: string) {
           "courier-quote",
           "undo-handoff",
           "undo-ready",
+          "ifood-accept-retry",
         ].includes(action)
       ) {
         await intentions.execute(
@@ -239,6 +240,14 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
+  // O aceite que não chegou ao iFood: o servidor põe o ``confirm`` para sair agora.
+  // O resultado chega pelo SSE do pedido (o aviso some quando o iFood recebe).
+  async function retryIFoodAccept(): Promise<boolean> {
+    const ok = await act("ifood-accept-retry");
+    if (ok) useSonner.success("Aceite enviado de novo ao iFood.");
+    return ok;
+  }
+
   // Reenvio do link de pagamento ("não chegou"): o servidor enfileira o aviso
   // de novo com a MESMA URL, e recusa com motivo (vencido, pago, cancelado,
   // cedo demais) — o motivo chega como `detail` e vira o toast do `act`.
@@ -334,6 +343,7 @@ export function useOrderDetail(orderRef: string) {
     undoHandoff,
     undoReady,
     requeueFiscal,
+    retryIFoodAccept,
     resendPaymentLink,
     saveNotes,
     addComment,
