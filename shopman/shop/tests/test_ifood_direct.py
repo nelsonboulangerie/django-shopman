@@ -141,6 +141,36 @@ def test_map_order_passes_through_indoor_type():
     assert payload["delivery"]["type"] == "INDOOR"
 
 
+def test_map_order_reads_takeout_time_and_ingest_keeps_it(db):
+    """P2-29: ``takeout.takeoutDateTime`` (quando o cliente vem buscar) não se perde."""
+    from shopman.shop.models import Channel
+    from shopman.shop.services import ifood_ingest, ifood_orders
+
+    raw = {
+        "id": "take-1",
+        "displayId": "7001",
+        "orderType": "TAKEOUT",
+        "orderTiming": "IMMEDIATE",
+        "takeout": {"mode": "DEFAULT", "takeoutDateTime": "2026-10-13T22:40:00-03:00"},
+        "items": [{"id": "i1", "externalCode": "PAO", "name": "Pão", "quantity": 1, "unitPrice": 5, "totalPrice": 5}],
+        "total": {"orderAmount": 5, "subTotal": 5},
+    }
+    payload = ifood_orders.map_order(raw)
+    assert payload["delivery"]["takeout_at"] == "2026-10-14T01:40:00+00:00"
+
+    Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood", "is_active": True})
+    order = ifood_ingest.ingest(payload)
+    assert order.data["ifood"]["takeout_at"] == "2026-10-14T01:40:00+00:00"
+
+
+def test_map_order_keeps_a_takeout_time_without_timezone_as_it_came():
+    from shopman.shop.services import ifood_orders
+
+    payload = ifood_orders.map_order({"id": "x", "orderType": "TAKEOUT", "takeout": {"takeoutDateTime": "2026-10-13T22:40:00"}, "items": []})
+    assert payload["delivery"]["takeout_at"] == "2026-10-13T22:40:00"
+    assert ifood_orders.map_order({"id": "y", "items": []})["delivery"]["takeout_at"] == ""
+
+
 def test_map_order_against_real_captured_order():
     """Lock the mapping against a REAL Developer-Portal test order (captured live
     2026-07-01). This is the schema validation WP-3 needed and mocks can't give.

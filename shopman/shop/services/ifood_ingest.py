@@ -144,6 +144,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "benefits": payload.get("benefits") or [],
             "delivered_by": delivery.get("delivered_by", ""),
             "pickup_code": delivery.get("pickup_code", ""),
+            "takeout_at": delivery.get("takeout_at", ""),
         },
     }
 

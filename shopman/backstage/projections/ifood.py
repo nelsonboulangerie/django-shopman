@@ -115,6 +115,9 @@ def operation_summary(order) -> tuple[str, ...]:
     if get_fulfillment_type(order) == "delivery":
         provider = str(facts.get("delivered_by") or "").upper()
         lines.append({"IFOOD": "Entrega por entregador iFood", "MERCHANT": "Entrega própria da loja"}.get(provider, "Responsável pela entrega não informado pelo iFood"))
+    takeout = _takeout_local(order)
+    if takeout is not None:
+        lines.append(f"Retirada prevista: {takeout.strftime('%d/%m/%Y às %H:%M')}")
     if str(facts.get("order_timing") or "").upper() == "SCHEDULED":
         lines.append("Pedido agendado no iFood")
         raw_schedule = facts.get("schedule")
@@ -152,17 +155,47 @@ def pickup_code(order) -> str:
     return str(((order.data or {}).get("ifood") or {}).get("pickup_code") or "").strip()
 
 
+def _takeout_local(order):
+    """Quando o cliente vem buscar o pedido IMEDIATO de retirada (``takeout_at``).
+
+    No agendado quem diz a hora é a janela do agendamento; repetir aqui seria
+    dizer duas vezes. Valor sem fuso ou malformado não vira hora na tela.
+    """
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    if order.channel_ref != "ifood" or get_fulfillment_type(order) == "delivery":
+        return None
+    facts = (order.data or {}).get("ifood") or {}
+    if str(facts.get("order_timing") or "").upper() == "SCHEDULED":
+        return None
+    try:
+        dt = parse_datetime(str(facts.get("takeout_at") or ""))
+    except (ValueError, TypeError):
+        return None
+    return timezone.localtime(dt) if dt is not None and timezone.is_aware(dt) else None
+
+
 def schedule_label(order) -> str:
     """O agendamento em UMA linha: "Agendado · Hoje 21:09–22:09".
 
-    Vazio quando o pedido é imediato. A data só aparece quando não é hoje — em
-    pedido para hoje ela é ruído, e quem lê a fila já sabe que dia é.
+    No pedido imediato de retirada, a hora em que o cliente vem: "Retirada às
+    19:40". Vazio no imediato sem essa hora. A data só aparece quando não é
+    hoje — em pedido para hoje ela é ruído, e quem lê a fila já sabe que dia é.
     """
     if order.channel_ref != "ifood":
         return ""
     facts = (order.data or {}).get("ifood") or {}
     if str(facts.get("order_timing") or "").upper() != "SCHEDULED":
-        return ""
+        takeout = _takeout_local(order)
+        if takeout is None:
+            return ""
+        from django.utils import timezone
+
+        day = "" if takeout.date() == timezone.localdate() else f" {takeout:%d/%m}"
+        return f"Retirada{day} às {takeout:%H:%M}"
 
     from django.utils import timezone
     from django.utils.dateparse import parse_datetime
