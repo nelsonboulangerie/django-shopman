@@ -2295,7 +2295,7 @@ def _pending_cash_refunds(cash_shift) -> tuple[POSPendingCashRefundProjection, .
             customer_name=item.customer_name,
             cancelled_at=item.cancelled_at,
             reason=item.reason,
-            reason_label="Encomenda ficou mais barata" if item.reason == "reduced" else "Venda cancelada",
+            reason_label=payment_service.REFUND_REASON_LABELS.get(item.reason, "Venda cancelada"),
         )
         for item in payment_service.pending_cash_refunds(channel_ref=cash_shift.terminal.channel_ref)
     )
@@ -2335,7 +2335,7 @@ def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefu
             customer_name=item.customer_name,
             method_label=_CARD_MACHINE_METHOD_LABELS.get(item.method, "Cartão"),
             reason=item.reason,
-            reason_label=payment_service.CARD_MACHINE_REFUND_REASONS.get(item.reason, "").capitalize(),
+            reason_label=payment_service.REFUND_REASON_LABELS.get(item.reason, ""),
             lookup_display=_card_machine_lookup_display(item),
         )
         for item in payment_service.pending_card_machine_refunds()

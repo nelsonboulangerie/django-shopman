@@ -287,8 +287,12 @@ export interface POSPendingCashRefundProjection {
   amount_display: string;
   customer_name: string;
   cancelled_at: string;
-  /** "cancelled" (venda cancelada: devolve tudo) · "reduced" (encomenda que ficou mais barata: a diferença). */
-  reason?: "cancelled" | "reduced";
+  /**
+   * "cancelled" / "returned" (venda cancelada ou devolvida inteira: devolve tudo) ·
+   * "partial_return" (devolução de parte da venda) · "reduced" (encomenda que ficou
+   * mais barata): esses dois devolvem a diferença.
+   */
+  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
   reason_label?: string;
 }
 

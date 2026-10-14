@@ -898,7 +898,7 @@ def _refundable_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
 
 @dataclass(frozen=True)
 class PendingCashRefund:
-    """Dinheiro que ainda não saiu de nenhuma gaveta: venda cancelada ou encomenda reduzida."""
+    """Dinheiro que ainda não saiu de nenhuma gaveta: venda cancelada ou devolvida, ou encomenda reduzida."""
 
     order_ref: str
     amount_q: int
@@ -906,8 +906,9 @@ class PendingCashRefund:
     cancelled_at: str  # ISO datetime, "" quando o pedido não guarda (ou não foi cancelado)
     customer_name: str
     channel_ref: str
-    #: ``"cancelled"`` (venda cancelada/devolvida, devolve tudo) ou ``"reduced"``
-    #: (encomenda editada que ficou mais barata, devolve a diferença).
+    #: Por que o dinheiro volta (:func:`refund_reason`): ``cancelled`` e
+    #: ``returned`` devolvem tudo; ``partial_return`` (devolução de parte da venda)
+    #: e ``reduced`` (encomenda editada que ficou mais barata) devolvem a diferença.
     reason: str = "cancelled"
 
 
@@ -915,13 +916,35 @@ class PendingCashRefund:
 _REFUND_ALL_STATUSES = frozenset({"cancelled", "returned"})
 
 
+def _returned_q(order) -> int:
+    """Quanto as devoluções PARCIAIS já registradas tiram do que o pedido vale."""
+    return sum(
+        int(record.get("refund_total_q") or 0)
+        for record in (order.data or {}).get("returns") or []
+        if isinstance(record, dict)
+    )
+
+
+def refund_reason(order) -> str:
+    """Por que o dinheiro do pedido volta ao cliente.
+
+    ``cancelled`` · ``returned`` (devolução total) · ``partial_return``
+    (devolução de parte da venda) · ``reduced`` (encomenda que ficou mais barata).
+    """
+    status = str(order.status)
+    if status in _REFUND_ALL_STATUSES:
+        return "returned" if status == "returned" else "cancelled"
+    return "partial_return" if (order.data or {}).get("returns") else "reduced"
+
+
 def overpaid_q(order, *, payment_reads=None) -> int:
     """Quanto entrou A MAIS do que o pedido vale agora — o que falta devolver.
 
-    Só existe no pedido editado que ficou mais barato (``order_composition``):
-    o dinheiro capturado passou do total efetivo. Venda cancelada/devolvida não
-    passa por aqui — ela devolve tudo. ``0`` quando não há o que devolver ou o
-    Payman não respondeu.
+    O pedido vivo vale o total efetivo (``order_composition``, a encomenda
+    editada) menos as devoluções PARCIAIS registradas (``returns``). O que foi
+    capturado acima disso volta ao cliente. Venda cancelada/devolvida inteira
+    não passa por aqui — ela devolve tudo. ``0`` quando não há o que devolver ou
+    o Payman não respondeu.
     """
     from shopman.shop.services import order_composition
 
@@ -930,7 +953,8 @@ def overpaid_q(order, *, payment_reads=None) -> int:
     captured = captured_balance_q(order, payment_reads=payment_reads)
     if captured is None:
         return 0
-    return max(0, captured - order_composition.effective_total_q(order))
+    kept_q = max(0, order_composition.effective_total_q(order) - _returned_q(order))
+    return max(0, captured - kept_q)
 
 
 def _held_refund_balance(intents) -> tuple[int, list[str]]:
@@ -954,10 +978,12 @@ def _customer_name(data: dict) -> str:
 def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashRefund]:
     """Pedidos com dinheiro capturado que ainda precisa voltar para o cliente.
 
-    Dois casos, os dois derivados de fatos que já existem — nunca uma tabela:
+    Três casos, os três derivados de fatos que já existem — nunca uma tabela:
 
-    - **venda cancelada/devolvida**: status do pedido no Orderman + saldo
-      capturado − devolvido do intent em dinheiro no Payman. Devolve tudo.
+    - **venda cancelada/devolvida inteira**: status do pedido no Orderman +
+      saldo capturado − devolvido do intent em dinheiro no Payman. Devolve tudo.
+    - **devolução de parte da venda** (``returns``): o pedido segue vivo e vale
+      menos o que voltou ao balcão (:func:`overpaid_q`). Devolve só isso.
     - **encomenda reduzida** (``order_edit``): o pedido segue vivo, editado, e
       o dinheiro capturado passou do total efetivo (:func:`overpaid_q`).
       Devolve só a diferença, e só do dinheiro.
@@ -981,17 +1007,18 @@ def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashR
     if not by_order:
         return []
     orders = Order.objects.filter(ref__in=list(by_order)).filter(
-        Q(status__in=_REFUND_ALL_STATUSES) | Q(data__has_key=order_composition.KEY)
+        Q(status__in=_REFUND_ALL_STATUSES)
+        | Q(data__has_key=order_composition.KEY)
+        | Q(data__has_key="returns")
     )
     if channel_ref:
         orders = orders.filter(channel_ref=channel_ref)
     pending: list[PendingCashRefund] = []
     for order in orders.order_by("updated_at"):
         balance_q, refs = _held_refund_balance(by_order.get(order.ref, []))
-        reason = "cancelled"
+        reason = refund_reason(order)
         if str(order.status) not in _REFUND_ALL_STATUSES:
             balance_q = min(balance_q, overpaid_q(order))
-            reason = "reduced"
         if balance_q <= 0:
             continue
         data = order.data or {}
@@ -1025,7 +1052,7 @@ class PendingCardMachineRefund:
     intent_refs: tuple[str, ...]
     customer_name: str
     channel_ref: str
-    #: Por que o dinheiro volta (chave de :data:`CARD_MACHINE_REFUND_REASONS`).
+    #: Por que o dinheiro volta (chave de :data:`REFUND_REASON_LABELS`).
     reason: str = "reduced"
     #: O caixa em que a venda passou na maquininha ("" quando o intent não guarda).
     terminal_ref: str = ""
@@ -1036,12 +1063,12 @@ class PendingCardMachineRefund:
     authorization: str = ""
 
 
-#: Os motivos, em frase de meio de linha (o aviso e a tela do PDV leem daqui).
-CARD_MACHINE_REFUND_REASONS = {
-    "cancelled": "venda cancelada",
-    "returned": "venda devolvida",
-    "partial_return": "devolução de parte da venda",
-    "reduced": "encomenda ficou mais barata",
+#: Os motivos de :func:`refund_reason`, como rótulo de tela (PDV, gaveta e maquininha).
+REFUND_REASON_LABELS = {
+    "cancelled": "Venda cancelada",
+    "returned": "Venda devolvida",
+    "partial_return": "Devolução de parte da venda",
+    "reduced": "Encomenda ficou mais barata",
 }
 
 #: A forma, em minúscula para meio de frase ("no crédito").
@@ -1063,22 +1090,6 @@ def _card_machine_intents(order_refs):
     return [intent for intent in rows if refund_route(intent) == ROUTE_CARD_MACHINE]
 
 
-def _returned_q(order) -> int:
-    """Quanto as devoluções PARCIAIS já registradas tiram do que o pedido vale."""
-    return sum(
-        int(record.get("refund_total_q") or 0)
-        for record in (order.data or {}).get("returns") or []
-        if isinstance(record, dict)
-    )
-
-
-def _card_machine_reason(order) -> str:
-    status = str(order.status)
-    if status in _REFUND_ALL_STATUSES:
-        return "returned" if status == "returned" else "cancelled"
-    return "partial_return" if (order.data or {}).get("returns") else "reduced"
-
-
 def card_machine_refund_due(order, *, intents=None) -> tuple[int, list[str]]:
     """``(valor, intents)`` que ainda falta estornar NA maquininha para este pedido.
 
@@ -1089,11 +1100,11 @@ def card_machine_refund_due(order, *, intents=None) -> tuple[int, list[str]]:
       o que entrou pela maquininha;
     - pedido vivo: vale o total efetivo (``order_composition``, a encomenda
       editada) menos as devoluções parciais. O que entrou acima disso volta.
-      O que o gateway (Pix, cartão online) já devolveu saiu do capturado, então
-      a maquininha só fica com a parte que é dela.
+      O que o gateway (Pix, cartão online) já devolveu saiu do capturado, e o
+      que a gaveta vai devolver em dinheiro vem primeiro (o operador entrega
+      nota, não estorna cartão pela metade), então a maquininha só fica com a
+      parte que é dela.
     """
-    from shopman.shop.services import order_composition
-
     if intents is None:
         intents = _card_machine_intents([order.ref])
     if not intents:
@@ -1103,14 +1114,15 @@ def card_machine_refund_due(order, *, intents=None) -> tuple[int, list[str]]:
         return 0, []
     if str(order.status) in _REFUND_ALL_STATUSES:
         return held_q, refs
-    captured = captured_balance_q(order)
-    if captured is None:
-        # "Não sei" não vira pendência inventada: a leitura seguinte decide, e o
-        # log guarda o porquê.
-        logger.warning("payment.card_machine_refund_due: payman read failed order=%s", order.ref)
+    due_q = overpaid_q(order)
+    if due_q <= 0:
         return 0, []
-    kept_q = max(0, order_composition.effective_total_q(order) - _returned_q(order))
-    return min(held_q, max(0, captured - kept_q)), refs
+    from shopman.payman.models import PaymentIntent
+
+    cash_q, _ = _held_refund_balance(
+        PaymentIntent.objects.filter(order_ref=order.ref, method="cash", status__in={"captured", "refunded"})
+    )
+    return min(held_q, max(0, due_q - cash_q)), refs
 
 
 def _intent_detail(intent) -> dict:
@@ -1135,7 +1147,7 @@ def _pending_card_machine_refund(order, intents) -> PendingCardMachineRefund | N
         intent_refs=tuple(refs),
         customer_name=_customer_name(order.data or {}),
         channel_ref=order.channel_ref,
-        reason=_card_machine_reason(order),
+        reason=refund_reason(order),
         **_intent_detail(last),
     )
 
@@ -1181,7 +1193,7 @@ def card_machine_refund_message(pending: PendingCardMachineRefund) -> str:
     from shopman.utils.monetary import format_money
 
     method = CARD_MACHINE_METHOD_WORDS.get(pending.method, "cartão")
-    reason = CARD_MACHINE_REFUND_REASONS.get(pending.reason, "venda cancelada")
+    reason = REFUND_REASON_LABELS.get(pending.reason, "Venda cancelada").lower()
     clues = [f"pedido {pending.order_ref}", reason]
     paid_at = parse_datetime(pending.paid_at) if pending.paid_at else None
     if paid_at is not None:
@@ -1241,7 +1253,7 @@ def record_card_machine_refund(order, *, actor, approved_by=None) -> int:
     remaining, _ = card_machine_refund_due(order, intents=intents)
     if remaining <= 0:
         return 0
-    reason = _card_machine_reason(order)
+    reason = refund_reason(order)
     recorded = 0
     with db_transaction.atomic():
         for intent in reversed(intents):
@@ -1272,6 +1284,15 @@ def record_card_machine_refund(order, *, actor, approved_by=None) -> int:
     return recorded
 
 
+#: O motivo como o Payman o grava (``PaymentTransaction``), por :func:`refund_reason`.
+_PAYMAN_REFUND_REASONS = {
+    "cancelled": "order_cancelled",
+    "returned": "order_returned",
+    "partial_return": "order_returned",
+    "reduced": "order_edited",
+}
+
+
 def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancelamento") -> int:
     """Devolve o dinheiro de uma venda: Payman e livro-caixa na MESMA transação.
 
@@ -1284,6 +1305,10 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
 
     Idempotente: o saldo reembolsável do Payman é a fonte; a segunda chamada
     não encontra saldo e não grava linha.
+
+    É o gesto "Devolvi em dinheiro": o pedido guarda quem devolveu (``actor`` do
+    evento ``cash_refund_recorded``), quando (a hora do evento), quem autorizou,
+    o motivo e o turno de onde o dinheiro saiu.
     """
     from django.db import transaction as db_transaction
     from shopman.cashman import Entry
@@ -1319,7 +1344,7 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
             PaymentService.refund(
                 intent_ref,
                 amount_q=balance_q,
-                reason="order_cancelled" if limit_q is None else "order_edited",
+                reason=_PAYMAN_REFUND_REASONS.get(refund_reason(order), "order_cancelled"),
                 gateway_id=gateway_id,
             )
             refunded_q += balance_q
@@ -1338,6 +1363,16 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
             parent=original if original is not None and original.shift_id == shift.pk else None,
             reason=str(reason or "")[:200],
             payload={"intents_refunded": refunded_refs},
+        )
+        order.emit_event(
+            event_type="cash_refund_recorded",
+            actor=actor.get_username() if hasattr(actor, "get_username") else str(actor),
+            payload={
+                "amount_q": refunded_q,
+                "reason": refund_reason(order),
+                "approved_by": approved_by.get_username() if hasattr(approved_by, "get_username") else "",
+                "shift_id": shift.pk,
+            },
         )
     logger.info("payment.refund_cash: refunded %s for order %s in shift %s", refunded_q, order.ref, shift.pk)
     return refunded_q

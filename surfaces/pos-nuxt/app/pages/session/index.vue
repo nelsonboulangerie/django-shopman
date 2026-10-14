@@ -540,6 +540,16 @@ const cardMachineClosingNotice = computed(() => {
     ? "1 estorno na maquininha ainda não foi registrado"
     : `${n} estornos na maquininha ainda não foram registrados`;
 });
+const cashRefundClosingNotice = computed(() => {
+  const n = pendingCashRefunds.value.length;
+  return n === 1
+    ? "1 devolução em dinheiro ainda não foi feita"
+    : `${n} devoluções em dinheiro ainda não foram feitas`;
+});
+function openCashRefundsFromClosing() {
+  closingDialogOpen.value = false;
+  refundsDialogOpen.value = true;
+}
 function openCardMachineFromClosing() {
   closingDialogOpen.value = false;
   cardMachineDialogOpen.value = true;
@@ -781,7 +791,7 @@ async function confirmClose() {
     <NuxtModal
       v-model:open="refundsDialogOpen"
       title="Devoluções em dinheiro"
-      description="Entregue o dinheiro ao cliente e toque em Devolver."
+      description="Entregue o dinheiro ao cliente e toque em Devolvi em dinheiro."
       :content="dialogContent('attention:refunds')"
     >
       <template #body>
@@ -801,14 +811,14 @@ async function confirmClose() {
               <NuxtButton
                 block
                 icon="i-lucide-hand-coins"
-                label="Devolver"
+                label="Devolvi em dinheiro"
                 :disabled="busy"
                 @click="refundPending(refund.order_ref)"
               />
             </li>
           </ul>
           <p class="text-xs text-muted-foreground">
-            O dinheiro sai desta gaveta e fica registrado no turno. Um gerente autoriza com o PIN.
+            O dinheiro sai desta gaveta e fica registrado no turno e no pedido, com quem devolveu e quando. Um gerente autoriza com o PIN.
           </p>
         </div>
       </template>
@@ -1267,6 +1277,19 @@ async function confirmClose() {
           <!-- Estorno na maquininha em aberto: não segura o fechamento (o
                estorno não mexe na gaveta), mas quem fecha o dia fica sabendo
                que um cliente ainda não recebeu o dinheiro de volta. -->
+          <!-- Devolução em dinheiro em aberto: o dinheiro do cliente ainda está
+               nesta gaveta, e a contagem vai incluí-lo. Avisa, não segura. -->
+          <NuxtAlert
+            v-if="pendingCashRefunds.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-hand-coins"
+            :title="cashRefundClosingNotice"
+            description="Esse dinheiro ainda é do cliente e está na gaveta. Dá para fechar o caixa assim mesmo."
+            orientation="vertical"
+            :actions="alertActions('warning', [{ label: 'Ver devoluções', onClick: openCashRefundsFromClosing }])"
+            data-close-shift-cash-refunds
+          />
           <NuxtAlert
             v-if="pendingCardMachineRefunds.length"
             color="warning"

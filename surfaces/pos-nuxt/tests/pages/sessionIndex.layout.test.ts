@@ -164,10 +164,10 @@ describe("antesala — turno aberto, organização da tela", () => {
     expect(badge("attention:accounts")).toBe("1");
     expect(block.text()).not.toContain("pendências");
     // As ações de cada pendência moram no diálogo do card — nenhuma na tela.
-    expect(block.text()).not.toContain("Devolver");
+    expect(block.text()).not.toContain("Devolvi em dinheiro");
     await tile(wrapper, "attention:refunds").trigger("click");
     await flushPromises();
-    expect(dialog("attention:refunds")?.textContent).toContain("Devolver");
+    expect(dialog("attention:refunds")?.textContent).toContain("Devolvi em dinheiro");
     await tile(wrapper, "attention:change").trigger("click");
     await flushPromises();
     expect(dialog("attention:change")?.textContent).toContain("Atender");
