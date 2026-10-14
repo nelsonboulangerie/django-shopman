@@ -69,6 +69,22 @@ export function orderReadback(result: Pick<PosSaleResultSnapshot, "salesMode" | 
   return { fulfillment, schedule };
 }
 
+/**
+ * A PRÓXIMA AÇÃO da tela de resultado (P2-31 do mapa de cenários): o CTA diz o
+ * que vem a seguir no mesmo modo. Encomenda registrada puxa outra encomenda (a
+ * mesma "Nova encomenda" da seção Encomendas); venda puxa outra venda. A volta
+ * ao quadro de comandas continua no F2, para os dois.
+ */
+export function nextActionLabel(salesMode: PosSaleResultSnapshot["salesMode"], pixPending: boolean): string {
+  const base = salesMode === "order" ? "Nova encomenda" : "Nova venda";
+  return pixPending ? `${base} mesmo assim` : base;
+}
+
+/** O papel da encomenda, com o verbo inteiro: o mesmo rótulo do detalhe da encomenda. */
+export function orderTicketLabel(printing: boolean): string {
+  return printing ? "Imprimindo…" : "Imprimir Via Pedido";
+}
+
 export interface SaleResultAdvanceInputs {
   /** Troco congelado no fechamento, em centavos. 0 = pagamento exato/digital. */
   changeQ: number;
