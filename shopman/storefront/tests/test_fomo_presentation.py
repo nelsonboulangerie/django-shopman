@@ -141,25 +141,6 @@ class TestPromoCountdown:
         assert badges_for_product(SKU, promotions=promos, now=NOW) == ()
 
 
-# ── F14: happy hour ──────────────────────────────────────────────────
-
-
-class TestHappyHour:
-    def test_active_happy_hour_shows_end_time(self):
-        badges = badges_for_product(
-            SKU, availability={"has_happy_hour": True, "happy_hour_end": "18:00"}, now=NOW
-        )
-        assert _by_type(badges, "happy_hour").label == "Happy Hour até 18:00"
-
-    def test_without_end_time_falls_back(self):
-        badges = badges_for_product(SKU, availability={"has_happy_hour": True}, now=NOW)
-        assert _by_type(badges, "happy_hour").label == "Happy Hour agora"
-
-    def test_inactive_is_silent(self):
-        badges = badges_for_product(SKU, availability={"has_happy_hour": False}, now=NOW)
-        assert badges == ()
-
-
 # ── Prova social (F16 + F17) ─────────────────────────────────────────
 
 
@@ -230,8 +211,6 @@ class TestPriorityAndCap:
             SKU,
             availability={
                 "available_qty": 2,
-                "has_happy_hour": True,
-                "happy_hour_end": "18:00",
             },
             production={"finished_at": NOW - timedelta(minutes=5)},
             promotions=[{"valid_until": NOW + timedelta(hours=1)}],
@@ -247,7 +226,8 @@ class TestPriorityAndCap:
     def test_ordered_by_priority(self):
         badges = badges_for_product(
             SKU,
-            availability={"available_qty": 1, "has_happy_hour": True},
+            availability={"available_qty": 1},
+            promotions=[{"valid_until": NOW + timedelta(hours=1)}],
             now=NOW,
         )
         assert [badge.priority for badge in badges] == sorted(badge.priority for badge in badges)

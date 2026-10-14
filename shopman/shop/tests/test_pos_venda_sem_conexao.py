@@ -64,12 +64,13 @@ def _offline(captured: datetime, **extra) -> dict:
 
 
 def _happy_hour(percent=40, start="17:00", end="18:00"):
-    from shopman.shop.models import RuleConfig
+    from shopman.shop.models import Channel, RuleConfig
 
+    # A Xepa só vale no balcão: a regra é listada no canal do PDV.
     RuleConfig.objects.create(
         ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
         label="Happy Hour", params={"discount_percent": percent, "start": start, "end": end}, enabled=True,
-    )
+    ).channels.set(Channel.objects.filter(ref="pdv"))
     cache.clear()
 
 

@@ -48,16 +48,6 @@ class CategoryProjection:
     url: str
 
 
-@dataclass(frozen=True)
-class HappyHourProjection:
-    """Happy hour banner state."""
-
-    active: bool
-    discount_percent: int
-    start: str  # "16:00"
-    end: str  # "18:00"
-
-
 # ──────────────────────────────────────────────────────────────────────
 # Fase 2 — Checkout, Payment, Tracking
 # ──────────────────────────────────────────────────────────────────────

@@ -25,14 +25,12 @@ from shopman.shop.observability import catalog_stage
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.storefront_context import (
-    happy_hour_state,
     popular_skus,
     session_pricing_hints,
 )
 from shopman.shop.projections.types import (
     Availability,
     CategoryProjection,
-    HappyHourProjection,
 )
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
@@ -197,7 +195,6 @@ class CatalogProjection:
     sections: tuple[CatalogSectionProjection, ...]
     featured: tuple[CatalogItemProjection, ...]
     active_category_ref: str | None
-    happy_hour: HappyHourProjection | None = None
     favorite_category_ref: str | None = None
     # Copy configurável para os dois vazios da tela: catálogo sem itens no canal
     # (``empty_state``) e busca client-side sem resultado (``search_empty_state``).
@@ -298,7 +295,6 @@ def build_catalog(
             sections=(),
             featured=(),
             active_category_ref=collection_ref if active_collection else None,
-            happy_hour=_happy_hour_projection(happy_hour_state()),
             favorite_category_ref=favorite_category_ref,
             empty_state=_catalog_empty_state(),
             search_empty_state=_search_empty_state(),
@@ -335,7 +331,6 @@ def build_catalog(
         sections=sections,
         featured=featured,
         active_category_ref=collection_ref if active_collection else None,
-        happy_hour=_happy_hour_projection(happy_hour_state()),
         favorite_category_ref=favorite_category_ref,
         # Copy do "nada encontrado" da busca client-side viaja sempre; o vazio do
         # catálogo (empty_state) só faz sentido quando não há itens, mas incluí-lo
@@ -1041,12 +1036,3 @@ def _cart_qty_by_sku(request: HttpRequest | None) -> dict[str, int]:
     return result
 
 
-def _happy_hour_projection(raw: dict) -> HappyHourProjection | None:
-    if not raw or not raw.get("active"):
-        return None
-    return HappyHourProjection(
-        active=True,
-        discount_percent=int(raw.get("discount_percent", 0) or 0),
-        start=str(raw.get("start", "")),
-        end=str(raw.get("end", "")),
-    )

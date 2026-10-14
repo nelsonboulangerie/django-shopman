@@ -57,11 +57,18 @@ class EmployeeRule(BaseRule):
 
 
 class HappyHourRule(BaseRule):
-    """Desconto happy hour — horário configurável."""
+    """Desconto por horário (Happy Hour, a "Hora da Xepa" da casa).
+
+    É liquidação de fim de dia de quem está na loja: vale só nos canais listados
+    no ``RuleConfig`` (decisão do dono, 14/10/2026: só no balcão). Sem canal
+    listado, não vale em lugar nenhum. O "vazio = todos" das outras regras levava
+    a Xepa ao site e ao iFood com um clique a menos no Admin.
+    """
 
     code = "shop.happy_hour"
     label = "Happy Hour"
     rule_type = "modifier"
+    channels_required = True
     default_params = {"discount_percent": 25, "start": "17:30", "end": "18:00"}
 
     def __init__(

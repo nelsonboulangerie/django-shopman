@@ -63,21 +63,7 @@ def _availability(sku: str, *, channel_ref: str) -> dict:
     except Exception:
         logger.debug("fomo.availability_failed sku=%s", sku, exc_info=True)
 
-    data.update(_happy_hour())
     return data
-
-
-def _happy_hour() -> dict:
-    from shopman.shop.projections.storefront_context import happy_hour_state
-
-    try:
-        state = happy_hour_state() or {}
-    except Exception:
-        logger.debug("fomo.happy_hour_failed", exc_info=True)
-        return {}
-    if not state.get("active"):
-        return {}
-    return {"has_happy_hour": True, "happy_hour_end": state.get("end", "")}
 
 
 # ── Produção ─────────────────────────────────────────────────────────

@@ -602,10 +602,6 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
         "code": "partial_results" if issues else "results",
         "outcome": "partial" if issues else "read",
     }
-    if catalog is not None and catalog.happy_hour is not None:
-        label = getattr(catalog.happy_hour, "label", "") or getattr(catalog.happy_hour, "message", "")
-        if label:
-            payload["happy_hour"] = str(label)
     return payload
 
 

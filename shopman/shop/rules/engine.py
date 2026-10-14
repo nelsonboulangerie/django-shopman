@@ -96,10 +96,12 @@ def get_channel_rule_params(ref: str, channel_ref: str | None) -> dict | None:
     - ``dict`` — the rule is enabled and applies here; use these params.
     - ``None`` — no enabled rule for this channel; the modifier must **skip**.
 
-    A rule with no ``channels`` applies everywhere; otherwise it applies only to
-    the listed channels (matched by ``Channel.ref``). The channels are prefetched
-    by ``get_active_rules()`` so this adds no per-call query. Returns ``None`` on
-    any DB error (fail-closed: no rule, no discount).
+    A rule with no ``channels`` applies everywhere — unless its class declares
+    ``channels_required`` (a Hora da Xepa): then no channel means nowhere.
+    Otherwise it applies only to the listed channels (matched by ``Channel.ref``).
+    The channels are prefetched by ``get_active_rules()`` so this adds no
+    per-call query. Returns ``None`` on any DB error (fail-closed: no rule, no
+    discount).
     """
     try:
         for rc in get_active_rules():
@@ -107,6 +109,9 @@ def get_channel_rule_params(ref: str, channel_ref: str | None) -> dict | None:
                 continue
             channels = list(rc.channels.all())
             if not channels:
+                rule_cls = _import_rule_class(rc.rule_path)
+                if getattr(rule_cls, "channels_required", False):
+                    return None
                 return rc.params or {}
             if channel_ref and any(c.ref == channel_ref for c in channels):
                 return rc.params or {}
