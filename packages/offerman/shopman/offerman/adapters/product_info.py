@@ -95,7 +95,11 @@ class ProductInfoBackend:
         for sku in skus:
             if sku in found:
                 p = found[sku]
-                primary_item = p.collection_items.filter(is_primary=True).first()
+                # Varre as linhas prefetchadas: .filter(is_primary=True)
+                # descartaria o prefetch e voltaria ao banco por produto.
+                primary_item = next(
+                    (ci for ci in p.collection_items.all() if ci.is_primary), None
+                )
                 category = primary_item.collection.ref if primary_item else None
                 result[sku] = ProductInfo(
                     sku=p.sku,
@@ -133,7 +137,10 @@ class ProductInfoBackend:
 
         result = []
         for p in qs:
-            primary_item = p.collection_items.filter(is_primary=True).first()
+            # Prefetchado acima; varre em Python em vez de consultar por produto.
+            primary_item = next(
+                (ci for ci in p.collection_items.all() if ci.is_primary), None
+            )
             category = primary_item.collection.ref if primary_item else None
             result.append(
                 ProductInfo(
