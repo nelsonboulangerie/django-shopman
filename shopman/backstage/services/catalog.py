@@ -1695,7 +1695,6 @@ def _apply_gtin_draft(sku: str, spec, *, actor: str) -> dict | None:
 
     from shopman.offerman import get_social_attributes, gtin_is_valid, set_social_attributes
 
-    from shopman.shop.services import attributes
     from shopman.shop.services import product_enrichment as enrichment
 
     if not isinstance(spec, dict):
@@ -1717,12 +1716,6 @@ def _apply_gtin_draft(sku: str, spec, *, actor: str) -> dict | None:
     names = [name for name in accept if name in enrichment.FIELD_LABELS]
     who = SimpleNamespace(get_username=lambda: actor or "catalogo")
     result = enrichment.accept_fields(product, names, replace=replace, user=who)
-    # ⚠️ O aceite do enriquecimento ainda grava o alérgeno na chave LEGADA
-    # (metadata["allergens"]); o registro de atributos é quem veste a tela do
-    # Gestor. Espelha para os dois lados enquanto a dívida não é paga.
-    if "allergens" in result.applied and product.metadata.get("allergens"):
-        attributes.set(product, "alergenos", list(product.metadata["allergens"]), source="manual", save=False)
-        product.save(update_fields=["metadata", "updated_at"])
     return {
         "applied": list(result.applied),
         "conflicts": dict(result.conflicts),
