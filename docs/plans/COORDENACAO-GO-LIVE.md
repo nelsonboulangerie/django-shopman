@@ -122,8 +122,9 @@ Coordenar o Shopman da Nelson Boulangerie até a virada para produção.
   - Caixas Presente: **entram** no Dia 1.
   - Demais itens: aceitos como recomendado (estoque por contagem; cupons desligados;
     custo de insumos depois; fichas como estão; Yooga mantém; ensaio no vivo antes).
-    Catálogo (B5): **1** (14/10): sessão de 2 h com a fila de divergências do
-    catálogo consolidado e inventário na véspera.
+    Catálogo (B5): **nem sessão nem abrir com o seed.** O dono quer o cadastro completo
+    nos apps (§7.2) para o gerente e ele corrigirem o catálogo direto no sistema. O
+    cadastro turbinado do catálogo vira pré-requisito da carga do Dia 1.
 - Alterações no alpha que esperam: pedido mínimo de entrega está em 0 desde a prova
   da TaOn de 13/10 e **volta a R$ 25** (Admin, "Pedidos e entrega") quando a prova
   terminar.
@@ -191,10 +192,15 @@ desconto vence e não soma" já valendo contra a Xepa.
   antes em `docs/reference/data-schemas.md`). Lista derivada no Offerman
   (`Listing.base_listing` + ajuste + arredondamento) só se o dono quiser sobrepreço por
   grupo, porque mexe no Core e esconde o desconto do B.I. e da mensagem de economia.
-- **Perguntas ao dono (levar em 1/2):** sobrepreço por grupo agora? (rec. 1: não, só
-  desconto) · Equipe −30% também na entrega pela loja online? (rec. 1: só retirada, como
-  hoje, para não abrir preço de equipe a terceiros) · arredondamento (rec. 1: preço final
-  para baixo, em múltiplos de R$ 0,10).
+- **Decisões do dono (14/10):** sem sobrepreço por grupo (só desconto); Equipe −30% só
+  na retirada; arredondamento do preço final para o **R$ X,00 ou R$ X,50 mais próximo**
+  (pode subir até R$ 0,25 em relação ao desconto exato; o teste deve cobrir os dois
+  lados). Aposentar a `EmployeeRule` (vira o grupo Equipe). Consertar a tabela de preço
+  por cliente: o canônico é `offerman.Listing` (o preço) apontado por
+  `guestman.PriceTier.listing_ref` (de quem é), orquestrado pela cascata de
+  `shop/handlers/pricing.py`; o conserto é o ctx levar o cliente em todo canal (PDV e
+  loja online), com teste de ponta a ponta. Vale para a vantagem "lista de preço
+  diferenciada" do grupo.
 
 ### 7.2 Cadastro completo nos apps Nuxt ("CRUD turbo")
 
@@ -213,7 +219,7 @@ um cadastro espartano: à altura da UX da suíte.
   painel edita), grupos de clientes (só Admin), e o que mais só existe no Admin.
 
 **Por que importa (dono, 14/10):** é o caminho para o gerente e o dono corrigirem tudo
-direto no sistema, inclusive a fila de divergências do catálogo do Dia 1 (B5 = 1) e os
+direto no sistema, inclusive as divergências do catálogo do Dia 1 (B5) e os
 grupos de preço da §7.1.
 
 **O que todo cadastro precisa ter (requisitos do dono, 14/10):**
@@ -242,7 +248,6 @@ produtos, por causa do B5). A proposta vai ao dono em 1/2, com capturas, antes d
 - Sessão de 20 min (seção 6), quando o certificado Efí de homologação existir.
 - Medir o fechamento da venda no PDV do alpha (meta < 1,5 s) na próxima venda dele.
 - Hardware do balcão (kit enxuto de R$ 3.981,98): adiado pelo dono em 14/10.
-- Listas de preço por grupo: as 3 perguntas do relatório da §7.1.
 - Leva ao contador (texto a montar e entregar ao dono, que envia):
   1. desconto da linha embutido no preço: como sai no `vDesc` do item da NFC-e;
   2. nota de estorno fora do prazo de cancelar: quem emite e como (pergunta inteira no
