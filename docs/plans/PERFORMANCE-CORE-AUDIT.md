@@ -518,3 +518,178 @@ que é Django 5+ já está disponível** — e o código roda em 6.1.
 - Não cobri watchman (13o pacote, de outra frente) nem o código de preço/catálogo em voo
   (claude/catalogo-turbo), conforme a regra.
 - Próximo passo natural: PR 1-5 do roadmap (Core sem N+1), cada um com o teste de contagem proposto.
+
+## 10. Aprofundamento — os 3 apps mais quentes (proposta, teste, risco)
+
+Todos os números desta seção foram medidos no mesmo Postgres local isolado (test DB criado/destruído pelo
+pytest-django). **Contagem de consultas não depende do volume de dados**, então o antes/depois abaixo é
+válido como orçamento. Onde o ganho é de linhas/CPU e não de contagem, digo explicitamente. Nenhuma
+alteração de código foi feita: as propostas são esboço, e os testes são descartáveis (não vão para o PR).
+
+### 10.1 orderman
+
+#### 10.1.1 CommitService — OrderItem um a um (N+1 de escrita)
+
+**Diagnóstico.** commit.py:457-472: para cada linha da sessão, OrderItem.objects.create(...) dentro da
+transação atômica que também segura select_for_update em Session e, quando há titular, em Customer. É N
+INSERTs, N+1 contando o Order. Medido com o fan-out de order_changed suprimido (monkeypatch só para isolar o
+SQL do CommitService):
+
+    MEASURE orderman CommitService: 1 item=35 queries; 10 itens=44 queries; delta=9
+
+Delta de exatamente 1 por item: a prova de que o laço é o custo variável. As 35 consultas de base do commit
+de 1 item são o resto do caminho (idempotência, locks, fence de cliente, evento, ref) — outro assunto.
+
+**Proposta concreta.** Montar a lista de OrderItem e gravar com bulk_create numa ida:
+
+    order_items = []
+    for item in session.items:
+        line_total = item.get("line_total_q")
+        if line_total is None:
+            line_total = monetary_mult(Decimal(str(item["qty"])), item.get("unit_price_q", 0))
+        order_items.append(OrderItem(
+            order=order, line_id=item["line_id"], sku=item["sku"], name=item.get("name", ""),
+            qty=Decimal(str(item["qty"])), unit_price_q=item.get("unit_price_q", 0),
+            line_total_q=int(line_total), meta=item.get("meta", {}),
+        ))
+    OrderItem.objects.bulk_create(order_items)
+
+Nada muda em volta: order.emit_event(created) e order_changed.send continuam na mesma posição e com o mesmo
+conteúdo. Não é preciso pk dos itens depois.
+
+**Teste que provaria.** CaptureQueriesContext em volta de CommitService.commit com uma sessão de 1 e uma de
+10 itens (Session.objects.create(session_key=..., channel_ref="pos", items=[...]) e commit com idempotency
+keys distintas). Antes medido: 35 -> 44 (delta 9). Depois esperado: 35 -> 35 (delta 0), com o mesmo Order e os
+mesmos 10 OrderItem persistidos. Para o alpha, medir tempo da transação (o commit está na rota mais quente) —
+o ganho em ms é maior que 9 round-trips porque encurta o tempo com lock de Session/Customer.
+
+**Risco: baixo.** OrderItem (order.py:366-408) não tem save() customizado nem receiver de sinal, então
+bulk_create não pula efeito nenhum. bulk_create não dispara post_save, e não há post_save de OrderItem. O caso
+de line_id duplicado estoura a UniqueConstraint(order, line_id) nos dois caminhos (create falha no 2o; bulk
+falha no lote) e aborta a mesma transação. Guarda: rodar test_commit_branches, test_services, test_preorder e
+o e2e de lifecycle antes de qualquer merge.
+
+#### 10.1.2 Histórico — Order.data->customer_ref sem índice (varredura de JSON)
+
+**Diagnóstico.** history.py:90-92 filtra Order.objects.filter(data__customer_ref=customer_ref) — JSONField sem
+índice. E history.py:77-80 soma snapshot.pricing.total_q iterando
+qs.values_list("snapshot", flat=True).iterator(): para CADA cliente, o banco devolve TODOS os pedidos dele e o
+Python parseia N snapshots JSON. No batch RFM (guestman/contrib/insights/service.py:183) isso multiplica por
+cliente. O WP-PERFORMANCE-2026-09 §2.3 mede 15.311 seq scans/dia em orderman_order e 13.055 em
+orderman_orderitem no alpha.
+
+**Proposta concreta (duas partes independentes).**
+
+1. Índice de expressão, sem novo campo e sem mudar a leitura (o dado já existe no JSON):
+
+    # Order.Meta.indexes (migração no Core, AddIndexConcurrently)
+    models.Index(KeyTextTransform("customer_ref", "data"), name="ord_order_customer_ref_idx")
+
+   No Postgres isso cria btree sobre (data->>'customer_ref'). Se a ordenação por data for usada junto,
+   compor com created_at para servir filter+order na mesma varredura.
+
+2. Agregar o gasto no banco em vez de somar N snapshots em Python. Hoje o valor vem de
+   snapshot.pricing.total_q com fallback para total_q; a expressão SQL equivalente é
+   COALESCE((snapshot->'pricing'->>'total_q')::bigint, total_q), somada por cliente. Isso só entra com teste
+   de equivalência; a parte 1 pode ir sozinha.
+
+**Teste que provaria.**
+- EXPLAIN (ANALYZE, BUFFERS) da query, em banco local com ~1.000 pedidos de 20 clientes. Antes: Seq Scan em
+  orderman_order. Depois: Index Scan/Bitmap sobre ord_order_customer_ref_idx, com rows caindo de ~1000 para
+  ~50. É um ganho de linhas lidas e de CPU de parse, NÃO de contagem de consultas (continua 1). Se data->>
+  for nulo em pedidos antigos, índice parcial WHERE data ? 'customer_ref' reduz tamanho.
+- Equivalência (só para a parte 2): 50 pedidos, alguns com snapshot.pricing.total_q diferente de total_q,
+  comparar get_customer_stats atual vs novo campo a campo.
+
+**Risco.** Baixo para o índice (não muda resultado; a regra do CLAUDE.md admite: dado já existente, queryable
+em escala e três leitores reais — B.I., craftsman/contrib/demand e este histórico). Médio para a agregação SQL
+(semântica do total com desconto), por isso ela é separável e exige o teste de equivalência verde. Migração
+com AddIndexConcurrently para não travar escrita no go-live.
+
+### 10.2 stockman — check_alerts (medido antes e depois)
+
+**Diagnóstico.** alerts.py:44-73: por alerta ativo, 1 aggregate de Quant + 1 aggregate de Hold, mais um save
+por disparo. Medido (antes) e comparação com a função irmã do dashboard (depois):
+
+    MEASURE stockman antes check_alerts: 2=5 12=25
+    MEASURE stockman depois _stock_alerts: 2=2 12=2
+
+1 + 2N no Core; constante 2 em shopman/backstage/projections/dashboard.py (_stock_alerts). A correção é copiar
+um padrão que já existe.
+
+**Proposta concreta.** Substituir os N laços por: 1 consulta de Quants agregada por (sku, position) aplicando
+o mesmo filtro de data (Q(target_date__isnull=True) | Q(target_date__lte=localdate())) e o mesmo recorte de
+posição do alerta; 1 consulta de Holds ativos (status PENDING/CONFIRMED e Q(expires_at__isnull=True) |
+Q(expires_at__gte=now)); comparar em Python. Para os alertas disparados, bulk_update de last_triggered_at numa
+escrita só. Reaproveitar a implementação do dashboard (extrair para o stockman) em vez de reescrever.
+
+**Teste que provaria.** django_assert_num_queries(2) com 1 e com 10 alertas que não disparam; (3) quando
+alguns disparam (2 leituras + 1 bulk_update). Antes/depois medido: 2 alertas 5 -> 2; 12 alertas 25 -> 2.
+Teste de paridade check_alerts vs _stock_alerts para os mesmos dados (mesmo disponível, mesmos disparados,
+mesmo last_triggered_at).
+
+**Risco: baixo.** O ponto sensível é preservar exatamente a semântica de position=None (soma de todas as
+posições) e a expiração do Hold — por isso a proposta é copiar o filtro do dashboard, não reinventar. O save
+por disparo vira bulk_update e o teste deve cobrir last_triggered_at. Guarda: manter o teste existente do
+dashboard verde e adicionar o de paridade.
+
+### 10.3 offerman — prefetch com to_attr no catálogo
+
+**Diagnóstico.** service.py:405-448: o queryset prefetcha product__keywords e
+product__collection_items__collection (:408), mas o laço ignora o prefetch em dois pontos:
+- :419 product.collection_items.filter(is_primary=True).first() — 1 query de collectionitem + 1 query da
+  collection do resultado (o objeto filtrado não traz a collection carregada);
+- :437 list(product.keywords.names()) if product.keywords else [] — a verificação de veracidade e o .names()
+  custam query de taggit por produto.
+Medido: 2 produtos = 11 consultas; 30 produtos = 95; delta = 84 (3 por produto). Atribuição confirmada
+capturando o SQL: por produto, 1 offerman_collectionitem + 1 offerman_collection + 1 taggit_tag. Com 5
+produtos o total foi 20, consistente com 5 de base + 3 por produto.
+
+**Proposta concreta.** Trocar os prefetches por Prefetch com to_attr e ler os atributos, sem .filter() nem
+avaliação de veracidade do manager no laço:
+
+    .prefetch_related(
+        Prefetch("product__collection_items",
+                 queryset=CollectionItem.objects.filter(is_primary=True)
+                          .select_related("collection").order_by("sort_order"),
+                 to_attr="primary_items"),
+        Prefetch("product__keywords", to_attr="keyword_list"),
+    )
+
+    # no laço:
+    primary_collection = product.primary_items[0].collection.ref if product.primary_items else None
+    keywords = [t.name for t in product.keyword_list]
+
+Remover o prefetch aninhado product__collection_items__collection para não buscar duas vezes.
+
+**Teste que provaria.** CaptureQueriesContext em CatalogService.get_projection_items com 2 e 30 produtos.
+Antes medido: 11 -> 95 (delta 84). Depois esperado: ~6 -> ~6 (constante: 1 listing + 1 listing items + 1
+primary collection items + 1 collections + 1 keywords + 1 de base). Além da contagem, um teste de igualdade do
+snapshot de projeção (mesmos ProjectedItem, mesmos campos) com 1 e com 30 produtos — o prefetch não pode mudar
+dado. O mesmo tratamento vale para os adapters sku_validator.py:134 e product_info.py:98/136, em PR próprio.
+
+**Risco: baixo.** Dois cuidados: (a) to_attr não popula _prefetched_objects_cache, então outro ponto do laço
+ou adapter que leia product.collection_items volta a consultar — conferir os consumidores; (b) manter a
+semântica de escolha da coleção primária: CollectionItem tem Meta.ordering, e .first() usava essa ordem, então
+o queryset do Prefetch é ordenado por sort_order e o laço pega [0] — se existir (por engano) mais de um
+is_primary=True para o mesmo produto, o comportamento é o mesmo de hoje. A ordem de keywords hoje é
+indeterminada (.names() sem ORDER BY); usar a lista do prefetch não é regressão.
+
+### 10.4 Medições — comando e saída bruta
+
+    # Postgres LOCAL; test DB criado/destruido pelo pytest-django; nunca o alpha.
+    PSYCOPG_IMPL=python PYTHONPATH=<worktree>:<packages> DATABASE_URL=postgres://LOCAL/perf_core_audit_base \
+      .venv/bin/python -m pytest _perf_core_audit_measure2_20261014.py -q -s
+
+    MEASURE orderman CommitService: 1 item=35 queries; 10 itens=44 queries; delta=9
+    MEASURE offerman get_projection_items: 2 produtos=11 queries; 30 produtos=95 queries; delta=84
+    MEASURE stockman antes check_alerts: 2=5 12=25
+    MEASURE stockman depois _stock_alerts: 2=2 12=2
+    3 passed
+
+Atribuição por produto (segundo medidor, 5 produtos):
+
+    TOTAL 20
+    SQL> SELECT ... FROM offerman_collectionitem ...   (1 por produto)
+    SQL> SELECT DISTINCT taggit_tag.name ...          (1 por produto, .names() ignorando o prefetch)
+    SQL> SELECT ... FROM offerman_collection ...       (1 por produto, .collection da linha filtrada)
