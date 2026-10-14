@@ -122,7 +122,8 @@ Coordenar o Shopman da Nelson Boulangerie até a virada para produção.
   - Caixas Presente: **entram** no Dia 1.
   - Demais itens: aceitos como recomendado (estoque por contagem; cupons desligados;
     custo de insumos depois; fichas como estão; Yooga mantém; ensaio no vivo antes).
-    Catálogo (B5): sem resposta registrada, levar de novo.
+    Catálogo (B5): reenviado em 14/10 (rec. 1: sessão de 2 h com a fila de divergências do
+    catálogo consolidado e inventário na véspera; 2: abrir com o seed e corrigir aberto).
 - Alterações no alpha que esperam: pedido mínimo de entrega está em 0 desde a prova
   da TaOn de 13/10 e **volta a R$ 25** (Admin, "Pedidos e entrega") quando a prova
   terminar.
@@ -159,6 +160,42 @@ desconto vence e não soma" já valendo contra a Xepa.
   do código.
 - A tela de gestão nasce num app Nuxt (ver 7.2), não só no Admin.
 
+**Especificação do dono (14/10), primeira entrega desta frente:**
+1. Verificar o que já existe de lista de preço por grupo de cliente; estender, não duplicar.
+2. Preço do grupo = preço base × (1 + ajuste%), ajuste positivo ou negativo, com
+   arredondamento configurável. Sempre calculado, nunca digitado: reajuste da base propaga.
+3. Vínculo por grupo de cliente (Guestman). Grupos iniciais: **Equipe (−30%)** e
+   **Aliança Francesa (−15%)**, configuráveis no Admin.
+4. Vale no PDV e na loja online. Desconto registrado por tipo (equipe/parceiro) para o B.I.
+5. Checkout e comprovante: com economia > 0, "Hoje você economizou R$ X por ser [grupo]";
+   texto por grupo, editável no Admin.
+6. Antes de implementar, relatório curto ao dono: o que existe, o que falta, proposta.
+
+**Relatório do passo 6 (14/10, contra `origin/main` 9b7320580), ainda não levado ao dono:**
+- Existe: desconto automático por faixa (#1766; `shop/services/promotions.py`
+  `customer_group_promotion`, Admin `shop/admin/price_tier.py`), aplicado pelo
+  `DiscountModifier` (`shop/modifiers.py`, maior desconto vence) e gravado por linha em
+  `pricing.discount.items[]` (`type: "promotion"`, nome, original, desconto). Na NFC-e o
+  desconto de linha sai embutido no preço do item (`adapters/fiscal_focusnfe.py`).
+- **Defeito latente:** a cascata "faixa do cliente → listing" de
+  `shop/handlers/pricing.py` depende de `ctx["customer"]`, que nenhum chamador preenche.
+  Hoje `PriceTier.listing_ref` não muda preço nenhum. Consertar ou remover, com teste.
+- **Duas regras para a mesma Equipe:** `EmployeeRule` (`shop/rules/pricing.py`, faixa
+  `staff`, 20%, só retirada) e o desconto por faixa do #1766 disputariam o mesmo cliente.
+  A proposta é aposentar a `EmployeeRule` virando promoção `grupo-staff`.
+- Falta: arredondamento; tipo do desconto (`discount_kind`) no registro da linha e a
+  leitura no B.I. (hoje o B.I. não lê desconto de pedido); mensagem de economia por grupo
+  no checkout e no comprovante (hoje só a de fidelidade existe).
+- **Proposta recomendada:** estender o desconto da faixa no motor de modifiers (sem Core:
+  `PriceTier.metadata` ganha `discount_kind`, `rounding`, `savings_message`, registrados
+  antes em `docs/reference/data-schemas.md`). Lista derivada no Offerman
+  (`Listing.base_listing` + ajuste + arredondamento) só se o dono quiser sobrepreço por
+  grupo, porque mexe no Core e esconde o desconto do B.I. e da mensagem de economia.
+- **Perguntas ao dono (levar em 1/2):** sobrepreço por grupo agora? (rec. 1: não, só
+  desconto) · Equipe −30% também na entrega pela loja online? (rec. 1: só retirada, como
+  hoje, para não abrir preço de equipe a terceiros) · arredondamento (rec. 1: preço final
+  para baixo, em múltiplos de R$ 0,10).
+
 ### 7.2 Cadastro completo nos apps Nuxt ("CRUD turbo")
 
 **Pedido:** gerente e dono criam e editam, com total autonomia e pelos apps Nuxt, tudo
@@ -183,8 +220,8 @@ as ondas. A proposta vai ao dono em 1/2, com capturas, antes do código.
 
 - Sessão de 20 min (seção 6), quando o certificado Efí de homologação existir.
 - Medir o fechamento da venda no PDV do alpha (meta < 1,5 s) na próxima venda dele.
-- Hardware do balcão (kit enxuto de R$ 3.981,98): sem resposta.
-- Grupo da Aliança: o percentual de desconto.
+- Hardware do balcão (kit enxuto de R$ 3.981,98): adiado pelo dono em 14/10.
+- Listas de preço por grupo: as 3 perguntas do relatório da §7.1.
 - Leva ao contador (texto a montar e entregar ao dono, que envia):
   1. desconto da linha embutido no preço: como sai no `vDesc` do item da NFC-e;
   2. nota de estorno fora do prazo de cancelar: quem emite e como (pergunta inteira no
