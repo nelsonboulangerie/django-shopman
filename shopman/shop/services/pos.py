@@ -128,6 +128,12 @@ class PosSaleReview:
     #: A primeira janela oferecível deste dia para este carrinho, ou "". A tela
     #: usa para pré-selecionar sem ter que refazer a conta do servidor.
     delivery_earliest_slot: str = ""
+    #: VENDA SEM COMANDA: o que cada linha cobra pelo motor, no formato da linha
+    #: da comanda (``line_id``, ``unit_price_q`` cobrado, ``meta._list_q`` e
+    #: ``meta._disc`` do desconto automático que venceu). Com comanda fica vazio:
+    #: o salvar já devolve o mesmo eco. Sem isto a tela listava o Pão por R$ 12,00
+    #: e o Subtotal dizia R$ 10,80 (o desconto do grupo do cliente), sem dizer por quê.
+    priced_lines: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -896,10 +902,12 @@ def review_sale(
         raise ValueError("Abra um POS tab antes de finalizar.")
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
     _stamp_list_prices_from_session(payload, session)
+    priced_lines: tuple[dict, ...] = ()
     if session is None:
         # Sem comanda, o kernel ainda não precificou nada: a revisão pergunta ao
         # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
-        _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
+        priced = _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
+        priced_lines = _review_priced_lines(payload, priced)
     _ensure_resolved_prices(payload)
 
     fulfillment_type = _payload_fulfillment_type(payload)
@@ -1119,7 +1127,47 @@ def review_sale(
         delivery_date=delivery_day.isoformat() if delivery_day else "",
         delivery_slots=delivery_slots,
         delivery_earliest_slot=delivery_earliest_slot,
+        priced_lines=priced_lines,
     )
+
+
+def _review_priced_lines(payload: dict, priced: dict[int, dict]) -> tuple[dict, ...]:
+    """As linhas da venda sem comanda como o motor as cobra, no formato da comanda.
+
+    O desconto MANUAL de linha fica fora da sonda (ver ``_stamp_engine_prices``),
+    então ele entra aqui pela mesma régua do kernel: um desconto por item, o maior
+    ganha, medido contra a etiqueta. Quando o manual vence, o automático sai da
+    linha (o selo é o do manual, que a tela já conhece); quando perde, a linha
+    cobra o automático e mostra o rótulo dele.
+    """
+    lines: list[dict] = []
+    for index, item in enumerate(payload.get("items") or []):
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        line_id = str(item.get("line_id") or "")
+        engine_line = priced.get(index)
+        if not line_id or not engine_line:
+            continue
+        meta = engine_line.get("meta") or {}
+        charged_q = _int_q(engine_line.get("unit_price_q"))
+        list_q = _int_q(meta.get("_list_q")) or charged_q
+        disc = dict(meta.get("_disc") or {})
+        manual = _normalize_line_discount(item.get("discount"))
+        if manual:
+            # A MESMA conta de ``_payload_line_discounts_q`` / ``DiscountModifier._calc_manual``.
+            if manual["type"] == "fixed":
+                manual_q = min(int(round(manual["value"] * 100)), list_q)
+            else:
+                manual_q = min(int(round(list_q * manual["value"] / 100)), list_q)
+            if manual_q > list_q - charged_q:
+                charged_q = list_q - manual_q
+                disc = {}
+        lines.append({
+            "line_id": line_id,
+            "unit_price_q": charged_q,
+            "meta": {"_list_q": list_q, **({"_disc": disc} if disc else {})},
+        })
+    return tuple(lines)
 
 
 def _schedule_review_context(payload: dict):
@@ -3615,7 +3663,9 @@ class _DiscardPricingProbe(Exception):
 _PRICING_PROBE_LINE = "pricing-probe-"
 
 
-def _stamp_engine_prices(payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str) -> None:
+def _stamp_engine_prices(
+    payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str,
+) -> dict[int, dict]:
     """Venda SEM comanda: carimba no payload o preço que o MOTOR dá agora (P0-1).
 
     Com comanda, o kernel já precificou as linhas ao salvar, e
@@ -3636,12 +3686,16 @@ def _stamp_engine_prices(payload: dict, *, channel: Channel, config: ChannelConf
 
     Recusa do Orderman na sonda não vira recusa aqui: o fechamento passa pelo
     mesmo caminho e recusa com a frase da regra; a revisão segue com o que tem.
+
+    Devolve a linha do motor por ÍNDICE do payload (vazio quando a sonda não
+    precificou), para a revisão dizer à tela o que cada linha cobra e por quê.
     """
     from shopman.orderman.exceptions import SessionError
 
     items = payload.get("items") or []
+    stamped: dict[int, dict] = {}
     if not any(isinstance(item, dict) and not _is_delivery_fee_item(item) for item in items):
-        return
+        return stamped
     probe = copy.deepcopy(payload)
     probe.pop("manual_discount", None)
     for index, item in enumerate(probe.get("items") or []):
@@ -3667,7 +3721,7 @@ def _stamp_engine_prices(payload: dict, *, channel: Channel, config: ChannelConf
         pass
     except (OrderValidationError, OrderCommitError, SessionError):
         logger.info("pos_pricing_probe_refused channel=%s", channel.ref, exc_info=True)
-        return
+        return stamped
     for index, item in enumerate(items):
         if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
@@ -3679,6 +3733,8 @@ def _stamp_engine_prices(payload: dict, *, channel: Channel, config: ChannelConf
             continue
         item["unit_price_q"] = price_q
         item["list_price_q"] = _int_q((line.get("meta") or {}).get("_list_q")) or price_q
+        stamped[index] = line
+    return stamped
 
 
 def _stamp_list_prices_from_session(payload: dict, session) -> None:

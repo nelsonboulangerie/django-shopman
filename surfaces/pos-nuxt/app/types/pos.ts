@@ -451,6 +451,9 @@ export interface POSCustomerLookupProjection {
   house_account?: boolean;
   /** Quanto o cliente deve hoje (centavos), quando tem conta. */
   account_balance_q?: number;
+  /** O desconto do GRUPO do cliente no balcão ("Aliança Francesa · 10%"). O Core
+   *  o aplica sozinho no reprice; aqui ele só ganha nome. Vazio = nenhum. */
+  group_discount_label?: string;
 }
 
 export interface POSCustomerLookupResponse {
@@ -1007,6 +1010,10 @@ export interface POSSaleReviewProjection {
   delivery_slots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** A primeira janela oferecível deste dia para este carrinho, ou "". */
   delivery_earliest_slot?: string;
+  /** VENDA SEM COMANDA: o que cada linha cobra pelo motor (`line_id` → cobrado,
+   *  etiqueta, desconto automático que venceu). Com comanda vem vazio: quem diz é
+   *  o eco do salvar. Mesmo formato, aplicado por `applyLinePrices`. */
+  line_prices?: Record<string, Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount">>;
   /** Só na revisão montada pela TELA sem conexão (`offlineSaleReview`): a hora
    *  da leitura de preços usada. O servidor nunca manda este campo. */
   offline?: { prices_at: string };
