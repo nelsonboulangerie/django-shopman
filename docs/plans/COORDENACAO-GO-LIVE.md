@@ -202,6 +202,17 @@ desconto vence e não soma" já valendo contra a Xepa.
   loja online), com teste de ponta a ponta. Vale para a vantagem "lista de preço
   diferenciada" do grupo.
 
+**Desempenho é requisito desde o início (dono, 14/10), não ajuste no fim:**
+- Medir ANTES e DEPOIS com o `Server-Timing` e a contagem de consultas que o repo já usa
+  (#1628, #1630; `web/test_catalog_nplus1_measure`), e pôr o número no PR.
+- Tetos que não podem piorar: Pagamento do PDV (`tabs/save/?review=1`) em ~1,6 s medido
+  no alpha; projeção do PDV em 46 consultas; cardápio da loja online sem N+1.
+- Preço por cliente se resolve **em lote** (uma consulta para a faixa e a lista do
+  cliente, não uma por item) e só quando o cliente está identificado. O cardápio
+  anônimo continua igual e cacheável.
+- Teste de contagem de consultas para cada caminho novo (carrinho, revisão do PDV,
+  checkout), que reprova se a contagem crescer com o número de itens.
+
 ### 7.2 Cadastro completo nos apps Nuxt ("CRUD turbo")
 
 **Pedido:** gerente e dono criam e editam, com total autonomia e pelos apps Nuxt, tudo
@@ -237,6 +248,11 @@ grupos de preço da §7.1.
 - À altura da suíte: peças do `operator-kit` (OperatorTable, BulkBar, FilterPanel,
   QuickFilters, RecordNav, ActionBar) e o checklist D1 a D12. O que faltar no kit nasce
   no kit, uma vez, e serve a todos os cadastros.
+
+**Desempenho também é requisito do cadastro:** tabelão com paginação/virtualização no
+servidor (não carregar o catálogo inteiro no navegador), filtro e ordenação no banco,
+salvar em lote numa ida, importação em segundo plano com progresso para arquivo
+grande, e o mesmo par "antes e depois" medido no PR.
 
 **Primeiro passo:** um agente faz o inventário campo a campo (o que o Admin edita
 e o Nuxt não) para produto, receita, insumo, cliente, fornecedor e grupo, mais o que o
