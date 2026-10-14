@@ -188,10 +188,6 @@ const SEATING = SALE && process.env.MOCK_SEATING === "1";
 // Os selos do quadro (só na prévia): a 14 com a cozinha toda no Pronto ("Tudo pronto")
 // e a 13 enviada à cozinha e não paga ("Não pago").
 const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
-// Prévia da encomenda do dia (MOCK_PREORDER=1): a comanda 13 vira encomenda de
-// retirada para hoje. Com MOCK_FIRE=preorder_unpaid o "Enviar à cozinha" recusa como
-// o servidor (encomenda cobra antes); sem ele, envia. Fora das flags, nada muda.
-const PREORDER = SALE && process.env.MOCK_PREORDER === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -427,7 +423,6 @@ function tabPayload(ref) {
   const inUse = ref === "12";
   const full = ref === "13";
   const saved = SAVED_ITEMS.get(ref);
-  const preorder = PREORDER && full;
   return {
     revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
     tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
@@ -441,7 +436,6 @@ function tabPayload(ref) {
     customer_ref: inUse ? "C-1" : full ? "C-13" : "",
     customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
     delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
-    ...(preorder ? { sales_mode: "order", fulfillment_type: "pickup", delivery_date: TODAY } : {}),
   };
 }
 function review(body) {
@@ -706,7 +700,7 @@ createServer((req, res) => {
   if (SALE) {
     const open = path.match(/^\/api\/v1\/backstage\/pos\/tabs\/([^/]+)\/open\/$/);
     if (open) {
-      send(res, 200, tabPayload(decodeURIComponent(open[1])));
+      send(res, 200, withPreorder(tabPayload(decodeURIComponent(open[1]))));
       return;
     }
     if (path === "/api/v1/backstage/pos/tabs/save/") {
@@ -719,7 +713,7 @@ createServer((req, res) => {
           line_id: item.line_id, sku: item.sku, name: item.name, qty: item.qty, price_q: item.unit_price_q, notes: item.notes || "",
         }));
         SAVED_ITEMS.set(ref, items);
-        send(res, 200, { ...tabPayload(ref), items });
+        send(res, 200, withPreorder({ ...tabPayload(ref), items }));
       });
       return;
     }
@@ -745,7 +739,7 @@ createServer((req, res) => {
     if (path === "/api/v1/backstage/pos/tabs/fire/") {
       void readBody(req).then((body) => {
         const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";
-        if (process.env.MOCK_FIRE === "preorder_unpaid" && tabPayload(ref).sales_mode === "order") {
+        if (process.env.MOCK_FIRE === "preorder_unpaid" && withPreorder(tabPayload(ref)).sales_mode === "order") {
           const error = {
             code: "preorder_unpaid",
             message: "Esta encomenda ainda não foi paga. Ela vai à cozinha sozinha quando o pagamento entrar.",
@@ -761,7 +755,7 @@ createServer((req, res) => {
           : { ...item, fired: true, fired_qty: item.qty, kitchen_status: "queued" });
         SAVED_ITEMS.set(ref, items);
         const fired = items.filter((item) => item.fired).map((item) => item.line_id);
-        send(res, 200, { ok: true, fired_count: 1, fired_lines: fired, tab: { ...tabPayload(ref), items } });
+        send(res, 200, { ok: true, fired_count: 1, fired_lines: fired, tab: withPreorder({ ...tabPayload(ref), items }) });
       });
       return;
     }
@@ -892,3 +886,11 @@ createServer((req, res) => {
 }).listen(port, "127.0.0.1", () => {
   console.log(`[pos-visual-mock] listening on http://127.0.0.1:${port}`);
 });
+
+// Prévia da encomenda do dia (MOCK_PREORDER=1): a comanda 13 vira encomenda de
+// retirada para hoje. Com MOCK_FIRE=preorder_unpaid o "Enviar à cozinha" recusa como
+// o servidor (encomenda cobra antes); sem ele, envia. Fora das flags, nada muda.
+function withPreorder(payload) {
+  if (!(SALE && process.env.MOCK_PREORDER === "1" && payload.tab_ref === "13")) return payload;
+  return { ...payload, sales_mode: "order", fulfillment_type: "pickup", delivery_date: TODAY };
+}
