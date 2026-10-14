@@ -5,6 +5,9 @@ import { alertActions } from "../../../../../operator-kit/app/utils/alertActions
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
 const channel = String(route.params.ref);
+// O aviso de item do iFood sem produto da casa chega com ``?q=<nome do item>``.
+const initialSearch =
+  typeof route.query.q === "string" ? route.query.q.trim() : "";
 const {
   board,
   pending,
@@ -291,6 +294,7 @@ const phoneHeaderActions = computed(() => [
           :busy="busy"
           :stale="stale"
           :confirm="bind"
+          :initial-search="initialSearch"
           @dirty-change="dirty = $event"
         />
       </template>

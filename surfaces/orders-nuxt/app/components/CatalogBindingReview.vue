@@ -13,9 +13,11 @@ const props = defineProps<{
     sku: string,
     revision: string,
   ) => Promise<boolean>;
+  /** Filtro de chegada: o item que o aviso mandou revisar (``?q=``). */
+  initialSearch?: string;
 }>();
 const emit = defineEmits<{ "dirty-change": [dirty: boolean] }>();
-const search = ref("");
+const search = ref(props.initialSearch ?? "");
 const drafts = ref<
   Record<string, { sku: string; revision: string; reviewing: boolean }>
 >({});
