@@ -846,7 +846,8 @@ createServer((req, res) => {
           line_id: item.line_id, sku: item.sku, name: item.name, qty: item.qty, price_q: item.unit_price_q, notes: item.notes || "",
         }));
         SAVED_ITEMS.set(ref, items);
-        send(res, 200, { ...tabPayload(ref), items });
+        // O eco do salvar diz o que cada linha cobra (o desconto do grupo, como o servidor).
+        send(res, 200, { ...tabPayload(ref), items, ...(GROUP ? { line_prices: groupLinePrices(body) } : {}) });
       });
       return;
     }
