@@ -58,6 +58,19 @@ for (const scheme of ["light", "dark"] as const) {
           await expect(page.locator("[data-pos-courier-confirm]")).toBeVisible();
           await expect(page.locator("[data-pos-courier-question]")).toContainText("A corrida é cobrada da casa.");
         }
+        // Cancelar a corrida armado (o segundo toque) e a conferência do Entregador
+        // voltou abertos: os estados mais largos do painel (dono, P=1, 14/10).
+        const cancel = page.locator("[data-pos-courier-cancel]");
+        if (await cancel.count()) {
+          await cancel.click();
+          await expect(cancel).toHaveText("Confirmar o cancelamento?");
+        }
+        const returned = page.locator("[data-pos-courier-returned]");
+        if (await returned.count()) {
+          await returned.click();
+          await expect(page.locator("[data-pos-courier-back-lines] li")).toHaveCount(2);
+        }
+        await expect(page.locator("[data-pos-courier-gestor]")).toHaveCount(0);
         const findings = await scanOperatorGeometry(page, { only: ["horizontal-overflow", ...OPERATOR_LABEL_FINDINGS] });
         expect(findings).toEqual([]);
         expect(await fitsInside(page, "[data-preorder-counter-panel]")).toEqual([]);
@@ -66,6 +79,12 @@ for (const scheme of ["light", "dark"] as const) {
           const confirm = await page.locator("[data-pos-courier-confirm-actions] button").evaluateAll((els) =>
             [...new Set(els.map((el) => Math.round(el.getBoundingClientRect().height)))]);
           expect(confirm).toHaveLength(1);
+        }
+        // Conferido e Voltar: a MESMA altura.
+        if (await page.locator("[data-pos-courier-back-actions]").count()) {
+          const back = await page.locator("[data-pos-courier-back-actions] button").evaluateAll((els) =>
+            [...new Set(els.map((el) => Math.round(el.getBoundingClientRect().height)))]);
+          expect(back).toHaveLength(1);
         }
       });
     }
@@ -88,4 +107,22 @@ test("o andamento da TaOn: chega para coletar, entrega prevista e o aviso de sem
   await expect(progress).toContainText(/Entrega prevista ~\d{2}:\d{2}/);
   await open(page, "/preorders/NB-1057", { width: 1366, height: 768 }, "light");
   await expect(page.locator("[data-pos-courier-stale]")).toContainText("A TaOn não informa a corrida desde", { timeout: 90_000 });
+});
+
+test("cancelar a corrida antes da coleta pede o segundo toque (mock: nunca a TaOn)", async ({ page }) => {
+  await open(page, "/preorders/NB-1057", { width: 1366, height: 768 }, "light");
+  const cancel = page.locator("[data-pos-courier-cancel]");
+  await expect(cancel).toHaveText("Cancelar a corrida", { timeout: 90_000 });
+  await cancel.click();
+  await cancel.click();
+  await expect(page.locator("[data-pos-courier-state]")).toHaveText("Corrida cancelada");
+  await expect(page.locator("[data-pos-courier-cancel]")).toHaveCount(0);
+});
+
+test("entregador voltou: confere a lista e fecha a saída (mock)", async ({ page }) => {
+  await open(page, "/preorders/NB-1054", { width: 1366, height: 768 }, "light");
+  await page.locator("[data-pos-courier-returned]").click({ timeout: 90_000 });
+  await expect(page.locator("[data-pos-courier-back-lines]")).toContainText("Maquininha Azul");
+  await page.locator("[data-pos-courier-back-done]").click();
+  await expect(page.locator("[data-pos-courier-returned]")).toHaveCount(0);
 });

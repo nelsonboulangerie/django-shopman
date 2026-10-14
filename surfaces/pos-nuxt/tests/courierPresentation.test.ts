@@ -10,7 +10,7 @@ import {
   courierCallLabel,
   courierPanelVisible,
   courierRowLine,
-  GESTOR_ONLY_COURIER_LINE,
+  COURIER_BACK_DIFFERENT_LINE,
   showsDeliveryExitNotice,
   custodyBody,
   noFreeMachineSentence,
@@ -94,9 +94,9 @@ describe("o aviso de saída pelo Gestor (seguimento)", () => {
     expect(showsDeliveryExitNotice({ fulfillment_type: "pickup" }, null)).toBe(true);
   });
 
-  it("o que ainda é só do Gestor cabe numa frase, sem travessão", () => {
-    expect(GESTOR_ONLY_COURIER_LINE).toBe("No Gestor de pedidos: cancelar a corrida e registrar a volta do troco ou da maquininha.");
-    expect(GESTOR_ONLY_COURIER_LINE).not.toMatch(/[\u2013\u2014]/);
+  it("só o acerto do que voltou diferente fica no Gestor, numa frase sem travessão", () => {
+    expect(COURIER_BACK_DIFFERENT_LINE).toBe("Voltou diferente? O acerto à mão é no Gestor de pedidos.");
+    expect(COURIER_BACK_DIFFERENT_LINE).not.toMatch(/[\u2013\u2014]/);
   });
 });
 

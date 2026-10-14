@@ -641,7 +641,8 @@ const RIDES = {
   "NB-1051": { name: "Bruno Lima", start: "14:00", window: "14h às 15h", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 2000, needs_machine: false, recorded: false }, call: true, balance: 4400 },
   "NB-1052": { name: "Fernanda Okumura de Albuquerque", start: "14:30", window: "14h30 às 15h30", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 0, needs_machine: true, recorded: false }, call: true, balance: 9800 },
   "NB-1053": { name: "Gustavo Reis", start: "13:00", window: "13h às 14h", status: "ready", situation: "ready", courier: { status: "A", id_mch: "R-53", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-53", confirmation_code: "4821" } },
-  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", id_mch: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" } },
+  // Na rua com a maquininha e o troco: "Entregador voltou" confere a lista e fecha a saída.
+  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", id_mch: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" }, returnLines: ["A Maquininha Azul", "R$ 120,00 em dinheiro: R$ 98,00 do pedido + R$ 22,00 de troco"] },
   "NB-1055": { name: "Igor Tavares", start: "15:00", window: "15h às 16h", status: "ready", situation: "ready", courier: { status: "N", id_mch: "R-55" }, call: true, attempts: 1 },
   "NB-1056": { name: "Joana Ribeiro", start: "15:30", window: "15h30 às 16h30", status: "ready", situation: "ready", courier: {}, noAnswer: true },
   "NB-1057": { name: "Lucas Ferraz", start: "16:00", window: "16h às 17h", status: "ready", situation: "ready", courier: { status: "P", id_mch: "R-57" } },
@@ -663,7 +664,9 @@ function rideBlock(ref) {
     attempts_count: ride.attempts || 0, position: null,
     error: ride.noAnswer ? { message: NO_ANSWER, at: `${TODAY}T15:20:00Z` } : null,
     can_quote: false, can_dispatch: !active && !ride.noAnswer && ride.status !== "delivered",
-    can_dispatch_again: Boolean(ride.noAnswer), can_cancel: false,
+    can_dispatch_again: Boolean(ride.noAnswer),
+    // Antes da coleta (a régua da central): procurando, aceita, a caminho.
+    can_cancel: active && ["D", "G", "P", "U", "A", "S"].includes(status),
     custody: ride.custody || { change_out_suggested_q: 0, needs_machine: false, recorded: false },
     // O andamento lido da TaOn (instantes ISO; a tela conta os minutos).
     ...rideProgress(status, ref),
@@ -714,8 +717,13 @@ function rideDetail(ref) {
       ...preorderDetail.actions,
       action("courier-dispatch", "Chamar entregador", block.can_dispatch, `Chamar um entregador da TaOn para o pedido ${ref.replace("NB-", "")}? A corrida é cobrada da casa.`),
       action("courier-dispatch-again", "Chamar de novo", block.can_dispatch_again, "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."),
+      { ...action("courier-cancel", "Solicitar cancelamento da corrida", block.can_cancel), confirmation: { required: true } },
+      ...(RIDES[ref].returnLines && !RIDES[ref].returned
+        ? [{ ...action("courier-back", "Entregador voltou", true), priority: "primary", confirmation: { required: true } }]
+        : []),
     ],
     courier: block,
+    courier_return_lines: RIDES[ref].returnLines && !RIDES[ref].returned ? RIDES[ref].returnLines : [],
     equipment_options: [
       { ref: "card_machine:MAQ-1", label: "Maquininha 1", enabled: true, reason: "", order_ref: "" },
       { ref: "card_machine:MAQ-3", label: "Maquininha Azul", enabled: true, reason: "", order_ref: "" },
@@ -953,6 +961,17 @@ createServer((req, res) => {
     const ride = path.match(/^\/api\/v1\/backstage\/pos\/preorders\/(NB-105\d)\/$/);
     if (ride && RIDES[ride[1]]) {
       send(res, 200, { order: rideDetail(ride[1]), generated_at: `${TODAY}T12:00:00Z`, contract_version: 1 });
+      return;
+    }
+    // Cancelar a corrida e "Entregador voltou" (as rotas do Gestor): o mock só muda o estado.
+    const rideGesture = path.match(/^\/api\/v1\/backstage\/orders\/(NB-105\d)\/(courier-cancel|courier-back)\/$/);
+    if (rideGesture && RIDES[rideGesture[1]]) {
+      const ride = RIDES[rideGesture[1]];
+      if (rideGesture[2] === "courier-cancel") ride.courier = { status: "C", id_mch: ride.courier.id_mch };
+      else ride.returned = true;
+      const index = orders.findIndex((order) => order.ref === rideGesture[1]);
+      if (index >= 0) orders[index] = rideCard(rideGesture[1]);
+      send(res, 200, { ok: true, ref: rideGesture[1], outcome: "applied" });
       return;
     }
     const call = path.match(/^\/api\/v1\/backstage\/orders\/(NB-105\d)\/(courier-dispatch|courier-dispatch-again)\/$/);
