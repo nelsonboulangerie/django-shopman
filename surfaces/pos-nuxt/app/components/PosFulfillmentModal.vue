@@ -14,11 +14,13 @@
 // resolveu.
 import type {
   POSAddressAutocompleteProjection,
+  POSDeliveryFeeWaiverProjection,
   POSFulfillmentOptionProjection,
   SavedAddressProjection,
   StructuredAddressProjection,
 } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
+import { deliveryFeeWaivedInFull, deliveryFeeWaiverNote } from "~/presentation/deliveryFeeWaiver";
 import {
   BR_STATES,
   DRAFT_FIELD_OF,
@@ -59,6 +61,8 @@ const props = defineProps<{
   /** A taxa RESOLVIDA pelo servidor, e de onde ela veio. */
   deliveryFeeQ: number;
   deliveryFeeSource: string;
+  /** Frete grátis (ou abatido) pela loja, e por qual regra. Opcional: sem ele, nada a dizer. */
+  deliveryFeeWaiver?: POSDeliveryFeeWaiverProjection | null;
   /**
    * Em que pé está a taxa. `resolved`: a review respondeu (e `deliveryFeeSource`
    * diz de onde veio). `calculating`: a review está a caminho. `failed`: a review
@@ -148,6 +152,15 @@ const deliveryFeeNote = computed(() => {
       // endereço: a taxa não foi calculada — não é grátis.
       return "Não deu para calcular a taxa deste endereço. Confira o CEP e o bairro, ou combine o valor.";
   }
+});
+// Frete grátis (ou abatido) pela loja: a regra pelo nome, e a taxa que seria.
+// Só quando a taxa é a da loja: com a combinada à mão, a promoção não entra.
+const deliveryFeeWaiverLine = computed(() =>
+  deliveryFeeKnown.value ? deliveryFeeWaiverNote(props.deliveryFeeWaiver, props.deliveryFeeQ) : "",
+);
+const deliveryFeeAmount = computed(() => {
+  if (!deliveryFeeKnown.value) return "—";
+  return deliveryFeeWaivedInFull(props.deliveryFeeWaiver, props.deliveryFeeQ) ? "Grátis" : formatBRL(props.deliveryFeeQ);
 });
 
 // O ENDEREÇO DE ENTREGA É O DA LOJA ONLINE (decisão do dono, 13/10/2026): os
@@ -492,9 +505,10 @@ function onMapCancel() {
           <div class="grid gap-1.5 rounded-md border bg-card p-3 text-sm">
             <div class="flex items-center justify-between gap-2">
               <span class="font-medium text-muted-foreground">Taxa de entrega</span>
-              <strong class="tabular-nums">{{ deliveryFeeKnown ? formatBRL(deliveryFeeQ) : "—" }}</strong>
+              <strong class="tabular-nums" data-pos-delivery-fee-amount>{{ deliveryFeeAmount }}</strong>
             </div>
             <p class="text-xs text-muted-foreground">{{ deliveryFeeNote }}</p>
+            <p v-if="deliveryFeeWaiverLine" class="text-xs text-primary" data-pos-delivery-fee-waiver>{{ deliveryFeeWaiverLine }}</p>
             <NuxtButton
               color="neutral"
               variant="ghost"

@@ -150,6 +150,7 @@ const {
   paymentCovered,
   deliveryFeeQ,
   deliveryFeeSource,
+  deliveryFeeWaiver,
   deliveryFeeStatus,
   deliveryDistanceKm,
   deliverySlots,
@@ -1654,6 +1655,7 @@ onBeforeUnmount(() => {
       :schedule-label="scheduleChipLabel"
       :delivery-fee-q="deliveryFeeQ"
       :delivery-fee-source="deliveryFeeSource"
+      :delivery-fee-waiver="deliveryFeeWaiver"
       :delivery-fee-status="deliveryFeeStatus"
       :delivery-distance-km="deliveryDistanceKm"
       @pick-saved-address="applySavedAddress"
