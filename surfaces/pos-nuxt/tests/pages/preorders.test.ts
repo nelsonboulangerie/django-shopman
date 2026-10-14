@@ -335,11 +335,22 @@ describe("Detalhe — receber e entregar", () => {
     detail.counter.hand_over = {
       ...detail.counter.hand_over,
       allowed: false,
-      block_reason: "Esta encomenda ainda não está pronta (Em preparo).",
+      block_reason: "Esta encomenda é para outro dia. Para entregar hoje, reagende para hoje.",
     };
     const wrapper = await mount(DetailPage);
     expect(wrapper.find("[data-preorder-hand-over]").exists()).toBe(false);
-    expect(wrapper.find("[data-preorder-hand-over-blocked]").text()).toContain("ainda não está pronta");
+    expect(wrapper.find("[data-preorder-hand-over-blocked]").text()).toContain("reagende para hoje");
+  });
+
+  it("ainda na cozinha: Entregar existe, e o diálogo diz que a encomenda sai da tela da cozinha", async () => {
+    detail.counter.hand_over = {
+      ...detail.counter.hand_over,
+      kitchen_notice: "A cozinha ainda não marcou pronto. Ao entregar, a encomenda sai da tela da cozinha.",
+    };
+    const wrapper = await mount(DetailPage);
+    await wrapper.find("[data-preorder-hand-over]").trigger("click");
+    await settle();
+    expect(body().querySelector("[data-preorder-kitchen-notice]")?.textContent).toContain("sai da tela da cozinha");
   });
 });
 

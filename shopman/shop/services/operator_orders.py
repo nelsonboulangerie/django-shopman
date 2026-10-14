@@ -1420,11 +1420,12 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
         return "Esta encomenda é para entregar no endereço: a saída é pelo Gestor de pedidos."
     if order.status in {Order.Status.COMPLETED, Order.Status.DELIVERED}:
         return "Esta encomenda já foi entregue."
-    if order.status != Order.Status.READY:
-        return (
-            f"Esta encomenda ainda não está pronta ({order.get_status_display()}). "
-            "Ela pode ser entregue aqui quando for marcada como pronta."
-        )
+    if order.status not in COUNTER_HAND_OVER_STATUSES:
+        return f"Esta encomenda não pode ser entregue agora ({order.get_status_display()})."
+    if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
+        # Antes do dia, a baixa de estoque e os tickets ainda não aconteceram
+        # (``lifecycle.activate_preorder``): concluir agora pularia os dois.
+        return "Esta encomenda é para outro dia. Para entregar hoje, reagende para hoje."
     due = balance_q if balance_q is not None else payment_service.balance_due_q(order, payment_reads=payment_reads)
     if due is None:
         return "Não deu para ler o que já foi pago. Confira o pagamento antes de entregar."
@@ -1480,6 +1481,8 @@ def hand_over_at_counter(
         # Receber com a cobrança do cliente ainda viva abriria a cobrança dupla:
         # quem cancela antes é :func:`take_over_before_hand_over`.
         raise ValueError("O Pix ou o link do cliente ainda está ativo. Atualize a encomenda e tente de novo.")
+    _mark_ready_at_counter(order, actor=actor)
+    order.refresh_from_db()
     received = 0
     if due:
         received = settle_delivery_cash(
@@ -1491,6 +1494,30 @@ def hand_over_at_counter(
     advance_order(order, actor=actor, cash_shift=cash_shift, target_status=Order.Status.COMPLETED)
     logger.info("operator_hand_over_at_counter order=%s received=%s", order.ref, received)
     return received
+
+
+#: De onde o "Entregar" do balcão conclui. Aceita e em preparo incluídos (P1-8):
+#: o cliente está no balcão com a sacola na mão, e quem entrega afirma que a
+#: cozinha terminou, como o "Marcar pronto" do Gestor. Os tickets abertos fecham
+#: com ``via = order_advanced`` (``kds.close_open_tickets``), a mesma trilha.
+COUNTER_HAND_OVER_STATUSES = frozenset({
+    Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY,
+})
+
+
+def _mark_ready_at_counter(order: Order, *, actor: str) -> None:
+    """O Pronto que o balcão afirma ao entregar: o mesmo efeito do "Marcar pronto".
+
+    ``advance_order`` (o caminho do Gestor) só dá o próximo degrau, e do aceito
+    o próximo é "em preparo", que abriria tickets e avisaria o cliente de um
+    preparo que já acabou. Aqui o pedido vai direto ao pronto (transição
+    permitida pelo mapa); os tickets abertos fecham no avanço seguinte, o da
+    conclusão (``advance_order`` → ``kds.close_open_tickets``), na mesma
+    transação.
+    """
+    if order.status == Order.Status.READY:
+        return
+    order.transition_status(Order.Status.READY, actor=actor)
 
 
 CHOOSE_COUNTER_TENDER_MESSAGE = "Escolha como o cliente pagou no balcão: dinheiro, débito ou crédito."

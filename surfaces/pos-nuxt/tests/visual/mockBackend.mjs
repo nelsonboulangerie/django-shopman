@@ -547,6 +547,10 @@ const preorderDetail = {
     hand_over: {
       allowed: true, needs_payment: true, amount_q: 8600, amount_display: "R$ 86,00",
       suggested_method: "cash", block_reason: "", digital_charge_notice: "",
+      // Prévia do Entregar antes do pronto da cozinha (MOCK_HANDOVER_KITCHEN=1).
+      ...(process.env.MOCK_HANDOVER_KITCHEN === "1"
+        ? { kitchen_notice: "A cozinha ainda não marcou pronto. Ao entregar, a encomenda sai da tela da cozinha." }
+        : {}),
     },
     cancel: { allowed: true, requires_approval: false, block_reason: "" },
     reschedule: { allowed: true, block_reason: "", date: TODAY, slot: "slot-12", skus: ["SKU-0"], revision: "rev-s" },

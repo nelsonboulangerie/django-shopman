@@ -203,6 +203,11 @@ export interface PreorderHandOver {
    * mostra antes de confirmar. "" quando não há cobrança digital viva.
    */
   digital_charge_notice: string;
+  /**
+   * A cozinha ainda não deu o pronto: entregar afirma o pronto (como o "Marcar
+   * pronto" do Gestor). A linha que o diálogo mostra; "" quando já está pronta.
+   */
+  kitchen_notice?: string;
 }
 
 export type CounterMethod = "cash" | "debit" | "credit";
