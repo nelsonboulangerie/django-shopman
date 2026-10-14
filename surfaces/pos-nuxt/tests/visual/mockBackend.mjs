@@ -261,6 +261,36 @@ if (DIRECT) {
     { ref: "terminal", label: "No caixa", description: "", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash", "pix", "credit", "debit"] },
   ];
 }
+// `MOCK_XEPA=1`: a Hora da Xepa (25%) aberta agora e fechando em `MOCK_XEPA_SECONDS`
+// (90 s por padrão). Até a virada o tile mostra o preço do motor com a etiqueta
+// riscada; depois, a leitura volta ao cheio e a janela aponta a abertura de amanhã.
+// É a prévia da grade (sem a variável, nada muda nos retratos).
+const XEPA = SALE && process.env.MOCK_XEPA === "1";
+const XEPA_ENDS_AT = Date.now() + 1000 * Number(process.env.MOCK_XEPA_SECONDS || 90);
+function xepaView() {
+  const open = Date.now() < XEPA_ENDS_AT;
+  const products = PRODUCTS.map((product) => {
+    if (!open) return product;
+    const now_q = product.price_q - Math.round((product.price_q * 25) / 100);
+    return {
+      ...product,
+      price_q: now_q,
+      price_display: brl(now_q),
+      list_price_q: product.price_q,
+      list_price_display: brl(product.price_q),
+      discount_label: "Hora da Xepa",
+    };
+  });
+  const next = open ? XEPA_ENDS_AT : XEPA_ENDS_AT + 23.5 * 3600 * 1000;
+  return {
+    ...pos,
+    products,
+    price_window: {
+      active: open, label: "Hora da Xepa", discount_percent: 25,
+      starts_at: "17:30", ends_at: "18:00", next_change_at: new Date(next).toISOString(),
+    },
+  };
+}
 // Os fechamentos recebidos, para o e2e conferir o que a fila reenviou
 // (`GET /__mock/closes`). A chave é o `client_request_id`: repetir devolve o
 // mesmo pedido, como o servidor de verdade.
@@ -686,7 +716,7 @@ createServer((req, res) => {
     return;
   }
   if (path === "/api/v1/backstage/pos/") {
-    send(res, 200, { pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
+    send(res, 200, { pos: XEPA ? xepaView() : pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
     return;
   }
   if (SALE && path === "/api/v1/backstage/closing/") {

@@ -1,4 +1,5 @@
 import type { Action, POSOperatorProjection, POSProjection, POSResponse, POSShiftSummaryProjection, POSTabProjection } from "~/types/pos";
+import { priceWindowRefreshDelayMs } from "~/presentation/catalog";
 
 /** As comandas da última leitura da Projection, para o selo das Comandas no shell. */
 export function usePosTabsState() {
@@ -61,6 +62,9 @@ export async function usePosTerminal() {
   const { flagIfStationLocked } = useStationLock();
   // Antes do `await`: depois dele o contexto do Nuxt já não está garantido.
   const sharedTabs = usePosTabsState();
+  // O escopo de quem chamou, guardado antes do `await`: o relógio da Hora da
+  // Xepa (abaixo) precisa morrer junto com a tela.
+  const scope = getCurrentScope();
 
   const { data, pending, error, refresh: fetchAgain } = await useFetch<POSResponse>(
     () => apiPath("/api/v1/backstage/pos/"),
@@ -76,6 +80,9 @@ export async function usePosTerminal() {
   // O selo das Comandas no rail (camada da suíte) conta as em uso em qualquer tela
   // do PDV; o rail lê daqui, sem uma segunda leitura.
   watch(tabs, (value) => { sharedTabs.value = value; }, { immediate: true });
+  if (import.meta.client) {
+    scope?.run(() => watchPriceWindow(() => pos.value?.price_window?.next_change_at, refresh));
+  }
   const operators = computed<POSOperatorProjection[]>(() => pos.value?.operators ?? []);
   const actions = computed<Action[]>(() => pos.value?.actions ?? []);
 
@@ -101,4 +108,43 @@ export async function usePosTerminal() {
   }
 
   return { data, pos, shift, tabs, operators, actions, pending, error, refresh, refreshTabs };
+}
+
+const PRICE_WINDOW_RETRY_MS = 30_000;
+
+/**
+ * A Hora da Xepa abre ou fecha: a grade relê a projeção NESSE instante, e o
+ * preço do tile troca sem recarregar. A projeção diz quando (`next_change_at`);
+ * a leitura nova traz a próxima virada, e o relógio se arma de novo.
+ */
+export function watchPriceWindow(nextChangeAt: () => string | null | undefined, refresh: () => unknown) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const clear = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+  let disposed = false;
+  const arm = (value: string | null | undefined, atLeastMs = 0) => {
+    clear();
+    const due = priceWindowRefreshDelayMs(value, Date.now());
+    if (due === null || disposed) return;
+    const delay = Math.max(due, atLeastMs);
+    timer = setTimeout(async () => {
+      timer = null;
+      try {
+        await refresh();
+      } catch {
+        // silêncio-deliberado: a leitura que falhou tem o próprio aviso; aqui só se tenta de novo
+      }
+      // A leitura voltou com a MESMA virada (relógio do servidor atrás, rede
+      // fora): o watch não dispara, então o relógio se arma de novo sozinho.
+      // Calmo: uma releitura a cada meio minuto até a virada aparecer.
+      if (nextChangeAt() === value) arm(value, PRICE_WINDOW_RETRY_MS);
+    }, delay);
+  };
+  watch(nextChangeAt, (value) => arm(value), { immediate: true });
+  onScopeDispose(() => {
+    disposed = true;
+    clear();
+  });
 }

@@ -32,6 +32,7 @@ Discount policy — "maior desconto ganha":
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -108,6 +109,61 @@ def in_time_window(start: time, end: time, now: time) -> bool:
     if start <= end:
         return start <= now < end
     return now >= start or now < end
+
+
+@dataclass(frozen=True)
+class TimeWindowOffer:
+    """A janela de desconto por horário (Happy Hour, "Hora da Xepa") vista num instante.
+
+    UMA leitura para quem cobra (``TimeWindowDiscountModifier``) e para quem mostra
+    (a grade do PDV): mesma regra, mesmo canal, mesmo relógio. ``next_change_at()``
+    é quando a janela abre (se está fechada) ou fecha (se está aberta), para a
+    tela trocar o preço na hora certa sem recarregar.
+    """
+
+    active: bool
+    discount_percent: int | float
+    label: str
+    start: time
+    end: time
+    #: O instante local em que a janela foi lida.
+    seen_at: datetime
+
+    def next_change_at(self) -> datetime:
+        """Quando a janela abre (fechada) ou fecha (aberta), a partir de ``seen_at``."""
+        from datetime import timedelta
+
+        boundary = self.end if self.active else self.start
+        change = self.seen_at.replace(hour=boundary.hour, minute=boundary.minute, second=0, microsecond=0)
+        if change <= self.seen_at:
+            change += timedelta(days=1)
+        return change
+
+    def price_q(self, list_q: int) -> int:
+        """O preço que a janela dá sobre a etiqueta, pela mesma conta do modifier."""
+        if not self.active or list_q <= 0:
+            return list_q
+        return list_q - monetary_div(list_q * self.discount_percent, 100)
+
+
+def time_window_offer(channel_ref: str | None, *, now: datetime | None = None) -> TimeWindowOffer | None:
+    """A janela de horário que vale para o canal, ou ``None`` sem regra ligada para ele."""
+    from shopman.shop.rules.engine import get_channel_rule_params
+
+    params = get_channel_rule_params("happy_hour", channel_ref)
+    if params is None:
+        return None
+    start = _parse_time(params.get("start"), DEFAULT_TIME_WINDOW_START)
+    end = _parse_time(params.get("end"), DEFAULT_TIME_WINDOW_END)
+    local_now = timezone.localtime(now or timezone.now())
+    return TimeWindowOffer(
+        active=in_time_window(start, end, local_now.time()),
+        discount_percent=params.get("discount_percent", DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT),
+        label=_discount_label("CART_DISCOUNT_LABEL_TIME_WINDOW", "Happy Hour"),
+        start=start,
+        end=end,
+        seen_at=local_now,
+    )
 
 
 # ── "Maior desconto ganha" — árbitro por-linha ─────────────────────────────
@@ -533,18 +589,11 @@ class TimeWindowDiscountModifier:
     order = 65
 
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        from shopman.shop.rules.engine import get_channel_rule_params
-
-        params = get_channel_rule_params("happy_hour", getattr(channel, "ref", None))
-        if params is None:
+        offer = time_window_offer(getattr(channel, "ref", None), now=pricing_now(ctx))
+        if offer is None:
             return
 
-        discount_percent = params.get("discount_percent", DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT)
-        start = _parse_time(params.get("start"), DEFAULT_TIME_WINDOW_START)
-        end = _parse_time(params.get("end"), DEFAULT_TIME_WINDOW_END)
-
-        now = timezone.localtime(pricing_now(ctx)).time()
-        if not in_time_window(start, end, now):
+        if not offer.active:
             # Fora da janela: limpa transparência residual de uma passagem anterior.
             pricing = session.pricing or {}
             if pricing.pop("happy_hour", None) is not None:
@@ -554,9 +603,9 @@ class TimeWindowDiscountModifier:
 
         _apply_flat_best_wins(
             session,
-            percent=discount_percent,
+            percent=offer.discount_percent,
             disc_type="happy_hour",
-            label=_discount_label("CART_DISCOUNT_LABEL_TIME_WINDOW", "Happy Hour"),
+            label=offer.label,
             pricing_key="happy_hour",
         )
 
