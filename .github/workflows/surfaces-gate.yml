@@ -114,7 +114,7 @@ jobs:
   # sem build e sem macOS. A allowlist versionada (`surfaces/npm-audit-allowlist.json`)
   # é a única exceção, e cada entrada tem prazo e motivo.
   supply-chain:
-    name: Supply chain — npm audit
+    name: Supply chain — ${{ matrix.id }}
     needs: surface-contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
