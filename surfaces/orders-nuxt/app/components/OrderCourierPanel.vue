@@ -20,6 +20,7 @@ import type {
 } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
+import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 
 const props = defineProps<{
   courier: CourierBlock;
@@ -79,6 +80,24 @@ function requestCancel() {
   confirmingCancel.value = false;
   emit("cancel");
 }
+
+// O pedido mudou depois da chamada e a corrida leva a cobrança antiga (P2-28): o
+// aviso amarelo leva o "Solicitar cancelamento", que arma a MESMA confirmação de
+// baixo; cancelada a corrida, o "Chamar entregador" de sempre leva a cobrança nova.
+const chargeNotice = computed(() =>
+  courierChargeNotice(props.courier.charge_outdated, { cancelHere: true }),
+);
+const chargeActions = computed(() => [
+  props.courier.can_cancel &&
+    !props.courier.charge_outdated?.collected &&
+    !confirmingCancel.value && {
+      label: "Solicitar cancelamento",
+      icon: "i-lucide-ban",
+      disabled: props.busy || !props.cancelAction?.enabled,
+      onClick: requestCancel,
+      ...{ "data-courier-charge-cancel": "" },
+    },
+]);
 
 // Chamar entregador abre corrida paga na central → confirm de 1 toque, com a
 // pergunta inteira (quem vem, para qual pedido, quem paga) vinda do servidor.
@@ -325,6 +344,19 @@ const vehicle = computed(() =>
           icon="i-lucide-triangle-alert"
           title="Falha ao abrir a corrida"
           :description="courier.error.message"
+        />
+
+        <!-- o pedido mudou depois da chamada: a corrida leva a cobrança antiga -->
+        <NuxtAlert
+          v-if="chargeNotice"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-receipt-text"
+          :title="chargeNotice.title"
+          :description="chargeNotice.description"
+          :actions="alertActions('warning', chargeActions)"
+          role="status"
+          data-courier-charge-outdated
         />
 
         <!-- timeline compacta da corrida -->
