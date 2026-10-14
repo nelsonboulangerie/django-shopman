@@ -185,7 +185,7 @@ def hold(order, *, require_all: bool = False) -> None:
             # ``product_not_found`` e o aviso diria "sem reserva" sem dizer por
             # quê. No pedido que já existe (iFood: item sem ``externalCode`` ou
             # com código velho), é o aviso de SKU fora do catálogo, com o item.
-            if not require_all and not allow_untracked and not _sku_known_to_catalog(comp_sku):
+            if not require_all and not allow_untracked and _sku_absent_from_catalog(comp_sku):
                 _alert_unknown_sku(order, comp_sku, item)
                 hold_ids.append({"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True})
                 continue
@@ -717,6 +717,22 @@ def _reconcile_decrease(adapter, order, sku, qty, entries, summary, *, hold_kwar
 
 
 # ── helpers ──
+
+
+def _sku_absent_from_catalog(sku: str) -> bool:
+    """True só quando o contrato de catálogo RESPONDE que não conhece o SKU.
+
+    O avesso de :func:`_sku_known_to_catalog` para o caminho brando: lá, a
+    dúvida exige a reserva; aqui, a dúvida também (contrato que não responde
+    não autoriza pular a reserva, que segue tentando e avisando se falhar).
+    """
+    from shopman.stockman.adapters.sku_validation import get_sku_validator
+
+    try:
+        return get_sku_validator().get_sku_info(sku) is None
+    except Exception:
+        logger.warning("stock.sku_catalog_lookup_failed sku=%s", sku, exc_info=True)
+        return False
 
 
 def _sku_known_to_catalog(sku: str) -> bool:
