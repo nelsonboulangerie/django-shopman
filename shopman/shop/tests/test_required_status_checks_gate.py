@@ -113,6 +113,20 @@ def test_matrix_cited_in_name_is_substituted(gate):
     assert names == {"Testes (test-shop)", "Testes (test-storefront)"}
 
 
+def test_dynamic_surface_matrix_is_expanded_from_canonical_contract(gate):
+    names = _job(
+        gate,
+        """
+        jobs:
+          app-quality:
+            name: ${{ matrix.dir }}
+            strategy:
+              matrix: ${{ fromJSON(needs.surface-contract.outputs.quality) }}
+        """,
+    )
+    assert {"operator-kit", "storefront-nuxt", "marketing-nuxt"} <= names
+
+
 def test_renamed_required_job_fails(gate, tmp_path, monkeypatch):
     root = _fake_repo(
         tmp_path,

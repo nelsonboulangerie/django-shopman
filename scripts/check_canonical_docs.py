@@ -94,11 +94,15 @@ READINESS_END = "<!-- canonical-readiness:end -->"
 ALLOWED_STATES = {"VERIFICADO", "PENDENTE", "BLOQUEADO", "DESCONHECIDO", "N/A"}
 
 REQUIRED_CHECKS_FILE = Path(".github/required-status-checks.json")
+SURFACE_CONTRACT_FILE = Path("surfaces/contracts.json")
 WORKFLOWS_DIR = Path(".github/workflows")
 # Um check obrigatório tem de existir no PR E na fila de merge: faltar em
 # qualquer um dos dois trava o merge para sempre.
 REQUIRED_TRIGGERS = ("pull_request", "merge_group")
 MATRIX_REF_RE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
+DYNAMIC_SURFACE_MATRIX_RE = re.compile(
+    r"matrix:\s*\$\{\{\s*fromJSON\(needs\.surface-contract\.outputs\.(quality|pwa|audit)\)\s*\}\}"
+)
 
 
 @dataclass
@@ -384,6 +388,30 @@ def _job_check_names(job_id: str, block: list[str]) -> set[str]:
         if _indent(line) == 4 and line.strip().startswith("name:"):
             name = _scalar(line.strip()[len("name:") :])
             break
+    dynamic = DYNAMIC_SURFACE_MATRIX_RE.search("\n".join(block))
+    if dynamic:
+        data = json.loads(_read(SURFACE_CONTRACT_FILE))["surfaces"]
+        kind = dynamic.group(1)
+        selected = [
+            (surface_id, surface)
+            for surface_id, surface in data.items()
+            if kind == "quality"
+            or (kind == "pwa" and surface.get("capabilities", {}).get("pwa"))
+            or (kind == "audit" and surface.get("capabilities", {}).get("npmAudit"))
+        ]
+        referenced = MATRIX_REF_RE.findall(name)
+        if not referenced:
+            raise ValueError(f"job {job_id}: dynamic surface matrix must reference matrix.id or matrix.dir")
+        unknown = sorted(set(referenced) - {"id", "dir"})
+        if unknown:
+            raise ValueError(f"job {job_id}: unsupported dynamic surface axes {unknown}")
+        return {
+            MATRIX_REF_RE.sub(
+                lambda match: surface_id if match.group(1) == "id" else surface["dir"],
+                name,
+            )
+            for surface_id, surface in selected
+        }
     matrix = _job_matrix(block)
     if not matrix:
         return {name}
