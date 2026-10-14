@@ -97,14 +97,38 @@ export function toneTimer(tone: KDSTone): string {
 
 const TONE_RANK: Record<KDSTone, number> = { late: 0, warning: 1, ok: 2 };
 
+/** Segundos até o prazo do ticket (negativo quando passou): a hora combinada com o
+ *  cliente quando há uma; sem ela, a meta da estação contada desde que o ticket
+ *  chegou. É o "o que vence antes" da fila (P2-16): a encomenda das 17h, que chega à
+ *  cozinha às 00:05, entra na fila pelas 17h, não pela madrugada. */
+export function ticketDeadline(
+  ticket: Pick<KDSTicketProjection, "due_in_seconds" | "target_seconds" | "elapsed_seconds">,
+): number {
+  if (ticket.due_in_seconds !== null && ticket.due_in_seconds !== undefined) return ticket.due_in_seconds;
+  return ticket.target_seconds - ticket.elapsed_seconds;
+}
+
 /** Auto-sort prep tickets by urgency (KDS best practice — work on what's due
- *  first): late before warning before ok, then oldest first within a tone. */
+ *  first): late before warning before ok, then what is due first within a tone
+ *  (`ticketDeadline`; sem hora combinada, é o mais antigo primeiro). */
 export function sortByUrgency(cards: KDSTicketProjection[]): KDSTicketProjection[] {
   return [...cards].sort((a, b) => {
     const ra = TONE_RANK[ticketTone(a.timer_class)];
     const rb = TONE_RANK[ticketTone(b.timer_class)];
-    return ra !== rb ? ra - rb : b.elapsed_seconds - a.elapsed_seconds;
+    if (ra !== rb) return ra - rb;
+    const da = ticketDeadline(a);
+    const db = ticketDeadline(b);
+    return da !== db ? da - db : b.elapsed_seconds - a.elapsed_seconds;
   });
+}
+
+/** O que o relógio do card diz: "para 17h" quando há hora combinada (a encomenda nasce
+ *  às 00:05, e o tempo desde ali não diz nada a ninguém); sem ela, o tempo desde que o
+ *  pedido chegou ("24m"). */
+export function ticketClockLabel(
+  ticket: Pick<KDSTicketProjection, "due_clock_display" | "elapsed_seconds">,
+): string {
+  return ticket.due_clock_display ? `para ${ticket.due_clock_display}` : elapsedLabel(ticket.elapsed_seconds);
 }
 
 export interface KDSAllDayCount {

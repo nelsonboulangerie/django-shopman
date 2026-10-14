@@ -57,6 +57,8 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     started_at_display: "",
     is_preorder: false,
     due_time_display: "",
+    due_clock_display: "",
+    due_in_seconds: null,
     seen: false,
     changes: [],
     change_ticket_pks: [],

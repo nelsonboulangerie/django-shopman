@@ -195,6 +195,37 @@ def window_start_time(slot_ref: str | None) -> time | None:
     return None
 
 
+def promised_at(source) -> datetime | None:
+    """A hora prometida ao cliente: o começo da janela combinada, no dia combinado.
+
+    Pedido (ou sessão) com ``delivery_time_slot`` resolve pela mesma régua de
+    :func:`window_start_time`, no dia de ``delivery_date`` (sem ele, o dia da
+    venda: a meia hora do PDV para hoje). iFood agendado promete o início da
+    janela de entrega dele. ``None`` quando não houve hora combinada: encomenda
+    "a combinar" não tem hora, e inventar uma seria prometer pelo cliente.
+    """
+    from django.utils import timezone
+
+    from shopman.shop.services import ifood_schedule
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if source is None:
+        return None
+    if ifood_schedule.is_scheduled(source):
+        return ifood_schedule.delivery_start(source)
+    data = getattr(source, "data", None) or {}
+    start = window_start_time(data.get("delivery_time_slot"))
+    if start is None:
+        return None
+    day = get_commitment_date(source)
+    if day is None:
+        created_at = getattr(source, "created_at", None)
+        if created_at is None:
+            return None
+        day = timezone.localtime(created_at).date()
+    return timezone.make_aware(datetime.combine(day, start))
+
+
 def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict]:
     """A grade que vale para ``day``: meia hora hoje, slot canônico no resto.
 

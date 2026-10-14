@@ -25,6 +25,7 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.services import operator_orders
+from shopman.shop.services.fulfillment_window import promised_at, window_label
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
@@ -136,9 +137,19 @@ class KDSTicketProjection:
     # "Encomenda · <cliente>" (prévia v4, nota 6). Venda do dia não mostra cliente,
     # canal nem telefone: o código chama o pedido.
     is_preorder: bool = False
-    # Hora combinada com o cliente, quando o pedido tem uma: "retira às 22:30" /
-    # "entrega às 22:30". Vazio sem hora combinada.
+    # Hora combinada com o cliente, quando o pedido tem uma, na régua da janela
+    # (``fulfillment_window``): "retira a partir das 17h" / "entrega das 14:00 às
+    # 14:30" / "entrega às 17:30" (iFood agendado). Vazio sem hora combinada.
     due_time_display: str = ""
+    # A mesma hora, curta, para o relógio do card: "17h" / "14h30". Com ela o
+    # relógio diz "para 17h" em vez do tempo desde que o ticket nasceu: a
+    # encomenda chega à cozinha às 00:05 e contar dali era acusar atraso de horas
+    # num pedido que ainda está no prazo (P2-16).
+    due_clock_display: str = ""
+    # Segundos até a hora combinada (negativo quando passou), no instante da
+    # projeção; ``None`` sem hora combinada. É a chave da fila: a cozinha trabalha
+    # pelo que vence antes.
+    due_in_seconds: int | None = None
     # Alguém da estação já deu "Visto" neste ticket (ou já o iniciou): o aviso de
     # pedido novo para em todas as telas da estação juntas (K20, registrado no
     # servidor por estação). No cancelado, é o "Visto" DEPOIS do cancelamento.
@@ -1171,15 +1182,22 @@ def _build_ticket(
     elapsed = (elapsed_until - ticket.created_at).total_seconds()
     target_sec = instance.target_time_minutes * 60
 
-    if elapsed < target_sec:
+    if source is None:
+        source = _resolve_ticket_source(ticket)
+    promised = promised_at(source)
+    due_in = int((promised - now).total_seconds()) if promised is not None else None
+
+    if due_in is not None:
+        # Com hora combinada, o prazo é ela, não a meta da estação contada desde
+        # que o ticket nasceu (a encomenda nasce às 00:05).
+        timer_class = "timer-ok" if due_in > 0 else "timer-late"
+    elif elapsed < target_sec:
         timer_class = "timer-ok"
     elif elapsed < target_sec * 2:
         timer_class = "timer-warning"
     else:
         timer_class = "timer-late"
 
-    if source is None:
-        source = _resolve_ticket_source(ticket)
     source_data = (getattr(source, "data", None) or {}) if source is not None else {}
     handle_ref = getattr(source, "handle_ref", "") if source is not None else ""
     order_ref, previous_tab_ref = _display_order_refs(
@@ -1240,7 +1258,9 @@ def _build_ticket(
         customer_note=str(source_data.get("order_notes", "") or ""),
         test_order_label=_test_order_label(source) if source is not None else "",
         is_preorder=_is_preorder(source),
-        due_time_display=_due_time_display(source_data, is_delivery=is_delivery),
+        due_time_display=_due_time_display(source, promised, is_delivery=is_delivery),
+        due_clock_display=_clock(promised),
+        due_in_seconds=due_in,
         seen=ticket_seen(ticket),
         changes=tuple(item_changes),
         change_ticket_pks=tuple(change_ticket_pks),
@@ -1273,17 +1293,31 @@ def _is_preorder(source) -> bool:
     return timezone.localdate(created_at) < commitment
 
 
-def _due_time_display(source_data: dict, *, is_delivery: bool) -> str:
-    """ "retira às 22:30" / "entrega às 22:30"; vazio sem hora combinada."""
-    value = str(
-        source_data.get("delivery_time")
-        or source_data.get("pickup_time")
-        or source_data.get("scheduled_time")
-        or ""
-    ).strip()[:5]
-    if len(value) != 5 or value[2] != ":" or not (value[:2] + value[3:]).isdigit():
+def _due_time_display(source, promised, *, is_delivery: bool) -> str:
+    """ "retira a partir das 17h" / "entrega das 14:00 às 14:30"; vazio sem hora.
+
+    O rótulo é o da janela combinada (``window_label``, o mesmo do Gestor, do
+    papel e do aviso ao cliente); o iFood agendado não tem janela da casa e diz
+    a hora que prometeu.
+    """
+    if promised is None:
         return ""
-    return f"{'entrega' if is_delivery else 'retira'} às {value}"
+    verb = "entrega" if is_delivery else "retira"
+    slot = str(((getattr(source, "data", None) or {}).get("delivery_time_slot")) or "").strip()
+    label = window_label(slot) if slot else ""
+    if not label:
+        return f"{verb} às {timezone.localtime(promised):%H:%M}"
+    if label[:2].isdigit():
+        return f"{verb} das {label}"
+    return f"{verb} {label[:1].lower()}{label[1:]}"
+
+
+def _clock(moment) -> str:
+    """ "17h" / "14h30": a hora como a casa fala; vazio sem hora."""
+    if moment is None:
+        return ""
+    local = timezone.localtime(moment)
+    return f"{local.hour}h" if local.minute == 0 else f"{local.hour}h{local.minute:02d}"
 
 
 def _volumes_fields(source) -> dict:

@@ -12,13 +12,13 @@
 import type { OperatorSwipeCommit } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { KDSTicketProjection } from "~/types/kds";
 import {
-  elapsedLabel,
   hasChanges,
   needsAcknowledgement,
   queueLine,
   queuePositionLabel,
   splitRef,
   ticketAction,
+  ticketClockLabel,
   type KDSAllDayCount,
   type KDSDensity,
 } from "~/presentation/board";
@@ -159,7 +159,7 @@ function onRowPointerdown(pk: number, event: PointerEvent) {
           <Icon name="lucide:lock" class="size-3.5" />Bloqueado
         </span>
         <span v-else class="shrink-0 text-base font-bold tabular-nums text-muted-foreground">
-          {{ elapsedLabel(card.elapsed_seconds) }}
+          {{ ticketClockLabel(card) }}
         </span>
       </div>
     </OperatorSwipeRow>

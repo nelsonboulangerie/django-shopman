@@ -17,6 +17,7 @@ import {
   lucideIcon,
   slaPercent,
   sortByUrgency,
+  ticketClockLabel,
   splitRef,
   targetLabel,
   ticketTone,
@@ -79,6 +80,8 @@ const ticket = (
   started_at_display: "",
   is_preorder: false,
   due_time_display: "",
+  due_clock_display: "",
+  due_in_seconds: null,
   seen: false,
   changes: [],
   change_ticket_pks: [],
@@ -272,6 +275,34 @@ describe("kds board presentation", () => {
     expect(sorted.map((c) => (c as KDSTicketProjection).pk)).toEqual([
       3, 2, 4, 1,
     ]);
+  });
+
+  it("P2-16: a encomenda entra na fila pela hora combinada, não pela madrugada", () => {
+    // Às 10h: balcão chegou há 2 min (meta 10 min → vence em 8 min); encomenda das
+    // 10h05 vence em 5 min; encomenda das 17h chegou às 00:05 e vence em 7 h.
+    const balcao = ticket({ pk: 1, timer_class: "timer-ok", elapsed_seconds: 120, target_seconds: 600 });
+    const das17 = ticket({
+      pk: 2,
+      timer_class: "timer-ok",
+      elapsed_seconds: 35_700,
+      target_seconds: 600,
+      due_clock_display: "17h",
+      due_in_seconds: 25_200,
+    });
+    const das10h05 = ticket({
+      pk: 3,
+      timer_class: "timer-ok",
+      elapsed_seconds: 35_700,
+      target_seconds: 600,
+      due_clock_display: "10h05",
+      due_in_seconds: 300,
+    });
+    expect(sortByUrgency([das17, balcao, das10h05]).map((c) => c.pk)).toEqual([3, 1, 2]);
+  });
+
+  it("P2-16: com hora combinada o relógio diz para quando; sem ela, o tempo corrido", () => {
+    expect(ticketClockLabel(ticket({ due_clock_display: "17h", elapsed_seconds: 35_700 }))).toBe("para 17h");
+    expect(ticketClockLabel(ticket({ elapsed_seconds: 1440 }))).toBe("24m");
   });
 
   it("splits the ref into a recessive prefix + the hero code", () => {

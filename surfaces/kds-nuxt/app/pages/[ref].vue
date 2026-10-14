@@ -26,7 +26,6 @@ import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation
 import type { KDSHistoryEntryProjection, KDSTicketProjection } from "~/types/kds";
 import {
   boardFilterCounts,
-  elapsedLabel,
   focusGrid,
   focusSlice,
   KDS_ARM_DELAY_MS,
@@ -37,6 +36,7 @@ import {
   restSummary,
   splitRef,
   ticketAction,
+  ticketClockLabel,
   ticketOverline,
   hasChanges,
   type KDSBoardFilter,
@@ -485,7 +485,7 @@ const phoneContext = computed(() => {
   if (!card) return { label: "", value: "" };
   return {
     label: `${splitRef(card.order_ref).code} · ${ticketOverline(card)}`,
-    value: elapsedLabel(card.elapsed_seconds),
+    value: ticketClockLabel(card),
   };
 });
 
