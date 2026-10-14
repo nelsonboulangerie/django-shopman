@@ -115,6 +115,9 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useOperatorReloadHold.ts` | `useOperatorReloadHold` | a TELA declara, pelo nome, o que impede recarregar agora (venda, comanda, pagamento) |
 | `app/composables/useConfirm.ts` | `useConfirm` | a pergunta antes de descartar o que não foi salvo (ou de um ato normal, `tone: "primary"`), no diálogo da casa: devolve `Promise<boolean>` (ver "Pergunta antes de descartar") |
 | `app/components/OperatorConfirmDialog.vue` | `<OperatorConfirmDialog>` | a caixa do `useConfirm`; montada UMA vez pelo `OperatorPwaRuntime`, nenhum app a monta |
+| `app/components/OperatorFormShell.vue` | `<OperatorFormShell>` | o casco canônico de um cadastro: seções, aviso do que não foi salvo, ação na base (salvar/descartar) e a pergunta antes de descartar (ver "Casco de cadastro") |
+| `app/components/OperatorFormSection.vue` | `<OperatorFormSection>` | a seção de um cadastro: título, descrição e a chave do próximo foco (`data-focus-target`) |
+| `app/composables/useDirtyForm.ts` | `useDirtyForm` | estado sujo de um cadastro: um retrato na abertura e as diferenças a partir dele |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
 | `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por dispositivo (Screen Orientation API): item "Travar giro" no `OperatorRail` só em dispositivo de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
@@ -1741,6 +1744,83 @@ Contrato:
 - A trava `tests/guardrails.nativeConfirm.test.ts` varre `app/` de todas as superfícies
   Nuxt e da layer e reprova `window.confirm(` (e o `confirm(` solto). O que ainda existe
   está declarado com motivo numa lista que **só encolhe** (hoje: dois pontos da Produção).
+
+## Casco de cadastro (`OperatorFormShell` + `useDirtyForm`)
+
+O mesmo casco em Compras, Produção e Gestor: a entidade e a condução mudam, o casco
+não. Ele nasceu no painel do Gestor (`CatalogProductCreatePanel`, #1786) e reúne o que
+todo cadastro precisa e que antes cada tela escrevia por conta própria.
+
+```vue
+<OperatorFormShell
+  :open="open"
+  title="Novo produto"
+  description="Cria um produto do zero."
+  :dirty="dirty"
+  :dirty-count="changedKeys.length"
+  :busy="busy"
+  save-label="Criar produto"
+  :save-disabled="!valid"
+  save-disabled-reason="Informe o código e o nome para salvar."
+  :active-section="activeSection"
+  :save-attrs="{ 'data-testid': 'create-submit' }"
+  @update:open="open = $event"
+  @save="submit"
+>
+  <template #lead><!-- ação extra antes do descarte (ex.: "Trocar intenção") --></template>
+
+  <OperatorFormSection section-key="identity" title="Identificação">
+    <NuxtFormField label="SKU" required>
+      <NuxtInput v-model="form.sku" data-focus-control />
+    </NuxtFormField>
+  </OperatorFormSection>
+
+  <OperatorFormSection section-key="price" title="Preço" description="Quanto custa.">
+    <NuxtFormField label="Preço (R$)"><NuxtInput v-model="form.priceText" /></NuxtFormField>
+  </OperatorFormSection>
+</OperatorFormShell>
+```
+
+```ts
+const { dirty, changedKeys, capture } = useDirtyForm(() => ({
+  ...form, intent: intent.value, accepted: [...accepted.value],
+}));
+// Ao abrir (ou limpar) o cadastro, tira o retrato do que está em tela:
+capture();
+```
+
+Contrato:
+
+- **O casco é a gaveta lateral.** `OperatorFormShell` desenha o `NuxtSlideover`
+  (título e descrição), o corpo com o slot padrão e a barra de ação. Quem chama
+  continua dono do formulário e do salvamento: o casco só conduz.
+- **Seções com nome.** Cada `OperatorFormSection` é um bloco `data-focus-target` com
+  `tabindex="-1"`; o título e a descrição são opcionais, e quem chama decide o chrome
+  (um `NuxtCard` em volta, ou os campos direto na superfície do painel). O controle que
+  deve receber o foco de teclado se marca com `data-focus-control`.
+- **Próximo foco por seção.** `active-section` é a chave do momento; quando ela muda, a
+  página vai à seção (`useNextFocus`) e foca o controle marcado, ou a própria seção. O
+  casco também expõe `reveal(alvo, opções)` para o foco fora do fluxo.
+- **Estado sujo com aviso.** `dirty` liga o aviso (`dirtyCountLabel`) e arma a pergunta
+  do descarte. O `useDirtyForm` compara o formulário de agora com o retrato tirado em
+  `capture()`: o retrato é uma cópia, e o que muda desde a abertura é "não salvo".
+- **Barra de ação na base.** Abaixo de `lg` é o `OperatorActionBar` da suíte (principal
+  é salvar, secundária é descartar, o motivo escrito quando não pode, e o aviso do que
+  não foi salvo na linha de contexto). Na mesa a mesma ação vira a linha do rodapé, com
+  o aviso ou o motivo à esquerda. O slot `lead` recebe uma ação extra antes do descarte.
+- **A pergunta antes de descartar é da casa.** Com `dirty`, fechar (o X, o Esc ou o
+  descartar) chama `useConfirm` com `FORM_DISCARD_COPY` ("Descartar o que você
+  preencheu?" / "Continuar preenchendo"); sem alteração, fecha direto. O
+  `confirmDiscard` troca a pergunta quando o cadastro tem nome próprio. Nada de
+  `window.confirm`.
+- **Nada de salvar no escuro.** `save-disabled` com `save-disabled-reason` diz o que
+  falta ("Informe o código e o nome para salvar."); o botão continua no lugar.
+- Consumidor: o criar/duplicar produto do Gestor
+  (`orders-nuxt/app/components/CatalogProductCreatePanel.vue`). O próximo é a criação
+  de receita da Produção (`recipes/new`), quando a porta Manual virar o formulário
+  canônico.
+- Testes: `tests/formShell.test.ts` (a conta pura), `tests/composables/useDirtyForm.test.ts`
+  e `tests/components/OperatorFormShell.test.ts` (DOM, foco e a caixa da casa).
 
 ## Filtro universal (`FilterBar` + `useRouteFilters`)
 
