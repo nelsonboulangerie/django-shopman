@@ -475,10 +475,7 @@ function submit() {
           v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
           section-key="gtin"
         >
-          <NuxtCard
-            v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
-            variant="soft"
-          >
+          <NuxtCard variant="soft">
             <div class="flex flex-col gap-3">
               <div class="flex flex-wrap items-end gap-2">
                 <NuxtFormField
@@ -528,10 +525,7 @@ function submit() {
           v-if="!isDuplicate && draft && intent !== 'insumo'"
           section-key="draft"
         >
-          <NuxtCard
-            v-if="!isDuplicate && draft && intent !== 'insumo'"
-            variant="outline"
-          >
+          <NuxtCard variant="outline">
             <div class="flex flex-col gap-3">
               <p class="text-sm font-medium">Revise o que as fontes trazem</p>
               <label
@@ -624,10 +618,7 @@ function submit() {
           v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
           section-key="photo"
         >
-          <NuxtCard
-            v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
-            variant="soft"
-          >
+          <NuxtCard variant="soft">
             <div class="flex flex-col gap-3">
               <NuxtFormField
                 label="Foto do produto"
@@ -691,7 +682,7 @@ function submit() {
           v-if="!isDuplicate && intent === 'revenda'"
           section-key="purchase"
         >
-          <NuxtCard v-if="!isDuplicate && intent === 'revenda'" variant="soft">
+          <NuxtCard variant="soft">
             <NuxtCheckbox
               v-model="linkPurchase"
               label="Ligar o comprável do mesmo SKU (Permitir compra)"
@@ -705,7 +696,7 @@ function submit() {
           v-if="!isDuplicate && intent === 'producao'"
           section-key="production"
         >
-          <NuxtCard v-if="!isDuplicate && intent === 'producao'" variant="soft">
+          <NuxtCard variant="soft">
             <p class="text-sm font-medium">Produzo e vendo aqui</p>
             <p class="text-xs text-muted-foreground">
               O vendável nasce no catálogo e a ficha de execução entra na
@@ -728,10 +719,7 @@ function submit() {
           title="Dados do produto"
           description="Preencha o que a loja e a nota vão usar."
         >
-          <div
-            v-if="isDuplicate || (intent !== '' && intent !== 'insumo')"
-            class="grid gap-3 sm:grid-cols-2"
-          >
+          <div class="grid gap-3 sm:grid-cols-2">
             <NuxtFormField label="SKU" required>
               <NuxtInput
                 v-model="form.sku"
