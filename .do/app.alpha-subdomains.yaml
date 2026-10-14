@@ -920,13 +920,18 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
-  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
-  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
-  # que não chama o Django (WP-PERFORMANCE P1).
+  # Duas sondas, duas perguntas (13/10/2026, depois dos 503 do Admin):
+  # - `health_check` (READINESS) = `/health/database/`: um `SELECT 1` pelo pool DESTE
+  #   processo. Falhou 5x seguidas, a borda para de mandar tráfego para a instância
+  #   (não reinicia). Só banco: fila parada e migration pendente não tiram o balcão
+  #   do ar; o `/health/ready/` completo segue no Alpha Smoke (#780).
+  # - `liveness_health_check` = `/health/live/`: o processo atende (zero banco).
+  #   Falhou 3x, a plataforma reinicia o contêiner. Banco fora não reinicia nada.
+  # Com 1 instância a readiness só segura o deploy novo que não alcança o banco; ela
+  # pagaria de verdade com 2, não adotado pelo dono em 13/10 (docs/runbooks/web-operator-resiliencia.md).
   health_check:
     failure_threshold: 5
-    http_path: /health/live/
+    http_path: /health/database/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -961,6 +966,13 @@ services:
   - key: SHOPMAN_BFF_PROXY_SECRET
     scope: RUN_TIME
     type: SECRET
+  # Access log da APLICAÇÃO (AccessLogMiddleware, logger `shopman.access`): método,
+  # padrão da rota, status e duração. Sem IP, usuário, query string ou caminho cru,
+  # por isso convive com o `--access-log=/dev/null` do daphne logo abaixo.
+  - key: SHOPMAN_ACCESS_LOG
+    scope: RUN_TIME
+    value: 'true'
+    type: GENERAL
   # Recibos de privacidade: o valor das chaves HMAC permanece exclusivamente no
   # cofre do App Platform. Declarar nome/tipo/escopo impede perda em update.
   - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY
@@ -1003,13 +1015,18 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
-  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
-  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
-  # que não chama o Django (WP-PERFORMANCE P1).
+  # Duas sondas, duas perguntas (13/10/2026, depois dos 503 do Admin):
+  # - `health_check` (READINESS) = `/health/database/`: um `SELECT 1` pelo pool DESTE
+  #   processo. Falhou 5x seguidas, a borda para de mandar tráfego para a instância
+  #   (não reinicia). Só banco: fila parada e migration pendente não tiram o balcão
+  #   do ar; o `/health/ready/` completo segue no Alpha Smoke (#780).
+  # - `liveness_health_check` = `/health/live/`: o processo atende (zero banco).
+  #   Falhou 3x, a plataforma reinicia o contêiner. Banco fora não reinicia nada.
+  # Com 1 instância a readiness só segura o deploy novo que não alcança o banco; ela
+  # pagaria de verdade com 2, não adotado pelo dono em 13/10 (docs/runbooks/web-operator-resiliencia.md).
   health_check:
     failure_threshold: 5
-    http_path: /health/live/
+    http_path: /health/database/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
@@ -1044,6 +1061,13 @@ services:
   - key: SHOPMAN_BFF_PROXY_SECRET
     scope: RUN_TIME
     type: SECRET
+  # Access log da APLICAÇÃO (AccessLogMiddleware, logger `shopman.access`): método,
+  # padrão da rota, status e duração. Sem IP, usuário, query string ou caminho cru,
+  # por isso convive com o `--access-log=/dev/null` do daphne logo abaixo.
+  - key: SHOPMAN_ACCESS_LOG
+    scope: RUN_TIME
+    value: 'true'
+    type: GENERAL
   # Recibos de privacidade: o valor das chaves HMAC permanece exclusivamente no
   # cofre do App Platform. Declarar nome/tipo/escopo impede perda em update.
   - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY

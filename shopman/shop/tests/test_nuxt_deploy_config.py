@@ -290,22 +290,27 @@ def test_operator_groups_have_capacity_alerts():
 
 @pytest.mark.parametrize("spec_name", ["app.alpha-subdomains.yaml", "app.subdomains.yaml"])
 def test_platform_probes_are_cheap_liveness_never_dependency_readiness(spec_name):
-    """O health check da plataforma pergunta só se o processo atende.
+    """O probe da plataforma pergunta o que é motivo para tirar o componente do ar.
 
     Ele roda a cada poucos segundos em cada componente. Apontado para `/`, cada Nuxt
     renderizava a shell SSR (a loja pedia a home ao Django); apontado para
-    `/health/ready/`, o `web` consultava banco, cache e fila. A prontidão das
-    dependências é pergunta do smoke, não motivo para tirar o componente do ar.
+    `/health/ready/`, o `web` consultava banco, cache, migrations e fila. A prontidão
+    das dependências é pergunta do smoke, não motivo para tirar o componente do ar.
+
+    A exceção medida (13/10/2026, 503 do Admin com instância única): a readiness do
+    Django é `/health/database/`, um `SELECT 1` pelo pool do processo e nada mais.
+    Liveness segue `/health/live/`, zero banco: banco fora não reinicia contêiner.
     """
     import yaml
 
     spec = yaml.safe_load((ROOT / ".do" / spec_name).read_text())
     services = {service["name"]: service for service in spec["services"]}
 
-    # O Django roda em dois services (mesma imagem): os dois com a liveness barata.
+    # O Django roda em dois services (mesma imagem): readiness pelo banco do processo,
+    # liveness barata.
     for name in ("web-operator", "web-storefront"):
         web = services[name]
-        assert web["health_check"]["http_path"] == "/health/live/", name
+        assert web["health_check"]["http_path"] == "/health/database/", name
         assert web["liveness_health_check"]["http_path"] == "/health/live/", name
     # Desde a ADR-030 os apps de operador são servidos pelo service do GRUPO; o
     # probe dele é o /health/live agregado do roteador (todos os filhos de pé).

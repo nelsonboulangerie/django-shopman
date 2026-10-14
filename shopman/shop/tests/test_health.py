@@ -366,3 +366,81 @@ def test_worker_startup_grace_expires_and_fresh_beats_recover(db, settings):
         assert health._check_required_workers(started + timedelta(seconds=180)) == ("fail", "worker_missing")
     with patch("shopman.orderman.worker_heartbeat.last_beat", return_value=started + timedelta(seconds=180)):
         assert health._check_required_workers(started + timedelta(seconds=181)) == ("ok", None)
+
+
+# ---------------------------------------------------------------------------
+# /health/database/: a readiness da plataforma (13/10/2026)
+# ---------------------------------------------------------------------------
+
+
+def test_database_readiness_touches_only_the_database(client, db):
+    with (
+        patch("shopman.shop.views.health._check_cache") as cache,
+        patch("shopman.shop.views.health._check_migrations") as migrations,
+        patch("shopman.shop.views.health._check_queue") as queue,
+    ):
+        response = client.get(reverse("health-database"))
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "checks": {"database": "ok"}}
+    assert response["Cache-Control"] == "no-store"
+    cache.assert_not_called()
+    migrations.assert_not_called()
+    queue.assert_not_called()
+
+
+def test_database_readiness_fails_without_leaking_the_reason(client):
+    with patch(
+        "shopman.shop.views.health._check_database",
+        return_value=("fail", "OperationalError: secret-host.internal"),
+    ):
+        response = client.get("/health/database/")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "error", "checks": {"database": "fail"}}
+    assert "secret-host.internal" not in response.content.decode()
+
+
+def test_stale_worker_never_takes_the_database_readiness_down(client, db, settings):
+    """O motivo de a readiness não ser o /health/ready/: fila parada não tira o Admin do ar."""
+    settings.SHOPMAN_REQUIRED_WORKERS = ("process_directives", "maintenance_worker")
+    settings.SHOPMAN_WORKER_STARTUP_GRACE_SECONDS = 0
+    with patch("shopman.orderman.worker_heartbeat.last_beat", return_value=None):
+        assert client.get("/health/ready/").status_code == 503
+        assert client.get("/health/database/").status_code == 200
+
+
+def test_platform_probe_host_reaches_the_database_readiness(client, db):
+    """A sonda da DO manda o IP privado (100.64/10) como Host; fora do ALLOWED_HOSTS."""
+    response = client.get("/health/database/", HTTP_HOST="100.64.1.2:8000")
+    assert response.status_code == 200
+
+
+def test_platform_probe_over_plain_http_is_not_redirected(db, settings):
+    """A sonda fala HTTP puro com o contêiner; um 301 para https reprova a sonda."""
+    settings.SECURE_SSL_REDIRECT = True
+    response = Client().get("/health/database/", HTTP_HOST="100.64.1.2:8000")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("spec_name", ["app.alpha-subdomains.yaml", "app.subdomains.yaml"])
+def test_every_django_probe_path_passes_the_host_and_https_gates(spec_name):
+    """Rota de sonda nova tem de entrar nos DOIS portões, ou a sonda nunca passa."""
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    from shopman.shop.middleware import HEALTH_PROBE_PATHS
+
+    root = Path(__file__).resolve().parents[3]
+    spec = yaml.safe_load((root / ".do" / spec_name).read_text(encoding="utf-8"))
+    for service in spec["services"]:
+        if service["name"] not in ("web-operator", "web-storefront"):
+            continue
+        for probe in ("health_check", "liveness_health_check"):
+            path = service[probe]["http_path"]
+            assert path in HEALTH_PROBE_PATHS, (service["name"], probe, path)
+            assert any(
+                re.search(pattern, path.lstrip("/")) for pattern in settings.SECURE_REDIRECT_EXEMPT
+            ), (service["name"], probe, path)

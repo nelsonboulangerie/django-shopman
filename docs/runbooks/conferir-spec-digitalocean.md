@@ -56,9 +56,12 @@ O script (`scripts/check_do_spec_drift.py`) é **somente leitura**: chama
 
 Ele compara **env de app, env de serviço, domínios, regras de ingress, bancos
 anexados (`databases`, campo a campo) e, por componente, imagem
-(`registry_type`, `repository`, `tag`/`digest`, `deploy_on_push`) e
-dimensionamento (`instance_count`, `instance_size_slug`)**. Bancos e componentes
-entraram em 30/09/2026 (ver a seção do incidente abaixo). As
+(`registry_type`, `repository`, `tag`/`digest`, `deploy_on_push`),
+dimensionamento (`instance_count`, `instance_size_slug`), comando (`run_command`),
+sondas (`health_check`, `liveness_health_check`) e alertas (do app e de cada
+componente, comparados como conjunto)**. Bancos e componentes entraram em
+30/09/2026 (ver a seção do incidente abaixo); sondas e alertas em 13/10/2026,
+depois dos 503 do Admin ([web-operator-resiliencia.md](web-operator-resiliencia.md)). As
 duas últimas entraram em 08/09/2026, depois que o arquivo versionado passou uma
 semana dizendo "OK" enquanto trazia `alpha.nelsonboulangerie.com.br` — domínio
 morto desde o corte de 01/09 — como PRIMARY, e deixava `backup.boulangerie.com.br`
