@@ -44,6 +44,7 @@ CONSTRAINTS = ROOT / "constraints.txt"
 PACKAGES = [
     "./packages/refs",
     "./packages/utils",
+    "./packages/watchman",
     "./packages/offerman",
     "./packages/stockman",
     "./packages/craftsman",
@@ -102,7 +103,7 @@ def resolve() -> dict[str, tuple[str, str]]:
 
     resolved = {}
     for item in report["install"]:
-        # Os 13 pacotes locais (shopman-*, django-shopman) instalam por caminho e
+        # Os 14 pacotes locais (shopman-*, django-shopman) instalam por caminho e
         # são versionados pelo próprio repo — pinar não faria sentido.
         if item.get("is_direct") and item["download_info"]["url"].startswith("file://"):
             continue

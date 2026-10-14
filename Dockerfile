@@ -85,6 +85,7 @@ COPY tools ./tools
 RUN python -m pip install -c constraints.txt \
         ./packages/refs \
         ./packages/utils \
+        ./packages/watchman \
         ./packages/offerman \
         ./packages/stockman \
         ./packages/craftsman \
