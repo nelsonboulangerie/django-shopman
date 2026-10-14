@@ -1319,7 +1319,8 @@ def cancel_order(
     reason: str,
     actor: str,
     cancellation_code: str = "",
-    customer_note: str = "",
+    reason_key: str = "",
+    internal_note: str = "",
     expected_authority_revision: str | None = None,
     expected_revision: str | None = None,
     prepared_identity: tuple[str, str] | None = None,
@@ -1328,22 +1329,26 @@ def cancel_order(
 
     ``cancellation_code`` (iFood) rides ``order.data`` to the status-callback handler.
 
-    ``customer_note`` is the operator-authored, customer-facing justification. It is
-    stored under ``order.data["cancellation_note"]`` and surfaced to the customer in
-    the ``order_cancelled`` notification. Kept separate from ``cancellation_reason``,
-    which also carries machine codes (``pix_timeout``, ``customer_requested``) that
-    must never reach the customer. Empty when the operator gave no reason → the
-    customer gets the plain cancellation message.
+    ``reason_key`` é a chave da lista única de motivos (``services/cancel_reasons``),
+    gravada em ``order.data["cancellation_reason_key"]``: o cliente lê o texto
+    revisado dela na notificação ``order_cancelled``. Fora da lista levanta
+    ``ValueError``. Vazia só no marketplace (o iFood exige o código dele, e o
+    pedido sai com ``other``). ``internal_note`` é a observação livre do operador:
+    vai para ``order.data["cancellation_internal_note"]`` e nunca ao cliente.
 
     Returns:
         True se cancelou ou persistiu solicitação iFood; False se a transição foi recusada.
     """
+    from shopman.shop.services import cancel_reasons
+
+    if (reason_key or order.channel_ref != "ifood") and cancel_reasons.validation_message(reason_key):
+        raise ValueError(cancel_reasons.validation_message(reason_key))
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
-    extra_data: dict[str, str] = {}
+    extra_data: dict[str, str] = {"cancellation_reason_key": reason_key.strip() or cancel_reasons.OTHER}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
-    if customer_note.strip():
-        extra_data["cancellation_note"] = customer_note.strip()
+    if internal_note.strip():
+        extra_data["cancellation_internal_note"] = internal_note.strip()
     # O retorno do serviço canônico é a resposta à pergunta "cancelou?", e
     # descartá-lo fazia a view responder 200 para um pedido que continuou como
     # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
@@ -1363,7 +1368,7 @@ def cancel_order(
                 raise OrderStateConflict("O pagamento ou estado mudou. Confira o pedido e a aprovação novamente.")
         if _cancellation_identity(locked) != reason_identity:
             raise OrderStateConflict("A referência do pedido mudou. Consulte os motivos novamente.")
-        return cancel(locked, reason=reason, actor=actor, extra_data=extra_data or None)
+        return cancel(locked, reason=reason, actor=actor, extra_data=extra_data)
 
 
 _COUNTER_METHODS = frozenset({"cash", "credit", "debit"})

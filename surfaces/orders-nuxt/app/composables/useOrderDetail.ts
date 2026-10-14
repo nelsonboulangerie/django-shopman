@@ -204,8 +204,15 @@ export function useOrderDetail(orderRef: string) {
   // relays a valid reason to the provider; empty string for other channels.
   const reject = (reason: string, cancellation_code = "") =>
     act("reject", { reason, cancellation_code });
-  const cancel = (reason: string, cancellation_code = "") =>
-    act("cancel", { reason, cancellation_code });
+  // Cancelar: o motivo é a chave da lista única (`reason_key`, obrigatória fora do
+  // iFood); o texto é a observação interna. No iFood, `reason` + código do iFood.
+  const cancel = (choice: { reasonKey: string; internalNote: string; reason: string; cancellationCode: string }) =>
+    act("cancel", {
+      reason_key: choice.reasonKey,
+      internal_note: choice.internalNote,
+      reason: choice.reason,
+      cancellation_code: choice.cancellationCode,
+    });
   const settleCash = (
     amount: string,
     changeBack?: string,

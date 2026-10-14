@@ -331,7 +331,14 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
-/** Motivos de recusa/cancelamento sob um cabeçalho (``label`` vazio = sem cabeçalho). */
+/** Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``). */
+export interface CancelReasonProjection {
+  key: string;
+  label: string;
+  customer_text: string;
+}
+
+/** Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho). */
 export interface CancellationPresetGroupProjection {
   label: string;
   presets: string[];
@@ -642,6 +649,7 @@ export interface OperatorOrderProjection {
   gift_message: string;
   gift_hide_values: boolean;
   cancellation_presets: CancellationPresetGroupProjection[];
+  cancel_reasons: CancelReasonProjection[];
   kitchen_note_tags: string[];
   customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;

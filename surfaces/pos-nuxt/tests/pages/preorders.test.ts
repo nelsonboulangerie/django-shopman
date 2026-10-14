@@ -152,7 +152,10 @@ beforeEach(() => {
       edit: { allowed: true, block_reason: "", cancel_and_redo: false, revision: "rev-edit" },
     },
     managers: [{ username: "gerente", name: "Gerente" }],
-    cancellation_presets: [],
+    cancel_reasons: [
+      { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+      { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
+    ],
   };
   found = {
     ok: true, query: "ana", today: "2026-09-26", include_completed: false, completed_days: 30,
@@ -216,6 +219,10 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
 });
 
 const body = () => document.body;
+// Escolhe um motivo da lista única no diálogo de cancelar (rádio do Nuxt UI).
+function pickCancelReason(label: string) {
+  body().querySelector<HTMLElement>(`[data-reason-keyed] [role="radio"][aria-label="${label}"]`)!.click();
+}
 async function settle() {
   await flushPromises();
   await flushPromises();
@@ -406,20 +413,28 @@ describe("Detalhe — as seções do Gestor, no balcão", () => {
 });
 
 describe("Detalhe — cancelar", () => {
-  it("cancela pela rota do Gestor, com a revisão e quem está identificado", async () => {
+  it("cancela pela rota do Gestor com o motivo da lista; o texto digitado é observação interna", async () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-cancel]").trigger("click");
     await settle();
-    const reason = body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!;
-    reason.value = "Cliente desistiu";
-    reason.dispatchEvent(new Event("input"));
+    const note = body().querySelector<HTMLTextAreaElement>("[data-reason-input]")!;
+    note.value = "Ligou às 10h";
+    note.dispatchEvent(new Event("input"));
     await settle();
+    // Sem motivo escolhido, Cancelar não acende (nem com a observação escrita).
+    expect(body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.disabled).toBe(true);
+    pickCancelReason("O cliente pediu");
+    await settle();
+    expect(body().querySelector("[data-reason-preview]")?.textContent).toContain("Cancelamos conforme você nos pediu.");
     body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
 
     const [path, options] = call.mock.calls[0]!;
     expect(path).toBe("/api/v1/backstage/orders/NB-7/cancel/");
-    expect(options.body).toMatchObject({ reason: "Cliente desistiu", base_revision: "rev-1", expected_actor_id: 7 });
+    expect(options.body).toMatchObject({
+      reason_key: "customer_request", internal_note: "Ligou às 10h", base_revision: "rev-1", expected_actor_id: 7,
+    });
+    expect(options.body.reason).toBeUndefined();
     expect(options.body.idempotency_key).toBeTruthy();
   });
 
@@ -427,6 +442,8 @@ describe("Detalhe — cancelar", () => {
     call.mockRejectedValueOnce({ status: 403, data: { detail: "Precisa de gerente.", error: { code: "manager_approval_required" } } });
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-cancel]").trigger("click");
+    await settle();
+    pickCancelReason("Outro motivo");
     await settle();
     body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
     await settle();
@@ -438,6 +455,8 @@ describe("Detalhe — cancelar", () => {
 
     expect(call).toHaveBeenCalledTimes(2);
     expect(call.mock.calls[1]![1].body.manager_approval).toEqual({ username: "gerente", pin: "1234" });
+    // O motivo escolhido sobrevive à assinatura.
+    expect(call.mock.calls[1]![1].body.reason_key).toBe("other");
     // Mesma tentativa, mesma chave: a primeira foi recusada antes de gravar.
     expect(call.mock.calls[1]![1].body.idempotency_key).toBe(call.mock.calls[0]![1].body.idempotency_key);
   });
@@ -460,25 +479,13 @@ describe("Detalhe — cancelar", () => {
     expect(call).not.toHaveBeenCalled();
   });
 
-  it("os motivos prontos do Gestor chegam ao balcão: um toque escolhe o motivo enviado", async () => {
-    detail.cancellation_presets = [
-      { label: "Cliente", presets: ["Cliente desistiu"] },
-      { label: "", presets: ["Pedido em duplicidade"] },
-    ];
+  it("os motivos são a lista única do backend, a mesma do Gestor", async () => {
     const wrapper = await mount(DetailPage);
     await wrapper.find("[data-preorder-cancel]").trigger("click");
     await settle();
-    const chips = [...body().querySelectorAll<HTMLButtonElement>("[data-reason-preset]")];
-    expect(chips.map((chip) => chip.textContent?.trim())).toEqual(["Cliente desistiu", "Pedido em duplicidade"]);
-    expect(body().querySelector("[data-testid='reason-other']")).not.toBeNull();
-    chips[0]!.click();
-    await settle();
-    body().querySelector<HTMLButtonElement>("[data-reason-confirm]")!.click();
-    await settle();
-
-    const [path, options] = call.mock.calls[0]!;
-    expect(path).toBe("/api/v1/backstage/orders/NB-7/cancel/");
-    expect(options.body).toMatchObject({ reason: "Cliente desistiu" });
+    expect(body().querySelectorAll('[data-reason-keyed] [role="radio"]')).toHaveLength(2);
+    expect(body().querySelector("[data-reason-preset]")).toBeNull();
+    expect(body().textContent).toContain("Observação interna (opcional)");
   });
 
   it("sem permissão para cancelar, não há botão", async () => {

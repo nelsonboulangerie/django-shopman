@@ -89,7 +89,7 @@ def _order(ref: str, status: str, *, regua: dict | None = None) -> Order:
 def _cancel(client, order, **payload):
     return client.post(
         reverse("api-backstage-order-cancel", args=[order.ref]),
-        data={"reason": "cliente desistiu", "expected_actor_id": int(client.session["_auth_user_id"]), "base_revision": operational_revision(order), "idempotency_key": f"cancel-{order.ref}", **payload},
+        data={"reason_key": "customer_request", "expected_actor_id": int(client.session["_auth_user_id"]), "base_revision": operational_revision(order), "idempotency_key": f"cancel-{order.ref}", **payload},
         content_type="application/json",
     )
 

@@ -132,6 +132,16 @@ const DETAIL_EXTRA = {
   items: [{ sku: "PAO", name: "Pão", qty: "1", unit_price_display: "R$ 16,00", total_display: "R$ 16,00" }],
   timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [], equipment_out: [],
   cancellation_presets: [], kitchen_note_tags: [], customer_profile: null,
+  can_cancel: true, cancel_requires_approval: false,
+  // A lista única de motivos de cancelar (`shop/services/cancel_reasons.py`).
+  cancel_reasons: [
+    { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },
+    { key: "cannot_deliver", label: "Não dá para entregar", customer_text: "Não conseguimos fazer a entrega no endereço e no horário do pedido." },
+    { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+    { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo." },
+    { key: "store_closing", label: "A loja vai fechar", customer_text: "Precisamos encerrar o atendimento antes do horário do seu pedido." },
+    { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
+  ],
 };
 
 function queueCard(ref) {

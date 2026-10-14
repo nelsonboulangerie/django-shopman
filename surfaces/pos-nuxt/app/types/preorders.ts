@@ -5,7 +5,7 @@
 // `POST /api/v1/backstage/pos/preorders/<ref>/hand-over/`.
 
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
-import type { ReasonPresetGroup } from "../../../operator-kit/app/types/reason";
+import type { KeyedReason } from "../../../operator-kit/app/types/reason";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -143,8 +143,8 @@ export interface PreorderDetail extends OperatorOrderDetail {
   equipment_options?: PreorderEquipmentOption[];
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
-  /** Os motivos prontos de cancelar, os mesmos do Gestor (Admin, `Shop.cancellation_presets`). */
-  cancellation_presets: ReasonPresetGroup[];
+  /** Os motivos de cancelar: a lista única do backend, a mesma do Gestor (`cancel_reasons`). */
+  cancel_reasons: KeyedReason[];
 }
 
 /** O bloco da corrida — espelho do `CourierBlock` do Gestor (`orders-nuxt/types/orders.ts`). */

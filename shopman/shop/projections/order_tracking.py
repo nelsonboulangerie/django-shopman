@@ -322,9 +322,11 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     payment_pending, payment_confirmed, payment_status_key, payment_expires_at = _payment_info(order)
     # ⚠️ `cancellation_reason` carrega CÓDIGO DE MÁQUINA (pix_timeout,
     # customer_requested…) e é campo de auditoria — data-schemas.md diz "nunca
-    # exibir ao cliente". O que chega ao cliente é a nota do operador, a mesma
-    # que o lifecycle usa na notificação. Sem nota, a tela não inventa motivo.
-    cancellation_note = str(order_data.get("cancellation_note") or "")
+    # exibir ao cliente". O que chega ao cliente é o texto revisado da chave do
+    # motivo (`cancellation_reason_key`), o mesmo da notificação; a observação
+    # interna do operador nunca. Sem chave ou com "Outro motivo", a tela não
+    # inventa motivo; no Pix vencido quem explica é a promessa da tela.
+    cancellation_note = "" if _is_payment_timeout_cancelled(order) else _cancellation_customer_text(order_data)
     refund_status_key = _refund_status_key(order)
     cancellation_request = _cancellation_request(order)
     progress_steps = _build_progress_steps(
@@ -1822,6 +1824,15 @@ def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
         "waitlist_deadline": block.get("deadline") if state == waitlist.CONFIRMING else None,
         "waitlist_planned_for": planned_for,
     }
+
+
+def _cancellation_customer_text(order_data: dict) -> str:
+    from shopman.shop.services import cancel_reasons
+
+    reason = cancel_reasons.cancel_reason(order_data.get("cancellation_reason_key"))
+    if reason is None or reason.key == cancel_reasons.OTHER:
+        return ""
+    return reason.customer_text
 
 
 def _is_payment_timeout_cancelled(order) -> bool:

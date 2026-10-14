@@ -377,7 +377,7 @@ def test_cancel_pelo_gestor_nao_estorna_dinheiro_e_o_cruzamento_fica_quieto(coun
     result = counter.close(client_request_id="c7", tendered_q=1200)
     order = Order.objects.get(ref=result.order_ref)
     with django_capture_on_commit_callbacks(execute=True):
-        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
+        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo", reason_key="customer_request")
     assert PaymentIntent.objects.get(order_ref=order.ref).status == PaymentIntent.Status.CAPTURED
     assert not Entry.objects.filter(kind=Entry.Kind.REFUND).exists()
 

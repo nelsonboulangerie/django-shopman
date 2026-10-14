@@ -74,7 +74,9 @@ def test_status_note_do_preparo_sem_hora_tem_frase_padrao():
 
 def test_status_note_do_cancelamento_diz_o_motivo_ou_aponta_o_pedido():
     order = _order("cancelled")
-    assert _status_note(order, "order_cancelled", "item indisponível") == "Motivo: item indisponível."
+    # Cancelado: a frase revisada da chave (P1-10), nunca o texto do operador.
+    assert _status_note(order, "order_cancelled", "texto do operador", note="Um dos itens acabou.") == "Um dos itens acabou."
+    assert _status_note(order, "order_rejected", "item indisponível") == "Motivo: item indisponível."
     assert _status_note(order, "order_rejected", None) == "Os detalhes estão no pedido."
 
 
