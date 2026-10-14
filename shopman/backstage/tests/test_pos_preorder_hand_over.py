@@ -355,6 +355,25 @@ def test_a_rota_recebe_e_entrega(balcao):
     assert _cash_entries("ROTA-ENTREGA") == [("cod_settled", 3600)]
 
 
+def test_a_rota_diz_onde_esta_a_nota_para_o_balcao_imprimir_a_DANFE(balcao):
+    """P2-27: a NFC-e da retirada nasce na entrega; o balcão só imprime a DANFE
+    sozinho se a resposta disser que há nota a esperar."""
+    from shopman.shop.services import fiscal as fiscal_service
+
+    order = _order("ROTA-NOTA", payment={"method": "cash"})
+
+    with patch.object(fiscal_service, "fiscal_state", return_value=fiscal_service.FISCAL_STATE_QUEUED):
+        response = balcao.post(
+            "/api/v1/backstage/pos/preorders/ROTA-NOTA/hand-over/",
+            {"base_revision": operator_orders.operational_revision(order), "client_request_id": "t-rota-nota",
+             "tenders": [{"method": "cash", "amount_q": 3600}]},
+            content_type="application/json",
+        )
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["fiscal_state"] == "queued"
+
+
 def test_a_rota_recusa_a_tela_desatualizada(balcao):
     _order("ROTA-VELHA", payment={"method": "cash"})
 

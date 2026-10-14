@@ -257,6 +257,11 @@ export interface PreorderHandOverResponse {
   ref: string;
   received_q: number;
   status: string;
+  /**
+   * Onde a NFC-e está depois da entrega (`fiscal_service.fiscal_state`):
+   * `queued`/`authorized` = há DANFE a imprimir quando autorizar.
+   */
+  fiscal_state?: string;
 }
 
 // ── Editar a encomenda na tela de venda (WP-E6) ─────────────────────────────

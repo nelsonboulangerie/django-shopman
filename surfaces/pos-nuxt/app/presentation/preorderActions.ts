@@ -144,3 +144,12 @@ export function redoNotice(
     : `A venda nova abriu na comanda "${redoTabLabel(redo.order_ref)}", com os itens da encomenda cancelada: ajuste e feche a venda.`;
   return redo.schedule_dropped ? `${base} ${redo.schedule_dropped}` : base;
 }
+
+/**
+ * Depois de entregar: há DANFE a esperar e imprimir? Só quando a nota está na
+ * fila ou já autorizou. Sem nota esperada (ou com a emissão falhada, que o
+ * Gestor reprocessa) a espera de 90s terminaria num aviso falso.
+ */
+export function danfeExpected(fiscalState: string | undefined | null): boolean {
+  return fiscalState === "queued" || fiscalState === "authorized";
+}
