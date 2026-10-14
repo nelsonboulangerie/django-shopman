@@ -17,6 +17,7 @@ import {
   inboxTotal,
   isShortcutsHelpKey,
   mergeShortcutGroups,
+  inboxAlertDescription,
   operatorAlertToInbox,
   urgentAlerts,
   deadlineLeftLabel,
@@ -351,5 +352,22 @@ describe("rail da suíte em três estados (PR-K4)", () => {
     const sections = [{ key: "a", label: "Pedidos", icon: "i-lucide-list" }];
     expect(suiteShortcutGroup(sections).items.some((item) => item.keys[0] === "C")).toBe(false);
     expect(suiteShortcutGroup(sections, { rail: true }).items).toContainEqual({ keys: ["C"], label: "Barra lateral: aberta, compacta ou oculta" });
+  });
+});
+
+describe("inboxAlertDescription", () => {
+  it("frase de uma linha: o rodapé segue na mesma linha", () => {
+    expect(inboxAlertDescription({ message: "Pagamento falhou.", meta: "14/10 às 10:12 · pedido W07", seen: false }))
+      .toBe("Pagamento falhou. · 14/10 às 10:12 · pedido W07");
+  });
+
+  it("mensagem em linhas: o rodapé desce para uma linha própria", () => {
+    const message = "Passou o prazo de cancelar a NFC-e. Envie ao contador até o fim de outubro:\nChave:\n4126\nTotal: R$ 27,00";
+    expect(inboxAlertDescription({ message, meta: "14/10 às 10:12 · pedido W31", seen: true }))
+      .toBe(`${message}\n14/10 às 10:12 · pedido W31 · visto`);
+  });
+
+  it("sem rodapé, só a mensagem", () => {
+    expect(inboxAlertDescription({ message: "Oi", meta: "", seen: false })).toBe("Oi");
   });
 });
