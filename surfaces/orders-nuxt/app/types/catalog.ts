@@ -426,6 +426,9 @@ export interface CreateProductPayload {
   fiscal?: Partial<ProductFiscal>;
   nutrition_facts?: Partial<NutritionFacts>;
   enrichment?: { gtin: string; accept: string[]; replace?: string[] };
+  // Intenção do cadastro (fatia E): a resposta conduz o caminho.
+  intent?: "revenda" | "producao" | "insumo";
+  purchase?: boolean;
 }
 
 export interface DuplicatePayload {

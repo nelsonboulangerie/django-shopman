@@ -1363,7 +1363,7 @@ def create_product(data: dict, *, actor: str = "") -> tuple[dict, dict | None]:
         error.field = "sku"
         raise error
     payload = {key: value for key, value in data.items()
-        if key not in {"sku", "name", "base_revision", "expected_actor_id", "idempotency_key", "enrichment"}}
+        if key not in {"sku", "name", "base_revision", "expected_actor_id", "idempotency_key", "enrichment", "purchase", "intent"}}
     unknown = set(payload) - _DETAIL_EDITABLE_FIELDS
     if unknown:
         raise CatalogError(f"Campos não editáveis neste produto: {', '.join(sorted(unknown))}.")
@@ -1371,7 +1371,12 @@ def create_product(data: dict, *, actor: str = "") -> tuple[dict, dict | None]:
         product = Product.objects.create(sku=sku, name=name)
         detail = update_product_detail(sku, payload, actor=actor) if payload else _detail_payload(product)
         enrichment = _apply_gtin_draft(sku, data.get("enrichment"), actor=actor)
-        if enrichment is not None:
+        if data.get("purchase"):
+            # "Compro e revendo": o vendável nasce e o comprável do MESMO SKU é
+            # ligado no mesmo fluxo (custo e fornecedor são do Compras).
+            set_purchasable(sku, True)
+            detail = _detail_payload(_get_product(sku))
+        elif enrichment is not None:
             detail = _detail_payload(_get_product(sku))
         return detail, enrichment
     except ValidationError as exc:

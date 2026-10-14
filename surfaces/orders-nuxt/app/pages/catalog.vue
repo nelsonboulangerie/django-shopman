@@ -1236,6 +1236,12 @@ async function applyImportCsv() {
 }
 // Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
 const bulkGridOpen = ref(false);
+// (c) "Só compro (insumo)": não cria Product; conduz ao cadastro de compra.
+function goPurchase() {
+  createOpen.value = false;
+  window.open(`${adminBaseUrl}/admin/buyman/material/add/`, "_blank", "noopener");
+}
+
 async function saveBulkCells(cells: BulkCell[]) {
   const result = await saveCells(cells);
   if (result) bulkGridOpen.value = false;
@@ -2238,6 +2244,8 @@ useHead({ title: "Catálogo" });
       :draft-error="createDraftError"
       :enhance="enhancePhoto"
       :upload="uploadPhoto"
+      :admin-base-url="adminBaseUrl"
+      @go-purchase="goPurchase"
       @update:open="
         (value) => {
           if (!value) createOpen = false;

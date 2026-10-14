@@ -22,13 +22,37 @@ const props = defineProps<{
   draftError: string;
   enhance: (image: string) => Promise<string>;
   upload: (image: string) => Promise<string>;
+  adminBaseUrl?: string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
   save: [payload: CreateProductPayload];
   lookup: [gtin: string];
+  "go-purchase": [];
 }>();
+
+// A INTENÇÃO vem antes do formulário: é ela que diz o que o cadastro é, e cada
+// resposta conduz por um caminho diferente (offerman só tem vendável).
+const intent = ref<"revenda" | "producao" | "insumo" | "">("");
+const linkPurchase = ref(false);
+const intents = [
+  {
+    value: "revenda" as const,
+    label: "Compro e revendo",
+    help: "Cria o vendável e oferece ligar o comprável do mesmo SKU.",
+  },
+  {
+    value: "producao" as const,
+    label: "Produzo e vendo aqui",
+    help: "Cria o vendável e aponta a ficha de execução na Produção.",
+  },
+  {
+    value: "insumo" as const,
+    label: "Só compro (insumo)",
+    help: "Insumo não entra no catálogo: o cadastro é no Compras.",
+  },
+];
 
 const form = reactive({
   sku: "",
@@ -88,6 +112,8 @@ const scanner = useBarcodeScanner((code) => {
 });
 
 function resetForm() {
+  intent.value = "";
+  linkPurchase.value = false;
   gtin.value = "";
   accepted.value = new Set();
   photoResult.value = "";
@@ -264,6 +290,10 @@ function submit() {
   if (form.shelf_life_days !== "")
     payload.shelf_life_days = Number(form.shelf_life_days);
   if (form.fiscal_profile) payload.fiscal = { profile: form.fiscal_profile };
+  if (!isDuplicate.value) {
+    payload.intent = intent.value || undefined;
+    payload.purchase = intent.value === "revenda" ? linkPurchase.value : undefined;
+  }
   if (!isDuplicate.value && gtin.value.trim()) {
     // O aceite é sempre explícito: só os campos marcados vão, e a marcação é a
     // confirmação para sobrepor o que o formulário trouxe.
@@ -303,7 +333,37 @@ function submit() {
           :description="duplicateNote"
         />
 
-        <NuxtCard v-if="!isDuplicate" variant="soft">
+        <!-- Intenção PRIMEIRO: ela diz o que o cadastro é e conduz o caminho. -->
+        <NuxtCard v-if="!isDuplicate && !intent" variant="soft">
+          <div class="flex flex-col gap-2">
+            <p class="text-sm font-medium">O que você vai cadastrar?</p>
+            <button
+              v-for="option in intents"
+              :key="option.value"
+              type="button"
+              class="rounded-md border border-default p-3 text-left hover:bg-elevated"
+              :data-intent="option.value"
+              @click="intent = option.value"
+            >
+              <span class="block text-sm font-medium">{{ option.label }}</span>
+              <span class="block text-xs text-muted-foreground">{{
+                option.help
+              }}</span>
+            </button>
+          </div>
+        </NuxtCard>
+        <NuxtCard v-if="!isDuplicate && intent === 'insumo'" variant="soft">
+          <p class="text-sm font-medium">Só compro (insumo)</p>
+          <p class="text-xs text-muted-foreground">
+            Insumo não entra no catálogo: o cadastro de compra é no Compras, com
+            fornecedor, custo e conversão. Nada é criado aqui.
+          </p>
+        </NuxtCard>
+
+        <NuxtCard
+          v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
+          variant="soft"
+        >
           <div class="flex flex-col gap-3">
             <div class="flex flex-wrap items-end gap-2">
               <NuxtFormField
@@ -345,7 +405,7 @@ function submit() {
           </div>
         </NuxtCard>
 
-        <NuxtCard v-if="!isDuplicate && draft" variant="outline">
+        <NuxtCard v-if="!isDuplicate && draft && intent !== 'insumo'" variant="outline">
           <div class="flex flex-col gap-3">
             <p class="text-sm font-medium">Revise o que as fontes trazem</p>
             <label
@@ -433,7 +493,10 @@ function submit() {
           </div>
         </NuxtCard>
 
-        <NuxtCard v-if="!isDuplicate" variant="soft">
+        <NuxtCard
+          v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
+          variant="soft"
+        >
           <div class="flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
               <p class="text-sm font-medium">Foto do produto</p>
@@ -496,7 +559,34 @@ function submit() {
           </div>
         </NuxtCard>
 
-        <div class="grid gap-3 sm:grid-cols-2">
+        <NuxtCard v-if="!isDuplicate && intent === 'revenda'" variant="soft">
+          <NuxtCheckbox
+            v-model="linkPurchase"
+            label="Ligar o comprável do mesmo SKU (Permitir compra)"
+          />
+          <p class="mt-1 text-xs text-muted-foreground">
+            O fornecedor e o custo ficam no Compras; o estoque é o mesmo SKU.
+          </p>
+        </NuxtCard>
+        <NuxtCard v-if="!isDuplicate && intent === 'producao'" variant="soft">
+          <p class="text-sm font-medium">Produzo e vendo aqui</p>
+          <p class="text-xs text-muted-foreground">
+            O vendável nasce no catálogo e a ficha de execução entra na Produção.
+          </p>
+          <a
+            v-if="adminBaseUrl"
+            :href="`${adminBaseUrl}/admin/craftsman/recipe/add/`"
+            target="_blank"
+            rel="noopener"
+            class="mt-1 inline-block text-sm underline"
+            >Abrir a ficha no Admin</a
+          >
+        </NuxtCard>
+
+        <div
+          v-if="isDuplicate || (intent !== '' && intent !== 'insumo')"
+          class="grid gap-3 sm:grid-cols-2"
+        >
           <NuxtFormField label="SKU" required>
             <NuxtInput v-model="form.sku" data-testid="create-sku" />
           </NuxtFormField>
@@ -567,14 +657,29 @@ function submit() {
       </div>
     </template>
     <template #footer>
-      <div class="flex justify-end gap-2">
+      <div class="flex items-center justify-between gap-2">
         <NuxtButton
+          v-if="!isDuplicate && intent"
+          color="neutral"
+          variant="ghost"
+          label="Trocar intenção"
+          @click="intent = ''"
+        />
+        <NuxtButton
+          v-else
           color="neutral"
           variant="ghost"
           label="Cancelar"
           @click="emit('update:open', false)"
         />
         <NuxtButton
+          v-if="!isDuplicate && intent === 'insumo'"
+          label="Abrir o Compras"
+          data-testid="create-go-purchase"
+          @click="emit('go-purchase')"
+        />
+        <NuxtButton
+          v-else
           :label="isDuplicate ? 'Duplicar' : 'Criar produto'"
           :loading="busy"
           :disabled="!valid"

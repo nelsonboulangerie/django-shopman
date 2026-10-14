@@ -438,3 +438,36 @@ def test_create_with_gtin_draft_applies_and_records_origin(client, operator, cat
     assert accepted["ncm"]["source"] == "cosmos"
     assert accepted["brand"]["accepted_by"] == "catalog-api"
     assert response.json()["product"]["name"] == "Geleia de morango"
+
+
+def test_create_with_purchase_links_the_same_sku(client, operator, catalog):
+    """(a) "Compro e revendo": o vendável nasce e o comprável do MESMO SKU liga."""
+    from shopman.buyman.models import Material
+
+    client.force_login(operator)
+    action = _action(client, "create-product")
+    body = {
+        **action["payload_schema"],
+        "sku": "GELEIA",
+        "name": "Geleia",
+        "intent": "revenda",
+        "purchase": True,
+    }
+    response = _post(client, CREATE_URL, body)
+    assert response.status_code == 200, response.json()
+    product = Product.objects.get(sku="GELEIA")
+    material = Material.objects.get(sku="GELEIA")
+    assert material.is_active is True
+    assert material.name == product.name
+
+
+def test_create_without_purchase_leaves_no_buy_record(client, operator, catalog):
+    from shopman.buyman.models import Material
+
+    client.force_login(operator)
+    action = _action(client, "create-product")
+    body = {**action["payload_schema"], "sku": "GELEIA", "name": "Geleia", "intent": "producao"}
+    response = _post(client, CREATE_URL, body)
+    assert response.status_code == 200, response.json()
+    assert Product.objects.filter(sku="GELEIA").exists()
+    assert not Material.objects.filter(sku="GELEIA").exists()
