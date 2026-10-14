@@ -85,18 +85,24 @@ class PaymentTimeoutHandler:
                 "gateway indisponível para verificar pagamento antes do cancel"
             )
 
+        from shopman.shop.services import cancel_reasons
+
         payment_service.cancel(order, reason="payment_timeout")
-        cancelled = cancel(
+        # Um aviso só ao cliente: o ``order_cancelled`` que o lifecycle manda no
+        # cancelamento, com a frase do prazo vencido no ``status_note`` (o que
+        # aconteceu, nada foi cobrado, como pedir de novo). O registro operacional
+        # fica no pedido (``cancellation_reason``, ``payment_timeout_at``) e na
+        # trilha do cancelamento.
+        cancel(
             order,
             reason="payment_timeout",
             actor="payment.timeout",
-            extra_data={"payment_timeout_at": timezone.now().isoformat()},
+            extra_data={
+                "payment_timeout_at": timezone.now().isoformat(),
+                "cancellation_reason_key": cancel_reasons.payment_deadline_reason_key(method),
+            },
             expected_unpaid_intent_ref=str(payment_data.get("intent_ref") or ""),
         )
-        if cancelled:
-            from shopman.shop.services import notification
-
-            notification.send(order, "payment_expired")
 
 
 def _parse_deadline(value) -> datetime | None:

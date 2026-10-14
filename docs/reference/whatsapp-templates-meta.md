@@ -30,7 +30,7 @@
 > - **Aprovados fora deste pacote (5):** `AutoReply`, `LateResponse`, `OrderConfirmation`,
 >   `product_available_alert`, `Unsold Bread` (os dois últimos Marketing).
 > - **Faltam submeter, texto já revisado pelo dono em 25/09 (11):** `pagamento_confirmado`,
->   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, `pagamento_expirado`,
+>   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, ~~`pagamento_expirado`~~ (aposentado 14/10, ver abaixo),
 >   `pagamento_falhou`, `fila_vaga_disponivel`, `fila_vaga_liberada`, `produto_chegou`,
 >   `reembolso_processado`, `pontos_fidelidade`.
 > - **Fora do go-live (Marketing) ou sem revisão de voz:** `saiu_do_forno`, `anuncio_novidade`,
@@ -346,6 +346,9 @@ Variante do `order_dispatched` com o link do entregador. Não é evento emitido:
 > detalhes estão no pedido.".
 >
 > ℹ️ "Oi, {{1}}." com **ponto**, não com exclamação: é notícia ruim.
+>
+> ℹ️ É também o aviso do **Pix vencido** (P1-9, 14/10/2026): um só, com `{{3}}` = *"O Pix
+> venceu e nada foi cobrado. Se ainda quiser, é só fazer um novo pedido."*
 
 ### `pedido_nao_confirmado` — evento `order_rejected`
 - Corpo: `Oi, {{1}}. Não conseguimos confirmar seu pedido {{2}} desta vez. {{3}} Se houve cobrança, devolvemos o valor. Qualquer dúvida, estamos à disposição. 😌`
@@ -418,8 +421,15 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
 
-### `pagamento_expirado` — evento `payment_expired`
-- Corpo: `Oi, {{1}}. O prazo para pagar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
+### ~~`pagamento_expirado`~~ — APOSENTADO (P1-9, 14/10/2026), **não submeter**
+
+> ⛔ O evento `payment_expired` deixou de existir. O Pix vencido mandava dois avisos
+> (este + `pedido_cancelado`); agora manda um só, o `pedido_cancelado` **já aprovado**, com
+> a frase do prazo no `{{3}}` (`status_note`): *"O Pix venceu e nada foi cobrado. Se ainda
+> quiser, é só fazer um novo pedido."* (nos outros meios, *"O prazo para pagar acabou e
+> nada foi cobrado. …"*). Nenhum modelo novo a submeter. O texto abaixo fica só como histórico.
+
+- Corpo (histórico): `Oi, {{1}}. O prazo para pagar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Pedir de novo` → `https://www.nelsonboulangerie.com.br/conta/pedidos` (link **fixo**, sem variável)
 
@@ -464,8 +474,8 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Pedir de novo` → `https://www.nelsonboulangerie.com.br/conta/pedidos` (link **fixo**, sem variável)
 
-> ℹ️ Mesma forma do `pagamento_expirado`, de propósito: os dois dizem a mesma coisa ao
-> cliente (o prazo passou, a reserva voltou, ninguém cobrou) e devem falar igual.
+> ℹ️ Tinha a mesma forma do `pagamento_expirado`, aposentado em 14/10/2026 (o Pix vencido
+> agora sai pelo `pedido_cancelado`).
 
 ### `pontos_fidelidade` — evento `loyalty_earned` 🆕
 - Corpo: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}. Obrigada por nos prestigiar!`
@@ -507,7 +517,7 @@ campo personalizado**. Sobram dois formatos:
 |---|---|---|
 | `Acompanhar pedido` · `Ver pedido` · `Ver detalhes` · `Pagar pedido` · `Tentar de novo` · `Confirmar pedido` · `Confirmar recebimento` · `Ver nota fiscal` | a maioria | `…/pedido/{{n}}` + `order_ref` |
 | `Garantir já` | `produto_chegou`, `saiu_do_forno` | `…/produto/{{n}}` + **`product_sku`** |
-| `Pedir de novo` | `pagamento_expirado`, `fila_vaga_liberada` | `…/conta/pedidos` — **estático** |
+| `Pedir de novo` | `fila_vaga_liberada` | `…/conta/pedidos` — **estático** |
 | `Ver saldo` | `pontos_fidelidade` | `…/conta` — **estático** |
 | `Como chegar` | `pedido_pronto_retirada` | Google Maps da loja — **estático** |
 | `Acompanhar entregador` | `pedido_saiu_entrega_rastreio` | base do link da TaOn (`MACHINE_TRACKING_LINK_BASE`) + `courier_tracking_path` |
@@ -650,7 +660,6 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |
 | `payment_reminder` | `pagamento_lembrete` | Utility |
-| `payment_expired` | `pagamento_expirado` | Utility |
 | `payment_failed` | `pagamento_falhou` | Utility |
 | `payment_refunded` | `reembolso_processado` | Utility 🆕 (emitido desde 13/10; corpo novo a submeter) |
 | `order_returned` | `pedido_devolvido` | Utility 🆕 (a submeter) |

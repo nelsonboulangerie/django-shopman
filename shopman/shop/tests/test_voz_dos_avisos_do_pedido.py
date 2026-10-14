@@ -37,6 +37,9 @@ TEXT_MIGRATIONS = [
 ]
 DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
 REVISED = import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes")
+# Eventos que uma migração posterior APAGOU (aviso aposentado): o texto deles não
+# chega a seed nenhum, porque a linha deixa de existir.
+RETIRED_EVENTS = frozenset(import_module("shopman.shop.migrations.0095_pix_vencido_um_aviso_so").RETIRED_EVENTS)
 
 
 def _order(status: str):
@@ -160,6 +163,9 @@ def _through_later_migrations(event: str, subject: str, body: str, *, after) -> 
 @pytest.mark.parametrize("migration", TEXT_MIGRATIONS, ids=lambda m: m.__name__.rsplit(".", 1)[-1])
 def test_cada_migracao_de_texto_chega_ao_texto_do_seed(migration):
     for event, _old_subject, new_subject, _old_body, new_body in migration.TEXTS:
+        if event in RETIRED_EVENTS:
+            assert event not in NOTIFICATION_TEMPLATES, f"{event} foi aposentado e voltou ao seed"
+            continue
         final = _through_later_migrations(event, new_subject, new_body, after=migration)
         seeded = NOTIFICATION_TEMPLATES[event]
         assert (seeded["subject"], seeded["body"]) == final, event

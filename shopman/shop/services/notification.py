@@ -64,7 +64,6 @@ _ACTIVE_NOTIFICATION_TEMPLATES = frozenset(
         # Link de pagamento do pedido remoto anotado no PDV: é a cobrança inteira
         # — se não chega, a casa fica esperando um dinheiro que ninguém pediu.
         "payment_link_sent",
-        "payment_expired",
         "payment_failed",
         "order_ready",
         "order_ready_pickup",

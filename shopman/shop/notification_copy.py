@@ -176,15 +176,6 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "Pague por aqui: {payment_url}{pix_suffix}"
         ),
     },
-    # "Nada foi cobrado" é sempre verdade aqui: o prazo venceu sem pagamento.
-    "payment_expired": {
-        "subject": "Pedido {order_ref_short}: reserva liberada",
-        "body": (
-            "Oi{customer_name_greeting}. O prazo para pagar o pedido *{order_ref_short}* acabou "
-            "e liberamos a reserva. Nada foi cobrado.\n"
-            "Para pedir de novo: {reorder_url}"
-        ),
-    },
     "payment_failed": {
         "subject": "Pedido {order_ref_short}: não conseguimos gerar o pagamento",
         "body": (

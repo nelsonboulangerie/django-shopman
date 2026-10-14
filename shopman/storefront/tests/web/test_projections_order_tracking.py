@@ -1164,7 +1164,7 @@ class TestStatusColours:
         assert proj.payment_status_label == "Pagamento expirado"
         assert proj.confirmation_countdown is False
         assert proj.promise.requires_active_notification is True
-        assert proj.promise.notification_topic == "payment_expired"
+        assert proj.promise.notification_topic == "order_cancelled"
         assert proj.promise.actions == ()
         assert "cancelamos o pedido" in proj.promise.message.lower()
         assert any(action.ref == "reorder" and action.label == "Repetir pedido" for action in proj.actions)

@@ -167,7 +167,7 @@ Eventos (`notification.send`), cadeia por canal na §1.1. Textos em
 | `order_dispatched` | saiu, com link do entregador (#1690) | OK; modelo Meta com rastreio espera medir o link da TaOn |
 | `order_delivered` | entregue | OK |
 | `order_cancelled` | cancelado | OK; o motivo do operador vai literal (§8, P1-10, em PR #1730) |
-| `payment_expired` | Pix venceu | ATRITO: chega junto com `order_cancelled` (dois avisos) |
+| ~~`payment_expired`~~ | Pix venceu | OK desde #1773: evento aposentado; sai um aviso só, o `order_cancelled` com a frase do prazo ("O Pix venceu e nada foi cobrado…"; era ATRITO: dois avisos; §8, P1-9) |
 | `payment_refunded` | estorno | OK desde #1720 (era LACUNA: texto existia, ninguém enviava; §8, P1-9) |
 | `order_returned` | devolução | OK desde #1720 (era LACUNA: sem texto; §8, P1-9) |
 | `order_rescheduled`, `preorder_reminder`, `order_updated` | encomenda reagendada, véspera, editada | OK (templates de encomenda esperam a revisão do dono) |
@@ -444,7 +444,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Pedido feito de noite, aceito na abertura | paga ao pedir; o prazo de aceite começa na abertura | ADR-036; migração `shop.0094` | OK (P1-5), em PR |
 | Cartão autorizado e ninguém aceita | preso sem prazo; a autorização vence no Stripe (~7 dias) | `handlers/payment_timeout.py:62-63` | LACUNA (P1-4), em PR #1732 |
 | Pedido editado em `new` antes do Pix | o Pix sai com o total selado antigo | `payment.py:111` | **LACUNA a provar (P0-6)**, em PR #1736 |
-| Pix venceu | cancela; dois avisos (vencido + cancelado) | `payment_timeout.py:85-97` | ATRITO (P2) |
+| Pix venceu | cancela; um aviso só (`order_cancelled` com a frase do prazo, `cancel_reasons.pix_expired`) | `handlers/payment_timeout.py`; `customer_orders.resolve_payment_timeout_if_due` | OK (P1-9), resolvido em #1773 (eram dois avisos) |
 | Pago depois de cancelado | estorno + alerta; o cliente não é avisado do estorno | `lifecycle.py:554-557` | ATRITO (P1-9), resolvido em #1720 |
 | Cliente quer cancelar | sozinho em `new`/`accepted` sem captura; pago vira solicitação ao gerente | `payment.py:1582-1595`; `cancellation_requests.py` | OK |
 | Xepa | só no balcão (decisão de 14/10, Pergunta 3 = 1): fora do WhatsApp, do site e do iFood, e a loja não anuncia | `rules/pricing.py` (`channels_required`); migração `shop.0093` | OK (P1-14) |
@@ -589,7 +589,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 | P1-6 · **em PR #1723** | PDV, entrega fora da área: a revisão diz que não bloqueia, o fechamento recusa, a taxa manual não resolve | `pos.py:898-910`; `validation.py:270` | A regra respeita a taxa manual do PDV (o combinado da porta é do operador, como a própria revisão diz) | S |
 | P1-7 · **em PR #1734** | Encomenda no dia vai à cozinha com Pix/link pendente; Pix em pagamento misto liquida pela palavra do operador | `pos.py:2199-2296`; `pos.py:3967-3971` | "Enviar à cozinha" pergunta antes de mandar pedido não pago; Pix no misto espera a confirmação do Pix (ou é recusado no misto, como no modo de teste) | S |
 | P1-8 · **em PR #1727** | Encomenda de retirada: "Entregar" no PDV exige `ready`, que o PDV não marca | `operator_orders.py:1419-1427` | "Entregar" aceita pedido aceito/em preparo e conclui (fecha os tickets abertos com alarde no KDS) | S |
-| P1-9 · **resolvido #1720** | Cliente não é avisado do estorno; devolução sem texto | `payment_refunded` sem emissor; `notification_copy.py` | Emitir `payment_refunded` no estorno concluído; texto de `order_returned`; um aviso só no Pix vencido | S |
+| P1-9 · **resolvido #1720 + #1773** | Cliente não é avisado do estorno; devolução sem texto | `payment_refunded` sem emissor; `notification_copy.py` | Emitir `payment_refunded` no estorno concluído; texto de `order_returned`; um aviso só no Pix vencido | S |
 | P1-10 · **em PR #1730** | Motivo do cancelamento é opcional e vai literal ao cliente | `backstage/api/operations.py:2268-2312` | Separar "motivo (interno)" de "mensagem ao cliente (opcional)"; sem mensagem, o texto padrão | S |
 | P1-11 · **resolvido #1718** | Link do entregador da TaOn não aparece na página do pedido | `order_tracking.py:1477-1482`; `courier.py:700` | A projeção lê `order.data.courier.tracking_url` | XS |
 | P1-12 | Nota fora da janela de 30 min ou depois da saída: o sistema tenta cancelar e só alerta; não há nota de estorno, e toda devolução cai aí | `fiscal.py:854`; `handlers/fiscal.py:517-575` | Fora da janela, não tentar cancelar: abrir a pendência "nota de estorno" com o roteiro do contador (até a emissão automática existir) | M |

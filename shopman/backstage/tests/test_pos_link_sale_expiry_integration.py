@@ -16,7 +16,8 @@ e vem buscar. Então:
    a casa conhece o expediente, o corte do atendimento; a loja deste teste não
    tem horário cadastrado, então vale a janela;
 3. vencido o prazo, o handler pergunta ao gateway e, com "não pago", cancela o
-   pedido, avisa o cliente (``payment_expired``) e devolve o estoque.
+   pedido, avisa o cliente UMA vez (``order_cancelled``, com a frase do prazo
+   vencido) e devolve o estoque.
 
 Antes disto, a venda de link para hoje fechava COMPLETED sem um centavo
 capturado, e o vencimento não a alcançava mais (o handler só age em NEW/ACCEPTED).
@@ -190,11 +191,13 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         self.assertEqual(order.status, Order.Status.CANCELLED)
         self.assertEqual(order.data.get("cancellation_reason"), "payment_timeout")
         self.assertEqual(PaymentIntent.objects.get(order_ref=order.ref).status, PaymentIntent.Status.CANCELLED)
-        self.assertTrue(
-            Directive.objects.filter(
-                topic="notification.send", payload__order_ref=order.ref, payload__template="payment_expired"
-            ).exists()
+        # Um aviso só ao cliente: o cancelamento, dizendo que o prazo acabou.
+        notices = Directive.objects.filter(topic="notification.send", payload__order_ref=order.ref)
+        self.assertEqual(
+            [n.payload["template"] for n in notices if n.payload.get("template") != "payment_link_sent"],
+            ["order_cancelled"],
         )
+        self.assertIn("prazo para pagar acabou", notices.get(payload__template="order_cancelled").payload["status_note"])
         # O estoque volta: reserva liberada, nada a devolver ao ledger.
         self.assertTrue(all(hold.status == HoldStatus.RELEASED for hold in _hold_rows(order)))
         self.assertEqual(StockQueries.available(SKU), Decimal(STOCK_QTY))
@@ -231,6 +234,6 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         self.assertNotEqual(order.status, Order.Status.CANCELLED)
         self.assertFalse(
             Directive.objects.filter(
-                topic="notification.send", payload__order_ref=order.ref, payload__template="payment_expired"
+                topic="notification.send", payload__order_ref=order.ref, payload__template="order_cancelled"
             ).exists()
         )
