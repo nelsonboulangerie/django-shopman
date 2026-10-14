@@ -162,6 +162,9 @@ def _base_queryset(filters: HistoryFilters):
             Q(ref__icontains=q)
             | Q(external_ref__icontains=q)
             | Q(handle_ref__icontains=q)
+            # O número do iFood: quando o sufixo estava ocupado o ref foi sorteado
+            # e só ``data.ifood.display_id`` carrega o número que o cliente fala.
+            | Q(data__ifood__display_id__icontains=q)
             | Q(data__customer__name__icontains=q)
             | Q(data__customer__phone__icontains=q)
         )

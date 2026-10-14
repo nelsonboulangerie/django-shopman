@@ -148,6 +148,12 @@ def test_search_by_ref_and_customer(client, manager, orders):
     assert _refs(_get(client, manager, q="brun")) == ["H-2"]
 
 
+def test_search_by_ifood_number_when_the_ref_was_drawn(client, manager, orders):
+    """P2-29: sufixo ocupado, o ref é sorteado; o número do iFood continua achando."""
+    _order("IFOOD-261013-D09", channel="ifood", method="external", ifood={"display_id": "4994"})
+    assert _refs(_get(client, manager, q="4994")) == ["IFOOD-261013-D09"]
+
+
 def test_row_contract(client, manager, orders):
     row = next(r for r in _get(client, manager, q="H-3").json()["history"]["items"])
     assert row["status"] == "cancelled"
