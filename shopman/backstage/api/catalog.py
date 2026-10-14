@@ -46,12 +46,17 @@ class _CatalogBase(OperationalObservationMixin, APIView):
 )
 class CatalogMatrixView(_CatalogBase):
     def get(self, request):
-        from shopman.backstage.projections.catalog import build_catalog_matrix, curation_actions
+        from shopman.backstage.projections.catalog import (
+            build_catalog_matrix,
+            curation_actions,
+            product_create_action,
+        )
 
         collection_ref = (request.query_params.get("collection") or "").strip()
         matrix = build_catalog_matrix(collection_ref, user=request.user)
+        actions = (*curation_actions(collection_ref, request.user), product_create_action(request.user))
         return Response(read_data(matrix=projection_data(matrix), collection_ref=collection_ref,
-            actions=[projection_data(action) for action in curation_actions(collection_ref, request.user)]))
+            actions=[projection_data(action) for action in actions]))
 
 
 class CatalogCellView(_CatalogBase):
@@ -527,3 +532,172 @@ class CatalogResyncView(_CatalogBase):
             return Response({"detail": "Esta intenção já representa outro reenvio.", "code": "intention_conflict"}, status=409)
         except RemoteMutationInProgress:
             return Response({"outcome": "in_progress"}, status=202)
+
+
+class CatalogProductCreateView(_CatalogBase):
+    """Cria um produto do zero, com intenção, revisão e recibo local."""
+
+    def _scope(self, request):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.product-create"})
+
+    def get(self, request):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not key:
+            return Response({"detail": "Informe a intenção."}, status=400)
+        try:
+            receipt = lookup_local_mutation(scope=self._scope(request), key=key)
+        except RemoteMutationInProgress:
+            receipt = None
+        if receipt is None:
+            return Response({"outcome": "unknown", "detail": "Resultado ainda não confirmado."}, status=202)
+        return Response(receipt.response_body, status=receipt.response_code)
+
+    def post(self, request):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        data = request.data
+        key = request.headers.get("Idempotency-Key") or (data.get("idempotency_key") if isinstance(data, dict) else None)
+        if not isinstance(data, dict) or not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision"):
+            return Response({"detail": "Atualize o catálogo: a criação exige intenção e revisão.", "error": {"code": "intention_required"}}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira o produto.", "error": {"code": "actor_changed"}}, status=409)
+        payload = {name: value for name, value in data.items() if name not in {"idempotency_key"}}
+        scope = self._scope(request)
+        fingerprint = mutation_fingerprint({"scope": scope, "payload": payload})
+
+        def execute():
+            try:
+                product, enrichment = catalog_service.create_product(payload, actor=_actor(request))
+            except (CatalogError, ValidationError) as exc:
+                body = {"outcome": "not_applied", "detail": str(exc)}
+                if getattr(exc, "field", None):
+                    body["field"] = exc.field
+                return body, 400
+            result = {"ok": True, "outcome": "applied", "intention": key, "product": product}
+            if enrichment is not None:
+                result["enrichment"] = enrichment
+            return result, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outra criação.", "error": {"code": "intention_conflict"}}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "unknown", "detail": "Criação em processamento; consulte esta intenção."}, status=202)
+
+
+class CatalogProductDuplicateView(_CatalogBase):
+    """Duplica o conteúdo de um produto num SKU novo, com intenção e revisão."""
+
+    def _scope(self, request, sku):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk,
+            "operation": "catalog.product-duplicate", "sku": sku})
+
+    def get(self, request):
+        from shopman.backstage.projections.catalog import product_duplicate_action
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        sku = request.query_params.get("ref") or request.query_params.get("sku")
+        if not isinstance(sku, str) or not sku:
+            return Response({"detail": "Informe o produto de origem."}, status=400)
+        try:
+            key = request.query_params.get("idempotency_key")
+            if key:
+                receipt = lookup_local_mutation(scope=self._scope(request, sku), key=key)
+                return Response(receipt.response_body, status=receipt.response_code) if receipt else Response({"outcome": "unknown"}, status=202)
+            detail = catalog_service.get_product_detail(sku)
+            return Response({
+                "source": {"sku": detail["sku"], "name": detail["name"]},
+                "suggested_sku": catalog_service.suggested_duplicate_sku(sku),
+                "suggested_name": catalog_service.suggested_duplicate_name(detail["name"]),
+                "action": projection_data(product_duplicate_action(sku, request.user)),
+            })
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress"}, status=202)
+        except (CatalogError, ValidationError) as exc:
+            return Response({"detail": str(exc)}, status=404)
+
+    def post(self, request):
+        from shopman.backstage.services.exceptions import CatalogConflict
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        data = request.data
+        key = request.headers.get("Idempotency-Key") or (data.get("idempotency_key") if isinstance(data, dict) else None)
+        sku = data.get("ref") if isinstance(data, dict) else None
+        if (not isinstance(data, dict) or not isinstance(sku, str) or not sku
+                or not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision")):
+            return Response({"detail": "Atualize o catálogo: a cópia exige intenção e revisão.", "error": {"code": "intention_required"}}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira o produto.", "error": {"code": "actor_changed"}}, status=409)
+        payload = {name: value for name, value in data.items() if name not in {"idempotency_key"}}
+        scope = self._scope(request, sku)
+        fingerprint = mutation_fingerprint({"scope": scope, "payload": payload})
+
+        def execute():
+            try:
+                product = catalog_service.duplicate_product(sku, payload, actor=_actor(request),
+                    expected_revision=payload.get("base_revision"))
+            except CatalogConflict as exc:
+                return {"outcome": "not_applied", "detail": str(exc), "error": {"code": "catalog_changed"}}, 409
+            except (CatalogError, ValidationError) as exc:
+                body = {"outcome": "not_applied", "detail": str(exc)}
+                if getattr(exc, "field", None):
+                    body["field"] = exc.field
+                return body, 400
+            return {"ok": True, "outcome": "applied", "intention": key,
+                "sku": payload.get("sku"), "product": product}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outra cópia.", "error": {"code": "intention_conflict"}}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "unknown", "detail": "Cópia em processamento; consulte esta intenção."}, status=202)
+
+
+class CatalogProductDraftView(_CatalogBase):
+    """Rascunho por GTIN para a tela de criar: campos com origem e correlação."""
+
+    def post(self, request):
+        data = request.data
+        gtin = data.get("gtin") if isinstance(data, dict) else None
+        try:
+            draft = catalog_service.product_draft(gtin)
+        except (CatalogError, ValidationError) as exc:
+            return Response({"detail": str(exc), "field": "gtin"}, status=400)
+        return Response({"draft": draft})
+
+
+class CatalogProductPhotoView(_CatalogBase):
+    """Melhoria DETERMINÍSTICA da foto; sem provedor ligado, 503 e a tela avisa."""
+
+    def post(self, request):
+        from shopman.backstage.services.exceptions import AiAssistNotConfigured
+
+        image = request.data.get("image") if isinstance(request.data, dict) else None
+        try:
+            return Response(catalog_service.enhance_product_photo(image))
+        except AiAssistNotConfigured as exc:
+            return Response({"detail": str(exc)}, status=503)
+        except (CatalogError, ValidationError) as exc:
+            return Response({"detail": str(exc), "field": "image"}, status=400)
+
+

@@ -327,3 +327,112 @@ export interface AiAssistRequest {
 export interface AiAssistResponse {
   suggestion: string;
 }
+
+// ── Criar produto, duplicar e rascunho por GTIN (7.2, onda 1) ────────────────
+// O rascunho do GTIN NÃO grava: as fontes (NF-e de compra -> Cosmos -> Open Food
+// Facts) vivem em `shop.services.product_enrichment`; aqui só chega o campo com a
+// ORIGEM. Quem aplica é o aceite campo a campo, no mesmo caminho do Admin.
+export interface EnrichmentFieldEntry {
+  value: unknown;
+  source: string;
+  source_ref?: string;
+  fetched_at?: string;
+  detail?: string;
+  alternatives?: { value: unknown; source: string; fetched_at?: string }[];
+}
+
+export interface EnrichmentFieldDraft extends EnrichmentFieldEntry {
+  label: string;
+  source_label: string;
+  display: string;
+}
+
+export interface CorrelationSuggestion {
+  field: string;
+  value: unknown;
+  reason: string;
+  sources: string[];
+}
+
+export interface CorrelateResult {
+  correlates: { sku: string; name: string; reasons: string[] }[];
+  suggestions: CorrelationSuggestion[];
+  notes: string[];
+}
+
+export interface ReferencePhoto {
+  url: string;
+  source: string;
+  license: string;
+  attribution: string;
+  fetched_at?: string;
+}
+
+export interface ProductDraft {
+  gtin: string;
+  fields: Record<string, EnrichmentFieldDraft>;
+  sources: string[];
+  consulted: string[];
+  skipped: Record<string, string>;
+  allergens_unmapped: string[];
+  notes: string[];
+  reference_photo: ReferencePhoto | null;
+  correlate: CorrelateResult;
+}
+
+export interface DuplicateSnapshot {
+  source: { sku: string; name: string };
+  suggested_sku: string;
+  suggested_name: string;
+  action: Action;
+}
+
+export interface CreateProductPayload {
+  sku: string;
+  name: string;
+  base_price_q?: number;
+  unit?: string;
+  unit_weight_g?: number | null;
+  short_description?: string;
+  long_description?: string;
+  keywords?: string[];
+  image_url?: string;
+  availability_policy?: string;
+  shelf_life_days?: number | null;
+  storage_tip?: string;
+  ingredients_text?: string;
+  production_cycle_hours?: number | null;
+  is_batch_produced?: boolean;
+  is_published?: boolean;
+  is_sellable?: boolean;
+  social?: Partial<ProductSocial>;
+  fiscal?: Partial<ProductFiscal>;
+  nutrition_facts?: Partial<NutritionFacts>;
+  enrichment?: { gtin: string; accept: string[]; replace?: string[] };
+}
+
+export interface DuplicatePayload {
+  sku: string;
+  name?: string;
+}
+export interface EnrichmentAcceptResult {
+  applied: string[];
+  conflicts: Record<string, unknown>;
+  refused: Record<string, string>;
+  sources: string[];
+  notes: string[];
+}
+
+export interface CreateProductResponse {
+  ok: boolean;
+  outcome: string;
+  product: ProductDetailProjection;
+  enrichment?: EnrichmentAcceptResult;
+}
+
+export interface PhotoEnhanceResponse {
+  provider: string;
+  media_type: string;
+  image: string;
+  steps: string[];
+}

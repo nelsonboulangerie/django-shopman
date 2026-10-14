@@ -18,9 +18,15 @@ import type {
   AssistableField,
   CatalogMatrixProjection,
   CatalogMatrixResponse,
+  CreateProductPayload,
+  CreateProductResponse,
+  DuplicatePayload,
+  DuplicateSnapshot,
+  PhotoEnhanceResponse,
   ProductDetailPatch,
   ProductDetailProjection,
   ProductDetailResponse,
+  ProductDraft,
   ProductEditConflict,
   ProductSocial,
 } from "~/types/catalog";
@@ -668,6 +674,125 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const reorderItems = (ref_: string, ordered: string[], action?: Action) =>
     reorder("reorder-items", ref_, ordered, action);
 
+  // ── criar produto, duplicar e rascunho por GTIN (7.2, onda 1) ─────────────
+  // Criar e duplicar passam pela MESMA intenção (revise + recibo) das outras
+  // escritas. O rascunho do GTIN é leitura pura: nada é gravado até o aceite.
+  const createKey = "catalog:create-product";
+
+  function createAction() {
+    return data.value?.actions?.find(
+      (action) => action.ref === "create-product",
+    );
+  }
+
+  async function createProduct(
+    payload: CreateProductPayload,
+  ): Promise<CreateProductResponse | null> {
+    if (busy.value.has(createKey) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(createKey);
+    try {
+      const result = await intentions.executePath(
+        createKey,
+        "/api/v1/backstage/catalog/product/create/",
+        createAction(),
+        payload as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      useSonner.success("Produto criado.");
+      return result as unknown as CreateProductResponse;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível criar o produto. Confira os campos.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(createKey);
+      busy.value = next;
+    }
+  }
+
+  async function fetchProductDraft(gtin: string): Promise<ProductDraft | null> {
+    clearError();
+    try {
+      const response = await $fetch<{ draft: ProductDraft }>(
+        "/api/v1/backstage/catalog/product/draft/",
+        { method: "POST", body: { gtin } },
+      );
+      return response.draft;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível buscar os dados deste código.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    }
+  }
+
+  async function fetchDuplicateSnapshot(
+    sku: string,
+  ): Promise<DuplicateSnapshot | null> {
+    clearError();
+    try {
+      return await $fetch<DuplicateSnapshot>(
+        "/api/v1/backstage/catalog/product/duplicate/",
+        { query: { ref: sku } },
+      );
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível preparar a cópia.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    }
+  }
+
+  async function duplicateProduct(
+    snapshot: DuplicateSnapshot,
+    payload: DuplicatePayload,
+  ): Promise<CreateProductResponse | null> {
+    const key = "catalog:duplicate:" + snapshot.source.sku;
+    if (busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/product/duplicate/",
+        snapshot.action,
+        { ref: snapshot.source.sku, ...payload },
+      );
+      await refreshAfterCommit();
+      useSonner.success("Produto duplicado. Ele nasce oculto e fora de venda.");
+      return result as unknown as CreateProductResponse;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível duplicar o produto.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  // Melhoria DETERMINÍSTICA da foto. Sem provedor ligado o servidor responde 503
+  // e a tela mostra o aviso: a capability é degradável, não caminho crítico.
+  async function enhancePhoto(image: string): Promise<string> {
+    const response = await $fetch<PhotoEnhanceResponse>(
+      "/api/v1/backstage/catalog/product/photo/",
+      { method: "POST", body: { image } },
+    );
+    return response.image;
+  }
   return {
     readMetadata,
     realtime,
@@ -702,5 +827,11 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     aiAssistKey,
     productConflict,
     acknowledgeProductConflict,
+    createAction,
+    createProduct,
+    fetchProductDraft,
+    fetchDuplicateSnapshot,
+    duplicateProduct,
+    enhancePhoto,
   };
 }

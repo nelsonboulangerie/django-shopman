@@ -31,6 +31,31 @@ def product_detail_action(sku: str, detail: dict, user):
             "base_revision": mutation_fingerprint({"sku": sku, "revisions": revisions}), "base_revisions": revisions})
 
 
+def product_create_action(user):
+    """A intenção de criar um produto novo, com a revisão que a superfície carrega."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    actor_id = getattr(user, "pk", None)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    return Action(ref="create-product", kind="mutation", label="Novo produto", enabled=allowed,
+        reason="" if allowed else "Sem permissão para editar o catálogo.",
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id,
+            "base_revision": mutation_fingerprint({"operation": "catalog.product-create", "actor": actor_id})})
+
+
+def product_duplicate_action(sku: str, user):
+    """A intenção de duplicar UM produto, com a revisão do conteúdo copiável."""
+    from shopman.backstage.services.catalog import product_duplicate_revision
+
+    actor_id = getattr(user, "pk", None)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    revision = product_duplicate_revision(sku) if allowed else ""
+    return Action(ref="duplicate-product", kind="mutation", label="Duplicar produto",
+        enabled=allowed, reason="" if allowed else "Sem permissão para editar o catálogo.",
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id, "base_revision": revision, "ref": sku})
+
 def product_switch_action(product, user):
     # Same field tokens and writer as the full editor, without loading long fields.
     action = product_detail_action(product.sku, {"sku": product.sku,

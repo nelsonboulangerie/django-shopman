@@ -488,6 +488,28 @@ _DETAIL_ATTR_TEXT_FIELDS = {"serves": "porcoes"}
 _DETAIL_META_LIST_FIELDS = ()
 _DETAIL_META_TEXT_FIELDS = ("approx_dimensions",)
 
+#: Campos que o formulário de criação aceita: os mesmos do painel de detalhe,
+#: mais os blocos JSON que têm dono de schema. ``sku`` é identidade e entra
+#: separado, validado por ``_new_product_sku``.
+_DETAIL_EDITABLE_FIELDS = frozenset({
+    *_DETAIL_TEXT_FIELDS,
+    *_DETAIL_INT_FIELDS,
+    *_DETAIL_NULLABLE_INT_FIELDS,
+    *_DETAIL_BOOL_FIELDS,
+    *_DETAIL_ATTR_LIST_FIELDS,
+    *_DETAIL_ATTR_TEXT_FIELDS,
+    *_DETAIL_META_TEXT_FIELDS,
+    "keywords",
+    "nutrition_facts",
+    "social",
+    "fiscal",
+    "gtin_rejected",
+    "allows_next_day_sale",
+    "made_to_order",
+    "ready_from",
+    "vocation",
+})
+
 
 def _get_product(sku: str):
     from shopman.offerman.models import Product
@@ -1201,6 +1223,429 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     product.refresh_from_db()
     return _detail_payload(product)
 
+
+# ── criar e duplicar produto ─────────────────────────────────────────────────
+# A criação do Gestor reusa o MESMO escritor do painel de detalhe: o produto novo
+# nasce com o mínimo (SKU e nome) e o resto entra pelo merge validado, com
+# ``save()``. Nunca um ``update()`` em massa: o ``save()`` é o gatilho de
+# ``product_created``/``product_updated`` que re-projeta iFood/Meta.
+#
+# A duplicação copia o CONTEÚDO do produto (campos, palavras-chave, rótulos e a
+# composição do combo) e nunca a decisão comercial: listing, publicação em canal
+# e curadoria de coleção são do dia, e copiá-los empurraria um SKU novo para
+# iFood/Meta sem ninguém revisar. A cópia nasce oculta e fora de venda.
+#
+# O GTIN identifica a EMBALAGEM, não o produto: dois SKUs com o mesmo código de
+# barras viram recusa na SEFAZ e no Google, então a cópia nasce sem ele (e sem a
+# marca de recusa do original, que é história daquele SKU).
+
+
+def _new_product_sku(raw) -> str:
+    if not isinstance(raw, str):
+        raise CatalogError("Informe o SKU do produto.")
+    sku = raw.strip()
+    if not sku:
+        raise CatalogError("Informe o SKU do produto.")
+    if len(sku) > 100:
+        raise CatalogError("O SKU deve ter no máximo 100 caracteres.")
+    if "/" in sku:
+        raise CatalogError("O SKU não pode ter barra (/).")
+    return sku
+
+
+def _new_product_name(raw, *, fallback: str = "") -> str:
+    name = str(raw or "").strip() or fallback
+    if not name:
+        raise CatalogError("Informe o nome do produto.")
+    if len(name) > 200:
+        raise CatalogError("O nome do produto deve ter no máximo 200 caracteres.")
+    return name
+
+
+def _duplicate_metadata(source) -> dict:
+    from shopman.shop.services.fiscal import GTIN_NF_REJECTED_KEY
+
+    metadata = json.loads(json.dumps(source.metadata or {}))
+    metadata.pop("gtin_source", None)
+    metadata.pop(GTIN_NF_REJECTED_KEY, None)
+    social = metadata.get("social")
+    if isinstance(social, dict):
+        metadata["social"] = {**social, "gtin": ""}
+    return metadata
+
+
+def product_duplicate_revision(sku: str) -> str:
+    """Impressão do conteúdo copiável: qualquer campo que mude invalida a cópia."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    detail = get_product_detail(sku)
+    return mutation_fingerprint({"operation": "catalog.product-duplicate", "sku": sku,
+        "revisions": product_field_revisions(detail)})
+
+
+def suggested_duplicate_sku(sku: str) -> str:
+    from shopman.offerman.models import Product
+
+    base = f"{sku}-COPIA"[:100]
+    candidate, suffix = base, 2
+    while Product.objects.filter(sku__iexact=candidate).exists():
+        tail = f"-{suffix}"
+        candidate = f"{base[: 100 - len(tail)]}{tail}"
+        suffix += 1
+    return candidate
+
+
+def suggested_duplicate_name(name: str) -> str:
+    suffix = " (cópia)"
+    return f"{name[: 200 - len(suffix)]}{suffix}"
+
+
+@transaction.atomic
+def create_product(data: dict, *, actor: str = "") -> tuple[dict, dict | None]:
+    """Cria um produto novo e devolve (detalhe canônico, resultado do GTIN).
+
+    O segundo item é None sem rascunho de GTIN; com rascunho, o resumo do
+    aceite campo a campo (aplicados, conflitos, recusados).
+    """
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product
+
+    if not isinstance(data, dict):
+        raise CatalogError("Informe os campos do produto.")
+    sku = _new_product_sku(data.get("sku"))
+    name = _new_product_name(data.get("name"))
+    if Product.objects.filter(sku__iexact=sku).exists():
+        error = CatalogError(f"Já existe um produto com o SKU '{sku}'.")
+        error.field = "sku"
+        raise error
+    payload = {key: value for key, value in data.items()
+        if key not in {"sku", "name", "base_revision", "expected_actor_id", "idempotency_key", "enrichment"}}
+    unknown = set(payload) - _DETAIL_EDITABLE_FIELDS
+    if unknown:
+        raise CatalogError(f"Campos não editáveis neste produto: {', '.join(sorted(unknown))}.")
+    try:
+        product = Product.objects.create(sku=sku, name=name)
+        detail = update_product_detail(sku, payload, actor=actor) if payload else _detail_payload(product)
+        enrichment = _apply_gtin_draft(sku, data.get("enrichment"), actor=actor)
+        if enrichment is not None:
+            detail = _detail_payload(_get_product(sku))
+        return detail, enrichment
+    except ValidationError as exc:
+        raise CatalogError(_first_validation_message(exc)) from exc
+
+
+@transaction.atomic
+def duplicate_product(sku: str, data: dict, *, actor: str = "", expected_revision: str | None = None) -> dict:
+    """Duplica o conteúdo de um produto num SKU novo (oculto e fora de venda)."""
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product, ProductComponent
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if not isinstance(data, dict):
+        raise CatalogError("Informe os campos da cópia.")
+    source = Product.objects.select_for_update().filter(sku=sku).first()
+    if source is None:
+        raise CatalogError(f"Produto '{sku}' não encontrado.")
+    if expected_revision is not None and expected_revision != product_duplicate_revision(sku):
+        raise CatalogConflict("O produto mudou desde que você abriu a cópia. Confira antes de duplicar.")
+    new_sku = _new_product_sku(data.get("sku"))
+    if new_sku == source.sku:
+        raise CatalogError("O SKU da cópia precisa ser diferente do original.")
+    if Product.objects.filter(sku__iexact=new_sku).exists():
+        error = CatalogError(f"Já existe um produto com o SKU '{new_sku}'.")
+        error.field = "sku"
+        raise error
+    name = _new_product_name(data.get("name"), fallback=suggested_duplicate_name(source.name))
+    try:
+        copy = Product.objects.create(
+            sku=new_sku,
+            name=name,
+            short_description=source.short_description,
+            long_description=source.long_description,
+            unit=source.unit,
+            unit_weight_g=source.unit_weight_g,
+            storage_tip=source.storage_tip,
+            ingredients_text=source.ingredients_text,
+            nutrition_facts=source.nutrition_facts or {},
+            base_price_q=source.base_price_q,
+            availability_policy=source.availability_policy,
+            shelf_life_days=source.shelf_life_days,
+            production_cycle_hours=source.production_cycle_hours,
+            image_url=source.image_url,
+            is_batch_produced=source.is_batch_produced,
+            metadata=_duplicate_metadata(source),
+            is_published=False,
+            is_sellable=False,
+        )
+        copy.keywords.set(list(source.keywords.names()))
+        # Os rótulos derivados da ficha congelam como escrita à mão na cópia: ela
+        # não herda a ficha técnica do original, e dizer "veio da ficha" ali
+        # congelaria uma derivação que não existe neste SKU.
+        for _field, ref in {**_DETAIL_ATTR_LIST_FIELDS, **_DETAIL_ATTR_TEXT_FIELDS}.items():
+            value = attributes.get(source, ref)
+            if value in (None, [], ""):
+                continue
+            attributes.set(copy, ref, value, source="manual", save=False)
+        copy.save()
+        # A composição do combo é do produto: a cópia nasce com os mesmos
+        # componentes. Listing, coleção e publicação NÃO vêm: são decisões do dia.
+        for component in ProductComponent.objects.filter(parent=source).order_by("pk"):
+            ProductComponent.objects.create(parent=copy, component=component.component, qty=component.qty)
+    except ValidationError as exc:
+        raise CatalogError(_first_validation_message(exc)) from exc
+    return _detail_payload(copy)
+
+# ── GTIN: rascunho, correlação e foto ────────────────────────────────────────
+# O rascunho NÃO escreve: consulta as fontes que já existem
+# (``shop.services.product_enrichment``: NF-e de compra -> Cosmos -> Open Food
+# Facts) e devolve campo a campo com a ORIGEM e a alternativa. Quem aplica é o
+# aceite campo a campo (``product_enrichment.accept_fields``), o MESMO caminho do
+# Admin; esta camada não reimplementa prioridade, fusão nem licença de foto.
+
+_CORRELATE_CONFIG_FIELDS = ("unit", "availability_policy", "is_batch_produced", "shelf_life_days")
+_PHOTO_MAX_BYTES = 8 * 1024 * 1024
+
+
+def product_draft(gtin: str) -> dict:
+    """Rascunho por GTIN para a tela de criar. Leitura pura: nada é gravado."""
+    from shopman.offerman import gtin_is_valid
+
+    from shopman.shop.services import product_enrichment as enrichment
+
+    code = str(gtin or "").strip()
+    if not code:
+        raise CatalogError("Leia ou digite o código de barras.")
+    if not gtin_is_valid(code):
+        raise CatalogError("O código de barras tem dígito verificador inválido. Confira a leitura.")
+    suggestion = enrichment.build_suggestion(code)
+    fields = {}
+    for name, entry in suggestion.fields.items():
+        fields[name] = {
+            **entry,
+            "label": enrichment.FIELD_LABELS.get(name, name),
+            "source_label": enrichment.SOURCE_LABELS.get(entry.get("source", ""), entry.get("source", "")),
+            "display": enrichment.format_value(name, entry.get("value")),
+        }
+    draft = {
+        "gtin": suggestion.gtin,
+        "fields": fields,
+        "sources": list(suggestion.sources),
+        "consulted": list(suggestion.consulted),
+        "skipped": dict(suggestion.skipped),
+        "allergens_unmapped": list(suggestion.allergens_unmapped),
+        "notes": list(suggestion.notes),
+        "reference_photo": suggestion.reference_photo,
+    }
+    draft["correlate"] = correlate_suggestions(draft)
+    return draft
+
+
+def _draft_hints(draft: dict) -> tuple[str, str, list[str]]:
+    import re
+
+    fields = (draft or {}).get("fields") or {}
+    value = lambda name: (fields.get(name) or {}).get("value")  # noqa: E731
+    ncm = str(value("ncm") or "")
+    brand = str(value("brand") or "")
+    name = str(value("name") or "")
+    words = [word for word in re.split(r"\W+", name.lower()) if len(word) >= 4][:4]
+    return ncm, brand, words
+
+
+def correlate_suggestions(draft: dict, *, limit: int = 5) -> dict:
+    """O que reaproveitar de produtos parecidos (NCM, marca, nome).
+
+    A sugestão é a CONFIGURAÇÃO do cadastro (unidade, disponibilidade,
+    produzido em lote, validade) e o PERFIL fiscal da casa. CFOP/CSOSN não se
+    inventam por produto: saem do perfil. Nada aqui escreve.
+    """
+    from collections import Counter
+
+    from shopman.offerman.models import Product
+
+    ncm, brand, words = _draft_hints(draft or {})
+    scored = []
+    products = Product.objects.only(
+        "id", "sku", "name", "unit", "availability_policy", "is_batch_produced", "shelf_life_days", "metadata",
+    ).order_by("name")
+    for product in products:
+        meta = product.metadata or {}
+        reasons = []
+        if ncm and str((meta.get("fiscal") or {}).get("ncm") or "") == ncm:
+            reasons.append(f"mesmo NCM {ncm}")
+        if brand and str((meta.get("social") or {}).get("brand") or "").strip().lower() == brand.lower():
+            reasons.append(f"mesma marca {brand}")
+        matches = [word for word in words if word in product.name.lower()]
+        if matches:
+            reasons.append("nome parecido: " + ", ".join(matches))
+        if reasons:
+            scored.append((len(reasons), product, reasons))
+    scored.sort(key=lambda item: (-item[0], item[1].name))
+    chosen = scored[:limit]
+    suggestions = []
+    for field in _CORRELATE_CONFIG_FIELDS:
+        counter = Counter()
+        for _score, product, _reasons in chosen:
+            value = getattr(product, field)
+            if value not in (None, ""):
+                counter[value] += 1
+        if not counter:
+            continue
+        value, count = counter.most_common(1)[0]
+        who = [product.sku for _s, product, _r in chosen if getattr(product, field) == value][:3]
+        suggestions.append({
+            "field": field, "value": value,
+            "reason": f"{count} de {len(chosen)} produtos parecidos usam {value}",
+            "sources": who,
+        })
+    profiles = Counter()
+    for _score, product, _reasons in chosen:
+        profile = str(((product.metadata or {}).get("fiscal") or {}).get("profile") or "")
+        if profile:
+            profiles[profile] += 1
+    if profiles:
+        value, count = profiles.most_common(1)[0]
+        extra = {"field": "fiscal_profile", "value": value,
+            "reason": f"{count} de {len(chosen)} produtos parecidos usam este perfil fiscal",
+            "sources": [product.sku for _s, product, _r in chosen
+                if str(((product.metadata or {}).get("fiscal") or {}).get("profile") or "") == value][:3]}
+        suggestions.append(extra)
+    notes = [] if chosen else ["Ainda não há produto parecido no catálogo para comparar."]
+    return {
+        "correlates": [{"sku": product.sku, "name": product.name, "reasons": reasons}
+            for _score, product, reasons in chosen],
+        "suggestions": suggestions,
+        "notes": notes,
+    }
+
+
+def photo_enhance_status() -> tuple[bool, str]:
+    """A melhoria de foto está ligada neste ambiente? (provider vazio = não)."""
+    from django.conf import settings
+
+    provider = str(getattr(settings, "SHOPMAN_PRODUCT_IMAGE_ENHANCE_PROVIDER", "") or "").strip().lower()
+    if not provider:
+        return False, "A melhoria de foto não está configurada neste ambiente."
+    if provider == "deterministic":
+        return True, ""
+    if provider == "generative":
+        # Foto generativa pode INVENTAR o produto. Só entra opt-in, com chave e
+        # revisão humana; nesta onda não há provedor ligado.
+        return False, "A melhoria generativa de foto ainda não está ligada. Use o ajuste determinístico."
+    return False, f"Provedor de melhoria de foto desconhecido: {provider}."
+
+
+def _decode_photo(raw) -> object:
+    import base64
+    import binascii
+    from io import BytesIO
+
+    from PIL import Image, UnidentifiedImageError
+
+    text = str(raw or "")
+    if text.startswith("data:"):
+        _, _, text = text.partition(",")
+    try:
+        payload = base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise CatalogError("Envie a foto como imagem.") from exc
+    if len(payload) > _PHOTO_MAX_BYTES:
+        raise CatalogError("A foto é grande demais (máximo 8 MB).")
+    try:
+        image = Image.open(BytesIO(payload))
+        image.load()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise CatalogError("Não consegui ler esta foto. Envie JPEG, PNG ou WebP.") from exc
+    return image
+
+
+def _trim_uniform_border(image):
+    from PIL import Image, ImageChops
+
+    rgb = image.convert("RGB")
+    width, height = rgb.size
+    if width < 8 or height < 8:
+        return rgb
+    corner = rgb.getpixel((0, 0))
+    background = Image.new("RGB", rgb.size, corner)
+    diff = ImageChops.difference(rgb, background).convert("L")
+    box = diff.point(lambda value: 255 if value > 18 else 0).getbbox()
+    return rgb.crop(box) if box else rgb
+
+
+def enhance_product_photo(raw) -> dict:
+    """Padronização DETERMINÍSTICA: recorta a borda, enquadra, dimensiona e afia.
+
+    Não inventa conteúdo: troca/limpa a borda uniforme, enquadra no quadrado,
+    redimensiona e ajusta nitidez. É a padronização permitida por padrão.
+    """
+    from io import BytesIO
+
+    from django.conf import settings
+    from PIL import Image, ImageEnhance, ImageOps
+
+    from shopman.backstage.services.exceptions import AiAssistNotConfigured
+
+    available, reason = photo_enhance_status()
+    provider = str(getattr(settings, "SHOPMAN_PRODUCT_IMAGE_ENHANCE_PROVIDER", "") or "").strip().lower()
+    if not available or provider != "deterministic":
+        raise AiAssistNotConfigured(reason or "A melhoria de foto não está ligada.")
+    image = _trim_uniform_border(_decode_photo(raw))
+    square = ImageOps.pad(image, (1200, 1200), color=(255, 255, 255), method=Image.Resampling.LANCZOS)
+    square = ImageEnhance.Sharpness(square).enhance(1.15)
+    square = ImageEnhance.Contrast(square).enhance(1.02)
+    output = BytesIO()
+    square.save(output, format="JPEG", quality=90, optimize=True)
+    import base64
+
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    return {"provider": "deterministic", "media_type": "image/jpeg",
+        "image": f"data:image/jpeg;base64,{encoded}",
+        "steps": ["recorte da borda uniforme", "quadrado 1200x1200", "nitidez", "contraste"]}
+
+
+def _apply_gtin_draft(sku: str, spec, *, actor: str) -> dict | None:
+    from dataclasses import replace as dc_replace
+    from types import SimpleNamespace
+
+    from shopman.offerman import get_social_attributes, gtin_is_valid, set_social_attributes
+
+    from shopman.shop.services import attributes
+    from shopman.shop.services import product_enrichment as enrichment
+
+    if not isinstance(spec, dict):
+        return None
+    gtin = str(spec.get("gtin") or "").strip()
+    accept = [str(name) for name in (spec.get("accept") or []) if isinstance(name, str)]
+    replace = [str(name) for name in (spec.get("replace") or []) if isinstance(name, str)]
+    if not gtin or not accept:
+        return None
+    if not gtin_is_valid(gtin):
+        raise CatalogError("O código de barras tem dígito verificador inválido.")
+    product = _get_product(sku)
+    # O código lido é a identidade do item: vai para o social, não para o rascunho.
+    product.metadata = set_social_attributes(
+        product.metadata, dc_replace(get_social_attributes(product.metadata), gtin=gtin))
+    suggestion = enrichment.build_suggestion(gtin)
+    product.metadata = enrichment.merge_into_metadata(product.metadata, suggestion)
+    product.save(update_fields=["metadata", "updated_at"])
+    names = [name for name in accept if name in enrichment.FIELD_LABELS]
+    who = SimpleNamespace(get_username=lambda: actor or "catalogo")
+    result = enrichment.accept_fields(product, names, replace=replace, user=who)
+    # ⚠️ O aceite do enriquecimento ainda grava o alérgeno na chave LEGADA
+    # (metadata["allergens"]); o registro de atributos é quem veste a tela do
+    # Gestor. Espelha para os dois lados enquanto a dívida não é paga.
+    if "allergens" in result.applied and product.metadata.get("allergens"):
+        attributes.set(product, "alergenos", list(product.metadata["allergens"]), source="manual", save=False)
+        product.save(update_fields=["metadata", "updated_at"])
+    return {
+        "applied": list(result.applied),
+        "conflicts": dict(result.conflicts),
+        "refused": dict(result.refused),
+        "sources": list(suggestion.sources),
+        "notes": list(suggestion.notes),
+    }
 
 # ── GTIN recusado pela SEFAZ ──────────────────────────────────────────────────
 # A nota que tomou a recusa já saiu de novo "SEM GTIN" (``shop.handlers.fiscal``)

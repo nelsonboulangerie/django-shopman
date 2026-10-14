@@ -36,8 +36,11 @@ import type {
   AssistableField,
   CatalogRowProjection,
   CollectionProjection,
+  CreateProductPayload,
+  DuplicateSnapshot,
   ProductDetailPatch,
   ProductDetailProjection,
+  ProductDraft,
   SkuRoles,
   SurfaceCellProjection,
   SurfaceProjection,
@@ -76,6 +79,12 @@ const {
   bulkBusy,
   aiAssist,
   aiAssistKey,
+  createAction,
+  createProduct,
+  fetchProductDraft,
+  fetchDuplicateSnapshot,
+  duplicateProduct,
+  enhancePhoto,
 } = useCatalogMatrix(collectionRef);
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
@@ -741,6 +750,11 @@ function rowMenuItems(row: CatalogRowProjection) {
       onSelect: () => openDetail(row),
     },
     {
+      label: "Duplicar",
+      icon: "i-lucide-copy",
+      onSelect: () => void openDuplicate(row),
+    },
+    {
       label: row.is_sellable
         ? "Pausar em todos os canais"
         : "Ativar em todos os canais",
@@ -1077,6 +1091,96 @@ function assistFor(sku: Ref<string | null>) {
 }
 const detailAssist = assistFor(detailSku);
 
+// ── criar e duplicar produto (7.2, onda 1) ─────────────────────────────────
+// Criar do zero e duplicar. O rascunho do GTIN é leitura pura; o aceite campo a
+// campo vai no corpo da criação, que o servidor aplica pelo mesmo caminho do Admin.
+const createOpen = ref(false);
+const createMode = ref<"create" | "duplicate">("create");
+const createBusy = ref(false);
+const createError = ref("");
+const createDraft = ref<ProductDraft | null>(null);
+const createDraftBusy = ref(false);
+const createDraftError = ref("");
+const duplicateSnapshot = ref<DuplicateSnapshot | null>(null);
+
+const duplicateSource = computed(() => duplicateSnapshot.value?.source ?? null);
+const duplicateSuggestedSku = computed(
+  () => duplicateSnapshot.value?.suggested_sku ?? "",
+);
+const duplicateSuggestedName = computed(
+  () => duplicateSnapshot.value?.suggested_name ?? "",
+);
+
+function openCreate() {
+  createMode.value = "create";
+  createError.value = "";
+  createDraft.value = null;
+  createDraftError.value = "";
+  duplicateSnapshot.value = null;
+  createOpen.value = true;
+}
+
+async function openDuplicate(row: CatalogRowProjection) {
+  createError.value = "";
+  createDraft.value = null;
+  createDraftError.value = "";
+  const snapshot = await fetchDuplicateSnapshot(row.sku);
+  if (!snapshot) {
+    createError.value = "Não foi possível preparar a cópia. Tente de novo.";
+    return;
+  }
+  duplicateSnapshot.value = snapshot;
+  createMode.value = "duplicate";
+  createOpen.value = true;
+}
+
+async function lookupDraft(gtin: string) {
+  createDraftError.value = "";
+  createDraftBusy.value = true;
+  try {
+    const draft = await fetchProductDraft(gtin);
+    if (!draft) {
+      createDraftError.value =
+        errorMsg.value || "Não foi possível buscar os dados deste código.";
+      return;
+    }
+    createDraft.value = draft;
+  } finally {
+    createDraftBusy.value = false;
+  }
+}
+
+async function saveNewProduct(payload: CreateProductPayload) {
+  createError.value = "";
+  createBusy.value = true;
+  try {
+    const result =
+      createMode.value === "duplicate" && duplicateSnapshot.value
+        ? await duplicateProduct(duplicateSnapshot.value, {
+            sku: payload.sku,
+            name: payload.name,
+          })
+        : await createProduct(payload);
+    if (!result) {
+      createError.value =
+        errorMsg.value || "Não foi possível salvar. Confira os campos.";
+      return;
+    }
+    const enrichment = result.enrichment;
+    if (enrichment && Object.keys(enrichment.conflicts || {}).length) {
+      errorMsg.value =
+        "Produto criado. Campos sugeridos que você já tinha digitado ficaram com o seu valor.";
+    }
+    if (enrichment && Object.keys(enrichment.refused || {}).length) {
+      errorMsg.value =
+        "Produto criado. " + Object.values(enrichment.refused).join(" ");
+    }
+    createOpen.value = false;
+  } finally {
+    createBusy.value = false;
+  }
+}
+
 useHead({ title: "Catálogo" });
 </script>
 
@@ -1210,6 +1314,13 @@ useHead({ title: "Catálogo" });
         />
       </template>
       <template #actions>
+        <NuxtButton
+          icon="i-lucide-plus"
+          label="Novo produto"
+          :disabled="!createAction()?.enabled"
+          data-testid="catalog-create"
+          @click="openCreate"
+        />
         <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
         <OperatorMoreMenu
           :items="headerMenuItems"
@@ -1969,6 +2080,27 @@ useHead({ title: "Catálogo" });
       @pause-channel="pauseDetailChannel"
     />
 
+    <!-- criar do zero e duplicar (7.2, onda 1) — o rascunho do GTIN é revisado aqui. -->
+    <CatalogProductCreatePanel
+      :open="createOpen"
+      :mode="createMode"
+      :source="duplicateSource"
+      :suggested-sku="duplicateSuggestedSku"
+      :suggested-name="duplicateSuggestedName"
+      :busy="createBusy"
+      :error="createError"
+      :draft="createDraft"
+      :draft-busy="createDraftBusy"
+      :draft-error="createDraftError"
+      :enhance="enhancePhoto"
+      @update:open="
+        (value) => {
+          if (!value) createOpen = false;
+        }
+      "
+      @lookup="lookupDraft"
+      @save="saveNewProduct"
+    />
     <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
     <NuxtModal
       :open="Boolean(zoom)"
