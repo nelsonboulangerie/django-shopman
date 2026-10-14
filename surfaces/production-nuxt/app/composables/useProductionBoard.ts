@@ -1,6 +1,10 @@
 // Production planning read-side. Single source for the planning matrix:
 //   - useFetch the production board projection (GET /api/v1/backstage/production/);
-//   - poll every 60s (planning changes slowly, manager-paced).
+//   - SSE first (ADR-016): o canal `backstage-production` (BFF /sse/production)
+//     avisa a cada lote planejado, aberto, ajustado ou fechado, e a tela refaz o
+//     GET canônico. Antes ninguém ouvia o canal e o lote aberto no tablet do forno
+//     levava até 60 s para aparecer no do planejamento (mapa de cenários, P2-18);
+//   - o poll de 60 s fica só de reserva (stream caído, deploy).
 // Writes (plan / start) go through the django proxy (CSRF handled there) and
 // reconcile via refresh. Order-coverage shortage surfaces as a structured error.
 import type {
@@ -24,6 +28,15 @@ import {
   type ProductionMutationBlock,
   type ProductionMutationMetadata,
 } from "~/composables/useProductionMutationGuard";
+import {
+  openResilientEventSource,
+  type ResilientEventSource,
+} from "../../../operator-kit/app/utils/resilientEventSource";
+
+/** Eventos do canal `backstage-production` (shop/handlers/_sse_emitters.py). */
+export const PRODUCTION_SSE_EVENTS = ["backstage-production-update"] as const;
+/** Poll de reserva: a atualização normal chega pelo SSE. */
+export const PRODUCTION_FALLBACK_POLL_MS = 60_000;
 
 export interface BoardActResult {
   ok: boolean;
@@ -61,7 +74,69 @@ export function useProductionBoard(
   const counts = computed(() => board.value?.counts ?? null);
   const dateDisplay = computed(() => board.value?.selected_date_display ?? "");
 
-  useAdaptivePoll(refresh, () => 60_000);
+  useAdaptivePoll(refresh, () => PRODUCTION_FALLBACK_POLL_MS);
+
+  // `realtime` diz HONESTAMENTE se a tela recebe push ou vive do poll de reserva.
+  const config = useRuntimeConfig();
+  const realtime = ref<"connecting" | "live" | "polling">("polling");
+  let source: ResilientEventSource | null = null;
+  // Um lote planejado em massa dispara uma rajada de avisos: uma releitura em voo
+  // por vez, e o aviso que chega no meio garante uma releitura depois dela.
+  let inFlight: Promise<unknown> | null = null;
+  let queued = false;
+  function refreshOnPush() {
+    queued = true;
+    if (inFlight) return;
+    inFlight = (async () => {
+      while (queued) {
+        queued = false;
+        await refresh();
+      }
+    })()
+      .catch(() => {})
+      .finally(() => {
+        inFlight = null;
+      });
+  }
+
+  function connectSse() {
+    if (source) return;
+    realtime.value = "connecting";
+    source = openResilientEventSource({
+      url: ssePath("/sse/production", config.app.baseURL),
+      events: PRODUCTION_SSE_EVENTS,
+      onEvent: refreshOnPush,
+      onOpen: (reconnected) => {
+        realtime.value = "live";
+        // Reabriu depois de uma queda: cobre o que passou no meio.
+        if (reconnected) refreshOnPush();
+      },
+      onDown: () => {
+        realtime.value = "polling";
+      },
+    });
+  }
+
+  // Conecta depois da primeira leitura boa (sessão e permissão provadas): sem ela
+  // o canal seria recusado e o stream ficaria tentando à toa.
+  let stopWaitingForRead: (() => void) | undefined;
+  onMounted(() => {
+    if (!pending.value && !error.value) {
+      connectSse();
+      return;
+    }
+    stopWaitingForRead = watch([pending, error], ([p, e]) => {
+      if (p || e) return;
+      stopWaitingForRead?.();
+      stopWaitingForRead = undefined;
+      connectSse();
+    });
+  });
+  onBeforeUnmount(() => {
+    stopWaitingForRead?.();
+    source?.close();
+    source = null;
+  });
 
   // a planning POST keys on the output_sku row (one in-flight per row).
   const busy = ref<Set<string>>(new Set());
@@ -193,6 +268,7 @@ export function useProductionBoard(
     pending,
     error,
     refresh,
+    realtime,
     isBusy,
     plan,
     start,
