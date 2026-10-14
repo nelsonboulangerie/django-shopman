@@ -66,6 +66,18 @@ class OrderCursorPagination(CursorPagination):
     max_page_size = 100
 
 
+class SessionCursorPagination(OrderCursorPagination):
+    """Paginação da lista de sessões (comandas).
+
+    "OrderCursorPagination" ordena por created_at, campo que Session não tem (o
+    de sessão chama-se opened_at): reutilizá-la aqui derrubava o GET /api/sessions
+    com FieldError. A ordem é a mesma intenção (mais recente primeiro) no campo
+    equivalente da sessão, com id como desempate para o cursor não repetir linha.
+    """
+
+    ordering = ("-opened_at", "-id")
+
+
 def _get_actor(request) -> str:
     """Extrai username do request ou retorna 'api' como fallback."""
     user = getattr(request, "user", None)
@@ -142,14 +154,18 @@ class SessionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
     queryset = Session.objects.all()
     serializer_class = SessionSerializer
     permission_classes = get_orderman_setting("DEFAULT_PERMISSION_CLASSES")
-    pagination_class = OrderCursorPagination
+    pagination_class = SessionCursorPagination
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     lookup_field = "session_key"
     lookup_url_kwarg = "session_key"
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # Sem o prefetch, serializar a página chama session.items uma vez por
+        # sessão (Session._load_items_from_lines ignora o prefetch quando ele
+        # existe): 1+N SELECTs numa lista de N comandas. Com o prefetch, as
+        # linhas vêm em uma consulta só.
+        qs = super().get_queryset().prefetch_related("session_items")
         channel_ref = self.request.query_params.get("channel_ref")
         if channel_ref:
             qs = qs.filter(channel_ref=channel_ref)
