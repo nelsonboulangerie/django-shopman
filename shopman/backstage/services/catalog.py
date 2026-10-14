@@ -209,6 +209,50 @@ def set_cell(
     return item
 
 
+#: Teto de células por lote — o mesmo envelope das outras mutações em lote.
+MAX_CATALOG_BATCH = 200
+
+
+@transaction.atomic
+def set_cells(cells: list[dict], *, actor: str = "") -> dict:
+    """Aplica VÁRIAS células numa única ida, com conflito POR LINHA.
+
+    Cada célula passa pelo MESMO ``set_cell`` (um ``save()`` por item, com sinais
+    e histórico preservados), então a falha de uma linha não derruba as outras:
+    quem colou a planilha recebe o recibo linha a linha. A intenção e o recibo
+    da requisição são da camada HTTP.
+    """
+    from django.core.exceptions import ValidationError
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if not isinstance(cells, list) or not cells:
+        raise CatalogError("Informe as células do lote.")
+    if len(cells) > MAX_CATALOG_BATCH:
+        raise CatalogError(f"Envie no máximo {MAX_CATALOG_BATCH} células por lote.")
+    applied, conflicts, errors = [], [], []
+    for index, cell in enumerate(cells):
+        if not isinstance(cell, dict):
+            errors.append({"index": index, "detail": "Célula inválida."})
+            continue
+        sku = str(cell.get("sku") or "")
+        surface_ref = str(cell.get("surface_ref") or "")
+        patch = {field: cell[field] for field in ("is_published", "is_sellable", "price_q") if field in cell}
+        revisions = cell.get("base_revisions") if isinstance(cell.get("base_revisions"), dict) else None
+        try:
+            item = set_cell(sku, surface_ref, actor=actor, expected_revisions=revisions, **patch)
+        except CatalogConflict as exc:
+            conflicts.append({"index": index, "sku": sku, "surface_ref": surface_ref,
+                "detail": str(exc), "conflicting_fields": getattr(exc, "fields", [])})
+        except (CatalogError, ValidationError) as exc:
+            errors.append({"index": index, "sku": sku, "surface_ref": surface_ref, "detail": str(exc)})
+        else:
+            applied.append({"index": index, "sku": sku, "surface_ref": surface_ref,
+                "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q})
+    if not applied and not conflicts:
+        raise CatalogError(errors[0]["detail"] if errors else "Nenhuma célula foi aplicada.")
+    return {"applied": applied, "conflicts": conflicts, "errors": errors}
+
 def set_product(sku: str, *, is_published: bool | None = None, is_sellable: bool | None = None, actor: str = ""):
     """Compatibility facade; global flags use the canonical partial product writer."""
     from shopman.offerman.models import Product

@@ -136,6 +136,63 @@ class CatalogCellView(_CatalogBase):
             return Response({"outcome": "in_progress"}, status=202)
 
 
+class CatalogCellsView(_CatalogBase):
+    """Lote de células numa ida, com recibo linha a linha e recibo local."""
+
+    def _scope(self, request):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.cells"})
+
+    def get(self, request):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not key:
+            return Response({"detail": "Informe a intenção."}, status=400)
+        try:
+            receipt = lookup_local_mutation(scope=self._scope(request), key=key)
+        except RemoteMutationInProgress:
+            receipt = None
+        if receipt is None:
+            return Response({"outcome": "unknown", "detail": "Resultado ainda não confirmado."}, status=202)
+        return Response(receipt.response_body, status=receipt.response_code)
+
+    def post(self, request):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        data = request.data
+        key = request.headers.get("Idempotency-Key") or (data.get("idempotency_key") if isinstance(data, dict) else None)
+        cells = data.get("cells") if isinstance(data, dict) else None
+        if (not isinstance(data, dict) or not isinstance(cells, list) or not cells
+                or not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision")):
+            return Response({"detail": "Atualize o catálogo: o lote exige intenção e revisão.", "error": {"code": "intention_required"}}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira o lote.", "error": {"code": "actor_changed"}}, status=409)
+        payload = {"cells": cells}
+        scope = self._scope(request)
+        fingerprint = mutation_fingerprint({"scope": scope, "payload": payload})
+
+        def execute():
+            try:
+                result = catalog_service.set_cells(cells, actor=_actor(request))
+            except (CatalogError, ValidationError) as exc:
+                return {"outcome": "not_applied", "detail": str(exc)}, 400
+            return {"ok": True, "outcome": "applied", "intention": key, **result}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outro lote.", "error": {"code": "intention_conflict"}}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "unknown", "detail": "Lote em processamento; consulte esta intenção."}, status=202)
+
 class CatalogProductDetailView(_CatalogBase):
     """Partial product edits have leaf revisions and an atomic local receipt."""
 
