@@ -153,4 +153,6 @@ def test_price_query_count_does_not_grow_with_the_number_of_items():
     one_item = price_query_count(1)
     six_items = price_query_count(6)
 
+    # Medição para o relatório (rode com -s): o número NÃO cresce com os itens.
+    print(f"\n[preco-por-grupo] consultas no reprice: 1 item={one_item}, 6 itens={six_items}")
     assert six_items == one_item, f"1 item={one_item} consultas, 6 itens={six_items}"

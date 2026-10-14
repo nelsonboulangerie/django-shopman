@@ -638,7 +638,8 @@ class CustomerPricingModifier:
         if "customer_segment" not in ctx:
             try:
                 ctx["customer_segment"] = customer.insight.rfm_segment or ""
-            except Exception:  # Insight (OneToOne) pode não existir ainda
+            except Exception:  # silêncio-deliberado: Insight (OneToOne) pode não existir; a faixa ainda casa
+                logger.debug("pricing.customer: no insight for customer", exc_info=True)
                 ctx["customer_segment"] = ""
         if "is_birthday" not in ctx:
             birthday = getattr(customer, "birthday", None)
