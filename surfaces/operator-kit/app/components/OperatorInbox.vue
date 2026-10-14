@@ -218,8 +218,36 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
             data-operator-inbox-alert
           >
             <template #actions>
+              <!-- O gesto que resolve ali mesmo (P2-19: "Aceitar" no pedido parado).
+                   Com ele à vista, ele é o sólido, numa linha só dele, e embaixo ficam
+                   "Abrir" (contorno) e "Visto", com os rótulos inteiros. -->
+              <template v-if="alert.actLabel && source?.act">
+                <NuxtButton
+                  class="min-w-0 basis-full justify-center"
+                  :color="alertColor(alert.tone)"
+                  variant="solid"
+                  :label="alert.actLabel"
+                  :disabled="source?.isPending?.(alert.key)"
+                  :loading="source?.isPending?.(alert.key)"
+                  data-alert-act
+                  @click="source?.act?.(alert.key)"
+                />
+                <NuxtButton
+                  v-if="alert.href"
+                  class="min-w-0 basis-0 flex-[2]"
+                  :to="alert.href"
+                  :color="alertColor(alert.tone)"
+                  variant="outline"
+                  trailing-icon="i-lucide-arrow-right"
+                  :label="alert.hrefLabel || 'Abrir'"
+                  :target="attrsFor(alert.href).target"
+                  :rel="attrsFor(alert.href).rel"
+                  data-alert-open
+                  @click="open = false"
+                />
+              </template>
               <NuxtButton
-                v-if="alert.href"
+                v-else-if="alert.href"
                 class="min-w-0 basis-0 flex-[2]"
                 :to="alert.href"
                 :color="alertColor(alert.tone)"
@@ -239,7 +267,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 icon="i-lucide-check"
                 label="Visto"
                 :disabled="source?.isPending?.(alert.key)"
-                :loading="source?.isPending?.(alert.key)"
+                :loading="source?.isPending?.(alert.key) && !(alert.actLabel && source?.act)"
                 aria-label="Marcar como visto"
                 title="Marca que você leu. O alerta sai quando o problema for resolvido."
                 data-alert-ack

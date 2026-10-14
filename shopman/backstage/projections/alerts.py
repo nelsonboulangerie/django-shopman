@@ -80,8 +80,9 @@ def _spec_value(alert, field: str) -> str:
     return getattr(spec, field) if spec else ""
 
 
-def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> OperatorAlertsProjection:
+def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=None) -> OperatorAlertsProjection:
     alert_rows = tuple(alerts)
+    acceptable = _acceptable_orders(alert_rows, surface=surface, user=user)
     production_refs = {alert.order_ref for alert in alert_rows if alert.order_ref and alert.audience == "production"}
     target_dates: dict[str, str] = {}
     if production_refs:
@@ -115,6 +116,7 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "") -> Op
                 alert,
                 target_date=target_dates.get(alert.order_ref, ""),
                 surface=surface,
+                acceptable=alert.order_ref in acceptable,
             ),
         )
         for alert in alert_rows
@@ -283,8 +285,82 @@ def alert_context_href(alert, *, surface: str, target_date: str = "") -> tuple[s
     return (href, label) if href else ("", "")
 
 
-def _alert_actions(alert, *, target_date: str = "", surface: str = "") -> tuple[ProductionActionProjection, ...]:
+#: O aviso cujo gesto direto é aceitar o pedido (P2-19 do mapa de cenários): o pedido
+#: parado sem aceite traz o "Aceitar" pronto, sem precisar abrir o pedido antes.
+_ACCEPT_ALERT_TYPES = frozenset({"stale_new_order"})
+
+
+def _acceptable_orders(alert_rows, *, surface: str, user) -> frozenset[str]:
+    """Os pedidos destes avisos que ESTA pessoa pode aceitar agora, no Gestor.
+
+    Só no Gestor (``surface == "orders"``): é o app que sabe executar o aceite. E só
+    quando a régua canônica do quadro (``operator_orders.operational_actions``)
+    oferece o "Aceitar" habilitado; pedido que já andou, pagamento que ainda trava o
+    aceite ou pessoa sem ``shop.manage_orders`` ficam com "Abrir o pedido". A rota
+    do aceite revalida tudo sob trava: oferecer não é autorizar.
+    """
+    if surface != "orders" or user is None:
+        return frozenset()
+    refs = {alert.order_ref for alert in alert_rows if alert.type in _ACCEPT_ALERT_TYPES and alert.order_ref}
+    if not refs:
+        return frozenset()
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import operator_orders
+
+    acceptable = set()
+    for order in Order.objects.filter(ref__in=refs, status=Order.Status.NEW):
+        confirm = next(
+            (action for action in operator_orders.operational_actions(order, user=user) if action.ref == "confirm"),
+            None,
+        )
+        if confirm is not None and confirm.enabled:
+            acceptable.add(order.ref)
+    return frozenset(acceptable)
+
+
+def _accept_order_action(alert) -> ProductionActionProjection:
+    """O "Aceitar" do aviso: o mesmo aceite do quadro, na rota do pedido.
+
+    A tela relê o pedido e manda a intenção canônica dele (``base_revision``,
+    ``expected_actor_id``), como o botão do cartão. O aviso fecha sozinho quando o
+    pedido sai de "novo" (``handlers/alert_resolution``).
+    """
+    ref = alert.order_ref
+    return ProductionActionProjection(
+        ref=f"confirm-order:{alert.pk}",
+        kind="confirm_order",
+        label="Aceitar",
+        priority=5,
+        enabled=True,
+        reason="",
+        method="POST",
+        href=f"/api/v1/backstage/orders/{quote(ref, safe='')}/confirm/",
+        payload_schema="",
+        expected_rev=None,
+        idempotency=ProductionActionIdempotencyProjection(
+            required=True,
+            key_scope=f"orders.confirm:{ref}",
+        ),
+        confirmation=ProductionActionConfirmationProjection(
+            required=False,
+            reason_required=False,
+            title="",
+            confirm_label="Aceitar",
+        ),
+        approval_requirement=None,
+        source_alert_ref=str(alert.pk),
+        source_alert_effect="resolves",
+        proof="",
+    )
+
+
+def _alert_actions(
+    alert, *, target_date: str = "", surface: str = "", acceptable: bool = False
+) -> tuple[ProductionActionProjection, ...]:
     actions = []
+    if acceptable:
+        actions.append(_accept_order_action(alert))
     href, label = alert_context_href(alert, surface=surface, target_date=target_date)
     if href:
         actions.append(_open_context_action(alert, label=label, href=href))

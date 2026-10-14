@@ -313,7 +313,14 @@ export interface OperatorAlertLike {
   origin_label?: string;
   origin_icon?: string;
   subject?: string;
-  actions?: ReadonlyArray<{ kind: string; enabled: boolean; label: string; href?: string | null }>;
+  actions?: ReadonlyArray<{
+    kind: string;
+    enabled: boolean;
+    label: string;
+    href?: string | null;
+    /** `resolves`: o gesto acaba com a causa (o "Aceitar" do pedido parado). */
+    source_alert_effect?: string | null;
+  }>;
 }
 
 export interface InboxAlertView {
@@ -326,6 +333,8 @@ export interface InboxAlertView {
   canAck: boolean;
   href?: string;
   hrefLabel?: string;
+  /** O gesto que resolve ali mesmo ("Aceitar"), quando o servidor o oferece. */
+  actLabel?: string;
   respondByIso?: string;
   deadlineKind?: "external" | "house";
   origin?: string;
@@ -336,12 +345,20 @@ export interface InboxAlertView {
 /**
  * Um alerta da operação escrito para a caixa de Avisos: a gravidade como tom (crítico e
  * erro são o vermelho de "bloqueado com motivo"; aviso, o âmbar), o lugar exato quando o
- * servidor o oferece, e "Visto" só quando o servidor oferece o gesto.
+ * servidor o oferece, o gesto que resolve ali mesmo quando o servidor o oferece (P2-19:
+ * "Aceitar" no pedido parado) e "Visto" só quando o servidor oferece o gesto.
  */
 export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
   const actions = alert.actions ?? [];
   const context = actions.find((action) => action.kind === "open_alert_context" && action.enabled && action.href);
   const canAck = actions.some((action) => action.kind === "acknowledge_alert" && action.enabled);
+  const direct = actions.find(
+    (action) =>
+      action.enabled &&
+      action.source_alert_effect === "resolves" &&
+      action.kind !== "acknowledge_alert" &&
+      action.kind !== "open_alert_context",
+  );
   return {
     key: alert.pk,
     tone: alert.severity === "critical" || alert.severity === "error" ? "critical" : "warning",
@@ -351,6 +368,7 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     seen: !canAck,
     canAck,
     ...(context ? { href: context.href ?? undefined, hrefLabel: context.label } : {}),
+    ...(direct ? { actLabel: direct.label } : {}),
     ...(alert.respond_by_iso ? { respondByIso: alert.respond_by_iso } : {}),
     ...(alert.deadline_kind === "external" || alert.deadline_kind === "house"
       ? { deadlineKind: alert.deadline_kind }

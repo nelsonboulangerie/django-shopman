@@ -99,3 +99,86 @@ describe("useAlerts", () => {
     expect(env.sonner.error).toHaveBeenCalledWith("Alerta já resolvido.");
   });
 });
+
+// P2-19 do mapa de cenários: o pedido parado sem aceite traz o "Aceitar" no aviso.
+describe("useAlerts: o Aceitar do pedido parado", () => {
+  beforeEach(() => env.reset());
+
+  const PARADO: AlertProjection = {
+    pk: 19,
+    type: "stale_new_order",
+    type_label: "Pedido parado aguardando confirmação",
+    severity: "warning",
+    severity_label: "Aviso",
+    message: "O pedido WEB-19 espera aceite há tempo demais.",
+    order_ref: "WEB-19",
+    created_at_display: "13/10 às 21:55",
+    actions: [
+      {
+        ref: "confirm-order:19", kind: "confirm_order", label: "Aceitar", enabled: true,
+        href: "/api/v1/backstage/orders/WEB-19/confirm/", source_alert_effect: "resolves",
+      },
+    ],
+  };
+  const CONFIRM = {
+    ref: "confirm", kind: "mutation", label: "Aceitar", enabled: true, reason: "", method: "POST",
+    payload_schema: { expected_actor_id: 1, base_revision: "rev-1" },
+  };
+
+  it("relê o pedido e manda a intenção canônica do aceite pela rota do aviso", async () => {
+    env.fetchData.value = { alerts: [PARADO], counts: { active: 1, critical: 0 }, ...READ };
+    env.fetchMock.mockImplementation(async (url: string) =>
+      url === "/api/v1/backstage/orders/WEB-19/"
+        ? { order: { ref: "WEB-19", actions: [CONFIRM] } }
+        : { outcome: "applied" },
+    );
+    const a = useAlerts();
+
+    expect(a.acceptAction(PARADO)?.label).toBe("Aceitar");
+    expect(await a.accept(PARADO)).toBe(true);
+
+    const [url, options] = env.fetchMock.mock.calls[1]!;
+    expect(String(url)).toBe("/api/v1/backstage/orders/WEB-19/confirm/");
+    expect(options.method).toBe("POST");
+    expect(options.body).toMatchObject({ expected_actor_id: 1, base_revision: "rev-1" });
+    expect(options.headers["Idempotency-Key"]).toBeTruthy();
+    expect(env.sonner.success).toHaveBeenCalledWith("Pedido WEB-19 aceito.");
+  });
+
+  it("pedido que já andou: não aceita às cegas, manda abrir o pedido", async () => {
+    env.fetchData.value = { alerts: [PARADO], counts: { active: 1, critical: 0 }, ...READ };
+    env.fetchMock.mockResolvedValue({ order: { ref: "WEB-19", actions: [] } });
+    const a = useAlerts();
+
+    expect(await a.accept(PARADO)).toBe(false);
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+    expect(env.sonner.error).toHaveBeenCalledWith(
+      "O pedido WEB-19 não espera mais aceite. Abra o pedido para conferir.",
+    );
+  });
+
+  it("a recusa do servidor chega com a frase dele", async () => {
+    env.fetchData.value = { alerts: [PARADO], counts: { active: 1, critical: 0 }, ...READ };
+    env.fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/v1/backstage/orders/WEB-19/") return { order: { ref: "WEB-19", actions: [CONFIRM] } };
+      throw Object.assign(new Error("conflict"), {
+        statusCode: 409,
+        status: 409,
+        data: { detail: "Pedido não está aguardando confirmação.", outcome: "not_applied" },
+      });
+    });
+    const a = useAlerts();
+
+    expect(await a.accept(PARADO)).toBe(false);
+    expect(env.sonner.error).toHaveBeenCalledWith("Pedido não está aguardando confirmação.");
+  });
+
+  it("aviso sem o gesto do servidor não aceita nada", async () => {
+    const semGesto = { ...PARADO, actions: [] };
+    env.fetchData.value = { alerts: [semGesto], counts: { active: 1, critical: 0 }, ...READ };
+    const a = useAlerts();
+
+    expect(await a.accept(semGesto)).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+});

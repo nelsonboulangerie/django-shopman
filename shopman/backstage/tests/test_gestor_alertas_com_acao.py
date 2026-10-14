@@ -311,3 +311,93 @@ def test_aviso_sem_prazo_nao_traz_prazo(client, gestor):
     client.force_login(gestor)
     alerta = client.get(reverse("api-backstage-alerts"), {"scope": "orders"}).json()["alerts"][0]
     assert alerta["respond_by_iso"] == ""
+
+
+# ── O aviso com a ação pronta (P2-19 do mapa de cenários) ─────────────────
+
+
+def _aceitavel(ref: str, *, status: str = Order.Status.NEW) -> Order:
+    """Pedido novo que o quadro deixa aceitar: disponibilidade conferida, em dinheiro."""
+    return Order.objects.create(
+        ref=ref, channel_ref="web", status=status, total_q=1000,
+        data={"availability_decision": {"approved": True, "decisions": []}, "payment": {"method": "cash"}},
+    )
+
+
+def _acoes(client, *, scope: str = "orders") -> dict[str, dict]:
+    alerta = client.get(reverse("api-backstage-alerts"), {"scope": scope}).json()["alerts"][0]
+    return {acao["kind"]: acao for acao in alerta["actions"]}
+
+
+def test_pedido_parado_sem_aceite_traz_o_aceitar_no_aviso(client, gestor):
+    """Ridiculamente fácil (dono, 25/09): a instrução vem com a ação pronta."""
+    order = _aceitavel("WEB-19")
+    _alert("stale_new_order", order_ref=order.ref)
+    client.force_login(gestor)
+
+    acoes = _acoes(client)
+
+    aceitar = acoes["confirm_order"]
+    assert (aceitar["label"], aceitar["method"], aceitar["href"]) == (
+        "Aceitar",
+        "POST",
+        "/api/v1/backstage/orders/WEB-19/confirm/",
+    )
+    assert aceitar["enabled"] is True
+    assert aceitar["source_alert_effect"] == "resolves"
+    # Abrir o pedido e Visto continuam ao lado.
+    assert {"open_alert_context", "acknowledge_alert"} <= acoes.keys()
+
+
+def test_o_aceitar_do_aviso_aceita_e_o_aviso_fecha(client, gestor, django_capture_on_commit_callbacks):
+    from shopman.backstage.tests._order_intent import context_payload
+
+    order = _aceitavel("WEB-20")
+    _alert("stale_new_order", order_ref=order.ref)
+    client.force_login(gestor)
+    aceitar = _acoes(client)["confirm_order"]
+
+    # O que a tela faz: relê o pedido e manda a intenção canônica para a rota do aviso.
+    with django_capture_on_commit_callbacks(execute=True):
+        resposta = client.post(
+            aceitar["href"],
+            data=context_payload(client, order.ref, "confirm"),
+            content_type="application/json",
+        )
+
+    assert resposta.status_code == 200, resposta.content
+    order.refresh_from_db()
+    assert order.status != Order.Status.NEW
+    assert not _open("stale_new_order", order.ref)
+
+
+def test_pedido_que_ja_andou_nao_oferece_aceitar(client, gestor):
+    order = _aceitavel("WEB-21", status=Order.Status.ACCEPTED)
+    _alert("stale_new_order", order_ref=order.ref)
+    client.force_login(gestor)
+
+    assert "confirm_order" not in _acoes(client)
+
+
+def test_pedido_que_o_quadro_nao_deixa_aceitar_fica_so_com_abrir(client, gestor):
+    """Disponibilidade ainda não conferida: o "Aceitar" do quadro está travado, e o
+    aviso não promete o que a rota recusaria. Leva ao pedido, que diz por quê."""
+    order = _order("WEB-23")
+    _alert("stale_new_order", order_ref=order.ref)
+    client.force_login(gestor)
+
+    acoes = _acoes(client)
+
+    assert "confirm_order" not in acoes
+    assert acoes["open_alert_context"]["href"] == "/WEB-23"
+
+
+def test_o_aceitar_e_so_do_gestor(client, gestor):
+    """Fora do Gestor nenhum app sabe aceitar: lá o aviso só leva ao pedido."""
+    order = _aceitavel("WEB-22")
+    _alert("stale_new_order", order_ref=order.ref)
+    client.force_login(gestor)
+
+    acoes = client.get(reverse("api-backstage-alerts")).json()["alerts"][0]["actions"]
+
+    assert "confirm_order" not in {acao["kind"] for acao in acoes}

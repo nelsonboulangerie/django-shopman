@@ -169,6 +169,38 @@ describe("OperatorInbox", () => {
     expect(document.querySelectorAll("[data-notification-item]")).toHaveLength(1);
   });
 
+  it("o gesto que resolve ali mesmo (P2-19: Aceitar) é o botão cheio, e o Abrir vira contorno", async () => {
+    const act = vi.fn();
+    useOperatorInboxAlerts().value = {
+      items: [
+        {
+          key: 9, tone: "warning", eyebrow: "Aviso · Pedido parado", message: "O pedido W09 espera aceite.",
+          meta: "21:55 · pedido W09", canAck: true, href: "/W09", hrefLabel: "Abrir o pedido", actLabel: "Aceitar",
+        },
+      ],
+      count: 1,
+      ack: vi.fn(),
+      act,
+    };
+    await mount();
+    await openPanel();
+    const botao = document.querySelector<HTMLElement>("[data-alert-act]")!;
+    expect(botao.textContent).toContain("Aceitar");
+    await click("[data-alert-act]");
+    expect(act).toHaveBeenCalledWith(9);
+  });
+
+  it("sem quem execute (o app não declarou act), o gesto direto não aparece", async () => {
+    useOperatorInboxAlerts().value = {
+      items: [{ key: 9, tone: "warning", message: "x", href: "/W09", hrefLabel: "Abrir o pedido", actLabel: "Aceitar" }],
+      count: 1,
+    };
+    await mount();
+    await openPanel();
+    expect(document.querySelector("[data-alert-act]")).toBeNull();
+    expect(document.querySelector("[data-alert-open]")).not.toBeNull();
+  });
+
   it("sem fonte de alertas, a caixa é só a pessoal (sem abas)", async () => {
     items.value = [ROTINA];
     await mount();

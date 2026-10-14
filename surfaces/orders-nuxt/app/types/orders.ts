@@ -160,6 +160,8 @@ export interface AlertProjection {
     href: string;
     expected_rev?: number | null;
     proof?: string;
+    /** `resolves`: o gesto acaba com a causa (o "Aceitar" do pedido parado). */
+    source_alert_effect?: string | null;
   }>;
 }
 

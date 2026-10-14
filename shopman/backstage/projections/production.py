@@ -99,6 +99,7 @@ class ProductionActionProjection:
         "oven_conclude",
         "acknowledge_alert",
         "open_alert_context",
+        "confirm_order",
         "print_labels",
     ]
     label: str

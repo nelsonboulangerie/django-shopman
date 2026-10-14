@@ -122,7 +122,7 @@ class AlertListView(APIView):
             surface = ""
         alerts = alert_service.list_active_alerts(user=request.user, limit=limit, scope=scope)
         counts = alert_service.active_counts(user=request.user, scope=scope)
-        projection = build_operator_alerts_projection(alerts=alerts, counts=counts, surface=surface)
+        projection = build_operator_alerts_projection(alerts=alerts, counts=counts, surface=surface, user=request.user)
         return Response(
             projection_data(
                 projection,
