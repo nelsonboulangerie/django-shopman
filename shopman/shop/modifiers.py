@@ -169,7 +169,7 @@ def time_window_offer(channel_ref: str | None, *, now: datetime | None = None) -
 # e ``unit_price_q`` persistem). Então o desconto vencedor da linha é registrado em
 # ``meta["_disc"]`` (fonte durável entre modifiers), e o preço de lista pré-desconto
 # em ``meta["_list_q"]`` (carimbado pelo ItemPricingModifier). Descontos flat
-# (funcionário, happy hour) calculam sobre a LISTA e só substituem quando batem o
+# (happy hour) calculam sobre a LISTA e só substituem quando batem o
 # desconto atual — nunca compõem sobre um preço já reduzido.
 
 
@@ -663,7 +663,7 @@ class LotDiscountModifier:
     à sacola inteira.
 
     "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha
-    quando bate o desconto já aplicado (promo, funcionário) — nunca compõe.
+    quando bate o desconto já aplicado (promo, happy hour) — nunca compõe.
     """
 
     code = "shop.lot_discount"
@@ -725,7 +725,7 @@ class TimeWindowDiscountModifier:
     (e.g. the online storefront, where listed prices would otherwise diverge).
 
     "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
-    bate o desconto já aplicado (promo, funcionário) — nunca compõe.
+    bate o desconto já aplicado (promo, lote) — nunca compõe.
     """
 
     code = "shop.happy_hour"

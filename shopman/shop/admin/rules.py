@@ -171,7 +171,7 @@ class RuleConfigAdmin(ModelAdmin):
                     "fields": ("params",),
                     "description": (
                         "Parâmetros JSON da regra. Regras de preço conhecidas "
-                        "(happy hour, funcionário) ganham campos tipados ao salvar."
+                        "(happy hour) ganham campos tipados ao salvar."
                     ),
                 },
             )
