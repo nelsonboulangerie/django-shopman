@@ -50,6 +50,7 @@ def _pool_hands_out_a_connection(pool) -> bool:
     try:
         conn = pool.getconn(timeout=POOL_PROBE_TIMEOUT_SECONDS)
     except Exception:  # noqa: BLE001 — PoolTimeout, ou o pool não consegue conectar
+        logger.debug("liveness pool probe got no connection", exc_info=True)
         return False
     pool.putconn(conn)
     return True
