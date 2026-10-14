@@ -259,6 +259,14 @@ e o Nuxt não) para produto, receita, insumo, cliente, fornecedor e grupo, mais 
 kit já oferece para cada requisito acima, e propõe as ondas (a primeira: catálogo de
 produtos, por causa do B5). A proposta vai ao dono em 1/2, com capturas, antes do código.
 
+### 7.3 WP-WATCHMAN: saúde, autocura e desempenho sozinhos
+
+Depois do incidente de 14/10 (pool de banco do `web-operator` esgotado por streams
+SSE, alpha fora por mais de meia hora sem ninguém avisado), o dono decidiu que não
+haverá webmaster e pediu um mecanismo absurdamente robusto, sem custo de
+desempenho, reaproveitável em outros projetos. Plano completo:
+[`WP-WATCHMAN.md`](WP-WATCHMAN.md). Começa depois que o PR do vazamento de SSE entrar.
+
 ## 8. Pendências que dependem do dono
 
 - Sessão de 20 min (seção 6), quando o certificado Efí de homologação existir.
@@ -275,8 +283,8 @@ produtos, por causa do B5). A proposta vai ao dono em 1/2, com capturas, antes d
 
 ## 9. Na janela da virada (não antes)
 
-- Aplicar o #1713 (readiness pelo banco e access log) conforme
-  `docs/runbooks/web-operator-resiliencia.md`.
+- #1713 (readiness pelo banco e access log): **já aplicado no alpha em 14/10/2026**
+  (painel, com o dono). Não há o que fazer na virada além de conferir.
 - P0-3: acrescentar `shopman.shop.fiscal_resolvers.intermediated_sale` em
   `SHOPMAN_FISCAL_EMISSION_RESOLVER` (já no `scripts/golive_spec_delta.py`).
 - Roteiro completo: `docs/runbooks/go-live-cutover.md` e
