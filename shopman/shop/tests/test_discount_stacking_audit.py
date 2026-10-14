@@ -48,6 +48,14 @@ VIRADA_DEPOIS = datetime(2026, 10, 10, 3, 1, tzinfo=UTC)  # 00:01 local
 
 
 class DiscountStackingAuditTests(TestCase):
+    def _happy_hour(self, **fields) -> RuleConfig:
+        # A regra de horário só vale onde está listada (``channels_required``).
+        # Aqui ela serve de desconto genérico do motor, então é listada no canal
+        # da sessão; na casa ela é a Xepa e só vale no PDV.
+        rule = RuleConfig.objects.create(**fields)
+        rule.channels.add(self.channel)
+        return rule
+
     def setUp(self) -> None:
         super().setUp()
         cache.clear()
@@ -184,7 +192,7 @@ class DiscountStackingAuditTests(TestCase):
             name="Promo 50", type=Promotion.PERCENT, value=50, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
-        RuleConfig.objects.create(
+        self._happy_hour(
             ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="Happy Hour", params=_wide_window_params(25), enabled=True,
         )
@@ -216,7 +224,7 @@ class DiscountStackingAuditTests(TestCase):
             name="Promo 10", type=Promotion.PERCENT, value=10, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
-        RuleConfig.objects.create(
+        self._happy_hour(
             ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="Happy Hour", params=_wide_window_params(40), enabled=True,
         )
@@ -247,10 +255,8 @@ class DiscountStackingAuditTests(TestCase):
 
     def test_happy_hour_window_crossing_midnight(self) -> None:
         # Janela 23:00–01:00 configurada no Admin: vale dos dois lados da virada
-        # e não vale fora dela. Badge da loja e modificador leem a mesma regra.
-        from shopman.shop.projections.storefront_context import happy_hour_state
-
-        RuleConfig.objects.create(
+        # e não vale fora dela.
+        self._happy_hour(
             ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="Happy Hour", params={"discount_percent": 40, "start": "23:00", "end": "01:00"},
             enabled=True,
@@ -265,7 +271,6 @@ class DiscountStackingAuditTests(TestCase):
                     ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
                 )
                 self.assertEqual(self._line(session)["unit_price_q"], esperado)
-                self.assertEqual(happy_hour_state()["active"], esperado == 600)
 
     # ── HOLE 5: manual order-level discount residue lost on a skipped tail ───
     def test_manual_discount_residue_not_swallowed_by_fee_line(self) -> None:

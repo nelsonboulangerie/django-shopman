@@ -444,7 +444,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Pix venceu | cancela; dois avisos (vencido + cancelado) | `payment_timeout.py:85-97` | ATRITO (P2) |
 | Pago depois de cancelado | estorno + alerta; o cliente não é avisado do estorno | `lifecycle.py:554-557` | ATRITO (P1-9), resolvido em #1720 |
 | Cliente quer cancelar | sozinho em `new`/`accepted` sem captura; pago vira solicitação ao gerente | `payment.py:1582-1595`; `cancellation_requests.py` | OK |
-| Xepa | vale no WhatsApp, não no site; vitrine do WhatsApp copiada uma vez do site | `seed.py:8758-8765`; `bootstrap_whatsapp_channel.py:105-152` | ATRITO (P1-14) |
+| Xepa | só no balcão (decisão de 14/10, Pergunta 3 = 1): fora do WhatsApp, do site e do iFood, e a loja não anuncia | `rules/pricing.py` (`channels_required`); migração `shop.0093` | OK (P1-14) |
 | `bootstrap_whatsapp_channel` | recria o canal com `auto_confirm`, contra a decisão da migração 0054 | `bootstrap_whatsapp_channel.py:32` | LACUNA (P1-15), resolvida em #1718 |
 | Pagar na entrega pelo site | não existe (`cash` fora dos métodos do canal) | `views.py:161-165`; `config.py:512` | decisão (Pergunta 2) |
 | Horário de entrega do site | só confere "já passou", não a grade | `views.py:273-285` | ATRITO (P2) |
@@ -591,7 +591,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 | P1-11 · **resolvido #1718** | Link do entregador da TaOn não aparece na página do pedido | `order_tracking.py:1477-1482`; `courier.py:700` | A projeção lê `order.data.courier.tracking_url` | XS |
 | P1-12 | Nota fora da janela de 30 min ou depois da saída: o sistema tenta cancelar e só alerta; não há nota de estorno, e toda devolução cai aí | `fiscal.py:854`; `handlers/fiscal.py:517-575` | Fora da janela, não tentar cancelar: abrir a pendência "nota de estorno" com o roteiro do contador (até a emissão automática existir) | M |
 | P1-13 · **em PR #1737** | Conferência de volumes no despacho: nada impede a sacola de um pedido sair com outro | `receipt_escpos.py:706` | QR de conferência em cada Via Pedido ("pedido + volume k de N"); a Saída bipa e diz "2 de 3 sacolas conferidas"; despachar com falta **avisa**, não bloqueia | M |
-| P1-14 | Xepa vale no WhatsApp e não no site; vitrine do WhatsApp copiada uma vez | `seed.py:8758-8765`; `bootstrap_whatsapp_channel.py:105-152` | Depende da Pergunta 3; a vitrine do WhatsApp passa a espelhar a do site | S |
+| P1-14 · **Xepa: em PR** | Xepa vale no WhatsApp e não no site; vitrine do WhatsApp copiada uma vez | `seed.py:8758-8765`; `bootstrap_whatsapp_channel.py:105-152` | Xepa só no balcão (Pergunta 3 = 1, 14/10), migração `shop.0093`. Resta a vitrine do WhatsApp espelhar a do site | S |
 | P1-15 · **resolvido #1718** | `bootstrap_whatsapp_channel` recria o autoaceite | `bootstrap_whatsapp_channel.py:32` | Config igual ao seed (`manual`) | XS |
 
 ### P2
@@ -637,3 +637,5 @@ Hoje só no PDV.
 **3. Xepa (Happy Hour): onde vale?** Hoje vale no balcão e no WhatsApp, e não no site.
 - **1 (recomendo):** só no balcão. É liquidação de fim de dia de quem está na loja.
 - **2:** balcão, WhatsApp e site.
+
+**Decidido (14/10/2026): 1.** Só no balcão. Feito no PR da Xepa (migração `shop.0093`).

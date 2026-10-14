@@ -117,12 +117,6 @@ export interface CatalogProjection {
   sections: CatalogSectionProjection[]
   featured: CatalogItemProjection[]
   active_category_ref: string | null
-  happy_hour: {
-    active: boolean
-    discount_percent: number
-    start: string
-    end: string
-  } | null
   favorite_category_ref: string | null
   has_items: boolean
   // Copy de vitrine vazia / busca sem resultado (backend); opcional + fallback na tela.

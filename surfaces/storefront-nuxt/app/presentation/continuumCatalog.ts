@@ -120,7 +120,6 @@ export function catalogFromStructureSnapshot (
     })),
     featured: [],
     active_category_ref: null,
-    happy_hour: null,
     favorite_category_ref: null,
     has_items: state.has_items && items.length > 0,
     empty_state: state.empty_state || null,

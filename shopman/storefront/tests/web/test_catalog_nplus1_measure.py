@@ -196,7 +196,6 @@ def _serialize(proj) -> dict:
         "featured_skus": [i.sku for i in proj.featured],
         "categories": [{"ref": c.ref, "name": c.name} for c in proj.categories],
         "active_category_ref": proj.active_category_ref,
-        "happy_hour": dataclasses.asdict(proj.happy_hour) if proj.happy_hour else None,
     }
 
 

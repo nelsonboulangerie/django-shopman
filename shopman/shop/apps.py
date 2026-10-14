@@ -257,6 +257,15 @@ class ShopmanConfig(AppConfig):
             sender=RuleConfig,
             dispatch_uid="shopman.shop.rules.invalidate_cache",
         )
+        # Os canais da regra moram num M2M, gravado DEPOIS do post_save: sem
+        # isto, tirar a Xepa de um canal no Admin só valia quando o cache vencesse.
+        from django.db.models.signals import m2m_changed
+
+        m2m_changed.connect(
+            invalidate_rules_cache,
+            sender=RuleConfig.channels.through,
+            dispatch_uid="shopman.shop.rules.invalidate_cache_channels",
+        )
 
         # O registro de atributos é lido a cada sugestão e a cada leitura de
         # produto; cadastrar um atributo no Admin precisa valer na hora, e não

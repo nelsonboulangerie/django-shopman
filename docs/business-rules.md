@@ -498,7 +498,13 @@ happy_hour:
   janela: 17:30 – 18:00   # Configurável via RuleConfig "happy_hour"
   exclusão: NÃO acumula com desconto funcionário
   aplicação: pós-pricing, sobre unit_price_q
+  canais: só os listados no RuleConfig; sem canal, não vale em lugar nenhum
 ```
+
+Na casa é a **Hora da Xepa**, e vale **só no balcão (PDV)**: decisão do dono, 14/10/2026.
+É liquidação de fim de dia de quem está na loja. Site, WhatsApp e iFood não têm Xepa,
+e a loja online não a anuncia. A regra declara `channels_required`, então o "vazio =
+todos" das outras regras não vale para ela (migração `shop.0093`).
 
 ---
 

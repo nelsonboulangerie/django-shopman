@@ -37,12 +37,12 @@ def balcao():
     cache.clear()
     with patch("django.utils.timezone.now", return_value=NO_HAPPY_HOUR):
         counter = _Counter()
-    from shopman.shop.models import RuleConfig
+    from shopman.shop.models import Channel, RuleConfig
 
     RuleConfig.objects.create(
         ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
         label="Happy Hour", params={"discount_percent": 40, "start": "17:00", "end": "18:00"}, enabled=True,
-    )
+    ).channels.set(Channel.objects.filter(ref="pdv"))
     cache.clear()
     yield counter
     cache.clear()

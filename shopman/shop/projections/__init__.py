@@ -9,7 +9,6 @@ from .types import (  # noqa: F401
     AddressAutocompleteProjection,
     Availability,
     CategoryProjection,
-    HappyHourProjection,
     OrderItemProjection,
     PickupSlotProjection,
     SavedAddressProjection,
