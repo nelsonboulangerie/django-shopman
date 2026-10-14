@@ -2857,7 +2857,7 @@ _AUTO_PRICING_DISCOUNT_TYPES = frozenset({
 
 
 def _tab_payload_pricing_discount(item: dict) -> dict | None:
-    """O desconto automático que venceu a linha (lote, happy hour, funcionário).
+    """O desconto automático que venceu a linha (lote, happy hour, grupo).
 
     O kernel baixa ``unit_price_q`` e carimba tipo, valor por unidade e RÓTULO
     de cliente em ``meta._disc`` — mas o PDV não mostrava nada: o operador via

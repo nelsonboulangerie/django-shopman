@@ -250,6 +250,45 @@ def _current_disc_q(item: dict) -> int:
     return max(0, _list_price_q(item) - int(item.get("unit_price_q", 0) or 0))
 
 
+def _round_to_step_q(price_q: int, step_q: int) -> int:
+    """Arredonda price_q ao múltiplo de step_q mais próximo (half-up).
+
+    O passo de 50 centavos é a régua da casa: o preço final do grupo cai no
+    R$ X,00 ou R$ X,50 mais perto, podendo subir ou descer até R$ 0,25.
+    """
+    if step_q <= 1:
+        return price_q
+    from decimal import ROUND_HALF_UP
+
+    steps = (Decimal(int(price_q)) / Decimal(int(step_q))).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return int(steps) * int(step_q)
+
+
+def _savings_message(template: str, *, amount_q: int, group: str) -> str:
+    """Renderiza a mensagem de economia do grupo ({amount} e {group}).
+
+    Texto do grupo quando configurado no Admin; vazio cai no copy global
+    CHECKOUT_GROUP_SAVINGS.
+    """
+    from shopman.utils.monetary import format_money
+
+    text = (template or "").strip()
+    if not text:
+        from shopman.shop.omotenashi.copy import WILDCARD, resolve_copy
+
+        entry = resolve_copy("CHECKOUT_GROUP_SAVINGS", moment=WILDCARD, audience=WILDCARD)
+        text = (entry.message or entry.title or "").strip()
+    if not text:
+        text = "Hoje você economizou {amount} por ser {group}"
+    return (
+        text.replace("{amount}", f"R$ {format_money(amount_q)}")
+        .replace("{group}", group)
+        .strip()
+    )
+
+
 # ── Rateio de desconto de PEDIDO entre as linhas ──────────────────────────
 # Invariante que o rateio precisa preservar: ``line_total_q == qty × unit_price_q``.
 # É o ``ItemPricingModifier`` (ordem 10) quem a estabelece, e os três rateios de
@@ -819,6 +858,20 @@ class DiscountModifier:
         pricing = session.pricing or {}
         session.pricing = pricing
 
+        # O desconto do PRÓPRIO grupo do cliente (a promoção grupo-<ref>) é o
+        # único que arredonda o preço final, carrega o tipo para o B.I. e produz a
+        # mensagem de economia. Contexto resolvido uma vez, não por linha.
+        from shopman.shop.services.promotions import group_discount_ref
+
+        tier_ref = str(ctx.get("price_tier") or "")
+        tier_metadata = ctx.get("price_tier_metadata") or {}
+        group_ref = group_discount_ref(tier_ref) if tier_ref else ""
+        group_kind = str(tier_metadata.get("discount_kind") or "").strip()
+        try:
+            rounding_q = int(tier_metadata.get("rounding", 50) or 0)
+        except (TypeError, ValueError):
+            rounding_q = 50
+
         for item in items:
             if _is_non_merchandise_line(item):
                 continue
@@ -840,7 +893,7 @@ class DiscountModifier:
 
             # Find best discount candidate
             best_discount_q = 0
-            best_source = None  # (type, name, promo)
+            best_source = None  # (type, name, promo, discount_kind)
 
             # Only PERCENT discounts compete per-line: a percentage is intrinsically
             # per-unit. FIXED discounts are order-level and applied once, after this
@@ -854,9 +907,15 @@ class DiscountModifier:
                 if not self._matches(promo, sku, ctx):
                     continue
                 discount_q = self._calc_discount(promo, price_q)
+                promo_kind = None
+                if group_ref and getattr(promo, "ref", "") == group_ref:
+                    promo_kind = group_kind or None
+                    if rounding_q > 0:
+                        rounded = _round_to_step_q(max(0, price_q - discount_q), rounding_q)
+                        discount_q = max(0, price_q - rounded)
                 if discount_q > best_discount_q:
                     best_discount_q = discount_q
-                    best_source = ("promotion", promo.name, promo)
+                    best_source = ("promotion", promo.name, promo, promo_kind)
 
             # Evaluate coupon
             if coupon_promo and coupon_promo.type == "percent":
@@ -865,14 +924,14 @@ class DiscountModifier:
                         coupon_discount_q = self._calc_discount(coupon_promo, price_q)
                         if coupon_discount_q >= best_discount_q:
                             best_discount_q = coupon_discount_q
-                            best_source = ("coupon", coupon_code, coupon_promo)
+                            best_source = ("coupon", coupon_code, coupon_promo, None)
 
             # Evaluate operator manual per-line discount (percent), best wins.
             if manual_allowed:
                 manual_discount_q = self._calc_manual(manual, price_q)
                 if manual_discount_q > best_discount_q:
                     best_discount_q = manual_discount_q
-                    best_source = ("manual", manual.get("reason") or "manual", None)
+                    best_source = ("manual", manual.get("reason") or "manual", None, None)
 
             # Apply winner — só quando bate o desconto já na linha (best-wins, sem
             # composição). Reconcilia a transparência do desconto substituído
@@ -882,7 +941,7 @@ class DiscountModifier:
                 item["unit_price_q"] = list_q - best_discount_q
                 item["line_total_q"] = monetary_mult(_qty_decimal(item), item["unit_price_q"])
 
-                source_type, source_name, source_promo = best_source
+                source_type, source_name, source_promo, source_kind = best_source
                 # Fonte durável do desconto vencedor da linha: ``meta._disc`` (para o
                 # árbitro flat reconciliar em "maior ganha") + ``discounts_applied``
                 # (abaixo) que vira ``pricing["discount"]``. ``modifiers_applied`` foi
@@ -891,13 +950,13 @@ class DiscountModifier:
                 modified = True
 
                 qty = _qty_decimal(item)
-                discounts_applied.append({
+                record = {
                     # A LINHA que ganhou o desconto, ao lado do SKU. O registro é
                     # a única fonte que sobrevive ao save (a linha perde campos
-                    # extras no ``update_items``), e quem o relê é a comanda do
-                    # PDV para restaurar o preço PRÉ-desconto. Identificado só
-                    # pelo SKU, o registro de uma linha respondia pela outra do
-                    # mesmo produto — a cortesia dada num café aparecia nos dois.
+                    # extras no update_items), e quem o relê é a comanda do PDV
+                    # para restaurar o preço PRÉ-desconto. Identificado só pelo
+                    # SKU, o registro de uma linha respondia pela outra do mesmo
+                    # produto — a cortesia dada num café aparecia nos dois.
                     "line_id": item.get("line_id", ""),
                     "sku": sku,
                     "type": source_type,
@@ -906,7 +965,10 @@ class DiscountModifier:
                     "discount_q": best_discount_q,
                     "qty": _qty_json(qty),
                     "fulfillment_types": list(getattr(source_promo, "fulfillment_types", None) or []),
-                })
+                }
+                if source_kind:
+                    record["discount_kind"] = source_kind
+                discounts_applied.append(record)
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
 
@@ -915,7 +977,14 @@ class DiscountModifier:
         # of a R$5 coupon is R$5 off the order, not R$30. Applied once to the
         # eligible merchandise subtotal, distributed across lines that don't
         # already carry a per-line discount (no stacking on the same line).
-        fixed = self._best_fixed_discount(promotions, coupon_promo, coupon_code, session_total)
+        fixed = self._best_fixed_discount(
+            promotions,
+            coupon_promo,
+            coupon_code,
+            session_total,
+            group_ref=group_ref,
+            group_kind=group_kind,
+        )
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
             eligible = [
@@ -930,7 +999,7 @@ class DiscountModifier:
             ]
             eligible_subtotal = sum(int(item.get("line_total_q", 0)) for item in eligible)
             target_q = min(fixed_value, eligible_subtotal)
-            src_type, src_name = fixed_source
+            src_type, src_name, src_kind = fixed_source
             # O registrado é o desconto REALMENTE aplicado, nunca o nominal: um
             # cupom de R$ 5,00 sobre uma linha de 6 unidades não é representável em
             # centavos por unidade (5,00/6 = 0,8333…), então o rateio entrega o
@@ -947,7 +1016,7 @@ class DiscountModifier:
                 modified = True
                 # sku=""/line_id="" — an order-level record: it aggregates into the
                 # cart's discount total/line but matches no line (no strikethrough).
-                discounts_applied.append({
+                order_record = {
                     "line_id": "",
                     "sku": "",
                     "type": src_type,
@@ -956,7 +1025,10 @@ class DiscountModifier:
                     "discount_q": applied_q,
                     "qty": 1,
                     "fulfillment_types": list(getattr(fixed_promo, "fulfillment_types", None) or []),
-                })
+                }
+                if src_kind:
+                    order_record["discount_kind"] = src_kind
+                discounts_applied.append(order_record)
                 if src_type == "coupon":
                     total_coupon_discount_q += applied_q
 
@@ -966,10 +1038,26 @@ class DiscountModifier:
         # Persist discount info in session.pricing (items lose extra fields on save)
         if not session.pricing:
             session.pricing = {}
-        session.pricing["discount"] = {
+        discount_block = {
             "total_discount_q": sum(_record_total_q(d) for d in discounts_applied),
             "items": discounts_applied,
         }
+        group_savings_q = sum(
+            _record_total_q(d) for d in discounts_applied if d.get("discount_kind")
+        )
+        if group_savings_q > 0:
+            group_name = str(ctx.get("price_tier_name") or "")
+            discount_block["savings"] = {
+                "amount_q": group_savings_q,
+                "group": group_name,
+                "kind": group_kind,
+                "message": _savings_message(
+                    str(tier_metadata.get("savings_message") or ""),
+                    amount_q=group_savings_q,
+                    group=group_name,
+                ),
+            }
+        session.pricing["discount"] = discount_block
         if coupon_code:
             session.pricing["coupon"] = {
                 "code": coupon_code,
@@ -1092,17 +1180,23 @@ class DiscountModifier:
 
     @staticmethod
     def _best_fixed_discount(
-        promotions: list[Any], coupon_promo: Any, coupon_code: str | None, session_total: int
-    ) -> tuple[int, tuple[str, str], Any] | None:
+        promotions: list[Any],
+        coupon_promo: Any,
+        coupon_code: str | None,
+        session_total: int,
+        *,
+        group_ref: str = "",
+        group_kind: str = "",
+    ) -> tuple[int, tuple[str, str, str | None], Any] | None:
         """Largest applicable FIXED discount, as a single order-level candidate.
 
         Fixed promotions and the fixed coupon compete on value (best wins, no
-        stacking of two fixed discounts). ``min_order_q`` is gated against the
-        gross order subtotal; SKU/collection scope is enforced later when picking
-        the eligible lines. Returns ``(value_q, source, promo)`` where ``source``
-        is ``("promotion", name)`` or ``("coupon", code)``, or ``None``.
+        stacking of two fixed discounts). min_order_q is gated against the gross
+        order subtotal; SKU/collection scope is enforced later when picking the
+        eligible lines. Returns (value_q, source, promo) where source is
+        (type, name, discount_kind), or None.
         """
-        best: tuple[int, tuple[str, str], Any] | None = None
+        best: tuple[int, tuple[str, str, str | None], Any] | None = None
         for promo in promotions:
             if promo.type != "fixed":
                 continue
@@ -1110,12 +1204,13 @@ class DiscountModifier:
                 continue
             value = max(0, int(promo.value or 0))
             if value > 0 and (best is None or value > best[0]):
-                best = (value, ("promotion", promo.name), promo)
+                kind = group_kind or None if (group_ref and getattr(promo, "ref", "") == group_ref) else None
+                best = (value, ("promotion", promo.name, kind), promo)
         if coupon_promo is not None and coupon_promo.type == "fixed":
             if not (coupon_promo.min_order_q and session_total < coupon_promo.min_order_q):
                 value = max(0, int(coupon_promo.value or 0))
                 if value > 0 and (best is None or value >= best[0]):
-                    best = (value, ("coupon", coupon_code or ""), coupon_promo)
+                    best = (value, ("coupon", coupon_code or "", None), coupon_promo)
         return best
 
     @staticmethod
