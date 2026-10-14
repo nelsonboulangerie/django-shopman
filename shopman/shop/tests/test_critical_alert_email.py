@@ -17,14 +17,32 @@ def paging(settings, monkeypatch):
     monkeypatch.setattr("shopman.shop.adapters.notification_email.is_available", lambda *args: True)
 
 
-def test_critical_alert_queues_once_per_type_without_raw_sensitive_detail(paging):
+def test_critical_alert_pages_each_order_without_raw_sensitive_detail(paging):
     for ref in ["ORDER-1", "ORDER-2"]:
         observability.create_operator_alert(type="fiscal_emit_failed", severity="critical",
                                            message="private provider content", order_ref=ref, dedupe_key=ref)
-    task = Directive.objects.get(payload__event="operator_critical")
-    assert task.payload["recipient"] == "owner@example.com"
-    assert "private provider content" not in str(task.payload)
-    assert task.payload["backends"] == ["email"]
+    tasks = Directive.objects.filter(payload__event="operator_critical").order_by("pk")
+    assert [t.payload["context"]["order_ref"] for t in tasks] == ["ORDER-1", "ORDER-2"]
+    for task in tasks:
+        assert task.payload["recipient"] == "owner@example.com"
+        assert "private provider content" not in str(task.payload)
+        assert task.payload["backends"] == ["email"]
+
+
+def test_critical_alert_same_order_pages_once_within_window(paging):
+    for key in ["first-failure", "second-failure"]:
+        alert = observability.create_operator_alert(type="fiscal_emit_failed", severity="critical",
+                                                    message=f"failure {key}", order_ref="ORDER-1",
+                                                    dedupe_key=key)
+        assert alert is not None
+    assert Directive.objects.filter(payload__event="operator_critical").count() == 1
+
+
+def test_critical_alert_without_order_pages_once_per_type(paging):
+    for message in ["backend down A", "backend down B"]:
+        observability.create_operator_alert(type="ifood_store_sync_failed", severity="critical",
+                                           message=message)
+    assert Directive.objects.filter(payload__event="operator_critical").count() == 1
 
 
 def test_noncritical_alert_does_not_page(paging):
