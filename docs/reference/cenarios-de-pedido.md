@@ -122,8 +122,9 @@ decidida, E013). **O iFood (`external`) não caía em nenhum dos quatro** (§8, 
 
 Sem CPF na entrega, a nota sai presencial (`indPres=1`, taxa da casa em `vOutro`,
 `fiscal.py:503-528`). Cancelar nota só em 30 min e com a mercadoria na casa
-(`cancellation_path`, `fiscal.py:194`); fora disso o caminho legal é nota de estorno, que o
-sistema não emite (§8, P1-12).
+(`cancellation_path`); fora disso o caminho legal é nota de estorno, que o sistema ainda não
+emite: o cancelamento nem é tentado e abre a pendência "nota de estorno" no Gestor, com o que
+juntar para o contador (`fiscal.open_return_note`; §8, P1-12, resolvido).
 
 ### 1.4 Pagamento
 
@@ -592,7 +593,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 | P1-9 · **resolvido #1720** | Cliente não é avisado do estorno; devolução sem texto | `payment_refunded` sem emissor; `notification_copy.py` | Emitir `payment_refunded` no estorno concluído; texto de `order_returned`; um aviso só no Pix vencido | S |
 | P1-10 · **em PR #1730** | Motivo do cancelamento é opcional e vai literal ao cliente | `backstage/api/operations.py:2268-2312` | Separar "motivo (interno)" de "mensagem ao cliente (opcional)"; sem mensagem, o texto padrão | S |
 | P1-11 · **resolvido #1718** | Link do entregador da TaOn não aparece na página do pedido | `order_tracking.py:1477-1482`; `courier.py:700` | A projeção lê `order.data.courier.tracking_url` | XS |
-| P1-12 | Nota fora da janela de 30 min ou depois da saída: o sistema tenta cancelar e só alerta; não há nota de estorno, e toda devolução cai aí | `fiscal.py:854`; `handlers/fiscal.py:517-575` | Fora da janela, não tentar cancelar: abrir a pendência "nota de estorno" com o roteiro do contador (até a emissão automática existir) | M |
+| P1-12 · **em PR** | Nota fora da janela de 30 min ou depois da saída: o sistema tenta cancelar e só alerta; não há nota de estorno, e toda devolução cai aí | `fiscal.py:854`; `handlers/fiscal.py:517-575` | Fora da janela (ou com a mercadoria fora, ou devolução parcial), não tentar cancelar: abrir a pendência "nota de estorno" no Gestor, com o roteiro do que juntar para o contador (`fiscal.open_return_note`, aviso `fiscal_return_note_due`). Emissão automática da nota de estorno fica para depois da resposta do contador | M |
 | P1-13 · **em PR #1737** | Conferência de volumes no despacho: nada impede a sacola de um pedido sair com outro | `receipt_escpos.py:706` | QR de conferência em cada Via Pedido ("pedido + volume k de N"); a Saída bipa e diz "2 de 3 sacolas conferidas"; despachar com falta **avisa**, não bloqueia | M |
 | P1-14 · **Xepa: em PR** | Xepa vale no WhatsApp e não no site; vitrine do WhatsApp copiada uma vez | `seed.py:8758-8765`; `bootstrap_whatsapp_channel.py:105-152` | Xepa só no balcão (Pergunta 3 = 1, 14/10), migração `shop.0093`. Resta a vitrine do WhatsApp espelhar a do site | S |
 | P1-15 · **resolvido #1718** | `bootstrap_whatsapp_channel` recria o autoaceite | `bootstrap_whatsapp_channel.py:32` | Config igual ao seed (`manual`) | XS |

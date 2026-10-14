@@ -149,14 +149,17 @@ class OperatorAlert(models.Model):
         # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
         # porque o pagamento gravado é menor que o total; nota autorizada cujo
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
-        # cancelada é passivo); e devolução parcial com a nota inteira de pé.
+        # cancelada é passivo); e a nota que não pode mais ser cancelada (fora
+        # dos 30 minutos, mercadoria já fora, devolução parcial) e espera a nota
+        # de estorno, que o sistema ainda não emite: a pendência leva ao
+        # contador o que ele precisa (P1-12).
         # Nenhum desses se resolve com retry — todos terminam em alguém.
         ("fiscal_emit_failed", "Emissão da NFC-e falhou após tentativas"),
         ("fiscal_receipt_promised", "Nota prometida ao cliente e não emitida"),
         ("fiscal_payment_mismatch", "NFC-e barrada: pagamento abaixo do total"),
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
         ("fiscal_cancel_failed", "Cancelamento da NFC-e falhou"),
-        ("fiscal_partial_return", "Devolução parcial com NFC-e em pé"),
+        ("fiscal_return_note_due", "Nota de estorno a encaminhar ao contador"),
         # Venda por marketplace indo para a nota sem identificar quem intermediou
         # (Ajuste SINIEF 22/20). A nota sai VÁLIDA e fora da regra — defeito que
         # não reclama sozinho —, e o que falta é configuração, não retry.
@@ -391,6 +394,7 @@ class OperatorAlert(models.Model):
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",
+        "fiscal_return_note_due",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
