@@ -2341,7 +2341,7 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
     import io
 
     import tablib
-    from shopman.offerman.contrib.import_export.resources import ProductResource
+    from shopman.offerman import ProductResource
 
     text = str(csv_text or "").strip()
     if not text:

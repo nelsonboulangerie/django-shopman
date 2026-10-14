@@ -64,10 +64,11 @@ const form = reactive({
   keywordsText: "",
   image_url: "",
   availability_policy: "planned_ok",
-  shelf_life_days: "" as string | number,
+  shelf_life_days: "",
   storage_tip: "",
   ingredients_text: "",
-  unit_weight_g: "" as string | number,
+  unit_weight_g: "",
+  is_batch_produced: false,
   is_published: true,
   is_sellable: true,
   fiscal_profile: "",
@@ -132,6 +133,7 @@ function resetForm() {
   form.storage_tip = "";
   form.ingredients_text = "";
   form.unit_weight_g = "";
+  form.is_batch_produced = false;
   form.is_published = true;
   form.is_sellable = true;
   form.fiscal_profile = "";
@@ -156,7 +158,7 @@ watch(
     if (!form.name && typeof value("name") === "string")
       form.name = value("name") as string;
     if (form.unit_weight_g === "" && typeof value("net_weight_g") === "number")
-      form.unit_weight_g = value("net_weight_g") as number;
+      form.unit_weight_g = String(value("net_weight_g"));
     if (
       !form.ingredients_text &&
       typeof value("ingredients_text") === "string"
@@ -167,8 +169,13 @@ watch(
   },
 );
 
-const fieldsWithDraft = computed(() =>
-  Object.keys(props.draft?.fields ?? {}),
+// Lista com a ENTRADA já resolvida: iterar as chaves e indexar de novo deixava o
+// campo "possivelmente undefined" para o typecheck.
+const draftFields = computed(() =>
+  Object.entries(props.draft?.fields ?? {}).map(([name, entry]) => ({
+    name,
+    entry,
+  })),
 );
 
 function parseBrl(text: string): number | null {
@@ -205,12 +212,18 @@ function useSuggestion(suggestion: CorrelateResult["suggestions"][number]) {
     form.fiscal_profile = String(suggestion.value);
     return;
   }
-  if (
-    ["unit", "availability_policy", "shelf_life_days", "is_batch_produced"].includes(
-      suggestion.field,
-    )
-  ) {
-    (form as Record<string, unknown>)[suggestion.field] = suggestion.value;
+  if (suggestion.field === "shelf_life_days") {
+    form.shelf_life_days = String(suggestion.value);
+    return;
+  }
+  if (suggestion.field === "is_batch_produced") {
+    form.is_batch_produced = Boolean(suggestion.value);
+    return;
+  }
+  if (suggestion.field === "unit" || suggestion.field === "availability_policy") {
+    (form as Record<string, unknown>)[suggestion.field] = String(
+      suggestion.value,
+    );
   }
 }
 
@@ -283,6 +296,7 @@ function submit() {
     ingredients_text: form.ingredients_text.trim(),
     is_published: form.is_published,
     is_sellable: form.is_sellable,
+    is_batch_produced: form.is_batch_produced,
   };
   if (form.unit_weight_g !== "")
     payload.unit_weight_g = Number(form.unit_weight_g);
@@ -411,31 +425,31 @@ function submit() {
           <div class="flex flex-col gap-3">
             <p class="text-sm font-medium">Revise o que as fontes trazem</p>
             <label
-              v-for="name in fieldsWithDraft"
-              :key="name"
+              v-for="item in draftFields"
+              :key="item.name"
               class="flex items-start gap-2"
             >
               <NuxtCheckbox
-                :model-value="accepted.has(name)"
+                :model-value="accepted.has(item.name)"
                 class="mt-0.5"
                 @update:model-value="
                   (value: boolean | 'indeterminate') =>
-                    toggleField(name, value === true)
+                    toggleField(item.name, value === true)
                 "
               />
               <span class="min-w-0">
                 <span class="block text-sm">
-                  {{ draft.fields[name].label }}:
-                  {{ draft.fields[name].display }}
+                  {{ item.entry.label }}:
+                  {{ item.entry.display }}
                 </span>
                 <span class="block text-xs text-muted-foreground">
-                  Fonte: {{ draft.fields[name].source_label }}
-                  <template v-if="draft.fields[name].detail">
-                    · {{ draft.fields[name].detail }}
+                  Fonte: {{ item.entry.source_label }}
+                  <template v-if="item.entry.detail">
+                    · {{ item.entry.detail }}
                   </template>
                 </span>
                 <span
-                  v-for="alternative in draft.fields[name].alternatives ?? []"
+                  v-for="alternative in item.entry.alternatives ?? []"
                   :key="alternative.source"
                   class="block text-xs text-muted-foreground"
                 >
