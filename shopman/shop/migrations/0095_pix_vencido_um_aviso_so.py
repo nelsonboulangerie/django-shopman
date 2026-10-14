@@ -10,12 +10,13 @@ recria o evento.
 
 from django.db import migrations
 
-RETIRED_EVENT = "payment_expired"
+#: Avisos aposentados: a linha do Admin some (o teste das migrações de texto lê daqui).
+RETIRED_EVENTS = ("payment_expired",)
 
 
 def forwards(apps, schema_editor):
     NotificationTemplate = apps.get_model("shop", "NotificationTemplate")
-    NotificationTemplate.objects.filter(event=RETIRED_EVENT).delete()
+    NotificationTemplate.objects.filter(event__in=RETIRED_EVENTS).delete()
 
 
 class Migration(migrations.Migration):
