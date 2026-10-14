@@ -602,8 +602,12 @@ def _archive_current_ride(block: dict) -> None:
 _STATUS_EVENT = "courier_status"
 
 
-def apply_status(order, machine_status: str, *, source: str, details: dict | None = None) -> None:
+def apply_status(order, machine_status: str, *, source: str, details: dict | None = None,
+                 at: str | None = None) -> None:
     """Persist the external fact once; every replay retries its local derivation.
+
+    ``at`` is when the provider says the step happened (``status_at``); absent,
+    the moment it reached us.
 
     Enrichment uses the observed ride outside the lock. A replacement ride cannot
     adopt its response. A local custody refusal never rolls back the external fact.
@@ -639,7 +643,7 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             # espera, E coletou, F finalizou): o B.I. mede daqui o tempo de chegada do
             # entregador. ``last_event_at`` só guarda a última.
             status_at = dict(block.get("status_at") or {})
-            status_at.setdefault(status, now_iso)
+            status_at.setdefault(status, at or now_iso)
             block["status_at"] = status_at
             if status == "E":
                 block.setdefault("dispatched_at", now_iso)
@@ -812,6 +816,40 @@ def _sync_alert_marker(ride_id: str) -> str:
     return f"corrida {ride_id}"
 
 
+#: O que cada marco do progresso lido prova sobre a corrida, na ordem em que acontece.
+_PROGRESS_STEPS = (("accepted_at", "A"), ("picked_up_at", "E"), ("finished_at", "F"))
+
+#: Quão adiantada está cada letra (D/G/P, a procura, valem zero).
+_STATUS_RANK = {"A": 1, "S": 1, "E": 2, "F": 3, "N": 3, "C": 3}
+
+
+def statuses_from_reading(current: str | None, reported: str, progress: dict | None) -> list[tuple[str, str | None]]:
+    """As letras que uma leitura prova, em ordem, cada uma com a hora em que aconteceu.
+
+    A letra que a central devolve pode ficar para trás do progresso da mesma
+    leitura. Medido no alpha em 13/10/2026 (PDV-261013-L34, corrida 776753357):
+    o progresso trouxe aceite 19:42, chegada à loja 19:44, coleta 19:45 e fim
+    19:55, e a letra seguiu em D por 44 batidas; o pedido só soube do fim às
+    20:26, quando a letra mudou. Vale o que estiver mais adiante: um marco do
+    progresso avança o status sozinho, e os marcos pulados entram no caminho
+    (a coleta registra a cobrança que saiu com o entregador antes do fim).
+    """
+    current = (current or "").strip().upper()
+    reported = (reported or "").strip().upper()
+    if reported in ("N", "C"):
+        return [(reported, None)]
+    progress = progress if isinstance(progress, dict) else {}
+    floor = _STATUS_RANK.get(current, 0)
+    steps = [(letter, str(progress[key])) for key, letter in _PROGRESS_STEPS
+             if progress.get(key) and _STATUS_RANK[letter] > floor]
+    if progress.get("cancelled_at") and not progress.get("finished_at") and current not in TERMINAL_STATUSES:
+        return [("C", str(progress["cancelled_at"]))]
+    reached = max((_STATUS_RANK[letter] for key, letter in _PROGRESS_STEPS if progress.get(key)), default=0)
+    if reported and _STATUS_RANK.get(reported, 0) >= reached and all(letter != reported for letter, _ in steps):
+        steps.append((reported, None))
+    return steps
+
+
 def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
     """Aplica uma leitura da corrida (``adapter.read_ride``): status, entregador e progresso.
 
@@ -826,8 +864,8 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
     if not ride_id:
         return
     status = str(snapshot.get("status") or "")
-    if status:
-        apply_status(order, status, source=source, details=snapshot)
+    for step, at in statuses_from_reading(get_block(order).get("status"), status, snapshot.get("progress")):
+        apply_status(order, step, source=source, details=snapshot, at=at)
     cache.delete(_sync_failures_key(ride_id))
     order.refresh_from_db()
     tracking = _tracking_retry(ride_id, status, known=bool(get_block(order).get("tracking_url")))
