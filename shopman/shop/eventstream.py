@@ -6,14 +6,31 @@ Toda rota SSE passa por :func:`events`, nunca pela view crua do
 pela vida inteira do stream, porque o Django só a devolve no fim do request. Com
 um ``EventSource`` de KDS ou PDV aberto o dia todo, cada tela prendia uma conexão
 que não fazia nada. :func:`events` devolve a conexão depois de cada leitura.
+
+Duas higienes de processo moram aqui também (incidente de 14/10/2026):
+
+- **vida máxima** (``SHOPMAN_SSE_MAX_LIFETIME_SECONDS``): o stream termina sozinho e
+  o ``EventSource`` reconecta. Stream de cliente que sumiu sem fechar o TCP (aba de
+  dispositivo que dormiu, rede que caiu) deixa de durar até o TCP desistir;
+- **teto por sessão** (``SHOPMAN_SSE_MAX_STREAMS_PER_SESSION``): o mesmo navegador
+  não abre streams sem fim; o excedente recebe 429 e a tela segue no poll de
+  fallback. Recusar o novo, e não derrubar o mais velho, é de propósito: derrubar
+  faria o velho reconectar e derrubar outro, em roda.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import hashlib
 import logging
+import threading
+from collections import Counter
 
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.db import connections
+from django.http import JsonResponse
 from django_eventstream.channelmanager import DefaultChannelManager
 from django_eventstream.views import events as _eventstream_events
 
@@ -32,26 +49,111 @@ def release_db_connections() -> None:
             conn.close()
 
 
-async def _release_between_reads(content):
+#: Streams abertos agora, por chave de sessão. Escrito pelo loop (início e fim de
+#: cada stream) e lido pela view (thread do request), daí o lock.
+_open_streams: Counter[str] = Counter()
+_open_lock = threading.Lock()
+
+
+def open_streams(key: str) -> int:
+    with _open_lock:
+        return _open_streams[key]
+
+
+def _stream_opened(key: str | None) -> None:
+    if key:
+        with _open_lock:
+            _open_streams[key] += 1
+
+
+def _stream_closed(key: str | None) -> None:
+    if key:
+        with _open_lock:
+            _open_streams[key] -= 1
+            if _open_streams[key] <= 0:
+                del _open_streams[key]
+
+
+async def _release_between_reads(content, *, max_lifetime: float = 0, session_key: str | None = None):
     """Repassa o stream devolvendo a conexão antes de cada espera.
 
     A primeira devolução cobre o que a view e os middlewares abriram (sessão,
     permissão do canal). As seguintes vêm depois de cada pedaço, e todo pedaço
     sai logo depois de uma leitura do histórico ou de um keep-alive, ou seja,
     imediatamente antes de o stream voltar a esperar evento.
+
+    Com ``max_lifetime`` o stream termina quando o prazo vence, mesmo esperando
+    evento: o ``EventSource`` reconecta e a contagem da sessão cai na hora.
     """
     release = sync_to_async(release_db_connections)
-    await release()
-    async for chunk in content:
+    _stream_opened(session_key)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max_lifetime if max_lifetime > 0 else None
+    source = aiter(content)
+    pending: asyncio.Future | None = None
+    try:
         await release()
-        yield chunk
+        while True:
+            pending = asyncio.ensure_future(anext(source))
+            timeout = None if deadline is None else max(0.0, deadline - loop.time())
+            done, _ = await asyncio.wait({pending}, timeout=timeout)
+            if pending not in done:
+                logger.info("sse_stream_closed reason=max_lifetime seconds=%d", int(max_lifetime))
+                return
+            try:
+                chunk = pending.result()
+            except StopAsyncIteration:
+                return
+            finally:
+                if pending.done():
+                    pending = None
+            await release()
+            yield chunk
+    finally:
+        # O cliente saiu (o Django cancela o envio) ou o prazo venceu: a leitura em
+        # curso é cancelada DENTRO do stream do django_eventstream, para o ``finally``
+        # dele rodar e tirar o listener. Sem isso, o listener ficava para trás.
+        if pending is not None and not pending.done():
+            pending.cancel()
+            with contextlib.suppress(BaseException):
+                await asyncio.shield(_settle(pending))
+        with contextlib.suppress(Exception):
+            await source.aclose()
+        _stream_closed(session_key)
+
+
+async def _settle(future) -> None:
+    with contextlib.suppress(BaseException):
+        await future
+
+
+def _session_bucket(request) -> str | None:
+    """A chave da contagem: o cookie de sessão resumido (o valor cru não fica em memória)."""
+    raw = request.COOKIES.get(settings.SESSION_COOKIE_NAME)
+    return hashlib.sha256(raw.encode()).hexdigest()[:16] if raw else None
+
+
+def _too_many_streams_response(key: str) -> JsonResponse:
+    logger.warning("sse_stream_refused reason=per_session_cap open=%d", open_streams(key))
+    response = JsonResponse({"detail": "Muitas atualizações abertas neste navegador."}, status=429)
+    response["Retry-After"] = "60"
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def events(request, **kwargs):
     """A view de stream do ``django_eventstream``, sem prender conexão de banco."""
+    session_key = _session_bucket(request)
+    cap = int(getattr(settings, "SHOPMAN_SSE_MAX_STREAMS_PER_SESSION", 0) or 0)
+    if session_key and cap > 0 and open_streams(session_key) >= cap:
+        return _too_many_streams_response(session_key)
     response = _eventstream_events(request, **kwargs)
     if getattr(response, "streaming", False) and getattr(response, "is_async", False):
-        response.streaming_content = _release_between_reads(response.streaming_content)
+        response.streaming_content = _release_between_reads(
+            response.streaming_content,
+            max_lifetime=float(getattr(settings, "SHOPMAN_SSE_MAX_LIFETIME_SECONDS", 0) or 0),
+            session_key=session_key,
+        )
     return response
 
 

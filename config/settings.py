@@ -2048,6 +2048,18 @@ SHOPMAN_EFI_WEBHOOK = {
 # any process reaches every active SSE listener across Daphne/ASGI workers.
 EVENTSTREAM_STORAGE_CLASS = "django_eventstream.storage.DjangoModelStorage"
 EVENTSTREAM_CHANNELMANAGER_CLASS = "shopman.shop.eventstream.ShopmanChannelManager"
+# Vida máxima de um stream SSE: no fim o servidor encerra e o EventSource reconecta
+# sozinho (com Last-Event-ID). Limpa de quebra a conexão meio-aberta (cliente sumiu
+# sem FIN), que de outra forma só cai quando o TCP desiste. 0 desliga.
+SHOPMAN_SSE_MAX_LIFETIME_SECONDS = _env_int("SHOPMAN_SSE_MAX_LIFETIME_SECONDS", 1800)
+# Teto de streams abertos ao mesmo tempo por sessão (por navegador). O excedente
+# recebe 429 e a tela fica no poll de fallback. Higiene, não segurança: a chave é o
+# cookie de sessão. 0 desliga.
+SHOPMAN_SSE_MAX_STREAMS_PER_SESSION = _env_int("SHOPMAN_SSE_MAX_STREAMS_PER_SESSION", 12)
+# Liveness (/health/live/): por quanto tempo o pool deste processo pode ficar sem
+# entregar conexão, com o banco respondendo por fora, antes de a sonda pedir
+# reinício (shopman/shop/pool_liveness.py).
+SHOPMAN_LIVENESS_POOL_STUCK_SECONDS = _env_int("SHOPMAN_LIVENESS_POOL_STUCK_SECONDS", 30)
 
 ASGI_APPLICATION = "config.asgi.application"
 

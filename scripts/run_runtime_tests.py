@@ -133,6 +133,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # streams SSE além do tamanho do pool não seguram conexão (incidente 14/10/2026).
     # O pool só existe no PostgreSQL.
     "shopman/shop/tests/test_orphan_connections.py",
+    # Liveness que reinicia o processo travado no pool e NÃO reinicia com o banco
+    # fora: precisa do pool e de uma conexão direta de verdade.
+    "shopman/shop/tests/test_self_healing.py",
 )
 
 
