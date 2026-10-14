@@ -42,6 +42,8 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from shopman.watchman.contracts import Status
+from shopman.watchman.runner import Report, run_profile
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +258,40 @@ def _build_response(
     )
 
 
+def _run_profile_response(
+    profile: str,
+    request,
+    *,
+    failure_only: frozenset[str] = frozenset(),
+) -> JsonResponse:
+    """Preserve the deployed probe contract while Watchman owns execution.
+
+    Public probes predate Watchman and expose ``ok|fail|skipped``. Keep that
+    intentionally small vocabulary and never disclose evidence. An observer
+    error becomes ``skipped`` rather than an exception from the observed app.
+    """
+
+    try:
+        report: Report = run_profile(profile, metadata={"request": request})
+    except Exception:  # noqa: BLE001 - invalid observer config never breaks the observed app
+        logger.exception("watchman_profile_error profile=%s", profile)
+        return _build_response({"watchman": ("skipped", None)}, critical=set())
+
+    public_status = {
+        Status.PASS: "ok",
+        Status.WARN: "ok",
+        Status.FAIL: "fail",
+        Status.UNKNOWN: "skipped",
+        Status.SKIPPED: "skipped",
+    }
+    checks = {
+        result.id: (public_status[result.status], None)
+        for result in report.results
+        if not (result.id in failure_only and result.status is not Status.FAIL)
+    }
+    return _build_response(checks, critical={result.id for result in report.results})
+
+
 class _RateLimitedProbeView(View):
     def dispatch(self, request, *args, **kwargs):
         if not _probe_rate_limiter.allow(_client_key(request)):
@@ -273,13 +309,7 @@ class HealthCheckView(_RateLimitedProbeView):
     """
 
     def get(self, request):
-        from shopman.shop import pool_liveness
-
-        checks = {"process": ("ok", None)}
-        pool = pool_liveness.check_pool()
-        if pool[0] == "fail":
-            checks["pool"] = pool
-        return _build_response(checks, critical={"process", "pool"})
+        return _run_profile_response("liveness", request, failure_only=frozenset({"pool"}))
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -287,16 +317,7 @@ class ReadyCheckView(_RateLimitedProbeView):
     """Readiness: local BFF dependencies, never provider reachability."""
 
     def get(self, request):
-        checks = {
-            "database": _check_database(),
-            "cache": _check_cache(),
-            "migrations": _check_migrations(),
-            "queue": _check_queue(),
-        }
-        return _build_response(
-            checks,
-            critical={"database", "cache", "migrations", "queue"},
-        )
+        return _run_profile_response("readiness", request)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -304,4 +325,4 @@ class DatabaseReadyView(_RateLimitedProbeView):
     """Platform readiness: this process reaches the database, nothing more."""
 
     def get(self, request):
-        return _build_response({"database": _check_database()}, critical={"database"})
+        return _run_profile_response("platform_readiness", request)
