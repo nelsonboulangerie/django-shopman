@@ -7,7 +7,7 @@ do cardápio e dos canais.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -247,7 +247,10 @@ def test_open_ifood_negotiation_is_what_the_order_waits_even_after_delivery(oper
     card = next(card for card in queue.ifood_negotiation_orders if card.ref == order.ref)
     assert card.attention == "negotiation"
     assert card.goal_minutes == 10  # recebida há 2 min, vence em 8
-    expires = timezone.localtime(timezone.now() + timedelta(minutes=8))
+    # O prazo esperado sai do pedido, não de um segundo `now()`: se o minuto virasse
+    # entre a criação e a conferência, "17:43" viraria "17:44" e o teste mentiria.
+    raw_expires = order.data["ifood"]["handshakes"]["dispute-1"]["raw"]["expiresAt"]
+    expires = timezone.localtime(datetime.fromisoformat(raw_expires))
     assert card.goal_label == f"responder até {expires:%H:%M}"
     assert card.attention_since_iso
 
