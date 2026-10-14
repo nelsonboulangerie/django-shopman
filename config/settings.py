@@ -367,16 +367,16 @@ INSTALLED_APPS = [
 ]
 
 # Watchman is the shared execution contract for local probes, CI diagnostics and
-# management commands. The Shopman-specific adapters are optional contribs of the
-# reusable package; public URLs and their rate limiter remain in shopman.shop.
+# management commands. Shopman-specific adapters stay in the host layer; public
+# URLs and their rate limiter remain in shopman.shop.
 WATCHMAN = {
     "CHECKS": [
         "shopman.watchman.checks.ProcessCheck",
-        "shopman.watchman.contrib.shopman.PoolCheck",
-        "shopman.watchman.contrib.shopman.DatabaseCheck",
-        "shopman.watchman.contrib.shopman.CacheCheck",
-        "shopman.watchman.contrib.shopman.MigrationsCheck",
-        "shopman.watchman.contrib.shopman.QueueCheck",
+        "shopman.shop.watchman_checks.PoolCheck",
+        "shopman.shop.watchman_checks.DatabaseCheck",
+        "shopman.shop.watchman_checks.CacheCheck",
+        "shopman.shop.watchman_checks.MigrationsCheck",
+        "shopman.shop.watchman_checks.QueueCheck",
     ],
     "PROFILES": {
         "liveness": ["process", "pool"],

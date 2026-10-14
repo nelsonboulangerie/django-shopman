@@ -1,8 +1,8 @@
-"""Watchman adapters for the health checks owned by django-shopman.
+"""Host-side Watchman adapters for django-shopman health primitives.
 
-This module is optional: the reusable package never imports it unless a project
-registers these dotted paths in ``WATCHMAN``. Imports from ``shopman.shop`` stay
-inside ``run()`` so installing Watchman in another Django project remains valid.
+The reusable ``shopman.watchman`` kernel must not import the product host. These
+adapters therefore live beside the checks they expose and implement Watchman's
+small public protocol without creating a dependency in the opposite direction.
 """
 
 from __future__ import annotations
