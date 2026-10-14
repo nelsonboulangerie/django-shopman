@@ -6,7 +6,6 @@ import {
   bulkableRefs,
   changeBackSuggestionQ,
   dispatchAsksChange,
-  moneyInput,
   cardAffordances,
   channelLabel,
   channelOptions,
@@ -38,6 +37,7 @@ import {
   realtimeIndicator,
   situationAfterContinua,
 } from "../app/presentation/board";
+import { moneyInput } from "../../operator-kit/app/presentation/custody";
 import type {
   OrderCardProjection,
   TwoZoneQueueProjection,

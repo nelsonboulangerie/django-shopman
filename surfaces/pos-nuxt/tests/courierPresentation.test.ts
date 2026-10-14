@@ -10,15 +10,15 @@ import {
   courierCallLabel,
   courierPanelVisible,
   courierRowLine,
+  GESTOR_ONLY_COURIER_LINE,
+  showsDeliveryExitNotice,
   custodyBody,
-  freeMachines,
-  machinePhrase,
-  moneyInput,
   noFreeMachineSentence,
   telHref,
   vehicleLine,
 } from "../app/presentation/courier";
 import type { PreorderCourier } from "../app/types/preorders";
+import { freeMachines, machinePhrase, moneyInput } from "../../operator-kit/app/presentation/custody";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = (...parts: string[]) => readFileSync(resolve(here, "..", "app", ...parts), "utf8");
@@ -86,6 +86,20 @@ describe("o painel do entregador no detalhe", () => {
   });
 });
 
+describe("o aviso de saída pelo Gestor (seguimento)", () => {
+  it("sai quando o PDV já oferece o Entregador, e fica sem ele (TaOn desligada)", () => {
+    expect(showsDeliveryExitNotice({ fulfillment_type: "delivery" }, block({ can_dispatch: true }))).toBe(false);
+    expect(showsDeliveryExitNotice({ fulfillment_type: "delivery" }, block({ status: "A" }))).toBe(false);
+    expect(showsDeliveryExitNotice({ fulfillment_type: "delivery" }, null)).toBe(true);
+    expect(showsDeliveryExitNotice({ fulfillment_type: "pickup" }, null)).toBe(true);
+  });
+
+  it("o que ainda é só do Gestor cabe numa frase, sem travessão", () => {
+    expect(GESTOR_ONLY_COURIER_LINE).toBe("No Gestor de pedidos: cancelar a corrida e registrar a volta do troco ou da maquininha.");
+    expect(GESTOR_ONLY_COURIER_LINE).not.toMatch(/[\u2013\u2014]/);
+  });
+});
+
 describe("a custódia da chamada", () => {
   const machines = [
     { ref: "card_machine:A", label: "Maquininha 1", enabled: true },
@@ -126,6 +140,14 @@ describe("a fiação", () => {
   it("o detalhe aberto se refaz no evento de pedido (SSE), não só a lista", () => {
     const preorders = app("composables", "usePosPreorders.ts");
     expect(preorders).toContain("refreshNuxtData(preordersLiveKeys(openDetail.value))");
+  });
+
+  it("a custódia vem do kit nos dois apps (Gestor e PDV)", () => {
+    const panel = app("components", "PosCourierPanel.vue");
+    expect(panel).toContain('from "../../../operator-kit/app/presentation/custody"');
+    const gestor = readFileSync(resolve(here, "..", "..", "orders-nuxt", "app", "components", "OrderCourierPanel.vue"), "utf8");
+    expect(gestor).toContain('from "../../../operator-kit/app/presentation/custody"');
+    expect(app("presentation", "courier.ts")).not.toMatch(/export function (freeMachines|machinePhrase|moneyInput)/);
   });
 
   it("o painel mora no painel do Balcão e o chamar de novo confirma com a frase do servidor", () => {

@@ -13,21 +13,21 @@
 // - **Chamar de novo**, dentro do aviso, quando a última chamada ficou sem
 //   resposta: a confirmação é a do diálogo da casa, com a frase do servidor.
 //
-// Cancelar e cotar a corrida ficam no Gestor.
+// Cancelar a corrida e registrar a volta do troco ou da maquininha ficam no Gestor
+// (a frase do painel, `GESTOR_ONLY_COURIER_LINE`).
 import type { OrderDetailAction } from "../../../operator-kit/app/types/orderDetail";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import {
   courierBadgeColor as badgeColor,
   courierCallLabel,
+  GESTOR_ONLY_COURIER_LINE,
   custodyBody,
-  freeMachines,
-  machinePhrase,
-  moneyInput,
   noFreeMachineSentence,
   telHref,
   vehicleLine,
 } from "~/presentation/courier";
 import type { PreorderCard, PreorderCourier, PreorderEquipmentOption } from "~/types/preorders";
+import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
 
 const props = defineProps<{
   courier: PreorderCourier;
@@ -206,6 +206,9 @@ async function callAgain() {
           label="Acompanhar corrida"
         />
       </div>
+
+      <!-- Com a corrida pedida, o que ainda é só do Gestor, numa frase. -->
+      <p v-if="courier.status" class="text-sm text-muted" data-pos-courier-gestor>{{ GESTOR_ONLY_COURIER_LINE }}</p>
 
       <!-- Chamar: o toque arma a confirmação, com a pergunta inteira do servidor e
            a custódia que sai com o entregador. -->

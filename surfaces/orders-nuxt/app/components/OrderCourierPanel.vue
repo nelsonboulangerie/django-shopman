@@ -11,11 +11,9 @@ import {
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import {
-  freeMachines,
-  machinePhrase,
   machinesOutSentence,
-  moneyInput,
 } from "~/presentation/board";
+import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type {
   Action,
   EquipmentOptionProjection,

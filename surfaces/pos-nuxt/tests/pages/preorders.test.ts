@@ -127,7 +127,7 @@ beforeEach(() => {
   detail = {
     ref: "NB-7", status: "accepted", status_label: "Aceito", context: "pos",
     actions: [{ ref: "comment", label: "Comentar", enabled: true, reason: "", payload_schema: { base_revision: "rev-comment" } }],
-    channel_ref: "web", channel_icon: "language", total_display: "R$ 36,00",
+    channel_ref: "web", channel_name: "Loja online", channel_icon: "language", total_display: "R$ 36,00",
     customer_name: "Ana Souza", customer_ref: "C-1", customer_phone: "(43) 99988-7766",
     customer_phone_uri: "tel:+5543999887766", customer_whatsapp_url: "https://wa.me/5543999887766",
     customer_email: "", customer_relay_phone: "", customer_relay_code: "", customer_relay_expires_at: "",
@@ -505,7 +505,7 @@ describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
   it("o nome no topo do painel não repete o número e o canal, que o resumo do kit já diz", async () => {
     const wrapper = await mount(DetailPage);
     expect(wrapper.find("[data-preorder-counter-panel]").text()).not.toContain("Loja online");
-    expect(wrapper.find("[data-order-summary]").text()).toContain("web");
+    expect(wrapper.find("[data-order-summary]").text()).toContain("Loja online");
   });
 
   it("hierarquia dos gestos: o principal na largura, os médios lado a lado, Cancelar separado no pé", async () => {

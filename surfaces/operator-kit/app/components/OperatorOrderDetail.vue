@@ -81,7 +81,7 @@ const split = computed(() => props.layout === "split");
  *  #13" quando veio de outra comanda do PDV): quem, de onde, quando. */
 const metaLine = computed(() =>
   [
-    props.order.channel_name || props.order.channel_ref,
+    props.order.channel_name,
     props.order.ref,
     props.order.opened_line,
     props.order.fulfillment_label,
@@ -147,7 +147,7 @@ const itemColumns = [
                 :name="`lucide:${lucideIcon(order.channel_icon)}`"
                 class="size-4"
               />
-              {{ order.channel_name || order.channel_ref }}
+              {{ order.channel_name }}
             </span>
             <span
               class="ml-auto text-xl font-bold tabular-nums"

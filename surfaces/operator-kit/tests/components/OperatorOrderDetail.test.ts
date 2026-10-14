@@ -86,10 +86,11 @@ describe("OperatorOrderDetail", () => {
     expect(standard.find("[data-order-status]").exists()).toBe(true);
     standard.unmount();
 
-    const counter = await mount({ order: order({ context: "pos" }), showStatus: false });
+    const counter = await mount({ order: order({ context: "pos", channel_name: "Loja online" }), showStatus: false });
     expect(counter.find("[data-order-status]").exists()).toBe(false);
-    // O resto do resumo continua: canal e total.
-    expect(counter.get("[data-order-summary]").text()).toContain("web");
+    // O resto do resumo continua: canal (pelo NOME, nunca o ref cru) e total.
+    expect(counter.get("[data-order-summary]").text()).toContain("Loja online");
+    expect(counter.get("[data-order-summary]").text()).not.toContain("web");
     expect(counter.get("[data-order-total]").text()).toBe("R$ 42,00");
   });
 
