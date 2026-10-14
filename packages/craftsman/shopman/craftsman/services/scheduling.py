@@ -529,8 +529,9 @@ def _validate_shared_ingredients(order, new_quantity: Decimal) -> None:
         if not inv_path:
             return
 
+        from django.db.models import Prefetch
         from django.utils.module_loading import import_string
-        from shopman.craftsman.models import WorkOrder
+        from shopman.craftsman.models import RecipeItem, WorkOrder
         from shopman.craftsman.protocols.inventory import MaterialNeed
 
         recipe = order.recipe
@@ -545,7 +546,8 @@ def _validate_shared_ingredients(order, new_quantity: Decimal) -> None:
         if not own_needs:
             return
 
-        # Other WOs on same date
+        # Other WOs on same date. A leitura é filtrada e vem pronta uma vez só:
+        # um filter dentro do laço voltaria ao banco por WO.
         other_wos = (
             WorkOrder.objects.filter(
                 status__in=[WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED],
@@ -553,13 +555,19 @@ def _validate_shared_ingredients(order, new_quantity: Decimal) -> None:
             )
             .exclude(pk=order.pk)
             .select_related("recipe")
-            .prefetch_related("recipe__items")
+            .prefetch_related(
+                Prefetch(
+                    "recipe__items",
+                    queryset=RecipeItem.objects.filter(is_optional=False),
+                    to_attr="need_items",
+                )
+            )
         )
 
         other_needs: dict[tuple[str, str], Decimal] = {}
         for other in other_wos:
             other_coeff = other.quantity / other.recipe.batch_size
-            for ri in other.recipe.items.filter(is_optional=False):
+            for ri in other.recipe.need_items:
                 key = (ri.input_sku, ri.unit)
                 if key in own_needs:
                     other_needs[key] = other_needs.get(key, Decimal("0")) + ri.quantity * other_coeff
