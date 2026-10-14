@@ -348,7 +348,7 @@ export interface InboxAlertView {
  * nota de estorno): aí o rodapé desce para uma linha própria, em vez de grudar no
  * último dado. Quem desenha preserva as quebras (`whitespace-pre-line`).
  */
-export function inboxAlertDescription(alert: Pick<InboxAlertView, "message" | "meta" | "seen">): string {
+export function inboxAlertDescription(alert: { message: string; meta?: string; seen?: boolean }): string {
   const footer = [alert.meta, alert.seen ? "visto" : ""].filter(Boolean).join(" · ");
   if (!footer) return alert.message;
   return `${alert.message}${alert.message.includes("\n") ? "\n" : " · "}${footer}`;
