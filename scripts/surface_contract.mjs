@@ -32,6 +32,17 @@ function validate() {
     catch { errors.push(`${id}: package.json ausente ou inválido`); continue; }
     for (const [phase, script] of Object.entries(surface.commands ?? {}))
       if (!scripts[script]) errors.push(`${id}: fase ${phase} aponta para script ausente ${script}`);
+    if (id !== "operator-kit") {
+      let hasComponentTests = false;
+      try {
+        hasComponentTests = readdirSync(
+          resolve(root, "surfaces", surface.dir, "tests/components"),
+          { recursive: true },
+        ).some((name) => String(name).endsWith(".test.ts"));
+      } catch {}
+      if (Boolean(surface.commands?.component) !== hasComponentTests)
+        errors.push(`${id}: fase component deve refletir a existência de tests/components/*.test.ts`);
+    }
     for (const [capability, script] of Object.entries(surface.capabilities ?? {}))
       if (typeof script === "string" && !scripts[script])
         errors.push(`${id}: capability ${capability} aponta para script ausente ${script}`);

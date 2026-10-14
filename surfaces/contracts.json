@@ -23,7 +23,7 @@
     "hub": {
       "dir": "hub-nuxt",
       "kind": "operator",
-      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
       "capabilities": { "pwa": true },
       "exceptions": [{ "capability": "browser", "reason": "Fluxo Playwright ainda não foi promovido ao gate canônico.", "owner": "engineering", "expires": "2026-11-14" }]
     },
@@ -83,7 +83,7 @@
     "bi": {
       "dir": "bi-nuxt",
       "kind": "operator",
-      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
       "capabilities": { "pwa": true, "visual": "test:visual" }
     },
     "purchase": {
@@ -96,7 +96,7 @@
     "kitchensink": {
       "dir": "kitchensink-nuxt",
       "kind": "operator",
-      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
       "capabilities": { "pwa": true, "visual": "test:visual" }
     }
   }
