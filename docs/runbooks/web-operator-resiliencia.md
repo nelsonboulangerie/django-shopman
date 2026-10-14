@@ -1,10 +1,11 @@
 # Admin fora do ar com instância única: sondas, access log e a 2ª instância
 
-> **Nada aqui foi aplicado na DigitalOcean.** O PR que trouxe este runbook muda o
-> arquivo `.do/app.alpha-subdomains.yaml` (e o modelo `.do/app.subdomains.yaml`)
-> e o código que as chaves novas usam. Mudar arquivo de spec no repositório não
-> aplica nada: a aplicação no app vivo é um `doctl apps update` e pede a palavra
-> do dono.
+> **Aplicado no alpha em 14/10/2026, ~16h UTC (#1713).** As duas sondas e o
+> `SHOPMAN_ACCESS_LOG=true` estão no vivo: readiness = `/health/database/`,
+> liveness = `/health/live/`. Os passos de "Como aplicar" ficam como registro e
+> para o ambiente de produção, que ainda não os recebeu. A seção "O processo se
+> cura sozinho" (14/10, depois do pool esgotado) não muda o spec: muda o que a
+> liveness responde.
 
 ## O que aconteceu (13/10/2026)
 
@@ -24,8 +25,8 @@ Quem serve o Admin é o componente `web-operator`: `instance_count: 1`,
 | # | Recomendação | Estado |
 |---|---|---|
 | 1 | Alertas `RESTART_COUNT`, `MEM_UTILIZATION` e `CPU_UTILIZATION` no `web-operator` | **Já estão no vivo** (lido em 13/10 por `spec get`): CPU > 80 % e memória > 85 % por 5 min, mais de 2 reinícios em 10 min. Iguais no `web-storefront`. Nada a aplicar. O que faltava era o drift-check enxergar alerta e sonda: agora enxerga (ver abaixo). ⚠️ Conferir na caixa de e-mail da conta DigitalOcean se o `RESTART_COUNT` disparou às ~17:35 UTC: é a prova mais barata da causa. |
-| 2 | Readiness separada, tocando o banco | **No arquivo**: `health_check` dos dois services Django → `/health/database/` (novo). Liveness segue `/health/live/`. |
-| 3 | Access log, enxuto, sem dado pessoal | **No arquivo**: `SHOPMAN_ACCESS_LOG=true` nos dois services Django. O `--access-log=/dev/null` do daphne **fica**. |
+| 2 | Readiness separada, tocando o banco | **Aplicado no alpha em 14/10 (#1713)**: `health_check` dos dois services Django → `/health/database/` (novo). Liveness segue `/health/live/`. |
+| 3 | Access log, enxuto, sem dado pessoal | **Aplicado no alpha em 14/10 (#1713)**: `SHOPMAN_ACCESS_LOG=true` nos dois services Django. O `--access-log=/dev/null` do daphne **fica**. |
 | 4 | `instance_count: 2` no `web-operator` | **Não adotado (decisão do dono 13/10)**: nada de servidor extra. Avaliação registrada na última seção. |
 
 ### 2. Por que `/health/database/` e não `/health/ready/`
@@ -51,7 +52,8 @@ O que ele ganha, dito sem exagero:
 - **com 2 instâncias**: é o que tira da rota a instância cujo pool travou enquanto
   a irmã atende. É a peça que faz a 2ª instância valer.
 
-Banco fora **não** reinicia contêiner: a liveness segue sem banco.
+Banco fora **não** reinicia contêiner: a liveness nunca falha por causa do banco
+(ver "O processo se cura sozinho").
 
 ### 3. Por que o access log não é o do daphne
 
@@ -177,6 +179,78 @@ passo 5, porque o spec de depois sai do vivo; quem a trouxe aplica.
 
 Depois de qualquer volta pelo painel, alinhar o arquivo num PR de seguimento
 (o drift-check passa a acusar).
+
+## O processo se cura sozinho (14/10/2026)
+
+Pedido do dono: não haverá webmaster. Às 15:06 UTC de 14/10 o pool do psycopg do
+`web-operator` esgotou (conexões de request cancelado que nunca voltavam, #1778) e
+todo request passou a cair com `PoolTimeout` depois de 10 s. A readiness falhava,
+mas com 1 instância não há para onde desviar; a liveness seguia 200, então a
+plataforma nunca reiniciou. Foi preciso um humano.
+
+### A liveness agora vê o processo travado, e só ele
+
+`/health/live/` falha (503, `"pool": "fail"`) quando as DUAS coisas valem
+(`shopman/shop/pool_liveness.py`):
+
+1. o pool **deste processo** não entrega conexão (um `getconn` de 1,5 s falha) há
+   pelo menos `SHOPMAN_LIVENESS_POOL_STUCK_SECONDS` (padrão **30 s**). Carga normal
+   entrega em milissegundos; pico passa em segundos;
+2. o banco **responde por fora do pool**: conexão nova, direta, `SELECT 1` em até 2 s.
+
+| Situação | Pool entrega? | Conexão direta? | Liveness | Resultado |
+|---|---|---|---|---|
+| normal | sim | (não testa) | 200 | nada |
+| pico de carga | não, por < 30 s | (não testa) | 200 | nada |
+| **processo travado** (pool esgotado, banco bem) | não, por ≥ 30 s | sim | **503** | a plataforma reinicia o contêiner |
+| **banco fora ou lento** | não | não | 200 | só a readiness falha; ninguém reinicia em loop |
+| sem pool (`DATABASE_POOL_MAX_SIZE=0`) | não se mede | não se mede | 200 | igual a antes |
+
+Tempo até o reinício, com as sondas do spec (`period_seconds: 30`,
+`failure_threshold: 3`): ~30 s de janela + 3 sondas = **2 a 2,5 min**, contra
+32 min no dia 14. **O spec não muda**: o `timeout_seconds: 5` cobre o pior caso da
+sonda (1,5 s + 2 s). Querendo reiniciar mais cedo, o botão é a env
+`SHOPMAN_LIVENESS_POOL_STUCK_SECONDS` no painel, ou `failure_threshold: 2` na sonda.
+
+O que olhar no log (`shopman.shop.pool_liveness`):
+
+- `liveness_pool_waiting stuck_for=Ns`: o pool não entregou na sonda, ainda dentro
+  da janela;
+- `liveness_pool_stuck_restart`: a sonda pediu reinício (ERROR). Deve vir seguido
+  de reinício no painel e do alerta `RESTART_COUNT` se repetir;
+- `liveness_pool_stuck_but_database_down`: pool parado com banco fora; ninguém
+  reinicia, de propósito;
+- `liveness_pool_recovered stuck_for=Ns`: voltou sozinho dentro da janela;
+- `db_connection_orphan_reclaimed count=N` (#1778): conexões de request cancelado
+  devolvidas. Se o `stuck_restart` aparecer SEM esses antes, é outro vazamento.
+
+### Os streams SSE têm prazo e teto
+
+`shopman/shop/eventstream.py`:
+
+- **vida máxima** `SHOPMAN_SSE_MAX_LIFETIME_SECONDS` (padrão **1800 s**): o servidor
+  encerra o stream e o `EventSource` reconecta sozinho, com `Last-Event-ID`. É o
+  fechamento do listener órfão: cliente que sumiu sem fechar o TCP (dispositivo que
+  dormiu, rede que caiu) deixa de manter listener e thread até o TCP desistir.
+  Log: `sse_stream_closed reason=max_lifetime`;
+- **teto por sessão** `SHOPMAN_SSE_MAX_STREAMS_PER_SESSION` (padrão **12**): o
+  mesmo navegador não abre streams sem fim. O excedente recebe **429** e a tela fica
+  no poll de fallback (ADR-016). Recusar o novo, e não derrubar o velho, evita a
+  roda de um derrubando o outro. Log: `sse_stream_refused reason=per_session_cap`.
+  É higiene, não segurança: a chave é o cookie de sessão (resumido, nunca o valor);
+- listener que sai: quando o cliente fecha, a leitura em curso é cancelada dentro do
+  stream do `django_eventstream`, e o `finally` dele tira o listener. O
+  "removed listener" do pacote é DEBUG: não aparece no log em INFO, e a ausência dele
+  não é sinal de órfão.
+
+`0` em qualquer das duas envs desliga a regra.
+
+### Testes
+
+`shopman/shop/tests/test_self_healing.py` (gate de runtime): pool real esgotado com
+banco de pé → liveness 503, e devolver as conexões → 200; pool esgotado com o banco
+inalcançável → liveness 200; prazo do stream encerra e libera a vaga; sessão acima do
+teto recebe 429 sem tocar o stream.
 
 ## 4. Duas instâncias no `web-operator`: não adotado (decisão do dono 13/10)
 

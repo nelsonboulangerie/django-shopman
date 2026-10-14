@@ -28,13 +28,15 @@ from __future__ import annotations
 
 import logging
 import threading
-import weakref
 
 logger = logging.getLogger(__name__)
 
-#: ``DatabaseWrapper`` → a thread que abriu a conexão. Chave fraca: wrapper coletado
-#: sai sozinho; entrada com a conexão já fechada sai na próxima varredura.
-_owners: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+#: ``DatabaseWrapper`` → a thread que abriu a conexão. Referência FORTE, de propósito:
+#: o wrapper órfão só é alcançável por aqui, e se o coletor o levasse, levaria junto a
+#: conexão do psycopg, que o pool nunca recebe de volta (medido: com chave fraca, a
+#: órfã sumia da tabela e continuava contada como emprestada). Entrada com a conexão
+#: já fechada sai na próxima varredura.
+_owners: dict = {}
 _lock = threading.Lock()
 
 

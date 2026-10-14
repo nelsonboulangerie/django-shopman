@@ -265,10 +265,21 @@ class _RateLimitedProbeView(View):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HealthCheckView(_RateLimitedProbeView):
-    """Liveness: prove only that this Django process serves requests."""
+    """Liveness: this Django process serves requests, and is not stuck on its pool.
+
+    Never fails because the database is down (see ``shopman/shop/pool_liveness.py``):
+    only a pool that hands out nothing for a sustained window while the database
+    answers a direct connection turns this into 503, so the platform restarts it.
+    """
 
     def get(self, request):
-        return _build_response({"process": ("ok", None)}, critical={"process"})
+        from shopman.shop import pool_liveness
+
+        checks = {"process": ("ok", None)}
+        pool = pool_liveness.check_pool()
+        if pool[0] == "fail":
+            checks["pool"] = pool
+        return _build_response(checks, critical={"process", "pool"})
 
 
 @method_decorator(csrf_exempt, name="dispatch")
