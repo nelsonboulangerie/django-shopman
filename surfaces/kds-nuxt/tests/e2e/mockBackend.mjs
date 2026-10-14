@@ -2,8 +2,9 @@
 // BFF encaminha (djangoProxy repassa o header cookie ao Django):
 //   · com `e2e_session=authed` → sessão de operador AUTENTICADA + estações + board vazio;
 //   · sem o cookie → 403 nos endpoints de operador (device não autenticado → gate de login).
-// O board público do cliente (/kds/cliente/) responde 200 SEMPRE (o `/pickup` é público,
-// como o menuboard do Produção). Login/lock/ações reais rodam contra o Django (reviewer local).
+// O board público do cliente (/kds/pickup/) responde 200 SEMPRE (o `/pickup` é público,
+// como o menuboard do Produção). `POST /__mock/pickup-ready` passa o WEB-0007 de Em preparo
+// para Pronto (a chamada do painel); `POST /__mock/pickup-reset` volta ao começo. Login/lock/ações reais rodam contra o Django (reviewer local).
 //
 // PRÉVIA (`KDS_MOCK_FIXTURE=preview`): toda requisição entra autenticada (sem cookie) e as
 // estação `bancada` (preparo) serve os quadros de previewFixtures.mjs, com
@@ -45,11 +46,22 @@ const BOARD = {
 };
 
 // Board público do cliente — o /pickup renderiza sem sessão de operador.
-const CUSTOMER = {
+const CUSTOMER_START = {
   status: {
     preparing: [{ ref: "WEB-0007", status: "preparing", status_label: "Preparando", updated_at_display: "08:00" }],
     ready: [{ ref: "WEB-0006", status: "ready", status_label: "Pronto", updated_at_display: "07:58" }],
     updated_at_display: "08:00",
+  },
+};
+let CUSTOMER = CUSTOMER_START;
+const CUSTOMER_CALLED = {
+  status: {
+    preparing: [],
+    ready: [
+      { ref: "WEB-0007", status: "ready", status_label: "Pronto", updated_at_display: "08:02" },
+      { ref: "WEB-0006", status: "ready", status_label: "Pronto", updated_at_display: "07:58" },
+    ],
+    updated_at_display: "08:02",
   },
 };
 
@@ -65,7 +77,15 @@ const server = createServer((req, res) => {
   const authed = Boolean(preview) || (req.headers.cookie || "").includes("e2e_session=authed");
 
   // Público — sempre 200, com ou sem sessão de operador.
-  if (/\/kds\/cliente\/?(\?|$)/.test(url)) return json(res, 200, CUSTOMER);
+  if (req.method === "POST" && url.startsWith("/__mock/pickup-ready")) {
+    CUSTOMER = CUSTOMER_CALLED;
+    return json(res, 200, {});
+  }
+  if (req.method === "POST" && url.startsWith("/__mock/pickup-reset")) {
+    CUSTOMER = CUSTOMER_START;
+    return json(res, 200, {});
+  }
+  if (/\/kds\/pickup\/?(\?|$)/.test(url)) return json(res, 200, CUSTOMER);
 
   // Sessão do dispositivo: 403 = não autenticado → o gate de login aparece.
   if (/\/operator\/session\/?(\?|$)/.test(url)) {
@@ -102,7 +122,7 @@ const server = createServer((req, res) => {
       return json(res, 200, preview.history(historyMatch[1], q));
     }
     const station = url.match(/\/kds\/([^/?]+)\/?(\?|$)/);
-    if (station && station[1] !== "cliente") return json(res, 200, preview.board(station[1]));
+    if (station) return json(res, 200, preview.board(station[1]));
     if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, preview.index());
   }
   if (/\/kds\/[^/]+\/?(\?|$)/.test(url)) return json(res, 200, BOARD); // /kds/<ref>/
