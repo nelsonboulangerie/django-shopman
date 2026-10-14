@@ -138,8 +138,8 @@ class CancellationReasonReachesCustomerTests(TestCase):
         # Os caminhos automáticos gravam um código de máquina em cancellation_reason;
         # o cliente lê o texto da chave correspondente, nunca "pix_timeout".
         cases = {
-            "payment_timeout": "payment_not_confirmed",
-            "pix_timeout": "payment_not_confirmed",
+            "payment_timeout": "payment_deadline_passed",
+            "pix_timeout": "pix_expired",
             "customer_requested": "customer_request",
             "pos_operator": "other",
         }
