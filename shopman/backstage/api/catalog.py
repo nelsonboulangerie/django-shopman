@@ -57,7 +57,13 @@ class CatalogMatrixView(_CatalogBase):
         query = (params.get("q") or "").strip()
         order = (params.get("order") or "name").strip()
         filters = {name: params.get(name) == "true"
-            for name in ("is_published", "is_sellable", "has_vocation") if params.get(name) in ("true", "false")}
+            for name in ("is_published", "is_sellable", "has_vocation", "pim_complete") if params.get(name) in ("true", "false")}
+        # Listas de opção da faceta (estoque e envio): valor fora da lista é
+        # ignorado pela projection, então não há recorte torto.
+        for name in ("stock", "sync_status"):
+            values = [part.strip() for part in (params.get(name) or "").split(",") if part.strip()]
+            if values:
+                filters[name] = values
         surface = [part.strip() for part in (params.get("surface") or "").split(",") if part.strip()]
         if surface:
             filters["surface"] = surface

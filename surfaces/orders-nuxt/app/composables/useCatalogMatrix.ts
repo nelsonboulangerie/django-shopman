@@ -85,13 +85,16 @@ export function useCatalogMatrix(
   const pageSize = list.pageSize ?? ref(50);
   const order = list.order ?? ref("name");
   const activeFilters = list.filters ?? ref<Record<string, string[]>>({});
-  // Só as facetas que o servidor aplica viram parâmetro. Faceta que filtraria
-  // só a página fica FORA do painel (ver PAGINATED_UNAVAILABLE_FACETS).
+  // TODAS as facetas da FilterBar viram parâmetro do servidor. As listas vão
+  // separadas por vírgula ou vazias (vazio = sem recorte, o servidor ignora).
   const facet = (id: string) => computed(() => activeFilters.value[id]?.[0] ?? "");
   const isPublished = facet("is_published");
   const isSellable = facet("is_sellable");
   const hasVocation = facet("has_vocation");
+  const pimComplete = facet("pim_complete");
   const surfaceFilter = computed(() => (activeFilters.value["surface"] ?? []).join(","));
+  const stockFilter = computed(() => (activeFilters.value["stock"] ?? []).join(","));
+  const syncFilter = computed(() => (activeFilters.value["sync_status"] ?? []).join(","));
   const resourceKey = useOperatorResourceKey("catalog-matrix");
   const {
     data,
@@ -110,7 +113,10 @@ export function useCatalogMatrix(
         isPublished.value,
         isSellable.value,
         hasVocation.value,
+        pimComplete.value,
         surfaceFilter.value,
+        stockFilter.value,
+        syncFilter.value,
       ].join(":"),
     ),
     server: true,
@@ -123,7 +129,10 @@ export function useCatalogMatrix(
       is_published: isPublished,
       is_sellable: isSellable,
       has_vocation: hasVocation,
+      pim_complete: pimComplete,
       surface: surfaceFilter,
+      stock: stockFilter,
+      sync_status: syncFilter,
     },
     dedupe: "defer",
     onResponseError: operatorSessionOnError,

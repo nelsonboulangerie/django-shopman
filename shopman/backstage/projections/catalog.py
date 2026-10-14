@@ -11,7 +11,7 @@ Read-only. Frozen dataclasses convertidos por ``backstage.api.projections.projec
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from shopman.utils.monetary import format_money
 
@@ -274,10 +274,36 @@ class VocationPendingProjection:
 
 
 @dataclass(frozen=True)
+class CatalogFacetsProjection:
+    """Contagens por opção das facetas de multi-escolha, do RECORTE ATUAL.
+
+    Cada dimensão conta sobre o recorte inteiro (coleção, busca, superfície e
+    os outros filtros ativos), nunca só a página: era a mentira que tirou as
+    facetas do painel quando a lista virou paginada. A seleção da PRÓPRIA
+    dimensão não entra na conta — a opção diz quantos itens casariam se fosse
+    marcada, com o resto do recorte como está.
+
+    As chaves são os valores das opções:
+    - ``stock``: ``ok`` | ``low`` | ``out``;
+    - ``sync_status``: ``synced`` | ``pending`` | ``error`` | ``never``.
+
+    PIM é boolean (Sim/Não), sem contagem por opção; canal/feed já carrega o
+    total do recorte. ``retracted`` e ``skipped`` aparecem no selo da célula,
+    mas não são opções de recorte: quem os separa no painel não teria o que
+    fazer com a distinção.
+    """
+
+    stock: dict[str, int] = field(default_factory=dict)
+    sync_status: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class CatalogMatrixProjection:
     surfaces: tuple[SurfaceProjection, ...]
     rows: tuple[CatalogRowProjection, ...]
     collections: tuple[CollectionProjection, ...]
+    # Contagens por opção das facetas de multi-escolha, do recorte atual.
+    facets: CatalogFacetsProjection = field(default_factory=CatalogFacetsProjection)
     # Da loja inteira, não do recorte de coleção: o aviso diz quantos faltam
     # classificar, esteja a lista filtrada ou não.
     vocation_pending: tuple[VocationPendingProjection, ...] = ()
@@ -320,6 +346,20 @@ def _stock_view(info: dict | None, low_stock_threshold: int, replenish_qty: int)
         "low_stock": (not sold_out) and promisable <= max(int(low_stock_threshold or 0), 0),
         "replenish_qty": max(int(replenish_qty or 0), 0),
     }
+
+
+#: Baldes de estoque da faceta, na ordem em que o painel os mostra.
+_STOCK_BUCKETS = ("ok", "low", "out")
+
+
+def _stock_bucket(info: dict | None, low_stock_threshold: int) -> str:
+    """Balde de UMA linha: esgotado vence estoque baixo; sem rastro, ``ok``."""
+    view = _stock_view(info, low_stock_threshold, 0)
+    if view["sold_out"]:
+        return "out"
+    if view["low_stock"]:
+        return "low"
+    return "ok"
 
 
 def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], int, dict[str, int]]:
@@ -381,6 +421,27 @@ def _cell_sync(sync_map: dict, sku: str, surface_ref: str) -> tuple[str, str, st
     if not rec:
         return "", "", ""
     return rec.get("status") or "", rec.get("error") or "", rec.get("last_synced_at") or ""
+
+
+#: Baldes de envio da faceta. ``retracted``/``skipped`` têm selo na célula, mas não
+#: viram opção de recorte — ver ``CatalogFacetsProjection``.
+_SYNC_BUCKETS = ("synced", "pending", "error", "never")
+
+
+def _sync_buckets(members_by_target: dict[str, set[str]], sync_map: dict) -> dict[str, set[str]]:
+    """Baldes de envio por SKU, das células das superfícies-alvo.
+
+    Um SKU casa um balde quando ALGUMA superfície-alvo o oferta e o último envio
+    (``CatalogSyncState``) está naquele estado; sem registro nenhum, o balde é
+    ``never``. A lista de alvos importa: só conta superfície com backend de
+    projeção (canal ou feed que projeta); as demais não têm envio para filtrar.
+    """
+    buckets: dict[str, set[str]] = {}
+    for surface_key, members in members_by_target.items():
+        for sku in members:
+            status = sync_map.get(sku, {}).get(surface_key, {}).get("status") or ""
+            buckets.setdefault(sku, set()).add(status or "never")
+    return buckets
 
 
 def _surface_sync_status(listing, is_projection_target: bool) -> str:
@@ -558,9 +619,26 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
 
     ``collection_ref`` (opcional) recorta os produtos daquela coleção
     (``product_queryset()``, smart-aware). ``query`` busca em nome e SKU;
-    ``filters`` aceita ``is_published``/``is_sellable``/``has_vocation``/``surface``; ``order`` é uma das
+    ``filters`` aceita ``is_published``/``is_sellable``/``has_vocation``/
+    ``surface``/``stock``/``pim_complete``/``sync_status``; ``order`` é uma das
     chaves de ``_CATALOG_ORDERS``; a página é do BANCO — só as linhas dela viram
     projection. As coleções e a vocação pendente continuam da casa inteira.
+
+    Semântica das facetas novas (envio, estoque e PIM), todas EM LOTE:
+
+    - ``stock`` é por produto: balde ``ok``/``low``/``out`` (esgotado vence
+      estoque baixo; produto sem rastro cai em ``ok``), o mesmo da coluna da linha.
+    - ``pim_complete`` é por produto: tem marca e categoria Google? É o mesmo sinal
+      de prontidão para feed que a linha mostra.
+    - ``sync_status`` é por célula (produto × superfície): o produto casa o balde
+      quando ALGUMA superfície-alvo o oferta e o último envio está naquele estado
+      (``synced``/``pending``/``error``; sem registro nenhum, ``never``). Só conta
+      superfície com backend de projeção — a lista de alvos importa. Com recorte de
+      superfície ativo, o envio olha só as superfícies escolhidas.
+
+    ``facets`` devolve a contagem por opção do RECORTE ATUAL, nunca só da página.
+    A seleção da própria dimensão não entra na conta: a opção diz quantos itens
+    casariam se fosse marcada, com o resto do recorte como está.
     """
     from shopman.offerman.models import Collection, Product
 
@@ -619,24 +697,80 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         if feed_members:
             clauses |= Q(sku__in=feed_members)
         products = products.filter(clauses).distinct()
+    # ── facetas de envio/estoque/PIM, EM LOTE ──────────────────────────────
+    # Os candidatos são quem passou por coleção, busca, filtros simples e
+    # superfície. Sobre eles, a leitura de cada faceta sai de uma vez (estoque,
+    # sync e PIM) e o recorte final é um filtro por SKU: o número de consultas
+    # não cresce com o tamanho do catálogo.
+    stock_values = {str(value) for value in (filters.get("stock") or []) if str(value) in _STOCK_BUCKETS}
+    sync_values = {str(value) for value in (filters.get("sync_status") or []) if str(value) in _SYNC_BUCKETS}
+    pim_filter = filters.get("pim_complete")
+    pim_filter = bool(pim_filter) if pim_filter is not None else None
+
+    candidate_skus = list(dict.fromkeys(products.order_by().values_list("sku", flat=True)))
+    stock_info, low_stock_threshold, planned_by_sku = _stock_for(candidate_skus)
+    stock_buckets = {
+        sku: _stock_bucket(stock_info.get(sku), low_stock_threshold) for sku in candidate_skus
+    }
+
+    # Estado de sync por (produto × plataforma) — uma consulta p/ todos os
+    # candidatos. O envio olha só superfície-alvo; se a tela estreitou a
+    # superfície, ele segue o mesmo estreitamento (o checklist "recusados pelo
+    # iFood" não pode devolver erro de outra plataforma).
+    from shopman.shop.services.catalog_sync import sync_status_map
+
+    sync_map = sync_status_map(candidate_skus)
+    members_by_surface = {
+        surface.ref: (
+            set(display_index[surface.ref]["members"])
+            if surface.ref in display_index
+            else set(cells_index.get(surface.ref, {}))
+        )
+        for surface in surfaces
+    }
+    target_members = {
+        (surface.sync_key or surface.ref): members_by_surface[surface.ref]
+        for surface in surfaces
+        if surface.is_projection_target and (not surface_refs or surface.ref in surface_refs)
+    }
+    sync_buckets = _sync_buckets(target_members, sync_map)
+
+    pim_skus: set[str] = set()
+    if pim_filter is not None:
+        from shopman.offerman import get_social_attributes
+
+        # Só quando a faceta está ativa: o PIM é boolean, sem contagem por opção.
+        for sku, metadata in products.order_by().values_list("sku", "metadata"):
+            attrs = get_social_attributes(metadata)
+            if attrs.brand and attrs.google_product_category:
+                pim_skus.add(sku)
+
+    def _passes_stock(sku: str) -> bool:
+        return not stock_values or stock_buckets.get(sku, "ok") in stock_values
+
+    def _passes_pim(sku: str) -> bool:
+        return pim_filter is None or (sku in pim_skus) == pim_filter
+
+    def _passes_sync(sku: str) -> bool:
+        return not sync_values or bool(sync_buckets.get(sku, set()) & sync_values)
+
+    final_skus = [
+        sku for sku in candidate_skus
+        if _passes_stock(sku) and _passes_pim(sku) and _passes_sync(sku)
+    ]
+    products = products.filter(sku__in=final_skus)
+
     order_key = order if order in _CATALOG_ORDERS else "name"
     if collection_ref and not collection_smart and not term and order_key == "name":
         # Coleção manual mantém a ordem curada (arraste), salvo busca/ordenação explícita.
         products = products.order_by("collection_items__sort_order", "sku")
     else:
         products = products.order_by(*_CATALOG_ORDERS[order_key])
-    total = products.count()
+    total = len(final_skus)
     size = max(1, min(int(page_size or 50), MAX_CATALOG_PAGE_SIZE))
     current = max(1, int(page or 1))
     start = (current - 1) * size
     products = list(products.prefetch_related("keywords", "collection_items__collection")[start:start + size])
-    skus = [p.sku for p in products]
-    stock_by_sku, low_stock_threshold, planned_by_sku = _stock_for(skus)
-
-    # Estado de sync por (produto × plataforma) — uma consulta p/ toda a matriz (Arc C).
-    from shopman.shop.services.catalog_sync import sync_status_map
-
-    sync_map = sync_status_map(skus)
 
     # Uma consulta para a matriz inteira: quem passa pelo filtro do cardápio mas
     # não é alcançado por nenhuma coleção ativa (regra em catalog_visibility).
@@ -727,7 +861,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
             )
 
         stock = _stock_view(
-            stock_by_sku.get(product.sku), low_stock_threshold, planned_by_sku.get(product.sku, 0)
+            stock_info.get(product.sku), low_stock_threshold, planned_by_sku.get(product.sku, 0)
         )
         social_view, pim_complete = _social_view(product)
         rows.append(
@@ -780,8 +914,25 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         .values_list("sku", "name")
     )
 
+    # A opção conta o que casaria COM o resto do recorte; a seleção da própria
+    # dimensão fica fora da conta (senão marcar "esgotado" zeraria os outros).
+    stock_count_skus = [sku for sku in candidate_skus if _passes_pim(sku) and _passes_sync(sku)]
+    sync_count_skus = [sku for sku in candidate_skus if _passes_stock(sku) and _passes_pim(sku)]
+
+    facets = CatalogFacetsProjection(
+        stock={
+            bucket: sum(1 for sku in stock_count_skus if stock_buckets.get(sku, "ok") == bucket)
+            for bucket in _STOCK_BUCKETS
+        },
+        sync_status={
+            bucket: sum(1 for sku in sync_count_skus if bucket in sync_buckets.get(sku, set()))
+            for bucket in _SYNC_BUCKETS
+        },
+    )
+
     return CatalogMatrixProjection(
-        surfaces=tuple(surfaces), rows=tuple(rows), collections=collections, vocation_pending=vocation_pending,
+        surfaces=tuple(surfaces), rows=tuple(rows), collections=collections, facets=facets,
+        vocation_pending=vocation_pending,
         total=total, page=current, page_size=size, has_next=start + len(products) < total,
         order=order_key, query=term,
     )
