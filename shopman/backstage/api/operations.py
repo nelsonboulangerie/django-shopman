@@ -593,6 +593,9 @@ def _pos_sale_review_payload(review) -> dict:
         "requires_manager_approval": review.requires_manager_approval,
         "manager_approval_threshold_q": review.manager_approval_threshold_q,
         "approval_reasons": list(review.approval_reasons),
+        # Conta na casa acima do limite: saldo de hoje, limite e quanto passa,
+        # para o aviso e o diálogo do gerente dizerem o que ele assina.
+        "house_account_limit": review.house_account_limit,
         "receipt_channels": list(review.receipt_channels),
         "fiscal_tax_id_requested": review.fiscal_tax_id_requested,
         "warnings": list(review.warnings),

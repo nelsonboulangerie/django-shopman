@@ -19,7 +19,7 @@
 // O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia
 // (leitura negada, nenhum gerente com PIN provisionado): esconder a única porta
 // deixaria o balcão sem saída no meio de uma sangria.
-import type { ManagerAction } from "../presentation/managerAuth";
+import type { HouseAccountLimitInput, ManagerAction } from "../presentation/managerAuth";
 import {
   managerAuthReason,
   managerAuthTitle,
@@ -45,6 +45,8 @@ const props = defineProps<{
   thresholdQ?: number;
   /** Códigos vindos da review (`approval_reasons`) — dizem POR QUE o gerente foi chamado. */
   reasons?: string[];
+  /** Conta na casa acima do limite (`review.house_account_limit`): o diálogo diz saldo, limite e quanto passa. */
+  houseAccountLimit?: HouseAccountLimitInput | null;
   /** Quem pode assinar (`POSProjection.managers`). Vazio cai no campo livre. */
   managers?: ManagerOption[];
   busy?: boolean;
@@ -66,6 +68,7 @@ const reason = computed(() =>
     action: props.action,
     reasons: props.reasons,
     thresholdQ: props.thresholdQ,
+    houseAccountLimit: props.houseAccountLimit,
   }),
 );
 const title = computed(() => managerAuthTitle(props.action));

@@ -1049,7 +1049,11 @@ const notices = computed<CheckoutNotice[]>(() => {
       // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
       // o diálogo já os traduz; o aviso os ignorava, e o operador tinha de
       // chamar o gerente para só então descobrir o motivo.
-      hint: managerAuthReason({ reasons: props.review?.approval_reasons, thresholdQ: managerThresholdQ.value }),
+      hint: managerAuthReason({
+        reasons: props.review?.approval_reasons,
+        thresholdQ: managerThresholdQ.value,
+        houseAccountLimit: props.review?.house_account_limit,
+      }),
     });
   }
   // Nada trava: entra quanto pedir à pessoa da vez. É a frase que o operador
@@ -2317,6 +2321,7 @@ defineExpose({
     action="sale_approval"
     :threshold-q="managerThresholdQ"
     :reasons="review?.approval_reasons"
+    :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"
     :managers="managers"
     :busy="loading"

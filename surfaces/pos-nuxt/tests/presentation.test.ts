@@ -856,6 +856,20 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
     expect(managerAuthTitle(undefined)).toBe("Autorização do gerente");
   });
 
+  // Conta na casa com limite (decisão do dono, 14/10/2026): o gerente lê o
+  // saldo em aberto, o limite e quanto esta venda passa ANTES de assinar.
+  it("conta acima do limite diz em aberto, limite e quanto passa", () => {
+    const text = managerAuthReason({
+      reasons: ["house_account_over_limit"],
+      houseAccountLimit: { balance_q: 18000, limit_q: 20000, charge_q: 5000, over_q: 3000 },
+    });
+    expect(text).toBe(
+      `Conta na casa acima do limite. Em aberto ${formatBRL(18000)}, limite ${formatBRL(20000)}: esta venda passa ${formatBRL(3000)}.`,
+    );
+    expect(text).not.toContain("—");
+    expect(managerAuthReason({ reasons: ["house_account_over_limit"] })).toBe("Conta na casa acima do limite.");
+  });
+
   it("spells out the review codes, threshold included", () => {
     const text = managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 1500 });
     expect(text).toContain("Desconto acima de");

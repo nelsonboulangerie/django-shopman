@@ -97,9 +97,30 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
  * chute da tela: antes o diálogo afirmava "descontos acima de R$ X" em todos os
  * casos, e o gerente autorizava sem saber o que estava assinando.
  */
-const REASON_COPY: Record<string, (thresholdQ: number) => string> = {
-  discount_over_threshold: (q) => `Desconto acima de ${formatBRL(q)}.`,
+const REASON_COPY: Record<string, (input: ManagerAuthReasonInput) => string> = {
+  discount_over_threshold: (input) => `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
+  // Conta na casa com limite (decisão do dono, 14/10/2026): o gerente vê o saldo
+  // de hoje, o limite e quanto esta venda passa ANTES de assinar.
+  house_account_over_limit: (input) => {
+    const limit = input.houseAccountLimit;
+    if (!limit) return "Conta na casa acima do limite.";
+    return (
+      `Conta na casa acima do limite. Em aberto ${formatBRL(limit.balance_q)}, `
+      + `limite ${formatBRL(limit.limit_q)}: esta venda passa ${formatBRL(limit.over_q)}.`
+    );
+  },
 };
+
+/** Os números da conta na casa acima do limite (`review.house_account_limit`). */
+export interface HouseAccountLimitInput {
+  /** O saldo devedor antes desta venda. */
+  balance_q: number;
+  limit_q: number;
+  /** O que esta venda põe na conta. */
+  charge_q: number;
+  /** Quanto o saldo passaria do limite. */
+  over_q: number;
+}
 
 export interface ManagerAuthReasonInput {
   /** O ato, quando a tela sabe qual é. */
@@ -107,6 +128,8 @@ export interface ManagerAuthReasonInput {
   /** Códigos vindos da review (`approval_reasons`). */
   reasons?: string[];
   thresholdQ?: number;
+  /** Com o motivo `house_account_over_limit`: saldo, limite e quanto passa. */
+  houseAccountLimit?: HouseAccountLimitInput | null;
 }
 
 /** O título: o ATO, nomeado. Nunca "Autorização" genérico se der para nomear. */
@@ -116,7 +139,7 @@ export function managerAuthTitle(action?: ManagerAction): string {
 
 export function managerAuthReason(input: ManagerAuthReasonInput): string {
   const listed = (input.reasons ?? [])
-    .map((code) => REASON_COPY[code]?.(input.thresholdQ ?? 0))
+    .map((code) => REASON_COPY[code]?.(input))
     .filter(Boolean);
   if (listed.length) return listed.join(" ");
   const fixa = input.action && MANAGER_ACTIONS[input.action]?.reason;

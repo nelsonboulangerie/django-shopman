@@ -192,6 +192,9 @@ const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
 // entrega para um endereço fora da área. A review diz a regra do fechamento até a taxa
 // ser combinada; depois, quem combinou. Fora da flag, nada muda.
 const OUT_OF_AREA = SALE && process.env.MOCK_OUT_OF_AREA === "1";
+// Prévia da conta na casa acima do limite (MOCK_ACCOUNT_LIMIT=1): a review pede o
+// gerente e diz em aberto, limite e quanto a venda passa. Fora da flag, nada muda.
+const ACCOUNT_LIMIT = SALE && process.env.MOCK_ACCOUNT_LIMIT === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -535,6 +538,13 @@ function review(body) {
     tender_total_q: 0, tender_total_display: brl(0), tender_count: 0, tendered_q: 0, tendered_amount_display: brl(0),
     change_q: 0, change_display: brl(0), requires_manager_approval: false, manager_approval_threshold_q: 0,
     approval_reasons: [], lines: [],
+    ...(ACCOUNT_LIMIT && subtotal > 0
+      ? {
+          requires_manager_approval: true,
+          approval_reasons: ["house_account_over_limit"],
+          house_account_limit: { balance_q: 18000, limit_q: 20000, charge_q: subtotal, over_q: Math.max(1, 18000 + subtotal - 20000) },
+        }
+      : {}),
     ...(OUT_OF_AREA && body?.fulfillment_type === "delivery"
       ? body?.delivery_fee_override_q == null
         ? {
