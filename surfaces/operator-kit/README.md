@@ -121,6 +121,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
 | `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por dispositivo (Screen Orientation API): item "Travar giro" no `OperatorRail` só em dispositivo de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
+| `app/composables/useCodeScanner.ts` | `useCodeScanner` | leitor de TECLADO (cunha HID): a rajada com o prefixo vira código e a digitação humana volta ao campo; a regra pura é `presentation/codeScan.ts` (ver "Leitor de código") |
+| `app/composables/useBarcodeScanner.ts` | `useBarcodeScanner` | leitor de CÂMERA nativo (`BarcodeDetector`); onde o detector não existe, a tela segue no gesto manual (ver "Leitor de código") |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
@@ -1612,6 +1614,41 @@ as setas (`scrollIntoView({ block: "nearest" })` em `PosCartPanel`/`PosCustomerS
 O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
+
+## Leitor de código: teclado e câmera
+
+São DUAS primitivas diferentes, com nomes diferentes, e nenhuma faz o trabalho da outra:
+
+- **`useCodeScanner`, leitor de TECLADO (cunha HID).** O leitor de hardware "digita" o
+  código depressa e fecha com Enter. O composable escuta na fase de captura da janela,
+  reconhece a rajada pelo PREFIXO e pela cadência de máquina, e não deixa o código cair
+  no campo com foco; o que era digitação humana volta para o campo, tecla por tecla. A
+  regra pura (o que é rajada de leitor, o que é dedo) vive em `app/presentation/codeScan.ts`,
+  testada em `tests/codeScan.test.ts`. O formato (prefixo, padrão e teto) é parâmetro de
+  quem chama. Consumidor: a conferência de volumes do despacho, em
+  `orders-nuxt/app/composables/useVolumeCheck.ts`.
+- **`useBarcodeScanner`, leitor de CÂMERA nativo.** Usa a `BarcodeDetector` do navegador
+  (Chrome/Android). Onde ela não existe, o composable diz que a câmera não lê e a tela
+  segue pelo gesto manual. Consumidor: o cadastro de produto do Gestor, em
+  `orders-nuxt/app/components/CatalogProductCreatePanel.vue`.
+
+A escolha é do ato, não do dispositivo: a cunha lê crachá, QR de conferência e etiqueta
+impressa em segundos; a câmera lê o que não passou por um leitor de hardware.
+
+### O `@zxing` do Compras e da Produção (dívida declarada)
+
+`purchase-nuxt` e `production-nuxt` mantêm hoje, cada um, um composable local chamado
+`useCodeScanner` que é leitor de CÂMERA por `@zxing/browser` (funciona em iOS/Safari, onde
+a `BarcodeDetector` não existe): `purchase-nuxt/app/composables/useCodeScanner.ts`, usado
+por `CodeScannerSheet.vue` no recebimento, e
+`production-nuxt/app/composables/useCodeScanner.ts`, usado por `LotLabelScanner.vue` na
+etiqueta de lote.
+
+São a mesma câmera `@zxing` duplicada, e o nome colide com a primitiva de teclado deste
+kit. A migração é: quando `useBarcodeScanner` cobrir o parque de navegadores, as duas
+cópias morrem e esses apps passam a consumir a primitiva de câmera do kit. Até lá o
+`@zxing` fica onde está, com o comportamento inalterado; a primitiva de teclado não é
+substituta dele, e nenhum leitor de câmera foi movido.
 
 ## Clique nunca inerte (`usePendingAction`)
 
