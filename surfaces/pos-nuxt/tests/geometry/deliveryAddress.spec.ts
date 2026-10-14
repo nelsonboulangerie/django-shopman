@@ -20,12 +20,13 @@ async function openAddress(page: Page, size: { width: number; height: number }, 
   }));
   await page.goto("/");
   await page.getByRole("button", { name: /#12/ }).first().click();
-  // A comanda carregada (as três linhas da 12) antes da tecla: no primeiro teste o
-  // `nuxt dev` ainda recarrega a página depois de otimizar as dependências.
-  await expect(page.locator("[data-pos-ticket-column] [data-item-select]")).toHaveCount(3);
-  await page.keyboard.press("F7");
+  // F7 até o Recebimento abrir: no primeiro teste o `nuxt dev` ainda recarrega a
+  // página depois de otimizar as dependências, e a tecla cairia no vazio.
   const search = page.locator('[data-focus-target="delivery-search"] input');
-  await expect(search).toBeFocused();
+  await expect(async () => {
+    if (!(await search.isVisible())) await page.keyboard.press("F7");
+    await expect(search).toBeFocused({ timeout: 3_000 });
+  }).toPass({ timeout: 60_000 });
   await search.fill("86010-000");
   await page.keyboard.press("Enter");
   await expect(page.locator('[data-focus-target="delivery-number"] input')).toBeFocused();
