@@ -414,6 +414,19 @@ class POSHeadlessSurfaceContractTests(TestCase):
             payload["checkout"]["capabilities"]["supports_on_delivery_cash"]
         )
 
+    def test_address_map_confirmation_follows_the_same_switch_as_the_online_store(self) -> None:
+        """O ponto no mapa é UMA regra da casa: a chave do checkout da loja liga o
+        mesmo passo no endereço de entrega do PDV (decisão do dono, 13/10)."""
+        capability = lambda: self.client.get("/api/v1/backstage/pos/").json()["pos"]["checkout"][  # noqa: E731
+            "capabilities"
+        ]["address_autocomplete"]
+
+        self.assertIs(capability()["map_confirmation_enabled"], False)
+
+        Shop.objects.update(defaults={"storefront": {"address_map_confirmation_enabled": True}})
+
+        self.assertIs(capability()["map_confirmation_enabled"], True)
+
     def test_api_pos_exposes_shop_name_for_customer_display(self) -> None:
         # A tela do cliente (segundo monitor do balcão) dá as boas-vindas em
         # nome da LOJA — o nome vem do Shop singleton, nunca digitado na tela.

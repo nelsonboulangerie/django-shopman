@@ -469,12 +469,27 @@ const TABS = SALE
 const SAVED_ITEMS = new Map();
 // O rastro da comanda nova criada pelo Transferir (ref nova -> ref de origem).
 const TRANSFERRED_FROM = new Map();
+// Prévia do ENDEREÇO DE ENTREGA (`MOCK_ADDRESS=1`): a comanda 12 vira encomenda com
+// entrega para amanhã, e o F7 abre o Recebimento direto no endereço. `MOCK_MAPS=1`
+// liga a busca do Google e a confirmação do ponto no mapa (a página de prévia injeta
+// um Google falso: a chave aqui não é de verdade). Sem as variáveis, nada muda.
+const ADDRESS = SALE && process.env.MOCK_ADDRESS === "1";
+const MAPS = ADDRESS && process.env.MOCK_MAPS === "1";
+if (ADDRESS) {
+  pos.checkout.capabilities.address_autocomplete = {
+    enabled: MAPS, provider: "google_places", public_api_key: MAPS ? "mock-browser-key" : "",
+    language: "pt-BR", region: "BR", countries: ["br"], types: ["address"], fields: [], structured_fields: [],
+    reverse_geocode_action_ref: "reverse_geocode", shop_latitude: -23.31, shop_longitude: -51.16, bias_radius_m: 15000,
+    map_confirmation_enabled: MAPS,
+  };
+}
 function tabPayload(ref) {
   const inUse = ref === "12";
   const full = ref === "13";
   const saved = SAVED_ITEMS.get(ref);
+  const delivery = ADDRESS && inUse;
   return {
-    revision: "rev-1", sales_mode: "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
+    revision: "rev-1", sales_mode: delivery ? "order" : "counter", session_key: `S-${ref}`, tab_session_key: `S-${ref}`,
     tab_ref: ref, tab_display: ref, tab_number: ref, opened_at_display: "09:41", seating_spot_ref: "", edit_of: "",
     transferred_from: TRANSFERRED_FROM.has(ref)
       ? { tab_display: TRANSFERRED_FROM.get(ref), label: `Transf. da #${TRANSFERRED_FROM.get(ref)}`, title: `Transferida da comanda #${TRANSFERRED_FROM.get(ref)}` }
@@ -484,8 +499,8 @@ function tabPayload(ref) {
     // tela segura o salvamento ("Não salvo") até alguém concluir o cadastro.
     customer_name: inUse ? "Ana Souza" : full ? "Roberto Albuquerque" : "",
     customer_ref: inUse ? "C-1" : full ? "C-13" : "",
-    customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
-    delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
+    customer_tax_id: "", customer_email: "", fulfillment_type: delivery ? "delivery" : "", delivery_address: "",
+    delivery_address_structured: {}, delivery_date: delivery ? TOMORROW : "", delivery_time_slot: "", delivery_fee_override_q: null,
     ...(OUT_OF_AREA && inUse
       ? {
           sales_mode: "order", customer_phone: "43999887766", fulfillment_type: "delivery",
@@ -977,6 +992,14 @@ createServer((req, res) => {
   }
   if (path === "/api/v1/backstage/pos/seating/") {
     send(res, 200, seating);
+    return;
+  }
+  // O servidor descreve o ponto que o operador arrastou no mapa.
+  if (ADDRESS && path === "/api/v1/geocode/reverse/") {
+    send(res, 200, {
+      formatted_address: "Rua Sergipe, 640 - Centro, Londrina - PR", route: "Rua Sergipe", street_number: "640",
+      neighborhood: "Centro", city: "Londrina", state_code: "PR", postal_code: "86010-360",
+    });
     return;
   }
   if (path.includes("/events/")) {

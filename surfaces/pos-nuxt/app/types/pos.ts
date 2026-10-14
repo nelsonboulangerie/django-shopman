@@ -375,6 +375,8 @@ export interface POSAddressAutocompleteProjection {
   shop_latitude: number | null;
   shop_longitude: number | null;
   bias_radius_m: number;
+  /** A loja confirma o ponto no mapa depois da sugestão (a mesma chave do site). */
+  map_confirmation_enabled?: boolean;
 }
 
 export interface StructuredAddressProjection {
