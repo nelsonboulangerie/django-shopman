@@ -8,6 +8,9 @@ import type {
   CreateProductPayload,
   ProductDraft,
 } from "~/types/catalog";
+import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
+import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
+import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm";
 
 const props = defineProps<{
   open: boolean;
@@ -94,10 +97,11 @@ const subtitle = computed(() =>
       : ""
     : "Cria um produto do zero. Publicar em canal e colecionar são gestos da matriz.",
 );
-const duplicateNote = computed(() =>
-  "A cópia traz o conteúdo do original (campos, palavras-chave, rótulos e a composição do combo). " +
-  "Não traz preço por canal, publicação nem coleção: a cópia nasce oculta e fora de venda, e o GTIN fica de fora. " +
-  "Confira e publique na matriz.",
+const duplicateNote = computed(
+  () =>
+    "A cópia traz o conteúdo do original (campos, palavras-chave, rótulos e a composição do combo). " +
+    "Não traz preço por canal, publicação nem coleção: a cópia nasce oculta e fora de venda, e o GTIN fica de fora. " +
+    "Confira e publique na matriz.",
 );
 
 const policyOptions = [
@@ -139,10 +143,32 @@ function resetForm() {
   form.fiscal_profile = "";
 }
 
+// O casco de cadastro cuida do aviso, do descarte e do próximo foco; aqui mora
+// só o retrato do que o operador mexeu.
+const { dirty, changedKeys, capture } = useDirtyForm(() => ({
+  intent: intent.value,
+  linkPurchase: linkPurchase.value,
+  gtin: gtin.value,
+  accepted: [...accepted.value],
+  ...form,
+}));
+
+// A seção que deve estar na linha de foco agora: a escolha conduz o cadastro.
+const activeSection = ref<string | null>("intent");
+
+function changeIntent() {
+  intent.value = "";
+  activeSection.value = "intent";
+}
+
 watch(
   () => [props.open, props.mode, props.suggestedSku, props.suggestedName],
   () => {
-    if (props.open) resetForm();
+    if (props.open) {
+      resetForm();
+      activeSection.value = "intent";
+      capture();
+    }
   },
   { immediate: true },
 );
@@ -159,13 +185,14 @@ watch(
       form.name = value("name") as string;
     if (form.unit_weight_g === "" && typeof value("net_weight_g") === "number")
       form.unit_weight_g = String(value("net_weight_g"));
-    if (
-      !form.ingredients_text &&
-      typeof value("ingredients_text") === "string"
-    )
+    if (!form.ingredients_text && typeof value("ingredients_text") === "string")
       form.ingredients_text = value("ingredients_text") as string;
-    if ((!form.unit || form.unit === "un") && typeof value("fiscal_unit") === "string")
+    if (
+      (!form.unit || form.unit === "un") &&
+      typeof value("fiscal_unit") === "string"
+    )
       form.unit = String(value("fiscal_unit")).toLowerCase();
+    activeSection.value = "draft";
   },
 );
 
@@ -196,6 +223,44 @@ const valid = computed(
     (isDuplicate.value || (priceQ.value !== null && priceQ.value >= 0)),
 );
 
+// Como o cadastro conduz: escolher a intenção leva o foco à próxima seção e o
+// botão do topo troca de volta.
+function chooseIntent(value: "revenda" | "producao" | "insumo") {
+  intent.value = value;
+  if (value !== "insumo") activeSection.value = "gtin";
+}
+
+const saveLabel = computed(() => {
+  if (!isDuplicate.value && intent.value === "insumo") return "Abrir o Compras";
+  return isDuplicate.value ? "Duplicar" : "Criar produto";
+});
+
+const saveDisabled = computed(() =>
+  !isDuplicate.value && intent.value === "insumo" ? false : !valid.value,
+);
+
+const saveDisabledReason = computed(() => {
+  if (!isDuplicate.value && intent.value === "")
+    return "Escolha o que você vai cadastrar.";
+  if (!isDuplicate.value && intent.value === "insumo") return "";
+  const missing: string[] = [];
+  if (!form.sku.trim()) missing.push("o código");
+  if (!form.name.trim()) missing.push("o nome");
+  if (!isDuplicate.value && priceQ.value === null) missing.push("o preço");
+  if (!missing.length) return "Confira os campos obrigatórios para salvar.";
+  if (missing.length === 1) return `Informe ${missing[0]} para salvar.`;
+  const last = missing.pop() as string;
+  return `Informe ${missing.join(", ")} e ${last} para salvar.`;
+});
+
+const saveAttrs = computed(() => ({
+  "data-testid":
+    !isDuplicate.value && intent.value === "insumo"
+      ? "create-go-purchase"
+      : "create-submit",
+}));
+const discardAttrs = { "data-testid": "create-discard" } as const;
+
 function lookup() {
   if (gtin.value.trim()) emit("lookup", gtin.value.trim());
 }
@@ -220,7 +285,10 @@ function useSuggestion(suggestion: CorrelateResult["suggestions"][number]) {
     form.is_batch_produced = Boolean(suggestion.value);
     return;
   }
-  if (suggestion.field === "unit" || suggestion.field === "availability_policy") {
+  if (
+    suggestion.field === "unit" ||
+    suggestion.field === "availability_policy"
+  ) {
     (form as Record<string, unknown>)[suggestion.field] = String(
       suggestion.value,
     );
@@ -278,6 +346,10 @@ async function usePhoto() {
 }
 
 function submit() {
+  if (!isDuplicate.value && intent.value === "insumo") {
+    emit("go-purchase");
+    return;
+  }
   if (!valid.value) return;
   const payload: CreateProductPayload = {
     sku: form.sku.trim(),
@@ -305,7 +377,8 @@ function submit() {
   if (form.fiscal_profile) payload.fiscal = { profile: form.fiscal_profile };
   if (!isDuplicate.value) {
     payload.intent = intent.value || undefined;
-    payload.purchase = intent.value === "revenda" ? linkPurchase.value : undefined;
+    payload.purchase =
+      intent.value === "revenda" ? linkPurchase.value : undefined;
   }
   if (!isDuplicate.value && gtin.value.trim()) {
     // O aceite é sempre explícito: só os campos marcados vão, e a marcação é a
@@ -321,14 +394,32 @@ function submit() {
 </script>
 
 <template>
-  <NuxtSlideover
+  <OperatorFormShell
     :open="open"
     :title="title"
     :description="subtitle"
-    side="right"
+    :dirty="dirty"
+    :dirty-count="changedKeys.length"
+    :busy="busy"
+    :save-label="saveLabel"
+    :save-disabled="saveDisabled"
+    :save-disabled-reason="saveDisabledReason"
+    :active-section="activeSection"
+    :save-attrs="saveAttrs"
+    :discard-attrs="discardAttrs"
     @update:open="(value: boolean) => emit('update:open', value)"
+    @save="submit"
   >
-    <template #body>
+    <template #lead>
+      <NuxtButton
+        v-if="!isDuplicate && intent"
+        color="neutral"
+        variant="ghost"
+        label="Trocar intenção"
+        @click="changeIntent"
+      />
+    </template>
+    <template #default>
       <div class="flex flex-col gap-4">
         <NuxtAlert
           v-if="error"
@@ -347,358 +438,372 @@ function submit() {
         />
 
         <!-- Intenção PRIMEIRO: ela diz o que o cadastro é e conduz o caminho. -->
-        <NuxtCard v-if="!isDuplicate && !intent" variant="soft">
-          <div class="flex flex-col gap-2">
-            <p class="text-sm font-medium">O que você vai cadastrar?</p>
-            <NuxtButton
-              v-for="option in intents"
-              :key="option.value"
-              color="neutral"
-              variant="outline"
-              class="w-full justify-start"
-              :data-intent="option.value"
-              @click="intent = option.value"
-            >
-              <span class="block text-left">
-                <span class="block text-sm font-medium">{{ option.label }}</span>
-                <span class="block text-xs text-muted-foreground">{{
-                  option.help
-                }}</span>
-              </span>
-            </NuxtButton>
-          </div>
-        </NuxtCard>
-        <NuxtCard v-if="!isDuplicate && intent === 'insumo'" variant="soft">
-          <p class="text-sm font-medium">Só compro (insumo)</p>
-          <p class="text-xs text-muted-foreground">
-            Insumo não entra no catálogo: o cadastro de compra é no Compras, com
-            fornecedor, custo e conversão. Nada é criado aqui.
-          </p>
-        </NuxtCard>
-
-        <NuxtCard
-          v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
-          variant="soft"
-        >
-          <div class="flex flex-col gap-3">
-            <div class="flex flex-wrap items-end gap-2">
-              <NuxtFormField
-                label="Código de barras (GTIN)"
-                class="min-w-48 flex-1"
-              >
-                <NuxtInput
-                  v-model="gtin"
-                  inputmode="numeric"
-                  placeholder="7891000053508"
-                  data-testid="create-gtin"
-                  @keyup.enter="lookup"
-                />
-              </NuxtFormField>
+        <OperatorFormSection section-key="intent">
+          <NuxtCard v-if="!isDuplicate && !intent" variant="soft">
+            <div class="flex flex-col gap-2">
+              <p class="text-sm font-medium">O que você vai cadastrar?</p>
               <NuxtButton
-                icon="i-lucide-scan-barcode"
-                label="Ler"
+                v-for="option in intents"
+                :key="option.value"
                 color="neutral"
                 variant="outline"
-                data-testid="create-scan"
-                @click="scanner.start()"
-              />
-              <NuxtButton
-                label="Buscar dados"
-                :loading="draftBusy"
-                :disabled="!gtin.trim()"
-                data-testid="create-lookup"
-                @click="lookup"
-              />
+                class="w-full justify-start"
+                :data-intent="option.value"
+                @click="chooseIntent(option.value)"
+              >
+                <span class="block text-left">
+                  <span class="block text-sm font-medium">{{
+                    option.label
+                  }}</span>
+                  <span class="block text-xs text-muted-foreground">{{
+                    option.help
+                  }}</span>
+                </span>
+              </NuxtButton>
             </div>
-            <p v-if="scanner.error.value" class="text-xs text-error">
-              {{ scanner.error.value }}
-            </p>
-            <p v-if="draftError" class="text-xs text-error">{{ draftError }}</p>
+          </NuxtCard>
+          <NuxtCard v-if="!isDuplicate && intent === 'insumo'" variant="soft">
+            <p class="text-sm font-medium">Só compro (insumo)</p>
             <p class="text-xs text-muted-foreground">
-              O código lido preenche o rascunho com o que as fontes sabem. Nada é
-              gravado até você salvar.
+              Insumo não entra no catálogo: o cadastro de compra é no Compras,
+              com fornecedor, custo e conversão. Nada é criado aqui.
             </p>
-          </div>
-        </NuxtCard>
+          </NuxtCard>
+        </OperatorFormSection>
 
-        <NuxtCard v-if="!isDuplicate && draft && intent !== 'insumo'" variant="outline">
-          <div class="flex flex-col gap-3">
-            <p class="text-sm font-medium">Revise o que as fontes trazem</p>
-            <label
-              v-for="item in draftFields"
-              :key="item.name"
-              class="flex items-start gap-2"
-            >
-              <NuxtCheckbox
-                :model-value="accepted.has(item.name)"
-                class="mt-0.5"
-                @update:model-value="
-                  (value: boolean | 'indeterminate') =>
-                    toggleField(item.name, value === true)
-                "
-              />
-              <span class="min-w-0">
-                <span class="block text-sm">
-                  {{ item.entry.label }}:
-                  {{ item.entry.display }}
-                </span>
-                <span class="block text-xs text-muted-foreground">
-                  Fonte: {{ item.entry.source_label }}
-                  <template v-if="item.entry.detail">
-                    · {{ item.entry.detail }}
-                  </template>
-                </span>
-                <span
-                  v-for="alternative in item.entry.alternatives ?? []"
-                  :key="alternative.source"
-                  class="block text-xs text-muted-foreground"
+        <OperatorFormSection
+          v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
+          section-key="gtin"
+        >
+          <NuxtCard
+            v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
+            variant="soft"
+          >
+            <div class="flex flex-col gap-3">
+              <div class="flex flex-wrap items-end gap-2">
+                <NuxtFormField
+                  label="Código de barras (GTIN)"
+                  class="min-w-48 flex-1"
                 >
-                  {{ alternative.source }} diz outra coisa:
-                  {{ alternative.value }}
-                </span>
-              </span>
-            </label>
-            <p
-              v-for="note in draft.notes"
-              :key="note"
-              class="text-xs text-muted-foreground"
-            >
-              {{ note }}
-            </p>
-            <div v-if="draft.reference_photo" class="flex items-start gap-2">
-              <img
-                :src="draft.reference_photo.url"
-                :alt="'Foto de referência de ' + draft.fields.name?.value"
-                class="h-16 w-16 rounded object-cover"
-              />
+                  <NuxtInput
+                    v-model="gtin"
+                    inputmode="numeric"
+                    placeholder="7891000053508"
+                    data-testid="create-gtin"
+                    data-focus-control
+                    @keyup.enter="lookup"
+                  />
+                </NuxtFormField>
+                <NuxtButton
+                  icon="i-lucide-scan-barcode"
+                  label="Ler"
+                  color="neutral"
+                  variant="outline"
+                  data-testid="create-scan"
+                  @click="scanner.start()"
+                />
+                <NuxtButton
+                  label="Buscar dados"
+                  :loading="draftBusy"
+                  :disabled="!gtin.trim()"
+                  data-testid="create-lookup"
+                  @click="lookup"
+                />
+              </div>
+              <p v-if="scanner.error.value" class="text-xs text-error">
+                {{ scanner.error.value }}
+              </p>
+              <p v-if="draftError" class="text-xs text-error">
+                {{ draftError }}
+              </p>
               <p class="text-xs text-muted-foreground">
-                Foto de referência ({{ draft.reference_photo.source }},
-                {{ draft.reference_photo.license }}): serve para reconhecer o
-                item, não vai para a vitrine.
+                O código lido preenche o rascunho com o que as fontes sabem.
+                Nada é gravado até você salvar.
               </p>
             </div>
-            <div
-              v-if="draft.correlate.suggestions.length"
-              class="flex flex-col gap-2 border-t border-default pt-3"
-            >
-              <p class="text-sm font-medium">
-                Reaproveitar de produtos parecidos
+          </NuxtCard>
+        </OperatorFormSection>
+
+        <OperatorFormSection
+          v-if="!isDuplicate && draft && intent !== 'insumo'"
+          section-key="draft"
+        >
+          <NuxtCard
+            v-if="!isDuplicate && draft && intent !== 'insumo'"
+            variant="outline"
+          >
+            <div class="flex flex-col gap-3">
+              <p class="text-sm font-medium">Revise o que as fontes trazem</p>
+              <label
+                v-for="item in draftFields"
+                :key="item.name"
+                class="flex items-start gap-2"
+              >
+                <NuxtCheckbox
+                  :model-value="accepted.has(item.name)"
+                  class="mt-0.5"
+                  @update:model-value="
+                    (value: boolean | 'indeterminate') =>
+                      toggleField(item.name, value === true)
+                  "
+                />
+                <span class="min-w-0">
+                  <span class="block text-sm">
+                    {{ item.entry.label }}:
+                    {{ item.entry.display }}
+                  </span>
+                  <span class="block text-xs text-muted-foreground">
+                    Fonte: {{ item.entry.source_label }}
+                    <template v-if="item.entry.detail">
+                      · {{ item.entry.detail }}
+                    </template>
+                  </span>
+                  <span
+                    v-for="alternative in item.entry.alternatives ?? []"
+                    :key="alternative.source"
+                    class="block text-xs text-muted-foreground"
+                  >
+                    {{ alternative.source }} diz outra coisa:
+                    {{ alternative.value }}
+                  </span>
+                </span>
+              </label>
+              <p
+                v-for="note in draft.notes"
+                :key="note"
+                class="text-xs text-muted-foreground"
+              >
+                {{ note }}
+              </p>
+              <div v-if="draft.reference_photo" class="flex items-start gap-2">
+                <img
+                  :src="draft.reference_photo.url"
+                  :alt="'Foto de referência de ' + draft.fields.name?.value"
+                  class="h-16 w-16 rounded object-cover"
+                />
+                <p class="text-xs text-muted-foreground">
+                  Foto de referência ({{ draft.reference_photo.source }},
+                  {{ draft.reference_photo.license }}): serve para reconhecer o
+                  item, não vai para a vitrine.
+                </p>
+              </div>
+              <div
+                v-if="draft.correlate.suggestions.length"
+                class="flex flex-col gap-2 border-t border-default pt-3"
+              >
+                <p class="text-sm font-medium">
+                  Reaproveitar de produtos parecidos
+                </p>
+                <div
+                  v-for="suggestion in draft.correlate.suggestions"
+                  :key="suggestion.field"
+                  class="flex items-center justify-between gap-2"
+                >
+                  <span class="text-xs">{{ suggestion.reason }}</span>
+                  <NuxtButton
+                    color="neutral"
+                    variant="outline"
+                    label="Usar"
+                    @click="useSuggestion(suggestion)"
+                  />
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  Parecidos:
+                  {{
+                    draft.correlate.correlates
+                      .map((item: { sku: string }) => item.sku)
+                      .join(", ")
+                  }}
+                </p>
+              </div>
+            </div>
+          </NuxtCard>
+        </OperatorFormSection>
+
+        <OperatorFormSection
+          v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
+          section-key="photo"
+        >
+          <NuxtCard
+            v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
+            variant="soft"
+          >
+            <div class="flex flex-col gap-3">
+              <NuxtFormField
+                label="Foto do produto"
+                hint="Escolha uma imagem para padronizar."
+              >
+                <NuxtInput
+                  type="file"
+                  accept="image/*"
+                  :disabled="photoBusy"
+                  data-testid="create-photo-input"
+                  @change="onPhotoPicked"
+                />
+              </NuxtFormField>
+              <p class="text-xs text-muted-foreground">
+                O ajuste é determinístico: recorta a borda, enquadra e afina.
+                Não inventa o produto.
+              </p>
+              <p v-if="photoError" class="text-xs text-warning">
+                {{ photoError }}
               </p>
               <div
-                v-for="suggestion in draft.correlate.suggestions"
-                :key="suggestion.field"
-                class="flex items-center justify-between gap-2"
+                v-if="photoResult || photoOriginal"
+                class="flex items-center gap-3"
               >
-                <span class="text-xs">{{ suggestion.reason }}</span>
-                <NuxtButton
-                  color="neutral"
-                  variant="outline"
-                  label="Usar"
-                  @click="useSuggestion(suggestion)"
+                <img
+                  :src="photoResult || photoOriginal"
+                  alt="Prévia da foto"
+                  class="h-20 w-20 rounded object-cover"
                 />
+                <div class="flex flex-col items-start gap-1">
+                  <NuxtButton
+                    color="neutral"
+                    variant="outline"
+                    :label="
+                      form.image_url
+                        ? 'Foto guardada'
+                        : 'Usar como foto do produto'
+                    "
+                    :loading="uploadBusy"
+                    :disabled="Boolean(form.image_url)"
+                    data-testid="create-photo-use"
+                    @click="usePhoto"
+                  />
+                  <a
+                    v-if="photoResult"
+                    :href="photoResult"
+                    download="produto.jpg"
+                    class="text-xs underline"
+                    >Baixar padronizada</a
+                  >
+                </div>
               </div>
-              <p class="text-xs text-muted-foreground">
-                Parecidos:
-                {{
-                  draft.correlate.correlates
-                    .map((item: { sku: string }) => item.sku)
-                    .join(", ")
-                }}
+              <p v-if="form.image_url" class="text-xs text-success break-all">
+                {{ form.image_url }}
               </p>
             </div>
-          </div>
-        </NuxtCard>
+          </NuxtCard>
+        </OperatorFormSection>
 
-        <NuxtCard
-          v-if="!isDuplicate && intent !== '' && intent !== 'insumo'"
-          variant="soft"
+        <OperatorFormSection
+          v-if="!isDuplicate && intent === 'revenda'"
+          section-key="purchase"
         >
-          <div class="flex flex-col gap-3">
-            <NuxtFormField
-              label="Foto do produto"
-              hint="Escolha uma imagem para padronizar."
-            >
-              <NuxtInput
-                type="file"
-                accept="image/*"
-                :disabled="photoBusy"
-                data-testid="create-photo-input"
-                @change="onPhotoPicked"
-              />
-            </NuxtFormField>
+          <NuxtCard v-if="!isDuplicate && intent === 'revenda'" variant="soft">
+            <NuxtCheckbox
+              v-model="linkPurchase"
+              label="Ligar o comprável do mesmo SKU (Permitir compra)"
+            />
+            <p class="mt-1 text-xs text-muted-foreground">
+              O fornecedor e o custo ficam no Compras; o estoque é o mesmo SKU.
+            </p>
+          </NuxtCard>
+        </OperatorFormSection>
+        <OperatorFormSection
+          v-if="!isDuplicate && intent === 'producao'"
+          section-key="production"
+        >
+          <NuxtCard v-if="!isDuplicate && intent === 'producao'" variant="soft">
+            <p class="text-sm font-medium">Produzo e vendo aqui</p>
             <p class="text-xs text-muted-foreground">
-              O ajuste é determinístico: recorta a borda, enquadra e afina. Não
-              inventa o produto.
+              O vendável nasce no catálogo e a ficha de execução entra na
+              Produção.
             </p>
-            <p v-if="photoError" class="text-xs text-warning">{{ photoError }}</p>
-            <div
-              v-if="photoResult || photoOriginal"
-              class="flex items-center gap-3"
+            <a
+              v-if="adminBaseUrl"
+              :href="`${adminBaseUrl}/admin/craftsman/recipe/add/`"
+              target="_blank"
+              rel="noopener"
+              class="mt-1 inline-block text-sm underline"
+              >Abrir a ficha no Admin</a
             >
-              <img
-                :src="photoResult || photoOriginal"
-                alt="Prévia da foto"
-                class="h-20 w-20 rounded object-cover"
-              />
-              <div class="flex flex-col items-start gap-1">
-                <NuxtButton
-                  color="neutral"
-                  variant="outline"
-                  :label="
-                    form.image_url
-                      ? 'Foto guardada'
-                      : 'Usar como foto do produto'
-                  "
-                  :loading="uploadBusy"
-                  :disabled="Boolean(form.image_url)"
-                  data-testid="create-photo-use"
-                  @click="usePhoto"
-                />
-                <a
-                  v-if="photoResult"
-                  :href="photoResult"
-                  download="produto.jpg"
-                  class="text-xs underline"
-                  >Baixar padronizada</a
-                >
-              </div>
-            </div>
-            <p v-if="form.image_url" class="text-xs text-success break-all">
-              {{ form.image_url }}
-            </p>
-          </div>
-        </NuxtCard>
+          </NuxtCard>
+        </OperatorFormSection>
 
-        <NuxtCard v-if="!isDuplicate && intent === 'revenda'" variant="soft">
-          <NuxtCheckbox
-            v-model="linkPurchase"
-            label="Ligar o comprável do mesmo SKU (Permitir compra)"
-          />
-          <p class="mt-1 text-xs text-muted-foreground">
-            O fornecedor e o custo ficam no Compras; o estoque é o mesmo SKU.
-          </p>
-        </NuxtCard>
-        <NuxtCard v-if="!isDuplicate && intent === 'producao'" variant="soft">
-          <p class="text-sm font-medium">Produzo e vendo aqui</p>
-          <p class="text-xs text-muted-foreground">
-            O vendável nasce no catálogo e a ficha de execução entra na Produção.
-          </p>
-          <a
-            v-if="adminBaseUrl"
-            :href="`${adminBaseUrl}/admin/craftsman/recipe/add/`"
-            target="_blank"
-            rel="noopener"
-            class="mt-1 inline-block text-sm underline"
-            >Abrir a ficha no Admin</a
-          >
-        </NuxtCard>
-
-        <div
+        <OperatorFormSection
           v-if="isDuplicate || (intent !== '' && intent !== 'insumo')"
-          class="grid gap-3 sm:grid-cols-2"
+          section-key="fields"
+          title="Dados do produto"
+          description="Preencha o que a loja e a nota vão usar."
         >
-          <NuxtFormField label="SKU" required>
-            <NuxtInput v-model="form.sku" data-testid="create-sku" />
-          </NuxtFormField>
-          <NuxtFormField label="Nome" required>
-            <NuxtInput v-model="form.name" data-testid="create-name" />
-          </NuxtFormField>
-          <template v-if="!isDuplicate">
-            <NuxtFormField label="Preço (R$)">
+          <div
+            v-if="isDuplicate || (intent !== '' && intent !== 'insumo')"
+            class="grid gap-3 sm:grid-cols-2"
+          >
+            <NuxtFormField label="SKU" required>
               <NuxtInput
-                v-model="form.priceText"
-                inputmode="decimal"
-                placeholder="15,00"
-                data-testid="create-price"
+                v-model="form.sku"
+                data-testid="create-sku"
+                data-focus-control
               />
             </NuxtFormField>
-            <NuxtFormField label="Unidade de venda">
-              <NuxtInput v-model="form.unit" placeholder="un" />
+            <NuxtFormField label="Nome" required>
+              <NuxtInput v-model="form.name" data-testid="create-name" />
             </NuxtFormField>
-            <NuxtFormField label="Descrição curta" class="sm:col-span-2">
-              <NuxtInput v-model="form.short_description" />
-            </NuxtFormField>
-            <NuxtFormField label="Descrição longa" class="sm:col-span-2">
-              <NuxtTextarea v-model="form.long_description" :rows="3" />
-            </NuxtFormField>
-            <NuxtFormField
-              label="Palavras-chave"
-              hint="Separe por vírgula."
-            >
-              <NuxtInput v-model="form.keywordsText" />
-            </NuxtFormField>
-            <NuxtFormField label="URL da imagem">
-              <NuxtInput v-model="form.image_url" placeholder="https://" />
-            </NuxtFormField>
-            <NuxtFormField label="Política de disponibilidade">
-              <NuxtSelect
-                v-model="form.availability_policy"
-                :items="policyOptions"
-              />
-            </NuxtFormField>
-            <NuxtFormField label="Validade (dias)">
-              <NuxtInput
-                v-model="form.shelf_life_days"
-                inputmode="numeric"
-                placeholder="Vazio = não perecível"
-              />
-            </NuxtFormField>
-            <NuxtFormField label="Peso por unidade (g)">
-              <NuxtInput v-model="form.unit_weight_g" inputmode="numeric" />
-            </NuxtFormField>
-            <NuxtFormField label="Dica de conservação">
-              <NuxtInput v-model="form.storage_tip" />
-            </NuxtFormField>
-            <NuxtFormField label="Ingredientes" class="sm:col-span-2">
-              <NuxtTextarea v-model="form.ingredients_text" :rows="2" />
-            </NuxtFormField>
-            <div class="flex items-center gap-4 sm:col-span-2">
-              <NuxtCheckbox
-                v-model="form.is_published"
-                label="Exibido no catálogo"
-              />
-              <NuxtCheckbox
-                v-model="form.is_sellable"
-                label="Disponível para venda"
-              />
-            </div>
-          </template>
-        </div>
+            <template v-if="!isDuplicate">
+              <NuxtFormField label="Preço (R$)">
+                <NuxtInput
+                  v-model="form.priceText"
+                  inputmode="decimal"
+                  placeholder="15,00"
+                  data-testid="create-price"
+                />
+              </NuxtFormField>
+              <NuxtFormField label="Unidade de venda">
+                <NuxtInput v-model="form.unit" placeholder="un" />
+              </NuxtFormField>
+              <NuxtFormField label="Descrição curta" class="sm:col-span-2">
+                <NuxtInput v-model="form.short_description" />
+              </NuxtFormField>
+              <NuxtFormField label="Descrição longa" class="sm:col-span-2">
+                <NuxtTextarea v-model="form.long_description" :rows="3" />
+              </NuxtFormField>
+              <NuxtFormField label="Palavras-chave" hint="Separe por vírgula.">
+                <NuxtInput v-model="form.keywordsText" />
+              </NuxtFormField>
+              <NuxtFormField label="URL da imagem">
+                <NuxtInput v-model="form.image_url" placeholder="https://" />
+              </NuxtFormField>
+              <NuxtFormField label="Política de disponibilidade">
+                <NuxtSelect
+                  v-model="form.availability_policy"
+                  :items="policyOptions"
+                />
+              </NuxtFormField>
+              <NuxtFormField label="Validade (dias)">
+                <NuxtInput
+                  v-model="form.shelf_life_days"
+                  inputmode="numeric"
+                  placeholder="Vazio = não perecível"
+                />
+              </NuxtFormField>
+              <NuxtFormField label="Peso por unidade (g)">
+                <NuxtInput v-model="form.unit_weight_g" inputmode="numeric" />
+              </NuxtFormField>
+              <NuxtFormField label="Dica de conservação">
+                <NuxtInput v-model="form.storage_tip" />
+              </NuxtFormField>
+              <NuxtFormField label="Ingredientes" class="sm:col-span-2">
+                <NuxtTextarea v-model="form.ingredients_text" :rows="2" />
+              </NuxtFormField>
+              <div class="flex items-center gap-4 sm:col-span-2">
+                <NuxtCheckbox
+                  v-model="form.is_published"
+                  label="Exibido no catálogo"
+                />
+                <NuxtCheckbox
+                  v-model="form.is_sellable"
+                  label="Disponível para venda"
+                />
+              </div>
+            </template>
+          </div>
+        </OperatorFormSection>
       </div>
     </template>
-    <template #footer>
-      <div class="flex items-center justify-between gap-2">
-        <NuxtButton
-          v-if="!isDuplicate && intent"
-          color="neutral"
-          variant="ghost"
-          label="Trocar intenção"
-          @click="intent = ''"
-        />
-        <NuxtButton
-          v-else
-          color="neutral"
-          variant="ghost"
-          label="Cancelar"
-          @click="emit('update:open', false)"
-        />
-        <NuxtButton
-          v-if="!isDuplicate && intent === 'insumo'"
-          label="Abrir o Compras"
-          data-testid="create-go-purchase"
-          @click="emit('go-purchase')"
-        />
-        <NuxtButton
-          v-else
-          :label="isDuplicate ? 'Duplicar' : 'Criar produto'"
-          :loading="busy"
-          :disabled="!valid"
-          data-testid="create-submit"
-          @click="submit"
-        />
-      </div>
-    </template>
-  </NuxtSlideover>
+  </OperatorFormShell>
 
   <NuxtModal
     :open="scanner.open.value"

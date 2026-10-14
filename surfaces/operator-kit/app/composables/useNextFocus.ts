@@ -1,4 +1,4 @@
-import type { MaybeRefOrGetter } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, toValue, watch, type MaybeRefOrGetter } from "vue";
 import {
   FOCUS_CONTROL_ATTRIBUTE,
   FOCUS_OBSTRUCTION_ATTRIBUTE,
