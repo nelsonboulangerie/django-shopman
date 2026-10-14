@@ -217,7 +217,7 @@ createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk) => { raw += chunk; });
     req.on("end", () => {
-      let body = {};
+      let body;
       try { body = JSON.parse(raw || "{}"); } catch { body = {}; }
       send(res, 200, volumeCheck(body));
     });
