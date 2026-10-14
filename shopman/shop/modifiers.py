@@ -507,6 +507,111 @@ def _lot_label() -> str:
     return _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação")
 
 
+class CustomerPricingModifier:
+    """Resolve o cliente da sessão UMA vez e deixa o contexto de preço pronto.
+
+    Ordem 5, antes do ``ItemPricingModifier`` (10). A sessão é a fonte em TODO
+    canal: a loja online grava ``customer.ref`` (e a faixa) a cada mexida na
+    sacola, e o PDV grava ``customer.ref``/``price_tier`` no atendimento. Sem
+    isto, ``ctx["customer"]`` nunca existia e a cascata "faixa do cliente ->
+    listing do offerman" de ``shop/handlers/pricing.py`` não mudava preço nenhum.
+
+    Uma consulta resolve o cadastro (com faixa e insight juntos) e abastece
+    ``customer``, ``price_tier``, ``price_tier_name``, ``price_tier_metadata``,
+    ``customer_segment`` e ``is_birthday``. O ``DiscountModifier`` reusa o
+    contexto em vez de reler a mesma linha; o ``ItemPricingModifier`` passa o
+    cliente ao backend, que resolve todas as linhas em lote.
+    """
+
+    code = "pricing.customer"
+    order = 5
+
+    def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
+        if ctx.get("customer") is not None:
+            self._publish_profile(ctx, ctx["customer"])
+            self._publish_tier(ctx, getattr(ctx["customer"], "price_tier", None), "")
+            return
+
+        session_customer = (session.data or {}).get("customer") or {}
+        customer_ref = str(session_customer.get("ref") or "").strip()
+        session_tier_ref = str(session_customer.get("price_tier") or "").strip()
+        if not customer_ref and not session_tier_ref:
+            return
+
+        customer = None
+        if customer_ref:
+            try:
+                from shopman.guestman.models import Customer
+
+                customer = (
+                    Customer.objects.select_related("price_tier", "insight")
+                    .filter(ref=customer_ref)
+                    .first()
+                )
+            except Exception:  # silêncio-deliberado: sem cadastro a faixa sozinha ainda resolve o preço
+                logger.debug(
+                    "pricing.customer: customer lookup failed for ref=%s",
+                    customer_ref,
+                    exc_info=True,
+                )
+        if customer is not None:
+            ctx["customer"] = customer
+
+        tier = getattr(customer, "price_tier", None) if customer is not None else None
+        tier_ref = session_tier_ref or getattr(tier, "ref", "")
+        if tier_ref and (tier is None or getattr(tier, "ref", "") != tier_ref):
+            tier = self._load_tier(tier_ref)
+            if customer is None and tier is not None:
+                # O PDV pode vincular só a faixa (sem ``ref`` de cliente): o preço
+                # da faixa ainda vale, e o backend só precisa de ``price_tier``.
+                from types import SimpleNamespace
+
+                ctx["customer"] = SimpleNamespace(price_tier=tier)
+        if tier is not None:
+            self._publish_tier(ctx, tier, tier_ref or getattr(tier, "ref", ""))
+        if customer is not None:
+            self._publish_profile(ctx, customer)
+        elif "customer_segment" not in ctx:
+            ctx["customer_segment"] = ""
+            ctx.setdefault("is_birthday", False)
+
+    @staticmethod
+    def _load_tier(ref: str):
+        try:
+            from shopman.guestman.models import PriceTier
+
+            return PriceTier.objects.filter(ref=ref).first()
+        except Exception:  # silêncio-deliberado: faixa ilegível não derruba a precificação
+            logger.debug("pricing.customer: tier lookup failed for ref=%s", ref, exc_info=True)
+            return None
+
+    @staticmethod
+    def _publish_tier(ctx: dict, tier: Any, fallback_ref: str) -> None:
+        if tier is None:
+            if fallback_ref:
+                ctx.setdefault("price_tier", fallback_ref)
+            return
+        ctx.setdefault("price_tier", getattr(tier, "ref", "") or fallback_ref)
+        ctx.setdefault("price_tier_name", getattr(tier, "name", "") or "")
+        metadata = getattr(tier, "metadata", None)
+        ctx.setdefault("price_tier_metadata", metadata if isinstance(metadata, dict) else {})
+
+    @staticmethod
+    def _publish_profile(ctx: dict, customer: Any) -> None:
+        if "customer_segment" not in ctx:
+            try:
+                ctx["customer_segment"] = customer.insight.rfm_segment or ""
+            except Exception:  # Insight (OneToOne) pode não existir ainda
+                ctx["customer_segment"] = ""
+        if "is_birthday" not in ctx:
+            birthday = getattr(customer, "birthday", None)
+            if birthday:
+                today = timezone.localdate(pricing_now(ctx))
+                ctx["is_birthday"] = birthday.month == today.month and birthday.day == today.day
+            else:
+                ctx["is_birthday"] = False
+
+
 class LotDiscountModifier:
     """Desconto do LOTE que a linha reservou (ADR-017 / D1-RETIREMENT-PLAN).
 
@@ -889,12 +994,15 @@ class DiscountModifier:
 
         customer_data = (session.data or {}).get("customer") or {}
 
-        needs_tier = not ctx.get("price_tier")
+        # Pertencimento, não valor: o ``CustomerPricingModifier`` (ordem 5) já
+        # abasteceu o contexto e uma chave presente (mesmo vazia) dispensa a
+        # releitura. Só quem chama o modifier direto (testes) paga a consulta.
+        needs_tier = "price_tier" not in ctx
         if needs_tier and customer_data.get("price_tier"):
             ctx["price_tier"] = customer_data["price_tier"]
             needs_tier = False
 
-        needs_segment = not ctx.get("customer_segment")
+        needs_segment = "customer_segment" not in ctx
         needs_birthday = "is_birthday" not in ctx
         customer_ref = customer_data.get("ref")
         if not customer_ref or not (needs_tier or needs_segment or needs_birthday):
@@ -920,6 +1028,9 @@ class DiscountModifier:
 
         if needs_tier and customer.price_tier_id:
             ctx["price_tier"] = customer.price_tier.ref
+            ctx.setdefault("price_tier_name", customer.price_tier.name or "")
+            metadata = customer.price_tier.metadata
+            ctx.setdefault("price_tier_metadata", metadata if isinstance(metadata, dict) else {})
 
         if needs_segment:
             try:
