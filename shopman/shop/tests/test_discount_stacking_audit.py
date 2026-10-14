@@ -43,6 +43,8 @@ def _wide_window_params(discount_percent: int) -> dict:
 
 
 # Os dois lados da meia-noite de Brasília (UTC-3), onde a CI reprovou em 10/10/2026.
+# No ``subTest`` eles entram como texto (``isoformat``): com pytest 9.0.x o xdist
+# não serializa ``datetime`` no relatório do subteste e o teste reprova sem defeito.
 VIRADA_ANTES = datetime(2026, 10, 10, 2, 59, 30, tzinfo=UTC)  # 23:59:30 local
 VIRADA_DEPOIS = datetime(2026, 10, 10, 3, 1, tzinfo=UTC)  # 00:01 local
 
@@ -245,7 +247,7 @@ class DiscountStackingAuditTests(TestCase):
 
     def test_flat_discount_wins_on_both_sides_of_midnight(self) -> None:
         for instant in (VIRADA_ANTES, VIRADA_DEPOIS):
-            with self.subTest(instant=instant), patch("django.utils.timezone.now", return_value=instant):
+            with self.subTest(instant=instant.isoformat()), patch("django.utils.timezone.now", return_value=instant):
                 Session.objects.all().delete()
                 RuleConfig.objects.all().delete()
                 from shopman.shop.models import Promotion
@@ -263,7 +265,7 @@ class DiscountStackingAuditTests(TestCase):
         )
         fora = datetime(2026, 10, 10, 4, 30, tzinfo=UTC)  # 01:30 local
         for instant, esperado in ((VIRADA_ANTES, 600), (VIRADA_DEPOIS, 600), (fora, 1000)):
-            with self.subTest(instant=instant), patch("django.utils.timezone.now", return_value=instant):
+            with self.subTest(instant=instant.isoformat()), patch("django.utils.timezone.now", return_value=instant):
                 cache.clear()
                 key = self._open_session()
                 session = ModifyService.modify_session(
