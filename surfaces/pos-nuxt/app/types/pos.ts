@@ -22,8 +22,14 @@ export interface POSProductProjection {
   kitchen_station?: string;
   /** A estação tem o envio automático ligado: a linha nova vai sozinha. */
   kitchen_auto_fire?: boolean;
+  /** O preço que o motor cobra AGORA (com a Hora da Xepa aberta, já descontado). */
   price_q: number;
   price_display: string;
+  /** A etiqueta cheia, para riscar ao lado do preço; 0/"" = sem desconto agora. */
+  list_price_q?: number;
+  list_price_display?: string;
+  /** O nome do desconto que vale agora (ex.: "Hora da Xepa"). */
+  discount_label?: string;
   collection_ref: string
   // Apresentação da coleção primária (Collection.metadata): cor hex da paleta
   // NB e nome de ícone Lucide — vestem o tile sem foto. Vazio sem configuração.
@@ -602,6 +608,19 @@ export interface POSProjection {
   /** Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta
    *  (balança no balcão). Desligado = só valor, e a opção nem aparece. */
   weighed_weight_entry?: boolean;
+  /** A janela de desconto por horário (Hora da Xepa); null sem regra para o PDV. */
+  price_window?: POSPriceWindowProjection | null;
+}
+
+/** A janela de desconto por horário vista na leitura: `next_change_at` é quando
+ *  ela abre ou fecha, e a tela relê a projeção nesse instante. */
+export interface POSPriceWindowProjection {
+  active: boolean;
+  label: string;
+  discount_percent: number;
+  starts_at: string;
+  ends_at: string;
+  next_change_at: string;
 }
 
 export interface POSShiftSummaryProjection {

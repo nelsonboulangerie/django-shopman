@@ -304,3 +304,31 @@ export function matchOpenTabs<T extends TabMatchSource>(tabs: T[], query: string
       .some((value) => Boolean(value) && (value.startsWith(normalized) || matchesWordStart(value, normalized))))
     .slice(0, 4);
 }
+
+// ── Hora da Xepa na grade ───────────────────────────────────────────────────
+// Com a janela de desconto por horário aberta, o `price_q` do tile já é o que o
+// motor cobra agora, e a etiqueta cheia vem para ser riscada ao lado. A tela não
+// calcula desconto: só mostra o que a projeção selou.
+
+/** A etiqueta cheia a riscar, ou "" quando o preço de agora é o cheio. */
+export function productStrikePrice(
+  product: Pick<POSProductProjection, "price_q" | "list_price_q" | "list_price_display">,
+): string {
+  const list = product.list_price_q ?? 0;
+  return list > product.price_q && product.list_price_display ? product.list_price_display : "";
+}
+
+/** Folga depois da virada: o servidor precisa já estar do outro lado da janela. */
+export const PRICE_WINDOW_REFRESH_GRACE_MS = 1500;
+const MAX_TIMER_MS = 2_147_483_647;
+
+/**
+ * Daqui a quanto a grade relê a projeção para o preço trocar sozinho (a janela
+ * abre ou fecha). `null` = não há virada a esperar (sem janela, data inválida).
+ */
+export function priceWindowRefreshDelayMs(nextChangeAt: string | null | undefined, nowMs: number): number | null {
+  if (!nextChangeAt) return null;
+  const at = Date.parse(nextChangeAt);
+  if (!Number.isFinite(at)) return null;
+  return Math.min(MAX_TIMER_MS, Math.max(0, at - nowMs) + PRICE_WINDOW_REFRESH_GRACE_MS);
+}

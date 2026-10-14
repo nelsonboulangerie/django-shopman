@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { POSProductProjection } from "~/types/pos";
-import { productFallbackIcon, productFallbackStyle } from "~/presentation/catalog";
+import { productFallbackIcon, productFallbackStyle, productStrikePrice } from "~/presentation/catalog";
 import { productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups } from "~/presentation/productOptions";
 
@@ -32,6 +32,10 @@ const showImage = computed(() => hasImage.value && !imageBroken.value);
 // Lucide genérico da categoria + SKU (presentation/catalog).
 const fallbackStyle = computed(() => productFallbackStyle(props.product));
 const fallbackIcon = computed(() => productFallbackIcon(props.product));
+
+// Hora da Xepa aberta: o preço do tile já é o que o motor cobra, e a etiqueta
+// cheia fica riscada ao lado (a projeção sela os dois; a tela não calcula).
+const strikePrice = computed(() => productStrikePrice(props.product));
 </script>
 
 <template>
@@ -101,7 +105,20 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
         data-pos-product-name
       >{{ product.name }}</p>
       <span class="flex min-w-0 items-center justify-between gap-1.5">
-        <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+        <!-- Na Hora da Xepa a etiqueta cheia fica riscada AO LADO, na mesma linha
+             (nunca embaixo): a altura do cartão não muda com o desconto, e o
+             riscado corta com reticências antes de empurrar o preço. -->
+        <span class="flex min-w-0 items-baseline gap-1.5" data-pos-product-price>
+          <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+          <s
+            v-if="strikePrice"
+            class="min-w-0 truncate op-micro tnum text-muted-foreground"
+            :title="product.discount_label ? `${product.discount_label}: antes ${strikePrice}` : `Antes ${strikePrice}`"
+            aria-hidden="true"
+            data-pos-product-list-price
+          >{{ strikePrice }}</s>
+          <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
+        </span>
         <!-- Esgotado: a pílula ao lado do preço; o tile fica visível porém inerte
              (sumir da grade faria o operador procurar um botão que "sumiu"). Sem
              preço, quem diz é a linha do preço ("Sem preço"). -->

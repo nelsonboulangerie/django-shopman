@@ -99,6 +99,28 @@ class POSProductProjection:
     # A estação dele tem o envio automático ligado (opcional por estação,
     # desligado por padrão): o PDV envia a linha nova sozinho ao sair da comanda.
     kitchen_auto_fire: bool = False
+    # Janela de desconto por horário aberta (Hora da Xepa): ``price_q`` já é o
+    # preço que o motor cobra AGORA, e a etiqueta cheia vem aqui para o tile
+    # mostrá-la riscada. Zero/vazio = sem desconto, ``price_q`` é a etiqueta.
+    list_price_q: int = 0
+    list_price_display: str = ""
+    discount_label: str = ""
+
+
+@dataclass(frozen=True)
+class POSPriceWindowProjection:
+    """A janela de desconto por horário do PDV (Hora da Xepa) no instante da leitura.
+
+    ``next_change_at`` é quando ela abre (fechada) ou fecha (aberta): a tela relê
+    a projeção nesse instante e o preço da grade troca sem recarregar a página.
+    """
+
+    active: bool
+    label: str
+    discount_percent: int | float
+    starts_at: str
+    ends_at: str
+    next_change_at: str
 
 
 @dataclass(frozen=True)
@@ -517,6 +539,9 @@ class POSProjection:
     # Desligado = só valor, e a tela nem mostra a opção. Ver
     # ``weighed_sale.weight_entry_enabled`` (``Shop.defaults.pos.weighed_weight_entry``).
     weighed_weight_entry: bool = False
+    # A janela de desconto por horário (Hora da Xepa), ou ``None`` sem regra
+    # ligada para o PDV. Ver ``POSPriceWindowProjection``.
+    price_window: POSPriceWindowProjection | None = None
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -590,7 +615,10 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
     duas gavetas funcionar: cada balcão resolve o seu, em vez de os dois
     disputarem o primeiro em ordem alfabética.
     """
-    products = _load_products()
+    from shopman.shop.modifiers import time_window_offer
+
+    offer = time_window_offer(POS_CHANNEL_REF)
+    products = _load_products(offer=offer)
 
     collections = tuple(
         POSCollectionProjection(ref=c["ref"], name=c["name"])
@@ -659,6 +687,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
+        price_window=_price_window_projection(offer),
         delivery_today=_delivery_today().isoformat(),
         delivery_slots_today=tuple(_delivery_slots_today()),
         delivery_slots_canonical=tuple(_delivery_slots_canonical()),
@@ -1131,8 +1160,25 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
 # ── Internals ──────────────────────────────────────────────────────────
 
 
-def _load_products() -> list[POSProductProjection]:
-    """Load products with prices for the POS grid."""
+def _price_window_projection(offer) -> POSPriceWindowProjection | None:
+    if offer is None:
+        return None
+    return POSPriceWindowProjection(
+        active=offer.active,
+        label=offer.label,
+        discount_percent=offer.discount_percent,
+        starts_at=offer.start.strftime("%H:%M"),
+        ends_at=offer.end.strftime("%H:%M"),
+        next_change_at=offer.next_change_at().isoformat(),
+    )
+
+
+def _load_products(*, offer=None) -> list[POSProductProjection]:
+    """Load products with prices for the POS grid.
+
+    ``offer`` é a janela de desconto por horário (``modifiers.time_window_offer``):
+    aberta, o tile mostra o preço que o motor cobra agora, com a etiqueta riscada.
+    """
     entries: list[tuple[Product, int]] = []
 
     # A coleção primária (ref + metadata cor/ícone do tile) vem prefetchada
@@ -1195,6 +1241,7 @@ def _load_products() -> list[POSProductProjection]:
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
             kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
+            offer=offer,
         )
         for p, price_q in entries
     ]
@@ -2389,6 +2436,7 @@ def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
     kitchen_station: str = "",
     kitchen_auto_fire: bool = False,
+    offer=None,
 ) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
@@ -2404,11 +2452,21 @@ def _product_projection(
     meta = collection.metadata if collection and isinstance(collection.metadata, dict) else {}
 
     sold_by_weight = weighed_sale.is_sold_by_weight(product.unit)
+    unit_suffix = "/kg" if sold_by_weight else ""
+    # A Hora da Xepa aberta: o tile mostra o preço que o fechamento vai cobrar
+    # (a mesma conta do ``TimeWindowDiscountModifier``), e a etiqueta riscada.
+    list_price_q, list_price_display, discount_label = 0, "", ""
+    if offer is not None and offer.active and price_q > 0:
+        now_q = offer.price_q(price_q)
+        if now_q < price_q:
+            list_price_q, list_price_display = price_q, f"R$ {format_money(price_q)}{unit_suffix}"
+            discount_label = offer.label
+            price_q = now_q
     # Sem preço não vende em canal nenhum: o tile diz isso, não "R$ 0,00".
     if price_q <= 0:
         price_display = "Sem preço"
     else:
-        price_display = f"R$ {format_money(price_q)}" + ("/kg" if sold_by_weight else "")
+        price_display = f"R$ {format_money(price_q)}{unit_suffix}"
     return POSProductProjection(
         sku=product.sku,
         name=product.name,
@@ -2427,6 +2485,9 @@ def _product_projection(
         option_groups=tuple(product_option_groups(product)),
         kitchen_station=kitchen_station,
         kitchen_auto_fire=kitchen_auto_fire,
+        list_price_q=list_price_q,
+        list_price_display=list_price_display,
+        discount_label=discount_label,
     )
 
 
