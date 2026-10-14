@@ -67,7 +67,7 @@ class POSCommercialCompletionTests(TestCase):
                 pos_terminal_ref=self.terminal.ref,
                 payment_tenders=[
                     {"method": "cash", "amount_q": 500, "collection": "terminal"},
-                    {"method": "pix", "amount_q": 700, "collection": "terminal", "reference": "PIX-123"},
+                    {"method": "pix", "amount_q": 700, "collection": "terminal", "reference": "PIX-123", "pix_confirmed": True},
                 ],
             ),
             actor="pos:commercial-pos",

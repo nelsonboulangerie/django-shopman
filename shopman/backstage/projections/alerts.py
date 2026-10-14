@@ -166,6 +166,7 @@ _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     "pos_drawer_sensor_blind": ("pos", "/", "Abrir o PDV"),
     "pos_drawer_left_open": ("pos", "/", "Abrir o PDV"),
     "cash_change_requested": ("pos", "/", "Abrir o PDV"),
+    "card_machine_refund_due": ("pos", "/session", "Registrar o estorno no PDV"),
     "cash_shift_open_at_closing": ("pos", "/session", "Fechar o caixa"),
     "cash_sale_after_shift_close": ("pos", "/session/report", "Conferir o relatório do caixa"),
     # B.I.: o número que passou da régua.
@@ -193,6 +194,7 @@ _ORDER_DETAIL_ANCHORS = {
 #: O rótulo do botão quando o aviso leva ao pedido: diz aonde leva, não "resolver".
 _ORDER_LABELS = {
     "ifood_negotiation_open": "Responder",
+    "card_authorization_expiring": "Aceitar ou recusar",
 }
 
 

@@ -1319,7 +1319,8 @@ def cancel_order(
     reason: str,
     actor: str,
     cancellation_code: str = "",
-    customer_note: str = "",
+    reason_key: str = "",
+    internal_note: str = "",
     expected_authority_revision: str | None = None,
     expected_revision: str | None = None,
     prepared_identity: tuple[str, str] | None = None,
@@ -1328,22 +1329,26 @@ def cancel_order(
 
     ``cancellation_code`` (iFood) rides ``order.data`` to the status-callback handler.
 
-    ``customer_note`` is the operator-authored, customer-facing justification. It is
-    stored under ``order.data["cancellation_note"]`` and surfaced to the customer in
-    the ``order_cancelled`` notification. Kept separate from ``cancellation_reason``,
-    which also carries machine codes (``pix_timeout``, ``customer_requested``) that
-    must never reach the customer. Empty when the operator gave no reason → the
-    customer gets the plain cancellation message.
+    ``reason_key`` é a chave da lista única de motivos (``services/cancel_reasons``),
+    gravada em ``order.data["cancellation_reason_key"]``: o cliente lê o texto
+    revisado dela na notificação ``order_cancelled``. Fora da lista levanta
+    ``ValueError``. Vazia só no marketplace (o iFood exige o código dele, e o
+    pedido sai com ``other``). ``internal_note`` é a observação livre do operador:
+    vai para ``order.data["cancellation_internal_note"]`` e nunca ao cliente.
 
     Returns:
         True se cancelou ou persistiu solicitação iFood; False se a transição foi recusada.
     """
+    from shopman.shop.services import cancel_reasons
+
+    if (reason_key or order.channel_ref != "ifood") and cancel_reasons.validation_message(reason_key):
+        raise ValueError(cancel_reasons.validation_message(reason_key))
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
-    extra_data: dict[str, str] = {}
+    extra_data: dict[str, str] = {"cancellation_reason_key": reason_key.strip() or cancel_reasons.OTHER}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
-    if customer_note.strip():
-        extra_data["cancellation_note"] = customer_note.strip()
+    if internal_note.strip():
+        extra_data["cancellation_internal_note"] = internal_note.strip()
     # O retorno do serviço canônico é a resposta à pergunta "cancelou?", e
     # descartá-lo fazia a view responder 200 para um pedido que continuou como
     # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
@@ -1363,7 +1368,7 @@ def cancel_order(
                 raise OrderStateConflict("O pagamento ou estado mudou. Confira o pedido e a aprovação novamente.")
         if _cancellation_identity(locked) != reason_identity:
             raise OrderStateConflict("A referência do pedido mudou. Consulte os motivos novamente.")
-        return cancel(locked, reason=reason, actor=actor, extra_data=extra_data or None)
+        return cancel(locked, reason=reason, actor=actor, extra_data=extra_data)
 
 
 _COUNTER_METHODS = frozenset({"cash", "credit", "debit"})
@@ -1420,11 +1425,12 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
         return "Esta encomenda é para entregar no endereço: a saída é pelo Gestor de pedidos."
     if order.status in {Order.Status.COMPLETED, Order.Status.DELIVERED}:
         return "Esta encomenda já foi entregue."
-    if order.status != Order.Status.READY:
-        return (
-            f"Esta encomenda ainda não está pronta ({order.get_status_display()}). "
-            "Ela pode ser entregue aqui quando for marcada como pronta."
-        )
+    if order.status not in COUNTER_HAND_OVER_STATUSES:
+        return f"Esta encomenda não pode ser entregue agora ({order.get_status_display()})."
+    if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
+        # Antes do dia, a baixa de estoque e os tickets ainda não aconteceram
+        # (``lifecycle.activate_preorder``): concluir agora pularia os dois.
+        return "Esta encomenda é para outro dia. Para entregar hoje, reagende para hoje."
     due = balance_q if balance_q is not None else payment_service.balance_due_q(order, payment_reads=payment_reads)
     if due is None:
         return "Não deu para ler o que já foi pago. Confira o pagamento antes de entregar."
@@ -1480,6 +1486,8 @@ def hand_over_at_counter(
         # Receber com a cobrança do cliente ainda viva abriria a cobrança dupla:
         # quem cancela antes é :func:`take_over_before_hand_over`.
         raise ValueError("O Pix ou o link do cliente ainda está ativo. Atualize a encomenda e tente de novo.")
+    _mark_ready_at_counter(order, actor=actor)
+    order.refresh_from_db()
     received = 0
     if due:
         received = settle_delivery_cash(
@@ -1491,6 +1499,30 @@ def hand_over_at_counter(
     advance_order(order, actor=actor, cash_shift=cash_shift, target_status=Order.Status.COMPLETED)
     logger.info("operator_hand_over_at_counter order=%s received=%s", order.ref, received)
     return received
+
+
+#: De onde o "Entregar" do balcão conclui. Aceita e em preparo incluídos (P1-8):
+#: o cliente está no balcão com a sacola na mão, e quem entrega afirma que a
+#: cozinha terminou, como o "Marcar pronto" do Gestor. Os tickets abertos fecham
+#: com ``via = order_advanced`` (``kds.close_open_tickets``), a mesma trilha.
+COUNTER_HAND_OVER_STATUSES = frozenset({
+    Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY,
+})
+
+
+def _mark_ready_at_counter(order: Order, *, actor: str) -> None:
+    """O Pronto que o balcão afirma ao entregar: o mesmo efeito do "Marcar pronto".
+
+    ``advance_order`` (o caminho do Gestor) só dá o próximo degrau, e do aceito
+    o próximo é "em preparo", que abriria tickets e avisaria o cliente de um
+    preparo que já acabou. Aqui o pedido vai direto ao pronto (transição
+    permitida pelo mapa); os tickets abertos fecham no avanço seguinte, o da
+    conclusão (``advance_order`` → ``kds.close_open_tickets``), na mesma
+    transação.
+    """
+    if order.status == Order.Status.READY:
+        return
+    order.transition_status(Order.Status.READY, actor=actor)
 
 
 CHOOSE_COUNTER_TENDER_MESSAGE = "Escolha como o cliente pagou no balcão: dinheiro, débito ou crédito."

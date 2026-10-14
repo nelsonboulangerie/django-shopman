@@ -1,4 +1,4 @@
-"""Shopman middleware — App Platform host probe, API version header, operator cookie domain.
+"""Shopman middleware — App Platform host probe, access log, API version header, operator cookie domain.
 
 As superfícies de cliente/operador são apps Nuxt; a captura de ?channel=, o
 onboarding e o welcome-gate vivem nos apps de superfície (storefront/backstage) —
@@ -7,15 +7,19 @@ não aqui. Este módulo guarda só os middlewares realmente wired em settings.
 
 from __future__ import annotations
 
+import logging
+import time
 from ipaddress import ip_address, ip_network
 
 from django.conf import settings
+from django.core.exceptions import MiddlewareNotUsed
 
 API_V1_PREFIX = "/api/v1/"
 API_VERSION = "1"
 HEALTH_PROBE_PATHS = {
     "/health/live/",
     "/health/ready/",
+    "/health/database/",
     "/health/",
     "/ready/",
 }
@@ -39,6 +43,70 @@ class AppPlatformHealthCheckHostMiddleware:
         ):
             request.META["HTTP_HOST"] = _canonical_allowed_host()
         return self.get_response(request)
+
+
+access_logger = logging.getLogger("shopman.access")
+
+_ACCESS_LOG_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+
+
+class AccessLogMiddleware:
+    """Uma linha por request, sem dado nenhum de quem pediu: método, ROTA, status, duração.
+
+    O access log do daphne fica em ``/dev/null`` (ver ``.do/app.alpha-subdomains.yaml``)
+    porque grava o request-target CRU, com query string, e o webhook da Efí
+    autentica por ``?token=``. Ele também grava o IP do cliente, e o formato
+    não tem opção. Sem nenhum access log, os 503 do Admin de 13/10/2026 (17:35-17:45
+    UTC) não deixaram rastro do que a instância atendia antes de cair.
+
+    Esta linha registra o PADRÃO da URL resolvida (``resolver_match.route``, ex.:
+    ``api/v1/backstage/orders/<str:ref>/``), nunca o caminho pedido: ref, token de
+    link mágico e código de recibo ficam de fora por construção, não por filtro.
+    Request que não resolveu rota (404, host recusado) sai com ``route=-``. Sem IP,
+    sem usuário, sem query string, sem corpo.
+
+    Sonda da plataforma que responde 2xx não é registrada (seria uma linha a cada
+    poucos segundos por sonda); sonda que FALHA é, porque é exatamente o sinal.
+    Resposta em stream (SSE) mede o tempo até os cabeçalhos, não a vida do stream.
+
+    Opt-in por ``SHOPMAN_ACCESS_LOG``: desligado, o Django tira o middleware da
+    cadeia na subida (``MiddlewareNotUsed``) e não custa nada por request.
+    """
+
+    def __init__(self, get_response):
+        if not getattr(settings, "SHOPMAN_ACCESS_LOG", False):
+            raise MiddlewareNotUsed
+        self.get_response = get_response
+
+    def __call__(self, request):
+        started = time.monotonic()
+        response = self.get_response(request)
+        status = int(getattr(response, "status_code", 0) or 0)
+        if request.path_info in HEALTH_PROBE_PATHS and status < 400:
+            return response
+        match = getattr(request, "resolver_match", None)
+        pattern = getattr(match, "route", None) if match is not None else None
+        route = f"/{pattern}" if pattern else "-"
+        method = request.method if request.method in _ACCESS_LOG_METHODS else "OTHER"
+        duration_ms = int((time.monotonic() - started) * 1000)
+        streaming = bool(getattr(response, "streaming", False))
+        access_logger.log(
+            logging.WARNING if status >= 500 else logging.INFO,
+            "access %s %s %s %dms%s",
+            method,
+            route,
+            status,
+            duration_ms,
+            " stream" if streaming else "",
+            extra={
+                "http_method": method,
+                "http_route": route,
+                "http_status": status,
+                "duration_ms": duration_ms,
+                "streaming": streaming,
+            },
+        )
+        return response
 
 
 def _is_app_platform_probe_host(raw_host: str) -> bool:

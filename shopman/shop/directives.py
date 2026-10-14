@@ -71,6 +71,9 @@ STAGING_AUTOPILOT = "staging.autopilot"
 # Payment
 PAYMENT_TIMEOUT = "payment.timeout"
 PAYMENT_REFUND = "payment.refund"  # retry assíncrono de estorno com backoff
+# Cartão autorizado esperando aceite: avisa antes de a autorização vencer no
+# Stripe e, se vencer, cancela o pedido sem cobrança (services/card_authorization).
+CARD_AUTHORIZATION_WATCH = "payment.card_authorization_watch"
 
 # Production
 # Heartbeat auto-reagendável: varre WOs started além da janela e planned

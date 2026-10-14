@@ -21,6 +21,8 @@ import type {
 import type { AffordanceRef } from "~/presentation/board";
 import {
   channelLabel,
+  cardAuthorizationNotice,
+  cardDeadlineLabel,
   confirmationRemainingLabel,
   splitRef,
   undoLine,
@@ -174,6 +176,10 @@ const emptyText = computed(
     })[props.scope],
 );
 
+/** O aviso do cartão autorizado esperando aceite (P1-4), ou nada. */
+function cardAuth(card: OrderCardProjection) {
+  return cardAuthorizationNotice(card.card_authorization_expires_iso, props.nowMs);
+}
 function clock(iso: string): string {
   const at = iso ? new Date(iso) : null;
   return at && !Number.isNaN(at.getTime())
@@ -397,6 +403,21 @@ function switchHint(row: {
               </template>
               <template v-else-if="item.kind === 'confirm'">
                 <NuxtBadge color="primary" label="Novo" />
+                <!-- cartão autorizado: a reserva vence no Stripe (P1-4) -->
+                <template v-if="cardAuth(item.card)">
+                  <NuxtBadge
+                    :color="cardAuth(item.card)!.tone"
+                    icon="i-lucide-credit-card"
+                    :label="cardAuth(item.card)!.label"
+                    :title="cardAuth(item.card)!.description"
+                    data-queue-card-authorization
+                  />
+                  <span class="op-micro text-muted-foreground"
+                    >até
+                    {{ cardDeadlineLabel(item.card.card_authorization_expires_iso) }},
+                    aceite para cobrar</span
+                  >
+                </template>
                 <span
                   v-if="
                     item.card.confirmation_deadline_iso &&

@@ -76,7 +76,7 @@ def test_cancelar_venda_em_conta_mata_a_divida_sem_estorno(counter, ana, django_
     result = _sale_on_account(counter, customer_ref="CLI-ANA", client_request_id="c-1")
     order = Order.objects.get(ref=result.order_ref)
     with django_capture_on_commit_callbacks(execute=True):
-        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo")
+        operator_orders.cancel_order(order, reason="customer_requested", actor="gestor:pablo", reason_key="customer_request")
 
     intent = PaymentIntent.objects.get(order_ref=order.ref)
     assert intent.status == PaymentIntent.Status.CANCELLED

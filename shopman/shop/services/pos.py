@@ -380,12 +380,15 @@ def close_sale(
     _validate_payment_completion(payload)
     _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
     _require_delivery_minimum(payload)
+    _require_delivery_coverage(payload)
     _require_house_account_if_on_account(
         payload,
         payment_method=_normalize_payment_method(payload.get("payment_method") or "cash"),
         tenders=[t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)],
     )
     _enforce_pix_payment_policy(payload)
+    _require_confirmed_pix_in_mixed(payload)
+    _refuse_pending_charge_on_fired_preorder(payload, channel_ref=channel.ref)
     # A partir daqui é uma transação só, e ela existe por causa de um defeito:
     # ``client_request_id`` era conferido com um SELECT solto e os ops eram
     # montados de um estado lido antes. Duas requests com a MESMA chave passavam
@@ -920,17 +923,22 @@ def review_sale(
     tendered_q = _int_q(payload.get("tendered_q"))
     threshold_q = discount_approval_threshold_q()
     warnings: list[dict] = []
-    # Fora da área é fato do ENDEREÇO, e o balcão precisa saber antes de
-    # prometer a entrega — não bloqueia (o combinado da porta é do operador),
-    # mas nunca acontece calado.
+    # Fora da área: UMA regra, dita aqui e cobrada igual no fechamento
+    # (`_require_delivery_coverage`). Sem taxa combinada, a entrega não fecha; com
+    # ela, fecha, e o pedido guarda quem combinou e quando.
     if delivery.blocked:
-        distancia = f" ({delivery.distance_km:g} km)" if delivery.distance_km is not None else ""
         warnings.append({
             "code": "delivery_out_of_area",
             "field": "delivery_address",
+            "message": delivery_out_of_area_message(delivery.distance_km),
+        })
+    elif delivery.out_of_area:
+        warnings.append({
+            "code": "delivery_out_of_area_agreed",
+            "field": "delivery_address",
             "message": (
-                f"Este endereço está fora da área de entrega{distancia}. "
-                "Confira o combinado antes de finalizar."
+                "Endereço fora da área de entrega, com taxa combinada por "
+                f"{_bare_username(operator_username) or 'você'}. Fica registrado no pedido."
             ),
         })
     # Endereço incompleto para a nota da entrega: aviso aqui (a review é tela);
@@ -1479,6 +1487,29 @@ def _require_delivery_minimum(payload: dict) -> None:
     )
 
 
+def delivery_out_of_area_message(distance_km: float | None) -> str:
+    """A frase do fora da área: a mesma na revisão e na recusa do fechamento."""
+    distancia = f" ({distance_km:g} km)".replace(".", ",") if distance_km is not None else ""
+    return f"Endereço fora da área de entrega{distancia}."
+
+
+DELIVERY_OUT_OF_AREA_RECOVERY = "Combine a taxa com o cliente e digite o valor, ou troque para retirada."
+
+
+def _require_delivery_coverage(payload: dict) -> None:
+    """Fora da área sem taxa combinada não fecha. Dito antes, na revisão, com a saída."""
+    delivery = _resolve_delivery_fee(payload)
+    if not delivery.blocked:
+        return
+    raise PosIntentError(
+        code="delivery_out_of_area",
+        message=delivery_out_of_area_message(delivery.distance_km),
+        field="delivery_address",
+        focus="delivery_address",
+        recovery=DELIVERY_OUT_OF_AREA_RECOVERY,
+    )
+
+
 #: Recusas do commit que se consertam no endereço da entrega.
 _COMMIT_ADDRESS_CODES = frozenset({
     "delivery_zone_not_covered", "delivery_zone_unverified", "delivery_address_mismatch",
@@ -1532,6 +1563,72 @@ def _payload_payment_method_set(payload: dict) -> set[str]:
     if tenders:
         return {_normalize_payment_method(t.get("method")) for t in tenders}
     return {_normalize_payment_method(payload.get("payment_method"))}
+
+
+def _refuse_pending_charge_on_fired_preorder(payload: dict, *, channel_ref: str) -> None:
+    """A gêmea, no fechamento, de ``_refuse_unpaid_preorder_fire``.
+
+    A comanda de encomenda só vai à cozinha antes de paga quando a casa combinou
+    receber na retirada ou na entrega. Se, depois do envio, o operador fecha com
+    Pix ou link sozinhos (cobrança que só o provedor confirma), a cozinha
+    trabalharia para um pagamento pendente, o buraco que a régua do envio fecha.
+    Recusa antes do commit; dinheiro, maquininha ou o pagamento na retirada
+    seguem valendo.
+    """
+    from shopman.shop.services.pos_sales_mode import sales_mode
+
+    if sales_mode(payload) != "order":
+        return
+    methods = _payload_payment_method_set(payload)
+    if len(methods) != 1 or not methods & {"pix", "link", "card"}:
+        return
+    if _payload_payment_collection(payload, _payload_fulfillment_type(payload)) != "terminal":
+        return
+    session = _payload_open_tab_session(channel_ref=channel_ref, payload=payload)
+    if session is None:
+        return
+    from shopman.shop.services import kds as kds_service
+
+    if not kds_service.fired_line_ids(session.session_key):
+        return
+    raise PosIntentError(
+        code="preorder_fired_unpaid",
+        message="Esta encomenda já está na cozinha. Pix e link ficam pendentes até o cliente pagar.",
+        field="payment_method",
+        focus="payment",
+        recovery="Receba agora em dinheiro ou cartão na maquininha, ou marque o pagamento na retirada ou na entrega.",
+    )
+
+
+def _require_confirmed_pix_in_mixed(payload: dict) -> None:
+    """Pix numa venda mista só liquida com o gesto "Recebi o Pix" (P1-7).
+
+    Na venda mista o Pix não passa pelo provedor: o cliente paga no QR da casa ou
+    na maquininha, e o intent nasce atestado no balcão (``settle_terminal_tenders``).
+    Antes bastava a linha existir, e a palavra do operador virava dinheiro
+    capturado. Agora a linha tem de trazer ``pix_confirmed``, que a tela só manda
+    depois de o operador conferir e tocar em "Recebi o Pix"; quem e quando são
+    carimbados no servidor (``build_session_ops``). Pix sozinho (ou dividido só em
+    Pix) continua no provedor, que é quem confirma.
+    """
+    tenders = [t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)]
+    methods = {_normalize_payment_method(t.get("method")) for t in tenders if _int_q(t.get("amount_q")) > 0}
+    if "pix" not in methods or len(methods) < 2:
+        return
+    for idx, tender in enumerate(tenders):
+        if _normalize_payment_method(tender.get("method")) != "pix" or _int_q(tender.get("amount_q")) <= 0:
+            continue
+        if str(tender.get("collection") or "terminal").strip().lower() != "terminal":
+            continue
+        if tender.get("pix_confirmed") is True:
+            continue
+        raise PosIntentError(
+            code="pix_mixed_unconfirmed",
+            message=f"Confira se o Pix de R$ {format_money(_int_q(tender.get('amount_q')))} entrou antes de concluir.",
+            field=f"payment_tenders.{idx}.pix_confirmed",
+            focus="payment",
+            recovery="Veja no app do banco ou na maquininha e toque em Recebi o Pix.",
+        )
 
 
 def _require_customer_if_scheduled(payload: dict) -> None:
@@ -2223,6 +2320,42 @@ def _session_to_fire_lines(session: Session) -> list[dict]:
     return lines
 
 
+def _session_is_preorder(session: Session) -> bool:
+    from shopman.shop.services.pos_sales_mode import sales_mode, session_sales_payload
+
+    return sales_mode(session_sales_payload(session)) == "order"
+
+
+def _session_collects_at_handoff(session: Session) -> bool:
+    payment = (session.data or {}).get("payment") or {}
+    return str(payment.get("collection") or "").strip().lower() == "on_delivery"
+
+
+def _refuse_unpaid_preorder_fire(session: Session) -> None:
+    """Encomenda cobra antes (política da casa, 28/08/2026): sem pagamento, sem cozinha.
+
+    A comanda de encomenda é anotada ANTES de cobrar, então ela nunca está paga
+    quando o operador toca em Enviar. Cobrada no balcão (Pix, link, cartão ou
+    dinheiro), o pedido vai à cozinha sozinho quando o dinheiro entra
+    (``lifecycle._on_accepted``/``_on_paid``). Mandar antes deixava os tickets na
+    cozinha com o Pix ou o link ainda por pagar, porque o lifecycle só segura o
+    KDS do PEDIDO, e o atalho da comanda corre antes de o pedido existir.
+
+    A exceção é a da casa: receber NA retirada ou NA entrega (dinheiro ou
+    maquininha, ``payment.collection == "on_delivery"``). Ali o pagamento depois
+    do trabalho é o combinado, como na régua de saída (``payment_gate``).
+    """
+    if not _session_is_preorder(session) or _session_collects_at_handoff(session):
+        return
+    raise PosIntentError(
+        code="preorder_unpaid",
+        message="Esta encomenda ainda não foi paga. Ela vai à cozinha sozinha quando o pagamento entrar.",
+        field="payment",
+        focus="payment",
+        recovery="Para receber na retirada ou na entrega, marque isso no Pagamento e envie de novo.",
+    )
+
+
 def fire_pos_tab(
     *,
     channel_ref: str,
@@ -2299,6 +2432,7 @@ def fire_pos_tab(
                     "today": today.isoformat(),
                 },
             )
+    _refuse_unpaid_preorder_fire(session)
 
     requested = {str(lid).strip() for lid in (line_ids or []) if str(lid).strip()}
     lines = _session_to_fire_lines(session)
@@ -2755,7 +2889,7 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     # telefone nascia para hoje, calada.
     _append_schedule_ops(ops, payload)
     if fulfillment_type == "delivery":
-        _append_delivery_ops(ops, payload)
+        _append_delivery_ops(ops, payload, operator_username=operator_username)
         # A LINHA é a cobrança (``Order.total_q`` é a soma das linhas), então ela
         # nasce da taxa RESOLVIDA — a mesma que a review mostrou ao operador.
         delivery_fee_q = _payload_delivery_fee_q(payload)
@@ -2810,6 +2944,13 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     if payment_collection == "on_delivery" and change_for_q > 0:
         ops.append({"op": "set_data", "path": "payment.change_for_q", "value": change_for_q})
     if tenders:
+        # O gesto "Recebi o Pix" ganha autor e hora AQUI, no servidor: é o
+        # registro de quem atestou o dinheiro que o provedor não confirmou.
+        confirmed_at = timezone.now().isoformat()
+        for tender in tenders:
+            if tender.get("pix_confirmed") is True:
+                tender["pix_confirmed_by"] = operator_username
+                tender["pix_confirmed_at"] = confirmed_at
         ops.append({"op": "set_data", "path": "payment.tenders", "value": tenders})
     cash_received_q = _cash_received_q(tenders)
     if cash_received_q > 0:
@@ -3628,6 +3769,9 @@ class DeliveryFeeResolution:
     source: str = ""
     distance_km: float | None = None
     blocked: bool = False
+    #: O ENDEREÇO está fora da área, mesmo quando a taxa é a combinada à mão.
+    #: ``blocked`` diz "não há taxa da loja"; isto diz "a loja não entrega ali".
+    out_of_area: bool = False
 
 
 #: Onde a resolução fica guardada DENTRO do payload. O payload atravessa a
@@ -3692,9 +3836,17 @@ def _compute_delivery_fee(payload: dict) -> DeliveryFeeResolution:
         return DeliveryFeeResolution(fee_q=0)
 
     override = payload.get("delivery_fee_override_q")
+    engine = _compute_engine_delivery_fee(payload)
     if override not in (None, ""):
-        return DeliveryFeeResolution(fee_q=max(0, _int_q(override)), source="manual")
+        return DeliveryFeeResolution(
+            fee_q=max(0, _int_q(override)), source="manual",
+            distance_km=engine.distance_km, out_of_area=engine.blocked,
+        )
+    return engine
 
+
+def _compute_engine_delivery_fee(payload: dict) -> DeliveryFeeResolution:
+    """A taxa da LOJA para o endereço (zona, faixa, frete grátis), sem a exceção."""
     address = payload.get("delivery_address_structured")
     address = address if isinstance(address, dict) else {}
     postal_code = str(address.get("postal_code") or "").strip()
@@ -3711,7 +3863,9 @@ def _compute_delivery_fee(payload: dict) -> DeliveryFeeResolution:
         postal_code, neighborhood, lat, lng, address_text=_delivery_address_text(payload, address)
     )
     if blocked:
-        return DeliveryFeeResolution(fee_q=0, source="blocked", distance_km=distance_km, blocked=True)
+        return DeliveryFeeResolution(
+            fee_q=0, source="blocked", distance_km=distance_km, blocked=True, out_of_area=True,
+        )
 
     source = "zone" if postal_code or neighborhood else "distance"
     if distance_km is None and not (postal_code or neighborhood):
@@ -3888,6 +4042,8 @@ def _payload_tenders(
             reference = str(tender.get("reference") or "").strip()
             if reference:
                 entry["reference"] = reference[:120]
+            if method == "pix" and tender.get("pix_confirmed") is True:
+                entry["pix_confirmed"] = True
             if pos_terminal_ref and entry["collection"] == "terminal":
                 entry["terminal_ref"] = pos_terminal_ref
             if entry["collection"] == "terminal":
@@ -4502,7 +4658,7 @@ def _append_schedule_ops(ops: list[dict], payload: dict) -> None:
         ops.append({"op": "set_data", "path": "delivery_time_slot", "value": delivery_time_slot})
 
 
-def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
+def _append_delivery_ops(ops: list[dict], payload: dict, *, operator_username: str = "") -> None:
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()
     if address:
@@ -4521,6 +4677,15 @@ def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
     override = payload.get("delivery_fee_override_q")
     if override not in (None, ""):
         ops.append({"op": "set_data", "path": "delivery_fee_override_q", "value": max(0, _int_q(override))})
+        # QUEM combinou e QUANDO: a exceção tem dono. É esta assinatura que deixa o
+        # commit aceitar o endereço fora da área (`operator_agreed_delivery_fee_q`).
+        delivery = _resolve_delivery_fee(payload)
+        ops.append({"op": "set_data", "path": "pos.delivery_fee_agreed", "value": {
+            "fee_q": max(0, _int_q(override)),
+            "by": _bare_username(operator_username) or operator_username or "pos",
+            "at": timezone.now().isoformat(),
+            "out_of_area": bool(delivery.out_of_area),
+        }})
 
 
 def _payload_tab_session_key(payload: dict) -> str:

@@ -63,6 +63,9 @@ class PaymentTimeoutHandler:
         if payment_service.has_sufficient_captured_payment(order) is True:
             return
         if method == "card" and status == "authorized":
+            # Cartão autorizado esperando aceite não vence aqui: o prazo é o do
+            # Stripe (7 dias), e quem o vigia é ``payment.card_authorization_watch``
+            # (avisa antes; vencido, cancela sem cobrança).
             return
         if status in _UNCERTAIN_STATUSES:
             return

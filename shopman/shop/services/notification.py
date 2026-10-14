@@ -1124,7 +1124,8 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
     """A frase do pedido em ``{status_note}``, com a frase-padrão quando falta o dado.
 
     Preparo: a hora prevista, SEM ponto final (o ponto é do texto: o template da
-    Meta não pode terminar em variável). Cancelado e não confirmado: o motivo.
+    Meta não pode terminar em variável). Cancelado: a frase revisada da chave do
+    motivo, pronta no payload. Não confirmado: o motivo.
     Pedido atualizado: a frase que a edição montou no momento do gesto (o que
     mudou, o total novo e a diferença — ``order_edit.customer_note``), que chega
     pronta no payload porque o "antes" não está mais no pedido quando o aviso sai.
@@ -1137,7 +1138,13 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
         if clock:
             return f"Previsto para ficar pronto às {clock}. Mas avisamos assim que estiver"
         return "Avisamos assim que estiver pronto"
-    if template in {"order_cancelled", "order_rejected"}:
+    if template == "order_cancelled":
+        # A frase inteira do motivo, já revisada (``services/cancel_reasons.py``).
+        # Sem ela no payload (reenvio), a mesma frase sai da chave gravada no pedido.
+        from shopman.shop.services import cancel_reasons
+
+        return str(note or "").strip() or cancel_reasons.customer_text(order.data)
+    if template == "order_rejected":
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
     if template == "order_rescheduled":
         return _commitment_phrase(order) or "a nova data que está no pedido"

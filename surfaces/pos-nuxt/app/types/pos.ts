@@ -22,8 +22,14 @@ export interface POSProductProjection {
   kitchen_station?: string;
   /** A estação tem o envio automático ligado: a linha nova vai sozinha. */
   kitchen_auto_fire?: boolean;
+  /** O preço que o motor cobra AGORA (com a Hora da Xepa aberta, já descontado). */
   price_q: number;
   price_display: string;
+  /** A etiqueta cheia, para riscar ao lado do preço; 0/"" = sem desconto agora. */
+  list_price_q?: number;
+  list_price_display?: string;
+  /** O nome do desconto que vale agora (ex.: "Hora da Xepa"). */
+  discount_label?: string;
   collection_ref: string
   // Apresentação da coleção primária (Collection.metadata): cor hex da paleta
   // NB e nome de ícone Lucide — vestem o tile sem foto. Vazio sem configuração.
@@ -286,13 +292,23 @@ export interface POSPendingCashRefundProjection {
   reason_label?: string;
 }
 
-/** Encomenda paga na maquininha que ficou mais barata: estornar NA maquininha e registrar. */
+/**
+ * Venda paga na maquininha cujo dinheiro precisa voltar NELA: cancelada,
+ * devolvida (toda ou em parte) ou encomenda que ficou mais barata. Estornar na
+ * maquininha e registrar; só o "Estornei" grava o estorno.
+ */
 export interface POSPendingCardMachineRefundProjection {
   order_ref: string;
   amount_q: number;
   amount_display: string;
   customer_name: string;
   method_label: string;
+  /** "cancelled" · "returned" · "partial_return" · "reduced". */
+  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
+  /** "Venda cancelada" · "Venda devolvida" · "Devolução de parte da venda" · "Encomenda ficou mais barata". */
+  reason_label?: string;
+  /** Como achar a transação na maquininha: "Aprovado em 13/10 às 14:32 · NSU 123456". */
+  lookup_display?: string;
 }
 
 /**
@@ -592,6 +608,19 @@ export interface POSProjection {
   /** Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta
    *  (balança no balcão). Desligado = só valor, e a opção nem aparece. */
   weighed_weight_entry?: boolean;
+  /** A janela de desconto por horário (Hora da Xepa); null sem regra para o PDV. */
+  price_window?: POSPriceWindowProjection | null;
+}
+
+/** A janela de desconto por horário vista na leitura: `next_change_at` é quando
+ *  ela abre ou fecha, e a tela relê a projeção nesse instante. */
+export interface POSPriceWindowProjection {
+  active: boolean;
+  label: string;
+  discount_percent: number;
+  starts_at: string;
+  ends_at: string;
+  next_change_at: string;
 }
 
 export interface POSShiftSummaryProjection {
@@ -736,6 +765,9 @@ export interface POSPaymentTenderDraft {
   amount_q: number;
   collection: PosPaymentCollection;
   reference?: string;
+  /** O gesto "Recebi o Pix" da venda mista (P1-7): o operador conferiu que o Pix
+   *  entrou. Só o booleano viaja; quem e quando o servidor carimba. */
+  pix_confirmed?: boolean;
   /** Internal: amount is still the untouched system auto-fill (first cédula
    *  replaces it). Stripped before the intent — never sent to the server. */
   _virgin?: boolean;

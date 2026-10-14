@@ -2265,9 +2265,23 @@ class OrderCancelView(_OrderActionBase):
         order, err = self._get_order(ref)
         if err:
             return err
-        operator_reason = str(request.data.get("reason") or "").strip()
-        reason = operator_reason or "Cancelado pelo operador"
+        from shopman.shop.services import cancel_reasons
+
+        # O motivo é OBRIGATÓRIO e vem da lista única (``cancel_reasons``): o
+        # cliente lê o texto revisado da chave, nunca o que o operador digitou.
+        # A observação livre é interna. No iFood o motivo é o código dele
+        # (``cancellation_code`` + a descrição em ``reason``), e a chave é opcional.
+        reason_key = str(request.data.get("reason_key") or "").strip()
+        internal_note = str(request.data.get("internal_note") or "").strip()
         code = str(request.data.get("cancellation_code") or "").strip()
+        marketplace = order.channel_ref == "ifood"
+        problem = cancel_reasons.validation_message(reason_key) if (reason_key or not marketplace) else ""
+        if problem:
+            return Response({"detail": problem, "field": "reason_key", "errors": {"reason_key": [problem]}}, status=400)
+        if marketplace:
+            reason = str(request.data.get("reason") or "").strip() or "Cancelado pelo operador"
+        else:
+            reason = cancel_reasons.cancel_reason(reason_key).label
         prepared = {}
 
         def prepare():
@@ -2309,11 +2323,15 @@ class OrderCancelView(_OrderActionBase):
 
         def execute(base):
             orders_service.cancel_order(order, reason=reason, actor=_actor(request),
-                cancellation_code=code, customer_note=operator_reason, expected_revision=base,
+                cancellation_code=code, reason_key=reason_key, internal_note=internal_note, expected_revision=base,
                 expected_authority_revision=prepared["authority"], prepared_identity=prepared["identity"])
 
         # Credentials are validated transiently; they are never fingerprinted or retained.
-        return self._context_response(request, order, "cancel", {"reason": operator_reason, "cancellation_code": code}, execute, prepare=prepare)
+        return self._context_response(
+            request, order, "cancel",
+            {"reason_key": reason_key, "internal_note": internal_note, "reason": reason, "cancellation_code": code},
+            execute, prepare=prepare,
+        )
 
 
 @extend_schema_view(
@@ -6139,6 +6157,36 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
         )
 
 
+def _card_machine_refund_due(order_ref: str) -> dict | None:
+    """O estorno que a venda cancelada deixa para a maquininha, para a tela dizer na hora.
+
+    ``None`` quando nada foi pela maquininha. A pendência em si é derivada e
+    mora na Sessão de caixa; isto só é a frase do momento do cancelamento.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import payment as payment_service
+
+    order = Order.objects.filter(ref=order_ref).first()
+    if order is None:
+        return None
+    try:
+        amount_q, refs = payment_service.card_machine_refund_due(order)
+    except Exception:
+        logger.warning("pos_cancel_card_machine_due_failed order=%s", order_ref, exc_info=True)
+        return None
+    if amount_q <= 0:
+        return None
+    from shopman.payman import PaymentService
+
+    method = str(getattr(PaymentService.get(refs[-1]), "method", "") or "")
+    return {
+        "amount_q": amount_q,
+        "amount_display": f"R$ {format_money(amount_q)}",
+        "method_label": payment_service.CARD_MACHINE_METHOD_WORDS.get(method, "cartão"),
+    }
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -6188,4 +6236,4 @@ class POSCancelRecentSaleView(APIView):
             return Response({"detail": str(exc)}, status=404)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=422)
-        return Response({"ok": True, "order_ref": order_ref})
+        return Response({"ok": True, "order_ref": order_ref, "card_machine_refund": _card_machine_refund_due(order_ref)})

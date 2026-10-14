@@ -1170,13 +1170,17 @@ class TestNotificationSendHandler:
 
         order = _make_order(snapshot={}, data={})
 
-        with_reason = _build_context(
-            order, {"order_ref": "ORD-001", "reason": "Item indisponível"}, "order_cancelled"
+        with_note = _build_context(
+            order, {"order_ref": "ORD-001", "status_note": "Um dos itens acabou."}, "order_cancelled"
         )
-        assert with_reason["status_note"] == "Motivo: Item indisponível."
+        assert with_note["status_note"] == "Um dos itens acabou."
 
-        without_reason = _build_context(order, {"order_ref": "ORD-001"}, "order_cancelled")
-        assert without_reason["status_note"] == "Os detalhes estão no pedido."
+        # Reenvio sem a frase no payload: sai a da chave gravada (sem chave, "Outro motivo").
+        without_note = _build_context(order, {"order_ref": "ORD-001"}, "order_cancelled")
+        assert without_note["status_note"] == "Sentimos muito pelo imprevisto."
+
+        rejected = _build_context(order, {"order_ref": "ORD-001", "reason": "Item indisponível"}, "order_rejected")
+        assert rejected["status_note"] == "Motivo: Item indisponível."
 
     @pytest.mark.django_db
     def test_stock_alert_context_resolves_name_without_hiding_sku(self):

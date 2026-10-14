@@ -79,6 +79,13 @@ class OperatorAlert(models.Model):
         # ainda em NEW, antes de alguém confirmar. Não é falha — é o aviso de
         # que existe pedido PAGO esperando decisão do balcão.
         ("payment_awaiting_confirmation", "Pagamento chegou antes da confirmação"),
+        # Cartão da loja online autorizado (captura manual) e ninguém aceita: a
+        # reserva vence no Stripe em 7 dias e o dinheiro some do pedido. O aviso
+        # traz o prazo; vencido, o pedido é cancelado sem cobrança e o crítico
+        # diz isso. E a recusa que o Stripe não anulou: o valor segue retido.
+        ("card_authorization_expiring", "Cartão autorizado esperando aceite"),
+        ("card_authorization_expired", "Autorização do cartão venceu sem aceite"),
+        ("card_authorization_release_failed", "Recusa não liberou a autorização do cartão"),
         ("stock_low", "Estoque baixo"),
         # Estoque do sistema acima do físico, pelos três caminhos: a baixa que
         # não saiu na entrega, o pedido que passou sem reserva, e o item fora
@@ -135,6 +142,10 @@ class OperatorAlert(models.Model):
         # A maquininha não aparece na tela enquanto está na rua (o card da saída
         # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
         ("card_machine_overdue", "Maquininha fora há muito tempo"),
+        # Venda paga na maquininha cancelada ou devolvida: o sistema não fala
+        # com a maquininha, então o dinheiro só volta ao cartão do cliente
+        # quando alguém estorna nela. Resolve no "Estornei na maquininha".
+        ("card_machine_refund_due", "Estornar na maquininha"),
         # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
         # porque o pagamento gravado é menor que o total; nota autorizada cujo
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
@@ -349,6 +360,9 @@ class OperatorAlert(models.Model):
         "payment_insufficient",
         "payment_disputed",
         "payment_after_cancel",
+        "card_authorization_expiring",
+        "card_authorization_expired",
+        "card_authorization_release_failed",
         "marketplace_rejected_unavailable",
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",
@@ -362,6 +376,7 @@ class OperatorAlert(models.Model):
         "ifood_store_open_while_closed",
         "ifood_store_sync_failed",
         "card_machine_overdue",
+        "card_machine_refund_due",
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",

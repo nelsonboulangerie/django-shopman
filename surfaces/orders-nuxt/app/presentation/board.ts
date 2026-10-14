@@ -108,6 +108,75 @@ export function confirmationRemainingLabel(
   return `${m}:${String(left % 60).padStart(2, "0")}`;
 }
 
+// ── Cartão autorizado esperando aceite (P1-4) ──────────────────────────────
+
+/** O aviso do cartão autorizado: a reserva vence no Stripe e o pedido espera aceite. */
+export interface CardAuthorizationNotice {
+  /** `warning` com folga; `error` nas últimas 24 h e depois de vencida. */
+  tone: "warning" | "error";
+  /** Rótulo curto da pílula do cartão. */
+  label: string;
+  title: string;
+  description: string;
+  expired: boolean;
+}
+
+const CARD_DEADLINE = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+/** "20/10 às 15h25", no fuso da loja. */
+export function cardDeadlineLabel(iso: string): string {
+  const parts = Object.fromEntries(
+    CARD_DEADLINE.formatToParts(new Date(iso)).map((p) => [p.type, p.value]),
+  );
+  return `${parts.day}/${parts.month} às ${parts.hour}h${parts.minute}`;
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** Quanto falta, por extenso: "6 dias", "5 horas", "40 minutos". */
+function timeLeftLabel(ms: number): string {
+  const minutes = Math.max(1, Math.floor(ms / 60_000));
+  if (minutes < 60) return plural(minutes, "minuto", "minutos");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return plural(hours, "hora", "horas");
+  return plural(Math.floor(hours / 24), "dia", "dias");
+}
+
+export function cardAuthorizationNotice(
+  expiresIso: string | undefined,
+  nowMs: number,
+): CardAuthorizationNotice | null {
+  if (!expiresIso) return null;
+  const deadline = Date.parse(expiresIso);
+  if (Number.isNaN(deadline)) return null;
+  const left = deadline - nowMs;
+  if (left <= 0)
+    return {
+      tone: "error",
+      label: "Cartão venceu",
+      title: "A autorização do cartão venceu",
+      description:
+        "Nada foi cobrado e o pedido vai ser cancelado. Para atender, combine um pagamento novo com o cliente.",
+      expired: true,
+    };
+  const span = timeLeftLabel(left);
+  return {
+    tone: left <= 24 * 60 * 60_000 ? "error" : "warning",
+    label: `Cartão vence em ${span}`,
+    title: `A autorização do cartão vence em ${span}`,
+    description: `Até ${cardDeadlineLabel(expiresIso)}. Aceite para cobrar ou recuse para liberar o valor no cartão do cliente.`,
+    expired: false,
+  };
+}
+
 // ── O sistema fez · desfazer (SUITE-UX §5.1) ───────────────────────────────
 
 export interface UndoLine {

@@ -331,7 +331,14 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
-/** Motivos de recusa/cancelamento sob um cabeçalho (``label`` vazio = sem cabeçalho). */
+/** Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``). */
+export interface CancelReasonProjection {
+  key: string;
+  label: string;
+  customer_text: string;
+}
+
+/** Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho). */
 export interface CancellationPresetGroupProjection {
   label: string;
   presets: string[];
@@ -464,6 +471,7 @@ export interface OrderCardProjection {
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  card_authorization_expires_iso: string;
   channel_display_id: string;
   courier_status: string;
   courier_status_label: string;
@@ -549,6 +557,7 @@ export interface PreorderHandOverProjection {
   suggested_method: string;
   block_reason: string;
   digital_charge_notice: string;
+  kitchen_notice: string;
 }
 
 /** Cancelar pelo PDV: a mesma régua, política e permissão do Gestor. */
@@ -640,6 +649,7 @@ export interface OperatorOrderProjection {
   gift_message: string;
   gift_hide_values: boolean;
   cancellation_presets: CancellationPresetGroupProjection[];
+  cancel_reasons: CancelReasonProjection[];
   kitchen_note_tags: string[];
   customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;
@@ -675,6 +685,7 @@ export interface OperatorOrderProjection {
   opened_line: string;
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  card_authorization_expires_iso: string;
   store_location: Record<string, number> | null;
   transferred_from_label: string;
 }

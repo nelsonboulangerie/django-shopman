@@ -4,6 +4,14 @@
 must remain healthy when a dependency is unavailable, otherwise an orchestrator
 can turn a database incident into a restart loop.
 
+``/health/database/`` is the platform READINESS probe of the Django services:
+one ``SELECT 1`` through the process connection pool, nothing else. It answers
+"can THIS process serve a request that touches the database?", so the edge
+stops routing to an instance whose pool is stuck while a healthy sibling keeps
+serving. It deliberately leaves out cache, migrations and the queue: a stale
+worker or a pending migration is not a reason to take the Admin off the air
+(the cost that #780 removed from the platform probe).
+
 ``/health/ready/`` checks the local dependency chain used by the operator BFF:
 database, shared cache/session storage, migrations and the durable queue. The
 migration plan is computed until it is first found clean and then trusted for
@@ -278,3 +286,11 @@ class ReadyCheckView(_RateLimitedProbeView):
             checks,
             critical={"database", "cache", "migrations", "queue"},
         )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DatabaseReadyView(_RateLimitedProbeView):
+    """Platform readiness: this process reaches the database, nothing more."""
+
+    def get(self, request):
+        return _build_response({"database": _check_database()}, critical={"database"})

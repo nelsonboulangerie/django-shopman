@@ -46,7 +46,7 @@ describe("OperatorReasonDialog", () => {
     expect(confirm.attributes("disabled")).toBeUndefined();
     await dom("[data-reason-input]").setValue("  Cliente desistiu  ");
     await confirm.trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Cliente desistiu", code: "" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Cliente desistiu", code: "", key: "" }]]);
   });
 
   it("motivo exigido: confirmar em branco não sai", async () => {
@@ -67,7 +67,7 @@ describe("OperatorReasonDialog", () => {
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
     await dom("[data-reason-input]").setValue("Forno em manutenção hoje");
     await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Forno em manutenção hoje", code: "" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Forno em manutenção hoje", code: "", key: "" }]]);
   });
 
   it("motivo codificado: escolhe da lista e espelha a descrição no motivo", async () => {
@@ -82,7 +82,29 @@ describe("OperatorReasonDialog", () => {
     (option.element as HTMLElement).click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Loja fechada", code: "B" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Loja fechada", code: "B", key: "" }]]);
+  });
+
+  it("motivo da lista: escolher é obrigatório, mostra o que o cliente lê e o texto é interno", async () => {
+    const keyedReasons = [
+      { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." },
+      { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
+    ];
+    const w = await mount({ keyedReasons, presets: groups });
+    expect(document.querySelector("[data-reason-preset]")).toBeNull();
+    expect(document.querySelector("[data-reason-preview]")).toBeNull();
+    expect(document.body.textContent).toContain("Observação interna (opcional)");
+    expect(document.body.textContent).toContain("O cliente não vê.");
+    // Sem motivo escolhido, nem com observação digitada o Cancelar acende.
+    await dom("[data-reason-input]").setValue("Faltou farinha");
+    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
+    const radio = document.querySelector<HTMLElement>('[data-reason-keyed] [role="radio"][aria-label="Acabou um item"]')!;
+    radio.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dom("[data-reason-preview]").text()).toContain("Um dos itens acabou.");
+    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
+    await dom("[data-reason-confirm]").trigger("click");
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Faltou farinha", code: "", key: "out_of_stock" }]]);
   });
 
   it("fechar com texto digitado pergunta dentro do diálogo, sem window.confirm", async () => {

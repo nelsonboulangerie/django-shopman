@@ -197,13 +197,70 @@ def test_se_a_entrega_falha_o_recebimento_volta_junto(operator, shift):
     assert _cash_entries(order.ref) == []
 
 
-@pytest.mark.parametrize(("status", "phrase"), [("preparing", "ainda não está pronta"), ("completed", "já foi entregue")])
-def test_so_entrega_o_que_esta_pronto(shift, status, phrase):
+@pytest.mark.parametrize(("status", "phrase"), [
+    ("new", "não pode ser entregue agora"),
+    ("completed", "já foi entregue"),
+    ("cancelled", "não pode ser entregue agora"),
+])
+def test_nao_entrega_o_que_nao_foi_aceito_ou_ja_acabou(shift, status, phrase):
     order = _order(f"S-{status}", status=status, payment={"method": "cash"})
 
     assert phrase in operator_orders.counter_hand_over_block(order)
     with pytest.raises(ValueError, match=phrase):
         operator_orders.hand_over_at_counter(order, cash_shift=shift, actor="pos:marina")
+
+
+# ── Entregar sem o Pronto (P1-8 dos cenários de pedido) ───────────────────
+#
+# O "Entregar" do balcão exigia o pedido pronto, e o PDV não tem como marcar
+# pronto: a encomenda cujo ticket a estação não fechou travava o cliente no
+# balcão até alguém achar o Gestor. Quem entrega afirma que a cozinha terminou,
+# como o "Marcar pronto" do Gestor: o pedido passa pelo pronto e conclui, e os
+# tickets abertos fecham com a trilha ``order_advanced``.
+
+
+@pytest.mark.parametrize("status", ["accepted", "preparing"])
+def test_entregar_conclui_a_encomenda_ainda_na_cozinha(shift, status):
+    order = _order(f"COZ-{status}", status=status, payment={"method": "cash"})
+
+    assert operator_orders.counter_hand_over_block(order) == ""
+    with patch("shopman.shop.services.kds.close_open_tickets", return_value=1) as close:
+        received = operator_orders.hand_over_at_counter(order, cash_shift=shift, actor="pos:marina")
+
+    order.refresh_from_db()
+    assert received == 3600
+    assert order.status == "completed"
+    close.assert_called_with(order, actor="pos:marina")
+    statuses = list(order.events.filter(type="status_changed").values_list("payload__new_status", flat=True))
+    assert statuses[-2:] == ["ready", "completed"]
+    if status == "accepted":
+        # Direto ao pronto: "em preparo" abriria tickets e avisaria o cliente de
+        # um preparo que já acabou.
+        assert "preparing" not in statuses
+
+
+def test_encomenda_de_outro_dia_nao_entrega_antes_de_reagendar(shift):
+    amanha = (timezone.localdate() + timezone.timedelta(days=1)).isoformat()
+    order = _order("AMANHA", status="accepted", payment={"method": "cash"}, delivery_date=amanha)
+
+    reason = operator_orders.counter_hand_over_block(order)
+    assert "outro dia" in reason
+    with pytest.raises(ValueError, match="outro dia"):
+        operator_orders.hand_over_at_counter(order, cash_shift=shift, actor="pos:marina")
+    order.refresh_from_db()
+    assert order.status == "accepted"
+
+
+def test_entrega_que_falha_no_recebimento_nao_deixa_o_pronto_pela_metade(shift):
+    """Uma transação: o pronto afirmado volta junto se o recebimento recusar."""
+    order = _order("COZ-FALHA", status="preparing", payment={"method": "cash"})
+
+    with pytest.raises(ValueError):
+        operator_orders.hand_over_at_counter(
+            order, cash_shift=shift, actor="pos:marina", tenders=[{"method": "pix", "amount_q": 3600}],
+        )
+    order.refresh_from_db()
+    assert order.status == "preparing"
 
 
 def test_pix_pendente_nao_recebe_no_balcao_sem_matar_a_cobranca_viva(shift):
@@ -342,3 +399,15 @@ def test_pronta_nao_reagenda_e_diz_por_que(operator):
 
     assert reschedule.allowed is False
     assert "já está pronto" in reschedule.block_reason
+
+
+def test_o_detalhe_avisa_que_a_encomenda_sai_da_tela_da_cozinha(operator):
+    _order("DET-COZ", status="preparing", payment={"method": "cash"})
+    _order("DET-PRONTA", status="ready", payment={"method": "cash"})
+
+    na_cozinha = preorders.build_counter_block(Order.objects.get(ref="DET-COZ"), user=operator).hand_over
+    pronta = preorders.build_counter_block(Order.objects.get(ref="DET-PRONTA"), user=operator).hand_over
+
+    assert na_cozinha.allowed is True
+    assert "sai da tela da cozinha" in na_cozinha.kitchen_notice
+    assert pronta.kitchen_notice == ""

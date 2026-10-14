@@ -188,6 +188,10 @@ const SEATING = SALE && process.env.MOCK_SEATING === "1";
 // Os selos do quadro (só na prévia): a 14 com a cozinha toda no Pronto ("Tudo pronto")
 // e a 13 enviada à cozinha e não paga ("Não pago").
 const KITCHEN_READY = SALE && process.env.MOCK_KITCHEN_READY === "1";
+// Prévia da entrega fora da área (MOCK_OUT_OF_AREA=1): a comanda 12 é uma encomenda de
+// entrega para um endereço fora da área. A review diz a regra do fechamento até a taxa
+// ser combinada; depois, quem combinou. Fora da flag, nada muda.
+const OUT_OF_AREA = SALE && process.env.MOCK_OUT_OF_AREA === "1";
 const brl = (q) => `R$ ${(q / 100).toFixed(2).replace(".", ",")}`;
 const PRODUCTS = [
   ["PAO-FRANCES", "Pão francês", 90, "paes"],
@@ -261,6 +265,36 @@ if (DIRECT) {
     { ref: "terminal", label: "No caixa", description: "", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash", "pix", "credit", "debit"] },
   ];
 }
+// `MOCK_XEPA=1`: a Hora da Xepa (25%) aberta agora e fechando em `MOCK_XEPA_SECONDS`
+// (90 s por padrão). Até a virada o tile mostra o preço do motor com a etiqueta
+// riscada; depois, a leitura volta ao cheio e a janela aponta a abertura de amanhã.
+// É a prévia da grade (sem a variável, nada muda nos retratos).
+const XEPA = SALE && process.env.MOCK_XEPA === "1";
+const XEPA_ENDS_AT = Date.now() + 1000 * Number(process.env.MOCK_XEPA_SECONDS || 90);
+function xepaView() {
+  const open = Date.now() < XEPA_ENDS_AT;
+  const products = PRODUCTS.map((product) => {
+    if (!open) return product;
+    const now_q = product.price_q - Math.round((product.price_q * 25) / 100);
+    return {
+      ...product,
+      price_q: now_q,
+      price_display: brl(now_q),
+      list_price_q: product.price_q,
+      list_price_display: brl(product.price_q),
+      discount_label: "Hora da Xepa",
+    };
+  });
+  const next = open ? XEPA_ENDS_AT : XEPA_ENDS_AT + 23.5 * 3600 * 1000;
+  return {
+    ...pos,
+    products,
+    price_window: {
+      active: open, label: "Hora da Xepa", discount_percent: 25,
+      starts_at: "17:30", ends_at: "18:00", next_change_at: new Date(next).toISOString(),
+    },
+  };
+}
 // Os fechamentos recebidos, para o e2e conferir o que a fila reenviou
 // (`GET /__mock/closes`). A chave é o `client_request_id`: repetir devolve o
 // mesmo pedido, como o servidor de verdade.
@@ -271,6 +305,22 @@ const ORDER_BY_KEY = new Map();
 // natureza, para a Sessão de caixa, o Fim do dia e o Relatório terem o que mostrar.
 // `MOCK_DAY_CLOSED=1` serve o dia já fechado (o quadro do dia, com as tabelas).
 const DAY_CLOSED = process.env.MOCK_DAY_CLOSED === "1";
+// `MOCK_CARD_MACHINE_REFUNDS=1`: estornos na maquininha esperando o "Estornei"
+// (venda cancelada no crédito, com NSU; devolução de parte de uma venda no débito).
+const CARD_MACHINE_REFUNDS = SALE && process.env.MOCK_CARD_MACHINE_REFUNDS === "1"
+  ? [
+    {
+      order_ref: "PDV-260929-K7Q", amount_q: 3450, amount_display: "R$ 34,50", customer_name: "Marina Lopes",
+      method_label: "Crédito", reason: "cancelled", reason_label: "Venda cancelada",
+      lookup_display: "Aprovado em 29/09 às 09:41 · NSU 004512",
+    },
+    {
+      order_ref: "PDV-260928-B2M", amount_q: 1200, amount_display: "R$ 12,00", customer_name: "",
+      method_label: "Débito", reason: "partial_return", reason_label: "Devolução de parte da venda",
+      lookup_display: "Aprovado em 28/09 às 16:05",
+    },
+  ]
+  : [];
 if (SALE) {
   pos.checkout.capabilities.cash_management = {
     enabled: true,
@@ -289,7 +339,7 @@ if (SALE) {
       { ref: "CR-1", amount_q: 10000, amount_display: "R$ 100,00", denominations: [1000, 500], note: "", requested_by: "Ana", requested_at: "2026-09-29T10:12:00-03:00" },
     ],
     pending_cash_refunds: [],
-    pending_card_machine_refunds: [],
+    pending_card_machine_refunds: CARD_MACHINE_REFUNDS,
     account_balances: [
       { customer_ref: "C-9", customer_name: "Carlos Mendes", balance_q: 4200, balance_display: "R$ 42,00", intents: 2, oldest_at: "" },
     ],
@@ -436,6 +486,18 @@ function tabPayload(ref) {
     customer_ref: inUse ? "C-1" : full ? "C-13" : "",
     customer_tax_id: "", customer_email: "", fulfillment_type: "", delivery_address: "",
     delivery_address_structured: {}, delivery_date: "", delivery_time_slot: "", delivery_fee_override_q: null,
+    ...(OUT_OF_AREA && inUse
+      ? {
+          sales_mode: "order", customer_phone: "43999887766", fulfillment_type: "delivery",
+          delivery_address: "Rua das Palmeiras, 410 - Jardim Bandeirantes, Cambé - PR",
+          delivery_address_structured: {
+            formatted_address: "Rua das Palmeiras, 410 - Jardim Bandeirantes, Cambé - PR",
+            route: "Rua das Palmeiras", street_number: "410", neighborhood: "Jardim Bandeirantes",
+            city: "Cambé", state_code: "PR", postal_code: "86188-000",
+          },
+          delivery_date: TODAY,
+        }
+      : {}),
   };
 }
 function review(body) {
@@ -449,6 +511,23 @@ function review(body) {
     tender_total_q: 0, tender_total_display: brl(0), tender_count: 0, tendered_q: 0, tendered_amount_display: brl(0),
     change_q: 0, change_display: brl(0), requires_manager_approval: false, manager_approval_threshold_q: 0,
     approval_reasons: [], lines: [],
+    ...(OUT_OF_AREA && body?.fulfillment_type === "delivery"
+      ? body?.delivery_fee_override_q == null
+        ? {
+            delivery_fee_source: "blocked", delivery_distance_km: 12.4,
+            warnings: [{ code: "delivery_out_of_area", field: "delivery_address", message: "Endereço fora da área de entrega (12,4 km)." }],
+          }
+        : {
+            delivery_fee_source: "manual", delivery_fee_q: Number(body.delivery_fee_override_q),
+            delivery_fee_display: brl(Number(body.delivery_fee_override_q)),
+            total_q: subtotal + Number(body.delivery_fee_override_q),
+            total_display: brl(subtotal + Number(body.delivery_fee_override_q)),
+            warnings: [{
+              code: "delivery_out_of_area_agreed", field: "delivery_address",
+              message: "Endereço fora da área de entrega, com taxa combinada por marina. Fica registrado no pedido.",
+            }],
+          }
+      : {}),
   };
 }
 function readBody(req) {
@@ -498,13 +577,25 @@ const preorderDetail = {
     hand_over: {
       allowed: true, needs_payment: true, amount_q: 8600, amount_display: "R$ 86,00",
       suggested_method: "cash", block_reason: "", digital_charge_notice: "",
+      // Prévia do Entregar antes do pronto da cozinha (MOCK_HANDOVER_KITCHEN=1).
+      ...(process.env.MOCK_HANDOVER_KITCHEN === "1"
+        ? { kitchen_notice: "A cozinha ainda não marcou pronto. Ao entregar, a encomenda sai da tela da cozinha." }
+        : {}),
     },
     cancel: { allowed: true, requires_approval: false, block_reason: "" },
     reschedule: { allowed: true, block_reason: "", date: TODAY, slot: "slot-12", skus: ["SKU-0"], revision: "rev-s" },
     edit: { allowed: true, block_reason: "", cancel_and_redo: false, revision: "rev-e" },
   },
   managers: [],
-  cancellation_presets: [],
+  // A lista única de motivos de cancelar (`shop/services/cancel_reasons.py`).
+  cancel_reasons: [
+    { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },
+    { key: "cannot_deliver", label: "Não dá para entregar", customer_text: "Não conseguimos fazer a entrega no endereço e no horário do pedido." },
+    { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+    { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo." },
+    { key: "store_closing", label: "A loja vai fechar", customer_text: "Precisamos encerrar o atendimento antes do horário do seu pedido." },
+    { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
+  ],
 };
 
 // O ENTREGADOR (TaOn) nas encomendas de entrega da casa (dono, 13/10/2026), só na
@@ -697,7 +788,7 @@ createServer((req, res) => {
     return;
   }
   if (path === "/api/v1/backstage/pos/") {
-    send(res, 200, { pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
+    send(res, 200, { pos: XEPA ? xepaView() : pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
     return;
   }
   if (SALE && path === "/api/v1/backstage/closing/") {
@@ -711,7 +802,7 @@ createServer((req, res) => {
   if (SALE) {
     const open = path.match(/^\/api\/v1\/backstage\/pos\/tabs\/([^/]+)\/open\/$/);
     if (open) {
-      send(res, 200, tabPayload(decodeURIComponent(open[1])));
+      send(res, 200, withPreorder(tabPayload(decodeURIComponent(open[1]))));
       return;
     }
     if (path === "/api/v1/backstage/pos/tabs/save/") {
@@ -724,7 +815,7 @@ createServer((req, res) => {
           line_id: item.line_id, sku: item.sku, name: item.name, qty: item.qty, price_q: item.unit_price_q, notes: item.notes || "",
         }));
         SAVED_ITEMS.set(ref, items);
-        send(res, 200, { ...tabPayload(ref), items });
+        send(res, 200, withPreorder({ ...tabPayload(ref), items }));
       });
       return;
     }
@@ -744,6 +835,29 @@ createServer((req, res) => {
         if (body?.to_tab_ref) TRANSFERRED_FROM.set(to, from);
         const closed = Boolean(body?.close_source_when_empty) && rest.length === 0;
         send(res, 200, { ok: true, source_closed: closed, source: closed ? null : { ...tabPayload(from), items: rest }, target: tabPayload(to) });
+      });
+      return;
+    }
+    if (path === "/api/v1/backstage/pos/tabs/fire/") {
+      void readBody(req).then((body) => {
+        const ref = String(body?.session_key || "").replace(/^S-/, "") || "12";
+        if (process.env.MOCK_FIRE === "preorder_unpaid" && withPreorder(tabPayload(ref)).sales_mode === "order") {
+          const error = {
+            code: "preorder_unpaid",
+            message: "Esta encomenda ainda não foi paga. Ela vai à cozinha sozinha quando o pagamento entrar.",
+            field: "payment", focus: "payment",
+            recovery: "Para receber na retirada ou na entrega, marque isso no Pagamento e envie de novo.",
+          };
+          return send(res, 422, { detail: error.message, error });
+        }
+        const ids = new Set(body?.line_ids || []);
+        const before = SAVED_ITEMS.get(ref) ?? tabPayload(ref).items;
+        const items = before.map((item) => (ids.size && !ids.has(item.line_id)) || item.fired
+          ? item
+          : { ...item, fired: true, fired_qty: item.qty, kitchen_status: "queued" });
+        SAVED_ITEMS.set(ref, items);
+        const fired = items.filter((item) => item.fired).map((item) => item.line_id);
+        send(res, 200, { ok: true, fired_count: 1, fired_lines: fired, tab: withPreorder({ ...tabPayload(ref), items }) });
       });
       return;
     }
@@ -874,3 +988,11 @@ createServer((req, res) => {
 }).listen(port, "127.0.0.1", () => {
   console.log(`[pos-visual-mock] listening on http://127.0.0.1:${port}`);
 });
+
+// Prévia da encomenda do dia (MOCK_PREORDER=1): a comanda 13 vira encomenda de
+// retirada para hoje. Com MOCK_FIRE=preorder_unpaid o "Enviar à cozinha" recusa como
+// o servidor (encomenda cobra antes); sem ele, envia. Fora das flags, nada muda.
+function withPreorder(payload) {
+  if (!(SALE && process.env.MOCK_PREORDER === "1" && payload.tab_ref === "13")) return payload;
+  return { ...payload, sales_mode: "order", fulfillment_type: "pickup", delivery_date: TODAY };
+}

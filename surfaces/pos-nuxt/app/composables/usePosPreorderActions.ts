@@ -99,12 +99,21 @@ export function usePosPreorderActions(options: {
     }
   }
 
-  async function cancel(reason: string, managerApproval: ManagerApproval | null = null): Promise<boolean> {
+  async function cancel(
+    choice: { reasonKey: string; internalNote: string },
+    managerApproval: ManagerApproval | null = null,
+  ): Promise<boolean> {
     const detail = options.detail.value;
     if (!detail || busy.value) return false;
     busy.value = true;
     const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.ref)}/cancel/`;
-    const payload = { reason: reason.trim(), base_revision: detail.counter.revision, expected_actor_id: detail.counter.actor_id };
+    // O motivo é a chave da lista única; a observação é interna (nunca vai ao cliente).
+    const payload = {
+      reason_key: choice.reasonKey,
+      internal_note: choice.internalNote.trim(),
+      base_revision: detail.counter.revision,
+      expected_actor_id: detail.counter.actor_id,
+    };
     try {
       await action.call(path, {
         body: {

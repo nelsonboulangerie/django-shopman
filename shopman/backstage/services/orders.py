@@ -98,7 +98,7 @@ class OrderChangeOutRequired(OrderError):
         self.suggested_q = int(suggested_q)
 
 
-def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", customer_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
+def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", reason_key: str = "", internal_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
     """Cancela o pedido, ou levanta ``OrderConflict`` se o estado não permitir.
 
     ``cancellation.cancel`` devolve ``False`` sem levantar quando a máquina de
@@ -113,7 +113,8 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
             reason=reason,
             actor=actor,
             cancellation_code=cancellation_code,
-            customer_note=customer_note,
+            reason_key=reason_key,
+            internal_note=internal_note,
             **({"expected_revision": expected_revision} if expected_revision is not None else {}),
             **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
             **({"expected_authority_revision": expected_authority_revision} if expected_authority_revision is not None else {}),

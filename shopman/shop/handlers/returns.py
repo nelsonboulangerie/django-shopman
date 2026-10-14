@@ -141,6 +141,11 @@ class ReturnService:
             except Exception as exc:
                 logger.exception("process_refund: payment refund failed for %s", order.ref)
                 result["refund"] = {"success": False, "error": str(exc)}
+        else:
+            # Venda mista do balcão não grava ``payment.intent_ref``: o que foi
+            # pela maquininha ainda precisa do aviso de "Estornar na maquininha"
+            # (o ``refund`` acima já o dá quando roda).
+            payment_service.announce_card_machine_refund(order)
 
         # Fiscal NÃO é cancelado aqui. Devolução TOTAL transiciona o pedido a
         # RETURNED e o lifecycle (_on_returned → fiscal.cancel) enfileira o

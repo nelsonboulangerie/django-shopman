@@ -24,7 +24,8 @@ com a lista na frente. É de propósito somente-leitura: um script que
 Compara envs (de app e por serviço), domínios, ingress, bancos anexados
 (``databases``, campo a campo) e, por componente, imagem (registry_type,
 repository, tag/digest, deploy_on_push), dimensionamento (instance_count,
-instance_size_slug) e o comando que sobe (run_command).
+instance_size_slug), o comando que sobe (run_command), as sondas
+(health_check, liveness_health_check) e os alertas (do app e do componente).
 
 ⚠️ O token precisa LER databases. Sem o escopo, o App Platform devolve o bloco
 só com ``name`` — o formato que derrubou os deploys em 29-30/09/2026 — e o
@@ -267,7 +268,38 @@ IMAGE_FIELDS = ("registry_type", "repository", "tag", "digest")
 #: `--access-log=/dev/null` do arquivo (commit 15061ed3f), e o access log grava a
 #: URI crua, com o `?token=` do webhook da Efí. Ninguém via, porque este script
 #: não comparava o comando.
-COMPONENT_FIELDS = ("instance_count", "instance_size_slug", "run_command")
+#: `health_check`, `liveness_health_check` e `alerts` entraram em 13/10/2026,
+#: depois dos 503 do Admin (17:35-17:45 UTC): são o que avisa e o que tira a
+#: instância da rota, e o `apps update` os apaga como apaga env. Até então, um
+#: alerta removido pelo painel ou uma sonda trocada passavam calados por aqui.
+COMPONENT_FIELDS = (
+    "instance_count",
+    "instance_size_slug",
+    "run_command",
+    "health_check",
+    "liveness_health_check",
+)
+
+
+def alert_signature(alert: dict) -> str:
+    """Um alerta como texto estável: `RULE OPERATOR VALUE WINDOW`.
+
+    O painel devolve a lista na ordem dele e o arquivo agrupa por leitura;
+    a ordem não muda o que dispara, então a lista é comparada ordenada.
+    """
+    parts = [str(alert.get(field)) for field in ("rule", "operator", "value", "window") if alert.get(field) is not None]
+    if alert.get("disabled"):
+        parts.append("disabled")
+    return " ".join(parts)
+
+
+def alerts_signature(alerts) -> list[str]:
+    return sorted(alert_signature(alert) for alert in alerts or [])
+
+
+def app_alert_index(spec: dict) -> dict[str, str]:
+    """Alertas de nível de APP (DEPLOYMENT_FAILED, DOMAIN_FAILED…) por assinatura."""
+    return dict.fromkeys(alerts_signature(spec.get("alerts")), "alerta")
 
 
 def database_index(spec: dict) -> dict[str, dict]:
@@ -307,6 +339,8 @@ def component_index(spec: dict) -> dict[str, dict]:
             for field in COMPONENT_FIELDS:
                 if field in component:
                     fields[field] = component[field]
+            if component.get("alerts"):
+                fields["alerts"] = alerts_signature(component["alerts"])
             out[f"{section}/{component.get('name') or '?'}"] = fields
     return out
 
@@ -572,6 +606,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     problems.extend(
         compare_plain(
+            app_alert_index(live), app_alert_index(versioned), label="alertas do app", unit="alertas"
+        )
+    )
+    problems.extend(
+        compare_plain(
             ingress_index(live),
             ingress_index(versioned),
             label="ingress",
@@ -615,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "\n⛔ NÃO rode `doctl apps update --spec` enquanto houver linha em SUMIRIAM:\n"
         "   o update substitui o spec inteiro, não faz merge. Env, DOMÍNIO, regra\n"
-        "   de ingress, banco anexado e componente somem do mesmo jeito. Traga a coisa para o arquivo primeiro\n"
+        "   de ingress, banco anexado, componente, sonda e alerta somem do mesmo jeito. Traga a coisa para o arquivo primeiro\n"
         "   (segredo entra como `type: SECRET` SEM `value` — o valor cifrado que já\n"
         "   está no painel permanece).\n"
         "   Ver docs/runbooks/conferir-spec-digitalocean.md."

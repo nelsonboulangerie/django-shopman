@@ -39,9 +39,13 @@ import {
   orderPaymentGuidance,
   paymentCollectionLabel,
   injectableMethods as toInjectableMethods,
+  attestedPixLines,
+  chargeWaitsForProvider,
+  firedPreorderBlocksPendingCharge,
   machineTenderLines,
   methodShortcuts,
   nonCashExcessQ,
+  paymentConfirmView,
   paymentIcon,
   SPLIT_PRESETS,
   splitShareQ,
@@ -227,6 +231,8 @@ const emit = defineEmits<{
   "update:confirmReceiptTaxId": [boolean];
   back: [];
   submit: [];
+  /** O operador conferiu o Pix da venda mista ("Recebi o Pix"), logo antes do submit. */
+  confirmPix: [];
   lookupCustomer: [];
   resolveCustomer: [done: (saved: boolean) => void];
   decisionConfirm: [ownerRef?: string];
@@ -318,7 +324,8 @@ const reviewWarnings = computed(() => {
       // Endereço incompleto para a nota e mínimo de entrega: quem fala é o
       // bloqueio do Validar.
       && w.code !== "delivery_address_incomplete"
-      && w.code !== "below_delivery_minimum",
+      && w.code !== "below_delivery_minimum"
+      && w.code !== "delivery_out_of_area",
   );
   return fromServer;
 });
@@ -563,7 +570,16 @@ const kitchenSurplus = computed(() => props.items.reduce((total, item) => total 
 const kitchenDeferred = computed(() =>
   Boolean(props.scheduleToday) && (props.deliveryDateEffective || "") > props.scheduleToday,
 );
-const kitchenNote = computed(() => kitchenHandoffNote(props.items, { deferred: kitchenDeferred.value }));
+// Encomenda cobrada por Pix ou link: vai à cozinha quando o dinheiro entrar
+// (política da casa: encomenda cobra antes; `lifecycle._on_paid`).
+const tenderMethods = computed(() => props.paymentTenders.map((tender) => tender.method));
+const kitchenWaitsPayment = computed(() =>
+  props.salesMode === "order"
+  && chargeWaitsForProvider({ collection: props.paymentCollection, methods: tenderMethods.value }),
+);
+const kitchenNote = computed(() =>
+  kitchenHandoffNote(props.items, { deferred: kitchenDeferred.value, waitsPayment: kitchenWaitsPayment.value }),
+);
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
@@ -614,6 +630,13 @@ const paymentGuidance = computed(() => orderPaymentGuidance({
 // ⚠️ Sai de cena inteiro quando o TEF da Stone entrar: ali o terminal recebe o
 // valor pela API e não há o que conferir. Ver docs/plans/WP-PAGAMENTO-LINK-E-TEF.md.
 const machineTenders = computed(() => machineTenderLines(tenderLines.value));
+// O Pix da venda MISTA entra no mesmo degrau (P1-7): sem provedor, quem atesta
+// que o dinheiro entrou é o operador, com o gesto "Recebi o Pix".
+const pixTenders = computed(() => attestedPixLines(tenderLines.value));
+const confirmTenders = computed(() => [...machineTenders.value, ...pixTenders.value]);
+const confirmView = computed(() =>
+  paymentConfirmView({ machine: machineTenders.value.length, pix: pixTenders.value.length }),
+);
 const machineConfirmOpen = ref(false);
 
 const hasLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method === "link"));
@@ -888,6 +911,26 @@ const ctaBlock = computed<{
       ],
     };
   }
+  // `delivery_out_of_area`: fora da área, a entrega só fecha com a taxa
+  // combinada à mão (o pedido guarda quem combinou). A mesma regra do
+  // fechamento, dita aqui com as duas saídas.
+  const outOfArea = props.review?.warnings?.find((w) => w.code === "delivery_out_of_area");
+  if (props.fulfillmentType === "delivery" && outOfArea && !props.deliveryFeeOverride) {
+    return {
+      message: outOfArea.message,
+      hint: "Para entregar, combine a taxa com o cliente. Ou troque para retirada.",
+      actions: [
+        {
+          label: "Combinar taxa",
+          run: () => {
+            emit("update:deliveryFeeOverride", true);
+            fulfillmentSheetOpen.value = true;
+          },
+        },
+        { label: "Trocar para retirada", run: () => { fulfillmentSheetOpen.value = true; } },
+      ],
+    };
+  }
   // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable
   // cobre o caso comum (cai no e-mail do cadastro); quando os dois estão vazios,
   // a recusa vinha no Validar.
@@ -898,6 +941,19 @@ const ctaBlock = computed<{
     };
   }
   if (!props.paymentTenders.length) return { message: "Escolha a forma de pagamento." };
+  // `preorder_fired_unpaid` — a gêmea. Encomenda que já está na cozinha não
+  // valida com Pix ou link pendentes (encomenda cobra antes).
+  if (firedPreorderBlocksPendingCharge({
+    salesMode: props.salesMode,
+    anyFired: props.items.some((item) => item.fired),
+    collection: props.paymentCollection,
+    methods: tenderMethods.value,
+  })) {
+    return {
+      message: "Esta encomenda já está na cozinha.",
+      hint: "Pix e link ficam pendentes até o cliente pagar. Receba em dinheiro ou cartão na maquininha.",
+    };
+  }
   // `link_requires_full_payment` — a gêmea. Ver `hasLinkTender` acima.
   if (hasLinkTender.value && hasNonLinkTender.value) {
     return {
@@ -1100,7 +1156,7 @@ function onCta() {
  *  Depois da autorização do gerente, nunca antes — o cartão só é passado quando
  *  a venda já está liberada. */
 function proceed() {
-  if (!onDelivery.value && machineTenders.value.length) { machineConfirmOpen.value = true; return; }
+  if (!onDelivery.value && confirmTenders.value.length) { machineConfirmOpen.value = true; return; }
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
@@ -1111,6 +1167,7 @@ function onManagerAuthorize(username: string, pin: string) {
 }
 function onMachineConfirmed() {
   machineConfirmOpen.value = false;
+  if (pixTenders.value.length) emit("confirmPix");
   emit("submit");
 }
 
@@ -2106,8 +2163,8 @@ defineExpose({
        forma; a venda ainda não foi registrada. -->
   <NuxtModal
     v-model:open="machineConfirmOpen"
-    title="Passe na maquininha"
-    description="Digite este valor no terminal e conclua a operação com o cliente."
+    :title="confirmView.title"
+    :description="confirmView.description"
     :ui="{ content: 'sm:max-w-sm' }"
     data-pos-machine-confirm
   >
@@ -2119,8 +2176,8 @@ defineExpose({
              cheia: é a primeira escolha no teclado do terminal, e a única que a
              maquininha não perdoa em silêncio. -->
         <div
-          v-for="line in machineTenders"
-          :key="line.method"
+          v-for="(line, idx) in confirmTenders"
+          :key="`${line.method}-${idx}`"
           class="grid justify-items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-7"
         >
           <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold uppercase tracking-widest text-primary-foreground">
@@ -2133,7 +2190,7 @@ defineExpose({
     </template>
     <template #footer>
       <div class="flex w-full flex-col gap-2">
-        <NuxtButton size="xl" block color="primary" label="OK, cobrei na maquininha" data-pos-machine-charged @click="onMachineConfirmed" />
+        <NuxtButton size="xl" block color="primary" :label="confirmView.cta" data-pos-machine-charged @click="onMachineConfirmed" />
         <NuxtButton block color="neutral" variant="ghost" label="Voltar" @click="machineConfirmOpen = false" />
       </div>
     </template>
