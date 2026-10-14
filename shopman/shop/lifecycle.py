@@ -55,7 +55,7 @@ from shopman.shop.services import (
     stock,
 )
 from shopman.shop.services.business_calendar import next_operational_deadline
-from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date
+from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date, is_counter_takeaway
 
 logger = logging.getLogger(__name__)
 
@@ -687,6 +687,14 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # E os pontos que o cliente RESGATOU como desconto também: o débito só é
     # justo se a venda existiu.
     loyalty.restore(order, reason="cancelled")
+
+    # Venda de balcão cancelada não vira aviso: o cliente está na frente do
+    # caixa e vê o cancelamento acontecer. "Seu pedido foi cancelado" chega a
+    # quem nunca fez pedido nenhum (o mesmo motivo de ``order_accepted`` não sair
+    # no balcão, em ``_on_accepted``). Encomenda e entrega do PDV têm saída pela
+    # frente e seguem avisando.
+    if is_counter_takeaway(order):
+        return
 
     # Local rejections already queued order_rejected. An iFood rejection stays
     # pending without notifying until CAN, so its now-confirmed cancellation
