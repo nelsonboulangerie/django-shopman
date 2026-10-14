@@ -263,7 +263,7 @@ Não existe no modo balcão por desenho (`pos_sales_mode.py:78-84`): entrega é 
 | Pix no pagamento misto | liquida pela palavra do operador | `pos.py:3967-3971` | ATRITO (P1-7), resolvido #1734 |
 | Desconto manual acima do teto | PIN de gerente; o teto inclui a taxa de entrega no subtotal | `pos.py:3247`, `:3471` | ATRITO (P2-22), resolvido #1746 |
 | Sem conexão | fila local, dinheiro/maquininha offline, envio na volta, preço da hora da venda | #1634, #1635 | OK |
-| Cupom | não há campo de cupom no PDV | `surfaces/pos-nuxt/app` | LACUNA (P2-21), na fila #1766 como desconto por grupo |
+| Cupom | não há campo de cupom no PDV. Decisão do dono (14/10/2026): no balcão o desconto é do GRUPO do cliente (faixa de preço com desconto automático no Admin), não cupom; identificar o cliente basta | `shop/admin/price_tier.py`; `services/promotions.py` (`customer_group_promotion`); `pos.py` (`_review_priced_lines`) | RESOLVIDO por outro caminho (P2-21), resolvido #1766 |
 | Devolução depois da venda | só no Gestor | — | ATRITO (P2) |
 
 ### 2.4 Matriz
@@ -327,7 +327,7 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 | Fora da área de entrega | a revisão diz "não bloqueia", o fechamento recusa, e taxa digitada à mão não resolve | `pos.py:898-910`; `validation.py:270` | ATRITO (P1-6), resolvido #1723 |
 | Pix de encomenda | vence no prazo do Pix (10 a 60 min) e cancela a encomenda, avisando o cliente | `payment_efi.py:340-345`; `handlers/payment_timeout.py` | ATRITO (P2-26), resolvido #1747 |
 | Entrega no balcão não imprime a DANFE sozinha | reimprimir à mão | `usePosPreorderActions` | ATRITO (P2-27), resolvido #1750 |
-| Promoção de frete grátis | ignorada no PDV | `pos.py:3634` | ATRITO (P2-21), não delegado |
+| Promoção de frete grátis | ignorada no PDV | `pos.py:3634` | ATRITO (P2-21), em andamento |
 | Corrida não atendida (N) ou cancelada (C) | alerta, custódia volta, "Chamar de novo" | `courier.py:587-660`, #1696, #1708 | OK |
 | Cancelar com corrida aberta | corrida cancelada antes da coleta; depois, alerta crítico | `courier.py:501` | OK |
 | Editar a encomenda | comanda virtual; diferença a mais vira saldo, a menos volta no mesmo meio; com nota autorizada, "Cancelar e refazer" | `order_edit.py:1-40`; `ops:3012-3058` | OK |
@@ -611,7 +611,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 | P2-18 · **resolvido #1754** | Produção sem SSE | `useProductionBoard.ts:3` | Assinar `backstage-production` | S |
 | P2-19 · **resolvido #1752 (via), #1762 (Aceitar no alerta)** | Gestor sem "Imprimir Via Pedido"; alerta sem ação direta | `order_queue.py`; `projections/alerts.py:254` | Botão de via; Aceitar no alerta de pedido parado | S |
 | P2-20 · **resolvido #1741** | `docs/guides/lifecycle.md` fala em `CONFIRMED` | — | Trocar por `accepted` | XS |
-| P2-21 · **cupom: na fila #1766, como desconto por grupo (decisão 6 = 1); frete grátis no PDV: não delegado** | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Campo de cupom na revisão; promoção de frete no motor do PDV | M |
+| P2-21 · **cupom: resolvido #1766, como desconto por grupo (decisão 6 = 1); frete grátis no PDV: em andamento** | PDV sem cupom; frete grátis ignorado | `pos.py:3634` | Cupom: trocado por desconto automático por grupo de clientes (dono, 14/10/2026; `test_pos_desconto_por_grupo.py`). Frete grátis no motor do PDV segue aberto | M |
 | P2-22 · **resolvido #1746** | Teto do desconto manual soma a taxa de entrega | `pos.py:3247`, `:3471` | Subtotal só de mercadoria (pendência de uma linha já registrada) | XS |
 | P2-23 · **resolvido #1764** | Conta na casa sem limite nem cobrança | `services/house_account.py` | Limite por cliente e lista "a cobrar" | M |
 | P2-24 · **resolvido #1742** | E-mail de alerta crítico com trava por tipo | `critical_alerts.py:29-37` | Trava por tipo + pedido | XS |
@@ -660,7 +660,7 @@ Hoje só no PDV.
 | D: desconto em R$ na linha do PDV vale por unidade ou na linha? | 1: por unidade, e a tela mostra os dois valores (unidade e linha) | resolvido #1758 |
 | P: "Cancelar a corrida" e "Entregador voltou" também no PDV? | 1: sim, como no Gestor | resolvido #1765 |
 | P2-23: limite na conta na casa? | 1: limite opcional por cliente; acima dele, PIN do gerente | resolvido #1764 |
-| 6 (P2-21): cupom no PDV? | 1: em vez de cupom, grupo de clientes com desconto automático (caso real: alunos da Aliança Francesa) | na fila #1766 |
+| 6 (P2-21): cupom no PDV? | 1: em vez de cupom, grupo de clientes com desconto automático (caso real: alunos da Aliança Francesa) | resolvido #1766 |
 | 9 (P2-30): horário de entrega do site | 1: o cliente escolhe a janela de entrega, com a grade da concierge, e o servidor confere | resolvido #1767 |
 
 ---
@@ -674,6 +674,6 @@ Conferido em `origin/main` (`7cbc718b1`), 14/10/2026. Tudo o mais da §8 está r
 | P1-12 | não delegado | Nota fora da janela de 30 min ou depois da saída: abrir a pendência "nota de estorno" com o roteiro do contador, em vez de tentar cancelar e só alertar |
 | P1-14 (resto) | não delegado | Vitrine do WhatsApp espelhar a do site (hoje é copiada uma vez pelo `bootstrap_whatsapp_channel`) |
 | P1-9 (resto) | não delegado | Pix vencido manda dois avisos (vencido e cancelado); a proposta era um só. Ficou fora do #1720 |
-| P2-21 (cupom) | na fila #1766 | Desconto automático por grupo de clientes no PDV (decisão 6 = 1) |
-| P2-21 (frete grátis) | não delegado | Promoção de frete grátis ignorada no motor do PDV |
+| P2-21 (cupom) | resolvido #1766 | Desconto automático por grupo de clientes no PDV (decisão 6 = 1) |
+| P2-21 (frete grátis) | em andamento | Promoção de frete grátis ignorada no motor do PDV |
 | P0-3 no vivo | espera a janela do dono | O código está no `main` (#1719); falta o resolver `intermediated_sale` na env `SHOPMAN_FISCAL_EMISSION_RESOLVER` do spec vivo, junto do delta do go-live |

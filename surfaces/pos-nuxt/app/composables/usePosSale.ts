@@ -71,6 +71,7 @@ import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosRe
 import {
   applyLinePrices,
   lineListUnitQ,
+  linesWithoutServerPrices,
   manualDiscountChargedQ,
   manualDiscountWasOverridden,
   winningDiscountLabel,
@@ -2040,6 +2041,16 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   // Defaults pertencem à escolha de um cliente; reabrir comanda só recupera o cadastro.
+  /** O cliente é de um grupo com desconto no balcão: o operador fica sabendo que
+   *  ele entra sozinho (e por quê), em vez de descobrir o preço menor na linha. */
+  function announceGroupDiscount(customer: POSCustomerLookupProjection) {
+    if (!customer.group_discount_label) return;
+    toast.info(`Desconto do grupo: ${customer.group_discount_label}`, {
+      description: "Entra sozinho na venda.",
+      duration: 6000,
+    });
+  }
+
   function applyCustomerDefaults(customer: POSCustomerLookupProjection) {
     cart.customerRef = customer.ref;
     cart.customerName = customer.name || cart.customerName;
@@ -2062,6 +2073,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
     // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
     // é só o parabéns.
+    announceGroupDiscount(customer);
     if (customer.is_birthday_today) {
       const nome = (customer.name || "").split(" ")[0] || "o cliente";
       toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
@@ -2268,6 +2280,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
       // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
       // é só o parabéns.
+      announceGroupDiscount(response.customer);
       if (response.customer.is_birthday_today) {
         const nome = (response.customer.name || "").split(" ")[0] || "o cliente";
         toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
@@ -2946,6 +2959,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // Resposta de um carrinho que já mudou: descartada (ver `invalidateReview`).
       if (generation !== reviewGeneration) return null;
       review.value = response.review;
+      if (!hasOpenTab.value) applyLinePrices(cart.items, response.review.line_prices);
       reviewedGeneration = generation;
       return response.review;
     } catch (error) {
@@ -3847,7 +3861,7 @@ export function usePosSale(deps: PosSaleDeps) {
     online.value,
     checkoutMode.value,
     saleTotalPaused.value,
-    cart.items,
+    linesWithoutServerPrices(cart.items),
     cart.salesMode,
     cart.fulfillmentConfirmed,
     cart.fulfillmentType,
@@ -3890,6 +3904,9 @@ export function usePosSale(deps: PosSaleDeps) {
       // Resposta de um carrinho que já mudou: descartada.
       if (seq !== saleReviewSeq) return;
       saleReview.value = response.review;
+      // Sem comanda, a revisão é quem diz o que cada linha cobra (o desconto do
+      // grupo do cliente, a Xepa): o selo entra na linha junto com o total.
+      if (!hasOpenTab.value) applyLinePrices(cart.items, response.review.line_prices);
     } catch {
       // Sem toast: quem diz o motivo é o Pagamento, que revisa de novo ao abrir
       // e oferece "Tentar de novo". Aqui a tela só não mostra número.
