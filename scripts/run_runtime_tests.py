@@ -129,6 +129,10 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/backstage/tests/test_production_print_jobs_postgresql.py",
     "shopman/shop/tests/test_deploy_checks.py",
     "shopman/shop/tests/test_health.py",
+    # Pool do psycopg sob ASGI: conexão órfã de request cancelado volta ao pool, e
+    # streams SSE além do tamanho do pool não seguram conexão (incidente 14/10/2026).
+    # O pool só existe no PostgreSQL.
+    "shopman/shop/tests/test_orphan_connections.py",
 )
 
 
