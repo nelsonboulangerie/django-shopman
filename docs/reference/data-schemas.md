@@ -1359,12 +1359,13 @@ Lido por: `setup.py` (registro), validators, modifiers.
 
 Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
 
-### Pricing — preço do canal e desconto da Concierge
+### Pricing — preço do canal, vitrine espelhada e desconto da Concierge
 
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `policy` | `string` | `"internal"` | `"internal"` (preço do backend) ou `"external"` (marketplace) |
 | `concierge_discount_max_percent` | `number` | `2.5` | Teto do desconto que a Concierge concede sozinha quando o cliente pede, em % do subtotal da sacola (aceita decimal); `0` desliga; entre 0 e 100. Configure no `Channel.config` do canal da Concierge (`whatsapp`) ou em `Shop.defaults`. O valor é calculado pelo sistema (arredondamento do total dentro do teto) e entra como cupom de uso único `CONCIERGE-…` pelas portas do cupom do site (canal, pedido mínimo, maior desconto ganha); no commit, o evento `concierge_discount` (ator `concierge`, `payload = {note, coupon_code, discount_q}`) vai para o histórico do pedido. Dono, 03/10/2026 |
+| `listing_from` | `string` | `""` | Ref do canal cuja **vitrine** este canal espelha: mesmos itens, faixas, preço e flags, sempre (`shop/services/listing_mirror.py`; receivers em `shop/handlers/listing_mirror.py`). Vazio = vitrine própria. Lido cru do `Channel.config` do canal, nunca da cascata do `Shop.defaults`. No Catálogo, a vitrine espelhada não tem edição própria (a mudança é feita na fonte) e fica fora de "todos os canais". Só a vitrine espelha: regra por canal (Xepa só no balcão, promoção com canais) segue escopada pelo canal do pedido. O WhatsApp aponta para a loja online (`"web"`), P1-14, 14/10/2026 |
 
 Lido por: `storefront/concierge/discount.py`.
 
