@@ -477,6 +477,27 @@ export interface BulkCellsResponse {
   }[];
   errors: { index: number; sku: string; surface_ref: string; detail: string }[];
 }
+// Import CSV pt-BR: a prévia não grava; o apply leva a revisão da prévia.
+export interface ImportPreviewChange {
+  sku: string;
+  action: "new" | "update";
+  name: string;
+  before: {
+    name: string;
+    base_price_q: number;
+    is_published: boolean;
+    is_sellable: boolean;
+  } | null;
+}
+
+export interface ImportPreview {
+  dry_run: boolean;
+  rows: number;
+  totals: Record<string, number>;
+  errors: { row: number; detail: string }[];
+  changes: ImportPreviewChange[];
+  base_revision: string;
+}
 export interface PhotoEnhanceResponse {
   provider: string;
   media_type: string;

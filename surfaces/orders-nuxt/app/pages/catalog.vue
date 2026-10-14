@@ -38,6 +38,7 @@ import type {
   CollectionProjection,
   CreateProductPayload,
   DuplicateSnapshot,
+  ImportPreview,
   ProductDetailPatch,
   ProductDetailProjection,
   ProductDraft,
@@ -115,6 +116,8 @@ const {
   enhancePhoto,
   uploadPhoto,
   saveCells,
+  previewImport,
+  applyImport,
 } = useCatalogMatrix(collectionRef, {
   search: searchTerm,
   page: catalogPage,
@@ -791,6 +794,13 @@ const headerMenuItems = computed(() => [
       icon: "i-lucide-download",
       onSelect: exportCatalog,
     },
+    {
+      label: "Importar CSV",
+      icon: "i-lucide-upload",
+      onSelect: () => {
+        importOpen.value = true;
+      },
+    },
   ],
 ]);
 function rowMenuItems(row: CatalogRowProjection) {
@@ -1201,6 +1211,29 @@ async function lookupDraft(gtin: string) {
   }
 }
 
+// Import CSV: a prévia é lida antes; o apply leva a revisão da prévia.
+const importOpen = ref(false);
+const importPreview = ref<ImportPreview | null>(null);
+const importCsv = ref("");
+const importPreviewBusy = ref(false);
+async function previewImportCsv(csv: string) {
+  importCsv.value = csv;
+  importPreviewBusy.value = true;
+  try {
+    importPreview.value = await previewImport(csv);
+  } finally {
+    importPreviewBusy.value = false;
+  }
+}
+async function applyImportCsv() {
+  if (!importPreview.value || !importCsv.value) return;
+  const result = await applyImport(importCsv.value, importPreview.value);
+  if (result) {
+    importOpen.value = false;
+    importPreview.value = null;
+    importCsv.value = "";
+  }
+}
 // Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
 const bulkGridOpen = ref(false);
 async function saveBulkCells(cells: BulkCell[]) {
@@ -2227,6 +2260,28 @@ useHead({ title: "Catálogo" });
         }
       "
       @save="saveBulkCells"
+    />
+
+    <!-- import CSV pt-BR: prévia sem gravar, erro por linha, apply numa ida. -->
+    <CatalogImportCsv
+      :open="importOpen"
+      :preview="importPreview"
+      :preview-busy="importPreviewBusy"
+      :busy="isBusy('catalog:product-import')"
+      :error="errorMsg"
+      @update:open="
+        (value) => {
+          if (!value) importOpen = false;
+        }
+      "
+      @preview="previewImportCsv"
+      @apply="applyImportCsv"
+      @reset="
+        () => {
+          importPreview = null;
+          importCsv = '';
+        }
+      "
     />
     <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
     <NuxtModal

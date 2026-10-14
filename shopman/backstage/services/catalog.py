@@ -2299,3 +2299,135 @@ def apply_resync_intention(data: dict) -> dict:
         record_sync(product.sku, ref, status="pending")
         tasks.append({"channel_ref": ref, "directive_id": directive.pk, "status": directive.status})
     return {"ok": True, "outcome": "applied", "sku": product.sku, "channels": chosen, "tasks": tasks}
+
+
+# ── import CSV de produto (pt-BR) ────────────────────────────────────────────
+# Reusa o MESMO recurso do Admin (``ProductResource``, upsert por sku): o CSV
+# tem as colunas do export, com separador ``;`` (vírgula é decimal) e a prévia
+# roda em ``dry_run`` — o erro é POR LINHA e nada é gravado antes de confirmar.
+
+_IMPORT_FLAGS = ("is_published", "is_sellable")
+_IMPORT_BOOL_TOKENS = {
+    "sim": "1", "s": "1", "verdadeiro": "1", "true": "1",
+    "não": "0", "nao": "0", "n": "0", "falso": "0", "false": "0",
+}
+
+
+def _import_price_q(value) -> str:
+    """Preço do CSV em centavos. "5,00" e "5.00" viram 500; "500" já é centavo."""
+    raw = str(value if value is not None else "").replace("R$", "").strip()
+    if not raw:
+        return ""
+    if "," in raw:
+        normalized = raw.replace(".", "").replace(",", ".")
+    else:
+        normalized = raw
+    try:
+        if "." in normalized:
+            return str(int(round(float(normalized) * 100)))
+        return str(int(normalized))
+    except ValueError:
+        # Valor torto fica como veio: quem recusa a linha é o recurso, com o erro.
+        return raw
+
+
+def _run_product_import(csv_text, *, dry_run: bool) -> dict:
+    import csv
+    import io
+
+    import tablib
+    from shopman.offerman.contrib.import_export.resources import ProductResource
+
+    text = str(csv_text or "").strip()
+    if not text:
+        raise CatalogError("Envie o arquivo CSV.")
+    first = text.splitlines()[0]
+    delimiter = ";" if first.count(";") >= first.count(",") and ";" in first else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+    headers = [str(field).strip() for field in (reader.fieldnames or [])]
+    if "sku" not in headers:
+        raise CatalogError("O CSV precisa da coluna sku (o mesmo modelo do export).")
+    dataset = tablib.Dataset()
+    dataset.headers = headers
+    parsed = []
+    for raw in reader:
+        row = {str(key).strip(): (value if value is not None else "") for key, value in raw.items() if key}
+        if not any(str(value).strip() for value in row.values()):
+            continue
+        if "base_price_q" in row:
+            row["base_price_q"] = _import_price_q(row["base_price_q"])
+        for flag in _IMPORT_FLAGS:
+            token = str(row.get(flag, "")).strip().lower()
+            if token in _IMPORT_BOOL_TOKENS:
+                row[flag] = _IMPORT_BOOL_TOKENS[token]
+        dataset.append([row.get(header, "") for header in headers])
+        parsed.append(row)
+    if not parsed:
+        raise CatalogError("O CSV não tem nenhuma linha para importar.")
+
+    result = ProductResource().import_data(
+        dataset, dry_run=dry_run, raise_errors=False, use_transactions=True,
+    )
+    errors = []
+    for invalid in result.invalid_rows:
+        messages = getattr(getattr(invalid, "error", None), "messages", None)
+        errors.append({"row": invalid.number, "detail": "; ".join(str(item) for item in messages) if messages else str(invalid.error)})
+    for error in result.error_rows:
+        errors.append({"row": error.number, "detail": str(error.errors)})
+    for index, row in enumerate(result.rows, start=1):
+        if row.errors:
+            errors.append({"row": index, "detail": "; ".join(str(item) for item in row.errors)})
+    for base in result.base_errors:
+        errors.append({"row": 0, "detail": str(getattr(base, "error", base))})
+    payload = {
+        "dry_run": dry_run,
+        "rows": len(parsed),
+        "totals": {key: int(value) for key, value in result.totals.items()},
+        "errors": errors,
+    }
+    if dry_run:
+        payload["changes"] = _import_changes(parsed)
+    return payload
+
+
+def _import_changes(parsed: list[dict]) -> list[dict]:
+    from shopman.offerman.models import Product
+
+    skus = [str(row.get("sku") or "").strip() for row in parsed]
+    existing = {product.sku: product for product in Product.objects.filter(sku__in=skus)}
+    changes = []
+    for row in parsed:
+        sku = str(row.get("sku") or "").strip()
+        before = existing.get(sku)
+        changes.append({
+            "sku": sku,
+            "action": "update" if before else "new",
+            "name": str(row.get("name") or (before.name if before else "")),
+            "before": {
+                "name": before.name,
+                "base_price_q": before.base_price_q,
+                "is_published": before.is_published,
+                "is_sellable": before.is_sellable,
+            } if before else None,
+        })
+    return changes
+
+
+def preview_product_import(data: dict, *, actor_id: int) -> dict:
+    """Prévia do CSV: valida linha a linha e mostra o que muda. Não grava nada."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    csv_text = data.get("csv") if isinstance(data, dict) else None
+    result = _run_product_import(csv_text, dry_run=True)
+    # A revisão da prévia é o que a confirmação carrega: o apply não inventa uma.
+    result["base_revision"] = mutation_fingerprint(
+        {"operation": "catalog.product-import", "csv": str(csv_text or "")}
+    )
+    return result
+
+
+@transaction.atomic
+def apply_product_import(data: dict, *, actor_id: int) -> dict:
+    """Aplica o CSV pelo MESMO recurso do Admin; o erro é por linha."""
+    result = _run_product_import(data.get("csv") if isinstance(data, dict) else None, dry_run=False)
+    return {"ok": True, "outcome": "applied", **result}

@@ -24,6 +24,7 @@ import type {
   CreateProductResponse,
   DuplicatePayload,
   DuplicateSnapshot,
+  ImportPreview,
   PhotoEnhanceResponse,
   ProductDetailPatch,
   ProductDetailProjection,
@@ -896,6 +897,66 @@ export function useCatalogMatrix(
       busy.value = next;
     }
   }
+  // ── import CSV: prévia sem gravar e apply com a revisão da prévia (fatia C3)
+  async function previewImport(csv: string): Promise<ImportPreview | null> {
+    clearError();
+    try {
+      const response = await $fetch<{ preview: ImportPreview }>(
+        "/api/v1/backstage/catalog/product/import/",
+        { method: "POST", body: { csv, preview: true } },
+      );
+      return response.preview;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Não foi possível ler o CSV.");
+      useSonner.error(errorMsg.value);
+      return null;
+    }
+  }
+
+  async function applyImport(
+    csv: string,
+    preview: ImportPreview,
+  ): Promise<ImportPreview | null> {
+    const key = "catalog:product-import";
+    if (busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    const action = {
+      ref: "import-products",
+      kind: "mutation",
+      label: "Importar produtos",
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: preview.base_revision,
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+    try {
+      await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/product/import/",
+        action,
+        { csv } as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      useSonner.success("Importação aplicada.");
+      return preview;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível aplicar o CSV.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
   async function uploadPhoto(image: string, filename = ""): Promise<string> {
     const response = await $fetch<{ url: string; name: string }>(
       "/api/v1/backstage/catalog/product/photo/upload/",
@@ -952,5 +1013,7 @@ export function useCatalogMatrix(
     enhancePhoto,
     uploadPhoto,
     saveCells,
+    previewImport,
+    applyImport,
   };
 }

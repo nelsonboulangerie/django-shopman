@@ -418,6 +418,13 @@ class CatalogBulkView(_CatalogPreviewMutationView):
     apply_command = staticmethod(catalog_service.apply_bulk_publication_intention)
 
 
+class CatalogProductImportView(_CatalogPreviewMutationView):
+    """Import CSV de produto: previa sem gravar, aplicacao com intencao e recibo."""
+
+    operation = "catalog.product-import"
+    preview_command = staticmethod(catalog_service.preview_product_import)
+    apply_command = staticmethod(catalog_service.apply_product_import)
+
 class _CatalogReorderView(_CatalogBase):
     operation = ""
     field = ""
