@@ -809,6 +809,15 @@ export function useCatalogMatrix(
 
   // Melhoria DETERMINÍSTICA da foto. Sem provedor ligado o servidor responde 503
   // e a tela mostra o aviso: a capability é degradável, não caminho crítico.
+  // Grava a foto no storage default e devolve a URL. Sem storage o servidor
+  // responde 503 e o painel avisa: a capability é degradável.
+  async function uploadPhoto(image: string, filename = ""): Promise<string> {
+    const response = await $fetch<{ url: string; name: string }>(
+      "/api/v1/backstage/catalog/product/photo/upload/",
+      { method: "POST", body: { image, filename } },
+    );
+    return response.url;
+  }
   async function enhancePhoto(image: string): Promise<string> {
     const response = await $fetch<PhotoEnhanceResponse>(
       "/api/v1/backstage/catalog/product/photo/",
@@ -856,5 +865,6 @@ export function useCatalogMatrix(
     fetchDuplicateSnapshot,
     duplicateProduct,
     enhancePhoto,
+    uploadPhoto,
   };
 }

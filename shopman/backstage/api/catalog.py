@@ -708,3 +708,18 @@ class CatalogProductPhotoView(_CatalogBase):
             return Response({"detail": str(exc), "field": "image"}, status=400)
 
 
+class CatalogProductPhotoUploadView(_CatalogBase):
+    """Grava a foto no storage default e devolve a URL; sem storage, 503."""
+
+    def post(self, request):
+        from shopman.backstage.services.exceptions import AiAssistNotConfigured
+
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            return Response(catalog_service.store_product_photo(data.get("image"), filename=data.get("filename") or ""))
+        except AiAssistNotConfigured as exc:
+            return Response({"detail": str(exc)}, status=503)
+        except (CatalogError, ValidationError) as exc:
+            return Response({"detail": str(exc), "field": "image"}, status=400)
+
+

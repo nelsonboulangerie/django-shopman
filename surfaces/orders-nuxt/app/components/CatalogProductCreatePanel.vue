@@ -21,6 +21,7 @@ const props = defineProps<{
   draftBusy: boolean;
   draftError: string;
   enhance: (image: string) => Promise<string>;
+  upload: (image: string) => Promise<string>;
 }>();
 
 const emit = defineEmits<{
@@ -53,7 +54,10 @@ const accepted = ref<Set<string>>(new Set());
 const photoInput = ref<HTMLInputElement | null>(null);
 const photoBusy = ref(false);
 const photoError = ref("");
+const photoOriginal = ref("");
 const photoResult = ref("");
+const uploadBusy = ref(false);
+const uploadedUrl = ref("");
 
 const isDuplicate = computed(() => props.mode === "duplicate");
 const title = computed(() =>
@@ -190,12 +194,14 @@ async function onPhotoPicked(event: Event) {
   const file = input.files?.[0];
   if (!file) return;
   photoResult.value = "";
+  photoOriginal.value = "";
+  uploadedUrl.value = "";
   photoError.value = "";
   if (file.size > 8 * 1024 * 1024) {
     photoError.value = "A foto é grande demais (máximo 8 MB).";
     return;
   }
-  const raw = await new Promise<string>((resolve, reject) => {
+  photoOriginal.value = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new Error("read_failed"));
@@ -203,14 +209,33 @@ async function onPhotoPicked(event: Event) {
   });
   photoBusy.value = true;
   try {
-    photoResult.value = await props.enhance(raw);
+    photoResult.value = await props.enhance(photoOriginal.value);
   } catch (error) {
+    // O ajuste é conveniência: sem ele a foto original ainda pode ser usada.
     photoError.value = httpErrorMessage(
       error,
-      "Não foi possível melhorar a foto.",
+      "Não foi possível padronizar a foto. A original ainda pode ser usada.",
     );
   } finally {
     photoBusy.value = false;
+  }
+}
+
+async function usePhoto() {
+  const image = photoResult.value || photoOriginal.value;
+  if (!image) return;
+  photoError.value = "";
+  uploadBusy.value = true;
+  try {
+    uploadedUrl.value = await props.upload(image);
+    form.image_url = uploadedUrl.value;
+  } catch (error) {
+    photoError.value = httpErrorMessage(
+      error,
+      "Não foi possível guardar a foto agora. A tela segue sem ela.",
+    );
+  } finally {
+    uploadBusy.value = false;
   }
 }
 
@@ -432,20 +457,42 @@ function submit() {
               O ajuste é determinístico: recorta a borda, enquadra e afina. Não
               inventa o produto.
             </p>
-            <p v-if="photoError" class="text-xs text-error">{{ photoError }}</p>
-            <div v-if="photoResult" class="flex items-center gap-2">
+            <p v-if="photoError" class="text-xs text-warning">{{ photoError }}</p>
+            <div
+              v-if="photoResult || photoOriginal"
+              class="flex items-center gap-3"
+            >
               <img
-                :src="photoResult"
-                alt="Prévia da foto padronizada"
+                :src="photoResult || photoOriginal"
+                alt="Prévia da foto"
                 class="h-20 w-20 rounded object-cover"
               />
-              <a
-                :href="photoResult"
-                download="produto.jpg"
-                class="text-sm underline"
-                >Baixar foto padronizada</a
-              >
+              <div class="flex flex-col items-start gap-1">
+                <NuxtButton
+                  color="neutral"
+                  variant="outline"
+                  :label="
+                    form.image_url
+                      ? 'Foto guardada'
+                      : 'Usar como foto do produto'
+                  "
+                  :loading="uploadBusy"
+                  :disabled="Boolean(form.image_url)"
+                  data-testid="create-photo-use"
+                  @click="usePhoto"
+                />
+                <a
+                  v-if="photoResult"
+                  :href="photoResult"
+                  download="produto.jpg"
+                  class="text-xs underline"
+                  >Baixar padronizada</a
+                >
+              </div>
             </div>
+            <p v-if="form.image_url" class="text-xs text-success break-all">
+              {{ form.image_url }}
+            </p>
           </div>
         </NuxtCard>
 

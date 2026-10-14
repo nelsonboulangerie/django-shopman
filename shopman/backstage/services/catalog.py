@@ -1536,7 +1536,8 @@ def photo_enhance_status() -> tuple[bool, str]:
     return False, f"Provedor de melhoria de foto desconhecido: {provider}."
 
 
-def _decode_photo(raw) -> object:
+def _decode_photo(raw) -> tuple[object, bytes]:
+    """Valida a foto e devolve ``(imagem PIL, bytes originais)``."""
     import base64
     import binascii
     from io import BytesIO
@@ -1557,7 +1558,40 @@ def _decode_photo(raw) -> object:
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
         raise CatalogError("Não consegui ler esta foto. Envie JPEG, PNG ou WebP.") from exc
-    return image
+    return image, payload
+
+
+_PHOTO_EXTENSIONS = {"jpeg": "jpg", "jpg": "jpg", "png": "png", "webp": "webp"}
+
+
+def store_product_photo(raw, *, filename: str = "") -> dict:
+    """Grava a foto no storage DEFAULT e devolve a URL. Não padroniza nem inventa.
+
+    O nome é único (arquivo imutável: o host serve com cache de um ano). Sem
+    storage gravável o serviço é DEGRADÁVEL: levanta ``AiAssistNotConfigured`` e a
+    camada HTTP responde 503, como o assist sem chave.
+    """
+    import os
+    import uuid
+
+    from django.core.files.base import ContentFile
+    from django.core.files.storage import default_storage
+
+    from shopman.backstage.services.exceptions import AiAssistNotConfigured
+
+    image, payload = _decode_photo(raw)
+    fmt = str(getattr(image, "format", "") or "").strip().lower()
+    extension = _PHOTO_EXTENSIONS.get(fmt, "jpg")
+    base = os.path.splitext(os.path.basename(str(filename or "")))[0].strip() or "produto"
+    name = f"products/{base}-{uuid.uuid4().hex}.{extension}"
+    try:
+        saved = default_storage.save(name, ContentFile(payload))
+        url = default_storage.url(saved)
+    except Exception as exc:
+        raise AiAssistNotConfigured(
+            "O storage de fotos não está disponível neste ambiente. Avise o responsável."
+        ) from exc
+    return {"name": saved, "url": url, "size": len(payload), "media_type": f"image/{fmt or 'jpeg'}"}
 
 
 def _trim_uniform_border(image):
@@ -1591,7 +1625,8 @@ def enhance_product_photo(raw) -> dict:
     provider = str(getattr(settings, "SHOPMAN_PRODUCT_IMAGE_ENHANCE_PROVIDER", "") or "").strip().lower()
     if not available or provider != "deterministic":
         raise AiAssistNotConfigured(reason or "A melhoria de foto não está ligada.")
-    image = _trim_uniform_border(_decode_photo(raw))
+    image, _payload = _decode_photo(raw)
+    image = _trim_uniform_border(image)
     square = ImageOps.pad(image, (1200, 1200), color=(255, 255, 255), method=Image.Resampling.LANCZOS)
     square = ImageEnhance.Sharpness(square).enhance(1.15)
     square = ImageEnhance.Contrast(square).enhance(1.02)

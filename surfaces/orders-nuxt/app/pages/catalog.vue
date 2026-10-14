@@ -96,6 +96,7 @@ const {
   fetchDuplicateSnapshot,
   duplicateProduct,
   enhancePhoto,
+  uploadPhoto,
 } = useCatalogMatrix(collectionRef, {
   search: searchTerm,
   page: catalogPage,
@@ -2157,6 +2158,7 @@ useHead({ title: "Catálogo" });
       :draft-busy="createDraftBusy"
       :draft-error="createDraftError"
       :enhance="enhancePhoto"
+      :upload="uploadPhoto"
       @update:open="
         (value) => {
           if (!value) createOpen = false;

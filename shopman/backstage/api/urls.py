@@ -32,6 +32,7 @@ from .catalog import (
     CatalogProductDetailView,
     CatalogProductDraftView,
     CatalogProductDuplicateView,
+    CatalogProductPhotoUploadView,
     CatalogProductPhotoView,
     CatalogProductPurchaseView,
     CatalogProductView,
@@ -643,6 +644,7 @@ urlpatterns = [
     path("catalog/product/duplicate/", CatalogProductDuplicateView.as_view(), name="api-backstage-catalog-product-duplicate"),
     path("catalog/product/draft/", CatalogProductDraftView.as_view(), name="api-backstage-catalog-product-draft"),
     path("catalog/product/photo/", CatalogProductPhotoView.as_view(), name="api-backstage-catalog-product-photo"),
+    path("catalog/product/photo/upload/", CatalogProductPhotoUploadView.as_view(), name="api-backstage-catalog-product-photo-upload"),
     path("catalog/product/<str:sku>/", CatalogProductDetailView.as_view(), name="api-backstage-catalog-product-detail"),
     path(
         "catalog/product/<str:sku>/purchase/",

@@ -241,6 +241,7 @@ def test_duplicate_rejects_existing_target_sku(catalog):
 
 DRAFT_URL = "/api/v1/backstage/catalog/product/draft/"
 PHOTO_URL = "/api/v1/backstage/catalog/product/photo/"
+PHOTO_UPLOAD_URL = "/api/v1/backstage/catalog/product/photo/upload/"
 
 
 def _ean13(base12: str) -> str:
@@ -354,6 +355,56 @@ def test_photo_endpoint_warns_when_off(client, operator, catalog):
     response = client.post(PHOTO_URL, {"image": "data:image/png;base64,AAAA"}, content_type="application/json")
     assert response.status_code in (400, 503)
 
+
+def _png_data_url() -> str:
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (20, 20), (10, 120, 30)).save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def test_store_product_photo_uses_the_default_storage(tmp_path):
+    from django.test import override_settings
+
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        result = catalog_service.store_product_photo(_png_data_url(), filename="geleia.png")
+    assert result["name"].startswith("products/geleia-")
+    assert result["name"].endswith(".png")
+    assert result["size"] > 0
+    assert result["media_type"] == "image/png"
+    assert result["name"] in result["url"]
+
+
+def test_photo_upload_endpoint_stores_and_returns_url(client, operator, catalog, tmp_path):
+    from django.test import override_settings
+
+    client.force_login(operator)
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        response = client.post(
+            PHOTO_UPLOAD_URL,
+            {"image": _png_data_url(), "filename": "geleia.png"},
+            content_type="application/json",
+        )
+    assert response.status_code == 200, response.json()
+    assert response.json()["name"].startswith("products/geleia-")
+    assert response.json()["url"].endswith(".png")
+
+
+def test_photo_upload_is_degradable_when_storage_fails(monkeypatch):
+    from django.core.files.storage import default_storage
+
+    from shopman.backstage.services.exceptions import AiAssistNotConfigured
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("storage unavailable")
+
+    monkeypatch.setattr(default_storage, "save", boom)
+    with pytest.raises(AiAssistNotConfigured):
+        catalog_service.store_product_photo(_png_data_url())
 
 def test_create_with_gtin_draft_applies_and_records_origin(client, operator, catalog, monkeypatch):
     from shopman.shop.services import attributes
