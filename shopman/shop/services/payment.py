@@ -35,7 +35,7 @@ from django.utils.dateparse import parse_datetime
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
-from shopman.shop.services import payment_deadline
+from shopman.shop.services import order_composition, payment_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,10 @@ def initiate(order) -> None:
         settle_terminal_tenders(order)
         return
 
-    amount_q = order.total_q
+    # O total que vale AGORA: pedido editado enquanto novo (concierge, Gestor)
+    # tem o total no ajuste, e o ``total_q`` selado é o de nascimento. Cobrar o
+    # selado mandava ao cliente um Pix com o valor antigo (P0-6).
+    amount_q = order_composition.effective_total_q(order)
     adapter = get_adapter("payment", method=method)
     route_by_persisted_gateway = str(method).lower() == "pix"
     expected_gateway = (
@@ -122,6 +125,10 @@ def initiate(order) -> None:
     # pending/authorized mock charge is kept for explicit reconciliation; it is
     # neither adopted by Efí nor silently cancelled/replaced.  Captured remains
     # a payment fact and is never charged again.
+    if (intent_ref := payment_data.get("intent_ref")) and not _retire_intent_with_old_amount(
+        order, payment_data=payment_data, method=method, amount_q=amount_q, intent_ref=intent_ref,
+    ):
+        return
     if intent_ref := payment_data.get("intent_ref"):
         persisted = _payman_intent(intent_ref)
         if (
@@ -139,7 +146,7 @@ def initiate(order) -> None:
                 order,
                 payment_data=payment_data,
                 method=method,
-                amount_q=order.total_q,
+                amount_q=amount_q,
                 error=(
                     f"A cobrança pendente pertence ao gateway {persisted.gateway or 'local'}, "
                     f"mas Pix agora usa {expected_label}. Reconcilie a cobrança anterior antes de gerar outra."
@@ -292,10 +299,59 @@ def initiate(order) -> None:
     )
 
 
+_INTENT_PRESENTATION_KEYS = ("intent_ref", "idempotency_key", "qr_code", "copy_paste", "expires_at", "checkout_url")
+
+
+def _retire_intent_with_old_amount(order, *, payment_data: dict, method: str, amount_q: int, intent_ref: str) -> bool:
+    """A cobrança viva do pedido tem o valor de antes da edição? Cancela e libera a nova.
+
+    O cliente nunca pode ter na mão um QR com o valor errado: a cobrança
+    pendente (ou autorizada) com valor diferente do total efetivo é cancelada no
+    provedor (``cancel_stale_intents``, que só dá baixa local depois do sim do
+    gateway) e o ``order.data["payment"]`` perde os dados dela, para o
+    ``initiate`` abrir a cobrança com o valor novo.
+
+    Devolve ``False`` quando a cobrança velha não pôde ser cancelada: o erro fica
+    gravado no pedido e nada novo é criado (dois QR vivos com valores diferentes
+    é pior do que nenhum). Cobrança capturada é fato e não se toca aqui.
+    """
+    persisted = _payman_intent(intent_ref)
+    if persisted is None or persisted.status not in {"pending", "authorized"}:
+        return True
+    if int(persisted.amount_q or 0) == int(amount_q):
+        return True
+    cancel_stale_intents(order, keep_intent_ref="", reason="superseded_by_order_edit")
+    refreshed = _payman_intent(intent_ref)
+    if refreshed is None or refreshed.status in {"pending", "authorized"}:
+        _record_initiate_error(
+            order,
+            payment_data=payment_data,
+            method=method,
+            amount_q=amount_q,
+            error=(
+                "A cobrança anterior tem o valor de antes da alteração e não pôde ser cancelada. "
+                "Cancele essa cobrança antes de gerar outra."
+            ),
+        )
+        return False
+    logger.info(
+        "payment.initiate: retired %s intent %s (amount %s) for order %s, new total %s",
+        method, intent_ref, persisted.amount_q, order.ref, amount_q,
+    )
+    for key in _INTENT_PRESENTATION_KEYS:
+        payment_data.pop(key, None)
+    data = dict(order.data or {})
+    data["payment"] = payment_data
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    return True
+
+
 def restore_existing_intent(order) -> bool:
     """Restore a persisted Payman intent to Order data without contacting a provider."""
     payment_data = dict((order.data or {}).get("payment") or {})
     method = payment_data.get("method")
+    amount_q = order_composition.effective_total_q(order)
     route_by_persisted_gateway = str(method or "").lower() == "pix"
     expected_gateway = (
         _gateway_for_adapter(get_adapter("payment", method=method)) or "__unresolved__"
@@ -313,7 +369,7 @@ def restore_existing_intent(order) -> bool:
         return (
             intent.order_ref == order.ref
             and intent.method == method
-            and intent.amount_q == order.total_q
+            and intent.amount_q == amount_q
             and (
                 not route_by_persisted_gateway
                 or intent.status == "captured"
@@ -321,11 +377,11 @@ def restore_existing_intent(order) -> bool:
             )
         )
     existing = _existing_active_intent(
-        order, method=method, amount_q=order.total_q, gateway=expected_gateway,
+        order, method=method, amount_q=amount_q, gateway=expected_gateway,
     )
     if existing is None:
         return False
-    _persist_intent(order, payment_data=payment_data, method=method, amount_q=order.total_q, intent=existing)
+    _persist_intent(order, payment_data=payment_data, method=method, amount_q=amount_q, intent=existing)
     return True
 
 
@@ -1477,7 +1533,9 @@ _PAID_STATUSES = {"captured", "paid"}
 _UNCERTAIN_STATUSES = {"unknown"}
 
 
-def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
+def cancel_stale_intents(
+    order, *, keep_intent_ref: str, reason: str = "superseded_by_captured_payment",
+) -> int:
     """Cancel same-order pending/authorized intents once one intent wins.
 
     A stale Pix QR remains payable at its provider. For Efí/mock intents the
@@ -1485,7 +1543,7 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
     provider result authorizes the local Payman transition. Other methods keep
     the established local cleanup behavior.
     """
-    if not keep_intent_ref:
+    if not keep_intent_ref and reason == "superseded_by_captured_payment":
         return 0
     try:
         from shopman.payman import PaymentService
@@ -1510,7 +1568,7 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
                             error="Adapter de origem indisponível.",
                         )
                         continue
-                    result = adapter.cancel(intent.ref, reason="superseded_by_captured_payment")
+                    result = adapter.cancel(intent.ref, reason=reason)
                     if not getattr(result, "success", False):
                         _alert_stale_intent_cancel_failed(
                             order,
@@ -1530,11 +1588,11 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
                     if refreshed.status not in {"cancelled", "failed"}:
                         PaymentService.cancel(
                             intent.ref,
-                            reason="superseded_by_captured_payment",
+                            reason=reason,
                         )
                     count += 1
                     continue
-                PaymentService.cancel(intent.ref, reason="superseded_by_captured_payment")
+                PaymentService.cancel(intent.ref, reason=reason)
                 count += 1
             except Exception as exc:
                 logger.warning(
