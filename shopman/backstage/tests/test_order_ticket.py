@@ -335,13 +335,20 @@ def test_o_QR_aponta_para_o_acompanhamento_do_pedido(shop, settings):
     assert bytes([0x1D, 0x28, 0x6B]) in papel, "faltou o comando de QR"
 
 
-def test_sem_base_de_loja_o_papel_sai_SEM_QR(shop, settings):
-    """Melhor sem QR do que com um QR que não abre nada."""
+def test_sem_base_de_loja_o_papel_sai_SEM_o_QR_do_cliente(shop, settings):
+    """Melhor sem QR do que com um QR que não abre nada.
+
+    O QR de CONFERÊNCIA da sacola (o da casa, lido no posto Saída) continua:
+    ele não depende da loja online. Sobra um QR só, e ele não é um endereço.
+    """
     settings.SHOPMAN_STOREFRONT_BASE_URL = ""
 
     papel = tickets.ticket_bytes(_order("ORD-T18"))
 
-    assert bytes([0x1D, 0x28, 0x6B]) not in papel
+    imprime_qr = bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])
+    assert b"http" not in papel
+    assert papel.count(imprime_qr) == 1
+    assert papel.count(b"VP-ORD-T18-1-1-") == 1
 
 
 # ── A janela do lote ──────────────────────────────────────────────────────

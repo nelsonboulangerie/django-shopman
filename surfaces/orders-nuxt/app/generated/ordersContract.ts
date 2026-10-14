@@ -501,6 +501,9 @@ export interface OrderCardProjection {
   undo: UndoProjection | null;
   kitchen: KitchenProgressProjection | null;
   volumes: number;
+  volumes_checked: number;
+  volumes_to_check: number;
+  volume_check_label: string;
   ready_at_iso: string;
   dispatched_at_iso: string;
   attention: string;

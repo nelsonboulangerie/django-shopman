@@ -38,6 +38,31 @@ function galleryDetail(ref) {
 }
 
 let scenario = "normal";
+// Conferência das sacolas (MOCK_VOLUMES=1): o G96 (pronto, retirada) com 3 sacolas
+// declaradas, e a bipada do leitor respondida como o servidor responde. Fora da
+// flag, o quadro não muda.
+const VOLUMES = process.env.MOCK_VOLUMES === "1";
+const DECLARED = VOLUMES ? { "PDV-261006-G96": 3, "WEB-261006-W29": 2 } : {};
+const checkedBags = new Map();
+function volumeCheck(body) {
+  const match = String(body.code || "").toUpperCase().match(/^VP-(.+)-(\d{1,2})-(\d{1,2})-[A-Z2-7]{8}$/);
+  if (!match) return { outcome: "unknown", message: "Este código não é de uma Via Pedido desta loja." };
+  const [, ref, k, n] = match;
+  const expected = String(body.expected_ref || "").toUpperCase();
+  const total = DECLARED[ref] || 1;
+  const base = { order_ref: ref, expected_ref: expected, volume: Number(k), volumes: Number(n) };
+  if (expected && expected !== ref) return { ...base, outcome: "other_order", message: "", checked: 0, total: 0, complete: false };
+  const done = checkedBags.get(ref) || new Set();
+  const repeated = done.has(Number(k));
+  done.add(Number(k));
+  checkedBags.set(ref, done);
+  return { ...base, outcome: repeated ? "repeated" : "checked", message: "", checked: done.size, total, complete: done.size >= total };
+}
+function withVolumes(card) {
+  if (!card || typeof card !== "object" || !(card.ref in DECLARED)) return card;
+  const done = checkedBags.get(card.ref);
+  return { ...card, volumes: DECLARED[card.ref], volumes_checked: done ? done.size : 0, volumes_to_check: DECLARED[card.ref] };
+}
 const LOCK_PEOPLE = [
   { id: 1, username: "ana", name: "Ana Paula" },
   { id: 2, username: "bruno", name: "Bruno" },
@@ -96,6 +121,9 @@ function queuePayload() {
   payload.generated_at = new Date().toISOString();
   q.service_day = dayInSaoPaulo(0);
   q.service_day_ends_at = dayInSaoPaulo(1) + "T00:00:00-03:00";
+  if (VOLUMES) {
+    for (const key of Object.keys(q)) if (Array.isArray(q[key])) q[key] = q[key].map(withVolumes);
+  }
   if (scenario === "empty") {
     const emptyKeys = ["intake", "prep", "expedition_pickup", "expedition_delivery",
       "expedition_delivery_transit", "preorders", "equipment_out", "equipment_available",
@@ -142,7 +170,7 @@ createServer((req, res) => {
 
   if (path === "/__visual/scenario") {
     const next = url.searchParams.get("set");
-    if (next) { scenario = next; acknowledged.clear(); }
+    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); }
     send(res, 200, { scenario });
     return;
   }
@@ -183,6 +211,16 @@ createServer((req, res) => {
   }
   if (req.method === "POST" && path.indexOf("ERR07") >= 0) {
     send(res, 409, { detail: "O pedido mudou em outra estação. Atualize e tente de novo.", field: null, errors: {} });
+    return;
+  }
+  if (req.method === "POST" && path === "/api/v1/backstage/orders/volume-check/") {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch { body = {}; }
+      send(res, 200, volumeCheck(body));
+    });
     return;
   }
   if (path === "/api/v1/backstage/orders/") {

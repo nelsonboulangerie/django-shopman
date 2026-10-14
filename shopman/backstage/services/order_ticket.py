@@ -201,16 +201,27 @@ def ticket_bytes(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     """
     from shopman.backstage.services.receipt_escpos import order_ticket
     from shopman.shop.services.storefront_links import order_tracking_url, storefront_base_url
+    from shopman.shop.services.volume_check import volume_code
 
     tracking_url = order_tracking_url(order.ref) if storefront_base_url() else ""
     name = shop_name or shop_display_name()
     total = declared_volumes(order)
     if total <= 1:
-        return order_ticket(order, shop_name=name, tracking_url=tracking_url, reprint=reprint)
+        # Uma sacola (declarada ou não): o QR de conferência diz "1 de 1". Se
+        # depois alguém declarar mais volumes, a leitura deste papel pede para
+        # reimprimir as vias, em vez de conferir pela contagem velha.
+        return order_ticket(
+            order, shop_name=name, tracking_url=tracking_url, reprint=reprint,
+            check_code=volume_code(order.ref, 1, 1),
+        )
     # Mais de um volume declarado: uma via por volume, cada uma com "Volume k de
-    # N" (a ficha vai grampeada na sacola; cada sacola leva a sua).
+    # N" e o QR de conferência daquela sacola (a ficha vai grampeada na sacola;
+    # cada sacola leva a sua).
     return b"".join(
-        order_ticket(order, shop_name=name, tracking_url=tracking_url, reprint=reprint, volume=(k, total))
+        order_ticket(
+            order, shop_name=name, tracking_url=tracking_url, reprint=reprint, volume=(k, total),
+            check_code=volume_code(order.ref, k, total),
+        )
         for k in range(1, total + 1)
     )
 

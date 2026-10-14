@@ -172,6 +172,7 @@ from .operations import (
     OrderUnassignView,
     OrderUndoHandoffView,
     OrderUndoReadyView,
+    OrderVolumeCheckView,
     OrderVolumesView,
     POSAccountBalancesView,
     POSAccountSettleView,
@@ -675,6 +676,8 @@ urlpatterns = [
         name="api-backstage-order-tickets-escpos",
     ),
     # Orders — operator actions
+    # Antes do detalhe: "volume-check" não é ref de pedido.
+    path("orders/volume-check/", OrderVolumeCheckView.as_view(), name="api-backstage-order-volume-check"),
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path(
         "orders/<str:ref>/ticket-escpos/",
