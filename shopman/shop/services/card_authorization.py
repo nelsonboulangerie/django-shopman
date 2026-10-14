@@ -89,11 +89,13 @@ def _authorized_card_intent(order):
     intent_ref = str(payment.get("intent_ref") or "")
     if method != "card" or not intent_ref:
         return None
-    try:
-        from shopman.payman import PaymentService
+    from shopman.payman import PaymentError, PaymentService
 
+    try:
         intent = PaymentService.get(intent_ref)
-    except Exception:
+    except PaymentError:
+        # Intent inexistente: não há autorização de pé para vigiar.
+        logger.info("card_authorization.intent_not_found order=%s intent=%s", order.ref, intent_ref)
         return None
     if str(intent.status or "").lower() != "authorized":
         return None
