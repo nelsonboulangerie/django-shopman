@@ -752,10 +752,14 @@ _ORDERS_FLOW_OFF = {
 }
 
 #: As ações do detalhe que o balcão executa (o resto do fluxo é do Gestor).
-_POS_DETAIL_ACTIONS = frozenset({"comment"})
+#: "Entregador voltou" (``courier-back``) também mora no balcão (dono, P=1,
+#: 14/10/2026): o MESMO gesto do Gestor, que fecha a saída inteira (entrega,
+#: dinheiro, troco e maquininha), com a mesma permissão.
+_POS_DETAIL_ACTIONS = frozenset({"comment", "courier-back"})
 
-#: As ações da corrida que o balcão executa: chamar e chamar de novo.
-_POS_COURIER_ACTIONS = frozenset({"courier-dispatch", "courier-dispatch-again"})
+#: As ações da corrida que o balcão executa: chamar, chamar de novo e cancelar a
+#: corrida antes da coleta (dono, P=1, 14/10/2026). Cotar fica no Gestor.
+_POS_COURIER_ACTIONS = frozenset({"courier-dispatch", "courier-dispatch-again", "courier-cancel"})
 
 
 @dataclass(frozen=True)
@@ -1125,8 +1129,8 @@ def _card_authorization_expires_iso(order: Order, method: str, payment_status: s
 def _courier_actions(order: Order, user, courier_block: dict | None, *, authorized: bool, refs=None) -> list[Action]:
     """As ações da corrida do entregador, as MESMAS no Gestor e no PDV.
 
-    ``refs`` filtra quais (o balcão chama e chama de novo; cancelar e cotar a
-    corrida ficam no Gestor). Sem bloco (retirada, marketplace, sem TaOn), nada.
+    ``refs`` filtra quais (o balcão chama, chama de novo e cancela a corrida;
+    cotar fica no Gestor). Sem bloco (retirada, marketplace, sem TaOn), nada.
     """
     if not courier_block:
         return []

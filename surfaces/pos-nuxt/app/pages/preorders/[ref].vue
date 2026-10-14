@@ -253,7 +253,8 @@ function goBack() {
             />
 
             <!-- O ENTREGADOR (TaOn), na encomenda de entrega da casa: o estado da
-                 corrida e o Chamar, com o bloco e as ações do Gestor (dono, 13/10). -->
+                 corrida, Chamar, Cancelar a corrida e Entregador voltou, com o bloco e as
+                 ações do Gestor (dono, 13/10 e 14/10). -->
             <PosCourierPanel
               v-if="courierPanelVisible(detail.courier)"
               :courier="detail.courier!"
@@ -261,9 +262,14 @@ function goBack() {
               :busy="actions.busy.value"
               :dispatch-action="detailAction(detail, 'courier-dispatch')"
               :dispatch-again-action="detailAction(detail, 'courier-dispatch-again')"
+              :cancel-action="detailAction(detail, 'courier-cancel')"
+              :back-action="detailAction(detail, 'courier-back')"
+              :return-lines="detail.courier_return_lines"
               :equipment-options="detail.equipment_options"
               @dispatch="actions.courierDispatch"
               @dispatch-again="actions.courierDispatchAgain"
+              @cancel="actions.courierCancel"
+              @back="actions.courierBack"
             />
 
             <!-- Os gestos de uso médio, lado a lado e menores que o principal: cada um

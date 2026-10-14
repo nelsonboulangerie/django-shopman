@@ -12,6 +12,17 @@ import type {
 import type { POSProjection } from "~/types/pos";
 import { detailAction } from "../../../operator-kit/app/presentation/orderDetail";
 
+/** Os gestos do entregador que o balcão faz (as ações do detalhe com o mesmo `ref`). */
+type CourierGesture = "courier-dispatch" | "courier-dispatch-again" | "courier-cancel" | "courier-back";
+
+/** O que o aviso diz quando o gesto passa, e o que diz quando não passa. */
+const COURIER_GESTURE_COPY: Record<CourierGesture, { done: string; failed: string }> = {
+  "courier-dispatch": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
+  "courier-dispatch-again": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
+  "courier-cancel": { done: "Cancelamento da corrida enviado à TaOn.", failed: "Não deu para cancelar a corrida." },
+  "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
+};
+
 export interface ManagerChallenge {
   code: string;
   message: string;
@@ -213,12 +224,15 @@ export function usePosPreorderActions(options: {
   }
 
   /**
-   * Chamar o entregador (TaOn): a MESMA rota do Gestor (`/orders/<ref>/courier-dispatch/`
-   * ou, depois de uma chamada sem resposta, `/courier-dispatch-again/`), com a base
-   * que o servidor mandou na ação. A custódia (troco da gaveta, maquininha) vai no
-   * mesmo corpo do Gestor. A corrida se acompanha pelo SSE dos pedidos.
+   * Os gestos do entregador (TaOn), pelas MESMAS rotas do Gestor
+   * (`/orders/<ref>/<gesto>/`), com a base que o servidor mandou na ação: chamar
+   * (`courier-dispatch`; depois de uma chamada sem resposta, `courier-dispatch-again`),
+   * cancelar a corrida antes da coleta (`courier-cancel`) e "Entregador voltou"
+   * (`courier-back`, que fecha a saída: entrega, dinheiro, troco e maquininha). A
+   * custódia da chamada (troco da gaveta, maquininha) vai no mesmo corpo do Gestor.
+   * A corrida se acompanha pelo SSE dos pedidos.
    */
-  async function courier(ref: "courier-dispatch" | "courier-dispatch-again", custody: { change_out?: string; equipment?: string[] } = {}): Promise<boolean> {
+  async function courier(ref: CourierGesture, custody: { change_out?: string; equipment?: string[] } = {}): Promise<boolean> {
     const detail = options.detail.value;
     const offered = detailAction(detail, ref);
     if (!detail || !offered?.enabled || busy.value) return false;
@@ -228,11 +242,11 @@ export function usePosPreorderActions(options: {
     try {
       await action.call(path, { body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) } });
       lastAttempt = null;
-      toast.success("Pedido de entregador enviado à TaOn.");
+      toast.success(COURIER_GESTURE_COPY[ref].done);
       await options.refresh();
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, "Não deu para chamar o entregador.")} Confira a encomenda e tente de novo.`);
+      toast.error(`${httpErrorMessage(error, COURIER_GESTURE_COPY[ref].failed)} Confira a encomenda e tente de novo.`);
       await options.refresh();
       return false;
     } finally {
@@ -248,5 +262,7 @@ export function usePosPreorderActions(options: {
     busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, comment, dismissManagerChallenge,
     courierDispatch: (custody: { change_out?: string; equipment?: string[] } = {}) => courier("courier-dispatch", custody),
     courierDispatchAgain: () => courier("courier-dispatch-again"),
+    courierCancel: () => courier("courier-cancel"),
+    courierBack: () => courier("courier-back"),
   };
 }
