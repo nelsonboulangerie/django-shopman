@@ -182,8 +182,14 @@ test("Ajustes tem as próprias seções, uma rota por lugar", async ({
   await settings.getByRole("tab", { name: "Modelos", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/templates$/);
   // O endereço antigo do panorama não existe mais (pré-go-live: zero legado).
-  const old = await page.goto("/v2");
-  expect(old?.status()).toBe(404);
+  // O artefato Nitro entrega a página de erro do SPA com transporte 200; o
+  // contrato público é o estado 404 explícito e acionável, não o detalhe do
+  // servidor que hospedou a mesma árvore Vue.
+  await page.goto("/v2");
+  await expect(
+    page.getByRole("heading", { name: "Esta página não existe" }),
+  ).toBeVisible();
+  await expect(page.getByText("Erro 404", { exact: true })).toBeVisible();
 });
 
 test("Plataformas usa detalhe modal e volta para a própria lista", async ({
