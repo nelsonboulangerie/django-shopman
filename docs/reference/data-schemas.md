@@ -1265,7 +1265,7 @@ Lido por: `hooks._on_order_created`, `ConfirmationTimeoutHandler`, `confirmation
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `method` | `string \| list[str]` | `"counter"` | `"counter"`, `"pix"`, `"card"`, `"external"`, ou lista |
-| `timeout_minutes` | `int` | `10` | Prazo do Pix: vira `pix_timeout_minutes` do adapter (validade do QR na Efí) e o pedido não pago cancela no vencimento. Só vale para Pix; o seed põe 10 nos canais `web` e `whatsapp`. Deve ser > 0 quando há Pix |
+| `timeout_minutes` | `int` | `10` | Prazo do Pix: vira `pix_timeout_minutes` do adapter (validade do QR na Efí) e o pedido não pago cancela no vencimento. Só vale para Pix; o seed põe 10 nos canais `web` e `whatsapp`. Exceção: o Pix de pedido do PDV que o cliente não leva agora (encomenda, entrega, data futura; `order_helpers.is_counter_takeaway` falso) vence no prazo do link, o de `link_timeout_minutes` abaixo (P2-26). Deve ser > 0 quando há Pix |
 | `link_timeout_minutes` | `int` | `120` | Janela do **link de pagamento** (pedido remoto do PDV), contada da venda. É o teto: o link vence em `min(agora + janela, corte do atendimento)` — início da janela combinada ou fechamento da loja no dia do compromisso (`shop/services/payment_deadline`) — preso à régua do Stripe (30 min–24 h). Deve ser > 0 |
 
 Property: `available_methods` → sempre retorna lista.
