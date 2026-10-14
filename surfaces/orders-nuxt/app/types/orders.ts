@@ -137,6 +137,8 @@ export interface OrderQueueResponse extends ReadMetadata {
 
 export interface OrderDetailResponse extends ReadMetadata {
   order: OperatorOrderProjection;
+  /** A impressora desta estação (a Via Pedido sai por ela). */
+  device_agent?: StationDeviceAgent;
 }
 
 export interface AlertProjection {

@@ -35,6 +35,7 @@ import {
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
 import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
@@ -101,6 +102,8 @@ const { canManageOrders } = useGestorAccess();
 
 // A DANFE da sacola sai sozinha pelo servidor; o card imprime ou reimprime à mão.
 const danfePrint = useDanfePrint(deviceAgent, refresh);
+// A Via Pedido no ⋯ de cada pedido (cartão e Grade), pela impressora desta estação.
+provideOrderTicketPrinter(deviceAgent);
 
 function handleSoundAction() {
   if (!soundOn.value || soundBlocked.value) {

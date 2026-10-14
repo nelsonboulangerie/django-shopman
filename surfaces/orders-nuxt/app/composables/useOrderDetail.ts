@@ -57,6 +57,9 @@ export function useOrderDetail(orderRef: string) {
     () => data.value?.order ?? (error.value ? lastConfirmed.value : null),
   );
 
+  // A impressora desta estação, a mesma que o quadro recebe (a Via Pedido sai por ela).
+  const deviceAgent = computed(() => data.value?.device_agent ?? null);
+
   const busy = ref(false);
   const mutationError = ref("");
 
@@ -315,6 +318,7 @@ export function useOrderDetail(orderRef: string) {
   return {
     readMetadata,
     order,
+    deviceAgent,
     pending,
     error,
     refresh,

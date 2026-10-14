@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// O ⋯ de um pedido: atender, seleção em lote, declarar volumes, voltar para a estação
-// e abrir o pedido. Uma peça só para o cartão do quadro e a linha da Grade (dono,
+// O ⋯ de um pedido: atender, seleção em lote, declarar volumes, imprimir a Via Pedido,
+// voltar para a estação e abrir o pedido. Uma peça só para o cartão do quadro e a linha da Grade (dono,
 // 07/10/2026: as opções sumiam da Grade), para as duas nunca divergirem.
 // É o `OperatorMoreMenu`, o ⋯ único do kit; os volumes, que pedem um número, abrem um modal
 // próprio (o editor não cabe dentro de um menu).
@@ -8,6 +8,8 @@ import type { OrderCardProjection } from "~/types/orders";
 import { computed, ref } from "vue";
 import { splitRef } from "~/presentation/board";
 import { kitchenRecallOptions } from "~/presentation/kitchen";
+import { orderTicketMenuItem } from "~/presentation/orderTicket";
+import { useOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 
 const props = withDefaults(
   defineProps<{
@@ -45,6 +47,17 @@ function saveVolumes() {
   emit("volumes", volumesDraft.value);
 }
 
+// A Via Pedido (P2-19): o mesmo papel que o PDV imprime. Só para quem gerencia
+// (a rota pede `shop.manage_orders`, a mesma régua do "Abrir o pedido").
+const ticketPrinter = useOrderTicketPrinter();
+const ticketItem = computed(() =>
+  ticketPrinter && props.canOpen
+    ? orderTicketMenuItem(ticketPrinter.agent.value, {
+        printing: ticketPrinter.isPrinting(props.card.ref),
+      })
+    : null,
+);
+
 const items = computed(() => [
   ...(props.canOpen
     ? [
@@ -81,6 +94,15 @@ const items = computed(() => [
           "data-card-volumes": "",
           disabled: props.busy || !volumesAction.value.enabled,
           onSelect: openVolumes,
+        },
+      ]
+    : []),
+  ...(ticketItem.value
+    ? [
+        {
+          ...ticketItem.value,
+          "data-card-order-ticket": "",
+          onSelect: () => void ticketPrinter?.print(props.card.ref),
         },
       ]
     : []),

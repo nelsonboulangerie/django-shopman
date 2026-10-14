@@ -1823,7 +1823,9 @@ class OrderDetailView(OperationalObservationMixin, APIView):
         # chamada por card viraria enxurrada no provedor.
         _reconcile_payment_if_due(order)
         proj = build_operator_order(order, user=request.user)
-        return Response(read_data(order=projection_data(proj)))
+        # A impressora desta estação, a mesma que o quadro recebe: o "Imprimir Via
+        # Pedido" do detalhe sai por ela (P2-19).
+        return Response(read_data(order=projection_data(proj), device_agent=_station_device_agent(request)))
 
 
 @extend_schema_view(
