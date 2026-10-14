@@ -374,6 +374,12 @@ const SALE_ITEMS = [
   { line_id: "L-aaaa0002", sku: "PAIN-CHOC", name: "Pain au chocolat", price_q: 1290, qty: 1, notes: "" },
   { line_id: "L-aaaa0003", sku: "CAFE-COADO", name: "Café coado", price_q: 690, qty: 2, notes: "" },
 ];
+// A prévia do desconto da linha (MOCK_LINE_DISCOUNT=1): R$ 1,00 POR UNIDADE em três
+// cafés, e 10% no croissant. O selo diz "por unidade · na linha" (dono, 14/10/2026).
+if (SALE && process.env.MOCK_LINE_DISCOUNT === "1") {
+  SALE_ITEMS[0] = { ...SALE_ITEMS[0], list_price_q: 1150, charged_price_q: 1035, discount: { type: "percent", value: 10, reason: "cortesia" } };
+  SALE_ITEMS[2] = { ...SALE_ITEMS[2], qty: 3, list_price_q: 690, charged_price_q: 590, discount: { type: "fixed", value: 1, reason: "cortesia" } };
+}
 // A comanda CHEIA (13): nove linhas, nomes compridos, uma já na cozinha e três que
 // esperam o envio. É o retrato da coluna da comanda apertada (pedido do dono, 10/10).
 const FULL_ITEMS = [

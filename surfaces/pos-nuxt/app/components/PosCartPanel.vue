@@ -21,8 +21,11 @@ import {
   selectionView,
 } from "~/presentation/selection";
 import {
+  discountReachText,
+  draftDiscountReach,
   lineDiscountBadge,
-  lineListUnitQ,
+  lineDiscountDetail,
+  lineDiscountFact,
   lineListTotalDisplay,
   lineTotalQ,
   unitChargedQ,
@@ -382,9 +385,15 @@ function discountBadge(item: POSCartItem) {
     (lineListTotalDisplay(item) ? "Desconto aplicado" : "")
   );
 }
+/** O selo na linha: o alcance do desconto, sem o motivo. "−R$ 1,00 por unidade ·
+ *  −R$ 3,00 na linha" quando a linha tem mais de uma unidade (o desconto em R$ é
+ *  por unidade, regra do kernel); em %, o percentual e o valor na linha. */
 function compactDiscount(item: POSCartItem) {
-  const label = discountBadge(item);
-  return (label.match(/−.+$/)?.[0] || label).replace(/(\d)\.(\d)/g, "$1,$2");
+  return lineDiscountFact(item) || discountBadge(item);
+}
+/** O detalhe da linha aberta: o motivo e o alcance. */
+function discountDetail(item: POSCartItem) {
+  return lineDiscountDetail(item, reasonOptions.value) || discountBadge(item);
 }
 // O teclado age sobre a linha selecionada, em três modos: "qty" (inteiro, o
 // primeiro dígito substitui), "disc" (desconto em %) e "disc_brl" (desconto em
@@ -708,6 +717,18 @@ function cancelDiscount() {
   setMode("qty");
 }
 // Na célula estreita o desconto vigente diz só o valor ("10%"), com o ícone.
+/** O alcance do que está sendo digitado, na linha aberta: "R$ 1,00 por unidade ·
+ *  R$ 3,00 na linha" (só com mais de uma unidade) ou "10% · R$ 2,07 na linha".
+ *  No lote (várias marcadas) cada linha tem a sua conta, e o painel não soma. */
+const discountDraftReach = computed(() => {
+  const item = activeItem.value;
+  if (selectMode.value || !item || !discountOpen.value) return "";
+  const value =
+    discountKind.value === "fixed" ? moneyEntryToReais(numpadBuffer.value) : clampPercent(numpadBuffer.value);
+  const reach = draftDiscountReach(item, discountKind.value, value);
+  if (!reach || (reach.percent === null && !reach.multiUnit)) return "";
+  return discountReachText(reach);
+});
 const discountShortLabel = computed(() => {
   const discount = activeItem.value?.discount;
   if (!discount?.value) return "";
@@ -1752,7 +1773,11 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         @click="chooseMode(mode.ref)"
       />
       <p class="col-span-2 flex items-baseline justify-between gap-2 op-label text-muted-foreground" data-pos-discount-value>
-        <span>{{
+        <!-- Com o valor digitado, o rótulo vira o alcance: "R$ 1,00 por unidade ·
+             R$ 3,00 na linha" (o R$ é por unidade, regra do kernel) ou "10% · R$ 2,07
+             na linha". -->
+        <span v-if="discountDraftReach" class="font-semibold text-foreground tnum" data-pos-discount-reach>{{ discountDraftReach }}</span>
+        <span v-else>{{
           selectMode
             ? `Desconto em ${selection.units} ${selection.units === 1 ? "item" : "itens"}`
             : numpadMode === "disc_brl"
@@ -1999,10 +2024,14 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                   <span v-if="isWeighedLine(item)" class="shrink-0">{{ formatBRL(unitChargedQ(item)) }}/kg</span>
                   <span
                     v-if="discountBadge(item)"
-                    class="inline-flex shrink-0 items-center gap-1 font-semibold text-primary"
+                    class="inline-flex min-w-0 items-start gap-1 font-semibold text-primary"
                     data-line-discount-fact
-                    :title="discountBadge(item)"
-                    ><Icon name="lucide:percent" class="size-3.5" aria-hidden="true" /><template v-if="!isWeighedLine(item)">{{ formatBRL(lineListUnitQ(item)) }} </template>{{ compactDiscount(item) }}</span
+                    :title="discountDetail(item)"
+                    ><Icon name="lucide:percent" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" /><span class="flex min-w-0 flex-wrap gap-x-1"><span
+                      v-for="(part, index) in compactDiscount(item).split(' · ')"
+                      :key="index"
+                      class="whitespace-nowrap"
+                      >{{ index ? ` ${part}` : part }}{{ index < compactDiscount(item).split(' · ').length - 1 ? " ·" : "" }}</span></span></span
                   >
                   <!-- O fato da cozinha É a porta do card dela (estação, disparo, estado):
                        a linha não carrega enfeite à direita (v4). -->
@@ -2044,11 +2073,11 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
               class="w-full px-3.5 pb-2 op-micro leading-relaxed"
             >
               <p v-if="discountBadge(item)" class="mt-1">
-                {{ discountBadge(item) }}
+                {{ discountDetail(item) }}
               </p>
               <p v-if="lineListTotalDisplay(item)" class="text-muted-foreground">
                 De
-                <span class="line-through" :title="discountBadge(item)">{{
+                <span class="line-through" :title="discountDetail(item)">{{
                   lineListTotalDisplay(item)
                 }}</span>
                 por {{ formatBRL(lineTotalQ(item)) }}

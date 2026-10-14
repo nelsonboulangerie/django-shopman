@@ -269,6 +269,31 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
     expect(wrapper.emitted("setDiscount")?.[0]?.slice(0, 2)).toEqual(["L-CAFE", 5]);
   });
 
+  it("desconto em R$ com mais de uma unidade diz por unidade e na linha, no editor e no selo", async () => {
+    const cafe = item({ sku: "CAFE", name: "Café", price_q: 300, qty: 3, list_price_q: 300 });
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [item({ sku: "PAO", name: "Pão" }), cafe] }) });
+    await open(wrapper);
+    await wrapper.find("[data-pos-line-discount]").trigger("click");
+    const reais = wrapper.findAll("[data-pos-discount-panel] button").find((b) => b.text() === "Em R$");
+    await reais!.trigger("click");
+    await wrapper.find('[aria-label="Dígito 1"]').trigger("click");
+    expect(wrapper.find("[data-pos-discount-reach]").text()).toBe(`${formatBRL(100)} por unidade · ${formatBRL(300)} na linha`);
+    // Em %: o valor na linha também.
+    const pct = wrapper.findAll("[data-pos-discount-panel] button").find((b) => b.text() === "Em %");
+    await pct!.trigger("click");
+    await wrapper.find('[aria-label="Dígito 1"]').trigger("click");
+    await wrapper.find('[aria-label="Dígito 0"]').trigger("click");
+    expect(wrapper.find("[data-pos-discount-reach]").text()).toBe(`10% · ${formatBRL(90)} na linha`);
+
+    const discounted = await mountSuspended(PosCartPanel, {
+      props: props({
+        items: [{ ...cafe, charged_price_q: 200, discount: { type: "fixed", value: 1, reason: "cortesia" } }],
+      }),
+    });
+    const fact = discounted.find("[data-line-discount-fact]").text();
+    expect(fact).toBe(`−${formatBRL(100)} por unidade · −${formatBRL(300)} na linha`);
+  });
+
   it("as teclas moram nos botões, não numa frase: Remover diz Del, Enviar F9, Transferir F10", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await open(wrapper);
