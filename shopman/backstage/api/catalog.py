@@ -52,8 +52,15 @@ class CatalogMatrixView(_CatalogBase):
             product_create_action,
         )
 
-        collection_ref = (request.query_params.get("collection") or "").strip()
-        matrix = build_catalog_matrix(collection_ref, user=request.user)
+        params = request.query_params
+        collection_ref = (params.get("collection") or "").strip()
+        query = (params.get("q") or "").strip()
+        order = (params.get("order") or "name").strip()
+        filters = {name: params.get(name) == "true"
+            for name in ("is_published", "is_sellable") if params.get(name) in ("true", "false")}
+        matrix = build_catalog_matrix(collection_ref, user=request.user, query=query, order=order,
+            page=as_int(params, "page", default=1) or 1,
+            page_size=as_int(params, "page_size", default=50) or 50, filters=filters)
         actions = (*curation_actions(collection_ref, request.user), product_create_action(request.user))
         return Response(read_data(matrix=projection_data(matrix), collection_ref=collection_ref,
             actions=[projection_data(action) for action in actions]))

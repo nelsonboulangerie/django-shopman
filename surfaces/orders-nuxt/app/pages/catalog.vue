@@ -9,7 +9,6 @@ import {
   cellPrice,
   cellSyncView,
   cellView,
-  filterRows,
   letterTile,
   rowStatus,
   surfaceDisplayIcon,
@@ -36,6 +35,7 @@ import type {
   AssistableField,
   CatalogRowProjection,
   CollectionProjection,
+  CatalogOrder,
   CreateProductPayload,
   DuplicateSnapshot,
   ProductDetailPatch,
@@ -45,9 +45,20 @@ import type {
   SurfaceCellProjection,
   SurfaceProjection,
 } from "~/types/catalog";
+import { refDebounced } from "@vueuse/core";
+
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const collectionRef = ref("");
+// A busca, a ordenação e a página são do SERVIDOR (onda 1, fatia B): mudar
+// qualquer um refaz a consulta, e a matriz não vem mais inteira.
+const query = ref("");
+// A busca só vira consulta 300 ms depois da última tecla: cada tecla não é um GET.
+const searchTerm = refDebounced(query, 300);
+const catalogPage = ref(1);
+const catalogOrder = ref<CatalogOrder>("name");
+// O cabeçalho "Produto" ordena no BANCO; a tabela é quem manda o estado.
+const catalogSorting = ref<{ id: string; desc: boolean }[]>([]);
 const {
   readMetadata,
   realtime,
@@ -85,7 +96,11 @@ const {
   fetchDuplicateSnapshot,
   duplicateProduct,
   enhancePhoto,
-} = useCatalogMatrix(collectionRef);
+} = useCatalogMatrix(collectionRef, {
+  search: searchTerm,
+  page: catalogPage,
+  order: catalogOrder,
+});
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
 // Cabeçalho de uma linha (UX-KIT-V1): a hora da última leitura útil ao lado do título.
@@ -142,6 +157,7 @@ const catalogColumns = computed(() => [
     id: "product",
     header: "Produto",
     enableHiding: false,
+    enableSorting: true,
     meta: {
       class: { th: "sm:min-w-[260px]", td: "sm:min-w-[260px] py-2" },
     },
@@ -201,7 +217,7 @@ const syncColor = (
         ? "warning"
         : "neutral";
 const catalogCountLine = computed(() => {
-  const total = matrix.value?.rows?.length ?? 0;
+  const total = matrix.value?.total ?? rows.value.length;
   const shown = rows.value.length;
   const products =
     shown === total
@@ -217,15 +233,31 @@ const catalogCountLine = computed(() => {
     );
   return parts.join(" · ");
 });
-const query = ref("");
-// Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
-// fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
-// servidor. Aqui é tudo client-side — a matriz já veio inteira.
+// Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) sobre a
+// PÁGINA que o servidor devolveu. Busca, ordem e paginação são do BANCO; estas
+// dimensões ainda são da tela.
 // Chegando de um checklist de canal (`?surface=ifood&sync=error`), a tela já abre recortada.
 const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
-const searched = computed<CatalogRowProjection[]>(() =>
-  filterRows(matrix.value?.rows ?? [], query.value),
+const searched = computed<CatalogRowProjection[]>(() => matrix.value?.rows ?? []);
+// Conjunto novo (busca/coleção) volta para a primeira página.
+watch(searchTerm, () => {
+  catalogPage.value = 1;
+});
+watch(collectionRef, () => {
+  catalogPage.value = 1;
+});
+const totalPages = computed(() =>
+  Math.max(
+    1,
+    Math.ceil((matrix.value?.total ?? 0) / (matrix.value?.page_size || 50)),
+  ),
 );
+watch(catalogSorting, (sorting) => {
+  const first = sorting[0];
+  if (!first || first.id !== "product") return;
+  catalogOrder.value = first.desc ? "-name" : "name";
+  catalogPage.value = 1;
+});
 // As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
 // senão marcar uma opção zeraria as contagens das outras.
 const dimensions = computed(() =>
@@ -1606,6 +1638,7 @@ useHead({ title: "Catálogo" });
         view-key="orders-catalog"
         caption="Produtos e disponibilidade por canal"
         data-catalog-matrix
+        v-model:sorting="catalogSorting"
         @retry="refresh()"
       >
         <template v-if="Object.keys(filters).length" #empty-actions>
@@ -2025,6 +2058,37 @@ useHead({ title: "Catálogo" });
           </template>
         </template>
       </OperatorTable>
+
+      <!-- Paginação do SERVIDOR (fatia B): a matriz não vem inteira. -->
+      <div
+        v-if="(matrix?.total ?? 0) > (matrix?.page_size ?? 50) || catalogPage > 1"
+        class="flex flex-wrap items-center justify-between gap-2"
+        data-catalog-pagination
+      >
+        <p class="text-xs text-muted-foreground">
+          Página {{ matrix?.page ?? 1 }} de {{ totalPages }} ·
+          <span class="tabular-nums">{{ matrix?.total ?? 0 }}</span>
+          {{ (matrix?.total ?? 0) === 1 ? "produto" : "produtos" }}
+        </p>
+        <div class="flex items-center gap-1.5">
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Anterior"
+            icon="i-lucide-chevron-left"
+            :disabled="catalogPage <= 1 || pending"
+            @click="catalogPage = Math.max(1, catalogPage - 1)"
+          />
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Próxima"
+            trailing-icon="i-lucide-chevron-right"
+            :disabled="!matrix?.has_next || pending"
+            @click="catalogPage += 1"
+          />
+        </div>
+      </div>
     </section>
 
     <!-- A barra de seleção da suíte: abaixo do `lg`, na base (a do topo mora no

@@ -817,7 +817,11 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     client.force_login(operator)
     matrix = client.get(MATRIX_URL).json()["matrix"]
 
-    assert set(matrix) == {"surfaces", "rows", "collections", "vocation_pending"}
+    assert set(matrix) == {
+        "surfaces", "rows", "collections", "vocation_pending",
+        # Paginação/filtro/ordenação no servidor (onda 1, fatia B).
+        "total", "page", "page_size", "has_next", "order", "query",
+    }
 
     surface = matrix["surfaces"][0]
     assert set(surface) == {

@@ -106,7 +106,24 @@ export interface CatalogMatrixProjection {
   collections: CollectionProjection[];
   // Produtos à venda sem vocação, da loja inteira (não do recorte de coleção).
   vocation_pending: VocationPending[];
+  // Paginação/filtro/ordenação no SERVIDOR (onda 1, fatia B): a matriz não vem
+  // inteira, e `total`/`has_next` dizem o tamanho da consulta.
+  total: number;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+  order: CatalogOrder;
+  query: string;
 }
+
+export type CatalogOrder =
+  | "name"
+  | "-name"
+  | "sku"
+  | "-sku"
+  | "price"
+  | "-price"
+  | "updated";
 
 export interface VocationPending {
   sku: string;

@@ -40,7 +40,21 @@ export interface CellPatch {
 // Escrita PIM: um subconjunto dos campos sociais (merge parcial no backend).
 export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 
-export function useCatalogMatrix(collectionRef?: Ref<string>) {
+export interface CatalogListOptions {
+  /** Busca textual (nome/SKU) — filtrada no BANCO. */
+  search?: Ref<string>;
+  /** Página corrente (1-based). */
+  page?: Ref<number>;
+  /** Linhas por página (o servidor tem teto). */
+  pageSize?: Ref<number>;
+  /** Ordenação: name | sku | price | updated. */
+  order?: Ref<string>;
+}
+
+export function useCatalogMatrix(
+  collectionRef?: Ref<string>,
+  list: CatalogListOptions = {},
+) {
   const intentions = useOrderIntention();
   const detailActions = new Map<string, Action>();
   const productConflicts = ref<Record<string, ProductEditConflict>>({});
@@ -56,9 +70,13 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     return conflict.product;
   }
   const path = "/api/v1/backstage/catalog/";
-  // Reactive collection filter → server-side row scoping (smart-aware via
-  // product_queryset). Changing the ref refetches the matrix.
+  // Recorte, busca, ordenação e página são do SERVIDOR: mudar qualquer um
+  // refaz a consulta (a chave inclui todos).
   const collection = collectionRef ?? ref("");
+  const search = list.search ?? ref("");
+  const page = list.page ?? ref(1);
+  const pageSize = list.pageSize ?? ref(50);
+  const order = list.order ?? ref("name");
   const resourceKey = useOperatorResourceKey("catalog-matrix");
   const {
     data,
@@ -66,16 +84,21 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     error,
     refresh: fetchMatrix,
   } = useFetch<CatalogMatrixResponse>(path, {
-    key: computed(() => `${resourceKey}:${collection.value}`),
+    key: computed(() =>
+      [resourceKey, collection.value, search.value, order.value, page.value, pageSize.value].join(":"),
+    ),
     server: true,
-    query: { collection },
+    query: { collection, q: search, order, page, page_size: pageSize },
     dedupe: "defer",
     onResponseError: operatorSessionOnError,
   });
 
   const refresh = coalesceRefresh(() => fetchMatrix());
   const matchesScope = (value: CatalogMatrixResponse | null | undefined) =>
-    (value?.collection_ref ?? "") === collection.value;
+    (value?.collection_ref ?? "") === collection.value &&
+    (value?.matrix?.query ?? "") === search.value &&
+    (value?.matrix?.page ?? 1) === page.value &&
+    (value?.matrix?.order ?? "name") === order.value;
   const readMetadata = useReadMetadata(
     computed(() => (matchesScope(data.value) ? data.value : null)),
     error,
