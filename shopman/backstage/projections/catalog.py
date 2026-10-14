@@ -558,7 +558,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
 
     ``collection_ref`` (opcional) recorta os produtos daquela coleção
     (``product_queryset()``, smart-aware). ``query`` busca em nome e SKU;
-    ``filters`` aceita ``is_published``/``is_sellable``; ``order`` é uma das
+    ``filters`` aceita ``is_published``/``is_sellable``/``has_vocation``/``surface``; ``order`` é uma das
     chaves de ``_CATALOG_ORDERS``; a página é do BANCO — só as linhas dela viram
     projection. As coleções e a vocação pendente continuam da casa inteira.
     """
@@ -598,6 +598,27 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         products = products.filter(is_published=bool(filters["is_published"]))
     if filters.get("is_sellable") is not None:
         products = products.filter(is_sellable=bool(filters["is_sellable"]))
+    if filters.get("has_vocation") is not None:
+        # Vocação mora fora do produto (``ProductConsumptionTag``): o recorte é
+        # por SKU, no banco, para o total e o has_next contarem o conjunto.
+        from shopman.backstage.models import ProductConsumptionTag
+
+        tagged = ProductConsumptionTag.objects.values_list("sku", flat=True)
+        products = products.filter(sku__in=tagged) if filters["has_vocation"] else products.exclude(sku__in=tagged)
+    surface_refs = [str(ref) for ref in (filters.get("surface") or []) if ref]
+    if surface_refs:
+        # Canal transaciona = tem ListingItem; feed = pertence às coleções do
+        # recorte. As duas condições vão para a MESMA query, com distinct.
+        feed_members: set[str] = set()
+        clauses = Q()
+        for ref in surface_refs:
+            if ref in display_index:
+                feed_members |= set(display_index[ref]["members"])
+            else:
+                clauses |= Q(listing_items__listing__ref=ref)
+        if feed_members:
+            clauses |= Q(sku__in=feed_members)
+        products = products.filter(clauses).distinct()
     order_key = order if order in _CATALOG_ORDERS else "name"
     if collection_ref and not collection_smart and not term and order_key == "name":
         # Coleção manual mantém a ordem curada (arraste), salvo busca/ordenação explícita.

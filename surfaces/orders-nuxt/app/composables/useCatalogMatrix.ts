@@ -49,6 +49,8 @@ export interface CatalogListOptions {
   pageSize?: Ref<number>;
   /** Ordenação: name | sku | price | updated. */
   order?: Ref<string>;
+  /** Facetas da FilterBar. As suportadas viram query do SERVIDOR. */
+  filters?: Ref<Record<string, string[]>>;
 }
 
 export function useCatalogMatrix(
@@ -77,6 +79,14 @@ export function useCatalogMatrix(
   const page = list.page ?? ref(1);
   const pageSize = list.pageSize ?? ref(50);
   const order = list.order ?? ref("name");
+  const activeFilters = list.filters ?? ref<Record<string, string[]>>({});
+  // Só as facetas que o servidor aplica viram parâmetro. Faceta que filtraria
+  // só a página fica FORA do painel (ver PAGINATED_UNAVAILABLE_FACETS).
+  const facet = (id: string) => computed(() => activeFilters.value[id]?.[0] ?? "");
+  const isPublished = facet("is_published");
+  const isSellable = facet("is_sellable");
+  const hasVocation = facet("has_vocation");
+  const surfaceFilter = computed(() => (activeFilters.value["surface"] ?? []).join(","));
   const resourceKey = useOperatorResourceKey("catalog-matrix");
   const {
     data,
@@ -85,10 +95,31 @@ export function useCatalogMatrix(
     refresh: fetchMatrix,
   } = useFetch<CatalogMatrixResponse>(path, {
     key: computed(() =>
-      [resourceKey, collection.value, search.value, order.value, page.value, pageSize.value].join(":"),
+      [
+        resourceKey,
+        collection.value,
+        search.value,
+        order.value,
+        page.value,
+        pageSize.value,
+        isPublished.value,
+        isSellable.value,
+        hasVocation.value,
+        surfaceFilter.value,
+      ].join(":"),
     ),
     server: true,
-    query: { collection, q: search, order, page, page_size: pageSize },
+    query: {
+      collection,
+      q: search,
+      order,
+      page,
+      page_size: pageSize,
+      is_published: isPublished,
+      is_sellable: isSellable,
+      has_vocation: hasVocation,
+      surface: surfaceFilter,
+    },
     dedupe: "defer",
     onResponseError: operatorSessionOnError,
   });

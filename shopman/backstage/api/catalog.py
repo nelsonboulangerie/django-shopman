@@ -57,7 +57,10 @@ class CatalogMatrixView(_CatalogBase):
         query = (params.get("q") or "").strip()
         order = (params.get("order") or "name").strip()
         filters = {name: params.get(name) == "true"
-            for name in ("is_published", "is_sellable") if params.get(name) in ("true", "false")}
+            for name in ("is_published", "is_sellable", "has_vocation") if params.get(name) in ("true", "false")}
+        surface = [part.strip() for part in (params.get("surface") or "").split(",") if part.strip()]
+        if surface:
+            filters["surface"] = surface
         matrix = build_catalog_matrix(collection_ref, user=request.user, query=query, order=order,
             page=as_int(params, "page", default=1) or 1,
             page_size=as_int(params, "page_size", default=50) or 50, filters=filters)

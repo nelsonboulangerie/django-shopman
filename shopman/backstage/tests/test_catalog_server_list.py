@@ -105,3 +105,36 @@ def test_matrix_api_paginates_filters_and_orders(client, operator, catalog):
     assert [row["sku"] for row in ordered["rows"]] == ["PAO"]
     assert ordered["order"] == "price"
     assert ordered["has_next"] is True
+
+
+def test_server_filters_vocation_and_surface(catalog):
+    from shopman.backstage.models import ConsumptionRole, ProductConsumptionTag
+
+    role = ConsumptionRole.objects.create(ref="leva", label="Leva")
+    ProductConsumptionTag.objects.create(sku="PAO", role=role)
+
+    tagged = build_catalog_matrix(filters={"has_vocation": True}, page_size=10)
+    assert {row.sku for row in tagged.rows} == {"PAO"}
+    assert tagged.total == 1
+
+    untagged = build_catalog_matrix(filters={"has_vocation": False}, page_size=10)
+    assert {row.sku for row in untagged.rows} == {"BOLO"}
+
+    on_web = build_catalog_matrix(filters={"surface": ["web"]}, page_size=10)
+    assert {row.sku for row in on_web.rows} == {"PAO", "BOLO"}
+    assert on_web.total == 2
+
+    on_ifood = build_catalog_matrix(filters={"surface": ["ifood"]}, page_size=10)
+    assert {row.sku for row in on_ifood.rows} == {"PAO"}
+    assert on_ifood.total == 1
+
+
+def test_matrix_api_filters_by_facets(client, operator, catalog):
+    client.force_login(operator)
+    on_ifood = client.get(MATRIX_URL, {"surface": "ifood"}).json()["matrix"]
+    assert [row["sku"] for row in on_ifood["rows"]] == ["PAO"]
+    assert on_ifood["total"] == 1
+
+    sellable_only = client.get(MATRIX_URL, {"is_sellable": "false"}).json()["matrix"]
+    assert [row["sku"] for row in sellable_only["rows"]] == []
+    assert sellable_only["total"] == 0

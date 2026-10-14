@@ -16,9 +16,8 @@ import {
   syncErrorCount,
 } from "~/presentation/catalog";
 import {
-  catalogDimensions,
-  filterByDimensions,
   filtersFromQuery,
+  serverCatalogDimensions,
   vocationPendingFilters,
 } from "~/presentation/catalogFilters";
 import { vocationNotice } from "~/presentation/vocation";
@@ -59,6 +58,23 @@ const catalogPage = ref(1);
 const catalogOrder = ref<CatalogOrder>("name");
 // O cabeçalho "Produto" ordena no BANCO; a tabela é quem manda o estado.
 const catalogSorting = ref<{ id: string; desc: boolean }[]>([]);
+// Facetas: só as que o SERVIDOR aplica entram no painel. As demais ficam de fora
+// enquanto a lista é paginada: filtrar só a página faria total/has_next mentirem.
+const SERVER_FACETS = ["surface", "is_published", "is_sellable", "has_vocation"];
+const routeFacets = filtersFromQuery(useRoute().query);
+const droppedFacets = Object.keys(routeFacets).filter(
+  (id) => !SERVER_FACETS.includes(id),
+);
+const filters = ref<ActiveFilters>(
+  Object.fromEntries(
+    Object.entries(routeFacets).filter(([id]) => SERVER_FACETS.includes(id)),
+  ),
+);
+const filterNotice = computed(() =>
+  droppedFacets.length
+    ? "O recorte veio com envio, estoque ou dados sociais, que ainda não filtram o catálogo paginado. Confira pela busca e pelos filtros disponíveis."
+    : "",
+);
 const {
   readMetadata,
   realtime,
@@ -101,6 +117,7 @@ const {
   search: searchTerm,
   page: catalogPage,
   order: catalogOrder,
+  filters,
 });
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
@@ -234,19 +251,23 @@ const catalogCountLine = computed(() => {
     );
   return parts.join(" · ");
 });
-// Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM) sobre a
-// PÁGINA que o servidor devolveu. Busca, ordem e paginação são do BANCO; estas
-// dimensões ainda são da tela.
-// Chegando de um checklist de canal (`?surface=ifood&sync=error`), a tela já abre recortada.
-const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
+// A página já chega recortada pelo servidor. Nada é filtrado de novo aqui:
+// faceta que só alcança a página mente no total e no has_next.
 const searched = computed<CatalogRowProjection[]>(() => matrix.value?.rows ?? []);
-// Conjunto novo (busca/coleção) volta para a primeira página.
+// Conjunto novo (busca, coleção ou faceta) volta para a primeira página.
 watch(searchTerm, () => {
   catalogPage.value = 1;
 });
 watch(collectionRef, () => {
   catalogPage.value = 1;
 });
+watch(
+  filters,
+  () => {
+    catalogPage.value = 1;
+  },
+  { deep: true },
+);
 const totalPages = computed(() =>
   Math.max(
     1,
@@ -259,14 +280,9 @@ watch(catalogSorting, (sorting) => {
   catalogOrder.value = first.desc ? "-name" : "name";
   catalogPage.value = 1;
 });
-// As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
-// senão marcar uma opção zeraria as contagens das outras.
-const dimensions = computed(() =>
-  catalogDimensions(surfaces.value, searched.value),
-);
-const rows = computed<CatalogRowProjection[]>(() =>
-  filterByDimensions(searched.value, surfaces.value, filters.value),
-);
+// Só as dimensões que o servidor filtra aparecem no painel.
+const dimensions = computed(() => serverCatalogDimensions(surfaces.value));
+const rows = computed<CatalogRowProjection[]>(() => searched.value);
 // status por linha (esmaecer/foto P&B/selo) computado uma vez por refresh.
 const rowStatuses = computed(() =>
   Object.fromEntries(rows.value.map((r) => [r.sku, rowStatus(r)])),
@@ -1372,6 +1388,11 @@ useHead({ title: "Catálogo" });
       <!-- O painel de filtros único (favoritos e recortes): no celular, o ícone com o
            número na ponta da linha; na mesa, o botão e os chips. -->
       <template #filter-panel>
+        <!-- Faceta que filtraria só a página saiu do ar; o porquê fica visível. -->
+        <p class="mb-2 text-xs text-muted-foreground" data-filter-note>
+          Envio, estoque e dados sociais ainda não filtram o catálogo inteiro
+          paginado. Eles voltam quando passarem para o servidor.
+        </p>
         <OperatorFilterPanel
           v-model="filters"
           :dimensions="dimensions"
@@ -1478,6 +1499,14 @@ useHead({ title: "Catálogo" });
         variant="subtle"
         icon="i-lucide-circle-alert"
         :description="errorMsg"
+      />
+      <NuxtAlert
+        v-if="filterNotice"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-filter"
+        :description="filterNotice"
+        data-filter-notice
       />
       <!-- Vocação: aviso padrão do conjunto mínimo, em `info` (serve só ao B.I.;
            não pede pressa). A ação repete a cor do aviso (PR #1545). -->
