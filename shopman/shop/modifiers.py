@@ -621,6 +621,7 @@ class DiscountModifier:
         manual_lines = any(
             ((item.get("meta") or {}).get("manual_discount") or {}).get("value")
             for item in (session.items or [])
+            if not _is_non_merchandise_line(item)
         )
         if not promotions and not coupon_promo and not manual_lines:
             if not session.pricing:

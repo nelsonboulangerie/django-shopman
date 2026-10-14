@@ -3573,7 +3573,13 @@ def _payload_manual_discount(payload: dict) -> dict:
     if not isinstance(manual_discount, dict):
         return {}
 
-    subtotal_q = _payload_subtotal_q(payload)
+    # O teto do desconto é a MERCADORIA: a taxa de entrega não entra na base do
+    # percentual nem no limite do valor fixo. O kernel (``ManualDiscountModifier``)
+    # já rateia só sobre mercadoria; medir aqui com a taxa dentro inflava o
+    # desconto pedido e chamava o gerente por um valor que a venda não dá.
+    subtotal_q = _payload_subtotal_q(
+        {"items": [i for i in payload.get("items", []) if not _is_delivery_fee_item(i)]}
+    )
     if subtotal_q <= 0:
         return {}
 
