@@ -378,7 +378,7 @@ Canal.config  ←  Shop.defaults  ←  ChannelConfig.defaults()
 ### 5.1 Máquina de Estados
 
 ```
-NEW → CONFIRMED → PROCESSING → READY → DISPATCHED → DELIVERED → COMPLETED
+NEW → ACCEPTED → PREPARING → READY → DISPATCHED → DELIVERED → COMPLETED
   ↘ CANCELLED (de qualquer estado não-terminal)
                                                         ↘ RETURNED (pós-entrega)
 ```
@@ -398,7 +398,7 @@ NEW → CONFIRMED → PROCESSING → READY → DISPATCHED → DELIVERED → COMP
 8. Se PIX: gera QR code → cliente paga
 9. Webhook (Efi/Stripe) → payment confirmed
 10. on_payment_confirmed → stock.commit (materializa reservas)
-11. Operador prepara → PROCESSING → READY
+11. Operador prepara → PREPARING → READY
 12. Fulfillment criado → DISPATCHED → DELIVERED
 13. COMPLETED → loyalty.earn (1 ponto por R$ 1,00)
 ```
@@ -409,7 +409,7 @@ NEW → CONFIRMED → PROCESSING → READY → DISPATCHED → DELIVERED → COMP
 Pedido criado (NEW)
   ├─ Cria diretiva CONFIRMATION_TIMEOUT com available_at = now + timeout
   ├─ Se operador cancela antes do timeout → CANCELLED
-  └─ Se timeout expira sem cancelamento → auto CONFIRMED
+  └─ Se timeout expira sem cancelamento → auto ACCEPTED
 ```
 
 ### 5.4 Fluxo PIX
