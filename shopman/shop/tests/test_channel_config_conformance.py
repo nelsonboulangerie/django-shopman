@@ -447,6 +447,27 @@ class TestPricingConformance:
             cfg.validate()
 
 
+# ── Aspect 2b: métodos de pagamento declaráveis ──
+
+
+class TestPaymentMethodConformance:
+    @pytest.mark.parametrize(
+        "method",
+        ["cash", "pix", "card", "link", "credit", "debit", "account", "external"],
+    )
+    def test_channel_declares_every_method_the_system_knows(self, method):
+        """Link, crédito, débito e conta na casa existem no PDV: o canal pode declará-los."""
+        cfg = ChannelConfig.from_dict({"payment": {"method": [method], "timing": "external"}})
+        cfg.validate()
+        assert cfg.payment.available_methods == [method]
+
+    @pytest.mark.parametrize("method", ["mixed", "boleto", ""])
+    def test_channel_rejects_unknown_or_composite_method(self, method):
+        cfg = ChannelConfig.from_dict({"payment": {"method": [method], "timing": "external"}})
+        with pytest.raises(ValueError, match="payment.method inválido"):
+            cfg.validate()
+
+
 # ── Aspect 7: Editing ──
 
 

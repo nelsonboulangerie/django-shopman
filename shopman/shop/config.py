@@ -118,6 +118,10 @@ class ChannelConfig:
         # "cash"     — dinheiro no ato
         # "pix"      — PIX com QR code
         # "card"     — cartão via Stripe
+        # "link"     — link de pagamento (pedido remoto anotado no balcão)
+        # "credit"   — crédito na maquininha
+        # "debit"    — débito na maquininha
+        # "account"  — conta na casa (cliente com conta aberta)
         # "external" — já pago (marketplace)
         # ["pix", "card"] — múltiplos métodos (cliente escolhe)
         timing: str = "post_commit"
@@ -509,7 +513,10 @@ class ChannelConfig:
             raise ValueError(
                 f"timeout_minutes deve ser > 0 para mode={self.confirmation.mode}",
             )
-        valid_methods = {"cash", "pix", "card", "external"}
+        # Os métodos que o PDV e os adapters conhecem (``services/pos.py``,
+        # ``payment_gate``). ``mixed`` fica de fora: é o resultado de uma venda
+        # com mais de uma forma, não algo que um canal declara.
+        valid_methods = {"cash", "pix", "card", "link", "credit", "debit", "account", "external"}
         if not self.payment.available_methods:
             raise ValueError("payment.method deve declarar pelo menos um método")
         for m in self.payment.available_methods:
