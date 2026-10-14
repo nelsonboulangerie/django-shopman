@@ -31,6 +31,12 @@ def __getattr__(name):
         from shopman.offerman.contrib.social import schema
 
         return getattr(schema, name)
+    elif name == "ProductResource":
+        # O endpoint de import do Catálogo (framework) precisa do MESMO recurso do
+        # Admin; expor aqui mantém a paridade sem o framework importar contrib.*.
+        from shopman.offerman.contrib.import_export.resources import ProductResource
+
+        return ProductResource
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -49,5 +55,8 @@ __all__ = [
     # Dígito verificador GS1: o mesmo validador para o cadastro, a leitura da
     # NF-e de compra e a sugestão de catálogo por GTIN.
     "gtin_is_valid",
+    # O recurso de import/export do produto: o endpoint do Catálogo no framework
+    # usa o MESMO recurso do Admin (paridade), sem importar contrib.* por fora.
+    "ProductResource",
 ]
 __version__ = "0.3.0"

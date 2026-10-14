@@ -16,11 +16,20 @@ import type {
 import type {
   AiAssistResponse,
   AssistableField,
+  BulkCell,
+  BulkCellsResponse,
   CatalogMatrixProjection,
   CatalogMatrixResponse,
+  CreateProductPayload,
+  CreateProductResponse,
+  DuplicatePayload,
+  DuplicateSnapshot,
+  ImportPreview,
+  PhotoEnhanceResponse,
   ProductDetailPatch,
   ProductDetailProjection,
   ProductDetailResponse,
+  ProductDraft,
   ProductEditConflict,
   ProductSocial,
 } from "~/types/catalog";
@@ -34,8 +43,26 @@ export interface CellPatch {
 // Escrita PIM: um subconjunto dos campos sociais (merge parcial no backend).
 export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 
-export function useCatalogMatrix(collectionRef?: Ref<string>) {
+export interface CatalogListOptions {
+  /** Busca textual (nome/SKU) — filtrada no BANCO. */
+  search?: Ref<string>;
+  /** Página corrente (1-based). */
+  page?: Ref<number>;
+  /** Linhas por página (o servidor tem teto). */
+  pageSize?: Ref<number>;
+  /** Ordenação: name | sku | price | updated. */
+  order?: Ref<string>;
+  /** Facetas da FilterBar. As suportadas viram query do SERVIDOR. */
+  filters?: Ref<Record<string, string[]>>;
+}
+
+export function useCatalogMatrix(
+  collectionRef?: Ref<string>,
+  list: CatalogListOptions = {},
+) {
   const intentions = useOrderIntention();
+  const { data: operatorSession } =
+    useNuxtData<{ operator?: { id: number } }>("operator-session");
   const detailActions = new Map<string, Action>();
   const productConflicts = ref<Record<string, ProductEditConflict>>({});
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
@@ -50,9 +77,21 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     return conflict.product;
   }
   const path = "/api/v1/backstage/catalog/";
-  // Reactive collection filter → server-side row scoping (smart-aware via
-  // product_queryset). Changing the ref refetches the matrix.
+  // Recorte, busca, ordenação e página são do SERVIDOR: mudar qualquer um
+  // refaz a consulta (a chave inclui todos).
   const collection = collectionRef ?? ref("");
+  const search = list.search ?? ref("");
+  const page = list.page ?? ref(1);
+  const pageSize = list.pageSize ?? ref(50);
+  const order = list.order ?? ref("name");
+  const activeFilters = list.filters ?? ref<Record<string, string[]>>({});
+  // Só as facetas que o servidor aplica viram parâmetro. Faceta que filtraria
+  // só a página fica FORA do painel (ver PAGINATED_UNAVAILABLE_FACETS).
+  const facet = (id: string) => computed(() => activeFilters.value[id]?.[0] ?? "");
+  const isPublished = facet("is_published");
+  const isSellable = facet("is_sellable");
+  const hasVocation = facet("has_vocation");
+  const surfaceFilter = computed(() => (activeFilters.value["surface"] ?? []).join(","));
   const resourceKey = useOperatorResourceKey("catalog-matrix");
   const {
     data,
@@ -60,16 +99,42 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     error,
     refresh: fetchMatrix,
   } = useFetch<CatalogMatrixResponse>(path, {
-    key: computed(() => `${resourceKey}:${collection.value}`),
+    key: computed(() =>
+      [
+        resourceKey,
+        collection.value,
+        search.value,
+        order.value,
+        page.value,
+        pageSize.value,
+        isPublished.value,
+        isSellable.value,
+        hasVocation.value,
+        surfaceFilter.value,
+      ].join(":"),
+    ),
     server: true,
-    query: { collection },
+    query: {
+      collection,
+      q: search,
+      order,
+      page,
+      page_size: pageSize,
+      is_published: isPublished,
+      is_sellable: isSellable,
+      has_vocation: hasVocation,
+      surface: surfaceFilter,
+    },
     dedupe: "defer",
     onResponseError: operatorSessionOnError,
   });
 
   const refresh = coalesceRefresh(() => fetchMatrix());
   const matchesScope = (value: CatalogMatrixResponse | null | undefined) =>
-    (value?.collection_ref ?? "") === collection.value;
+    (value?.collection_ref ?? "") === collection.value &&
+    (value?.matrix?.query ?? "") === search.value &&
+    (value?.matrix?.page ?? 1) === page.value &&
+    (value?.matrix?.order ?? "name") === order.value;
   const readMetadata = useReadMetadata(
     computed(() => (matchesScope(data.value) ? data.value : null)),
     error,
@@ -668,6 +733,244 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
   const reorderItems = (ref_: string, ordered: string[], action?: Action) =>
     reorder("reorder-items", ref_, ordered, action);
 
+  // ── criar produto, duplicar e rascunho por GTIN (7.2, onda 1) ─────────────
+  // Criar e duplicar passam pela MESMA intenção (revise + recibo) das outras
+  // escritas. O rascunho do GTIN é leitura pura: nada é gravado até o aceite.
+  const createKey = "catalog:create-product";
+
+  function createAction() {
+    return data.value?.actions?.find(
+      (action) => action.ref === "create-product",
+    );
+  }
+
+  async function createProduct(
+    payload: CreateProductPayload,
+  ): Promise<CreateProductResponse | null> {
+    if (busy.value.has(createKey) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(createKey);
+    try {
+      const result = await intentions.executePath(
+        createKey,
+        "/api/v1/backstage/catalog/product/create/",
+        createAction(),
+        payload as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      useSonner.success("Produto criado.");
+      return result as unknown as CreateProductResponse;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível criar o produto. Confira os campos.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(createKey);
+      busy.value = next;
+    }
+  }
+
+  async function fetchProductDraft(gtin: string): Promise<ProductDraft | null> {
+    clearError();
+    try {
+      const response = await $fetch<{ draft: ProductDraft }>(
+        "/api/v1/backstage/catalog/product/draft/",
+        { method: "POST", body: { gtin } },
+      );
+      return response.draft;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível buscar os dados deste código.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    }
+  }
+
+  async function fetchDuplicateSnapshot(
+    sku: string,
+  ): Promise<DuplicateSnapshot | null> {
+    clearError();
+    try {
+      return await $fetch<DuplicateSnapshot>(
+        "/api/v1/backstage/catalog/product/duplicate/",
+        { query: { ref: sku } },
+      );
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível preparar a cópia.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    }
+  }
+
+  async function duplicateProduct(
+    snapshot: DuplicateSnapshot,
+    payload: DuplicatePayload,
+  ): Promise<CreateProductResponse | null> {
+    const key = "catalog:duplicate:" + snapshot.source.sku;
+    if (busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/product/duplicate/",
+        snapshot.action,
+        { ref: snapshot.source.sku, ...payload },
+      );
+      await refreshAfterCommit();
+      useSonner.success("Produto duplicado. Ele nasce oculto e fora de venda.");
+      return result as unknown as CreateProductResponse;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível duplicar o produto.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  // Melhoria DETERMINÍSTICA da foto. Sem provedor ligado o servidor responde 503
+  // e a tela mostra o aviso: a capability é degradável, não caminho crítico.
+  // Grava a foto no storage default e devolve a URL. Sem storage o servidor
+  // responde 503 e o painel avisa: a capability é degradável.
+  // ── tabelão: salvar o lote numa ida (fatia C) ──────────────────────────────
+  // A intenção é a mesma das outras escritas; o lote inteiro vai num POST só.
+  async function saveCells(cells: BulkCell[]): Promise<BulkCellsResponse | null> {
+    const key = "catalog:cells";
+    if (!cells.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    const action = {
+      ref: "edit-cells",
+      kind: "mutation",
+      label: "Salvar células",
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: `catalog-batch-${Date.now()}` ,
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/cells/",
+        action,
+        { cells } as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      const body = result as unknown as BulkCellsResponse;
+      const changed = body.applied?.length ?? 0;
+      if (body.conflicts?.length || body.errors?.length) {
+        errorMsg.value =
+          "Lote aplicado em parte. Confira as linhas marcadas antes de repetir.";
+      } else {
+        useSonner.success(`${changed} célula(s) atualizada(s).`);
+      }
+      return body;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível salvar o lote. Tente de novo.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+  // ── import CSV: prévia sem gravar e apply com a revisão da prévia (fatia C3)
+  async function previewImport(csv: string): Promise<ImportPreview | null> {
+    clearError();
+    try {
+      const response = await $fetch<{ preview: ImportPreview }>(
+        "/api/v1/backstage/catalog/product/import/",
+        { method: "POST", body: { csv, preview: true } },
+      );
+      return response.preview;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(error, "Não foi possível ler o CSV.");
+      useSonner.error(errorMsg.value);
+      return null;
+    }
+  }
+
+  async function applyImport(
+    csv: string,
+    preview: ImportPreview,
+  ): Promise<ImportPreview | null> {
+    const key = "catalog:product-import";
+    if (busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    const action = {
+      ref: "import-products",
+      kind: "mutation",
+      label: "Importar produtos",
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: preview.base_revision,
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+    try {
+      await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/product/import/",
+        action,
+        { csv } as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      useSonner.success("Importação aplicada.");
+      return preview;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível aplicar o CSV.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+  async function uploadPhoto(image: string, filename = ""): Promise<string> {
+    const response = await $fetch<{ url: string; name: string }>(
+      "/api/v1/backstage/catalog/product/photo/upload/",
+      { method: "POST", body: { image, filename } },
+    );
+    return response.url;
+  }
+  async function enhancePhoto(image: string): Promise<string> {
+    const response = await $fetch<PhotoEnhanceResponse>(
+      "/api/v1/backstage/catalog/product/photo/",
+      { method: "POST", body: { image } },
+    );
+    return response.image;
+  }
   return {
     readMetadata,
     realtime,
@@ -702,5 +1005,15 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     aiAssistKey,
     productConflict,
     acknowledgeProductConflict,
+    createAction,
+    createProduct,
+    fetchProductDraft,
+    fetchDuplicateSnapshot,
+    duplicateProduct,
+    enhancePhoto,
+    uploadPhoto,
+    saveCells,
+    previewImport,
+    applyImport,
   };
 }

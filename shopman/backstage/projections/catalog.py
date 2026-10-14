@@ -31,6 +31,31 @@ def product_detail_action(sku: str, detail: dict, user):
             "base_revision": mutation_fingerprint({"sku": sku, "revisions": revisions}), "base_revisions": revisions})
 
 
+def product_create_action(user):
+    """A intenção de criar um produto novo, com a revisão que a superfície carrega."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    actor_id = getattr(user, "pk", None)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    return Action(ref="create-product", kind="mutation", label="Novo produto", enabled=allowed,
+        reason="" if allowed else "Sem permissão para editar o catálogo.",
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id,
+            "base_revision": mutation_fingerprint({"operation": "catalog.product-create", "actor": actor_id})})
+
+
+def product_duplicate_action(sku: str, user):
+    """A intenção de duplicar UM produto, com a revisão do conteúdo copiável."""
+    from shopman.backstage.services.catalog import product_duplicate_revision
+
+    actor_id = getattr(user, "pk", None)
+    allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
+    revision = product_duplicate_revision(sku) if allowed else ""
+    return Action(ref="duplicate-product", kind="mutation", label="Duplicar produto",
+        enabled=allowed, reason="" if allowed else "Sem permissão para editar o catálogo.",
+        method="POST", idempotency="required",
+        payload_schema={"expected_actor_id": actor_id, "base_revision": revision, "ref": sku})
+
 def product_switch_action(product, user):
     # Same field tokens and writer as the full editor, without loading long fields.
     action = product_detail_action(product.sku, {"sku": product.sku,
@@ -256,6 +281,14 @@ class CatalogMatrixProjection:
     # Da loja inteira, não do recorte de coleção: o aviso diz quantos faltam
     # classificar, esteja a lista filtrada ou não.
     vocation_pending: tuple[VocationPendingProjection, ...] = ()
+    # Paginação/filtro/ordenação no SERVIDOR: a matriz não vem mais inteira, e o
+    # navegador não monta uma linha por produto do catálogo.
+    total: int = 0
+    page: int = 1
+    page_size: int = 0
+    has_next: bool = False
+    order: str = "name"
+    query: str = ""
 
 
 # ── builders ────────────────────────────────────────────────────────────────
@@ -503,17 +536,36 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
     return surfaces, index
 
 
-def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatrixProjection:
-    """Monta a matriz produto × superfície com o eixo coleção.
+#: Ordenações que o servidor aceita (colunas reais; nunca uma ordem inventada).
+_CATALOG_ORDERS: dict[str, tuple[str, ...]] = {
+    "name": ("name", "sku"),
+    "-name": ("-name", "sku"),
+    "sku": ("sku",),
+    "-sku": ("-sku",),
+    "price": ("base_price_q", "name"),
+    "-price": ("-base_price_q", "name"),
+    "updated": ("-updated_at",),
+}
 
-    ``collection_ref`` (opcional) filtra as linhas aos produtos daquela coleção,
-    resolvida por ``product_queryset()`` (smart-aware) — funciona para coleções
-    manuais e por regra.
+#: Teto de linhas por página. Acima disto a matriz volta a ser o que era.
+MAX_CATALOG_PAGE_SIZE = 200
+
+
+def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = "",
+    order: str = "name", page: int = 1, page_size: int = 50,
+    filters: dict | None = None) -> CatalogMatrixProjection:
+    """Monta a matriz produto × superfície com o eixo coleção, PAGINADA.
+
+    ``collection_ref`` (opcional) recorta os produtos daquela coleção
+    (``product_queryset()``, smart-aware). ``query`` busca em nome e SKU;
+    ``filters`` aceita ``is_published``/``is_sellable``/``has_vocation``/``surface``; ``order`` é uma das
+    chaves de ``_CATALOG_ORDERS``; a página é do BANCO — só as linhas dela viram
+    projection. As coleções e a vocação pendente continuam da casa inteira.
     """
     from shopman.offerman.models import Collection, Product
 
     surfaces, cells_index = _build_surfaces()
-    from django.db.models import Max, Subquery
+    from django.db.models import Max, Q, Subquery
     from django.utils import timezone
     from shopman.offerman.models import ListingItem
 
@@ -527,20 +579,57 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
     display_surfaces, display_index = _build_display_surfaces()
     surfaces = surfaces + display_surfaces
 
-    products = (
-        Product.objects.all()
-        .order_by("name")
-        .prefetch_related("keywords", "collection_items__collection")
-    )
+    # A consulta é do BANCO: busca, filtros simples e ordenação acontecem antes
+    # de materializar. A página é o único recorte que vira linha na resposta.
+    products = Product.objects.all()
+    collection_smart = False
     if collection_ref:
         coll = Collection.objects.filter(ref=collection_ref).first()
         if coll is None:
             products = products.none()
         else:
-            products = coll.product_queryset().prefetch_related("keywords", "collection_items__collection")
-            products = products.order_by("name", "sku") if coll.is_smart else products.order_by("collection_items__sort_order", "sku")
+            collection_smart = coll.is_smart
+            products = coll.product_queryset()
+    term = (query or "").strip()
+    if term:
+        products = products.filter(Q(name__icontains=term) | Q(sku__icontains=term))
+    filters = filters or {}
+    if filters.get("is_published") is not None:
+        products = products.filter(is_published=bool(filters["is_published"]))
+    if filters.get("is_sellable") is not None:
+        products = products.filter(is_sellable=bool(filters["is_sellable"]))
+    if filters.get("has_vocation") is not None:
+        # Vocação mora fora do produto (``ProductConsumptionTag``): o recorte é
+        # por SKU, no banco, para o total e o has_next contarem o conjunto.
+        from shopman.backstage.models import ProductConsumptionTag
 
-    products = list(products)
+        tagged = ProductConsumptionTag.objects.values_list("sku", flat=True)
+        products = products.filter(sku__in=tagged) if filters["has_vocation"] else products.exclude(sku__in=tagged)
+    surface_refs = [str(ref) for ref in (filters.get("surface") or []) if ref]
+    if surface_refs:
+        # Canal transaciona = tem ListingItem; feed = pertence às coleções do
+        # recorte. As duas condições vão para a MESMA query, com distinct.
+        feed_members: set[str] = set()
+        clauses = Q()
+        for ref in surface_refs:
+            if ref in display_index:
+                feed_members |= set(display_index[ref]["members"])
+            else:
+                clauses |= Q(listing_items__listing__ref=ref)
+        if feed_members:
+            clauses |= Q(sku__in=feed_members)
+        products = products.filter(clauses).distinct()
+    order_key = order if order in _CATALOG_ORDERS else "name"
+    if collection_ref and not collection_smart and not term and order_key == "name":
+        # Coleção manual mantém a ordem curada (arraste), salvo busca/ordenação explícita.
+        products = products.order_by("collection_items__sort_order", "sku")
+    else:
+        products = products.order_by(*_CATALOG_ORDERS[order_key])
+    total = products.count()
+    size = max(1, min(int(page_size or 50), MAX_CATALOG_PAGE_SIZE))
+    current = max(1, int(page or 1))
+    start = (current - 1) * size
+    products = list(products.prefetch_related("keywords", "collection_items__collection")[start:start + size])
     skus = [p.sku for p in products]
     stock_by_sku, low_stock_threshold, planned_by_sku = _stock_for(skus)
 
@@ -658,7 +747,9 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
                 sold_out=stock["sold_out"],
                 low_stock=stock["low_stock"],
                 replenish_qty=stock["replenish_qty"],
-                keywords=tuple(product.keywords.names()),
+                # `.names()` consulta o banco por produto e ignora o prefetch; a
+                # lista do cache do prefetch é a mesma e não faz N+1.
+                keywords=tuple(sorted(tag.name for tag in product.keywords.all())),
                 cells=tuple(cells),
                 social=social_view,
                 pim_complete=pim_complete,
@@ -691,4 +782,6 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None) -> CatalogMatri
 
     return CatalogMatrixProjection(
         surfaces=tuple(surfaces), rows=tuple(rows), collections=collections, vocation_pending=vocation_pending,
+        total=total, page=current, page_size=size, has_next=start + len(products) < total,
+        order=order_key, query=term,
     )

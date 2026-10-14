@@ -106,7 +106,24 @@ export interface CatalogMatrixProjection {
   collections: CollectionProjection[];
   // Produtos à venda sem vocação, da loja inteira (não do recorte de coleção).
   vocation_pending: VocationPending[];
+  // Paginação/filtro/ordenação no SERVIDOR (onda 1, fatia B): a matriz não vem
+  // inteira, e `total`/`has_next` dizem o tamanho da consulta.
+  total: number;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+  order: CatalogOrder;
+  query: string;
 }
+
+export type CatalogOrder =
+  | "name"
+  | "-name"
+  | "sku"
+  | "-sku"
+  | "price"
+  | "-price"
+  | "updated";
 
 export interface VocationPending {
   sku: string;
@@ -326,4 +343,167 @@ export interface AiAssistRequest {
 // livre em lista, então o contrato é uma string para todos os campos.
 export interface AiAssistResponse {
   suggestion: string;
+}
+
+// ── Criar produto, duplicar e rascunho por GTIN (7.2, onda 1) ────────────────
+// O rascunho do GTIN NÃO grava: as fontes (NF-e de compra -> Cosmos -> Open Food
+// Facts) vivem em `shop.services.product_enrichment`; aqui só chega o campo com a
+// ORIGEM. Quem aplica é o aceite campo a campo, no mesmo caminho do Admin.
+export interface EnrichmentFieldEntry {
+  value: unknown;
+  source: string;
+  source_ref?: string;
+  fetched_at?: string;
+  detail?: string;
+  alternatives?: { value: unknown; source: string; fetched_at?: string }[];
+}
+
+export interface EnrichmentFieldDraft extends EnrichmentFieldEntry {
+  label: string;
+  source_label: string;
+  display: string;
+}
+
+export interface CorrelationSuggestion {
+  field: string;
+  value: unknown;
+  reason: string;
+  sources: string[];
+}
+
+export interface CorrelateResult {
+  correlates: { sku: string; name: string; reasons: string[] }[];
+  suggestions: CorrelationSuggestion[];
+  notes: string[];
+}
+
+export interface ReferencePhoto {
+  url: string;
+  source: string;
+  license: string;
+  attribution: string;
+  fetched_at?: string;
+}
+
+export interface ProductDraft {
+  gtin: string;
+  fields: Record<string, EnrichmentFieldDraft>;
+  sources: string[];
+  consulted: string[];
+  skipped: Record<string, string>;
+  allergens_unmapped: string[];
+  notes: string[];
+  reference_photo: ReferencePhoto | null;
+  correlate: CorrelateResult;
+}
+
+export interface DuplicateSnapshot {
+  source: { sku: string; name: string };
+  suggested_sku: string;
+  suggested_name: string;
+  action: Action;
+}
+
+export interface CreateProductPayload {
+  sku: string;
+  name: string;
+  base_price_q?: number;
+  unit?: string;
+  unit_weight_g?: number | null;
+  short_description?: string;
+  long_description?: string;
+  keywords?: string[];
+  image_url?: string;
+  availability_policy?: string;
+  shelf_life_days?: number | null;
+  storage_tip?: string;
+  ingredients_text?: string;
+  production_cycle_hours?: number | null;
+  is_batch_produced?: boolean;
+  is_published?: boolean;
+  is_sellable?: boolean;
+  social?: Partial<ProductSocial>;
+  fiscal?: Partial<ProductFiscal>;
+  nutrition_facts?: Partial<NutritionFacts>;
+  enrichment?: { gtin: string; accept: string[]; replace?: string[] };
+  // Intenção do cadastro (fatia E): a resposta conduz o caminho.
+  intent?: "revenda" | "producao" | "insumo";
+  purchase?: boolean;
+}
+
+export interface DuplicatePayload {
+  sku: string;
+  name?: string;
+}
+export interface EnrichmentAcceptResult {
+  applied: string[];
+  conflicts: Record<string, unknown>;
+  refused: Record<string, string>;
+  sources: string[];
+  notes: string[];
+}
+
+export interface CreateProductResponse {
+  ok: boolean;
+  outcome: string;
+  product: ProductDetailProjection;
+  enrichment?: EnrichmentAcceptResult;
+}
+
+// Tabelão: uma célula do lote que vai para POST catalog/cells/ numa ida.
+export interface BulkCell {
+  sku: string;
+  surface_ref: string;
+  price_q?: number;
+  is_published?: boolean;
+  is_sellable?: boolean;
+  base_revisions?: Record<string, string>;
+}
+
+export interface BulkCellsResponse {
+  ok: boolean;
+  outcome: string;
+  applied: {
+    index: number;
+    sku: string;
+    surface_ref: string;
+    price_q: number | null;
+    is_published: boolean;
+    is_sellable: boolean;
+  }[];
+  conflicts: {
+    index: number;
+    sku: string;
+    surface_ref: string;
+    detail: string;
+    conflicting_fields?: string[];
+  }[];
+  errors: { index: number; sku: string; surface_ref: string; detail: string }[];
+}
+// Import CSV pt-BR: a prévia não grava; o apply leva a revisão da prévia.
+export interface ImportPreviewChange {
+  sku: string;
+  action: "new" | "update";
+  name: string;
+  before: {
+    name: string;
+    base_price_q: number;
+    is_published: boolean;
+    is_sellable: boolean;
+  } | null;
+}
+
+export interface ImportPreview {
+  dry_run: boolean;
+  rows: number;
+  totals: Record<string, number>;
+  errors: { row: number; detail: string }[];
+  changes: ImportPreviewChange[];
+  base_revision: string;
+}
+export interface PhotoEnhanceResponse {
+  provider: string;
+  media_type: string;
+  image: string;
+  steps: string[];
 }

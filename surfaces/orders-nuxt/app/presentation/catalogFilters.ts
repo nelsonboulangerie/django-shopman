@@ -153,6 +153,35 @@ export function catalogDimensions(
   return dimensions;
 }
 
+/**
+ * Facetas que o SERVIDOR ainda não filtra. Enquanto a lista é paginada elas NÃO
+ * entram no painel: filtrar só a página faria o total e o has_next mentirem.
+ */
+export const PAGINATED_UNAVAILABLE_FACETS: readonly string[] = [
+  FILTER_SYNC,
+  FILTER_STOCK,
+  FILTER_PIM,
+];
+
+/**
+ * Dimensões que valem com a lista paginada: o servidor filtra todas estas.
+ * Sem contagem por opção: contar sobre a página seria a mesma mentira.
+ */
+export function serverCatalogDimensions(
+  surfaces: SurfaceProjection[],
+): FilterDimension[] {
+  return [
+    {
+      id: FILTER_SURFACE,
+      label: "Canal ou feed",
+      type: "multi-select",
+      options: surfaces.map((s) => ({ value: s.ref, label: s.name })),
+    },
+    { id: FILTER_PUBLISHED, label: "Exibido", type: "boolean", options: [] },
+    { id: FILTER_SELLABLE, label: "À venda", type: "boolean", options: [] },
+    { id: FILTER_VOCATION, label: "Com vocação", type: "boolean", options: [] },
+  ];
+}
 // ── aplicação ──────────────────────────────────────────────────────────────────
 
 /** Dimensão boolean guarda ["true"] / ["false"]; ausente ou vazia = sem recorte. */
