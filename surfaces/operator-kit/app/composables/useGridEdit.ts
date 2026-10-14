@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, shallowRef } from "vue";
 
 export interface GridChange<T> {
   key: string;
@@ -10,8 +10,10 @@ export interface GridChange<T> {
  * de mudanças para salvar tudo numa ida. Não conhece domínio: guarda valores.
  */
 export function useGridEdit<T>() {
-  const draft = ref<Record<string, T>>({});
-  const history = ref<{ key: string; previous: T | undefined }[]>([]);
+  // shallowRef: o ref profundamente reativo desembrulharia T em UnwrapRef<T>,
+  // e o rascunho deixaria de ser exatamente Record<string, T>.
+  const draft = shallowRef<Record<string, T>>({});
+  const history = shallowRef<{ key: string; previous: T | undefined }[]>([]);
 
   function set(key: string, value: T) {
     if (draft.value[key] === value) return;
@@ -33,8 +35,9 @@ export function useGridEdit<T>() {
     if (!last) return;
     history.value = history.value.slice(0, -1);
     const next = { ...draft.value };
-    if (last.previous === undefined) delete next[last.key];
-    else next[last.key] = last.previous;
+    const previous = last.previous;
+    if (previous === undefined) delete next[last.key];
+    else next[last.key] = previous;
     draft.value = next;
   }
 

@@ -74,7 +74,8 @@ export function useBarcodeScanner(
         return;
       }
     } catch {
-      // Quadro sem código: o detector reclama e a gente tenta o próximo.
+      // silêncio-deliberado: quadro sem código é o normal do detector; a gente
+      // tenta o próximo quadro e nada deixa de ser reportado.
     }
     frame = requestAnimationFrame(() => void loop(detector));
   }
