@@ -108,7 +108,7 @@ class RuleConfig(models.Model):
         if not is_new:
             try:
                 old_path = RuleConfig.objects.values_list("rule_path", flat=True).get(pk=self.pk)
-            except RuleConfig.DoesNotExist:
+            except RuleConfig.DoesNotExist:  # silêncio-deliberado: pk sem linha no banco (fixture/race); não há path antigo e o save abaixo insere
                 pass
         super().save(*args, **kwargs)
         logger.warning(

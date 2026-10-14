@@ -92,6 +92,7 @@ class DiscountStackingAuditTests(TestCase):
     # ── HOLE: group discount must NOT compound on a promo line (best-wins) ───
     def test_group_discount_does_not_compound_on_promotion(self) -> None:
         from shopman.guestman.models import PriceTier
+
         from shopman.shop.models import Promotion
 
         now = timezone.now()
@@ -149,6 +150,7 @@ class DiscountStackingAuditTests(TestCase):
         modo que o cliente queimava um cupom de uso único que não lhe deu nada.
         """
         from shopman.guestman.models import PriceTier
+
         from shopman.shop.models import Coupon, Promotion
 
         now = timezone.now()

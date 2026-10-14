@@ -36,6 +36,9 @@ from unfold.widgets import (
     UnfoldAdminCheckboxSelectMultipleWidget,
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminRadioSelectWidget,
+    UnfoldAdminTextareaWidget,
+    UnfoldAdminTextInputWidget,
+    UnfoldBooleanSwitchWidget,
 )
 
 from shopman.shop.models import Channel, Promotion
@@ -91,23 +94,26 @@ class PriceTierGroupDiscountForm(forms.ModelForm):
     group_pickup_only = forms.BooleanField(
         label="Só na retirada",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text="Com entrega, o desconto do grupo não vale. É o guarda do benefício da Equipe.",
     )
     group_discount_kind = forms.CharField(
         label="Tipo do desconto",
         required=False,
         max_length=40,
+        widget=UnfoldAdminTextInputWidget,
         help_text="Para o B.I. medir desconto por tipo. Ex: equipe, parceiro.",
     )
     group_rounding = forms.BooleanField(
         label="Arredondar o preço final",
         required=False,
+        widget=UnfoldBooleanSwitchWidget,
         help_text="Arredonda o preço de cada item para o R$ 0,00 ou R$ 0,50 mais próximo.",
     )
     group_savings_message = forms.CharField(
         label="Mensagem de economia",
         required=False,
-        widget=forms.Textarea(attrs={"rows": 2}),
+        widget=UnfoldAdminTextareaWidget(attrs={"rows": 2}),
         help_text='Texto do checkout e do comprovante. Use {amount} para o valor e {group} para o nome do grupo. Ex: "Hoje você economizou {amount} por ser {group}".',
     )
 

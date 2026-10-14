@@ -300,6 +300,7 @@ class TestGroupDiscount:
 
     def _group_session(self, price_tier="staff", price_q=1000, percent=20):
         from shopman.guestman.models import PriceTier
+
         from shopman.shop.services import sessions
 
         _shop()
@@ -334,6 +335,7 @@ class TestGroupDiscount:
         docs/plans/DISCOUNT-AUDIT-2026-08.md.
         """
         from shopman.guestman.models import PriceTier
+
         from shopman.shop.services import sessions
 
         _shop()
