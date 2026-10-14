@@ -169,7 +169,10 @@ class SkuValidator:
 
         result = []
         for p in qs:
-            primary_item = p.collection_items.filter(is_primary=True).first()
+            # Prefetched above; scan in Python instead of re-querying per product.
+            primary_item = next(
+                (ci for ci in p.collection_items.all() if ci.is_primary), None
+            )
             category = primary_item.collection.name if primary_item else None
             result.append(
                 SkuInfo(
