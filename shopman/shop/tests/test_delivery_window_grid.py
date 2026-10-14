@@ -115,11 +115,11 @@ def test_a_grade_da_concierge_e_a_do_site_sao_a_mesma_funcao():
     from pathlib import Path
 
     import shopman.storefront.concierge.tools as concierge_tools
-    import shopman.storefront.presentation.checkout as checkout_presentation
+    import shopman.storefront.services.pickup_slots as storefront_slots
 
     concierge = Path(concierge_tools.__file__).read_text()
     assert "delivery_slots_for" not in concierge
     assert "delivery_windows_for(day)" in concierge
     assert "delivery_window_error(" in concierge
-    assert "fulfillment_window.annotate(day" in Path(checkout_presentation.__file__).read_text()
+    assert "fulfillment_window.annotate(day" in Path(storefront_slots.__file__).read_text()
     assert fulfillment_window.annotate.__module__ == fulfillment_window.delivery_windows_for.__module__

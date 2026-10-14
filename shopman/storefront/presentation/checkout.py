@@ -608,22 +608,15 @@ def _delivery_windows(
 ) -> tuple[tuple[PickupSlotProjection, ...], str | None]:
     """As janelas de entrega da data pedida (hoje, sem data), anotadas para o carrinho.
 
-    ``annotate`` lê a mesma grade de ``fulfillment_window.delivery_windows_for``,
-    a que a concierge oferece e que o commit confere; a anotação (janela apagada com o
-    motivo, "X sai às 12:00") é a mesma da retirada.
+    A grade é a de ``fulfillment_window.delivery_windows_for``, a que a concierge
+    oferece e que o commit confere; a anotação (janela apagada com o motivo,
+    "X sai às 12:00") é a mesma da retirada. A leitura passa pelo serviço da
+    loja, como a da retirada: a apresentação não importa ``shop.services``.
     """
-    from datetime import date as _date
-
-    from django.utils import timezone
-
-    from shopman.shop.services import fulfillment_window
-
     try:
-        day = _date.fromisoformat(delivery_date) if delivery_date else timezone.localdate()
-    except ValueError:
-        day = timezone.localdate()
-    try:
-        context = fulfillment_window.annotate(day, [item.sku for item in cart.items])
+        from shopman.storefront.services.pickup_slots import annotate_delivery_windows_for_checkout
+
+        context = annotate_delivery_windows_for_checkout([item.sku for item in cart.items], delivery_date=delivery_date)
     except Exception:
         # Sem grade não há janela a escolher, e o servidor recusaria qualquer
         # uma: a tela precisa saber que a leitura falhou, não só ver a lista vazia.
