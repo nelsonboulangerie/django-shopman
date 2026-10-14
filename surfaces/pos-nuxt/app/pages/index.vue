@@ -929,6 +929,13 @@ async function startNextSale() {
   tabBoardRef.value?.focus();
 }
 
+// "Nova encomenda" na tela de resultado da encomenda (P2-31): a próxima
+// comanda livre já no modo Encomendas, o mesmo gesto da seção Encomendas.
+async function startNextOrder() {
+  dismissResult();
+  await openNewOrder();
+}
+
 // "Ver a nota" na tela de resultado: só para quem o servidor deixa.
 const resultDanfeScreenUrl = computed(() =>
   result.value && pos.value?.danfe_screen_allowed && djangoOrigin.value
@@ -1354,6 +1361,7 @@ onBeforeUnmount(() => {
           :resending-link="resendingLink"
           :printing-ticket="Boolean(printingOrderRef)"
           @new-sale="startNextSale"
+          @new-order="startNextOrder"
           @print-ticket="printOrderTicket(result.orderRef)"
           @print-receipt="printReceipt"
           @print-danfe="printDanfe"
