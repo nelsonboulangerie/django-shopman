@@ -160,6 +160,19 @@ def _enqueue_callback(order, actor) -> None:
         logger.warning("ifood_status: order %s has no iFood order id — cannot call back", order.ref)
         return
 
+    # O iFood só anda para frente e não tem "desfazer pronto". Desfazer o Pronto
+    # devolve o pedido ao preparo AQUI; marcar de novo não é outro aviso lá: o
+    # readyToPickup (ou um passo adiante) que já saiu continua valendo, e um
+    # startPreparation depois dele seria andar para trás. Só o que falhou volta
+    # a sair (directive ``failed`` não conta como aviso dado).
+    if _progress_already_announced(order):
+        logger.info(
+            "ifood_status: no callback for order %s (status=%s) — iFood already told this step or a later one",
+            order.ref,
+            order.status,
+        )
+        return
+
     dedupe_key = f"{IFOOD_STATUS_CALLBACK}:{order.ref}:{order.status}"
     exists = Directive.objects.filter(
         dedupe_key=dedupe_key,
@@ -187,6 +200,23 @@ def _enqueue_callback(order, actor) -> None:
     if created is None:
         return
     logger.debug("ifood_status: enqueued %s callback for order %s", order.status, order.ref)
+
+
+#: Os passos de progresso do iFood, na ordem em que ele os aceita.
+PROGRESS_STEPS = ("accepted", "preparing", "ready", "dispatched")
+
+
+def _progress_already_announced(order) -> bool:
+    """Este passo, ou um posterior, já foi (ou está sendo) avisado ao iFood?"""
+    status = str(order.status or "")
+    if status not in PROGRESS_STEPS:
+        return False
+    return Directive.objects.filter(
+        topic=IFOOD_STATUS_CALLBACK,
+        payload__order_ref=order.ref,
+        payload__status__in=PROGRESS_STEPS[PROGRESS_STEPS.index(status):],
+        status__in=("queued", "running", "done"),
+    ).exists()
 
 
 __all__ = ["IFoodStatusCallbackHandler", "on_order_status_changed"]
