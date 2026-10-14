@@ -68,6 +68,15 @@ it("conteúdo remoto é texto e não dispara imagens ou HTML externos", () => {
   expect(wrapper.text()).toContain('<img src="https://example.com/tracker"');
 });
 
+it("chega filtrada pelo item do aviso (P2-29: item do iFood sem produto da casa)", () => {
+  const data: any = board();
+  data.items.push({ ...item(), item_id: "remote-2", name: "Pão de queijo", external_code: "" });
+  const wrapper = render(data, { initialSearch: "Pão de queijo" });
+  expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe("Pão de queijo");
+  expect(wrapper.text()).toContain("Pão de queijo");
+  expect(wrapper.text()).not.toContain("Pão remoto");
+});
+
 it("vínculo de outra captura continua pendente sem escolha automática", () => {
   const data: any = board();
   data.items[0].binding = { name: "Produto exemplo", sku: "SKU", snapshot_id: 1 };
