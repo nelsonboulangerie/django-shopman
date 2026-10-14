@@ -11,7 +11,7 @@ import { review, workspaceProps } from "../support/paymentWorkspaceProps";
 // aparecia "R$ 0,00" sem explicação.
 
 const waiver = { reason: "promotion" as const, promotion_name: "Frete de verão", threshold_q: 0, base_fee_q: 800 };
-const nbsp = (text: string) => text.replace(/ /g, " ");
+const nbsp = (text: string) => text.replace(/\u00a0/g, " ");
 
 describe("PosPaymentWorkspace — frete grátis pela promoção", () => {
   afterEach(() => { document.body.innerHTML = ""; });

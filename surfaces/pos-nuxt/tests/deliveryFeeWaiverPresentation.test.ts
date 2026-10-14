@@ -15,7 +15,7 @@ const promotion: POSDeliveryFeeWaiverProjection = {
 const threshold: POSDeliveryFeeWaiverProjection = {
   reason: "threshold", promotion_name: "", threshold_q: 12000, base_fee_q: 800,
 };
-const nbsp = (text: string) => text.replace(/ /g, " ");
+const nbsp = (text: string) => text.replace(/\u00a0/g, " ");
 
 describe("frete grátis no balcão", () => {
   it("sem renúncia, nada a dizer", () => {
