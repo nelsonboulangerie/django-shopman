@@ -16,7 +16,7 @@ O Shopman é composto por **3 camadas**:
 
 | Camada | Onde vive | Descrição |
 |--------|-----------|-----------|
-| **Core Apps** | `packages/` | 11 pacotes pip independentes, cada um com domínio próprio |
+| **Pacotes** | `packages/` | 13 pacotes pip independentes: 12 domínios e o Watchman operacional |
 | **Framework** | `shopman/` | Orquestrador (`shop`) + superfícies headless (`storefront`, `backstage`) que servem API JSON e projections |
 | **Superfícies** | `surfaces/` | 9 apps Nuxt 4 SSR + layer `operator-kit` |
 
@@ -42,6 +42,8 @@ Cada app é um pacote pip independente. Os cores nunca se importam entre si — 
 | **Payman** | `shopman-payman` | `shopman.payman` | Pagamentos | PaymentIntent, PaymentTransaction |
 | **Buyman** | `shopman-buyman` | `shopman.buyman` | Compras (procurement) | Material, Supplier |
 | **Fiscalman** | `shopman-fiscalman` | `shopman.fiscalman` | Fiscal (NFC-e) | classificação em Product.metadata |
+| **Cashman** | `shopman-cashman` | `shopman.cashman` | Caixa e livro financeiro | Terminal, Shift, Movement |
+| **Watchman** | `shopman-watchman` | `shopman.watchman` | Saúde e supervisão | — |
 
 ## Quickstart
 

@@ -151,7 +151,7 @@ outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
 ## Estrutura do Projeto
 
 ```
-packages/               12 apps pip-instaláveis (sem dependência entre si)
+packages/               13 apps pip-instaláveis (sem dependência entre si)
 ├── utils/              Utilitários compartilhados (monetary, phone, admin)          [shopman-utils]
 ├── refs/               Registro de refs tipadas, rename/audit e campos reutilizáveis [shopman-refs]
 ├── offerman/           Catálogo: produtos, preços, listings, coleções, bundles      [shopman-offerman]
@@ -163,7 +163,8 @@ packages/               12 apps pip-instaláveis (sem dependência entre si)
 ├── payman/             Pagamentos: intents, transactions, service                   [shopman-payman]
 ├── buyman/             Compras: fornecedores, materiais, custos (procurement, Fase 1) [shopman-buyman]
 ├── fiscalman/          Fiscal: classificação NFC-e (schema em Product.metadata)      [shopman-fiscalman]
-└── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
+├── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
+└── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
 
 shopman/                Namespace package (PEP 420) — sem __init__.py
 ├── shop/               Orquestrador (app Django, label="shop") — health/readiness views [django-shopman]
@@ -480,7 +481,7 @@ make migrate           # Migrações
 
 ## Core é Sagrado — Regras de Integridade
 
-O `packages/` é um conjunto de 12 apps pip-instaláveis, muito bem desenhado, robusto e flexível.
+O `packages/` é um conjunto de 13 apps pip-instaláveis, muito bem desenhado, robusto e flexível.
 Antes de alterar qualquer coisa no Core, **compreenda como ele já resolve o problema**.
 
 1. **Não adicionar campos a modelos do Core sem necessidade comprovada.** Os modelos `Session`, `Order`,
