@@ -549,6 +549,7 @@ export interface PreorderHandOverProjection {
   suggested_method: string;
   block_reason: string;
   digital_charge_notice: string;
+  kitchen_notice: string;
 }
 
 /** Cancelar pelo PDV: a mesma régua, política e permissão do Gestor. */

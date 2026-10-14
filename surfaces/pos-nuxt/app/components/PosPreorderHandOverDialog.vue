@@ -60,8 +60,8 @@ function confirm() {
       <form class="grid gap-4" data-preorder-hand-over-dialog @submit.prevent="confirm">
         <NuxtAlert
           v-if="handOver.kitchen_notice"
-          color="neutral"
-          variant="soft"
+          color="info"
+          variant="subtle"
           icon="i-lucide-chef-hat"
           :title="handOver.kitchen_notice"
           data-preorder-kitchen-notice
