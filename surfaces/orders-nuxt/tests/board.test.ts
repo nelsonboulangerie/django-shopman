@@ -326,6 +326,12 @@ describe("matchesQuery", () => {
     expect(matchesQuery(c, "a47")).toBe(true);
     expect(matchesQuery(c, "B12")).toBe(false);
   });
+
+  it("finds the iFood order by its number when the ref was drawn (P2-29)", () => {
+    const c = card({ ref: "IFOOD-261013-D09", channel_display_id: "4994" });
+    expect(matchesQuery(c, "4994")).toBe(true);
+    expect(matchesQuery(c, "4995")).toBe(false);
+  });
 });
 
 describe("channelLabel", () => {

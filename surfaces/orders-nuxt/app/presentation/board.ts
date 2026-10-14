@@ -414,14 +414,20 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
   return out;
 }
 
-/** Filter cards by a free-text query over ref, customer and items summary. */
+/** Filter cards by a free-text query over ref, customer, items summary and
+ *  the channel's own number (iFood #4994 when the ref was drawn instead). */
 export function matchesQuery(
   card: OrderCardProjection,
   rawQuery: string,
 ): boolean {
   const q = rawQuery.trim().toLowerCase();
   if (!q) return true;
-  return [card.ref, card.customer_name, card.items_summary]
+  return [
+    card.ref,
+    card.channel_display_id,
+    card.customer_name,
+    card.items_summary,
+  ]
     .join(" ")
     .toLowerCase()
     .includes(q);

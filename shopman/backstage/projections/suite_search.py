@@ -261,6 +261,8 @@ def _orders(user, query, app, app_label, base):
         .filter(
             Q(ref__icontains=query)
             | Q(external_ref__icontains=query)
+            # O número do iFood, que o ref nem sempre carrega (sufixo ocupado = sorteio).
+            | Q(data__ifood__display_id__icontains=query)
             | Q(data__customer__name__icontains=query)
         )
         .order_by("-created_at")
