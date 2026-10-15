@@ -274,6 +274,7 @@ class MergeService:
             "orders": cls._migrate_orders(source, target, snapshot),
         }
         loyalty_merged = cls._merge_loyalty(source, target, snapshot)
+        cls._migrate_price_tiers(source, target, snapshot)
 
         # Recalculate insights for target
         cls._recalculate_insights(target)
@@ -442,6 +443,11 @@ class MergeService:
                     )
                 except ImportError:
                     logger.warning("Merge optional component unavailable: timeline; related operation was not performed")
+
+            # Tirar do sobrevivente SÓ os grupos que esta unificação acrescentou.
+            added_refs = snapshot.get("price_tiers_added", [])
+            if added_refs:
+                target.price_tiers.remove(*target.price_tiers.filter(ref__in=added_refs))
 
             # Revert order identity links
             order_snapshots = snapshot.get("orders", [])
@@ -880,6 +886,22 @@ class MergeService:
 
         snapshot["addresses"] = moved_pks
         return migrated
+
+    @classmethod
+    def _migrate_price_tiers(cls, source: Customer, target: Customer, snapshot: dict) -> int:
+        """Une os GRUPOS comerciais do doador aos do sobrevivente.
+
+        O vínculo é N:N e é vantagem comercial: quem some do sobrevivente perde o
+        desconto. A união é aditiva; o doador desativado mantém os dele, e o undo
+        tira do sobrevivente só o que ESTA unificação acrescentou.
+        """
+        source_refs = list(source.price_tiers.values_list("ref", flat=True))
+        target_refs = set(target.price_tiers.values_list("ref", flat=True))
+        added = [ref for ref in source_refs if ref not in target_refs]
+        if added:
+            target.price_tiers.add(*source.price_tiers.filter(ref__in=added))
+        snapshot["price_tiers_added"] = added
+        return len(added)
 
     @classmethod
     def _migrate_preferences(

@@ -42,7 +42,7 @@ def _customer_client() -> tuple[Client, Customer]:
         ref="regular", defaults={"name": "Regular", "is_default": True, "priority": 0}
     )
     customer = Customer.objects.create(
-        ref="CUST-EDGE", first_name="Marisol", phone="+5543999990077", price_tier=tier
+        ref="CUST-EDGE", first_name="Marisol", phone="+5543999990077", price_tiers=tier
     )
     info = AuthCustomerInfo(
         uuid=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True

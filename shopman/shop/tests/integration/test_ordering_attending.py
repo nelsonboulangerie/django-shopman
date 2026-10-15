@@ -28,7 +28,7 @@ class TestOrderingCustomersIntegration(TestCase):
             ref="INT-CUST-001",
             first_name="Integration",
             last_name="Test",
-            price_tier=self.tier,
+            price_tiers=self.tier,
         )
 
         # Create channel
@@ -56,7 +56,7 @@ class TestOrderingCustomersIntegration(TestCase):
         self.tier.listing_ref = "atacado"
         self.tier.save()
 
-        assert self.customer.price_tier.listing_ref == "atacado"
+        assert self.customer.primary_price_tier.listing_ref == "atacado"
 
     def test_customer_lookup_by_ref(self):
         """Customer can be retrieved by ref for session association."""

@@ -21,9 +21,9 @@ class OffermanPricingBackend:
     def get_price(self, sku: str, channel: Any, customer=None, qty: int = 1) -> int | None:
         catalog = get_adapter("catalog")
 
-        # 1. Preço da faixa do cliente (se identificado e a faixa aponta um listing)
-        if customer and getattr(customer, "price_tier", None):
-            listing_ref = getattr(customer.price_tier, "listing_ref", None)
+        # 1. Preço do grupo do cliente (se identificado e o grupo aponta um listing)
+        if customer:
+            listing_ref = getattr(customer, "listing_ref", None)
             if listing_ref:
                 item = self._get_listing_item(catalog, listing_ref, sku, qty=qty)
                 if item and item.get("is_sellable"):
@@ -93,8 +93,8 @@ class OffermanPricingBackend:
 
         skus = list(dict.fromkeys(sku for sku, _qty in lines))
         customer_listing = None
-        if customer and getattr(customer, "price_tier", None):
-            customer_listing = getattr(customer.price_tier, "listing_ref", None) or None
+        if customer:
+            customer_listing = getattr(customer, "listing_ref", None) or None
         channel_listing = (getattr(channel, "ref", None) if channel else None) or None
         customer_tiers = bulk_tiers(skus, customer_listing) if customer_listing else {}
         channel_tiers = bulk_tiers(skus, channel_listing) if channel_listing else {}

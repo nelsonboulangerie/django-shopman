@@ -47,14 +47,14 @@ def unificados(tier):
         first_name="Maria",
         last_name="Souza",
         phone="+5543911111111",
-        price_tier=tier,
+        price_tiers=tier,
     )
     target = Customer.objects.create(
         ref="TGT-UNDO",
         first_name="Maria",
         last_name="Silva",
         phone="+5543922222222",
-        price_tier=tier,
+        price_tiers=tier,
     )
     result = MergeService.merge(source, target, {"staff_override": True}, actor="pdv:fran")
     return MergeAudit.objects.get(pk=result.audit_id)

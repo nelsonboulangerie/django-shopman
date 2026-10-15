@@ -67,7 +67,7 @@ class CustomerViewSet(
         return CustomerSerializer
 
     def get_queryset(self):
-        return Customer.objects.filter(is_active=True).select_related("price_tier")
+        return Customer.objects.filter(is_active=True).prefetch_related("price_tiers")
 
     def create(self, request, *args, **kwargs):
         serializer = CreateCustomerSerializer(data=request.data)
@@ -108,7 +108,7 @@ class CustomerViewSet(
             from shopman.guestman.models import PriceTier
             tier = PriceTier.objects.filter(ref=data["price_tier_ref"]).first()
             if tier:
-                update_fields["price_tier"] = tier
+                update_fields["price_tiers"] = [tier]
 
         cust = customer_service.update(customer.ref, **update_fields)
         if not cust:

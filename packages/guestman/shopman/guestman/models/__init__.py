@@ -7,6 +7,7 @@ CORE models are exported here. Contrib models are in their respective modules:
 """
 
 from shopman.guestman.models.address import AddressLabel, CustomerAddress
+from shopman.guestman.models.advantage import PriceTierAdvantage
 from shopman.guestman.models.contact_point import ContactPoint
 from shopman.guestman.models.customer import Customer, CustomerType
 from shopman.guestman.models.erasure_tombstone import (
@@ -21,6 +22,7 @@ from shopman.guestman.models.tag import CustomerTag, TaggedCustomer
 __all__ = [
     # Core models
     "PriceTier",
+    "PriceTierAdvantage",
     "Customer",
     # Etiquetas do operador (namespace próprio, não o `taggit.Tag` global)
     "CustomerTag",

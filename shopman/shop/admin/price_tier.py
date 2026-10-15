@@ -26,7 +26,12 @@ from django.contrib import admin
 from django.db import transaction
 from django.db.models import OuterRef, Subquery, Value
 from django.db.models.functions import Concat
-from shopman.guestman.contrib.admin_unfold.admin import PriceTierAdmin as _GuestmanPriceTierAdmin
+from shopman.guestman.contrib.admin_unfold.admin import (
+    PriceTierAdmin as _GuestmanPriceTierAdmin,
+)
+from shopman.guestman.contrib.admin_unfold.admin import (
+    PriceTierAdvantageInline,
+)
 from shopman.guestman.models import PriceTier
 from shopman.utils.monetary import format_money
 from unfold.decorators import display
@@ -195,6 +200,7 @@ class PriceTierAdmin(_GuestmanPriceTierAdmin):
     """A faixa de preço do guestman, com o desconto automático do grupo."""
 
     form = PriceTierGroupDiscountForm
+    inlines = [PriceTierAdvantageInline]
     list_display = [*_GuestmanPriceTierAdmin.list_display, "group_discount_display"]
     fieldsets = [
         (None, {"fields": ("name", "ref", "description", "listing_ref", "is_default", "priority", "metadata")}),

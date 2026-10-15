@@ -15,7 +15,7 @@ class GuestmanOrderHistoryTests(TestCase):
             first_name="Ana",
             last_name="Silva",
             phone="+5543999990001",
-            price_tier=tier,
+            price_tiers=tier,
         )
         self.backend = OrdermanOrderHistoryBackend()
 

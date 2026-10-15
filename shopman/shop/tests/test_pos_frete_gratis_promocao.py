@@ -152,7 +152,7 @@ def test_promocao_de_grupo_de_clientes_so_vale_para_o_cliente_do_grupo(balcao):
 
     operator, shift = balcao
     tier = PriceTier.objects.create(ref="alianca", name="Aliança Francesa")
-    Customer.objects.create(ref="CLI-ALIANCA", first_name="Ana", phone="+5543999990001", price_tier=tier)
+    Customer.objects.create(ref="CLI-ALIANCA", first_name="Ana", phone="+5543999990001", price_tiers=tier)
     Customer.objects.create(ref="CLI-OUTRO", first_name="Beto", phone="+5543999990002")
     _promo(customer_segments=["alianca"])
 

@@ -174,7 +174,9 @@ def _apply_payload(customer, data: dict, *, creating: bool) -> list[str]:
     if creating or "phone" in data:
         customer.phone = _text(data, "phone")
     if creating or "priceTierRef" in data:
-        customer.price_tier = _price_tier(_text(data, "priceTierRef"))
+        # M2M não se atribui antes do pk: guarda a intenção e grava no _save_customer.
+        customer._pending_price_tier = _price_tier(_text(data, "priceTierRef"))
+        customer._pending_price_tier_set = True
     if creating or "notes" in data:
         customer.notes = _text(data, "notes")
 
@@ -233,6 +235,14 @@ def _save_customer(customer, *, tags: list[str], cleared: set[str]) -> None:
         customer.full_clean()
         customer.save()
         customer.tags.set(tags)
+        if getattr(customer, "_pending_price_tier_set", False):
+            from shopman.guestman.models import PriceTier
+
+            tier = customer._pending_price_tier
+            if tier is None:
+                tier = PriceTier.objects.filter(is_default=True).first()
+            customer.price_tiers.set([tier] if tier is not None else [])
+            customer._pending_price_tier_set = False
         if "phone" in cleared:
             ContactPoint.objects.filter(customer=customer, type__in=(ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP)).update(is_primary=False)
         if "email" in cleared:

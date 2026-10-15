@@ -57,7 +57,7 @@ class ReorderContextTests(TestCase):
             first_name="João",
             last_name="Silva",
             phone="+5543999990001",
-            price_tier=tier,
+            price_tiers=tier,
         )
 
     def _create_order(self, days_ago: int, items=None) -> Order:

@@ -63,7 +63,7 @@ def _unit_price_q(session_key: str, channel_ref: str) -> int:
 
 
 def _customer(tier: PriceTier) -> Customer:
-    return Customer.objects.create(ref="CUST-VIP", first_name="Ana", price_tier=tier)
+    return Customer.objects.create(ref="CUST-VIP", first_name="Ana", price_tiers=tier)
 
 
 @pytest.mark.parametrize("channel_ref", ["web", "pdv"])
@@ -132,7 +132,7 @@ def test_price_query_count_does_not_grow_with_the_number_of_items():
     from django.test.utils import CaptureQueriesContext
 
     _seed_many(6)
-    Customer.objects.create(ref="CUST-VIP", first_name="Ana", price_tier=PriceTier.objects.get(ref="vip"))
+    Customer.objects.create(ref="CUST-VIP", first_name="Ana", price_tiers=PriceTier.objects.get(ref="vip"))
 
     def price_query_count(item_count: int) -> int:
         session = sessions.create_session("web")

@@ -34,8 +34,8 @@ def _undo(audit_id: str, actor: str, started: Event) -> str:
 
 def test_concurrent_undo_has_one_winner_and_preserves_its_actor(monkeypatch):
     tier = PriceTier.objects.create(ref="regular", name="Regular", is_default=True)
-    source = Customer.objects.create(ref="SRC-RACE", first_name="Doador", price_tier=tier)
-    target = Customer.objects.create(ref="TGT-RACE", first_name="Destino", price_tier=tier)
+    source = Customer.objects.create(ref="SRC-RACE", first_name="Doador", price_tiers=tier)
+    target = Customer.objects.create(ref="TGT-RACE", first_name="Destino", price_tiers=tier)
     result = MergeService.merge(source, target, {"staff_override": True}, actor="merge")
 
     first_inside = Event()

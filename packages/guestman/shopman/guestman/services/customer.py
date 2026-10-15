@@ -31,7 +31,7 @@ class CustomerValidation:
 def get(ref: str) -> Customer | None:
     """Get customer by unique ref."""
     try:
-        return Customer.objects.select_related("price_tier").get(ref=ref, is_active=True)
+        return Customer.objects.prefetch_related("price_tiers").get(ref=ref, is_active=True)
     except Customer.DoesNotExist:
         return None
 
@@ -39,7 +39,7 @@ def get(ref: str) -> Customer | None:
 def get_by_uuid(uuid: str) -> Customer | None:
     """Get customer by UUID."""
     try:
-        return Customer.objects.select_related("price_tier").get(uuid=uuid, is_active=True)
+        return Customer.objects.prefetch_related("price_tiers").get(uuid=uuid, is_active=True)
     except Customer.DoesNotExist:
         return None
 
@@ -48,7 +48,7 @@ def get_by_document(document: str) -> Customer | None:
     """Get customer by document (CPF/CNPJ)."""
     doc_normalized = "".join(filter(str.isdigit, document))
     try:
-        return Customer.objects.select_related("price_tier").get(
+        return Customer.objects.prefetch_related("price_tiers").get(
             document=doc_normalized, is_active=True
         )
     except Customer.DoesNotExist:
@@ -65,7 +65,7 @@ def get_by_phone(phone: str) -> Customer | None:
         return None
 
     contact_point = (
-        ContactPoint.objects.select_related("customer", "customer__price_tier")
+        ContactPoint.objects.select_related("customer").prefetch_related("customer__price_tiers")
         .filter(
             value_normalized=phone_normalized,
             type__in=[ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP],
@@ -78,7 +78,7 @@ def get_by_phone(phone: str) -> Customer | None:
         return contact_point.customer
 
     try:
-        return Customer.objects.select_related("price_tier").get(
+        return Customer.objects.prefetch_related("price_tiers").get(
             phone=phone_normalized, is_active=True
         )
     except Customer.DoesNotExist:
@@ -98,7 +98,7 @@ def get_by_email(email: str) -> Customer | None:
         return None
 
     contact_point = (
-        ContactPoint.objects.select_related("customer", "customer__price_tier")
+        ContactPoint.objects.select_related("customer").prefetch_related("customer__price_tiers")
         .filter(
             type=ContactPoint.Type.EMAIL,
             value_normalized=email_normalized,
@@ -111,7 +111,7 @@ def get_by_email(email: str) -> Customer | None:
         return contact_point.customer
 
     try:
-        return Customer.objects.select_related("price_tier").get(
+        return Customer.objects.prefetch_related("price_tiers").get(
             email__iexact=email_normalized, is_active=True
         )
     except Customer.DoesNotExist:
@@ -119,7 +119,7 @@ def get_by_email(email: str) -> Customer | None:
     except Customer.MultipleObjectsReturned:
         return Customer.objects.filter(
             email__iexact=email_normalized, is_active=True
-        ).select_related("price_tier").order_by("-updated_at").first()
+        ).prefetch_related("price_tiers").order_by("-updated_at").first()
 
 
 def validate(ref: str) -> CustomerValidation:
@@ -153,7 +153,7 @@ def validate(ref: str) -> CustomerValidation:
         ref=ref,
         customer_id=cust.id,
         name=cust.name,
-        price_tier_ref=cust.price_tier.ref if cust.price_tier else None,
+        price_tier_ref=cust.primary_price_tier.ref if cust.primary_price_tier else None,
         listing_ref=cust.listing_ref,
         default_address=addr_dict,
     )
@@ -183,7 +183,7 @@ def search(query: str, limit: int = 20, offset: int = 0) -> list[Customer]:
             | Q(email__icontains=query)
         )
 
-    return list(qs.select_related("price_tier").order_by("ref")[offset:offset + limit])
+    return list(qs.prefetch_related("price_tiers").order_by("ref")[offset:offset + limit])
 
 
 def price_tiers() -> list[PriceTier]:
@@ -219,7 +219,7 @@ def create(
             document="".join(filter(str.isdigit, document)),
             email=email,
             phone=phone,
-            price_tier=price_tier,
+            price_tiers=price_tier,
             **kwargs,
         )
 
@@ -235,7 +235,6 @@ UPDATABLE_FIELDS = {
     "birthday",
     "email",
     "phone",
-    "price_tier",
     "notes",
     "metadata",
     "is_active",
@@ -244,11 +243,22 @@ UPDATABLE_FIELDS = {
 
 
 def update(ref: str, **fields) -> Customer | None:
-    """Update customer fields (only whitelisted fields are accepted)."""
+    """Update customer fields (only whitelisted fields are accepted).
+
+    ``price_tiers`` (ou o atalho singular ``price_tier``) SUBSTITUI a lista de grupos
+    do cliente; lista vazia tira todos. M2M não passa pelo ``setattr`` do laço.
+    """
+    groups_provided = "price_tiers" in fields or "price_tier" in fields
+    price_tiers = fields.pop("price_tiers", None)
+    if price_tiers is None and "price_tier" in fields:
+        single = fields.pop("price_tier")
+        price_tiers = [single] if single is not None else []
+    price_tiers = list(price_tiers or [])
+
     with transaction.atomic():
         cust = (
             Customer.objects.select_for_update(of=("self",))
-            .select_related("price_tier")
+            .prefetch_related("price_tiers")
             .filter(ref=ref, is_active=True)
             .first()
         )
@@ -266,6 +276,12 @@ def update(ref: str, **fields) -> Customer | None:
                 setattr(cust, key, value)
 
         cust.save()
+        if groups_provided:
+            old_refs = sorted(cust.price_tiers.values_list("ref", flat=True))
+            new_refs = sorted(getattr(tier, "ref", "") for tier in price_tiers)
+            if old_refs != new_refs:
+                changes["price_tiers"] = {"old": old_refs, "new": new_refs}
+            cust.price_tiers.set(price_tiers)
     if changes:
         customer_updated.send(sender=Customer, customer=cust, changes=changes)
     return cust
