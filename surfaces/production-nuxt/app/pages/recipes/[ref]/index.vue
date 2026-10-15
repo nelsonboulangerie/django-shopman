@@ -425,6 +425,14 @@ const publishDiff = computed(() => [
               @click="openDuplicate"
             />
             <NuxtButton
+              v-if="canEdit && entry.ficha_ref"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-clipboard-list"
+              label="Abrir ficha"
+              :to="'/recipes/sheets?open=' + entry.ficha_ref"
+            />
+            <NuxtButton
               v-if="canEdit && entry.execution?.exists"
               color="neutral"
               variant="outline"

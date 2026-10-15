@@ -46,8 +46,9 @@ from shopman.craftsman.services.recipe_book import (
     suggest_anchor_kind,
 )
 
+from shopman.backstage.services import recipe_book as recipe_book_service
 from shopman.backstage.services import recipe_external_references, recipe_favorites, recipe_ratings
-from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeVersionNotFound
+from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeSheetNotFound, RecipeVersionNotFound
 from shopman.backstage.services.recipe_capture import CapturedRecipe, is_configured
 from shopman.backstage.services.recipe_matching import (
     DEFAULT_MIN_SCORE,
@@ -439,6 +440,82 @@ class ExecutionSheetProjection:
     shelf_life_reviewed_by: str
     production_lifecycle: str
     lifecycle_options: tuple[LifecycleOptionProjection, ...]
+
+
+@dataclass(frozen=True)
+class RecipeSheetItemProjection:
+    """Uma linha da ficha de execução: o insumo e o que ele consome do estoque."""
+
+    input_sku: str
+    name: str
+    quantity: str
+    unit: str
+    usable_factor: str
+    gross_quantity: str
+    correction_factor: str
+    sort_order: int
+    is_optional: bool
+    note: str
+
+
+@dataclass(frozen=True)
+class RecipeSheetMassBalanceProjection:
+    """A conta de massa da ficha: o rendimento contra a soma dos insumos."""
+
+    status: str
+    output_unit: str
+    batch_display: str
+    total_display: str
+    message: str
+    tone: str
+
+
+@dataclass(frozen=True)
+class RecipeSheetCardProjection:
+    """Um cartão de ficha de execução na lista."""
+
+    ref: str
+    name: str
+    output_sku: str
+    output_name: str
+    batch_size: str
+    item_count: int
+    is_active: bool
+    has_entry: bool
+    updated_at_display: str
+
+
+@dataclass(frozen=True)
+class RecipeSheetListProjection:
+    """A lista de fichas de execução."""
+
+    cards: tuple[RecipeSheetCardProjection, ...]
+    count: int
+    page: int
+    page_size: int
+    total: int
+    has_next: bool
+    sort: str
+
+
+@dataclass(frozen=True)
+class RecipeSheetDetailProjection:
+    """A ficha de execução inteira: identidade, itens, massa e operação."""
+
+    ref: str
+    revision: str
+    name: str
+    output_sku: str
+    output_name: str
+    batch_size: str
+    output_unit: str
+    is_active: bool
+    steps: tuple[RecipeStepProjection, ...]
+    items: tuple[RecipeSheetItemProjection, ...]
+    mass_balance: RecipeSheetMassBalanceProjection
+    execution: ExecutionSheetProjection
+    has_entry: bool
+    entry_ref: str
 
 
 @dataclass(frozen=True)
@@ -1639,4 +1716,193 @@ def resolve_recipe_book_access(user) -> RecipeBookAccessProjection:
         can_view=bool(can_view),
         can_edit=bool(can_edit),
         capture_available=is_configured(),
+    )
+
+
+# ── Ficha de execução: lista e detalhe ──────────────────────────────────────
+
+
+def build_recipe_sheet_list(*, query="", active="", sort="updated", page=1, page_size=48) -> RecipeSheetListProjection:
+    """As fichas de execução, com busca por nome/ref/SKU e recorte por situação."""
+    sheets_qs = Recipe.objects.annotate(item_count=Count("items"))
+    if active in ("1", "true", "yes"):
+        sheets_qs = sheets_qs.filter(is_active=True)
+    elif active in ("0", "false", "no"):
+        sheets_qs = sheets_qs.filter(is_active=False)
+    term = (query or "").strip()
+    if term:
+        sheets_qs = sheets_qs.filter(Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term))
+    ordering = {
+        "updated": ("-updated_at", "name", "ref"),
+        "name": ("name", "ref"),
+        "output": ("output_sku", "name", "ref"),
+        "active": ("-is_active", "name", "ref"),
+    }.get(sort, ("-updated_at", "name", "ref"))
+    sheets_qs = sheets_qs.order_by(*ordering)
+    total = sheets_qs.count()
+    size = max(1, min(int(page_size or 48), 100))
+    current = max(1, int(page or 1))
+    start = (current - 1) * size
+    sheets = list(sheets_qs[start : start + size])
+    names = _output_names({sheet.output_sku for sheet in sheets if sheet.output_sku})
+    entry_refs = set(
+        RecipeEntry.objects.filter(ref__in=[sheet.ref for sheet in sheets]).values_list("ref", flat=True)
+    )
+    cards = tuple(_sheet_card(sheet, names, entry_refs) for sheet in sheets)
+    return RecipeSheetListProjection(
+        cards=cards,
+        count=len(cards),
+        page=current,
+        page_size=size,
+        total=total,
+        has_next=start + len(cards) < total,
+        sort=sort,
+    )
+
+
+def _sheet_card(sheet: Recipe, names: dict[str, str], entry_refs: set[str]) -> RecipeSheetCardProjection:
+    return RecipeSheetCardProjection(
+        ref=sheet.ref,
+        name=sheet.name,
+        output_sku=sheet.output_sku,
+        output_name=names.get(sheet.output_sku, "") if sheet.output_sku else "",
+        batch_size=_plain_number(sheet.batch_size),
+        item_count=int(getattr(sheet, "item_count", 0) or 0),
+        is_active=bool(sheet.is_active),
+        has_entry=sheet.ref in entry_refs,
+        updated_at_display=_datetime_display(sheet.updated_at),
+    )
+
+
+def build_recipe_sheet(ref: str) -> RecipeSheetDetailProjection:
+    """A ficha inteira: identidade, itens com bruto/aproveitamento, massa e operação."""
+    sheet = Recipe.objects.filter(ref=ref).prefetch_related("items").first()
+    if sheet is None:
+        raise RecipeSheetNotFound(f"Ficha '{ref}' não existe no cadastro.")
+    items = list(sheet.items.order_by("sort_order", "input_sku"))
+    names = _output_names({item.input_sku for item in items})
+    entry = RecipeEntry.objects.filter(ref=ref).only("ref").first()
+    return RecipeSheetDetailProjection(
+        ref=sheet.ref,
+        revision=recipe_book_service.recipe_revision(sheet),
+        name=sheet.name,
+        output_sku=sheet.output_sku,
+        output_name=names.get(sheet.output_sku, "") if sheet.output_sku else "",
+        batch_size=_plain_number(sheet.batch_size),
+        output_unit=sheet._declared_output_unit(),
+        is_active=bool(sheet.is_active),
+        steps=tuple(_step_projection(step) for step in sheet.steps or []),
+        items=tuple(_sheet_item(item, names) for item in items),
+        mass_balance=_sheet_mass_balance(sheet, items),
+        execution=_execution_sheet(sheet),
+        has_entry=entry is not None,
+        entry_ref=entry.ref if entry else "",
+    )
+
+
+def _sheet_item(item, names: dict[str, str]) -> RecipeSheetItemProjection:
+    return RecipeSheetItemProjection(
+        input_sku=item.input_sku,
+        name=names.get(item.input_sku, "") or item.input_sku,
+        quantity=_plain_number(item.quantity),
+        unit=item.unit,
+        usable_factor=_factor_text(item.usable_factor),
+        gross_quantity=_plain_number(item.gross_quantity),
+        correction_factor=_factor_text(item.correction_factor),
+        sort_order=int(item.sort_order or 0),
+        is_optional=bool(item.is_optional),
+        note=str((item.meta or {}).get("note") or ""),
+    )
+
+
+def _factor_text(value) -> str:
+    """Aproveitamento e fator de correção com as quatro casas que o modelo guarda."""
+    return format(Decimal(value).quantize(Decimal("0.0001")).normalize(), "f")
+
+
+def _item_mass_kg(item) -> Decimal | None:
+    """Massa do item em kg, com a MESMA física do Core.
+
+    A regra de arquitetura proíbe o import profundo do models/recipe.py, então
+    a conta (massa direta; volume pela densidade declarada no item) é espelhada
+    aqui. Contagem não atravessa: "6 ovos" só vira grama com peso por unidade.
+    """
+    from shopman.utils import units
+
+    dimension = units.dimension(item.unit)
+    if dimension == units.MASS:
+        return units.convert(item.quantity, item.unit, "kg")
+    if dimension == units.VOLUME:
+        density = (item.meta or {}).get("density_g_per_ml")
+        try:
+            density = Decimal(str(density))
+        except (TypeError, ArithmeticError, ValueError):
+            return None
+        if density <= 0:
+            return None
+        return units.convert(item.quantity, item.unit, "ml") * density / Decimal("1000")
+    return None
+
+
+def _sheet_mass_balance(sheet: Recipe, items: list) -> RecipeSheetMassBalanceProjection:
+    """Rendimento contra a soma dos insumos, com a mesma régua do modelo.
+
+    Só opina quando as duas pontas estão na mesma dimensão: saída em massa e todo
+    insumo convertível (volume pela densidade declarada, contagem fora). Quando
+    não dá para comparar, diz que não dá, em vez de aprovar em silêncio.
+    """
+    from shopman.utils import units
+
+    output_unit = sheet._declared_output_unit()
+    total_kg = Decimal("0")
+    comparable = True
+    has_mass = False
+    for item in items:
+        if item.is_optional:
+            continue
+        mass = _item_mass_kg(item)
+        if mass is None:
+            comparable = False
+            break
+        total_kg += mass
+        has_mass = True
+    if not has_mass:
+        return RecipeSheetMassBalanceProjection(
+            status="empty",
+            output_unit=output_unit,
+            batch_display=_quantity_display(sheet.batch_size, output_unit),
+            total_display="",
+            message="Sem ingredientes para somar.",
+            tone="muted",
+        )
+    total_display = _grams_display(total_kg * _THOUSAND)
+    if units.dimension(output_unit) != units.MASS or not comparable:
+        return RecipeSheetMassBalanceProjection(
+            status="incomparable",
+            output_unit=output_unit,
+            batch_display=_quantity_display(sheet.batch_size, output_unit),
+            total_display=total_display,
+            message="Esta ficha mistura unidades que não comparam; confira a soma à mão.",
+            tone="muted",
+        )
+    batch_kg = units.convert(sheet.batch_size, output_unit, "kg")
+    if batch_kg > total_kg:
+        return RecipeSheetMassBalanceProjection(
+            status="exceeds",
+            output_unit=output_unit,
+            batch_display=_quantity_display(sheet.batch_size, output_unit),
+            total_display=total_display,
+            message=(
+                f"O rendimento ({_grams_display(batch_kg * _THOUSAND)}) passa da soma dos "
+                f"insumos ({total_display}). Misturar não cria matéria: confira a ficha."
+            ),
+            tone="warning",
+        )
+    return RecipeSheetMassBalanceProjection(
+        status="ok",
+        output_unit=output_unit,
+        batch_display=_quantity_display(sheet.batch_size, output_unit),
+        total_display=total_display,
+        message=f"O rendimento cabe na soma dos insumos ({total_display}).",
+        tone="ok",
     )

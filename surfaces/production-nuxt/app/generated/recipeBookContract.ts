@@ -249,6 +249,72 @@ export interface ExecutionSheetProjection {
   lifecycle_options: LifecycleOptionProjection[];
 }
 
+/** Uma linha da ficha de execução: o insumo e o que ele consome do estoque. */
+export interface RecipeSheetItemProjection {
+  input_sku: string;
+  name: string;
+  quantity: string;
+  unit: string;
+  usable_factor: string;
+  gross_quantity: string;
+  correction_factor: string;
+  sort_order: number;
+  is_optional: boolean;
+  note: string;
+}
+
+/** A conta de massa da ficha: o rendimento contra a soma dos insumos. */
+export interface RecipeSheetMassBalanceProjection {
+  status: string;
+  output_unit: string;
+  batch_display: string;
+  total_display: string;
+  message: string;
+  tone: string;
+}
+
+/** Um cartão de ficha de execução na lista. */
+export interface RecipeSheetCardProjection {
+  ref: string;
+  name: string;
+  output_sku: string;
+  output_name: string;
+  batch_size: string;
+  item_count: number;
+  is_active: boolean;
+  has_entry: boolean;
+  updated_at_display: string;
+}
+
+/** A lista de fichas de execução. */
+export interface RecipeSheetListProjection {
+  cards: RecipeSheetCardProjection[];
+  count: number;
+  page: number;
+  page_size: number;
+  total: number;
+  has_next: boolean;
+  sort: string;
+}
+
+/** A ficha de execução inteira: identidade, itens, massa e operação. */
+export interface RecipeSheetDetailProjection {
+  ref: string;
+  revision: string;
+  name: string;
+  output_sku: string;
+  output_name: string;
+  batch_size: string;
+  output_unit: string;
+  is_active: boolean;
+  steps: RecipeStepProjection[];
+  items: RecipeSheetItemProjection[];
+  mass_balance: RecipeSheetMassBalanceProjection;
+  execution: ExecutionSheetProjection;
+  has_entry: boolean;
+  entry_ref: string;
+}
+
 /** A recipe entry with its versions (newest first). */
 export interface RecipeEntryDetailProjection {
   ref: string;
