@@ -1725,6 +1725,18 @@ desliga a vantagem sem apagar. O resolvedor canônico é
 `shop/services/promotions.best_group_advantage(tier_refs, kind, ...)`, que trata também
 `discount` (melhor `Promotion` dos grupos) e `price_list` (melhor `listing_ref`).
 
+**Quem escreve**: o Gestor (`shopman/backstage/services/customer_groups.py` → `PriceTierAdvantage`
+via `shop/services/customer_groups.sync_group_advantages`) é o dono de `priority`, `is_active` e
+das chaves de `free_shipping` e `exclusive_collections`. `campaign_refs` é do Marketing: o Gestor
+aceita a chave, mas não a oferece na tela, e chave AUSENTE no payload não é tocada, para que
+editar o frete não apague o que outro dono escreveu. O `kind`/`priority`/`is_active` aparece na
+projection como `CustomerGroupAdvantageProjection`, e a lista de grupos do cliente como
+`CustomerPriceTierProjection` (`shopman/backstage/projections/customer_groups.py` e `customers.py`).
+
+⚠️ O CSV do Admin (`guestman/contrib/admin_unfold/admin.py`, ação `export_selected_csv`) ainda
+exporta UMA coluna `price_tier` = o grupo PRIMÁRIO. Expor a lista lá é mudança de `packages/`,
+fora da onda 5b.
+
 ---
 ## Customer.metadata
 

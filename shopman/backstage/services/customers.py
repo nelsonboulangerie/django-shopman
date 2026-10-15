@@ -37,7 +37,7 @@ _MUTABLE_FIELDS = {
     "birthday",
     "email",
     "phone",
-    "priceTierRef",
+    "priceTierRefs",
     "tags",
     "notes",
     "houseAccount",
@@ -114,15 +114,25 @@ def _assert_revision(customer, data: dict) -> None:
         )
 
 
-def _price_tier(ref: str):
-    if not ref:
-        return None
+def _price_tiers(value) -> list:
+    """Os grupos comerciais do cliente, na ordem em que a tela os mandou.
+
+    O cliente vive em quantos grupos o negócio quiser, e todos precificam: o motor
+    escolhe a melhor vantagem por tipo. Lista vazia é uma escolha legítima e o
+    cadastro fica sem grupo (o ``Customer.save`` só dá o padrão a quem nunca teve).
+    """
     from shopman.guestman.models import PriceTier
 
-    tier = PriceTier.objects.filter(ref=ref).first()
-    if tier is None:
-        raise _mutation_error("Escolha um grupo comercial disponível.", field="priceTierRef")
-    return tier
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise _mutation_error("Envie os grupos comerciais como uma lista.", field="priceTierRefs")
+    refs = list(dict.fromkeys(item.strip() for item in value if item.strip()))
+    tiers = {tier.ref: tier for tier in PriceTier.objects.filter(ref__in=refs)}
+    missing = next((ref for ref in refs if ref not in tiers), "")
+    if missing:
+        raise _mutation_error("Escolha um grupo comercial disponível.", field="priceTierRefs")
+    return [tiers[ref] for ref in refs]
 
 
 def _tags(value) -> list[str]:
@@ -173,10 +183,10 @@ def _apply_payload(customer, data: dict, *, creating: bool) -> list[str]:
         customer.email = _text(data, "email").lower()
     if creating or "phone" in data:
         customer.phone = _text(data, "phone")
-    if creating or "priceTierRef" in data:
+    if creating or "priceTierRefs" in data:
         # M2M não se atribui antes do pk: guarda a intenção e grava no _save_customer.
-        customer._pending_price_tier = _price_tier(_text(data, "priceTierRef"))
-        customer._pending_price_tier_set = True
+        customer._pending_price_tiers = _price_tiers(data.get("priceTierRefs"))
+        customer._pending_price_tiers_set = True
     if creating or "notes" in data:
         customer.notes = _text(data, "notes")
 
@@ -235,14 +245,18 @@ def _save_customer(customer, *, tags: list[str], cleared: set[str]) -> None:
         customer.full_clean()
         customer.save()
         customer.tags.set(tags)
-        if getattr(customer, "_pending_price_tier_set", False):
+        if getattr(customer, "_pending_price_tiers_set", False):
             from shopman.guestman.models import PriceTier
 
-            tier = customer._pending_price_tier
-            if tier is None:
-                tier = PriceTier.objects.filter(is_default=True).first()
-            customer.price_tiers.set([tier] if tier is not None else [])
-            customer._pending_price_tier_set = False
+            # Nenhum grupo escolhido cai no grupo padrão, que é a mesma régua do
+            # ``Customer._apply_default_price_tier``: o cadastro pode ficar sem
+            # grupo um instante, mas o próximo save dá o padrão de volta.
+            tiers = customer._pending_price_tiers
+            if not tiers:
+                default = PriceTier.objects.filter(is_default=True).first()
+                tiers = [default] if default is not None else []
+            customer.price_tiers.set(tiers)
+            customer._pending_price_tiers_set = False
         if "phone" in cleared:
             ContactPoint.objects.filter(customer=customer, type__in=(ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP)).update(is_primary=False)
         if "email" in cleared:
@@ -326,10 +340,10 @@ def _address_copy_payload(address) -> dict:
 def duplicate_customer(ref: str, data: dict, *, actor: str):
     """Cria um cadastro novo a partir de outro.
 
-    A cópia traz o relacionamento comercial (grupo, etiquetas, conta na casa,
-    preferências fiscais) e os endereços. NÃO traz o documento nem telefone/e-mail:
-    identidade e contato são únicos por cadastro, e o formulário os informa. A revisão
-    do original confere que ninguém o editou no meio.
+    A cópia traz o relacionamento comercial (os grupos, as etiquetas, a conta na
+    casa, as preferências fiscais) e os endereços. NÃO traz o documento nem
+    telefone/e-mail: identidade e contato são únicos por cadastro, e o formulário os
+    informa. A revisão do original confere que ninguém o editou no meio.
     """
     from shopman.guestman.models import Customer, CustomerAddress
 
@@ -379,8 +393,8 @@ def duplicate_customer(ref: str, data: dict, *, actor: str):
         ),
         "email": email,
         "phone": _text(overrides, "phone"),
-        "priceTierRef": overrides.get(
-            "priceTierRef", source.primary_price_tier.ref if source.primary_price_tier_id else ""
+        "priceTierRefs": overrides.get(
+            "priceTierRefs", [tier.ref for tier in source.price_tiers.all()]
         ),
         "tags": overrides.get("tags", list(source.tags.names())),
         "notes": overrides.get("notes", source.notes),

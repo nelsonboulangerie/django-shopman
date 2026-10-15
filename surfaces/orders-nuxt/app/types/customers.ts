@@ -37,7 +37,8 @@ export interface CustomerMutationPayload {
   birthday?: string;
   email?: string;
   phone?: string;
-  priceTierRef?: string;
+  /** Os grupos comerciais do cliente: MUITOS, e todos precificam. */
+  priceTierRefs?: string[];
   tags?: string[];
   notes?: string;
   houseAccount?: boolean;

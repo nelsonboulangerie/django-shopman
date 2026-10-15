@@ -34,7 +34,7 @@ type FormState = {
   birthday: string;
   phone: string;
   email: string;
-  priceTierRef: string;
+  priceTierRefs: string[];
   tagsText: string;
   notes: string;
   houseAccount: boolean;
@@ -51,7 +51,7 @@ const form = reactive<FormState>({
   birthday: "",
   phone: "",
   email: "",
-  priceTierRef: "",
+  priceTierRefs: [],
   tagsText: "",
   notes: "",
   houseAccount: false,
@@ -69,7 +69,7 @@ function snapshot(): FormState {
     birthday: form.birthday,
     phone: form.phone.trim(),
     email: form.email.trim(),
-    priceTierRef: form.priceTierRef,
+    priceTierRefs: [...form.priceTierRefs].sort(),
     tagsText: form.tagsText.trim(),
     notes: form.notes.trim(),
     houseAccount: form.houseAccount,
@@ -91,7 +91,10 @@ function reset() {
     birthday: customer?.birthday ?? "",
     phone: customer?.phone ?? "",
     email: customer?.email ?? "",
-    priceTierRef: customer?.price_tier_ref ?? props.options.price_tiers[0]?.value ?? "",
+    // Cadastro novo nasce no grupo padrão, que a lista de opções traz primeiro.
+    priceTierRefs: customer
+      ? customer.price_tiers.map((tier) => tier.ref)
+      : props.options.price_tiers.slice(0, 1).map((tier) => tier.value),
     tagsText: customer?.tags.join(", ") ?? "",
     notes: customer?.notes ?? "",
     houseAccount: customer?.house_account ?? false,
@@ -105,6 +108,24 @@ function reset() {
 watch(() => [props.open, props.customer?.revision, props.options] as const, ([open]) => {
   if (open) reset();
 }, { immediate: true });
+
+/**
+ * Quem decide o preço é o grupo de maior prioridade entre os marcados. A ficha já
+ * chega na ordem de prioridade, então o primeiro marcado é o primário; some quando
+ * ninguém está marcado.
+ */
+const primaryGroupRef = computed(() =>
+  (props.customer?.price_tiers ?? []).find((tier) => form.priceTierRefs.includes(tier.ref))?.ref ?? ""
+);
+const primaryGroupName = computed(() =>
+  props.options.price_tiers.find((tier) => tier.value === primaryGroupRef.value)?.label ?? ""
+);
+
+function togglePriceTier(ref: string, checked: boolean) {
+  form.priceTierRefs = checked
+    ? [...new Set([...form.priceTierRefs, ref])]
+    : form.priceTierRefs.filter((item) => item !== ref);
+}
 
 const disabledReason = computed(() => {
   if (!form.firstName.trim()) return "Informe o nome do cliente.";
@@ -125,7 +146,7 @@ function submit() {
     birthday: form.birthday,
     phone: form.phone.trim(),
     email: form.email.trim(),
-    priceTierRef: form.priceTierRef,
+    priceTierRefs: form.priceTierRefs,
     tags: form.tagsText.split(",").map((tag) => tag.trim()).filter(Boolean),
     notes: form.notes.trim(),
     houseAccount: form.houseAccount,
@@ -200,12 +221,35 @@ function submit() {
       />
     </OperatorFormSection>
 
-    <OperatorFormSection section-key="commercial" title="Relacionamento comercial" description="Grupo comercial altera preço e vantagens; etiquetas só organizam o atendimento.">
+    <OperatorFormSection section-key="commercial" title="Relacionamento comercial" description="O cliente pode estar em mais de um grupo. A melhor vantagem de cada tipo vale, sem acumular, e a lista de preço vem do grupo de maior prioridade.">
       <div class="grid gap-3 sm:grid-cols-2">
-        <NuxtFormField label="Grupo comercial" :error="fieldErrors.priceTierRef">
-          <NuxtSelect v-model="form.priceTierRef" :items="options.price_tiers" value-key="value" label-key="label" class="w-full" />
+        <NuxtFormField
+          label="Grupos comerciais"
+          description="Pode marcar mais de um. Sem nenhum, o cadastro fica com o grupo padrão."
+          :error="fieldErrors.priceTierRefs"
+          class="sm:col-span-2"
+        >
+          <div v-if="options.price_tiers.length" class="grid gap-2 sm:grid-cols-2">
+            <div
+              v-for="tier in options.price_tiers"
+              :key="tier.value"
+              class="flex items-center gap-2"
+              :data-testid="`customer-group-${tier.value}`"
+            >
+              <NuxtCheckbox
+                :model-value="form.priceTierRefs.includes(tier.value)"
+                :label="tier.label"
+                @update:model-value="togglePriceTier(tier.value, Boolean($event))"
+              />
+              <NuxtBadge v-if="tier.value === primaryGroupRef" color="primary" label="Decide o preço" />
+            </div>
+          </div>
+          <p v-else class="text-sm text-muted-foreground">Nenhum grupo comercial cadastrado.</p>
+          <p v-if="primaryGroupName && form.priceTierRefs.length > 1" class="text-xs text-muted-foreground">
+            Com mais de um grupo, {{ primaryGroupName }} decide o preço.
+          </p>
         </NuxtFormField>
-        <NuxtFormField label="Etiquetas" description="Separe por vírgula. Ex.: vizinho, sem glúten." :error="fieldErrors.tags">
+        <NuxtFormField label="Etiquetas" description="Separe por vírgula. Ex.: vizinho, sem glúten." :error="fieldErrors.tags" class="sm:col-span-2">
           <NuxtInput v-model="form.tagsText" class="w-full" />
         </NuxtFormField>
         <NuxtCheckbox v-model="form.houseAccount" label="Pode comprar em conta" />

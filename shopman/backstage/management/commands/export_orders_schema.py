@@ -44,6 +44,7 @@ from shopman.backstage.projections.channel_health import (
     ChannelHealthProjection,
 )
 from shopman.backstage.projections.customer_groups import (
+    CustomerGroupAdvantageProjection,
     CustomerGroupFormOptionsProjection,
     CustomerGroupListProjection,
     CustomerGroupOptionProjection,
@@ -60,6 +61,7 @@ from shopman.backstage.projections.customers import (
     CustomerIdentifierProjection,
     CustomerListProjection,
     CustomerOrderRowProjection,
+    CustomerPriceTierProjection,
     CustomerRowProjection,
     MergeAuditListProjection,
     MergeAuditRowProjection,
@@ -183,6 +185,7 @@ CONTRACT_DATACLASSES = (
     CustomerFilterOption,
     CustomerFormOptionProjection,
     CustomerFormOptionsProjection,
+    CustomerPriceTierProjection,
     CustomerRowProjection,
     CustomerListProjection,
     CustomerIdentifierProjection,
@@ -192,6 +195,7 @@ CONTRACT_DATACLASSES = (
     CustomerConsentProjection,
     CustomerDetailProjection,
     CustomerGroupOptionProjection,
+    CustomerGroupAdvantageProjection,
     CustomerGroupFormOptionsProjection,
     CustomerGroupProjection,
     CustomerGroupListProjection,
