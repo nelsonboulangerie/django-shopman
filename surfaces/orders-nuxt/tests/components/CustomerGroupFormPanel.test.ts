@@ -87,7 +87,7 @@ describe("CustomerGroupFormPanel", () => {
   it("duplica como um cadastro novo, preservando a regra mas exigindo outro código", async () => {
     const wrapper = panel({ group, duplicate: true });
     expect(wrapper.get("[data-testid='customer-group-ref']").attributes("disabled")).toBeUndefined();
-    expect(wrapper.get("[data-testid='customer-group-name']").element).toHaveProperty("value", "Aliança Francesa — cópia");
+    expect(wrapper.get("[data-testid='customer-group-name']").element).toHaveProperty("value", "Aliança Francesa (cópia)");
     await wrapper.get("[data-testid='customer-group-ref']").setValue("alianca-francesa-2");
     await wrapper.get("[data-testid='customer-group-submit']").trigger("click");
     expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({

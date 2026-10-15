@@ -160,7 +160,7 @@ const phoneHeaderActions = computed(() => [
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-medium">{{ row.original.name }}</span>
-              <NuxtBadge v-if="row.original.is_default" color="primary" variant="subtle" label="Padrão" />
+              <NuxtBadge v-if="row.original.is_default" color="primary" label="Padrão" />
             </div>
             <span class="block font-mono text-xs text-muted-foreground">{{ row.original.ref }}</span>
             <span v-if="row.original.description" class="mt-1 block max-w-xl text-xs text-muted-foreground">{{ row.original.description }}</span>
@@ -178,7 +178,7 @@ const phoneHeaderActions = computed(() => [
           <span v-if="row.original.pickup_only && row.original.discount_type" class="block text-xs text-muted-foreground">Somente retirada</span>
         </template>
         <template #customers-cell="{ row }">
-          <NuxtBadge color="neutral" variant="subtle" :label="row.original.customer_count_label" />
+          <NuxtBadge color="neutral" :label="row.original.customer_count_label" />
         </template>
         <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-2">

@@ -69,7 +69,7 @@ function reset() {
   const group = props.group;
   Object.assign(form, {
     ref: props.duplicate ? "" : group?.ref ?? "",
-    name: props.duplicate && group ? `${group.name} — cópia` : group?.name ?? "",
+    name: props.duplicate && group ? `${group.name} (cópia)` : group?.name ?? "",
     description: group?.description ?? "",
     listingRef: group?.listing_ref ?? "",
     priority: group?.priority ?? 0,
