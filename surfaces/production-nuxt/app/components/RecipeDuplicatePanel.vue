@@ -50,6 +50,7 @@ function save() {
   <OperatorFormShell
     :open="open"
     title="Duplicar receita"
+    size="standard"
     :description="source ? `Cópia da versão ${fromVersion ?? source.current_version_number ?? 'mais recente'} de ${source.name}.` : ''"
     :dirty="dirty"
     :dirty-count="changedKeys.length"

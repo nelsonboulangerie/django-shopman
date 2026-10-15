@@ -90,6 +90,7 @@ function save() {
   <OperatorFormShell
     :open="open"
     title="Operação da ficha"
+    size="wide"
     description="Como a receita se comporta no planejamento e no chão de produção."
     :dirty="dirty"
     :dirty-count="changedKeys.length"
