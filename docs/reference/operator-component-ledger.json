@@ -2044,6 +2044,35 @@
           "status": "pending"
         },
         {
+          "id": "recipe-sheets",
+          "source_files": [
+            "app/pages/recipes/sheets/index.vue"
+          ],
+          "routes": [
+            "/recipes/sheets"
+          ],
+          "variants": [
+            "list",
+            "empty",
+            "create",
+            "edit",
+            "duplicate",
+            "forbidden",
+            "stale"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
           "id": "reports",
           "source_files": [
             "app/pages/reports.vue"

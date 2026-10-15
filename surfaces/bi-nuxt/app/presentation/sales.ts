@@ -1,7 +1,11 @@
 // Vendas (PR-B3 do WP-BI-CANON-LAUDO): a parte pura da tela. Monta os pontos que o
 // `OperatorReadingChart` do kit desenha e as linhas da tabela "Por canal", a partir do
 // `BISalesReport`. Sem Vue; testada em `tests/sales.test.ts`.
-import type { ReadingChartPoint, ReadingChartSeries } from "../../../operator-kit/app/presentation/readingChart";
+import type {
+  ReadingChartPoint,
+  ReadingChartSeries,
+  ReadingCsv,
+} from "../../../operator-kit/app/presentation/readingChart";
 import type { BISalesReport } from "~/types/bi";
 import {
   BUCKET_SPAN_LABELS,
@@ -9,6 +13,8 @@ import {
   bucketLabel,
   bucketSalesDays,
   channelIcon,
+  csvMoney,
+  formatMoney,
   sharePercent,
   reais,
 } from "./bi";
@@ -87,4 +93,52 @@ export function channelRows(report: Pick<BISalesReport, "by_channel" | "revenue_
     revenue_q: row.revenue_q,
     share: sharePercent(row.revenue_q, report.revenue_total_q),
   }));
+}
+
+// ── Desconto por tipo de grupo ───────────────────────────────────────────────
+
+/**
+ * Rótulos pt-BR dos tipos que o cadastro de grupos já cria
+ * (`setup_commercial_groups`). O tipo é texto livre ("Tipo para o B.I." no grupo),
+ * então o que não está aqui sai humanizado em vez de sumir: um tipo novo que o
+ * gestor inventar aparece na tela no dia seguinte.
+ */
+const DISCOUNT_KIND_LABELS: Record<string, string> = {
+  equipe: "Equipe",
+  parceiro: "Parceiro",
+};
+
+export function discountKindLabel(kind: string): string {
+  const key = kind.trim();
+  const known = DISCOUNT_KIND_LABELS[key.toLowerCase()];
+  if (known) return known;
+  const words = key.replace(/[-_]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : key;
+}
+
+export interface DiscountKindRow {
+  /** O tipo cru do contrato; a identidade da linha. */
+  kind: string;
+  /** O tipo como o gestor o lê ("Equipe", "Parceiro", "Convênio"). */
+  label: string;
+  amount_q: number;
+  /** O valor já formatado ("R$ 200,00"). */
+  amount: string;
+}
+
+export function discountRows(report: Pick<BISalesReport, "discount_by_kind">): DiscountKindRow[] {
+  return report.discount_by_kind.map((row) => ({
+    kind: row.kind,
+    label: discountKindLabel(row.kind),
+    amount_q: row.amount_q,
+    amount: formatMoney(row.amount_q),
+  }));
+}
+
+/** O CSV do quadro: uma linha por tipo e a última com o total do período. */
+export function discountCsv(rows: readonly DiscountKindRow[], totalQ: number): ReadingCsv {
+  return {
+    header: ["Tipo de grupo", "Desconto (R$)"],
+    rows: [...rows.map((row) => [row.label, csvMoney(row.amount_q)]), ["Total", csvMoney(totalQ)]],
+  };
 }

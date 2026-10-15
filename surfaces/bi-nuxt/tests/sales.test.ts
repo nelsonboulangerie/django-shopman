@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   channelRows,
+  discountCsv,
+  discountKindLabel,
+  discountRows,
   hourPoints,
   revenueReading,
   revenueSeries,
@@ -86,5 +89,50 @@ describe("channelRows", () => {
       ["web", 1, "25%"],
     ]);
     expect(rows[0]?.icon).toBeTruthy();
+  });
+});
+
+describe("desconto por tipo de grupo", () => {
+  it("traduz os tipos que o cadastro cria e humaniza o tipo livre do gestor", () => {
+    expect(discountKindLabel("equipe")).toBe("Equipe");
+    expect(discountKindLabel("Parceiro")).toBe("Parceiro");
+    expect(discountKindLabel("convênio")).toBe("Convênio");
+    expect(discountKindLabel("beneficio-manual")).toBe("Beneficio manual");
+  });
+
+  it("monta uma linha por tipo, com o valor formatado, na ordem do servidor", () => {
+    const rows = discountRows({
+      discount_by_kind: [
+        { kind: "equipe", amount_q: 20000 },
+        { kind: "parceiro", amount_q: 15050 },
+      ],
+    });
+    // O Intl separa "R$" do número com espaço fixo; a tela mostra igual e o teste
+    // normaliza para comparar.
+    expect(rows.map((row) => ({ ...row, amount: row.amount.replace(/\u00a0/g, " ") }))).toEqual([
+      { kind: "equipe", label: "Equipe", amount_q: 20000, amount: "R$ 200,00" },
+      { kind: "parceiro", label: "Parceiro", amount_q: 15050, amount: "R$ 150,50" },
+    ]);
+  });
+
+  it("sem tipo no período devolve nenhuma linha", () => {
+    expect(discountRows({ discount_by_kind: [] })).toEqual([]);
+  });
+
+  it("o CSV leva os tipos e fecha com o total do período", () => {
+    const rows = discountRows({
+      discount_by_kind: [
+        { kind: "equipe", amount_q: 20000 },
+        { kind: "parceiro", amount_q: 15050 },
+      ],
+    });
+    expect(discountCsv(rows, 35050)).toEqual({
+      header: ["Tipo de grupo", "Desconto (R$)"],
+      rows: [
+        ["Equipe", "200,00"],
+        ["Parceiro", "150,50"],
+        ["Total", "350,50"],
+      ],
+    });
   });
 });

@@ -51,6 +51,7 @@ describe("barra de seleção: só a OperatorBulkBar", () => {
     const screens = files.filter(({ source }) => /#selection\b/.test(source));
     expect(screens.map(({ file }) => file).sort()).toEqual([
       "orders-nuxt/app/pages/catalog.vue",
+      "orders-nuxt/app/pages/customers/index.vue",
       "orders-nuxt/app/pages/index.vue",
     ]);
     for (const { file, source } of screens) {

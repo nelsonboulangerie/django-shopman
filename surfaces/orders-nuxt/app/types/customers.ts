@@ -70,3 +70,29 @@ export interface CustomerAddressMutationPayload {
 }
 
 export type CustomerAddressMutationResponse = CustomerMutationResponse;
+
+/** A cópia: leva a revisão do original e, opcionalmente, a nova identidade/contato. */
+export interface CustomerDuplicatePayload {
+  expectedRevision: string;
+  firstName?: string;
+  lastName?: string;
+  document?: string;
+  phone?: string;
+  email?: string;
+}
+
+export type CustomerBulkOperation = "add_tags" | "remove_tags";
+
+export interface CustomerBulkPayload {
+  refs: string[];
+  operation: CustomerBulkOperation;
+  tags: string[];
+}
+
+export type CustomerBulkResponse = {
+  ok?: boolean;
+  outcome?: "applied" | "not_applied" | "unknown";
+  operation: CustomerBulkOperation;
+  applied: string[];
+  skipped: { ref: string; reason: string }[];
+};

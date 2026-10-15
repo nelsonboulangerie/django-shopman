@@ -50,7 +50,9 @@ from .customer_groups import CustomerGroupDetailView, CustomerGroupListView
 from .customers import (
     CustomerAddressDetailView,
     CustomerAddressListView,
+    CustomerBulkView,
     CustomerDetailView,
+    CustomerDuplicateView,
     CustomerListView,
     CustomerMergeListView,
     CustomerMergePreviewView,
@@ -311,6 +313,9 @@ from .recipe_book import (
     RecipeExecutionView,
     RecipeFavoriteView,
     RecipeReferenceView,
+    RecipeSheetDuplicateView,
+    RecipeSheetListView,
+    RecipeSheetView,
     RecipeVersionCreateView,
     RecipeVersionPublishView,
     RecipeVersionRatingView,
@@ -511,6 +516,14 @@ urlpatterns = [
     path("recipes/ingredients/", IngredientOptionsView.as_view(), name="api-backstage-recipes-ingredients"),
     path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
     path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
+    # Ficha de execução: rotas fixas ANTES de recipes/<slug:ref>/ ("sheets" também é slug).
+    path("recipes/sheets/", RecipeSheetListView.as_view(), name="api-backstage-recipe-sheets"),
+    path("recipes/sheets/<slug:ref>/", RecipeSheetView.as_view(), name="api-backstage-recipe-sheet"),
+    path(
+        "recipes/sheets/<slug:ref>/duplicate/",
+        RecipeSheetDuplicateView.as_view(),
+        name="api-backstage-recipe-sheet-duplicate",
+    ),
     path("recipes/<slug:ref>/", RecipeEntryView.as_view(), name="api-backstage-recipe"),
     path("recipes/<slug:ref>/duplicate/", RecipeDuplicateView.as_view(), name="api-backstage-recipe-duplicate"),
     path("recipes/<slug:ref>/execution/", RecipeExecutionView.as_view(), name="api-backstage-recipe-execution"),
@@ -684,6 +697,7 @@ urlpatterns = [
     # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
     # se chama "merge", mas a ordem não deveria depender disso.
     path("customers/", CustomerListView.as_view(), name="api-backstage-customers"),
+    path("customers/bulk/", CustomerBulkView.as_view(), name="api-backstage-customers-bulk"),
     path("customers/groups/", CustomerGroupListView.as_view(), name="api-backstage-customer-groups"),
     path("customers/groups/<str:ref>/", CustomerGroupDetailView.as_view(), name="api-backstage-customer-group-detail"),
     path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
@@ -695,6 +709,11 @@ urlpatterns = [
         name="api-backstage-customers-merge-undo",
     ),
     path("customers/<str:ref>/", CustomerDetailView.as_view(), name="api-backstage-customer-detail"),
+    path(
+        "customers/<str:ref>/duplicate/",
+        CustomerDuplicateView.as_view(),
+        name="api-backstage-customer-duplicate",
+    ),
     path(
         "customers/<str:ref>/addresses/",
         CustomerAddressListView.as_view(),

@@ -29,9 +29,12 @@ import {
   sourceConflictLabel,
   sourcesCaption,
 } from "~/presentation/bi";
+import type { DiscountKindRow } from "~/presentation/sales";
 import {
   ORDERS_SERIES,
   channelRows as toChannelRows,
+  discountCsv as toDiscountCsv,
+  discountRows as toDiscountRows,
   hourPoints as toHourPoints,
   revenueReading,
   revenueSeries as toRevenueSeries,
@@ -144,6 +147,18 @@ const topCsv = computed(() => ({
     sharePercent(row.revenue_q, topTotal.value),
   ]),
 }));
+
+// Descontos por tipo de grupo: o servidor manda uma linha por tipo, já do maior para o
+// menor, e o total como campo próprio. A tela não soma (`discount_kind_total_q` é o
+// número que o motor gravou por pedido); o rodapé do quadro põe o total à vista.
+const discountRows = computed(() => (report.value ? toDiscountRows(report.value) : []));
+const discountCsv = computed(() =>
+  toDiscountCsv(discountRows.value, report.value?.discount_kind_total_q ?? 0),
+);
+const discountColumns = [
+  { accessorKey: "label", header: "Tipo de grupo", enableSorting: true, meta: { class: { td: "font-medium text-highlighted" } } },
+  { id: "amount", accessorFn: (row: DiscountKindRow) => row.amount_q, header: "Desconto", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
+];
 
 // "Maior canal" leva ao quadro Por canal pelo próximo foco da suíte (linha de foco sob
 // o chrome fixo e foco de teclado no quadro), não por um scrollIntoView da tela.
@@ -392,6 +407,36 @@ const activeFilters = computed(() => {
             </OperatorTable>
           </OperatorReadingCard>
         </div>
+
+        <!-- Descontos por tipo de grupo: o tipo vem do cadastro de grupos ("Tipo para
+             o B.I.") e só a venda nativa o registra; o histórico não tem a dimensão. -->
+        <OperatorReadingCard
+          title="Descontos por tipo de grupo"
+          description="Descontos concedidos no período; só as vendas do Shopman registram o tipo"
+          :csv="discountRows.length ? discountCsv : undefined"
+          class="shrink-0"
+          data-bi-discounts
+        >
+          <OperatorTable
+            in-card
+            :data="discountRows"
+            :columns="discountColumns"
+            :row-key="(row) => row.kind"
+            caption="Descontos por tipo de grupo"
+            empty-icon="i-lucide-tag"
+            empty-title="Nenhum desconto de grupo no período"
+            empty-description="O desconto aparece aqui quando o pedido registra o grupo que o concedeu."
+            data-bi-discount-table
+          >
+            <template #amount-cell="{ row }">{{ row.original.amount }}</template>
+            <template #footer>
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-semibold text-highlighted">Total</span>
+                <span class="font-semibold tnum text-highlighted">{{ formatMoney(report.discount_kind_total_q) }}</span>
+              </div>
+            </template>
+          </OperatorTable>
+        </OperatorReadingCard>
       </template>
     </main>
   </div>

@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Check or create the versioned Watchman detectors through Sentry's API.
+"""Check the versioned Watchman detectors through Sentry's read-only API.
 
 Authentication is intentionally environment-only.  The command never stores or
-prints the token.  Notification workflows are checked, not guessed: Sentry needs
-the account-specific email action identifier for ``ti@boulangerie.com.br``.
+prints the token. Changes belong to the owner in Sentry's panel; this client has
+no mutating method by construction.
 """
 
 from __future__ import annotations
@@ -25,12 +25,10 @@ class SentryClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
 
-    def request(self, method: str, path: str, payload: dict | None = None):
-        data = json.dumps(payload).encode() if payload is not None else None
+    def get(self, path: str):
         request = urllib.request.Request(
             self.base_url + path,
-            data=data,
-            method=method,
+            method="GET",
             headers={"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"},
         )
         try:
@@ -38,55 +36,11 @@ class SentryClient:
                 return json.load(response)
         except urllib.error.HTTPError as exc:
             detail = exc.read(1000).decode(errors="replace")
-            raise RuntimeError(f"Sentry API {method} {path} returned {exc.code}: {detail}") from exc
+            raise RuntimeError(f"Sentry API GET {path} returned {exc.code}: {detail}") from exc
 
 
 def _index(items: list[dict]) -> dict[str, dict]:
     return {str(item.get("name", "")): item for item in items}
-
-
-def _uptime_payload(item: dict, environment: str) -> dict:
-    return {
-        "name": item["name"],
-        "url": item["url"],
-        "method": "GET",
-        "intervalSeconds": item["interval_seconds"],
-        "timeoutMs": item["timeout_ms"],
-        "downtimeThreshold": item["downtime_threshold"],
-        "recoveryThreshold": item["recovery_threshold"],
-        "environment": environment,
-        "status": "active",
-        "responseCaptureEnabled": False,
-    }
-
-
-def _error_payload(contract: dict) -> dict:
-    item = contract["error_rate"]
-    return {
-        "name": item["name"],
-        "type": "metric_issue",
-        "dataSources": [
-            {
-                "aggregate": item["aggregate"],
-                "dataset": item["dataset"],
-                "environment": contract["environment"],
-                "eventTypes": ["default", "error"],
-                "query": item["query"],
-                "queryType": 0,
-                "timeWindow": item["time_window_seconds"],
-            }
-        ],
-        "conditionGroup": {
-            "logicType": "any",
-            "conditions": [
-                {"type": "gt", "comparison": item["open_above"], "conditionResult": 75},
-                {"type": "lte", "comparison": item["resolve_at_or_below"], "conditionResult": 0},
-            ],
-            "actions": [],
-        },
-        "config": {"detectionType": "static"},
-        "enabled": True,
-    }
 
 
 def _uptime_matches(found: dict, expected: dict, environment: str) -> bool:
@@ -127,59 +81,71 @@ def _error_matches(found: dict, contract: dict) -> bool:
     )
 
 
-def reconcile(client: SentryClient, contract: dict, *, apply: bool) -> list[str]:
+def _workflow_matches(found: dict, contract: dict, detector_ids: set[str]) -> bool:
+    expected = contract["notification"]
+    conditions = (found.get("triggers") or {}).get("conditions") or []
+    condition_types = {item.get("type") for item in conditions}
+    encoded = json.dumps(found, ensure_ascii=False).lower()
+    return (
+        found.get("name") == expected["name"]
+        and found.get("enabled") is True
+        and found.get("environment") == contract["environment"]
+        and (found.get("config") or {}).get("frequency") == expected["frequency_minutes"]
+        and {str(item) for item in found.get("detectorIds", [])} == detector_ids
+        and expected["recipient"].lower() in encoded
+        and (not expected["send_resolved"] or "issue_resolved_trigger" in condition_types)
+    )
+
+
+def reconcile(client: SentryClient, contract: dict) -> list[str]:
     org, project = contract["organization"], contract["project"]
-    detectors = client.request("GET", f"/api/0/organizations/{org}/detectors/?project={project}")
+    detectors = client.get(f"/api/0/organizations/{org}/detectors/?project={project}")
     existing = _index(detectors)
     changes: list[str] = []
+    expected_detectors: list[dict] = []
     for uptime in contract["uptime"]:
         found = existing.get(uptime["name"])
-        if found and _uptime_matches(found, uptime, contract["environment"]):
-            continue
         if found:
-            changes.append(f"uptime detector has drift: {uptime['name']}")
-        elif apply:
-            client.request(
-                "POST",
-                f"/api/0/projects/{org}/{project}/uptime/",
-                _uptime_payload(uptime, contract["environment"]),
-            )
-        else:
+            expected_detectors.append(found)
+        if not found:
             changes.append(f"missing uptime detector: {uptime['name']}")
+        elif not _uptime_matches(found, uptime, contract["environment"]):
+            changes.append(f"uptime detector has drift: {uptime['name']}")
     rate = contract["error_rate"]
     found_rate = existing.get(rate["name"])
     if not found_rate:
-        if apply:
-            client.request(
-                "POST",
-                f"/api/0/organizations/{org}/projects/{project}/detectors/",
-                _error_payload(contract),
-            )
-        else:
-            changes.append(f"missing error-rate detector: {rate['name']}")
+        changes.append(f"missing error-rate detector: {rate['name']}")
     elif not _error_matches(found_rate, contract):
+        expected_detectors.append(found_rate)
         changes.append(f"error-rate detector has drift: {rate['name']}")
+    else:
+        expected_detectors.append(found_rate)
 
-    workflows = client.request("GET", f"/api/0/organizations/{org}/workflows/")
-    recipient = contract["notification"]["recipient"].lower()
-    encoded = json.dumps(workflows).lower()
-    if recipient not in encoded:
-        changes.append(f"notification workflow does not target {recipient}")
+    workflows = client.get(f"/api/0/organizations/{org}/workflows/")
+    expected_workflow = _index(workflows).get(contract["notification"]["name"])
+    detector_ids = {str(item["id"]) for item in expected_detectors if item.get("id") is not None}
+    if not expected_workflow:
+        changes.append(f"missing notification workflow: {contract['notification']['name']}")
+    elif len(detector_ids) != 3 or not _workflow_matches(expected_workflow, contract, detector_ids):
+        changes.append(f"notification workflow has drift: {contract['notification']['name']}")
     return changes
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("check", "apply"), default="check", nargs="?")
+    parser.add_argument("action", choices=("check",), default="check", nargs="?")
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     args = parser.parse_args()
     token = os.environ.get("SENTRY_AUTH_TOKEN", "").strip()
     if not token:
-        print("SENTRY_AUTH_TOKEN ausente (requer alerts:read e, para apply, alerts:write)", file=sys.stderr)
+        print(
+            "SENTRY_AUTH_TOKEN ausente: o DSN envia eventos, mas a conferência requer alerts:read ou org:read",
+            file=sys.stderr,
+        )
         return 2
     contract = json.loads(args.contract.read_text(encoding="utf-8"))
     client = SentryClient(base_url=os.environ.get("SENTRY_API_BASE", "https://sentry.io"), token=token)
-    changes = reconcile(client, contract, apply=args.action == "apply")
+    changes = reconcile(client, contract)
     if changes:
         print(json.dumps({"status": "drift", "changes": changes}, ensure_ascii=False))
         return 1

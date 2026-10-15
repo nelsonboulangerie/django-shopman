@@ -75,6 +75,12 @@ host decides how log events reach Sentry or e-mail and can expose
 Query budgets are enforced only when the host supplies a query count. Absence is
 never interpreted as zero.
 
+For configured routes, the first healthy observation emits a structured INFO
+pulse; `BUDGET_HEARTBEAT_SAMPLES` (default: 1000) controls later pulses. The
+cumulative count distinguishes "no breach" from "no measurement" without a
+timer, thread, I/O or database query on ordinary requests; the only additional
+hot-path work is an integer comparison.
+
 ## Writing a check
 
 Checks perform their own bounded I/O. The runner provides a deadline but does

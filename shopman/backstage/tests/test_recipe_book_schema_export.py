@@ -43,7 +43,8 @@ def test_render_reflects_contract_source() -> None:
 
 def test_every_projection_of_the_plan_is_exported() -> None:
     """§7 lists nineteen shapes, plus the structured step (30/09/2026), the four of the usage by version
-    (report 06 §5.5), the external reference (D6) and the three of the rating (D7)."""
+    (report 06 §5.5), the external reference (D6), the three of the rating (D7) and the five of the
+    execution sheet cadastro (CADASTRO-TURBO, onda 3)."""
     names = {dc.__name__ for dc in CONTRACT_DATACLASSES}
     assert names == {
         "RecipeStepProjection",
@@ -76,4 +77,9 @@ def test_every_projection_of_the_plan_is_exported() -> None:
         "IngredientOptionProjection",
         "CaptureItemProjection",
         "RecipeCaptureDraftProjection",
+        "RecipeSheetItemProjection",
+        "RecipeSheetMassBalanceProjection",
+        "RecipeSheetCardProjection",
+        "RecipeSheetListProjection",
+        "RecipeSheetDetailProjection",
     }

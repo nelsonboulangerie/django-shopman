@@ -177,3 +177,36 @@ def test_budget_breach_is_structured_and_never_contains_request_values(settings,
     assert records[0].query_count == 3
     assert "987654" not in records[0].getMessage()
     assert "secret" not in records[0].getMessage()
+
+
+def test_controlled_budget_probe_logs_breach_then_healthy_observation_pulse(settings, caplog):
+    route = "/admin/auth/user/<path:object_id>/change/"
+    settings.WATCHMAN = {
+        "BUDGETS": {
+            "controlled_probe": {
+                "route": route,
+                "max_duration_ms": 10_000,
+                "max_queries": 1,
+                "consecutive_failures": 1,
+                "recovery_samples": 1,
+                "heartbeat_samples": 1,
+            }
+        }
+    }
+    caplog.set_level(logging.INFO, logger="shopman.watchman.performance")
+    path = "/admin/auth/user/watchman-probe/change/"
+
+    breached = HttpResponse(status=200)
+    breached._watchman_query_count = 2
+    _middleware(breached, settings, resolve_path=path)(RequestFactory().get(path))
+
+    recovered = HttpResponse(status=200)
+    recovered._watchman_query_count = 0
+    _middleware(recovered, settings, resolve_path=path)(RequestFactory().get(path))
+    _middleware(recovered, settings, resolve_path=path)(RequestFactory().get(path))
+
+    records = _records(caplog, logger_name="shopman.watchman.performance")
+    assert [record.watchman_event for record in records] == ["opened", "resolved", "healthy"]
+    assert records[0].query_count == 2
+    assert records[-1].watchman_observations == 3
+    assert "watchman_budgets_ok budget=controlled_probe observations=3" in records[-1].getMessage()

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, watch } from "vue";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 import UiDateField from "../../../operator-kit/app/components/UiDateField.vue";
+import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm";
 import type { CustomerDetailProjection, CustomerFormOptionsProjection } from "~/generated/ordersContract";
 import type { CustomerMutationPayload } from "~/types/customers";
 
@@ -58,7 +59,6 @@ const form = reactive<FormState>({
   fiscalCpfNaNota: false,
   fiscalEmailReceipt: false,
 });
-const baseline = ref("");
 
 function snapshot(): FormState {
   return {
@@ -79,6 +79,8 @@ function snapshot(): FormState {
   };
 }
 
+const { dirty, changedKeys, capture } = useDirtyForm(snapshot);
+
 function reset() {
   const customer = props.customer;
   Object.assign(form, {
@@ -97,18 +99,13 @@ function reset() {
     fiscalCpfNaNota: customer?.fiscal_cpf_na_nota ?? false,
     fiscalEmailReceipt: customer?.fiscal_email_receipt ?? false,
   });
-  baseline.value = JSON.stringify(snapshot());
+  nextTick(capture);
 }
 
 watch(() => [props.open, props.customer?.revision, props.options] as const, ([open]) => {
   if (open) reset();
 }, { immediate: true });
 
-const changedKeys = computed(() => {
-  const before = JSON.parse(baseline.value || "{}") as Record<string, unknown>;
-  return Object.entries(snapshot()).filter(([key, value]) => before[key] !== value).map(([key]) => key);
-});
-const dirty = computed(() => changedKeys.value.length > 0);
 const disabledReason = computed(() => {
   if (!form.firstName.trim()) return "Informe o nome do cliente.";
   if (form.fiscalCpfNaNota && !form.document.trim()) return "Informe o CPF ou CNPJ usado na nota.";
