@@ -19,6 +19,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from shopman.shop import product_options
 
@@ -28,7 +29,6 @@ DEFAULT_STOREFRONT_CHANNEL_REF = "web"
 
 # Pricing-modifier discount keys aggregated into the cart breakdown.
 _PRICING_MODIFIER_KEYS = (
-    "employee_discount",
     "happy_hour",
     "loyalty_redeem",
     "manual_discount",
@@ -138,6 +138,9 @@ class CartDiscountLineProjection:
     name: str
     is_coupon: bool
     amount_q: int
+    # A promoção vencedora é restrita à retirada (fulfillment_types): o checkout
+    # avisa antes de o cliente trocar para entrega.
+    requires_pickup: bool = False
 
 
 @dataclass(frozen=True)
@@ -191,6 +194,9 @@ class CartProjection:
     can_checkout: bool
     revision: int = 0
     checkout_block_reason: str = ""  # "" | "empty" | "unavailable" | "below_minimum"
+    # Mensagem de economia do grupo (texto por grupo, editável no Admin). Vazia
+    # quando não houve desconto de grupo.
+    group_savings_message: str = ""
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -354,6 +360,7 @@ def build_cart(
         upsell=upsell,
         can_checkout=can_checkout,
         checkout_block_reason=block_reason,
+        group_savings_message=str((discount_data.get("savings") or {}).get("message") or ""),
     )
 
 
@@ -621,22 +628,35 @@ def _line_availability(
 def _discount_lines(discount_data: dict, pricing: dict) -> tuple[CartDiscountLineProjection, ...]:
     """One row per discount origin, aggregated. Coupon/promo carry the raw
     name + ``is_coupon``; the presentation composes the label.
+    ``requires_pickup`` acende quando a promoção vencedora é restrita à retirada
+    (o ``fulfillment_types`` carimbado pelo motor no registro do desconto).
     """
-    agg: dict[tuple[bool, str], int] = defaultdict(int)
+    agg: dict[tuple[bool, str], dict[str, Any]] = defaultdict(
+        lambda: {"amount_q": 0, "requires_pickup": False}
+    )
     for d in discount_data.get("items") or []:
         amt = int(d.get("discount_q", 0)) * int(d.get("qty", 0))
         if amt <= 0:
             continue
         name = (d.get("name") or "").strip() or "Promoção"
-        agg[(d.get("type") == "coupon", name)] += amt
+        entry = agg[(d.get("type") == "coupon", name)]
+        entry["amount_q"] += amt
+        fulfillment = d.get("fulfillment_types") or []
+        if "pickup" in fulfillment and "delivery" not in fulfillment:
+            entry["requires_pickup"] = True
     for key in _PRICING_MODIFIER_KEYS:
         mod_data = pricing.get(key) or {}
         amt = int(mod_data.get("total_discount_q", 0))
         if amt > 0:
-            agg[(False, mod_data.get("label", key))] += amt
+            agg[(False, mod_data.get("label", key))]["amount_q"] += amt
     return tuple(
-        CartDiscountLineProjection(name=name, is_coupon=is_coupon, amount_q=amt)
-        for (is_coupon, name), amt in sorted(agg.items(), key=lambda kv: -kv[1])
+        CartDiscountLineProjection(
+            name=name,
+            is_coupon=is_coupon,
+            amount_q=entry["amount_q"],
+            requires_pickup=entry["requires_pickup"],
+        )
+        for (is_coupon, name), entry in sorted(agg.items(), key=lambda kv: -kv[1]["amount_q"])
     )
 
 

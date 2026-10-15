@@ -297,7 +297,7 @@ export interface CartProjection {
   discount_total_q: number
   discount_total_display: string
   has_discount: boolean
-  discount_lines: Array<{ label: string, amount_q: number, amount_display: string }>
+  discount_lines: Array<{ label: string, amount_q: number, amount_display: string, requires_pickup?: boolean }>
   delivery_fee_q: number | null
   delivery_fee_display: string | null
   delivery_is_free: boolean
@@ -307,6 +307,9 @@ export interface CartProjection {
   grand_total_q: number
   grand_total_display: string
   loyalty_applied: boolean
+  // Economia do grupo ("Hoje você economizou R$ X por ser [grupo]"). Vazia
+  // quando não houve desconto do grupo.
+  group_savings_message: string
   coupon_code: string | null
   coupon_discount_q: number | null
   coupon_discount_display: string | null
@@ -909,6 +912,7 @@ export interface CheckoutProjection {
   support_whatsapp_url: string
   pickup_hint: string
   delivery_hint: string
+  group_savings_message: string
   card_provider: string
   // Cartões de teste do Stripe. Vem VAZIO fora do modo de teste — o backend
   // deriva isso da chave (`pk_test_`), então chave live não manda os números.

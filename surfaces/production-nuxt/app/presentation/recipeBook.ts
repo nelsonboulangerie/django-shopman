@@ -495,12 +495,30 @@ export function favoriteActionHint(isFavorite: boolean): string {
 }
 
 /** Query da lista — omite filtros vazios (URLs limpas). */
-export function bookQuery(term: string, kind: string, archived: boolean): Record<string, string> {
+export function bookQuery(
+  term: string,
+  kind: string,
+  archived: boolean,
+  options: {
+    withoutSku?: boolean;
+    withDraft?: boolean;
+    favorites?: boolean;
+    sort?: string;
+    page?: number;
+    pageSize?: number;
+  } = {},
+): Record<string, string> {
   const query: Record<string, string> = {};
   const q = term.trim();
   if (q) query.q = q;
   if (kind) query.kind = kind;
   if (archived) query.archived = "1";
+  if (options.withoutSku) query.without_sku = "1";
+  if (options.withDraft) query.with_draft = "1";
+  if (options.favorites) query.favorites = "1";
+  if (options.sort && options.sort !== "updated") query.sort = options.sort;
+  if ((options.page ?? 1) > 1) query.page = String(options.page);
+  if (options.pageSize && options.pageSize !== 48) query.page_size = String(options.pageSize);
   return query;
 }
 

@@ -167,13 +167,32 @@ def check_dependabot(reg: Registry) -> list[str]:
 
 def check_surfaces_gate(reg: Registry) -> list[str]:
     where = ".github/workflows/surfaces-gate.yml"
-    jobs = reg.yaml(where)["jobs"]
+    contract_where = "surfaces/contracts.json"
+    contracts = json.loads(reg.read(contract_where)).get("surfaces") or {}
     errors = []
-    quality = set(jobs["app-quality"]["strategy"]["matrix"]["app"])
-    errors += _diff(f"{where} (app-quality)", "o app", {s.dir for s in reg.surfaces} | {"operator-kit"}, quality)
-    pwa_matrix = jobs["pwa-quality"]["strategy"]["matrix"]["include"]
-    pwa = {(entry["app"], entry["surface"]) for entry in pwa_matrix}
-    errors += _diff(f"{where} (pwa-quality)", "a entrada", {(s.id, s.dir) for s in reg.surfaces}, pwa)
+    quality = {value.get("dir") for value in contracts.values()}
+    errors += _diff(
+        f"{contract_where} (quality)",
+        "o app",
+        {s.dir for s in reg.surfaces} | {"operator-kit"},
+        quality,
+    )
+    pwa = {
+        (key, value.get("dir"))
+        for key, value in contracts.items()
+        if (value.get("capabilities") or {}).get("pwa")
+    }
+    errors += _diff(
+        f"{contract_where} (pwa)",
+        "a entrada",
+        {(s.id, s.dir) for s in reg.surfaces},
+        pwa,
+    )
+    workflow = reg.read(where)
+    for job, output in (("app-quality", "quality"), ("pwa-quality", "pwa")):
+        marker = f"fromJSON(needs.surface-contract.outputs.{output})"
+        if marker not in workflow:
+            errors.append(f"{where} ({job}): matriz não vem do contrato ({marker})")
     return errors
 
 

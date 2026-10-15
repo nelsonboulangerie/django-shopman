@@ -36,6 +36,16 @@ const {
   selectMaterial,
   readonlyFallback,
   actionPending,
+  actionError,
+  materialForm,
+  materialFormSource,
+  materialFormConversions,
+  materialFormCosts,
+  materialCategories,
+  openMaterialCreate,
+  saveMaterial,
+  saveMaterialConversion,
+  saveMaterialCost,
   refresh,
 } = usePurchaseDesk();
 
@@ -156,9 +166,23 @@ const alerts = computed(() => {
 });
 
 const headerActions = [
+  { label: "Novo insumo", icon: "i-lucide-plus", onSelect: () => openMaterialCreate() },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
   { label: "Contagem de estoque", icon: "i-lucide-clipboard-check", to: baseSectionPath("count") },
 ];
+
+async function onSubmitMaterial(payload: Record<string, unknown>) {
+  const sku = await saveMaterial(payload);
+  if (sku) await navigateTo(materialPath(sku));
+}
+
+const materialSavedVersion = ref(0);
+async function onSaveMaterialConversion(payload: Parameters<typeof saveMaterialConversion>[0]) {
+  if (await saveMaterialConversion(payload)) materialSavedVersion.value += 1;
+}
+async function onSaveMaterialCost(payload: Parameters<typeof saveMaterialCost>[0]) {
+  if (await saveMaterialCost(payload)) materialSavedVersion.value += 1;
+}
 
 const saving = ref(false);
 async function onSaveMinStock() {
@@ -319,6 +343,23 @@ const saveLabel = computed(() =>
       :action="{ label: saveLabel, icon: 'i-lucide-check', loading: saving, disabled: readonlyFallback || actionPending, onSelect: () => void onSaveMinStock() }"
       :secondary="{ label: 'Limpar', onSelect: () => clearMinStock() }"
       context-label="Zero apaga o mínimo do insumo"
+    />
+
+    <PurchaseMaterialFormPanel
+      :open="materialForm.open"
+      :mode="materialForm.mode"
+      :source="materialFormSource"
+      :categories="materialCategories"
+      :suppliers="suppliers"
+      :conversions="materialFormConversions"
+      :costs="materialFormCosts"
+      :saved-version="materialSavedVersion"
+      :busy="actionPending"
+      :error="actionError"
+      @update:open="materialForm.open = $event"
+      @save="onSubmitMaterial"
+      @save-conversion="onSaveMaterialConversion"
+      @save-cost="onSaveMaterialCost"
     />
   </main>
 </template>

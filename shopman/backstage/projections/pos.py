@@ -2852,12 +2852,12 @@ def _tab_payload_line_discount(item: dict) -> dict | None:
 #: O rótulo sempre esteve no dado (`meta._disc.label`); morria neste filtro.
 #: ``manual`` fica fora de propósito: tem badge próprio, com o motivo digitado.
 _AUTO_PRICING_DISCOUNT_TYPES = frozenset({
-    "lot_discount", "happy_hour", "employee_discount", "promotion", "coupon",
+    "lot_discount", "happy_hour", "promotion", "coupon",
 })
 
 
 def _tab_payload_pricing_discount(item: dict) -> dict | None:
-    """O desconto automático que venceu a linha (lote, happy hour, funcionário).
+    """O desconto automático que venceu a linha (lote, happy hour, grupo).
 
     O kernel baixa ``unit_price_q`` e carimba tipo, valor por unidade e RÓTULO
     de cliente em ``meta._disc`` — mas o PDV não mostrava nada: o operador via

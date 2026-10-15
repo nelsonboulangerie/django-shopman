@@ -43,10 +43,20 @@ from shopman.backstage.projections.channel_health import (
     ChannelHealthLink,
     ChannelHealthProjection,
 )
+from shopman.backstage.projections.customer_groups import (
+    CustomerGroupFormOptionsProjection,
+    CustomerGroupListProjection,
+    CustomerGroupOptionProjection,
+    CustomerGroupProjection,
+)
 from shopman.backstage.projections.customers import (
+    CustomerAddressProjection,
     CustomerCandidateProjection,
+    CustomerConsentProjection,
     CustomerDetailProjection,
     CustomerFilterOption,
+    CustomerFormOptionProjection,
+    CustomerFormOptionsProjection,
     CustomerIdentifierProjection,
     CustomerListProjection,
     CustomerOrderRowProjection,
@@ -171,12 +181,20 @@ CONTRACT_DATACLASSES = (
     QueueAwarenessProjection,
     TwoZoneQueueProjection,
     CustomerFilterOption,
+    CustomerFormOptionProjection,
+    CustomerFormOptionsProjection,
     CustomerRowProjection,
     CustomerListProjection,
     CustomerIdentifierProjection,
     CustomerOrderRowProjection,
     CustomerCandidateProjection,
+    CustomerAddressProjection,
+    CustomerConsentProjection,
     CustomerDetailProjection,
+    CustomerGroupOptionProjection,
+    CustomerGroupFormOptionsProjection,
+    CustomerGroupProjection,
+    CustomerGroupListProjection,
     MergeSideProjection,
     MergeMoveProjection,
     MergeFillProjection,
@@ -201,6 +219,7 @@ def render_orders_contract_ts() -> str:
             "shopman/backstage/projections/order_queue.py"
             " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py"
             " + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py"
+            " + shopman/backstage/projections/customer_groups.py"
             " + shopman/backstage/projections/notification_receipts.py"
             " + shopman/backstage/projections/order_history.py"
             " + shopman/backstage/projections/order_attention.py"

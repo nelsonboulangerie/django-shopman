@@ -2279,6 +2279,7 @@ useSeoMeta({
                     <dd class="tabular-nums">{{ cart.delivery_fee_display }}</dd>
                   </div>
                 </dl>
+                <p v-if="cart.group_savings_message" class="mt-2 shop-body text-primary">{{ cart.group_savings_message }}</p>
               </template>
             </div>
 

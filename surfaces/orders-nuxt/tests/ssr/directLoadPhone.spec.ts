@@ -18,6 +18,7 @@ const ROUTES = [
   "/?columns=expedition",
   "/history",
   "/customers",
+  "/customers/groups",
   "/catalog",
   "/IFOOD-261006-W01",
   "/feeds",

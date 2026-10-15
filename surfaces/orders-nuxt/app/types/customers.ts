@@ -27,3 +27,46 @@ export type MergeResponse = {
   target_ref: string;
   audit_id: string;
 };
+
+export interface CustomerMutationPayload {
+  expectedRevision?: string;
+  firstName?: string;
+  lastName?: string;
+  customerType?: string;
+  document?: string;
+  birthday?: string;
+  email?: string;
+  phone?: string;
+  priceTierRef?: string;
+  tags?: string[];
+  notes?: string;
+  houseAccount?: boolean;
+  houseAccountLimit?: string;
+  fiscalCpfNaNota?: boolean;
+  fiscalEmailReceipt?: boolean;
+}
+
+export type CustomerMutationResponse = {
+  customer: CustomerDetailProjection;
+  ok?: boolean;
+  outcome?: "applied" | "not_applied" | "unknown";
+  resource?: { kind: "customer" | "customer-address"; ref: string };
+};
+
+export interface CustomerAddressMutationPayload {
+  expectedRevision?: string;
+  label?: string;
+  labelCustom?: string;
+  formattedAddress?: string;
+  route?: string;
+  streetNumber?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  stateCode?: string;
+  postalCode?: string;
+  deliveryInstructions?: string;
+  isDefault?: boolean;
+}
+
+export type CustomerAddressMutationResponse = CustomerMutationResponse;

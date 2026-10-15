@@ -52,7 +52,7 @@ describe("gestorSections (rail)", () => {
 
   it("estar numa seção de Ajustes acende o item Ajustes", () => {
     const sections = gestorSections({ channelsAttention: "", canManageCustomers: true });
-    for (const path of ["/catalog", "/history", "/customers/merges", "/channels/ifood/catalog", "/feeds", "/workstations", "/settings"]) {
+    for (const path of ["/catalog", "/history", "/customers/groups", "/customers/merges", "/channels/ifood/catalog", "/feeds", "/workstations", "/settings"]) {
       expect(activeSectionKey(path, sections)).toBe("settings");
     }
     expect(activeSectionKey("/", sections)).toBe("orders");

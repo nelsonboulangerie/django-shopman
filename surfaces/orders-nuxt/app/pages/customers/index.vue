@@ -11,7 +11,11 @@ import {
   listQueryFromRoute,
   routeQueryFromList,
   type CustomerFilter,
+  type CustomerSort,
 } from "~/presentation/customers";
+import type { CustomerFormOptionsProjection } from "~/generated/ordersContract";
+import type { CustomerMutationPayload } from "~/types/customers";
+import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
 
 useHead({ title: "Clientes" });
 
@@ -51,9 +55,49 @@ function setFilter(filter: string) {
 function goToPage(page: number) {
   router.replace({ query: routeQueryFromList({ ...listQuery.value, page }) });
 }
+function setSort(sort: string) {
+  router.replace({
+    query: routeQueryFromList({ ...listQuery.value, sort: sort as CustomerSort, page: 1 }),
+  });
+}
 
-// Criar e editar cadastro continua no Admin; esta seção acha, compara e unifica.
-const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
+const createOpen = ref(false);
+const createBusy = ref(false);
+const createError = ref("");
+const createFieldErrors = ref<Record<string, string>>({});
+watch(createOpen, (open) => {
+  if (!open) return;
+  createError.value = "";
+  createFieldErrors.value = {};
+});
+let createKey = crypto.randomUUID();
+const emptyForm: CustomerFormOptionsProjection = { customer_types: [], price_tiers: [] };
+const formOptions = computed(() => list.value?.form ?? emptyForm);
+
+async function saveCustomer(payload: CustomerMutationPayload) {
+  if (createBusy.value) return;
+  createBusy.value = true;
+  createError.value = "";
+  createFieldErrors.value = {};
+  try {
+    const response = await createCustomer(payload, createKey);
+    if (response.outcome !== "applied" || !response.customer) {
+      createError.value = "O resultado ainda não foi confirmado. Tente salvar novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    createKey = crypto.randomUUID();
+    createOpen.value = false;
+    useSonner.success(`${response.customer.name} foi cadastrado.`);
+    await refresh();
+    await router.push(`/customers/${encodeURIComponent(response.customer.ref)}`);
+  } catch (failure) {
+    createError.value = httpErrorMessage(failure, "Não foi possível cadastrar o cliente.");
+    createFieldErrors.value = mutationFieldErrors(failure);
+    if (httpError(failure).status) createKey = crypto.randomUUID();
+  } finally {
+    createBusy.value = false;
+  }
+}
 
 const items = computed(() => list.value?.items ?? []);
 type CustomerRow = (typeof items.value)[number];
@@ -96,10 +140,9 @@ const customerColumns = [
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
+  { label: "Cadastrar cliente", icon: "i-lucide-user-round-plus", onSelect: () => { createOpen.value = true; } },
+  { label: "Grupos", icon: "i-lucide-badge-percent", to: "/customers/groups" },
   { label: "Unificações", icon: "i-lucide-history", to: "/customers/merges" },
-  ...(adminBaseUrl
-    ? [{ label: "Cadastrar ou editar no Admin", icon: "i-lucide-settings", to: `${adminBaseUrl}/admin/guestman/customer/`, target: "_blank" }]
-    : []),
   { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
 ]);
 </script>
@@ -146,22 +189,31 @@ const phoneHeaderActions = computed(() => [
       <template #filters>
         <div class="flex items-center gap-3">
           <NuxtButton
+            icon="i-lucide-user-round-plus"
+            label="Cadastrar cliente"
+            @click="createOpen = true"
+          />
+          <NuxtButton
+            to="/customers/groups"
+            icon="i-lucide-badge-percent"
+            label="Grupos"
+            color="neutral"
+            variant="outline"
+          />
+          <NuxtButton
             to="/customers/merges"
             icon="i-lucide-history"
             label="Unificações"
             color="neutral"
             variant="outline"
           />
-          <NuxtButton
-            v-if="adminBaseUrl"
-            :to="`${adminBaseUrl}/admin/guestman/customer/`"
-            target="_blank"
-            icon="i-lucide-settings"
-            trailing-icon="i-lucide-external-link"
-            label="Admin"
-            color="neutral"
-            variant="outline"
-            title="Cadastrar ou editar cliente (abre o Admin)"
+          <NuxtSelect
+            :model-value="listQuery.sort"
+            :items="[{ value: 'recent', label: 'Mais recentes' }, { value: 'name', label: 'Nome' }]"
+            value-key="value"
+            label-key="label"
+            aria-label="Ordenar clientes"
+            @update:model-value="setSort(String($event))"
           />
           <OperatorTableView table-key="orders-customers" />
           <NuxtButton
@@ -274,5 +326,14 @@ const phoneHeaderActions = computed(() => [
         </template>
       </OperatorTable>
     </section>
+
+    <CustomerFormPanel
+      v-model:open="createOpen"
+      :options="formOptions"
+      :busy="createBusy"
+      :error="createError"
+      :field-errors="createFieldErrors"
+      @save="saveCustomer"
+    />
   </main>
 </template>

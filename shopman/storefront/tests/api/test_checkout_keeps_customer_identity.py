@@ -13,9 +13,10 @@ o ``_resolve_customer_ctx`` do discount modifier retorna cedo e nunca avalia
 ``is_birthday``.
 
 O fix preserva ``ref`` e ``price_tier``: as duas decidem preço. O guarda do
-benefício de funcionário (só na retirada) mora na REGRA
-``EmployeeRule.pickup_only``, que é onde a política pertence — não em derrubar a
-faixa no commit, que só produzia a discordância entre a tela e a cobrança.
+benefício de retirada mora na promoção do grupo
+(``Promotion.fulfillment_types = ["pickup"]``), que é onde a política pertence —
+não em derrubar a faixa no commit, que só produzia a discordância entre a tela e a
+cobrança.
 """
 
 from __future__ import annotations
@@ -107,8 +108,9 @@ def test_checkout_preserves_customer_ref(client):
     # A identidade sobrevive — é ela que decide preço e elegibilidade de promoção.
     assert customer.get("ref") == "CLI-001"
     # A faixa também sobrevive — é ela que decide o preço (staff, atacado). O
-    # guarda do benefício de funcionário mora na REGRA (`EmployeeRule.pickup_only`),
-    # não em derrubar a faixa no commit. Ver `test_persona_3_employee.py`.
+    # guarda do benefício de retirada mora na promoção do grupo
+    # (`Promotion.fulfillment_types = ["pickup"]`), não em derrubar a faixa no
+    # commit. Ver `test_persona_3_employee.py`.
     assert customer.get("price_tier") == "atacado"
     # E o que o formulário mandou continua chegando.
     assert customer.get("name") == "Maria Santos"

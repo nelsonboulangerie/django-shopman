@@ -119,7 +119,11 @@ useHead({ title: "Ofertas e cupons" });
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-marketing-offers>
+  <main
+    class="flex min-h-0 flex-1 flex-col"
+    data-marketing-offers
+    :data-surface-ready="loading ? 'offers:loading' : 'offers:ready'"
+  >
     <OperatorPageHeader
       title="Ofertas e cupons"
       search-placeholder="Buscar campanha, modelo ou tela"

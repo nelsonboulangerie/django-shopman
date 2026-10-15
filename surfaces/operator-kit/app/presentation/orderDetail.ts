@@ -119,8 +119,7 @@ export function relayExpiresLabel(iso: string): string {
   return `Vale até ${at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-/** O cadastro do cliente no Admin — o CRUD de cliente ainda mora lá. Vazio sem
- *  cliente identificado ou sem endereço do Admin configurado. */
+/** Fallback do cadastro no Admin para superfícies que ainda não têm ficha própria. */
 export function customerAdminUrl(
   adminBaseUrl: string,
   customerRef: string,

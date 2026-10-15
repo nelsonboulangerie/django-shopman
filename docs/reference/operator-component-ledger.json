@@ -1266,6 +1266,36 @@
           }
         },
         {
+          "id": "customer-groups",
+          "source_files": [
+            "app/pages/customers/groups.vue"
+          ],
+          "routes": [
+            "/customers/groups"
+          ],
+          "variants": [
+            "list",
+            "create",
+            "edit",
+            "duplicate",
+            "empty"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
           "id": "customer-merges",
           "source_files": [
             "app/pages/customers/merges.vue"

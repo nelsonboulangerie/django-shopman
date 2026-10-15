@@ -143,6 +143,9 @@ class CheckoutProjection:
     # Fulfillment contextual hints shown below the pickup/delivery chips
     pickup_hint: str = ""
     delivery_hint: str = ""
+    # Economia do grupo, pronta para a tela ("Hoje você economizou R$ X por ser
+    # [grupo]"). Vazia quando não houve desconto do grupo.
+    group_savings_message: str = ""
 
     # Provedor de cartão (Stripe/Efí) p/ o storefront dar previsibilidade no
     # checkout ("pagamento seguro via X"). Vazio quando não há provedor real
@@ -312,6 +315,7 @@ def build_checkout(
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",
         delivery_hint=_delivery_hint(cart),
+        group_savings_message=cart.group_savings_message,
         card_provider=_card_provider(),
         stripe_test_cards=_stripe_test_cards(),
         default_ddd=get_default_ddd(),
@@ -323,33 +327,20 @@ def build_checkout(
     )
 
 
-_EMPLOYEE_DISCOUNT_LABEL = "Desconto funcionário"
-
-
 def _delivery_hint(cart) -> str:
-    """Aviso ao lado de "Entrega" quando escolhê-la custa o desconto de funcionário.
+    """Aviso ao lado de "Entrega" quando escolhê-la custa um desconto de retirada.
 
-    Sem isto o funcionário troca de retirada para entrega, vê o total subir e lê
-    como defeito. O aviso aparece no momento da ESCOLHA, ao lado da própria
-    opção — validar cedo e no lugar onde a decisão acontece.
+    Vale para QUALQUER desconto restrito à retirada (o ``fulfillment_types`` da
+    promoção, que o motor carimba no registro): a sacola mostra a linha de
+    desconto e a entrega a derruba. O aviso aparece no momento da ESCOLHA, ao lado
+    da própria opção.
 
-    Lê o lado de leitura (o próprio ``CartProjection``): a presença da linha de
-    desconto já identifica o funcionário, sem a presentation tocar em
-    ``shop.services`` (regra R-A de ``test_import_boundaries``).
-
-    ⚠️ Limite conhecido: com a entrega JÁ escolhida o desconto não está aplicado,
-    a linha some e o aviso também. Ele cobre a decisão, não o arrependimento.
+    Lê o lado de leitura (o próprio ``CartProjection``), sem a presentation tocar
+    em ``shop.services`` (regra R-A de ``test_import_boundaries``).
     """
-    from shopman.shop.rules.engine import get_rule_params
-
-    tem_desconto = any(
-        line.label == _EMPLOYEE_DISCOUNT_LABEL for line in (cart.discount_lines or ())
-    )
-    if not tem_desconto:
+    if not any(getattr(line, "requires_pickup", False) for line in (cart.discount_lines or ())):
         return ""
-    if not get_rule_params("employee_discount").get("pickup_only", True):
-        return ""
-    return "Sem o desconto de funcionário"
+    return "Sem o desconto do grupo"
 
 
 def _card_provider() -> str:

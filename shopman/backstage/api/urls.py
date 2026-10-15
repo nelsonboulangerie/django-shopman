@@ -26,9 +26,16 @@ from .catalog import (
     CatalogAiAssistView,
     CatalogBulkPriceView,
     CatalogBulkView,
+    CatalogCellsView,
     CatalogCellView,
     CatalogMatrixView,
+    CatalogProductCreateView,
     CatalogProductDetailView,
+    CatalogProductDraftView,
+    CatalogProductDuplicateView,
+    CatalogProductImportView,
+    CatalogProductPhotoUploadView,
+    CatalogProductPhotoView,
     CatalogProductPurchaseView,
     CatalogProductView,
     CatalogReorderCollectionsView,
@@ -39,7 +46,10 @@ from .catalog import (
 )
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
+from .customer_groups import CustomerGroupDetailView, CustomerGroupListView
 from .customers import (
+    CustomerAddressDetailView,
+    CustomerAddressListView,
     CustomerDetailView,
     CustomerListView,
     CustomerMergeListView,
@@ -265,11 +275,16 @@ from .product_promise import CatalogPromiseView, ProductPromiseView
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
+    PurchaseContactView,
+    PurchaseConversionDetailView,
     PurchaseConversionView,
     PurchaseCostBatchView,
     PurchaseCostView,
     PurchaseCountConfirmView,
     PurchaseCountView,
+    PurchaseMaterialDetailView,
+    PurchaseMaterialDuplicateView,
+    PurchaseMaterialView,
     PurchaseMinStockView,
     PurchaseOpeningView,
     PurchaseReceiptVolumesView,
@@ -278,6 +293,10 @@ from .purchase import (
     PurchaseRequestSendView,
     PurchaseSaleView,
     PurchaseScanInvoiceView,
+    PurchaseSupplierContactView,
+    PurchaseSupplierDetailView,
+    PurchaseSupplierDuplicateView,
+    PurchaseSupplierView,
 )
 from .recipe_book import (
     FormulaLensView,
@@ -287,7 +306,9 @@ from .recipe_book import (
     RecipeBookListView,
     RecipeCaptureView,
     RecipeCompareView,
+    RecipeDuplicateView,
     RecipeEntryView,
+    RecipeExecutionView,
     RecipeFavoriteView,
     RecipeReferenceView,
     RecipeVersionCreateView,
@@ -491,6 +512,8 @@ urlpatterns = [
     path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
     path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
     path("recipes/<slug:ref>/", RecipeEntryView.as_view(), name="api-backstage-recipe"),
+    path("recipes/<slug:ref>/duplicate/", RecipeDuplicateView.as_view(), name="api-backstage-recipe-duplicate"),
+    path("recipes/<slug:ref>/execution/", RecipeExecutionView.as_view(), name="api-backstage-recipe-execution"),
     path("recipes/<slug:ref>/favorite/", RecipeFavoriteView.as_view(), name="api-backstage-recipe-favorite"),
     path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
     path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
@@ -546,6 +569,45 @@ urlpatterns = [
         "purchase/materials/<str:material_sku>/opening/",
         PurchaseOpeningView.as_view(),
         name="api-backstage-purchase-opening",
+    ),
+    # Cadastro da Base. A ordem importa: `min-stock` e os subgestos de um SKU
+    # vêm antes do detalhe, senão "min-stock" casaria com <material_sku>.
+    path("purchase/materials/", PurchaseMaterialView.as_view(), name="api-backstage-purchase-materials"),
+    path(
+        "purchase/materials/<str:material_sku>/duplicate/",
+        PurchaseMaterialDuplicateView.as_view(),
+        name="api-backstage-purchase-material-duplicate",
+    ),
+    path(
+        "purchase/materials/<str:material_sku>/",
+        PurchaseMaterialDetailView.as_view(),
+        name="api-backstage-purchase-material",
+    ),
+    path("purchase/suppliers/", PurchaseSupplierView.as_view(), name="api-backstage-purchase-suppliers"),
+    path(
+        "purchase/suppliers/<str:ref>/duplicate/",
+        PurchaseSupplierDuplicateView.as_view(),
+        name="api-backstage-purchase-supplier-duplicate",
+    ),
+    path(
+        "purchase/suppliers/<str:ref>/contacts/",
+        PurchaseSupplierContactView.as_view(),
+        name="api-backstage-purchase-supplier-contacts",
+    ),
+    path(
+        "purchase/suppliers/<str:ref>/",
+        PurchaseSupplierDetailView.as_view(),
+        name="api-backstage-purchase-supplier",
+    ),
+    path(
+        "purchase/contacts/<int:contact_id>/",
+        PurchaseContactView.as_view(),
+        name="api-backstage-purchase-contact",
+    ),
+    path(
+        "purchase/conversions/<int:conversion_id>/",
+        PurchaseConversionDetailView.as_view(),
+        name="api-backstage-purchase-conversion",
     ),
     # Contagem de insumos — auditoria de estoque, restrita a gestor/dono.
     path("purchase/count/", PurchaseCountView.as_view(), name="api-backstage-purchase-count"),
@@ -622,6 +684,8 @@ urlpatterns = [
     # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
     # se chama "merge", mas a ordem não deveria depender disso.
     path("customers/", CustomerListView.as_view(), name="api-backstage-customers"),
+    path("customers/groups/", CustomerGroupListView.as_view(), name="api-backstage-customer-groups"),
+    path("customers/groups/<str:ref>/", CustomerGroupDetailView.as_view(), name="api-backstage-customer-group-detail"),
     path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
     path("customers/merge/", CustomerMergeView.as_view(), name="api-backstage-customers-merge"),
     path("customers/merges/", CustomerMergeListView.as_view(), name="api-backstage-customers-merges"),
@@ -631,9 +695,27 @@ urlpatterns = [
         name="api-backstage-customers-merge-undo",
     ),
     path("customers/<str:ref>/", CustomerDetailView.as_view(), name="api-backstage-customer-detail"),
+    path(
+        "customers/<str:ref>/addresses/",
+        CustomerAddressListView.as_view(),
+        name="api-backstage-customer-addresses",
+    ),
+    path(
+        "customers/<str:ref>/addresses/<int:address_id>/",
+        CustomerAddressDetailView.as_view(),
+        name="api-backstage-customer-address-detail",
+    ),
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
+    path("catalog/cells/", CatalogCellsView.as_view(), name="api-backstage-catalog-cells"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
+    # ⚠️ ANTES de `catalog/product/<str:sku>/`: `create` e `duplicate` casariam com `<str:sku>`.
+    path("catalog/product/create/", CatalogProductCreateView.as_view(), name="api-backstage-catalog-product-create"),
+    path("catalog/product/duplicate/", CatalogProductDuplicateView.as_view(), name="api-backstage-catalog-product-duplicate"),
+    path("catalog/product/draft/", CatalogProductDraftView.as_view(), name="api-backstage-catalog-product-draft"),
+    path("catalog/product/import/", CatalogProductImportView.as_view(), name="api-backstage-catalog-product-import"),
+    path("catalog/product/photo/", CatalogProductPhotoView.as_view(), name="api-backstage-catalog-product-photo"),
+    path("catalog/product/photo/upload/", CatalogProductPhotoUploadView.as_view(), name="api-backstage-catalog-product-photo-upload"),
     path("catalog/product/<str:sku>/", CatalogProductDetailView.as_view(), name="api-backstage-catalog-product-detail"),
     path(
         "catalog/product/<str:sku>/purchase/",

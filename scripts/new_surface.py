@@ -15,8 +15,8 @@ superfície já nascer inteira, e termina rodando a própria trava.
    `../operator-kit` (BFF canônico, `/health/*`, login/PIN, rail, PWA), com as
    dependências e o lock do `hub-nuxt` (o conjunto base, sem extra nenhum) e um
    teste de contrato da casca.
-3. Escreve o app em cada lugar que enumera superfícies: Dependabot, as duas
-   matrizes do `surfaces-gate.yml`, `SURFACES` do Makefile, `groups.json`,
+3. Escreve o app em cada lugar que enumera superfícies: o contrato canônico do
+   `surfaces-gate.yml`, Dependabot, `SURFACES` do Makefile, `groups.json`,
    `Dockerfile.operator-group`, os dois specs de `.do/` (ingress, `OPERATOR_HOSTS`,
    env da URL), `CSRF_TRUSTED_ORIGINS` de dev, a env e o tile da Central no
    Django, `app-identity.json`, o perfil do gate de PWA e a árvore do
@@ -392,16 +392,14 @@ def register_everywhere(repo: Repo, s: dict, sibling: dict, domain_by_spec: dict
 
     repo.insert_after_last(".github/dependabot.yml", r"^\s+- /surfaces/[a-z]+-nuxt$", f"      - /surfaces/{d}")
 
-    gate = ".github/workflows/surfaces-gate.yml"
-    repo.insert_after_last(
-        gate, r"^\s{10}- [a-z]+-nuxt$", f"          - {d}", within=(r"^  app-quality:", r"^  [a-z-]+:$")
-    )
-    repo.insert_after_last(
-        gate,
-        r"^\s{12}surface: [a-z]+-nuxt$",
-        f"          - app: {app_id}\n            surface: {d}",
-        within=(r"^  pwa-quality:", r"^  [a-z-]+:$"),
-    )
+    contracts = json.loads(repo.read("surfaces/contracts.json"))
+    contracts["surfaces"][app_id] = {
+        "dir": d,
+        "kind": "operator",
+        "commands": {"unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build"},
+        "capabilities": {"pwa": True},
+    }
+    repo.write("surfaces/contracts.json", dump_json(contracts))
 
     line = next(ln for ln in repo.read("Makefile").splitlines() if ln.startswith("SURFACES :="))
     repo.replace_once("Makefile", line + "\n", f"{line} {d}\n")

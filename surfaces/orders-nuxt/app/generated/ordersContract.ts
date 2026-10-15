@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -775,6 +775,18 @@ export interface CustomerFilterOption {
   active: boolean;
 }
 
+/** CustomerFormOptionProjection(value: 'str', label: 'str') */
+export interface CustomerFormOptionProjection {
+  value: string;
+  label: string;
+}
+
+/** CustomerFormOptionsProjection(customer_types: 'tuple[CustomerFormOptionProjection, ...]', price_tiers: 'tuple[CustomerFormOptionProjection, ...]') */
+export interface CustomerFormOptionsProjection {
+  customer_types: CustomerFormOptionProjection[];
+  price_tiers: CustomerFormOptionProjection[];
+}
+
 /** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str') */
 export interface CustomerRowProjection {
   ref: string;
@@ -789,7 +801,7 @@ export interface CustomerRowProjection {
   duplicate_hint: string;
 }
 
-/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str', sort: 'str', form: 'CustomerFormOptionsProjection') */
 export interface CustomerListProjection {
   query: string;
   filter: string;
@@ -800,6 +812,8 @@ export interface CustomerListProjection {
   total: number;
   has_next: boolean;
   total_label: string;
+  sort: string;
+  form: CustomerFormOptionsProjection;
 }
 
 /** CustomerIdentifierProjection(type_label: 'str', value: 'str') */
@@ -828,7 +842,37 @@ export interface CustomerCandidateProjection {
   reason_label: string;
 }
 
-/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', addresses: 'tuple[str, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]') */
+/** CustomerAddressProjection(id: 'int', revision: 'str', label: 'str', label_code: 'str', formatted_address: 'str', route: 'str', street_number: 'str', complement: 'str', neighborhood: 'str', city: 'str', state_code: 'str', postal_code: 'str', delivery_instructions: 'str', is_default: 'bool', is_verified: 'bool') */
+export interface CustomerAddressProjection {
+  id: number;
+  revision: string;
+  label: string;
+  label_code: string;
+  formatted_address: string;
+  route: string;
+  street_number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state_code: string;
+  postal_code: string;
+  delivery_instructions: string;
+  is_default: boolean;
+  is_verified: boolean;
+}
+
+/** CustomerConsentProjection(channel_label: 'str', purpose_label: 'str', status_label: 'str', allowed: 'bool', proof_label: 'str', source: 'str', updated_display: 'str') */
+export interface CustomerConsentProjection {
+  channel_label: string;
+  purpose_label: string;
+  status_label: string;
+  allowed: boolean;
+  proof_label: string;
+  source: string;
+  updated_display: string;
+}
+
+/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', consents: 'tuple[CustomerConsentProjection, ...]', addresses: 'tuple[CustomerAddressProjection, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]', revision: 'str', first_name: 'str', last_name: 'str', customer_type: 'str', document: 'str', birthday: 'str', phone: 'str', price_tier_ref: 'str', price_tier_name: 'str', tags: 'tuple[str, ...]', house_account: 'bool', house_account_limit: 'str', fiscal_cpf_na_nota: 'bool', fiscal_email_receipt: 'bool', form: 'CustomerFormOptionsProjection') */
 export interface CustomerDetailProjection {
   ref: string;
   name: string;
@@ -846,10 +890,70 @@ export interface CustomerDetailProjection {
   total_spent_display: string;
   last_order_display: string;
   identifiers: CustomerIdentifierProjection[];
-  addresses: string[];
+  consents: CustomerConsentProjection[];
+  addresses: CustomerAddressProjection[];
   recent_orders: CustomerOrderRowProjection[];
   candidates: CustomerCandidateProjection[];
   actions: Action[];
+  revision: string;
+  first_name: string;
+  last_name: string;
+  customer_type: string;
+  document: string;
+  birthday: string;
+  phone: string;
+  price_tier_ref: string;
+  price_tier_name: string;
+  tags: string[];
+  house_account: boolean;
+  house_account_limit: string;
+  fiscal_cpf_na_nota: boolean;
+  fiscal_email_receipt: boolean;
+  form: CustomerFormOptionsProjection;
+}
+
+/** CustomerGroupOptionProjection(value: 'str', label: 'str') */
+export interface CustomerGroupOptionProjection {
+  value: string;
+  label: string;
+}
+
+/** CustomerGroupFormOptionsProjection(channels: 'tuple[CustomerGroupOptionProjection, ...]', listings: 'tuple[CustomerGroupOptionProjection, ...]', discount_types: 'tuple[CustomerGroupOptionProjection, ...]') */
+export interface CustomerGroupFormOptionsProjection {
+  channels: CustomerGroupOptionProjection[];
+  listings: CustomerGroupOptionProjection[];
+  discount_types: CustomerGroupOptionProjection[];
+}
+
+/** CustomerGroupProjection(ref: 'str', name: 'str', description: 'str', listing_ref: 'str', listing_name: 'str', priority: 'int', is_default: 'bool', customer_count: 'int', customer_count_label: 'str', discount_type: 'str', discount_value: 'str', discount_label: 'str', channel_refs: 'tuple[str, ...]', channels_label: 'str', pickup_only: 'bool', discount_kind: 'str', rounding: 'bool', savings_message: 'str', revision: 'str') */
+export interface CustomerGroupProjection {
+  ref: string;
+  name: string;
+  description: string;
+  listing_ref: string;
+  listing_name: string;
+  priority: number;
+  is_default: boolean;
+  customer_count: number;
+  customer_count_label: string;
+  discount_type: string;
+  discount_value: string;
+  discount_label: string;
+  channel_refs: string[];
+  channels_label: string;
+  pickup_only: boolean;
+  discount_kind: string;
+  rounding: boolean;
+  savings_message: string;
+  revision: string;
+}
+
+/** CustomerGroupListProjection(items: 'tuple[CustomerGroupProjection, ...]', total: 'int', total_label: 'str', form: 'CustomerGroupFormOptionsProjection') */
+export interface CustomerGroupListProjection {
+  items: CustomerGroupProjection[];
+  total: number;
+  total_label: string;
+  form: CustomerGroupFormOptionsProjection;
 }
 
 /** MergeSideProjection(ref: 'str', name: 'str', phone_display: 'str', document_display: 'str', source_label: 'str', orders_label: 'str') */

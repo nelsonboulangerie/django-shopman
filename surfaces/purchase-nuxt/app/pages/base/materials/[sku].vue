@@ -6,7 +6,7 @@ import { MATERIALS_TRAIL, baseSectionPath, materialPath } from "~/presentation/p
 
 const route = useRoute();
 const screen = useScreen();
-const { enrichedMaterials, backendReady } = usePurchaseDesk();
+const { enrichedMaterials, backendReady, openMaterialEdit, openMaterialDuplicate } = usePurchaseDesk();
 const sku = computed(() => String(route.params.sku ?? ""));
 const material = computed(() => enrichedMaterials.value.find((item) => item.sku === sku.value) ?? null);
 
@@ -26,7 +26,11 @@ function close() {
   >
     <PurchaseMaterialDetail v-if="material" :material="material">
       <template #actions>
-        <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o insumo" @click="close()" />
+        <div class="flex items-center gap-1">
+          <NuxtButton icon="i-lucide-pencil" color="neutral" variant="ghost" square aria-label="Editar o insumo" title="Editar" @click="openMaterialEdit(material.sku)" />
+          <NuxtButton icon="i-lucide-copy" color="neutral" variant="ghost" square aria-label="Duplicar o insumo" title="Duplicar" @click="openMaterialDuplicate(material.sku)" />
+          <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o insumo" @click="close()" />
+        </div>
       </template>
       <template #nav>
         <OperatorRecordNav :trail="MATERIALS_TRAIL" :current="material.sku" :to="materialPath" previous-label="Insumo anterior" next-label="Próximo insumo" />
@@ -59,7 +63,11 @@ function close() {
       <div v-if="material" class="h-full overflow-auto p-4" data-material-sheet>
         <PurchaseMaterialDetail :material="material">
           <template #actions>
-            <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o insumo" @click="close()" />
+            <div class="flex items-center gap-1">
+          <NuxtButton icon="i-lucide-pencil" color="neutral" variant="ghost" square aria-label="Editar o insumo" title="Editar" @click="openMaterialEdit(material.sku)" />
+          <NuxtButton icon="i-lucide-copy" color="neutral" variant="ghost" square aria-label="Duplicar o insumo" title="Duplicar" @click="openMaterialDuplicate(material.sku)" />
+          <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o insumo" @click="close()" />
+        </div>
           </template>
           <template #nav>
             <OperatorRecordNav :trail="MATERIALS_TRAIL" :current="material.sku" :to="materialPath" previous-label="Insumo anterior" next-label="Próximo insumo" />

@@ -98,6 +98,14 @@ class BISourceConflict:
 
 
 @dataclass(frozen=True)
+class BISalesDiscountKindRow:
+    """Desconto de um TIPO de grupo (equipe, parceiro, ...) na janela."""
+
+    kind: str
+    amount_q: int
+
+
+@dataclass(frozen=True)
 class BISalesReport:
     date_from: str
     date_to: str
@@ -121,6 +129,11 @@ class BISalesReport:
     compare: str
     #: Dias da semana sem expediente regular (0 = segunda): o gráfico diz "fechado".
     closed_weekdays: tuple[int, ...]
+    #: Desconto por tipo de grupo (equipe, parceiro, ...), do maior para o menor.
+    #: Só o nativo registra; o histórico não tem essa dimensão.
+    discount_by_kind: tuple[BISalesDiscountKindRow, ...]
+    #: Total dos descontos com tipo. Igual à soma de discount_by_kind por invariante.
+    discount_kind_total_q: int
 
 
 logger = logging.getLogger(__name__)
@@ -148,6 +161,8 @@ def build_bi_sales(
     channel_revenue: dict[str, int] = defaultdict(int)
     by_hour = [0] * 24
     by_weekday = [0] * 7
+    kind_totals: dict[str, int] = defaultdict(int)
+    kind_total = 0
     for sale in window.sales:
         day_orders[sale.day] += 1
         day_revenue[sale.day] += sale.total_q
@@ -155,6 +170,9 @@ def build_bi_sales(
         channel_revenue[sale.channel_key] += sale.total_q
         by_hour[sale.occurred_at.hour] += 1
         by_weekday[sale.occurred_at.weekday()] += 1
+        kind_total += sale.discount_kind_total_q
+        for kind, amount_q in sale.discount_by_kind:
+            kind_totals[kind] += amount_q
 
     days = []
     for day in iter_days(date_from, date_to):
@@ -210,6 +228,11 @@ def build_bi_sales(
         channels=options,
         compare=compare_key,
         closed_weekdays=_closed_weekdays(),
+        discount_by_kind=tuple(
+            BISalesDiscountKindRow(kind=kind, amount_q=kind_totals[kind])
+            for kind in sorted(kind_totals, key=lambda k: (-kind_totals[k], k))
+        ),
+        discount_kind_total_q=kind_total,
     )
 
 

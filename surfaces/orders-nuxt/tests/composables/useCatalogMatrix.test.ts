@@ -299,3 +299,29 @@ it("resync perdido consulta o recibo sem repetir o enqueue", async () => {
   expect(env.fetchMock.mock.calls[1]![1]).toEqual({ query: { idempotency_key: key, ref: "PAO" } });
   expect(env.fetchMock).toHaveBeenCalledTimes(2);
 });
+
+describe("useCatalogMatrix — facetas na query", () => {
+  it("leva estoque, envio e PIM ao servidor no recorte do filtro", async () => {
+    const { ref, unref } = await import("vue");
+    env.reset();
+    const filters = ref({
+      stock: ["out"],
+      sync_status: ["error"],
+      pim_complete: ["true"],
+      is_published: ["false"],
+      surface: ["ifood"],
+    });
+    useCatalogMatrix(undefined, { filters });
+    const call = env.useFetchMock.mock.calls.find(
+      ([url]) => String(url) === "/api/v1/backstage/catalog/",
+    )!;
+    const opts = call[1] as any;
+    expect(unref(opts.query.stock)).toBe("out");
+    expect(unref(opts.query.sync_status)).toBe("error");
+    expect(unref(opts.query.pim_complete)).toBe("true");
+    expect(unref(opts.query.is_published)).toBe("false");
+    expect(unref(opts.query.surface)).toBe("ifood");
+    // A chave inclui as facetas: trocar o recorte refaz o GET.
+    expect(String(opts.key.value)).toMatch(/:ifood:out:error$/);
+  });
+});

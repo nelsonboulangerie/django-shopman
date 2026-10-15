@@ -576,7 +576,11 @@ def current_value(product, name: str) -> Any:
     if name == "ingredients_text":
         return product.ingredients_text or ""
     if name == "allergens":
-        return list(meta.get("allergens") or [])
+        from shopman.shop.services import attributes
+
+        # Alérgeno é atributo do registro (``alergenos``), não chave solta do
+        # metadata: a chave legada morreu no rename (shop.0033).
+        return list(attributes.get(product, "alergenos") or [])
     if name == "nutrition":
         return dict(product.nutrition_facts or {})
     raise KeyError(name)
@@ -633,6 +637,9 @@ def accept_fields(product, names, *, replace=(), user=None) -> AcceptResult:
     fields: dict[str, dict[str, Any]] = dict(block.get("fields") or {})
     accepted: dict[str, dict[str, Any]] = dict(block.get("accepted") or {})
     who = user.get_username() if user is not None and hasattr(user, "get_username") else ""
+    # Campos que moram no registro de atributos (o alérgeno): gravados depois de
+    # fechar o ``metadata``, para o rascunho não sobrescrever o atributo.
+    attribute_writes: dict[str, Any] = {}
 
     for name in names:
         entry = fields.get(name)
@@ -676,10 +683,12 @@ def accept_fields(product, names, *, replace=(), user=None) -> AcceptResult:
         elif name == "ingredients_text":
             product.ingredients_text = str(value)
         elif name == "allergens":
-            meta["allergens"] = list(value)
-            # Aceite humano é o oposto de auto-preenchido: trava a derivação
-            # por receita, que para revenda não existe mesmo.
-            meta["dietary_auto_filled"] = False
+            # O alérgeno é atributo do registro (``alergenos``), não chave solta
+            # do metadata: a chave legada morreu no rename (shop.0033). A
+            # gravação fica para depois do bloco de rascunho. A proveniência
+            # ``manual`` é o que trava a derivação por receita, que só reescreve
+            # o que é dela.
+            attribute_writes["alergenos"] = list(value)
         elif name == "nutrition":
             facts = NutritionFacts.from_dict({**value, "auto_filled": False})
             product.nutrition_facts = facts.to_dict() if facts else {}
@@ -710,5 +719,10 @@ def accept_fields(product, names, *, replace=(), user=None) -> AcceptResult:
     block["accepted"] = accepted
     meta["enrichment"] = block
     product.metadata = meta
+    if attribute_writes:
+        from shopman.shop.services import attributes
+
+        for ref, attr_value in attribute_writes.items():
+            attributes.set(product, ref, attr_value, source="manual", save=False)
     product.save()
     return result

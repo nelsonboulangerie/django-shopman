@@ -10,7 +10,6 @@ Execution order:
   10  pricing.item          — base price from backend (qty-aware)
   20  shop.discount         — promotions + coupons (maior desconto ganha)
   50  pricing.session_total — recalculate total
-  60  shop.employee_discount
   70  shop.delivery_fee     — taxa de entrega por zona (só delivery)
   80  shop.loyalty_redeem   — loyalty points redemption (post-pricing)
   85  shop.manual_discount  — desconto manual (POS)
@@ -43,7 +42,6 @@ from shopman.utils.monetary import monetary_div, monetary_mult
 logger = logging.getLogger(__name__)
 
 # ── Configurable defaults ──────────────────────────────────────────
-DEFAULT_EMPLOYEE_DISCOUNT_PERCENT = 20
 DEFAULT_AVAILABILITY_DISCOUNT_PERCENT = 50
 DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT = 25
 DEFAULT_TIME_WINDOW_START = "17:30"
@@ -171,7 +169,7 @@ def time_window_offer(channel_ref: str | None, *, now: datetime | None = None) -
 # e ``unit_price_q`` persistem). Então o desconto vencedor da linha é registrado em
 # ``meta["_disc"]`` (fonte durável entre modifiers), e o preço de lista pré-desconto
 # em ``meta["_list_q"]`` (carimbado pelo ItemPricingModifier). Descontos flat
-# (funcionário, happy hour) calculam sobre a LISTA e só substituem quando batem o
+# (happy hour) calculam sobre a LISTA e só substituem quando batem o
 # desconto atual — nunca compõem sobre um preço já reduzido.
 
 
@@ -250,6 +248,45 @@ def _list_price_q(item: dict) -> int:
 def _current_disc_q(item: dict) -> int:
     """Desconto por unidade já na linha (lista − preço corrente)."""
     return max(0, _list_price_q(item) - int(item.get("unit_price_q", 0) or 0))
+
+
+def _round_to_step_q(price_q: int, step_q: int) -> int:
+    """Arredonda price_q ao múltiplo de step_q mais próximo (half-up).
+
+    O passo de 50 centavos é a régua da casa: o preço final do grupo cai no
+    R$ X,00 ou R$ X,50 mais perto, podendo subir ou descer até R$ 0,25.
+    """
+    if step_q <= 1:
+        return price_q
+    from decimal import ROUND_HALF_UP
+
+    steps = (Decimal(int(price_q)) / Decimal(int(step_q))).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return int(steps) * int(step_q)
+
+
+def _savings_message(template: str, *, amount_q: int, group: str) -> str:
+    """Renderiza a mensagem de economia do grupo ({amount} e {group}).
+
+    Texto do grupo quando configurado no Admin; vazio cai no copy global
+    CHECKOUT_GROUP_SAVINGS.
+    """
+    from shopman.utils.monetary import format_money
+
+    text = (template or "").strip()
+    if not text:
+        from shopman.shop.omotenashi.copy import WILDCARD, resolve_copy
+
+        entry = resolve_copy("CHECKOUT_GROUP_SAVINGS", moment=WILDCARD, audience=WILDCARD)
+        text = (entry.message or entry.title or "").strip()
+    if not text:
+        text = "Hoje você economizou {amount} por ser {group}"
+    return (
+        text.replace("{amount}", f"R$ {format_money(amount_q)}")
+        .replace("{group}", group)
+        .strip()
+    )
 
 
 # ── Rateio de desconto de PEDIDO entre as linhas ──────────────────────────
@@ -431,7 +468,7 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
         pricing["discount"] = disc
         if t == "coupon" and pricing.get("coupon"):
             pricing["coupon"]["discount_q"] = sum(_record_total_q(d) for d in kept if d.get("type") == "coupon")
-    elif t in ("lot_discount", "employee_discount", "happy_hour"):
+    elif t in ("lot_discount", "happy_hour"):
         entry = pricing.get(t)
         if entry:
             new_total = int(entry.get("total_discount_q", 0)) - monetary_mult(qty, int(prior.get("amount_q", 0)))
@@ -507,6 +544,112 @@ def _lot_label() -> str:
     return _discount_label("CART_DISCOUNT_LABEL_AVAILABILITY", "Liquidação")
 
 
+class CustomerPricingModifier:
+    """Resolve o cliente da sessão UMA vez e deixa o contexto de preço pronto.
+
+    Ordem 5, antes do ``ItemPricingModifier`` (10). A sessão é a fonte em TODO
+    canal: a loja online grava ``customer.ref`` (e a faixa) a cada mexida na
+    sacola, e o PDV grava ``customer.ref``/``price_tier`` no atendimento. Sem
+    isto, ``ctx["customer"]`` nunca existia e a cascata "faixa do cliente ->
+    listing do offerman" de ``shop/handlers/pricing.py`` não mudava preço nenhum.
+
+    Uma consulta resolve o cadastro (com faixa e insight juntos) e abastece
+    ``customer``, ``price_tier``, ``price_tier_name``, ``price_tier_metadata``,
+    ``customer_segment`` e ``is_birthday``. O ``DiscountModifier`` reusa o
+    contexto em vez de reler a mesma linha; o ``ItemPricingModifier`` passa o
+    cliente ao backend, que resolve todas as linhas em lote.
+    """
+
+    code = "pricing.customer"
+    order = 5
+
+    def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
+        if ctx.get("customer") is not None:
+            self._publish_profile(ctx, ctx["customer"])
+            self._publish_tier(ctx, getattr(ctx["customer"], "price_tier", None), "")
+            return
+
+        session_customer = (session.data or {}).get("customer") or {}
+        customer_ref = str(session_customer.get("ref") or "").strip()
+        session_tier_ref = str(session_customer.get("price_tier") or "").strip()
+        if not customer_ref and not session_tier_ref:
+            return
+
+        customer = None
+        if customer_ref:
+            try:
+                from shopman.guestman.models import Customer
+
+                customer = (
+                    Customer.objects.select_related("price_tier", "insight")
+                    .filter(ref=customer_ref)
+                    .first()
+                )
+            except Exception:  # silêncio-deliberado: sem cadastro a faixa sozinha ainda resolve o preço
+                logger.debug(
+                    "pricing.customer: customer lookup failed for ref=%s",
+                    customer_ref,
+                    exc_info=True,
+                )
+        if customer is not None:
+            ctx["customer"] = customer
+
+        tier = getattr(customer, "price_tier", None) if customer is not None else None
+        tier_ref = session_tier_ref or getattr(tier, "ref", "")
+        if tier_ref and (tier is None or getattr(tier, "ref", "") != tier_ref):
+            tier = self._load_tier(tier_ref)
+            if customer is None and tier is not None:
+                # O PDV pode vincular só a faixa (sem ``ref`` de cliente): o preço
+                # da faixa ainda vale, e o backend só precisa de ``price_tier``.
+                from types import SimpleNamespace
+
+                ctx["customer"] = SimpleNamespace(price_tier=tier)
+        if tier is not None:
+            self._publish_tier(ctx, tier, tier_ref or getattr(tier, "ref", ""))
+        if customer is not None:
+            self._publish_profile(ctx, customer)
+        elif "customer_segment" not in ctx:
+            ctx["customer_segment"] = ""
+            ctx.setdefault("is_birthday", False)
+
+    @staticmethod
+    def _load_tier(ref: str):
+        try:
+            from shopman.guestman.models import PriceTier
+
+            return PriceTier.objects.filter(ref=ref).first()
+        except Exception:  # silêncio-deliberado: faixa ilegível não derruba a precificação
+            logger.debug("pricing.customer: tier lookup failed for ref=%s", ref, exc_info=True)
+            return None
+
+    @staticmethod
+    def _publish_tier(ctx: dict, tier: Any, fallback_ref: str) -> None:
+        if tier is None:
+            if fallback_ref:
+                ctx.setdefault("price_tier", fallback_ref)
+            return
+        ctx.setdefault("price_tier", getattr(tier, "ref", "") or fallback_ref)
+        ctx.setdefault("price_tier_name", getattr(tier, "name", "") or "")
+        metadata = getattr(tier, "metadata", None)
+        ctx.setdefault("price_tier_metadata", metadata if isinstance(metadata, dict) else {})
+
+    @staticmethod
+    def _publish_profile(ctx: dict, customer: Any) -> None:
+        if "customer_segment" not in ctx:
+            try:
+                ctx["customer_segment"] = customer.insight.rfm_segment or ""
+            except Exception:  # silêncio-deliberado: Insight (OneToOne) pode não existir; a faixa ainda casa
+                logger.debug("pricing.customer: no insight for customer", exc_info=True)
+                ctx["customer_segment"] = ""
+        if "is_birthday" not in ctx:
+            birthday = getattr(customer, "birthday", None)
+            if birthday:
+                today = timezone.localdate(pricing_now(ctx))
+                ctx["is_birthday"] = birthday.month == today.month and birthday.day == today.day
+            else:
+                ctx["is_birthday"] = False
+
+
 class LotDiscountModifier:
     """Desconto do LOTE que a linha reservou (ADR-017 / D1-RETIREMENT-PLAN).
 
@@ -520,7 +663,7 @@ class LotDiscountModifier:
     à sacola inteira.
 
     "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha
-    quando bate o desconto já aplicado (promo, funcionário) — nunca compõe.
+    quando bate o desconto já aplicado (promo, happy hour) — nunca compõe.
     """
 
     code = "shop.lot_discount"
@@ -582,7 +725,7 @@ class TimeWindowDiscountModifier:
     (e.g. the online storefront, where listed prices would otherwise diverge).
 
     "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
-    bate o desconto já aplicado (promo, funcionário) — nunca compõe.
+    bate o desconto já aplicado (promo, lote) — nunca compõe.
     """
 
     code = "shop.happy_hour"
@@ -716,6 +859,20 @@ class DiscountModifier:
         pricing = session.pricing or {}
         session.pricing = pricing
 
+        # O desconto do PRÓPRIO grupo do cliente (a promoção grupo-<ref>) é o
+        # único que arredonda o preço final, carrega o tipo para o B.I. e produz a
+        # mensagem de economia. Contexto resolvido uma vez, não por linha.
+        from shopman.shop.services.promotions import group_discount_ref
+
+        tier_ref = str(ctx.get("price_tier") or "")
+        tier_metadata = ctx.get("price_tier_metadata") or {}
+        group_ref = group_discount_ref(tier_ref) if tier_ref else ""
+        group_kind = str(tier_metadata.get("discount_kind") or "").strip()
+        try:
+            rounding_q = int(tier_metadata.get("rounding", 50) or 0)
+        except (TypeError, ValueError):
+            rounding_q = 50
+
         for item in items:
             if _is_non_merchandise_line(item):
                 continue
@@ -737,7 +894,7 @@ class DiscountModifier:
 
             # Find best discount candidate
             best_discount_q = 0
-            best_source = None  # (type, name)
+            best_source = None  # (type, name, promo, discount_kind)
 
             # Only PERCENT discounts compete per-line: a percentage is intrinsically
             # per-unit. FIXED discounts are order-level and applied once, after this
@@ -751,9 +908,15 @@ class DiscountModifier:
                 if not self._matches(promo, sku, ctx):
                     continue
                 discount_q = self._calc_discount(promo, price_q)
+                promo_kind = None
+                if group_ref and getattr(promo, "ref", "") == group_ref:
+                    promo_kind = group_kind or None
+                    if rounding_q > 0:
+                        rounded = _round_to_step_q(max(0, price_q - discount_q), rounding_q)
+                        discount_q = max(0, price_q - rounded)
                 if discount_q > best_discount_q:
                     best_discount_q = discount_q
-                    best_source = ("promotion", promo.name, promo.pk)
+                    best_source = ("promotion", promo.name, promo, promo_kind)
 
             # Evaluate coupon
             if coupon_promo and coupon_promo.type == "percent":
@@ -762,14 +925,14 @@ class DiscountModifier:
                         coupon_discount_q = self._calc_discount(coupon_promo, price_q)
                         if coupon_discount_q >= best_discount_q:
                             best_discount_q = coupon_discount_q
-                            best_source = ("coupon", coupon_code, None)
+                            best_source = ("coupon", coupon_code, coupon_promo, None)
 
             # Evaluate operator manual per-line discount (percent), best wins.
             if manual_allowed:
                 manual_discount_q = self._calc_manual(manual, price_q)
                 if manual_discount_q > best_discount_q:
                     best_discount_q = manual_discount_q
-                    best_source = ("manual", manual.get("reason") or "manual", None)
+                    best_source = ("manual", manual.get("reason") or "manual", None, None)
 
             # Apply winner — só quando bate o desconto já na linha (best-wins, sem
             # composição). Reconcilia a transparência do desconto substituído
@@ -779,7 +942,7 @@ class DiscountModifier:
                 item["unit_price_q"] = list_q - best_discount_q
                 item["line_total_q"] = monetary_mult(_qty_decimal(item), item["unit_price_q"])
 
-                source_type, source_name, source_id = best_source
+                source_type, source_name, source_promo, source_kind = best_source
                 # Fonte durável do desconto vencedor da linha: ``meta._disc`` (para o
                 # árbitro flat reconciliar em "maior ganha") + ``discounts_applied``
                 # (abaixo) que vira ``pricing["discount"]``. ``modifiers_applied`` foi
@@ -788,13 +951,13 @@ class DiscountModifier:
                 modified = True
 
                 qty = _qty_decimal(item)
-                discounts_applied.append({
+                record = {
                     # A LINHA que ganhou o desconto, ao lado do SKU. O registro é
                     # a única fonte que sobrevive ao save (a linha perde campos
-                    # extras no ``update_items``), e quem o relê é a comanda do
-                    # PDV para restaurar o preço PRÉ-desconto. Identificado só
-                    # pelo SKU, o registro de uma linha respondia pela outra do
-                    # mesmo produto — a cortesia dada num café aparecia nos dois.
+                    # extras no update_items), e quem o relê é a comanda do PDV
+                    # para restaurar o preço PRÉ-desconto. Identificado só pelo
+                    # SKU, o registro de uma linha respondia pela outra do mesmo
+                    # produto — a cortesia dada num café aparecia nos dois.
                     "line_id": item.get("line_id", ""),
                     "sku": sku,
                     "type": source_type,
@@ -802,7 +965,11 @@ class DiscountModifier:
                     "original_price_q": price_q,
                     "discount_q": best_discount_q,
                     "qty": _qty_json(qty),
-                })
+                    "fulfillment_types": list(getattr(source_promo, "fulfillment_types", None) or []),
+                }
+                if source_kind:
+                    record["discount_kind"] = source_kind
+                discounts_applied.append(record)
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
 
@@ -811,7 +978,14 @@ class DiscountModifier:
         # of a R$5 coupon is R$5 off the order, not R$30. Applied once to the
         # eligible merchandise subtotal, distributed across lines that don't
         # already carry a per-line discount (no stacking on the same line).
-        fixed = self._best_fixed_discount(promotions, coupon_promo, coupon_code, session_total)
+        fixed = self._best_fixed_discount(
+            promotions,
+            coupon_promo,
+            coupon_code,
+            session_total,
+            group_ref=group_ref,
+            group_kind=group_kind,
+        )
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
             eligible = [
@@ -826,7 +1000,7 @@ class DiscountModifier:
             ]
             eligible_subtotal = sum(int(item.get("line_total_q", 0)) for item in eligible)
             target_q = min(fixed_value, eligible_subtotal)
-            src_type, src_name = fixed_source
+            src_type, src_name, src_kind = fixed_source
             # O registrado é o desconto REALMENTE aplicado, nunca o nominal: um
             # cupom de R$ 5,00 sobre uma linha de 6 unidades não é representável em
             # centavos por unidade (5,00/6 = 0,8333…), então o rateio entrega o
@@ -843,7 +1017,7 @@ class DiscountModifier:
                 modified = True
                 # sku=""/line_id="" — an order-level record: it aggregates into the
                 # cart's discount total/line but matches no line (no strikethrough).
-                discounts_applied.append({
+                order_record = {
                     "line_id": "",
                     "sku": "",
                     "type": src_type,
@@ -851,7 +1025,11 @@ class DiscountModifier:
                     "original_price_q": 0,
                     "discount_q": applied_q,
                     "qty": 1,
-                })
+                    "fulfillment_types": list(getattr(fixed_promo, "fulfillment_types", None) or []),
+                }
+                if src_kind:
+                    order_record["discount_kind"] = src_kind
+                discounts_applied.append(order_record)
                 if src_type == "coupon":
                     total_coupon_discount_q += applied_q
 
@@ -861,10 +1039,26 @@ class DiscountModifier:
         # Persist discount info in session.pricing (items lose extra fields on save)
         if not session.pricing:
             session.pricing = {}
-        session.pricing["discount"] = {
+        discount_block = {
             "total_discount_q": sum(_record_total_q(d) for d in discounts_applied),
             "items": discounts_applied,
         }
+        group_savings_q = sum(
+            _record_total_q(d) for d in discounts_applied if d.get("discount_kind")
+        )
+        if group_savings_q > 0:
+            group_name = str(ctx.get("price_tier_name") or "")
+            discount_block["savings"] = {
+                "amount_q": group_savings_q,
+                "group": group_name,
+                "kind": group_kind,
+                "message": _savings_message(
+                    str(tier_metadata.get("savings_message") or ""),
+                    amount_q=group_savings_q,
+                    group=group_name,
+                ),
+            }
+        session.pricing["discount"] = discount_block
         if coupon_code:
             session.pricing["coupon"] = {
                 "code": coupon_code,
@@ -889,12 +1083,15 @@ class DiscountModifier:
 
         customer_data = (session.data or {}).get("customer") or {}
 
-        needs_tier = not ctx.get("price_tier")
+        # Pertencimento, não valor: o ``CustomerPricingModifier`` (ordem 5) já
+        # abasteceu o contexto e uma chave presente (mesmo vazia) dispensa a
+        # releitura. Só quem chama o modifier direto (testes) paga a consulta.
+        needs_tier = "price_tier" not in ctx
         if needs_tier and customer_data.get("price_tier"):
             ctx["price_tier"] = customer_data["price_tier"]
             needs_tier = False
 
-        needs_segment = not ctx.get("customer_segment")
+        needs_segment = "customer_segment" not in ctx
         needs_birthday = "is_birthday" not in ctx
         customer_ref = customer_data.get("ref")
         if not customer_ref or not (needs_tier or needs_segment or needs_birthday):
@@ -920,6 +1117,9 @@ class DiscountModifier:
 
         if needs_tier and customer.price_tier_id:
             ctx["price_tier"] = customer.price_tier.ref
+            ctx.setdefault("price_tier_name", customer.price_tier.name or "")
+            metadata = customer.price_tier.metadata
+            ctx.setdefault("price_tier_metadata", metadata if isinstance(metadata, dict) else {})
 
         if needs_segment:
             try:
@@ -947,8 +1147,12 @@ class DiscountModifier:
             if fulfillment_type:
                 if fulfillment_type not in promo.fulfillment_types:
                     return False
-            else:
-                # fulfillment_type not chosen yet — don't pre-apply fulfillment-restricted promos
+            elif "pickup" not in promo.fulfillment_types:
+                # Sem o tipo escolhido, a promoção que NÃO vale na retirada (só
+                # entrega) não pré-aplica: o desconto apareceria e sumiria ao
+                # trocar para retirada. A restrita à RETIRADA vale, porque retirada
+                # é o padrão da casa até alguém escolher entrega — é assim que o
+                # benefício da Equipe sempre apareceu.
                 return False
         if promo.skus and sku not in promo.skus:
             return False
@@ -977,17 +1181,23 @@ class DiscountModifier:
 
     @staticmethod
     def _best_fixed_discount(
-        promotions: list[Any], coupon_promo: Any, coupon_code: str | None, session_total: int
-    ) -> tuple[int, tuple[str, str], Any] | None:
+        promotions: list[Any],
+        coupon_promo: Any,
+        coupon_code: str | None,
+        session_total: int,
+        *,
+        group_ref: str = "",
+        group_kind: str = "",
+    ) -> tuple[int, tuple[str, str, str | None], Any] | None:
         """Largest applicable FIXED discount, as a single order-level candidate.
 
         Fixed promotions and the fixed coupon compete on value (best wins, no
-        stacking of two fixed discounts). ``min_order_q`` is gated against the
-        gross order subtotal; SKU/collection scope is enforced later when picking
-        the eligible lines. Returns ``(value_q, source, promo)`` where ``source``
-        is ``("promotion", name)`` or ``("coupon", code)``, or ``None``.
+        stacking of two fixed discounts). min_order_q is gated against the gross
+        order subtotal; SKU/collection scope is enforced later when picking the
+        eligible lines. Returns (value_q, source, promo) where source is
+        (type, name, discount_kind), or None.
         """
-        best: tuple[int, tuple[str, str], Any] | None = None
+        best: tuple[int, tuple[str, str, str | None], Any] | None = None
         for promo in promotions:
             if promo.type != "fixed":
                 continue
@@ -995,12 +1205,13 @@ class DiscountModifier:
                 continue
             value = max(0, int(promo.value or 0))
             if value > 0 and (best is None or value > best[0]):
-                best = (value, ("promotion", promo.name), promo)
+                kind = group_kind or None if (group_ref and getattr(promo, "ref", "") == group_ref) else None
+                best = (value, ("promotion", promo.name, kind), promo)
         if coupon_promo is not None and coupon_promo.type == "fixed":
             if not (coupon_promo.min_order_q and session_total < coupon_promo.min_order_q):
                 value = max(0, int(coupon_promo.value or 0))
                 if value > 0 and (best is None or value >= best[0]):
-                    best = (value, ("coupon", coupon_code or ""), coupon_promo)
+                    best = (value, ("coupon", coupon_code or "", None), coupon_promo)
         return best
 
     @staticmethod
@@ -1014,8 +1225,8 @@ class DiscountModifier:
 
         1. **Carimbava ``meta["_disc"]``** — não carimbava. Os outros descontos
            passam todos por ``_stamp_disc``, e é dali que ``_reverse_prior_pricing``
-           descobre o que abater quando um desconto flat (funcionário, happy hour)
-           vence a linha depois. Sem o carimbo, o flat vencia, o preço da linha caía
+           descobre o que abater quando um desconto flat (happy hour) vence a
+           linha depois. Sem o carimbo, o flat vencia, o preço da linha caía
            de novo e o fixo continuava inteiro em ``pricing["discount"]`` e em
            ``pricing["coupon"]``: a tela dizia "Cupom aplicado, desconto de R$ 5,00"
            e "de R$ 94,00 por R$ 71,20" num pedido de lista R$ 89,00. O cliente
@@ -1054,72 +1265,6 @@ class DiscountModifier:
             return min(int(round(value * 100)), price_q)
         return min(monetary_div(int(round(price_q * value)), 100), price_q)
 
-
-
-class EmployeeDiscountModifier:
-    """
-    Discount for employees (the customer's price tier is "staff").
-
-    Percentage is configurable via channel config rules.employee_discount_percent
-    or SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT setting (default 20).
-
-    "Maior desconto ganha": aplica sobre o preço de LISTA e só vence a linha quando
-    bate o desconto já aplicado (promo) — nunca compõe.
-    """
-
-    code = "shop.employee_discount"
-    order = 60  # After canonical pricing (10, 50), before session total recalc
-
-    def __init__(
-        self,
-        *,
-        discount_percent: int = DEFAULT_EMPLOYEE_DISCOUNT_PERCENT,
-        pickup_only: bool = True,
-    ):
-        self.discount_percent = discount_percent
-        # Fallback quando não há RuleConfig; a regra no admin é a fonte real.
-        self.pickup_only = pickup_only
-
-    def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
-        from shopman.shop.rules.engine import get_rule_params
-
-        rule_params = get_rule_params("employee_discount")
-
-        data = session.data or {}
-        price_tier = data.get("customer", {}).get("price_tier", "")
-        # Benefício, não canal: com entrega o preço de funcionário viajaria para
-        # qualquer endereço, sem ninguém ver. Retirando, alguém entrega na mão.
-        pickup_only = rule_params.get("pickup_only", self.pickup_only)
-        delivering = pickup_only and data.get("fulfillment_type") == "delivery"
-
-        # QUAL tier marca funcionário é decisão da regra no admin, não um
-        # literal daqui — era "staff" cravado e o parâmetro ficava decorativo
-        # (achado da faxina 2026-08-13: one question, one owner).
-        employee_tier = rule_params.get("price_tier", "staff")
-
-        if price_tier != employee_tier or delivering:
-            # Deixou de ser o tier de funcionário (ou trocou para entrega):
-            # limpa transparência residual de uma passagem anterior.
-            pricing = session.pricing or {}
-            if pricing.pop("employee_discount", None) is not None:
-                session.pricing = pricing
-                session.save(update_fields=["pricing"])
-            return
-
-        config = getattr(channel, "config", None) or {}
-        channel_rules = config.get("rules", {})
-        if "employee_discount_percent" in channel_rules:
-            percent = channel_rules["employee_discount_percent"]
-        else:
-            percent = rule_params.get("discount_percent", self.discount_percent)
-
-        _apply_flat_best_wins(
-            session,
-            percent=percent,
-            disc_type="employee_discount",
-            label="Desconto funcionário",
-            pricing_key="employee_discount",
-        )
 
 
 _ZONE_MODE_EXCLUDE = "exclude"

@@ -160,6 +160,51 @@ def test_pedido_PAGO_nao_grita_pendencia(shop):
     assert "Pago" in papel
 
 
+def _com_economia(ref: str) -> Order:
+    # O snapshot é selado na criação: o pedido nasce com ele, nunca o ganha depois.
+    order = Order.objects.create(
+        ref=ref,
+        channel_ref="web",
+        status="accepted",
+        total_q=3600,
+        data={"customer": {"name": "Ana"}, "payment": {"method": "link"}},
+        snapshot={
+            "pricing": {
+                "discount": {
+                    "savings": {"message": "Hoje economizou R$ 3,00 por ser da Equipe"}
+                }
+            }
+        },
+    )
+    OrderItem.objects.create(
+        order=order,
+        line_id="1",
+        sku="SKU-1",
+        name="Pão de fermentação natural",
+        qty=2,
+        unit_price_q=1800,
+        line_total_q=3600,
+    )
+    return order
+
+
+def test_economia_do_grupo_imprime_na_ficha(shop):
+    """A mensagem do grupo sai do snapshot imutável do pedido, não do cadastro vivo."""
+    papel = _texto(order_ticket(_com_economia("ORD-SAV")))
+
+    assert "Hoje economizou R$ 3,00" in papel
+    assert "por ser da Equipe" in papel
+
+
+def test_economia_do_grupo_imprime_no_recibo(shop):
+    from shopman.backstage.services.receipt_escpos import sale_receipt
+
+    papel = sale_receipt(_com_economia("ORD-SAV2")).decode(ENCODING, "replace")
+
+    assert "Hoje economizou R$ 3,00" in papel
+    assert "por ser da Equipe" in papel
+
+
 # ── O bloco que se lê de longe ────────────────────────────────────────────
 
 

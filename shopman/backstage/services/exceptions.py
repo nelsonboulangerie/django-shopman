@@ -184,3 +184,23 @@ class CustomerMergeError(BackstageServiceError):
 
 class CustomerNotFound(CustomerMergeError):
     """Cadastro inexistente. A camada HTTP mapeia para 404."""
+
+
+class CustomerMutationError(BackstageServiceError):
+    """Recusa de criar/editar cliente já traduzida para o Gestor."""
+
+    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload"):
+        super().__init__(detail)
+        self.detail = detail
+        self.field = field
+        self.code = code
+
+
+class CustomerGroupMutationError(BackstageServiceError):
+    """Recusa de criar/editar grupo comercial já traduzida para o Gestor."""
+
+    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload"):
+        super().__init__(detail)
+        self.detail = detail
+        self.field = field
+        self.code = code

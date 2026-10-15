@@ -78,7 +78,6 @@ ALL_HANDLERS = [
     # Pricing modifiers (via shopman.modifiers)
     "shopman.shop.modifiers.DeliveryFeeModifier",
     "shopman.shop.modifiers.DiscountModifier",
-    "shopman.shop.modifiers.EmployeeDiscountModifier",
     "shopman.shop.modifiers.LotDiscountModifier",
     "shopman.shop.modifiers.LoyaltyRedeemModifier",
     "shopman.shop.modifiers.ManualDiscountModifier",
@@ -321,9 +320,9 @@ def _register_loyalty_handler() -> None:
 def _register_pricing_modifiers() -> None:
     from shopman.shop.handlers.pricing import ItemPricingModifier, OffermanPricingBackend, SessionTotalModifier
     from shopman.shop.modifiers import (
+        CustomerPricingModifier,
         DeliveryFeeModifier,
         DiscountModifier,
-        EmployeeDiscountModifier,
         LotDiscountModifier,
         LoyaltyRedeemModifier,
         ManualDiscountModifier,
@@ -332,11 +331,13 @@ def _register_pricing_modifiers() -> None:
 
     backend = OffermanPricingBackend()
     for modifier in [
+        # O cliente vira contexto ANTES do preço: a cascata "faixa do cliente ->
+        # listing" do ItemPricingModifier depende dele (ordem 5 < 10).
+        CustomerPricingModifier(),
         ItemPricingModifier(backend=backend),
         LotDiscountModifier(),
         DiscountModifier(),
         SessionTotalModifier(),
-        EmployeeDiscountModifier(),
         DeliveryFeeModifier(),
         LoyaltyRedeemModifier(),
         ManualDiscountModifier(),

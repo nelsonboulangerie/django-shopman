@@ -9,7 +9,6 @@ import {
   cellPrice,
   cellSyncView,
   cellView,
-  filterRows,
   letterTile,
   rowStatus,
   surfaceDisplayIcon,
@@ -17,9 +16,8 @@ import {
   syncErrorCount,
 } from "~/presentation/catalog";
 import {
-  catalogDimensions,
-  filterByDimensions,
   filtersFromQuery,
+  serverCatalogDimensions,
   vocationPendingFilters,
 } from "~/presentation/catalogFilters";
 import { vocationNotice } from "~/presentation/vocation";
@@ -35,16 +33,37 @@ import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/f
 import type {
   AssistableField,
   CatalogRowProjection,
+  BulkCell,
+  CatalogOrder,
   CollectionProjection,
+  CreateProductPayload,
+  DuplicateSnapshot,
+  ImportPreview,
   ProductDetailPatch,
   ProductDetailProjection,
+  ProductDraft,
   SkuRoles,
   SurfaceCellProjection,
   SurfaceProjection,
 } from "~/types/catalog";
+import { refDebounced } from "@vueuse/core";
+
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const collectionRef = ref("");
+// A busca, a ordenação e a página são do SERVIDOR (onda 1, fatia B): mudar
+// qualquer um refaz a consulta, e a matriz não vem mais inteira.
+const query = ref("");
+// A busca só vira consulta 300 ms depois da última tecla: cada tecla não é um GET.
+const searchTerm = refDebounced(query, 300);
+const catalogPage = ref(1);
+const catalogOrder = ref<CatalogOrder>("name");
+// O cabeçalho "Produto" ordena no BANCO; a tabela é quem manda o estado.
+const catalogSorting = ref<{ id: string; desc: boolean }[]>([]);
+// Facetas: TODAS as dimensões do painel filtram no SERVIDOR. O recorte pode vir
+// da URL (o checklist de um canal abre já recortado); valor desconhecido morre na
+// leitura, em `filtersFromQuery`.
+const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
 const {
   readMetadata,
   realtime,
@@ -76,7 +95,22 @@ const {
   bulkBusy,
   aiAssist,
   aiAssistKey,
-} = useCatalogMatrix(collectionRef);
+  createAction,
+  createProduct,
+  fetchProductDraft,
+  fetchDuplicateSnapshot,
+  duplicateProduct,
+  enhancePhoto,
+  uploadPhoto,
+  saveCells,
+  previewImport,
+  applyImport,
+} = useCatalogMatrix(collectionRef, {
+  search: searchTerm,
+  page: catalogPage,
+  order: catalogOrder,
+  filters,
+});
 
 const surfaces = computed(() => matrix.value?.surfaces ?? []);
 // Cabeçalho de uma linha (UX-KIT-V1): a hora da última leitura útil ao lado do título.
@@ -133,6 +167,7 @@ const catalogColumns = computed(() => [
     id: "product",
     header: "Produto",
     enableHiding: false,
+    enableSorting: true,
     meta: {
       class: { th: "sm:min-w-[260px]", td: "sm:min-w-[260px] py-2" },
     },
@@ -192,7 +227,7 @@ const syncColor = (
         ? "warning"
         : "neutral";
 const catalogCountLine = computed(() => {
-  const total = matrix.value?.rows?.length ?? 0;
+  const total = matrix.value?.total ?? rows.value.length;
   const shown = rows.value.length;
   const products =
     shown === total
@@ -208,23 +243,40 @@ const catalogCountLine = computed(() => {
     );
   return parts.join(" · ");
 });
-const query = ref("");
-// Recorte por dimensões (envio, canal, publicação, venda, estoque, PIM). A coleção
-// fica FORA: é o eixo primário, mora nas pills (que também reordenam) e recorta no
-// servidor. Aqui é tudo client-side — a matriz já veio inteira.
-// Chegando de um checklist de canal (`?surface=ifood&sync=error`), a tela já abre recortada.
-const filters = ref<ActiveFilters>(filtersFromQuery(useRoute().query));
-const searched = computed<CatalogRowProjection[]>(() =>
-  filterRows(matrix.value?.rows ?? [], query.value),
+// A página já chega recortada pelo servidor. Nada é filtrado de novo aqui:
+// faceta que só alcança a página mente no total e no has_next.
+const searched = computed<CatalogRowProjection[]>(() => matrix.value?.rows ?? []);
+// Conjunto novo (busca, coleção ou faceta) volta para a primeira página.
+watch(searchTerm, () => {
+  catalogPage.value = 1;
+});
+watch(collectionRef, () => {
+  catalogPage.value = 1;
+});
+watch(
+  filters,
+  () => {
+    catalogPage.value = 1;
+  },
+  { deep: true },
 );
-// As contagens das opções são lidas sobre o resultado da BUSCA (antes dos filtros),
-// senão marcar uma opção zeraria as contagens das outras.
+const totalPages = computed(() =>
+  Math.max(
+    1,
+    Math.ceil((matrix.value?.total ?? 0) / (matrix.value?.page_size || 50)),
+  ),
+);
+watch(catalogSorting, (sorting) => {
+  const first = sorting[0];
+  if (!first || first.id !== "product") return;
+  catalogOrder.value = first.desc ? "-name" : "name";
+  catalogPage.value = 1;
+});
+// Só as dimensões que o servidor filtra aparecem no painel.
 const dimensions = computed(() =>
-  catalogDimensions(surfaces.value, searched.value),
+  serverCatalogDimensions(surfaces.value, matrix.value?.facets),
 );
-const rows = computed<CatalogRowProjection[]>(() =>
-  filterByDimensions(searched.value, surfaces.value, filters.value),
-);
+const rows = computed<CatalogRowProjection[]>(() => searched.value);
 // status por linha (esmaecer/foto P&B/selo) computado uma vez por refresh.
 const rowStatuses = computed(() =>
   Object.fromEntries(rows.value.map((r) => [r.sku, rowStatus(r)])),
@@ -731,6 +783,13 @@ const headerMenuItems = computed(() => [
       icon: "i-lucide-download",
       onSelect: exportCatalog,
     },
+    {
+      label: "Importar CSV",
+      icon: "i-lucide-upload",
+      onSelect: () => {
+        importOpen.value = true;
+      },
+    },
   ],
 ]);
 function rowMenuItems(row: CatalogRowProjection) {
@@ -739,6 +798,11 @@ function rowMenuItems(row: CatalogRowProjection) {
       label: "Editar detalhes",
       icon: "i-lucide-pencil",
       onSelect: () => openDetail(row),
+    },
+    {
+      label: "Duplicar",
+      icon: "i-lucide-copy",
+      onSelect: () => void openDuplicate(row),
     },
     {
       label: row.is_sellable
@@ -1077,6 +1141,131 @@ function assistFor(sku: Ref<string | null>) {
 }
 const detailAssist = assistFor(detailSku);
 
+// ── criar e duplicar produto (7.2, onda 1) ─────────────────────────────────
+// Criar do zero e duplicar. O rascunho do GTIN é leitura pura; o aceite campo a
+// campo vai no corpo da criação, que o servidor aplica pelo mesmo caminho do Admin.
+const createOpen = ref(false);
+const createMode = ref<"create" | "duplicate">("create");
+const createBusy = ref(false);
+const createError = ref("");
+const createDraft = ref<ProductDraft | null>(null);
+const createDraftBusy = ref(false);
+const createDraftError = ref("");
+const duplicateSnapshot = ref<DuplicateSnapshot | null>(null);
+
+const duplicateSource = computed(() => duplicateSnapshot.value?.source ?? null);
+const duplicateSuggestedSku = computed(
+  () => duplicateSnapshot.value?.suggested_sku ?? "",
+);
+const duplicateSuggestedName = computed(
+  () => duplicateSnapshot.value?.suggested_name ?? "",
+);
+
+function openCreate() {
+  createMode.value = "create";
+  createError.value = "";
+  createDraft.value = null;
+  createDraftError.value = "";
+  duplicateSnapshot.value = null;
+  createOpen.value = true;
+}
+
+async function openDuplicate(row: CatalogRowProjection) {
+  createError.value = "";
+  createDraft.value = null;
+  createDraftError.value = "";
+  const snapshot = await fetchDuplicateSnapshot(row.sku);
+  if (!snapshot) {
+    createError.value = "Não foi possível preparar a cópia. Tente de novo.";
+    return;
+  }
+  duplicateSnapshot.value = snapshot;
+  createMode.value = "duplicate";
+  createOpen.value = true;
+}
+
+async function lookupDraft(gtin: string) {
+  createDraftError.value = "";
+  createDraftBusy.value = true;
+  try {
+    const draft = await fetchProductDraft(gtin);
+    if (!draft) {
+      createDraftError.value =
+        errorMsg.value || "Não foi possível buscar os dados deste código.";
+      return;
+    }
+    createDraft.value = draft;
+  } finally {
+    createDraftBusy.value = false;
+  }
+}
+
+// Import CSV: a prévia é lida antes; o apply leva a revisão da prévia.
+const importOpen = ref(false);
+const importPreview = ref<ImportPreview | null>(null);
+const importCsv = ref("");
+const importPreviewBusy = ref(false);
+async function previewImportCsv(csv: string) {
+  importCsv.value = csv;
+  importPreviewBusy.value = true;
+  try {
+    importPreview.value = await previewImport(csv);
+  } finally {
+    importPreviewBusy.value = false;
+  }
+}
+async function applyImportCsv() {
+  if (!importPreview.value || !importCsv.value) return;
+  const result = await applyImport(importCsv.value, importPreview.value);
+  if (result) {
+    importOpen.value = false;
+    importPreview.value = null;
+    importCsv.value = "";
+  }
+}
+// Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
+const bulkGridOpen = ref(false);
+// (c) "Só compro (insumo)": não cria Product; conduz ao cadastro de compra.
+function goPurchase() {
+  createOpen.value = false;
+  window.open(`${adminBaseUrl}/admin/buyman/material/add/`, "_blank", "noopener");
+}
+
+async function saveBulkCells(cells: BulkCell[]) {
+  const result = await saveCells(cells);
+  if (result) bulkGridOpen.value = false;
+}
+async function saveNewProduct(payload: CreateProductPayload) {
+  createError.value = "";
+  createBusy.value = true;
+  try {
+    const result =
+      createMode.value === "duplicate" && duplicateSnapshot.value
+        ? await duplicateProduct(duplicateSnapshot.value, {
+            sku: payload.sku,
+            name: payload.name,
+          })
+        : await createProduct(payload);
+    if (!result) {
+      createError.value =
+        errorMsg.value || "Não foi possível salvar. Confira os campos.";
+      return;
+    }
+    const enrichment = result.enrichment;
+    if (enrichment && Object.keys(enrichment.conflicts || {}).length) {
+      errorMsg.value =
+        "Produto criado. Campos sugeridos que você já tinha digitado ficaram com o seu valor.";
+    }
+    if (enrichment && Object.keys(enrichment.refused || {}).length) {
+      errorMsg.value =
+        "Produto criado. " + Object.values(enrichment.refused).join(" ");
+    }
+    createOpen.value = false;
+  } finally {
+    createBusy.value = false;
+  }
+}
+
 useHead({ title: "Catálogo" });
 </script>
 
@@ -1210,6 +1399,22 @@ useHead({ title: "Catálogo" });
         />
       </template>
       <template #actions>
+        <NuxtButton
+          icon="i-lucide-table-2"
+          label="Tabelão"
+          color="neutral"
+          variant="outline"
+          :disabled="!rows.length"
+          data-testid="catalog-bulk-grid"
+          @click="bulkGridOpen = true"
+        />
+        <NuxtButton
+          icon="i-lucide-plus"
+          label="Novo produto"
+          :disabled="!createAction()?.enabled"
+          data-testid="catalog-create"
+          @click="openCreate"
+        />
         <!-- ⋯ (v3): a última leitura útil, Atualizar e Exportar moram aqui -->
         <OperatorMoreMenu
           :items="headerMenuItems"
@@ -1495,6 +1700,7 @@ useHead({ title: "Catálogo" });
         view-key="orders-catalog"
         caption="Produtos e disponibilidade por canal"
         data-catalog-matrix
+        v-model:sorting="catalogSorting"
         @retry="refresh()"
       >
         <template v-if="Object.keys(filters).length" #empty-actions>
@@ -1914,6 +2120,37 @@ useHead({ title: "Catálogo" });
           </template>
         </template>
       </OperatorTable>
+
+      <!-- Paginação do SERVIDOR (fatia B): a matriz não vem inteira. -->
+      <div
+        v-if="(matrix?.total ?? 0) > (matrix?.page_size ?? 50) || catalogPage > 1"
+        class="flex flex-wrap items-center justify-between gap-2"
+        data-catalog-pagination
+      >
+        <p class="text-xs text-muted-foreground">
+          Página {{ matrix?.page ?? 1 }} de {{ totalPages }} ·
+          <span class="tabular-nums">{{ matrix?.total ?? 0 }}</span>
+          {{ (matrix?.total ?? 0) === 1 ? "produto" : "produtos" }}
+        </p>
+        <div class="flex items-center gap-1.5">
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Anterior"
+            icon="i-lucide-chevron-left"
+            :disabled="catalogPage <= 1 || pending"
+            @click="catalogPage = Math.max(1, catalogPage - 1)"
+          />
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            label="Próxima"
+            trailing-icon="i-lucide-chevron-right"
+            :disabled="!matrix?.has_next || pending"
+            @click="catalogPage += 1"
+          />
+        </div>
+      </div>
     </section>
 
     <!-- A barra de seleção da suíte: abaixo do `lg`, na base (a do topo mora no
@@ -1969,6 +2206,67 @@ useHead({ title: "Catálogo" });
       @pause-channel="pauseDetailChannel"
     />
 
+    <!-- criar do zero e duplicar (7.2, onda 1) — o rascunho do GTIN é revisado aqui. -->
+    <CatalogProductCreatePanel
+      :open="createOpen"
+      :mode="createMode"
+      :source="duplicateSource"
+      :suggested-sku="duplicateSuggestedSku"
+      :suggested-name="duplicateSuggestedName"
+      :busy="createBusy"
+      :error="createError"
+      :draft="createDraft"
+      :draft-busy="createDraftBusy"
+      :draft-error="createDraftError"
+      :enhance="enhancePhoto"
+      :upload="uploadPhoto"
+      :admin-base-url="adminBaseUrl"
+      @go-purchase="goPurchase"
+      @update:open="
+        (value) => {
+          if (!value) createOpen = false;
+        }
+      "
+      @lookup="lookupDraft"
+      @save="saveNewProduct"
+    />
+
+    <!-- tabelão: preço e flags por superfície, com colar/desfazer/salvar em lote. -->
+    <CatalogBulkGrid
+      :open="bulkGridOpen"
+      :rows="rows"
+      :surfaces="surfaces"
+      :busy="isBusy('catalog:cells')"
+      :error="errorMsg"
+      @update:open="
+        (value) => {
+          if (!value) bulkGridOpen = false;
+        }
+      "
+      @save="saveBulkCells"
+    />
+
+    <!-- import CSV pt-BR: prévia sem gravar, erro por linha, apply numa ida. -->
+    <CatalogImportCsv
+      :open="importOpen"
+      :preview="importPreview"
+      :preview-busy="importPreviewBusy"
+      :busy="isBusy('catalog:product-import')"
+      :error="errorMsg"
+      @update:open="
+        (value) => {
+          if (!value) importOpen = false;
+        }
+      "
+      @preview="previewImportCsv"
+      @apply="applyImportCsv"
+      @reset="
+        () => {
+          importPreview = null;
+          importCsv = '';
+        }
+      "
+    />
     <!-- lightbox canônico: foco preso, Escape e retorno ao disparador são do Reka. -->
     <NuxtModal
       :open="Boolean(zoom)"

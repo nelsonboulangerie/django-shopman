@@ -119,7 +119,8 @@ def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):
     assert RecipeEntry.objects.filter(current_version__isnull=True).count() == 0
 
     book = build_recipe_book()
-    assert book.count == RecipeEntry.objects.count()
+    assert book.count == min(book.page_size, RecipeEntry.objects.count())
+    assert book.total == RecipeEntry.objects.count()
     assert all(card.has_ficha for card in book.entries)
 
     # Sobre o dado REAL: nenhuma peça do seed acusa lente de padaria, e a

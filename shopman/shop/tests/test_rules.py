@@ -20,31 +20,10 @@ from shopman.shop.rules.engine import (
     load_rule,
     register_active_rules,
 )
-from shopman.shop.rules.pricing import EmployeeRule, HappyHourRule
+from shopman.shop.rules.pricing import HappyHourRule
 from shopman.shop.rules.validation import BusinessHoursRule, DeliveryZoneRule
 
 # ── Pricing rules: class attributes ──────────────────────────────────
-
-
-class TestEmployeeRule:
-    def test_code_and_label(self):
-        rule = EmployeeRule()
-        assert rule.code == "shop.employee_discount"
-        assert rule.rule_type == "modifier"
-
-    def test_default_params(self):
-        assert EmployeeRule.default_params == {
-            "discount_percent": 20,
-            "price_tier": "staff",
-            # Benefício do funcionário, não canal de preço: com entrega ele
-            # viajaria para qualquer endereço. Ver test_persona_3_employee.
-            "pickup_only": True,
-        }
-
-    def test_custom_params(self):
-        rule = EmployeeRule(discount_percent=15, price_tier="team")
-        assert rule.discount_percent == 15
-        assert rule.price_tier == "team"
 
 
 class TestHappyHourRule:
@@ -351,9 +330,14 @@ class TestEngine:
         "carrega?" do Admin.
         """
         rc = self._create_rule(
-            ref="employee_orphan_param",
-            rule_path="shopman.shop.rules.pricing.EmployeeRule",
-            params={"staff_discount_pct": 20, "discount_percent": 15},
+            ref="happy_orphan_param",
+            rule_path="shopman.shop.rules.pricing.HappyHourRule",
+            params={
+                "discount_percent": 15,
+                "start": "17:30",
+                "end": "18:00",
+                "staff_discount_pct": 20,
+            },
         )
 
         with pytest.raises(ValueError, match="staff_discount_pct"):
@@ -402,8 +386,8 @@ class TestEngine:
 
         self._create_rule(
             ref="pricing_skip",
-            rule_path="shopman.shop.rules.pricing.EmployeeRule",
-            params={"discount_percent": 20},
+            rule_path="shopman.shop.rules.pricing.HappyHourRule",
+            params={"discount_percent": 25, "start": "17:30", "end": "18:00"},
         )
 
         initial_count = len(registry.get_modifiers())

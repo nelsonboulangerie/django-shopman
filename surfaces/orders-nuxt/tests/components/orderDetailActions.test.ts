@@ -508,12 +508,13 @@ describe("detalhe do pedido — falar com o cliente", () => {
     );
   });
 
-  it("com cadastro: leva ao CRUD do cliente no Admin", () => {
+  it("com cadastro: mantém o operador no CRUD de Clientes do Gestor", () => {
     const tela = abrir(order({ customer_ref: "CLI-42" }));
 
     expect(tela.find("[data-contact-cadastro]").attributes("href")).toBe(
-      "https://api.exemplo/admin/guestman/customer/?q=CLI-42",
+      "/customers/CLI-42",
     );
+    expect(tela.find("[data-contact-cadastro]").attributes("target")).toBeUndefined();
   });
 
   // Botão que não leva a lugar nenhum é pior do que botão nenhum: o operador

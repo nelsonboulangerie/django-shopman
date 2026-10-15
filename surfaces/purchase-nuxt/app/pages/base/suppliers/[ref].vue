@@ -5,7 +5,7 @@ import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/p
 
 const route = useRoute();
 const screen = useScreen();
-const { suppliers, backendReady } = usePurchaseDesk();
+const { suppliers, backendReady, openSupplierEdit, openSupplierDuplicate } = usePurchaseDesk();
 const supplierRef = computed(() => String(route.params.ref ?? ""));
 const supplier = computed(() => suppliers.value.find((item) => item.ref === supplierRef.value) ?? null);
 
@@ -24,7 +24,11 @@ function close() {
     >
       <PurchaseSupplierDetail v-if="supplier" :supplier="supplier">
         <template #actions>
-          <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o fornecedor" @click="close()" />
+          <div class="flex items-center gap-1">
+            <NuxtButton icon="i-lucide-pencil" color="neutral" variant="ghost" square aria-label="Editar o fornecedor" title="Editar" @click="openSupplierEdit(supplier.ref)" />
+            <NuxtButton icon="i-lucide-copy" color="neutral" variant="ghost" square aria-label="Duplicar o fornecedor" title="Duplicar" @click="openSupplierDuplicate(supplier.ref)" />
+            <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o fornecedor" @click="close()" />
+          </div>
         </template>
         <template #nav>
           <OperatorRecordNav :trail="SUPPLIERS_TRAIL" :current="supplier.ref" :to="supplierPath" previous-label="Fornecedor anterior" next-label="Próximo fornecedor" />
@@ -55,7 +59,11 @@ function close() {
         <div v-if="supplier" class="h-full overflow-auto p-4" data-supplier-sheet>
           <PurchaseSupplierDetail :supplier="supplier">
             <template #actions>
-              <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o fornecedor" @click="close()" />
+              <div class="flex items-center gap-1">
+            <NuxtButton icon="i-lucide-pencil" color="neutral" variant="ghost" square aria-label="Editar o fornecedor" title="Editar" @click="openSupplierEdit(supplier.ref)" />
+            <NuxtButton icon="i-lucide-copy" color="neutral" variant="ghost" square aria-label="Duplicar o fornecedor" title="Duplicar" @click="openSupplierDuplicate(supplier.ref)" />
+            <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square aria-label="Fechar o fornecedor" @click="close()" />
+          </div>
             </template>
             <template #nav>
               <OperatorRecordNav :trail="SUPPLIERS_TRAIL" :current="supplier.ref" :to="supplierPath" previous-label="Fornecedor anterior" next-label="Próximo fornecedor" />

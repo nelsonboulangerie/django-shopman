@@ -458,6 +458,11 @@ const RECIPE_BOOK = {
       { value: "enriched", label: "Massa enriquecida" },
     ],
     count: RECIPE_CARDS.length,
+    page: 1,
+    page_size: 48,
+    total: RECIPE_CARDS.length,
+    has_next: false,
+    sort: "updated",
   },
   access: RECIPE_ACCESS,
 };
@@ -540,6 +545,7 @@ function recipeDetail(card) {
   return {
     entry: {
       ref: card.ref,
+      revision: "2026-07-04T12:00:00+00:00",
       name: card.name,
       kind: card.kind,
       kind_label: card.kind_label,
@@ -550,6 +556,22 @@ function recipeDetail(card) {
       current_version_number: card.current_version_number,
       ficha_ref: card.has_ficha ? card.ref : "",
       execution_in_sync: true,
+      execution: {
+        exists: card.has_ficha,
+        max_started_minutes: card.has_ficha ? 90 : null,
+        capacity_per_day: card.has_ficha ? "120" : "",
+        requires_batch_tracking: card.has_ficha,
+        shelf_life_days: card.has_ficha ? 3 : null,
+        shelf_life_reviewed: card.has_ficha,
+        shelf_life_reviewed_by: card.has_ficha ? "Gerente de produção" : "",
+        shelf_life_reviewed_at_display: card.has_ficha ? "04/07/2026 09:30" : "",
+        production_lifecycle: "standard",
+        lifecycle_options: [
+          { value: "standard", label: "Padrão" },
+          { value: "ready", label: "Pronto para venda" },
+        ],
+        revision: card.has_ficha ? "2026-07-04T12:00:00+00:00" : "",
+      },
       is_favorite: card.is_favorite,
       versions: card.current_version_number
         ? [recipeVersion(2, "published", "Publicada"), recipeVersion(1, "superseded", "Substituída")]

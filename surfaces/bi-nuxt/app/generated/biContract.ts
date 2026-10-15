@@ -195,7 +195,13 @@ export interface BISourceConflict {
   source: string;
 }
 
-/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious', channel: 'str', channels: 'tuple[BISalesChannelOption, ...]', compare: 'str', closed_weekdays: 'tuple[int, ...]') */
+/** Desconto de um TIPO de grupo (equipe, parceiro, ...) na janela. */
+export interface BISalesDiscountKindRow {
+  kind: string;
+  amount_q: number;
+}
+
+/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious', channel: 'str', channels: 'tuple[BISalesChannelOption, ...]', compare: 'str', closed_weekdays: 'tuple[int, ...]', discount_by_kind: 'tuple[BISalesDiscountKindRow, ...]', discount_kind_total_q: 'int') */
 export interface BISalesReport {
   date_from: string;
   date_to: string;
@@ -216,6 +222,8 @@ export interface BISalesReport {
   channels: BISalesChannelOption[];
   compare: string;
   closed_weekdays: number[];
+  discount_by_kind: BISalesDiscountKindRow[];
+  discount_kind_total_q: number;
 }
 
 /** BICashDay(date: 'str', shifts: 'int', difference_q: 'int', sangria_q: 'int', suprimento_q: 'int') */

@@ -7,12 +7,13 @@
 // botões redondos de ícone, com o nome acessível por extenso.
 import type { OperatorOrderDetail } from "../types/orderDetail";
 
-defineProps<{
+withDefaults(defineProps<{
   order: OperatorOrderDetail;
   adminUrl: string;
   relayExpires: string;
   compact?: boolean;
-}>();
+  external?: boolean;
+}>(), { compact: false, external: true });
 
 </script>
 
@@ -71,7 +72,7 @@ defineProps<{
   <NuxtButton
     v-if="adminUrl"
     :to="adminUrl"
-    target="_blank"
+    :target="external ? '_blank' : undefined"
     color="neutral"
     variant="ghost"
     icon="i-lucide-id-card"

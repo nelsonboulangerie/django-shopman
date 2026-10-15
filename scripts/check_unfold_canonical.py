@@ -377,6 +377,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/catalog.py",
             ROOT / "shopman/backstage/projections/catalog_bindings.py",
             ROOT / "shopman/backstage/projections/customers.py",
+            ROOT / "shopman/backstage/projections/customer_groups.py",
             ROOT / "shopman/backstage/projections/feeds.py",
             ROOT / "shopman/backstage/projections/channel_health.py",
             ROOT / "shopman/backstage/projections/channel_attention.py",

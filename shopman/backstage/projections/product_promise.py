@@ -281,9 +281,12 @@ def _value_of(product: Product, fact: str) -> tuple[str, bool]:
         return f"{energy} kcal por porção de {serving} g", True
 
     if fact == FACT_DIETARY:
-        metadata = product.metadata or {}
-        allergens = list(metadata.get("allergens") or [])
-        dietary = list(metadata.get("dietary_info") or [])
+        from shopman.shop.services import attributes
+
+        # Alérgeno e dieta são atributos do registro, não chaves soltas do
+        # metadata: elas morreram no rename (shop.0033).
+        allergens = list(attributes.get(product, "alergenos") or [])
+        dietary = list(attributes.get(product, "dieta") or [])
         if not allergens and not dietary:
             return "", False
         parts = []
