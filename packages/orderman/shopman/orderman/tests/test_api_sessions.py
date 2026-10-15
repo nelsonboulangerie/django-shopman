@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import types
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from django.test import TestCase
@@ -364,3 +365,58 @@ class SessionApiTests(TestCase):
         # ModifyService limpa issues/checks após aplicar ops
         self.assertEqual(r.data["data"]["issues"], [])
         self.assertEqual(r.data["data"]["checks"], {})
+
+    def _mk_session(self, session_key: str, channel_ref: str = "pos") -> Session:
+        return Session.objects.create(
+            session_key=session_key,
+            channel_ref=channel_ref,
+            state="open",
+            pricing_policy="internal",
+            edit_policy="open",
+            rev=0,
+            items=[],
+            data={"checks": {}, "issues": []},
+        )
+
+    def test_list_sessions_returns_200_with_cursor_pagination(self) -> None:
+        # 30 sessões: a página default do endpoint é 25.
+        for i in range(30):
+            self._mk_session(f"SESS-LIST-{i:03d}")
+
+        r = self.client.get("/api/sessions")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(len(r.data["results"]), 25)
+        self.assertIsNotNone(r.data["next"])
+
+        r2 = self.client.get(r.data["next"])
+        self.assertEqual(r2.status_code, 200, r2.data)
+        self.assertEqual(len(r2.data["results"]), 5)
+        self.assertIsNone(r2.data["next"])
+
+    def test_list_sessions_orders_by_opened_at_desc(self) -> None:
+        base = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+        keys = ["SESS-ORDER-OLD", "SESS-ORDER-MID", "SESS-ORDER-NEW"]
+        for offset, key in enumerate(keys):
+            session = self._mk_session(key)
+            # auto_now_add ignoraria o valor no create; o update fixa a janela.
+            Session.objects.filter(pk=session.pk).update(
+                opened_at=base + timedelta(minutes=offset)
+            )
+
+        r = self.client.get("/api/sessions")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(
+            [row["session_key"] for row in r.data["results"]],
+            list(reversed(keys)),
+        )
+
+    def test_list_sessions_filters_by_channel_ref(self) -> None:
+        self._mk_session("SESS-POS-1", channel_ref="pos")
+        self._mk_session("SESS-SHOP-1", channel_ref="shop")
+
+        r = self.client.get("/api/sessions?channel_ref=shop")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(
+            [row["session_key"] for row in r.data["results"]],
+            ["SESS-SHOP-1"],
+        )

@@ -66,6 +66,19 @@ class OrderCursorPagination(CursorPagination):
     max_page_size = 100
 
 
+# Session não tem created_at: a paginação de Order apontava para uma coluna
+# inexistente e derrubava GET /api/sessions com FieldError. A janela da sessão é
+# opened_at; o id entra como desempate para a ordenação ser única, que é o que o
+# cursor exige.
+class SessionCursorPagination(CursorPagination):
+    """Cursor-based pagination for Session, ordered by opened_at."""
+
+    page_size = 25
+    ordering = ("-opened_at", "-id")
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 def _get_actor(request) -> str:
     """Extrai username do request ou retorna 'api' como fallback."""
     user = getattr(request, "user", None)
@@ -142,7 +155,7 @@ class SessionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
     queryset = Session.objects.all()
     serializer_class = SessionSerializer
     permission_classes = get_orderman_setting("DEFAULT_PERMISSION_CLASSES")
-    pagination_class = OrderCursorPagination
+    pagination_class = SessionCursorPagination
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     lookup_field = "session_key"
