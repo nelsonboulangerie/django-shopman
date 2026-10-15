@@ -110,7 +110,17 @@ watch(
       :pending="pending"
       :primary="canEdit ? { label: 'Nova receita', icon: 'i-lucide-plus', to: '/recipes/new' } : undefined"
       @refresh="refresh()"
-    />
+    >
+      <template #actions>
+        <NuxtButton
+          to="/recipes/sheets"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-clipboard-list"
+          label="Fichas de execução"
+        />
+      </template>
+    </RecipeHeader>
 
     <!-- Sem a permissão de leitura: explica com calma, sem beco. -->
     <section v-if="forbidden" class="grid flex-1 place-items-center p-6 text-center">

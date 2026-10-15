@@ -23,7 +23,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 from shopman.craftsman.exceptions import RecipeBookError
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.craftsman.services import recipe_book as craftsman
 
@@ -31,6 +31,7 @@ from shopman.backstage.services import recipe_external_references as external_re
 from shopman.backstage.services.exceptions import (
     RecipeBookServiceError,
     RecipeEntryNotFound,
+    RecipeSheetNotFound,
     RecipeVersionNotFound,
 )
 from shopman.backstage.services.recipe_capture import CapturedRecipe, read_recipe
@@ -335,8 +336,21 @@ def update_execution(entry: RecipeEntry, data: dict, *, actor: str) -> Recipe:
     if recipe is None:
         raise RecipeEntryNotFound("Publique uma versão antes de configurar a ficha de execução.")
     _assert_revision(recipe, data)
-    meta = dict(recipe.meta or {})
+    recipe.meta = apply_execution_settings(dict(recipe.meta or {}), data, actor=actor)
+    with translating_errors():
+        recipe.full_clean()
+        recipe.save()
+    return recipe
 
+
+def apply_execution_settings(meta: dict, data: dict, *, actor: str) -> dict:
+    """Aplica as chaves de operação presentes no corpo ao ``meta`` e o devolve.
+
+    A mesma conta serve à ficha publicada pelo inventário (``update_execution``)
+    e ao cadastro direto da ficha: um só lugar decide o que ``max_started_minutes``,
+    ``capacity_per_day``, rastreio de lote, validade revisada e ciclo de produção
+    escrevem — e o que apagam quando o corpo pede vazio.
+    """
     if "maxStartedMinutes" in data:
         value = _integer_setting(data.get("maxStartedMinutes"), field="maxStartedMinutes", minimum=1, maximum=10080)
         if value is None:
@@ -413,11 +427,7 @@ def update_execution(entry: RecipeEntry, data: dict, *, actor: str) -> Recipe:
         else:
             meta.pop("production_lifecycle", None)
 
-    recipe.meta = meta
-    with translating_errors():
-        recipe.full_clean()
-        recipe.save()
-    return recipe
+    return meta
 
 
 @transaction.atomic
@@ -658,3 +668,319 @@ def get_version(entry: RecipeEntry, number: int) -> RecipeVersion:
     if version is None:
         raise RecipeVersionNotFound(f"A receita '{entry.ref}' não tem a versão {number}.")
     return version
+
+
+# ── Ficha de execução (craftsman.Recipe + RecipeItem) ────────────
+#
+# O Admin sempre permitiu criar e editar a ficha à mão; estas funções levam o
+# MESMO gesto para a Produção. A paridade com o Admin vem de passar pelo caminho
+# canônico do modelo: Recipe.full_clean/save (ficha ativa única por SKU, SKU de
+# saída válido, batch_size positivo, etapas normalizadas) e RecipeItem.full_clean
+# (unidade do cadastro, quantidade > 0, aproveitamento em (0, 1]). Uma diferença
+# DELIBERADA: o invariante de massa é revalidado DEPOIS dos itens gravados,
+# enquanto o Admin só o vê na próxima gravação da ficha. Ficha errada desconta
+# estoque errado; aqui se recusa na hora.
+
+
+def unique_sheet_ref(name: str, *, wanted: str = "") -> str:
+    """slugify do nome (ou do ref pedido) com sufixo numérico quando já existe."""
+    base = slugify(wanted or name)[:_MAX_REF_LENGTH].strip("-")
+    if not base:
+        raise _fail("Não foi possível gerar um identificador a partir do nome.", field="ref" if wanted else "name")
+    candidate = base
+    suffix = 2
+    while Recipe.objects.filter(ref=candidate).exists():
+        tail = f"-{suffix}"
+        candidate = f"{base[: _MAX_REF_LENGTH - len(tail)]}{tail}"
+        suffix += 1
+    return candidate
+
+
+def get_sheet(ref: str) -> Recipe:
+    """A ficha pelo ref. RecipeSheetNotFound quando não existe (404 na porta)."""
+    recipe = Recipe.objects.filter(ref=ref).first()
+    if recipe is None:
+        raise RecipeSheetNotFound(f"Ficha '{ref}' não existe no cadastro.")
+    return recipe
+
+
+def recipe_revision(recipe: Recipe) -> str:
+    """Impressão digital da ficha inteira, itens incluídos.
+
+    Recipe.updated_at não muda quando um RecipeItem é gravado, então ele
+    sozinho não serve de base para a trava de concorrência: a revisão soma os
+    itens, que é onde mora o risco de duas telas se sobrescreverem.
+    """
+    payload = {
+        "name": recipe.name,
+        "output_sku": recipe.output_sku,
+        "batch_size": str(recipe.batch_size),
+        "is_active": bool(recipe.is_active),
+        "steps": recipe.steps or [],
+        "meta": recipe.meta or {},
+        "items": [
+            [
+                item.input_sku,
+                str(item.quantity),
+                item.unit,
+                str(item.usable_factor),
+                item.sort_order,
+                bool(item.is_optional),
+                item.meta or {},
+            ]
+            for item in recipe.items.order_by("sort_order", "input_sku")
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _assert_sheet_revision(recipe: Recipe, data: dict, *, field: str = "expectedRevision") -> None:
+    expected = str(data.get(field) or "").strip()
+    if expected and expected != recipe_revision(recipe):
+        raise _fail(
+            "A ficha mudou desde que você abriu. Atualize e confira antes de salvar.",
+            field=field,
+            code="RECIPE_CHANGED",
+        )
+
+
+def _positive_decimal(value: Any, *, field: str, label: str) -> Decimal:
+    if value in (None, "") or isinstance(value, bool):
+        raise _fail(f"{label} precisa ser maior que zero.", field=field)
+    try:
+        parsed = Decimal(str(value).replace(",", "."))
+    except (InvalidOperation, ValueError):
+        raise _fail(f"{label} precisa ser um número.", field=field) from None
+    if not parsed.is_finite() or parsed <= 0 or parsed > Decimal("999999999"):
+        raise _fail(f"{label} precisa ser maior que zero.", field=field)
+    return parsed.quantize(Decimal("0.001"))
+
+
+def _usable_factor(value: Any, *, field: str) -> Decimal:
+    if value in (None, ""):
+        return Decimal("1")
+    if isinstance(value, bool):
+        raise _fail("O aproveitamento precisa ser um número entre 0 e 1.", field=field)
+    try:
+        parsed = Decimal(str(value).replace(",", "."))
+    except (InvalidOperation, ValueError):
+        raise _fail("O aproveitamento precisa ser um número entre 0 e 1.", field=field) from None
+    if not parsed.is_finite() or parsed <= 0 or parsed > 1:
+        raise _fail("O aproveitamento precisa estar entre 0 e 1.", field=field)
+    return parsed.quantize(Decimal("0.0001"))
+
+
+def _sheet_batch_size(value: Any) -> Decimal:
+    return _positive_decimal(value, field="batch_size", label="O rendimento base")
+
+
+def _sheet_is_active(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise _fail("Ativa aceita apenas sim ou não.", field="is_active")
+    return value
+
+
+def _item_lines(data: dict) -> list[dict]:
+    """Lê, valida e normaliza a lista de ingredientes do corpo (vazia é permitida)."""
+    from shopman.craftsman.models import RecipeItem
+    from shopman.craftsman.models.recipe import normalize_recipe_item_unit
+
+    raw = data.get("items")
+    if raw is None:
+        raise _fail("A ficha precisa da lista de ingredientes.", field="items")
+    if not isinstance(raw, list):
+        raise _fail("Os ingredientes precisam ser uma lista.", field="items")
+    lines: list[dict] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(raw):
+        field = f"items[{index}]"
+        if not isinstance(entry, dict):
+            raise _fail("Cada ingrediente precisa ser um objeto.", field=field)
+        sku = _text(entry, "input_sku")
+        if not sku:
+            raise _fail("Informe o insumo da linha.", field=f"{field}.input_sku")
+        if sku in seen:
+            raise _fail(f"O insumo {sku} aparece mais de uma vez na ficha.", field=f"{field}.input_sku")
+        seen.add(sku)
+        unit = normalize_recipe_item_unit(str(entry.get("unit") or ""))
+        if unit not in RecipeItem.Unit.values:
+            raise _fail("Unidade inválida para cálculo da ficha técnica.", field=f"{field}.unit")
+        sort_order = entry.get("sort_order")
+        if sort_order in (None, ""):
+            sort_order = index
+        elif isinstance(sort_order, bool) or not str(sort_order).strip().isdigit():
+            raise _fail("A ordem precisa ser um número inteiro.", field=f"{field}.sort_order")
+        else:
+            sort_order = int(sort_order)
+        is_optional = entry.get("is_optional", False)
+        if not isinstance(is_optional, bool):
+            raise _fail("Opcional aceita apenas sim ou não.", field=f"{field}.is_optional")
+        lines.append({
+            "input_sku": sku,
+            "quantity": _positive_decimal(entry.get("quantity"), field=f"{field}.quantity", label="A quantidade"),
+            "unit": unit,
+            "usable_factor": _usable_factor(entry.get("usable_factor"), field=f"{field}.usable_factor"),
+            "sort_order": sort_order,
+            "is_optional": is_optional,
+            "note": _text(entry, "note"),
+        })
+    return lines
+
+
+def _sync_sheet_items(recipe: Recipe, lines: list[dict]) -> None:
+    """Substitui os itens da ficha pelos do corpo, preservando o meta que a tela não edita."""
+    from shopman.craftsman.models import RecipeItem
+
+    existing = {item.input_sku: item for item in recipe.items.all()}
+    keep = [line["input_sku"] for line in lines]
+    recipe.items.exclude(input_sku__in=keep).delete()
+    for index, line in enumerate(lines):
+        item = existing.get(line["input_sku"])
+        meta = dict(item.meta or {}) if item is not None else {}
+        if line["note"]:
+            meta["note"] = line["note"]
+        else:
+            meta.pop("note", None)
+        if item is None:
+            item = RecipeItem(recipe=recipe, input_sku=line["input_sku"])
+        item.quantity = line["quantity"]
+        item.unit = line["unit"]
+        item.usable_factor = line["usable_factor"]
+        item.sort_order = line["sort_order"]
+        item.is_optional = line["is_optional"]
+        item.meta = meta
+        try:
+            item.full_clean()
+        except ValidationError as exc:
+            attribute, message = _first_validation_message(exc)
+            suffix = f".{attribute}" if attribute else ""
+            raise _fail(message, field=f"items[{index}]{suffix}") from exc
+        item.save()
+
+
+@transaction.atomic
+def create_sheet_from_payload(data: dict, *, actor: str = "") -> Recipe:
+    """POST sheets/: cria a ficha de execução do zero, com os itens numa transação."""
+    if not isinstance(data, dict):
+        raise _fail("O corpo precisa ser um objeto.")
+    name = _text(data, "name")
+    if not name:
+        raise _fail("Informe o nome da ficha.", field="name")
+    output_sku = _text(data, "output_sku").upper()
+    if not output_sku:
+        raise _fail("Informe o SKU de saída.", field="output_sku")
+    lines = _item_lines(data)
+    recipe = Recipe(
+        ref=unique_sheet_ref(name, wanted=_text(data, "ref")),
+        name=name,
+        output_sku=output_sku,
+        batch_size=_sheet_batch_size(data.get("batch_size")),
+        steps=_steps(data.get("steps")),
+        is_active=_sheet_is_active(data.get("is_active"), default=True),
+        meta=apply_execution_settings({}, data, actor=actor),
+    )
+    try:
+        with translating_errors():
+            recipe.full_clean()
+            recipe.save()
+            _sync_sheet_items(recipe, lines)
+            # O invariante de massa só enxerga os itens com a ficha já gravada.
+            recipe.full_clean()
+    except IntegrityError as exc:
+        raise _fail("Já existe uma ficha com essa referência. Tente novamente.", field="ref") from exc
+    return recipe
+
+
+@transaction.atomic
+def update_sheet_from_payload(sheet: Recipe, data: dict, *, actor: str = "") -> Recipe:
+    """PATCH sheets/<ref>/: edita a identidade, os itens e a operação da ficha."""
+    if not isinstance(data, dict):
+        raise _fail("O corpo precisa ser um objeto.")
+    recipe = Recipe.objects.select_for_update().get(pk=sheet.pk)
+    _assert_sheet_revision(recipe, data)
+    if "name" in data:
+        name = _text(data, "name")
+        if not name:
+            raise _fail("Informe o nome da ficha.", field="name")
+        recipe.name = name
+    if "output_sku" in data:
+        output_sku = _text(data, "output_sku").upper()
+        if not output_sku:
+            raise _fail("Informe o SKU de saída.", field="output_sku")
+        recipe.output_sku = output_sku
+    if "batch_size" in data:
+        recipe.batch_size = _sheet_batch_size(data.get("batch_size"))
+    if "steps" in data:
+        recipe.steps = _steps(data.get("steps"))
+    if "is_active" in data:
+        recipe.is_active = _sheet_is_active(data.get("is_active"), default=recipe.is_active)
+    recipe.meta = apply_execution_settings(dict(recipe.meta or {}), data, actor=actor)
+    lines = _item_lines(data) if "items" in data else None
+    try:
+        with translating_errors():
+            recipe.full_clean()
+            recipe.save()
+            if lines is not None:
+                _sync_sheet_items(recipe, lines)
+            # Revalida com os itens novos: a gravação do pai valida os antigos.
+            recipe.full_clean()
+    except IntegrityError as exc:
+        raise _fail("Já existe uma ficha ativa para este SKU. Inative a ficha anterior.", field="output_sku") from exc
+    return recipe
+
+
+@transaction.atomic
+def duplicate_sheet(sheet: Recipe, data: dict, *, actor: str = "") -> Recipe:
+    """POST sheets/<ref>/duplicate/: copia a ficha INTEIRA (itens e meta) como inativa.
+
+    Nasce inativa de propósito: é uma cópia em revisão, e o SKU de saída costuma
+    ser o mesmo, que a ficha ativa única proíbe enquanto ficha ativa. A revisão de
+    validade não viaja (o carimbo de quem revisou é da ficha original), então a
+    cópia pede nova confirmação.
+    """
+    if not isinstance(data, dict):
+        raise _fail("O corpo precisa ser um objeto.")
+    source = Recipe.objects.prefetch_related("items").get(pk=sheet.pk)
+    _assert_sheet_revision(source, data)
+    name = _text(data, "name")
+    if not name:
+        raise _fail("Informe o nome da cópia.", field="name")
+    output_sku = _text(data, "output_sku").upper() or source.output_sku
+    meta = dict(source.meta or {})
+    for key in ("shelf_life_reviewed_by", "shelf_life_reviewed_at"):
+        meta.pop(key, None)
+    meta = apply_execution_settings(meta, data, actor=actor)
+    copy = Recipe(
+        ref=unique_sheet_ref(name, wanted=_text(data, "ref")),
+        name=name,
+        output_sku=output_sku,
+        batch_size=source.batch_size,
+        steps=list(source.steps or []),
+        is_active=_sheet_is_active(data.get("is_active"), default=False),
+        meta=meta,
+    )
+    source_items = list(source.items.order_by("sort_order", "input_sku"))
+    try:
+        with translating_errors():
+            copy.full_clean()
+            copy.save()
+            for index, item in enumerate(source_items):
+                clone = RecipeItem(
+                    recipe=copy,
+                    input_sku=item.input_sku,
+                    quantity=item.quantity,
+                    unit=item.unit,
+                    usable_factor=item.usable_factor,
+                    sort_order=index,
+                    is_optional=item.is_optional,
+                    meta=dict(item.meta or {}),
+                )
+                clone.full_clean()
+                clone.save()
+            copy.full_clean()
+    except IntegrityError as exc:
+        raise _fail("Já existe uma ficha com essa referência. Tente novamente.", field="ref") from exc
+    return copy
