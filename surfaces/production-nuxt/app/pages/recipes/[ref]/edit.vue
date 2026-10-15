@@ -273,6 +273,7 @@ async function startDraft() {
   const result = await createVersion(
     base
       ? {
+          ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
           from_version: base.number,
           formula: formulaFromServed(base.formula),
           yield_quantity: base.yield_quantity,
@@ -281,7 +282,15 @@ async function startDraft() {
           notes: base.notes,
           label: "",
         }
-      : { formula: emptyFormula(), yield_quantity: "1", yield_unit: "kg", steps: [], notes: "", label: "" },
+      : {
+          ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
+          formula: emptyFormula(),
+          yield_quantity: "1",
+          yield_unit: "kg",
+          steps: [],
+          notes: "",
+          label: "",
+        },
   );
   if (result.ok && result.version) await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`, { replace: true });
 }

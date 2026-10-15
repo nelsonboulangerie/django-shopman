@@ -18,23 +18,32 @@ const archived = ref(false);
 const onlyWithoutSku = ref(false);
 const onlyWithDraft = ref(false);
 const onlyFavorites = ref(false);
+const sort = ref("updated");
+const page = ref(1);
 
-const { entries, kinds, canEdit, forbidden, pending, error, refresh, toggleFavorite, isFavoriteBusy } = useRecipeBook(
+const { entries, kinds, total, pageSize, canEdit, forbidden, pending, error, refresh, toggleFavorite, isFavoriteBusy } = useRecipeBook(
   query,
   kind,
   archived,
+  {
+    withoutSku: onlyWithoutSku,
+    withDraft: onlyWithDraft,
+    favorites: onlyFavorites,
+    sort,
+    page,
+  },
 );
 
-const visible = computed(() =>
-  filterEntries(
-    entries.value,
-    query.value,
-    kind.value,
-    onlyWithoutSku.value,
-    onlyWithDraft.value,
-    onlyFavorites.value,
-  ),
-);
+// O servidor entrega só a página e o recorte pedidos. Repetir o predicado aqui
+// evita um flash incoerente enquanto a próxima resposta está em voo.
+const visible = computed(() => filterEntries(
+  entries.value,
+  query.value,
+  kind.value,
+  onlyWithoutSku.value,
+  onlyWithDraft.value,
+  onlyFavorites.value,
+));
 const hasFilters = computed(
   () =>
     !!query.value.trim() || !!kind.value || onlyWithoutSku.value || onlyWithDraft.value || onlyFavorites.value,
@@ -47,6 +56,7 @@ function clearFilters() {
   onlyWithoutSku.value = false;
   onlyWithDraft.value = false;
   onlyFavorites.value = false;
+  page.value = 1;
 }
 const ALL_KINDS = "__all__";
 const kindItems = computed(() => [{ value: ALL_KINDS, label: "Todas" }, ...kinds.value]);
@@ -55,6 +65,14 @@ const kindChoice = computed({
   set: (value: string) => {
     kind.value = value === ALL_KINDS ? "" : value;
   },
+});
+const sortItems = [
+  { value: "updated", label: "Atualizadas recentemente" },
+  { value: "name", label: "Nome" },
+  { value: "kind", label: "Tipo e nome" },
+];
+watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, sort], () => {
+  page.value = 1;
 });
 
 // A trilha da lista (`OperatorRecordNav` na receita): grava a ordem que a pessoa vê,
@@ -67,6 +85,11 @@ const trailFrom = computed(() => {
   const params = new URLSearchParams();
   if (query.value.trim()) params.set("q", query.value.trim());
   if (kind.value) params.set("kind", kind.value);
+  if (onlyWithoutSku.value) params.set("without_sku", "1");
+  if (onlyWithDraft.value) params.set("with_draft", "1");
+  if (onlyFavorites.value) params.set("favorites", "1");
+  if (sort.value !== "updated") params.set("sort", sort.value);
+  if (page.value > 1) params.set("page", String(page.value));
   const search = params.toString();
   return search ? `/recipes?${search}` : "/recipes";
 });
@@ -114,6 +137,14 @@ watch(
           value-key="value"
           class="w-48"
           aria-label="Tipo de receita"
+        />
+        <NuxtSelect
+          v-model="sort"
+          :items="sortItems"
+          value-key="value"
+          label-key="label"
+          class="w-56"
+          aria-label="Ordenar receitas"
         />
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
@@ -248,6 +279,19 @@ watch(
             <Icon name="lucide:star" class="size-5" :class="entry.is_favorite ? 'fill-current' : ''" />
           </NuxtButton>
         </div>
+      </div>
+
+      <div v-if="total > pageSize" class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        <p class="text-xs text-muted-foreground tabular-nums">
+          {{ total }} receitas · página {{ page }}
+        </p>
+        <NuxtPagination
+          v-model:page="page"
+          :total="total"
+          :items-per-page="pageSize"
+          :sibling-count="1"
+          aria-label="Páginas de receitas"
+        />
       </div>
     </section>
   </main>

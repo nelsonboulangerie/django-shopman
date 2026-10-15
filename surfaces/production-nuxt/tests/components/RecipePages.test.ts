@@ -1,4 +1,4 @@
-import { computed, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +6,8 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 import RecipeHeader from "../../app/components/RecipeHeader.vue";
 import RecipeListPage from "../../app/pages/recipes/index.vue";
 import RecipeDetailPage from "../../app/pages/recipes/[ref]/index.vue";
+import RecipeDuplicatePanel from "../../app/components/RecipeDuplicatePanel.vue";
+import RecipeExecutionFormPanel from "../../app/components/RecipeExecutionFormPanel.vue";
 import type { RecipeEntryCardProjection } from "../../app/types/recipeBook";
 
 // As telas de receitas sem o runtime Nuxt: os composables viram dados de teste, as peças
@@ -50,16 +52,33 @@ const OperatorRecordNavStub = defineComponent({
 const passthrough = (name: string) =>
   defineComponent({ name, setup: (_, { slots }) => () => h("div", { "data-stub": name }, slots.default?.()) });
 
+const OperatorFormShellStub = defineComponent({
+  name: "OperatorFormShell",
+  props: { open: Boolean, saveDisabled: Boolean, saveDisabledReason: String },
+  emits: ["save", "update:open"],
+  setup(props, { emit, slots }) {
+    return () => props.open
+      ? h("section", { "data-form-shell": "", "data-disabled-reason": props.saveDisabledReason }, [
+          slots.default?.(),
+          h("button", { disabled: props.saveDisabled, onClick: () => emit("save") }, "Salvar"),
+        ])
+      : null;
+  },
+});
+
 const stubs = {
   ...nuxtUiStubs,
   Icon: true,
   NuxtLink: { props: ["to"], template: "<a :href='to'><slot /></a>" },
   NuxtSelect: true,
   NuxtSelectMenu: true,
+  NuxtPagination: true,
   NuxtCard: passthrough("NuxtCard"),
   OperatorPageHeader: OperatorPageHeaderStub,
   OperatorSuiteSearch: true,
   OperatorRecordNav: OperatorRecordNavStub,
+  OperatorFormShell: OperatorFormShellStub,
+  OperatorFormSection: passthrough("OperatorFormSection"),
   OperatorTable: true,
   // O cabeçalho é o de verdade: é ele que repassa o `#status` ao `OperatorPageHeader`.
   RecipeHeader,
@@ -95,6 +114,8 @@ const entries = ref<RecipeEntryCardProjection[]>([]);
 function installGlobals() {
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
+  vi.stubGlobal("reactive", reactive);
+  vi.stubGlobal("nextTick", nextTick);
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
   vi.stubGlobal("useHead", () => {});
@@ -159,7 +180,7 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     await favorites!.trigger("click");
     await nextTick();
 
-    expect(remember).toHaveBeenLastCalledWith(["pao-a"], { from: "/recipes", label: "Favoritas" });
+    expect(remember).toHaveBeenLastCalledWith(["pao-a"], { from: "/recipes?favorites=1", label: "Favoritas" });
   });
 
   it("the star is a pressed-state toggle button, not a native control in the card link", async () => {
@@ -186,6 +207,20 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       lens: { items: [] },
       steps: [],
       notes: "",
+      revision: "2026-10-14T02:03:04+00:00",
+      execution: {
+        exists: false,
+        max_started_minutes: null,
+        capacity_per_day: "",
+        requires_batch_tracking: false,
+        shelf_life_days: null,
+        shelf_life_reviewed: false,
+        shelf_life_reviewed_by: "",
+        shelf_life_reviewed_at_display: "",
+        production_lifecycle: "",
+        lifecycle_options: [],
+        revision: "",
+      },
       source_label: "Manual",
       published_at_display: "",
       created_at_display: "",
@@ -224,6 +259,8 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       refresh: vi.fn(),
       busy: ref(false),
       patchEntry: vi.fn(async () => ({ ok: true })),
+      saveExecution: vi.fn(async () => ({ ok: true })),
+      duplicate: vi.fn(async () => ({ ok: true })),
       createVersion: vi.fn(),
       publish: vi.fn(),
       saveReferences: vi.fn(),
@@ -273,5 +310,91 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
 
     expect(wrapper.find('[data-overlay="NuxtModal"]').exists()).toBe(false);
     expect(wrapper.find('input[aria-label="SKU do produto"]').exists()).toBe(true);
+  });
+});
+
+describe("Receitas: cadastros turbinados", () => {
+  it("duplicates from the served revision and normalizes the new SKU", async () => {
+    const source = {
+      ref: "pao-b",
+      name: "Pão B",
+      revision: "2026-10-14T02:03:04+00:00",
+      current_version_number: 3,
+    } as never;
+    const wrapper = mount(RecipeDuplicatePanel, {
+      props: { open: true, source },
+      global: { stubs },
+    });
+    await nextTick();
+    const inputs = wrapper.findAll("input");
+    expect(inputs[0].element.value).toBe("Pão B (cópia)");
+    await inputs[2].setValue("sku-novo");
+    await wrapper.findAll("button").find((button) => button.text() === "Salvar")!.trigger("click");
+
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual({
+      name: "Pão B (cópia)",
+      outputSku: "SKU-NOVO",
+      expectedRevision: "2026-10-14T02:03:04+00:00",
+    });
+  });
+
+  it("requires a fresh shelf-life review after the number changes", async () => {
+    const execution = {
+      exists: true,
+      max_started_minutes: 90,
+      capacity_per_day: "24",
+      requires_batch_tracking: true,
+      shelf_life_days: 3,
+      shelf_life_reviewed: true,
+      shelf_life_reviewed_by: "Pablo",
+      shelf_life_reviewed_at_display: "hoje",
+      production_lifecycle: "standard",
+      lifecycle_options: [],
+      revision: "2026-10-14T02:03:04+00:00",
+    };
+    const wrapper = mount(RecipeExecutionFormPanel, {
+      props: { open: true, execution },
+      global: { stubs },
+    });
+    await nextTick();
+    const inputs = wrapper.findAll("input");
+    expect(wrapper.find('[role="checkbox"][aria-label="Prazo revisado pelo responsável"]').attributes("aria-checked")).toBe("true");
+    await inputs[2].setValue("4");
+    await nextTick();
+    expect(wrapper.find('[role="checkbox"][aria-label="Prazo revisado pelo responsável"]').attributes("aria-checked")).toBe("false");
+    await wrapper.findAll("button").find((button) => button.text() === "Salvar")!.trigger("click");
+
+    expect(wrapper.emitted("save")?.[0]?.[0]).toMatchObject({
+      shelfLifeDays: 4,
+      shelfLifeReviewed: false,
+      expectedRevision: "2026-10-14T02:03:04+00:00",
+    });
+  });
+
+  it("blocks fractional shelf life before it reaches the server", async () => {
+    const execution = {
+      exists: true,
+      max_started_minutes: null,
+      capacity_per_day: "",
+      requires_batch_tracking: false,
+      shelf_life_days: null,
+      shelf_life_reviewed: false,
+      shelf_life_reviewed_by: "",
+      shelf_life_reviewed_at_display: "",
+      production_lifecycle: "",
+      lifecycle_options: [],
+      revision: "rev-1",
+    };
+    const wrapper = mount(RecipeExecutionFormPanel, {
+      props: { open: true, execution },
+      global: { stubs },
+    });
+    await nextTick();
+    await wrapper.findAll("input")[2].setValue("1.5");
+    await nextTick();
+
+    const shell = wrapper.findComponent(OperatorFormShellStub);
+    expect(shell.props("saveDisabled")).toBe(true);
+    expect(shell.props("saveDisabledReason")).toContain("número inteiro");
   });
 });

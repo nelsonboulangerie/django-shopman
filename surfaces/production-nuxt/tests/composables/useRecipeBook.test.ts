@@ -46,11 +46,20 @@ describe("useRecipeBook", () => {
 
   it("createEntry POSTs to recipes/, reconciles and returns the entry", async () => {
     env.fetchData.value = { book: { entries: [], kinds: [], count: 0 }, access: {} };
-    env.fetchMock.mockResolvedValueOnce({ entry: { ref: "pao-campanha", name: "Pão de campanha" } });
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      resource: { kind: "recipe", ref: "pao-campanha" },
+      entry: { ref: "pao-campanha", name: "Pão de campanha" },
+    });
     const result = await book().createEntry({ name: "Pão de campanha", kind: "bread", output_sku: "", notes: "" });
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/recipes/",
-      expect.objectContaining({ method: "POST", body: expect.objectContaining({ name: "Pão de campanha", kind: "bread" }) }),
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Idempotency-Key": expect.any(String) },
+        body: expect.objectContaining({ name: "Pão de campanha", kind: "bread" }),
+      }),
     );
     expect(result.ok).toBe(true);
     expect(result.entry?.ref).toBe("pao-campanha");
@@ -65,5 +74,37 @@ describe("useRecipeBook", () => {
     expect(result.field).toBe("name");
     expect(result.message).toBe("Nome obrigatório.");
     expect(env.sonner.error).toHaveBeenCalledWith("Nome obrigatório.");
+  });
+
+  it("keeps the same intention key while the result is uncertain", async () => {
+    env.fetchData.value = { book: { entries: [], kinds: [], count: 0 }, access: {} };
+    const api = book();
+    const payload = { name: "Pão", kind: "bread", output_sku: "", notes: "" };
+    env.fetchMock
+      .mockResolvedValueOnce({ outcome: "unknown" })
+      .mockResolvedValueOnce({ outcome: "unknown" });
+
+    await api.createEntry(payload);
+    await api.createEntry(payload);
+
+    const firstHeaders = env.fetchMock.mock.calls[0]?.[1]?.headers;
+    const retryHeaders = env.fetchMock.mock.calls[1]?.[1]?.headers;
+    expect(firstHeaders).toEqual(retryHeaders);
+  });
+
+  it("rotates the intention key after a definitive refusal", async () => {
+    env.fetchData.value = { book: { entries: [], kinds: [], count: 0 }, access: {} };
+    const api = book();
+    const payload = { name: "", kind: "bread", output_sku: "", notes: "" };
+    env.fetchMock
+      .mockRejectedValueOnce({ status: 400, data: { detail: "Nome obrigatório.", field: "name" } })
+      .mockRejectedValueOnce({ status: 400, data: { detail: "Nome obrigatório.", field: "name" } });
+
+    await api.createEntry(payload);
+    await api.createEntry(payload);
+
+    const firstKey = env.fetchMock.mock.calls[0]?.[1]?.headers?.["Idempotency-Key"];
+    const nextKey = env.fetchMock.mock.calls[1]?.[1]?.headers?.["Idempotency-Key"];
+    expect(nextKey).not.toBe(firstKey);
   });
 });

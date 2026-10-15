@@ -39,6 +39,8 @@ const {
   refresh,
   busy,
   patchEntry,
+  saveExecution,
+  duplicate,
   createVersion,
   publish,
   saveReferences,
@@ -74,12 +76,22 @@ const subtitle = computed(() => {
 });
 const stale = computed(() => isStale({ error: !!error.value, hasData: !!entry.value }));
 const isCurrent = computed(() => !!selected.value && selected.value.number === entry.value?.current_version_number);
+const executionSummary = computed(() => {
+  const execution = entry.value?.execution;
+  if (!execution?.exists) return "";
+  return [
+    execution.max_started_minutes ? `${execution.max_started_minutes} min até atraso` : "tempo padrão da loja",
+    execution.capacity_per_day ? `${execution.capacity_per_day} por dia` : "capacidade sem teto próprio",
+    execution.shelf_life_days == null ? "validade não declarada" : `${execution.shelf_life_days} dias de validade`,
+  ].join(" · ");
+});
 
 // ── Nova versão: copia a selecionada em rascunho e abre o editor ────────────
 async function newVersion() {
   const base = selected.value;
   if (!base) return;
   const result = await createVersion({
+    ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
     from_version: base.number,
     formula: formulaFromServed(base.formula),
     yield_quantity: base.yield_quantity,
@@ -140,7 +152,10 @@ function startSku() {
   skuEditing.value = true;
 }
 async function saveSku() {
-  const result = await patchEntry({ output_sku: skuInput.value.trim().toUpperCase() });
+  const result = await patchEntry({
+    output_sku: skuInput.value.trim().toUpperCase(),
+    ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
+  });
   if (result.ok) {
     skuEditing.value = false;
     skuError.value = "";
@@ -168,16 +183,56 @@ async function saveDetails() {
     detailsError.value = "Dê um nome à receita.";
     return;
   }
-  const result = await patchEntry({ name, kind: detailsKind.value, notes: detailsNotes.value });
+  const result = await patchEntry({
+    name,
+    kind: detailsKind.value,
+    notes: detailsNotes.value,
+    ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
+  });
   if (result.ok) detailsOpen.value = false;
   else detailsError.value = result.message ?? "";
+}
+
+// ── Cadastro turbo: copiar a receita inteira e ajustar a operação da ficha ─
+const duplicateOpen = ref(false);
+const executionOpen = ref(false);
+const duplicateKey = ref("");
+
+function newMutationKey() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function openDuplicate() {
+  duplicateKey.value = newMutationKey();
+  duplicateOpen.value = true;
+}
+
+async function saveDuplicate(payload: Parameters<typeof duplicate>[0]) {
+  const result = await duplicate(payload, duplicateKey.value);
+  if (!result.ok && !result.uncertain) duplicateKey.value = newMutationKey();
+  if (result.ok && result.entry) {
+    duplicateOpen.value = false;
+    useSonner.success("Cópia criada como rascunho.");
+    await navigateTo(`/recipes/${result.entry.ref}/edit?v=1`);
+  }
+}
+
+async function saveExecutionForm(payload: Parameters<typeof saveExecution>[0]) {
+  const result = await saveExecution(payload);
+  if (result.ok) {
+    executionOpen.value = false;
+    useSonner.success("Operação da ficha salva.");
+  }
 }
 
 // ── Arquivar / restaurar (destrutivo pede confirmação) ──────────────────────
 const archiveOpen = ref(false);
 async function confirmArchive() {
   if (!entry.value) return;
-  const result = await patchEntry({ is_archived: !entry.value.is_archived });
+  const result = await patchEntry({
+    is_archived: !entry.value.is_archived,
+    expectedRevision: entry.value.revision,
+  });
   if (result.ok) {
     archiveOpen.value = false;
     useSonner.success(entry.value.is_archived ? "Receita restaurada." : "Receita arquivada.");
@@ -364,6 +419,23 @@ const publishDiff = computed(() => [
               v-if="canEdit"
               color="neutral"
               variant="outline"
+              icon="i-lucide-copy-plus"
+              label="Duplicar"
+              :disabled="!versions.length"
+              @click="openDuplicate"
+            />
+            <NuxtButton
+              v-if="canEdit && entry.execution?.exists"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-settings-2"
+              label="Operação"
+              @click="executionOpen = true"
+            />
+            <NuxtButton
+              v-if="canEdit"
+              color="neutral"
+              variant="outline"
               icon="i-lucide-pencil"
               label="Dados"
               @click="openDetails"
@@ -380,6 +452,16 @@ const publishDiff = computed(() => [
         </NuxtCard>
 
         <p v-if="entry.notes" class="mb-4 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{{ entry.notes }}</p>
+
+        <NuxtAlert
+          v-if="entry.execution?.exists"
+          class="mb-4"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-clipboard-check"
+          title="Ficha de execução ativa"
+          :description="executionSummary"
+        />
 
         <div class="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
           <!-- ── A lente da versão selecionada ───────────────────────────── -->
@@ -626,5 +708,20 @@ const publishDiff = computed(() => [
         </div>
       </template>
     </NuxtModal>
+
+    <RecipeDuplicatePanel
+      v-model:open="duplicateOpen"
+      :source="entry"
+      :from-version="selected?.number"
+      :busy="busy"
+      @save="saveDuplicate"
+    />
+
+    <RecipeExecutionFormPanel
+      v-model:open="executionOpen"
+      :execution="entry?.execution ?? null"
+      :busy="busy"
+      @save="saveExecutionForm"
+    />
   </main>
 </template>
