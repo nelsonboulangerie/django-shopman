@@ -27,6 +27,7 @@ class RouteBudget:
     consecutive_failures: int = 3
     recovery_samples: int = 3
     max_alert_interval: int = 64
+    heartbeat_samples: int = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,7 @@ class _BudgetState:
     recoveries: int = 0
     alert_interval: int = 1
     next_alert: int = 0
+    next_heartbeat: int = 1
     incident_open: bool = False
 
 
@@ -62,6 +64,12 @@ class BudgetRecorder:
         raw = (getattr(settings, "WATCHMAN", {}) or {}).get("BUDGETS", {})
         if not isinstance(raw, dict):
             raise WatchmanConfigurationError("WATCHMAN['BUDGETS'] must be a mapping")
+        try:
+            default_heartbeat = int(
+                (getattr(settings, "WATCHMAN", {}) or {}).get("BUDGET_HEARTBEAT_SAMPLES", 1000)
+            )
+        except (TypeError, ValueError) as exc:
+            raise WatchmanConfigurationError("invalid Watchman budget heartbeat interval") from exc
         budgets: list[RouteBudget] = []
         for name, values in raw.items():
             if not isinstance(values, dict):
@@ -76,10 +84,16 @@ class BudgetRecorder:
                     consecutive_failures=int(values.get("consecutive_failures", 3)),
                     recovery_samples=int(values.get("recovery_samples", 3)),
                     max_alert_interval=int(values.get("max_alert_interval", 64)),
+                    heartbeat_samples=int(values.get("heartbeat_samples", default_heartbeat)),
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise WatchmanConfigurationError(f"invalid Watchman budget {name!r}") from exc
-            if budget.max_duration_ms <= 0 or budget.consecutive_failures <= 0 or budget.recovery_samples <= 0:
+            if (
+                budget.max_duration_ms <= 0
+                or budget.consecutive_failures <= 0
+                or budget.recovery_samples <= 0
+                or budget.heartbeat_samples <= 0
+            ):
                 raise WatchmanConfigurationError(f"invalid Watchman budget {name!r}")
             budgets.append(budget)
         return cls(tuple(budgets))
@@ -97,6 +111,9 @@ class BudgetRecorder:
             return None
         state = self._states[budget.name]
         state.sample += 1
+        heartbeat_due = state.sample >= state.next_heartbeat
+        if heartbeat_due:
+            state.next_heartbeat = state.sample + budget.heartbeat_samples
         state.durations.append(duration_ms)
         if query_count is not None:
             state.queries.append(query_count)
@@ -121,7 +138,7 @@ class BudgetRecorder:
 
         state.failures = 0
         if not state.incident_open:
-            return None
+            return BudgetEvent("healthy", budget, duration_ms, query_count, state.sample) if heartbeat_due else None
         state.recoveries += 1
         if state.recoveries < budget.recovery_samples:
             return None
@@ -168,11 +185,16 @@ class PerformanceBudgetCheck:
     def run(self, context: CheckContext) -> CheckResult:
         snapshot = get_recorder().snapshot()
         open_incidents = sorted(name for name, state in snapshot.items() if state["incident_open"])
+        observations = sum(state["samples"] for state in snapshot.values())
         status = Status.FAIL if open_incidents else Status.PASS
         return CheckResult(
             id=self.id,
             status=status,
-            summary=("route budgets are within limits" if not open_incidents else "route budget incident is open"),
-            evidence={"open": open_incidents, "budgets": snapshot},
+            summary=(
+                f"route budgets are within limits; {observations} observations"
+                if not open_incidents
+                else "route budget incident is open"
+            ),
+            evidence={"open": open_incidents, "observations": observations, "budgets": snapshot},
             remediation=("Inspect shopman.watchman.performance events." if open_incidents else None),
         )

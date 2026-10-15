@@ -121,20 +121,43 @@ class AccessLogMiddleware:
         if budget_event is not None:
             budget_logger = logging.getLogger("shopman.watchman.performance")
             # Sentry's default logging integration promotes ERROR to an event;
-            # WARNING remains a breadcrumb. Opening/reminding pages people,
-            # recovery records evidence without opening another incident.
+            # WARNING remains a breadcrumb. Opening/reminding pages people;
+            # recovery and the sparse healthy pulse record evidence without
+            # opening another incident.
+            level = {
+                "healthy": logging.INFO,
+                "resolved": logging.WARNING,
+            }.get(budget_event.kind, logging.ERROR)
+            message = (
+                "watchman_budgets_ok budget=%s observations=%d duration=%dms queries=%s"
+                if budget_event.kind == "healthy"
+                else "watchman_budget_%s %s %s duration=%dms queries=%s sample=%d"
+            )
+            arguments = (
+                (
+                    budget_event.budget.name,
+                    budget_event.sample,
+                    duration_ms,
+                    query_count if query_count is not None else "unknown",
+                )
+                if budget_event.kind == "healthy"
+                else (
+                    budget_event.kind,
+                    method,
+                    route,
+                    duration_ms,
+                    query_count if query_count is not None else "unknown",
+                    budget_event.sample,
+                )
+            )
             budget_logger.log(
-                logging.WARNING if budget_event.kind == "resolved" else logging.ERROR,
-                "watchman_budget_%s %s %s duration=%dms queries=%s sample=%d",
-                budget_event.kind,
-                method,
-                route,
-                duration_ms,
-                query_count if query_count is not None else "unknown",
-                budget_event.sample,
+                level,
+                message,
+                *arguments,
                 extra={
                     "watchman_event": budget_event.kind,
                     "watchman_budget": budget_event.budget.name,
+                    "watchman_observations": budget_event.sample,
                     "http_method": method,
                     "http_route": route,
                     "duration_ms": duration_ms,
