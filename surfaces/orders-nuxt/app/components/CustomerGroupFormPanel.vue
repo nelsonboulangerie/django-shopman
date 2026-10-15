@@ -11,12 +11,14 @@ import type {
 const props = withDefaults(defineProps<{
   open: boolean;
   group?: CustomerGroupProjection | null;
+  duplicate?: boolean;
   options: CustomerGroupFormOptionsProjection;
   busy?: boolean;
   error?: string;
   fieldErrors?: Record<string, string>;
 }>(), {
   group: null,
+  duplicate: false,
   busy: false,
   error: "",
   fieldErrors: () => ({}),
@@ -43,6 +45,7 @@ const form = reactive({
   savingsMessage: "Hoje você economizou {amount} por ser {group}",
 });
 const baseline = ref("");
+const isExisting = computed(() => Boolean(props.group && !props.duplicate));
 
 function snapshot() {
   return {
@@ -65,8 +68,8 @@ function snapshot() {
 function reset() {
   const group = props.group;
   Object.assign(form, {
-    ref: group?.ref ?? "",
-    name: group?.name ?? "",
+    ref: props.duplicate ? "" : group?.ref ?? "",
+    name: props.duplicate && group ? `${group.name} — cópia` : group?.name ?? "",
     description: group?.description ?? "",
     listingRef: group?.listing_ref ?? "",
     priority: group?.priority ?? 0,
@@ -82,7 +85,7 @@ function reset() {
   baseline.value = JSON.stringify(snapshot());
 }
 
-watch(() => [props.open, props.group?.revision, props.options] as const, ([open]) => {
+watch(() => [props.open, props.group?.revision, props.duplicate, props.options] as const, ([open]) => {
   if (open) reset();
 }, { immediate: true });
 
@@ -109,7 +112,7 @@ const discountChoice = computed({
 });
 const disabledReason = computed(() => {
   if (!form.name.trim()) return "Informe o nome do grupo.";
-  if (!props.group && !/^[-a-z0-9_]+$/.test(form.ref.trim())) return "Use letras minúsculas, números e hífen no código.";
+  if (!isExisting.value && !/^[-a-z0-9_]+$/.test(form.ref.trim())) return "Use letras minúsculas, números e hífen no código.";
   if (form.discountType && !form.discountValue.trim()) return "Informe o valor do desconto.";
   if (form.discountType && !form.discountKind.trim()) return "Informe o tipo usado pelo B.I.";
   return "";
@@ -128,7 +131,7 @@ function submit() {
   if (disabledReason.value) return;
   emit("save", {
     ...snapshot(),
-    ...(props.group?.revision ? { expectedRevision: props.group.revision } : {}),
+    ...(isExisting.value && props.group?.revision ? { expectedRevision: props.group.revision } : {}),
   });
 }
 </script>
@@ -136,13 +139,13 @@ function submit() {
 <template>
   <OperatorFormShell
     :open="open"
-    :title="group ? `Editar ${group.name}` : 'Criar grupo de clientes'"
+    :title="duplicate && group ? `Duplicar ${group.name}` : group ? `Editar ${group.name}` : 'Criar grupo de clientes'"
     description="Preço, desconto e mensagem seguem juntos. A melhor vantagem vence; descontos concorrentes não se somam."
     size="wide"
     :dirty="dirty"
     :dirty-count="changedKeys.length"
     :busy="busy"
-    :save-label="group ? 'Salvar grupo' : 'Criar grupo'"
+    :save-label="isExisting ? 'Salvar grupo' : duplicate ? 'Criar cópia' : 'Criar grupo'"
     save-icon="i-lucide-badge-percent"
     :save-disabled="Boolean(disabledReason)"
     :save-disabled-reason="disabledReason"
@@ -158,7 +161,7 @@ function submit() {
           <NuxtInput v-model="form.name" class="w-full" autofocus data-testid="customer-group-name" />
         </NuxtFormField>
         <NuxtFormField label="Código" required :error="fieldErrors.ref">
-          <NuxtInput v-model="form.ref" class="w-full" :disabled="Boolean(group)" data-testid="customer-group-ref" />
+          <NuxtInput v-model="form.ref" class="w-full" :disabled="isExisting" data-testid="customer-group-ref" />
         </NuxtFormField>
         <NuxtFormField label="Descrição" class="sm:col-span-2" :error="fieldErrors.description">
           <NuxtTextarea v-model="form.description" :rows="2" class="w-full" />

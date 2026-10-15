@@ -7,6 +7,7 @@ useHead({ title: "Grupos de clientes" });
 const { groups, pending, error, refresh, readMetadata } = useCustomerGroups();
 const panelOpen = ref(false);
 const editing = ref<CustomerGroupProjection | null>(null);
+const duplicating = ref(false);
 const busy = ref(false);
 const mutationError = ref("");
 const fieldErrors = ref<Record<string, string>>({});
@@ -25,6 +26,7 @@ const columns = [
 
 function openCreate() {
   editing.value = null;
+  duplicating.value = false;
   intentionKey = crypto.randomUUID();
   mutationError.value = "";
   fieldErrors.value = {};
@@ -33,6 +35,16 @@ function openCreate() {
 
 function openEdit(group: CustomerGroupProjection) {
   editing.value = group;
+  duplicating.value = false;
+  intentionKey = crypto.randomUUID();
+  mutationError.value = "";
+  fieldErrors.value = {};
+  panelOpen.value = true;
+}
+
+function openDuplicate(group: CustomerGroupProjection) {
+  editing.value = group;
+  duplicating.value = true;
   intentionKey = crypto.randomUUID();
   mutationError.value = "";
   fieldErrors.value = {};
@@ -40,7 +52,10 @@ function openEdit(group: CustomerGroupProjection) {
 }
 
 watch(panelOpen, (open) => {
-  if (!open) editing.value = null;
+  if (!open) {
+    editing.value = null;
+    duplicating.value = false;
+  }
 });
 
 async function save(payload: CustomerGroupMutationPayload) {
@@ -49,7 +64,7 @@ async function save(payload: CustomerGroupMutationPayload) {
   mutationError.value = "";
   fieldErrors.value = {};
   try {
-    const response = editing.value
+    const response = editing.value && !duplicating.value
       ? await updateCustomerGroup(editing.value.ref, payload, intentionKey)
       : await createCustomerGroup(payload, intentionKey);
     if (response.outcome !== "applied" || !response.group) {
@@ -58,7 +73,7 @@ async function save(payload: CustomerGroupMutationPayload) {
     }
     intentionKey = crypto.randomUUID();
     panelOpen.value = false;
-    useSonner.success(`${response.group.name} foi ${editing.value ? "atualizado" : "criado"}.`);
+    useSonner.success(`${response.group.name} foi ${editing.value && !duplicating.value ? "atualizado" : "criado"}.`);
     await refresh();
   } catch (failure) {
     mutationError.value = httpErrorMessage(failure, "Não foi possível salvar o grupo.");
@@ -166,15 +181,26 @@ const phoneHeaderActions = computed(() => [
           <NuxtBadge color="neutral" variant="subtle" :label="row.original.customer_count_label" />
         </template>
         <template #actions-cell="{ row }">
-          <NuxtButton
-            type="button"
-            icon="i-lucide-pencil"
-            label="Editar"
-            color="neutral"
-            variant="outline"
-            :data-edit-customer-group="row.original.ref"
-            @click="openEdit(row.original)"
-          />
+          <div class="flex flex-wrap items-center gap-2">
+            <NuxtButton
+              type="button"
+              icon="i-lucide-copy"
+              label="Duplicar"
+              color="neutral"
+              variant="ghost"
+              :data-duplicate-customer-group="row.original.ref"
+              @click="openDuplicate(row.original)"
+            />
+            <NuxtButton
+              type="button"
+              icon="i-lucide-pencil"
+              label="Editar"
+              color="neutral"
+              variant="outline"
+              :data-edit-customer-group="row.original.ref"
+              @click="openEdit(row.original)"
+            />
+          </div>
         </template>
       </OperatorTable>
     </section>
@@ -182,6 +208,7 @@ const phoneHeaderActions = computed(() => [
     <CustomerGroupFormPanel
       v-model:open="panelOpen"
       :group="editing"
+      :duplicate="duplicating"
       :options="options"
       :busy="busy"
       :error="mutationError"

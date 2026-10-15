@@ -78,6 +78,20 @@ describe("CustomerGroupFormPanel", () => {
     }));
   });
 
+  it("duplica como um cadastro novo, preservando a regra mas exigindo outro código", async () => {
+    const wrapper = panel({ group, duplicate: true });
+    expect(wrapper.get("[data-testid='customer-group-ref']").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get("[data-testid='customer-group-name']").element).toHaveProperty("value", "Aliança Francesa — cópia");
+    await wrapper.get("[data-testid='customer-group-ref']").setValue("alianca-francesa-2");
+    await wrapper.get("[data-testid='customer-group-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
+      ref: "alianca-francesa-2",
+      discountValue: "15",
+      channelRefs: ["pdv"],
+    }));
+    expect(wrapper.emitted("save")?.[0]?.[0]).not.toHaveProperty("expectedRevision");
+  });
+
   it("pausa sem sugerir exclusão do histórico", async () => {
     const wrapper = panel({ group });
     const vm = wrapper.vm as unknown as { form: { discountType: string } };
