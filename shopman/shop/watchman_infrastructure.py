@@ -69,7 +69,7 @@ class DeploymentDriftCheck:
                 evidence={"required_env": "WATCHMAN_LIVE_DO_SPEC"},
                 remediation="Download the live spec read-only and rerun with WATCHMAN_LIVE_DO_SPEC.",
             )
-        versioned = os.environ.get("WATCHMAN_VERSIONED_DO_SPEC", ".do/app.alpha-subdomains.yaml")
+        versioned = os.environ.get("WATCHMAN_VERSIONED_DO_SPEC", ".do/app.subdomains.yaml")
         return _run(
             self.id,
             [sys.executable, "scripts/check_do_spec_drift.py", "--spec", versioned, "--live-spec", live_spec],
@@ -79,9 +79,9 @@ class DeploymentDriftCheck:
 
 class ExternalMonitoringContractCheck:
     id = "external_monitoring"
-    description = "Versioned Sentry uptime and rate-alert contract is valid."
+    description = "Versioned Sentry monitoring contract matches the live account."
     scopes = frozenset({Scope.SECURITY, Scope.DIAGNOSTIC})
-    timeout_seconds = 2.0
+    timeout_seconds = 30.0
 
     def run(self, context: CheckContext) -> CheckResult:
         path = ROOT / "ops" / "watchman" / "sentry.json"
@@ -90,12 +90,29 @@ class ExternalMonitoringContractCheck:
             endpoints = payload["uptime"]
             rate = payload["error_rate"]
             recipient = payload["notification"]["recipient"]
+            notification = payload["notification"]
             valid = (
-                isinstance(endpoints, list)
-                and len(endpoints) >= 2
-                and all(item["url"].startswith("https://") and item["interval_seconds"] == 60 for item in endpoints)
+                payload["schema_version"] == 1
+                and bool(payload["organization"])
+                and bool(payload["project"])
+                and payload["environment"] == "production"
+                and isinstance(endpoints, list)
+                and len(endpoints) == 2
+                and len({item["url"] for item in endpoints}) == 2
+                and all(
+                    item["url"].startswith("https://")
+                    and item["interval_seconds"] == 60
+                    and item["timeout_ms"] > 0
+                    and item["downtime_threshold"] > 0
+                    and item["recovery_threshold"] > 0
+                    for item in endpoints
+                )
                 and rate["aggregate"] == "count()"
+                and rate["time_window_seconds"] == 300
+                and rate["open_above"] > rate["resolve_at_or_below"] >= 0
                 and recipient == "ti@boulangerie.com.br"
+                and notification["repeat_minutes"] == [0, 5, 10, 30, 60, 180]
+                and notification["send_resolved"] is True
             )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return CheckResult(
@@ -105,10 +122,24 @@ class ExternalMonitoringContractCheck:
                 evidence={"error": exc.__class__.__name__},
                 remediation="Repair ops/watchman/sentry.json.",
             )
-        return CheckResult(
-            id=self.id,
-            status=Status.PASS if valid else Status.FAIL,
-            summary="external monitoring contract is versioned" if valid else "external monitoring contract is incomplete",
-            evidence={"uptime_monitors": len(endpoints), "recipient": recipient},
-            remediation=None if valid else "Declare both services, one-minute cadence, rate alert and ti@ recipient.",
-        )
+        if not valid:
+            return CheckResult(
+                id=self.id,
+                status=Status.FAIL,
+                summary="external monitoring contract is incomplete",
+                evidence={"uptime_monitors": len(endpoints), "recipient": recipient},
+                remediation="Declare both services, cadence, rate alert, repetition, recovery and ti@ recipient.",
+            )
+        if not os.environ.get("SENTRY_AUTH_TOKEN", "").strip():
+            return CheckResult(
+                id=self.id,
+                status=Status.SKIPPED,
+                summary="contract is valid; live Sentry drift was not checked",
+                evidence={
+                    "uptime_monitors": len(endpoints),
+                    "recipient": recipient,
+                    "required_env": "SENTRY_AUTH_TOKEN",
+                },
+                remediation="Provide a read-only SENTRY_AUTH_TOKEN and rerun the infrastructure profile.",
+            )
+        return _run(self.id, [sys.executable, "scripts/watchman_sentry.py", "check"], 25.0)

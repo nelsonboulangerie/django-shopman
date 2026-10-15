@@ -14,13 +14,16 @@ hermético de produção e confrontar um snapshot da DigitalOcean.
 ```bash
 python manage.py watchman check --profile diagnostic --format json
 python manage.py watchman check --profile performance --format json
-WATCHMAN_LIVE_DO_SPEC=/tmp/live.yaml python manage.py watchman check --profile infrastructure --format json
+WATCHMAN_LIVE_DO_SPEC=/tmp/live.yaml SENTRY_AUTH_TOKEN=... \
+  python manage.py watchman check --profile infrastructure --format json
 SENTRY_AUTH_TOKEN=... python scripts/watchman_sentry.py check
 ```
 
 `python scripts/watchman_sentry.py apply` cria detectores ausentes de uptime e
 taxa de erros. Ele não inventa a identidade interna da ação de e-mail: o check
 continua vermelho até o workflow real conter `ti@boulangerie.com.br`.
+Sem `SENTRY_AUTH_TOKEN`, o perfil valida o arquivo mas marca a conferência viva
+como `SKIPPED`; nunca transforma ausência de acesso em um resultado verde.
 
 ## Visão Geral
 

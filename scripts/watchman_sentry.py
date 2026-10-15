@@ -65,15 +65,17 @@ def _error_payload(contract: dict) -> dict:
     return {
         "name": item["name"],
         "type": "metric_issue",
-        "dataSources": [{
-            "aggregate": item["aggregate"],
-            "dataset": item["dataset"],
-            "environment": contract["environment"],
-            "eventTypes": ["default", "error"],
-            "query": item["query"],
-            "queryType": 0,
-            "timeWindow": item["time_window_seconds"],
-        }],
+        "dataSources": [
+            {
+                "aggregate": item["aggregate"],
+                "dataset": item["dataset"],
+                "environment": contract["environment"],
+                "eventTypes": ["default", "error"],
+                "query": item["query"],
+                "queryType": 0,
+                "timeWindow": item["time_window_seconds"],
+            }
+        ],
         "conditionGroup": {
             "logicType": "any",
             "conditions": [
@@ -87,6 +89,44 @@ def _error_payload(contract: dict) -> dict:
     }
 
 
+def _uptime_matches(found: dict, expected: dict, environment: str) -> bool:
+    sources = found.get("dataSources") or []
+    query = sources[0].get("queryObj", {}) if sources else {}
+    config = found.get("config") or {}
+    return (
+        found.get("type") == "uptime_domain_failure"
+        and found.get("enabled", found.get("status") == "active") is True
+        and query.get("url", found.get("url")) == expected["url"]
+        and query.get("method", found.get("method")) == "GET"
+        and query.get("intervalSeconds", found.get("intervalSeconds")) == expected["interval_seconds"]
+        and query.get("timeoutMs", found.get("timeoutMs")) == expected["timeout_ms"]
+        and config.get("environment", found.get("environment")) == environment
+        and config.get("downtimeThreshold", found.get("downtimeThreshold")) == expected["downtime_threshold"]
+        and config.get("recoveryThreshold", found.get("recoveryThreshold")) == expected["recovery_threshold"]
+    )
+
+
+def _error_matches(found: dict, contract: dict) -> bool:
+    expected = contract["error_rate"]
+    sources = found.get("dataSources") or []
+    query_obj = sources[0].get("queryObj", {}) if sources else {}
+    query = query_obj.get("snubaQuery", query_obj)
+    group = found.get("conditionGroup") or {}
+    conditions = group.get("conditions") or []
+    thresholds = {(item.get("type"), item.get("comparison"), item.get("conditionResult")) for item in conditions}
+    return (
+        found.get("type") == "metric_issue"
+        and found.get("enabled") is True
+        and query.get("aggregate") == expected["aggregate"]
+        and query.get("dataset") == expected["dataset"]
+        and query.get("environment") == contract["environment"]
+        and query.get("query") == expected["query"]
+        and query.get("timeWindow") == expected["time_window_seconds"]
+        and ("gt", expected["open_above"], 75) in thresholds
+        and ("lte", expected["resolve_at_or_below"], 0) in thresholds
+    )
+
+
 def reconcile(client: SentryClient, contract: dict, *, apply: bool) -> list[str]:
     org, project = contract["organization"], contract["project"]
     detectors = client.request("GET", f"/api/0/organizations/{org}/detectors/?project={project}")
@@ -94,25 +134,31 @@ def reconcile(client: SentryClient, contract: dict, *, apply: bool) -> list[str]
     changes: list[str] = []
     for uptime in contract["uptime"]:
         found = existing.get(uptime["name"])
-        if found and found.get("type") == "uptime_domain_failure":
+        if found and _uptime_matches(found, uptime, contract["environment"]):
             continue
-        changes.append(f"missing uptime detector: {uptime['name']}")
-        if apply:
+        if found:
+            changes.append(f"uptime detector has drift: {uptime['name']}")
+        elif apply:
             client.request(
                 "POST",
                 f"/api/0/projects/{org}/{project}/uptime/",
                 _uptime_payload(uptime, contract["environment"]),
             )
+        else:
+            changes.append(f"missing uptime detector: {uptime['name']}")
     rate = contract["error_rate"]
     found_rate = existing.get(rate["name"])
-    if not found_rate or found_rate.get("type") != "metric_issue":
-        changes.append(f"missing error-rate detector: {rate['name']}")
+    if not found_rate:
         if apply:
             client.request(
                 "POST",
                 f"/api/0/organizations/{org}/projects/{project}/detectors/",
                 _error_payload(contract),
             )
+        else:
+            changes.append(f"missing error-rate detector: {rate['name']}")
+    elif not _error_matches(found_rate, contract):
+        changes.append(f"error-rate detector has drift: {rate['name']}")
 
     workflows = client.request("GET", f"/api/0/organizations/{org}/workflows/")
     recipient = contract["notification"]["recipient"].lower()

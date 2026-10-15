@@ -11,11 +11,29 @@ def _context():
     return CheckContext(profile="infrastructure", deadline=9999999999)
 
 
-def test_external_monitoring_contract_names_both_services_and_ti_recipient():
+def test_external_monitoring_contract_is_explicitly_skipped_without_live_credential(monkeypatch):
+    monkeypatch.delenv("SENTRY_AUTH_TOKEN", raising=False)
+
+    result = ExternalMonitoringContractCheck().run(_context())
+
+    assert result.status is Status.SKIPPED
+    assert result.evidence == {
+        "uptime_monitors": 2,
+        "recipient": "ti@boulangerie.com.br",
+        "required_env": "SENTRY_AUTH_TOKEN",
+    }
+
+
+@patch("shopman.shop.watchman_infrastructure._run")
+def test_external_monitoring_contract_checks_live_drift_when_credential_exists(run, monkeypatch):
+    monkeypatch.setenv("SENTRY_AUTH_TOKEN", "test-token")
+    run.return_value = Mock(status=Status.PASS)
+
     result = ExternalMonitoringContractCheck().run(_context())
 
     assert result.status is Status.PASS
-    assert result.evidence == {"uptime_monitors": 2, "recipient": "ti@boulangerie.com.br"}
+    command = run.call_args.args[1]
+    assert command[-2:] == ["scripts/watchman_sentry.py", "check"]
 
 
 def test_deployment_drift_is_explicitly_skipped_without_live_snapshot(monkeypatch):
