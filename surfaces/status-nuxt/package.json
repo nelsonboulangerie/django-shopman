@@ -37,7 +37,7 @@
     "happy-dom": "^20.14.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
-    "vue-tsc": "^3.3.12"
+    "vue-tsc": "^3.3.13"
   },
   "overrides": {
     "esbuild": "^0.28.2",
