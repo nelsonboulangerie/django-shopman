@@ -292,6 +292,7 @@ class RecipeVersionProjection:
     """A frozen formula version of a recipe entry."""
 
     id: int
+    revision: str
     number: int
     status: str
     status_label: str
@@ -1201,10 +1202,13 @@ def _step_projection(step: dict) -> RecipeStepProjection:
 
 def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionProjection:
     """Uma versão congelada, com a lente sobre a sua fórmula."""
+    from shopman.backstage.services.recipe_book import version_revision
+
     source = version.source if isinstance(version.source, dict) else {}
     source_kind = str(source.get("kind") or "")
     return RecipeVersionProjection(
         id=version.pk,
+        revision=version_revision(version),
         number=version.number,
         status=version.status,
         status_label=_status_label(version.status),

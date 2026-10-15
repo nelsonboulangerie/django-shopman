@@ -17,6 +17,7 @@ import type {
   RecipeEntryDetailProjection,
   RecipeEntryResponse,
   RecipeVersionProjection,
+  RecipeVersionMutationResponse,
   RecipeVersionResponse,
   VersionPayload,
 } from "~/types/recipeBook";
@@ -29,6 +30,11 @@ export interface EntryActionResult {
   version?: RecipeVersionProjection;
   field?: string;
   message?: string;
+  uncertain?: boolean;
+}
+
+function newMutationKey(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export function useRecipeEntry(entryRef: string) {
@@ -72,7 +78,8 @@ export function useRecipeEntry(entryRef: string) {
     } catch (err) {
       const message = httpErrorMessage(err, fallback);
       useSonner.error(message);
-      return { ok: false, field: errorField(httpError(err).data), message };
+      const parsed = httpError(err);
+      return { ok: false, field: errorField(parsed.data), message, uncertain: !parsed.status };
     } finally {
       busy.value = false;
     }
@@ -105,15 +112,33 @@ export function useRecipeEntry(entryRef: string) {
     );
   }
 
-  const createVersion = (payload: VersionPayload) =>
-    act(
-      () => $fetch<RecipeVersionResponse>(`${base}versions/`, { method: "POST", body: payload }),
+  const createVersionKey = ref(newMutationKey());
+  async function createVersion(payload: VersionPayload) {
+    const result = await act(
+      async () => {
+        const response = await $fetch<RecipeVersionMutationResponse>(`${base}versions/`, {
+          method: "POST",
+          headers: { "Idempotency-Key": createVersionKey.value },
+          body: payload,
+        });
+        if (response.outcome !== "applied") throw new Error(response.outcome);
+        return response;
+      },
       "Não foi possível criar a versão.",
     );
+    if (result.ok || !result.uncertain) createVersionKey.value = newMutationKey();
+    return result;
+  }
 
   const updateDraft = (number: number, patch: DraftPatch) =>
     act(
-      () => $fetch<RecipeVersionResponse>(`${base}versions/${number}/`, { method: "PATCH", body: patch }),
+      () => $fetch<RecipeVersionResponse>(`${base}versions/${number}/`, {
+        method: "PATCH",
+        body: {
+          ...patch,
+          ...(versionByNumber(number)?.revision ? { expectedRevision: versionByNumber(number)?.revision } : {}),
+        },
+      }),
       "Não foi possível salvar o rascunho.",
     );
 
@@ -131,7 +156,13 @@ export function useRecipeEntry(entryRef: string) {
 
   const saveReferences = (references: ExternalReferenceInput[]) =>
     act(
-      () => $fetch<RecipeEntryResponse>(base, { method: "PATCH", body: { external_references: references } }),
+      () => $fetch<RecipeEntryResponse>(base, {
+        method: "PATCH",
+        body: {
+          external_references: references,
+          ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
+        },
+      }),
       "Não foi possível salvar as fontes.",
     );
 
@@ -141,11 +172,29 @@ export function useRecipeEntry(entryRef: string) {
       "Não foi possível salvar a nota.",
     );
 
-  const publish = (number: number) =>
-    act(
-      () => $fetch<RecipeEntryResponse>(`${base}versions/${number}/publish/`, { method: "POST", body: {} }),
+  const publishKeys = new Map<number, string>();
+  async function publish(number: number) {
+    const key = publishKeys.get(number) ?? newMutationKey();
+    publishKeys.set(number, key);
+    const version = versionByNumber(number);
+    const result = await act(
+      async () => {
+        const response = await $fetch<RecipeVersionMutationResponse>(`${base}versions/${number}/publish/`, {
+          method: "POST",
+          headers: { "Idempotency-Key": key },
+          body: {
+            ...(version?.revision ? { expectedRevision: version.revision } : {}),
+            ...(entry.value?.revision ? { expectedEntryRevision: entry.value.revision } : {}),
+          },
+        });
+        if (response.outcome !== "applied") throw new Error(response.outcome);
+        return response;
+      },
       "Não foi possível publicar a versão.",
     );
+    if (result.ok || !result.uncertain) publishKeys.delete(number);
+    return result;
+  }
 
   return {
     entry,

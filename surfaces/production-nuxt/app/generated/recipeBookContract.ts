@@ -127,6 +127,7 @@ export interface RecipeStepProjection {
 /** A frozen formula version of a recipe entry. */
 export interface RecipeVersionProjection {
   id: number;
+  revision: string;
   number: number;
   status: string;
   status_label: string;

@@ -412,13 +412,44 @@ class RecipeVersionCreateView(_RecipeBookBase):
 
     def post(self, request, ref: str):
         entry = self._entry(ref)
+        data = dict(request.data or {})
+        key = request.headers.get("Idempotency-Key") or data.pop("idempotencyKey", None)
+        if not isinstance(key, str) or not key or len(key) > 128:
+            return Response(
+                {"detail": "Atualize a receita e tente novamente.", "error": {"code": "intention_required"}},
+                status=400,
+            )
+        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"recipe-version-create:{ref}"})
+        fingerprint = mutation_fingerprint({"scope": scope, "payload": data})
+
+        def execute():
+            try:
+                version = recipe_book_service.create_version_from_payload(entry, data, actor=_actor(request))
+            except RecipeVersionNotFound as exc:
+                return {"detail": str(exc), "outcome": "not_applied"}, 404
+            except RecipeBookServiceError as exc:
+                response = _service_error_response(exc)
+                return {**dict(response.data), "outcome": "not_applied"}, response.status_code
+            return {
+                **self._entry_and_version_payload(entry.ref, version.number),
+                "ok": True,
+                "outcome": "applied",
+                "resource": {"kind": "recipe-version", "ref": version.version_ref},
+            }, 201
+
         try:
-            version = recipe_book_service.create_version_from_payload(entry, request.data, actor=_actor(request))
-        except RecipeVersionNotFound as exc:
-            raise NotFound(str(exc)) from exc
-        except RecipeBookServiceError as exc:
-            return _service_error_response(exc)
-        return Response(self._entry_and_version_payload(entry.ref, version.number), status=201)
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response(
+                {"detail": "Esta tentativa já representa outra versão.", "error": {"code": "intention_conflict"}},
+                status=409,
+            )
+        except RemoteMutationInProgress:
+            return Response(
+                {"detail": "Versão em processamento. Tente novamente em instantes.", "outcome": "unknown"},
+                status=202,
+            )
 
 
 @extend_schema_view(
@@ -454,11 +485,46 @@ class RecipeVersionPublishView(_RecipeBookBase):
     def post(self, request, ref: str, number: int):
         entry = self._entry(ref)
         version = self._version(entry, number)
+        data = dict(request.data or {})
+        key = request.headers.get("Idempotency-Key") or data.pop("idempotencyKey", None)
+        if not isinstance(key, str) or not key or len(key) > 128:
+            return Response(
+                {"detail": "Atualize a receita e tente novamente.", "error": {"code": "intention_required"}},
+                status=400,
+            )
+        scope = mutation_fingerprint({
+            "version": 1,
+            "actor": request.user.pk,
+            "operation": f"recipe-version-publish:{ref}:{number}",
+        })
+        fingerprint = mutation_fingerprint({"scope": scope, "payload": data})
+
+        def execute():
+            try:
+                recipe_book_service.publish(version, data, actor=_actor(request))
+            except RecipeBookServiceError as exc:
+                response = _service_error_response(exc)
+                return {**dict(response.data), "outcome": "not_applied"}, response.status_code
+            return {
+                "entry": self._entry_payload(entry.ref),
+                "ok": True,
+                "outcome": "applied",
+                "resource": {"kind": "recipe-version", "ref": version.version_ref},
+            }, 200
+
         try:
-            recipe_book_service.publish(version, actor=_actor(request))
-        except RecipeBookServiceError as exc:
-            return _service_error_response(exc)
-        return Response({"entry": self._entry_payload(entry.ref)})
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response(
+                {"detail": "Esta tentativa já representa outra publicação.", "error": {"code": "intention_conflict"}},
+                status=409,
+            )
+        except RemoteMutationInProgress:
+            return Response(
+                {"detail": "Publicação em processamento. Tente novamente em instantes.", "outcome": "unknown"},
+                status=202,
+            )
 
 
 # ── Lente e padronização ─────────────────────────────────────────────────────

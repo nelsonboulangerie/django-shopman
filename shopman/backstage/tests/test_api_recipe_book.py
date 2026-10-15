@@ -484,6 +484,32 @@ def test_new_version_with_from_version_and_a_formula_uses_the_formula(client, ed
     assert stored.source == {"kind": "manual"}
 
 
+def test_new_version_replays_the_exact_receipt_for_the_same_intention(client, editor, entry):
+    client.force_login(editor)
+    url = f"{LIST_URL}{entry.ref}/versions/"
+    payload = {"from_version": 1, "label": "Teste de forno"}
+
+    first = _post(client, url, payload, key="stable-version-create")
+    replay = _post(client, url, payload, key="stable-version-create")
+
+    assert first.status_code == replay.status_code == 201
+    assert replay.json() == first.json()
+    assert replay.json()["resource"] == {"kind": "recipe-version", "ref": "massa-tradicao@2"}
+    assert entry.versions.count() == 2
+
+
+def test_new_version_refuses_reusing_an_intention_for_another_payload(client, editor, entry):
+    client.force_login(editor)
+    url = f"{LIST_URL}{entry.ref}/versions/"
+    assert _post(client, url, {"from_version": 1, "label": "A"}, key="one-version-intention").status_code == 201
+
+    conflict = _post(client, url, {"from_version": 1, "label": "B"}, key="one-version-intention")
+
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "intention_conflict"
+    assert entry.versions.count() == 2
+
+
 def test_new_version_refuses_unknown_source_kind_and_missing_from_version(client, editor, entry):
     client.force_login(editor)
     bad_source = _post(client, f"{LIST_URL}{entry.ref}/versions/", version_payload(source={"kind": "dream"}))
@@ -536,6 +562,20 @@ def test_patch_draft_refuses_an_invalid_step_naming_it(client, editor, entry):
     refused = _patch(client, url, {"steps": [{"name": "Forno", "temperature_celsius": "230 °C"}]})
     assert refused.status_code == 400
     assert refused.json()["detail"].startswith("Etapa 1: a temperatura")
+
+
+def test_patch_draft_refuses_a_stale_revision_without_overwriting(client, editor, entry):
+    client.force_login(editor)
+    url = f"{LIST_URL}{entry.ref}/versions/1/"
+    detail = client.get(f"{LIST_URL}{entry.ref}/").json()["entry"]
+    revision = detail["versions"][0]["revision"]
+    assert _patch(client, url, {"label": "Primeira aba", "expectedRevision": revision}).status_code == 200
+
+    stale = _patch(client, url, {"label": "Segunda aba", "expectedRevision": revision})
+
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "recipe_changed"
+    assert RecipeVersion.objects.get(entry=entry, number=1).label == "Primeira aba"
 
 
 def test_patch_draft_then_publish_makes_it_immutable(client, editor, entry):
@@ -666,6 +706,48 @@ def test_publish_twice_is_a_state_conflict(client, editor, entry):
     response = _post(client, url, {})
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "version_not_draft"
+
+
+def test_publish_replays_the_exact_receipt_for_the_same_intention(client, editor, entry):
+    client.force_login(editor)
+    url = f"{LIST_URL}{entry.ref}/versions/1/publish/"
+
+    first = _post(client, url, {}, key="stable-publish")
+    replay = _post(client, url, {}, key="stable-publish")
+
+    assert first.status_code == replay.status_code == 200
+    assert replay.json() == first.json()
+    assert replay.json()["resource"] == {"kind": "recipe-version", "ref": "massa-tradicao@1"}
+    assert Recipe.objects.filter(ref=entry.ref).count() == 1
+
+
+def test_publish_refuses_stale_version_and_entry_revisions(client, editor, entry):
+    client.force_login(editor)
+    detail_url = f"{LIST_URL}{entry.ref}/"
+    publish_url = f"{LIST_URL}{entry.ref}/versions/1/publish/"
+    detail = client.get(detail_url).json()["entry"]
+    version_revision = detail["versions"][0]["revision"]
+
+    assert _patch(client, f"{LIST_URL}{entry.ref}/versions/1/", {
+        "label": "Mudou", "expectedRevision": version_revision,
+    }).status_code == 200
+    stale_version = _post(client, publish_url, {
+        "expectedRevision": version_revision,
+        "expectedEntryRevision": detail["revision"],
+    })
+    assert stale_version.status_code == 409
+    assert stale_version.json()["error"]["code"] == "recipe_changed"
+
+    fresh = client.get(detail_url).json()["entry"]
+    entry.name = "Mudou em outra aba"
+    entry.save()
+    stale_entry = _post(client, publish_url, {
+        "expectedRevision": fresh["versions"][0]["revision"],
+        "expectedEntryRevision": fresh["revision"],
+    })
+    assert stale_entry.status_code == 409
+    assert stale_entry.json()["error"]["code"] == "recipe_changed"
+    assert RecipeVersion.objects.get(entry=entry, number=1).status == RecipeVersion.Status.DRAFT
 
 
 # ── Lente e padronização ─────────────────────────────────────────────────────

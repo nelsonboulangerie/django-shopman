@@ -11,6 +11,8 @@ publicar na ficha e comparar versões continuam em
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
@@ -186,17 +188,20 @@ def create_entry_from_payload(data: dict, *, actor: str = "") -> tuple[RecipeEnt
     if version_data is not None and not isinstance(version_data, dict):
         raise _fail("A versão precisa ser um objeto.", field="version")
 
-    with transaction.atomic(), translating_errors():
-        entry = craftsman.create_entry(
-            ref=unique_ref(name, wanted=_text(data, "ref")),
-            name=name,
-            kind=kind,
-            output_sku=output_sku,
-            notes=notes,
-        )
-        version = None
-        if version_data is not None:
-            version = create_version_from_payload(entry, version_data, actor=actor)
+    try:
+        with transaction.atomic(), translating_errors():
+            entry = craftsman.create_entry(
+                ref=unique_ref(name, wanted=_text(data, "ref")),
+                name=name,
+                kind=kind,
+                output_sku=output_sku,
+                notes=notes,
+            )
+            version = None
+            if version_data is not None:
+                version = create_version_from_payload(entry, version_data, actor=actor)
+    except IntegrityError as exc:
+        raise _fail("Já existe uma receita com essa referência. Tente novamente.", field="ref") from exc
     return entry, version
 
 
@@ -254,6 +259,33 @@ def _assert_revision(row, data: dict, *, field: str = "expectedRevision") -> Non
     if expected and expected != row.updated_at.isoformat():
         raise _fail(
             "A receita mudou desde que você abriu. Atualize e confira antes de salvar.",
+            field=field,
+            code="RECIPE_CHANGED",
+        )
+
+
+def version_revision(version: RecipeVersion) -> str:
+    """Revisão estável do rascunho sem exigir uma coluna nova no Core."""
+    payload = {
+        "status": version.status,
+        "label": version.label or "",
+        "yield_quantity": str(version.yield_quantity),
+        "yield_unit": version.yield_unit,
+        "formula": version.formula or {},
+        "steps": version.steps or [],
+        "notes": version.notes or "",
+        "published_at": version.published_at.isoformat() if version.published_at else "",
+        "meta": version.meta or {},
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _assert_version_revision(version: RecipeVersion, data: dict, *, field: str = "expectedRevision") -> None:
+    expected = str(data.get(field) or "").strip()
+    if expected and expected != version_revision(version):
+        raise _fail(
+            "O rascunho mudou desde que você abriu. Atualize e confira antes de salvar.",
             field=field,
             code="RECIPE_CHANGED",
         )
@@ -411,8 +443,8 @@ def duplicate_entry(entry: RecipeEntry, data: dict, *, actor: str) -> tuple[Reci
     name = _text(data, "name")
     if not name:
         raise _fail("Informe o nome da cópia.", field="name")
-    output_sku = _text(data, "outputSku")
-    if output_sku and output_sku == entry.output_sku:
+    output_sku = _text(data, "outputSku").upper()
+    if output_sku and output_sku.casefold() == entry.output_sku.casefold():
         raise _fail("A cópia precisa produzir outro SKU ou ficar sem SKU por enquanto.", field="outputSku")
     try:
         with transaction.atomic(), translating_errors():
@@ -455,6 +487,7 @@ def _version_fields_from(version: RecipeVersion) -> dict:
     }
 
 
+@transaction.atomic
 def create_version_from_payload(entry: RecipeEntry, data: dict, *, actor: str = "") -> RecipeVersion:
     """``POST recipes/<ref>/versions/``: um rascunho novo, do zero ou copiado de ``from_version``.
 
@@ -464,6 +497,8 @@ def create_version_from_payload(entry: RecipeEntry, data: dict, *, actor: str = 
     """
     if not isinstance(data, dict):
         raise _fail("A versão precisa ser um objeto.", field="version")
+    entry = RecipeEntry.objects.select_for_update().get(pk=entry.pk)
+    _assert_revision(entry, data)
     base: dict = {}
     source = _source(data.get("source"))
     from_version = data.get("from_version")
@@ -505,10 +540,13 @@ def create_version_from_payload(entry: RecipeEntry, data: dict, *, actor: str = 
         )
 
 
+@transaction.atomic
 def update_draft_from_payload(version: RecipeVersion, data: dict) -> RecipeVersion:
     """``PATCH recipes/<ref>/versions/<n>/``: só os campos presentes no corpo."""
     if not isinstance(data, dict):
         raise _fail("O corpo precisa ser um objeto.")
+    version = RecipeVersion.objects.select_for_update().select_related("entry").get(pk=version.pk)
+    _assert_version_revision(version, data)
     changes: dict[str, Any] = {}
     if "formula" in data:
         changes["formula"] = _formula(data.get("formula"), required=True)
@@ -527,14 +565,15 @@ def update_draft_from_payload(version: RecipeVersion, data: dict) -> RecipeVersi
         changes["notes"] = _text(data, "notes")
     if "label" in data:
         changes["label"] = _text(data, "label")
-    unknown = sorted(set(data) - set(_VERSION_FIELDS))
+    unknown = sorted(set(data) - set(_VERSION_FIELDS) - {"expectedRevision"})
     if unknown and not changes:
         raise _fail(f"Nenhum campo do rascunho no corpo (recebido: {', '.join(unknown)}).")
     with translating_errors():
         return craftsman.update_draft(version, **changes)
 
 
-def publish(version: RecipeVersion, *, actor: str = ""):
+@transaction.atomic
+def publish(version: RecipeVersion, data: dict | None = None, *, actor: str = ""):
     """``POST .../publish/``: escreve a ficha de execução e vira a versão atual.
 
     Leva junto o perfil de cada insumo (``Material.metadata``: alérgenos, dieta,
@@ -542,6 +581,11 @@ def publish(version: RecipeVersion, *, actor: str = ""):
     receita nova publicada não teria de onde tirar o rótulo do PDP (ADR-008)
     nem a ponte volume/massa do leite ao publicar.
     """
+    data = data if isinstance(data, dict) else {}
+    entry = RecipeEntry.objects.select_for_update().get(pk=version.entry_id)
+    version = RecipeVersion.objects.select_for_update().get(pk=version.pk)
+    _assert_version_revision(version, data)
+    _assert_revision(entry, data, field="expectedEntryRevision")
     with translating_errors():
         return craftsman.publish_version(
             version, actor=actor, default_item_meta=material_profiles_for(version.formula or {}),

@@ -156,6 +156,7 @@ export interface RecipeStepInput {
 
 /** Corpo de `POST recipes/<ref>/versions/` e do `version` de `POST recipes/`. */
 export interface VersionPayload {
+  expectedRevision?: string;
   from_version?: number;
   formula: Formula;
   yield_quantity: string;
@@ -169,6 +170,7 @@ export interface VersionPayload {
 
 /** Campos do rascunho aceitos por `PATCH recipes/<ref>/versions/<n>/`. */
 export interface DraftPatch {
+  expectedRevision?: string;
   formula?: Formula;
   yield_quantity?: string;
   yield_unit?: string;
@@ -256,6 +258,12 @@ export interface RecipeDuplicateResponse extends RecipeEntryResponse {
 }
 
 export type RecipeCreateResponse = RecipeDuplicateResponse;
+export interface RecipeVersionMutationResponse extends RecipeEntryResponse {
+  version?: RecipeVersionProjection;
+  ok: boolean;
+  outcome: "applied" | "not_applied" | "unknown";
+  resource: { kind: "recipe-version"; ref: string };
+}
 
 /** POST/DELETE recipes/<ref>/favorite/ — a estrela do operador, idempotente. */
 export interface RecipeFavoriteResponse {

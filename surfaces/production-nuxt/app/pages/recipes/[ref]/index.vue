@@ -91,6 +91,7 @@ async function newVersion() {
   const base = selected.value;
   if (!base) return;
   const result = await createVersion({
+    ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
     from_version: base.number,
     formula: formulaFromServed(base.formula),
     yield_quantity: base.yield_quantity,
@@ -208,6 +209,7 @@ function openDuplicate() {
 
 async function saveDuplicate(payload: Parameters<typeof duplicate>[0]) {
   const result = await duplicate(payload, duplicateKey.value);
+  if (!result.ok && !result.uncertain) duplicateKey.value = newMutationKey();
   if (result.ok && result.entry) {
     duplicateOpen.value = false;
     useSonner.success("Cópia criada como rascunho.");

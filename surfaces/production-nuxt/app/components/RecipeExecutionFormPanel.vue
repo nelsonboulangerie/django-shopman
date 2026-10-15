@@ -60,10 +60,11 @@ const capacityValid = computed(() => {
   return Number.isFinite(value) && value > 0;
 });
 const valid = computed(() =>
-  maxStarted.value !== undefined && shelfLife.value !== undefined && capacityValid.value &&
+  !!props.execution?.revision && maxStarted.value !== undefined && shelfLife.value !== undefined && capacityValid.value &&
   (!form.shelfLifeReviewed || shelfLife.value !== null),
 );
 const disabledReason = computed(() => {
+  if (!props.execution?.revision) return "Publique uma versão antes de configurar a operação.";
   if (maxStarted.value === undefined) return "O tempo máximo precisa ser um número inteiro entre 1 e 10.080 minutos.";
   if (!capacityValid.value) return "A capacidade precisa ser maior que zero.";
   if (shelfLife.value === undefined) return "A validade precisa ser um número inteiro entre 0 e 3.650 dias.";
