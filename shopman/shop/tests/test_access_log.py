@@ -46,11 +46,11 @@ def _capture_access_logger(caplog):
     budget_logger.removeHandler(caplog.handler)
 
 
-def _records(caplog):
+def _records(caplog, *, logger_name="shopman.access"):
     seen: set[int] = set()
     out = []
     for record in caplog.records:
-        if record.name == "shopman.access" and id(record) not in seen:
+        if record.name == logger_name and id(record) not in seen:
             seen.add(id(record))
             out.append(record)
     return out
@@ -171,7 +171,7 @@ def test_budget_breach_is_structured_and_never_contains_request_values(settings,
 
     _middleware(response, settings, resolve_path=path)(RequestFactory().get(path + "?token=secret"))
 
-    records = [record for record in caplog.records if record.name == "shopman.watchman.performance"]
+    records = _records(caplog, logger_name="shopman.watchman.performance")
     assert len(records) == 1
     assert records[0].watchman_event == "opened"
     assert records[0].query_count == 3
