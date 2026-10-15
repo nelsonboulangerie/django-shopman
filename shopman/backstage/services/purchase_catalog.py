@@ -79,12 +79,32 @@ _SUPPLIER_COPY_BLOCKED_META = frozenset(
 )
 
 
-def _as_bool(raw: Any, *, default: bool) -> bool:
-    if raw is None:
+_TRUE_TOKENS = frozenset({"1", "true", "sim", "on", "yes"})
+_FALSE_TOKENS = frozenset({"0", "false", "nao", "não", "off", "no"})
+
+
+def _as_flag(data: Any, field: str, *, default: bool) -> bool:
+    """Booleano estrito do campo, no dialeto do service (PurchaseError).
+
+    Mesmo contrato do _as_flag de services/purchase.py: o booleano JSON passa, os
+    tokens inequívocos passam, e qualquer outra coisa é recusa com o campo, nunca
+    False calado. O nome não é _as_bool de propósito: esse é o parser canônico de
+    shopman/backstage/parsing.py, e a camada de serviço tem o seu (ver
+    test_input_parsing_gate.py).
+    """
+    if not isinstance(data, dict) or field not in data or data[field] is None:
         return default
-    if isinstance(raw, bool):
-        return raw
-    return str(raw).strip().lower() in {"1", "true", "sim", "on", "yes"}
+    value = data[field]
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    token = str(value).strip().lower()
+    if token in _TRUE_TOKENS:
+        return True
+    if token in _FALSE_TOKENS:
+        return False
+    raise PurchaseError("Este campo aceita apenas sim ou não.", code=f"{field}_invalid", field=field)
 
 
 def _text(raw: Any, *, field: str, label: str, required: bool = False, max_length: int = 0) -> str:
@@ -265,7 +285,7 @@ def create_material(data: dict[str, Any], *, user=None) -> dict[str, Any]:
         name=name,
         unit=unit,
         shelf_life_days=_shelf_life(data.get("shelfLifeDays")),
-        is_active=_as_bool(data.get("isActive"), default=True),
+        is_active=_as_flag(data, "isActive", default=True),
         metadata=_material_metadata({}, category=category),
     )
     try:
@@ -294,7 +314,7 @@ def update_material(material_sku: str, data: dict[str, Any], *, user=None) -> di
     if "shelfLifeDays" in data:
         material.shelf_life_days = _shelf_life(data.get("shelfLifeDays"))
     if "isActive" in data:
-        material.is_active = _as_bool(data.get("isActive"), default=material.is_active)
+        material.is_active = _as_flag(data, "isActive", default=material.is_active)
     if "category" in data:
         category = _text(data.get("category"), field="category", label="a categoria", max_length=_CATEGORY_MAX)
         material.metadata = _material_metadata(material.metadata, category=category)
@@ -426,7 +446,7 @@ def create_supplier(data: dict[str, Any], *, user=None) -> dict[str, Any]:
         document=_text(data.get("document"), field="document", label="o documento", max_length=32),
         email=_text(data.get("email"), field="email", label="o e-mail", max_length=254),
         phone=_text(data.get("phone"), field="phone", label="o telefone", max_length=32),
-        is_active=_as_bool(data.get("isActive"), default=True),
+        is_active=_as_flag(data, "isActive", default=True),
         metadata=_supplier_metadata(
             {},
             lead_time_days=_lead_time(data.get("leadTimeDays")),
@@ -463,7 +483,7 @@ def update_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, A
     if "phone" in data:
         supplier.phone = _text(data.get("phone"), field="phone", label="o telefone", max_length=32)
     if "isActive" in data:
-        supplier.is_active = _as_bool(data.get("isActive"), default=supplier.is_active)
+        supplier.is_active = _as_flag(data, "isActive", default=supplier.is_active)
     if "leadTimeDays" in data or "paymentTerm" in data:
         lead_time_days = _lead_time(data.get("leadTimeDays")) if "leadTimeDays" in data else None
         payment_term = (
@@ -568,9 +588,9 @@ def _contact_payload(contact, data: dict[str, Any]) -> None:
     if "notes" in data:
         contact.notes = str(data.get("notes") or "").strip()
     if "isPrimary" in data:
-        contact.is_primary = _as_bool(data.get("isPrimary"), default=contact.is_primary)
+        contact.is_primary = _as_flag(data, "isPrimary", default=contact.is_primary)
     if "isActive" in data:
-        contact.is_active = _as_bool(data.get("isActive"), default=contact.is_active)
+        contact.is_active = _as_flag(data, "isActive", default=contact.is_active)
 
 
 def _contact_error(exc: Exception) -> PurchaseError:
@@ -668,7 +688,7 @@ def update_conversion(conversion_id: int, data: dict[str, Any], *, user=None) ->
         else:
             conversion.supplier = None
     if "isActive" in data:
-        conversion.is_active = _as_bool(data.get("isActive"), default=conversion.is_active)
+        conversion.is_active = _as_flag(data, "isActive", default=conversion.is_active)
 
     try:
         conversion.full_clean()

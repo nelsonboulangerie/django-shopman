@@ -170,6 +170,23 @@ def test_create_material_refuses_bad_unit_and_negative_shelf_life(client, purcha
 
 
 @pytest.mark.django_db
+def test_create_material_refuses_a_flag_that_is_not_yes_or_no(client, purchase_operator):
+    """O parser do service é estrito: "talvez" é recusa com campo, nunca False calado."""
+    client.force_login(purchase_operator)
+
+    response = _post(
+        client,
+        "api-backstage-purchase-materials",
+        {"sku": "FLAG-INVALIDA", "name": "Flag", "unit": "kg", "isActive": "talvez"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "isActive_invalid"
+    assert response.json()["field"] == "isActive"
+    assert Material.objects.count() == 0
+
+
+@pytest.mark.django_db
 def test_update_material_keeps_untouched_metadata(client, purchase_operator, material):
     client.force_login(purchase_operator)
 
