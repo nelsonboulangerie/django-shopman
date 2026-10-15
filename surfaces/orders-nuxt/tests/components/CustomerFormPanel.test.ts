@@ -9,7 +9,10 @@ const options: CustomerFormOptionsProjection = {
     { value: "individual", label: "Pessoa Física" },
     { value: "business", label: "Pessoa Jurídica" },
   ],
-  price_tiers: [{ value: "varejo", label: "Varejo" }],
+  price_tiers: [
+    { value: "varejo", label: "Varejo" },
+    { value: "equipe", label: "Equipe" },
+  ],
 };
 
 const customer = {
@@ -25,8 +28,7 @@ const customer = {
   phone: "+5543999991111",
   phone_display: "(43) 99999-1111",
   email: "ana@example.com",
-  price_tier_ref: "varejo",
-  price_tier_name: "Varejo",
+  price_tiers: [{ ref: "varejo", name: "Varejo", is_primary: true }],
   tags: ["vizinha"],
   notes: "Prefere retirada.",
   house_account: false,
@@ -73,9 +75,35 @@ describe("CustomerFormPanel", () => {
     expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
       firstName: "Ana",
       email: "ANA@EXAMPLE.COM",
-      priceTierRef: "varejo",
+      priceTierRefs: ["varejo"],
       tags: [],
     }));
+  });
+
+  it("marca mais de um grupo e diz qual decide o preço", async () => {
+    const wrapper = panel({
+      customer: {
+        ...customer,
+        price_tiers: [
+          { ref: "equipe", name: "Equipe", is_primary: true },
+          { ref: "varejo", name: "Varejo", is_primary: false },
+        ],
+      },
+    });
+    expect(wrapper.text()).toContain("Com mais de um grupo, Equipe decide o preço.");
+
+    const vm = wrapper.vm as unknown as { form: { priceTierRefs: string[] } };
+    vm.form.priceTierRefs = ["equipe", "varejo"];
+    await wrapper.vm.$nextTick();
+    await wrapper.get("[data-testid='customer-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
+      priceTierRefs: ["equipe", "varejo"],
+    }));
+  });
+
+  it("mostra a recusa do servidor no campo dos grupos", () => {
+    const wrapper = panel({ fieldErrors: { priceTierRefs: "Escolha um grupo comercial disponível." } });
+    expect(wrapper.text()).toContain("Escolha um grupo comercial disponível.");
   });
 
   it("edita com a revisão que protege contra outra aba", async () => {

@@ -45,6 +45,10 @@ const canMerge = computed(() =>
     customer.value.actions.some((action) => action.ref === "merge_preview"),
   ),
 );
+/** Quem decide o preço quando o cliente está em mais de um grupo. */
+const primaryPriceTierName = computed(
+  () => customer.value?.price_tiers.find((tier) => tier.is_primary)?.name ?? "",
+);
 const editOpen = ref(false);
 const editBusy = ref(false);
 const editError = ref("");
@@ -362,9 +366,25 @@ const phoneHeaderActions = computed(() => [
                   <dt class="text-muted-foreground">Aniversário</dt>
                   <dd>{{ customer.birthday_display }}</dd>
                 </div>
+                <div class="flex items-start gap-2 sm:col-span-2">
+                  <dt class="shrink-0 text-muted-foreground">Grupos comerciais</dt>
+                  <dd class="flex flex-wrap items-center gap-2">
+                    <template v-if="customer.price_tiers.length">
+                      <NuxtBadge
+                        v-for="tier in customer.price_tiers"
+                        :key="tier.ref"
+                        color="neutral"
+                        :label="tier.name"
+                      />
+                      <span v-if="customer.price_tiers.length > 1" class="text-xs text-muted-foreground">
+                        Preço definido por {{ primaryPriceTierName }}
+                      </span>
+                    </template>
+                    <span v-else class="text-muted-foreground">Sem grupo comercial</span>
+                  </dd>
+                </div>
               </dl>
               <div class="flex flex-wrap gap-2 text-xs">
-                <NuxtBadge v-if="customer.price_tier_name" color="neutral" :label="`Preço: ${customer.price_tier_name}`" />
                 <NuxtBadge v-if="customer.house_account" color="success" label="Conta na casa" />
                 <NuxtBadge v-for="tag in customer.tags" :key="tag" color="neutral" :label="tag" />
               </div>

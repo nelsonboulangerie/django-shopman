@@ -9,6 +9,10 @@ const form = {
     { value: "web", label: "Loja online" },
   ],
   listings: [{ value: "parceiros", label: "Tabela parceiros · parceiros" }],
+  collections: [
+    { value: "finos", label: "Finos" },
+    { value: "torneira", label: "Torneira" },
+  ],
   discount_types: [
     { value: "", label: "Sem desconto" },
     { value: "percent", label: "Percentual em cada item" },
@@ -35,6 +39,41 @@ const group = {
   discount_kind: "parceiro",
   rounding: true,
   savings_message: "Hoje você economizou {amount} por ser {group}",
+  advantages: [
+    {
+      kind: "free_shipping",
+      kind_label: "Frete grátis",
+      is_active: true,
+      priority: 3,
+      summary_label: "Frete grátis em pedidos a partir de R$ 80,00",
+      min_order_q: 8000,
+      min_order_display: "R$ 80,00",
+      collection_refs: [],
+      campaign_refs: [],
+    },
+    {
+      kind: "exclusive_collections",
+      kind_label: "Coleções exclusivas",
+      is_active: true,
+      priority: 0,
+      summary_label: "1 coleção exclusiva",
+      min_order_q: 0,
+      min_order_display: "",
+      collection_refs: ["finos"],
+      campaign_refs: [],
+    },
+    {
+      kind: "exclusive_notifications",
+      kind_label: "Notificações exclusivas",
+      is_active: false,
+      priority: 0,
+      summary_label: "Nenhum aviso exclusivo escolhido",
+      min_order_q: 0,
+      min_order_display: "",
+      collection_refs: [],
+      campaign_refs: [],
+    },
+  ],
   revision: "2026-10-14T22:00:00Z",
 };
 
@@ -56,8 +95,23 @@ async function pageAction(page: Page, name: string) {
   await page.getByRole("menuitem", { name, exact: true }).click();
 }
 
+/**
+ * Nenhuma chamada da tela pode terminar em erro. Um 4xx/5xx aqui vira "lista vazia"
+ * na captura, e a evidência passaria mostrando uma tela que não carregou.
+ */
+function trackHttpFailures(page: Page): string[] {
+  const failures: string[] = [];
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      failures.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+    }
+  });
+  return failures;
+}
+
 for (const viewport of selectedOperatorViewports()) {
   test(`grupos de clientes CRUD · ${viewport.id}`, async ({ page }, testInfo) => {
+    const httpFailures = trackHttpFailures(page);
     await page.setViewportSize({
       width: Math.round(viewport.width / (viewport.zoom || 1)),
       height: Math.round(viewport.height / (viewport.zoom || 1)),
@@ -84,5 +138,19 @@ for (const viewport of selectedOperatorViewports()) {
       app: "orders", surface: "customer-groups-edit", route: "/customers/groups",
       scenario: "form", state: "normal", theme: "light", viewport,
     }, { fullPage: false, scan: false });
+
+    // As vantagens tipadas ficam abaixo da dobra: a evidência precisa mostrá-las.
+    await page.locator('[data-focus-target="advantages"]').scrollIntoViewIfNeeded();
+    await expect(page.getByText("Pedido mínimo (R$)", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Avisos que só este grupo recebe. Quem escolhe os avisos é o Marketing.", { exact: true }),
+    ).toBeVisible();
+    await expectOperatorLabelsFit(page, `vantagens do grupo ${viewport.id}`);
+    await captureOperatorEvidence(page, testInfo, {
+      app: "orders", surface: "customer-groups-advantages", route: "/customers/groups",
+      scenario: "form", state: "normal", theme: "light", viewport,
+    }, { fullPage: false, scan: false });
+
+    expect(httpFailures).toEqual([]);
   });
 }

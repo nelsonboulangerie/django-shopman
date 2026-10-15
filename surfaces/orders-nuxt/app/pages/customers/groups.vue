@@ -13,7 +13,7 @@ const mutationError = ref("");
 const fieldErrors = ref<Record<string, string>>({});
 let intentionKey = crypto.randomUUID();
 
-const emptyOptions = { channels: [], listings: [], discount_types: [] };
+const emptyOptions = { channels: [], listings: [], collections: [], discount_types: [] };
 const options = computed(() => groups.value?.form ?? emptyOptions);
 const items = computed(() => groups.value?.items ?? []);
 const columns = [
@@ -172,6 +172,13 @@ const phoneHeaderActions = computed(() => [
             {{ row.original.listing_name ? `Lista: ${row.original.listing_name}` : "Preço base do canal" }}
           </span>
           <span v-if="row.original.rounding && row.original.discount_type" class="block text-xs text-muted-foreground">Arredonda para R$ 0,00 ou R$ 0,50</span>
+          <span
+            v-for="advantage in row.original.advantages.filter((item) => item.is_active)"
+            :key="advantage.kind"
+            class="block text-xs text-muted-foreground"
+          >
+            {{ advantage.summary_label }}
+          </span>
         </template>
         <template #scope-cell="{ row }">
           <span class="block text-sm">{{ row.original.channels_label }}</span>

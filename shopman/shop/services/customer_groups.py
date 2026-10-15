@@ -18,6 +18,16 @@ from shopman.shop.services import promotions as promotion_service
 GROUP_DISCOUNT_OPEN_END = datetime(2099, 12, 31, 23, 59, 59)
 NO_DISCOUNT = ""
 
+#: Os tipos de vantagem que um grupo pode carregar, na ordem em que o gestor lê.
+#: Espelha ``guestman.PriceTierAdvantage.Kind``: o desconto e a lista de preço NÃO
+#: entram aqui porque já têm dono canônico (a ``Promotion`` ``grupo-<ref>`` e
+#: ``PriceTier.listing_ref``).
+ADVANTAGE_KINDS: tuple[str, ...] = (
+    "free_shipping",
+    "exclusive_collections",
+    "exclusive_notifications",
+)
+
 
 def group_promotion(tier_ref: str) -> Promotion | None:
     if not tier_ref:
@@ -45,6 +55,29 @@ def metadata_with_group_settings(
     else:
         merged.pop("savings_message", None)
     return merged
+
+
+def sync_group_advantages(tier, advantages) -> None:
+    """Grava as vantagens tipadas do grupo: uma linha por TIPO, e nunca apaga.
+
+    ``advantages`` é o conjunto que o formulário mandou, com ``kind``, ``priority``,
+    ``is_active`` e ``config`` já tipados. Tipo ausente do conjunto não é tocado; tipo
+    presente fica desligado em vez de sumir, porque o grupo é histórico e "esta vantagem
+    não vale mais" não é a mesma coisa que "esta vantagem nunca existiu". O
+    ``UniqueConstraint(tier, kind)`` garante a linha única por tipo.
+    """
+    from shopman.guestman.models import PriceTierAdvantage
+
+    existing = {advantage.kind: advantage for advantage in tier.advantages.all()}
+    for values in advantages:
+        advantage = existing.get(values["kind"])
+        if advantage is None:
+            advantage = PriceTierAdvantage(tier=tier, kind=values["kind"])
+        advantage.priority = values["priority"]
+        advantage.is_active = values["is_active"]
+        advantage.config = values["config"]
+        advantage.full_clean()
+        advantage.save()
 
 
 def discount_value_q(kind: str, value: Decimal) -> int:

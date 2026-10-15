@@ -195,14 +195,145 @@ def test_default_is_unique_and_group_with_customers_is_counted(client, manager):
 
 
 def test_list_query_count_does_not_grow_with_groups(django_assert_num_queries):
-    for index in range(6):
-        tier = PriceTier.objects.create(ref=f"g-{index}", name=f"Grupo {index}")
-        customer_group_service.sync_group_discount(
-            tier, discount_type=Promotion.PERCENT, discount_value_q=10 + index,
-        )
-    with django_assert_num_queries(5):
+    """A listagem é constante: uma consulta por tabela, nunca uma por grupo.
+
+    Duas consultas fixas a mais do que antes das vantagens tipadas: o prefetch
+    delas, que traz TODAS de uma vez, e a lista de coleções que o formulário
+    oferece. O dobro de grupos com o dobro de vantagens não move a contagem.
+    """
+
+    def build(count: int, *, start: int = 0):
+        for index in range(start, start + count):
+            tier = PriceTier.objects.create(ref=f"g-{index}", name=f"Grupo {index}")
+            customer_group_service.sync_group_discount(
+                tier, discount_type=Promotion.PERCENT, discount_value_q=10 + index,
+            )
+            customer_group_service.sync_group_advantages(tier, [{
+                "kind": "free_shipping",
+                "priority": index,
+                "is_active": True,
+                "config": {"min_order_q": index * 100},
+            }])
+
+    build(6)
+    with django_assert_num_queries(7):
         result = build_customer_group_list()
         assert result.total == 6
+        assert result.items[0].advantages[0].kind == "free_shipping"
+
+    build(6, start=6)
+    with django_assert_num_queries(7):
+        assert build_customer_group_list().total == 12
+
+
+def test_group_advantages_are_typed_edited_and_never_deleted(client, manager, shop):
+    """A vantagem é do TIPO: uma linha por tipo, desligável, e o histórico fica."""
+    from shopman.guestman.models import PriceTierAdvantage
+    from shopman.offerman.models import Collection
+
+    Collection.objects.create(ref="finos", name="Finos")
+    client.force_login(manager)
+    created = _post(client, _payload(advantages=[
+        {"kind": "free_shipping", "isActive": True, "priority": 7, "minOrderQ": "80,00"},
+        {"kind": "exclusive_collections", "isActive": True, "priority": 0, "collectionRefs": ["finos"]},
+    ])).json()["group"]
+
+    assert created["advantages"] == [
+        {
+            "kind": "free_shipping",
+            "kind_label": "Frete grátis",
+            "is_active": True,
+            "priority": 7,
+            "summary_label": "Frete grátis em pedidos a partir de R$ 80,00",
+            "min_order_q": 8000,
+            "min_order_display": "R$ 80,00",
+            "collection_refs": [],
+            "campaign_refs": [],
+        },
+        {
+            "kind": "exclusive_collections",
+            "kind_label": "Coleções exclusivas",
+            "is_active": True,
+            "priority": 0,
+            "summary_label": "1 coleção exclusiva",
+            "min_order_q": 0,
+            "min_order_display": "",
+            "collection_refs": ["finos"],
+            "campaign_refs": [],
+        },
+        {
+            "kind": "exclusive_notifications",
+            "kind_label": "Notificações exclusivas",
+            "is_active": False,
+            "priority": 0,
+            "summary_label": "Nenhum aviso exclusivo escolhido",
+            "min_order_q": 0,
+            "min_order_display": "",
+            "collection_refs": [],
+            "campaign_refs": [],
+        },
+    ]
+    advantage = PriceTierAdvantage.objects.get(tier__ref=created["ref"], kind="free_shipping")
+    assert advantage.config == {"min_order_q": 8000}
+
+    # Desligar não apaga: o grupo é histórico, e "não vale mais" não é "nunca existiu".
+    off = _patch(client, created["ref"], _payload(
+        expectedRevision=created["revision"],
+        advantages=[{"kind": "free_shipping", "isActive": False, "priority": 7, "minOrderQ": "80,00"}],
+    ))
+    assert off.status_code == 200, off.content
+    assert off.json()["group"]["revision"] != created["revision"]
+    assert PriceTierAdvantage.objects.filter(tier__ref=created["ref"]).count() == 2
+    advantage.refresh_from_db()
+    assert advantage.is_active is False
+    assert advantage.config == {"min_order_q": 8000}
+    # Tipo que não veio no conjunto não é tocado.
+    assert PriceTierAdvantage.objects.get(
+        tier__ref=created["ref"], kind="exclusive_collections",
+    ).is_active is True
+
+
+def test_editing_advantages_keeps_the_config_this_screen_does_not_own(client, manager, shop):
+    """A tela edita frete e coleções. Os avisos exclusivos são do Marketing: sobrevivem."""
+    client.force_login(manager)
+    created = _post(client, _payload(advantages=[
+        {"kind": "exclusive_notifications", "isActive": True, "priority": 4, "campaignRefs": ["aviso-sexta"]},
+    ])).json()["group"]
+    assert created["advantages"][2]["campaign_refs"] == ["aviso-sexta"]
+
+    edited = _patch(client, created["ref"], _payload(
+        expectedRevision=created["revision"],
+        # A tela manda só o que possui: chave ausente não é tocada.
+        advantages=[{"kind": "exclusive_notifications", "isActive": True, "priority": 4}],
+    ))
+    assert edited.status_code == 200, edited.content
+    assert edited.json()["group"]["advantages"][2]["campaign_refs"] == ["aviso-sexta"]
+
+
+@pytest.mark.parametrize(
+    ("advantages", "field"),
+    [
+        ([{"kind": "brinde", "isActive": True, "priority": 0}], "advantages"),
+        ([{"kind": "free_shipping", "isActive": True, "priority": 0, "minOrderQ": "-1"}], "advantages"),
+        ([{"kind": "free_shipping", "isActive": "sim", "priority": 0}], "advantages"),
+        ([{"kind": "free_shipping", "isActive": True, "priority": 0, "brindeQ": 1}], "advantages"),
+        ([{"kind": "free_shipping", "isActive": True, "priority": 0},
+          {"kind": "free_shipping", "isActive": False, "priority": 0}], "advantages"),
+        ([{"kind": "exclusive_collections", "isActive": True, "priority": 0,
+           "collectionRefs": ["sumiu"]}], "advantages"),
+        ({"kind": "free_shipping"}, "advantages"),
+    ],
+)
+def test_group_refuses_malformed_advantages(client, manager, shop, advantages, field):
+    from shopman.guestman.models import PriceTierAdvantage
+
+    client.force_login(manager)
+    response = _post(client, _payload(advantages=advantages))
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "invalid_payload"
+    assert PriceTier.objects.count() == 0
+    assert PriceTierAdvantage.objects.count() == 0
 
 
 def test_groups_are_not_hard_deleted(client, manager):

@@ -2,11 +2,51 @@
 import { computed, reactive, ref, watch } from "vue";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
-import type {
-  CustomerGroupFormOptionsProjection,
-  CustomerGroupMutationPayload,
-  CustomerGroupProjection,
+import {
+  CUSTOMER_GROUP_ADVANTAGE_KINDS,
+  type CustomerGroupAdvantageInput,
+  type CustomerGroupAdvantageKind,
+  type CustomerGroupFormOptionsProjection,
+  type CustomerGroupMutationPayload,
+  type CustomerGroupProjection,
 } from "~/types/customerGroups";
+
+//: O que cada vantagem tipada é, na palavra do gestor. Os avisos exclusivos têm
+//: dono próprio (o Marketing escolhe QUAIS avisos); aqui o grupo liga a vantagem
+//: e define a prioridade do desempate.
+const ADVANTAGE_COPY: Record<CustomerGroupAdvantageKind, { title: string; description: string }> = {
+  free_shipping: {
+    title: "Frete grátis",
+    description: "Vale a partir do pedido mínimo. Em branco, vale em qualquer pedido.",
+  },
+  exclusive_collections: {
+    title: "Coleções exclusivas",
+    description: "Coleções do catálogo que só quem está neste grupo compra.",
+  },
+  exclusive_notifications: {
+    title: "Notificações exclusivas",
+    description: "Avisos que só este grupo recebe. Quem escolhe os avisos é o Marketing.",
+  },
+};
+
+interface AdvantageState {
+  isActive: boolean;
+  priority: number;
+  minOrderQ: string;
+  collectionRefs: string[];
+}
+
+function emptyAdvantage(): AdvantageState {
+  return { isActive: false, priority: 0, minOrderQ: "", collectionRefs: [] };
+}
+
+function emptyAdvantages(): Record<CustomerGroupAdvantageKind, AdvantageState> {
+  return {
+    free_shipping: emptyAdvantage(),
+    exclusive_collections: emptyAdvantage(),
+    exclusive_notifications: emptyAdvantage(),
+  };
+}
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -44,8 +84,13 @@ const form = reactive({
   rounding: true,
   savingsMessage: "Hoje você economizou {amount} por ser {group}",
 });
+const advantages = reactive(emptyAdvantages());
 const baseline = ref("");
 const isExisting = computed(() => Boolean(props.group && !props.duplicate));
+
+function moneyFromCents(value: number): string {
+  return value > 0 ? (value / 100).toFixed(2).replace(".", ",") : "";
+}
 
 function snapshot() {
   return {
@@ -62,7 +107,32 @@ function snapshot() {
     discountKind: form.discountType ? form.discountKind.trim() : "",
     rounding: form.rounding,
     savingsMessage: form.savingsMessage.trim(),
+    advantages: CUSTOMER_GROUP_ADVANTAGE_KINDS.map((kind) => ({
+      kind,
+      isActive: advantages[kind].isActive,
+      priority: Number(advantages[kind].priority || 0),
+      minOrderQ: advantages[kind].minOrderQ.trim(),
+      collectionRefs: [...advantages[kind].collectionRefs].sort(),
+    })),
   };
+}
+
+/**
+ * O que vai para o servidor. Cada tipo manda só as chaves que possui: chave
+ * ausente não é tocada, e é assim que os avisos exclusivos do Marketing
+ * sobrevivem a um salvamento feito aqui.
+ */
+function advantagesPayload(): CustomerGroupAdvantageInput[] {
+  return CUSTOMER_GROUP_ADVANTAGE_KINDS.map((kind) => {
+    const base = {
+      kind,
+      isActive: advantages[kind].isActive,
+      priority: Number(advantages[kind].priority || 0),
+    };
+    if (kind === "free_shipping") return { ...base, minOrderQ: advantages[kind].minOrderQ.trim() };
+    if (kind === "exclusive_collections") return { ...base, collectionRefs: [...advantages[kind].collectionRefs] };
+    return base;
+  });
 }
 
 function reset() {
@@ -82,6 +152,16 @@ function reset() {
     rounding: group?.rounding ?? true,
     savingsMessage: group?.savings_message || "Hoje você economizou {amount} por ser {group}",
   });
+  const saved = new Map((group?.advantages ?? []).map((advantage) => [advantage.kind, advantage]));
+  for (const kind of CUSTOMER_GROUP_ADVANTAGE_KINDS) {
+    const advantage = saved.get(kind);
+    Object.assign(advantages[kind], {
+      isActive: advantage?.is_active ?? false,
+      priority: advantage?.priority ?? 0,
+      minOrderQ: moneyFromCents(advantage?.min_order_q ?? 0),
+      collectionRefs: [...(advantage?.collection_refs ?? [])],
+    });
+  }
   baseline.value = JSON.stringify(snapshot());
 }
 
@@ -127,10 +207,18 @@ function toggleChannel(ref: string, checked: boolean) {
     : form.channelRefs.filter((item) => item !== ref);
 }
 
+function toggleCollection(kind: CustomerGroupAdvantageKind, ref: string, checked: boolean) {
+  const current = advantages[kind].collectionRefs;
+  advantages[kind].collectionRefs = checked
+    ? [...new Set([...current, ref])]
+    : current.filter((item) => item !== ref);
+}
+
 function submit() {
   if (disabledReason.value) return;
   emit("save", {
     ...snapshot(),
+    advantages: advantagesPayload(),
     ...(isExisting.value && props.group?.revision ? { expectedRevision: props.group.revision } : {}),
   });
 }
@@ -225,6 +313,62 @@ function submit() {
         <NuxtTextarea v-model="form.savingsMessage" :rows="2" class="w-full" />
       </NuxtFormField>
       <NuxtAlert color="success" variant="subtle" icon="i-lucide-sparkles" title="Prévia" :description="messagePreview" />
+    </OperatorFormSection>
+
+    <OperatorFormSection
+      section-key="advantages"
+      title="Vantagens do grupo"
+      description="Uma por tipo, e a melhor de cada tipo vence entre os grupos do cliente. Nada aqui se soma ao desconto."
+    >
+      <div
+        v-for="(kind, index) in CUSTOMER_GROUP_ADVANTAGE_KINDS"
+        :key="kind"
+        :class="index ? 'border-t border-default pt-4' : ''"
+        class="flex flex-col gap-3"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <NuxtCheckbox v-model="advantages[kind].isActive" :label="ADVANTAGE_COPY[kind].title" />
+            <p class="mt-1 text-xs text-muted-foreground">{{ ADVANTAGE_COPY[kind].description }}</p>
+          </div>
+          <NuxtFormField label="Prioridade" description="Maior vence." class="w-28 shrink-0">
+            <NuxtInput
+              v-model.number="advantages[kind].priority"
+              type="number"
+              inputmode="numeric"
+              class="w-full"
+              :data-testid="`customer-group-advantage-priority-${kind}`"
+            />
+          </NuxtFormField>
+        </div>
+
+        <NuxtFormField
+          v-if="kind === 'free_shipping'"
+          label="Pedido mínimo (R$)"
+          description="Em branco, frete grátis em qualquer pedido."
+          class="max-w-xs"
+        >
+          <NuxtInput
+            v-model="advantages[kind].minOrderQ"
+            inputmode="decimal"
+            class="w-full"
+            data-testid="customer-group-advantage-min-order"
+          />
+        </NuxtFormField>
+
+        <div v-else-if="kind === 'exclusive_collections'">
+          <div v-if="options.collections.length" class="grid gap-2 sm:grid-cols-2">
+            <NuxtCheckbox
+              v-for="collection in options.collections"
+              :key="collection.value"
+              :model-value="advantages[kind].collectionRefs.includes(collection.value)"
+              :label="collection.label"
+              @update:model-value="toggleCollection(kind, collection.value, Boolean($event))"
+            />
+          </div>
+          <p v-else class="text-sm text-muted-foreground">Nenhuma coleção ativa cadastrada no catálogo.</p>
+        </div>
+      </div>
     </OperatorFormSection>
   </OperatorFormShell>
 </template>

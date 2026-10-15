@@ -13,6 +13,10 @@ const options: CustomerGroupFormOptionsProjection = {
     { value: "web", label: "Loja online" },
   ],
   listings: [{ value: "parceiros", label: "Parceiros · parceiros" }],
+  collections: [
+    { value: "finos", label: "Finos" },
+    { value: "torneira", label: "Torneira" },
+  ],
   discount_types: [
     { value: "", label: "Sem desconto" },
     { value: "percent", label: "Percentual em cada item" },
@@ -38,6 +42,41 @@ const group = {
   discount_kind: "parceiro",
   rounding: true,
   savings_message: "Hoje você economizou {amount} por ser {group}",
+  advantages: [
+    {
+      kind: "free_shipping",
+      kind_label: "Frete grátis",
+      is_active: true,
+      priority: 3,
+      summary_label: "Frete grátis em pedidos a partir de R$ 80,00",
+      min_order_q: 8000,
+      min_order_display: "R$ 80,00",
+      collection_refs: [],
+      campaign_refs: [],
+    },
+    {
+      kind: "exclusive_collections",
+      kind_label: "Coleções exclusivas",
+      is_active: false,
+      priority: 0,
+      summary_label: "1 coleção exclusiva",
+      min_order_q: 0,
+      min_order_display: "",
+      collection_refs: ["finos"],
+      campaign_refs: [],
+    },
+    {
+      kind: "exclusive_notifications",
+      kind_label: "Notificações exclusivas",
+      is_active: true,
+      priority: 0,
+      summary_label: "Nenhum aviso exclusivo escolhido",
+      min_order_q: 0,
+      min_order_display: "",
+      collection_refs: [],
+      campaign_refs: ["aviso-sexta"],
+    },
+  ],
   revision: "2026-10-14T22:00:00+00:00",
 } satisfies CustomerGroupProjection;
 
@@ -110,5 +149,66 @@ describe("CustomerGroupFormPanel", () => {
   it("mostra a recusa no campo apontado pelo servidor", () => {
     const wrapper = panel({ fieldErrors: { ref: "Já existe um grupo com este código." } });
     expect(wrapper.text()).toContain("Já existe um grupo com este código.");
+  });
+
+  it("lê as vantagens do grupo e as devolve tipadas no salvar", async () => {
+    const wrapper = panel({ group });
+    expect(wrapper.text()).toContain("Frete grátis");
+    expect(wrapper.text()).toContain("Coleções exclusivas");
+    expect(wrapper.text()).toContain("Quem escolhe os avisos é o Marketing.");
+    expect(
+      (wrapper.get("[data-testid='customer-group-advantage-min-order']").element as HTMLInputElement).value,
+    ).toBe("80,00");
+
+    await wrapper.get("[data-testid='customer-group-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
+      advantages: [
+        { kind: "free_shipping", isActive: true, priority: 3, minOrderQ: "80,00" },
+        { kind: "exclusive_collections", isActive: false, priority: 0, collectionRefs: ["finos"] },
+        { kind: "exclusive_notifications", isActive: true, priority: 0 },
+      ],
+    }));
+  });
+
+  it("cria com as vantagens desligadas e nenhuma coleção marcada", async () => {
+    const wrapper = panel();
+    await wrapper.get("[data-testid='customer-group-name']").setValue("Equipe");
+    await wrapper.get("[data-testid='customer-group-ref']").setValue("equipe");
+    await wrapper.get("[data-testid='customer-group-discount']").setValue("30");
+    await wrapper.get("[data-testid='customer-group-kind']").setValue("equipe");
+    await wrapper.get("[data-testid='customer-group-submit']").trigger("click");
+
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
+      advantages: [
+        { kind: "free_shipping", isActive: false, priority: 0, minOrderQ: "" },
+        { kind: "exclusive_collections", isActive: false, priority: 0, collectionRefs: [] },
+        { kind: "exclusive_notifications", isActive: false, priority: 0 },
+      ],
+    }));
+  });
+
+  it("liga o frete grátis com o pedido mínimo informado", async () => {
+    const wrapper = panel();
+    const vm = wrapper.vm as unknown as {
+      advantages: Record<string, { isActive: boolean; minOrderQ: string; collectionRefs: string[] }>;
+    };
+    vm.advantages.free_shipping.isActive = true;
+    vm.advantages.free_shipping.minOrderQ = "50,00";
+    vm.advantages.exclusive_collections.isActive = true;
+    vm.advantages.exclusive_collections.collectionRefs = ["finos"];
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get("[data-testid='customer-group-name']").setValue("Vizinhos");
+    await wrapper.get("[data-testid='customer-group-ref']").setValue("vizinhos");
+    await wrapper.get("[data-testid='customer-group-discount']").setValue("10");
+    await wrapper.get("[data-testid='customer-group-kind']").setValue("vizinho");
+    await wrapper.get("[data-testid='customer-group-submit']").trigger("click");
+
+    const payload = wrapper.emitted("save")?.[0]?.[0] as { advantages: unknown[] };
+    expect(payload.advantages).toEqual([
+      { kind: "free_shipping", isActive: true, priority: 0, minOrderQ: "50,00" },
+      { kind: "exclusive_collections", isActive: true, priority: 0, collectionRefs: ["finos"] },
+      { kind: "exclusive_notifications", isActive: false, priority: 0 },
+    ]);
   });
 });

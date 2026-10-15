@@ -787,6 +787,13 @@ export interface CustomerFormOptionsProjection {
   price_tiers: CustomerFormOptionProjection[];
 }
 
+/** Um grupo comercial do cliente. O cliente tem MUITOS, e todos precificam. */
+export interface CustomerPriceTierProjection {
+  ref: string;
+  name: string;
+  is_primary: boolean;
+}
+
 /** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str') */
 export interface CustomerRowProjection {
   ref: string;
@@ -872,7 +879,7 @@ export interface CustomerConsentProjection {
   updated_display: string;
 }
 
-/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', consents: 'tuple[CustomerConsentProjection, ...]', addresses: 'tuple[CustomerAddressProjection, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]', revision: 'str', first_name: 'str', last_name: 'str', customer_type: 'str', document: 'str', birthday: 'str', phone: 'str', price_tier_ref: 'str', price_tier_name: 'str', tags: 'tuple[str, ...]', house_account: 'bool', house_account_limit: 'str', fiscal_cpf_na_nota: 'bool', fiscal_email_receipt: 'bool', form: 'CustomerFormOptionsProjection') */
+/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', consents: 'tuple[CustomerConsentProjection, ...]', addresses: 'tuple[CustomerAddressProjection, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]', revision: 'str', first_name: 'str', last_name: 'str', customer_type: 'str', document: 'str', birthday: 'str', phone: 'str', price_tiers: 'tuple[CustomerPriceTierProjection, ...]', tags: 'tuple[str, ...]', house_account: 'bool', house_account_limit: 'str', fiscal_cpf_na_nota: 'bool', fiscal_email_receipt: 'bool', form: 'CustomerFormOptionsProjection') */
 export interface CustomerDetailProjection {
   ref: string;
   name: string;
@@ -902,8 +909,7 @@ export interface CustomerDetailProjection {
   document: string;
   birthday: string;
   phone: string;
-  price_tier_ref: string;
-  price_tier_name: string;
+  price_tiers: CustomerPriceTierProjection[];
   tags: string[];
   house_account: boolean;
   house_account_limit: string;
@@ -918,14 +924,28 @@ export interface CustomerGroupOptionProjection {
   label: string;
 }
 
-/** CustomerGroupFormOptionsProjection(channels: 'tuple[CustomerGroupOptionProjection, ...]', listings: 'tuple[CustomerGroupOptionProjection, ...]', discount_types: 'tuple[CustomerGroupOptionProjection, ...]') */
+/** Uma vantagem TIPADA do grupo, como o gestor lê e edita. */
+export interface CustomerGroupAdvantageProjection {
+  kind: string;
+  kind_label: string;
+  is_active: boolean;
+  priority: number;
+  summary_label: string;
+  min_order_q: number;
+  min_order_display: string;
+  collection_refs: string[];
+  campaign_refs: string[];
+}
+
+/** CustomerGroupFormOptionsProjection(channels: 'tuple[CustomerGroupOptionProjection, ...]', listings: 'tuple[CustomerGroupOptionProjection, ...]', collections: 'tuple[CustomerGroupOptionProjection, ...]', discount_types: 'tuple[CustomerGroupOptionProjection, ...]') */
 export interface CustomerGroupFormOptionsProjection {
   channels: CustomerGroupOptionProjection[];
   listings: CustomerGroupOptionProjection[];
+  collections: CustomerGroupOptionProjection[];
   discount_types: CustomerGroupOptionProjection[];
 }
 
-/** CustomerGroupProjection(ref: 'str', name: 'str', description: 'str', listing_ref: 'str', listing_name: 'str', priority: 'int', is_default: 'bool', customer_count: 'int', customer_count_label: 'str', discount_type: 'str', discount_value: 'str', discount_label: 'str', channel_refs: 'tuple[str, ...]', channels_label: 'str', pickup_only: 'bool', discount_kind: 'str', rounding: 'bool', savings_message: 'str', revision: 'str') */
+/** CustomerGroupProjection(ref: 'str', name: 'str', description: 'str', listing_ref: 'str', listing_name: 'str', priority: 'int', is_default: 'bool', customer_count: 'int', customer_count_label: 'str', discount_type: 'str', discount_value: 'str', discount_label: 'str', channel_refs: 'tuple[str, ...]', channels_label: 'str', pickup_only: 'bool', discount_kind: 'str', rounding: 'bool', savings_message: 'str', advantages: 'tuple[CustomerGroupAdvantageProjection, ...]', revision: 'str') */
 export interface CustomerGroupProjection {
   ref: string;
   name: string;
@@ -945,6 +965,7 @@ export interface CustomerGroupProjection {
   discount_kind: string;
   rounding: boolean;
   savings_message: string;
+  advantages: CustomerGroupAdvantageProjection[];
   revision: string;
 }
 

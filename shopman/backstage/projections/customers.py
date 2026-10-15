@@ -122,6 +122,20 @@ class CustomerFormOptionProjection:
 
 
 @dataclass(frozen=True)
+class CustomerPriceTierProjection:
+    """Um grupo comercial do cliente. O cliente tem MUITOS, e todos precificam.
+
+    ``is_primary`` marca o de maior prioridade, que é o que a tela e o PDV mostram
+    quando só cabe um. Quem decide preço é o motor, e ele olha a lista inteira:
+    vale a melhor vantagem por tipo, sem acumular.
+    """
+
+    ref: str
+    name: str
+    is_primary: bool
+
+
+@dataclass(frozen=True)
 class CustomerFormOptionsProjection:
     customer_types: tuple[CustomerFormOptionProjection, ...]
     price_tiers: tuple[CustomerFormOptionProjection, ...]
@@ -231,8 +245,7 @@ class CustomerDetailProjection:
     document: str
     birthday: str
     phone: str
-    price_tier_ref: str
-    price_tier_name: str
+    price_tiers: tuple[CustomerPriceTierProjection, ...]
     tags: tuple[str, ...]
     house_account: bool
     house_account_limit: str
@@ -736,6 +749,14 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
             ),
         )
 
+    # ``price_tiers`` vem do prefetch: a ordem é a do ``PriceTier.Meta`` (maior
+    # prioridade primeiro), então o primeiro é o primário.
+    tiers = list(customer.price_tiers.all())
+    price_tiers = tuple(
+        CustomerPriceTierProjection(ref=tier.ref, name=tier.name, is_primary=index == 0)
+        for index, tier in enumerate(tiers)
+    )
+
     return CustomerDetailProjection(
         ref=customer.ref,
         name=_customer_name(customer),
@@ -765,8 +786,7 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
         document=customer.document or "",
         birthday=customer.birthday.isoformat() if customer.birthday else "",
         phone=customer.phone or "",
-        price_tier_ref=customer.primary_price_tier.ref if customer.primary_price_tier_id else "",
-        price_tier_name=customer.primary_price_tier.name if customer.primary_price_tier_id else "",
+        price_tiers=price_tiers,
         tags=tuple(customer.tags.names()),
         house_account=bool(metadata.get("house_account")),
         house_account_limit=limit,

@@ -15,6 +15,8 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
@@ -247,7 +249,7 @@ def test_create_customer_is_idempotent_and_returns_the_exact_record(client, mana
         "document": "529.982.247-25",
         "phone": "(43) 99999-1111",
         "email": "ANA@EXAMPLE.COM",
-        "priceTierRef": tier.ref,
+        "priceTierRefs": [tier.ref],
         "tags": ["vizinha", " Café "],
         "notes": "Prefere retirada.",
         "houseAccount": True,
@@ -277,6 +279,85 @@ def test_create_customer_is_idempotent_and_returns_the_exact_record(client, mana
         "fiscal_prefs": {"cpf_na_nota": True, "email_receipt": True},
     }
     assert ContactPoint.objects.filter(customer=customer, is_primary=True).count() == 2
+
+
+def test_customer_lives_in_many_groups_and_projection_says_which_is_primary(client, manager, shop):
+    """O cliente pertence a VÁRIOS grupos: a ficha lista todos, e marca o primário."""
+    PriceTier.objects.create(ref="varejo", name="Varejo", priority=0, is_default=True)
+    alianca = PriceTier.objects.create(ref="alianca", name="Aliança Francesa", priority=20)
+    equipe = PriceTier.objects.create(ref="equipe", name="Equipe", priority=40)
+    client.force_login(manager)
+
+    created = _post(client, LIST_URL, {
+        "firstName": "Ana",
+        "priceTierRefs": [alianca.ref, equipe.ref],
+    })
+    assert created.status_code == 201, created.content
+    customer = Customer.objects.get(ref=created.json()["customer"]["ref"])
+    assert set(customer.price_tiers.values_list("ref", flat=True)) == {"alianca", "equipe"}
+
+    detail = client.get(f"{LIST_URL}{customer.ref}/").json()["customer"]
+    # A ordem é a de maior prioridade: o primário primeiro, e é o que a tela mostra.
+    assert detail["price_tiers"] == [
+        {"ref": "equipe", "name": "Equipe", "is_primary": True},
+        {"ref": "alianca", "name": "Aliança Francesa", "is_primary": False},
+    ]
+    assert "price_tier_ref" not in detail and "price_tier_name" not in detail
+
+
+def test_edit_replaces_the_whole_group_list_and_refuses_unknown_or_empty_refs(client, manager, people):
+    PriceTier.objects.create(ref="varejo", name="Varejo", priority=0, is_default=True)
+    PriceTier.objects.create(ref="equipe", name="Equipe", priority=40)
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/"
+    revision = client.get(url).json()["customer"]["revision"]
+
+    edited = _patch(client, url, {"expectedRevision": revision, "priceTierRefs": ["equipe", "varejo"]})
+    assert edited.status_code == 200, edited.content
+    assert [tier["ref"] for tier in edited.json()["customer"]["price_tiers"]] == ["equipe", "varejo"]
+
+    # Sem grupo escolhido, o cadastro fica com o padrão, que é a régua do Core.
+    current = client.get(url).json()["customer"]["revision"]
+    cleared = _patch(client, url, {"expectedRevision": current, "priceTierRefs": []})
+    assert cleared.status_code == 200
+    assert [tier["ref"] for tier in cleared.json()["customer"]["price_tiers"]] == ["varejo"]
+
+    # Grupo que não existe mais é recusado inteiro, sem gravar meia lista.
+    stale = client.get(url).json()["customer"]["revision"]
+    refused = _patch(client, url, {"expectedRevision": stale, "priceTierRefs": ["equipe", "sumiu"]})
+    assert refused.status_code == 400
+    assert refused.json()["field"] == "priceTierRefs"
+    assert [tier["ref"] for tier in client.get(url).json()["customer"]["price_tiers"]] == ["varejo"]
+
+    malformed = _patch(client, url, {"expectedRevision": stale, "priceTierRefs": "equipe"})
+    assert malformed.status_code == 400
+    assert malformed.json()["field"] == "priceTierRefs"
+
+
+def test_customer_detail_query_count_does_not_grow_with_groups(client, manager, people):
+    """A ficha lê os grupos no prefetch: mais grupos não é mais consulta."""
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/"
+
+    def measure() -> tuple[list[str], int]:
+        with CaptureQueriesContext(connection) as context:
+            detail = client.get(url).json()["customer"]
+            refs = [tier["ref"] for tier in detail["price_tiers"]]
+        return refs, len(context.captured_queries)
+
+    customer = Customer.objects.get(ref="CLI-MARIA")
+    customer.price_tiers.add(PriceTier.objects.create(ref="g-0", name="Grupo 0", priority=1))
+    one_group, with_one = measure()
+    assert one_group == ["g-0"]
+
+    for index in range(1, 9):
+        customer.price_tiers.add(
+            PriceTier.objects.create(ref=f"g-{index}", name=f"Grupo {index}", priority=index + 1)
+        )
+    eight_groups, with_eight = measure()
+    assert eight_groups == [f"g-{index}" for index in range(8, -1, -1)]
+
+    assert with_eight == with_one
 
 
 def test_create_customer_refuses_invalid_fields_and_reused_intention(client, manager, shop):

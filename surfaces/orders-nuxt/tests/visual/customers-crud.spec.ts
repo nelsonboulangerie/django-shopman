@@ -60,8 +60,10 @@ const detail = {
   document: "12345678909",
   birthday: "1988-05-12",
   phone: "+5543999990101",
-  price_tier_ref: "PADRAO",
-  price_tier_name: "Padrão",
+  price_tiers: [
+    { ref: "PADRAO", name: "Padrão", is_primary: true },
+    { ref: "ATACADO", name: "Atacado", is_primary: false },
+  ],
   tags: ["vizinha", "encomendas"],
   house_account: true,
   house_account_limit: "500,00",
@@ -109,8 +111,23 @@ async function pageAction(page: Page, name: string) {
   await page.getByRole("menuitem", { name, exact: true }).click();
 }
 
+/**
+ * Nenhuma chamada da tela pode terminar em erro. Um 4xx/5xx aqui vira "cadastro
+ * vazio" na captura, e a evidência passaria mostrando uma tela que não carregou.
+ */
+function trackHttpFailures(page: Page): string[] {
+  const failures: string[] = [];
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      failures.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+    }
+  });
+  return failures;
+}
+
 for (const viewport of selectedOperatorViewports()) {
   test(`clientes CRUD · ${viewport.id}`, async ({ page }, testInfo) => {
+    const httpFailures = trackHttpFailures(page);
     await page.setViewportSize({
       width: Math.round(viewport.width / (viewport.zoom || 1)),
       height: Math.round(viewport.height / (viewport.zoom || 1)),
@@ -177,5 +194,7 @@ for (const viewport of selectedOperatorViewports()) {
       app: "orders", surface: "customers-address", route: "/customers/CLI-MARIA", scenario: "form",
       state: "normal", theme: "light", viewport,
     }, { fullPage: false, scan: false });
+
+    expect(httpFailures).toEqual([]);
   });
 }
