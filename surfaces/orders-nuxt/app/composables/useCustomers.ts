@@ -7,6 +7,10 @@ import type {
   MergeAuditListResponse,
   MergePreviewResponse,
   MergeResponse,
+  CustomerMutationPayload,
+  CustomerMutationResponse,
+  CustomerAddressMutationPayload,
+  CustomerAddressMutationResponse,
 } from "~/types/customers";
 
 // Clientes do Gestor — leitura por projection, escrita pelo MergeService (via
@@ -22,6 +26,7 @@ export function useCustomerList(query: Ref<CustomerListQuery>) {
         q: query.value.q || undefined,
         filter: query.value.filter,
         page: query.value.page,
+        sort: query.value.sort,
       })),
       dedupe: "defer",
       onResponseError: operatorSessionOnError,
@@ -61,6 +66,61 @@ export async function searchCustomers(q: string) {
     query: { q },
   });
   return response.list.items;
+}
+
+export async function createCustomer(payload: CustomerMutationPayload, idempotencyKey: string) {
+  return $fetch<CustomerMutationResponse>(`${BASE}/`, {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: payload,
+  });
+}
+
+export async function updateCustomer(ref: string, payload: CustomerMutationPayload, idempotencyKey: string) {
+  return $fetch<CustomerMutationResponse>(`${BASE}/${encodeURIComponent(ref)}/`, {
+    method: "PATCH",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: payload,
+  });
+}
+
+export async function createCustomerAddress(
+  customerRef: string,
+  payload: CustomerAddressMutationPayload,
+  idempotencyKey: string,
+) {
+  return $fetch<CustomerAddressMutationResponse>(
+    `${BASE}/${encodeURIComponent(customerRef)}/addresses/`,
+    { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: payload },
+  );
+}
+
+export async function updateCustomerAddress(
+  customerRef: string,
+  addressId: number,
+  payload: CustomerAddressMutationPayload,
+  idempotencyKey: string,
+) {
+  return $fetch<CustomerAddressMutationResponse>(
+    `${BASE}/${encodeURIComponent(customerRef)}/addresses/${addressId}/`,
+    { method: "PATCH", headers: { "Idempotency-Key": idempotencyKey }, body: payload },
+  );
+}
+
+export async function removeCustomerAddress(
+  customerRef: string,
+  addressId: number,
+  expectedRevision: string,
+  idempotencyKey: string,
+) {
+  return $fetch<CustomerAddressMutationResponse>(
+    `${BASE}/${encodeURIComponent(customerRef)}/addresses/${addressId}/`,
+    {
+      method: "DELETE",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: { expectedRevision },
+    },
+  );
 }
 
 export function fetchMergePreview(sourceRef: string, targetRef: string) {

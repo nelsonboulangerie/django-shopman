@@ -8,11 +8,14 @@ export const CUSTOMER_FILTERS = [
   "no_phone",
 ] as const;
 export type CustomerFilter = (typeof CUSTOMER_FILTERS)[number];
+export const CUSTOMER_SORTS = ["recent", "name"] as const;
+export type CustomerSort = (typeof CUSTOMER_SORTS)[number];
 
 export interface CustomerListQuery {
   q: string;
   filter: CustomerFilter;
   page: number;
+  sort: CustomerSort;
 }
 
 type RouteQueryValue = string | null | (string | null)[] | undefined;
@@ -27,10 +30,12 @@ export function listQueryFromRoute(
 ): CustomerListQuery {
   const filter = first(query.filter) as CustomerFilter;
   const page = Number.parseInt(first(query.page), 10);
+  const sort = first(query.sort) as CustomerSort;
   return {
     q: first(query.q),
     filter: CUSTOMER_FILTERS.includes(filter) ? filter : "all",
     page: Number.isFinite(page) && page > 1 ? page : 1,
+    sort: CUSTOMER_SORTS.includes(sort) ? sort : "recent",
   };
 }
 
@@ -42,6 +47,7 @@ export function routeQueryFromList(
   if (list.q) out.q = list.q;
   if (list.filter !== "all") out.filter = list.filter;
   if (list.page > 1) out.page = String(list.page);
+  if (list.sort !== "recent") out.sort = list.sort;
   return out;
 }
 

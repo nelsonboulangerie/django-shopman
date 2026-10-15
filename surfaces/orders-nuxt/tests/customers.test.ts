@@ -9,11 +9,11 @@ import {
 
 describe("listQueryFromRoute", () => {
   it("lê busca, filtro e página da URL", () => {
-    expect(listQueryFromRoute({ q: " maria ", filter: "no_phone", page: "3" })).toEqual({ q: "maria", filter: "no_phone", page: 3 });
+    expect(listQueryFromRoute({ q: " maria ", filter: "no_phone", page: "3" })).toEqual({ q: "maria", filter: "no_phone", page: 3, sort: "recent" });
   });
 
   it("filtro desconhecido e página inválida voltam ao padrão", () => {
-    expect(listQueryFromRoute({ filter: "hackers", page: "-2" })).toEqual({ q: "", filter: "all", page: 1 });
+    expect(listQueryFromRoute({ filter: "hackers", page: "-2" })).toEqual({ q: "", filter: "all", page: 1, sort: "recent" });
     expect(listQueryFromRoute({ page: "abc" }).page).toBe(1);
   });
 
@@ -24,11 +24,11 @@ describe("listQueryFromRoute", () => {
 
 describe("routeQueryFromList", () => {
   it("URL limpa quando tudo está no padrão", () => {
-    expect(routeQueryFromList({ q: "", filter: "all", page: 1 })).toEqual({});
+    expect(routeQueryFromList({ q: "", filter: "all", page: 1, sort: "recent" })).toEqual({});
   });
 
   it("volta pela mesma URL", () => {
-    const query = { q: "ana", filter: "possible_duplicates" as const, page: 2 };
+    const query = { q: "ana", filter: "possible_duplicates" as const, page: 2, sort: "name" as const };
     expect(listQueryFromRoute(routeQueryFromList(query))).toEqual(query);
   });
 });

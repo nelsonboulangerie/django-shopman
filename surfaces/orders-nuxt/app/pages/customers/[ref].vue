@@ -4,7 +4,9 @@
 // Os candidatos vêm com o motivo escrito ("Mesmo cliente no iFood", "Mesmo CPF",
 // "Mesmo nome"): é sugestão, e a unificação é sempre um gesto do gestor, depois da
 // prévia lado a lado (`CustomerMergeDialog`).
-import type { CustomerCandidateProjection } from "~/generated/ordersContract";
+import type { CustomerAddressProjection, CustomerCandidateProjection } from "~/generated/ordersContract";
+import type { CustomerAddressMutationPayload, CustomerMutationPayload } from "~/types/customers";
+import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
@@ -43,20 +45,120 @@ const canMerge = computed(() =>
     customer.value.actions.some((action) => action.ref === "merge_preview"),
   ),
 );
-// Editar o cadastro (nome, contato, observações) continua no Admin.
-const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
-const adminUrl = computed(() =>
-  adminBaseUrl
-    ? `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(customerRef.value)}`
-    : "",
-);
+const editOpen = ref(false);
+const editBusy = ref(false);
+const editError = ref("");
+const editFieldErrors = ref<Record<string, string>>({});
+let editKey = crypto.randomUUID();
+watch(editOpen, (open) => {
+  if (!open) return;
+  editError.value = "";
+  editFieldErrors.value = {};
+});
+async function saveCustomer(payload: CustomerMutationPayload) {
+  if (editBusy.value || !customer.value) return;
+  editBusy.value = true;
+  editError.value = "";
+  editFieldErrors.value = {};
+  try {
+    const response = await updateCustomer(customer.value.ref, payload, editKey);
+    if (response.outcome !== "applied") {
+      editError.value = "O resultado ainda não foi confirmado. Tente salvar novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    editKey = crypto.randomUUID();
+    editOpen.value = false;
+    useSonner.success(`${response.customer.name} foi atualizado.`);
+    await refresh();
+  } catch (failure) {
+    editError.value = httpErrorMessage(failure, "Não foi possível salvar o cliente.");
+    editFieldErrors.value = mutationFieldErrors(failure);
+    if (httpError(failure).status) editKey = crypto.randomUUID();
+  } finally {
+    editBusy.value = false;
+  }
+}
+const addressOpen = ref(false);
+const addressDraft = ref<CustomerAddressProjection | null>(null);
+const addressBusy = ref(false);
+const addressError = ref("");
+const addressFieldErrors = ref<Record<string, string>>({});
+let addressCreateKey = crypto.randomUUID();
+let addressUpdateKey = crypto.randomUUID();
+const addressDeleteKeys = new Map<number, string>();
+
+function addAddress() {
+  addressDraft.value = null;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  addressOpen.value = true;
+}
+function editAddress(address: CustomerAddressProjection) {
+  addressDraft.value = address;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  addressUpdateKey = crypto.randomUUID();
+  addressOpen.value = true;
+}
+async function saveAddress(payload: CustomerAddressMutationPayload) {
+  if (addressBusy.value || !customer.value) return;
+  addressBusy.value = true;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  try {
+    const response = addressDraft.value
+      ? await updateCustomerAddress(customer.value.ref, addressDraft.value.id, payload, addressUpdateKey)
+      : await createCustomerAddress(customer.value.ref, payload, addressCreateKey);
+    if (response.outcome !== "applied") {
+      addressError.value = "O resultado ainda não foi confirmado. Tente salvar novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    if (addressDraft.value) addressUpdateKey = crypto.randomUUID();
+    addressCreateKey = crypto.randomUUID();
+    addressOpen.value = false;
+    useSonner.success("Endereço salvo.");
+    await refresh();
+  } catch (failure) {
+    addressError.value = httpErrorMessage(failure, "Não foi possível salvar o endereço.");
+    addressFieldErrors.value = mutationFieldErrors(failure);
+    if (!addressDraft.value && httpError(failure).status) addressCreateKey = crypto.randomUUID();
+    if (addressDraft.value && httpError(failure).status) addressUpdateKey = crypto.randomUUID();
+  } finally {
+    addressBusy.value = false;
+  }
+}
+async function removeAddress(address: CustomerAddressProjection) {
+  if (addressBusy.value || !customer.value) return;
+  const key = addressDeleteKeys.get(address.id) ?? crypto.randomUUID();
+  addressDeleteKeys.set(address.id, key);
+  addressBusy.value = true;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  try {
+    const response = await removeCustomerAddress(customer.value.ref, address.id, address.revision, key);
+    if (response.outcome !== "applied") {
+      addressError.value = "A remoção ainda não foi confirmada. Tente novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    addressDeleteKeys.delete(address.id);
+    addressOpen.value = false;
+    useSonner.success("Endereço removido.");
+    await refresh();
+  } catch (failure) {
+    addressError.value = httpErrorMessage(failure, "Não foi possível remover o endereço.");
+    addressFieldErrors.value = mutationFieldErrors(failure);
+    if (httpError(failure).status) addressDeleteKeys.delete(address.id);
+  } finally {
+    addressBusy.value = false;
+  }
+}
 const notFound = computed(() => httpError(error.value).status === 404);
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
-  ...(adminUrl.value && customer.value
-    ? [{ label: "Editar no Admin", icon: "i-lucide-pencil", to: adminUrl.value, target: "_blank" }]
+  ...(customer.value?.is_active
+    ? [{ label: "Editar cliente", icon: "i-lucide-pencil", onSelect: () => { editOpen.value = true; } }]
     : []),
   { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
 ]);
@@ -83,15 +185,12 @@ const phoneHeaderActions = computed(() => [
       </template>
       <template #filters>
         <NuxtButton
-          v-if="adminUrl && customer"
-          :to="adminUrl"
-          target="_blank"
+          v-if="customer?.is_active"
           icon="i-lucide-pencil"
-          trailing-icon="i-lucide-external-link"
-          label="Editar no Admin"
+          label="Editar cliente"
           color="neutral"
           variant="outline"
-          title="Editar este cadastro (abre o Admin)"
+          @click="editOpen = true"
         />
         <NuxtButton
           icon="i-lucide-refresh-cw"
@@ -224,6 +323,11 @@ const phoneHeaderActions = computed(() => [
                   <dd>{{ customer.birthday_display }}</dd>
                 </div>
               </dl>
+              <div class="flex flex-wrap gap-2 text-xs">
+                <NuxtBadge v-if="customer.price_tier_name" color="neutral" :label="`Preço: ${customer.price_tier_name}`" />
+                <NuxtBadge v-if="customer.house_account" color="success" label="Conta na casa" />
+                <NuxtBadge v-for="tag in customer.tags" :key="tag" color="neutral" :label="tag" />
+              </div>
               <NuxtAlert
                 v-if="customer.notes"
                 color="info"
@@ -325,6 +429,30 @@ const phoneHeaderActions = computed(() => [
           </div>
         </NuxtCard>
 
+        <NuxtCard as="article" data-customer-consents>
+          <div class="flex flex-col gap-3">
+            <div>
+              <h2 class="op-title">Consentimentos</h2>
+              <p class="op-micro text-muted-foreground">
+                Leitura da trilha LGPD. Alterações só acontecem no gesto que registra origem, texto e evidência.
+              </p>
+            </div>
+            <ul v-if="customer.consents.length" class="divide-y divide-border text-sm">
+              <li v-for="consent in customer.consents" :key="consent.channel_label" class="flex flex-wrap items-start justify-between gap-2 py-2">
+                <div>
+                  <span class="font-medium">{{ consent.channel_label }}</span>
+                  <p class="text-xs text-muted-foreground">{{ consent.purpose_label }} · {{ consent.proof_label }}</p>
+                  <p v-if="consent.source || consent.updated_display" class="text-xs text-muted-foreground">
+                    {{ consent.source || "Origem não informada" }}<template v-if="consent.updated_display"> · {{ consent.updated_display }}</template>
+                  </p>
+                </div>
+                <NuxtBadge :color="consent.allowed ? 'success' : consent.status_label === 'Opt-out' ? 'error' : 'neutral'" :label="consent.status_label" />
+              </li>
+            </ul>
+            <NuxtAlert v-else color="info" variant="subtle" title="Nenhum opt-in registrado" description="Sem evidência, a tela não presume autorização para marketing." />
+          </div>
+        </NuxtCard>
+
         <NuxtCard as="article">
           <div class="flex flex-col gap-3">
             <div>
@@ -351,9 +479,17 @@ const phoneHeaderActions = computed(() => [
               Nenhum identificador.
             </p>
             <h2 class="op-title">Endereços</h2>
+            <NuxtButton v-if="customer.is_active" variant="outline" icon="i-lucide-map-pin-plus" label="Adicionar" @click="addAddress" />
             <ul v-if="customer.addresses.length" class="mt-1 space-y-1 text-sm">
-              <li v-for="address in customer.addresses" :key="address">
-                {{ address }}
+              <li v-for="address in customer.addresses" :key="address.id" class="flex items-start justify-between gap-2 rounded-md border border-border p-2">
+                <div>
+                  <span class="font-medium">{{ address.label }}</span>
+                  <NuxtBadge v-if="address.is_default" class="ms-2" color="neutral" label="Padrão" />
+                  <p>{{ address.formatted_address }}</p>
+                  <p v-if="address.complement" class="text-xs text-muted-foreground">{{ address.complement }}</p>
+                  <p v-if="!address.is_verified" class="text-xs text-muted-foreground">Ainda não verificado</p>
+                </div>
+                <NuxtButton v-if="customer.is_active" icon="i-lucide-pencil" color="neutral" variant="ghost" square :aria-label="`Editar ${address.label}`" @click="editAddress(address)" />
               </li>
             </ul>
             <p v-else class="mt-1 text-sm text-muted-foreground">
@@ -370,6 +506,26 @@ const phoneHeaderActions = computed(() => [
       :current="customer"
       :initial-other="mergeWith"
       @merged="onMerged"
+    />
+    <CustomerFormPanel
+      v-if="customer"
+      v-model:open="editOpen"
+      :customer="customer"
+      :options="customer.form"
+      :busy="editBusy"
+      :error="editError"
+      :field-errors="editFieldErrors"
+      @save="saveCustomer"
+    />
+    <CustomerAddressFormPanel
+      v-if="customer"
+      v-model:open="addressOpen"
+      :address="addressDraft"
+      :busy="addressBusy"
+      :error="addressError"
+      :field-errors="addressFieldErrors"
+      @save="saveAddress"
+      @remove="removeAddress"
     />
   </main>
 </template>
