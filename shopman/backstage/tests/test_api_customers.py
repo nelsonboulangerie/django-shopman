@@ -815,7 +815,7 @@ BULK_URL = f"{LIST_URL}bulk/"
 def test_duplicate_copies_relationship_and_addresses_but_not_identity(client, manager, people, shop):
     source = people["balcao"]
     tier = PriceTier.objects.create(ref="vizinho", name="Vizinho", priority=10)
-    source.price_tier = tier
+    source.price_tiers.set([tier])
     source.metadata = {"house_account": True, "house_account_limit_q": 25000}
     source.save()
     source.tags.set(["vizinha", "café"])
@@ -848,7 +848,7 @@ def test_duplicate_copies_relationship_and_addresses_but_not_identity(client, ma
     assert copy.phone == ""
     assert copy.email == ""
     # relacionamento comercial e endereços acompanham
-    assert copy.price_tier_id == tier.pk
+    assert [t.pk for t in copy.price_tiers.all()] == [tier.pk]
     assert set(copy.tags.names()) == {"vizinha", "café"}
     assert copy.metadata == {"house_account": True, "house_account_limit_q": 25000}
     copied_address = copy.addresses.get()

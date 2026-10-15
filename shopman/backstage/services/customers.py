@@ -337,7 +337,7 @@ def duplicate_customer(ref: str, data: dict, *, actor: str):
         raise _mutation_error("A cópia precisa ser um objeto.")
     source = (
         Customer.objects.select_for_update(of=("self",))
-        .select_related("price_tier")
+        .prefetch_related("price_tiers")
         .filter(ref=ref)
         .first()
     )
@@ -380,7 +380,7 @@ def duplicate_customer(ref: str, data: dict, *, actor: str):
         "email": email,
         "phone": _text(overrides, "phone"),
         "priceTierRef": overrides.get(
-            "priceTierRef", source.price_tier.ref if source.price_tier_id else ""
+            "priceTierRef", source.primary_price_tier.ref if source.primary_price_tier_id else ""
         ),
         "tags": overrides.get("tags", list(source.tags.names())),
         "notes": overrides.get("notes", source.notes),
