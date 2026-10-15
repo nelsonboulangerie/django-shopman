@@ -23,7 +23,17 @@ def classify_results(payload: dict) -> tuple[list[dict], list[dict], list[dict]]
     blocking: list[dict] = []
     pending: list[dict] = []
     warnings: list[dict] = []
-    for result in payload.get("checks", []):
+    checks = payload.get("checks")
+    if payload.get("schema_version") != 1 or not isinstance(checks, list) or not checks:
+        blocking.append({
+            "id": "watchman_report_contract",
+            "status": "fail",
+            "summary": "Watchman returned an empty or unsupported report schema",
+            "evidence": {},
+        })
+        return blocking, pending, warnings
+
+    for result in checks:
         status = result.get("status")
         evidence = result.get("evidence") or {}
         is_expected_sentry_pending = (
