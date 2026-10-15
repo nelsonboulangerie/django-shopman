@@ -21,13 +21,15 @@ export default defineOperatorVisualConfig({
     },
     {
       command:
-        `NUXT_IGNORE_LOCK=1 POS_VISUAL_CLIENT_ONLY=1 NUXT_APP_BASE_URL=/ ` +
+        `POS_VISUAL_CLIENT_ONLY=1 NUXT_APP_BASE_URL=/ ` +
         `NUXT_DJANGO_BASE_URL=http://127.0.0.1:${backendPort} ` +
         `NUXT_PUBLIC_DJANGO_BASE_URL=http://127.0.0.1:${backendPort} ` +
-        `npx nuxt dev --host 127.0.0.1 --port ${appPort}`,
+        `npx nuxt build && HOST=127.0.0.1 PORT=${appPort} ` +
+        `NUXT_DJANGO_BASE_URL=http://127.0.0.1:${backendPort} ` +
+        `node .output/server/index.mjs`,
       url: `http://127.0.0.1:${appPort}/`,
       reuseExistingServer: false,
-      timeout: 120_000,
+      timeout: 420_000,
     },
   ],
   use: {
