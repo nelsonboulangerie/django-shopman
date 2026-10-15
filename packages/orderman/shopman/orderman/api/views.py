@@ -162,7 +162,11 @@ class SessionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
     lookup_url_kwarg = "session_key"
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # A listagem serializa os ``items`` de cada sessão. Sem o prefetch, a
+        # página cheia (25 sessões) faz 26 consultas: uma da página e uma de
+        # ``orderman_sessionitem`` por sessão. ``_load_items_from_lines`` já lê
+        # ``_prefetched_objects_cache``, então o prefetch derruba a página para 2.
+        qs = super().get_queryset().prefetch_related("session_items")
         channel_ref = self.request.query_params.get("channel_ref")
         if channel_ref:
             qs = qs.filter(channel_ref=channel_ref)
