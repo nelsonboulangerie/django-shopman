@@ -33,6 +33,9 @@ const editing = ref<RecipeSheetDetailProjection | null>(null);
 const duplicateOpen = ref(false);
 const duplicating = ref<RecipeSheetDetailProjection | null>(null);
 const duplicateKey = ref(newMutationKey());
+// Enquanto uma ficha é buscada para editar/duplicar, a linha mostra o pendente e
+// as outras ações ficam bloqueadas: clique nunca inerte (contrato do kit).
+const opening = ref<string | null>(null);
 
 function newMutationKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? Date.now() + "-" + Math.random().toString(16).slice(2);
@@ -43,17 +46,29 @@ function openCreate() {
   formOpen.value = true;
 }
 async function openEdit(card: RecipeSheetCardProjection) {
-  const detail = await fetchSheet(card.ref);
-  if (!detail) return;
-  editing.value = detail;
-  formOpen.value = true;
+  if (opening.value) return;
+  opening.value = card.ref;
+  try {
+    const detail = await fetchSheet(card.ref);
+    if (!detail) return;
+    editing.value = detail;
+    formOpen.value = true;
+  } finally {
+    opening.value = null;
+  }
 }
 async function openDuplicate(card: RecipeSheetCardProjection) {
-  const detail = await fetchSheet(card.ref);
-  if (!detail) return;
-  duplicating.value = detail;
-  duplicateKey.value = newMutationKey();
-  duplicateOpen.value = true;
+  if (opening.value) return;
+  opening.value = card.ref;
+  try {
+    const detail = await fetchSheet(card.ref);
+    if (!detail) return;
+    duplicating.value = detail;
+    duplicateKey.value = newMutationKey();
+    duplicateOpen.value = true;
+  } finally {
+    opening.value = null;
+  }
 }
 
 async function saveForm(payload: RecipeSheetPayload) {
@@ -168,8 +183,26 @@ onMounted(async () => {
           </div>
 
           <div class="mt-1 flex flex-wrap items-center gap-1.5">
-            <NuxtButton v-if="canEdit" color="neutral" variant="outline" icon="i-lucide-pencil" label="Editar" @click="openEdit(card)" />
-            <NuxtButton v-if="canEdit" color="neutral" variant="outline" icon="i-lucide-copy-plus" label="Duplicar" @click="openDuplicate(card)" />
+            <NuxtButton
+              v-if="canEdit"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-pencil"
+              label="Editar"
+              :loading="opening === card.ref"
+              :disabled="opening !== null"
+              @click="openEdit(card)"
+            />
+            <NuxtButton
+              v-if="canEdit"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-copy-plus"
+              label="Duplicar"
+              :loading="opening === card.ref"
+              :disabled="opening !== null"
+              @click="openDuplicate(card)"
+            />
           </div>
         </NuxtCard>
       </div>

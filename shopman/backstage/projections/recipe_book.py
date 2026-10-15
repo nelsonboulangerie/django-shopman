@@ -1820,6 +1820,30 @@ def _factor_text(value) -> str:
     return format(Decimal(value).quantize(Decimal("0.0001")).normalize(), "f")
 
 
+def _item_mass_kg(item) -> Decimal | None:
+    """Massa do item em kg, com a MESMA física do Core.
+
+    A regra de arquitetura proíbe o import profundo do models/recipe.py, então
+    a conta (massa direta; volume pela densidade declarada no item) é espelhada
+    aqui. Contagem não atravessa: "6 ovos" só vira grama com peso por unidade.
+    """
+    from shopman.utils import units
+
+    dimension = units.dimension(item.unit)
+    if dimension == units.MASS:
+        return units.convert(item.quantity, item.unit, "kg")
+    if dimension == units.VOLUME:
+        density = (item.meta or {}).get("density_g_per_ml")
+        try:
+            density = Decimal(str(density))
+        except (TypeError, ArithmeticError, ValueError):
+            return None
+        if density <= 0:
+            return None
+        return units.convert(item.quantity, item.unit, "ml") * density / Decimal("1000")
+    return None
+
+
 def _sheet_mass_balance(sheet: Recipe, items: list) -> RecipeSheetMassBalanceProjection:
     """Rendimento contra a soma dos insumos, com a mesma régua do modelo.
 
@@ -1827,7 +1851,6 @@ def _sheet_mass_balance(sheet: Recipe, items: list) -> RecipeSheetMassBalancePro
     insumo convertível (volume pela densidade declarada, contagem fora). Quando
     não dá para comparar, diz que não dá, em vez de aprovar em silêncio.
     """
-    from shopman.craftsman.models.recipe import _item_mass_in_kg
     from shopman.utils import units
 
     output_unit = sheet._declared_output_unit()
@@ -1837,7 +1860,7 @@ def _sheet_mass_balance(sheet: Recipe, items: list) -> RecipeSheetMassBalancePro
     for item in items:
         if item.is_optional:
             continue
-        mass = _item_mass_in_kg(item)
+        mass = _item_mass_kg(item)
         if mass is None:
             comparable = False
             break

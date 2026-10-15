@@ -785,8 +785,7 @@ def _sheet_is_active(value: Any, *, default: bool) -> bool:
 
 def _item_lines(data: dict) -> list[dict]:
     """Lê, valida e normaliza a lista de ingredientes do corpo (vazia é permitida)."""
-    from shopman.craftsman.models import RecipeItem
-    from shopman.craftsman.models.recipe import normalize_recipe_item_unit
+    from shopman.craftsman.models import RecipeItem, normalize_recipe_item_unit
 
     raw = data.get("items")
     if raw is None:

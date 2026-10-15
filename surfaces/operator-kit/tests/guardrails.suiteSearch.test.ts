@@ -130,7 +130,10 @@ describe("busca da suíte (V6-BUSCA)", () => {
         const source = readFileSync(path, "utf8");
         // `screen-label` vai direto ao OperatorSuiteSearch; no Produção, `search-label`
         // do ProductionHeader é repassado como `screen-label`.
-        const literal = path.endsWith("RecipeHeader.vue") || /recipes\/index\.vue$/.test(path)
+        // O RecipeHeader escreve o screen-label canônico ("filtrando as receitas") e
+        // recebe do chamador só o aria-label (search-label). O guard lê o screen-label
+        // de quem USA o cabeçalho, presente e futuro, em vez de uma lista de caminhos.
+        const literal = path.endsWith("RecipeHeader.vue") || /<RecipeHeader\b/.test(source)
           ? /\sscreen-label="([^"]*)"/g
           : /\s(?:screen|search)-label="([^"]*)"/g;
         for (const match of source.matchAll(literal)) {
