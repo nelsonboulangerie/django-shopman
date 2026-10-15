@@ -46,6 +46,7 @@ from .catalog import (
 )
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
+from .customer_groups import CustomerGroupDetailView, CustomerGroupListView
 from .customers import (
     CustomerAddressDetailView,
     CustomerAddressListView,
@@ -679,6 +680,8 @@ urlpatterns = [
     # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
     # se chama "merge", mas a ordem não deveria depender disso.
     path("customers/", CustomerListView.as_view(), name="api-backstage-customers"),
+    path("customers/groups/", CustomerGroupListView.as_view(), name="api-backstage-customer-groups"),
+    path("customers/groups/<str:ref>/", CustomerGroupDetailView.as_view(), name="api-backstage-customer-group-detail"),
     path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
     path("customers/merge/", CustomerMergeView.as_view(), name="api-backstage-customers-merge"),
     path("customers/merges/", CustomerMergeListView.as_view(), name="api-backstage-customers-merges"),

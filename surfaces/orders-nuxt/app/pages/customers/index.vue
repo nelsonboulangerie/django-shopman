@@ -141,6 +141,7 @@ const customerColumns = [
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
   { label: "Cadastrar cliente", icon: "i-lucide-user-round-plus", onSelect: () => { createOpen.value = true; } },
+  { label: "Grupos", icon: "i-lucide-badge-percent", to: "/customers/groups" },
   { label: "Unificações", icon: "i-lucide-history", to: "/customers/merges" },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
 ]);
@@ -191,6 +192,13 @@ const phoneHeaderActions = computed(() => [
             icon="i-lucide-user-round-plus"
             label="Cadastrar cliente"
             @click="createOpen = true"
+          />
+          <NuxtButton
+            to="/customers/groups"
+            icon="i-lucide-badge-percent"
+            label="Grupos"
+            color="neutral"
+            variant="outline"
           />
           <NuxtButton
             to="/customers/merges"

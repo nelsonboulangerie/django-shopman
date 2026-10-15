@@ -121,7 +121,7 @@ def _price_tier(ref: str):
 
     tier = PriceTier.objects.filter(ref=ref).first()
     if tier is None:
-        raise _mutation_error("Escolha uma faixa de preço disponível.", field="priceTierRef")
+        raise _mutation_error("Escolha um grupo comercial disponível.", field="priceTierRef")
     return tier
 
 

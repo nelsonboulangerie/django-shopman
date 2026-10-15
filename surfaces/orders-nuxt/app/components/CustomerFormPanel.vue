@@ -203,9 +203,9 @@ function submit() {
       />
     </OperatorFormSection>
 
-    <OperatorFormSection section-key="commercial" title="Relacionamento comercial" description="Faixa altera preço; etiquetas só organizam o atendimento.">
+    <OperatorFormSection section-key="commercial" title="Relacionamento comercial" description="Grupo comercial altera preço e vantagens; etiquetas só organizam o atendimento.">
       <div class="grid gap-3 sm:grid-cols-2">
-        <NuxtFormField label="Faixa de preço" :error="fieldErrors.priceTierRef">
+        <NuxtFormField label="Grupo comercial" :error="fieldErrors.priceTierRef">
           <NuxtSelect v-model="form.priceTierRef" :items="options.price_tiers" value-key="value" label-key="label" class="w-full" />
         </NuxtFormField>
         <NuxtFormField label="Etiquetas" description="Separe por vírgula. Ex.: vizinho, sem glúten." :error="fieldErrors.tags">
