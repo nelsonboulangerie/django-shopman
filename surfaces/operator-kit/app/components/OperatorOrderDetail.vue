@@ -41,8 +41,10 @@ const props = withDefaults(
   defineProps<{
     order: OperatorOrderDetail;
     busy?: boolean;
-    /** Endereço do Admin (o cadastro do cliente ainda mora lá). Vazio: sem o link. */
+    /** Fallback legado para superfícies sem cadastro próprio. */
     adminBaseUrl?: string;
+    /** Cadastro de cliente da própria superfície; vence o fallback do Admin. */
+    customerHref?: string;
     /** A etiqueta de status do pedido no resumo. Padrão: aparece (o Gestor).
      *  A tela que já diz a situação com a etiqueta dela desliga esta, para não
      *  mostrar duas etiquetas de estado com vocabulários diferentes (o PDV,
@@ -56,6 +58,7 @@ const props = withDefaults(
   {
     busy: false,
     adminBaseUrl: "",
+    customerHref: "",
     showStatus: true,
     layout: "stack",
     decisionOnly: false,
@@ -66,14 +69,14 @@ const emit = defineEmits<{ comment: [note: string] }>();
 /** O rascunho do comentário mora na página: é ela que avisa texto não salvo. */
 const comment = defineModel<string>("comment", { default: "" });
 
-const adminUrl = computed(() =>
-  adminUrlFor(props.adminBaseUrl, props.order.customer_ref),
+const customerUrl = computed(() =>
+  props.customerHref || adminUrlFor(props.adminBaseUrl, props.order.customer_ref),
 );
 const relayExpires = computed(() =>
   relayExpiresLabel(props.order.customer_relay_expires_at),
 );
 const showContact = computed(() =>
-  hasCustomerContact(props.order, adminUrl.value),
+  hasCustomerContact(props.order, customerUrl.value),
 );
 const profile = computed(() => props.order.customer_profile);
 const split = computed(() => props.layout === "split");
@@ -263,7 +266,8 @@ const itemColumns = [
           <div class="flex flex-wrap gap-2" data-customer-contact>
             <OperatorOrderContact
               :order="order"
-              :admin-url="adminUrl"
+              :admin-url="customerUrl"
+              :external="!customerHref"
               :relay-expires="relayExpires"
             />
           </div>
@@ -649,7 +653,7 @@ const itemColumns = [
               </div>
               <div
                 v-if="
-                  order.customer_relay_phone || order.customer_email || adminUrl
+                  order.customer_relay_phone || order.customer_email || customerUrl
                 "
                 class="flex flex-wrap gap-2"
                 data-customer-contact-more
@@ -662,7 +666,8 @@ const itemColumns = [
                       ? order.customer_phone_uri
                       : '',
                   }"
-                  :admin-url="adminUrl"
+                  :admin-url="customerUrl"
+                  :external="!customerHref"
                   :relay-expires="relayExpires"
                 />
               </div>

@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
+import UiDateField from "../../../operator-kit/app/components/UiDateField.vue";
 import type { CustomerDetailProjection, CustomerFormOptionsProjection } from "~/generated/ordersContract";
 import type { CustomerMutationPayload } from "~/types/customers";
 
@@ -179,7 +180,7 @@ function submit() {
           <NuxtInput v-model="form.document" inputmode="numeric" class="w-full" />
         </NuxtFormField>
         <NuxtFormField label="Data de nascimento" :error="fieldErrors.birthday">
-          <NuxtInput v-model="form.birthday" type="date" class="w-full" />
+          <UiDateField v-model="form.birthday" label="Data de nascimento" class="w-full" />
         </NuxtFormField>
       </div>
     </OperatorFormSection>
