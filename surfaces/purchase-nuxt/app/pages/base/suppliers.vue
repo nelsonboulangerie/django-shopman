@@ -2,13 +2,28 @@
 // Base · Fornecedores: a tabela da suíte com os fornecedores, quantos insumos cada um
 // cobre e a pontualidade. O fornecedor aberto é a rota filha (`/base/suppliers/<ref>`).
 import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
-import { plural } from "~/presentation/purchaseUi";
+import { matchesSupplierFilters, plural, supplierDimensions } from "~/presentation/purchaseUi";
 import type { Supplier } from "~/types/purchase";
+import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
 type SupplierRow = { supplier: Supplier; materialsCovered: number; preferredCount: number };
 
 const route = useRoute();
-const { suppliers, supplierSummaries, metrics, selectSupplier, refresh } = usePurchaseDesk();
+const {
+  suppliers,
+  supplierSummaries,
+  supplierFilters,
+  supplierForm,
+  supplierFormSource,
+  metrics,
+  selectSupplier,
+  openSupplierCreate,
+  saveSupplier,
+  saveSupplierContact,
+  actionPending,
+  actionError,
+  refresh,
+} = usePurchaseDesk();
 
 const openRef = computed(() => (typeof route.params.ref === "string" ? route.params.ref : ""));
 watch(openRef, (ref) => {
@@ -17,6 +32,32 @@ watch(openRef, (ref) => {
 
 const search = ref("");
 const sorting = ref<{ id: string; desc: boolean }[]>([]);
+
+// O painel de filtros da suíte: Situação e "tem contato comercial?" — a pergunta
+// que o comprador faz antes de apertar enviar.
+const dimensions = computed(() => supplierDimensions(suppliers.value));
+const quickItems = computed(() => [
+  {
+    key: "without-contact",
+    label: "Sem contato comercial",
+    icon: "i-lucide-user-x",
+    count: suppliers.value.filter((supplier) => !supplier.orderContactName).length,
+  },
+]);
+const quickModel = computed<string[]>({
+  get: () => (supplierFilters.value.contact?.includes("without") ? ["without-contact"] : []),
+  set: (keys) => {
+    const next = { ...supplierFilters.value };
+    delete next.contact;
+    if (keys.includes("without-contact")) next.contact = ["without"];
+    supplierFilters.value = next;
+  },
+});
+const activeFilters = computed(() =>
+  filterBarActiveFilters(dimensions.value, supplierFilters.value, (next) => {
+    supplierFilters.value = next;
+  }),
+);
 const SORT_VALUE: Record<string, (row: SupplierRow) => number | string> = {
   name: (row) => row.supplier.displayName,
   materials: (row) => row.materialsCovered,
@@ -39,10 +80,11 @@ const displayed = computed<SupplierRow[]>(() => {
   const term = search.value.trim().toLowerCase();
   const list = supplierSummaries.value.filter(
     (row) =>
-      !term ||
-      row.supplier.displayName.toLowerCase().includes(term) ||
-      row.supplier.name.toLowerCase().includes(term) ||
-      row.supplier.ref.toLowerCase().includes(term),
+      (!term ||
+        row.supplier.displayName.toLowerCase().includes(term) ||
+        row.supplier.name.toLowerCase().includes(term) ||
+        row.supplier.ref.toLowerCase().includes(term)) &&
+      matchesSupplierFilters(row.supplier, supplierFilters.value),
   );
   const sort = sorting.value[0];
   const value = sort ? SORT_VALUE[sort.id] : undefined;
@@ -62,13 +104,30 @@ watch(
 );
 
 const headerActions = [
+  { label: "Novo fornecedor", icon: "i-lucide-plus", onSelect: () => openSupplierCreate() },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
 ];
+
+async function onSubmitSupplier(payload: Record<string, unknown>) {
+  const ref = await saveSupplier(payload);
+  if (ref) await navigateTo(supplierPath(ref));
+}
+
+const supplierSavedVersion = ref(0);
+async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierContact>[0]) {
+  if (await saveSupplierContact(payload)) supplierSavedVersion.value += 1;
+}
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Base" :actions="headerActions" actions-label="Mais ações da Base">
+    <OperatorPageHeader
+      title="Base"
+      :actions="headerActions"
+      actions-label="Mais ações da Base"
+      :active-filters="activeFilters"
+      desk-only-filters
+    >
       <template #status>
         <PurchaseReadStatus />
       </template>
@@ -83,7 +142,23 @@ const headerActions = [
       <template #filters-primary>
         <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
       </template>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="supplierFilters"
+          :dimensions="dimensions"
+          surface="purchase"
+          screen="suppliers"
+          data-base-supplier-filters
+        />
+      </template>
       <template #filters>
+        <OperatorQuickFilters
+          v-model="quickModel"
+          :items="quickItems"
+          multiple
+          label="Fornecedores sem contato comercial"
+          data-base-supplier-no-contact
+        />
         <OperatorTableView table-key="purchase-suppliers" />
       </template>
       <template #filters-end>
@@ -136,5 +211,17 @@ const headerActions = [
            de lado abaixo do `xl`. -->
       <NuxtPage />
     </div>
+
+    <PurchaseSupplierFormPanel
+      :open="supplierForm.open"
+      :mode="supplierForm.mode"
+      :source="supplierFormSource"
+      :saved-version="supplierSavedVersion"
+      :busy="actionPending"
+      :error="actionError"
+      @update:open="supplierForm.open = $event"
+      @save="onSubmitSupplier"
+      @save-contact="onSaveSupplierContact"
+    />
   </main>
 </template>
