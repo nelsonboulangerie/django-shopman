@@ -794,16 +794,9 @@ def _stock_on_hand_map(skus: list[str]) -> dict[str, Decimal]:
     try:
         from shopman.stockman import stock
 
-        result: dict[str, Decimal] = {}
-        for sku in skus:
-            try:
-                result[sku] = Decimal(stock.available(sku))
-            except Exception:
-                logger.debug("purchase.stock_available_failed sku=%s", sku, exc_info=True)
-                result[sku] = Decimal("0")
-        return result
+        return stock.available_many(skus)
     except Exception:
-        logger.debug("purchase.stock_service_unavailable", exc_info=True)
+        logger.debug("purchase.stock_availability_failed", exc_info=True)
         return {sku: Decimal("0") for sku in skus}
 
 
