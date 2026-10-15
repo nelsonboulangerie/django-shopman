@@ -94,7 +94,11 @@ def _project(tier, promo: Promotion | None, listings: dict[str, str]) -> Custome
         discount_value = f"{Decimal(promo.value) / 100:.2f}"
         discount_label = f"R$ {format_money(int(promo.value))} por pedido"
     channel_refs = tuple(channel.ref for channel in promo.channels.all()) if promo is not None else ()
-    channels_label = ", ".join(channel.name or channel.ref for channel in promo.channels.all()) if channel_refs else "Todos os canais"
+    channels_label = (
+        ", ".join(channel.name or channel.ref for channel in promo.channels.all())
+        if discount_type and channel_refs
+        else "Todos os canais"
+    )
     return CustomerGroupProjection(
         ref=tier.ref,
         name=tier.name,

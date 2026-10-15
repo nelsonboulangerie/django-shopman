@@ -160,7 +160,7 @@ const phoneHeaderActions = computed(() => [
         </template>
         <template #scope-cell="{ row }">
           <span class="block text-sm">{{ row.original.channels_label }}</span>
-          <span v-if="row.original.pickup_only" class="block text-xs text-muted-foreground">Somente retirada</span>
+          <span v-if="row.original.pickup_only && row.original.discount_type" class="block text-xs text-muted-foreground">Somente retirada</span>
         </template>
         <template #customers-cell="{ row }">
           <NuxtBadge color="neutral" variant="subtle" :label="row.original.customer_count_label" />
