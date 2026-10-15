@@ -74,6 +74,15 @@ def ensure_commercial_groups() -> list[tuple[str, str]]:
             outcomes.append((ref, "preservado"))
             continue
 
+        # O ref é conhecido, mas o nome pode revelar um cadastro próprio que
+        # antecede este bootstrap. Conceder desconto a ele por inferência seria
+        # uma mudança financeira silenciosa. Só reparamos o nome canônico ou as
+        # grafias legadas que esta implantação já usou.
+        known_names = {definition["name"], *definition["legacy_names"]}
+        if not tier_created and tier.name not in known_names:
+            outcomes.append((ref, "preservado-sem-desconto"))
+            continue
+
         changed_fields: list[str] = []
         metadata = dict(tier.metadata or {})
         for key, value in (

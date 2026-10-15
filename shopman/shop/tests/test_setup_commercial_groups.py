@@ -64,3 +64,14 @@ def test_setup_commercial_groups_never_reverts_operator_edits(db):
     assert tier.name == "Time da casa"
     assert tier.metadata == {"discount_kind": "beneficio-manual", "rounding": 0}
     assert (promo.value, promo.is_active) == (12, False)
+
+
+def test_setup_commercial_groups_does_not_grant_discount_to_unknown_legacy_group(db):
+    PriceTier.objects.create(ref="staff", name="Convênio antigo", metadata={"owner": "manual"})
+
+    call_command("setup_commercial_groups", verbosity=0)
+
+    tier = PriceTier.objects.get(ref="staff")
+    assert tier.name == "Convênio antigo"
+    assert tier.metadata == {"owner": "manual"}
+    assert not Promotion.objects.filter(ref="grupo-staff").exists()
