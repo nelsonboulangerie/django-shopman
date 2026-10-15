@@ -11,12 +11,12 @@ def _context():
     return CheckContext(profile="infrastructure", deadline=9999999999)
 
 
-def test_external_monitoring_contract_is_explicitly_skipped_without_live_credential(monkeypatch):
+def test_external_monitoring_contract_is_unknown_without_live_credential(monkeypatch):
     monkeypatch.delenv("SENTRY_AUTH_TOKEN", raising=False)
 
     result = ExternalMonitoringContractCheck().run(_context())
 
-    assert result.status is Status.SKIPPED
+    assert result.status is Status.UNKNOWN
     assert result.evidence == {
         "uptime_monitors": 2,
         "recipient": "ti@boulangerie.com.br",
@@ -36,12 +36,12 @@ def test_external_monitoring_contract_checks_live_drift_when_credential_exists(r
     assert command[-2:] == ["scripts/watchman_sentry.py", "check"]
 
 
-def test_deployment_drift_is_explicitly_skipped_without_live_snapshot(monkeypatch):
+def test_deployment_drift_is_unknown_without_live_snapshot(monkeypatch):
     monkeypatch.delenv("WATCHMAN_LIVE_DO_SPEC", raising=False)
 
     result = DeploymentDriftCheck().run(_context())
 
-    assert result.status is Status.SKIPPED
+    assert result.status is Status.UNKNOWN
     assert result.evidence["required_env"] == "WATCHMAN_LIVE_DO_SPEC"
 
 

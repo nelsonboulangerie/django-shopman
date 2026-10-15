@@ -64,7 +64,7 @@ class DeploymentDriftCheck:
         if not live_spec:
             return CheckResult(
                 id=self.id,
-                status=Status.SKIPPED,
+                status=Status.UNKNOWN,
                 summary="live DigitalOcean spec was not supplied",
                 evidence={"required_env": "WATCHMAN_LIVE_DO_SPEC"},
                 remediation="Download the live spec read-only and rerun with WATCHMAN_LIVE_DO_SPEC.",
@@ -133,7 +133,7 @@ class ExternalMonitoringContractCheck:
         if not os.environ.get("SENTRY_AUTH_TOKEN", "").strip():
             return CheckResult(
                 id=self.id,
-                status=Status.SKIPPED,
+                status=Status.UNKNOWN,
                 summary="contract is valid; live Sentry drift was not checked",
                 evidence={
                     "uptime_monitors": len(endpoints),
