@@ -10,7 +10,10 @@
 import type {
   DraftPatch,
   EntryPatch,
+  ExecutionPatch,
   ExternalReferenceInput,
+  RecipeDuplicatePayload,
+  RecipeDuplicateResponse,
   RecipeEntryDetailProjection,
   RecipeEntryResponse,
   RecipeVersionProjection,
@@ -81,6 +84,27 @@ export function useRecipeEntry(entryRef: string) {
       "Não foi possível salvar a receita.",
     );
 
+  const saveExecution = (patch: ExecutionPatch) =>
+    act(
+      () => $fetch<RecipeEntryResponse>(`${base}execution/`, { method: "PATCH", body: patch }),
+      "Não foi possível salvar a operação da ficha.",
+    );
+
+  async function duplicate(payload: RecipeDuplicatePayload, idempotencyKey: string): Promise<EntryActionResult> {
+    return act(
+      async () => {
+        const response = await $fetch<RecipeDuplicateResponse>(`${base}duplicate/`, {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: payload,
+        });
+        if (response.outcome !== "applied") throw new Error(response.outcome);
+        return response;
+      },
+      "Não foi possível duplicar a receita.",
+    );
+  }
+
   const createVersion = (payload: VersionPayload) =>
     act(
       () => $fetch<RecipeVersionResponse>(`${base}versions/`, { method: "POST", body: payload }),
@@ -138,6 +162,8 @@ export function useRecipeEntry(entryRef: string) {
     refresh,
     busy,
     patchEntry,
+    saveExecution,
+    duplicate,
     createVersion,
     updateDraft,
     publish,

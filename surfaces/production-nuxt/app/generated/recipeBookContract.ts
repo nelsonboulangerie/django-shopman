@@ -34,6 +34,11 @@ export interface RecipeBookListProjection {
   entries: RecipeEntryCardProjection[];
   kinds: KindOptionProjection[];
   count: number;
+  page: number;
+  page_size: number;
+  total: number;
+  has_next: boolean;
+  sort: string;
 }
 
 /** What the current operator may do on the recipe book. */
@@ -222,9 +227,31 @@ export interface VersionRatingProjection {
   my_rated_at_display: string;
 }
 
+/** Uma variante de coordenação disponível para a ficha de execução. */
+export interface LifecycleOptionProjection {
+  value: string;
+  label: string;
+}
+
+/** Configuração operacional da ficha que a versão publicada materializa. */
+export interface ExecutionSheetProjection {
+  exists: boolean;
+  ref: string;
+  revision: string;
+  max_started_minutes: number | null;
+  capacity_per_day: string;
+  requires_batch_tracking: boolean;
+  shelf_life_days: number | null;
+  shelf_life_reviewed: boolean;
+  shelf_life_reviewed_by: string;
+  production_lifecycle: string;
+  lifecycle_options: LifecycleOptionProjection[];
+}
+
 /** A recipe entry with its versions (newest first). */
 export interface RecipeEntryDetailProjection {
   ref: string;
+  revision: string;
   name: string;
   kind: string;
   kind_label: string;
@@ -235,6 +262,7 @@ export interface RecipeEntryDetailProjection {
   current_version_number: number | null;
   ficha_ref: string;
   execution_in_sync: boolean;
+  execution: ExecutionSheetProjection;
   is_favorite: boolean;
   versions: RecipeVersionProjection[];
   usage: RecipeUsageProjection;

@@ -173,6 +173,11 @@ class RecipeBookListProjection:
     entries: tuple[RecipeEntryCardProjection, ...]
     kinds: tuple[KindOptionProjection, ...]
     count: int
+    page: int
+    page_size: int
+    total: int
+    has_next: bool
+    sort: str
 
 
 @dataclass(frozen=True)
@@ -411,10 +416,36 @@ class VersionRatingProjection:
 
 
 @dataclass(frozen=True)
+class LifecycleOptionProjection:
+    """Uma variante de coordenação disponível para a ficha de execução."""
+
+    value: str
+    label: str
+
+
+@dataclass(frozen=True)
+class ExecutionSheetProjection:
+    """Configuração operacional da ficha que a versão publicada materializa."""
+
+    exists: bool
+    ref: str
+    revision: str
+    max_started_minutes: int | None
+    capacity_per_day: str
+    requires_batch_tracking: bool
+    shelf_life_days: int | None
+    shelf_life_reviewed: bool
+    shelf_life_reviewed_by: str
+    production_lifecycle: str
+    lifecycle_options: tuple[LifecycleOptionProjection, ...]
+
+
+@dataclass(frozen=True)
 class RecipeEntryDetailProjection:
     """A recipe entry with its versions (newest first)."""
 
     ref: str
+    revision: str
     name: str
     kind: str
     kind_label: str
@@ -429,6 +460,7 @@ class RecipeEntryDetailProjection:
     #: Craftsman (``execution_in_sync``): carimbo ``version_ref`` + impressão
     #: digital do conteúdo, que pega a ficha editada pelo Admin.
     execution_in_sync: bool
+    execution: ExecutionSheetProjection
     #: Estrela do operador que abriu a receita (ver ``RecipeEntryCardProjection``).
     is_favorite: bool
     versions: tuple[RecipeVersionProjection, ...]
@@ -844,7 +876,17 @@ def _warning(warning: FormulaWarning) -> FormulaWarningProjection:
 
 
 def build_recipe_book(
-    *, query: str = "", kind: str = "", archived: bool = False, operator_ref: str = ""
+    *,
+    query: str = "",
+    kind: str = "",
+    archived: bool = False,
+    operator_ref: str = "",
+    only_without_sku: bool = False,
+    only_with_draft: bool = False,
+    only_favorites: bool = False,
+    sort: str = "updated",
+    page: int = 1,
+    page_size: int = 48,
 ) -> RecipeBookListProjection:
     """O inventário: um cartão por receita, com filtro por texto, tipo e arquivadas.
 
@@ -859,7 +901,6 @@ def build_recipe_book(
             version_total=Count("versions", distinct=True),
             draft_total=Count("versions", filter=Q(versions__status=RecipeVersion.Status.DRAFT), distinct=True),
         )
-        .order_by("name", "ref")
     )
     if kind:
         entries_qs = entries_qs.filter(kind=kind)
@@ -868,18 +909,44 @@ def build_recipe_book(
         entries_qs = entries_qs.filter(
             Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term)
         )
-    entries = list(entries_qs)
+    if only_without_sku:
+        entries_qs = entries_qs.filter(output_sku="")
+    if only_with_draft:
+        entries_qs = entries_qs.filter(draft_total__gt=0)
+    favorites = recipe_favorites.favorite_refs(operator_ref)
+    if only_favorites:
+        entries_qs = entries_qs.filter(ref__in=favorites)
+
+    ordering = {
+        "updated": ("-updated_at", "name", "ref"),
+        "name": ("name", "ref"),
+        "kind": ("kind", "name", "ref"),
+    }.get(sort, ("-updated_at", "name", "ref"))
+    entries_qs = entries_qs.order_by(*ordering)
+    total = entries_qs.count()
+    size = max(1, min(int(page_size or 48), 100))
+    current = max(1, int(page or 1))
+    start = (current - 1) * size
+    entries = list(entries_qs[start : start + size])
     names = _output_names({entry.output_sku for entry in entries if entry.output_sku})
     ficha_refs = set(
         Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list("ref", flat=True)
     )
-    favorites = recipe_favorites.favorite_refs(operator_ref)
     ratings = recipe_ratings.overall_by_entry(
         [entry.ref for entry in entries],
         {entry.ref: entry.current_version.number for entry in entries if entry.current_version is not None},
     )
     cards = tuple(_card(entry, names, ficha_refs, favorites, ratings) for entry in entries)
-    return RecipeBookListProjection(entries=cards, kinds=_kind_options(), count=len(cards))
+    return RecipeBookListProjection(
+        entries=cards,
+        kinds=_kind_options(),
+        count=len(cards),
+        page=current,
+        page_size=size,
+        total=total,
+        has_next=start + len(cards) < total,
+        sort=sort,
+    )
 
 
 def _card(
@@ -932,6 +999,7 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
     current = entry.current_version
     return RecipeEntryDetailProjection(
         ref=entry.ref,
+        revision=entry.updated_at.isoformat(),
         name=entry.name,
         kind=entry.kind,
         kind_label=_kind_label(entry.kind),
@@ -942,6 +1010,7 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
         current_version_number=current.number if current is not None else None,
         ficha_ref=entry.ref if ficha is not None else "",
         execution_in_sync=execution_in_sync(current, ficha),
+        execution=_execution_sheet(ficha),
         is_favorite=recipe_favorites.is_favorite(operator_ref, entry.ref),
         versions=tuple(build_recipe_version(version, kind=entry.kind) for version in versions),
         usage=build_recipe_usage(entry.ref),
@@ -952,6 +1021,77 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
         ),
         ratings=build_version_ratings(entry.ref, versions, operator_ref=operator_ref, criteria=criteria),
     )
+
+
+def _execution_sheet(recipe: Recipe | None) -> ExecutionSheetProjection:
+    """Lê metadados operacionais sem deixar legado malformado derrubar a ficha."""
+    from shopman.shop.production_lifecycle import production_lifecycle_choices
+
+    choices = tuple(
+        LifecycleOptionProjection(value=str(value), label=str(label))
+        for value, label in production_lifecycle_choices()
+    )
+    if recipe is None:
+        return ExecutionSheetProjection(
+            exists=False,
+            ref="",
+            revision="",
+            max_started_minutes=None,
+            capacity_per_day="",
+            requires_batch_tracking=False,
+            shelf_life_days=None,
+            shelf_life_reviewed=False,
+            shelf_life_reviewed_by="",
+            production_lifecycle=choices[0].value if choices else "",
+            lifecycle_options=choices,
+        )
+
+    meta = recipe.meta or {}
+    max_started = _safe_int(meta.get("max_started_minutes"), minimum=1)
+    shelf_life = _safe_int(meta.get("shelf_life_days"), minimum=0)
+    capacity = _safe_decimal_text(meta.get("capacity_per_day"), positive=True)
+    reviewed = bool(
+        shelf_life is not None
+        and meta.get("shelf_life_reviewed_days") == shelf_life
+        and meta.get("shelf_life_reviewed_by")
+        and meta.get("shelf_life_reviewed_at")
+    )
+    lifecycle = str(meta.get("production_lifecycle") or (choices[0].value if choices else ""))
+    return ExecutionSheetProjection(
+        exists=True,
+        ref=recipe.ref,
+        revision=recipe.updated_at.isoformat(),
+        max_started_minutes=max_started,
+        capacity_per_day=capacity,
+        requires_batch_tracking=bool(meta.get("requires_batch_tracking")),
+        shelf_life_days=shelf_life,
+        shelf_life_reviewed=reviewed,
+        shelf_life_reviewed_by=str(meta.get("shelf_life_reviewed_by") or "") if reviewed else "",
+        production_lifecycle=lifecycle,
+        lifecycle_options=choices,
+    )
+
+
+def _safe_int(value: Any, *, minimum: int) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not parsed.is_finite() or parsed != parsed.to_integral_value() or parsed < minimum:
+        return None
+    return int(parsed)
+
+
+def _safe_decimal_text(value: Any, *, positive: bool) -> str:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return ""
+    if not parsed.is_finite() or (positive and parsed <= 0):
+        return ""
+    return format(parsed.normalize(), "f")
 
 
 # ── Referências externas (D6) ────────────────────────────────────────────────

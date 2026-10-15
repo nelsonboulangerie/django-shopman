@@ -27,8 +27,10 @@ export type {
   FormulaMetricProjection,
   FormulaPartProjection,
   FormulaWarningProjection,
+  ExecutionSheetProjection,
   IngredientOptionProjection,
   KindOptionProjection,
+  LifecycleOptionProjection,
   QualityShareProjection,
   RatingCriterionProjection,
   RecipeBookAccessProjection,
@@ -203,6 +205,25 @@ export interface EntryPatch {
   notes?: string;
   is_archived?: boolean;
   external_references?: ExternalReferenceInput[];
+  expectedRevision?: string;
+}
+
+export interface RecipeDuplicatePayload {
+  name: string;
+  ref?: string;
+  outputSku?: string;
+  fromVersion?: number;
+  expectedRevision: string;
+}
+
+export interface ExecutionPatch {
+  expectedRevision: string;
+  maxStartedMinutes?: number | null;
+  capacityPerDay?: string | null;
+  requiresBatchTracking?: boolean;
+  shelfLifeDays?: number | null;
+  shelfLifeReviewed?: boolean;
+  productionLifecycle?: string;
 }
 
 /** Corpo de `PUT recipes/<ref>/versions/<n>/rating/`: id do critério → nota inteira de 0 a 5. */
@@ -227,6 +248,14 @@ export interface RecipeEntryResponse {
   entry: RecipeEntryDetailProjection;
   access?: RecipeBookAccessProjection;
 }
+
+export interface RecipeDuplicateResponse extends RecipeEntryResponse {
+  ok: boolean;
+  outcome: "applied" | "not_applied" | "unknown";
+  resource: { kind: "recipe"; ref: string };
+}
+
+export type RecipeCreateResponse = RecipeDuplicateResponse;
 
 /** POST/DELETE recipes/<ref>/favorite/ — a estrela do operador, idempotente. */
 export interface RecipeFavoriteResponse {

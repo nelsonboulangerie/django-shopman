@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -128,8 +129,9 @@ def published_levain(db):
     return levain
 
 
-def _post(client, url, body):
-    return client.post(url, json.dumps(body), content_type="application/json")
+def _post(client, url, body, *, key: str | None = None):
+    headers = {"HTTP_IDEMPOTENCY_KEY": key or str(uuid4())}
+    return client.post(url, json.dumps(body), content_type="application/json", **headers)
 
 
 def _patch(client, url, body):
@@ -167,6 +169,8 @@ def test_viewer_reads_but_does_not_write(client, viewer, entry):
     forbidden = [
         _post(client, LIST_URL, {"name": "Outra", "kind": "bread", "output_sku": "", "notes": ""}),
         _patch(client, f"{LIST_URL}{entry.ref}/", {"notes": "x"}),
+        _post(client, f"{LIST_URL}{entry.ref}/duplicate/", {"name": "Cópia"}),
+        _patch(client, f"{LIST_URL}{entry.ref}/execution/", {"maxStartedMinutes": 60}),
         _post(client, f"{LIST_URL}{entry.ref}/versions/", version_payload()),
         _patch(client, f"{LIST_URL}{entry.ref}/versions/1/", {"label": "x"}),
         _post(client, f"{LIST_URL}{entry.ref}/versions/1/publish/", {}),
@@ -214,6 +218,29 @@ def test_list_filters_by_text_kind_and_archived(client, viewer, entry):
     assert [c["ref"] for c in client.get(LIST_URL, {"q": "confeit"}).json()["book"]["entries"]] == [other.ref]
     assert [c["ref"] for c in client.get(LIST_URL, {"kind": "bread"}).json()["book"]["entries"]] == [entry.ref]
     assert [c["ref"] for c in client.get(LIST_URL, {"archived": "1"}).json()["book"]["entries"]] == [archived.ref]
+
+
+def test_list_pages_sorts_and_filters_in_the_database(client, viewer, entry):
+    craftsman.create_entry(ref="abacate", name="Abacate", kind="cream")
+    craftsman.create_entry(ref="zabaglione", name="Zabaglione", kind="cream", output_sku="ZABA")
+    client.force_login(viewer)
+
+    first = client.get(LIST_URL, {"sort": "name", "page_size": 1}).json()["book"]
+    second = client.get(LIST_URL, {"sort": "name", "page_size": 1, "page": 2}).json()["book"]
+    assert first["total"] == 3
+    assert first["page_size"] == 1
+    assert first["has_next"] is True
+    assert first["entries"][0]["ref"] == "abacate"
+    assert second["entries"][0]["ref"] == entry.ref
+
+    without_sku = client.get(LIST_URL, {"without_sku": "1", "sort": "name"}).json()["book"]
+    assert [row["ref"] for row in without_sku["entries"]] == ["abacate"]
+    with_draft = client.get(LIST_URL, {"with_draft": "1"}).json()["book"]
+    assert [row["ref"] for row in with_draft["entries"]] == [entry.ref]
+
+    invalid = client.get(LIST_URL, {"sort": "surpresa"})
+    assert invalid.status_code == 400
+    assert invalid.json()["field"] == "sort"
     assert client.get(LIST_URL, {"kind": "pizza"}).json()["field"] == "kind"
 
 
@@ -256,6 +283,111 @@ def test_create_entry_generates_a_unique_ref(client, editor, entry):
     response = _post(client, LIST_URL, {"name": "Massa Tradição", "kind": "bread", "output_sku": "", "notes": ""})
     assert response.status_code == 201
     assert response.json()["entry"]["ref"] == "massa-tradicao-2"
+
+
+def test_create_entry_replays_the_exact_receipt_once(client, editor):
+    client.force_login(editor)
+    payload = {"name": "Pão idempotente", "kind": "bread", "output_sku": "", "notes": ""}
+    key = str(uuid4())
+
+    first = _post(client, LIST_URL, payload, key=key)
+    replay = _post(client, LIST_URL, payload, key=key)
+
+    assert first.status_code == replay.status_code == 201
+    assert first.json() == replay.json()
+    assert first.json()["resource"] == {"kind": "recipe", "ref": "pao-idempotente"}
+    assert RecipeEntry.objects.filter(ref="pao-idempotente").count() == 1
+
+    conflict = _post(client, LIST_URL, {**payload, "name": "Outra receita"}, key=key)
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "intention_conflict"
+
+
+def test_create_entry_requires_an_intention_key(client, editor):
+    client.force_login(editor)
+    response = client.post(
+        LIST_URL,
+        json.dumps({"name": "Sem chave", "kind": "bread"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "intention_required"
+
+
+def test_duplicate_entry_creates_one_new_draft_and_replays_the_receipt(client, editor, entry):
+    client.force_login(editor)
+    key = str(uuid4())
+    payload = {
+        "name": "Massa Tradição Integral",
+        "outputSku": "MASSA-TRADICAO-INTEGRAL",
+        "fromVersion": 1,
+        "expectedRevision": entry.updated_at.isoformat(),
+    }
+    url = f"{LIST_URL}{entry.ref}/duplicate/"
+
+    first = client.post(url, json.dumps(payload), content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+    replay = client.post(url, json.dumps(payload), content_type="application/json", HTTP_IDEMPOTENCY_KEY=key)
+
+    assert first.status_code == replay.status_code == 201
+    assert first.json()["resource"] == replay.json()["resource"] == {
+        "kind": "recipe", "ref": "massa-tradicao-integral",
+    }
+    copied = RecipeEntry.objects.get(ref="massa-tradicao-integral")
+    assert copied.current_version_id is None
+    assert copied.output_sku == "MASSA-TRADICAO-INTEGRAL"
+    assert copied.versions.count() == 1
+    version = copied.versions.get()
+    assert version.status == RecipeVersion.Status.DRAFT
+    assert version.source["copied_from"] == "massa-tradicao@1"
+    assert version.created_by == editor.username
+    assert not Recipe.objects.filter(ref=copied.ref).exists()
+
+
+def test_duplicate_entry_requires_an_intention_key(client, editor, entry):
+    client.force_login(editor)
+    response = client.post(
+        f"{LIST_URL}{entry.ref}/duplicate/",
+        json.dumps({"name": "Cópia"}),
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "intention_required"
+    assert RecipeEntry.objects.count() == 1
+
+
+def test_duplicate_entry_refuses_a_stale_source(client, editor, entry):
+    revision = entry.updated_at.isoformat()
+    entry.name = "Mudou em outra aba"
+    entry.save()
+    client.force_login(editor)
+
+    response = client.post(
+        f"{LIST_URL}{entry.ref}/duplicate/",
+        json.dumps({"name": "Cópia", "expectedRevision": revision}),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "recipe_changed"
+    assert RecipeEntry.objects.count() == 1
+
+
+def test_duplicate_entry_never_reuses_the_source_output_sku(client, editor, entry):
+    client.force_login(editor)
+    response = client.post(
+        f"{LIST_URL}{entry.ref}/duplicate/",
+        json.dumps({
+            "name": "Cópia perigosa",
+            "outputSku": entry.output_sku,
+            "expectedRevision": entry.updated_at.isoformat(),
+        }),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "outputSku"
+    assert RecipeEntry.objects.count() == 1
 
 
 def test_create_entry_refuses_a_bad_draft_without_leaving_an_orphan(client, editor):
@@ -444,6 +576,66 @@ def test_publish_writes_the_sheet_and_the_list_shows_it(client, editor, entry):
     assert card["anchor_kind"] == "flour"
     assert card["hydration_display"] == "70%"
     assert card["draft_count"] == 0
+
+
+def test_execution_settings_are_projected_and_saved_without_touching_the_formula(client, editor, entry):
+    craftsman.publish_version(entry.versions.get(number=1), actor=editor.username)
+    client.force_login(editor)
+    detail = client.get(f"{LIST_URL}{entry.ref}/").json()["entry"]
+    assert detail["execution"]["exists"] is True
+    assert detail["execution"]["max_started_minutes"] is None
+
+    response = _patch(client, f"{LIST_URL}{entry.ref}/execution/", {
+        "expectedRevision": detail["execution"]["revision"],
+        "maxStartedMinutes": 90,
+        "capacityPerDay": "120,5",
+        "requiresBatchTracking": True,
+        "shelfLifeDays": 2,
+        "shelfLifeReviewed": True,
+    })
+
+    assert response.status_code == 200, response.content
+    execution = response.json()["entry"]["execution"]
+    assert execution["max_started_minutes"] == 90
+    assert execution["capacity_per_day"] == "120.5"
+    assert execution["requires_batch_tracking"] is True
+    assert execution["shelf_life_days"] == 2
+    assert execution["shelf_life_reviewed"] is True
+    assert execution["shelf_life_reviewed_by"] == editor.username
+    recipe = Recipe.objects.get(ref=entry.ref)
+    assert recipe.meta["version_ref"] == "massa-tradicao@1"
+    assert recipe.items.count() == 3
+
+
+def test_execution_settings_refuse_fractional_days_and_stale_forms(client, editor, entry):
+    craftsman.publish_version(entry.versions.get(number=1), actor=editor.username)
+    recipe = Recipe.objects.get(ref=entry.ref)
+    revision = recipe.updated_at.isoformat()
+    client.force_login(editor)
+
+    fractional = _patch(client, f"{LIST_URL}{entry.ref}/execution/", {
+        "expectedRevision": revision,
+        "shelfLifeDays": "1,5",
+    })
+    assert fractional.status_code == 400
+    assert fractional.json()["field"] == "shelfLifeDays"
+
+    recipe.name = "Mudou em outra aba"
+    recipe.save()
+    stale = _patch(client, f"{LIST_URL}{entry.ref}/execution/", {
+        "expectedRevision": revision,
+        "maxStartedMinutes": 60,
+    })
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "recipe_changed"
+    recipe.refresh_from_db()
+    assert "max_started_minutes" not in recipe.meta
+
+
+def test_execution_settings_require_a_published_sheet(client, editor, entry):
+    client.force_login(editor)
+    response = _patch(client, f"{LIST_URL}{entry.ref}/execution/", {"maxStartedMinutes": 60})
+    assert response.status_code == 404
 
 
 def test_publish_without_sku_names_the_field(client, editor):

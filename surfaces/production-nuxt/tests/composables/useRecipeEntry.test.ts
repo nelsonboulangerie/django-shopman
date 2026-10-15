@@ -7,6 +7,7 @@ const env = installNuxtGlobals();
 
 const ENTRY = {
   ref: "pao-campanha",
+  revision: "2026-10-14T02:03:04+00:00",
   name: "Pão de campanha",
   kind: "bread",
   output_sku: "PAO-CAMP",
@@ -80,6 +81,74 @@ describe("useRecipeEntry", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(published.ok).toBe(true);
+  });
+
+  it("saves execution with the revision and reconciles the served projection", async () => {
+    env.fetchData.value = { entry: ENTRY };
+    env.fetchMock.mockResolvedValueOnce({ entry: ENTRY });
+    const payload = {
+      expectedRevision: "2026-10-14T02:03:04+00:00",
+      maxStartedMinutes: 90,
+      capacityPerDay: "24",
+      requiresBatchTracking: true,
+      shelfLifeDays: 3,
+      shelfLifeReviewed: true,
+      productionLifecycle: "standard",
+    };
+
+    const result = await useRecipeEntry("pao-campanha").saveExecution(payload);
+
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/recipes/pao-campanha/execution/",
+      expect.objectContaining({ method: "PATCH", body: payload }),
+    );
+    expect(result.ok).toBe(true);
+    expect(env.refresh).toHaveBeenCalled();
+  });
+
+  it("duplicates with a stable key and returns the exact created recipe", async () => {
+    env.fetchData.value = { entry: ENTRY };
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      resource: { kind: "recipe", ref: "pao-campanha-copia" },
+      entry: { ...ENTRY, ref: "pao-campanha-copia", name: "Pão de campanha (cópia)" },
+    });
+    const payload = {
+      name: "Pão de campanha (cópia)",
+      expectedRevision: "2026-10-14T02:03:04+00:00",
+    };
+
+    const result = await useRecipeEntry("pao-campanha").duplicate(payload, "stable-key");
+
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/recipes/pao-campanha/duplicate/",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Idempotency-Key": "stable-key" },
+        body: payload,
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.entry?.ref).toBe("pao-campanha-copia");
+  });
+
+  it("does not treat an uncertain duplicate outcome as a successful creation", async () => {
+    env.fetchData.value = { entry: ENTRY };
+    env.fetchMock.mockResolvedValueOnce({
+      ok: false,
+      outcome: "unknown",
+      resource: { kind: "recipe", ref: "" },
+    });
+
+    const result = await useRecipeEntry("pao-campanha").duplicate(
+      { name: "Cópia", expectedRevision: ENTRY.revision },
+      "same-key-on-retry",
+    );
+
+    expect(result.ok).toBe(false);
+    expect(env.sonner.error).toHaveBeenCalled();
+    expect(env.refresh).not.toHaveBeenCalled();
   });
 
   it("a refused write toasts the server message and returns the field", async () => {
