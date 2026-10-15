@@ -272,11 +272,16 @@ from .product_promise import CatalogPromiseView, ProductPromiseView
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
+    PurchaseContactView,
+    PurchaseConversionDetailView,
     PurchaseConversionView,
     PurchaseCostBatchView,
     PurchaseCostView,
     PurchaseCountConfirmView,
     PurchaseCountView,
+    PurchaseMaterialDetailView,
+    PurchaseMaterialDuplicateView,
+    PurchaseMaterialView,
     PurchaseMinStockView,
     PurchaseOpeningView,
     PurchaseReceiptVolumesView,
@@ -285,6 +290,10 @@ from .purchase import (
     PurchaseRequestSendView,
     PurchaseSaleView,
     PurchaseScanInvoiceView,
+    PurchaseSupplierContactView,
+    PurchaseSupplierDetailView,
+    PurchaseSupplierDuplicateView,
+    PurchaseSupplierView,
 )
 from .recipe_book import (
     FormulaLensView,
@@ -553,6 +562,45 @@ urlpatterns = [
         "purchase/materials/<str:material_sku>/opening/",
         PurchaseOpeningView.as_view(),
         name="api-backstage-purchase-opening",
+    ),
+    # Cadastro da Base. A ordem importa: `min-stock` e os subgestos de um SKU
+    # vêm antes do detalhe, senão "min-stock" casaria com <material_sku>.
+    path("purchase/materials/", PurchaseMaterialView.as_view(), name="api-backstage-purchase-materials"),
+    path(
+        "purchase/materials/<str:material_sku>/duplicate/",
+        PurchaseMaterialDuplicateView.as_view(),
+        name="api-backstage-purchase-material-duplicate",
+    ),
+    path(
+        "purchase/materials/<str:material_sku>/",
+        PurchaseMaterialDetailView.as_view(),
+        name="api-backstage-purchase-material",
+    ),
+    path("purchase/suppliers/", PurchaseSupplierView.as_view(), name="api-backstage-purchase-suppliers"),
+    path(
+        "purchase/suppliers/<str:ref>/duplicate/",
+        PurchaseSupplierDuplicateView.as_view(),
+        name="api-backstage-purchase-supplier-duplicate",
+    ),
+    path(
+        "purchase/suppliers/<str:ref>/contacts/",
+        PurchaseSupplierContactView.as_view(),
+        name="api-backstage-purchase-supplier-contacts",
+    ),
+    path(
+        "purchase/suppliers/<str:ref>/",
+        PurchaseSupplierDetailView.as_view(),
+        name="api-backstage-purchase-supplier",
+    ),
+    path(
+        "purchase/contacts/<int:contact_id>/",
+        PurchaseContactView.as_view(),
+        name="api-backstage-purchase-contact",
+    ),
+    path(
+        "purchase/conversions/<int:conversion_id>/",
+        PurchaseConversionDetailView.as_view(),
+        name="api-backstage-purchase-conversion",
     ),
     # Contagem de insumos — auditoria de estoque, restrita a gestor/dono.
     path("purchase/count/", PurchaseCountView.as_view(), name="api-backstage-purchase-count"),

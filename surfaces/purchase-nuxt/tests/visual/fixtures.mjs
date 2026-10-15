@@ -70,6 +70,8 @@ function suppliers() {
     tradeName,
     displayName: tradeName || name,
     document: `12.345.${String(670 + index).padStart(3, "0")}/0001-${String(10 + index)}`,
+    email: `central@${ref.toLowerCase()}.example`,
+    phone: "(43) 3333-0000",
     contact: index === 2 ? "" : "(43) 3333-0000",
     contacts: contact
       ? [{
