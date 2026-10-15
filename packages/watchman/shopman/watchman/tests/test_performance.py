@@ -56,6 +56,18 @@ def test_unconfigured_route_is_constant_time_noop():
     assert average_ms < 0.5
 
 
+def test_healthy_pulse_proves_the_budget_is_observing_requests():
+    recorder = BudgetRecorder((_budget(heartbeat_samples=3),))
+
+    assert recorder.record(method="GET", route="/catalog/", duration_ms=10, query_count=2) is None
+    assert recorder.record(method="GET", route="/catalog/", duration_ms=11, query_count=2) is None
+    pulse = recorder.record(method="GET", route="/catalog/", duration_ms=12, query_count=2)
+
+    assert pulse and pulse.kind == "healthy"
+    assert pulse.sample == 3
+    assert recorder.snapshot()["catalog"]["samples"] == 3
+
+
 def test_invalid_budget_configuration_fails_closed(settings):
     settings.WATCHMAN = {"BUDGETS": {"broken": {"route": "/x/"}}}
 
