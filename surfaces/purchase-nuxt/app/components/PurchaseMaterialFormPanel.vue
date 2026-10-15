@@ -406,7 +406,6 @@ watch(
             :label="category"
             color="neutral"
             variant="outline"
-            size="sm"
             @click="form.category = category"
           />
         </div>
@@ -445,12 +444,11 @@ watch(
               </span>
             </span>
             <span class="flex shrink-0 gap-1">
-              <NuxtButton label="Editar" color="neutral" variant="ghost" size="sm" @click="editConversion(row)" />
+              <NuxtButton label="Editar" color="neutral" variant="ghost" @click="editConversion(row)" />
               <NuxtButton
                 :label="row.isActive ? 'Desativar' : 'Reativar'"
                 color="neutral"
                 variant="ghost"
-                size="sm"
                 @click="toggleConversion(row)"
               />
             </span>
@@ -490,6 +488,7 @@ watch(
           icon="i-lucide-plus"
           color="neutral"
           variant="outline"
+          class="self-start"
           :disabled="busy"
           data-testid="conversion-add"
           @click="newConversion()"
@@ -518,11 +517,10 @@ watch(
                 label="Tornar preferencial"
                 color="neutral"
                 variant="ghost"
-                size="sm"
                 :disabled="busy"
                 @click="makePreferred(row)"
               />
-              <NuxtButton label="Editar" color="neutral" variant="ghost" size="sm" @click="editCost(row)" />
+              <NuxtButton label="Editar" color="neutral" variant="ghost" @click="editCost(row)" />
             </span>
           </li>
         </ul>
@@ -555,6 +553,7 @@ watch(
           icon="i-lucide-plus"
           color="neutral"
           variant="outline"
+          class="self-start"
           :disabled="busy || !suppliers.length"
           data-testid="cost-add"
           @click="newCost()"

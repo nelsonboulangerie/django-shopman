@@ -1,0 +1,727 @@
+{
+  "version": 1,
+  "generated_at": "2026-10-15T00:05:52.608Z",
+  "browser_lock": "surfaces/operator-kit/visual/browser-lock.json",
+  "evidence": [
+    {
+      "app": "purchase",
+      "surface": "purchase-material-duplicate",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-duplicate/normal/form/desktop-common/dark.png",
+      "test": " >  > catalog-forms.spec.ts > material-duplicate · dark · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-duplicate",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-duplicate/normal/form/desktop-common/light.png",
+      "test": " >  > catalog-forms.spec.ts > material-duplicate · light · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-duplicate",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-duplicate/normal/form/mobile-standard/dark.png",
+      "test": " >  > catalog-forms.spec.ts > material-duplicate · dark · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-duplicate",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-duplicate/normal/form/mobile-standard/light.png",
+      "test": " >  > catalog-forms.spec.ts > material-duplicate · light · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-duplicate",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-duplicate/normal/form/tablet-portrait/dark.png",
+      "test": " >  > catalog-forms.spec.ts > material-duplicate · dark · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-duplicate",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-duplicate/normal/form/tablet-portrait/light.png",
+      "test": " >  > catalog-forms.spec.ts > material-duplicate · light · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-edit",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-edit/normal/form/desktop-common/dark.png",
+      "test": " >  > catalog-forms.spec.ts > material-edit · dark · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-edit",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-edit/normal/form/desktop-common/light.png",
+      "test": " >  > catalog-forms.spec.ts > material-edit · light · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-edit",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-edit/normal/form/mobile-standard/dark.png",
+      "test": " >  > catalog-forms.spec.ts > material-edit · dark · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-edit",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-edit/normal/form/mobile-standard/light.png",
+      "test": " >  > catalog-forms.spec.ts > material-edit · light · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-edit",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-edit/normal/form/tablet-portrait/dark.png",
+      "test": " >  > catalog-forms.spec.ts > material-edit · dark · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-material-edit",
+      "route": "/base/materials/FAR-T65",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-material-edit/normal/form/tablet-portrait/light.png",
+      "test": " >  > catalog-forms.spec.ts > material-edit · light · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-materials-list",
+      "route": "/base/materials",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "dark",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-materials-list/normal/list/desktop-common/dark.png",
+      "test": " >  > catalog-forms.spec.ts > materials-list · dark · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-materials-list",
+      "route": "/base/materials",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "light",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-materials-list/normal/list/desktop-common/light.png",
+      "test": " >  > catalog-forms.spec.ts > materials-list · light · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-materials-list",
+      "route": "/base/materials",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "dark",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-materials-list/normal/list/mobile-standard/dark.png",
+      "test": " >  > catalog-forms.spec.ts > materials-list · dark · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-materials-list",
+      "route": "/base/materials",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "light",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-materials-list/normal/list/mobile-standard/light.png",
+      "test": " >  > catalog-forms.spec.ts > materials-list · light · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-materials-list",
+      "route": "/base/materials",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "dark",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-materials-list/normal/list/tablet-portrait/dark.png",
+      "test": " >  > catalog-forms.spec.ts > materials-list · dark · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-materials-list",
+      "route": "/base/materials",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "light",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-materials-list/normal/list/tablet-portrait/light.png",
+      "test": " >  > catalog-forms.spec.ts > materials-list · light · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-duplicate",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-duplicate/normal/form/desktop-common/dark.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-duplicate · dark · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-duplicate",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-duplicate/normal/form/desktop-common/light.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-duplicate · light · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-duplicate",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-duplicate/normal/form/mobile-standard/dark.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-duplicate · dark · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-duplicate",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-duplicate/normal/form/mobile-standard/light.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-duplicate · light · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-duplicate",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-duplicate/normal/form/tablet-portrait/dark.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-duplicate · dark · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-duplicate",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-duplicate/normal/form/tablet-portrait/light.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-duplicate · light · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-edit",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-edit/normal/form/desktop-common/dark.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-edit · dark · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-edit",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-edit/normal/form/desktop-common/light.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-edit · light · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-edit",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-edit/normal/form/mobile-standard/dark.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-edit · dark · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-edit",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-edit/normal/form/mobile-standard/light.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-edit · light · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-edit",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "dark",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-edit/normal/form/tablet-portrait/dark.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-edit · dark · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-supplier-edit",
+      "route": "/base/suppliers/MOINHO-PARANA",
+      "scenario": "normal",
+      "state": "form",
+      "theme": "light",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-supplier-edit/normal/form/tablet-portrait/light.png",
+      "test": " >  > catalog-forms.spec.ts > supplier-edit · light · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-suppliers-list",
+      "route": "/base/suppliers",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "dark",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-suppliers-list/normal/list/desktop-common/dark.png",
+      "test": " >  > catalog-forms.spec.ts > suppliers-list · dark · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-suppliers-list",
+      "route": "/base/suppliers",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "light",
+      "viewport": {
+        "id": "desktop-common",
+        "label": "1440x900",
+        "width": 1440,
+        "height": 900,
+        "profile": "desktop-keyboard",
+        "touch": false
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-suppliers-list/normal/list/desktop-common/light.png",
+      "test": " >  > catalog-forms.spec.ts > suppliers-list · light · desktop-common"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-suppliers-list",
+      "route": "/base/suppliers",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "dark",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-suppliers-list/normal/list/mobile-standard/dark.png",
+      "test": " >  > catalog-forms.spec.ts > suppliers-list · dark · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-suppliers-list",
+      "route": "/base/suppliers",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "light",
+      "viewport": {
+        "id": "mobile-standard",
+        "label": "390x844",
+        "width": 390,
+        "height": 844,
+        "profile": "mobile-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-suppliers-list/normal/list/mobile-standard/light.png",
+      "test": " >  > catalog-forms.spec.ts > suppliers-list · light · mobile-standard"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-suppliers-list",
+      "route": "/base/suppliers",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "dark",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-suppliers-list/normal/list/tablet-portrait/dark.png",
+      "test": " >  > catalog-forms.spec.ts > suppliers-list · dark · tablet-portrait"
+    },
+    {
+      "app": "purchase",
+      "surface": "purchase-suppliers-list",
+      "route": "/base/suppliers",
+      "scenario": "normal",
+      "state": "list",
+      "theme": "light",
+      "viewport": {
+        "id": "tablet-portrait",
+        "label": "820x1180",
+        "width": 820,
+        "height": 1180,
+        "profile": "tablet-touch",
+        "touch": true
+      },
+      "findings": [],
+      "status": "passed",
+      "path": "purchase/purchase-suppliers-list/normal/list/tablet-portrait/light.png",
+      "test": " >  > catalog-forms.spec.ts > suppliers-list · light · tablet-portrait"
+    }
+  ]
+}

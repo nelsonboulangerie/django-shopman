@@ -134,8 +134,9 @@ SCREENS: dict[tuple[str, str], Screen] = {
     ("marketing", "campaigns"): Screen("shop.view_marketing", screen_query),
     # Relatórios da Produção: a perm fina de gestor (`can_view_reports`).
     ("production", "reports"): Screen("backstage.view_production_reports", screen_query),
-    # Compras, Base · Insumos: quem opera as compras.
+    # Compras, Base · Insumos e Fornecedores: quem opera as compras.
     ("purchase", "materials"): Screen("backstage.operate_purchase", screen_query),
+    ("purchase", "suppliers"): Screen("backstage.operate_purchase", screen_query),
 }
 
 

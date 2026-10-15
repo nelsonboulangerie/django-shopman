@@ -324,7 +324,7 @@ function roleLabel(role: string): string {
             </span>
             <span class="flex shrink-0 items-center gap-1">
               <NuxtBadge v-if="!person.isActive" color="neutral" label="Inativo" />
-              <NuxtButton label="Editar" color="neutral" variant="ghost" size="sm" @click="editContact(person)" />
+              <NuxtButton label="Editar" color="neutral" variant="ghost" @click="editContact(person)" />
             </span>
           </li>
         </ul>
@@ -369,6 +369,7 @@ function roleLabel(role: string): string {
           icon="i-lucide-plus"
           color="neutral"
           variant="outline"
+          class="self-start"
           :disabled="busy"
           data-testid="contact-add"
           @click="newContact()"

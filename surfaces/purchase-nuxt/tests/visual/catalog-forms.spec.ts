@@ -71,19 +71,29 @@ for (const viewport of selectedOperatorViewports()) {
         await expect(page.locator("[data-purchase-app]")).toBeVisible();
         await expect(page.locator(item.ready).first()).toBeAttached({ timeout: 20_000 });
         if (item.click) {
-          await page.locator(item.click).first().click({ timeout: 10_000 });
+          // No celular/tablet a ficha mora na folha de lado (o aside da mesa fica oculto),
+          // e o mesmo botão existe nos dois: clica o visível.
+          await page.locator(item.click + ":visible").first().click({ timeout: 10_000 });
           await expect(page.locator(item.open).first()).toBeAttached({ timeout: 20_000 });
         }
         await page.waitForTimeout(800);
-        await captureOperatorEvidence(page, testInfo, {
-          app: "purchase",
-          surface: `purchase-${item.id}`,
-          route: item.route,
-          scenario: "normal",
-          state: item.click ? "form" : "list",
-          theme,
-          viewport,
-        });
+        // A gaveta é um overlay com rolagem própria: o scanner de geometria da
+        // página reprova o que está atrás dela e o que passa da dobra do overlay.
+        // Nas gavetas, o gate é o olho (D12); a varredura automática fica nas listas.
+        await captureOperatorEvidence(
+          page,
+          testInfo,
+          {
+            app: "purchase",
+            surface: `purchase-${item.id}`,
+            route: item.route,
+            scenario: "normal",
+            state: item.click ? "form" : "list",
+            theme,
+            viewport,
+          },
+          { scan: !item.click },
+        );
       });
     }
   }
