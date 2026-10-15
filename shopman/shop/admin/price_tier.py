@@ -18,8 +18,7 @@ apaga), e o histórico dos pedidos segue apontando para ela.
 
 from __future__ import annotations
 
-from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from django import forms
 from django.conf import settings
@@ -27,7 +26,6 @@ from django.contrib import admin
 from django.db import transaction
 from django.db.models import OuterRef, Subquery, Value
 from django.db.models.functions import Concat
-from django.utils import timezone
 from shopman.guestman.contrib.admin_unfold.admin import PriceTierAdmin as _GuestmanPriceTierAdmin
 from shopman.guestman.models import PriceTier
 from shopman.utils.monetary import format_money
@@ -42,12 +40,11 @@ from unfold.widgets import (
 )
 
 from shopman.shop.models import Channel, Promotion
+from shopman.shop.services import customer_groups as customer_group_service
 from shopman.shop.services import promotions as promotion_service
 
 #: Sem data de fim: o desconto do grupo vale enquanto estiver ligado. O campo do
 #: modelo é obrigatório, então "sem prazo" é o último dia que o banco guarda bem.
-GROUP_DISCOUNT_OPEN_END = datetime(2099, 12, 31, 23, 59, 59)
-
 NO_DISCOUNT = ""
 DISCOUNT_TYPE_CHOICES = [
     (NO_DISCOUNT, "Sem desconto"),
@@ -61,9 +58,7 @@ def _pos_channel_ref() -> str:
 
 
 def _group_promotion(tier_ref: str) -> Promotion | None:
-    if not tier_ref:
-        return None
-    return Promotion.objects.filter(ref=promotion_service.group_discount_ref(tier_ref)).first()
+    return customer_group_service.group_promotion(tier_ref)
 
 
 class PriceTierGroupDiscountForm(forms.ModelForm):
@@ -159,9 +154,10 @@ class PriceTierGroupDiscountForm(forms.ModelForm):
     def group_discount_value_q(self) -> int:
         """O ``Promotion.value``: percentual inteiro, ou centavos no valor por pedido."""
         value = self.cleaned_data.get("group_discount_value") or Decimal("0")
-        if self.cleaned_data.get("group_discount_type") == Promotion.PERCENT:
-            return int(value)
-        return int((value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        return customer_group_service.discount_value_q(
+            self.cleaned_data.get("group_discount_type") or NO_DISCOUNT,
+            value,
+        )
 
 
 def _metadata_with_group_settings(metadata: dict, form: PriceTierGroupDiscountForm) -> dict:
@@ -171,49 +167,24 @@ def _metadata_with_group_settings(metadata: dict, form: PriceTierGroupDiscountFo
     o atalho editável e têm dono único aqui. Chave vazia sai do metadata para o
     padrão do motor voltar a valer (nada de ``""`` fingindo configuração).
     """
-    merged = dict(metadata or {})
-    kind = (form.cleaned_data.get("group_discount_kind") or "").strip()
-    if kind:
-        merged["discount_kind"] = kind
-    else:
-        merged.pop("discount_kind", None)
-    merged["rounding"] = 50 if form.cleaned_data.get("group_rounding") else 0
-    savings = (form.cleaned_data.get("group_savings_message") or "").strip()
-    if savings:
-        merged["savings_message"] = savings
-    else:
-        merged.pop("savings_message", None)
-    return merged
+    return customer_group_service.metadata_with_group_settings(
+        metadata,
+        discount_kind=form.cleaned_data.get("group_discount_kind") or "",
+        rounding=bool(form.cleaned_data.get("group_rounding")),
+        savings_message=form.cleaned_data.get("group_savings_message") or "",
+    )
 
 
 def sync_group_discount(tier: PriceTier, form: PriceTierGroupDiscountForm, *, previous_ref: str = "") -> Promotion | None:
     """Grava a promoção do grupo a partir do formulário. Devolve a promoção (ou None)."""
-    kind = form.cleaned_data.get("group_discount_type") or NO_DISCOUNT
-    promo = _group_promotion(previous_ref or tier.ref)
-    if kind == NO_DISCOUNT:
-        if promo is not None and promo.is_active:
-            promo.is_active = False
-            promo.save(update_fields=["is_active"])
-        return promo
-    if promo is None:
-        promo = Promotion(valid_from=timezone.now())
-    promo.ref = promotion_service.group_discount_ref(tier.ref)
-    # O nome da promoção é o rótulo que o balcão lê na linha ("Aliança Francesa −10%").
-    promo.name = tier.name
-    promo.type = kind
-    promo.value = form.group_discount_value_q()
-    promo.customer_segments = [tier.ref]
-    promo.birthday_only = False
-    promo.valid_until = timezone.make_aware(GROUP_DISCOUNT_OPEN_END)
-    if promo.valid_from > timezone.now():
-        promo.valid_from = timezone.now()
-    promo.is_active = True
-    # "Só na retirada" é o guarda do benefício, não um parâmetro decorativo: a
-    # promoção restrita a retirada não casa quando o fulfillment é entrega.
-    promo.fulfillment_types = ["pickup"] if form.cleaned_data.get("group_pickup_only") else []
-    promo.save()
-    promo.channels.set(form.cleaned_data.get("group_discount_channels") or [])
-    return promo
+    return customer_group_service.sync_group_discount(
+        tier,
+        discount_type=form.cleaned_data.get("group_discount_type") or NO_DISCOUNT,
+        discount_value_q=form.group_discount_value_q(),
+        channel_refs=[channel.ref for channel in (form.cleaned_data.get("group_discount_channels") or [])],
+        pickup_only=bool(form.cleaned_data.get("group_pickup_only")),
+        previous_ref=previous_ref,
+    )
 
 
 admin.site.unregister(PriceTier)

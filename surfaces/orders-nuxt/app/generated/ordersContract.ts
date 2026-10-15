@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -910,6 +910,50 @@ export interface CustomerDetailProjection {
   fiscal_cpf_na_nota: boolean;
   fiscal_email_receipt: boolean;
   form: CustomerFormOptionsProjection;
+}
+
+/** CustomerGroupOptionProjection(value: 'str', label: 'str') */
+export interface CustomerGroupOptionProjection {
+  value: string;
+  label: string;
+}
+
+/** CustomerGroupFormOptionsProjection(channels: 'tuple[CustomerGroupOptionProjection, ...]', listings: 'tuple[CustomerGroupOptionProjection, ...]', discount_types: 'tuple[CustomerGroupOptionProjection, ...]') */
+export interface CustomerGroupFormOptionsProjection {
+  channels: CustomerGroupOptionProjection[];
+  listings: CustomerGroupOptionProjection[];
+  discount_types: CustomerGroupOptionProjection[];
+}
+
+/** CustomerGroupProjection(ref: 'str', name: 'str', description: 'str', listing_ref: 'str', listing_name: 'str', priority: 'int', is_default: 'bool', customer_count: 'int', customer_count_label: 'str', discount_type: 'str', discount_value: 'str', discount_label: 'str', channel_refs: 'tuple[str, ...]', channels_label: 'str', pickup_only: 'bool', discount_kind: 'str', rounding: 'bool', savings_message: 'str', revision: 'str') */
+export interface CustomerGroupProjection {
+  ref: string;
+  name: string;
+  description: string;
+  listing_ref: string;
+  listing_name: string;
+  priority: number;
+  is_default: boolean;
+  customer_count: number;
+  customer_count_label: string;
+  discount_type: string;
+  discount_value: string;
+  discount_label: string;
+  channel_refs: string[];
+  channels_label: string;
+  pickup_only: boolean;
+  discount_kind: string;
+  rounding: boolean;
+  savings_message: string;
+  revision: string;
+}
+
+/** CustomerGroupListProjection(items: 'tuple[CustomerGroupProjection, ...]', total: 'int', total_label: 'str', form: 'CustomerGroupFormOptionsProjection') */
+export interface CustomerGroupListProjection {
+  items: CustomerGroupProjection[];
+  total: number;
+  total_label: string;
+  form: CustomerGroupFormOptionsProjection;
 }
 
 /** MergeSideProjection(ref: 'str', name: 'str', phone_display: 'str', document_display: 'str', source_label: 'str', orders_label: 'str') */
