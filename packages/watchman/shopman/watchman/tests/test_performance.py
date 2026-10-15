@@ -40,9 +40,10 @@ def test_budget_uses_hysteresis_backoff_and_resolution():
 def test_query_budget_is_only_applied_when_measurement_exists():
     recorder = BudgetRecorder((_budget(consecutive_failures=1),))
 
-    assert recorder.record(method="GET", route="/catalog/", duration_ms=10, query_count=None) is None
+    pulse = recorder.record(method="GET", route="/catalog/", duration_ms=10, query_count=None)
     event = recorder.record(method="GET", route="/catalog/", duration_ms=10, query_count=11)
 
+    assert pulse and pulse.kind == "healthy"
     assert event and event.kind == "opened"
 
 
@@ -59,13 +60,15 @@ def test_unconfigured_route_is_constant_time_noop():
 def test_healthy_pulse_proves_the_budget_is_observing_requests():
     recorder = BudgetRecorder((_budget(heartbeat_samples=3),))
 
-    assert recorder.record(method="GET", route="/catalog/", duration_ms=10, query_count=2) is None
+    first = recorder.record(method="GET", route="/catalog/", duration_ms=10, query_count=2)
     assert recorder.record(method="GET", route="/catalog/", duration_ms=11, query_count=2) is None
-    pulse = recorder.record(method="GET", route="/catalog/", duration_ms=12, query_count=2)
+    assert recorder.record(method="GET", route="/catalog/", duration_ms=12, query_count=2) is None
+    pulse = recorder.record(method="GET", route="/catalog/", duration_ms=13, query_count=2)
 
+    assert first and first.kind == "healthy" and first.sample == 1
     assert pulse and pulse.kind == "healthy"
-    assert pulse.sample == 3
-    assert recorder.snapshot()["catalog"]["samples"] == 3
+    assert pulse.sample == 4
+    assert recorder.snapshot()["catalog"]["samples"] == 4
 
 
 def test_invalid_budget_configuration_fails_closed(settings):

@@ -396,7 +396,8 @@ WATCHMAN = {
     # bastante para capturar regressões humanas como o N+1 de Compras (29 s).
     # A chave é o padrão resolvido da URL: nunca inclui SKU, pessoa ou query string.
     # O pulso é por observações, não por relógio: não cria thread, timer, I/O ou
-    # consulta. Uma linha INFO a cada 1.000 medições prova que o medidor está vivo.
+    # consulta. A primeira observação e depois uma a cada 1.000 provam que o
+    # medidor está vivo, inclusive em rotas de baixo volume.
     "BUDGET_HEARTBEAT_SAMPLES": 1000,
     "BUDGETS": {
         "storefront_catalog": {

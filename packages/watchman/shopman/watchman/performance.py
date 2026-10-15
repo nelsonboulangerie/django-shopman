@@ -48,7 +48,7 @@ class _BudgetState:
     recoveries: int = 0
     alert_interval: int = 1
     next_alert: int = 0
-    next_heartbeat: int = 1000
+    next_heartbeat: int = 1
     incident_open: bool = False
 
 
@@ -57,9 +57,7 @@ class BudgetRecorder:
 
     def __init__(self, budgets: tuple[RouteBudget, ...] = ()) -> None:
         self._budgets = {(budget.method, budget.route): budget for budget in budgets}
-        self._states = {
-            budget.name: _BudgetState(next_heartbeat=budget.heartbeat_samples) for budget in budgets
-        }
+        self._states = {budget.name: _BudgetState() for budget in budgets}
 
     @classmethod
     def from_settings(cls) -> BudgetRecorder:
