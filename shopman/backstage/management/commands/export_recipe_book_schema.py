@@ -23,8 +23,8 @@ from shopman.backstage.contracts import render_contract_module, run_contract_exp
 from shopman.backstage.projections.recipe_book import (
     CaptureItemProjection,
     CriterionAverageProjection,
-    ExternalReferenceProjection,
     ExecutionSheetProjection,
+    ExternalReferenceProjection,
     FormulaItemProjection,
     FormulaLensProjection,
     FormulaMetricProjection,
