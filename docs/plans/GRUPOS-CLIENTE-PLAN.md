@@ -2,8 +2,46 @@
 
 > Frente §7.1 / onda 5 (parte CORE) do `docs/plans/CADASTRO-TURBO-INVENTARIO.md`.
 > Branch `claude/grupos-core`, base `origin/main` `ad256f041`.
-> As decisões do dono de 14/10/2026 estão registradas em
-> `docs/plans/COORDENACAO-GO-LIVE.md` §7.1 e NÃO se reabrem.
+> As decisões do dono de 14/10/2026 estão em `docs/plans/COORDENACAO-GO-LIVE.md` §7.1
+> e NÃO se reabrem.
+
+## 0. Reconciliação com o que já está no main (#1803 / #1804 / #1805)
+
+Antes de escrever Core, leitura do que o trilho turbo do Gestor já entregou:
+
+`shopman/backstage/services/customer_groups.py`, `shopman/backstage/api/customer_groups.py`,
+`shopman/backstage/projections/customer_groups.py`, `shopman/shop/admin/price_tier.py`,
+`shopman/shop/services/customer_groups.py`, `surfaces/orders-nuxt/app/pages/customers/groups.vue`
+e `CustomerGroupFormPanel.vue`, mais `shopman/shop/management/commands/setup_commercial_groups.py`.
+
+**(a) O N:N no Core já existia? NÃO.** Confirmado no main `ad256f041`:
+`Customer.price_tier` era FK ÚNICA (`models/customer.py:84`, `on_delete=PROTECT`) e o
+`PriceTier` não tinha coleção de clientes (só o reverso `customers` da própria FK); as
+migrações do guestman paravam na `0005`. Faltava o vínculo N:N. É o que esta frente entrega.
+
+**(b) Como o framework representava “grupo”.** O grupo é `guestman.PriceTier`. O desconto é
+uma `Promotion` comum com `ref=grupo-<tier.ref>` e `customer_segments=[tier.ref]`, derivada por
+`shop/services/customer_groups.py::sync_group_discount`; a lista de preço é `PriceTier.listing_ref`
+(cascata de `shop/handlers/pricing.py`); o resto (`discount_kind`, `rounding`, `savings_message`)
+vive em `PriceTier.metadata`. O #1804 é o CRUD do grupo no Gestor: `backstage/services/customer_groups.py`
+→ `backstage/api/customer_groups.py` (permissão `shop.manage_customers`) → `backstage/projections/customer_groups.py`
+→ Nuxt. O vínculo cliente↔grupo no turbo era UM só: `priceTierRef` em `backstage/services/customers.py`.
+
+**O que esta frente faz com isso.** ESTENDE o que o #1804 trouxe, sem caminho paralelo:
+
+| Peça | Situação |
+|---|---|
+| Entidade do grupo | **reusa** `guestman.PriceTier` (nada de grupo novo) |
+| Desconto do grupo | **reusa** a `Promotion` `grupo-<ref>` e o `sync_group_discount` |
+| Lista de preço | **reusa** `PriceTier.listing_ref` (agora escolhida pelo melhor grupo) |
+| CRUD do grupo no Gestor | **reusa** `backstage/services/customer_groups.py` + API + projection |
+| Core novo MEDIDO | `Customer.price_tiers` (M2M, migração `0006`) e `PriceTierAdvantage` |
+| Motor | `shop/services/promotions.py` e `shop/modifiers.py` passam a resolver MELHOR por tipo |
+| Vínculo no Gestor | `backstage/services/customers.py` grava o M2M (o form segue com UM grupo) |
+| Fora desta frente (onda 5b, UI) | expor N:N e `PriceTierAdvantage` na API/projection/Nuxt |
+
+Ou seja: a API e a tela do grupo continuam as mesmas; o que muda é o modelo por baixo e o
+motor. A exposição de vários grupos e das vantagens tipadas na superfície Nuxt é a onda 5b.
 
 ## 1. O que o dono decidiu (14/10/2026)
 
@@ -98,11 +136,12 @@ para `primary_price_tier` / `price_tiers`: `guestman` (services, api, admin, mer
 
 ## 5. Testes
 
-- Guestman: N:N (cliente em dois grupos), default, migração de dados.
+- Guestman: N:N (cliente em dois grupos), default, primário, lista de preço, limpar grupos.
 - Promoções: cliente em Equipe (−30%) **e** Aliança (−15%) paga **só** os −30% (não soma);
-  o vencedor é o melhor; prioridade no empate.
+  o arredondamento vem do grupo VENCEDOR, não do primário.
 - Vantagens tipadas: melhor por tipo entre grupos (prioridade), sem acumular.
-- Contagem de consultas do reprice não cresce com o número de itens.
+- Suítes verdes: guestman 511, shop 11.802 (as 10 falhas iniciais eram classificação nova
+  em `config/synthetic_purge.py` e logger do except — corrigidas), storefront 2.705.
 
 ## 6. Ordem dos commits
 

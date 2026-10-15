@@ -162,6 +162,8 @@ POLICY: dict[str, Rule] = {
     "payman.PaymentTransaction": _purge(_ORDERS),
     # guestman
     "guestman.Customer": _purge(_CUSTOMER),
+    # Tabela do M2M Customer.price_tiers (N:N): elo do cliente, some com ele.
+    "guestman.Customer_price_tiers": _purge(_CUSTOMER),
     "guestman.CustomerAddress": _purge(_CUSTOMER),
     "guestman.ContactPoint": _purge(_CUSTOMER),
     "guestman.ExternalIdentity": _purge(_CUSTOMER),
@@ -169,6 +171,7 @@ POLICY: dict[str, Rule] = {
     "guestman.ProcessedEvent": _purge(_CUSTOMER),
     "guestman.TaggedCustomer": _purge(_CUSTOMER),
     "guestman.PriceTier": _keep(_CONFIG),
+    "guestman.PriceTierAdvantage": _keep(_CONFIG),
     "guestman.CustomerTag": _keep(_CONFIG),
     "customer_consent.CommunicationConsent": _purge(_CUSTOMER),
     "customer_consent.CommunicationConsentEvent": _purge(_CUSTOMER),

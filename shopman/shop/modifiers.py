@@ -618,6 +618,7 @@ class CustomerPricingModifier:
         try:
             return list(tiers.all())
         except Exception:  # silêncio-deliberado: sem os grupos, o resto do contexto segue
+            logger.debug("pricing.customer: tiers lookup failed", exc_info=True)
             return []
 
     @staticmethod
