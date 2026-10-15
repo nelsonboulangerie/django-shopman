@@ -2,7 +2,7 @@
 // "Ler etiqueta do lote" (v3 celular a, pino 3; plano §13 item 7): a câmera lê o QR
 // da etiqueta de preparo e abre o Finalizar daquele lote. Sem câmera (ou sem
 // permissão), o mesmo lugar aceita o código digitado.
-import { useCodeScanner } from "~/composables/useCodeScanner";
+import { useZxingScanner } from "~/composables/useZxingScanner";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{
@@ -11,7 +11,7 @@ const emit = defineEmits<{
 }>();
 
 const typed = ref("");
-const scanner = useCodeScanner((text) => emit("code", text));
+const scanner = useZxingScanner((text) => emit("code", text));
 
 watch(
   () => props.open,

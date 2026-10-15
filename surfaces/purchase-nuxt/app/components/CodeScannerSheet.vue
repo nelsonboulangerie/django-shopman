@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // A câmera do receber em folha de baixo (NuxtDrawer): "Ler EAN", "Bipar cada volume" e "Ler da
-// embalagem" usam esta mesma folha (useCodeScanner). Em modo contínuo ela fica
+// embalagem" usam esta mesma folha (useZxingScanner). Em modo contínuo ela fica
 // aberta e conta as leituras; nos outros, fecha na primeira.
-import { useCodeScanner } from "~/composables/useCodeScanner";
+import { useZxingScanner } from "~/composables/useZxingScanner";
 
 const props = withDefaults(
   defineProps<{
@@ -21,7 +21,7 @@ const emit = defineEmits<{
   code: [string];
 }>();
 
-const scanner = useCodeScanner((text) => emit("code", text), { continuous: props.continuous });
+const scanner = useZxingScanner((text) => emit("code", text), { continuous: props.continuous });
 
 watch(
   () => props.open,

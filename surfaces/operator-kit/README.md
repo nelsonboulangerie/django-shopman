@@ -121,6 +121,8 @@ O layer contribui, via auto-import do Nuxt:
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
 | `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por dispositivo (Screen Orientation API): item "Travar giro" no `OperatorRail` só em dispositivo de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
+| `app/composables/useCodeScanner.ts` | `useCodeScanner` | leitor de TECLADO (cunha HID): a rajada com o prefixo vira código e a digitação humana volta ao campo; a regra pura é `presentation/codeScan.ts` (ver "Leitor de código") |
+| `app/composables/useBarcodeScanner.ts` | `useBarcodeScanner` | leitor de CÂMERA nativo (`BarcodeDetector`); onde o detector não existe, a tela segue no gesto manual (ver "Leitor de código") |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
@@ -1612,6 +1614,47 @@ as setas (`scrollIntoView({ block: "nearest" })` em `PosCartPanel`/`PosCustomerS
 O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
+
+## Leitor de código: teclado, câmera nativa e @zxing
+
+São TRÊS primitivas de leitura, com papéis diferentes, e nenhuma faz o trabalho da outra.
+Duas vivem aqui no kit; a terceira, por enquanto, vive nos apps.
+
+- **`useCodeScanner`, leitor de TECLADO (cunha HID), no kit.** O leitor de hardware "digita"
+  o código depressa e fecha com Enter. O composable escuta na fase de captura da janela,
+  reconhece a rajada pelo PREFIXO e pela cadência de máquina, e não deixa o código cair no
+  campo com foco; o que era digitação humana volta para o campo, tecla por tecla. A regra
+  pura (o que é rajada de leitor, o que é dedo) vive em `app/presentation/codeScan.ts`,
+  testada em `tests/codeScan.test.ts`. O formato (prefixo, padrão e teto) é parâmetro de
+  quem chama. É a primitiva canônica do kit, e NÃO há duplicata dela em app nenhum.
+  Consumidor: a conferência de volumes do despacho, em
+  `orders-nuxt/app/composables/useVolumeCheck.ts`.
+- **`useBarcodeScanner`, leitor de CÂMERA nativo, no kit.** Usa a `BarcodeDetector` do
+  navegador (Chrome/Android). Onde ela não existe, o composable diz que a câmera não lê e a
+  tela segue pelo gesto manual. Consumidor: o cadastro de produto do Gestor, em
+  `orders-nuxt/app/components/CatalogProductCreatePanel.vue`.
+- **`useZxingScanner`, leitor de CÂMERA `@zxing`, nos apps.** Existe porque a
+  `BarcodeDetector` não cobre iOS/Safari, e é um composable local de `purchase-nuxt` e
+  `production-nuxt`, ainda duplicado entre os dois. O nome diz o motor (`@zxing`) para não
+  colidir com a primitiva de teclado do kit. Detalhe e condição de migração na seção abaixo.
+
+A escolha é do ato, não do dispositivo: a cunha lê crachá, QR de conferência e etiqueta
+impressa em segundos; a câmera lê o que não passou por um leitor de hardware.
+
+### A câmera `@zxing` dos apps (decisão do dono, 14/10/2026)
+
+`purchase-nuxt` e `production-nuxt` mantêm hoje, cada um, um composable local
+`useZxingScanner`, leitor de CÂMERA por `@zxing/browser` (funciona em iOS/Safari, onde a
+`BarcodeDetector` não existe): `purchase-nuxt/app/composables/useZxingScanner.ts`, usado por
+`CodeScannerSheet.vue` no recebimento, e
+`production-nuxt/app/composables/useZxingScanner.ts`, usado por `LotLabelScanner.vue` na
+etiqueta de lote.
+
+É a mesma câmera `@zxing` duplicada em dois apps. Decisão do dono (14/10/2026): a duplicata
+FICA, documentada, enquanto a primitiva nativa não cobrir iOS/Safari. Quando
+`useBarcodeScanner` cobrir o parque, incluindo iOS/Safari, os dois `useZxingScanner` migram
+para cá e as cópias morrem. Até lá, comportamento inalterado; a primitiva de teclado não é
+substituta deles, e nenhum leitor de câmera foi movido.
 
 ## Clique nunca inerte (`usePendingAction`)
 
