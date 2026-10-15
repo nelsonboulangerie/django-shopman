@@ -154,6 +154,70 @@ def test_best_price_list_uses_the_priority_order():
     assert best.tier_ref == "alianca-francesa"
 
 
+def test_resolving_the_groups_is_one_prefetch_not_one_per_group():
+    """O custo de resolver os grupos NÃO cresce com o número de grupos.
+
+    Antes (FK única) era 1 consulta (`select_related("price_tier")`). Agora são 2:
+    a linha do cliente + o prefetch do M2M, sempre 2, com um ou com dez grupos.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from shopman.shop.modifiers import CustomerPricingModifier
+
+    _seed()
+    session = sessions.create_session("web")
+    sessions.modify_session(
+        session_key=session.session_key,
+        channel_ref="web",
+        ops=[
+            {
+                "op": "set_data",
+                "path": "customer",
+                "value": {"ref": "CUST-NN", "price_tiers": ["equipe", "alianca-francesa"]},
+            },
+        ],
+    )
+    session = cart_service.get_open_session(session_key=session.session_key, channel_ref="web")
+    ctx: dict = {}
+    with CaptureQueriesContext(connection) as queries:
+        CustomerPricingModifier().apply(channel=None, session=session, ctx=ctx)
+
+    assert sorted(ctx["price_tiers"]) == ["alianca-francesa", "equipe"]
+    assert len(queries) == 2
+
+
 def test_advantage_kind_without_rows_is_none():
     _seed()
     assert promotions.best_group_advantage(["equipe"], "exclusive_collections") is None
+
+
+def test_different_types_coexist_without_summing():
+    _seed()
+    refs = ["equipe", "alianca-francesa"]
+
+    # Tipos diferentes têm donos diferentes: o desconto vem da Equipe e a lista de
+    # preço, da Aliança. Um tipo não anula nem soma o outro.
+    discount = promotions.best_group_advantage(refs, "discount")
+    price_list = promotions.best_group_advantage(refs, "price_list")
+    assert discount.tier_ref == "equipe"
+    assert discount.value.value == 30
+    assert price_list.tier_ref == "alianca-francesa"
+    assert price_list.value == "atacado"
+
+    # E o que o cliente paga é UM desconto: os −30% da Equipe.
+    session = _reprice("CUST-NN")
+    assert session.items[0]["unit_price_q"] == 700
+
+
+def test_same_typed_advantage_does_not_accumulate():
+    _seed()
+    # Dois grupos com frete grátis: vale a MAIOR prioridade (Equipe, 5), não as duas.
+    best = promotions.best_group_advantage(["equipe", "alianca-francesa"], "free_shipping")
+
+    assert best is not None
+    assert best.tier_ref == "equipe"
+    assert best.value.config["min_order_q"] == 5000
+    assert PriceTierAdvantage.objects.filter(
+        tier__ref__in=["equipe", "alianca-francesa"], kind="free_shipping", is_active=True
+    ).count() == 2  # as duas existem; só uma é a vencedora
