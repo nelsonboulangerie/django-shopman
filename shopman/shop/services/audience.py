@@ -778,7 +778,7 @@ def _by_price_tiers(tier_refs) -> list[Recipient]:
         from shopman.guestman.models import Customer
 
         customers = (
-            Customer.objects.filter(price_tier__ref__in=cleaned, is_active=True)
+            Customer.objects.filter(price_tiers__ref__in=cleaned, is_active=True).distinct()
             .exclude(phone="")
         )
     except Exception:

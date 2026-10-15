@@ -1301,7 +1301,6 @@ class Command(BaseCommand):
                     "first_name": "Teste",
                     "last_name": f"Marketing {index:02d}",
                     "customer_type": "individual",
-                    "price_tier": tier,
                     "phone": phone,
                     # Cohort sintética explicitamente adulta: a resolução real
                     # de Marketing exige DOB canônico >= 18 anos e deve poder
@@ -1310,6 +1309,8 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
+            if tier is not None:
+                customer.price_tiers.set([tier])
             ContactPoint.objects.update_or_create(
                 customer=customer,
                 type="whatsapp",
@@ -6284,11 +6285,12 @@ class Command(BaseCommand):
                     "first_name": first,
                     "last_name": last,
                     "customer_type": ctype,
-                    "price_tier": price_tier,
                     "phone": phone,
                     **extras,
                 },
             )
+            if price_tier is not None:
+                c.price_tiers.set([price_tier])
             ContactPoint.objects.update_or_create(
                 customer=c,
                 type="whatsapp",

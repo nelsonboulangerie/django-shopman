@@ -2936,21 +2936,21 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     if persisted_customer:
         ops.append({"op": "set_data", "path": "customer.ref", "value": persisted_customer["ref"]})
         ops.append({"op": "set_data", "path": "customer_ref", "value": persisted_customer["ref"]})
-        if persisted_customer.get("price_tier"):
-            ops.append({
-                "op": "set_data", "path": "customer.price_tier",
-                "value": persisted_customer["price_tier"],
-            })
+        persisted_refs = persisted_customer.get("price_tiers") or (
+            [persisted_customer["price_tier"]] if persisted_customer.get("price_tier") else []
+        )
+        if persisted_refs:
+            ops.append({"op": "set_data", "path": "customer.price_tiers", "value": persisted_refs})
+            ops.append({"op": "set_data", "path": "customer.price_tier", "value": persisted_refs[0]})
     else:
         customer = resolve_customer(customer_phone)
         if customer:
             ops.append({"op": "set_data", "path": "customer.ref", "value": customer.ref})
             ops.append({"op": "set_data", "path": "customer_ref", "value": customer.ref})
-            if customer.price_tier_id:
-                ops.append({
-                    "op": "set_data", "path": "customer.price_tier",
-                    "value": customer.price_tier.ref,
-                })
+            tier_refs = [tier.ref for tier in customer.price_tiers.all()]
+            if tier_refs:
+                ops.append({"op": "set_data", "path": "customer.price_tiers", "value": tier_refs})
+                ops.append({"op": "set_data", "path": "customer.price_tier", "value": tier_refs[0]})
 
     from shopman.shop.services.pos_sales_mode import sales_mode
 
@@ -5421,7 +5421,8 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             "phone": customer.phone,
             "tax_id": customer.document,
             "email": customer.email,
-            "price_tier": customer.price_tier.ref if customer.price_tier_id else "",
+            "price_tier": customer.primary_price_tier.ref if customer.primary_price_tier_id else "",
+            "price_tiers": [tier.ref for tier in customer.price_tiers.all()],
             # "criei agora" ≠ "achei": a tela distingue o cadastro recém-criado.
             "created": created,
         }

@@ -47,7 +47,7 @@ def customer(db, tier_regular):
         last_name="Doe",
         email="john@example.com",
         phone="+5543999999999",
-        price_tier=tier_regular,
+        price_tiers=tier_regular,
     )
 
 
@@ -59,7 +59,7 @@ def customer_vip(db, tier_vip):
         last_name="VIP",
         email="jane@example.com",
         phone="+5543888888888",
-        price_tier=tier_vip,
+        price_tiers=tier_vip,
     )
 
 
@@ -70,7 +70,7 @@ def customer_inactive(db, tier_regular):
         first_name="Gone",
         last_name="User",
         phone="+5543777777777",
-        price_tier=tier_regular,
+        price_tiers=tier_regular,
         is_active=False,
     )
 

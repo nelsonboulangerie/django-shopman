@@ -637,7 +637,7 @@ def _status_label(status: str) -> str:
 
 def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
     Customer = _customer_model()
-    customer = Customer.objects.select_related("price_tier").prefetch_related("tags", "addresses").filter(ref=ref).first()
+    customer = Customer.objects.prefetch_related("price_tiers", "tags", "addresses").filter(ref=ref).first()
     if customer is None:
         return None
 
@@ -765,8 +765,8 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
         document=customer.document or "",
         birthday=customer.birthday.isoformat() if customer.birthday else "",
         phone=customer.phone or "",
-        price_tier_ref=customer.price_tier.ref if customer.price_tier_id else "",
-        price_tier_name=customer.price_tier.name if customer.price_tier_id else "",
+        price_tier_ref=customer.primary_price_tier.ref if customer.primary_price_tier_id else "",
+        price_tier_name=customer.primary_price_tier.name if customer.primary_price_tier_id else "",
         tags=tuple(customer.tags.names()),
         house_account=bool(metadata.get("house_account")),
         house_account_limit=limit,

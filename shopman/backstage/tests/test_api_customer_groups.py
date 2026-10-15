@@ -186,7 +186,7 @@ def test_default_is_unique_and_group_with_customers_is_counted(client, manager):
     second = _post(client, _payload(ref="vip", name="VIP", isDefault=True)).json()["group"]
     assert PriceTier.objects.get(ref=first["ref"]).is_default is False
     tier = PriceTier.objects.get(ref=second["ref"])
-    Customer.objects.create(ref="CLI-VIP", first_name="Ana", price_tier=tier)
+    Customer.objects.create(ref="CLI-VIP", first_name="Ana", price_tiers=tier)
 
     groups = client.get(URL).json()["groups"]
     vip = next(item for item in groups["items"] if item["ref"] == "vip")

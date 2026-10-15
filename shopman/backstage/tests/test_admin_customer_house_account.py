@@ -20,7 +20,7 @@ def _form_data(customer: Customer, **over) -> dict:
         "document": customer.document or "",
         "email": customer.email or "",
         "phone": customer.phone or "",
-        "price_tier": customer.price_tier_id or "",
+        "price_tier": customer.primary_price_tier_id or "",
         "tags": "",
         "notes": customer.notes or "",
         "is_active": "on" if customer.is_active else "",

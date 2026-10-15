@@ -77,9 +77,6 @@ CUSTOMER_FIELDS = (
     "phone",
     "is_active",
     "metadata",
-    "price_tier__ref",
-    "price_tier__name",
-    "price_tier__listing_ref",
     "created_at",
     "updated_at",
 )
@@ -758,6 +755,16 @@ def _postgres_repeatable_read_if_safe(*, outermost: bool) -> None:
 def _write_export(writer: _ObjectWriter, customer: Any) -> None:
     customer_model = apps.get_model("guestman.Customer")
     customer_row = customer_model.objects.filter(pk=customer.pk).values(*CUSTOMER_FIELDS).get()
+    # Grupos comerciais: o cliente pode ter MAIS DE UM (N:N). As chaves planas seguem
+    # com o grupo PRIMÁRIO para o contrato da exportação; a lista completa vai junto.
+    tiers = list(customer.price_tiers.order_by("-priority", "name"))
+    customer_row["price_tier__ref"] = tiers[0].ref if tiers else ""
+    customer_row["price_tier__name"] = tiers[0].name if tiers else ""
+    customer_row["price_tier__listing_ref"] = tiers[0].listing_ref if tiers else ""
+    customer_row["price_tiers"] = [
+        {"ref": tier.ref, "name": tier.name, "listing_ref": tier.listing_ref}
+        for tier in tiers
+    ]
     customer_ref = customer_row["ref"]
     customer_uuid = customer_row["uuid"]
     phone = customer_row["phone"] or ""

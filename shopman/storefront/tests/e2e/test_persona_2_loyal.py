@@ -57,7 +57,7 @@ def _loyal_customer(price_tier_ref="fieis"):
         last_name="Fiel",
         phone=J.DEFAULT_PHONE,
         email="maria@example.com",
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 

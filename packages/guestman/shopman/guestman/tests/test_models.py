@@ -62,14 +62,14 @@ class TestCustomer:
             ref="TEST",
             first_name="First",
             last_name="Last",
-            price_tier=tier_regular,
+            price_tiers=tier_regular,
         )
         assert cust.name == "First Last"
 
         cust_no_last = Customer.objects.create(
             ref="TEST2",
             first_name="OnlyFirst",
-            price_tier=tier_regular,
+            price_tiers=tier_regular,
         )
         assert cust_no_last.name == "OnlyFirst"
 
@@ -83,7 +83,7 @@ class TestCustomer:
             ref="NEW-CUST",
             first_name="New",
         )
-        assert cust.price_tier == tier_regular
+        assert cust.primary_price_tier == tier_regular
 
     def test_default_address_property(self, customer, customer_address):
         """Test default_address property."""

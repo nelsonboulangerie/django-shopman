@@ -566,13 +566,13 @@ class CustomerPricingModifier:
     def apply(self, *, channel: Any, session: Any, ctx: dict) -> None:
         if ctx.get("customer") is not None:
             self._publish_profile(ctx, ctx["customer"])
-            self._publish_tier(ctx, getattr(ctx["customer"], "price_tier", None), "")
+            self._publish_groups(ctx, self._customer_tiers(ctx["customer"]))
             return
 
         session_customer = (session.data or {}).get("customer") or {}
         customer_ref = str(session_customer.get("ref") or "").strip()
-        session_tier_ref = str(session_customer.get("price_tier") or "").strip()
-        if not customer_ref and not session_tier_ref:
+        session_refs = self._session_group_refs(session_customer)
+        if not customer_ref and not session_refs:
             return
 
         customer = None
@@ -581,11 +581,12 @@ class CustomerPricingModifier:
                 from shopman.guestman.models import Customer
 
                 customer = (
-                    Customer.objects.select_related("price_tier", "insight")
+                    Customer.objects.prefetch_related("price_tiers")
+                    .select_related("insight")
                     .filter(ref=customer_ref)
                     .first()
                 )
-            except Exception:  # silêncio-deliberado: sem cadastro a faixa sozinha ainda resolve o preço
+            except Exception:  # silêncio-deliberado: sem cadastro os grupos da sessão ainda resolvem o preço
                 logger.debug(
                     "pricing.customer: customer lookup failed for ref=%s",
                     customer_ref,
@@ -593,19 +594,9 @@ class CustomerPricingModifier:
                 )
         if customer is not None:
             ctx["customer"] = customer
-
-        tier = getattr(customer, "price_tier", None) if customer is not None else None
-        tier_ref = session_tier_ref or getattr(tier, "ref", "")
-        if tier_ref and (tier is None or getattr(tier, "ref", "") != tier_ref):
-            tier = self._load_tier(tier_ref)
-            if customer is None and tier is not None:
-                # O PDV pode vincular só a faixa (sem ``ref`` de cliente): o preço
-                # da faixa ainda vale, e o backend só precisa de ``price_tier``.
-                from types import SimpleNamespace
-
-                ctx["customer"] = SimpleNamespace(price_tier=tier)
-        if tier is not None:
-            self._publish_tier(ctx, tier, tier_ref or getattr(tier, "ref", ""))
+            self._publish_groups(ctx, self._customer_tiers(customer), fallback_refs=session_refs)
+        elif session_refs:
+            self._publish_groups(ctx, self._load_tiers(session_refs), fallback_refs=session_refs)
         if customer is not None:
             self._publish_profile(ctx, customer)
         elif "customer_segment" not in ctx:
@@ -613,25 +604,75 @@ class CustomerPricingModifier:
             ctx.setdefault("is_birthday", False)
 
     @staticmethod
-    def _load_tier(ref: str):
+    def _session_group_refs(session_customer: dict) -> list[str]:
+        from shopman.shop.services import promotions
+
+        refs = session_customer.get("price_tiers") or session_customer.get("price_tier")
+        return promotions._tier_refs(refs)
+
+    @staticmethod
+    def _customer_tiers(customer: Any) -> list[Any]:
+        tiers = getattr(customer, "price_tiers", None)
+        if tiers is None:
+            return []
+        try:
+            return list(tiers.all())
+        except Exception:  # silêncio-deliberado: sem os grupos, o resto do contexto segue
+            logger.debug("pricing.customer: tiers lookup failed", exc_info=True)
+            return []
+
+    @staticmethod
+    def _load_tiers(refs: list[str]) -> list[Any]:
         try:
             from shopman.guestman.models import PriceTier
 
-            return PriceTier.objects.filter(ref=ref).first()
-        except Exception:  # silêncio-deliberado: faixa ilegível não derruba a precificação
-            logger.debug("pricing.customer: tier lookup failed for ref=%s", ref, exc_info=True)
-            return None
+            by_ref = {tier.ref: tier for tier in PriceTier.objects.filter(ref__in=refs)}
+        except Exception:  # silêncio-deliberado: grupo ilegível não derruba a precificação
+            logger.debug("pricing.customer: tier lookup failed for refs=%s", refs, exc_info=True)
+            return []
+        return [by_ref[ref] for ref in refs if ref in by_ref]
 
-    @staticmethod
-    def _publish_tier(ctx: dict, tier: Any, fallback_ref: str) -> None:
-        if tier is None:
-            if fallback_ref:
-                ctx.setdefault("price_tier", fallback_ref)
+    @classmethod
+    def _publish_groups(cls, ctx: dict, tiers: list[Any], fallback_refs=()) -> None:
+        """Publica a LISTA de grupos do cliente e o mapa de metadados de cada um.
+
+        O motor de desconto usa a lista inteira (melhor por tipo, sem acumular); o
+        ``price_tier``/``price_tier_name`` seguem como o grupo PRIMÁRIO, para quem lê
+        "o grupo do cliente". Nada é sobrescrito quando o chamador já publicou.
+        """
+        refs = [getattr(tier, "ref", "") for tier in tiers if getattr(tier, "ref", "")]
+        if not refs:
+            refs = list(fallback_refs)
+        if not refs:
             return
-        ctx.setdefault("price_tier", getattr(tier, "ref", "") or fallback_ref)
-        ctx.setdefault("price_tier_name", getattr(tier, "name", "") or "")
-        metadata = getattr(tier, "metadata", None)
-        ctx.setdefault("price_tier_metadata", metadata if isinstance(metadata, dict) else {})
+        ctx.setdefault("price_tiers", refs)
+        ctx.setdefault("price_tier", refs[0])
+        if not tiers:
+            return
+        metadata_by_ref = {}
+        names_by_ref = {}
+        for tier in tiers:
+            ref = getattr(tier, "ref", "")
+            if not ref:
+                continue
+            names_by_ref[ref] = getattr(tier, "name", "") or ""
+            metadata = getattr(tier, "metadata", None)
+            metadata_by_ref[ref] = metadata if isinstance(metadata, dict) else {}
+        primary = tiers[0]
+        ctx.setdefault("price_tier_name", getattr(primary, "name", "") or "")
+        ctx.setdefault("price_tier_metadata", metadata_by_ref.get(getattr(primary, "ref", ""), {}))
+        ctx.setdefault("price_tier_metadata_by_ref", metadata_by_ref)
+        ctx.setdefault("price_tier_names_by_ref", names_by_ref)
+        # O PDV pode vincular só os grupos (sem ``ref`` de cliente): o backend precisa
+        # do melhor ``listing_ref`` dos grupos para a cascata de preço.
+        if ctx.get("customer") is None:
+            from types import SimpleNamespace
+
+            best_listing = next(
+                (getattr(tier, "listing_ref", "") for tier in tiers if getattr(tier, "listing_ref", "")),
+                "",
+            )
+            ctx["customer"] = SimpleNamespace(listing_ref=best_listing)
 
     @staticmethod
     def _publish_profile(ctx: dict, customer: Any) -> None:
@@ -779,7 +820,7 @@ class DiscountModifier:
         # for ``customer_segments``-gated and ``birthday_only`` promotions/coupons.
         # Resolved from the session's linked customer so it survives EVERY reprice
         # (each cart mutation re-runs this modifier); a value the caller already
-        # put in ``ctx`` still wins. The POS writes ``customer.price_tier`` straight to
+        # put in ``ctx`` still wins. The POS writes ``customer.primary_price_tier`` straight to
         # the session; the storefront links the customer (ref + tier) when a
         # segment-gated coupon is applied, and the RFM segment resolves from the
         # customer's ``insight``.
@@ -861,17 +902,30 @@ class DiscountModifier:
 
         # O desconto do PRÓPRIO grupo do cliente (a promoção grupo-<ref>) é o
         # único que arredonda o preço final, carrega o tipo para o B.I. e produz a
-        # mensagem de economia. Contexto resolvido uma vez, não por linha.
+        # mensagem de economia. O cliente pode ter MAIS DE UM grupo: o mapa por ref
+        # diz qual metadado vale para o vencedor de cada linha.
         from shopman.shop.services.promotions import group_discount_ref
 
-        tier_ref = str(ctx.get("price_tier") or "")
-        tier_metadata = ctx.get("price_tier_metadata") or {}
-        group_ref = group_discount_ref(tier_ref) if tier_ref else ""
-        group_kind = str(tier_metadata.get("discount_kind") or "").strip()
-        try:
-            rounding_q = int(tier_metadata.get("rounding", 50) or 0)
-        except (TypeError, ValueError):
-            rounding_q = 50
+        tier_refs = list(ctx.get("price_tiers") or [])
+        if not tier_refs and ctx.get("price_tier"):
+            tier_refs = [str(ctx["price_tier"])]
+        group_refs = {group_discount_ref(ref) for ref in tier_refs}
+        metadata_by_ref = dict(ctx.get("price_tier_metadata_by_ref") or {})
+        if not metadata_by_ref and ctx.get("price_tier_metadata") and tier_refs:
+            metadata_by_ref = {tier_refs[0]: ctx["price_tier_metadata"]}
+
+        def _winning_group_meta(promo):
+            """(ref do grupo vencedor, discount_kind, passo do arredondamento)."""
+            for ref in tier_refs:
+                if group_discount_ref(ref) == getattr(promo, "ref", ""):
+                    meta = metadata_by_ref.get(ref) or {}
+                    kind = str(meta.get("discount_kind") or "").strip() or None
+                    try:
+                        step = int(meta.get("rounding", 50) or 0)
+                    except (TypeError, ValueError):
+                        step = 50
+                    return ref, kind, step
+            return "", None, 0
 
         for item in items:
             if _is_non_merchandise_line(item):
@@ -909,14 +963,15 @@ class DiscountModifier:
                     continue
                 discount_q = self._calc_discount(promo, price_q)
                 promo_kind = None
-                if group_ref and getattr(promo, "ref", "") == group_ref:
-                    promo_kind = group_kind or None
-                    if rounding_q > 0:
-                        rounded = _round_to_step_q(max(0, price_q - discount_q), rounding_q)
+                promo_group_ref = ""
+                if getattr(promo, "ref", "") in group_refs:
+                    promo_group_ref, promo_kind, rounding_step = _winning_group_meta(promo)
+                    if rounding_step > 0:
+                        rounded = _round_to_step_q(max(0, price_q - discount_q), rounding_step)
                         discount_q = max(0, price_q - rounded)
                 if discount_q > best_discount_q:
                     best_discount_q = discount_q
-                    best_source = ("promotion", promo.name, promo, promo_kind)
+                    best_source = ("promotion", promo.name, promo, promo_kind, promo_group_ref)
 
             # Evaluate coupon
             if coupon_promo and coupon_promo.type == "percent":
@@ -925,14 +980,14 @@ class DiscountModifier:
                         coupon_discount_q = self._calc_discount(coupon_promo, price_q)
                         if coupon_discount_q >= best_discount_q:
                             best_discount_q = coupon_discount_q
-                            best_source = ("coupon", coupon_code, coupon_promo, None)
+                            best_source = ("coupon", coupon_code, coupon_promo, None, "")
 
             # Evaluate operator manual per-line discount (percent), best wins.
             if manual_allowed:
                 manual_discount_q = self._calc_manual(manual, price_q)
                 if manual_discount_q > best_discount_q:
                     best_discount_q = manual_discount_q
-                    best_source = ("manual", manual.get("reason") or "manual", None, None)
+                    best_source = ("manual", manual.get("reason") or "manual", None, None, "")
 
             # Apply winner — só quando bate o desconto já na linha (best-wins, sem
             # composição). Reconcilia a transparência do desconto substituído
@@ -942,7 +997,7 @@ class DiscountModifier:
                 item["unit_price_q"] = list_q - best_discount_q
                 item["line_total_q"] = monetary_mult(_qty_decimal(item), item["unit_price_q"])
 
-                source_type, source_name, source_promo, source_kind = best_source
+                source_type, source_name, source_promo, source_kind, source_group = best_source
                 # Fonte durável do desconto vencedor da linha: ``meta._disc`` (para o
                 # árbitro flat reconciliar em "maior ganha") + ``discounts_applied``
                 # (abaixo) que vira ``pricing["discount"]``. ``modifiers_applied`` foi
@@ -969,6 +1024,8 @@ class DiscountModifier:
                 }
                 if source_kind:
                     record["discount_kind"] = source_kind
+                if source_group:
+                    record["discount_group"] = source_group
                 discounts_applied.append(record)
                 if source_type == "coupon":
                     total_coupon_discount_q += monetary_mult(qty, best_discount_q)
@@ -983,8 +1040,8 @@ class DiscountModifier:
             coupon_promo,
             coupon_code,
             session_total,
-            group_ref=group_ref,
-            group_kind=group_kind,
+            group_refs=group_refs,
+            group_meta=_winning_group_meta,
         )
         if fixed is not None:
             fixed_value, fixed_source, fixed_promo = fixed
@@ -1000,7 +1057,7 @@ class DiscountModifier:
             ]
             eligible_subtotal = sum(int(item.get("line_total_q", 0)) for item in eligible)
             target_q = min(fixed_value, eligible_subtotal)
-            src_type, src_name, src_kind = fixed_source
+            src_type, src_name, src_kind, src_group = fixed_source
             # O registrado é o desconto REALMENTE aplicado, nunca o nominal: um
             # cupom de R$ 5,00 sobre uma linha de 6 unidades não é representável em
             # centavos por unidade (5,00/6 = 0,8333…), então o rateio entrega o
@@ -1029,6 +1086,8 @@ class DiscountModifier:
                 }
                 if src_kind:
                     order_record["discount_kind"] = src_kind
+                if src_group:
+                    order_record["discount_group"] = src_group
                 discounts_applied.append(order_record)
                 if src_type == "coupon":
                     total_coupon_discount_q += applied_q
@@ -1047,13 +1106,15 @@ class DiscountModifier:
             _record_total_q(d) for d in discounts_applied if d.get("discount_kind")
         )
         if group_savings_q > 0:
-            group_name = str(ctx.get("price_tier_name") or "")
+            winner = next(d for d in discounts_applied if d.get("discount_kind"))
+            group_name = str(winner.get("name") or "")
+            winner_meta = metadata_by_ref.get(str(winner.get("discount_group") or "")) or {}
             discount_block["savings"] = {
                 "amount_q": group_savings_q,
                 "group": group_name,
-                "kind": group_kind,
+                "kind": str(winner.get("discount_kind") or ""),
                 "message": _savings_message(
-                    str(tier_metadata.get("savings_message") or ""),
+                    str(winner_meta.get("savings_message") or ""),
                     amount_q=group_savings_q,
                     group=group_name,
                 ),
@@ -1069,32 +1130,39 @@ class DiscountModifier:
 
     @staticmethod
     def _resolve_customer_ctx(session: Any, ctx: dict) -> None:
-        """Populate ``price_tier``, ``customer_segment`` and ``is_birthday``
+        """Populate ``price_tiers``, ``customer_segment`` and ``is_birthday``
         in ``ctx`` from the session's linked customer, without overriding values
         the caller already supplied.
 
-        ``customer.price_tier`` persisted on the session (POS) is authoritative for the
-        tier. Everything else (segment, birthday, and the tier when only the ref
+        ``customer.price_tiers`` persisted on the session (POS) is authoritative for the
+        groups. Everything else (segment, birthday, and the groups when only the ref
         is on the session) resolves from the ``Customer`` row, so the discount is
         recomputed correctly on every reprice, not just the moment the coupon is
         applied.
         """
         from django.core.exceptions import ObjectDoesNotExist
 
+        from shopman.shop.services import promotions
+
         customer_data = (session.data or {}).get("customer") or {}
 
         # Pertencimento, não valor: o ``CustomerPricingModifier`` (ordem 5) já
         # abasteceu o contexto e uma chave presente (mesmo vazia) dispensa a
         # releitura. Só quem chama o modifier direto (testes) paga a consulta.
-        needs_tier = "price_tier" not in ctx
-        if needs_tier and customer_data.get("price_tier"):
-            ctx["price_tier"] = customer_data["price_tier"]
-            needs_tier = False
+        needs_groups = "price_tiers" not in ctx and "price_tier" not in ctx
+        if needs_groups:
+            session_refs = promotions._tier_refs(
+                customer_data.get("price_tiers") or customer_data.get("price_tier")
+            )
+            if session_refs:
+                ctx["price_tiers"] = session_refs
+                ctx["price_tier"] = session_refs[0]
+                needs_groups = False
 
         needs_segment = "customer_segment" not in ctx
         needs_birthday = "is_birthday" not in ctx
         customer_ref = customer_data.get("ref")
-        if not customer_ref or not (needs_tier or needs_segment or needs_birthday):
+        if not customer_ref or not (needs_groups or needs_segment or needs_birthday):
             return
 
         try:
@@ -1102,7 +1170,7 @@ class DiscountModifier:
 
             customer = (
                 Customer.objects.filter(ref=customer_ref)
-                .select_related("price_tier", "insight")
+                .prefetch_related("price_tiers").select_related("insight")
                 .first()
             )
         except Exception:
@@ -1115,11 +1183,10 @@ class DiscountModifier:
         if customer is None:
             return
 
-        if needs_tier and customer.price_tier_id:
-            ctx["price_tier"] = customer.price_tier.ref
-            ctx.setdefault("price_tier_name", customer.price_tier.name or "")
-            metadata = customer.price_tier.metadata
-            ctx.setdefault("price_tier_metadata", metadata if isinstance(metadata, dict) else {})
+        if needs_groups:
+            tiers = list(customer.price_tiers.all())
+            if tiers:
+                CustomerPricingModifier._publish_groups(ctx, tiers)
 
         if needs_segment:
             try:
@@ -1162,8 +1229,10 @@ class DiscountModifier:
                 return False
         if promo.customer_segments:
             customer_segment = ctx.get("customer_segment", "")
-            price_tier = ctx.get("price_tier", "")
-            if customer_segment not in promo.customer_segments and price_tier not in promo.customer_segments:
+            tier_refs = set(ctx.get("price_tiers") or [])
+            if ctx.get("price_tier"):
+                tier_refs.add(ctx["price_tier"])
+            if customer_segment not in promo.customer_segments and not tier_refs.intersection(promo.customer_segments):
                 return False
         if getattr(promo, "birthday_only", False):
             if not ctx.get("is_birthday"):
@@ -1186,18 +1255,20 @@ class DiscountModifier:
         coupon_code: str | None,
         session_total: int,
         *,
-        group_ref: str = "",
-        group_kind: str = "",
-    ) -> tuple[int, tuple[str, str, str | None], Any] | None:
+        group_refs: set[str] = frozenset(),
+        group_meta=None,
+    ) -> tuple[int, tuple[str, str, str | None, str], Any] | None:
         """Largest applicable FIXED discount, as a single order-level candidate.
 
         Fixed promotions and the fixed coupon compete on value (best wins, no
         stacking of two fixed discounts). min_order_q is gated against the gross
         order subtotal; SKU/collection scope is enforced later when picking the
-        eligible lines. Returns (value_q, source, promo) where source is
-        (type, name, discount_kind), or None.
+        eligible lines. A fixed discount of the customer's own group carries its
+        (discount_kind, group_ref) per the WINNING group, not the primary one.
+        Returns (value_q, source, promo) where source is
+        (type, name, discount_kind, group_ref), or None.
         """
-        best: tuple[int, tuple[str, str, str | None], Any] | None = None
+        best: tuple[int, tuple[str, str, str | None, str], Any] | None = None
         for promo in promotions:
             if promo.type != "fixed":
                 continue
@@ -1205,13 +1276,15 @@ class DiscountModifier:
                 continue
             value = max(0, int(promo.value or 0))
             if value > 0 and (best is None or value > best[0]):
-                kind = group_kind or None if (group_ref and getattr(promo, "ref", "") == group_ref) else None
-                best = (value, ("promotion", promo.name, kind), promo)
+                kind, group_ref = None, ""
+                if getattr(promo, "ref", "") in group_refs and group_meta is not None:
+                    group_ref, kind, _step = group_meta(promo)
+                best = (value, ("promotion", promo.name, kind, group_ref), promo)
         if coupon_promo is not None and coupon_promo.type == "fixed":
             if not (coupon_promo.min_order_q and session_total < coupon_promo.min_order_q):
                 value = max(0, int(coupon_promo.value or 0))
                 if value > 0 and (best is None or value >= best[0]):
-                    best = (value, ("coupon", coupon_code or "", None), coupon_promo)
+                    best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
         return best
 
     @staticmethod

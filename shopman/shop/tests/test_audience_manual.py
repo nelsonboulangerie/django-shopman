@@ -43,7 +43,7 @@ def _customer(
         ref=ref or f"CLI-{phone[-4:]}",
         first_name="Ana",
         phone=phone,
-        price_tier=price_tier,
+        price_tiers=price_tier,
         birthday=birthday,
     )
     if opted_in:

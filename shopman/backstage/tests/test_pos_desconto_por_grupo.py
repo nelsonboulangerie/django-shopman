@@ -100,7 +100,7 @@ def balcao(client):
             "savings_message": "Hoje você economizou {amount} por ser da Aliança Francesa",
         },
     )
-    aluno = Customer.objects.create(ref="ALUNO", first_name="Louise", phone="+5543999990010", price_tier=tier)
+    aluno = Customer.objects.create(ref="ALUNO", first_name="Louise", phone="+5543999990010", price_tiers=tier)
     yield {"client": client, "shift": shift, "aluno": aluno, "tier": tier}
     cache.clear()
 
@@ -329,6 +329,12 @@ def _tier_form(**overrides) -> dict:
         "group_discount_value": "10",
         "group_discount_channels": [str(Channel.objects.get(ref="pdv").pk)],
         "group_rounding": "on",
+        # Formset das vantagens tipadas (inline): sem o management form o Admin
+        # rejeita o POST inteiro, mesmo sem nenhuma vantagem marcada.
+        "advantages-TOTAL_FORMS": "0",
+        "advantages-INITIAL_FORMS": "0",
+        "advantages-MIN_NUM_FORMS": "0",
+        "advantages-MAX_NUM_FORMS": "1000",
         **overrides,
     }
 

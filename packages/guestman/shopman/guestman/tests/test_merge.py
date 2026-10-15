@@ -59,7 +59,7 @@ def source(tier):
         last_name="Souza",
         phone="+5543911111111",
         email="maria@example.com",
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 
@@ -71,7 +71,7 @@ def target(tier):
         last_name="Silva",
         phone="+5543922222222",
         email="maria.silva@example.com",
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 
@@ -1222,7 +1222,7 @@ class TestMergeFillsIdentityGaps:
         """Só um CPF. Sem nome, sem telefone, sem e-mail."""
         return Customer.objects.create(
             ref="GHOST-001", first_name="", last_name="", document="11144477735",
-            price_tier=tier,
+            price_tiers=tier,
         )
 
     def test_documento_do_fantasma_chega_no_sobrevivente(self, fantasma, target, evidence):
@@ -1248,11 +1248,11 @@ class TestMergeFillsIdentityGaps:
         contato que chegou assume o posto de principal (`set_as_primary`).
         """
         sem_email = Customer.objects.create(
-            ref="TGT-SEM-EMAIL", first_name="Maria", last_name="Silva", price_tier=tier,
+            ref="TGT-SEM-EMAIL", first_name="Maria", last_name="Silva", price_tiers=tier,
         )
         fantasma = Customer.objects.create(
             ref="GHOST-002", first_name="", last_name="",
-            email="fantasma@example.com", price_tier=tier,
+            email="fantasma@example.com", price_tiers=tier,
         )
 
         MergeService.merge(fantasma, sem_email, evidence=evidence, actor="pdv")
@@ -1283,11 +1283,11 @@ class TestMergeFillsIdentityGaps:
         de sair do doador ANTES de entrar no sobrevivente, ou os dois o têm por
         um instante e o banco recusa."""
         sem_telefone = Customer.objects.create(
-            ref="TGT-SEM-TEL", first_name="Maria", last_name="Silva", price_tier=tier,
+            ref="TGT-SEM-TEL", first_name="Maria", last_name="Silva", price_tiers=tier,
         )
         fantasma = Customer.objects.create(
             ref="GHOST-003", first_name="", last_name="",
-            phone="+5543933333333", price_tier=tier,
+            phone="+5543933333333", price_tiers=tier,
         )
 
         MergeService.merge(fantasma, sem_telefone, evidence=evidence, actor="pdv")
@@ -1303,7 +1303,7 @@ class TestMergeFillsIdentityGaps:
         unifica, adultera."""
         doador = Customer.objects.create(
             ref="SRC-DOC", first_name="Maria", last_name="Souza",
-            document="52998224725", price_tier=tier,
+            document="52998224725", price_tiers=tier,
         )
         target.document = "11144477735"
         target.save(update_fields=["document"])
@@ -1316,10 +1316,10 @@ class TestMergeFillsIdentityGaps:
     def test_o_nome_anda_inteiro_ou_nao_anda(self, tier, evidence):
         """Emprestar só o sobrenome constrói uma pessoa que não existe."""
         doador = Customer.objects.create(
-            ref="SRC-NOME", first_name="Ana", last_name="Souza", price_tier=tier,
+            ref="SRC-NOME", first_name="Ana", last_name="Souza", price_tiers=tier,
         )
         sem_sobrenome = Customer.objects.create(
-            ref="TGT-NOME", first_name="Ana", last_name="", price_tier=tier,
+            ref="TGT-NOME", first_name="Ana", last_name="", price_tiers=tier,
         )
 
         MergeService.merge(doador, sem_sobrenome, evidence=evidence, actor="pdv")
@@ -1331,7 +1331,7 @@ class TestMergeFillsIdentityGaps:
     def test_fantasma_como_alvo_ganha_o_nome_do_doador(self, tier, fantasma, evidence):
         """A direção inversa (possível pelo Admin): quem fica é o sem rosto."""
         com_nome = Customer.objects.create(
-            ref="SRC-ROSTO", first_name="Ana", last_name="Souza", price_tier=tier,
+            ref="SRC-ROSTO", first_name="Ana", last_name="Souza", price_tiers=tier,
         )
 
         MergeService.merge(com_nome, fantasma, evidence=evidence, actor="admin")

@@ -31,6 +31,7 @@ from shopman.guestman.models import (
     CustomerAddress,
     ExternalIdentity,
     PriceTier,
+    PriceTierAdvantage,
 )
 from shopman.utils import unfold_link
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
@@ -166,8 +167,17 @@ class RFMSegmentFilter(admin.SimpleListFilter):
 # =============================================================================
 
 
+class PriceTierAdvantageInline(BaseTabularInline):
+    """As vantagens tipadas do grupo (frete grátis, coleções e avisos exclusivos)."""
+
+    model = PriceTierAdvantage
+    extra = 0
+    fields = ["kind", "priority", "is_active", "config"]
+
+
 @admin.register(PriceTier)
 class PriceTierAdmin(BaseModelAdmin):
+    inlines = [PriceTierAdvantageInline]
     list_display = [
         "ref",
         "name",
@@ -345,7 +355,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
     list_display = [
         "customer_header",
         "customer_type_badge",
-        "price_tier",
+        "primary_price_tier",
         "tag_list",
         "orders_count",
         "rfm_segment_badge",
@@ -355,7 +365,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
     list_display_links = ["customer_header"]
     list_filter = [
         "customer_type",
-        ("price_tier", ChoicesDropdownFilter),
+        ("price_tiers", ChoicesDropdownFilter),
         "tags",
         "is_active",
         RFMSegmentFilter,
@@ -404,7 +414,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
             },
         ),
         ("Contato", {"fields": ["email", "phone"]}),
-        ("Segmentação", {"fields": ["price_tier", "tags", "house_account", "house_account_limit", "fiscal_cpf_na_nota", "fiscal_email_receipt", "notes"]}),
+        ("Segmentação", {"fields": ["price_tiers", "tags", "house_account", "house_account_limit", "fiscal_cpf_na_nota", "fiscal_email_receipt", "notes"]}),
         (
             "Sistema",
             {
@@ -596,7 +606,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
             "ref", "first_name", "last_name", "customer_type",
             "email", "phone", "price_tier", "is_active",
         ])
-        for customer in queryset.select_related("price_tier"):
+        for customer in queryset.prefetch_related("price_tiers"):
             writer.writerow([
                 customer.ref,
                 customer.first_name,
@@ -604,7 +614,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
                 customer.customer_type,
                 customer.email or "",
                 customer.phone or "",
-                customer.price_tier.ref if customer.price_tier else "",
+                customer.primary_price_tier.ref if customer.primary_price_tier else "",
                 customer.is_active,
             ])
         return response

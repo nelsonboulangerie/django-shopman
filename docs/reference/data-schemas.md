@@ -15,7 +15,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
-| `customer` | `dict` | CheckoutView, POS, API (`set_data`), iFood webhook | CommitService, handlers | Dados do cliente: `{name, phone, notes, ref, price_tier, cpf, address}`. ⚠️ **`phone` preenchido não quer dizer que dá para falar com o cliente.** No pedido do iFood ele é um RELÉ de voz: o 0800 da central mais o `phone_localizer` que quem liga digita para cair na pessoa (`services/ifood_orders._map_customer`). Serve para o operador ligar à mão; não serve para WhatsApp, SMS nem aviso automático. Quem precisa do telefone COMO CONTATO pergunta a `services/notification.customer_contact_phone(order)`, que devolve `""` no relé — o sinal é o `phone_localizer` e, quando a plataforma o omite, a declaração do canal (`notifications.customer_phone = "relay"`). O localizador VENCE: `phone_localizer_expiration` (ISO, do `localizerExpiration` do iFood) diz até quando a central repassa a ligação. A tela de detalhe mostra o relé como "Central 0800… · Código …" e o "Ligar pela central" disca os dois (`tel:<0800>,<código>`); sem WhatsApp, e sem ligação quando o código venceu (`backstage/projections/order_queue._relay_contact`). **Identidade no iFood**, também de `_map_customer`: `ifood_customer_id` (o `customer.id` — identificador do CLIENTE, e a chave de identidade de `shop/services/customer._handle_ifood`; até 19/09/2026 a estratégia usava o id do PEDIDO e criava um `Customer` por compra), `orders_count_on_merchant` (pedidos anteriores desta pessoa NESTA loja pela contagem do iFood; `None` = o iFood não informou, que é diferente de `0` = primeira compra) e `segmentation` (a Super-Segmentação do iFood — ⚠️ **dado confidencial pela documentação deles: não vai para o cliente nem para terceiros**; fica no snapshot para leitura interna) |
+| `customer` | `dict` | CheckoutView, POS, API (`set_data`), iFood webhook | CommitService, handlers | Dados do cliente: `{name, phone, notes, ref, price_tier, price_tiers, cpf, address}`. `price_tiers` é a LISTA de refs dos grupos do cliente (relação N:N, `Customer.price_tiers`); `price_tier` é o grupo PRIMÁRIO (maior `priority`) e sobrevive só como leitura de tela/PDV. O motor de desconto casa `customer_segments` contra QUALQUER ref da lista: vale a melhor vantagem por tipo, sem acumular. ⚠️ **`phone` preenchido não quer dizer que dá para falar com o cliente.** No pedido do iFood ele é um RELÉ de voz: o 0800 da central mais o `phone_localizer` que quem liga digita para cair na pessoa (`services/ifood_orders._map_customer`). Serve para o operador ligar à mão; não serve para WhatsApp, SMS nem aviso automático. Quem precisa do telefone COMO CONTATO pergunta a `services/notification.customer_contact_phone(order)`, que devolve `""` no relé — o sinal é o `phone_localizer` e, quando a plataforma o omite, a declaração do canal (`notifications.customer_phone = "relay"`). O localizador VENCE: `phone_localizer_expiration` (ISO, do `localizerExpiration` do iFood) diz até quando a central repassa a ligação. A tela de detalhe mostra o relé como "Central 0800… · Código …" e o "Ligar pela central" disca os dois (`tel:<0800>,<código>`); sem WhatsApp, e sem ligação quando o código venceu (`backstage/projections/order_queue._relay_contact`). **Identidade no iFood**, também de `_map_customer`: `ifood_customer_id` (o `customer.id` — identificador do CLIENTE, e a chave de identidade de `shop/services/customer._handle_ifood`; até 19/09/2026 a estratégia usava o id do PEDIDO e criava um `Customer` por compra), `orders_count_on_merchant` (pedidos anteriores desta pessoa NESTA loja pela contagem do iFood; `None` = o iFood não informou, que é diferente de `0` = primeira compra) e `segmentation` (a Super-Segmentação do iFood — ⚠️ **dado confidencial pela documentação deles: não vai para o cliente nem para terceiros**; fica no snapshot para leitura interna) |
 | `fulfillment_type` | `string` | CheckoutView, POS, API, iFood webhook | CommitService, MinimumOrderValidator | `"pickup"` ou `"delivery"` |
 | `delivery_address` | `string` | CheckoutView, API, iFood webhook | CommitService, CustomerIdentificationHandler | Endereço formatado (texto livre) |
 | `pos.sales_mode` | `string` | PDV intent/save | PDV projection e `_mark_tab_committed` | `counter` (retirada imediata, sem data/janela) ou `order` (cadastro ativo selecionado + recebimento explícito + data antes dos itens). Draft sem itens pode completar o funil. Registros antigos inferem pelo recebimento/data/janela. Copiado para `Order.data.pos.sales_mode` pelo carimbo POS existente. |
@@ -1704,6 +1704,28 @@ comercial, sem campo novo no Core (decisão do dono, 14/10/2026).
 
 ---
 
+## guestman.PriceTierAdvantage.config
+
+Vantagem TIPADA de um grupo comercial, além do desconto (que vive na `Promotion`
+`grupo-<ref>`) e da lista de preço (que vive em `PriceTier.listing_ref`). Uma linha por
+tipo de vantagem (`UniqueConstraint(tier, kind)`), com prioridade para desempatar entre os
+grupos do MESMO cliente. Cliente em mais de um grupo: vale a melhor por tipo, sem acumular
+(decisão do dono, 14/10/2026).
+
+**Campo**: `PriceTierAdvantage.config` (JSONField, `shopman/guestman/models/advantage.py`).
+
+| `kind` | Chaves de `config` | Lido por | Descrição |
+|--------|--------------------|----------|-----------|
+| `free_shipping` | `min_order_q` (`int`, centavos) | follow-up (frete) | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. |
+| `exclusive_collections` | `collection_refs` (`list[str]`) | follow-up (catálogo) | Coleções do Offerman que só o membro enxerga/comprar. |
+| `exclusive_notifications` | `campaign_refs` (`list[str]`) | follow-up (marketing) | Avisos/campanhas exclusivos do grupo. |
+
+`priority` (`int`) desempata tipos iguais entre grupos do mesmo cliente; `is_active`
+desliga a vantagem sem apagar. O resolvedor canônico é
+`shop/services/promotions.best_group_advantage(tier_refs, kind, ...)`, que trata também
+`discount` (melhor `Promotion` dos grupos) e `price_list` (melhor `listing_ref`).
+
+---
 ## Customer.metadata
 
 Extensao do cadastro de cliente para contexto operacional e demos. Dados que

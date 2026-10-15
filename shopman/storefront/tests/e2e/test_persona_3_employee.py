@@ -46,7 +46,7 @@ def _staff_customer():
     )
     return Customer.objects.create(
         ref="CUST-STAFF-1", first_name="Carlos", last_name="Silva",
-        phone=J.DEFAULT_PHONE, price_tier=tier,
+        phone=J.DEFAULT_PHONE, price_tiers=tier,
     )
 
 

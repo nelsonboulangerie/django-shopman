@@ -224,9 +224,12 @@ def assign_customer(
     existing = (session.data or {}).get("customer") or {}
     merged = dict(existing)
     merged["ref"] = customer.ref
-    if customer.price_tier_id:
-        merged["price_tier"] = customer.price_tier.ref
+    tier_refs = [tier.ref for tier in customer.price_tiers.all()]
+    if tier_refs:
+        merged["price_tiers"] = tier_refs
+        merged["price_tier"] = tier_refs[0]
     else:
+        merged.pop("price_tiers", None)
         merged.pop("price_tier", None)
     if merged == existing:
         return False

@@ -1217,7 +1217,7 @@ class _Pricing:
             try:
                 from shopman.guestman.models import Customer
 
-                self._customer = Customer.objects.select_related("price_tier").filter(ref=customer_ref).first()
+                self._customer = Customer.objects.prefetch_related("price_tiers").filter(ref=customer_ref).first()
             except Exception:
                 logger.warning("order_edit: faixa do cliente indisponível order=%s", self.order.ref, exc_info=True)
 

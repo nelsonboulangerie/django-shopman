@@ -51,7 +51,7 @@ def _seed(*, base_q: int, percent: int, rounding: int = 50) -> None:
         valid_from=now - timedelta(days=1),
         valid_until=now + timedelta(days=1),
     )
-    Customer.objects.create(ref="CUST-EQUIPE", first_name="Ana", price_tier=tier)
+    Customer.objects.create(ref="CUST-EQUIPE", first_name="Ana", price_tiers=tier)
 
 
 def _price_of(*, base_q: int, percent: int, rounding: int = 50) -> tuple[int, dict]:

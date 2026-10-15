@@ -467,15 +467,15 @@ def customer_eligible_for_promotion(customer, promotion) -> bool:
         return False  # alvo exige identidade; visitante anônimo não qualifica
 
     if segments:
-        tier_ref = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
+        tier_refs = {tier.ref for tier in customer.price_tiers.all()}
         try:
             rfm_segment = customer.insight.rfm_segment or ""
         except ObjectDoesNotExist:
-            # Sem insight calculado (OneToOne ausente) o cliente só casa por faixa;
+            # Sem insight calculado (OneToOne ausente) o cliente só casa por grupo;
             # segmento RFM fica vazio. Degrada sem bloquear o cupom.
             logger.debug("coupon_eligibility_insight_missing")
             rfm_segment = ""
-        if tier_ref not in segments and rfm_segment not in segments:
+        if not tier_refs.intersection(segments) and rfm_segment not in segments:
             return False
 
     if birthday_only:
@@ -551,9 +551,8 @@ def validate_and_apply_coupon(
     if customer is not None:
         payload = {
             "ref": getattr(customer, "ref", "") or "",
-            "price_tier": (
-                customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
-            ),
+            "price_tier": customer.primary_price_tier.ref if customer.primary_price_tier_id else "",
+            "price_tiers": [tier.ref for tier in customer.price_tiers.all()],
         }
 
     session = apply_coupon_code(
@@ -597,8 +596,9 @@ def apply_coupon_code(
         customer = {
             "ref": locked_customer.ref,
             "price_tier": (
-                locked_customer.price_tier.ref if locked_customer.price_tier_id else ""
+                locked_customer.primary_price_tier.ref if locked_customer.primary_price_tier_id else ""
             ),
+            "price_tiers": [tier.ref for tier in locked_customer.price_tiers.all()],
         }
 
     session = Session.objects.select_for_update().filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
@@ -613,6 +613,8 @@ def apply_coupon_code(
         merged = dict(data.get("customer") or {})
         if customer.get("ref"):
             merged["ref"] = customer["ref"]
+        if customer.get("price_tiers") is not None:
+            merged["price_tiers"] = list(customer.get("price_tiers") or [])
         if customer.get("price_tier"):
             merged["price_tier"] = customer["price_tier"]
         if merged:

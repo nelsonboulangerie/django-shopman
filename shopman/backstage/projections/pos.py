@@ -1091,7 +1091,7 @@ def _customer_lookup_projection(customer, fallback_phone: str = "") -> POSCustom
     from shopman.shop.projections import customer_context
 
     name = getattr(customer, "name", "") or f"{getattr(customer, 'first_name', '')} {getattr(customer, 'last_name', '')}".strip()
-    tier_ref = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
+    tier_ref = customer.primary_price_tier.ref if getattr(customer, "primary_price_tier_id", None) else ""
     summary = customer_history_summary(customer.ref)
     addresses = customer_context.saved_addresses(customer.ref)
     from shopman.shop.services import house_account
@@ -1123,20 +1123,21 @@ def _customer_lookup_projection(customer, fallback_phone: str = "") -> POSCustom
         ),
         house_account=eligible,
         account_balance_q=house_account.balance_q(customer.ref) if eligible else 0,
-        group_discount_label=_group_discount_label(tier_ref),
+        group_discount_label=_group_discount_label(customer),
     )
 
 
-def _group_discount_label(tier_ref: str) -> str:
-    """O nome do desconto do grupo do cliente no PDV, ou "" (ver ``group_discount_label``)."""
-    if not tier_ref:
+def _group_discount_label(customer) -> str:
+    """O MELHOR desconto entre os grupos do cliente no PDV, ou "" (ver ``group_discount_label``)."""
+    refs = [tier.ref for tier in customer.price_tiers.all()]
+    if not refs:
         return ""
     from shopman.shop.services import promotions as promotion_service
 
     try:
-        promo = promotion_service.customer_group_promotion(tier_ref, channel_ref=POS_CHANNEL_REF)
+        promo = promotion_service.customer_group_promotion(refs, channel_ref=POS_CHANNEL_REF)
     except Exception:  # silêncio-deliberado: sem rótulo, a tela não promete desconto; o motor aplica igual
-        logger.debug("pos_lookup_group_discount_failed tier=%s", tier_ref, exc_info=True)
+        logger.debug("pos_lookup_group_discount_failed refs=%s", refs, exc_info=True)
         return ""
     return promotion_service.group_discount_label(promo)
 
