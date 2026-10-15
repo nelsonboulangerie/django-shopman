@@ -26,6 +26,16 @@ Sem `SENTRY_AUTH_TOKEN` ou sem `WATCHMAN_LIVE_DO_SPEC`, o perfil valida o que é
 possível mas marca a conferência viva como `UNKNOWN` e sai com erro; ausência de
 acesso nunca vira um resultado verde.
 
+O workflow diário `Watchman Infrastructure` roda esse perfil fora dos serviços,
+sempre em modo somente leitura. Ele exige o secret `DIGITALOCEAN_READ_TOKEN`
+(Apps e Databases: leitura), usa `SENTRY_AUTH_TOKEN` apenas para conferir drift e
+preserva o relatório JSON por 30 dias. A falta temporária do token de leitura do
+Sentry vira pendência visível sem bloquear; drift real, falha de contrato ou
+evidência indisponível da DigitalOcean deixam o job vermelho. Com `SENTRY_DSN`
+configurado nos secrets do repositório, uma falha também abre um evento sanitizado
+na escada externa do Watchman. O workflow não contém chamada de escrita à API da
+DigitalOcean ou do Sentry.
+
 ## Visão Geral
 
 | Comando | App | Categoria | Descrição |
