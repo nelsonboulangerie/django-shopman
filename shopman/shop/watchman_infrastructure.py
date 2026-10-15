@@ -110,8 +110,9 @@ class ExternalMonitoringContractCheck:
                 and rate["aggregate"] == "count()"
                 and rate["time_window_seconds"] == 300
                 and rate["open_above"] > rate["resolve_at_or_below"] >= 0
+                and notification["name"] == "Watchman: operações ti@"
                 and recipient == "ti@boulangerie.com.br"
-                and notification["repeat_minutes"] == [0, 5, 10, 30, 60, 180]
+                and notification["frequency_minutes"] == 30
                 and notification["send_resolved"] is True
             )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:

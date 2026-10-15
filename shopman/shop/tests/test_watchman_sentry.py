@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.watchman_sentry import _error_matches, _error_payload, _uptime_matches, _uptime_payload, reconcile
+from scripts.watchman_sentry import _error_matches, _uptime_matches, _workflow_matches, reconcile
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -13,8 +13,8 @@ class FakeClient:
         self.responses = iter(responses)
         self.calls = []
 
-    def request(self, method, path, payload=None):
-        self.calls.append((method, path, payload))
+    def get(self, path):
+        self.calls.append(path)
         return next(self.responses)
 
 
@@ -22,64 +22,138 @@ def _contract():
     return json.loads((ROOT / "ops/watchman/sentry.json").read_text())
 
 
-def test_check_detects_every_missing_detector_and_wrong_recipient():
+def _uptime(contract, index, detector_id):
+    item = contract["uptime"][index]
+    return {
+        "id": detector_id,
+        "name": item["name"],
+        "type": "uptime_domain_failure",
+        "enabled": True,
+        "config": {
+            "environment": contract["environment"],
+            "downtimeThreshold": item["downtime_threshold"],
+            "recoveryThreshold": item["recovery_threshold"],
+        },
+        "dataSources": [
+            {
+                "queryObj": {
+                    "url": item["url"],
+                    "method": "GET",
+                    "intervalSeconds": item["interval_seconds"],
+                    "timeoutMs": item["timeout_ms"],
+                }
+            }
+        ],
+    }
+
+
+def _error_rate(contract, detector_id):
+    item = contract["error_rate"]
+    return {
+        "id": detector_id,
+        "name": item["name"],
+        "type": "metric_issue",
+        "enabled": True,
+        "dataSources": [
+            {
+                "queryObj": {
+                    "snubaQuery": {
+                        "aggregate": item["aggregate"],
+                        "dataset": item["dataset"],
+                        "environment": contract["environment"],
+                        "query": item["query"],
+                        "timeWindow": item["time_window_seconds"],
+                    }
+                }
+            }
+        ],
+        "conditionGroup": {
+            "conditions": [
+                {"type": "gt", "comparison": item["open_above"], "conditionResult": 75},
+                {"type": "lte", "comparison": item["resolve_at_or_below"], "conditionResult": 0},
+            ]
+        },
+    }
+
+
+def _workflow(contract, detector_ids):
+    notification = contract["notification"]
+    return {
+        "id": "workflow-1",
+        "name": notification["name"],
+        "enabled": True,
+        "environment": contract["environment"],
+        "config": {"frequency": notification["frequency_minutes"]},
+        "detectorIds": detector_ids,
+        "triggers": {"conditions": [{"type": "issue_resolved_trigger"}]},
+        "actionFilters": [
+            {
+                "actions": [
+                    {
+                        "type": "email",
+                        "config": {"targetDisplay": notification["recipient"]},
+                    }
+                ]
+            }
+        ],
+    }
+
+
+def test_check_detects_every_missing_detector_and_workflow():
     client = FakeClient([[], []])
 
-    changes = reconcile(client, _contract(), apply=False)
+    changes = reconcile(client, _contract())
 
     assert len(changes) == 4
-    assert any("ti@boulangerie.com.br" in item for item in changes)
+    assert any("missing notification workflow" in item for item in changes)
+    assert all(path.startswith("/api/0/organizations/") for path in client.calls)
 
 
-def test_apply_creates_two_uptime_and_one_rate_detector_without_guessing_workflow():
-    client = FakeClient([[], {}, {}, {}, []])
-
-    changes = reconcile(client, _contract(), apply=True)
-
-    posts = [call for call in client.calls if call[0] == "POST"]
-    assert len(posts) == 3
-    assert sum(path.endswith("/uptime/") for _, path, _ in posts) == 2
-    assert changes == ["notification workflow does not target ti@boulangerie.com.br"]
-
-
-def test_payloads_preserve_one_minute_cadence_and_resolved_threshold():
+def test_exact_live_contract_passes_using_only_get_requests():
     contract = _contract()
+    detectors = [_uptime(contract, 0, "1"), _uptime(contract, 1, "2"), _error_rate(contract, "3")]
+    client = FakeClient([detectors, [_workflow(contract, ["1", "2", "3"])]] )
 
-    uptime = _uptime_payload(contract["uptime"][0], contract["environment"])
-    rate = _error_payload(contract)
+    changes = reconcile(client, contract)
 
-    assert uptime["intervalSeconds"] == 60
-    assert uptime["downtimeThreshold"] == 3
-    assert rate["conditionGroup"]["conditions"][-1]["conditionResult"] == 0
+    assert changes == []
+    assert len(client.calls) == 2
 
 
 def test_live_detector_comparison_rejects_same_name_with_wrong_configuration():
     contract = _contract()
-    uptime = contract["uptime"][0]
-    found_uptime = {
-        "type": "uptime_domain_failure",
-        "enabled": True,
-        "config": {"environment": "production", "downtimeThreshold": 3, "recoveryThreshold": 2},
-        "dataSources": [
-            {"queryObj": {"url": "https://wrong.example/", "method": "GET", "intervalSeconds": 60, "timeoutMs": 10000}}
-        ],
-    }
-    error = _error_payload(contract)
-    error["dataSources"][0]["queryObj"] = {"snubaQuery": error["dataSources"][0]}
+    uptime = _uptime(contract, 0, "1")
+    uptime["dataSources"][0]["queryObj"]["url"] = "https://wrong.example/"
+    rate = _error_rate(contract, "3")
 
-    assert _uptime_matches(found_uptime, uptime, "production") is False
-    assert _error_matches(error, contract) is True
+    assert _uptime_matches(uptime, contract["uptime"][0], "production") is False
+    assert _error_matches(rate, contract) is True
+
+
+def test_workflow_must_bind_all_detectors_recipient_frequency_and_resolution():
+    contract = _contract()
+    workflow = _workflow(contract, ["1", "2"])
+
+    assert _workflow_matches(workflow, contract, {"1", "2", "3"}) is False
+
+    workflow["detectorIds"].append("3")
+    assert _workflow_matches(workflow, contract, {"1", "2", "3"}) is True
+
+    workflow["config"]["frequency"] = 60
+    assert _workflow_matches(workflow, contract, {"1", "2", "3"}) is False
 
 
 def test_check_reports_configuration_drift_instead_of_name_only_success():
     contract = _contract()
-    detectors = [
-        {"name": item["name"], "type": "uptime_domain_failure", "enabled": True} for item in contract["uptime"]
+    detectors = [_uptime(contract, 0, "1"), _uptime(contract, 1, "2"), _error_rate(contract, "3")]
+    detectors[0]["config"]["downtimeThreshold"] = 99
+    workflow = _workflow(contract, ["1", "2", "3"])
+    workflow["actionFilters"] = []
+    client = FakeClient([detectors, [workflow]])
+
+    changes = reconcile(client, contract)
+
+    assert changes == [
+        f"uptime detector has drift: {contract['uptime'][0]['name']}",
+        f"notification workflow has drift: {contract['notification']['name']}",
     ]
-    detectors.append({"name": contract["error_rate"]["name"], "type": "metric_issue", "enabled": True})
-    client = FakeClient([detectors, [{"actions": [{"target": "ti@boulangerie.com.br"}]}]])
-
-    changes = reconcile(client, contract, apply=False)
-
-    assert len(changes) == 3
-    assert all("has drift" in item for item in changes)
