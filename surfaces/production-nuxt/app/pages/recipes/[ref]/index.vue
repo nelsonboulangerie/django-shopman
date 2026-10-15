@@ -456,7 +456,7 @@ const publishDiff = computed(() => [
         <NuxtAlert
           v-if="entry.execution?.exists"
           class="mb-4"
-          color="neutral"
+          color="info"
           variant="subtle"
           icon="i-lucide-clipboard-check"
           title="Ficha de execução ativa"
