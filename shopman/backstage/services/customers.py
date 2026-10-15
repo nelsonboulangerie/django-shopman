@@ -280,6 +280,203 @@ def update_customer(ref: str, data: dict):
     return customer
 
 
+# ── Cópia e lote ─────────────────────────────────────────────────────────────
+
+_COPY_SUFFIX = " (cópia)"
+_BULK_OPERATIONS = ("add_tags", "remove_tags")
+_BULK_LIMIT = 200
+_TAGS_PER_CUSTOMER = 30
+
+
+def _copy_label(value: str, *, max_length: int = 100) -> str:
+    value = (value or "").strip()
+    if len(value) + len(_COPY_SUFFIX) > max_length:
+        value = value[: max_length - len(_COPY_SUFFIX)]
+    return f"{value}{_COPY_SUFFIX}".strip()
+
+
+def _address_copy_payload(address) -> dict:
+    return {
+        "label": address.label,
+        "labelCustom": address.label_custom,
+        "formattedAddress": address.formatted_address,
+        "route": address.route,
+        "streetNumber": address.street_number,
+        "complement": address.complement,
+        "neighborhood": address.neighborhood,
+        "city": address.city,
+        "stateCode": address.state_code,
+        "postalCode": address.postal_code,
+        "deliveryInstructions": address.delivery_instructions,
+        "isDefault": bool(address.is_default),
+    }
+
+
+@transaction.atomic
+def duplicate_customer(ref: str, data: dict, *, actor: str):
+    """Cria um cadastro novo a partir de outro.
+
+    A cópia traz o relacionamento comercial (grupo, etiquetas, conta na casa,
+    preferências fiscais) e os endereços. NÃO traz o documento nem telefone/e-mail:
+    identidade e contato são únicos por cadastro, e o formulário os informa. A revisão
+    do original confere que ninguém o editou no meio.
+    """
+    from shopman.guestman.models import Customer, CustomerAddress
+
+    if not isinstance(data, dict):
+        raise _mutation_error("A cópia precisa ser um objeto.")
+    source = (
+        Customer.objects.select_for_update(of=("self",))
+        .select_related("price_tier")
+        .filter(ref=ref)
+        .first()
+    )
+    if source is None:
+        raise CustomerNotFound("Cliente não encontrado.")
+    if not source.is_active:
+        raise _mutation_error(
+            "Este cadastro foi unificado ou desativado e não pode ser copiado.",
+            code="inactive",
+        )
+    _assert_revision(source, data)
+
+    overrides = {key: value for key, value in data.items() if key != "expectedRevision"}
+    unknown = sorted(set(overrides) - _MUTABLE_FIELDS)
+    if unknown:
+        raise _mutation_error(f"Campo desconhecido: {unknown[0]}.", field=unknown[0])
+
+    metadata = dict(source.metadata or {})
+    fiscal = dict(metadata.get("fiscal_prefs") or {})
+    limit_q = metadata.get("house_account_limit_q")
+    limit = (
+        f"{Decimal(limit_q) / 100:.2f}"
+        if isinstance(limit_q, int) and not isinstance(limit_q, bool)
+        else ""
+    )
+    document = re.sub(r"\D", "", _text(overrides, "document"))
+    email = _text(overrides, "email")
+    merged = {
+        "firstName": overrides["firstName"] if "firstName" in overrides else source.first_name,
+        "lastName": (
+            overrides["lastName"]
+            if "lastName" in overrides
+            else (_copy_label(source.last_name) if source.last_name else _COPY_SUFFIX.strip())
+        ),
+        "customerType": overrides.get("customerType", source.customer_type),
+        "document": document,
+        "birthday": overrides.get(
+            "birthday", source.birthday.isoformat() if source.birthday else ""
+        ),
+        "email": email,
+        "phone": _text(overrides, "phone"),
+        "priceTierRef": overrides.get(
+            "priceTierRef", source.price_tier.ref if source.price_tier_id else ""
+        ),
+        "tags": overrides.get("tags", list(source.tags.names())),
+        "notes": overrides.get("notes", source.notes),
+        "houseAccount": overrides.get("houseAccount", bool(metadata.get("house_account"))),
+        "houseAccountLimit": overrides.get("houseAccountLimit", limit),
+        "fiscalCpfNaNota": overrides.get(
+            "fiscalCpfNaNota", bool(fiscal.get("cpf_na_nota")) and bool(document)
+        ),
+        "fiscalEmailReceipt": overrides.get(
+            "fiscalEmailReceipt", bool(fiscal.get("email_receipt")) and bool(email)
+        ),
+    }
+
+    copy_row = Customer(
+        ref=Customer.generate_ref(), source_system="manual", created_by=actor or "gestor"
+    )
+    tags = _apply_payload(copy_row, merged, creating=True)
+    cleared = {field for field in ("phone", "email") if not getattr(copy_row, field)}
+    _save_customer(copy_row, tags=tags, cleared=cleared)
+
+    addresses = list(source.addresses.all().order_by("-is_default", "pk"))
+    first_copy = None
+    copied_default = False
+    for address in addresses:
+        copied = CustomerAddress(customer=copy_row)
+        _apply_address(copied, _address_copy_payload(address), creating=True)
+        _save_address(copied)
+        first_copy = first_copy or copied
+        copied_default = copied_default or copied.is_default
+    if first_copy is not None and not copied_default:
+        first_copy.is_default = True
+        first_copy.save(update_fields=["is_default", "updated_at"])
+
+    logger.info(
+        "gestor_customer_duplicated source=%s ref=%s addresses=%s actor=%s",
+        source.ref,
+        copy_row.ref,
+        len(addresses),
+        actor,
+    )
+    return copy_row
+
+
+@transaction.atomic
+def bulk_customers(data: dict, *, actor: str) -> dict:
+    """Aplica etiquetas a vários cadastros de uma vez.
+
+    Só cadastros ativos entram; os que sumiram ou foram unificados voltam em
+    skipped, e a tela diz quantos foram. Adicionar ou remover a mesma etiqueta
+    duas vezes não muda nada, então repetir o gesto é inofensivo.
+    """
+    from shopman.guestman.models import Customer
+
+    if not isinstance(data, dict):
+        raise _mutation_error("O pedido em lote precisa ser um objeto.")
+    raw_refs = data.get("refs")
+    if not isinstance(raw_refs, list) or not raw_refs:
+        raise _mutation_error("Escolha ao menos um cadastro.", field="refs")
+    refs: list[str] = []
+    for raw in raw_refs:
+        if not isinstance(raw, str) or not raw.strip():
+            raise _mutation_error("Escolha ao menos um cadastro.", field="refs")
+        value = raw.strip()
+        if value not in refs:
+            refs.append(value)
+    if len(refs) > _BULK_LIMIT:
+        raise _mutation_error(
+            f"Escolha no máximo {_BULK_LIMIT} cadastros por vez.", field="refs"
+        )
+
+    operation = _text(data, "operation")
+    if operation not in _BULK_OPERATIONS:
+        raise _mutation_error("Escolha uma das ações em lote.", field="operation")
+    tags = _tags(data.get("tags"))
+    if not tags:
+        raise _mutation_error("Informe ao menos uma etiqueta.", field="tags")
+
+    customers = list(Customer.objects.filter(ref__in=refs, is_active=True).order_by("pk"))
+    found = {customer.ref for customer in customers}
+    skipped = tuple(
+        {"ref": value, "reason": "not_found_or_inactive"}
+        for value in refs
+        if value not in found
+    )
+    applied: list[str] = []
+    for customer in customers:
+        current = list(customer.tags.names())
+        if operation == "add_tags":
+            existing = {tag.casefold() for tag in current}
+            current.extend(tag for tag in tags if tag.casefold() not in existing)
+        else:
+            removed = {tag.casefold() for tag in tags}
+            current = [tag for tag in current if tag.casefold() not in removed]
+        customer.tags.set(current[:_TAGS_PER_CUSTOMER])
+        applied.append(customer.ref)
+
+    logger.info(
+        "gestor_customer_bulk operation=%s applied=%s skipped=%s actor=%s",
+        operation,
+        len(applied),
+        len(skipped),
+        actor,
+    )
+    return {"operation": operation, "applied": applied, "skipped": skipped}
+
+
 _ADDRESS_FIELDS = {
     "label",
     "labelCustom",

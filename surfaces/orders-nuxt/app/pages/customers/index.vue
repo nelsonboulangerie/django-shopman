@@ -8,13 +8,15 @@
 import type { ActiveFilters, FilterDimension } from "../../../../operator-kit/app/types/filters";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 import {
+  customersCsv,
   listQueryFromRoute,
   routeQueryFromList,
   type CustomerFilter,
   type CustomerSort,
 } from "~/presentation/customers";
+import type { OperatorBulkItem } from "../../../../operator-kit/app/presentation/bulkBar";
 import type { CustomerFormOptionsProjection } from "~/generated/ordersContract";
-import type { CustomerMutationPayload } from "~/types/customers";
+import type { CustomerBulkOperation, CustomerMutationPayload } from "~/types/customers";
 import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
 
 useHead({ title: "Clientes" });
@@ -136,6 +138,104 @@ const customerColumns = [
   { id: "contact", header: "Contato" },
   { id: "orders", header: "Pedidos", meta: { supporting: true } },
 ];
+
+// Seleção da lista e a barra de lote: etiquetar a seleção numa ida e exportar o que
+// está marcado. A seleção atravessa páginas; trocar busca ou recorte a limpa, porque
+// aí a pergunta mudou. O servidor ignora cadastro inativo ou que sumiu.
+const selected = ref<Set<string>>(new Set());
+const customerRowSelection = computed<Record<string, boolean>>({
+  get: () => Object.fromEntries([...selected.value].map((ref_) => [ref_, true])),
+  set: (next) => {
+    selected.value = new Set(Object.keys(next).filter((key) => next[key]));
+  },
+});
+function clearSelection() {
+  selected.value = new Set();
+}
+watch(() => [listQuery.value.q, listQuery.value.filter] as const, clearSelection);
+
+const bulkScope = computed(() => {
+  const current = (list.value?.filters ?? []).find(
+    (option) => option.ref === listQuery.value.filter,
+  );
+  return current && current.ref !== "all" ? current.label : "";
+});
+
+const bulkOpen = ref(false);
+const bulkBusy = ref(false);
+const bulkError = ref("");
+let bulkKey = crypto.randomUUID();
+watch(bulkOpen, (open) => {
+  if (!open) return;
+  bulkError.value = "";
+});
+function bulkItems(_placement: "toolbar" | "base"): OperatorBulkItem[] {
+  return [
+    {
+      label: "Etiquetar…",
+      icon: "i-lucide-tags",
+      disabled: bulkBusy.value,
+      onSelect: () => {
+        bulkOpen.value = true;
+      },
+    },
+    {
+      label: "Exportar CSV",
+      shortLabel: "CSV",
+      icon: "i-lucide-download",
+      disabled: bulkBusy.value,
+      onSelect: () => exportSelectionCsv(),
+    },
+  ];
+}
+async function saveBulkTags({
+  operation,
+  tags,
+}: {
+  operation: CustomerBulkOperation;
+  tags: string[];
+}) {
+  if (bulkBusy.value || selected.value.size === 0) return;
+  bulkBusy.value = true;
+  bulkError.value = "";
+  try {
+    const response = await bulkCustomers(
+      { refs: [...selected.value], operation, tags },
+      bulkKey,
+    );
+    if (response.outcome !== "applied") {
+      bulkError.value = "O resultado ainda não foi confirmado. Tente de novo; a mesma intenção será reutilizada.";
+      return;
+    }
+    bulkKey = crypto.randomUUID();
+    bulkOpen.value = false;
+    const verb = response.operation === "add_tags" ? "Etiqueta aplicada em " : "Etiqueta removida de ";
+    const many = response.applied.length === 1 ? " cadastro" : " cadastros";
+    const skipped = response.skipped.length
+      ? " " + response.skipped.length + " ficaram de fora."
+      : "";
+    useSonner.success(verb + response.applied.length + many + "." + skipped);
+    clearSelection();
+    await refresh();
+  } catch (failure) {
+    bulkError.value = httpErrorMessage(failure, "Não foi possível aplicar as etiquetas.");
+    if (httpError(failure).status) bulkKey = crypto.randomUUID();
+  } finally {
+    bulkBusy.value = false;
+  }
+}
+function exportSelectionCsv() {
+  const chosen = items.value.filter((row) => selected.value.has(row.ref));
+  if (!chosen.length) return;
+  const csv = customersCsv(chosen);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "clientes-" + new Date().toISOString().slice(0, 10) + ".csv";
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
@@ -184,6 +284,15 @@ const phoneHeaderActions = computed(() => [
           surface="orders"
           screen="customers"
           :chips="false"
+        />
+      </template>
+      <template v-if="selected.size" #selection>
+        <OperatorBulkBar
+          :count="selected.size"
+          :scope="bulkScope"
+          :items="bulkItems('toolbar')"
+          data-customers-bulk
+          @clear="clearSelection"
         />
       </template>
       <template #filters>
@@ -245,9 +354,11 @@ const phoneHeaderActions = computed(() => [
 
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <OperatorTable
+        v-model:row-selection="customerRowSelection"
         :data="items"
         :columns="customerColumns"
         :row-key="(row: CustomerRow) => row.ref"
+        selectable
         :row-label="(row: CustomerRow) => `o cadastro de ${row.name}`"
         :on-select="
           (row: CustomerRow) =>
@@ -326,6 +437,24 @@ const phoneHeaderActions = computed(() => [
         </template>
       </OperatorTable>
     </section>
+
+    <OperatorBulkBar
+      v-if="selected.size"
+      placement="base"
+      :count="selected.size"
+      :scope="bulkScope"
+      :items="bulkItems('base')"
+      data-customers-bulk
+      @clear="clearSelection"
+    />
+
+    <CustomerBulkTagsPanel
+      v-model:open="bulkOpen"
+      :count="selected.size"
+      :busy="bulkBusy"
+      :error="bulkError"
+      @save="saveBulkTags"
+    />
 
     <CustomerFormPanel
       v-model:open="createOpen"

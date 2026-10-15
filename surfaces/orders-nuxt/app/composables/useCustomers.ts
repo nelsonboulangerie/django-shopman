@@ -11,6 +11,9 @@ import type {
   CustomerMutationResponse,
   CustomerAddressMutationPayload,
   CustomerAddressMutationResponse,
+  CustomerDuplicatePayload,
+  CustomerBulkPayload,
+  CustomerBulkResponse,
 } from "~/types/customers";
 
 // Clientes do Gestor — leitura por projection, escrita pelo MergeService (via
@@ -79,6 +82,25 @@ export async function createCustomer(payload: CustomerMutationPayload, idempoten
 export async function updateCustomer(ref: string, payload: CustomerMutationPayload, idempotencyKey: string) {
   return $fetch<CustomerMutationResponse>(`${BASE}/${encodeURIComponent(ref)}/`, {
     method: "PATCH",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: payload,
+  });
+}
+
+export async function duplicateCustomer(
+  ref: string,
+  payload: CustomerDuplicatePayload,
+  idempotencyKey: string,
+) {
+  return $fetch<CustomerMutationResponse>(
+    `${BASE}/${encodeURIComponent(ref)}/duplicate/`,
+    { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: payload },
+  );
+}
+
+export async function bulkCustomers(payload: CustomerBulkPayload, idempotencyKey: string) {
+  return $fetch<CustomerBulkResponse>(`${BASE}/bulk/`, {
+    method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: payload,
   });
