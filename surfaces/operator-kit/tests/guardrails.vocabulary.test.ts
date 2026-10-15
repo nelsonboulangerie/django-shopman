@@ -143,9 +143,6 @@ function stripComments(text: string): string {
 // harness visual do Marketing, que serve as respostas do servidor para o retrato.
 const SOURCE_EXT = [".ts", ".vue", ".mjs", ".py"];
 
-/** Voz do cliente final, por decisão do dono (ver acima). Não é dívida a pagar. */
-const EXEMPT_SURFACES = ["storefront-nuxt/"];
-
 const SKIP_DIRS = new Set([
   "node_modules",
   ".nuxt",
@@ -175,11 +172,15 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
   return found;
 }
 
+// O registro canônico decide o escopo. Superfícies de cliente têm voz própria;
+// enumerar uma exceção por nome faria cada nova superfície pública quebrar uma
+// regra que nunca se aplicou a ela.
+const OPERATOR_SCOPE = new Set([...OPERATOR_SURFACES, "operator-kit", "operator-router"]);
+
 const SOURCES = sourceFiles(surfacesDir).filter((file) => {
   const path = relative(surfacesDir, file);
-  return (
-    !MAY_QUOTE.has(path) && !EXEMPT_SURFACES.some((prefix) => path.startsWith(prefix))
-  );
+  const surface = path.split("/")[0];
+  return OPERATOR_SCOPE.has(surface) && !MAY_QUOTE.has(path);
 });
 
 /**

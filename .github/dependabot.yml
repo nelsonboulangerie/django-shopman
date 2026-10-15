@@ -40,6 +40,7 @@ updates:
       - /surfaces/bi-nuxt
       - /surfaces/purchase-nuxt
       - /surfaces/kitchensink-nuxt
+      - /surfaces/status-nuxt
       - /surfaces/operator-kit
     schedule:
       interval: weekly

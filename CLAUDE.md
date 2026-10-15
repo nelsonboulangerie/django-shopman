@@ -225,6 +225,7 @@ surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro 
 ├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
 ├── kitchensink-nuxt/ Catálogo do operador (:3009)        → api./backstage
+├── status-nuxt/      status público independente (:3010) → liveness pública
 ├── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
 │                      retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
 │                      BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
