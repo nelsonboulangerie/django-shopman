@@ -3,21 +3,27 @@
 Trava: o número de consultas não pode crescer com N (N+1). Medido com
 CaptureQueriesContext contra Postgres (config.settings_test + DATABASE_URL) e
 também no settings do próprio pacote (SQLite); o teste é portátil.
+
+Cobre dois caminhos: o commit (OrderItem em um INSERT só) e a listagem de
+sessões (as linhas da página vêm no prefetch, não uma consulta por sessão).
 """
 
 from __future__ import annotations
 
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from rest_framework.test import APIClient
 from shopman.orderman.ids import generate_idempotency_key
 from shopman.orderman.models import Session
 from shopman.orderman.services import CommitService
 from shopman.orderman.signals import order_changed
 
 CHANNEL_REF = "qc-budget"
+ITEMS_PER_SESSION = 3
 
 
 def _line(i: int) -> dict:
@@ -73,3 +79,50 @@ class CommitQueryBudgetTests(TestCase):
         _, sql = self._commit_and_count(10)
         inserts = [s for s in sql if "INSERT INTO" in s and "orderman_orderitem" in s]
         self.assertEqual(len(inserts), 1, f"esperado 1 INSERT de OrderItem, obtido {len(inserts)}")
+
+
+class SessionListQueryBudgetTests(TestCase):
+    """GET /api/sessions: a página custa o mesmo com N e com 2N sessões.
+
+    O defeito era uma consulta de ``orderman_sessionitem`` por sessão da página
+    (25 sessões = 26 consultas). Aqui a página cresce junto com N via
+    ``page_size``, então a contagem só fica igual se as linhas vierem de um
+    prefetch: uma consulta para a página e uma para as linhas, independente do
+    tamanho.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.user = get_user_model().objects.create_user("qc-budget-user", password="qc-budget")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def _open_sessions(self, count: int, *, offset: int) -> None:
+        for i in range(offset, offset + count):
+            _open_session(ITEMS_PER_SESSION, key=f"QC-LIST-{i}")
+
+    def _list(self, page_size: int):
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get("/api/sessions", {"page_size": str(page_size)})
+        self.assertEqual(response.status_code, 200, response.data)
+        return len(ctx), response.data["results"]
+
+    def test_list_query_count_does_not_grow_with_page_size(self) -> None:
+        half = 5
+        self._open_sessions(half, offset=0)
+        small, small_rows = self._list(half)
+
+        self._open_sessions(half, offset=half)
+        large, large_rows = self._list(half * 2)
+
+        self.assertEqual(len(small_rows), half)
+        self.assertEqual(len(large_rows), half * 2)
+        for row in small_rows + large_rows:
+            self.assertEqual(len(row["items"]), ITEMS_PER_SESSION, row)
+        self.assertEqual(
+            large,
+            small,
+            f"página de {half} sessões = {small} consultas; de {half * 2} = {large}. "
+            "O número voltou a crescer com o tamanho da página (uma consulta de "
+            'orderman_sessionitem por sessão): falta o prefetch_related("session_items").',
+        )
