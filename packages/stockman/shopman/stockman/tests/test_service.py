@@ -9,6 +9,7 @@ import pytest
 from django.test import override_settings
 from django.utils import timezone
 from shopman.stockman import StockError, stock
+from shopman.stockman.adapters.sku_validation import reset_sku_validator
 from shopman.stockman.models import Hold, HoldStatus, Quant
 
 pytestmark = pytest.mark.django_db
@@ -59,6 +60,62 @@ class TestStockAvailable:
 
         # 4 days after: expired
         assert stock.available(demand_product, friday + timedelta(days=4)) == Decimal('0')
+
+    def test_available_many_matches_single_reads(self, product, vitrine, today):
+        stock.receive(Decimal('100'), product.sku, vitrine, reason='Entrada')
+        stock.hold(Decimal('30'), product, today)
+
+        result = stock.available_many([product.sku, 'SEM-ESTOQUE'], today)
+
+        assert result == {
+            product.sku: stock.available(product.sku, today),
+            'SEM-ESTOQUE': stock.available('SEM-ESTOQUE', today),
+        }
+
+    @override_settings(
+        STOCKMAN={
+            'SKU_VALIDATOR': 'shopman.stockman.tests.fakes.PerishableSkuValidator',
+        }
+    )
+    def test_available_many_preserves_shelf_life(self, perishable_product, friday):
+        reset_sku_validator()
+        try:
+            stock.plan(Decimal('50'), perishable_product, friday, reason='Produção sexta')
+
+            assert stock.available_many(
+                [perishable_product.sku],
+                friday + timedelta(days=1),
+            )[perishable_product.sku] == stock.available(
+                perishable_product.sku,
+                friday + timedelta(days=1),
+            )
+        finally:
+            reset_sku_validator()
+
+    def test_available_many_query_count_is_constant(
+        self,
+        db,
+        django_assert_num_queries,
+        vitrine,
+        today,
+    ):
+        skus = [f'BULK-{index:03d}' for index in range(60)]
+        Quant.objects.bulk_create(
+            [
+                Quant(sku=sku, position=vitrine, _quantity=Decimal(index + 1))
+                for index, sku in enumerate(skus)
+            ]
+        )
+
+        # Lotes vencidos, saldos e reservas: o mesmo orçamento para 1 ou 60
+        # SKUs. O validador noop usado pela suíte não consulta o banco.
+        with django_assert_num_queries(3):
+            one = stock.available_many(skus[:1], today)
+        with django_assert_num_queries(3):
+            many = stock.available_many(skus, today)
+
+        assert one[skus[0]] == Decimal('1')
+        assert many[skus[-1]] == Decimal('60')
 
 
 class TestStockReceive:
