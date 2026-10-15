@@ -70,7 +70,7 @@ alta prioridade não faz essa pergunta.
 
 Criar um workflow com:
 
-- nome: `Watchman — operações ti@`;
+- nome: `Watchman: operações ti@`;
 - ligado aos três monitores acima, e somente a eles;
 - ambiente: `production`;
 - frequência de repetição: 30 minutos enquanto durar;

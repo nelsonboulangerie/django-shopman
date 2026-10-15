@@ -31,7 +31,7 @@
     "resolve_at_or_below": 5
   },
   "notification": {
-    "name": "Watchman — operações ti@",
+    "name": "Watchman: operações ti@",
     "recipient": "ti@boulangerie.com.br",
     "frequency_minutes": 30,
     "send_resolved": true

@@ -110,7 +110,7 @@ class ExternalMonitoringContractCheck:
                 and rate["aggregate"] == "count()"
                 and rate["time_window_seconds"] == 300
                 and rate["open_above"] > rate["resolve_at_or_below"] >= 0
-                and notification["name"] == "Watchman — operações ti@"
+                and notification["name"] == "Watchman: operações ti@"
                 and recipient == "ti@boulangerie.com.br"
                 and notification["frequency_minutes"] == 30
                 and notification["send_resolved"] is True
