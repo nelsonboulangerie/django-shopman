@@ -99,6 +99,7 @@ class CatalogStructureSnapshotView(View):
                 except ValueError:
                     response = _problem(503, "Snapshot excedeu o limite seguro.")
                     response["Server-Timing"] = timing.server_timing()
+                    response._watchman_query_count = timing.query_count
                     return response
 
             headers = _snapshot_headers(head)
@@ -118,6 +119,7 @@ class CatalogStructureSnapshotView(View):
                 status = 200
                 response_bytes = len(body)
             response["Server-Timing"] = timing.server_timing()
+            response._watchman_query_count = timing.query_count
 
         log_catalog_observation(
             path="continuum_catalog_structure",

@@ -59,3 +59,11 @@ def test_unknown_observer_result_does_not_restart_the_process(client):
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "checks": {"process": "ok"}}
     assert "observer broke" not in response.content.decode()
+
+
+def test_storefront_ingress_has_its_own_public_probe_alias(client):
+    with patch("shopman.shop.pool_liveness.check_pool", return_value=("ok", None)):
+        response = client.get("/api/v1/health/live/")
+
+    assert response.status_code == 200
+    assert response.json()["checks"] == {"process": "ok"}

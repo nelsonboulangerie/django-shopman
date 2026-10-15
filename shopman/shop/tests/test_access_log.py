@@ -14,6 +14,7 @@ from django.core.exceptions import MiddlewareNotUsed
 from django.http import HttpResponse, StreamingHttpResponse
 from django.test import RequestFactory
 from django.urls import resolve
+from shopman.watchman.performance import reset_recorder
 
 from shopman.shop.middleware import AccessLogMiddleware
 
@@ -35,16 +36,21 @@ def _capture_access_logger(caplog):
     # Quando outra suíte do mesmo processo religa a propagação, o registro chega
     # pelos dois caminhos: `_records` conta cada registro uma vez só.
     logger = logging.getLogger("shopman.access")
+    budget_logger = logging.getLogger("shopman.watchman.performance")
     logger.addHandler(caplog.handler)
+    budget_logger.addHandler(caplog.handler)
+    reset_recorder()
     yield
+    reset_recorder()
     logger.removeHandler(caplog.handler)
+    budget_logger.removeHandler(caplog.handler)
 
 
-def _records(caplog):
+def _records(caplog, *, logger_name="shopman.access"):
     seen: set[int] = set()
     out = []
     for record in caplog.records:
-        if record.name == "shopman.access" and id(record) not in seen:
+        if record.name == logger_name and id(record) not in seen:
             seen.add(id(record))
             out.append(record)
     return out
@@ -145,3 +151,29 @@ def test_middleware_is_first_in_the_chain():
     from django.conf import settings as django_settings
 
     assert django_settings.MIDDLEWARE[0] == "shopman.shop.middleware.AccessLogMiddleware"
+
+
+def test_budget_breach_is_structured_and_never_contains_request_values(settings, caplog):
+    settings.WATCHMAN = {
+        "BUDGETS": {
+            "admin": {
+                "route": "/admin/auth/user/<path:object_id>/change/",
+                "max_duration_ms": 1,
+                "max_queries": 2,
+                "consecutive_failures": 1,
+            }
+        }
+    }
+    caplog.set_level(logging.WARNING, logger="shopman.watchman.performance")
+    response = HttpResponse(status=200)
+    response._watchman_query_count = 3
+    path = "/admin/auth/user/987654/change/"
+
+    _middleware(response, settings, resolve_path=path)(RequestFactory().get(path + "?token=secret"))
+
+    records = _records(caplog, logger_name="shopman.watchman.performance")
+    assert len(records) == 1
+    assert records[0].watchman_event == "opened"
+    assert records[0].query_count == 3
+    assert "987654" not in records[0].getMessage()
+    assert "secret" not in records[0].getMessage()

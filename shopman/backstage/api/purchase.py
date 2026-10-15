@@ -13,6 +13,7 @@ from shopman.backstage.services import purchase as purchase_service
 from shopman.backstage.services import purchase_catalog as purchase_catalog_service
 from shopman.backstage.services import purchase_count as purchase_count_service
 from shopman.backstage.services.purchase import PurchaseError
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services.remote_mutations import (
     RemoteMutationConflict,
     RemoteMutationInProgress,
@@ -104,7 +105,7 @@ def _catalog_mutation(request, *, operation: str, payload: dict, execute) -> Res
         )
 
 
-class PurchaseBoardView(APIView):
+class PurchaseBoardView(ServerTimingMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"
 

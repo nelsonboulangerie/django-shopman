@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "organization": "nelson-boulangerie",
+  "project": "shopman",
+  "environment": "production",
+  "uptime": [
+    {
+      "name": "Watchman — web-operator readiness",
+      "url": "https://api.boulangerie.com.br/health/ready/",
+      "interval_seconds": 60,
+      "timeout_ms": 10000,
+      "downtime_threshold": 3,
+      "recovery_threshold": 2
+    },
+    {
+      "name": "Watchman — web-storefront readiness",
+      "url": "https://api.boulangerie.com.br/api/v1/health/ready/",
+      "interval_seconds": 60,
+      "timeout_ms": 10000,
+      "downtime_threshold": 3,
+      "recovery_threshold": 2
+    }
+  ],
+  "error_rate": {
+    "name": "Watchman — error volume",
+    "aggregate": "count()",
+    "dataset": "events",
+    "query": "is:unresolved level:[error,fatal]",
+    "time_window_seconds": 300,
+    "open_above": 20,
+    "resolve_at_or_below": 5
+  },
+  "notification": {
+    "recipient": "ti@boulangerie.com.br",
+    "repeat_minutes": [0, 5, 10, 30, 60, 180],
+    "send_resolved": true
+  }
+}

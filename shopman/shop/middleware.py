@@ -22,6 +22,8 @@ HEALTH_PROBE_PATHS = {
     "/health/database/",
     "/health/",
     "/ready/",
+    "/api/v1/health/live/",
+    "/api/v1/health/ready/",
 }
 APP_PLATFORM_PROBE_NETWORK = ip_network("100.64.0.0/10")
 
@@ -77,6 +79,9 @@ class AccessLogMiddleware:
         if not getattr(settings, "SHOPMAN_ACCESS_LOG", False):
             raise MiddlewareNotUsed
         self.get_response = get_response
+        from shopman.watchman.performance import get_recorder
+
+        self._watchman_recorder = get_recorder()
 
     def __call__(self, request):
         started = time.monotonic()
@@ -90,6 +95,13 @@ class AccessLogMiddleware:
         method = request.method if request.method in _ACCESS_LOG_METHODS else "OTHER"
         duration_ms = int((time.monotonic() - started) * 1000)
         streaming = bool(getattr(response, "streaming", False))
+        query_count = getattr(response, "_watchman_query_count", None)
+        budget_event = self._watchman_recorder.record(
+            method=method,
+            route=route,
+            duration_ms=duration_ms,
+            query_count=query_count,
+        )
         access_logger.log(
             logging.WARNING if status >= 500 else logging.INFO,
             "access %s %s %s %dms%s",
@@ -106,6 +118,29 @@ class AccessLogMiddleware:
                 "streaming": streaming,
             },
         )
+        if budget_event is not None:
+            budget_logger = logging.getLogger("shopman.watchman.performance")
+            # Sentry's default logging integration promotes ERROR to an event;
+            # WARNING remains a breadcrumb. Opening/reminding pages people,
+            # recovery records evidence without opening another incident.
+            budget_logger.log(
+                logging.WARNING if budget_event.kind == "resolved" else logging.ERROR,
+                "watchman_budget_%s %s %s duration=%dms queries=%s sample=%d",
+                budget_event.kind,
+                method,
+                route,
+                duration_ms,
+                query_count if query_count is not None else "unknown",
+                budget_event.sample,
+                extra={
+                    "watchman_event": budget_event.kind,
+                    "watchman_budget": budget_event.budget.name,
+                    "http_method": method,
+                    "http_route": route,
+                    "duration_ms": duration_ms,
+                    "query_count": query_count,
+                },
+            )
         return response
 
 

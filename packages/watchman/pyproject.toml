@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopman-watchman"
-version = "0.1.0"
-description = "Small, reusable health-check contracts and probes for Django"
+version = "0.2.0"
+description = "Reusable health checks and route performance budgets for Django"
 license = "MIT"
 authors = [
     {name = "Pablo Valentini", email = "pablondrina@gmail.com"}

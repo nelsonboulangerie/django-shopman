@@ -232,6 +232,7 @@ class ServerTimingMixin:
             with catalog_stage("projection"):
                 response = super().dispatch(request, *args, **kwargs)
         response["Server-Timing"] = timing.server_timing()
+        response._watchman_query_count = timing.query_count
         return response
 
 
