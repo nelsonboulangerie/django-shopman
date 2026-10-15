@@ -377,12 +377,43 @@ WATCHMAN = {
         "shopman.shop.watchman_checks.CacheCheck",
         "shopman.shop.watchman_checks.MigrationsCheck",
         "shopman.shop.watchman_checks.QueueCheck",
+        "shopman.watchman.performance.PerformanceBudgetCheck",
+        "shopman.shop.watchman_infrastructure.ProductionContractCheck",
+        "shopman.shop.watchman_infrastructure.DeploymentDriftCheck",
+        "shopman.shop.watchman_infrastructure.ExternalMonitoringContractCheck",
     ],
     "PROFILES": {
         "liveness": ["process", "pool"],
         "platform_readiness": ["database"],
         "readiness": ["database", "cache", "migrations", "queue"],
-        "diagnostic": ["process", "pool", "database", "cache", "migrations", "queue"],
+        "performance": ["performance_budgets"],
+        "infrastructure": ["production_contract", "deployment_drift", "external_monitoring"],
+        # O diagnóstico interativo permanece curto. Os contratos de infraestrutura
+        # são deliberadamente um perfil CLI separado porque podem levar minutos.
+        "diagnostic": ["process", "pool", "database", "cache", "migrations", "queue", "performance_budgets"],
+    },
+    # Limites generosos o bastante para não paginar por jitter, mas baixos o
+    # bastante para capturar regressões humanas como o N+1 de Compras (29 s).
+    # A chave é o padrão resolvido da URL: nunca inclui SKU, pessoa ou query string.
+    "BUDGETS": {
+        "storefront_catalog": {
+            "method": "GET",
+            "route": "/api/v1/storefront/public/catalog/<slug:collection>/",
+            "max_duration_ms": 1500,
+            "max_queries": 60,
+        },
+        "pos_projection": {
+            "method": "GET",
+            "route": "/api/v1/backstage/pos/",
+            "max_duration_ms": 2000,
+            "max_queries": 55,
+        },
+        "purchase_board": {
+            "method": "GET",
+            "route": "/api/v1/backstage/purchase/",
+            "max_duration_ms": 6000,
+            "max_queries": 80,
+        },
     },
 }
 
@@ -2448,6 +2479,8 @@ SECURE_REDIRECT_EXEMPT = [
     r"^health/live/$",
     r"^health/ready/$",
     r"^health/database/$",
+    r"^api/v1/health/live/$",
+    r"^api/v1/health/ready/$",
     r"^health/$",
     r"^ready/$",
 ]

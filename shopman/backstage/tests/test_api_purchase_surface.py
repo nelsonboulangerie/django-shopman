@@ -132,6 +132,8 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
     response = client.get(reverse("api-backstage-purchase"))
 
     assert response.status_code == 200
+    assert "projection;dur=" in response["Server-Timing"]
+    assert response._watchman_query_count > 0
     purchase = response.json()["purchase"]
     assert purchase["materials"][0]["sku"] == "FARINHA-NOVARA-T55"
     assert purchase["materials"][0]["stockOnHand"] == 12.0

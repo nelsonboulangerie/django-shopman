@@ -1,9 +1,12 @@
 # Shopman Watchman
 
-`shopman-watchman` is a small reusable Django app for health checks. It owns the
-check contract, registry, runner, JSON representation, probe views and management
-command. It deliberately does **not** restart processes, configure a hosting
-provider or replace an external uptime monitor.
+`shopman-watchman` is a small reusable Django app for health checks and cheap
+route-budget observation. It owns the check contract, registry, runner, JSON
+representation, probe views, management command and the O(1) in-memory budget
+recorder. It deliberately does **not** restart processes, configure a hosting
+provider or replace an external uptime monitor: liveness tells the supervisor to
+restart, and a monitor outside the instance proves that the supervisor itself is
+still reachable.
 
 ## Install
 
@@ -22,6 +25,16 @@ WATCHMAN = {
         "liveness": ["process"],
         "readiness": ["process", "database"],
         "diagnostic": ["process", "database"],
+    },
+    "BUDGETS": {
+        "catalog": {
+            "method": "GET",
+            "route": "/api/catalog/",
+            "max_duration_ms": 500,
+            "max_queries": 20,
+            "consecutive_failures": 3,
+            "recovery_samples": 3,
+        }
     },
 }
 ```
@@ -49,6 +62,18 @@ python manage.py watchman explain process --format json
 `check` exits with `0` when every check passes or warns, `1` when a check fails
 or cannot complete, and `2` for invalid Watchman configuration (the shell sees
 Django's command error exit code). The JSON schema is versioned.
+
+## Route budgets
+
+Call `get_recorder().record(...)` after a request. Unconfigured routes cost one
+dictionary lookup; configured routes add one bounded `deque` append. There is no
+I/O and no global lock. Three consecutive breaches open an incident, reminders
+use exponential spacing, and three healthy samples emit a resolved event. The
+host decides how log events reach Sentry or e-mail and can expose
+`PerformanceBudgetCheck` in a non-public profile.
+
+Query budgets are enforced only when the host supplies a query count. Absence is
+never interpreted as zero.
 
 ## Writing a check
 

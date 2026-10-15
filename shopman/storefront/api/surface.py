@@ -571,6 +571,7 @@ class StorefrontMenuView(APIView):
 
             response = Response(payload)
             response["Server-Timing"] = timing.server_timing()
+            response._watchman_query_count = timing.query_count
 
         observation = {
             "path": "storefront_menu" if self.include_cart else "storefront_catalog",

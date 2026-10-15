@@ -4,6 +4,24 @@
 
 ---
 
+## `watchman`
+
+Executa o mesmo contrato versionado de saúde localmente, na CI e no app
+publicado. `check --profile diagnostic` é curto e serve para diagnóstico vivo;
+`check --profile infrastructure` é exclusivo de CLI e pode executar o contrato
+hermético de produção e confrontar um snapshot da DigitalOcean.
+
+```bash
+python manage.py watchman check --profile diagnostic --format json
+python manage.py watchman check --profile performance --format json
+WATCHMAN_LIVE_DO_SPEC=/tmp/live.yaml python manage.py watchman check --profile infrastructure --format json
+SENTRY_AUTH_TOKEN=... python scripts/watchman_sentry.py check
+```
+
+`python scripts/watchman_sentry.py apply` cria detectores ausentes de uptime e
+taxa de erros. Ele não inventa a identidade interna da ação de e-mail: o check
+continua vermelho até o workflow real conter `ti@boulangerie.com.br`.
+
 ## Visão Geral
 
 | Comando | App | Categoria | Descrição |
