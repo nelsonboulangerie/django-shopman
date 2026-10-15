@@ -19,9 +19,10 @@ WATCHMAN_LIVE_DO_SPEC=/tmp/live.yaml SENTRY_AUTH_TOKEN=... \
 SENTRY_AUTH_TOKEN=... python scripts/watchman_sentry.py check
 ```
 
-`python scripts/watchman_sentry.py apply` cria detectores ausentes de uptime e
-taxa de erros. Ele não inventa a identidade interna da ação de e-mail: o check
-continua vermelho até o workflow real conter `ti@boulangerie.com.br`.
+O reconciliador é deliberadamente somente leitura: a conta externa só é alterada
+pelo dono no painel, seguindo `docs/runbooks/watchman-sentry-painel.md`. O token
+precisa apenas de `alerts:read` (ou `org:read`); o DSN não substitui esse acesso,
+porque é uma chave de ingestão de eventos, não de leitura da configuração.
 Sem `SENTRY_AUTH_TOKEN` ou sem `WATCHMAN_LIVE_DO_SPEC`, o perfil valida o que é
 possível mas marca a conferência viva como `UNKNOWN` e sai com erro; ausência de
 acesso nunca vira um resultado verde.
