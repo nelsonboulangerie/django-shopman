@@ -11,8 +11,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 # A lista vem do registro único; cópia à mão aqui era mais um lugar para esquecer.
 REGISTRY = json.loads((ROOT / "surfaces" / "registry.json").read_text())["surfaces"]
 SURFACES = tuple(surface["dir"] for surface in REGISTRY.values())
-DEPLOYED_SURFACES = tuple(
-    surface["dir"] for surface in REGISTRY.values() if surface.get("deployment") != "preview"
+OPERATOR_SURFACES = tuple(
+    surface["dir"]
+    for surface in REGISTRY.values()
+    if surface["kind"] == "operator" and surface.get("deployment") != "preview"
+)
+DIGITALOCEAN_SURFACES = tuple(
+    surface["dir"] for surface in REGISTRY.values() if surface.get("deployment") is None
 )
 NUXT_RUNTIMES = (*SURFACES, "operator-kit")
 
@@ -83,13 +88,13 @@ def test_operator_groups_cover_every_operator_surface_exactly_once():
     """Os dois grupos da ADR-030 somam os oito apps de operador — nem um a mais.
 
     `groups.json` é a lista que o launcher sobe, que o deploy-images.yml lê e que
-    este teste confere contra `SURFACES`. App de operador novo que não entra num
+    este teste confere contra `OPERATOR_SURFACES`. App de operador novo que não entra num
     grupo não teria contêiner; app em dois grupos subiria duas vezes.
     """
     groups = _operator_groups()
     assert set(groups) == {"operator-floor", "operator-office"}
     members = [app["surface"] for apps in groups.values() for app in apps]
-    assert sorted(members) == sorted(s for s in DEPLOYED_SURFACES if s != "storefront-nuxt")
+    assert sorted(members) == sorted(OPERATOR_SURFACES)
     assert len(members) == len(set(members))
     registry = json.loads((ROOT / "surfaces" / "registry.json").read_text())["surfaces"]
     for name, apps in groups.items():
@@ -163,7 +168,7 @@ def test_alpha_app_platform_spec_routes_all_nuxt_apps():
         )
 
     assert_image("storefront-nuxt", "storefront")
-    for surface in DEPLOYED_SURFACES:
+    for surface in DIGITALOCEAN_SURFACES:
         if surface == "storefront-nuxt":
             continue
         assert surface not in services, f"{surface} voltou a ter service próprio (ADR-030)"
@@ -333,9 +338,7 @@ def test_every_nuxt_surface_serves_a_liveness_route_without_django():
     assert (kit / "ready.get.ts").is_file()
     storefront = ROOT / "surfaces" / "storefront-nuxt" / "server" / "routes" / "health"
     assert (storefront / "live.get.ts").is_file()
-    for surface in SURFACES:
-        if surface == "storefront-nuxt":
-            continue
+    for surface in OPERATOR_SURFACES:
         config = (ROOT / "surfaces" / surface / "nuxt.config.ts").read_text()
         assert '"../operator-kit"' in config, f"{surface} não recebe /health/live da layer"
         assert not (ROOT / "surfaces" / surface / "server" / "routes" / "health").exists(), (

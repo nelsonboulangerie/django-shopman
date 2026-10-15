@@ -1,0 +1,47 @@
+{
+  "name": "status-nuxt",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev --host 127.0.0.1 --port 3010",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview --host 127.0.0.1 --port 3010",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "nuxi typecheck && npm run typecheck:functions",
+    "typecheck:functions": "tsc --ignoreConfig --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022 --types @cloudflare/workers-types functions/api/status.ts",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@nuxt/icon": "^2.5.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vite-pwa/nuxt": "1.1.1",
+    "@vueuse/nuxt": "^14.4.0",
+    "nuxt": "^4.5.2",
+    "tailwindcss": "^4.3.0",
+    "vue": "^3.5.43",
+    "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261015.1",
+    "@iconify-json/lucide": "^1.2.143",
+    "@nuxt/eslint": "^1.17.0",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "happy-dom": "^20.14.6",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11",
+    "vue-tsc": "^3.3.12"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2",
+    "js-yaml": "^4.3.2",
+    "svgo": "^4.1.0"
+  }
+}

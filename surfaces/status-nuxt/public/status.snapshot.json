@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "overall": "unknown",
+  "observedAt": null,
+  "components": [
+    { "id": "online_store", "label": "Loja online", "description": "Cardápio, carrinho e acompanhamento de pedidos.", "status": "unknown" },
+    { "id": "service_operations", "label": "Atendimento e operações", "description": "Capacidades que sustentam o atendimento nas lojas.", "status": "unknown" }
+  ]
+}

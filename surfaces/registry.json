@@ -100,6 +100,16 @@
       "base_url_env": null,
       "hub_tile": null,
       "deployment": "preview"
+    },
+    "status": {
+      "dir": "status-nuxt",
+      "kind": "customer",
+      "dev_port": 3010,
+      "service": null,
+      "subdomain": "status",
+      "base_url_env": null,
+      "hub_tile": null,
+      "deployment": "external"
     }
   },
   "operator_groups": {

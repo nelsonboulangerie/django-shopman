@@ -80,6 +80,18 @@ const profiles = {
   // O catálogo tem uma única rota canônica. Inventar atalhos para âncoras ou cenários
   // tornaria estados de teste em navegação de produto.
   kitchensink: operatorProfile('kitchensink', { shortcuts: false }),
+  status: {
+    surface: 'status-nuxt',
+    manifestUrl: '/manifest.webmanifest?v=1',
+    manifestHref: '/manifest.webmanifest?v=1',
+    manifestCache: 'public, max-age=3600',
+    packageWithPwaDependency: 'status-nuxt',
+    storefront: false,
+    publicStatus: true,
+    display: 'standalone',
+    orientation: 'any',
+    shortcuts: false,
+  },
 }
 const requestedApp = process.argv.find(value => value.startsWith('--app='))?.split('=', 2)[1]
 const profile = profiles[requestedApp]
@@ -98,7 +110,7 @@ if (profile.storefront) {
   check(splashScreens.length === 40, 'matriz canônica contém 40 splash screens iOS')
   check(new Set(splashScreens.map(([width, height]) => `${width}x${height}`)).size === 40, 'dimensões de splash screen não se repetem')
 }
-if (!profile.storefront) {
+if (!profile.storefront && !profile.publicStatus) {
   check(Boolean(profile.identity), `${requestedApp} tem identidade em app-identity.json`)
   const assetScript = surfacePackage.scripts?.['pwa:assets'] || ''
   check(assetScript.includes(`--app=${requestedApp}`), `gerador de ícones recebe a chave --app=${requestedApp}`)
@@ -116,7 +128,11 @@ check(forbidden.length === 0, 'precache não contém /api/, /events/ nem /admin/
 check(html.length === 1 && html[0] === 'offline.html', 'nenhuma navegação/HTML entra no precache além do casco offline')
 check(sw.includes('=>"navigate"===') && sw.includes('NetworkOnly') && sw.includes('PrecacheFallbackPlugin'), 'navegação usa NetworkOnly com fallback offline')
 check((sw.match(/\.CacheFirst\(/g) || []).length === 2, 'existem exatamente dois caches CacheFirst')
-check(sw.includes('startsWith("/img/products/")') && sw.includes('startsWith("/fonts/")'), 'cache de runtime cobre somente produtos e fontes')
+if (profile.publicStatus) {
+  check(sw.includes('startsWith("/fonts/")') && sw.includes('"/nelson-logo.svg"'), 'status cacheia somente fontes e marca')
+} else {
+  check(sw.includes('startsWith("/img/products/")') && sw.includes('startsWith("/fonts/")'), 'cache de runtime cobre somente produtos e fontes')
+}
 check(!sw.includes('startsWith("/api/') && !sw.includes('startsWith("/events/') && !sw.includes('startsWith("/admin/'), 'service worker não registra rotas proibidas')
 check(/"SKIP_WAITING"===\w+\.data\.type&&self\.skipWaiting\(\)/.test(sw), 'skipWaiting depende de mensagem explícita')
 
@@ -137,7 +153,7 @@ for (const [name, width, height] of requiredAssets) {
   const actual = await pngSize(join(surface, 'public/pwa', name))
   check(actual[0] === width && actual[1] === height, `${name} mede ${width}x${height}`)
 }
-if (!profile.storefront) {
+if (!profile.storefront && !profile.publicStatus) {
   // Favicon da aba: a identidade do app gerada por `pwa:assets` (operator-kit/PWA_ICONS.md).
   for (const name of ['favicon.ico', 'favicon.svg']) {
     check(await stat(join(surface, 'public', name)).then(() => true, () => false), `${name} existe em public/`)
@@ -192,7 +208,7 @@ try {
     check(field in manifest, `manifesto contém ${field}`)
   }
   // Sobe junto com a forma/desenho dos ícones (operator-kit/PWA_ICONS.md).
-  const assetVersion = profile.storefront ? '7' : '3'
+  const assetVersion = profile.storefront ? '7' : profile.publicStatus ? '1' : '3'
   check(manifest.icons.every(icon => new URL(icon.src, baseUrl).searchParams.get('v') === assetVersion), `ícones do manifesto usam cache-busting v=${assetVersion}`)
   check(manifest.icons.some(icon => icon.purpose === 'maskable'), 'manifesto declara ícone maskable')
   if (profile.storefront) {
@@ -208,7 +224,7 @@ try {
     check(manifest.icons.some(icon => icon.purpose === 'monochrome'), 'manifesto declara ícone monochrome')
     check(manifest.screenshots.filter(item => item.form_factor === 'narrow').length === 2, 'manifesto declara duas screenshots narrow')
     check(manifest.screenshots.filter(item => item.form_factor === 'wide').length === 1, 'manifesto declara uma screenshot wide')
-  } else {
+  } else if (!profile.publicStatus) {
     if (profile.shortcuts) check(manifest.shortcuts.length > 0, 'manifesto do operador declara atalhos')
     else check(manifest.shortcuts.length === 0, 'manifesto do kiosk não inventa atalhos')
     // A BARRA DE TÍTULO do app instalado é o `theme_color`. Ela tem de ser a cor do
@@ -223,6 +239,9 @@ try {
       `manifesto se chama pelo rótulo canônico ("${profile.identity.label}")`)
     check(!/\s[-–—|]\s/.test(manifest.name), 'nome do app não tem hífen, meia-risca, travessão nem barra')
     check(manifest.description === profile.identity.description, 'descrição vem da identidade canônica')
+  } else {
+    check(manifest.name === 'Status — Nelson Boulangerie', 'manifesto público usa a identidade Nelson')
+    check(manifest.shortcuts.length === 0, 'status público não inventa atalhos')
   }
 
   const swResponse = await fetch(`${baseUrl}/sw.js`, { method: 'HEAD' })
@@ -241,17 +260,19 @@ try {
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
-  if (!profile.storefront) {
+  if (!profile.storefront && !profile.publicStatus) {
     check(document.includes(`content="${profile.identity.color}"`), 'theme-color do HTML é a mesma cor do manifesto')
     const titleText = (document.match(/<title[^>]*>([^<]*)<\/title>/) || [])[1] || ''
     check(titleText.endsWith(profile.identity.label), `título da janela termina no rótulo canônico ("${profile.identity.label}", visto "${titleText}")`)
     check(!/\s[-–—|]\s/.test(titleText), 'título da janela não tem hífen, meia-risca, travessão nem barra')
   }
   check(document.includes(`/pwa/apple-touch-icon-180x180.png?v=${assetVersion}`), 'HTML referencia apple-touch-icon versionado')
-  if (!profile.storefront) {
+  if (!profile.storefront && !profile.publicStatus) {
     check(document.includes('href="/favicon.svg?v=1"') && document.includes('href="/favicon.ico?v=1"'), 'HTML referencia favicon SVG e ICO versionados')
     const favicon = await fetch(`${baseUrl}/favicon.svg?v=1`)
     check(favicon.ok && (await favicon.text()).includes('<rect '), 'favicon.svg responde 200 com o retângulo arredondado')
+  } else if (profile.publicStatus) {
+    check(document.includes('href="/pwa/favicon.svg?v=1"'), 'HTML referencia favicon público versionado')
   }
   check(document.includes('apple-mobile-web-app-capable') && document.includes('apple-mobile-web-app-status-bar-style'), 'HTML contém metas iOS')
   if (profile.storefront) check((document.match(/rel="apple-touch-startup-image"/g) || []).length === 40, 'HTML contém 40 links apple-touch-startup-image')
