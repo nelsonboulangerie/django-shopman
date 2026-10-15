@@ -73,6 +73,14 @@ function fetchOptions(): FetchOptions {
   return { credentials: "include", headers };
 }
 
+function mutationOptions(idempotencyKey: string) {
+  const options = fetchOptions();
+  return {
+    ...options,
+    headers: { ...(options.headers ?? {}), "Idempotency-Key": idempotencyKey },
+  };
+}
+
 export function usePurchaseApi() {
   async function fetchProjection() {
     return $fetch<PurchaseResponse>(PURCHASE_API_ENDPOINTS.projection, fetchOptions());
@@ -188,9 +196,9 @@ export function usePurchaseApi() {
   }
 
   // ── Cadastro da Base ──────────────────────────────────────────────────────
-  async function createMaterial(payload: PurchaseMaterialUpsertPayload) {
+  async function createMaterial(payload: PurchaseMaterialUpsertPayload, idempotencyKey: string) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.createMaterial, {
-      ...fetchOptions(),
+      ...mutationOptions(idempotencyKey),
       method: "POST",
       body: payload,
     });
@@ -204,17 +212,21 @@ export function usePurchaseApi() {
     });
   }
 
-  async function duplicateMaterial(materialSku: string, payload: PurchaseMaterialDuplicatePayload) {
+  async function duplicateMaterial(
+    materialSku: string,
+    payload: PurchaseMaterialDuplicatePayload,
+    idempotencyKey: string,
+  ) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.duplicateMaterial(materialSku), {
-      ...fetchOptions(),
+      ...mutationOptions(idempotencyKey),
       method: "POST",
       body: payload,
     });
   }
 
-  async function createSupplier(payload: PurchaseSupplierUpsertPayload) {
+  async function createSupplier(payload: PurchaseSupplierUpsertPayload, idempotencyKey: string) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.createSupplier, {
-      ...fetchOptions(),
+      ...mutationOptions(idempotencyKey),
       method: "POST",
       body: payload,
     });
@@ -228,17 +240,25 @@ export function usePurchaseApi() {
     });
   }
 
-  async function duplicateSupplier(ref: string, payload: PurchaseSupplierDuplicatePayload) {
+  async function duplicateSupplier(
+    ref: string,
+    payload: PurchaseSupplierDuplicatePayload,
+    idempotencyKey: string,
+  ) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.duplicateSupplier(ref), {
-      ...fetchOptions(),
+      ...mutationOptions(idempotencyKey),
       method: "POST",
       body: payload,
     });
   }
 
-  async function createSupplierContact(ref: string, payload: PurchaseContactUpsertPayload) {
+  async function createSupplierContact(
+    ref: string,
+    payload: PurchaseContactUpsertPayload,
+    idempotencyKey: string,
+  ) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.createSupplierContact(ref), {
-      ...fetchOptions(),
+      ...mutationOptions(idempotencyKey),
       method: "POST",
       body: payload,
     });

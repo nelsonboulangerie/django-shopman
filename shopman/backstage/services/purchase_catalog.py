@@ -156,20 +156,20 @@ def _shelf_life(raw: Any) -> int | None:
     if not text:
         return None
     try:
-        days = int(Decimal(text.replace(",", ".")))
+        value = Decimal(text.replace(",", "."))
     except (InvalidOperation, ValueError):
         raise PurchaseError(
             "A validade é um número de dias (vazio = não perecível).",
             code="shelf_life_invalid",
             field="shelfLifeDays",
         ) from None
-    if days < 0:
+    if not value.is_finite() or value != value.to_integral_value() or value < 0 or value > 36500:
         raise PurchaseError(
-            "A validade não pode ser negativa.",
+            "A validade precisa ser um número inteiro entre 0 e 36.500 dias.",
             code="shelf_life_invalid",
             field="shelfLifeDays",
         )
-    return days
+    return int(value)
 
 
 def _factor(raw: Any) -> Decimal:
@@ -261,10 +261,23 @@ def _supplier_field(exc: ValidationError) -> str:
     return "name"
 
 
+def _assert_revision(row, data: dict[str, Any], *, noun: str) -> None:
+    expected = str(data.get("expectedRevision") or "").strip()
+    current = row.updated_at.isoformat() if row.updated_at else ""
+    if expected and expected != current:
+        raise PurchaseError(
+            f"{noun.capitalize()} mudou desde que você abriu o cadastro. Atualize e confira antes de salvar.",
+            code="catalog_changed",
+            field="expectedRevision",
+            status_code=409,
+        )
+
+
 # ── Insumo ───────────────────────────────────────────────────────────────────
 
 
-def create_material(data: dict[str, Any], *, user=None) -> dict[str, Any]:
+@transaction.atomic
+def create_material(data: dict[str, Any], *, user=None) -> tuple[dict[str, Any], str]:
     """Cria o insumo do zero. SKU e nome são o mínimo; o resto tem default."""
     Material = apps.get_model("buyman", "Material")
     if not isinstance(data, dict):
@@ -293,19 +306,27 @@ def create_material(data: dict[str, Any], *, user=None) -> dict[str, Any]:
         material.save()
     except ValidationError as exc:
         raise PurchaseError(_first_validation_message(exc), code="material_refused", field=_material_field(exc)) from exc
+    except IntegrityError as exc:
+        raise PurchaseError(
+            f"Já existe um insumo com o SKU {sku}. Edite o existente em vez de criar outro.",
+            code="material_sku_exists",
+            field="sku",
+        ) from exc
 
     logger.info("purchase.material_created sku=%s user=%s", material.sku, getattr(user, "username", "") or "anon")
-    return build_purchase()
+    return build_purchase(), material.sku
 
 
+@transaction.atomic
 def update_material(material_sku: str, data: dict[str, Any], *, user=None) -> dict[str, Any]:
     """Edita o cadastro do insumo. O SKU não muda por aqui (renome é do Admin)."""
     Material = apps.get_model("buyman", "Material")
-    material = Material.objects.filter(sku=material_sku).first()
+    material = Material.objects.select_for_update().filter(sku=material_sku).first()
     if material is None:
         raise PurchaseError("Insumo não encontrado.", code="material_not_found", field="sku", status_code=404)
     if not isinstance(data, dict):
         raise PurchaseError("Informe os campos do insumo.", code="material_invalid")
+    _assert_revision(material, data, noun="o insumo")
 
     if "name" in data:
         material.name = _text(data.get("name"), field="name", label="o nome", required=True, max_length=_MATERIAL_LABEL_MAX)
@@ -329,7 +350,8 @@ def update_material(material_sku: str, data: dict[str, Any], *, user=None) -> di
     return build_purchase()
 
 
-def duplicate_material(material_sku: str, data: dict[str, Any], *, user=None) -> dict[str, Any]:
+@transaction.atomic
+def duplicate_material(material_sku: str, data: dict[str, Any], *, user=None) -> tuple[dict[str, Any], str]:
     """Duplica o conteúdo copiável do insumo num SKU novo.
 
     A cópia traz nome, unidade, validade e categoria. Não traz EAN, mínimo
@@ -337,11 +359,12 @@ def duplicate_material(material_sku: str, data: dict[str, Any], *, user=None) ->
     decisão do original, e o novo SKU começa limpo.
     """
     Material = apps.get_model("buyman", "Material")
-    source = Material.objects.filter(sku=material_sku).first()
+    source = Material.objects.select_for_update().filter(sku=material_sku).first()
     if source is None:
         raise PurchaseError("Insumo não encontrado.", code="material_not_found", field="sku", status_code=404)
     if not isinstance(data, dict):
         raise PurchaseError("Informe os campos da cópia.", code="material_invalid")
+    _assert_revision(source, data, noun="o insumo original")
 
     new_sku = _sku(data.get("sku"))
     if new_sku.casefold() == source.sku.casefold():
@@ -379,6 +402,12 @@ def duplicate_material(material_sku: str, data: dict[str, Any], *, user=None) ->
         copy_row.save()
     except ValidationError as exc:
         raise PurchaseError(_first_validation_message(exc), code="material_refused", field=_material_field(exc)) from exc
+    except IntegrityError as exc:
+        raise PurchaseError(
+            f"Já existe um insumo com o SKU {new_sku}.",
+            code="material_sku_exists",
+            field="sku",
+        ) from exc
 
     logger.info(
         "purchase.material_duplicated source=%s sku=%s user=%s",
@@ -386,7 +415,7 @@ def duplicate_material(material_sku: str, data: dict[str, Any], *, user=None) ->
         copy_row.sku,
         getattr(user, "username", "") or "anon",
     )
-    return build_purchase()
+    return build_purchase(), copy_row.sku
 
 
 # ── Fornecedor ───────────────────────────────────────────────────────────────
@@ -407,16 +436,24 @@ def _lead_time(raw: Any) -> int:
     if not text:
         return 0
     try:
-        return int(Decimal(text.replace(",", ".")))
+        value = Decimal(text.replace(",", "."))
     except (InvalidOperation, ValueError):
         raise PurchaseError(
             "O prazo de entrega é um número de dias.",
             code="lead_time_invalid",
             field="leadTimeDays",
         ) from None
+    if not value.is_finite() or value != value.to_integral_value() or value < 0 or value > 3650:
+        raise PurchaseError(
+            "O prazo de entrega precisa ser um número inteiro entre 0 e 3.650 dias.",
+            code="lead_time_invalid",
+            field="leadTimeDays",
+        )
+    return int(value)
 
 
-def create_supplier(data: dict[str, Any], *, user=None) -> dict[str, Any]:
+@transaction.atomic
+def create_supplier(data: dict[str, Any], *, user=None) -> tuple[dict[str, Any], str]:
     """Cria o fornecedor. Sem ref informada, ela nasce do nome (o padrão da casa)."""
     Supplier = apps.get_model("buyman", "Supplier")
     if not isinstance(data, dict):
@@ -458,19 +495,27 @@ def create_supplier(data: dict[str, Any], *, user=None) -> dict[str, Any]:
         supplier.save()
     except ValidationError as exc:
         raise PurchaseError(_first_validation_message(exc), code="supplier_refused", field=_supplier_field(exc)) from exc
+    except IntegrityError as exc:
+        raise PurchaseError(
+            f"Já existe um fornecedor com a referência {ref}.",
+            code="supplier_ref_exists",
+            field="ref",
+        ) from exc
 
     logger.info("purchase.supplier_created ref=%s user=%s", supplier.ref, getattr(user, "username", "") or "anon")
-    return build_purchase()
+    return build_purchase(), supplier.ref
 
 
+@transaction.atomic
 def update_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, Any]:
     """Edita o fornecedor. A referência não muda por aqui (renome é do Admin)."""
     Supplier = apps.get_model("buyman", "Supplier")
-    supplier = Supplier.objects.filter(ref=ref).first()
+    supplier = Supplier.objects.select_for_update().filter(ref=ref).first()
     if supplier is None:
         raise PurchaseError("Fornecedor não encontrado.", code="supplier_not_found", field="ref", status_code=404)
     if not isinstance(data, dict):
         raise PurchaseError("Informe os campos do fornecedor.", code="supplier_invalid")
+    _assert_revision(supplier, data, noun="o fornecedor")
 
     if "name" in data:
         supplier.name = _text(data.get("name"), field="name", label="a razão social", required=True, max_length=_SUPPLIER_NAME_MAX)
@@ -506,7 +551,7 @@ def update_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, A
 
 
 @transaction.atomic
-def duplicate_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, Any]:
+def duplicate_supplier(ref: str, data: dict[str, Any], *, user=None) -> tuple[dict[str, Any], str]:
     """Duplica o fornecedor, com os contatos e os termos comerciais.
 
     A cópia NÃO herda CNPJ nem o de-para de nota: são identidade e história do
@@ -519,6 +564,7 @@ def duplicate_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str
         raise PurchaseError("Fornecedor não encontrado.", code="supplier_not_found", field="ref", status_code=404)
     if not isinstance(data, dict):
         raise PurchaseError("Informe os campos da cópia.", code="supplier_invalid")
+    _assert_revision(source, data, noun="o fornecedor original")
 
     new_ref = _ref(data.get("ref"), required=True)
     if new_ref == source.ref:
@@ -548,6 +594,12 @@ def duplicate_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str
         copy_row.save()
     except ValidationError as exc:
         raise PurchaseError(_first_validation_message(exc), code="supplier_refused", field=_supplier_field(exc)) from exc
+    except IntegrityError as exc:
+        raise PurchaseError(
+            f"Já existe um fornecedor com a referência {new_ref}.",
+            code="supplier_ref_exists",
+            field="ref",
+        ) from exc
 
     for contact in source.contacts.all().order_by("pk"):
         SupplierContact.objects.create(
@@ -567,7 +619,7 @@ def duplicate_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str
         copy_row.ref,
         getattr(user, "username", "") or "anon",
     )
-    return build_purchase()
+    return build_purchase(), copy_row.ref
 
 
 # ── Contato do fornecedor ────────────────────────────────────────────────────
@@ -595,7 +647,11 @@ def _contact_payload(contact, data: dict[str, Any]) -> None:
 
 def _contact_error(exc: Exception) -> PurchaseError:
     message = _first_validation_message(exc) if isinstance(exc, ValidationError) else str(exc)
-    return PurchaseError(message, code="contact_refused", field="name")
+    messages = getattr(exc, "message_dict", None) or {}
+    field_map = {"is_primary": "isPrimary", "is_active": "isActive"}
+    raw_field = next(iter(messages), "name")
+    field = field_map.get(raw_field, raw_field)
+    return PurchaseError(message, code="contact_refused", field=field)
 
 
 def create_supplier_contact(ref: str, data: dict[str, Any], *, user=None) -> dict[str, Any]:
@@ -619,6 +675,10 @@ def create_supplier_contact(ref: str, data: dict[str, Any], *, user=None) -> dic
             field="email",
         )
     try:
+        # O save do modelo promove o contato e demove o principal anterior na
+        # mesma transação. Validar a constraint única antes disso recusaria o
+        # gesto que o próprio modelo foi desenhado para resolver.
+        contact.full_clean(validate_constraints=False)
         contact.save()
     except (ValidationError, IntegrityError) as exc:
         raise _contact_error(exc) from exc
@@ -651,6 +711,7 @@ def update_supplier_contact(contact_id: int, data: dict[str, Any], *, user=None)
             field="email",
         )
     try:
+        contact.full_clean(validate_constraints=False)
         contact.save()
     except (ValidationError, IntegrityError) as exc:
         raise _contact_error(exc) from exc
@@ -693,7 +754,7 @@ def update_conversion(conversion_id: int, data: dict[str, Any], *, user=None) ->
     try:
         conversion.full_clean()
         conversion.save()
-    except ValidationError as exc:
+    except (ValidationError, IntegrityError) as exc:
         messages = getattr(exc, "message_dict", None) or {}
         field = "factor" if "to_base_factor" in messages else "label"
         raise PurchaseError(

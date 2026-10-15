@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -70,11 +71,12 @@ def supplier(db):
     )
 
 
-def _post(client, name, data=None, args=None):
+def _post(client, name, data=None, args=None, *, key=None):
     return client.post(
         reverse(name, args=args or []),
         data=json.dumps(data or {}),
         content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key or str(uuid4()),
     )
 
 
@@ -116,6 +118,7 @@ def test_create_material_persists_and_returns_projection(client, purchase_operat
     body = response.json()
     assert body["ok"] is True
     assert body["message"] == "Insumo Manteiga francesa criado."
+    assert body["resource"] == {"kind": "material", "ref": "MANTEIGA-PRESIDENT"}
     created = Material.objects.get(sku="MANTEIGA-PRESIDENT")
     assert created.unit == "kg"
     assert created.shelf_life_days == 90
@@ -168,6 +171,13 @@ def test_create_material_refuses_bad_unit_and_negative_shelf_life(client, purcha
     assert bad_shelf.status_code == 400
     assert bad_shelf.json()["field"] == "shelfLifeDays"
 
+    fractional = _post(
+        client, "api-backstage-purchase-materials",
+        {"sku": "C", "name": "C", "unit": "kg", "shelfLifeDays": "1,5"},
+    )
+    assert fractional.status_code == 400
+    assert fractional.json()["error"]["code"] == "shelf_life_invalid"
+
 
 @pytest.mark.django_db
 def test_create_material_refuses_a_flag_that_is_not_yes_or_no(client, purchase_operator):
@@ -215,6 +225,26 @@ def test_update_material_unknown_sku_is_404(client, purchase_operator):
 
 
 @pytest.mark.django_db
+def test_update_material_refuses_a_stale_form(client, purchase_operator, material):
+    stale_revision = material.updated_at.isoformat()
+    material.name = "Alterado em outra tela"
+    material.save()
+    client.force_login(purchase_operator)
+
+    response = _post(
+        client,
+        "api-backstage-purchase-material",
+        {"name": "Meu rascunho", "expectedRevision": stale_revision},
+        args=[material.sku],
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "catalog_changed"
+    material.refresh_from_db()
+    assert material.name == "Alterado em outra tela"
+
+
+@pytest.mark.django_db
 def test_duplicate_material_copies_content_but_not_identity(client, purchase_operator, material):
     client.force_login(purchase_operator)
 
@@ -226,6 +256,7 @@ def test_duplicate_material_copies_content_but_not_identity(client, purchase_ope
     )
 
     assert response.status_code == 200, response.json()
+    assert response.json()["resource"] == {"kind": "material", "ref": "FARINHA-NOVARA-T80"}
     copy = Material.objects.get(sku="FARINHA-NOVARA-T80")
     assert copy.name == "Farinha T80"
     assert copy.unit == "kg"
@@ -279,6 +310,61 @@ def test_create_supplier_derives_ref_from_the_name(client, purchase_operator):
     assert supplier.metadata["purchase"]["lead_time_days"] == 3
     assert supplier.metadata["purchase"]["payment_term"] == "21 dias"
     assert response.json()["message"] == "Fornecedor cadastrado."
+    assert response.json()["resource"] == {"kind": "supplier", "ref": "tamura"}
+
+
+@pytest.mark.django_db
+def test_create_supplier_returns_the_exact_generated_ref_with_homonyms(client, purchase_operator):
+    Supplier.objects.create(ref="tamura", name="Tamura")
+    client.force_login(purchase_operator)
+
+    response = _post(client, "api-backstage-purchase-suppliers", {"name": "Tamura"})
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["resource"] == {"kind": "supplier", "ref": "tamura-2"}
+    assert Supplier.objects.filter(ref="tamura-2").exists()
+
+
+@pytest.mark.django_db
+def test_create_supplier_retry_returns_the_same_record(client, purchase_operator):
+    """Resposta perdida não pode transformar o reenvio em outro fornecedor."""
+    client.force_login(purchase_operator)
+    key = str(uuid4())
+    payload = {"name": "Tamura"}
+
+    first = _post(client, "api-backstage-purchase-suppliers", payload, key=key)
+    retried = _post(client, "api-backstage-purchase-suppliers", payload, key=key)
+
+    assert first.status_code == retried.status_code == 200
+    assert first.json()["resource"] == retried.json()["resource"]
+    assert Supplier.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_create_supplier_refuses_reusing_intention_for_other_payload(client, purchase_operator):
+    client.force_login(purchase_operator)
+    key = str(uuid4())
+
+    assert _post(client, "api-backstage-purchase-suppliers", {"name": "Tamura"}, key=key).status_code == 200
+    conflict = _post(client, "api-backstage-purchase-suppliers", {"name": "Outro"}, key=key)
+
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "intention_conflict"
+    assert Supplier.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_supplier_refuses_fractional_or_negative_delivery_days(client, purchase_operator):
+    client.force_login(purchase_operator)
+
+    for value in ("1,5", -1):
+        response = _post(
+            client,
+            "api-backstage-purchase-suppliers",
+            {"name": "Prazo inválido", "leadTimeDays": value},
+        )
+        assert response.status_code == 400
+        assert response.json()["field"] == "leadTimeDays"
 
 
 @pytest.mark.django_db
@@ -315,6 +401,26 @@ def test_update_supplier_changes_commercial_terms(client, purchase_operator, sup
 
 
 @pytest.mark.django_db
+def test_update_supplier_refuses_a_stale_form(client, purchase_operator, supplier):
+    stale_revision = supplier.updated_at.isoformat()
+    supplier.trade_name = "Alterado em outra tela"
+    supplier.save()
+    client.force_login(purchase_operator)
+
+    response = _post(
+        client,
+        "api-backstage-purchase-supplier",
+        {"tradeName": "Meu rascunho", "expectedRevision": stale_revision},
+        args=[supplier.ref],
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "catalog_changed"
+    supplier.refresh_from_db()
+    assert supplier.trade_name == "Alterado em outra tela"
+
+
+@pytest.mark.django_db
 def test_duplicate_supplier_copies_contacts_and_terms_but_not_document(client, purchase_operator, supplier):
     SupplierContact.objects.create(
         supplier=supplier, name="Cláudia Ramos", role="sales",
@@ -330,6 +436,7 @@ def test_duplicate_supplier_copies_contacts_and_terms_but_not_document(client, p
     )
 
     assert response.status_code == 200, response.json()
+    assert response.json()["resource"] == {"kind": "supplier", "ref": "moinho-sp-2"}
     copy = Supplier.objects.get(ref="moinho-sp-2")
     assert copy.name == "Moinho São Paulo Filial"
     assert copy.document == ""
@@ -380,6 +487,41 @@ def test_create_contact_normalizes_phone_and_promotes_the_first(client, purchase
     people = body["purchase"]["suppliers"][0]["contacts"]
     assert people[0]["name"] == "Cláudia Ramos"
     assert people[0]["phone"] == contact.phone
+
+
+@pytest.mark.django_db
+def test_create_contact_retry_does_not_duplicate_the_person(client, purchase_operator, supplier):
+    client.force_login(purchase_operator)
+    key = str(uuid4())
+    payload = {"name": "Cláudia Ramos", "role": "sales", "phone": "43 99999-0000"}
+
+    first = _post(
+        client, "api-backstage-purchase-supplier-contacts", payload,
+        args=[supplier.ref], key=key,
+    )
+    retried = _post(
+        client, "api-backstage-purchase-supplier-contacts", payload,
+        args=[supplier.ref], key=key,
+    )
+
+    assert first.status_code == retried.status_code == 200
+    assert SupplierContact.objects.filter(supplier=supplier).count() == 1
+
+
+@pytest.mark.django_db
+def test_create_contact_refuses_an_invalid_email(client, purchase_operator, supplier):
+    client.force_login(purchase_operator)
+
+    response = _post(
+        client,
+        "api-backstage-purchase-supplier-contacts",
+        {"name": "Cláudia", "role": "sales", "email": "email-inválido"},
+        args=[supplier.ref],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "email"
+    assert SupplierContact.objects.count() == 0
 
 
 @pytest.mark.django_db
@@ -480,5 +622,6 @@ def test_create_material_costs_a_bounded_number_of_queries(client, purchase_oper
             {"sku": "NOVO-INSUMO", "name": "Novo insumo", "unit": "kg"},
         )
     assert response.status_code == 200, response.json()
-    # 32 neste dataset: 1 insert + a projeção inteira (a mesma do board, 31).
-    assert len(captured) <= 40, f"Criar insumo custou {len(captured)} consultas."
+    # 45 neste dataset: escrita + projeção inteira + recibo idempotente local.
+    # O teto mantém folga curta sem esconder N+1; o custo não cresce com a Base.
+    assert len(captured) <= 48, f"Criar insumo custou {len(captured)} consultas."

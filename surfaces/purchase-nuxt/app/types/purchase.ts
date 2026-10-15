@@ -65,6 +65,7 @@ export interface Material {
   lastDeliveryExpiry?: string;
   /** Códigos de barras conferidos deste insumo: o "Ler EAN" acha o item da caixa. */
   eans?: string[];
+  revision?: string;
 }
 
 export interface OpensInto {
@@ -144,6 +145,7 @@ export interface Supplier {
   isActive: boolean;
   lastDeliveryAt: string;
   paymentTerm: string;
+  revision?: string;
 }
 
 export interface MaterialConversion {
@@ -606,9 +608,13 @@ export interface PurchaseCostBatchLineError {
 }
 
 export interface PurchaseActionResponse {
-  ok: boolean;
+  ok?: boolean;
+  outcome?: "applied" | "not_applied" | "unknown";
+  detail?: string;
   purchase?: PurchaseProjection;
   message?: string;
+  /** Registro criado pela ação. Evita procurar por nome numa projeção com homônimos. */
+  resource?: { kind: "material" | "supplier"; ref: string };
   // Só a rota de declarar conversão devolve: é por ele que a linha que estava
   // travada seleciona a conversão recém-criada, sem procurar por rótulo.
   conversionId?: string;
@@ -742,11 +748,14 @@ export interface PurchaseMaterialUpsertPayload {
 }
 
 /** Editar não muda o SKU: renomear identificador é gesto do Admin. */
-export type PurchaseMaterialPatchPayload = Partial<Omit<PurchaseMaterialUpsertPayload, "sku">>;
+export type PurchaseMaterialPatchPayload = Partial<Omit<PurchaseMaterialUpsertPayload, "sku">> & {
+  expectedRevision?: string;
+};
 
 export interface PurchaseMaterialDuplicatePayload {
   sku: string;
   name: string;
+  expectedRevision?: string;
 }
 
 export interface PurchaseSupplierUpsertPayload {
@@ -762,11 +771,14 @@ export interface PurchaseSupplierUpsertPayload {
 }
 
 /** Editar não muda a referência: renomear identificador é gesto do Admin. */
-export type PurchaseSupplierPatchPayload = Partial<Omit<PurchaseSupplierUpsertPayload, "ref">>;
+export type PurchaseSupplierPatchPayload = Partial<Omit<PurchaseSupplierUpsertPayload, "ref">> & {
+  expectedRevision?: string;
+};
 
 export interface PurchaseSupplierDuplicatePayload {
   ref: string;
   name: string;
+  expectedRevision?: string;
 }
 
 export interface PurchaseContactUpsertPayload {

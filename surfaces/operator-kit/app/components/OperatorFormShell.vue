@@ -49,6 +49,8 @@ const props = withDefaults(
     /** Troca a pergunta do descarte, quando o cadastro tem nome próprio. */
     confirmDiscard?: Partial<FormDiscardCopy>;
     actionLabel?: string;
+    /** `wide` para formulários em duas colunas; `standard` para gestos curtos. */
+    size?: "standard" | "wide";
   }>(),
   {
     description: "",
@@ -64,6 +66,7 @@ const props = withDefaults(
     activeSection: null,
     confirmDiscard: undefined,
     actionLabel: "Ação do cadastro",
+    size: "wide",
   },
 );
 
@@ -88,6 +91,9 @@ const saveAction = computed<OperatorActionBarAction>(() => ({
 const notice = computed(() => (props.dirty ? dirtyCountLabel(props.dirtyCount) : ""));
 const statusLine = computed(() =>
   props.saveDisabled && props.saveDisabledReason ? props.saveDisabledReason : notice.value,
+);
+const panelClass = computed(() =>
+  props.size === "standard" ? "w-full max-w-none sm:max-w-lg" : "w-full max-w-none sm:max-w-2xl",
 );
 
 const confirm = useConfirm();
@@ -127,6 +133,7 @@ defineExpose({ reveal });
     :title="title"
     :description="description"
     side="right"
+    :class="panelClass"
     @update:open="onOpenChange"
   >
     <template #body>

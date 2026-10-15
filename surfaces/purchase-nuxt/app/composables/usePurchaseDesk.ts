@@ -93,6 +93,10 @@ function centsInput(cents: number): string {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
+function newMutationKey(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function usePurchaseDesk() {
   const view = useState<PurchaseView>("purchase-view", () => "panel");
   const baseView = useState<PurchaseBaseView>("purchase-base-view", () => "materials");
@@ -737,13 +741,16 @@ export function usePurchaseDesk() {
   // vai selecionar. `null` continua sendo o "não deu" dos usos que só testam.
   async function runBackendAction(
     request: () => Promise<PurchaseActionResponse>,
-    options: { receipt?: boolean; quiet?: boolean } = {},
+    options: { receipt?: boolean; quiet?: boolean; onDefinitiveFailure?: () => void } = {},
   ): Promise<PurchaseActionResponse | null> {
     if (actionPending.value) return null;
     actionPending.value = true;
     actionError.value = "";
     try {
       const response = await request();
+      if (response.outcome && response.outcome !== "applied") {
+        throw new Error(response.detail || "O resultado ainda não foi confirmado. Tente novamente.");
+      }
       if (response.purchase) applyProjection(response.purchase, options);
       // `quiet`: a própria tela já anuncia o que aconteceu, e em tamanho maior
       // que um toast. Repetir "Entrada confirmada no estoque" duas vezes na
@@ -752,6 +759,10 @@ export function usePurchaseDesk() {
       await refresh();
       return response;
     } catch (err) {
+      const status = httpError(err).status;
+      if (status >= 400 && status < 500 && ![401, 403, 409].includes(status)) {
+        options.onDefinitiveFailure?.();
+      }
       const message = httpErrorMessage(err, "Falha na ação. Tente de novo.");
       actionError.value = message;
       useSonner.error(message);
@@ -1219,13 +1230,13 @@ export function usePurchaseDesk() {
   // ── Cadastro da Base (criar, editar e duplicar) ──────────────────────────
   // O painel é dono do formulário; aqui mora o fetch e o que a projeção faz
   // depois. O estado do painel é da sessão, como o resto do Compras.
-  const materialForm = useState<{ open: boolean; mode: PurchaseFormMode; sku: string }>(
+  const materialForm = useState<{ open: boolean; mode: PurchaseFormMode; sku: string; mutationKey: string }>(
     "purchase-material-form",
-    () => ({ open: false, mode: "create", sku: "" }),
+    () => ({ open: false, mode: "create", sku: "", mutationKey: newMutationKey() }),
   );
-  const supplierForm = useState<{ open: boolean; mode: PurchaseFormMode; ref: string }>(
+  const supplierForm = useState<{ open: boolean; mode: PurchaseFormMode; ref: string; mutationKey: string }>(
     "purchase-supplier-form",
-    () => ({ open: false, mode: "create", ref: "" }),
+    () => ({ open: false, mode: "create", ref: "", mutationKey: newMutationKey() }),
   );
 
   const materialFormSource = computed(
@@ -1245,25 +1256,25 @@ export function usePurchaseDesk() {
   const materialFormCosts = computed(() => costs.value.filter((row) => row.materialSku === materialForm.value.sku));
 
   function openMaterialCreate() {
-    materialForm.value = { open: true, mode: "create", sku: "" };
+    materialForm.value = { open: true, mode: "create", sku: "", mutationKey: newMutationKey() };
   }
   function openMaterialEdit(sku: string) {
-    materialForm.value = { open: true, mode: "edit", sku };
+    materialForm.value = { open: true, mode: "edit", sku, mutationKey: newMutationKey() };
   }
   function openMaterialDuplicate(sku: string) {
-    materialForm.value = { open: true, mode: "duplicate", sku };
+    materialForm.value = { open: true, mode: "duplicate", sku, mutationKey: newMutationKey() };
   }
   function closeMaterialForm() {
     materialForm.value = { ...materialForm.value, open: false };
   }
   function openSupplierCreate() {
-    supplierForm.value = { open: true, mode: "create", ref: "" };
+    supplierForm.value = { open: true, mode: "create", ref: "", mutationKey: newMutationKey() };
   }
   function openSupplierEdit(ref: string) {
-    supplierForm.value = { open: true, mode: "edit", ref };
+    supplierForm.value = { open: true, mode: "edit", ref, mutationKey: newMutationKey() };
   }
   function openSupplierDuplicate(ref: string) {
-    supplierForm.value = { open: true, mode: "duplicate", ref };
+    supplierForm.value = { open: true, mode: "duplicate", ref, mutationKey: newMutationKey() };
   }
   function closeSupplierForm() {
     supplierForm.value = { ...supplierForm.value, open: false };
@@ -1272,13 +1283,21 @@ export function usePurchaseDesk() {
   async function saveMaterial(payload: Record<string, unknown>): Promise<string | null> {
     const mode = materialForm.value.mode;
     const sku = materialForm.value.sku;
-    const response = await runBackendAction(() => {
-      if (mode === "create") return api.createMaterial(payload as unknown as PurchaseMaterialUpsertPayload);
-      if (mode === "duplicate") return api.duplicateMaterial(sku, payload as unknown as PurchaseMaterialDuplicatePayload);
-      return api.updateMaterial(sku, payload as unknown as PurchaseMaterialPatchPayload);
-    });
+    const mutationKey = materialForm.value.mutationKey;
+    const response = await runBackendAction(
+      () => {
+        if (mode === "create") return api.createMaterial(payload as unknown as PurchaseMaterialUpsertPayload, mutationKey);
+        if (mode === "duplicate") return api.duplicateMaterial(sku, payload as unknown as PurchaseMaterialDuplicatePayload, mutationKey);
+        return api.updateMaterial(sku, payload as unknown as PurchaseMaterialPatchPayload);
+      },
+      {
+        onDefinitiveFailure: () => {
+          materialForm.value = { ...materialForm.value, mutationKey: newMutationKey() };
+        },
+      },
+    );
     if (!response) return null;
-    const savedSku = mode === "edit" ? sku : String((payload as { sku?: string }).sku ?? sku);
+    const savedSku = mode === "edit" ? sku : response.resource?.ref || String((payload as { sku?: string }).sku ?? sku);
     selectedMaterialSku.value = savedSku;
     closeMaterialForm();
     return savedSku;
@@ -1287,17 +1306,21 @@ export function usePurchaseDesk() {
   async function saveSupplier(payload: Record<string, unknown>): Promise<string | null> {
     const mode = supplierForm.value.mode;
     const ref = supplierForm.value.ref;
-    const response = await runBackendAction(() => {
-      if (mode === "create") return api.createSupplier(payload as unknown as PurchaseSupplierUpsertPayload);
-      if (mode === "duplicate") return api.duplicateSupplier(ref, payload as unknown as PurchaseSupplierDuplicatePayload);
-      return api.updateSupplier(ref, payload as unknown as PurchaseSupplierPatchPayload);
-    });
+    const mutationKey = supplierForm.value.mutationKey;
+    const response = await runBackendAction(
+      () => {
+        if (mode === "create") return api.createSupplier(payload as unknown as PurchaseSupplierUpsertPayload, mutationKey);
+        if (mode === "duplicate") return api.duplicateSupplier(ref, payload as unknown as PurchaseSupplierDuplicatePayload, mutationKey);
+        return api.updateSupplier(ref, payload as unknown as PurchaseSupplierPatchPayload);
+      },
+      {
+        onDefinitiveFailure: () => {
+          supplierForm.value = { ...supplierForm.value, mutationKey: newMutationKey() };
+        },
+      },
+    );
     if (!response) return null;
-    let savedRef = mode === "create" ? String((payload as { ref?: string }).ref ?? "").trim() : ref;
-    if (!savedRef) {
-      const name = String((payload as { name?: string }).name ?? "").trim();
-      savedRef = suppliers.value.find((supplier) => supplier.name === name)?.ref ?? "";
-    }
+    const savedRef = mode === "edit" ? ref : response.resource?.ref || String((payload as { ref?: string }).ref ?? "").trim();
     if (savedRef) selectedSupplierRef.value = savedRef;
     closeSupplierForm();
     return savedRef;
@@ -1349,13 +1372,22 @@ export function usePurchaseDesk() {
       isPrimary: payload.isPrimary,
       isActive: payload.isActive,
     };
-    const response = await runBackendAction(() =>
-      payload.contactId
-        ? api.updateContact(payload.contactId, body)
-        : ref
-          ? api.createSupplierContact(ref, body)
-          : Promise.reject(new Error("Sem fornecedor para o contato.")),
+    const response = await runBackendAction(
+      () =>
+        payload.contactId
+          ? api.updateContact(payload.contactId, body)
+          : ref
+            ? api.createSupplierContact(ref, body, supplierForm.value.mutationKey)
+            : Promise.reject(new Error("Sem fornecedor para o contato.")),
+      {
+        onDefinitiveFailure: () => {
+          supplierForm.value = { ...supplierForm.value, mutationKey: newMutationKey() };
+        },
+      },
     );
+    if (response && !payload.contactId) {
+      supplierForm.value = { ...supplierForm.value, mutationKey: newMutationKey() };
+    }
     return Boolean(response);
   }
 

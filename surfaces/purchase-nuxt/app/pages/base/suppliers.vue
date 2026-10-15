@@ -112,6 +112,11 @@ async function onSubmitSupplier(payload: Record<string, unknown>) {
   const ref = await saveSupplier(payload);
   if (ref) await navigateTo(supplierPath(ref));
 }
+
+const supplierSavedVersion = ref(0);
+async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierContact>[0]) {
+  if (await saveSupplierContact(payload)) supplierSavedVersion.value += 1;
+}
 </script>
 
 <template>
@@ -211,11 +216,12 @@ async function onSubmitSupplier(payload: Record<string, unknown>) {
       :open="supplierForm.open"
       :mode="supplierForm.mode"
       :source="supplierFormSource"
+      :saved-version="supplierSavedVersion"
       :busy="actionPending"
       :error="actionError"
       @update:open="supplierForm.open = $event"
       @save="onSubmitSupplier"
-      @save-contact="(payload) => saveSupplierContact(payload)"
+      @save-contact="onSaveSupplierContact"
     />
   </main>
 </template>

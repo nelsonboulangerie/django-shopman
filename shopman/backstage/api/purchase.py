@@ -13,6 +13,12 @@ from shopman.backstage.services import purchase as purchase_service
 from shopman.backstage.services import purchase_catalog as purchase_catalog_service
 from shopman.backstage.services import purchase_count as purchase_count_service
 from shopman.backstage.services.purchase import PurchaseError
+from shopman.shop.services.remote_mutations import (
+    RemoteMutationConflict,
+    RemoteMutationInProgress,
+    mutation_fingerprint,
+    run_idempotent_mutation,
+)
 
 from .permissions import HasBackstagePermission
 
@@ -21,11 +27,17 @@ from .permissions import HasBackstagePermission
 PURCHASE_COUNT_PERMISSIONS = ("backstage.operate_purchase", "backstage.audit_stock")
 
 
-def _purchase_response(projection, *, message: str = "") -> Response:
-    body = {"ok": True, "purchase": projection_data(projection)}
+def _purchase_body(projection, *, message: str = "", resource: dict | None = None) -> dict:
+    body = {"ok": True, "outcome": "applied", "purchase": projection_data(projection)}
     if message:
         body["message"] = message
-    return Response(body)
+    if resource:
+        body["resource"] = resource
+    return body
+
+
+def _purchase_response(projection, *, message: str = "", resource: dict | None = None) -> Response:
+    return Response(_purchase_body(projection, message=message, resource=resource))
 
 
 def _error_response(exc: PurchaseError) -> Response:
@@ -43,6 +55,53 @@ def _error_response(exc: PurchaseError) -> Response:
         # superset em `error`, no mesmo molde de `error.code`.
         payload["error"]["lines"] = exc.lines
     return Response(payload, status=exc.status_code)
+
+
+def _catalog_mutation(request, *, operation: str, payload: dict, execute) -> Response:
+    """Executa criação/duplicação uma vez, mesmo quando a resposta se perde.
+
+    Cadastro é usado em Wi-Fi de operação. Um reenvio depois de timeout não pode
+    criar um segundo fornecedor, contato ou SKU. O mesmo par escopo/chave aceita
+    a repetição idêntica e recusa a chave reaproveitada com outro conteúdo.
+    """
+    key = request.headers.get("Idempotency-Key") or payload.get("idempotencyKey")
+    if not isinstance(key, str) or not key or len(key) > 128:
+        return Response(
+            {
+                "detail": "Atualize o cadastro e tente novamente.",
+                "error": {"code": "intention_required"},
+            },
+            status=400,
+        )
+    clean_payload = {name: value for name, value in payload.items() if name != "idempotencyKey"}
+    scope = mutation_fingerprint(
+        {"version": 1, "actor": request.user.pk, "operation": operation},
+    )
+    fingerprint = mutation_fingerprint({"scope": scope, "payload": clean_payload})
+
+    def run():
+        try:
+            projection, message, resource = execute(clean_payload)
+        except PurchaseError as exc:
+            response = _error_response(exc)
+            body = dict(response.data)
+            body["outcome"] = "not_applied"
+            return body, response.status_code
+        return _purchase_body(projection, message=message, resource=resource), 200
+
+    try:
+        result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=run)
+        return Response(result.response_body, status=result.response_code)
+    except RemoteMutationConflict:
+        return Response(
+            {"detail": "Esta tentativa já representa outro cadastro.", "error": {"code": "intention_conflict"}},
+            status=409,
+        )
+    except RemoteMutationInProgress:
+        return Response(
+            {"detail": "Cadastro em processamento. Tente novamente em instantes.", "outcome": "unknown"},
+            status=202,
+        )
 
 
 class PurchaseBoardView(APIView):
@@ -352,12 +411,18 @@ class PurchaseMaterialView(APIView):
     )
     def post(self, request):
         data = dict(request.data or {})
-        try:
-            projection = purchase_catalog_service.create_material(data, user=request.user)
-        except PurchaseError as exc:
-            return _error_response(exc)
-        name = str(data.get("name") or "").strip()
-        return _purchase_response(projection, message=f"Insumo {name} criado." if name else "Insumo criado.")
+
+        def execute(payload):
+            projection, sku = purchase_catalog_service.create_material(payload, user=request.user)
+            name = str(payload.get("name") or "").strip()
+            return projection, f"Insumo {name} criado.", {"kind": "material", "ref": sku}
+
+        return _catalog_mutation(
+            request,
+            operation="purchase.material-create",
+            payload=data,
+            execute=execute,
+        )
 
 
 class PurchaseMaterialDetailView(APIView):
@@ -394,12 +459,17 @@ class PurchaseMaterialDuplicateView(APIView):
     )
     def post(self, request, material_sku: str):
         data = dict(request.data or {})
-        try:
-            projection = purchase_catalog_service.duplicate_material(material_sku, data, user=request.user)
-        except PurchaseError as exc:
-            return _error_response(exc)
-        new_sku = str(data.get("sku") or "").strip()
-        return _purchase_response(projection, message=f"Cópia criada: {new_sku}." if new_sku else "Insumo duplicado.")
+
+        def execute(payload):
+            projection, sku = purchase_catalog_service.duplicate_material(material_sku, payload, user=request.user)
+            return projection, f"Cópia criada: {sku}.", {"kind": "material", "ref": sku}
+
+        return _catalog_mutation(
+            request,
+            operation=f"purchase.material-duplicate:{material_sku}",
+            payload=data,
+            execute=execute,
+        )
 
 
 class PurchaseSupplierView(APIView):
@@ -414,11 +484,18 @@ class PurchaseSupplierView(APIView):
         responses={200: OpenApiResponse(description="Supplier created and projection refreshed.")},
     )
     def post(self, request):
-        try:
-            projection = purchase_catalog_service.create_supplier(dict(request.data or {}), user=request.user)
-        except PurchaseError as exc:
-            return _error_response(exc)
-        return _purchase_response(projection, message="Fornecedor cadastrado.")
+        data = dict(request.data or {})
+
+        def execute(payload):
+            projection, ref = purchase_catalog_service.create_supplier(payload, user=request.user)
+            return projection, "Fornecedor cadastrado.", {"kind": "supplier", "ref": ref}
+
+        return _catalog_mutation(
+            request,
+            operation="purchase.supplier-create",
+            payload=data,
+            execute=execute,
+        )
 
 
 class PurchaseSupplierDetailView(APIView):
@@ -452,11 +529,18 @@ class PurchaseSupplierDuplicateView(APIView):
         responses={200: OpenApiResponse(description="Copy created and projection refreshed.")},
     )
     def post(self, request, ref: str):
-        try:
-            projection = purchase_catalog_service.duplicate_supplier(ref, dict(request.data or {}), user=request.user)
-        except PurchaseError as exc:
-            return _error_response(exc)
-        return _purchase_response(projection, message="Cópia do fornecedor criada.")
+        data = dict(request.data or {})
+
+        def execute(payload):
+            projection, created_ref = purchase_catalog_service.duplicate_supplier(ref, payload, user=request.user)
+            return projection, "Cópia do fornecedor criada.", {"kind": "supplier", "ref": created_ref}
+
+        return _catalog_mutation(
+            request,
+            operation=f"purchase.supplier-duplicate:{ref}",
+            payload=data,
+            execute=execute,
+        )
 
 
 class PurchaseSupplierContactView(APIView):
@@ -471,11 +555,17 @@ class PurchaseSupplierContactView(APIView):
         responses={200: OpenApiResponse(description="Contact created and projection refreshed.")},
     )
     def post(self, request, ref: str):
-        try:
-            projection = purchase_catalog_service.create_supplier_contact(ref, dict(request.data or {}), user=request.user)
-        except PurchaseError as exc:
-            return _error_response(exc)
-        return _purchase_response(projection, message="Contato adicionado.")
+        data = dict(request.data or {})
+        return _catalog_mutation(
+            request,
+            operation=f"purchase.supplier-contact-create:{ref}",
+            payload=data,
+            execute=lambda payload: (
+                purchase_catalog_service.create_supplier_contact(ref, payload, user=request.user),
+                "Contato adicionado.",
+                None,
+            ),
+        )
 
 
 class PurchaseContactView(APIView):

@@ -176,6 +176,14 @@ async function onSubmitMaterial(payload: Record<string, unknown>) {
   if (sku) await navigateTo(materialPath(sku));
 }
 
+const materialSavedVersion = ref(0);
+async function onSaveMaterialConversion(payload: Parameters<typeof saveMaterialConversion>[0]) {
+  if (await saveMaterialConversion(payload)) materialSavedVersion.value += 1;
+}
+async function onSaveMaterialCost(payload: Parameters<typeof saveMaterialCost>[0]) {
+  if (await saveMaterialCost(payload)) materialSavedVersion.value += 1;
+}
+
 const saving = ref(false);
 async function onSaveMinStock() {
   saving.value = true;
@@ -345,12 +353,13 @@ const saveLabel = computed(() =>
       :suppliers="suppliers"
       :conversions="materialFormConversions"
       :costs="materialFormCosts"
+      :saved-version="materialSavedVersion"
       :busy="actionPending"
       :error="actionError"
       @update:open="materialForm.open = $event"
       @save="onSubmitMaterial"
-      @save-conversion="(payload) => saveMaterialConversion(payload)"
-      @save-cost="(payload) => saveMaterialCost(payload)"
+      @save-conversion="onSaveMaterialConversion"
+      @save-cost="onSaveMaterialCost"
     />
   </main>
 </template>

@@ -137,6 +137,16 @@ describe("PurchaseMaterialFormPanel", () => {
     });
   });
 
+  it("criar: não arredonda validade fracionária silenciosamente", async () => {
+    const wrapper = mountMaterial({ mode: "create" });
+    await wrapper.find('[data-testid="material-sku"]').setValue("NOVO-INSUMO");
+    await wrapper.find('[data-testid="material-name"]').setValue("Novo insumo");
+    await wrapper.find('[data-testid="material-shelf-life"]').setValue("1,5");
+
+    expect(wrapper.find('[data-testid="save-disabled"]').text()).toBe("true");
+    expect(wrapper.find('[data-testid="save-reason"]').text()).toContain("número inteiro");
+  });
+
   it("duplicar: nasce sugerido e recusa repetir o SKU do original", async () => {
     const wrapper = mountMaterial({ mode: "duplicate", source: farinha });
     expect((wrapper.find('[data-testid="material-sku"]').element as HTMLInputElement).value).toBe("FAR-T65-COPIA");
@@ -176,6 +186,22 @@ describe("PurchaseMaterialFormPanel", () => {
     await wrapper.find('[data-testid="conversion-form"]').trigger("submit");
 
     expect(wrapper.emitted("save-conversion")![0][0]).toMatchObject({ conversionId: "c1", factor: "20" });
+  });
+
+  it("editar: fecha o gesto auxiliar quando o servidor confirma o salvamento", async () => {
+    const wrapper = mountMaterial({
+      mode: "edit",
+      source: farinha,
+      conversions: [saco],
+      costs: [],
+      suppliers: [],
+      savedVersion: 0,
+    });
+    await wrapper.find('[data-testid="conversion-add"]').trigger("click");
+    expect(wrapper.find('[data-testid="conversion-form"]').exists()).toBe(true);
+
+    await wrapper.setProps({ savedVersion: 1 });
+    expect(wrapper.find('[data-testid="conversion-form"]').exists()).toBe(false);
   });
 });
 
@@ -235,5 +261,14 @@ describe("PurchaseSupplierFormPanel", () => {
     await wrapper.find('[data-testid="contact-form"]').trigger("submit");
 
     expect(wrapper.emitted("save-contact")![0][0]).toMatchObject({ contactId: "7", email: "outra@moinho.example" });
+  });
+
+  it("editar: fecha o contato inline quando o servidor confirma o salvamento", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho, savedVersion: 0 });
+    await wrapper.find('[data-testid="contact-add"]').trigger("click");
+    expect(wrapper.find('[data-testid="contact-form"]').exists()).toBe(true);
+
+    await wrapper.setProps({ savedVersion: 1 });
+    expect(wrapper.find('[data-testid="contact-form"]').exists()).toBe(false);
   });
 });

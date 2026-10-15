@@ -3,6 +3,8 @@
 // conduz (seções, estado sujo, descarte e próximo foco); aqui mora o formulário
 // e o que a tela é dona do payload. Conversões e custos são gestos inline, com
 // Aplicar e Cancelar (D9): eles voltam pela projeção, não por estado paralelo.
+import { nextTick } from "vue";
+
 import type {
   ConversionKind,
   Material,
@@ -26,6 +28,7 @@ const props = withDefaults(
     suppliers?: Supplier[];
     conversions?: MaterialConversion[];
     costs?: SupplierMaterialCost[];
+    savedVersion?: number;
     busy?: boolean;
     error?: string;
   }>(),
@@ -35,6 +38,7 @@ const props = withDefaults(
     suppliers: () => [],
     conversions: () => [],
     costs: () => [],
+    savedVersion: 0,
     busy: false,
     error: "",
   },
@@ -185,7 +189,7 @@ const shelfLifeNumber = computed(() => {
   const text = form.shelfLifeDaysText.trim();
   if (!text) return null;
   const value = Number(text.replace(",", "."));
-  return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+  return Number.isInteger(value) && value >= 0 && value <= 36500 ? value : null;
 });
 const shelfLifeInvalid = computed(() => form.shelfLifeDaysText.trim() !== "" && shelfLifeNumber.value === null);
 const sameSourceSku = computed(
@@ -202,7 +206,7 @@ const saveDisabledReason = computed(() => {
   if (!isEdit.value && !form.sku.trim()) return "Informe o SKU para salvar.";
   if (!form.name.trim()) return "Informe o nome para salvar.";
   if (sameSourceSku.value) return "O SKU da cópia precisa ser diferente do original.";
-  if (shelfLifeInvalid.value) return "A validade é um número de dias. Deixe vazio se não perece.";
+  if (shelfLifeInvalid.value) return "A validade precisa ser um número inteiro de dias. Deixe vazio se não perece.";
   return "";
 });
 
@@ -210,7 +214,11 @@ function submit() {
   if (!valid.value) return;
   const shelfLife = shelfLifeInvalid.value ? null : shelfLifeNumber.value;
   if (isDuplicate.value) {
-    emit("save", { sku: form.sku.trim(), name: form.name.trim() });
+    emit("save", {
+      sku: form.sku.trim(),
+      name: form.name.trim(),
+      ...(props.source?.revision ? { expectedRevision: props.source.revision } : {}),
+    });
     return;
   }
   if (isEdit.value) {
@@ -220,6 +228,7 @@ function submit() {
       shelfLifeDays: shelfLife,
       isActive: form.isActive,
       category: form.category.trim(),
+      ...(props.source?.revision ? { expectedRevision: props.source.revision } : {}),
     });
     return;
   }
@@ -347,6 +356,17 @@ watch(
     }
   },
 );
+
+watch(
+  () => props.savedVersion,
+  async (_next, previous) => {
+    if (previous === undefined || !props.open) return;
+    resetConversion();
+    resetCost();
+    await nextTick();
+    capture();
+  },
+);
 </script>
 
 <template>
@@ -361,6 +381,7 @@ watch(
     :save-disabled="!valid"
     :save-disabled-reason="saveDisabledReason"
     :active-section="activeSection"
+    :size="isDuplicate ? 'standard' : 'wide'"
     :save-attrs="{ 'data-testid': 'material-form-save' }"
     :discard-attrs="{ 'data-testid': 'material-form-discard' }"
     action-label="Cadastro do insumo"
@@ -385,18 +406,19 @@ watch(
               v-model="form.sku"
               :disabled="isEdit"
               placeholder="FARINHA-T65"
+              class="w-full"
               data-testid="material-sku"
               data-focus-control
             />
           </NuxtFormField>
           <NuxtFormField label="Nome" required>
-            <NuxtInput v-model="form.name" placeholder="Farinha de trigo tipo 65" data-testid="material-name" />
+            <NuxtInput v-model="form.name" class="w-full" placeholder="Farinha de trigo tipo 65" data-testid="material-name" />
           </NuxtFormField>
           <NuxtFormField v-if="!isDuplicate" label="Unidade-base">
             <NuxtSelect v-model="form.unit" :items="UNIT_OPTIONS" class="w-full" />
           </NuxtFormField>
-          <NuxtFormField v-if="!isDuplicate" label="Categoria" hint="Agrupa o insumo na lista e nos filtros.">
-            <NuxtInput v-model="form.category" placeholder="Farinhas" data-testid="material-category" />
+          <NuxtFormField v-if="!isDuplicate" label="Categoria" description="Agrupa o insumo na lista e nos filtros.">
+            <NuxtInput v-model="form.category" class="w-full" placeholder="Farinhas" data-testid="material-category" />
           </NuxtFormField>
         </div>
         <div v-if="!isDuplicate && categories.length" class="flex flex-wrap gap-1.5">
@@ -419,7 +441,7 @@ watch(
       >
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="Validade (dias)">
-            <NuxtInput v-model="form.shelfLifeDaysText" inputmode="numeric" placeholder="Vazio = não perecível" data-testid="material-shelf-life" />
+            <NuxtInput v-model="form.shelfLifeDaysText" class="w-full" inputmode="numeric" placeholder="Vazio = não perecível" data-testid="material-shelf-life" />
           </NuxtFormField>
           <div class="flex items-center">
             <NuxtCheckbox v-model="form.isActive" label="Ativo na Base" description="Inativo sai dos pedidos e da sugestão de compra." />
@@ -458,16 +480,16 @@ watch(
 
         <form v-if="conversion.open" class="mt-2 flex flex-col gap-3 rounded-lg bg-elevated/60 p-3" data-testid="conversion-form" @submit.prevent="submitConversion()">
           <div class="grid gap-3 sm:grid-cols-2">
-            <NuxtFormField label="Rótulo" required hint="Como o operador chama: saco 25 kg, cartela.">
-              <NuxtInput v-model="conversion.label" data-testid="conversion-label" />
+            <NuxtFormField label="Rótulo" required description="Como o operador chama: saco 25 kg, cartela.">
+              <NuxtInput v-model="conversion.label" class="w-full" data-testid="conversion-label" />
             </NuxtFormField>
-            <NuxtFormField label="Fator" required :hint="'Quanto vale UM item de compra em ' + source.unit + '.'">
-              <NuxtInput v-model="conversion.factor" inputmode="decimal" placeholder="25" data-testid="conversion-factor" />
+            <NuxtFormField label="Fator" required :description="'Quanto vale UM item de compra em ' + source.unit + '.'">
+              <NuxtInput v-model="conversion.factor" class="w-full" inputmode="decimal" placeholder="25" data-testid="conversion-factor" />
             </NuxtFormField>
             <NuxtFormField label="Tipo">
               <NuxtSelect v-model="conversion.kind" :items="KIND_OPTIONS" class="w-full" />
             </NuxtFormField>
-            <NuxtFormField label="Fornecedor" hint="Vazio = vale para qualquer fornecedor.">
+            <NuxtFormField label="Fornecedor" description="Vazio = vale para qualquer fornecedor.">
               <NuxtSelect v-model="conversion.supplierRef" :items="supplierOptions" class="w-full" placeholder="Qualquer fornecedor" />
             </NuxtFormField>
           </div>
@@ -531,11 +553,11 @@ watch(
             <NuxtFormField label="Fornecedor" required>
               <NuxtSelect v-model="cost.supplierRef" :items="supplierOptions" class="w-full" data-testid="cost-supplier" />
             </NuxtFormField>
-            <NuxtFormField label="Unidade de compra" hint="Vazio = comprado na unidade-base.">
+            <NuxtFormField label="Unidade de compra" description="Vazio = comprado na unidade-base.">
               <NuxtSelect v-model="cost.conversionId" :items="costConversions" class="w-full" placeholder="Unidade-base" />
             </NuxtFormField>
             <NuxtFormField label="Valor pago (R$)" required>
-              <NuxtInput v-model="cost.costInput" inputmode="decimal" placeholder="180,00" data-testid="cost-input" />
+              <NuxtInput v-model="cost.costInput" class="w-full" inputmode="decimal" placeholder="180,00" data-testid="cost-input" />
             </NuxtFormField>
             <div class="flex items-end">
               <NuxtCheckbox v-model="cost.makePreferred" label="Custo preferencial" description="Alimenta o custeio e a sugestão de preço." />

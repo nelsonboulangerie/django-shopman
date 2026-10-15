@@ -2,6 +2,8 @@
 // O cadastro do fornecedor no casco da suíte: criar, editar e duplicar, com os
 // contatos como parte do cadastro (antes eles só existiam no Admin). A cópia
 // traz contatos e termos comerciais, e não o CNPJ: identidade não se duplica.
+import { nextTick } from "vue";
+
 import type { PurchaseFormMode, Supplier, SupplierContact } from "~/types/purchase";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
@@ -12,10 +14,11 @@ const props = withDefaults(
     open: boolean;
     mode: PurchaseFormMode;
     source?: Supplier | null;
+    savedVersion?: number;
     busy?: boolean;
     error?: string;
   }>(),
-  { source: null, busy: false, error: "" },
+  { source: null, savedVersion: 0, busy: false, error: "" },
 );
 
 type ContactSave = {
@@ -142,7 +145,7 @@ const leadTimeNumber = computed(() => {
   const text = form.leadTimeDaysText.trim();
   if (!text) return 0;
   const value = Number(text.replace(",", "."));
-  return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+  return Number.isInteger(value) && value >= 0 && value <= 3650 ? value : null;
 });
 const leadTimeInvalid = computed(() => form.leadTimeDaysText.trim() !== "" && leadTimeNumber.value === null);
 const sameSourceRef = computed(
@@ -159,7 +162,7 @@ const saveDisabledReason = computed(() => {
   if (isDuplicate.value && !form.ref.trim()) return "Informe a referência da cópia.";
   if (isDuplicate.value && sameSourceRef.value) return "A referência da cópia precisa ser diferente da original.";
   if (!form.name.trim()) return "Informe a razão social para salvar.";
-  if (leadTimeInvalid.value) return "O prazo de entrega é um número de dias.";
+  if (leadTimeInvalid.value) return "O prazo de entrega precisa ser um número inteiro de dias.";
   return "";
 });
 
@@ -167,7 +170,11 @@ function submit() {
   if (!valid.value) return;
   const leadTimeDays = leadTimeInvalid.value ? 0 : leadTimeNumber.value ?? 0;
   if (isDuplicate.value) {
-    emit("save", { ref: form.ref.trim(), name: form.name.trim() });
+    emit("save", {
+      ref: form.ref.trim(),
+      name: form.name.trim(),
+      ...(props.source?.revision ? { expectedRevision: props.source.revision } : {}),
+    });
     return;
   }
   const payload = {
@@ -181,7 +188,10 @@ function submit() {
     paymentTerm: form.paymentTerm.trim(),
   };
   if (isEdit.value) {
-    emit("save", payload);
+    emit("save", {
+      ...payload,
+      ...(props.source?.revision ? { expectedRevision: props.source.revision } : {}),
+    });
     return;
   }
   emit("save", { ref: form.ref.trim(), ...payload });
@@ -232,6 +242,16 @@ function submitContact() {
 function roleLabel(role: string): string {
   return ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role;
 }
+
+watch(
+  () => props.savedVersion,
+  async (_next, previous) => {
+    if (previous === undefined || !props.open) return;
+    resetContact();
+    await nextTick();
+    capture();
+  },
+);
 </script>
 
 <template>
@@ -246,6 +266,7 @@ function roleLabel(role: string): string {
     :save-disabled="!valid"
     :save-disabled-reason="saveDisabledReason"
     :active-section="activeSection"
+    :size="isDuplicate ? 'standard' : 'wide'"
     :save-attrs="{ 'data-testid': 'supplier-form-save' }"
     :discard-attrs="{ 'data-testid': 'supplier-form-discard' }"
     action-label="Cadastro do fornecedor"
@@ -265,23 +286,23 @@ function roleLabel(role: string): string {
 
       <OperatorFormSection section-key="identity" title="Identificação" description="A empresa, do jeito que ela aparece na nota.">
         <div class="grid gap-3 sm:grid-cols-2">
-          <NuxtFormField label="Referência" :required="isDuplicate" hint="Identificador curto, sem acento. Vazio gera do nome.">
-            <NuxtInput v-model="form.ref" :disabled="isEdit" placeholder="moinho-sp" data-testid="supplier-ref" data-focus-control />
+          <NuxtFormField label="Referência" :required="isDuplicate" description="Identificador curto, sem acento. Vazio gera do nome.">
+            <NuxtInput v-model="form.ref" :disabled="isEdit" class="w-full" placeholder="moinho-sp" data-testid="supplier-ref" data-focus-control />
           </NuxtFormField>
           <NuxtFormField label="Razão social" required>
-            <NuxtInput v-model="form.name" placeholder="Moinho São Paulo Ltda." data-testid="supplier-name" />
+            <NuxtInput v-model="form.name" class="w-full" placeholder="Moinho São Paulo Ltda." data-testid="supplier-name" />
           </NuxtFormField>
-          <NuxtFormField label="Nome fantasia" hint="Como a casa chama no dia a dia.">
-            <NuxtInput v-model="form.tradeName" placeholder="Moinho SP" data-testid="supplier-trade-name" />
+          <NuxtFormField label="Nome fantasia" description="Como a casa chama no dia a dia.">
+            <NuxtInput v-model="form.tradeName" class="w-full" placeholder="Moinho SP" data-testid="supplier-trade-name" />
           </NuxtFormField>
           <NuxtFormField label="CNPJ/Documento">
-            <NuxtInput v-model="form.document" placeholder="12.345.678/0001-90" data-testid="supplier-document" />
+            <NuxtInput v-model="form.document" class="w-full" placeholder="12.345.678/0001-90" data-testid="supplier-document" />
           </NuxtFormField>
           <NuxtFormField label="E-mail da central">
-            <NuxtInput v-model="form.email" type="email" placeholder="compras@fornecedor.com.br" />
+            <NuxtInput v-model="form.email" class="w-full" type="email" placeholder="compras@fornecedor.com.br" />
           </NuxtFormField>
           <NuxtFormField label="Telefone da central">
-            <NuxtInput v-model="form.phone" placeholder="(43) 3333-0000" />
+            <NuxtInput v-model="form.phone" class="w-full" placeholder="(43) 3333-0000" />
           </NuxtFormField>
           <div class="flex items-center sm:col-span-2">
             <NuxtCheckbox v-model="form.isActive" label="Ativo" description="Inativo sai dos pedidos, sem apagar o histórico." />
@@ -297,10 +318,10 @@ function roleLabel(role: string): string {
       >
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="Prazo de entrega (dias)">
-            <NuxtInput v-model="form.leadTimeDaysText" inputmode="numeric" placeholder="3" data-testid="supplier-lead-time" />
+            <NuxtInput v-model="form.leadTimeDaysText" class="w-full" inputmode="numeric" placeholder="3" data-testid="supplier-lead-time" />
           </NuxtFormField>
           <NuxtFormField label="Condição de pagamento">
-            <NuxtInput v-model="form.paymentTerm" placeholder="28 dias" data-testid="supplier-payment-term" />
+            <NuxtInput v-model="form.paymentTerm" class="w-full" placeholder="28 dias" data-testid="supplier-payment-term" />
           </NuxtFormField>
         </div>
       </OperatorFormSection>
@@ -333,19 +354,19 @@ function roleLabel(role: string): string {
         <form v-if="contact.open" class="mt-2 flex flex-col gap-3 rounded-lg bg-elevated/60 p-3" data-testid="contact-form" @submit.prevent="submitContact()">
           <div class="grid gap-3 sm:grid-cols-2">
             <NuxtFormField label="Nome" required>
-              <NuxtInput v-model="contact.name" data-testid="contact-name" />
+              <NuxtInput v-model="contact.name" class="w-full" data-testid="contact-name" />
             </NuxtFormField>
             <NuxtFormField label="Assunto">
               <NuxtSelect v-model="contact.role" :items="ROLE_OPTIONS" class="w-full" />
             </NuxtFormField>
             <NuxtFormField label="E-mail">
-              <NuxtInput v-model="contact.email" type="email" data-testid="contact-email" />
+              <NuxtInput v-model="contact.email" class="w-full" type="email" data-testid="contact-email" />
             </NuxtFormField>
             <NuxtFormField label="Telefone/WhatsApp">
-              <NuxtInput v-model="contact.phone" data-testid="contact-phone" />
+              <NuxtInput v-model="contact.phone" class="w-full" data-testid="contact-phone" />
             </NuxtFormField>
-            <NuxtFormField label="Observações" class="sm:col-span-2" hint="Horário em que atende, quem substitui nas férias.">
-              <NuxtTextarea v-model="contact.notes" :rows="2" />
+            <NuxtFormField label="Observações" class="sm:col-span-2" description="Horário em que atende, quem substitui nas férias.">
+              <NuxtTextarea v-model="contact.notes" :rows="2" class="w-full" />
             </NuxtFormField>
             <div class="flex flex-wrap items-center gap-4 sm:col-span-2">
               <NuxtCheckbox v-model="contact.isPrimary" label="Principal do assunto" />

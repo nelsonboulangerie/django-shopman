@@ -1792,7 +1792,9 @@ capture();
 Contrato:
 
 - **O casco é a gaveta lateral.** `OperatorFormShell` desenha o `NuxtSlideover`
-  (título e descrição), o corpo com o slot padrão e a barra de ação. Quem chama
+  em largura de formulário (`wide`, `sm:max-w-2xl`, tela inteira no celular), com
+  `size="standard"` (`sm:max-w-lg`) para gestos curtos como uma duplicação de dois
+  campos. Título, descrição, corpo com o slot padrão e barra de ação vêm juntos. Quem chama
   continua dono do formulário e do salvamento: o casco só conduz.
 - **Seções com nome.** Cada `OperatorFormSection` é um bloco `data-focus-target` com
   `tabindex="-1"`; o título e a descrição são opcionais, e quem chama decide o chrome

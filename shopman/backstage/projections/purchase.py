@@ -107,6 +107,8 @@ class MaterialProjection:
     #: conferidos (``Material.metadata.purchase.eans``): o "Ler EAN" do receber
     #: acha o item da caixa pela câmera.
     eans: tuple[str, ...] = ()
+    #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
+    revision: str = ""
 
 
 @dataclass(frozen=True)
@@ -145,6 +147,8 @@ class SupplierProjection:
     isActive: bool
     lastDeliveryAt: str
     paymentTerm: str
+    #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
+    revision: str = ""
 
 
 @dataclass(frozen=True)
@@ -513,6 +517,7 @@ def _material_projection(
         netContentKg=net_content_kg,
         lastDeliveryExpiry=last_delivery_expiry,
         eans=tuple(str(code) for code in (meta.get("eans") or ()) if str(code).strip()),
+        revision=material.updated_at.isoformat() if material.updated_at else "",
     )
 
 
@@ -686,6 +691,7 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
         isActive=bool(supplier.is_active),
         lastDeliveryAt=_meta_str(meta, "last_delivery_at", "lastDeliveryAt") or last_delivery_at,
         paymentTerm=_meta_str(meta, "payment_term", "paymentTerm") or "A combinar",
+        revision=supplier.updated_at.isoformat() if supplier.updated_at else "",
     )
 
 
