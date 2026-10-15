@@ -16,8 +16,7 @@ from shopman.offerman.models import Listing, ListingItem, Product
 
 from shopman.shop.models import Channel, Promotion, Shop
 from shopman.shop.services import cart as cart_service
-from shopman.shop.services import promotions
-from shopman.shop.services import sessions
+from shopman.shop.services import promotions, sessions
 
 pytestmark = pytest.mark.django_db
 

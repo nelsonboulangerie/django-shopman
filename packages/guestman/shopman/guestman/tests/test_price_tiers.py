@@ -5,7 +5,7 @@ derivado, e a lista é a fonte canônica.
 """
 
 import pytest
-from shopman.guestman.models import Customer, PriceTier
+from shopman.guestman.models import Customer
 
 pytestmark = pytest.mark.django_db
 
