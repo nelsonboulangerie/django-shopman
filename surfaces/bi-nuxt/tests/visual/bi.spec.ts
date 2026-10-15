@@ -24,3 +24,13 @@ for (const route of ROUTES) {
     expect(pageErrors).toEqual([]);
   });
 }
+// O quadro novo das Vendas: uma linha por tipo de grupo e o total do período no
+// rodapé. O cenário é o normal (o gravado), com o desconto já no contrato.
+test("a Vendas mostra os descontos por tipo de grupo", async ({ page }) => {
+  await page.goto("/sales");
+  const card = page.locator("[data-bi-discounts]");
+  await expect(card).toBeVisible();
+  await expect(card.getByText("Equipe")).toBeVisible();
+  await expect(card.getByText("Parceiro")).toBeVisible();
+  await expect(card.getByText("605,50")).toBeVisible();
+});

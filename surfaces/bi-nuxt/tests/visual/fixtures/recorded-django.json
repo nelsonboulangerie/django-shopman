@@ -2073,7 +2073,18 @@
       "compare": "previous",
       "closed_weekdays": [
         6
-      ]
+      ],
+      "discount_by_kind": [
+        {
+          "kind": "equipe",
+          "amount_q": 38450
+        },
+        {
+          "kind": "parceiro",
+          "amount_q": 22100
+        }
+      ],
+      "discount_kind_total_q": 60550
     }
   },
   "/api/v1/backstage/bi/cash/?date_from=2026-09-11&date_to=2026-10-08": {
