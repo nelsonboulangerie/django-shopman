@@ -190,7 +190,7 @@ function submit() {
           <NuxtInput v-model="form.discountValue" inputmode="decimal" class="w-full" data-testid="customer-group-discount" />
         </NuxtFormField>
         <NuxtFormField v-if="form.discountType" label="Tipo para o B.I." description="Ex.: equipe, parceiro, convênio." :error="fieldErrors.discountKind">
-          <NuxtInput v-model="form.discountKind" class="w-full" />
+          <NuxtInput v-model="form.discountKind" class="w-full" data-testid="customer-group-kind" />
         </NuxtFormField>
       </div>
       <NuxtAlert

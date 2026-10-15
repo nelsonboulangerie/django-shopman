@@ -59,10 +59,16 @@ describe("CustomerGroupFormPanel", () => {
     await wrapper.get("[data-testid='customer-group-name']").setValue("Equipe");
     await wrapper.get("[data-testid='customer-group-ref']").setValue("equipe");
     await wrapper.get("[data-testid='customer-group-discount']").setValue("30");
-    const kind = wrapper.findAll("input").find((input) => input.element.getAttribute("value") === "");
-    expect(kind).toBeDefined();
-    // O tipo do B.I. é obrigatório: o botão permanece protegido até preenchê-lo.
-    expect(wrapper.text()).toContain("Informe o tipo usado pelo B.I.");
+    await wrapper.get("[data-testid='customer-group-kind']").setValue("equipe");
+    await wrapper.get("[data-testid='customer-group-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
+      ref: "equipe",
+      name: "Equipe",
+      discountType: "percent",
+      discountValue: "30",
+      discountKind: "equipe",
+    }));
+    expect(wrapper.emitted("save")?.[0]?.[0]).not.toHaveProperty("expectedRevision");
   });
 
   it("edita com revisão e não permite trocar o código", async () => {
