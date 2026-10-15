@@ -5,7 +5,7 @@
 // "Mesmo nome"): é sugestão, e a unificação é sempre um gesto do gestor, depois da
 // prévia lado a lado (`CustomerMergeDialog`).
 import type { CustomerAddressProjection, CustomerCandidateProjection } from "~/generated/ordersContract";
-import type { CustomerAddressMutationPayload, CustomerMutationPayload } from "~/types/customers";
+import type { CustomerAddressMutationPayload, CustomerDuplicatePayload, CustomerMutationPayload } from "~/types/customers";
 import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
@@ -76,6 +76,35 @@ async function saveCustomer(payload: CustomerMutationPayload) {
     if (httpError(failure).status) editKey = crypto.randomUUID();
   } finally {
     editBusy.value = false;
+  }
+}
+const duplicateOpen = ref(false);
+const duplicateBusy = ref(false);
+const duplicateError = ref("");
+let duplicateKey = crypto.randomUUID();
+watch(duplicateOpen, (open) => {
+  if (!open) return;
+  duplicateError.value = "";
+});
+async function saveDuplicate(payload: CustomerDuplicatePayload) {
+  if (duplicateBusy.value || !customer.value) return;
+  duplicateBusy.value = true;
+  duplicateError.value = "";
+  try {
+    const response = await duplicateCustomer(customer.value.ref, payload, duplicateKey);
+    if (response.outcome !== "applied" || !response.customer) {
+      duplicateError.value = "O resultado ainda não foi confirmado. Tente salvar novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    duplicateKey = crypto.randomUUID();
+    duplicateOpen.value = false;
+    useSonner.success(response.customer.name + " foi criado a partir de " + customer.value.name + ".");
+    await router.push("/customers/" + encodeURIComponent(response.customer.ref));
+  } catch (failure) {
+    duplicateError.value = httpErrorMessage(failure, "Não foi possível duplicar o cliente.");
+    if (httpError(failure).status) duplicateKey = crypto.randomUUID();
+  } finally {
+    duplicateBusy.value = false;
   }
 }
 const addressOpen = ref(false);
@@ -158,7 +187,10 @@ const notFound = computed(() => httpError(error.value).status === 404);
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
   ...(customer.value?.is_active
-    ? [{ label: "Editar cliente", icon: "i-lucide-pencil", onSelect: () => { editOpen.value = true; } }]
+    ? [
+        { label: "Editar cliente", icon: "i-lucide-pencil", onSelect: () => { editOpen.value = true; } },
+        { label: "Duplicar cliente", icon: "i-lucide-copy-plus", onSelect: () => { duplicateOpen.value = true; } },
+      ]
     : []),
   { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
 ]);
@@ -191,6 +223,14 @@ const phoneHeaderActions = computed(() => [
           color="neutral"
           variant="outline"
           @click="editOpen = true"
+        />
+        <NuxtButton
+          v-if="customer?.is_active"
+          icon="i-lucide-copy-plus"
+          label="Duplicar cliente"
+          color="neutral"
+          variant="outline"
+          @click="duplicateOpen = true"
         />
         <NuxtButton
           icon="i-lucide-refresh-cw"
@@ -516,6 +556,14 @@ const phoneHeaderActions = computed(() => [
       :error="editError"
       :field-errors="editFieldErrors"
       @save="saveCustomer"
+    />
+    <CustomerDuplicatePanel
+      v-if="customer"
+      v-model:open="duplicateOpen"
+      :source="customer"
+      :busy="duplicateBusy"
+      :error="duplicateError"
+      @save="saveDuplicate"
     />
     <CustomerAddressFormPanel
       v-if="customer"

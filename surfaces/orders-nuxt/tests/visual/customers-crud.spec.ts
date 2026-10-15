@@ -95,10 +95,15 @@ async function mockCustomers(page: Page) {
 }
 
 async function pageAction(page: Page, name: string) {
+  // A barra da mesa pode reaparecer um instante depois de fechar um painel; esperar
+  // pela ação antes de cair no ⋯ evita o clique no menu que só existe no celular.
   const direct = page.getByRole("button", { name, exact: true }).filter({ visible: true });
-  if (await direct.count()) {
+  try {
+    await direct.first().waitFor({ state: "visible", timeout: 5000 });
     await direct.first().click();
     return;
+  } catch {
+    // Sem a ação na barra da mesa: ela mora no ⋯ da barra do topo (celular).
   }
   await page.locator("[data-page-header-more]").click();
   await page.getByRole("menuitem", { name, exact: true }).click();
@@ -126,6 +131,25 @@ for (const viewport of selectedOperatorViewports()) {
     }, { fullPage: false, scan: false });
     await page.keyboard.press("Escape");
 
+    // Seleção + barra de lote: etiquetar a seleção numa ida e exportar o CSV.
+    await page.locator("[data-operator-table-select]").first().click();
+    await expect(
+      page.locator("[data-operator-bulk-action]").filter({ visible: true }).first(),
+    ).toBeVisible();
+    await expectOperatorLabelsFit(page, `seleção de clientes ${viewport.id}`);
+    await captureOperatorEvidence(page, testInfo, {
+      app: "orders", surface: "customers-bulk", route: "/customers", scenario: "selection",
+      state: "normal", theme: "light", viewport,
+    }, { fullPage: false, scan: false });
+    await page.locator('[data-operator-bulk-action="Etiquetar…"]').filter({ visible: true }).click();
+    await expect(page.getByRole("heading", { name: "Etiquetas em lote", exact: true })).toBeVisible();
+    await expectOperatorLabelsFit(page, `etiquetas em lote ${viewport.id}`);
+    await captureOperatorEvidence(page, testInfo, {
+      app: "orders", surface: "customers-bulk-tags", route: "/customers", scenario: "form",
+      state: "normal", theme: "light", viewport,
+    }, { fullPage: false, scan: false });
+    await page.keyboard.press("Escape");
+
     await page.goto("/customers/CLI-MARIA");
     await expect(page.getByText("Consentimentos", { exact: true })).toBeVisible();
     await pageAction(page, "Editar cliente");
@@ -133,6 +157,15 @@ for (const viewport of selectedOperatorViewports()) {
     await expectOperatorLabelsFit(page, `editar cliente ${viewport.id}`);
     await captureOperatorEvidence(page, testInfo, {
       app: "orders", surface: "customers-edit", route: "/customers/CLI-MARIA", scenario: "form",
+      state: "normal", theme: "light", viewport,
+    }, { fullPage: false, scan: false });
+    await page.keyboard.press("Escape");
+
+    await pageAction(page, "Duplicar cliente");
+    await expect(page.getByRole("heading", { name: "Duplicar cliente", exact: true })).toBeVisible();
+    await expectOperatorLabelsFit(page, `duplicar cliente ${viewport.id}`);
+    await captureOperatorEvidence(page, testInfo, {
+      app: "orders", surface: "customers-duplicate", route: "/customers/CLI-MARIA", scenario: "form",
       state: "normal", theme: "light", viewport,
     }, { fullPage: false, scan: false });
     await page.keyboard.press("Escape");

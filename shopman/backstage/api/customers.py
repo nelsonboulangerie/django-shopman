@@ -197,6 +197,107 @@ class CustomerDetailView(_CustomersBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Duplicate a customer into a new record",
+        responses={201: OpenApiResponse(description="Cópia criada e projetada.")},
+    ),
+)
+class CustomerDuplicateView(_CustomersBase):
+    def post(self, request, ref: str):
+        from shopman.backstage.projections.customers import build_customer_detail
+
+        data = dict(request.data or {})
+        key = request.headers.get("Idempotency-Key") or data.pop("idempotencyKey", None)
+        if not isinstance(key, str) or not key or len(key) > 128:
+            return Response(
+                {"detail": "Atualize a ficha e tente novamente.", "error": {"code": "intention_required"}},
+                status=400,
+            )
+        scope = mutation_fingerprint({
+            "version": 1,
+            "actor": request.user.pk,
+            "operation": f"customer-duplicate:{ref}",
+        })
+        fingerprint = mutation_fingerprint({"scope": scope, "payload": data})
+
+        def execute():
+            try:
+                customer = customers_service.duplicate_customer(ref, data, actor=_actor(request))
+            except CustomerNotFound as exc:
+                return {"detail": str(exc), "outcome": "not_applied"}, 404
+            except CustomerMutationError as exc:
+                refusal = _mutation_refusal(exc)
+                return {**dict(refusal.data), "outcome": "not_applied"}, refusal.status_code
+            return {
+                "ok": True,
+                "outcome": "applied",
+                "customer": projection_data(build_customer_detail(customer.ref)),
+                "resource": {"kind": "customer", "ref": customer.ref},
+            }, 201
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response(
+                {"detail": "Esta tentativa já representa outra cópia.", "error": {"code": "intention_conflict"}},
+                status=409,
+            )
+        except RemoteMutationInProgress:
+            return Response(
+                {"detail": "Cópia em processamento. Tente novamente em instantes.", "outcome": "unknown"},
+                status=202,
+            )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Apply one action to several customers at once",
+        responses={200: OpenApiResponse(description="Aplicado; diz quantos entraram e quantos ficaram de fora.")},
+    ),
+)
+class CustomerBulkView(_CustomersBase):
+    def post(self, request):
+        data = dict(request.data or {})
+        key = request.headers.get("Idempotency-Key") or data.pop("idempotencyKey", None)
+        if not isinstance(key, str) or not key or len(key) > 128:
+            return Response(
+                {"detail": "Atualize a lista e tente novamente.", "error": {"code": "intention_required"}},
+                status=400,
+            )
+        scope = mutation_fingerprint({
+            "version": 1,
+            "actor": request.user.pk,
+            "operation": "customer-bulk",
+        })
+        fingerprint = mutation_fingerprint({"scope": scope, "payload": data})
+
+        def execute():
+            try:
+                result = customers_service.bulk_customers(data, actor=_actor(request))
+            except CustomerMutationError as exc:
+                refusal = _mutation_refusal(exc)
+                return {**dict(refusal.data), "outcome": "not_applied"}, refusal.status_code
+            return {"ok": True, "outcome": "applied", **result}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response(
+                {"detail": "Esta tentativa já representa outro lote.", "error": {"code": "intention_conflict"}},
+                status=409,
+            )
+        except RemoteMutationInProgress:
+            return Response(
+                {"detail": "Lote em processamento. Tente novamente em instantes.", "outcome": "unknown"},
+                status=202,
+            )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Create a customer address with an idempotent intention",
         responses={201: OpenApiResponse(description="Endereço criado e ficha atualizada.")},
     ),

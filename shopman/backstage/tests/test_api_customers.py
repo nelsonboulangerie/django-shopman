@@ -125,6 +125,8 @@ def people(shop):
         ("get", f"{PREVIEW_URL}?source_ref=IF-AAAA0001&target_ref=CLI-MARIA"),
         ("post", MERGE_URL),
         ("get", MERGES_URL),
+        ("post", f"{LIST_URL}CLI-MARIA/duplicate/"),
+        ("post", f"{LIST_URL}bulk/"),
     ],
 )
 def test_every_route_requires_manage_customers(client, plain_staff, people, method, url):
@@ -802,3 +804,137 @@ def test_session_answers_whether_the_operator_can_manage_customers(client, manag
 
     client.force_login(plain_staff)
     assert client.get(SESSION_URL, {"perm": "shop.manage_customers"}).json()["authorized"] is False
+
+
+# ── Cópia e lote ──────────────────────────────────────────────────────
+
+DUPLICATE_URL = f"{LIST_URL}CLI-MARIA/duplicate/"
+BULK_URL = f"{LIST_URL}bulk/"
+
+
+def test_duplicate_copies_relationship_and_addresses_but_not_identity(client, manager, people, shop):
+    source = people["balcao"]
+    tier = PriceTier.objects.create(ref="vizinho", name="Vizinho", priority=10)
+    source.price_tier = tier
+    source.metadata = {"house_account": True, "house_account_limit_q": 25000}
+    source.save()
+    source.tags.set(["vizinha", "café"])
+    CustomerAddress.objects.create(
+        customer=source, formatted_address="Rua das Flores, 10", is_default=True,
+    )
+    client.force_login(manager)
+    revision = client.get(f"{LIST_URL}CLI-MARIA/").json()["customer"]["revision"]
+    payload = {
+        "expectedRevision": revision,
+        "firstName": "Ana",
+        "lastName": "Souza (cópia)",
+    }
+
+    first = _post(client, DUPLICATE_URL, payload, key="duplicate-maria")
+    replay = _post(client, DUPLICATE_URL, payload, key="duplicate-maria")
+
+    assert first.status_code == replay.status_code == 201, first.content
+    assert replay.json() == first.json()
+    body = first.json()
+    assert body["outcome"] == "applied"
+    assert body["resource"] == {"kind": "customer", "ref": body["customer"]["ref"]}
+    copy = Customer.objects.get(ref=body["customer"]["ref"])
+    assert copy.ref != source.ref
+    assert copy.first_name == "Ana"
+    assert copy.source_system == "manual"
+    assert copy.created_by == manager.username
+    # identidade e contato não se copiam: são únicos por cadastro
+    assert copy.document == ""
+    assert copy.phone == ""
+    assert copy.email == ""
+    # relacionamento comercial e endereços acompanham
+    assert copy.price_tier_id == tier.pk
+    assert set(copy.tags.names()) == {"vizinha", "café"}
+    assert copy.metadata == {"house_account": True, "house_account_limit_q": 25000}
+    copied_address = copy.addresses.get()
+    assert copied_address.formatted_address == "Rua das Flores, 10"
+    assert copied_address.is_default is True
+
+
+def test_duplicate_defaults_the_name_and_refuses_stale_or_absorbed_sources(client, manager, people):
+    client.force_login(manager)
+    revision = client.get(f"{LIST_URL}CLI-MARIA/").json()["customer"]["revision"]
+
+    missing = _post(client, DUPLICATE_URL, {"firstName": "Ana"})
+    assert missing.status_code == 400
+    assert missing.json()["error"]["code"] == "revision_required"
+
+    stale = _post(client, DUPLICATE_URL, {"expectedRevision": "2000-01-01T00:00:00+00:00"})
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "customer_changed"
+
+    absorbed = Customer.objects.create(ref="CLI-GONE", first_name="Some", is_active=False)
+    absorbed_revision = absorbed.updated_at.isoformat()
+    gone = _post(client, f"{LIST_URL}CLI-GONE/duplicate/", {"expectedRevision": absorbed_revision})
+    assert gone.status_code == 409
+    assert gone.json()["error"]["code"] == "inactive"
+
+    unknown = _post(client, f"{LIST_URL}CLI-NAO-EXISTE/duplicate/", {"expectedRevision": revision})
+    assert unknown.status_code == 404
+
+    # sem sobrescrita, o nome nasce com o sufixo da cópia
+    body = _post(client, DUPLICATE_URL, {"expectedRevision": revision}).json()
+    assert body["customer"]["name"].endswith("(cópia)")
+
+
+def test_bulk_customers_adds_and_removes_tags_in_one_trip(client, manager, people):
+    client.force_login(manager)
+    people["balcao"].tags.set(["vizinha"])
+    people["other"].tags.set(["corredor"])
+
+    added = _post(client, BULK_URL, {
+        "refs": ["CLI-MARIA", "CLI-JOAO", "CLI-SUMIU"],
+        "operation": "add_tags",
+        "tags": ["campanha", "Vizinha"],
+    })
+    assert added.status_code == 200, added.content
+    body = added.json()
+    assert body["outcome"] == "applied"
+    assert body["operation"] == "add_tags"
+    assert set(body["applied"]) == {"CLI-MARIA", "CLI-JOAO"}
+    assert body["skipped"] == [{"ref": "CLI-SUMIU", "reason": "not_found_or_inactive"}]
+    assert set(Customer.objects.get(ref="CLI-MARIA").tags.names()) == {"vizinha", "campanha"}
+    assert set(Customer.objects.get(ref="CLI-JOAO").tags.names()) == {"corredor", "campanha", "Vizinha"}
+
+    removed = _post(client, BULK_URL, {
+        "refs": ["CLI-MARIA", "CLI-JOAO"],
+        "operation": "remove_tags",
+        "tags": ["campanha"],
+    })
+    assert removed.status_code == 200
+    assert set(Customer.objects.get(ref="CLI-MARIA").tags.names()) == {"vizinha"}
+    assert set(Customer.objects.get(ref="CLI-JOAO").tags.names()) == {"corredor", "Vizinha"}
+
+
+@pytest.mark.parametrize(
+    ("payload", "field"),
+    [
+        ({"refs": [], "operation": "add_tags", "tags": ["x"]}, "refs"),
+        ({"refs": ["CLI-MARIA"], "operation": "delete_all", "tags": ["x"]}, "operation"),
+        ({"refs": ["CLI-MARIA"], "operation": "add_tags", "tags": []}, "tags"),
+        ({"refs": [7], "operation": "add_tags", "tags": ["x"]}, "refs"),
+    ],
+)
+def test_bulk_customers_refuses_invalid_requests(client, manager, people, payload, field):
+    client.force_login(manager)
+
+    response = _post(client, BULK_URL, payload)
+
+    assert response.status_code == 400
+    assert response.json()["field"] == field
+
+
+def test_bulk_customers_replays_with_the_same_intention(client, manager, people):
+    client.force_login(manager)
+    payload = {"refs": ["CLI-MARIA"], "operation": "add_tags", "tags": ["campanha"]}
+
+    first = _post(client, BULK_URL, payload, key="bulk-1")
+    replay = _post(client, BULK_URL, payload, key="bulk-1")
+
+    assert first.status_code == replay.status_code == 200
+    assert replay.json() == first.json()
