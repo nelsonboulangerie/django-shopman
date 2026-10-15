@@ -8,7 +8,9 @@ desfazer passam pelo ``MergeService`` e que quem não é gestor não chega perto
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Permission, User
@@ -16,7 +18,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
-from shopman.guestman.models import Customer
+from shopman.guestman.models import ContactPoint, Customer, CustomerAddress, PriceTier
 from shopman.orderman.models import Order
 
 from shopman.shop.models import Shop
@@ -66,6 +68,24 @@ def _order(ref: str, customer_ref: str, *, ifood_id: str = "", channel_ref: str 
         status="completed",
         total_q=2500,
         data={"customer_ref": customer_ref, "customer": customer},
+    )
+
+
+def _post(client, url: str, body: dict, *, key: str | None = None):
+    return client.post(
+        url,
+        json.dumps(body),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key or str(uuid4()),
+    )
+
+
+def _patch(client, url: str, body: dict, *, key: str | None = None):
+    return client.patch(
+        url,
+        json.dumps(body),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key or str(uuid4()),
     )
 
 
@@ -197,6 +217,307 @@ def test_regular_list_limits_duplicate_scan_to_the_visible_page(client, manager,
     assert calls[0]["documents"] == {"11122233344"}
 
 
+def test_list_sorts_by_name_and_serves_form_options(client, manager, people):
+    PriceTier.objects.create(ref="vizinho", name="Vizinho", priority=10)
+    client.force_login(manager)
+
+    listing = client.get(LIST_URL, {"sort": "name"}).json()["list"]
+
+    assert [row["name"] for row in listing["items"]] == sorted(row["name"] for row in listing["items"])
+    assert listing["sort"] == "name"
+    assert listing["form"]["customer_types"] == [
+        {"value": "individual", "label": "Pessoa Física"},
+        {"value": "business", "label": "Pessoa Jurídica"},
+    ]
+    assert {tier["value"] for tier in listing["form"]["price_tiers"]} == {"vizinho"}
+
+
+# ── Cadastro turbo ───────────────────────────────────────────────────
+
+
+def test_create_customer_is_idempotent_and_returns_the_exact_record(client, manager, shop):
+    tier = PriceTier.objects.create(ref="varejo", name="Varejo", is_default=True)
+    client.force_login(manager)
+    payload = {
+        "firstName": "Ana",
+        "lastName": "Silva",
+        "customerType": "individual",
+        "document": "529.982.247-25",
+        "phone": "(43) 99999-1111",
+        "email": "ANA@EXAMPLE.COM",
+        "priceTierRef": tier.ref,
+        "tags": ["vizinha", " Café "],
+        "notes": "Prefere retirada.",
+        "houseAccount": True,
+        "houseAccountLimit": "250,50",
+        "fiscalCpfNaNota": True,
+        "fiscalEmailReceipt": True,
+    }
+
+    first = _post(client, LIST_URL, payload, key="create-ana")
+    replay = _post(client, LIST_URL, payload, key="create-ana")
+
+    assert first.status_code == replay.status_code == 201
+    assert replay.json() == first.json()
+    body = first.json()
+    assert body["outcome"] == "applied"
+    assert body["resource"] == {"kind": "customer", "ref": body["customer"]["ref"]}
+    customer = Customer.objects.get(ref=body["customer"]["ref"])
+    assert Customer.objects.count() == 1
+    assert customer.created_by == manager.username
+    assert customer.source_system == "manual"
+    assert customer.document == "52998224725"
+    assert customer.email == "ana@example.com"
+    assert set(customer.tags.names()) == {"vizinha", "Café"}
+    assert customer.metadata == {
+        "house_account": True,
+        "house_account_limit_q": 25050,
+        "fiscal_prefs": {"cpf_na_nota": True, "email_receipt": True},
+    }
+    assert ContactPoint.objects.filter(customer=customer, is_primary=True).count() == 2
+
+
+def test_create_customer_refuses_invalid_fields_and_reused_intention(client, manager, shop):
+    client.force_login(manager)
+    invalid = _post(client, LIST_URL, {"firstName": "Ana", "document": "111"})
+    assert invalid.status_code == 400
+    assert invalid.json()["field"] == "document"
+
+    assert _post(client, LIST_URL, {"firstName": "Ana"}, key="one-customer").status_code == 201
+    conflict = _post(client, LIST_URL, {"firstName": "Bia"}, key="one-customer")
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "intention_conflict"
+
+
+@pytest.mark.parametrize(
+    ("payload", "field"),
+    [
+        ({"firstName": "Ana", "houseAccountLimit": "100,00"}, "houseAccountLimit"),
+        ({"firstName": "Ana", "fiscalCpfNaNota": True}, "document"),
+        ({"firstName": "Ana", "fiscalEmailReceipt": True}, "email"),
+        ({"firstName": "Ana", "tags": ["vizinha", 7]}, "tags"),
+    ],
+)
+def test_create_customer_refuses_inconsistent_commercial_data(client, manager, shop, payload, field):
+    client.force_login(manager)
+
+    response = _post(client, LIST_URL, payload)
+
+    assert response.status_code == 400
+    assert response.json()["field"] == field
+    assert Customer.objects.count() == 0
+
+
+def test_edit_customer_uses_revision_and_preserves_contact_history(client, manager, people):
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/"
+    detail = client.get(url).json()["customer"]
+
+    payload = {
+        "expectedRevision": detail["revision"],
+        "firstName": "Maria Clara",
+        "phone": "",
+        "tags": ["cliente antiga"],
+        "houseAccount": True,
+        "houseAccountLimit": "1000.00",
+        "fiscalCpfNaNota": True,
+    }
+    response = _patch(client, url, payload, key="edit-maria")
+    replay = _patch(client, url, payload, key="edit-maria")
+
+    assert response.status_code == replay.status_code == 200, response.content
+    assert replay.json() == response.json()
+    assert response.json()["outcome"] == "applied"
+    edited = response.json()["customer"]
+    assert edited["first_name"] == "Maria Clara"
+    assert edited["phone"] == ""
+    assert edited["tags"] == ["cliente antiga"]
+    customer = Customer.objects.get(ref="CLI-MARIA")
+    assert customer.metadata["house_account_limit_q"] == 100000
+    assert ContactPoint.objects.filter(customer=customer, type=ContactPoint.Type.PHONE).exists()
+    assert not ContactPoint.objects.filter(
+        customer=customer, type__in=(ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP), is_primary=True,
+    ).exists()
+
+    turned_off = _patch(client, url, {
+        "expectedRevision": edited["revision"],
+        "houseAccount": False,
+    })
+    assert turned_off.status_code == 200
+    customer.refresh_from_db()
+    assert "house_account" not in customer.metadata
+    assert "house_account_limit_q" not in customer.metadata
+
+
+def test_edit_customer_refuses_missing_and_stale_revisions(client, manager, people):
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/"
+    revision = client.get(url).json()["customer"]["revision"]
+    no_intention = client.patch(
+        url,
+        json.dumps({"expectedRevision": revision, "notes": "sem intenção"}),
+        content_type="application/json",
+    )
+    assert no_intention.status_code == 400
+    assert no_intention.json()["error"]["code"] == "intention_required"
+    missing = _patch(client, url, {"notes": "sem revisão"})
+    assert missing.status_code == 400
+    assert missing.json()["error"]["code"] == "revision_required"
+
+    assert _patch(client, url, {"expectedRevision": revision, "notes": "primeira aba"}).status_code == 200
+    stale = _patch(client, url, {"expectedRevision": revision, "notes": "segunda aba"})
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "customer_changed"
+    assert Customer.objects.get(ref="CLI-MARIA").notes == "primeira aba"
+
+
+def test_address_create_replays_and_first_address_becomes_default(client, manager, people):
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/addresses/"
+    payload = {
+        "label": "home",
+        "formattedAddress": "Rua das Flores, 10 - Centro, Londrina - PR",
+        "route": "Rua das Flores",
+        "streetNumber": "10",
+        "neighborhood": "Centro",
+        "city": "Londrina",
+        "stateCode": "PR",
+        "postalCode": "86000-000",
+        "complement": "Fundos",
+        # O formulário envia falso no estado inicial; o domínio ainda garante
+        # que o primeiro endereço do cadastro seja o padrão.
+        "isDefault": False,
+    }
+
+    first = _post(client, url, payload, key="address-1")
+    replay = _post(client, url, payload, key="address-1")
+
+    assert first.status_code == replay.status_code == 201
+    assert replay.json() == first.json()
+    assert CustomerAddress.objects.count() == 1
+    address = first.json()["customer"]["addresses"][0]
+    assert address["label"] == "Casa"
+    assert address["is_default"] is True
+    assert address["is_verified"] is False
+
+
+def test_address_other_requires_a_name(client, manager, people):
+    client.force_login(manager)
+
+    response = _post(client, f"{LIST_URL}CLI-MARIA/addresses/", {
+        "label": "other",
+        "formattedAddress": "Rua A, 1",
+    })
+
+    assert response.status_code == 400
+    assert response.json()["field"] == "labelCustom"
+    assert not CustomerAddress.objects.exists()
+
+
+def test_address_edit_uses_its_own_revision(client, manager, people):
+    address = CustomerAddress.objects.create(
+        customer=people["balcao"], formatted_address="Rua A, 1", is_default=True,
+    )
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/addresses/{address.pk}/"
+    revision = address.updated_at.isoformat()
+
+    payload = {
+        "expectedRevision": revision,
+        "formattedAddress": "Rua A, 2",
+        "streetNumber": "2",
+    }
+    edited = _patch(client, url, payload, key="edit-address-1")
+    replay = _patch(client, url, payload, key="edit-address-1")
+    stale = _patch(client, url, {
+        "expectedRevision": revision,
+        "formattedAddress": "Rua A, 3",
+    })
+
+    assert edited.status_code == replay.status_code == 200
+    assert replay.json() == edited.json()
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "customer_changed"
+    address.refresh_from_db()
+    assert address.formatted_address == "Rua A, 2"
+
+
+def test_address_non_location_edit_preserves_verification_but_location_edit_clears_it(client, manager, people):
+    address = CustomerAddress.objects.create(
+        customer=people["balcao"],
+        formatted_address="Rua A, 1",
+        place_id="google-place-1",
+        latitude="-23.3100000",
+        longitude="-51.1600000",
+        is_verified=True,
+        is_default=True,
+    )
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/addresses/{address.pk}/"
+
+    instructions = _patch(client, url, {
+        "expectedRevision": address.updated_at.isoformat(),
+        "deliveryInstructions": "Chamar na portaria",
+    })
+    assert instructions.status_code == 200
+    address.refresh_from_db()
+    assert address.is_verified is True
+    assert address.place_id == "google-place-1"
+
+    moved = _patch(client, url, {
+        "expectedRevision": address.updated_at.isoformat(),
+        "formattedAddress": "Rua A, 2",
+    })
+    assert moved.status_code == 200
+    address.refresh_from_db()
+    assert address.is_verified is False
+    assert address.place_id == ""
+    assert address.latitude is None
+    assert address.longitude is None
+
+
+def test_address_cannot_leave_an_active_customer_without_a_default(client, manager, people):
+    address = CustomerAddress.objects.create(
+        customer=people["balcao"], formatted_address="Rua A, 1", is_default=True,
+    )
+    client.force_login(manager)
+
+    response = _patch(client, f"{LIST_URL}CLI-MARIA/addresses/{address.pk}/", {
+        "expectedRevision": address.updated_at.isoformat(),
+        "isDefault": False,
+    })
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "default_address_required"
+    address.refresh_from_db()
+    assert address.is_default is True
+
+
+def test_address_delete_replays_and_promotes_a_replacement(client, manager, people):
+    first = CustomerAddress.objects.create(
+        customer=people["balcao"], formatted_address="Rua A, 1", is_default=True,
+    )
+    second = CustomerAddress.objects.create(
+        customer=people["balcao"], formatted_address="Rua B, 2", is_default=False,
+    )
+    client.force_login(manager)
+    url = f"{LIST_URL}CLI-MARIA/addresses/{first.pk}/"
+    body = json.dumps({"expectedRevision": first.updated_at.isoformat()})
+
+    removed = client.delete(
+        url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="delete-address-1",
+    )
+    replay = client.delete(
+        url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="delete-address-1",
+    )
+
+    assert removed.status_code == replay.status_code == 200
+    assert replay.json() == removed.json()
+    assert not CustomerAddress.objects.filter(pk=first.pk).exists()
+    second.refresh_from_db()
+    assert second.is_default is True
+
+
 # ── Ficha e candidatos ────────────────────────────────────────────────
 
 
@@ -209,6 +530,33 @@ def test_detail_suggests_same_ifood_customer_and_same_name(client, manager, peop
     assert customer["identifiers"] == [{"type_label": "iFood", "value": "ifood-order-1"}]
     assert customer["orders_label"] == "1 pedido"
     assert customer["recent_orders"][0]["ref"] == "IF-ORD-1"
+
+
+def test_detail_exposes_consent_as_read_only_evidence(client, manager, people):
+    from shopman.guestman.contrib.consent.service import ConsentService
+
+    ConsentService.grant_consent(
+        "CLI-MARIA",
+        "whatsapp",
+        source="checkout",
+        actor_ref="gerente",
+    )
+    client.force_login(manager)
+
+    customer = client.get(f"{LIST_URL}CLI-MARIA/").json()["customer"]
+
+    assert customer["consents"] == [
+        {
+            "channel_label": "WhatsApp",
+            "purpose_label": "Marketing geral",
+            "status_label": "Opt-in",
+            "allowed": True,
+            "proof_label": "Verificado",
+            "source": "checkout",
+            "updated_display": customer["consents"][0]["updated_display"],
+        }
+    ]
+    assert customer["consents"][0]["updated_display"]
 
 
 def test_detail_of_absorbed_record_says_where_it_went(client, manager, people):

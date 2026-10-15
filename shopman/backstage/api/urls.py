@@ -47,6 +47,8 @@ from .catalog import (
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
 from .customers import (
+    CustomerAddressDetailView,
+    CustomerAddressListView,
     CustomerDetailView,
     CustomerListView,
     CustomerMergeListView,
@@ -690,6 +692,16 @@ urlpatterns = [
         name="api-backstage-customers-merge-undo",
     ),
     path("customers/<str:ref>/", CustomerDetailView.as_view(), name="api-backstage-customer-detail"),
+    path(
+        "customers/<str:ref>/addresses/",
+        CustomerAddressListView.as_view(),
+        name="api-backstage-customer-addresses",
+    ),
+    path(
+        "customers/<str:ref>/addresses/<int:address_id>/",
+        CustomerAddressDetailView.as_view(),
+        name="api-backstage-customer-address-detail",
+    ),
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/cells/", CatalogCellsView.as_view(), name="api-backstage-catalog-cells"),

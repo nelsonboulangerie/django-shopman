@@ -137,9 +137,12 @@ async function submitComment(note: string) {
 
 const code = computed(() => splitRef(orderRef.value));
 
-// Cadastro do cliente: o CRUD de cliente ainda mora no Admin, e o Gestor aponta
-// para lá (o link "Abrir cadastro" é do `OperatorOrderDetail`).
-const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
+// O detalhe mantém o operador no Gestor: a ficha 360 agora também edita o cadastro.
+const customerHref = computed(() =>
+  order.value?.customer_ref
+    ? `/customers/${encodeURIComponent(order.value.customer_ref)}`
+    : "",
+);
 
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
@@ -1076,7 +1079,7 @@ const outside = useOutsideStore(
         v-model:comment="comment"
         :order="order"
         :busy="busy"
-        :admin-base-url="adminBaseUrl"
+        :customer-href="customerHref"
         :show-status="false"
         :decision-only="outside.away.value"
         layout="split"
