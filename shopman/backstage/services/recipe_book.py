@@ -11,15 +11,19 @@ publicar na ficha e comparar versões continuam em
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from contextlib import contextmanager
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 from django.utils.text import slugify
 from shopman.craftsman.exceptions import RecipeBookError
-from shopman.craftsman.models import RecipeEntry, RecipeVersion
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
 from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.craftsman.services import recipe_book as craftsman
 
@@ -184,17 +188,20 @@ def create_entry_from_payload(data: dict, *, actor: str = "") -> tuple[RecipeEnt
     if version_data is not None and not isinstance(version_data, dict):
         raise _fail("A versão precisa ser um objeto.", field="version")
 
-    with transaction.atomic(), translating_errors():
-        entry = craftsman.create_entry(
-            ref=unique_ref(name, wanted=_text(data, "ref")),
-            name=name,
-            kind=kind,
-            output_sku=output_sku,
-            notes=notes,
-        )
-        version = None
-        if version_data is not None:
-            version = create_version_from_payload(entry, version_data, actor=actor)
+    try:
+        with transaction.atomic(), translating_errors():
+            entry = craftsman.create_entry(
+                ref=unique_ref(name, wanted=_text(data, "ref")),
+                name=name,
+                kind=kind,
+                output_sku=output_sku,
+                notes=notes,
+            )
+            version = None
+            if version_data is not None:
+                version = create_version_from_payload(entry, version_data, actor=actor)
+    except IntegrityError as exc:
+        raise _fail("Já existe uma receita com essa referência. Tente novamente.", field="ref") from exc
     return entry, version
 
 
@@ -206,6 +213,17 @@ def patch_entry(entry: RecipeEntry, data: dict) -> RecipeEntry:
     """
     if not isinstance(data, dict):
         raise _fail("O corpo precisa ser um objeto.")
+    with transaction.atomic():
+        entry = (
+            RecipeEntry.objects.select_for_update(of=("self",))
+            .select_related("current_version")
+            .get(pk=entry.pk)
+        )
+        _assert_revision(entry, data)
+        return _patch_entry_locked(entry, data)
+
+
+def _patch_entry_locked(entry: RecipeEntry, data: dict) -> RecipeEntry:
     if "name" in data:
         name = _text(data, "name")
         if not name:
@@ -236,6 +254,225 @@ def patch_entry(entry: RecipeEntry, data: dict) -> RecipeEntry:
     return entry
 
 
+def _assert_revision(row, data: dict, *, field: str = "expectedRevision") -> None:
+    expected = str(data.get(field) or "").strip()
+    if expected and expected != row.updated_at.isoformat():
+        raise _fail(
+            "A receita mudou desde que você abriu. Atualize e confira antes de salvar.",
+            field=field,
+            code="RECIPE_CHANGED",
+        )
+
+
+def version_revision(version: RecipeVersion) -> str:
+    """Revisão estável do rascunho sem exigir uma coluna nova no Core."""
+    payload = {
+        "status": version.status,
+        "label": version.label or "",
+        "yield_quantity": str(version.yield_quantity),
+        "yield_unit": version.yield_unit,
+        "formula": version.formula or {},
+        "steps": version.steps or [],
+        "notes": version.notes or "",
+        "published_at": version.published_at.isoformat() if version.published_at else "",
+        "meta": version.meta or {},
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _assert_version_revision(version: RecipeVersion, data: dict, *, field: str = "expectedRevision") -> None:
+    expected = str(data.get(field) or "").strip()
+    if expected and expected != version_revision(version):
+        raise _fail(
+            "O rascunho mudou desde que você abriu. Atualize e confira antes de salvar.",
+            field=field,
+            code="RECIPE_CHANGED",
+        )
+
+
+def _integer_setting(value: Any, *, field: str, minimum: int, maximum: int) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        raise _fail(f"{field} precisa ser um número inteiro.", field=field)
+    try:
+        parsed = Decimal(str(value).replace(",", "."))
+    except (InvalidOperation, ValueError):
+        raise _fail(f"{field} precisa ser um número inteiro.", field=field) from None
+    if not parsed.is_finite() or parsed != parsed.to_integral_value() or not minimum <= parsed <= maximum:
+        raise _fail(f"{field} precisa estar entre {minimum} e {maximum}.", field=field)
+    return int(parsed)
+
+
+def _decimal_setting(value: Any, *, field: str) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        raise _fail(f"{field} precisa ser um número maior que zero.", field=field)
+    try:
+        parsed = Decimal(str(value).replace(",", "."))
+    except (InvalidOperation, ValueError):
+        raise _fail(f"{field} precisa ser um número maior que zero.", field=field) from None
+    if not parsed.is_finite() or parsed <= 0 or parsed > Decimal("999999999"):
+        raise _fail(f"{field} precisa ser um número maior que zero.", field=field)
+    return format(parsed.normalize(), "f")
+
+
+def _boolean_setting(data: dict, field: str, *, default: bool) -> bool:
+    value = data.get(field, default)
+    if not isinstance(value, bool):
+        raise _fail(f"{field} aceita apenas sim ou não.", field=field)
+    return value
+
+
+@transaction.atomic
+def update_execution(entry: RecipeEntry, data: dict, *, actor: str) -> Recipe:
+    """Edita apenas a operação da ficha; fórmula e BOM continuam vindo da versão."""
+    if not isinstance(data, dict):
+        raise _fail("O corpo precisa ser um objeto.")
+    recipe = Recipe.objects.select_for_update().filter(ref=entry.ref, is_active=True).first()
+    if recipe is None:
+        raise RecipeEntryNotFound("Publique uma versão antes de configurar a ficha de execução.")
+    _assert_revision(recipe, data)
+    meta = dict(recipe.meta or {})
+
+    if "maxStartedMinutes" in data:
+        value = _integer_setting(data.get("maxStartedMinutes"), field="maxStartedMinutes", minimum=1, maximum=10080)
+        if value is None:
+            meta.pop("max_started_minutes", None)
+        else:
+            meta["max_started_minutes"] = value
+    if "capacityPerDay" in data:
+        value = _decimal_setting(data.get("capacityPerDay"), field="capacityPerDay")
+        if value is None:
+            meta.pop("capacity_per_day", None)
+        else:
+            meta["capacity_per_day"] = value
+    if "requiresBatchTracking" in data:
+        enabled = _boolean_setting(data, "requiresBatchTracking", default=False)
+        if enabled:
+            meta["requires_batch_tracking"] = True
+        else:
+            meta.pop("requires_batch_tracking", None)
+    if "shelfLifeDays" in data:
+        days = _integer_setting(data.get("shelfLifeDays"), field="shelfLifeDays", minimum=0, maximum=3650)
+        if days is None:
+            meta.pop("shelf_life_days", None)
+        else:
+            meta["shelf_life_days"] = days
+    else:
+        days = _integer_setting(meta.get("shelf_life_days"), field="shelfLifeDays", minimum=0, maximum=3650)
+
+    if "shelfLifeReviewed" in data:
+        reviewed = _boolean_setting(data, "shelfLifeReviewed", default=False)
+        if reviewed:
+            if days is None:
+                raise _fail("Informe a validade antes de confirmar a revisão.", field="shelfLifeDays")
+            already_reviewed = bool(
+                _integer_setting(
+                    meta.get("shelf_life_reviewed_days"),
+                    field="shelfLifeDays",
+                    minimum=0,
+                    maximum=3650,
+                ) == days
+                and meta.get("shelf_life_reviewed_by")
+                and meta.get("shelf_life_reviewed_at")
+            )
+            if not already_reviewed:
+                meta.update({
+                    "shelf_life_reviewed_days": days,
+                    "shelf_life_reviewed_by": actor,
+                    "shelf_life_reviewed_at": timezone.now().isoformat(),
+                    "shelf_life_source": "manager_review",
+                })
+            meta.pop("shelf_life_review_required", None)
+        else:
+            for key in ("shelf_life_reviewed_days", "shelf_life_reviewed_by", "shelf_life_reviewed_at"):
+                meta.pop(key, None)
+    elif _integer_setting(
+        meta.get("shelf_life_reviewed_days"),
+        field="shelfLifeDays",
+        minimum=0,
+        maximum=3650,
+    ) != days:
+        for key in ("shelf_life_reviewed_days", "shelf_life_reviewed_by", "shelf_life_reviewed_at"):
+            meta.pop(key, None)
+
+    if "productionLifecycle" in data:
+        from shopman.shop.production_lifecycle import production_lifecycle_choices
+
+        lifecycle = str(data.get("productionLifecycle") or "").strip()
+        choices = production_lifecycle_choices()
+        allowed = {str(value) for value, _label in choices}
+        if lifecycle and lifecycle not in allowed:
+            raise _fail("Escolha um ciclo de produção disponível.", field="productionLifecycle")
+        default = str(choices[0][0]) if choices else ""
+        if lifecycle and lifecycle != default:
+            meta["production_lifecycle"] = lifecycle
+        else:
+            meta.pop("production_lifecycle", None)
+
+    recipe.meta = meta
+    with translating_errors():
+        recipe.full_clean()
+        recipe.save()
+    return recipe
+
+
+@transaction.atomic
+def duplicate_entry(entry: RecipeEntry, data: dict, *, actor: str) -> tuple[RecipeEntry, RecipeVersion]:
+    """Cria outra receita com um rascunho copiado; nunca clona uma ficha ativa."""
+    if not isinstance(data, dict):
+        raise _fail("O corpo precisa ser um objeto.")
+    entry = (
+        RecipeEntry.objects.select_for_update(of=("self",))
+        .select_related("current_version")
+        .get(pk=entry.pk)
+    )
+    _assert_revision(entry, data)
+    raw_number = data.get("fromVersion")
+    if raw_number in (None, ""):
+        source = entry.current_version or entry.versions.order_by("-number").first()
+    else:
+        number = _integer_setting(raw_number, field="fromVersion", minimum=1, maximum=999999)
+        source = entry.versions.filter(number=number).first()
+    if source is None:
+        raise RecipeVersionNotFound(f"A receita '{entry.ref}' não tem versão para duplicar.")
+
+    name = _text(data, "name")
+    if not name:
+        raise _fail("Informe o nome da cópia.", field="name")
+    output_sku = _text(data, "outputSku").upper()
+    if output_sku and output_sku.casefold() == entry.output_sku.casefold():
+        raise _fail("A cópia precisa produzir outro SKU ou ficar sem SKU por enquanto.", field="outputSku")
+    try:
+        with transaction.atomic(), translating_errors():
+            copied = craftsman.create_entry(
+                ref=unique_ref(name, wanted=_text(data, "ref")),
+                name=name,
+                kind=entry.kind,
+                output_sku=output_sku,
+                notes=entry.notes or "",
+            )
+    except IntegrityError as exc:
+        raise _fail("Já existe uma receita com essa referência. Tente novamente.", field="ref") from exc
+    with translating_errors():
+        version = craftsman.create_version(
+            copied,
+            formula=dict(source.formula or {}),
+            yield_quantity=source.yield_quantity,
+            yield_unit=source.yield_unit,
+            origin=dict(source.origin or {}),
+            source={"kind": "manual", "copied_from": source.version_ref},
+            steps=list(source.steps or []),
+            notes=source.notes or "",
+            label=f"Cópia de {entry.name}",
+            created_by=actor,
+        )
+    return copied, version
+
+
 # ── Versão ───────────────────────────────────────────────────────────────────
 
 
@@ -250,6 +487,7 @@ def _version_fields_from(version: RecipeVersion) -> dict:
     }
 
 
+@transaction.atomic
 def create_version_from_payload(entry: RecipeEntry, data: dict, *, actor: str = "") -> RecipeVersion:
     """``POST recipes/<ref>/versions/``: um rascunho novo, do zero ou copiado de ``from_version``.
 
@@ -259,6 +497,8 @@ def create_version_from_payload(entry: RecipeEntry, data: dict, *, actor: str = 
     """
     if not isinstance(data, dict):
         raise _fail("A versão precisa ser um objeto.", field="version")
+    entry = RecipeEntry.objects.select_for_update().get(pk=entry.pk)
+    _assert_revision(entry, data)
     base: dict = {}
     source = _source(data.get("source"))
     from_version = data.get("from_version")
@@ -300,10 +540,13 @@ def create_version_from_payload(entry: RecipeEntry, data: dict, *, actor: str = 
         )
 
 
+@transaction.atomic
 def update_draft_from_payload(version: RecipeVersion, data: dict) -> RecipeVersion:
     """``PATCH recipes/<ref>/versions/<n>/``: só os campos presentes no corpo."""
     if not isinstance(data, dict):
         raise _fail("O corpo precisa ser um objeto.")
+    version = RecipeVersion.objects.select_for_update().select_related("entry").get(pk=version.pk)
+    _assert_version_revision(version, data)
     changes: dict[str, Any] = {}
     if "formula" in data:
         changes["formula"] = _formula(data.get("formula"), required=True)
@@ -322,14 +565,15 @@ def update_draft_from_payload(version: RecipeVersion, data: dict) -> RecipeVersi
         changes["notes"] = _text(data, "notes")
     if "label" in data:
         changes["label"] = _text(data, "label")
-    unknown = sorted(set(data) - set(_VERSION_FIELDS))
+    unknown = sorted(set(data) - set(_VERSION_FIELDS) - {"expectedRevision"})
     if unknown and not changes:
         raise _fail(f"Nenhum campo do rascunho no corpo (recebido: {', '.join(unknown)}).")
     with translating_errors():
         return craftsman.update_draft(version, **changes)
 
 
-def publish(version: RecipeVersion, *, actor: str = ""):
+@transaction.atomic
+def publish(version: RecipeVersion, data: dict | None = None, *, actor: str = ""):
     """``POST .../publish/``: escreve a ficha de execução e vira a versão atual.
 
     Leva junto o perfil de cada insumo (``Material.metadata``: alérgenos, dieta,
@@ -337,6 +581,11 @@ def publish(version: RecipeVersion, *, actor: str = ""):
     receita nova publicada não teria de onde tirar o rótulo do PDP (ADR-008)
     nem a ponte volume/massa do leite ao publicar.
     """
+    data = data if isinstance(data, dict) else {}
+    entry = RecipeEntry.objects.select_for_update().get(pk=version.entry_id)
+    version = RecipeVersion.objects.select_for_update().get(pk=version.pk)
+    _assert_version_revision(version, data)
+    _assert_revision(entry, data, field="expectedEntryRevision")
     with translating_errors():
         return craftsman.publish_version(
             version, actor=actor, default_item_meta=material_profiles_for(version.formula or {}),

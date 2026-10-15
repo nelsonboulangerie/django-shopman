@@ -466,6 +466,13 @@ describe("filterEntries", () => {
   it("bookQuery omits empty filters", () => {
     expect(bookQuery("", "", false)).toEqual({});
     expect(bookQuery(" pão ", "bread", true)).toEqual({ q: "pão", kind: "bread", archived: "1" });
+    expect(bookQuery("", "", false, {
+      withoutSku: true,
+      withDraft: true,
+      favorites: true,
+      sort: "name",
+      page: 2,
+    })).toEqual({ without_sku: "1", with_draft: "1", favorites: "1", sort: "name", page: "2" });
   });
 });
 
