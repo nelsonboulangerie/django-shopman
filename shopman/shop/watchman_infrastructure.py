@@ -97,10 +97,14 @@ class ExternalMonitoringContractCheck:
             payload = json.loads(path.read_text(encoding="utf-8"))
             endpoints = payload["uptime"]
             rate = payload["error_rate"]
-            recipient = payload["notification"]["recipient"]
             notification = payload["notification"]
+            delivery = notification["delivery_assurance"]
+            email_action = notification["email_action"]
+            recipient = delivery["intended_address"]
+            trigger_types = notification["trigger_types"]
+            detector_names = [item["name"] for item in endpoints] + [rate["name"]]
             valid = (
-                payload["schema_version"] == 1
+                payload["schema_version"] == 2
                 and bool(payload["organization"])
                 and bool(payload["project"])
                 and payload["environment"] == "production"
@@ -121,7 +125,13 @@ class ExternalMonitoringContractCheck:
                 and notification["name"] == "Watchman: operações ti@"
                 and recipient == "ti@boulangerie.com.br"
                 and notification["frequency_minutes"] == 30
-                and notification["send_resolved"] is True
+                and email_action["target_type"] == "user"
+                and "target_identifier" not in email_action
+                and delivery["method"] == "dedicated_sentry_member"
+                and delivery["evidence_review_days"] > 0
+                and len(detector_names) == len(set(detector_names))
+                and "issue_resolved_trigger" in trigger_types
+                and any(item != "issue_resolved_trigger" for item in trigger_types)
             )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return CheckResult(
@@ -136,8 +146,15 @@ class ExternalMonitoringContractCheck:
                 id=self.id,
                 status=Status.FAIL,
                 summary="external monitoring contract is incomplete",
-                evidence={"uptime_monitors": len(endpoints), "recipient": recipient},
-                remediation="Declare both services, cadence, rate alert, repetition, recovery and ti@ recipient.",
+                evidence={
+                    "uptime_monitors": len(endpoints),
+                    "recipient": recipient,
+                    "target_resolution": "sentry_members_api",
+                },
+                remediation=(
+                    "Declare both services, cadence, rate alert, opening/recovery triggers and the dedicated "
+                    "Sentry member route to ti@."
+                ),
             )
         if not os.environ.get("SENTRY_AUTH_TOKEN", "").strip():
             return CheckResult(
