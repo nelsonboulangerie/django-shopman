@@ -64,7 +64,6 @@ _ACTIVE_NOTIFICATION_TEMPLATES = frozenset(
         # Link de pagamento do pedido remoto anotado no PDV: é a cobrança inteira
         # — se não chega, a casa fica esperando um dinheiro que ninguém pediu.
         "payment_link_sent",
-        "payment_expired",
         "payment_failed",
         "order_ready",
         "order_ready_pickup",
@@ -850,6 +849,14 @@ def _build_context(order, payload: dict, template: str) -> dict:
 
         context["order_total_display"] = f"R$ {format_money(order_composition.effective_total_q(order))}"
 
+    # O valor DESTE estorno (``payment_refunded``): a devolução parcial devolve só
+    # uma parte. Sem o valor no payload, o estorno é do total.
+    refund_amount_q = payload.get("refund_amount_q")
+    if refund_amount_q:
+        context["refund_amount_display"] = f"R$ {format_money(int(refund_amount_q))}"
+    else:
+        context["refund_amount_display"] = context.get("order_total_display", "")
+
     from shopman.shop.services import storefront_links
 
     # Destino do aviso de fidelidade: os pontos são mostrados em /conta, e um aviso
@@ -1116,7 +1123,8 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
     """A frase do pedido em ``{status_note}``, com a frase-padrão quando falta o dado.
 
     Preparo: a hora prevista, SEM ponto final (o ponto é do texto: o template da
-    Meta não pode terminar em variável). Cancelado e não confirmado: o motivo.
+    Meta não pode terminar em variável). Cancelado: a frase revisada da chave do
+    motivo, pronta no payload. Não confirmado: o motivo.
     Pedido atualizado: a frase que a edição montou no momento do gesto (o que
     mudou, o total novo e a diferença — ``order_edit.customer_note``), que chega
     pronta no payload porque o "antes" não está mais no pedido quando o aviso sai.
@@ -1129,11 +1137,77 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
         if clock:
             return f"Previsto para ficar pronto às {clock}. Mas avisamos assim que estiver"
         return "Avisamos assim que estiver pronto"
-    if template in {"order_cancelled", "order_rejected"}:
+    if template == "order_cancelled":
+        # A frase inteira do motivo, já revisada (``services/cancel_reasons.py``).
+        # Sem ela no payload (reenvio), a mesma frase sai da chave gravada no pedido.
+        from shopman.shop.services import cancel_reasons
+
+        return str(note or "").strip() or cancel_reasons.customer_text(order.data)
+    if template == "order_rejected":
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
     if template == "order_rescheduled":
         return _commitment_phrase(order) or "a nova data que está no pedido"
+    if template == "payment_refunded":
+        # Montada por quem estornou (sabe o meio); a padrão é a do meio desconhecido.
+        return str(note or "").strip() or refund_arrival_note("")
+    if template == "order_returned":
+        return _returned_money_note(order)
     return ""
+
+
+#: Por onde o dinheiro do estorno volta e quanto pode demorar, SEM ponto final
+#: (o ponto é do texto). O prazo é do banco, não da casa: a frase diz que pode
+#: demorar, nunca quando chega.
+_REFUND_ARRIVAL_NOTES = {
+    "pix": (
+        "O valor volta por Pix para a conta que fez o pagamento. Costuma cair em instantes, "
+        "mas pode demorar mais, conforme o banco"
+    ),
+    "card": (
+        "O valor volta para o cartão usado no pagamento e pode levar alguns dias para aparecer "
+        "na fatura, conforme o banco do cartão"
+    ),
+}
+_REFUND_ARRIVAL_DEFAULT = (
+    "O valor volta pela mesma forma de pagamento e pode levar alguns dias para aparecer, "
+    "conforme o banco"
+)
+
+
+def refund_arrival_note(method: str) -> str:
+    """A frase do ``payment_refunded`` para o meio do estorno (``pix``, ``card``…)."""
+    return _REFUND_ARRIVAL_NOTES.get(str(method or "").strip().lower(), _REFUND_ARRIVAL_DEFAULT)
+
+
+def _returned_money_note(order) -> str:
+    """O que acontece com o dinheiro na devolução do pedido, sem ponto final.
+
+    Gateway (Pix/cartão online): o estorno é automático e tem aviso próprio
+    (``payment_refunded``), então a frase promete esse aviso. Pago no balcão
+    (dinheiro, maquininha, Pix atestado): quem devolve é a equipe, e o sistema não
+    finge que devolveu. iFood: o estorno é do iFood. Nada capturado: nada a devolver.
+    """
+    from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
+
+    if (getattr(order, "channel_ref", "") or "") == IFOOD_CHANNEL_REF:
+        return "A devolução do valor é feita pelo iFood, pela forma de pagamento usada lá"
+
+    from shopman.shop.services.order_edit import ROUTE_GATEWAY, refund_route
+
+    try:
+        from shopman.payman import PaymentService
+
+        intents = list(PaymentService.get_by_order(order.ref).filter(status__in={"captured", "refunded"}))
+    except Exception:
+        logger.warning("notification: intents do pedido %s ilegíveis na devolução", order.ref, exc_info=True)
+        intents = None
+    if intents is None:
+        return _REFUND_ARRIVAL_DEFAULT
+    if not intents:
+        return "Nada foi cobrado neste pedido, então não há valor a devolver"
+    if any(refund_route(intent) == ROUTE_GATEWAY for intent in intents):
+        return "O valor volta pela mesma forma de pagamento, e avisamos por aqui quando a devolução for feita"
+    return "A devolução do valor é feita pela nossa equipe, na mesma forma de pagamento"
 
 
 def _commitment_phrase(order) -> str:

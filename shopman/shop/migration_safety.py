@@ -76,7 +76,7 @@ HOWTO = (
     "Antes de deixar este deploy migrar o banco:\n"
     "  1. Anote o ponto de restauração (docs/runbooks/backup-e-restore.md).\n"
     f"  2. Declare-o em {BACKUP_REF_ENV} no ambiente que roda o release\n"
-    "     (ex.: SHOPMAN_MIGRATION_BACKUP_REF='PITR 2026-09-23T14:05:00Z — shopman-headless-postgres').\n"
+    "     (ex.: SHOPMAN_MIGRATION_BACKUP_REF='PITR 2026-09-23T14:05:00Z, shopman-staging-postgres').\n"
     "  3. Redeploy.\n"
     "\n"
     "Migração destrutiva (contract) não tem rollback barato: a recuperação é\n"

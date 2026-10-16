@@ -141,13 +141,18 @@ class ReturnService:
             except Exception as exc:
                 logger.exception("process_refund: payment refund failed for %s", order.ref)
                 result["refund"] = {"success": False, "error": str(exc)}
+        else:
+            # Venda mista do balcão não grava ``payment.intent_ref``: o que foi
+            # pela maquininha ainda precisa do aviso de "Estornar na maquininha"
+            # (o ``refund`` acima já o dá quando roda).
+            payment_service.announce_card_machine_refund(order)
 
         # Fiscal NÃO é cancelado aqui. Devolução TOTAL transiciona o pedido a
         # RETURNED e o lifecycle (_on_returned → fiscal.cancel) enfileira o
         # cancelamento idempotente — um único caminho, com retry e alerta.
         # Cancelar a nota inteira numa devolução PARCIAL seria fiscalmente
-        # errado (venda parcialmente mantida): o operador é alertado para
-        # tratar com o contador (o instrumento correto é outro).
+        # errado (venda parcialmente mantida): abre a pendência da nota de
+        # estorno da parte devolvida (``fiscal.open_return_note``).
         return result
 
 
@@ -238,30 +243,22 @@ class ReturnHandler:
             order.data["returns"] = returns
             order.save(update_fields=["data", "updated_at"])
 
-        self._alert_partial_return_fiscal(order, returns, return_index)
+        self._open_partial_return_note(order, returns, return_index)
 
     @staticmethod
-    def _alert_partial_return_fiscal(order, returns: list, return_index: int) -> None:
-        """Devolução parcial com NFC-e emitida: decisão fiscal é humana."""
+    def _open_partial_return_note(order, returns: list, return_index: int) -> None:
+        """Devolução parcial com NFC-e autorizada: a pendência da nota de estorno.
+
+        A nota inteira nunca se cancela aqui (a venda continua valendo em parte);
+        quem desfaz a parte devolvida é a nota de estorno, levada ao contador.
+        """
         if return_index >= len(returns):
             return
         if returns[return_index].get("type") != "partial":
             return
-        if not order.data.get("nfce_access_key") or order.data.get("nfce_cancelled"):
-            return
-        from shopman.shop.services.observability import create_operator_alert
+        from shopman.shop.services import fiscal
 
-        create_operator_alert(
-            type="fiscal_partial_return",
-            severity="warning",
-            message=(
-                f"Devolução PARCIAL no pedido {order.ref} com NFC-e autorizada. "
-                "A nota NÃO foi cancelada (venda parcialmente mantida). Avaliar "
-                "com o contador o instrumento fiscal da devolução."
-            ),
-            order_ref=order.ref,
-            dedupe_key=f"fiscal_partial_return:{order.ref}:{return_index}",
-        )
+        fiscal.open_return_note(order, return_index=return_index)
 
 
 __all__ = ["ReturnHandler", "ReturnService", "ReturnResult"]

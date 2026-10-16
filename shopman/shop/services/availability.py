@@ -425,15 +425,121 @@ def decide(
             "sku": sku,
             "requested_qty": qty_d,
             "available_qty": bundle_result["available_qty"],
+            "orderable_ceiling": bundle_result["orderable_ceiling"],
+            "is_tracked": bundle_result["is_tracked"],
             "reason_code": bundle_result.get("error_code"),
             "is_paused": bundle_result.get("is_paused", False),
             "is_planned": bundle_result.get("is_planned", False),
             "target_date": target_date,
             "failed_sku": bundle_result.get("failed_sku"),
+            "_component_tracking": bundle_result.get("_component_tracking", {}),
             "source": "availability.bundle_decision",
         }
 
     listing_item = _sku_in_channel_listing(sku, channel_ref)
+    gate = _listing_gate_decision(
+        sku, qty_d, listing_item, as_component=as_component, target_date=target_date,
+    )
+    if gate is not None:
+        return gate
+
+    adapter = get_adapter("stock")
+    scope = adapter.get_channel_scope(channel_ref)
+    info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope))
+    return _stock_decision(adapter, sku, qty_d, info, target_date=target_date)
+
+
+def decide_many(
+    lines,
+    *,
+    channel_ref: str | None = None,
+    target_date: date | None = None,
+) -> list[dict]:
+    """``decide`` para várias linhas ``(sku, qty)`` com leituras em lote.
+
+    Devolve, na ordem das linhas, exatamente o que ``decide(sku, qty,
+    channel_ref=..., target_date=...)`` devolveria para cada uma. O que muda é o
+    custo: ``decide`` vai ao banco umas quinze vezes por SKU (canal, vitrine,
+    item da vitrine, bundle, recorte do canal, estoque, lotes, holds…), e a
+    revisão da venda do PDV perguntava linha por linha. Aqui o canal, a vitrine,
+    a detecção de bundle e a leitura do Stockman são feitas uma vez para todos os
+    SKUs, e cada linha é decidida pelos MESMOS passos de ``decide``
+    (``_listing_gate_decision`` e ``_stock_decision``).
+
+    Ficam no caminho de ``decide``, um por um: linha sem ``target_date`` (a data
+    ali depende do SKU e da quantidade, via fila de espera) e SKU que é bundle
+    (a expansão é recursiva e rara no balcão).
+    """
+    items = [(str(sku), Decimal(str(qty))) for sku, qty in lines]
+    if not items:
+        return []
+    if target_date is None:
+        return [decide(sku, qty, channel_ref=channel_ref) for sku, qty in items]
+
+    skus = list(dict.fromkeys(sku for sku, _qty in items))
+    catalog = get_adapter("catalog")
+    bulk_bundles = getattr(catalog, "bulk_bundle_skus", None)
+    try:
+        bundles = bulk_bundles(skus) if bulk_bundles else set(skus)
+    except Exception:
+        logger.debug("availability.decide_many: bundle lookup degraded; per-SKU path", exc_info=True)
+        bundles = set(skus)
+    simple = [sku for sku in skus if sku not in bundles]
+
+    listing_items = _listing_items_for_skus(simple, channel_ref)
+    adapter = get_adapter("stock")
+    infos: dict[str, dict] = {}
+    to_read = [
+        sku for sku in simple
+        if _listing_gate_decision(
+            sku, Decimal("0"), listing_items[sku], as_component=False, target_date=target_date,
+        ) is None
+    ]
+    if to_read:
+        scope = adapter.get_channel_scope(channel_ref)
+        kwargs = _availability_kwargs(scope)
+        bulk_read = getattr(adapter, "get_availability_for_skus", None)
+        if bulk_read is not None:
+            infos = bulk_read(to_read, target_date=target_date, **kwargs)
+        else:
+            infos = {sku: adapter.get_availability(sku, target_date=target_date, **kwargs) for sku in to_read}
+
+    decisions: list[dict] = []
+    for sku, qty in items:
+        if sku in bundles:
+            decisions.append(decide(sku, qty, channel_ref=channel_ref, target_date=target_date))
+            continue
+        gate = _listing_gate_decision(
+            sku, qty, listing_items[sku], as_component=False, target_date=target_date,
+        )
+        if gate is not None:
+            decisions.append(gate)
+            continue
+        decisions.append(_stock_decision(adapter, sku, qty, infos[sku], target_date=target_date))
+    return decisions
+
+
+def _availability_kwargs(scope: dict) -> dict:
+    """O recorte do canal nos argumentos da leitura de estoque do adapter."""
+    return {
+        "safety_margin": scope["safety_margin"],
+        "allowed_positions": scope["allowed_positions"],
+        "excluded_positions": scope.get("excluded_positions"),
+        "expiry_margin_days": scope.get("expiry_margin_days", 0),
+        "include_nonconforming": scope.get("sells_nonconforming", True),
+        "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
+    }
+
+
+def _listing_gate_decision(
+    sku: str,
+    qty_d: Decimal,
+    listing_item: dict | bool,
+    *,
+    as_component: bool,
+    target_date: date | None,
+) -> dict | None:
+    """A recusa do portão da vitrine, ou ``None`` quando o SKU passa por ele."""
     if listing_item is False and as_component:
         listing_item = True  # componente não precisa estar listado; pausado no canal, sim, recusa
     if listing_item is False:
@@ -442,6 +548,8 @@ def decide(
             "sku": sku,
             "requested_qty": qty_d,
             "available_qty": Decimal("0"),
+            "orderable_ceiling": Decimal("0"),
+            "is_tracked": None,
             "reason_code": "not_in_listing",
             "is_paused": False,
             "is_planned": False,
@@ -455,6 +563,8 @@ def decide(
             "sku": sku,
             "requested_qty": qty_d,
             "available_qty": Decimal("0"),
+            "orderable_ceiling": Decimal("0"),
+            "is_tracked": None,
             "reason_code": "paused",
             "is_paused": True,
             "is_planned": False,
@@ -465,53 +575,30 @@ def decide(
     # ``ListingItem.min_qty`` is kept in the model but not enforced at the
     # gate (AVAILABILITY-PLAN §10 — ``below_min_qty`` is YAGNI today).
     # Future B2B/MOQ scenarios should resurrect this with proper UX.
+    return None
 
-    adapter = get_adapter("stock")
-    scope = adapter.get_channel_scope(channel_ref)
-    info = adapter.get_availability(
-        sku,
-        target_date=target_date,
-        safety_margin=scope["safety_margin"],
-        allowed_positions=scope["allowed_positions"],
-        excluded_positions=scope.get("excluded_positions"),
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
-            include_nonconforming=scope.get("sells_nonconforming", True),
-            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
-    )
-    if not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions"))):
-        return {
-            "approved": True,
-            "sku": sku,
-            "requested_qty": qty_d,
-            "available_qty": Decimal("999999"),
-            "reason_code": None,
-            "is_paused": False,
-            "is_planned": False,
-            "target_date": target_date,
-            "failed_sku": None,
-            "source": "stock.untracked",
-            "untracked": True,
-        }
 
-    decision = adapter.promise_decision_from_availability(
+def _stock_decision(_adapter, sku: str, qty_d: Decimal, info: dict, *, target_date: date | None) -> dict:
+    """A decisão a partir da leitura de estoque já feita (passo final de ``decide``)."""
+    from shopman.stockman.services.availability import decision_from_availability
+
+    decision = decision_from_availability(
         sku,
         qty_d,
         info,
         target_date=target_date,
     )
-    approved = decision.approved if isinstance(getattr(decision, "approved", None), bool) else qty_d <= info["total_promisable"]
-    reason_code = getattr(decision, "reason_code", None)
-    if not isinstance(reason_code, str | type(None)):
-        reason_code = None if approved else ("paused" if info.get("is_paused", False) else "insufficient_stock")
     return {
-        "approved": approved,
-        "sku": getattr(decision, "sku", sku),
-        "requested_qty": getattr(decision, "requested_qty", qty_d),
-        "available_qty": getattr(decision, "available_qty", info["total_promisable"]),
-        "reason_code": reason_code,
-        "is_paused": getattr(decision, "is_paused", info.get("is_paused", False)),
-        "is_planned": getattr(decision, "is_planned", info.get("is_planned", False)),
-        "target_date": getattr(decision, "target_date", target_date),
+        "approved": decision.approved,
+        "sku": decision.sku,
+        "requested_qty": decision.requested_qty,
+        "available_qty": decision.available_qty,
+        "orderable_ceiling": decision.orderable_ceiling,
+        "is_tracked": decision.is_tracked,
+        "reason_code": decision.reason_code.value if decision.reason_code is not None else None,
+        "is_paused": decision.is_paused,
+        "is_planned": decision.is_planned,
+        "target_date": decision.target_date,
         "failed_sku": None,
         "source": "stock.promise_decision",
     }
@@ -546,7 +633,9 @@ def check(
     Returns:
         {
             "ok": bool,                 # passes listing check AND stock check
-            "available_qty": Decimal,   # total_promisable for this channel
+            "available_qty": Decimal | None,  # factual supply; None = no ledger
+            "orderable_ceiling": Decimal | None,  # finite policy limit, if any
+            "is_tracked": bool | None,
             "is_paused": bool,          # product paused/unpublished
             "is_planned": bool,         # only future quants exist
             "breakdown": {ready, in_production},
@@ -565,6 +654,8 @@ def check(
     return {
         "ok": decision["approved"],
         "available_qty": decision["available_qty"],
+        "orderable_ceiling": decision.get("orderable_ceiling"),
+        "is_tracked": decision.get("is_tracked"),
         "is_paused": decision["is_paused"],
         "is_planned": decision["is_planned"],
         "breakdown": {},
@@ -572,7 +663,7 @@ def check(
         "is_bundle": decision["source"] == "availability.bundle_decision",
         "failed_sku": decision.get("failed_sku"),
         "target_date": target_date,
-        "untracked": decision.get("untracked", False),
+        "_component_tracking": decision.get("_component_tracking", {}),
     }
 
 
@@ -609,7 +700,11 @@ def _check_bundle(
     Returns ok=False at the first failing component, or ok=True with
     available_qty = number of full bundles constructable from components.
     """
-    min_constructable: Decimal | None = None
+    min_factual_constructable: Decimal | None = None
+    min_orderable_ceiling: Decimal | None = None
+    any_factual_supply = False
+    any_component_tracked = False
+    component_tracking: dict[str, bool] = {}
 
     for comp in components:
         comp_sku = comp["sku"]
@@ -621,6 +716,8 @@ def _check_bundle(
             return {
                 "ok": False,
                 "available_qty": result["available_qty"],
+                "orderable_ceiling": result.get("orderable_ceiling"),
+                "is_tracked": result.get("is_tracked"),
                 "is_paused": result.get("is_paused", False),
                 "is_planned": result.get("is_planned", False),
                 "breakdown": result.get("breakdown", {}),
@@ -635,17 +732,41 @@ def _check_bundle(
         # CatalogService.expand multiplies by qty). To get per-bundle qty,
         # divide back: comp_qty_per_bundle = comp_qty / bundle_qty.
         comp_qty_per_bundle = comp_qty / bundle_qty if bundle_qty else comp_qty
-        if comp_qty_per_bundle > 0:
-            constructable = result["available_qty"] / comp_qty_per_bundle
-        else:
-            constructable = Decimal("0")
+        component_available = result.get("available_qty")
+        if component_available is not None:
+            any_factual_supply = True
+            factual_constructable = (
+                component_available / comp_qty_per_bundle
+                if comp_qty_per_bundle > 0
+                else Decimal("0")
+            )
+            if (
+                min_factual_constructable is None
+                or factual_constructable < min_factual_constructable
+            ):
+                min_factual_constructable = factual_constructable
+        is_tracked = result.get("is_tracked") is not False
+        component_tracking[comp_sku] = is_tracked
+        any_component_tracked = any_component_tracked or is_tracked
 
-        if min_constructable is None or constructable < min_constructable:
-            min_constructable = constructable
+        component_ceiling = result.get("orderable_ceiling")
+        if component_ceiling is not None:
+            ceiling = (
+                component_ceiling / comp_qty_per_bundle
+                if comp_qty_per_bundle > 0
+                else Decimal("0")
+            )
+            if min_orderable_ceiling is None or ceiling < min_orderable_ceiling:
+                min_orderable_ceiling = ceiling
 
     return {
         "ok": True,
-        "available_qty": min_constructable if min_constructable is not None else Decimal("0"),
+        "available_qty": min_factual_constructable if any_factual_supply else None,
+        "orderable_ceiling": min_orderable_ceiling,
+        # A mixed bundle is tracked because its tracked components still need
+        # holds. Per-component tracking below prevents trying to reserve the
+        # components that intentionally have no Stockman ledger.
+        "is_tracked": any_component_tracked,
         "is_paused": False,
         "is_planned": False,
         "breakdown": {},
@@ -653,6 +774,7 @@ def _check_bundle(
         "is_bundle": True,
         "failed_sku": None,
         "target_date": target_date,
+        "_component_tracking": component_tracking,
     }
 
 
@@ -691,6 +813,31 @@ def _sku_in_channel_listing(sku: str, channel_ref: str | None) -> dict | bool:
     if item is None:
         return False
     return item
+
+
+def _listing_items_for_skus(skus: list[str], channel_ref: str | None) -> dict[str, dict | bool]:
+    """``_sku_in_channel_listing`` para vários SKUs: canal e vitrine lidos uma vez.
+
+    Mesmas respostas, SKU a SKU: ``True`` quando o portão não se aplica, o
+    ``dict`` do item quando o SKU está na vitrine, ``False`` quando não está.
+    """
+    if not skus:
+        return {}
+    skipped = dict.fromkeys(skus, True)
+    if not channel_ref:
+        return skipped
+    channel = Channel.objects.filter(ref=channel_ref).first()
+    if channel is None or not channel.ref:
+        return skipped
+    listing_ref = channel.ref
+    catalog = get_adapter("catalog")
+    if not catalog.listing_exists(listing_ref):
+        return skipped
+    bulk_items = getattr(catalog, "bulk_listing_items", None)
+    if bulk_items is None:
+        return {sku: _sku_in_channel_listing(sku, channel_ref) for sku in skus}
+    found = bulk_items(skus, listing_ref)
+    return {sku: found.get(sku, False) for sku in skus}
 
 
 def _channel_hold_ttl_minutes(channel_ref: str | None) -> int:
@@ -855,18 +1002,6 @@ def _reserve_checked_status(
 ) -> dict:
     adapter = adapter or get_adapter("stock")
 
-    # SKUs that are not tracked by Stockman: skip the hold (the order will
-    # commit without stock reservation, same as the legacy noop path).
-    if status.get("untracked"):
-        return {
-            "ok": True,
-            "hold_id": None,
-            "available_qty": status["available_qty"],
-            "is_paused": False,
-            "error_code": None,
-            "substitutes": [],
-        }
-
     if not status["ok"]:
         return {
             "ok": False,
@@ -891,8 +1026,22 @@ def _reserve_checked_status(
                 channel_ref=channel_ref,
                 target_date=target_date,
                 available_qty=status["available_qty"],
+                component_tracking=status.get("_component_tracking", {}),
                 adapter=adapter,
             )
+
+    # A simple SKU outside Stockman scope needs no hold. Bundles are handled
+    # above even when every component is untracked so the result can record
+    # precisely which components were skipped.
+    if status.get("is_tracked") is False:
+        return {
+            "ok": True,
+            "hold_id": None,
+            "available_qty": status["available_qty"],
+            "is_paused": False,
+            "error_code": None,
+            "substitutes": [],
+        }
 
     result = initial_hold_result or adapter.create_hold(
         sku=sku,
@@ -1197,6 +1346,7 @@ def _reconcile_simple(
     ttl_minutes: int,
     hold_metadata: dict[str, str] | None = None,
     metadata_filters: dict[str, str] | None = None,
+    is_tracked: bool | None = None,
 ) -> dict:
     """Reconcile a simple (non-bundle) SKU to `new_qty`."""
     existing = _load_session_holds_for_sku(
@@ -1222,6 +1372,17 @@ def _reconcile_simple(
     # ── Grow ──
     if new_qty > current_total:
         delta = new_qty - current_total
+        if is_tracked is False:
+            return {
+                "ok": True,
+                "hold_ids": [],
+                "released_ids": [],
+                "available_qty": None,
+                "is_paused": False,
+                "error_code": None,
+                "substitutes": [],
+                "untracked_skus": [sku],
+            }
         if target_date is None:
             # O acréscimo entra no MESMO dia que a linha já promete: a sacola
             # que está na fila da fornada de amanhã cresce dentro dela, e a de
@@ -1273,7 +1434,7 @@ def _reconcile_simple(
 
         status = check(sku, delta, channel_ref=channel_ref, target_date=target_date)
 
-        if status.get("untracked"):
+        if status.get("is_tracked") is False:
             # SKU outside Stockman scope — no hold needed, treat as ok.
             return {
                 "ok": True,
@@ -1454,6 +1615,7 @@ def _reconcile_bundle_components(
     """
     created_ids: list[str] = []
     released_ids: list[str] = []
+    untracked_skus: list[str] = []
     adapter = get_adapter("stock")
     hold_metadata = _cart_hold_metadata(bundle_sku, bundle_parent_sku=bundle_sku)
 
@@ -1461,6 +1623,15 @@ def _reconcile_bundle_components(
         comp_sku = comp["sku"]
         comp_qty = Decimal(str(comp["qty"]))
 
+        component_status = check(
+            comp_sku,
+            comp_qty,
+            channel_ref=channel_ref,
+            target_date=target_date,
+            as_component=True,
+        )
+        if component_status.get("is_tracked") is False:
+            untracked_skus.append(comp_sku)
         result = _reconcile_simple(
             comp_sku, comp_qty,
             session_key=session_key,
@@ -1469,6 +1640,7 @@ def _reconcile_bundle_components(
             ttl_minutes=ttl_minutes,
             hold_metadata=hold_metadata,
             metadata_filters=hold_metadata,
+            is_tracked=component_status.get("is_tracked"),
         )
         if not result["ok"]:
             # Rollback: release any new holds we've created for previous components.
@@ -1496,6 +1668,7 @@ def _reconcile_bundle_components(
         "is_paused": False,
         "error_code": None,
         "substitutes": [],
+        "untracked_skus": untracked_skus,
     }
 
 
@@ -1508,7 +1681,8 @@ def _reserve_bundle_components(
     ttl_minutes: int,
     channel_ref: str | None,
     target_date: date | None,
-    available_qty: Decimal,
+    available_qty: Decimal | None,
+    component_tracking: dict[str, bool],
     adapter,
 ) -> dict:
     """Create one hold per bundle component.
@@ -1517,11 +1691,16 @@ def _reserve_bundle_components(
     and returns ok=False.
     """
     created_hold_ids: list[str] = []
+    untracked_skus: list[str] = []
     hold_metadata = _cart_hold_metadata(bundle_sku, bundle_parent_sku=bundle_sku)
 
     for comp in components:
         comp_sku = comp["sku"]
         comp_qty = Decimal(str(comp["qty"]))
+
+        if component_tracking.get(comp_sku) is False:
+            untracked_skus.append(comp_sku)
+            continue
 
         result = adapter.create_hold(
             sku=comp_sku,
@@ -1563,4 +1742,5 @@ def _reserve_bundle_components(
         "error_code": None,
         "is_bundle": True,
         "substitutes": [],
+        "untracked_skus": untracked_skus,
     }

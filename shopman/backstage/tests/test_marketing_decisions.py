@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -31,6 +32,7 @@ from shopman.shop.tests.test_marketing_delivery_recovery import _targets
 pytestmark = pytest.mark.django_db
 
 URL = "/api/v1/backstage/marketing/decisions/"
+_SHOP_ZONE = ZoneInfo("America/Sao_Paulo")
 
 
 @pytest.fixture
@@ -171,8 +173,22 @@ def test_automatic_check_reports_what_the_lookup_found():
     assert DeliveryReconciliation.objects.get().state == DeliveryReconciliation.State.COMPLETED
 
 
-def test_scheduled_line_counts_today_and_active_campaigns(rule):
-    now = timezone.now()
+@pytest.mark.parametrize(
+    ("local_clock", "expected_today"),
+    [
+        # Meio-dia: "agora + 1 min" ainda é hoje; "+3 dias" nunca é.
+        (datetime(2026, 10, 8, 12, 0, tzinfo=_SHOP_ZONE), 1),
+        # 23:59:30 da loja: "agora + 1 min" já é amanhã. Era a hora em que a CI
+        # reprovava (run 37876423454, 09/10 02:50 UTC), com 0 fora de {1, 2}.
+        (datetime(2026, 10, 8, 23, 59, 30, tzinfo=_SHOP_ZONE), 0),
+    ],
+    ids=["meio-dia", "virada-da-meia-noite"],
+)
+def test_scheduled_line_counts_today_and_active_campaigns(rule, monkeypatch, local_clock, expected_today):
+    # Relógio congelado e devolvido em UTC, como o now() real: "hoje" tem de
+    # sair do fuso da loja, nunca da hora em que a suíte calhou de rodar.
+    now = local_clock.astimezone(UTC)
+    monkeypatch.setattr("django.utils.timezone.now", lambda: now)
     Announcement.objects.create(
         rule=rule,
         template=rule.template,
@@ -195,11 +211,11 @@ def test_scheduled_line_counts_today_and_active_campaigns(rule):
         is_active=False,
     )
 
-    queue = build_decision_queue()
+    queue = build_decision_queue(now=now)
 
     assert len(queue.scheduled) == 2
     assert queue.scheduled[0].scheduled_for < queue.scheduled[1].scheduled_for
-    assert queue.scheduled_today_count in {1, 2}  # 2 só se "agora + 1 min" virar o dia
+    assert queue.scheduled_today_count == expected_today
     assert queue.active_campaign_count == 1
     assert queue.items == ()
 

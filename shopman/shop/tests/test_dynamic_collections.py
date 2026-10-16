@@ -111,3 +111,12 @@ def test_featured_survives_cache_outage(monkeypatch):
     monkeypatch.setattr(cache, "get", down)
     monkeypatch.setattr(cache, "set", down)
     assert _featured() == ("PAO-A",)
+
+
+@pytest.mark.django_db
+def test_featured_without_sales_lists_published_by_name():
+    """Banco sem venda (o Dia 1, depois do ``purge_synthetic_data``): a seção sai por nome."""
+    _published("PAO-B")
+    _published("PAO-A")
+    dynamic_collections.invalidate_featured_ranking()
+    assert _featured() == ("PAO-A", "PAO-B")

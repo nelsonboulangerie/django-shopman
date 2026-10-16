@@ -602,10 +602,6 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
         "code": "partial_results" if issues else "results",
         "outcome": "partial" if issues else "read",
     }
-    if catalog is not None and catalog.happy_hour is not None:
-        label = getattr(catalog.happy_hour, "label", "") or getattr(catalog.happy_hour, "message", "")
-        if label:
-            payload["happy_hour"] = str(label)
     return payload
 
 
@@ -779,7 +775,8 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
 def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillment_type: str = "pickup") -> dict:
     """Dias e horários em que a casa consegue entregar/servir esta sacola."""
     from shopman.shop.projections.channel_policy import resolve_channel_policy
-    from shopman.shop.services.business_calendar import available_dates, delivery_slots_for
+    from shopman.shop.services.business_calendar import available_dates
+    from shopman.shop.services.fulfillment_window import delivery_windows_for
     from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
 
     if fulfillment_type not in resolve_channel_policy(ctx.channel_ref).fulfillment_types:
@@ -802,7 +799,7 @@ def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillmen
     payload: dict = {"ok": True, "date": when, "available_dates": dates}
     if fulfillment_type == "delivery":
         try:
-            slots = delivery_slots_for(day)
+            slots = delivery_windows_for(day)
         except Exception:
             logger.debug("concierge.delivery_slots degraded", exc_info=True)
             slots = []
@@ -845,9 +842,10 @@ def set_fulfillment(
 ) -> dict:
     """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site.
 
-    Na entrega, ``tax_id`` é o CPF/CNPJ PEDIDO para a nota (``fiscal.tax_id``):
-    a nota da entrega a domicílio não sai sem ele, e a porta do pedido recusa
-    (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
+    Na entrega, ``tax_id`` é o CPF/CNPJ PEDIDO para a nota (``fiscal.tax_id``),
+    opcional: sem ele a nota sai presencial, consumidor não identificado
+    (decisão do dono, 13/10/2026). Informado e inválido, a porta do pedido
+    recusa (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
 
     O endereço é montado na conversa (``concierge/address.py``): pelo
     endereço do cadastro do cliente (``use_saved_address``, o padrão, ou
@@ -993,11 +991,11 @@ def set_fulfillment(
                 )
             values["delivery_address"] = structured["formatted_address"]
         if slot_ref:
-            from shopman.shop.services.business_calendar import delivery_slots_for
+            from shopman.shop.services.fulfillment_window import delivery_window_error
 
-            refs = {s.get("ref") for s in delivery_slots_for(day)}
-            if slot_ref not in refs:
-                errors["delivery_time_slot"] = "Esse horário não está disponível para entrega nesse dia."
+            slot_error = delivery_window_error(day, slot_ref)
+            if slot_error:
+                errors["delivery_time_slot"] = slot_error
             else:
                 values["delivery_time_slot"] = slot_ref
 
@@ -1169,7 +1167,8 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
 def _delivery_fiscal_missing(ctx: ToolContext, session) -> list[str]:
     """O que falta para a nota da entrega sair — a régua da porta do pedido.
 
-    ``fiscal_tax_id``: pedir o CPF ou CNPJ e gravar com set_fulfillment.
+    ``fiscal_tax_id``: o CPF ou CNPJ informado não confere; pedir de novo
+    (ou seguir sem ele) e gravar com set_fulfillment.
     ``delivery_address_details``: o endereço dito na conversa não tem rua,
     número, bairro, cidade, estado e CEP separados, que a nota exige; o
     concierge pergunta o que falta (``set_fulfillment`` com as partes).
@@ -1338,9 +1337,9 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             if slot_error:
                 errors["delivery_time_slot"] = slot_error
         elif locked.data.get("fulfillment_type") == "delivery" and locked.data.get("delivery_time_slot"):
-            from shopman.shop.services.business_calendar import delivery_slots_for
-            slots = delivery_slots_for(_parse_date(locked.data.get("delivery_date", "")))
-            if locked.data["delivery_time_slot"] not in {slot.get("ref") for slot in slots}:
+            from shopman.shop.services.fulfillment_window import delivery_window_error
+            locked_day = _parse_date(locked.data.get("delivery_date", ""))
+            if locked_day is None or delivery_window_error(locked_day, locked.data["delivery_time_slot"]):
                 errors["delivery_time_slot"] = "O horário não está mais disponível para entrega."
         if errors:
             return _error("revision_conflict", "A data mudou de disponibilidade. Escolha um horário válido.", errors=errors), 409
@@ -1365,12 +1364,14 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES
 
         if getattr(exc, "code", "") in REFUSAL_CODES:
-            # A nota da entrega não sai sem CPF e endereço completo. O modelo
-            # precisa saber O QUE pedir, não que "não deu".
+            # A porta recusa CPF/CNPJ informado e INVÁLIDO, ou endereço
+            # incompleto. CPF em branco passa: a nota sai presencial (ADR-035).
+            # O modelo precisa saber O QUE consertar, não que "não deu".
             return _error(
                 exc.code,
-                f"{exc.message} Peça o CPF ou CNPJ ao cliente e grave com set_fulfillment (tax_id); "
-                "se o endereço estiver incompleto, ofereça o site (send_web_link) ou a retirada.",
+                f"{exc.message} Se o CPF ou CNPJ está errado, peça o número certo ao cliente ou siga sem ele "
+                "(set_fulfillment com tax_id); se o endereço estiver incompleto, ofereça o site "
+                "(send_web_link) ou a retirada.",
             )
         if getattr(exc, "code", "") == "total_changed":
             return _error("revision_conflict", "O total mudou. Confira a diferença antes de confirmar.", facts=getattr(exc, "context", {}))
@@ -1795,7 +1796,7 @@ def render_result(name: str, result: dict) -> str:
             if result.get("ready"):
                 rows.append("Confira o resumo. Ao confirmar, seu pedido será registrado; pagamento é uma etapa separada. Responda ‘confirmo’ para registrar.")
             else:
-                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "informar o CPF ou CNPJ para a nota fiscal da entrega (sem ele, só a retirada)", "delivery_address_details": "completar o endereço da entrega (rua, número, bairro e CEP)", "cart": "conferir a sacola"}
+                labels = {"items": "escolher os produtos", "payment_method": "escolher como pagar", "customer_phone": "confirmar seu contato", "fulfillment_type": "escolher entrega ou retirada", "delivery_time_slot": "escolher o horário", "delivery_date": "escolher uma data disponível", "delivery_address": "informar o endereço", "delivery_out_of_zone": "escolher um endereço atendido ou retirada", "fiscal_tax_id": "corrigir o CPF ou CNPJ da nota (ou seguir sem ele)", "delivery_address_details": "completar o endereço da entrega (rua, número, bairro e CEP)", "cart": "conferir a sacola"}
                 if result.get("address_missing"):
                     from shopman.shop.services.delivery_fiscal_identity import join_words
 
@@ -1928,7 +1929,7 @@ TOOL_SPECS: list[dict] = [
                 "delivery_date": {"type": "string", "description": "AAAA-MM-DD ou \"\"."},
                 "slot_ref": {"type": "string", "description": "Ref do horário, ou \"\"."},
                 "address": {"type": "string", "description": "Endereço escrito pelo cliente (entrega), ou \"\"."},
-                "tax_id": {"type": "string", "description": "CPF ou CNPJ do cliente para a nota fiscal da entrega (obrigatório para entregar), ou \"\"."},
+                "tax_id": {"type": "string", "description": "CPF ou CNPJ do cliente para a nota fiscal da entrega (opcional: sem ele a nota sai sem identificar o consumidor), ou \"\"."},
                 "use_shared_location": {"type": "boolean", "description": "true quando o cliente enviou a localização pelo WhatsApp e ela é o endereço da entrega."},
                 "street": {"type": "string", "description": "Rua dita/corrigida pelo cliente, ou \"\"."},
                 "street_number": {"type": "string", "description": "Número da casa/prédio (ou \"S/N\" se o cliente disser que não tem), ou \"\"."},

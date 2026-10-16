@@ -30,6 +30,23 @@ class CustomerType(models.TextChoices):
     BUSINESS = "business", _("Pessoa Jurídica")
 
 
+class CustomerManager(models.Manager):
+    """Manager do Customer que aceita os grupos já na criação.
+
+    ``price_tiers`` é M2M e não entra no construtor do model; sem este atalho o
+    cadastro com grupo viraria create + set. O valor pode ser um grupo só ou uma
+    coleção; ``None`` deixa o grupo padrão do ``save()`` agir.
+    """
+
+    def create(self, **kwargs):
+        provided = "price_tiers" in kwargs
+        tiers = kwargs.pop("price_tiers", None)
+        customer = super().create(**kwargs)
+        if provided and tiers is not None:
+            customer.price_tiers.set(tiers if hasattr(tiers, "__iter__") else [tiers])
+        return customer
+
+
 class Customer(models.Model):
     """
     Registered customer.
@@ -79,16 +96,17 @@ class Customer(models.Model):
     phone = models.CharField(_("telefone"), max_length=20, blank=True, db_index=True)
 
     # Segmentation
-    #: A faixa comercial: qual tabela de preço este cliente enxerga. UMA por cliente, e
-    #: ela precifica — não confundir com `tags`, que são muitas e não mexem em preço.
-    price_tier = models.ForeignKey(
+    #: Os grupos comerciais do cliente. MUITOS por cliente, e eles precificam — não
+    #: confundir com `tags`, que são muitas e não mexem em preço. Quem pertence a mais
+    #: de um grupo recebe a melhor vantagem por tipo, sem acumular.
+    price_tiers = models.ManyToManyField(
         "guestman.PriceTier",
-        on_delete=models.PROTECT,
         related_name="customers",
-        null=True,
         blank=True,
-        verbose_name=_("faixa de preço"),
+        verbose_name=_("grupos"),
     )
+
+    objects = CustomerManager()
 
     #: Etiquetas livres, criadas por quem atende: "corredores", "sem glúten", "vizinho".
     #: MUITAS por cliente e sem efeito em preço — é o que as separa da `price_tier`.
@@ -158,10 +176,25 @@ class Customer(models.Model):
         return f"{self.first_name} {self.last_name}".strip()
 
     @property
+    def primary_price_tier(self):
+        """O grupo primário: maior prioridade (a ordem do PriceTier desempata por nome).
+
+        É a leitura de tela/PDV que ainda fala "o grupo do cliente"; o motor usa a lista
+        inteira (`price_tiers`). Derivado, sem coluna.
+        """
+        return self.price_tiers.first()
+
+    @property
+    def primary_price_tier_id(self):
+        tier = self.primary_price_tier
+        return tier.pk if tier else None
+
+    @property
     def listing_ref(self) -> str | None:
-        """Applicable listing code (from the customer's price tier)."""
-        if self.price_tier and self.price_tier.listing_ref:
-            return self.price_tier.listing_ref
+        """A lista de preço do grupo de maior prioridade que tem uma (cascata do Offerman)."""
+        for tier in self.price_tiers.all():
+            if tier.listing_ref:
+                return tier.listing_ref
         return None
 
     @property
@@ -180,24 +213,27 @@ class Customer(models.Model):
         if self.email:
             self.email = self.email.lower().strip()
 
-        # Set default price tier (select_for_update prevents race between concurrent creates)
-        if not self.price_tier_id:
-            from django.db import transaction
-            from shopman.guestman.models import PriceTier
-
-            with transaction.atomic():
-                default_tier = (
-                    PriceTier.objects.select_for_update()
-                    .filter(is_default=True)
-                    .first()
-                )
-                if default_tier:
-                    self.price_tier = default_tier
-
         super().save(*args, **kwargs)
+
+        # Grupo padrão para quem ainda não tem nenhum (select_for_update evita corrida
+        # entre criações concorrentes). M2M só depois do pk existir.
+        self._apply_default_price_tier()
 
         # Sync cache → ContactPoint (source of truth)
         self._sync_contact_points()
+
+    def _apply_default_price_tier(self):
+        if not self.pk or self.price_tiers.exists():
+            return
+        from django.db import transaction
+        from shopman.guestman.models import PriceTier
+
+        with transaction.atomic():
+            default_tier = (
+                PriceTier.objects.select_for_update().filter(is_default=True).first()
+            )
+            if default_tier:
+                self.price_tiers.add(default_tier)
 
     def _sync_contact_points(self):
         """

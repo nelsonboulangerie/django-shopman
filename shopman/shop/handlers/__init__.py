@@ -32,6 +32,7 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.confirmation.ConfirmationTimeoutHandler",
     "shopman.shop.handlers.confirmation.StaleNewOrderAlertHandler",
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
+    "shopman.shop.handlers.card_authorization.CardAuthorizationWatchHandler",
     # Production
     "shopman.shop.handlers.production_alerts.ProductionLateCheckHandler",
     # Cozinha (avisos no bolso: pedido novo e atraso)
@@ -77,7 +78,6 @@ ALL_HANDLERS = [
     # Pricing modifiers (via shopman.modifiers)
     "shopman.shop.modifiers.DeliveryFeeModifier",
     "shopman.shop.modifiers.DiscountModifier",
-    "shopman.shop.modifiers.EmployeeDiscountModifier",
     "shopman.shop.modifiers.LotDiscountModifier",
     "shopman.shop.modifiers.LoyaltyRedeemModifier",
     "shopman.shop.modifiers.ManualDiscountModifier",
@@ -182,8 +182,10 @@ def _register_preorder_handler() -> None:
 
 
 def _register_payment_timeout_handler() -> None:
+    from shopman.shop.handlers.card_authorization import CardAuthorizationWatchHandler
     from shopman.shop.handlers.payment_timeout import PaymentTimeoutHandler
     registry.register_directive_handler(PaymentTimeoutHandler())
+    registry.register_directive_handler(CardAuthorizationWatchHandler())
 
 
 def _register_payment_refund_handler() -> None:
@@ -254,6 +256,10 @@ def _register_fiscal_publication_gate() -> None:
 
     fiscal_gate.connect()
 
+    # Depois do porteiro fiscal: o espelho grava pelo mesmo save() e passa por ele.
+    from shopman.shop.handlers import listing_mirror as listing_mirror_handler
+    listing_mirror_handler.connect()
+
     from shopman.shop.handlers import access_link as access_link_handler
     access_link_handler.connect()
 
@@ -314,9 +320,9 @@ def _register_loyalty_handler() -> None:
 def _register_pricing_modifiers() -> None:
     from shopman.shop.handlers.pricing import ItemPricingModifier, OffermanPricingBackend, SessionTotalModifier
     from shopman.shop.modifiers import (
+        CustomerPricingModifier,
         DeliveryFeeModifier,
         DiscountModifier,
-        EmployeeDiscountModifier,
         LotDiscountModifier,
         LoyaltyRedeemModifier,
         ManualDiscountModifier,
@@ -325,11 +331,13 @@ def _register_pricing_modifiers() -> None:
 
     backend = OffermanPricingBackend()
     for modifier in [
+        # O cliente vira contexto ANTES do preço: a cascata "faixa do cliente ->
+        # listing" do ItemPricingModifier depende dele (ordem 5 < 10).
+        CustomerPricingModifier(),
         ItemPricingModifier(backend=backend),
         LotDiscountModifier(),
         DiscountModifier(),
         SessionTotalModifier(),
-        EmployeeDiscountModifier(),
         DeliveryFeeModifier(),
         LoyaltyRedeemModifier(),
         ManualDiscountModifier(),

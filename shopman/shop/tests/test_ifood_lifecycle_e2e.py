@@ -294,3 +294,44 @@ def test_real_order_stays_in_the_bi_so_the_suppression_cannot_leak(rehearsal):
     window = (order.created_at - timedelta(days=1), order.created_at + timedelta(days=1))
     sales, _cancelled = read_sales(window)
     assert [sale.ref for sale in sales] == [f"shopman:{order.ref}"]
+
+
+#: A política fiscal do alpha (spec vivo de 10/10): os quatro resolvers da casa.
+_HOUSE_RESOLVERS = ",".join(
+    f"shopman.shop.fiscal_resolvers.{name}"
+    for name in ("on_request_or_tax_id", "eletronic_payment", "deferred_settlement", "on_requested_receipt")
+)
+
+
+@pytest.mark.parametrize(("resolver", "emits"), [
+    # O vivo de hoje: o pagamento do iFood é ``external``, nenhum dos quatro o
+    # enxerga, e o iFood sem CPF saía sem nota (P0-3).
+    (_HOUSE_RESOLVERS, False),
+    # Com o resolver do intermediador, a nota sai (ADR-035).
+    (f"{_HOUSE_RESOLVERS},shopman.shop.fiscal_resolvers.intermediated_sale", True),
+])
+def test_ifood_without_cpf_issues_presential_nfce_only_with_intermediated_sale(rehearsal, settings, resolver, emits):
+    settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = resolver
+    # A captura real traz documento estrangeiro, que não é CPF/CNPJ: é o caso sem CPF.
+    assert rehearsal.raw["customer"]["documentType"] == "idEstrangeiro"
+    order, _ = _ingest_and_prepare(rehearsal)
+    assert "fiscal" not in order.data
+    for ticket in KDSTicket.objects.filter(session_key=order.session_key):
+        assert rehearsal.act(lambda ticket=ticket: kds.complete_ticket(ticket, actor="local-operator"))
+    assert rehearsal.event("DSP")["ingested"] == 1
+    assert rehearsal.event("CON")["ingested"] == 1
+    order.refresh_from_db()
+    assert order.status == "completed"
+
+    if not emits:
+        assert rehearsal.fiscal.emissions == []
+        assert "nfce_access_key" not in order.data
+        return
+    assert len(rehearsal.fiscal.emissions) == 1
+    emission = rehearsal.fiscal.emissions[0]
+    # Presencial: consumidor não identificado, sem grupo de entrega (sem
+    # destinatário nem endereço), e com o grupo do intermediador.
+    assert not (emission["customer"] or {}).get("tax_id")
+    assert emission["delivery"] is None
+    assert emission["intermediary"]["cnpj"] == "14380200000121"
+    assert order.data["nfce_access_key"] == "local-rehearsal-key"

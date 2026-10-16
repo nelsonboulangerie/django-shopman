@@ -8,6 +8,7 @@ import TimersPage from "../../app/pages/timers.vue";
 // auto-importado pelo Nuxt não se resolve sozinho no ambiente de componente.
 import FloorTimerCard from "../../app/components/FloorTimerCard.vue";
 import type { FloorTimerEntry } from "../../app/composables/useFloorTimers";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 // A página é dirigida por dois composables: a fileira de etiquetas (servidor) e
 // os timers (dispositivo). Ambos são stubados com refs controláveis; o que se prova
@@ -26,6 +27,7 @@ const createTagSpy = vi.fn();
 const sonnerSuccess = vi.fn();
 
 const stubs = {
+  ...nuxtUiStubs,
   Icon: true,
   ProductionHeader: {
     props: ["title", "count", "countLabel", "pending", "query"],

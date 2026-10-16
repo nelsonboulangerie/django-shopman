@@ -7,7 +7,7 @@ import type {
   QCGradeProjection,
   QCOrderCardProjection,
 } from "../../app/types/production";
-import { UiButtonStub } from "../support/nativeUiStubs";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 const GRADES: QCGradeProjection[] = [
   { ref: "standard", label: "Padrão", rank: 30, markdown_percent: 0, is_default: true },
@@ -62,7 +62,7 @@ function mountPanel(orders: QCOrderCardProjection[], props: Record<string, unkno
       correctionAvailable: () => true,
       ...props,
     },
-    global: { stubs: { Icon: true, UiButton: UiButtonStub } },
+    global: { stubs: { Icon: true, ...nuxtUiStubs } },
   });
 }
 
@@ -152,9 +152,19 @@ describe("QualityGatePanel — qualidade em lote", () => {
     await wrapper
       .findAll('[role="tab"]')
       .find((tab) => tab.text().includes("Confirmados"))!
-      .trigger("mousedown", { button: 0, ctrlKey: false });
+      .trigger("click");
 
     expect(wrapper.find("[data-quality-reviewed]").text()).toContain("Brioche revisado");
+  });
+
+  it("a troca do painel conta cada vista; a exceção leva o selo de aviso", () => {
+    const wrapper = mountPanel(ORDERS());
+    const tabs = wrapper.findAll('[role="tab"]').map((tab) => tab.text());
+
+    expect(tabs).toEqual(["Para confirmar 7", "Confirmados 1"]);
+    const badge = wrapper.find("[data-quality-exception] [data-quality-exception-badge]");
+    expect(badge.attributes("data-color")).toBe("warning");
+    expect(badge.text()).not.toBe("");
   });
 
   it("não oferece o ato sem permissão e cala a fila que não pôde ser lida", () => {

@@ -137,14 +137,15 @@ def certificate_milestone(expires_at, *, now=None) -> tuple[str, str] | None:
     foi alcançado (``"3"``, ``"7"``, ``"15"``, ``"30"``). Os dias contam pelo
     calendário local — quem lê o alerta pensa em "dia 10", não em horas UTC.
     """
+    from shopman.watchman.expiry import reached_milestone
+
     now = now or timezone.now()
-    if now >= expires_at:
-        return ("expired", "critical")
-    days_left = (timezone.localtime(expires_at).date() - timezone.localtime(now).date()).days
-    for days, severity in CERTIFICATE_MILESTONES:
-        if days_left <= days:
-            return (str(days), severity)
-    return None
+    return reached_milestone(
+        timezone.localtime(expires_at).date(),
+        today=timezone.localtime(now).date(),
+        milestones=CERTIFICATE_MILESTONES,
+        expired=now >= expires_at,
+    )
 
 
 def certificate_message(certificate, *, milestone: str, now=None) -> str:

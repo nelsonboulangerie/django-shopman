@@ -20,47 +20,18 @@ function key(
   } as KeyboardEvent;
 }
 
-describe("atalhos globais da Produção", () => {
-  it("mapeia as quatro etapas por Alt+1–4 sem sequestrar as teclas de função", () => {
-    expect(
-      resolveProductionGlobalShortcut(
-        key("¡", { altKey: true, code: "Digit1" }),
-      ),
-    ).toBe("plan");
-    expect(
-      resolveProductionGlobalShortcut(
-        key("€", { altKey: true, code: "Digit2" }),
-      ),
-    ).toBe("mise-en-place");
-    expect(
-      resolveProductionGlobalShortcut(
-        key("#", { altKey: true, code: "Digit3" }),
-      ),
-    ).toBe("open");
-    expect(
-      resolveProductionGlobalShortcut(
-        key("¢", { altKey: true, code: "Digit4" }),
-      ),
-    ).toBe("close");
-    expect(
-      resolveProductionGlobalShortcut(
-        key("∞", { altKey: true, code: "Digit5" }),
-      ),
-    ).toBe("quality");
-    expect(resolveProductionGlobalShortcut(key("F1"))).toBeNull();
-    expect(resolveProductionGlobalShortcut(key("F5"))).toBeNull();
-  });
-
-  it("mapeia busca, atualização e ajuda sem roubar modificadores do sistema", () => {
-    expect(resolveProductionGlobalShortcut(key("/"))).toBe("focus-search");
+describe("atalho global da Produção", () => {
+  it("R relê; etapas, busca e ajuda são do shell e não passam por aqui", () => {
     expect(resolveProductionGlobalShortcut(key("R"))).toBe("refresh");
-    expect(resolveProductionGlobalShortcut(key("?"))).toBe("help");
+    expect(resolveProductionGlobalShortcut(key("r"))).toBe("refresh");
     expect(
-      resolveProductionGlobalShortcut(key("r", { metaKey: true })),
+      resolveProductionGlobalShortcut(key("¡", { altKey: true, code: "Digit1" })),
     ).toBeNull();
-    expect(
-      resolveProductionGlobalShortcut(key("r", { ctrlKey: true })),
-    ).toBeNull();
+    expect(resolveProductionGlobalShortcut(key("/"))).toBeNull();
+    expect(resolveProductionGlobalShortcut(key("?"))).toBeNull();
+    expect(resolveProductionGlobalShortcut(key("F5"))).toBeNull();
+    expect(resolveProductionGlobalShortcut(key("r", { metaKey: true }))).toBeNull();
+    expect(resolveProductionGlobalShortcut(key("r", { ctrlKey: true }))).toBeNull();
   });
 });
 

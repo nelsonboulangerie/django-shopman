@@ -2,11 +2,12 @@
 // mostra saem daqui, e cada uma é a da prévia com o dado real.
 import { describe, expect, it } from "vitest";
 import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
-import { BI_SECTIONS, biSections, swipeNeighbours } from "~/presentation/biSections";
+import { BI_SECTIONS, biSections } from "~/presentation/biSections";
 import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
-  barGeometry,
-  barScale,
+  MADE_SOLD_SERIES,
+  madeSoldPoints,
+  carryContext,
   carryLabel,
   clientCount,
   compareName,
@@ -17,7 +18,6 @@ import {
   unavailableText,
   collectionsOf,
   compareCaption,
-  dayCaption,
   dayName,
   filterRows,
   hiddenRowsSummary,
@@ -128,9 +128,8 @@ describe("o dia e a comparação", () => {
     expect(overShortTitle("2026-09-26", "2026-10-04")).toBe("Sobrou ou faltou no sábado 26/09?");
   });
 
-  it("o controle do dia diz o nome e a data curta", () => {
+  it("o dia diz o nome", () => {
     expect(dayName("2026-10-03", "2026-10-04")).toBe("Ontem");
-    expect(dayCaption("2026-10-03")).toBe("sáb 03/10");
     expect(dayName("2026-09-30", "2026-10-04")).toBe("Quarta");
   });
 
@@ -202,14 +201,18 @@ describe("cada produto", () => {
     expect(versusTypicalText(shokupan)).toBe("acabou perto de fechar");
   });
 
-  it("a barra compacta usa uma escala comum", () => {
-    const scale = barScale(report.rows);
-    expect(scale).toBe(60);
-    const geometry = barGeometry(croissant, scale);
-    expect(Math.round(geometry.made)).toBe(73);
-    expect(Math.round(geometry.lost)).toBe(23);
-    expect(geometry.lostFrom).toBe(geometry.sold);
-    expect(Math.round(geometry.typical!)).toBe(83);
+  it("o gráfico fez × vendeu: vendeu e sobrou somam o feito; a falta estimada vem listrada", () => {
+    const points = madeSoldPoints(report.rows);
+    expect(points.map((point) => point.label)).toEqual(report.rows.map((row) => row.name));
+    const croissantPoint = points[report.rows.indexOf(croissant)]!;
+    expect(croissantPoint.values).toEqual({
+      sold: Number(croissant.sold),
+      leftover: Number(croissant.leftover),
+      lost: Number(croissant.lost_estimate),
+    });
+    const bagutePoint = points[report.rows.indexOf(baguete)]!;
+    expect(bagutePoint.values.sold! + bagutePoint.values.leftover!).toBe(Number(baguete.made));
+    expect(MADE_SOLD_SERIES.map((item) => item.fill ?? "solid")).toEqual(["solid", "tint", "hatch"]);
   });
 
   it("o resto da lista vira uma linha só", () => {
@@ -344,12 +347,27 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     expect(carryLabel("2026-10-05")).toBe("Levar ao plano da próxima segunda");
   });
 
-  it("o deslizar do celular segue a ordem do rail e não dá a volta", () => {
+  it("a ação na base diz o que leva ao plano: os produtos que faltaram ou sobraram", () => {
+    expect(carryContext({ summary: { short: 2, over: 7, right: 4 } } as never)).toEqual({
+      label: "Faltaram ou sobraram",
+      value: "9 produtos",
+    });
+    expect(carryContext({ summary: { short: 0, over: 1, right: 0 } } as never).value).toBe("1 produto");
+  });
+
+  it("as oito leituras seguem na casca da suíte, na mesma ordem e com a janela na query", () => {
     const sections = biSections("period=28d");
-    expect(swipeNeighbours(sections, "/sales").previous?.key).toBe("production");
-    expect(swipeNeighbours(sections, "/sales").next?.key).toBe("cash");
-    expect(swipeNeighbours(sections, "/").previous).toBeNull();
-    expect(swipeNeighbours(sections, "/scenarios").next).toBeNull();
-    expect(swipeNeighbours(BI_SECTIONS, "/nada").index).toBe(-1);
+    expect(sections.map((section) => section.label)).toEqual([
+      "Produção",
+      "Vendas",
+      "Caixa",
+      "Clientes",
+      "Perfis",
+      "Explorar",
+      "Projeção",
+      "Cenários",
+    ]);
+    expect(sections.find((section) => section.key === "sales")?.to).toBe("/sales?period=28d");
+    expect(biSections("")).toEqual([...BI_SECTIONS]);
   });
 });

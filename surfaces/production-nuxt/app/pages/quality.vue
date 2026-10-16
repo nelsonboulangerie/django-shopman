@@ -111,6 +111,27 @@ const gateCounts = computed(() => {
     reviewed: gate.reviewed.length,
   };
 });
+const viewTabs = computed(() => [
+  { value: "pending", label: `Para confirmar ${gateCounts.value.pending}` },
+  { value: "reviewed", label: `Confirmados ${gateCounts.value.reviewed}` },
+]);
+// Dias anteriores e relatórios moram no ⋯ "Mais ações" (dados, o kit desenha).
+const dayActions = computed(() => [
+  { label: "Dia anterior", icon: "i-lucide-chevron-left", onSelect: () => shiftDay(-1) },
+  ...(selectedDate.value !== ""
+    ? [
+        { label: "Dia seguinte", icon: "i-lucide-chevron-right", onSelect: () => shiftDay(1) },
+        {
+          label: "Voltar para hoje",
+          icon: "i-lucide-calendar-check",
+          onSelect: () => {
+            selectedDate.value = "";
+          },
+        },
+      ]
+    : []),
+  { label: "Relatórios de qualidade", icon: "i-lucide-chart-column", to: "/reports" },
+]);
 // O selo da Qualidade no rail: os lotes fechados esperando a revisão. Fora desta
 // tela o selo some (o número sem a leitura viva mentiria).
 const productionRail = useProductionRail();
@@ -166,16 +187,106 @@ function goClose() {
 }
 
 // ── Correção da partição de um lote fechado ─────────────────────────────────
+// O lote em correção mora na URL (`?lot=<pk>`, com o dia e a busca), como no
+// Fechamento: o voltar do navegador volta ao portão, e o anterior e o próximo
+// andam entre os lotes que o portão mostra com Corrigir.
+const QUALITY_LOTS_TRAIL = "production-quality-lots";
 const correcting = ref<QCOrderCardProjection | null>(null);
+const routeLot = computed(() =>
+  typeof route.query.lot === "string" ? route.query.lot : "",
+);
+
+function qualityQuery(lot = ""): Record<string, string> {
+  const next: Record<string, string> = {};
+  if (selectedDate.value) next.date = selectedDate.value;
+  const search = query.value.trim();
+  if (search) next.q = search;
+  if (lot) next.lot = lot;
+  return next;
+}
+function lotLocation(lot: string) {
+  return { path: "/quality", query: qualityQuery(lot) };
+}
+
+// Andar para outro lote (o ‹ › do `OperatorRecordNav`, ou o atalho) troca a tela
+// inteira: com quantidades ou motivos digitados, pergunta antes de descartar. O
+// voltar já pergunta dentro da tela, e sair para o painel (lote vazio) não passa aqui.
+const closeScreen = ref<{ confirmDiscardChanges: (action: "leave" | "switch") => Promise<boolean> } | null>(null);
+onBeforeRouteUpdate(async (to) => {
+  const target = typeof to.query.lot === "string" ? to.query.lot : "";
+  if (!target || target === routeLot.value || !closeScreen.value?.confirmDiscardChanges) return true;
+  return closeScreen.value.confirmDiscardChanges("switch");
+});
 
 function openCorrection(order: QCOrderCardProjection) {
   if (!correctionAvailable(order)) return;
-  correcting.value = order;
+  void navigateTo(lotLocation(String(order.pk)));
 }
 
+// Sair da correção substitui a entrada dela no histórico.
 function backToGate() {
   correcting.value = null;
+  if (routeLot.value) void navigateTo(lotLocation(""), { replace: true });
 }
+
+// O lote da URL vira a correção. Guardado ao entrar (a revisão vista é a que a
+// correção confirma); lote sem correção possível volta ao portão.
+watch(
+  [routeLot, () => kiosk.value, pending],
+  ([lot]) => {
+    if (!lot) {
+      correcting.value = null;
+      return;
+    }
+    if (!kiosk.value) return;
+    if (correcting.value && String(correcting.value.pk) === lot) return;
+    const order = kiosk.value.orders.find((item) => String(item.pk) === lot);
+    if (!order && pending.value) return;
+    if (!order || !correctionAvailable(order)) {
+      backToGate();
+      return;
+    }
+    correcting.value = order;
+  },
+  { immediate: true },
+);
+
+// A trilha: os lotes que o portão mostra com Corrigir, na vista e com a busca da
+// pessoa. Gravada só com o portão na tela.
+function matchesQuery(order: QCOrderCardProjection): boolean {
+  const q = query.value.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    order.recipe_name.toLowerCase().includes(q) ||
+    order.output_sku.toLowerCase().includes(q) ||
+    order.ref.toLowerCase().includes(q)
+  );
+}
+const { remember: rememberLots } = useRecordTrail(QUALITY_LOTS_TRAIL);
+const trailFrom = computed(() => {
+  const search = new URLSearchParams(qualityQuery()).toString();
+  return search ? `/quality?${search}` : "/quality";
+});
+watch(
+  () => {
+    const gate = qualityGate(qualityOrders.value);
+    const shown = view.value === "pending" ? gate.exceptions : gate.reviewed;
+    return [
+      shown
+        .filter((order) => matchesQuery(order) && correctionAvailable(order))
+        .map((order) => String(order.pk))
+        .join("\n"),
+      trailFrom.value,
+      view.value === "pending" ? "Exceções para olhar" : "Confirmados",
+      routeLot.value,
+    ] as const;
+  },
+  ([ids, from, label, lot]) => {
+    if (lot) return;
+    rememberLots(ids ? ids.split("\n") : [], { from, label });
+  },
+  { immediate: true },
+);
 
 interface QcCorrectionPayload {
   partition: QcPartitionGroup[];
@@ -223,84 +334,37 @@ const screenStarted = computed(() => {
       :pending="pending"
       :stale="stale"
       search-placeholder="Buscar lote ou produto"
+      search-label="filtrando os lotes"
+      :actions="dayActions"
       @refresh="refresh"
     >
-      <!-- Dias anteriores e relatórios moram no ⋯ (v4 legenda 8): o título fica
-           com a troca de vista, a lupa e o ⋯. -->
-      <template #menu="{ close }">
-        <div class="mt-1.5 border-t border-border pt-1.5" data-quality-day-menu>
-          <button
-            type="button"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            data-quality-previous-day
-            @click="
-              close();
-              shiftDay(-1);
-            "
-          >
-            <Icon name="lucide:chevron-left" class="size-4 text-muted-foreground" />
-            Dia anterior
-          </button>
-          <button
-            v-if="selectedDate !== ''"
-            type="button"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            @click="
-              close();
-              shiftDay(1);
-            "
-          >
-            <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
-            Dia seguinte
-          </button>
-          <button
-            v-if="selectedDate !== ''"
-            type="button"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            @click="
-              close();
-              selectedDate = '';
-            "
-          >
-            <Icon name="lucide:calendar-check" class="size-4 text-muted-foreground" />
-            Voltar para hoje
-          </button>
-          <NuxtLink
-            to="/reports"
-            role="menuitem"
-            class="flex min-h-control w-full items-center gap-2.5 rounded-md px-2.5 text-left op-body transition hover:bg-accent"
-            @click="close()"
-          >
-            <Icon name="lucide:chart-column" class="size-4 text-muted-foreground" />
-            Relatórios de qualidade
-          </NuxtLink>
-        </div>
+      <!-- Anterior e próximo DENTRO do portão de onde a pessoa veio. Aberto por
+           link, sem trilha: o par não aparece. -->
+      <template v-if="correcting" #status>
+        <OperatorRecordNav
+          class="ms-auto"
+          :trail="QUALITY_LOTS_TRAIL"
+          :current="String(correcting.pk)"
+          :to="lotLocation"
+          previous-label="Lote anterior"
+          next-label="Próximo lote"
+        />
       </template>
-      <template #actions>
-        <UiTabs
-          v-if="!correcting && kiosk && kiosk.orders.length"
+      <template v-if="!correcting && kiosk && kiosk.orders.length" #primary>
+        <NuxtTabs
           v-model="view"
+          :items="viewTabs"
+          :content="false"
+          variant="pill"
+          aria-label="Lotes da Qualidade"
           data-quality-view
-        >
-          <UiTabsList class="grid grid-cols-2 rounded-lg border-0 bg-muted" aria-label="Lotes da Qualidade">
-            <UiTabsTrigger value="pending" class="gap-1.5 font-semibold data-[state=active]:bg-card">
-              Para confirmar
-              <span class="tnum">{{ gateCounts.pending }}</span>
-            </UiTabsTrigger>
-            <UiTabsTrigger value="reviewed" class="gap-1.5 font-semibold data-[state=active]:bg-card">
-              Confirmados
-              <span class="tnum">{{ gateCounts.reviewed }}</span>
-            </UiTabsTrigger>
-          </UiTabsList>
-        </UiTabs>
+        />
       </template>
     </ProductionHeader>
 
     <QcCloseScreen
       v-if="correcting && kiosk"
+      ref="closeScreen"
       :key="`correct-${correcting.pk}`"
       :title="correcting.recipe_name"
       :subtitle="screenSubtitle"

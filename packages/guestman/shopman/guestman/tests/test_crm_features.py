@@ -50,7 +50,7 @@ def customer(tier):
         last_name="Santos",
         phone="5541999990001",
         email="maria@example.com",
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 
@@ -60,7 +60,7 @@ def customer_b(tier):
         ref="CRM-002",
         first_name="João",
         last_name="Silva",
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 
@@ -135,7 +135,7 @@ class TestCustomerContactPointSync:
         cust = Customer.objects.create(
             ref="NO-PHONE",
             first_name="Test",
-            price_tier=tier,
+            price_tiers=tier,
         )
         assert not ContactPoint.objects.filter(
             customer=cust,

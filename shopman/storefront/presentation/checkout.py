@@ -143,6 +143,9 @@ class CheckoutProjection:
     # Fulfillment contextual hints shown below the pickup/delivery chips
     pickup_hint: str = ""
     delivery_hint: str = ""
+    # Economia do grupo, pronta para a tela ("Hoje você economizou R$ X por ser
+    # [grupo]"). Vazia quando não houve desconto do grupo.
+    group_savings_message: str = ""
 
     # Provedor de cartão (Stripe/Efí) p/ o storefront dar previsibilidade no
     # checkout ("pagamento seguro via X"). Vazio quando não há provedor real
@@ -165,6 +168,13 @@ class CheckoutProjection:
     prefill_tax_id: str = ""
     prefill_tax_id_source: str = ""
     offer_save_tax_id: bool = False
+
+    # Janelas de ENTREGA da data pedida: a mesma grade da concierge
+    # (``fulfillment_window.delivery_windows_for``: meia hora hoje, turno na
+    # encomenda), anotadas com a prontidão do carrinho. O servidor confere a
+    # escolha contra esta grade no commit (decisão do dono, 14/10/2026).
+    delivery_windows: tuple[PickupSlotProjection, ...] = ()
+    earliest_delivery_window_ref: str | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -226,10 +236,8 @@ def build_checkout(
     )
     policy = resolve_channel_policy(interaction.channel_ref)
     payment_methods = _payment_methods(channel_ref)
-    pickup_slots, earliest_slot_ref = _pickup_slots(
-        cart,
-        delivery_date=_delivery_date_from_context(request, delivery_date),
-    )
+    requested_date = _delivery_date_from_context(request, delivery_date)
+    pickup_slots, earliest_slot_ref = _pickup_slots(cart, delivery_date=requested_date)
     max_preorder_days, closed_dates, support_whatsapp_url = _shop_config()
     available_dates, closed_weekdays = checkout_projection.availability_dates(max_preorder_days)
 
@@ -239,6 +247,9 @@ def build_checkout(
     prefill = _delivery_tax_id_prefill(customer_info=customer_info, reduced=reduced_identity)
 
     fulfillment_options = policy.fulfillment_types
+    delivery_windows, earliest_delivery_window_ref = (
+        _delivery_windows(cart, delivery_date=requested_date) if "delivery" in fulfillment_options else ((), None)
+    )
     remembered_fulfillment = str(remembered_defaults.get("fulfillment_type") or "")
     default_fulfillment_type = (
         remembered_fulfillment
@@ -266,6 +277,8 @@ def build_checkout(
     enabled_slot_refs = {slot.ref for slot in pickup_slots if slot.enabled}
     if remembered_slot in enabled_slot_refs:
         earliest_slot_ref = remembered_slot
+    if remembered_slot in {window.ref for window in delivery_windows if window.enabled}:
+        earliest_delivery_window_ref = remembered_slot
 
     return CheckoutProjection(
         copy=_checkout_copy(),
@@ -302,42 +315,32 @@ def build_checkout(
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",
         delivery_hint=_delivery_hint(cart),
+        group_savings_message=cart.group_savings_message,
         card_provider=_card_provider(),
         stripe_test_cards=_stripe_test_cards(),
         default_ddd=get_default_ddd(),
+        delivery_windows=delivery_windows,
+        earliest_delivery_window_ref=earliest_delivery_window_ref,
         prefill_tax_id=prefill.tax_id,
         prefill_tax_id_source=prefill.source,
         offer_save_tax_id=not reduced_identity and prefill.source != FROM_DOCUMENT,
     )
 
 
-_EMPLOYEE_DISCOUNT_LABEL = "Desconto funcionário"
-
-
 def _delivery_hint(cart) -> str:
-    """Aviso ao lado de "Entrega" quando escolhê-la custa o desconto de funcionário.
+    """Aviso ao lado de "Entrega" quando escolhê-la custa um desconto de retirada.
 
-    Sem isto o funcionário troca de retirada para entrega, vê o total subir e lê
-    como defeito. O aviso aparece no momento da ESCOLHA, ao lado da própria
-    opção — validar cedo e no lugar onde a decisão acontece.
+    Vale para QUALQUER desconto restrito à retirada (o ``fulfillment_types`` da
+    promoção, que o motor carimba no registro): a sacola mostra a linha de
+    desconto e a entrega a derruba. O aviso aparece no momento da ESCOLHA, ao lado
+    da própria opção.
 
-    Lê o lado de leitura (o próprio ``CartProjection``): a presença da linha de
-    desconto já identifica o funcionário, sem a presentation tocar em
-    ``shop.services`` (regra R-A de ``test_import_boundaries``).
-
-    ⚠️ Limite conhecido: com a entrega JÁ escolhida o desconto não está aplicado,
-    a linha some e o aviso também. Ele cobre a decisão, não o arrependimento.
+    Lê o lado de leitura (o próprio ``CartProjection``), sem a presentation tocar
+    em ``shop.services`` (regra R-A de ``test_import_boundaries``).
     """
-    from shopman.shop.rules.engine import get_rule_params
-
-    tem_desconto = any(
-        line.label == _EMPLOYEE_DISCOUNT_LABEL for line in (cart.discount_lines or ())
-    )
-    if not tem_desconto:
+    if not any(getattr(line, "requires_pickup", False) for line in (cart.discount_lines or ())):
         return ""
-    if not get_rule_params("employee_discount").get("pickup_only", True):
-        return ""
-    return "Sem o desconto de funcionário"
+    return "Sem o desconto do grupo"
 
 
 def _card_provider() -> str:
@@ -587,6 +590,42 @@ def _pickup_slots(
     except Exception:
         logger.debug("checkout_projection_slots_failed", exc_info=True)
         return (), None
+
+
+def _delivery_windows(
+    cart: CartProjection,
+    *,
+    delivery_date: str = "",
+) -> tuple[tuple[PickupSlotProjection, ...], str | None]:
+    """As janelas de entrega da data pedida (hoje, sem data), anotadas para o carrinho.
+
+    A grade é a de ``fulfillment_window.delivery_windows_for``, a que a concierge
+    oferece e que o commit confere; a anotação (janela apagada com o motivo,
+    "X sai às 12:00") é a mesma da retirada. A leitura passa pelo serviço da
+    loja, como a da retirada: a apresentação não importa ``shop.services``.
+    """
+    try:
+        from shopman.storefront.services.pickup_slots import annotate_delivery_windows_for_checkout
+
+        context = annotate_delivery_windows_for_checkout([item.sku for item in cart.items], delivery_date=delivery_date)
+    except Exception:
+        # Sem grade não há janela a escolher, e o servidor recusaria qualquer
+        # uma: a tela precisa saber que a leitura falhou, não só ver a lista vazia.
+        logger.warning("checkout_projection_delivery_windows_failed", exc_info=True)
+        return (), None
+    earliest = context.get("earliest_ref") or None
+    windows = tuple(
+        PickupSlotProjection(
+            ref=str(window.get("ref") or ""),
+            label=str(window.get("label") or ""),
+            starts_at=str(window.get("starts_at") or ""),
+            enabled=bool(window.get("enabled", True)),
+            reason=str(window.get("reason") or ""),
+            is_earliest=str(window.get("ref") or "") == earliest,
+        )
+        for window in context.get("windows") or []
+    )
+    return windows, earliest
 
 
 def _delivery_date_from_context(request: HttpRequest, delivery_date: str | None) -> str:

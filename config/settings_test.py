@@ -67,7 +67,6 @@ SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = {}
 # ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
 #
 SHOPMAN_ADMIN_REQUIRE_2FA = False
-SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = 20
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = 0
 SHOPMAN_CART_MUTATION_PERF_LOG_MS = 0.0
 SHOPMAN_PIX_EXPIRY_SECONDS = 3600
@@ -118,7 +117,8 @@ SHOPMAN_NOTIFICATION_ADAPTERS = {
 SHOPMAN_FISCAL_ADAPTER = None
 SHOPMAN_FISCAL_EMISSION_RESOLVER = (
     "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
-    "shopman.shop.fiscal_resolvers.on_requested_receipt"
+    "shopman.shop.fiscal_resolvers.on_requested_receipt,"
+    "shopman.shop.fiscal_resolvers.intermediated_sale"
 )
 SHOPMAN_COURIER_ADAPTER = None
 SHOPMAN_CUSTOMER_STRATEGY_MODULES = []

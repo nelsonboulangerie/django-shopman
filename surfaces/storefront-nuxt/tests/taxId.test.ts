@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   TAX_ID_INVALID_MESSAGE,
-  TAX_ID_REQUIRED_MESSAGE,
   TAX_ID_WHY,
-  deliveryTaxIdError,
+  taxIdError,
   formatTaxId,
   isValidTaxId,
   taxIdLooksComplete
@@ -24,14 +23,13 @@ describe('CPF/CNPJ da nota da entrega', () => {
     expect(formatTaxId('11222333000181')).toBe('11.222.333/0001-81')
   })
 
-  it('vazio só é erro quando a entrega pede o documento', () => {
-    expect(deliveryTaxIdError('', true)).toBe(TAX_ID_REQUIRED_MESSAGE)
-    expect(deliveryTaxIdError('', false)).toBe('')
-    expect(deliveryTaxIdError('52998224725', true)).toBe('')
+  it('vazio nunca é erro: na entrega o documento é opcional (13/10/2026)', () => {
+    expect(taxIdError('')).toBe('')
+    expect(taxIdError('52998224725')).toBe('')
   })
 
-  it('documento errado é erro sempre, mesmo quando não é exigido', () => {
-    expect(deliveryTaxIdError('52998224700', false)).toBe(TAX_ID_INVALID_MESSAGE)
+  it('documento errado é erro sempre', () => {
+    expect(taxIdError('52998224700')).toBe(TAX_ID_INVALID_MESSAGE)
   })
 
   it('não acusa o CPF pela metade', () => {
@@ -39,10 +37,10 @@ describe('CPF/CNPJ da nota da entrega', () => {
     expect(taxIdLooksComplete('529.982.247-25')).toBe(true)
   })
 
-  it('a copy fala "nós", sem travessão', () => {
-    for (const text of [TAX_ID_REQUIRED_MESSAGE, TAX_ID_INVALID_MESSAGE, TAX_ID_WHY]) {
+  it('a copy é convite, sem travessão', () => {
+    for (const text of [TAX_ID_INVALID_MESSAGE, TAX_ID_WHY]) {
       expect(text).not.toMatch(/—|a gente/)
     }
-    expect(TAX_ID_REQUIRED_MESSAGE).toMatch(/precisamos/)
+    expect(TAX_ID_WHY).toMatch(/se quiser/)
   })
 })

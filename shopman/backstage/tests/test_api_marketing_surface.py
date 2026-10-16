@@ -1835,7 +1835,7 @@ class TestManualFire:
             ref="CLI-FIRE-1",
             first_name="Ana",
             phone="+5543999998801",
-            price_tier=tier,
+            price_tiers=tier,
             birthday=date(1990, 1, 1),
         )
         ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
@@ -1945,7 +1945,7 @@ class TestManualFire:
             ref="CLI-MDL-1",
             first_name="Bia",
             phone="+5543999998802",
-            price_tier=tier,
+            price_tiers=tier,
         )
         ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
         rule.audience_rules = {"price_tiers": [tier.ref]}
@@ -2737,7 +2737,7 @@ class TestAudienceCount:
                 ref=ref,
                 first_name="Ana",
                 phone=phone,
-                price_tier=tier,
+                price_tiers=tier,
                 birthday=date(1990, 1, 1),
             )
             CustomerInsight.objects.create(customer=customer, rfm_segment=segment)

@@ -18,21 +18,29 @@ Estados: `LIVRE` · `EM_EXECUCAO` · `EM_PR` · `AGUARDA_DONO` · `ADIADO`.
 `FEITO` não fica aqui: o histórico é do HANDOFF e o detalhe é de
 `docs/coordination/ROUNDS/<id>-<slug>.md`.
 
-Linhas do turno conferidas em 2026-10-02 17:05 UTC (fila de merge e `gh pr view`). Quadro conferido contra o remoto em 2026-10-02 15:55 UTC (`origin/main` = `bddd02693`, #1375). Registros:
-`ROUNDS/R0-reconciliar-handoff.md` (a conferência do HANDOFF) e `ROUNDS/R2-relatorio-da-reconciliacao.md`
-(o que o R0 e este quadro ainda erravam). O `make coordination` acusa linha `EM_PR` cujo PR já saiu:
-ao mergear, **tire a linha no mesmo PR** (escreva o registro com "na fila #N").
+Linhas conferidas em **2026-10-15 13:2x UTC** (fila de merge, `gh pr view` e branches contra o
+remoto), contra `origin/main` = `48eb028c2`. Antes disso o quadro estava parado desde 02/10 e
+carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam mergeadas** (o
+`make coordination` as acusava como reivindicações órfãs há 286 h). Registros históricos:
+`ROUNDS/R0-reconciliar-handoff.md` e `ROUNDS/R2-relatorio-da-reconciliacao.md`. O
+`make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
+PR** (escreva o registro com "na fila #N").
 
 ## Em execução agora
 
-| id | frente | estado | sessão | branch / PR | desde (UTC) |
-|---|---|---|---|---|---|
-| UX-P2 | Planejamento: o número na linha e o "Por quê" por cima (SUITE-UX §15) | EM_PR | suite-ux (session_01UcT9P3) | #1419 | 2026-10-03 14:00 |
-| UX-M1 | Marketing: fila de decisões por prazo (SUITE-UX §9) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | #1420 | 2026-10-03 14:00 |
-| UX-H1 | Central como fila das filas (SUITE-UX §6) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-h1-central-fila` | 2026-10-03 14:08 |
-| UX-G2 | Gestor: "pronto" automático e desfazer de 5 s em Entregar/Despachar (SUITE-UX §5.1, §15) | EM_EXECUCAO | suite-ux (session_01UcT9P3) | `claude/ux-g2-pronto-automatico-desfazer` | 2026-10-03 14:47 |
+Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
+e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 
-**SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). Registros em `ROUNDS/UX-*.md`.
+| id | frente | estado | branch / PR | desde (UTC) |
+|---|---|---|---|---|
+| §7.1-5a | Core: cliente em vários grupos (N:N) e vantagens tipadas | EM_PR | `claude/grupos-core` / #1812 | 2026-10-15 12:07 |
+| §7.2-4 | Clientes: duplicar cadastro e etiquetar em lote | EM_PR | `claude/cadastro-clientes` / #1815 | 2026-10-15 12:5x |
+| §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
+| WATCHMAN | Saúde, autocura e desempenho (Codex, outro agente) | EM_PR | `codex/watchman-*` / #1809, #1813 | 2026-10-15 11:5x |
+
+**SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
+
+**Turno de 15/10 (coordenação DSH):** mergeados #1810 (`GET /api/sessions` responde 200) e #1814 (card de desconto por tipo no B.I.). Higiene de disco: 185 worktrees removidas, 34 GB para ~140 GB livres. Reconciliação com o Codex: o núcleo das ondas 3, 4 e 5 do §7.2 já entrou por #1802 a #1806. Detalhe em `HANDOFF-DSH-2026-10-15.md`.
 
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
@@ -49,6 +57,7 @@ desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5
 
 | id | o que trava | onde |
 |---|---|---|
+| SESS-N1 | `GET /api/sessions` faz N+1 em `Session.items`: página cheia de 25 = **26 consultas**. O prefetch já é previsto pelo modelo, então `prefetch_related("session_items")` no `SessionViewSet.get_queryset` cai para **2**. Confirmado ausente em `origin/main` `48eb028c2`. Follow-up de uma linha, mas muda comportamento observável; o agente do #1810 o deixou fora do escopo de propósito | `HANDOFF-DSH-2026-10-15.md`, "Defeito conhecido" |
 | ManyChat | Faltam 4 modelos (`pontos_fidelidade`, `pedido_entregue_v2`, `fila_vaga_disponivel_v2`, `produto_chegou_v2`); `pagamento_falhou` foi enviado e está em análise na Meta. Depois, os flows de `pedido_em_preparo` e `reembolso_processado` (aprovados). A ligação evento → flow é linha no `MANYCHAT_FLOW_MAP` (`config/settings.py`) num PR, **não** o Admin. Trava: o Chrome visível, janela sem nada por cima, na aba "Criar modelo" do grupo do Claude, por ~20 min | `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
 | Entrega | `fulfillment.courier="auto"`: chama a TaOn de verdade. Não reconferido no vivo em 02/10 | HANDOFF §0.5 |
 | Link | gerar UM link de pagamento no PDV para provar que sai. Não reconferido no vivo em 02/10 | HANDOFF §0.3 |
@@ -72,12 +81,13 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 
 ## Armadilhas ativas (leia antes de mexer)
 
-1. ⛔ **O drift do spec está `[FAIL]` de propósito, só por `SHOPMAN_COURIER_ADAPTER`** (D-020/D-026):
-   ligado no painel, fora do arquivo. **Aplicar o arquivo desliga a entrega por parceiro.** As
-   chaves do Jev e da Concierge ligada para o dono (`assist`, `SHOPMAN_CONCIERGE_ENABLED=true`,
-   `CONCIERGE_TRIAGE_CLASSIFIER=jev`, 03/10) estão no arquivo desde `claude/spec-concierge-ligada`.
-2. ⛔ **O checkout principal está 3201 commits atrás** de `origin/main` (02/10 15:55 UTC), num branch do Codex
-   de 28/08. Leia de `origin/main`, escreva em worktree.
+1. `SHOPMAN_COURIER_ADAPTER` mora no arquivo do spec desde 10/10 (#1633), com o valor do vivo
+   (D-026 superada). O drift que restou em 10/10 é `KDS__NUXT_PUBLIC_ORDERS_URL` só no arquivo: o
+   vivo não a tem e a Saída do KDS aponta para `http://127.0.0.1:3004/`; o arquivo está certo.
+2. ⛔ **O checkout principal está 4730 commits atrás** de `origin/main` (medido em 15/10 13:2x
+   UTC), no branch `codex/shopman-backstage-marketing-hardening`. Leia de `origin/main`, escreva
+   em worktree. O `make coordination` **não existe** neste checkout (o Makefile é velho demais):
+   rode `python3 scripts/coordination_status.py` de um worktree atualizado.
 3. ⛔ **NUNCA `doctl apps update` no spec vivo.**
 4. O branch `dsh/handoff-onda1-e-p7-20260930` tem 1 commit fora do `main` mas o conteúdo já está
    lá; ele está em uso na worktree `.dsh-worktrees/go-live-acceleration` do DeepSeek Harness. Não

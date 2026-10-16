@@ -4,12 +4,16 @@
 // Os candidatos vêm com o motivo escrito ("Mesmo cliente no iFood", "Mesmo CPF",
 // "Mesmo nome"): é sugestão, e a unificação é sempre um gesto do gestor, depois da
 // prévia lado a lado (`CustomerMergeDialog`).
-import type { CustomerCandidateProjection } from "~/generated/ordersContract";
+import type { CustomerAddressProjection, CustomerCandidateProjection } from "~/generated/ordersContract";
+import type { CustomerAddressMutationPayload, CustomerDuplicatePayload, CustomerMutationPayload } from "~/types/customers";
+import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
 const router = useRouter();
 const customerRef = computed(() => String(route.params.ref || ""));
-const { customer, pending, error, refresh, readMetadata } = useCustomerDetail(customerRef);
+const { customer, pending, error, refresh, readMetadata } =
+  useCustomerDetail(customerRef);
 
 useHead({ title: computed(() => customer.value?.name || "Cliente") });
 
@@ -20,175 +24,539 @@ function compare(candidate: CustomerCandidateProjection | null) {
   mergeOpen.value = true;
 }
 
-async function onMerged({ targetRef, sourceRef }: { targetRef: string; sourceRef: string }) {
-  useSonner.success(`${sourceRef} foi unificado a ${targetRef}. Dá para desfazer em Unificações por 24 horas.`);
-  if (targetRef !== customerRef.value) await router.push(`/customers/${encodeURIComponent(targetRef)}`);
+async function onMerged({
+  targetRef,
+  sourceRef,
+}: {
+  targetRef: string;
+  sourceRef: string;
+}) {
+  useSonner.success(
+    `${sourceRef} foi unificado a ${targetRef}. Dá para desfazer em Unificações por 24 horas.`,
+  );
+  if (targetRef !== customerRef.value)
+    await router.push(`/customers/${encodeURIComponent(targetRef)}`);
   else await refresh();
 }
 
-const canMerge = computed(() => Boolean(customer.value?.is_active && customer.value.actions.some((action) => action.ref === "merge_preview")));
-// Editar o cadastro (nome, contato, observações) continua no Admin.
-const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
-const adminUrl = computed(() => (adminBaseUrl ? `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(customerRef.value)}` : ""));
+const canMerge = computed(() =>
+  Boolean(
+    customer.value?.is_active &&
+    customer.value.actions.some((action) => action.ref === "merge_preview"),
+  ),
+);
+/** Quem decide o preço quando o cliente está em mais de um grupo. */
+const primaryPriceTierName = computed(
+  () => customer.value?.price_tiers.find((tier) => tier.is_primary)?.name ?? "",
+);
+const editOpen = ref(false);
+const editBusy = ref(false);
+const editError = ref("");
+const editFieldErrors = ref<Record<string, string>>({});
+let editKey = crypto.randomUUID();
+watch(editOpen, (open) => {
+  if (!open) return;
+  editError.value = "";
+  editFieldErrors.value = {};
+});
+async function saveCustomer(payload: CustomerMutationPayload) {
+  if (editBusy.value || !customer.value) return;
+  editBusy.value = true;
+  editError.value = "";
+  editFieldErrors.value = {};
+  try {
+    const response = await updateCustomer(customer.value.ref, payload, editKey);
+    if (response.outcome !== "applied") {
+      editError.value = "O resultado ainda não foi confirmado. Tente salvar novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    editKey = crypto.randomUUID();
+    editOpen.value = false;
+    useSonner.success(`${response.customer.name} foi atualizado.`);
+    await refresh();
+  } catch (failure) {
+    editError.value = httpErrorMessage(failure, "Não foi possível salvar o cliente.");
+    editFieldErrors.value = mutationFieldErrors(failure);
+    if (httpError(failure).status) editKey = crypto.randomUUID();
+  } finally {
+    editBusy.value = false;
+  }
+}
+const duplicateOpen = ref(false);
+const duplicateBusy = ref(false);
+const duplicateError = ref("");
+let duplicateKey = crypto.randomUUID();
+watch(duplicateOpen, (open) => {
+  if (!open) return;
+  duplicateError.value = "";
+});
+async function saveDuplicate(payload: CustomerDuplicatePayload) {
+  if (duplicateBusy.value || !customer.value) return;
+  duplicateBusy.value = true;
+  duplicateError.value = "";
+  try {
+    const response = await duplicateCustomer(customer.value.ref, payload, duplicateKey);
+    if (response.outcome !== "applied" || !response.customer) {
+      duplicateError.value = "O resultado ainda não foi confirmado. Tente salvar novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    duplicateKey = crypto.randomUUID();
+    duplicateOpen.value = false;
+    useSonner.success(response.customer.name + " foi criado a partir de " + customer.value.name + ".");
+    await router.push("/customers/" + encodeURIComponent(response.customer.ref));
+  } catch (failure) {
+    duplicateError.value = httpErrorMessage(failure, "Não foi possível duplicar o cliente.");
+    if (httpError(failure).status) duplicateKey = crypto.randomUUID();
+  } finally {
+    duplicateBusy.value = false;
+  }
+}
+const addressOpen = ref(false);
+const addressDraft = ref<CustomerAddressProjection | null>(null);
+const addressBusy = ref(false);
+const addressError = ref("");
+const addressFieldErrors = ref<Record<string, string>>({});
+let addressCreateKey = crypto.randomUUID();
+let addressUpdateKey = crypto.randomUUID();
+const addressDeleteKeys = new Map<number, string>();
+
+function addAddress() {
+  addressDraft.value = null;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  addressOpen.value = true;
+}
+function editAddress(address: CustomerAddressProjection) {
+  addressDraft.value = address;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  addressUpdateKey = crypto.randomUUID();
+  addressOpen.value = true;
+}
+async function saveAddress(payload: CustomerAddressMutationPayload) {
+  if (addressBusy.value || !customer.value) return;
+  addressBusy.value = true;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  try {
+    const response = addressDraft.value
+      ? await updateCustomerAddress(customer.value.ref, addressDraft.value.id, payload, addressUpdateKey)
+      : await createCustomerAddress(customer.value.ref, payload, addressCreateKey);
+    if (response.outcome !== "applied") {
+      addressError.value = "O resultado ainda não foi confirmado. Tente salvar novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    if (addressDraft.value) addressUpdateKey = crypto.randomUUID();
+    addressCreateKey = crypto.randomUUID();
+    addressOpen.value = false;
+    useSonner.success("Endereço salvo.");
+    await refresh();
+  } catch (failure) {
+    addressError.value = httpErrorMessage(failure, "Não foi possível salvar o endereço.");
+    addressFieldErrors.value = mutationFieldErrors(failure);
+    if (!addressDraft.value && httpError(failure).status) addressCreateKey = crypto.randomUUID();
+    if (addressDraft.value && httpError(failure).status) addressUpdateKey = crypto.randomUUID();
+  } finally {
+    addressBusy.value = false;
+  }
+}
+async function removeAddress(address: CustomerAddressProjection) {
+  if (addressBusy.value || !customer.value) return;
+  const key = addressDeleteKeys.get(address.id) ?? crypto.randomUUID();
+  addressDeleteKeys.set(address.id, key);
+  addressBusy.value = true;
+  addressError.value = "";
+  addressFieldErrors.value = {};
+  try {
+    const response = await removeCustomerAddress(customer.value.ref, address.id, address.revision, key);
+    if (response.outcome !== "applied") {
+      addressError.value = "A remoção ainda não foi confirmada. Tente novamente; a mesma intenção será reutilizada.";
+      return;
+    }
+    addressDeleteKeys.delete(address.id);
+    addressOpen.value = false;
+    useSonner.success("Endereço removido.");
+    await refresh();
+  } catch (failure) {
+    addressError.value = httpErrorMessage(failure, "Não foi possível remover o endereço.");
+    addressFieldErrors.value = mutationFieldErrors(failure);
+    if (httpError(failure).status) addressDeleteKeys.delete(address.id);
+  } finally {
+    addressBusy.value = false;
+  }
+}
 const notFound = computed(() => httpError(error.value).status === 404);
+// Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
+// celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
+// desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
+const phoneHeaderActions = computed(() => [
+  ...(customer.value?.is_active
+    ? [
+        { label: "Editar cliente", icon: "i-lucide-pencil", onSelect: () => { editOpen.value = true; } },
+        { label: "Duplicar cliente", icon: "i-lucide-copy-plus", onSelect: () => { duplicateOpen.value = true; } },
+      ]
+    : []),
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader :title="customer?.name || 'Cliente'">
+    <OperatorPageHeader
+      :title="customer?.name || 'Cliente'"
+      :filters-wrap="false"
+      :phone-actions="phoneHeaderActions"
+      desk-only-filters
+    >
       <template #lead>
-        <NuxtLink
+        <NuxtButton
           to="/customers"
-          class="-ml-2 inline-flex min-h-control min-w-control shrink-0 items-center justify-center gap-1 rounded-md px-2 op-label text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          icon="i-lucide-chevron-left"
+          color="neutral"
+          variant="ghost"
+          square
+          aria-label="Voltar para Clientes"
           @click.prevent="router.back()"
-        >
-          <Icon name="lucide:chevron-left" class="size-5 md:size-4" />
-          <span class="max-md:sr-only">Clientes</span>
-        </NuxtLink>
-        <span class="hidden h-6 w-px bg-border md:block" aria-hidden="true" />
+        />
       </template>
-      <template #actions>
-        <a
-          v-if="adminUrl && customer"
-          :href="adminUrl"
-          target="_blank"
-          rel="noopener"
-          class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          title="Editar este cadastro (abre o Admin)"
-        >
-          <Icon name="lucide:pencil" class="size-4" />
-          <span class="hidden sm:inline">Editar no Admin</span>
-          <Icon name="lucide:external-link" class="size-3.5 opacity-60" />
-        </a>
-        <UiIconButton icon="lucide:refresh-cw" label="Atualizar" :spinning="pending" @click="refresh()" />
+      <template #filters>
+        <NuxtButton
+          v-if="customer?.is_active"
+          icon="i-lucide-pencil"
+          label="Editar cliente"
+          color="neutral"
+          variant="outline"
+          @click="editOpen = true"
+        />
+        <NuxtButton
+          v-if="customer?.is_active"
+          icon="i-lucide-copy-plus"
+          label="Duplicar cliente"
+          color="neutral"
+          variant="outline"
+          @click="duplicateOpen = true"
+        />
+        <NuxtButton
+          icon="i-lucide-refresh-cw"
+          label="Atualizar"
+          color="neutral"
+          variant="outline"
+          :loading="pending"
+          @click="refresh()"
+        />
+      </template>
+      <template #filters-end>
+        <ReadFreshness
+          inline
+          :metadata="readMetadata"
+          :failed="Boolean(error)"
+        />
       </template>
     </OperatorPageHeader>
-    <ReadFreshness :metadata="readMetadata" :failed="Boolean(error)" />
 
-    <section class="min-h-0 flex-1 overflow-auto p-4">
-      <div v-if="notFound" class="rounded-lg border border-dashed p-6 text-center text-sm">
-        Este cadastro não existe.
-        <NuxtLink to="/customers" class="ml-1 underline">Voltar para Clientes</NuxtLink>
-      </div>
-      <div v-else-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
-        {{ httpErrorMessage(error, "Não foi possível carregar a ficha.") }}
-        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar de novo</button>
-      </div>
+    <section class="min-h-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
+      <NuxtEmpty
+        v-if="notFound"
+        icon="i-lucide-user-x"
+        title="Este cadastro não existe"
+        :actions="[{ label: 'Voltar para Clientes', to: '/customers' }]"
+      />
+      <NuxtAlert
+        v-else-if="error"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Não foi possível carregar a ficha"
+        :description="
+          httpErrorMessage(error, 'Não foi possível carregar a ficha.')
+        "
+        :actions="alertActions('error', [
+          {
+            label: 'Tentar de novo',
+            onClick: () => refresh(),
+          },
+        ])"
+      />
 
       <div v-if="pending && !customer" class="space-y-3">
-        <UiSkeleton
+        <NuxtSkeleton
           v-for="i in 3"
           :key="i"
-          class="h-28 rounded-lg border"
-          label="Carregando cliente"
+          class="h-24 w-full"
+          aria-label="Carregando cliente"
         />
       </div>
 
-      <div v-else-if="customer" class="mx-auto grid max-w-5xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div
+        v-else-if="customer"
+        class="mx-auto grid max-w-5xl gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+      >
         <!-- Absorvido: a ficha diz para onde foi, e não oferece nada além disso. -->
-        <div
+        <NuxtAlert
           v-if="!customer.is_active"
-          class="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100 lg:col-span-2"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-merge"
+          title="Cadastro unificado ou desativado"
+          :description="
+            customer.merged_into_ref
+              ? `Este cadastro foi unificado a ${customer.merged_into_ref}. Os pedidos e contatos dele estão lá.`
+              : 'Este cadastro está desativado.'
+          "
+          :actions="
+            alertActions('warning', customer.merged_into_ref
+              ? [
+                  {
+                    label: `Abrir ${customer.merged_into_ref}`,
+                    to: `/customers/${encodeURIComponent(customer.merged_into_ref)}`,
+                  },
+                ]
+              : [])
+          "
           data-customer-absorbed
+        />
+
+        <NuxtCard
+          as="article"
+          class="lg:col-span-2"
+          data-customer-header
         >
-          <template v-if="customer.merged_into_ref">
-            Este cadastro foi unificado a
-            <NuxtLink :to="`/customers/${encodeURIComponent(customer.merged_into_ref)}`" class="font-medium underline">{{ customer.merged_into_ref }}</NuxtLink>.
-            Os pedidos e contatos dele estão lá.
-          </template>
-          <template v-else>Este cadastro está desativado.</template>
-        </div>
-
-        <article class="rounded-lg border bg-card p-4 lg:col-span-2" data-customer-header>
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-lg font-semibold">{{ customer.name }}</p>
-              <p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span class="font-mono">{{ customer.ref }}</span>
-                <span v-if="customer.source_label" class="rounded bg-muted px-1.5 py-0.5">{{ customer.source_label }}</span>
-                <span v-if="customer.created_display">Cadastrado em {{ customer.created_display }}</span>
-              </p>
-            </div>
-            <button
-              v-if="canMerge"
-              type="button"
-              class="inline-flex min-h-control items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition hover:bg-accent"
-              data-customer-merge-any
-              @click="compare(null)"
-            >
-              <Icon name="lucide:merge" class="size-4" />
-              Unificar com outro cadastro…
-            </button>
-          </div>
-          <dl class="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-            <div class="flex gap-2"><dt class="text-muted-foreground">Telefone</dt><dd>{{ customer.phone_display || "Sem telefone" }}</dd></div>
-            <div class="flex gap-2"><dt class="text-muted-foreground">E-mail</dt><dd>{{ customer.email || "Sem e-mail" }}</dd></div>
-            <div class="flex gap-2"><dt class="text-muted-foreground">CPF</dt><dd>{{ customer.document_display || "Sem CPF" }}</dd></div>
-            <div v-if="customer.birthday_display" class="flex gap-2"><dt class="text-muted-foreground">Aniversário</dt><dd>{{ customer.birthday_display }}</dd></div>
-          </dl>
-          <p v-if="customer.notes" class="mt-3 whitespace-pre-line rounded bg-muted/50 p-2 text-sm">{{ customer.notes }}</p>
-        </article>
-
-        <!-- Quem pode ser a mesma pessoa -->
-        <article v-if="customer.candidates.length" class="rounded-lg border border-amber-300 bg-card p-4 lg:col-span-2 dark:border-amber-500/40" data-customer-candidates>
-          <h2 class="text-sm font-semibold">Pode ser a mesma pessoa</h2>
-          <p class="text-xs text-muted-foreground">Sugestão da tela, com o motivo em cada linha. Confira antes de unificar.</p>
-          <ul class="mt-2 divide-y">
-            <li v-for="candidate in customer.candidates" :key="candidate.ref" class="flex flex-wrap items-center justify-between gap-3 py-2">
-              <div class="min-w-0 text-sm">
-                <NuxtLink :to="`/customers/${encodeURIComponent(candidate.ref)}`" class="font-medium hover:underline">{{ candidate.name }}</NuxtLink>
-                <span class="ml-2 font-mono text-xs text-muted-foreground">{{ candidate.ref }}</span>
-                <p class="text-xs text-muted-foreground">
-                  <span class="font-medium text-amber-800 dark:text-amber-200">{{ candidate.reason_label }}</span>
-                  · {{ candidate.phone_display || "sem telefone" }}
-                  <template v-if="candidate.source_label"> · {{ candidate.source_label }}</template>
-                  · {{ candidate.orders_label }}
+          <div class="flex flex-col gap-3">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h2 class="text-xl font-semibold">{{ customer.name }}</h2>
+                <p
+                  class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+                >
+                  <span class="font-mono">{{ customer.ref }}</span>
+                  <NuxtBadge
+                    v-if="customer.source_label"
+                    color="neutral"
+                    :label="customer.source_label"
+                  />
+                  <span v-if="customer.created_display"
+                    >Cadastrado em {{ customer.created_display }}</span
+                  >
                 </p>
               </div>
-              <button
+              <NuxtButton
+                v-if="canMerge"
                 type="button"
-                class="min-h-control rounded-md border px-3 text-sm font-medium transition hover:bg-accent"
-                :data-customer-compare="candidate.ref"
-                @click="compare(candidate)"
+                icon="i-lucide-merge"
+                label="Unificar com outro cadastro…"
+                data-customer-merge-any
+                @click="compare(null)"
+              />
+            </div>
+            <div class="space-y-3">
+              <dl class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                <div class="flex gap-2">
+                  <dt class="text-muted-foreground">Telefone</dt>
+                  <dd>{{ customer.phone_display || "Sem telefone" }}</dd>
+                </div>
+                <div class="flex gap-2">
+                  <dt class="text-muted-foreground">E-mail</dt>
+                  <dd>{{ customer.email || "Sem e-mail" }}</dd>
+                </div>
+                <div class="flex gap-2">
+                  <dt class="text-muted-foreground">CPF</dt>
+                  <dd>{{ customer.document_display || "Sem CPF" }}</dd>
+                </div>
+                <div v-if="customer.birthday_display" class="flex gap-2">
+                  <dt class="text-muted-foreground">Aniversário</dt>
+                  <dd>{{ customer.birthday_display }}</dd>
+                </div>
+                <div class="flex items-start gap-2 sm:col-span-2">
+                  <dt class="shrink-0 text-muted-foreground">Grupos comerciais</dt>
+                  <dd class="flex flex-wrap items-center gap-2">
+                    <template v-if="customer.price_tiers.length">
+                      <NuxtBadge
+                        v-for="tier in customer.price_tiers"
+                        :key="tier.ref"
+                        color="neutral"
+                        :label="tier.name"
+                      />
+                      <span v-if="customer.price_tiers.length > 1" class="text-xs text-muted-foreground">
+                        Preço definido por {{ primaryPriceTierName }}
+                      </span>
+                    </template>
+                    <span v-else class="text-muted-foreground">Sem grupo comercial</span>
+                  </dd>
+                </div>
+              </dl>
+              <div class="flex flex-wrap gap-2 text-xs">
+                <NuxtBadge v-if="customer.house_account" color="success" label="Conta na casa" />
+                <NuxtBadge v-for="tag in customer.tags" :key="tag" color="neutral" :label="tag" />
+              </div>
+              <NuxtAlert
+                v-if="customer.notes"
+                color="info"
+                variant="subtle"
+                title="Observação"
+                :description="customer.notes"
+              />
+            </div>
+          </div>
+        </NuxtCard>
+
+        <!-- Quem pode ser a mesma pessoa -->
+        <NuxtCard
+          v-if="customer.candidates.length"
+          as="article"
+          class="lg:col-span-2"
+          data-customer-candidates
+        >
+          <div class="flex flex-col gap-3">
+            <div>
+              <h2 class="op-title">Pode ser a mesma pessoa</h2>
+              <p class="op-micro text-muted-foreground">
+                Sugestão da tela, com o motivo em cada linha. Confira antes de
+                unificar.
+              </p>
+            </div>
+            <ul class="divide-y divide-border">
+              <li
+                v-for="candidate in customer.candidates"
+                :key="candidate.ref"
+                class="flex flex-wrap items-center justify-between gap-3 py-2"
               >
-                Comparar
-              </button>
-            </li>
-          </ul>
-        </article>
+                <div class="min-w-0 text-sm">
+                  <NuxtLink
+                    :to="`/customers/${encodeURIComponent(candidate.ref)}`"
+                    class="font-medium hover:underline"
+                    >{{ candidate.name }}</NuxtLink
+                  >
+                  <span class="ms-2 font-mono text-xs text-muted-foreground">{{
+                    candidate.ref
+                  }}</span>
+                  <p class="text-xs text-muted-foreground">
+                    <NuxtBadge
+                      color="warning"
+                      :label="candidate.reason_label"
+                    />
+                    · {{ candidate.phone_display || "sem telefone" }}
+                    <template v-if="candidate.source_label">
+                      · {{ candidate.source_label }}</template
+                    >
+                    · {{ candidate.orders_label }}
+                  </p>
+                </div>
+                <NuxtButton
+                  type="button"
+                  label="Comparar"
+                  :data-customer-compare="candidate.ref"
+                  @click="compare(candidate)"
+                />
+              </li>
+            </ul>
+          </div>
+        </NuxtCard>
 
-        <article class="rounded-lg border bg-card p-4">
-          <h2 class="text-sm font-semibold">Pedidos</h2>
-          <p class="text-sm">
-            {{ customer.orders_label }}<template v-if="customer.total_spent_display"> · {{ customer.total_spent_display }} no total</template>
-            <template v-if="customer.last_order_display"> · último {{ customer.last_order_display }}</template>
-          </p>
-          <ul v-if="customer.recent_orders.length" class="mt-2 divide-y text-sm">
-            <li v-for="order in customer.recent_orders" :key="order.ref">
-              <NuxtLink :to="`/${encodeURIComponent(order.ref)}`" class="flex flex-wrap items-center justify-between gap-2 py-1.5 hover:underline">
-                <span><span class="font-mono text-xs">{{ order.ref }}</span> · {{ order.channel_label }}</span>
-                <span class="text-xs text-muted-foreground">{{ order.ordered_at_display }} · {{ order.status_label }} · {{ order.total_display }}</span>
-              </NuxtLink>
-            </li>
-          </ul>
-        </article>
+        <NuxtCard as="article">
+          <div class="flex flex-col gap-3">
+            <div>
+              <h2 class="op-title">Pedidos</h2>
+              <p class="op-micro text-muted-foreground">
+                {{ customer.orders_label
+                }}<template v-if="customer.total_spent_display">
+                  · {{ customer.total_spent_display }} no total</template
+                >
+                <template v-if="customer.last_order_display">
+                  · último {{ customer.last_order_display }}</template
+                >
+              </p>
+            </div>
+            <ul
+              v-if="customer.recent_orders.length"
+              class="divide-y divide-border text-sm"
+            >
+              <li v-for="order in customer.recent_orders" :key="order.ref">
+                <NuxtLink
+                  :to="`/${encodeURIComponent(order.ref)}`"
+                  class="flex flex-wrap items-center justify-between gap-2 py-1.5 hover:underline"
+                >
+                  <span
+                    ><span class="font-mono text-xs">{{ order.ref }}</span> ·
+                    {{ order.channel_label }}</span
+                  >
+                  <span class="text-xs text-muted-foreground"
+                    >{{ order.ordered_at_display }} · {{ order.status_label }} ·
+                    {{ order.total_display }}</span
+                  >
+                </NuxtLink>
+              </li>
+            </ul>
+          </div>
+        </NuxtCard>
 
-        <article class="rounded-lg border bg-card p-4">
-          <h2 class="text-sm font-semibold">Identificadores</h2>
-          <p class="text-xs text-muted-foreground">As chaves pelas quais os canais reconhecem esta pessoa.</p>
-          <ul v-if="customer.identifiers.length" class="mt-2 space-y-1 text-sm">
-            <li v-for="identifier in customer.identifiers" :key="`${identifier.type_label}:${identifier.value}`" class="flex gap-2">
-              <span class="text-muted-foreground">{{ identifier.type_label }}</span>
-              <span class="break-all font-mono text-xs leading-5">{{ identifier.value }}</span>
-            </li>
-          </ul>
-          <p v-else class="mt-2 text-sm text-muted-foreground">Nenhum identificador.</p>
-          <h2 class="mt-4 text-sm font-semibold">Endereços</h2>
-          <ul v-if="customer.addresses.length" class="mt-1 space-y-1 text-sm">
-            <li v-for="address in customer.addresses" :key="address">{{ address }}</li>
-          </ul>
-          <p v-else class="mt-1 text-sm text-muted-foreground">Nenhum endereço salvo.</p>
-        </article>
+        <NuxtCard as="article" data-customer-consents>
+          <div class="flex flex-col gap-3">
+            <div>
+              <h2 class="op-title">Consentimentos</h2>
+              <p class="op-micro text-muted-foreground">
+                Leitura da trilha LGPD. Alterações só acontecem no gesto que registra origem, texto e evidência.
+              </p>
+            </div>
+            <ul v-if="customer.consents.length" class="divide-y divide-border text-sm">
+              <li v-for="consent in customer.consents" :key="consent.channel_label" class="flex flex-wrap items-start justify-between gap-2 py-2">
+                <div>
+                  <span class="font-medium">{{ consent.channel_label }}</span>
+                  <p class="text-xs text-muted-foreground">{{ consent.purpose_label }} · {{ consent.proof_label }}</p>
+                  <p v-if="consent.source || consent.updated_display" class="text-xs text-muted-foreground">
+                    {{ consent.source || "Origem não informada" }}<template v-if="consent.updated_display"> · {{ consent.updated_display }}</template>
+                  </p>
+                </div>
+                <NuxtBadge :color="consent.allowed ? 'success' : consent.status_label === 'Opt-out' ? 'error' : 'neutral'" :label="consent.status_label" />
+              </li>
+            </ul>
+            <NuxtAlert v-else color="info" variant="subtle" title="Nenhum opt-in registrado" description="Sem evidência, a tela não presume autorização para marketing." />
+          </div>
+        </NuxtCard>
+
+        <NuxtCard as="article">
+          <div class="flex flex-col gap-3">
+            <div>
+              <h2 class="op-title">Identificadores</h2>
+              <p class="op-micro text-muted-foreground">
+                As chaves pelas quais os canais reconhecem esta pessoa.
+              </p>
+            </div>
+            <ul v-if="customer.identifiers.length" class="space-y-1 text-sm">
+              <li
+                v-for="identifier in customer.identifiers"
+                :key="`${identifier.type_label}:${identifier.value}`"
+                class="flex gap-2"
+              >
+                <span class="text-muted-foreground">{{
+                  identifier.type_label
+                }}</span>
+                <span class="break-all font-mono text-xs leading-5">{{
+                  identifier.value
+                }}</span>
+              </li>
+            </ul>
+            <p v-else class="text-sm text-muted-foreground">
+              Nenhum identificador.
+            </p>
+            <h2 class="op-title">Endereços</h2>
+            <NuxtButton v-if="customer.is_active" variant="outline" icon="i-lucide-map-pin-plus" label="Adicionar" @click="addAddress" />
+            <ul v-if="customer.addresses.length" class="mt-1 space-y-1 text-sm">
+              <li v-for="address in customer.addresses" :key="address.id" class="flex items-start justify-between gap-2 rounded-md border border-border p-2">
+                <div>
+                  <span class="font-medium">{{ address.label }}</span>
+                  <NuxtBadge v-if="address.is_default" class="ms-2" color="neutral" label="Padrão" />
+                  <p>{{ address.formatted_address }}</p>
+                  <p v-if="address.complement" class="text-xs text-muted-foreground">{{ address.complement }}</p>
+                  <p v-if="!address.is_verified" class="text-xs text-muted-foreground">Ainda não verificado</p>
+                </div>
+                <NuxtButton v-if="customer.is_active" icon="i-lucide-pencil" color="neutral" variant="ghost" square :aria-label="`Editar ${address.label}`" @click="editAddress(address)" />
+              </li>
+            </ul>
+            <p v-else class="mt-1 text-sm text-muted-foreground">
+              Nenhum endereço salvo.
+            </p>
+          </div>
+        </NuxtCard>
       </div>
     </section>
 
@@ -198,6 +566,34 @@ const notFound = computed(() => httpError(error.value).status === 404);
       :current="customer"
       :initial-other="mergeWith"
       @merged="onMerged"
+    />
+    <CustomerFormPanel
+      v-if="customer"
+      v-model:open="editOpen"
+      :customer="customer"
+      :options="customer.form"
+      :busy="editBusy"
+      :error="editError"
+      :field-errors="editFieldErrors"
+      @save="saveCustomer"
+    />
+    <CustomerDuplicatePanel
+      v-if="customer"
+      v-model:open="duplicateOpen"
+      :source="customer"
+      :busy="duplicateBusy"
+      :error="duplicateError"
+      @save="saveDuplicate"
+    />
+    <CustomerAddressFormPanel
+      v-if="customer"
+      v-model:open="addressOpen"
+      :address="addressDraft"
+      :busy="addressBusy"
+      :error="addressError"
+      :field-errors="addressFieldErrors"
+      @save="saveAddress"
+      @remove="removeAddress"
     />
   </main>
 </template>

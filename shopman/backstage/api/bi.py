@@ -14,17 +14,16 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.backstage.parsing import as_bool
 from shopman.backstage.permissions import CASH_AUDIT_PERMISSION, can_audit_cash
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_change import build_bi_change
 from shopman.backstage.projections.bi_customers import build_bi_customers
+from shopman.backstage.projections.bi_delivery_timing import build_bi_delivery_timing
 from shopman.backstage.projections.bi_explore import (
     AUDIT_ONLY_FAMILIES,
     ExploreError,
     build_bi_explore,
     metric_family,
-    validate_config,
 )
 from shopman.backstage.projections.bi_forecast import ForecastError, build_bi_forecast
 from shopman.backstage.projections.bi_over_short import build_bi_over_short
@@ -54,6 +53,19 @@ def _query_date(request, param: str) -> date | None:
         return None  # janela inválida cai no default — a projection normaliza
 
 
+def _bi_reading(report, *, status: int = 200) -> Response:
+    """A resposta de toda leitura do B.I.: o relatório e a hora em que o servidor o gerou.
+
+    ``generated_at`` (ISO, no fuso do projeto) é o que o ``ReadFreshness`` das telas
+    mostra: a hora é a do SERVIDOR, não a de quando a resposta chegou ao dispositivo,
+    então um relógio errado no dispositivo não envelhece nem rejuvenesce a leitura.
+    """
+    return Response(
+        {"bi": projection_data(report), "generated_at": timezone.localtime().replace(microsecond=0).isoformat()},
+        status=status,
+    )
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
@@ -67,7 +79,25 @@ class BIProductionView(_BIBase):
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. delivery timing: real prep time by SKU/hour/weekday and courier arrival by hour/weekday",
+        responses={200: OpenApiResponse(description="B.I. delivery timing report.")},
+    ),
+)
+class BIDeliveryTimingView(_BIBase):
+    """O que a chamada antecipada do entregador vai aprender: preparo real e chegada."""
+
+    def get(self, request):
+        report = build_bi_delivery_timing(
+            date_from=_query_date(request, "date_from"),
+            date_to=_query_date(request, "date_to"),
+        )
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -85,7 +115,7 @@ class BIOverShortView(_BIBase):
             day=_query_date(request, "day"),
             compare=(request.GET.get("compare") or "").strip(),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -138,7 +168,7 @@ class BISalesView(_BIBase):
             channel=(request.GET.get("channel") or "").strip(),
             compare=(request.GET.get("compare") or "").strip(),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -160,7 +190,7 @@ class BICashView(_BIBase):
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -176,7 +206,7 @@ class BICustomersView(_BIBase):
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -216,7 +246,7 @@ class BIExploreView(_BIBase):
                 report,
                 metrics=tuple(m for m in report.metrics if metric_family(m.key) not in AUDIT_ONLY_FAMILIES),
             )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 def _permission_subject(request):
@@ -248,7 +278,7 @@ class BIConsumptionProfilesView(_BIBase):
             weekday=weekday,
             hour_band=str(request.GET.get("hour_band") or "").strip(),
         )
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -274,7 +304,7 @@ class BIForecastView(_BIBase):
             )
         except ForecastError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"bi": projection_data(report)})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -300,102 +330,7 @@ class BIChangeView(_BIBase):
             )
         except ForecastError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"bi": projection_data(report)})
-
-
-# ── Cenários salvos (F9) — config validada pela gramática, zero código ───────
-
-_VIEW_WINDOW_KEYS = {"preset", "from", "to"}
-
-
-def _validated_view_config(raw) -> dict:
-    """Config de cenário fora da gramática não salva (ExploreError na borda)."""
-    if not isinstance(raw, dict):
-        raise ExploreError("Config do cenário precisa ser um objeto.")
-    unknown = set(raw) - {"metric", "by", "by2", "window"}
-    if unknown:
-        raise ExploreError(f"Chaves desconhecidas na config: {', '.join(sorted(unknown))}.")
-    validate_config(
-        str(raw.get("metric") or ""), str(raw.get("by") or "time"), str(raw.get("by2") or "")
-    )
-    window = raw.get("window") or {}
-    if not isinstance(window, dict) or set(window) - _VIEW_WINDOW_KEYS:
-        raise ExploreError("Janela do cenário aceita só: preset, from, to.")
-    return {
-        "metric": raw["metric"],
-        "by": raw.get("by") or "time",
-        "by2": raw.get("by2") or "",
-        "window": {key: str(window[key]) for key in window},
-    }
-
-
-def _view_payload(view) -> dict:
-    return {
-        "id": view.pk,
-        "name": view.name,
-        "config": view.config,
-        "is_favorite": view.is_favorite,
-    }
-
-
-@extend_schema_view(
-    get=extend_schema(tags=["backstage"], summary="List my saved B.I. scenarios",
-                      responses={200: OpenApiResponse(description="Saved scenarios.")}),
-    post=extend_schema(tags=["backstage"], summary="Save a B.I. scenario (grammar-validated)",
-                       responses={200: OpenApiResponse(description="Scenario saved.")}),
-)
-class BIViewListView(_BIBase):
-    def get(self, request):
-        from shopman.backstage.models import BIView
-
-        views = BIView.objects.filter(owner=request.user)
-        return Response({"views": [_view_payload(v) for v in views]})
-
-    def post(self, request):
-        from shopman.backstage.models import BIView
-
-        name = str(request.data.get("name") or "").strip()[:80]
-        if not name:
-            return Response({"detail": "Dê um nome ao cenário."}, status=400)
-        try:
-            config = _validated_view_config(request.data.get("config"))
-        except ExploreError as exc:
-            return Response({"detail": str(exc)}, status=400)
-        view, _created = BIView.objects.update_or_create(
-            owner=request.user, name=name, defaults={"config": config}
-        )
-        return Response({"ok": True, "view": _view_payload(view)})
-
-
-@extend_schema_view(
-    patch=extend_schema(tags=["backstage"], summary="Toggle favorite on a saved scenario",
-                        responses={200: OpenApiResponse(description="Scenario updated.")}),
-    delete=extend_schema(tags=["backstage"], summary="Delete a saved scenario",
-                         responses={200: OpenApiResponse(description="Scenario deleted.")}),
-)
-class BIViewDetailView(_BIBase):
-    def _get(self, request, pk: int):
-        from shopman.backstage.models import BIView
-
-        return BIView.objects.filter(owner=request.user, pk=pk).first()
-
-    def patch(self, request, pk: int):
-        view = self._get(request, pk)
-        if view is None:
-            return Response({"detail": "Cenário não encontrado."}, status=404)
-        # Exigido, e não `bool(...)` com default False: este PATCH existe SÓ para
-        # este campo, então a chave ausente era um pedido sem conteúdo que
-        # DESFAVORITAVA em silêncio.
-        view.is_favorite = as_bool(request.data, "is_favorite")
-        view.save(update_fields=["is_favorite"])
-        return Response({"ok": True, "view": _view_payload(view)})
-
-    def delete(self, request, pk: int):
-        view = self._get(request, pk)
-        if view is None:
-            return Response({"detail": "Cenário não encontrado."}, status=404)
-        view.delete()
-        return Response({"ok": True})
+        return _bi_reading(report)
 
 
 @extend_schema_view(
@@ -420,7 +355,7 @@ class BIScenariosView(_BIBase):
     """
 
     def get(self, request):
-        return Response({"bi": projection_data(build_bi_scenarios())})
+        return _bi_reading(build_bi_scenarios())
 
     def post(self, request):
         from shopman.backstage.bi.scenarios import ScenariosNotConfigured, generate
@@ -438,4 +373,4 @@ class BIScenariosView(_BIBase):
             )
         except ScenariosNotConfigured as exc:
             return Response({"detail": str(exc)}, status=409)
-        return Response({"bi": projection_data(report_view(report))}, status=201)
+        return _bi_reading(report_view(report), status=201)

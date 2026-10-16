@@ -24,8 +24,11 @@ from django.core.management.base import BaseCommand
 from shopman.backstage.contracts import render_contract_module, run_contract_export
 from shopman.backstage.projections.kds import (
     KDSBoardProjection,
+    KDSChangeProjection,
     KDSCustomerOrderProjection,
     KDSCustomerStatusProjection,
+    KDSHistoryEntryProjection,
+    KDSHistoryProjection,
     KDSInstanceSummaryProjection,
     KDSItemProjection,
     KDSTicketProjection,
@@ -37,9 +40,12 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/kds-nuxt/app/generated/kdsContract.ts")
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
     KDSItemProjection,
+    KDSChangeProjection,
     KDSTicketProjection,
     KDSInstanceSummaryProjection,
     KDSBoardProjection,
+    KDSHistoryEntryProjection,
+    KDSHistoryProjection,
     KDSCustomerOrderProjection,
     KDSCustomerStatusProjection,
 )

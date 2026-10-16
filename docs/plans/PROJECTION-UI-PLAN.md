@@ -689,7 +689,7 @@ class Availability(str, Enum):
     UNAVAILABLE = "unavailable"
 ```
 
-Isso alinha com a constituição (seção 4.2 — Stockman): disponibilidade canônica
+Isso alinha com a [Constituição §4.2](../constitution.md#42-promessa): disponibilidade canônica
 distingue available, planned, expected, unavailable.
 
 ### Preços sempre dual

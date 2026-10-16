@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "vue-sonner";
 import { nextTick } from "vue";
 
-import { makeProjection, makeSale, makeTabPayload } from "./_posSaleHarness";
+import { makeProjection, makeSale } from "./_posSaleHarness";
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 mockNuxtImport("$fetch", () => fetchMock);
@@ -710,12 +710,11 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
     h.handles.dispose();
   });
 
-  it("entrada de pagamento digitada durante o load do checkout não é perdida", async () => {
-    let resolveOpen!: (value: unknown) => void;
+  it("entrada de pagamento digitada enquanto o total chega não é perdida", async () => {
+    let resolveSave!: (value: unknown) => void;
     const actionCall = vi.fn().mockImplementation((path: string) => {
       const p = String(path);
-      if (p.includes("/tabs/save/")) return Promise.resolve({});
-      if (p.includes("/open/")) return new Promise((resolve) => { resolveOpen = resolve; });
+      if (p.includes("/tabs/save/")) return new Promise((resolve) => { resolveSave = resolve; });
       if (p.includes("/sale/review/")) return Promise.resolve({ review: { total_q: 1000, total_display: "R$ 10,00" } });
       return Promise.resolve({});
     });
@@ -724,47 +723,66 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
     const pao = h.handles.posValue.value!.products[0]!;
     h.sale.addProduct(pao);
 
-    const pending = h.sale.submitSale(); // shell aberto, reload da comanda pendente
+    const pending = h.sale.submitSale(); // shell aberto, total a caminho
     expect(h.sale.checkoutMode.value).toBe(true);
     await vi.waitFor(() => {
-      if (!resolveOpen) throw new Error("open_tab ainda não chamado");
+      if (!resolveSave) throw new Error("salvar ainda não chamado");
     });
-    // Operador já lança dinheiro + valor enquanto a comanda recarrega por baixo.
+    // Operador já lança dinheiro + valor enquanto o total não chega.
     h.sale.cart.paymentMethod = "cash";
     h.sale.cart.paymentTenders.push({ method: "cash", amount_q: 2000 });
     h.sale.cart.tenderedAmountInput = "20,00";
 
-    resolveOpen(makeTabPayload({
-      items: [{ line_id: "L-pao-1", sku: "PAO", name: "Pão", qty: 2, unit_price_q: 500, price_q: 500 }],
-    }));
+    resolveSave({ revision: "r2", review: { total_q: 1000, total_display: "R$ 10,00" } });
     await pending;
 
     expect(h.sale.cart.paymentTenders).toHaveLength(1); // entrada preservada
     expect(h.sale.cart.tenderedAmountInput).toBe("20,00");
     expect(h.sale.cart.paymentMethod).toBe("cash");
+    expect(h.sale.review.value?.total_q).toBe(1000);
     h.handles.dispose();
   });
 
-  it("com comanda aberta, o reload da comanda não derruba o checkout otimista", async () => {
+  it("com comanda aberta, o total chega numa ida só: salvar com a revisão junto", async () => {
     const actionCall = vi.fn().mockImplementation(async (path: string) => {
       const p = String(path);
-      if (p.includes("/tabs/save/")) return {};
-      if (p.includes("/open/")) {
-        return makeTabPayload({
-          items: [{ line_id: "L-pao-1", sku: "PAO", name: "Pão", qty: 2, unit_price_q: 500, price_q: 500 }],
-        });
-      }
-      if (p.includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (p.includes("/tabs/save/")) return { revision: "r2", review: { total_q: 1000, total_display: "R$ 10,00" } };
       return {};
     });
     const h = makeSale({ projection: freeCartProjection(), actionCall });
     Object.assign(h.sale.cart, { tabRef: "M1", tabDisplay: "M1", tabSessionKey: "sess-1" });
     const pao = h.handles.posValue.value!.products[0]!;
     h.sale.addProduct(pao);
+    const refreshesBefore = vi.mocked(h.handles.refresh).mock.calls.length;
 
-    await h.sale.submitSale(); // prepara: persiste + recarrega + review, tudo por baixo
+    await h.sale.submitSale(); // prepara o Pagamento
 
     expect(h.sale.checkoutMode.value).toBe(true);
+    expect(h.sale.review.value?.total_q).toBe(1000);
+    // A trava de desempenho: o total não espera reabrir a comanda, nem reler a
+    // projeção do terminal, nem uma segunda ida para revisar.
+    const paths = actionCall.mock.calls.map((call) => String(call[0]));
+    expect(paths).toEqual([expect.stringMatching(/\/tabs\/save\/\?review=1$/)]);
+    expect(vi.mocked(h.handles.refresh).mock.calls.length).toBe(refreshesBefore);
+    h.handles.dispose();
+  });
+
+  it("se a revisão não vem junto do salvar, o Pagamento revisa pelo caminho de sempre", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      const p = String(path);
+      if (p.includes("/tabs/save/")) return { revision: "r2", review_error: { status: 409, detail: "Abra o caixa." } };
+      if (p.includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      return {};
+    });
+    const h = makeSale({ projection: freeCartProjection(), actionCall });
+    Object.assign(h.sale.cart, { tabRef: "M1", tabDisplay: "M1", tabSessionKey: "sess-1" });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+
+    await h.sale.submitSale();
+
+    const paths = actionCall.mock.calls.map((call) => String(call[0]));
+    expect(paths).toHaveLength(2);
+    expect(paths[1]).toContain("/sale/review/");
     expect(h.sale.review.value?.total_q).toBe(1000);
     h.handles.dispose();
   });

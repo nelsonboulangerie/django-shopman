@@ -333,6 +333,12 @@ class MutationAttemptSerializer(StrictMutationSerializer):
         return attrs
 
 
+class ProductionBlindCodeAllocationSerializer(MutationAttemptSerializer):
+    selected_date = serializers.DateField()
+    position = serializers.CharField(required=False, allow_blank=True, default="", max_length=100)
+    base_recipe = serializers.CharField(required=False, allow_blank=True, default="", max_length=100)
+
+
 class ExistingWorkOrderMutationSerializer(MutationAttemptSerializer):
     expected_rev = serializers.IntegerField(min_value=0)
 

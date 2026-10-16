@@ -297,13 +297,15 @@ class TestStockConformance:
             "approved": True,
             "sku": "PAIN-AU-CHOCOLAT",
             "requested_qty": Decimal("2"),
-            "available_qty": Decimal("999"),
+            "available_qty": None,
+            "orderable_ceiling": None,
+            "is_tracked": False,
             "reason_code": None,
             "is_paused": False,
             "is_planned": False,
             "target_date": None,
             "failed_sku": None,
-            "source": "stock.untracked",
+            "source": "stock.promise_decision",
         }
 
         with _patch_config(cfg):
@@ -424,7 +426,9 @@ class TestNotificationsConformance:
                             with patch("shopman.shop.lifecycle.notification.send") as mock_notify:
                                 dispatch(order, "on_cancelled")
 
-        mock_notify.assert_called_with(order, "order_cancelled")
+        mock_notify.assert_called_with(
+            order, "order_cancelled", status_note="Sentimos muito pelo imprevisto.", reason_key="other",
+        )
 
 
 # ── Aspect 6: Pricing ──
@@ -444,6 +448,27 @@ class TestPricingConformance:
         cfg = ChannelConfig()
         cfg.pricing.policy = "invalid"
         with pytest.raises(ValueError, match="pricing.policy"):
+            cfg.validate()
+
+
+# ── Aspect 2b: métodos de pagamento declaráveis ──
+
+
+class TestPaymentMethodConformance:
+    @pytest.mark.parametrize(
+        "method",
+        ["cash", "pix", "card", "link", "credit", "debit", "account", "external"],
+    )
+    def test_channel_declares_every_method_the_system_knows(self, method):
+        """Link, crédito, débito e conta na casa existem no PDV: o canal pode declará-los."""
+        cfg = ChannelConfig.from_dict({"payment": {"method": [method], "timing": "external"}})
+        cfg.validate()
+        assert cfg.payment.available_methods == [method]
+
+    @pytest.mark.parametrize("method", ["mixed", "boleto", ""])
+    def test_channel_rejects_unknown_or_composite_method(self, method):
+        cfg = ChannelConfig.from_dict({"payment": {"method": [method], "timing": "external"}})
+        with pytest.raises(ValueError, match="payment.method inválido"):
             cfg.validate()
 
 

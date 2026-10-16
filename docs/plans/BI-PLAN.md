@@ -99,7 +99,8 @@ momento (o start da WO, não o enfornar) — não serve de proxy.
 
 Fato operacional da instância → model do backstage (precedente: `KDSTicket`), ligado por
 string ref (ADR-004). **Nenhuma mudança em craftsman** — novos kinds em `WorkOrderEvent`
-poriam vocabulário de padaria no core genérico (constituição §2.6); rejeitado na ADR-021 §4.
+poriam vocabulário de padaria no core genérico
+([Constituição §5](../constitution.md#5-regras-de-modelagem)); rejeitado na ADR-021 §4.
 
 ```python
 class OvenRun(models.Model):
@@ -142,7 +143,8 @@ class OvenRun(models.Model):
 
 Relatório de tempo de forno sempre exibe **cobertura** (% de fornadas do período com medição
 armar→Concluir completa). Métrica sem denominador declarado mente por omissão
-([health não alcança tudo](../../docs/constitution.md) §2.3 aplicado a métricas).
+([Constituição v1 §2.3, histórica](../_archive/constitution-v1.md#23-nenhum-pacote-pode-mentir-sobre-o-mundo),
+aplicada a métricas).
 
 ## 5. O que medir na v1
 

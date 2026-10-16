@@ -11,7 +11,8 @@ import { operatorAppNamed } from "../../appIdentity";
 const props = withDefaults(defineProps<{
   /** Na Central: o selo é identidade, sem caminho de volta. */
   home?: boolean;
-}>(), { home: false });
+  placement?: "header" | "rail";
+}>(), { home: false, placement: "header" });
 
 interface SealIdentity { label: string; icon: string; iconSrc: string; color: string }
 
@@ -31,25 +32,34 @@ const iconName = computed(() => {
 </script>
 
 <template>
-  <component
-    :is="hubUrl ? 'a' : 'span'"
-    :href="hubUrl || undefined"
+  <NuxtButton
+    :to="hubUrl || undefined"
     :target="hubUrl ? hubLink.target : undefined"
     :rel="hubUrl ? hubLink.rel : undefined"
-    class="-mx-1 my-1.5 grid size-11 shrink-0 place-items-center rounded-lg rail:hidden"
+    color="neutral"
+    variant="ghost"
+    square
+    class="group"
+    :class="placement === 'header' ? '-mx-1 my-1.5 rail:hidden' : ''"
     :aria-label="hubUrl ? `${identity?.label || 'App'}: ${HUB_BACK}` : identity?.label || undefined"
     data-page-header-app
   >
-    <span class="grid size-9 place-items-center overflow-hidden rounded-lg" :style="{ background: appColor }">
-      <img
-        v-if="identity?.iconSrc && !broken"
-        :src="identity.iconSrc"
-        class="size-9"
-        alt=""
-        decoding="async"
-        @error="broken = true"
-      >
-      <Icon v-else :name="iconName" class="size-5 text-white" aria-hidden="true" />
-    </span>
-  </component>
+    <!-- Com Central para onde voltar, o selo vira a seta de voltar no hover e no foco:
+         o caminho fica visível antes do clique, sem texto a mais na barra. -->
+    <NuxtAvatar
+      :src="identity?.iconSrc && !broken ? identity.iconSrc : undefined"
+      :icon="iconName"
+      alt=""
+      :style="{ background: appColor }"
+      :class="hubUrl ? 'group-hover:hidden group-focus-visible:hidden' : undefined"
+      @error="broken = true"
+    />
+    <NuxtAvatar
+      v-if="hubUrl"
+      icon="i-lucide-arrow-left"
+      class="hidden group-hover:inline-flex group-focus-visible:inline-flex"
+      aria-hidden="true"
+      data-page-header-app-back
+    />
+  </NuxtButton>
 </template>

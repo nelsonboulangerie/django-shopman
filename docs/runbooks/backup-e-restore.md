@@ -25,12 +25,15 @@ feito o restore uma vez.
 
 ## 1. O que existe hoje
 
-Dois clusters *managed* de PostgreSQL 16 na DigitalOcean:
+Um cluster *managed* de PostgreSQL 16 na DigitalOcean:
 
 | Ambiente | Cluster | Onde está declarado |
 |---|---|---|
-| Alpha | `shopman-staging-postgres` | `.do/app.alpha-subdomains.yaml` (`databases:`) |
-| Produção | `shopman-headless-postgres` | `.do/app.subdomains.yaml` (`databases:`) |
+| Alpha, e produção a partir do dia D | `shopman-staging-postgres` | spec vivo do `shopman-nelson`; versionado em `.do/app.alpha-subdomains.yaml` (`databases:`) |
+
+A loja vira produção no próprio app vivo, no mesmo banco (D-029). O
+`shopman-headless-postgres` que o `.do/app.subdomains.yaml` anexa **não existe** na
+conta (`doctl databases list`, 10/10/2026): é nome de modelo para um app novo.
 
 O que a DigitalOcean entrega por padrão, sem nada a instalar e sem custo extra
 (cada afirmação com a página de onde veio):
@@ -188,7 +191,7 @@ Esta é a parte que nenhum código faz por você, e é a parte que salva o dia.
    `SHOPMAN_MIGRATION_BACKUP_REF` (App Platform → Settings → componente
    `release` → Environment Variables):
    ```
-   SHOPMAN_MIGRATION_BACKUP_REF=PITR 2026-09-23T14:05:00Z — shopman-headless-postgres
+   SHOPMAN_MIGRATION_BACKUP_REF=PITR 2026-09-23T14:05:00Z, shopman-staging-postgres
    ```
 
 O conteúdo é texto livre e legível por gente — a trava não valida formato, ela

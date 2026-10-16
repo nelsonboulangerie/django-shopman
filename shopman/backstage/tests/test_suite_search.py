@@ -105,6 +105,20 @@ def test_order_by_ref(client, maria_order):
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_ifood_order_by_its_number_when_the_ref_was_drawn(client):
+    """P2-29: sufixo ocupado, o ref é sorteado; o número do iFood continua achando."""
+    Order.objects.create(
+        ref="IFOOD-261013-D09",
+        channel_ref="ifood",
+        status="preparing",
+        total_q=1300,
+        data={"customer": {"name": "Cliente iFood"}, "ifood": {"display_id": "4994"}},
+    )
+    search = _search(client, _admin(), "4994")
+    assert [r["key"] for r in _group(search, "orders")] == ["order:IFOOD-261013-D09"]
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_open_preorder_links_to_the_pos(client, maria_order):
     search = _search(client, _admin(), "Maria")
     [preorder] = _group(search, "preorders")
@@ -149,11 +163,11 @@ def test_material_and_supplier_open_the_purchase_base(client):
     search = _search(client, _admin(), "man")
     [material] = _group(search, "materials")
     assert material["app"] == "purchase"
-    assert material["url"] == "https://compras.example.test/?view=base&material=MANTEIGA-82"
+    assert material["url"] == "https://compras.example.test/base/materials/MANTEIGA-82"
     search = _search(client, _admin(), "anaconda")
     [supplier] = _group(search, "suppliers")
     assert supplier["title"] == "Moinho Anaconda"
-    assert supplier["url"] == "https://compras.example.test/?view=base&supplier=MOINHO-ANACONDA"
+    assert supplier["url"] == "https://compras.example.test/base/suppliers/MOINHO-ANACONDA"
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -179,7 +193,7 @@ def test_campaign_opens_the_marketing_campaigns(client):
     Campaign.objects.create(name="Fornada de pães", trigger="production_finished", template=template)
     [campaign] = _group(_search(client, _admin(), "fornada"), "campaigns")
     assert campaign["app"] == "marketing"
-    assert campaign["url"] == "https://mkt.example.test/campaigns?q=Fornada+de+p%C3%A3es"
+    assert campaign["url"] == "https://mkt.example.test/settings/campaigns?q=Fornada+de+p%C3%A3es"
     assert campaign["detail"] == "campanha · ligada"
 
 

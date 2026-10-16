@@ -405,8 +405,20 @@ def advance_order(
     undo_window: bool = False,
     handoff_token: str | None = None,
     expedite_only: bool = False,
+    partner_collects: bool = False,
 ) -> str:
     """Advance an order through the operator lifecycle.
+
+    ``partner_collects``: a coleta veio da corrida da TaOn (status ``E``). A
+    casa não tem entregador próprio (decisão do dono, 13/10/2026) e a coleta
+    despacha também com cobrança na porta: o que cobrar, em que forma e o troco
+    para quanto já estão no pedido e foram na observação da corrida
+    (``courier.door_charge_note``), e a coleta os registra em
+    ``courier.door_charge``. Fato externo não inventa custódia: a coleta não
+    lança troco da gaveta nem reserva maquininha, e grava
+    ``dispatch.collector = "courier_partner"``. Troco da gaveta ou maquininha
+    da casa que vão com o entregador da TaOn se registram despachando no
+    Gestor antes da coleta (aí o pedido já saiu e a coleta é no-op).
 
     ``expedite_only``: quem toca só expede (``expedites_only``). A régua de
     ``expedite_refusal`` é aplicada aqui, sob o lock, na linha travada.
@@ -481,7 +493,10 @@ def advance_order(
 
     dispatching = next_status == Order.Status.DISPATCHED and get_fulfillment_type(order) == "delivery"
     change_out = 0
-    if dispatching:
+    partner_dispatch = dispatching and partner_collects
+    if partner_dispatch:
+        taken, trip, device_fields = [], "", {}
+    elif dispatching:
         suggested_q = change_out_suggested_q(order)
         if change_out_q is None and suggested_q > 0:
             raise ChangeOutRequired(suggested_q)
@@ -534,6 +549,19 @@ def advance_order(
             # Saindo do pronto com a janela do pronto automático aberta: o
             # aviso de pronto sai agora, antes do aviso da saída.
             order_undo.release_ready_hold(order)
+        if partner_dispatch:
+            # Coleta da TaOn sem custódia registrada no Gestor: nada de gaveta
+            # nem de maquininha lançado por fato externo. Gravado ANTES da
+            # transição, que é o que a trava de maquininha (``guard_dispatch``)
+            # consulta.
+            data = dict(order.data or {})
+            data["dispatch"] = {
+                **dict(data.get("dispatch") or {}),
+                "collector": "courier_partner",
+                "collector_at": timezone_now_iso(),
+            }
+            order.data = data
+            order.save(update_fields=["data", "updated_at"])
         if taken or trip:
             # Custódia da maquininha: o despacho registra o que saiu;
             # "onde está agora" é derivado (saiu e ainda não voltou). Não é
@@ -556,6 +584,10 @@ def advance_order(
         # (alerta por pedido) — sem barrar. Dentro da transação de propósito: se
         # a transição não acontecer, o aviso dela também não fica.
         fiscal_service.alert_handoff_without_nfce(order, target_status=next_status)
+        # Conferência de sacolas pela metade: o mesmo grito sem portão.
+        from shopman.shop.services import volume_check
+
+        volume_check.alert_if_unchecked(order, target_status=next_status)
         order.transition_status(next_status, actor=actor)
         if next_status in _KITCHEN_FINISHED_STATUSES:
             # "Marcar pronto" por fora do KDS: quem avançou afirmou que a cozinha
@@ -955,6 +987,25 @@ def cash_due_on_delivery_q(order: Order) -> int:
     return order_composition.effective_total_q(order)
 
 
+def card_due_on_delivery_q(order: Order) -> int:
+    """Quanto desta entrega será cobrado no CARTÃO (maquininha) na porta, em centavos.
+
+    Mesma régua de ``cash_due_on_delivery_q``: as linhas respondem quando
+    existem; sem elas, o método do topo responde pelo pedido inteiro.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    if get_fulfillment_type(order) != "delivery" or payment.get("collection") != "on_delivery":
+        return 0
+    tenders = payment.get("tenders") or []
+    if tenders:
+        return sum(int(t.get("amount_q") or 0) for t in tenders if t.get("method") in {"credit", "debit"})
+    if payment.get("method") not in {"credit", "debit"}:
+        return 0
+    from shopman.shop.services import order_composition
+
+    return order_composition.effective_total_q(order)
+
+
 def change_out_suggested_q(order: Order) -> int:
     """Quanto de troco a loja sugere que o entregador leve: ``change_for_q − parcela em dinheiro``.
 
@@ -971,6 +1022,193 @@ def change_out_suggested_q(order: Order) -> int:
     return max(0, _change_for_q(order) - cash_due)
 
 
+def partner_custody_asks(order: Order) -> dict:
+    """O que a chamada do entregador da TaOn pergunta antes de abrir a corrida.
+
+    ``change_out_suggested_q``: o troco que sai da gaveta (zero: não pergunta).
+    ``needs_machine``: a cobrança na porta é no cartão e a maquininha da casa vai
+    junto. ``recorded``: a custódia já foi registrada numa chamada anterior
+    (a corrida não foi aceita e o operador chama de novo): nada se pergunta.
+    Pedido pago: tudo zero, a confirmação não pergunta nada.
+    """
+    from shopman.shop.adapters.delivery_devices import needs_card_machine
+
+    dispatch = (order.data or {}).get("dispatch") or {}
+    recorded = bool(dispatch.get("custody_at"))
+    return {
+        "change_out_suggested_q": 0 if recorded else change_out_suggested_q(order),
+        "needs_machine": False if recorded else needs_card_machine(order),
+        "recorded": recorded,
+    }
+
+
+#: Chaves da custódia da chamada que saem do ``dispatch`` quando ela volta: a
+#: chamada seguinte registra a dela do zero, sem herdar a volta desta.
+_PARTNER_CUSTODY_KEYS = (
+    "collector", "custody_at", "custody_by", "equipment", "device_ref", "device_label",
+    "equipment_out_at", "equipment_out_by", "equipment_back_at", "equipment_back_by",
+)
+
+#: Os pedidos que já saíram com o entregador: a custódia foi junto, e quem fecha
+#: é o "Entregador voltou", nunca a volta automática.
+_COLLECTED_STATUSES = frozenset({
+    Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED, Order.Status.RETURNED,
+})
+
+
+@transaction.atomic
+def return_partner_custody(order: Order, *, actor: str, reason: str) -> bool:
+    """A corrida terminou sem coleta: o troco volta à gaveta e a maquininha é liberada.
+
+    O inverso de :func:`record_partner_custody`, pelas peças do "Entregador
+    voltou": o troco vira ``courier_in`` apontando para o ``courier_out`` (no
+    mesmo turno, enquanto ele está aberto) e a maquininha volta por
+    :func:`mark_equipment_returned`. Os dois lançamentos levam
+    ``payload.custody_return`` e se anulam em :func:`courier_change_by_order`:
+    a chamada seguinte registra a custódia dela do zero, sem duplicar.
+
+    Idempotente: sem ``dispatch.custody_at`` não há o que devolver. Pedido que
+    já saiu (``_COLLECTED_STATUSES``) não devolve nada: a custódia foi com o
+    entregador. Turno do troco já fechado: o dinheiro não entra sozinho num
+    turno que não é o dele; aviso crítico ao operador, e a maquininha volta.
+    """
+    from shopman.cashman.models import Entry
+
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    dispatch = dict((order.data or {}).get("dispatch") or {})
+    if not dispatch.get("custody_at") or order.status in _COLLECTED_STATUSES:
+        return False
+    change = courier_change(order)
+    returned_q = 0
+    if change.pending:
+        courier_out = Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).order_by("-id").first()
+        shift = courier_out.shift if courier_out is not None else None
+        if shift is not None and getattr(shift, "is_open", False):
+            from shopman.cashman import services as cash_ledger
+
+            cash_ledger.record(
+                "courier_in", shift=shift, operator=_user_for_actor(actor) or shift.opened_by,
+                amount_q=change.out_q, order_ref=order.ref, parent=courier_out,
+                payload={"courier_out_id": courier_out.pk, "settled_by": actor,
+                         "custody_return": True, "reason": reason},
+            )
+            returned_q = change.out_q
+        else:
+            from shopman.shop.adapters import alert as alert_adapter
+
+            alert_adapter.create(
+                "integration_failed", "critical",
+                f"O troco de R$ {_money(change.out_q)} do pedido {short_ref(order.ref)} saiu da gaveta e o entregador "
+                "não veio buscar, mas o turno dele já fechou: devolva o dinheiro pelo caixa.",
+                order_ref=order.ref,
+            )
+    equipment = list(equipment_custody(order).equipment)
+    if equipment_custody(order).pending:
+        mark_equipment_returned(order, actor=actor)
+        order.refresh_from_db()
+    data = dict(order.data or {})
+    kept = {k: v for k, v in dict(data.get("dispatch") or {}).items() if k not in _PARTNER_CUSTODY_KEYS}
+    kept["custody_returns"] = [*kept.get("custody_returns", []), {
+        "at": timezone_now_iso(), "by": actor, "reason": reason,
+        "change_q": returned_q, "equipment": equipment, "device_label": dispatch.get("device_label", ""),
+    }]
+    data["dispatch"] = kept
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    order.emit_event(event_type="partner_custody_returned", actor=actor,
+        payload={"reason": reason, "change_q": returned_q, "equipment": equipment})
+    return True
+
+
+def _money(amount_q: int) -> str:
+    from shopman.utils.monetary import format_money
+
+    return format_money(int(amount_q))
+
+
+@transaction.atomic
+def record_partner_custody(
+    order: Order,
+    *,
+    actor: str,
+    change_out_q: int | None = None,
+    cash_shift=None,
+    equipment: list[str] | None = None,
+) -> dict:
+    """A custódia que sai com o entregador da TaOn, registrada na chamada.
+
+    É a mesma custódia do despacho do Gestor (``advance_order``), com as mesmas
+    peças: o troco sai da gaveta como ``courier_out`` no turno de quem chama, a
+    maquininha é reservada por ``delivery_devices.allocate`` e o pedido grava
+    ``dispatch.equipment``/``device_ref``. A diferença é que o pedido não muda
+    de status: quem despacha é a coleta (``E``), que com ``partner_collects``
+    não lança nada de novo. ``dispatch.collector = "courier_partner"`` já fica
+    gravado, para a trava de maquininha e para o acerto.
+
+    Idempotente: com ``dispatch.custody_at`` gravado, não lança nada (a chamada
+    repetida depois de uma corrida não aceita reaproveita a custódia).
+    Pedido sem nada a levar (pago, sem troco, sem cartão) não grava nada.
+    """
+    if cash_shift is not None:
+        cash_shift = type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    asks = partner_custody_asks(order)
+    if asks["recorded"]:
+        return {"recorded": False, "change_out_q": 0, "device_ref": ""}
+    suggested_q = asks["change_out_suggested_q"]
+    if change_out_q is None and suggested_q > 0:
+        raise ChangeOutRequired(suggested_q)
+    change_out = int(change_out_q or 0)
+    if change_out < 0:
+        raise ValueError("O troco levado não pode ser negativo.")
+    if change_out > 0 and (cash_shift is None or not getattr(cash_shift, "is_open", False)):
+        raise ValueError("Abra um turno de caixa para o entregador levar troco da gaveta.")
+    from shopman.shop.adapters import delivery_devices
+
+    taken, device_fields = [], {}
+    if asks["needs_machine"] or equipment:
+        taken = _clean_equipment(order, equipment)
+        device = delivery_devices.allocate(order, taken, allowed=equipment_options(order.channel_ref or ""))
+        if device:
+            device_fields = {"device_ref": str(device.ref), "device_label": device.label}
+            taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
+    if not taken and change_out <= 0:
+        return {"recorded": False, "change_out_q": 0, "device_ref": ""}
+
+    now = timezone_now_iso()
+    data = dict(order.data or {})
+    data["dispatch"] = {
+        **dict(data.get("dispatch") or {}),
+        "collector": "courier_partner",
+        "custody_at": now,
+        "custody_by": actor,
+        **({"equipment": taken, **device_fields, "equipment_out_at": now, "equipment_out_by": actor} if taken else {}),
+    }
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    if change_out > 0:
+        from shopman.cashman import services as cash_ledger
+
+        cash_ledger.record(
+            "courier_out",
+            shift=cash_shift,
+            operator=_user_for_actor(actor) or cash_shift.opened_by,
+            amount_q=-change_out,
+            order_ref=order.ref,
+            payload={
+                "change_for_q": _change_for_q(order),
+                "suggested_q": suggested_q,
+                "dispatched_by": actor,
+                "collector": "courier_partner",
+            },
+        )
+    order.emit_event(event_type="partner_custody_recorded", actor=actor,
+        payload={"change_out_q": change_out, "equipment": taken, **device_fields})
+    return {"recorded": True, "change_out_q": change_out, "device_ref": device_fields.get("device_ref", "")}
+
+
 def courier_change_by_order(order_refs) -> dict[str, tuple[int, int | None]]:
     """``{order_ref: (out_q, back_q | None)}`` numa consulta, para projections com muitos cards."""
     from shopman.cashman.models import Entry
@@ -982,9 +1220,13 @@ def courier_change_by_order(order_refs) -> dict[str, tuple[int, int | None]]:
     back: dict[str, int] = {}
     rows = Entry.objects.filter(
         kind__in=[Entry.Kind.COURIER_OUT, Entry.Kind.COURIER_IN], order_ref__in=refs
-    ).values_list("order_ref", "kind", "amount_q")
-    for ref, kind, amount_q in rows:
+    ).values_list("order_ref", "kind", "amount_q", "payload__custody_return")
+    for ref, kind, amount_q, custody_return in rows:
         if kind == Entry.Kind.COURIER_OUT:
+            out[ref] = out.get(ref, 0) - int(amount_q)
+        elif custody_return:
+            # A corrida não coletou e o troco voltou (``return_partner_custody``):
+            # anula a saída, não é acerto. A chamada seguinte abre outro ciclo.
             out[ref] = out.get(ref, 0) - int(amount_q)
         else:
             back[ref] = back.get(ref, 0) + int(amount_q)
@@ -1081,7 +1323,8 @@ def cancel_order(
     reason: str,
     actor: str,
     cancellation_code: str = "",
-    customer_note: str = "",
+    reason_key: str = "",
+    internal_note: str = "",
     expected_authority_revision: str | None = None,
     expected_revision: str | None = None,
     prepared_identity: tuple[str, str] | None = None,
@@ -1090,22 +1333,26 @@ def cancel_order(
 
     ``cancellation_code`` (iFood) rides ``order.data`` to the status-callback handler.
 
-    ``customer_note`` is the operator-authored, customer-facing justification. It is
-    stored under ``order.data["cancellation_note"]`` and surfaced to the customer in
-    the ``order_cancelled`` notification. Kept separate from ``cancellation_reason``,
-    which also carries machine codes (``pix_timeout``, ``customer_requested``) that
-    must never reach the customer. Empty when the operator gave no reason → the
-    customer gets the plain cancellation message.
+    ``reason_key`` é a chave da lista única de motivos (``services/cancel_reasons``),
+    gravada em ``order.data["cancellation_reason_key"]``: o cliente lê o texto
+    revisado dela na notificação ``order_cancelled``. Fora da lista levanta
+    ``ValueError``. Vazia só no marketplace (o iFood exige o código dele, e o
+    pedido sai com ``other``). ``internal_note`` é a observação livre do operador:
+    vai para ``order.data["cancellation_internal_note"]`` e nunca ao cliente.
 
     Returns:
         True se cancelou ou persistiu solicitação iFood; False se a transição foi recusada.
     """
+    from shopman.shop.services import cancel_reasons
+
+    if (reason_key or order.channel_ref != "ifood") and cancel_reasons.validation_message(reason_key):
+        raise ValueError(cancel_reasons.validation_message(reason_key))
     reason_identity = prepared_identity if prepared_identity is not None else _validate_operator_cancellation_code(order, cancellation_code)
-    extra_data: dict[str, str] = {}
+    extra_data: dict[str, str] = {"cancellation_reason_key": reason_key.strip() or cancel_reasons.OTHER}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
-    if customer_note.strip():
-        extra_data["cancellation_note"] = customer_note.strip()
+    if internal_note.strip():
+        extra_data["cancellation_internal_note"] = internal_note.strip()
     # O retorno do serviço canônico é a resposta à pergunta "cancelou?", e
     # descartá-lo fazia a view responder 200 para um pedido que continuou como
     # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
@@ -1125,7 +1372,7 @@ def cancel_order(
                 raise OrderStateConflict("O pagamento ou estado mudou. Confira o pedido e a aprovação novamente.")
         if _cancellation_identity(locked) != reason_identity:
             raise OrderStateConflict("A referência do pedido mudou. Consulte os motivos novamente.")
-        return cancel(locked, reason=reason, actor=actor, extra_data=extra_data or None)
+        return cancel(locked, reason=reason, actor=actor, extra_data=extra_data)
 
 
 _COUNTER_METHODS = frozenset({"cash", "credit", "debit"})
@@ -1182,11 +1429,12 @@ def counter_hand_over_block(order: Order, *, payment_reads=None, balance_q: int 
         return "Esta encomenda é para entregar no endereço: a saída é pelo Gestor de pedidos."
     if order.status in {Order.Status.COMPLETED, Order.Status.DELIVERED}:
         return "Esta encomenda já foi entregue."
-    if order.status != Order.Status.READY:
-        return (
-            f"Esta encomenda ainda não está pronta ({order.get_status_display()}). "
-            "Ela pode ser entregue aqui quando for marcada como pronta."
-        )
+    if order.status not in COUNTER_HAND_OVER_STATUSES:
+        return f"Esta encomenda não pode ser entregue agora ({order.get_status_display()})."
+    if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
+        # Antes do dia, a baixa de estoque e os tickets ainda não aconteceram
+        # (``lifecycle.activate_preorder``): concluir agora pularia os dois.
+        return "Esta encomenda é para outro dia. Para entregar hoje, reagende para hoje."
     due = balance_q if balance_q is not None else payment_service.balance_due_q(order, payment_reads=payment_reads)
     if due is None:
         return "Não deu para ler o que já foi pago. Confira o pagamento antes de entregar."
@@ -1242,6 +1490,8 @@ def hand_over_at_counter(
         # Receber com a cobrança do cliente ainda viva abriria a cobrança dupla:
         # quem cancela antes é :func:`take_over_before_hand_over`.
         raise ValueError("O Pix ou o link do cliente ainda está ativo. Atualize a encomenda e tente de novo.")
+    _mark_ready_at_counter(order, actor=actor)
+    order.refresh_from_db()
     received = 0
     if due:
         received = settle_delivery_cash(
@@ -1253,6 +1503,30 @@ def hand_over_at_counter(
     advance_order(order, actor=actor, cash_shift=cash_shift, target_status=Order.Status.COMPLETED)
     logger.info("operator_hand_over_at_counter order=%s received=%s", order.ref, received)
     return received
+
+
+#: De onde o "Entregar" do balcão conclui. Aceita e em preparo incluídos (P1-8):
+#: o cliente está no balcão com a sacola na mão, e quem entrega afirma que a
+#: cozinha terminou, como o "Marcar pronto" do Gestor. Os tickets abertos fecham
+#: com ``via = order_advanced`` (``kds.close_open_tickets``), a mesma trilha.
+COUNTER_HAND_OVER_STATUSES = frozenset({
+    Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY,
+})
+
+
+def _mark_ready_at_counter(order: Order, *, actor: str) -> None:
+    """O Pronto que o balcão afirma ao entregar: o mesmo efeito do "Marcar pronto".
+
+    ``advance_order`` (o caminho do Gestor) só dá o próximo degrau, e do aceito
+    o próximo é "em preparo", que abriria tickets e avisaria o cliente de um
+    preparo que já acabou. Aqui o pedido vai direto ao pronto (transição
+    permitida pelo mapa); os tickets abertos fecham no avanço seguinte, o da
+    conclusão (``advance_order`` → ``kds.close_open_tickets``), na mesma
+    transação.
+    """
+    if order.status == Order.Status.READY:
+        return
+    order.transition_status(Order.Status.READY, actor=actor)
 
 
 CHOOSE_COUNTER_TENDER_MESSAGE = "Escolha como o cliente pagou no balcão: dinheiro, débito ou crédito."
@@ -1909,7 +2183,14 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         # pronto automático ligado e ticket aberto na cozinha, o "Marcar pronto"
         # sai do card e fica no menu do pedido (``priority="menu"``), para a
         # estação sem tela e para o caso que o sistema não viu.
-        priority = "menu" if target == Order.Status.READY and _kitchen_will_conclude(order) else "primary"
+        # Na ENTREGA, quem decide o pronto é o operador (decisão do dono,
+        # 13/10/2026): ele sabe se a sacola está pronta e chama o entregador na
+        # hora. O "Marcar pronto" fica à vista mesmo com ticket na Cozinha.
+        priority = (
+            "menu"
+            if target == Order.Status.READY and get_fulfillment_type(order) != "delivery" and _kitchen_will_conclude(order)
+            else "primary"
+        )
         actions.append(Action(
             ref="advance", kind="mutation", label=labels[target], priority=priority,
             enabled=not reason, reason=reason, method="POST", idempotency="required",

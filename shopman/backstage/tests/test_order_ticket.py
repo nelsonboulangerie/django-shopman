@@ -160,6 +160,51 @@ def test_pedido_PAGO_nao_grita_pendencia(shop):
     assert "Pago" in papel
 
 
+def _com_economia(ref: str) -> Order:
+    # O snapshot é selado na criação: o pedido nasce com ele, nunca o ganha depois.
+    order = Order.objects.create(
+        ref=ref,
+        channel_ref="web",
+        status="accepted",
+        total_q=3600,
+        data={"customer": {"name": "Ana"}, "payment": {"method": "link"}},
+        snapshot={
+            "pricing": {
+                "discount": {
+                    "savings": {"message": "Hoje economizou R$ 3,00 por ser da Equipe"}
+                }
+            }
+        },
+    )
+    OrderItem.objects.create(
+        order=order,
+        line_id="1",
+        sku="SKU-1",
+        name="Pão de fermentação natural",
+        qty=2,
+        unit_price_q=1800,
+        line_total_q=3600,
+    )
+    return order
+
+
+def test_economia_do_grupo_imprime_na_ficha(shop):
+    """A mensagem do grupo sai do snapshot imutável do pedido, não do cadastro vivo."""
+    papel = _texto(order_ticket(_com_economia("ORD-SAV")))
+
+    assert "Hoje economizou R$ 3,00" in papel
+    assert "por ser da Equipe" in papel
+
+
+def test_economia_do_grupo_imprime_no_recibo(shop):
+    from shopman.backstage.services.receipt_escpos import sale_receipt
+
+    papel = sale_receipt(_com_economia("ORD-SAV2")).decode(ENCODING, "replace")
+
+    assert "Hoje economizou R$ 3,00" in papel
+    assert "por ser da Equipe" in papel
+
+
 # ── O bloco que se lê de longe ────────────────────────────────────────────
 
 
@@ -335,13 +380,20 @@ def test_o_QR_aponta_para_o_acompanhamento_do_pedido(shop, settings):
     assert bytes([0x1D, 0x28, 0x6B]) in papel, "faltou o comando de QR"
 
 
-def test_sem_base_de_loja_o_papel_sai_SEM_QR(shop, settings):
-    """Melhor sem QR do que com um QR que não abre nada."""
+def test_sem_base_de_loja_o_papel_sai_SEM_o_QR_do_cliente(shop, settings):
+    """Melhor sem QR do que com um QR que não abre nada.
+
+    O QR de CONFERÊNCIA da sacola (o da casa, lido no posto Saída) continua:
+    ele não depende da loja online. Sobra um QR só, e ele não é um endereço.
+    """
     settings.SHOPMAN_STOREFRONT_BASE_URL = ""
 
     papel = tickets.ticket_bytes(_order("ORD-T18"))
 
-    assert bytes([0x1D, 0x28, 0x6B]) not in papel
+    imprime_qr = bytes([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])
+    assert b"http" not in papel
+    assert papel.count(imprime_qr) == 1
+    assert papel.count(b"VP-ORD-T18-1-1-") == 1
 
 
 # ── A janela do lote ──────────────────────────────────────────────────────

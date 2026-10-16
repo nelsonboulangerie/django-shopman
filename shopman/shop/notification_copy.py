@@ -176,15 +176,6 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "Pague por aqui: {payment_url}{pix_suffix}"
         ),
     },
-    # "Nada foi cobrado" é sempre verdade aqui: o prazo venceu sem pagamento.
-    "payment_expired": {
-        "subject": "Pedido {order_ref_short}: reserva liberada",
-        "body": (
-            "Oi{customer_name_greeting}. O prazo para pagar o pedido *{order_ref_short}* acabou "
-            "e liberamos a reserva. Nada foi cobrado.\n"
-            "Para pedir de novo: {reorder_url}"
-        ),
-    },
     "payment_failed": {
         "subject": "Pedido {order_ref_short}: não conseguimos gerar o pagamento",
         "body": (
@@ -192,11 +183,28 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "Tente de novo por aqui: {payment_url}"
         ),
     },
+    # Sai quando o GATEWAY devolveu (Pix/cartão), uma vez por estorno
+    # (``services/payment._notify_refund``). `{refund_amount_display}` é o valor
+    # DESTE estorno (a devolução parcial não devolve o total); `{status_note}` diz
+    # por onde o dinheiro volta e quanto pode demorar, sem prometer o prazo do
+    # banco, que a casa não controla.
     "payment_refunded": {
-        "subject": "Reembolso do pedido {order_ref_short} processado",
+        "subject": "Pedido {order_ref_short}: valor devolvido",
         "body": (
-            "Oi{customer_name_greeting}! O reembolso do pedido *{order_ref_short}*, no valor de *{order_total_display}*, "
-            "foi processado. Qualquer dúvida, estamos à disposição."
+            "Oi{customer_name_greeting}! Devolvemos *{refund_amount_display}* do seu pedido *{order_ref_short}*. "
+            "{status_note}. Qualquer dúvida, estamos à disposição."
+        ),
+    },
+    # Devolução do pedido INTEIRO (a parcial não muda o status). O estorno vem
+    # depois, no aviso próprio (`payment_refunded`); aqui `{status_note}` diz o que
+    # acontece com o dinheiro conforme a forma de pagamento
+    # (``services/notification._returned_money_note``).
+    "order_returned": {
+        "subject": "Pedido {order_ref_short} devolvido",
+        "body": (
+            "Oi{customer_name_greeting}. Registramos a devolução de todos os itens do seu pedido *{order_ref_short}*. "
+            "{status_note}. Qualquer dúvida, estamos à disposição.\n"
+            "Veja os detalhes: {tracking_url}"
         ),
     },
     # ── Fila de espera, fidelidade, acesso e produto ─────────────────────

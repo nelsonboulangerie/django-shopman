@@ -39,6 +39,20 @@ describe("mapa canônico de atalhos", () => {
     expect(shortcutEventAllowed(normal, base, new Set(["locked"]))).toBe(false);
   });
 
+  it("cala sob a trava do terminal, que cobre a tela sem ser diálogo", () => {
+    const lock = document.createElement("div");
+    lock.setAttribute("data-operator-lock", "");
+    const event = new KeyboardEvent("keydown", { code: "KeyK", key: "k", ctrlKey: true });
+    Object.defineProperty(event, "target", { value: document.body });
+    expect(shortcutEventAllowed(event, base, new Set(["ready"]))).toBe(true);
+    document.body.append(lock);
+    try {
+      expect(shortcutEventAllowed(event, base, new Set(["ready"]))).toBe(false);
+    } finally {
+      lock.remove();
+    }
+  });
+
   it("detecta colisão em contexto e plataforma sobrepostos", () => {
     const other: OperatorShortcutCommand = { ...base, id: "screen.search", scope: "screen", owner: "orders" };
     expect(findOperatorShortcutCollisions([base, other])).toMatchObject([

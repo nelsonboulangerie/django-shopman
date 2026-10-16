@@ -270,53 +270,81 @@ def test_settle_delivery_cash_rejects_without_open_shift(client, operator):
     assert "detail" in response.json()
 
 
+def _cancel(client, operator, order, idem, **body):
+    return client.post(
+        reverse("api-backstage-order-cancel", args=[order.ref]),
+        data={"expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": idem, **body},
+        content_type="application/json",
+    )
+
+
+def _cancelled_notice(order):
+    return Directive.objects.get(
+        topic="notification.send",
+        payload__order_ref=order.ref,
+        payload__template="order_cancelled",
+    )
+
+
 @pytest.mark.django_db
-def test_cancel_endpoint_delivers_operator_reason_to_customer(
+def test_cancel_endpoint_sends_the_reviewed_text_of_the_chosen_reason(
     client, operator, django_capture_on_commit_callbacks
 ):
-    """G2: the operator's justification reaches the customer, not a generic notice."""
+    """P1-10: o cliente lê o texto revisado da chave; a observação do operador é interna."""
+    from shopman.shop.services.cancel_reasons import cancel_reason
+
     order = _order("ORD-API-CANCEL", status="preparing")
     client.force_login(operator)
 
     with django_capture_on_commit_callbacks(execute=True):
-        response = client.post(
-            reverse("api-backstage-order-cancel", args=[order.ref]),
-            data={"reason": "Item indisponível no momento", "expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "cancel-note"},
-            content_type="application/json",
-        )
+        response = _cancel(client, operator, order, "cancel-key", reason_key="out_of_stock", internal_note="Faltou farinha na segunda fornada")
     assert response.status_code == 200
 
     order.refresh_from_db()
     assert order.status == "cancelled"
-    assert order.data["cancellation_note"] == "Item indisponível no momento"
+    assert order.data["cancellation_reason_key"] == "out_of_stock"
+    assert order.data["cancellation_internal_note"] == "Faltou farinha na segunda fornada"
+    assert "cancellation_note" not in order.data
 
-    notice = Directive.objects.get(
-        topic="notification.send",
-        payload__order_ref=order.ref,
-        payload__template="order_cancelled",
-    )
-    assert notice.payload["reason"] == "Item indisponível no momento"
+    notice = _cancelled_notice(order)
+    assert notice.payload["status_note"] == cancel_reason("out_of_stock").customer_text
+    assert "farinha" not in str(notice.payload)
 
 
 @pytest.mark.django_db
-def test_cancel_endpoint_without_reason_stays_generic(
+def test_cancel_endpoint_with_other_sends_the_generic_text(
     client, operator, django_capture_on_commit_callbacks
 ):
+    from shopman.shop.services.cancel_reasons import cancel_reason
+
     order = _order("ORD-API-CANCEL-GEN", status="preparing")
     client.force_login(operator)
 
     with django_capture_on_commit_callbacks(execute=True):
-        response = client.post(reverse("api-backstage-order-cancel", args=[order.ref]), data={"expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "cancel-generic"}, content_type="application/json")
+        response = _cancel(client, operator, order, "cancel-other", reason_key="other", internal_note="Cliente sumiu")
     assert response.status_code == 200
 
     order.refresh_from_db()
-    assert "cancellation_note" not in order.data
-    notice = Directive.objects.get(
-        topic="notification.send",
-        payload__order_ref=order.ref,
-        payload__template="order_cancelled",
-    )
-    assert notice.payload.get("reason") is None
+    assert order.data["cancellation_reason_key"] == "other"
+    notice = _cancelled_notice(order)
+    assert notice.payload["status_note"] == cancel_reason("other").customer_text
+    assert "sumiu" not in str(notice.payload)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("body", [{}, {"reason_key": ""}, {"reason_key": "acabou"}, {"reason": "Item indisponível"}])
+def test_cancel_endpoint_requires_a_reason_from_the_list(client, operator, body):
+    order = _order("ORD-API-CANCEL-NOKEY", status="preparing")
+    client.force_login(operator)
+
+    response = _cancel(client, operator, order, f"cancel-nokey-{len(str(body))}", **body)
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["field"] == "reason_key"
+    assert payload["errors"]["reason_key"] == [payload["detail"]]
+    order.refresh_from_db()
+    assert order.status == "preparing"
 
 
 @pytest.mark.django_db

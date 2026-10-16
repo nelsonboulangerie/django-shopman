@@ -44,7 +44,7 @@ class CreateAddressSerializer(serializers.Serializer):
 
 class CustomerSerializer(serializers.ModelSerializer):
     price_tier_name = serializers.CharField(
-        source="price_tier.name", read_only=True, default=None
+        source="primary_price_tier.name", read_only=True, default=None
     )
     listing_ref = serializers.CharField(read_only=True)
     phone_display = serializers.SerializerMethodField()

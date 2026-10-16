@@ -21,6 +21,7 @@ from shopman.guestman.models import (
     CustomerAddress,
     ExternalIdentity,
     PriceTier,
+    PriceTierAdvantage,
 )
 
 # ===========================================
@@ -28,8 +29,15 @@ from shopman.guestman.models import (
 # ===========================================
 
 
+class PriceTierAdvantageInline(admin.TabularInline):
+    model = PriceTierAdvantage
+    extra = 0
+    fields = ["kind", "priority", "is_active", "config"]
+
+
 @admin.register(PriceTier)
 class PriceTierAdmin(admin.ModelAdmin):
+    inlines = [PriceTierAdvantageInline]
     list_display = [
         "ref",
         "name",
@@ -129,11 +137,11 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, MergeAdminMixin, admin.Model
         "ref",
         "name",
         "customer_type",
-        "price_tier",
+        "primary_price_tier",
         "phone",
         "is_active",
     ]
-    list_filter = ["customer_type", "price_tier", "is_active"]
+    list_filter = ["customer_type", "price_tiers", "is_active"]
     search_fields = ["ref", "first_name", "last_name", "document", "phone", "email"]
     list_editable = ["is_active"]
     actions = ["merge_customers_action"]
@@ -159,7 +167,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, MergeAdminMixin, admin.Model
             },
         ),
         ("Contact", {"fields": ["email", "phone"]}),
-        ("Segmentation", {"fields": ["price_tier", "tags", "notes"]}),
+        ("Segmentation", {"fields": ["price_tiers", "tags", "notes"]}),
         (
             "System",
             {

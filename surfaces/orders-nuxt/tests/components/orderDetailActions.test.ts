@@ -23,6 +23,8 @@ const requeueFiscal = vi.fn();
 const equipmentBack = vi.fn();
 const saveNotes = vi.fn();
 const readError = ref<unknown>(null);
+// A impressora desta estação (a Via Pedido sai por ela; P2-19).
+const estacao = ref<{ can_print: boolean; agent_url?: string; token?: string; reason: string } | null>(null);
 
 const localStates = new Map<string, ReturnType<typeof ref>>();
 beforeEach(() => localStates.clear());
@@ -38,17 +40,24 @@ vi.stubGlobal("useConfirm", () => vi.fn(async () => false));
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
-vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" } }));
+const routeHash = ref("");
+vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" }, get hash() { return routeHash.value; } }));
+const reveal = vi.fn();
+vi.stubGlobal("useNextFocus", () => ({ reveal }));
 vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.exemplo" } }));
 vi.stubGlobal("useOrderEvents", () => ({ realtime: ref("polling") }));
 vi.stubGlobal("useOrdersContext", () => ({ location: ref({ path: "/", query: {} }) }));
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
+vi.stubGlobal("useVolumeCheck", () => ({
+  state: ref({ conference: null, alarm: null }), check: vi.fn(), switchTo: vi.fn(), dismissAlarm: vi.fn(), end: vi.fn(),
+}));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useNowTick", () => ref(Date.now()));
-vi.stubGlobal("useMediaQuery", () => ref(false));
+vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
 vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
+  deviceAgent: computed(() => estacao.value),
   pending: ref(false),
   error: readError,
   refresh: vi.fn(),
@@ -166,6 +175,7 @@ const stubs = {
   // O cabeçalho de uma linha (G14) carrega a ação primária e o ⋯: os slots entram.
   OperatorPageHeader: { template: "<header><slot name='lead' /><slot name='status' /><slot name='actions' /><slot name='phone-actions' /></header>" },
   OperatorLiveStatus: true,
+  OperatorRecordNav: true,
   ReadFreshness: true,
   UiIconButton: defineComponent({
     inheritAttrs: false,
@@ -176,6 +186,7 @@ const stubs = {
   }),
   NuxtLink: { template: "<a><slot /></a>" },
   OrderCourierPanel: true,
+  OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
   UiDialog: { template: "<div><slot /></div>" },
   UiDialogContent: { template: "<div><slot /></div>" },
@@ -189,6 +200,27 @@ function abrir(projection: OperatorOrderProjection) {
   detalhe.value = projection;
   return mount(OrderDetailPage, { global: { stubs, mocks: { $router: { go: vi.fn() } } } });
 }
+
+// F4 do laudo do Gestor: o aviso com prazo ("Responder") chega com #ifood-negotiations;
+// a página leva o operador à resposta, não só ao pedido.
+describe("detalhe do pedido — o aviso leva à negociação iFood", () => {
+  beforeEach(() => {
+    reveal.mockClear();
+    routeHash.value = "";
+  });
+  const negotiation = { id: "d1", can_respond: true } as unknown as OperatorOrderProjection["ifood_negotiations"][number];
+  it("com o destino no endereço e a negociação lida, revela o bloco", async () => {
+    routeHash.value = "#ifood-negotiations";
+    abrir(order({ ifood_negotiations: [negotiation] }));
+    await flushPromises();
+    expect(reveal).toHaveBeenCalledWith("ifood-negotiations");
+  });
+  it("sem o destino no endereço, a página não rola sozinha", async () => {
+    abrir(order({ ifood_negotiations: [negotiation] }));
+    await flushPromises();
+    expect(reveal).not.toHaveBeenCalled();
+  });
+});
 
 describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   it("preserva a quantidade fracionária projetada sem arredondar", () => {
@@ -476,12 +508,13 @@ describe("detalhe do pedido — falar com o cliente", () => {
     );
   });
 
-  it("com cadastro: leva ao CRUD do cliente no Admin", () => {
+  it("com cadastro: mantém o operador no CRUD de Clientes do Gestor", () => {
     const tela = abrir(order({ customer_ref: "CLI-42" }));
 
     expect(tela.find("[data-contact-cadastro]").attributes("href")).toBe(
-      "https://api.exemplo/admin/guestman/customer/?q=CLI-42",
+      "/customers/CLI-42",
     );
+    expect(tela.find("[data-contact-cadastro]").attributes("target")).toBeUndefined();
   });
 
   // Botão que não leva a lugar nenhum é pior do que botão nenhum: o operador
@@ -515,7 +548,7 @@ describe("nota da cozinha — atualização concorrente", () => {
     detalhe.value = order({ kitchen_note: "Outra pessoa", revisions: { kitchen_note: "v2" } });
     await w.vm.$nextTick();
     expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Meu rascunho");
-    expect(w.text()).toContain("No servidor: Outra pessoa");
+    expect(w.text()).toContain("A nota gravada é: Outra pessoa");
     const save = w.findAll("button").find((button) => button.text() === "Salvar nota")!;
     expect(save.attributes("disabled")).toBeDefined();
     await w.findAll("button").find((button) => button.text() === "Manter meu texto")!.trigger("click");
@@ -675,5 +708,26 @@ describe("G14: o detalhe em duas colunas com a ação primária no cabeçalho", 
     await w.get("[data-action='menu']").trigger("click");
     expect(w.get("[data-detail-menu] [data-action='cancel']").text()).toContain("Cancelar pedido");
     w.unmount();
+  });
+
+  // P2-19: o Gestor imprime a Via Pedido do PDV, do ⋯ do detalhe.
+  it("o ⋯ oferece Imprimir Via Pedido; sem impressora, apagado e dizendo por quê", async () => {
+    estacao.value = { can_print: false, reason: "Este dispositivo não tem impressora configurada." };
+    const w = abrir(order());
+    await w.get("[data-action='menu']").trigger("click");
+    const item = w.get("[data-detail-menu] [data-action='order-ticket']");
+    expect(item.text()).toContain("Imprimir Via Pedido");
+    expect(item.text()).toContain("Este dispositivo não tem impressora.");
+    expect(item.attributes("disabled")).toBeDefined();
+    w.unmount();
+
+    estacao.value = { can_print: true, agent_url: "http://127.0.0.1:9123", token: "t", reason: "" };
+    const comImpressora = abrir(order());
+    await comImpressora.get("[data-action='menu']").trigger("click");
+    expect(
+      comImpressora.get("[data-detail-menu] [data-action='order-ticket']").attributes("disabled"),
+    ).toBeUndefined();
+    comImpressora.unmount();
+    estacao.value = null;
   });
 });

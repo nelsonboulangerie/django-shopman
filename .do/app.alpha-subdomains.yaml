@@ -110,15 +110,37 @@ ingress:
         exact: www.nelsonboulangerie.com.br
       path:
         prefix: /
+  # API do Django dividida por path (ver o bloco `services`). A ordem importa e é
+  # do mais específico para o mais geral: backstage antes de `/api/v1/`, e o
+  # resto do host (Admin, `/events/`, webhooks, menuboard, health) no operador.
+  # `preserve_path_prefix: true` é obrigatório: sem ele a DO CORTA o prefixo e o
+  # Django recebe `/storefront/...` no lugar de `/api/v1/storefront/...` (404 da
+  # API inteira no alpha em 10/10, ~20 min). A DO grava o prefixo sem barra final.
   - component:
-      name: web
+      name: web-operator
+      preserve_path_prefix: true
+    match:
+      authority:
+        exact: api.boulangerie.com.br
+      path:
+        prefix: /api/v1/backstage
+  - component:
+      name: web-storefront
+      preserve_path_prefix: true
+    match:
+      authority:
+        exact: api.boulangerie.com.br
+      path:
+        prefix: /api/v1
+  - component:
+      name: web-operator
     match:
       authority:
         exact: api.boulangerie.com.br
       path:
         prefix: /
   - component:
-      name: web
+      name: web-operator
     match:
       authority:
         exact: admin.boulangerie.com.br
@@ -181,7 +203,7 @@ ingress:
       path:
         prefix: /
   - component:
-      name: web
+      name: web-operator
     match:
       authority:
         exact: backup.boulangerie.com.br
@@ -336,9 +358,12 @@ envs:
   type: GENERAL
 # Ordem e conteúdo copiados do vivo. O `on_requested_receipt` entrou pelo painel
 # em 08/09 — sem ele, pedir a nota impressa ou por e-mail não emitia nada.
+# ⚠️ O `intermediated_sale` (venda pelo iFood, ADR-035) está AQUI e AINDA NÃO no vivo:
+#    sem ele o iFood sem CPF não emite nota. Entra no spec vivo na janela do dono,
+#    junto do delta do go-live (docs/runbooks/go-live-delta-do-spec.md).
 - key: SHOPMAN_FISCAL_EMISSION_RESOLVER
   scope: RUN_TIME
-  value: 'shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt'
+  value: 'shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt,shopman.shop.fiscal_resolvers.intermediated_sale'
   type: GENERAL
 - key: STRIPE_CAPTURE_METHOD
   scope: RUN_TIME
@@ -414,10 +439,15 @@ envs:
   type: SECRET
 # Entrega por parceiro (TaOn sobre a Machine, API v1). As seis GENERAL abaixo
 # repetem o padrão do config/settings.py (SHOPMAN_MACHINE): aplicar não muda
-# comportamento. ⚠️ SHOPMAN_COURIER_ADAPTER fica FORA deste arquivo de propósito:
-# com ele e sem as quatro credenciais, o `check --deploy` do job release reprova
-# (SHOPMAN_E011) e o deploy para. O interruptor se liga no painel, depois das
-# credenciais e do ensaio de homologação (docs/runbooks/courier-machine-homologacao.md).
+# comportamento. O interruptor SHOPMAN_COURIER_ADAPTER foi ligado no painel pelo
+# dono (D-020, 02/10) depois das quatro credenciais SECRET abaixo; ele mora aqui
+# desde 10/10 para o arquivo descrever o vivo (sem ele, um `apps update` desligaria
+# a entrega por parceiro). Sem as credenciais, o `check --deploy` do release
+# reprova (SHOPMAN_E011): desligar é tirar a chave daqui E do painel.
+- key: SHOPMAN_COURIER_ADAPTER
+  scope: RUN_TIME
+  value: 'shopman.shop.adapters.courier_machine'
+  type: GENERAL
 - key: MACHINE_API_BASE
   scope: RUN_TIME
   value: 'https://api.taximachine.com.br/api/integracao'
@@ -441,6 +471,10 @@ envs:
 - key: MACHINE_TIMEOUT
   scope: RUN_TIME
   value: '15'
+  type: GENERAL
+- key: MACHINE_COMPANY_NAME
+  scope: RUN_TIME
+  value: 'TaOn'
   type: GENERAL
 - key: MACHINE_API_USER
   scope: RUN_TIME
@@ -671,7 +705,7 @@ envs:
   value: assist
   type: GENERAL
 - key: CONCIERGE_TRIAGE_CLASSIFIER
-  scope: RUN_AND_BUILD_TIME
+  scope: RUN_TIME
   value: jev
   type: GENERAL
 # Intenções no plural (OBS0310-Q/R): sem chave aqui de propósito. O padrão do código
@@ -860,6 +894,19 @@ envs:
   value: 'https://img.nelsonboulangerie.com.br/products'
   type: GENERAL
 services:
+# ── Django em DOIS services, mesma imagem e mesmo código ──
+# `web-operator` atende o que segura o balcão: as APIs `/api/v1/backstage/`, o
+# SSE `/events/` (KDS, PDV, Pedidos), o Admin, os webhooks (Pix, cartão, iFood,
+# ManyChat), o menuboard e o atalho `backup.`. Instância DEDICADA: o mesmo Django
+# rodava 10 a 30 vezes mais devagar que a bancada numa vCPU compartilhada, e é
+# o PDV que espera. `web-storefront` atende a API da loja (`/api/v1/`, fora o
+# backstage) numa vCPU compartilhada: um pico de visita na loja não tira CPU do
+# balcão. A divisão é só pelo ingress; ALLOWED_HOSTS, CSRF, sessão (Valkey) e o
+# fanout do SSE (Redis) são do app, iguais nos dois. Os BFFs seguem chamando
+# `https://api.<domínio>`: o path decide o service.
+# Processo: daphne de 1 processo nos dois. Um processo satura ~1 núcleo (bancada
+# 10/10: 1,02 a 1,10 núcleo sob carga, daphne ou uvicorn de 1 worker); um 2º
+# worker numa vCPU só divide o mesmo núcleo e custa ~110 MB. Workers só com 2 vCPU.
 - alerts:
   - operator: GREATER_THAN
     rule: CPU_UTILIZATION
@@ -873,20 +920,25 @@ services:
     rule: RESTART_COUNT
     value: 2
     window: TEN_MINUTES
-  # Health check = liveness barata (processo atende; zero banco). O `/health/ready/`
-  # (banco, cache, migrations, fila) fica para o Alpha Smoke e o diagnóstico: tirar o
-  # `web` do ar por banco fora não cura o banco. Os Nuxt usam o `/health/live` do BFF,
-  # que não chama o Django (WP-PERFORMANCE P1).
+  # Duas sondas, duas perguntas (13/10/2026, depois dos 503 do Admin):
+  # - `health_check` (READINESS) = `/health/database/`: um `SELECT 1` pelo pool DESTE
+  #   processo. Falhou 5x seguidas, a borda para de mandar tráfego para a instância
+  #   (não reinicia). Só banco: fila parada e migration pendente não tiram o balcão
+  #   do ar; o `/health/ready/` completo segue no Alpha Smoke (#780).
+  # - `liveness_health_check` = `/health/live/`: o processo atende (zero banco).
+  #   Falhou 3x, a plataforma reinicia o contêiner. Banco fora não reinicia nada.
+  # Com 1 instância a readiness só segura o deploy novo que não alcança o banco; ela
+  # pagaria de verdade com 2, não adotado pelo dono em 13/10 (docs/runbooks/web-operator-resiliencia.md).
   health_check:
     failure_threshold: 5
-    http_path: /health/live/
+    http_path: /health/database/
     initial_delay_seconds: 30
     period_seconds: 10
     success_threshold: 1
     timeout_seconds: 5
   http_port: 8000
   instance_count: 1
-  instance_size_slug: apps-s-1vcpu-1gb
+  instance_size_slug: apps-d-1vcpu-2gb
   liveness_health_check:
     failure_threshold: 3
     http_path: /health/live/
@@ -894,7 +946,7 @@ services:
     period_seconds: 30
     success_threshold: 1
     timeout_seconds: 5
-  name: web
+  name: web-operator
   envs:
   - key: VAPID_PRIVATE_KEY
     scope: RUN_TIME
@@ -914,6 +966,108 @@ services:
   - key: SHOPMAN_BFF_PROXY_SECRET
     scope: RUN_TIME
     type: SECRET
+  # Access log da APLICAÇÃO (AccessLogMiddleware, logger `shopman.access`): método,
+  # padrão da rota, status e duração. Sem IP, usuário, query string ou caminho cru,
+  # por isso convive com o `--access-log=/dev/null` do daphne logo abaixo.
+  - key: SHOPMAN_ACCESS_LOG
+    scope: RUN_TIME
+    value: 'true'
+    type: GENERAL
+  # Recibos de privacidade: o valor das chaves HMAC permanece exclusivamente no
+  # cofre do App Platform. Declarar nome/tipo/escopo impede perda em update.
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION
+    scope: RUN_TIME
+    value: '1'
+    type: GENERAL
+  - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS
+    scope: RUN_TIME
+    type: SECRET
+  # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
+  # O access log do daphne grava o request-target CRU, com query string
+  # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
+  # — `?token=<EFI_WEBHOOK_TOKEN>` — porque é assim que a EFI cadastra a URL.
+  # Esse token é a autenticação ÚNICA do webhook de Pix (a allowlist de IP nasce
+  # vazia e o mTLS é advisory), então cada chamada legítima da EFI escrevia o
+  # segredo em texto puro no stream de log da plataforma. Quem lê o log forja
+  # "Pix recebido" e o pedido se paga sozinho.
+  # O `before_send` do Sentry redige isso PARA O SENTRY; não faz nada pelo stdout.
+  # Verbosity fica em 1: o log da APLICAÇÃO segue em INFO, só o access log morre.
+  run_command: daphne -b 0.0.0.0 -p 8000 --access-log=/dev/null config.asgi:application
+  image:
+    registry_type: DOCR
+    repository: shopman
+    tag: web
+    deploy_on_push:
+      enabled: false
+- alerts:
+  - operator: GREATER_THAN
+    rule: CPU_UTILIZATION
+    value: 80
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: MEM_UTILIZATION
+    value: 85
+    window: FIVE_MINUTES
+  - operator: GREATER_THAN
+    rule: RESTART_COUNT
+    value: 2
+    window: TEN_MINUTES
+  # Duas sondas, duas perguntas (13/10/2026, depois dos 503 do Admin):
+  # - `health_check` (READINESS) = `/health/database/`: um `SELECT 1` pelo pool DESTE
+  #   processo. Falhou 5x seguidas, a borda para de mandar tráfego para a instância
+  #   (não reinicia). Só banco: fila parada e migration pendente não tiram o balcão
+  #   do ar; o `/health/ready/` completo segue no Alpha Smoke (#780).
+  # - `liveness_health_check` = `/health/live/`: o processo atende (zero banco).
+  #   Falhou 3x, a plataforma reinicia o contêiner. Banco fora não reinicia nada.
+  # Com 1 instância a readiness só segura o deploy novo que não alcança o banco; ela
+  # pagaria de verdade com 2, não adotado pelo dono em 13/10 (docs/runbooks/web-operator-resiliencia.md).
+  health_check:
+    failure_threshold: 5
+    http_path: /health/database/
+    initial_delay_seconds: 30
+    period_seconds: 10
+    success_threshold: 1
+    timeout_seconds: 5
+  http_port: 8000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-1gb
+  liveness_health_check:
+    failure_threshold: 3
+    http_path: /health/live/
+    initial_delay_seconds: 30
+    period_seconds: 30
+    success_threshold: 1
+    timeout_seconds: 5
+  name: web-storefront
+  envs:
+  - key: VAPID_PRIVATE_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_PUBLIC_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: VAPID_CLAIMS_EMAIL
+    scope: RUN_TIME
+    type: SECRET
+  # Segredo compartilhado com os BFFs Nuxt (`storefront-nuxt` e os oito apps de
+  # operador: NUXT_DJANGO_PROXY_SECRET, MESMO valor). O BFF chama o `api.` pela rede
+  # pública e a borda acrescenta o IP de SAÍDA do Nitro ao X-Forwarded-For: com
+  # depth=2 o Django gravava 147.182.186.185 como IP de consentimento e de
+  # maioridade (medido 17/09); nos apps de operador, o mesmo IP ia para a trilha de
+  # acesso (SignInEvent). Com o segredo, lê um salto a mais. Vazio = desligado.
+  - key: SHOPMAN_BFF_PROXY_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  # Access log da APLICAÇÃO (AccessLogMiddleware, logger `shopman.access`): método,
+  # padrão da rota, status e duração. Sem IP, usuário, query string ou caminho cru,
+  # por isso convive com o `--access-log=/dev/null` do daphne logo abaixo.
+  - key: SHOPMAN_ACCESS_LOG
+    scope: RUN_TIME
+    value: 'true'
+    type: GENERAL
   # Recibos de privacidade: o valor das chaves HMAC permanece exclusivamente no
   # cofre do App Platform. Declarar nome/tipo/escopo impede perda em update.
   - key: SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY

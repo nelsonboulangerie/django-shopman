@@ -13,6 +13,7 @@ e `StockAlertSubscription` são dado de superfície de cliente, não regra de pr
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -38,6 +39,155 @@ def get_active_promotions(now, *, channel_ref: str = "") -> list[Any]:
     if not channel_ref:
         return promotions
     return [p for p in promotions if p.applies_to_channel(channel_ref)]
+
+
+#: O prefixo do ``Promotion.ref`` do desconto de um grupo de clientes (``PriceTier``).
+#: Um grupo tem UM desconto automático; o ref deriva do grupo para o Admin achar a
+#: promoção que edita sem guardar ponteiro em lugar nenhum.
+GROUP_DISCOUNT_REF_PREFIX = "grupo-"
+
+#: Tipos de vantagem resolvidos pelo motor. `discount` e `price_list` têm dono canônico
+#: (a `Promotion` `grupo-<ref>` e `PriceTier.listing_ref`); os demais vivem em
+#: `PriceTierAdvantage`.
+ADVANTAGE_KINDS = (
+    "discount",
+    "price_list",
+    "free_shipping",
+    "exclusive_collections",
+    "exclusive_notifications",
+)
+
+
+def group_discount_ref(price_tier_ref: str) -> str:
+    return f"{GROUP_DISCOUNT_REF_PREFIX}{price_tier_ref}"
+
+
+@dataclass(frozen=True)
+class GroupAdvantage:
+    """A melhor vantagem de um TIPO entre os grupos do cliente. Uma só, sem acumular."""
+
+    kind: str
+    tier_ref: str
+    label: str
+    value: Any
+
+
+def _tier_refs(price_tier_refs) -> list[str]:
+    """Normaliza um ref, uma lista ou um queryset na lista de grupos do cliente."""
+    if not price_tier_refs:
+        return []
+    raw = [price_tier_refs] if isinstance(price_tier_refs, str) else list(price_tier_refs)
+    refs: list[str] = []
+    for item in raw:
+        ref = str(item or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def best_group_advantage(
+    price_tier_refs, kind: str, *, channel_ref: str = "", now=None
+) -> GroupAdvantage | None:
+    """A melhor vantagem do TIPO entre os grupos do cliente: UMA só, sem acumular.
+
+    ``discount`` = a ``Promotion`` ``grupo-<ref>`` de maior percentual (o valor fixo só
+    quando não há percentual); ``price_list`` = a lista de preço do grupo de maior
+    prioridade que tem uma; os demais tipos = a ``PriceTierAdvantage`` ativa de maior
+    prioridade. Cliente em Equipe (−30%) e Aliança (−15%) fica com UMA: os −30%.
+    """
+    refs = _tier_refs(price_tier_refs)
+    if not refs:
+        return None
+    if kind == "discount":
+        return _best_group_discount(refs, channel_ref=channel_ref, now=now)
+    if kind == "price_list":
+        return _best_group_listing(refs)
+    return _best_typed_advantage(refs, kind)
+
+
+def _best_group_discount(refs: list[str], *, channel_ref: str, now) -> GroupAdvantage | None:
+    from django.utils import timezone
+
+    from shopman.shop.models import Promotion
+
+    refset = set(refs)
+    candidates = [
+        promo
+        for promo in get_active_promotions(now or timezone.now(), channel_ref=channel_ref)
+        if not promo.birthday_only
+        and promo.type in (Promotion.PERCENT, Promotion.FIXED)
+        and int(promo.value or 0) > 0
+        and refset.intersection(promo.customer_segments or [])
+    ]
+    if not candidates:
+        return None
+    promo = max(candidates, key=lambda p: (p.type == Promotion.PERCENT, int(p.value or 0)))
+    tier_ref = next((r for r in refs if r in (promo.customer_segments or [])), "")
+    return GroupAdvantage(kind="discount", tier_ref=tier_ref, label=promo.name or "", value=promo)
+
+
+def _best_group_listing(refs: list[str]) -> GroupAdvantage | None:
+    from shopman.guestman.models import PriceTier
+
+    tier = (
+        PriceTier.objects.filter(ref__in=refs)
+        .exclude(listing_ref="")
+        .order_by("-priority", "name")
+        .first()
+    )
+    if tier is None:
+        return None
+    return GroupAdvantage(
+        kind="price_list", tier_ref=tier.ref, label=tier.name or "", value=tier.listing_ref
+    )
+
+
+def _best_typed_advantage(refs: list[str], kind: str) -> GroupAdvantage | None:
+    from shopman.guestman.models import PriceTierAdvantage
+
+    advantage = (
+        PriceTierAdvantage.objects.filter(tier__ref__in=refs, kind=kind, is_active=True)
+        .select_related("tier")
+        .order_by("-priority", "-tier__priority", "id")
+        .first()
+    )
+    if advantage is None:
+        return None
+    return GroupAdvantage(
+        kind=kind,
+        tier_ref=advantage.tier.ref,
+        label=advantage.tier.name or "",
+        value=advantage,
+    )
+
+
+def customer_group_promotion(price_tier_refs, *, channel_ref: str, now=None) -> Any | None:
+    """A melhor promoção de grupo entre os grupos do cliente, ou ``None``.
+
+    É a mesma promoção que o ``DiscountModifier`` aplica sozinho no reprice (casa
+    ``customer_segments`` com QUALQUER grupo do cliente): aqui ela só é NOMEADA, para o
+    balcão saber que o desconto vai entrar. Aniversariante fica de fora (tem aviso
+    próprio), e promoção de SKU/coleção também vale: o rótulo diz o grupo, a linha
+    diz em quais itens o desconto entrou.
+
+    Com mais de uma, ganha a de maior percentual; o valor fixo só quando não há
+    percentual. É o rótulo do balcão, não a conta: a conta é do motor, item a item.
+    """
+    best = best_group_advantage(price_tier_refs, "discount", channel_ref=channel_ref, now=now)
+    return best.value if best is not None else None
+
+
+def group_discount_label(promo: Any) -> str:
+    """"Aliança Francesa · 10%" ou "Aliança Francesa · R$ 2,00"."""
+    from shopman.utils.monetary import format_money
+
+    from shopman.shop.models import Promotion
+
+    if promo is None:
+        return ""
+    value = int(promo.value or 0)
+    amount = f"{min(value, 100)}%" if promo.type == Promotion.PERCENT else f"R$ {format_money(value)}"
+    return f"{promo.name} · {amount}"
 
 
 def get_coupon_promotion(code: str, now, *, channel_ref: str = "") -> Any | None:

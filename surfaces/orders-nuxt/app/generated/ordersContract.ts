@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -331,7 +331,14 @@ export interface AwaitingWorkOrderProjection {
   progress_pct: number;
 }
 
-/** Motivos de recusa/cancelamento sob um cabeçalho (``label`` vazio = sem cabeçalho). */
+/** Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``). */
+export interface CancelReasonProjection {
+  key: string;
+  label: string;
+  customer_text: string;
+}
+
+/** Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho). */
 export interface CancellationPresetGroupProjection {
   label: string;
   presets: string[];
@@ -383,6 +390,7 @@ export interface UndoProjection {
   action_ref: string;
   held_effect: string;
   already_out: string;
+  undo_since_iso: string;
 }
 
 /** Uma estação da Cozinha neste pedido, vista do Gestor (SUITE-UX §15). */
@@ -397,6 +405,7 @@ export interface KitchenStationProjection {
   cancelled_items: number;
   can_mark_ready: boolean;
   recall_ticket_pk: number | null;
+  items: string[];
 }
 
 /** Em que pé a Cozinha está com o pedido: o progresso por estação no cartão. */
@@ -404,6 +413,14 @@ export interface KitchenProgressProjection {
   order_pk: number;
   stations: KitchenStationProjection[];
   missing_label: string;
+}
+
+/** O lembrete de um pedido. A tela mostra quando o relógio passa de ``due_at_iso``. */
+export interface CourierReminderProjection {
+  due_at_iso: string;
+  since_iso: string;
+  since_basis: string;
+  short_ref: string;
 }
 
 /** A single order card in the operator queue. */
@@ -454,6 +471,7 @@ export interface OrderCardProjection {
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  card_authorization_expires_iso: string;
   channel_display_id: string;
   courier_status: string;
   courier_status_label: string;
@@ -482,6 +500,8 @@ export interface OrderCardProjection {
   ifood_schedule_label: string;
   ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
+  ifood_accept_failed: boolean;
+  ifood_accept_notice: string;
   test_order_label: string;
   test_order_notice: string;
   danfe_printable: boolean;
@@ -491,6 +511,9 @@ export interface OrderCardProjection {
   undo: UndoProjection | null;
   kitchen: KitchenProgressProjection | null;
   volumes: number;
+  volumes_checked: number;
+  volumes_to_check: number;
+  volume_check_label: string;
   ready_at_iso: string;
   dispatched_at_iso: string;
   attention: string;
@@ -498,6 +521,7 @@ export interface OrderCardProjection {
   goal_minutes: number;
   goal_label: string;
   ready_eta_iso: string;
+  courier_reminder: CourierReminderProjection | null;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -524,6 +548,9 @@ export interface PreorderCardProjection {
   items_summary: string;
   items_count: number;
   ticket_printed: boolean;
+  courier_label: string;
+  courier_tone: string;
+  courier_call: boolean;
 }
 
 /** Entregar no balcão: "Entregar" (pago) ou "Receber e entregar" (com saldo). */
@@ -535,6 +562,7 @@ export interface PreorderHandOverProjection {
   suggested_method: string;
   block_reason: string;
   digital_charge_notice: string;
+  kitchen_notice: string;
 }
 
 /** Cancelar pelo PDV: a mesma régua, política e permissão do Gestor. */
@@ -626,6 +654,7 @@ export interface OperatorOrderProjection {
   gift_message: string;
   gift_hide_values: boolean;
   cancellation_presets: CancellationPresetGroupProjection[];
+  cancel_reasons: CancelReasonProjection[];
   kitchen_note_tags: string[];
   customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;
@@ -652,6 +681,8 @@ export interface OperatorOrderProjection {
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
   ifood_negotiations: IFoodNegotiationProjection[];
+  ifood_accept_failed: boolean;
+  ifood_accept_notice: string;
   test_order_label: string;
   test_order_notice: string;
   context: string;
@@ -661,7 +692,9 @@ export interface OperatorOrderProjection {
   opened_line: string;
   confirmation_deadline_iso: string;
   confirmation_action: string;
+  card_authorization_expires_iso: string;
   store_location: Record<string, number> | null;
+  transferred_from_label: string;
 }
 
 /** Top-level read model for the operator order queue. */
@@ -742,6 +775,25 @@ export interface CustomerFilterOption {
   active: boolean;
 }
 
+/** CustomerFormOptionProjection(value: 'str', label: 'str') */
+export interface CustomerFormOptionProjection {
+  value: string;
+  label: string;
+}
+
+/** CustomerFormOptionsProjection(customer_types: 'tuple[CustomerFormOptionProjection, ...]', price_tiers: 'tuple[CustomerFormOptionProjection, ...]') */
+export interface CustomerFormOptionsProjection {
+  customer_types: CustomerFormOptionProjection[];
+  price_tiers: CustomerFormOptionProjection[];
+}
+
+/** Um grupo comercial do cliente. O cliente tem MUITOS, e todos precificam. */
+export interface CustomerPriceTierProjection {
+  ref: string;
+  name: string;
+  is_primary: boolean;
+}
+
 /** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str') */
 export interface CustomerRowProjection {
   ref: string;
@@ -756,7 +808,7 @@ export interface CustomerRowProjection {
   duplicate_hint: string;
 }
 
-/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str', sort: 'str', form: 'CustomerFormOptionsProjection') */
 export interface CustomerListProjection {
   query: string;
   filter: string;
@@ -767,6 +819,8 @@ export interface CustomerListProjection {
   total: number;
   has_next: boolean;
   total_label: string;
+  sort: string;
+  form: CustomerFormOptionsProjection;
 }
 
 /** CustomerIdentifierProjection(type_label: 'str', value: 'str') */
@@ -795,7 +849,37 @@ export interface CustomerCandidateProjection {
   reason_label: string;
 }
 
-/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', addresses: 'tuple[str, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]') */
+/** CustomerAddressProjection(id: 'int', revision: 'str', label: 'str', label_code: 'str', formatted_address: 'str', route: 'str', street_number: 'str', complement: 'str', neighborhood: 'str', city: 'str', state_code: 'str', postal_code: 'str', delivery_instructions: 'str', is_default: 'bool', is_verified: 'bool') */
+export interface CustomerAddressProjection {
+  id: number;
+  revision: string;
+  label: string;
+  label_code: string;
+  formatted_address: string;
+  route: string;
+  street_number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state_code: string;
+  postal_code: string;
+  delivery_instructions: string;
+  is_default: boolean;
+  is_verified: boolean;
+}
+
+/** CustomerConsentProjection(channel_label: 'str', purpose_label: 'str', status_label: 'str', allowed: 'bool', proof_label: 'str', source: 'str', updated_display: 'str') */
+export interface CustomerConsentProjection {
+  channel_label: string;
+  purpose_label: string;
+  status_label: string;
+  allowed: boolean;
+  proof_label: string;
+  source: string;
+  updated_display: string;
+}
+
+/** CustomerDetailProjection(ref: 'str', name: 'str', is_active: 'bool', merged_into_ref: 'str', phone_display: 'str', email: 'str', document_display: 'str', birthday_display: 'str', source_label: 'str', is_ifood: 'bool', created_display: 'str', notes: 'str', orders_label: 'str', total_spent_display: 'str', last_order_display: 'str', identifiers: 'tuple[CustomerIdentifierProjection, ...]', consents: 'tuple[CustomerConsentProjection, ...]', addresses: 'tuple[CustomerAddressProjection, ...]', recent_orders: 'tuple[CustomerOrderRowProjection, ...]', candidates: 'tuple[CustomerCandidateProjection, ...]', actions: 'tuple[Action, ...]', revision: 'str', first_name: 'str', last_name: 'str', customer_type: 'str', document: 'str', birthday: 'str', phone: 'str', price_tiers: 'tuple[CustomerPriceTierProjection, ...]', tags: 'tuple[str, ...]', house_account: 'bool', house_account_limit: 'str', fiscal_cpf_na_nota: 'bool', fiscal_email_receipt: 'bool', form: 'CustomerFormOptionsProjection') */
 export interface CustomerDetailProjection {
   ref: string;
   name: string;
@@ -813,10 +897,84 @@ export interface CustomerDetailProjection {
   total_spent_display: string;
   last_order_display: string;
   identifiers: CustomerIdentifierProjection[];
-  addresses: string[];
+  consents: CustomerConsentProjection[];
+  addresses: CustomerAddressProjection[];
   recent_orders: CustomerOrderRowProjection[];
   candidates: CustomerCandidateProjection[];
   actions: Action[];
+  revision: string;
+  first_name: string;
+  last_name: string;
+  customer_type: string;
+  document: string;
+  birthday: string;
+  phone: string;
+  price_tiers: CustomerPriceTierProjection[];
+  tags: string[];
+  house_account: boolean;
+  house_account_limit: string;
+  fiscal_cpf_na_nota: boolean;
+  fiscal_email_receipt: boolean;
+  form: CustomerFormOptionsProjection;
+}
+
+/** CustomerGroupOptionProjection(value: 'str', label: 'str') */
+export interface CustomerGroupOptionProjection {
+  value: string;
+  label: string;
+}
+
+/** Uma vantagem TIPADA do grupo, como o gestor lê e edita. */
+export interface CustomerGroupAdvantageProjection {
+  kind: string;
+  kind_label: string;
+  is_active: boolean;
+  priority: number;
+  summary_label: string;
+  min_order_q: number;
+  min_order_display: string;
+  collection_refs: string[];
+  campaign_refs: string[];
+}
+
+/** CustomerGroupFormOptionsProjection(channels: 'tuple[CustomerGroupOptionProjection, ...]', listings: 'tuple[CustomerGroupOptionProjection, ...]', collections: 'tuple[CustomerGroupOptionProjection, ...]', discount_types: 'tuple[CustomerGroupOptionProjection, ...]') */
+export interface CustomerGroupFormOptionsProjection {
+  channels: CustomerGroupOptionProjection[];
+  listings: CustomerGroupOptionProjection[];
+  collections: CustomerGroupOptionProjection[];
+  discount_types: CustomerGroupOptionProjection[];
+}
+
+/** CustomerGroupProjection(ref: 'str', name: 'str', description: 'str', listing_ref: 'str', listing_name: 'str', priority: 'int', is_default: 'bool', customer_count: 'int', customer_count_label: 'str', discount_type: 'str', discount_value: 'str', discount_label: 'str', channel_refs: 'tuple[str, ...]', channels_label: 'str', pickup_only: 'bool', discount_kind: 'str', rounding: 'bool', savings_message: 'str', advantages: 'tuple[CustomerGroupAdvantageProjection, ...]', revision: 'str') */
+export interface CustomerGroupProjection {
+  ref: string;
+  name: string;
+  description: string;
+  listing_ref: string;
+  listing_name: string;
+  priority: number;
+  is_default: boolean;
+  customer_count: number;
+  customer_count_label: string;
+  discount_type: string;
+  discount_value: string;
+  discount_label: string;
+  channel_refs: string[];
+  channels_label: string;
+  pickup_only: boolean;
+  discount_kind: string;
+  rounding: boolean;
+  savings_message: string;
+  advantages: CustomerGroupAdvantageProjection[];
+  revision: string;
+}
+
+/** CustomerGroupListProjection(items: 'tuple[CustomerGroupProjection, ...]', total: 'int', total_label: 'str', form: 'CustomerGroupFormOptionsProjection') */
+export interface CustomerGroupListProjection {
+  items: CustomerGroupProjection[];
+  total: number;
+  total_label: string;
+  form: CustomerGroupFormOptionsProjection;
 }
 
 /** MergeSideProjection(ref: 'str', name: 'str', phone_display: 'str', document_display: 'str', source_label: 'str', orders_label: 'str') */

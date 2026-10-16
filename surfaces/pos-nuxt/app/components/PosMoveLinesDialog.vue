@@ -1,35 +1,46 @@
 <script setup lang="ts">
-import type { POSCartItem, POSTabProjection } from "~/types/pos";
+import type { POSCartItem, POSSeatingSpotOption, POSTabProjection } from "~/types/pos";
 import {
-  availableMoveModes,
+  allowsExistingTab,
+  allowsNewTab,
   buildMovePayload,
-  canSubmitMove,
-  defaultMoveTarget,
+  filterTargets,
+  freeSpotOptions,
   freezesPriceOnMove,
-  type MoveMode,
+  linesToMove,
   type MovePayload,
   moveLineId,
-  moveLineView,
-  modeNeedsSelection,
+  movesEverything,
   moveTargetOptions,
-  selectedLineIds,
+  movingSummary,
+  resolveDestination,
+  tabLabel,
+  transferCta,
 } from "~/presentation/moveLines";
 
+// TRANSFERIR, A AÇÃO ÚNICA (dono, N=1, 13/10/2026): um campo só, "Para qual comanda?",
+// que recebe o leitor, a digitação ou a escolha na lista das comandas em uso. Ao abrir,
+// a ação padrão já está pronta: a comanda nova pré-nomeada ("13-2"), e o Enter confirma.
 const props = defineProps<{
   open: boolean;
   tabDisplay: string;
+  /** A sessão da comanda de origem (fica fora da lista de destinos). */
+  sourceSessionKey?: string;
+  /** A mesa da comanda de origem ("" sem mesa): não é destino nem mesa livre. */
+  sourceSpotRef?: string;
+  /** As mesas do Salão de hoje (dono, M=1): a ocupada leva à comanda dela; a livre abre a
+   *  comanda nova já nela. */
+  seatingSpots?: POSSeatingSpotOption[];
   items: POSCartItem[];
-  suggestedSplitRef: string;
+  /** O nome que a comanda nova recebe se ninguém mudar ("13-2", ou o próximo livre). */
+  suggestedNewTabRef: string;
   otherTabs: POSTabProjection[];
-  /** `tab_manipulation` capability — drives the offered modes + price note. */
+  /** `tab_manipulation`: o que o canal deixa (comanda nova, comanda em uso) e o preço. */
   capability: unknown;
   busy: boolean;
   /** Fase de preparo (persist + reload da comanda): o diálogo já abriu. */
   preparing?: boolean;
-  /**
-   * Linhas que já vêm marcadas: o Transferir do modo seleção da comanda (v4), onde o
-   * operador escolheu antes o que sai. Pelo F10 a lista vem vazia, como sempre.
-   */
+  /** As linhas marcadas na comanda. Vazio: vai a comanda inteira. */
   preselected?: string[];
 }>();
 
@@ -38,141 +49,177 @@ const emit = defineEmits<{
   submit: [MovePayload];
 }>();
 
-const modes = computed(() => availableMoveModes(props.capability));
-const showPriceNote = computed(() => freezesPriceOnMove(props.capability));
-const targetOptions = computed(() => moveTargetOptions(props.otherTabs));
-const lineViews = computed(() => props.items.map(moveLineView));
+const destinationInput = ref("");
+const field = ref<{ inputRef?: HTMLInputElement; $el?: HTMLElement } | null>(null);
 
-const mode = ref<MoveMode>("split");
-const selected = ref<Set<string>>(new Set());
-const splitRef = ref("");
-const targetSessionKey = ref("");
+const sourceTitle = computed(() => tabLabel(props.tabDisplay));
+const lines = computed(() => linesToMove(props.items, props.preselected));
+const lineIds = computed(() => lines.value.map(moveLineId));
+const all = computed(() => movesEverything(props.items, lineIds.value));
+const summary = computed(() => movingSummary(lines.value));
+const spots = computed(() => props.seatingSpots || []);
+const options = computed(() => moveTargetOptions(props.otherTabs, props.sourceSessionKey, spots.value));
+const freeSpots = computed(() => freeSpotOptions(spots.value, props.otherTabs, props.sourceSpotRef));
+const sourceSpotKeys = computed(() => {
+  const spot = spots.value.find((entry) => entry.ref === props.sourceSpotRef);
+  return spot ? [spot.label, spot.short_label].filter(Boolean) : [];
+});
+const shown = computed(() => filterTargets(options.value, destinationInput.value, props.suggestedNewTabRef));
+const shownSpots = computed(() => filterTargets(freeSpots.value, destinationInput.value, props.suggestedNewTabRef));
+const destination = computed(() =>
+  resolveDestination({
+    input: destinationInput.value,
+    options: options.value,
+    spots: freeSpots.value,
+    sourceSpotKeys: sourceSpotKeys.value,
+    sourceDisplay: props.tabDisplay,
+    suggested: props.suggestedNewTabRef,
+    allowsNew: allowsNewTab(props.capability),
+    allowsExisting: allowsExistingTab(props.capability),
+  }),
+);
+const cta = computed(() => transferCta({ units: summary.value.units, all: all.value, destination: destination.value, sourceTitle: sourceTitle.value }));
+const canSubmit = computed(() => !props.busy && !props.preparing && destination.value.kind !== "invalid" && lineIds.value.length > 0);
+// A origem, sempre à vista, e a garantia do preço.
+const description = computed(() => {
+  const origin = props.tabDisplay ? `Da comanda ${sourceTitle.value}.` : "";
+  const price = freezesPriceOnMove(props.capability) ? "O preço de cada item fica como foi cobrado." : "";
+  return [origin, price].filter(Boolean).join(" ") || undefined;
+});
 
 watch(() => props.open, (isOpen) => {
   if (!isOpen) return;
-  mode.value = modes.value[0]?.ref ?? "split";
-  // Seleção começa VAZIA: dividir a conta é escolher O QUE SAI — nascer com
-  // tudo marcado invertia o gesto (desmarcar o que fica) e um Enter apressado
-  // movia a comanda inteira.
-  // A exceção é o Transferir do modo seleção: lá a escolha já foi feita, linha a linha.
-  const known = new Set(props.items.map(moveLineId));
-  selected.value = new Set((props.preselected ?? []).filter((id) => known.has(id)));
-  splitRef.value = props.suggestedSplitRef;
-  targetSessionKey.value = defaultMoveTarget(props.otherTabs);
+  destinationInput.value = props.suggestedNewTabRef;
+  // O campo nasce com o nome sugerido SELECIONADO: o leitor ou a digitação substituem;
+  // o Enter aceita.
+  void nextTick(() => {
+    const input = field.value?.inputRef || field.value?.$el?.querySelector?.("input");
+    input?.focus();
+    input?.select();
+  });
 });
 
-function toggle(id: string) {
-  const next = new Set(selected.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  selected.value = next;
+function pick(title: string) {
+  destinationInput.value = title;
 }
 
-const selectedIds = computed(() => selectedLineIds(props.items, selected.value));
-const needsSelection = computed(() => modeNeedsSelection(mode.value));
-const canSubmit = computed(() => canSubmitMove({
-  mode: mode.value,
-  selectedIds: selectedIds.value,
-  splitRef: splitRef.value,
-  targetSessionKey: targetSessionKey.value,
-  itemCount: props.items.length,
-  busy: props.busy,
-}));
-
-// O rodapé diz o verbo do modo selecionado — o dicionário da comanda é
-// dividir · transferir · juntar, e nada além disso.
-const submitLabel = computed(() => modes.value.find((option) => option.ref === mode.value)?.label || "Mover itens");
-
 function submit() {
-  const payload = buildMovePayload({
-    mode: mode.value,
-    items: props.items,
-    selectedIds: selectedIds.value,
-    splitRef: splitRef.value,
-    targetSessionKey: targetSessionKey.value,
-  });
+  if (!canSubmit.value) return;
+  const payload = buildMovePayload({ items: props.items, lineIds: lineIds.value, destination: destination.value });
   if (payload) emit("submit", payload);
 }
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <UiDialogContent class="sm:max-w-md">
-      <UiDialogHeader>
-        <!-- ⚠️ O título NÃO pode ser um dos três modos: "Transferir" era ao
-             mesmo tempo o nome da caixa e o nome de um dos botões dentro
-             dela, e quem escolhia "Dividir" lia "Transferir" no topo. A
-             comanda é o assunto; os verbos são dela (dividir, transferir,
-             juntar) e moram nos botões. -->
-        <UiDialogTitle>Comanda #{{ tabDisplay || "atual" }}</UiDialogTitle>
-        <UiDialogDescription v-if="showPriceNote">
-          O preço de cada item é mantido como foi cobrado nesta comanda.
-        </UiDialogDescription>
-      </UiDialogHeader>
+  <NuxtModal
+    :open="open"
+    title="Transferir"
+    :description="description"
+    :ui="{ content: 'sm:max-w-lg' }"
+    data-pos-move-dialog
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <template #body>
+      <div class="grid gap-3">
+        <!-- O que vai, numa frase: as marcadas, ou a comanda inteira. -->
+        <p class="op-body [overflow-wrap:anywhere]" data-pos-move-summary>
+          <span class="font-semibold">{{ all ? "Vai tudo" : "Vão" }}</span>
+          {{ summary.text }}
+        </p>
 
-      <div class="grid gap-2" :style="{ gridTemplateColumns: `repeat(${modes.length}, minmax(0, 1fr))` }">
-        <UiButton
-          v-for="option in modes"
-          :key="option.ref"
-          variant="outline"
-          size="sm"
-          :class="mode === option.ref ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground' : ''"
-          @click="mode = option.ref"
-        >
-          {{ option.label }}
-        </UiButton>
-      </div>
+        <p v-if="preparing" class="flex items-center gap-2 op-micro text-muted-foreground">
+          <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
+          Preparando a comanda…
+        </p>
 
-      <p v-if="mode === 'merge'" class="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-        Junta todos os itens desta comanda na comanda escolhida e libera esta.
-      </p>
-
-      <!-- Preparo em curso: o diálogo abre na hora e a comanda é persistida por
-           baixo — sem isto o botão do rodapé parecia morto. -->
-      <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-        <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
-        Preparando a comanda…
-      </p>
-      <div v-else-if="needsSelection" class="grid max-h-56 gap-1 overflow-y-auto">
-        <div
-          v-for="line in lineViews"
-          :key="line.id"
-          class="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5"
-          :class="selected.has(line.id) ? 'border-primary bg-primary/5' : ''"
-        >
-          <UiCheckbox
-            :model-value="selected.has(line.id)"
-            :aria-label="`Selecionar ${line.label}`"
-            @update:model-value="toggle(line.id)"
+        <div class="grid gap-1.5">
+          <label for="pos-move-destination" class="op-label font-medium">Para qual comanda?</label>
+          <NuxtInput
+            id="pos-move-destination"
+            ref="field"
+            v-model="destinationInput"
+            class="w-full"
+            autocomplete="off"
+            :placeholder="`Bipe, digite o número ou um nome (ex.: ${suggestedNewTabRef || '13-2'})`"
+            :color="destination.kind === 'invalid' ? 'error' : undefined"
+            :aria-invalid="destination.kind === 'invalid' || undefined"
+            aria-describedby="pos-move-destination-state"
+            data-pos-move-destination
+            @keydown.enter.prevent="submit"
           />
-          <span class="min-w-0 flex-1 truncate text-sm">{{ line.label }}</span>
-          <span class="text-xs tabular-nums text-muted-foreground">{{ line.amountDisplay }}</span>
+          <!-- O estado do campo em palavra: comanda nova, comanda em uso, ou o motivo. -->
+          <p
+            id="pos-move-destination-state"
+            class="flex items-center gap-1.5 op-micro"
+            :class="destination.kind === 'invalid' ? 'text-error' : 'text-muted-foreground'"
+            data-pos-move-destination-state
+            :data-destination-kind="destination.kind"
+          >
+            <template v-if="destination.kind === 'new' && destination.spotTitle">
+              <Icon name="lucide:armchair" class="size-3.5 shrink-0" aria-hidden="true" />Comanda nova {{ destination.title }}, já na {{ destination.spotTitle }}.
+            </template>
+            <template v-else-if="destination.kind === 'new'">
+              <Icon name="lucide:plus" class="size-3.5 shrink-0" aria-hidden="true" />Comanda nova {{ destination.title }}. Para outra, bipe ou escolha abaixo.
+            </template>
+            <template v-else-if="destination.kind === 'existing'">
+              <Icon name="lucide:receipt-text" class="size-3.5 shrink-0" aria-hidden="true" />Comanda em uso {{ destination.title }}.
+            </template>
+            <template v-else>{{ destination.reason }}</template>
+          </p>
+        </div>
+
+        <!-- As comandas EM USO, para escolher com um toque (a que casa com o campo). -->
+        <div v-if="shown.length" class="grid gap-1.5">
+          <span class="op-micro text-muted-foreground">Comandas em uso</span>
+          <div class="flex flex-wrap gap-2" data-pos-move-targets>
+            <NuxtButton
+              v-for="option in shown"
+              :key="option.sessionKey"
+              color="neutral"
+              :variant="destination.kind === 'existing' && destination.sessionKey === option.sessionKey ? 'solid' : 'outline'"
+              :label="option.label"
+              :aria-pressed="destination.kind === 'existing' && destination.sessionKey === option.sessionKey"
+              :data-pos-move-target="option.sessionKey"
+              @click="pick(option.title)"
+            />
+          </div>
+        </div>
+
+        <!-- As MESAS LIVRES do Salão (dono, M=1): a comanda nova nasce na escolhida. -->
+        <div v-if="shownSpots.length" class="grid gap-1.5">
+          <span class="op-micro text-muted-foreground">Mesas livres</span>
+          <div class="flex flex-wrap gap-2" data-pos-move-spots>
+            <NuxtButton
+              v-for="spot in shownSpots"
+              :key="spot.spotRef"
+              color="neutral"
+              :variant="destination.kind === 'new' && destination.spotRef === spot.spotRef ? 'solid' : 'outline'"
+              icon="i-lucide-armchair"
+              :label="spot.title"
+              :aria-pressed="destination.kind === 'new' && destination.spotRef === spot.spotRef"
+              :data-pos-move-spot="spot.spotRef"
+              @click="pick(spot.title)"
+            />
+          </div>
         </div>
       </div>
-
-      <label v-if="mode === 'split'" class="grid gap-1 text-sm">
-        <span class="font-medium text-muted-foreground">Nova comanda</span>
-        <UiInput v-model="splitRef" placeholder="Ex: 1007/2" />
-      </label>
-
-      <label v-else class="grid gap-1 text-sm">
-        <span class="font-medium text-muted-foreground">Comanda de destino</span>
-        <UiNativeSelect
-          v-model="targetSessionKey"
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <NuxtButton color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="$emit('update:open', false)" />
+        <!-- O botão diz o RESULTADO, em palavras (dono, N=1). -->
+        <!-- Frase inteira, que quebra linha no celular em vez de cortar. -->
+        <NuxtButton
+          color="primary"
+          :disabled="!canSubmit"
+          :loading="busy"
+          class="justify-center"
+          data-pos-move-submit
+          @click="submit"
         >
-          <option v-if="!targetOptions.length" value="" disabled>Nenhuma outra comanda aberta</option>
-          <option v-for="option in targetOptions" :key="option.sessionKey" :value="option.sessionKey">
-            {{ option.label }}
-          </option>
-        </UiNativeSelect>
-      </label>
-
-      <UiDialogFooter>
-        <UiButton variant="outline" :disabled="busy" @click="$emit('update:open', false)">Cancelar</UiButton>
-        <!-- O botão repete o modo escolhido. Dizia "Mover" — um quarto verbo
-             para um gesto que já tinha três nomes na mesma caixa. -->
-        <UiButton :disabled="!canSubmit" :loading="busy" @click="submit">{{ submitLabel }}</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+          <span class="whitespace-normal text-center [overflow-wrap:anywhere]">{{ cta }}</span>
+        </NuxtButton>
+      </div>
+    </template>
+  </NuxtModal>
 </template>

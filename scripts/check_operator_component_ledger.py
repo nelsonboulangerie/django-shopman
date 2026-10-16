@@ -30,6 +30,10 @@ MANUAL_OVERLAY = re.compile(
     re.DOTALL,
 )
 NATIVE_CONTROL = re.compile(r"<(?:button|select|textarea)(?:\s|>)")
+# `UiNativeSelect` está aposentado (dono, 08/10/2026, PR #1539): escolha numa lista
+# é `NuxtSelect` (curta e fixa) ou `NuxtSelectMenu` (longa ou que cresce). Os usos
+# de hoje são teto que só cai; nenhum uso novo.
+UI_NATIVE_SELECT = re.compile(r"<UiNativeSelect(?:\s|>|/)")
 REKA_IMPORT = re.compile(r"(?:from\s+|import\s*\()\s*[\"']reka-ui[\"']")
 NUXT_UI_IMPORT = re.compile(r"(?:from\s+|import\s*\()\s*[\"']@nuxt/ui[\"']")
 CANONICAL_STRUCTURE = re.compile(
@@ -46,6 +50,7 @@ class Counts:
     direct_reka_import_files: int
     manual_overlay_files: int
     native_control_occurrences: int
+    ui_native_select_occurrences: int
 
 
 def vue_and_ts(root: Path) -> list[Path]:
@@ -68,12 +73,14 @@ def count_app(app_root: Path) -> Counts:
     ]
     manual = []
     native = 0
+    native_select = 0
     for path in app.rglob("*.vue"):
         text = path.read_text(encoding="utf-8")
         if "components/Ui/" not in path.as_posix() and MANUAL_OVERLAY.search(text):
             manual.append(path)
         native += len(NATIVE_CONTROL.findall(text))
-    return Counts(len(local_ui), len(reka), len(manual), native)
+        native_select += len(UI_NATIVE_SELECT.findall(text))
+    return Counts(len(local_ui), len(reka), len(manual), native, native_select)
 
 
 def page_sources(app_root: Path) -> set[str]:

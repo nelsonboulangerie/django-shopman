@@ -48,16 +48,6 @@ class CategoryProjection:
     url: str
 
 
-@dataclass(frozen=True)
-class HappyHourProjection:
-    """Happy hour banner state."""
-
-    active: bool
-    discount_percent: int
-    start: str  # "16:00"
-    end: str  # "18:00"
-
-
 # ──────────────────────────────────────────────────────────────────────
 # Fase 2 — Checkout, Payment, Tracking
 # ──────────────────────────────────────────────────────────────────────
@@ -182,6 +172,10 @@ class AddressAutocompleteProjection:
     shop_latitude: float | None = None
     shop_longitude: float | None = None
     bias_radius_m: int = 15000
+    # Confirmar o ponto no mapa depois de escolher o endereço: a MESMA chave da loja
+    # (`Shop.defaults["storefront"]["address_map_confirmation_enabled"]`). Uma casa,
+    # uma regra: o endereço que o balcão digita passa pelo mesmo passo do site.
+    map_confirmation_enabled: bool = False
 
 
 @dataclass(frozen=True)

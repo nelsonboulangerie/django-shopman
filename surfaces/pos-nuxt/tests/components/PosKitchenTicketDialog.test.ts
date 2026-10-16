@@ -94,6 +94,7 @@ describe("PosCartPanel — a linha disparada abre o card da cozinha", () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: {
         items,
+        total: { status: "confirmed", display: "R$\u00a030,00" },
         requiresTab: false,
         hasOpenTab: true,
         loading: false,

@@ -68,13 +68,14 @@ function backToToday() {
 </script>
 
 <template>
-  <UiDialog v-model:open="isOpen">
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-      <UiDialogHeader>
-        <UiDialogTitle>Quando</UiDialogTitle>
-        <UiDialogDescription>{{ fulfillmentType === "delivery" ? "Entrega" : fulfillmentType === "pickup" ? "Retirada" : "Pedido" }}: combine o dia e o horário. Agendamento exige cliente identificado.</UiDialogDescription>
-      </UiDialogHeader>
-
+  <NuxtModal
+    v-model:open="isOpen"
+    title="Quando"
+    :description="`${fulfillmentType === 'delivery' ? 'Entrega' : fulfillmentType === 'pickup' ? 'Retirada' : 'Pedido'}: combine o dia e o horário. Agendamento exige cliente identificado.`"
+    :ui="{ content: 'sm:max-w-lg' }"
+    data-pos-schedule-modal
+  >
+    <template #body>
       <!-- HOJE é o padrão, e ele é uma AFIRMAÇÃO: a esmagadora maioria das
            vendas é para agora, e a caixa não pode parecer que falta preencher
            alguma coisa. -->
@@ -93,11 +94,24 @@ function backToToday() {
         @update:date="$emit('update:deliveryDate', $event)"
         @update:time-slot="$emit('update:deliveryTimeSlot', $event)"
       />
-
-      <UiDialogFooter class="gap-2 sm:justify-between">
-        <UiButton v-if="fulfillmentType !== 'delivery' && salesMode !== 'order'" variant="outline" @click="backToToday">Sem agendamento · levar agora</UiButton>
-        <UiButton class="sm:ml-auto" :disabled="salesMode === 'order' && !deliveryDate" @click="isOpen = false">Confirmar dia e horário</UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+        <NuxtButton
+          v-if="fulfillmentType !== 'delivery' && salesMode !== 'order'"
+          color="neutral"
+          variant="outline"
+          label="Sem agendamento · levar agora"
+          @click="backToToday"
+        />
+        <NuxtButton
+          class="sm:ml-auto"
+          color="primary"
+          label="Confirmar dia e horário"
+          :disabled="salesMode === 'order' && !deliveryDate"
+          @click="isOpen = false"
+        />
+      </div>
+    </template>
+  </NuxtModal>
 </template>

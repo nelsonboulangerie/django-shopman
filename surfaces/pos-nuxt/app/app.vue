@@ -26,7 +26,11 @@ useOperatorWindowTitle();
 </script>
 
 <template>
-  <PosCustomerDisplayShell v-if="isCustomerDisplay" />
-  <PosOperatorShell v-else />
-  <OperatorPwaRuntime :show-prompts="!isCustomerDisplay" />
+  <!-- `OperatorAppRoot` (o `NuxtApp` do kit): tooltips, diálogos e o idioma das peças
+       do Nuxt UI, como nos outros apps do shell da suíte. -->
+  <OperatorAppRoot>
+    <PosCustomerDisplayShell v-if="isCustomerDisplay" />
+    <PosOperatorShell v-else />
+    <OperatorPwaRuntime :show-prompts="!isCustomerDisplay" />
+  </OperatorAppRoot>
 </template>

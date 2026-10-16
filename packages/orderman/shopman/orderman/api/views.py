@@ -66,6 +66,19 @@ class OrderCursorPagination(CursorPagination):
     max_page_size = 100
 
 
+# Session não tem created_at: a paginação de Order apontava para uma coluna
+# inexistente e derrubava GET /api/sessions com FieldError. A janela da sessão é
+# opened_at; o id entra como desempate para a ordenação ser única, que é o que o
+# cursor exige.
+class SessionCursorPagination(CursorPagination):
+    """Cursor-based pagination for Session, ordered by opened_at."""
+
+    page_size = 25
+    ordering = ("-opened_at", "-id")
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 def _get_actor(request) -> str:
     """Extrai username do request ou retorna 'api' como fallback."""
     user = getattr(request, "user", None)
@@ -142,14 +155,18 @@ class SessionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
     queryset = Session.objects.all()
     serializer_class = SessionSerializer
     permission_classes = get_orderman_setting("DEFAULT_PERMISSION_CLASSES")
-    pagination_class = OrderCursorPagination
+    pagination_class = SessionCursorPagination
     throttle_classes = [AnonRateThrottle, UserRateThrottle]
 
     lookup_field = "session_key"
     lookup_url_kwarg = "session_key"
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # A listagem serializa os ``items`` de cada sessão. Sem o prefetch, a
+        # página cheia (25 sessões) faz 26 consultas: uma da página e uma de
+        # ``orderman_sessionitem`` por sessão. ``_load_items_from_lines`` já lê
+        # ``_prefetched_objects_cache``, então o prefetch derruba a página para 2.
+        qs = super().get_queryset().prefetch_related("session_items")
         channel_ref = self.request.query_params.get("channel_ref")
         if channel_ref:
             qs = qs.filter(channel_ref=channel_ref)

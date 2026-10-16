@@ -165,17 +165,6 @@ export function queueColumnForKey(key: string, keys: readonly string[]): string 
   return keys[Number(key) - 1] ?? null;
 }
 
-function joinNames(names: string[]): string {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
-}
-
-/** "Visão: Saída" quando alguma coluna está recolhida; vazio com todas abertas. */
-export function queueViewLabel(layout: QueueColumnLayout, keys: readonly string[], titles: Record<string, string>): string {
-  if (allQueueColumnsOpen(layout, keys)) return "";
-  return `Visão: ${joinNames(openQueueKeys(layout, keys).map((key) => titles[key] ?? key))}`;
-}
-
 /** Nome acessível da faixa recolhida: o que ela abre e o que há lá dentro. */
 export function queueStripLabel(
   title: string,

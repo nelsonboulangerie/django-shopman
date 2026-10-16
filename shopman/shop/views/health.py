@@ -4,6 +4,14 @@
 must remain healthy when a dependency is unavailable, otherwise an orchestrator
 can turn a database incident into a restart loop.
 
+``/health/database/`` is the platform READINESS probe of the Django services:
+one ``SELECT 1`` through the process connection pool, nothing else. It answers
+"can THIS process serve a request that touches the database?", so the edge
+stops routing to an instance whose pool is stuck while a healthy sibling keeps
+serving. It deliberately leaves out cache, migrations and the queue: a stale
+worker or a pending migration is not a reason to take the Admin off the air
+(the cost that #780 removed from the platform probe).
+
 ``/health/ready/`` checks the local dependency chain used by the operator BFF:
 database, shared cache/session storage, migrations and the durable queue. The
 migration plan is computed until it is first found clean and then trusted for
@@ -34,6 +42,8 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from shopman.watchman.contracts import Status
+from shopman.watchman.runner import Report, run_profile
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +258,40 @@ def _build_response(
     )
 
 
+def _run_profile_response(
+    profile: str,
+    request,
+    *,
+    failure_only: frozenset[str] = frozenset(),
+) -> JsonResponse:
+    """Preserve the deployed probe contract while Watchman owns execution.
+
+    Public probes predate Watchman and expose ``ok|fail|skipped``. Keep that
+    intentionally small vocabulary and never disclose evidence. An observer
+    error becomes ``skipped`` rather than an exception from the observed app.
+    """
+
+    try:
+        report: Report = run_profile(profile, metadata={"request": request})
+    except Exception:  # noqa: BLE001 - invalid observer config never breaks the observed app
+        logger.exception("watchman_profile_error profile=%s", profile)
+        return _build_response({"watchman": ("skipped", None)}, critical=set())
+
+    public_status = {
+        Status.PASS: "ok",
+        Status.WARN: "ok",
+        Status.FAIL: "fail",
+        Status.UNKNOWN: "skipped",
+        Status.SKIPPED: "skipped",
+    }
+    checks = {
+        result.id: (public_status[result.status], None)
+        for result in report.results
+        if not (result.id in failure_only and result.status is not Status.FAIL)
+    }
+    return _build_response(checks, critical={result.id for result in report.results})
+
+
 class _RateLimitedProbeView(View):
     def dispatch(self, request, *args, **kwargs):
         if not _probe_rate_limiter.allow(_client_key(request)):
@@ -257,10 +301,15 @@ class _RateLimitedProbeView(View):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class HealthCheckView(_RateLimitedProbeView):
-    """Liveness: prove only that this Django process serves requests."""
+    """Liveness: this Django process serves requests, and is not stuck on its pool.
+
+    Never fails because the database is down (see ``shopman/shop/pool_liveness.py``):
+    only a pool that hands out nothing for a sustained window while the database
+    answers a direct connection turns this into 503, so the platform restarts it.
+    """
 
     def get(self, request):
-        return _build_response({"process": ("ok", None)}, critical={"process"})
+        return _run_profile_response("liveness", request, failure_only=frozenset({"pool"}))
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -268,13 +317,12 @@ class ReadyCheckView(_RateLimitedProbeView):
     """Readiness: local BFF dependencies, never provider reachability."""
 
     def get(self, request):
-        checks = {
-            "database": _check_database(),
-            "cache": _check_cache(),
-            "migrations": _check_migrations(),
-            "queue": _check_queue(),
-        }
-        return _build_response(
-            checks,
-            critical={"database", "cache", "migrations", "queue"},
-        )
+        return _run_profile_response("readiness", request)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class DatabaseReadyView(_RateLimitedProbeView):
+    """Platform readiness: this process reaches the database, nothing more."""
+
+    def get(self, request):
+        return _run_profile_response("platform_readiness", request)

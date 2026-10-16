@@ -4,7 +4,7 @@ import type { CartProjection, CartResponse, CheckoutMutationResponse, CheckoutRe
 import type { AddressSelection } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentation/paymentConstraints'
-import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, deliveryTaxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
+import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
@@ -40,7 +40,9 @@ import {
   weekdayDateLabel,
   paymentMethodLabel as resolvePaymentMethodLabel,
   quickCheckoutDateOptions,
-  reconciledPickupSlotRef,
+  checkoutWindows,
+  earliestCheckoutWindowRef,
+  reconciledWindowRef,
   selectedPickupSlot,
   shouldOfferPickupSwap,
   whenSummary as buildWhenSummary,
@@ -185,10 +187,11 @@ watch(() => state.payment_method, value => {
   if (value) clearFieldError('payment_method')
 })
 
-// CPF/CNPJ NA NOTA (decisões do dono, 24 e 25/09/2026). Toda ENTREGA pede o
-// documento de quem compra, no MESMO passo do endereço; sem ele a entrega não
-// fecha e a retirada continua a um toque. Na RETIRADA é o "CPF na nota?" do
-// balcão: opcional, no passo do pagamento. O campo é um só (`fiscal_tax_id`) e
+// CPF/CNPJ NA NOTA (decisão do dono, 13/10/2026, que substitui a de 24/09).
+// Na ENTREGA o campo aparece no MESMO passo do endereço, opcional: sem
+// documento a nota sai presencial, consumidor não identificado (a praxe do
+// delivery). Na RETIRADA é o "CPF na nota?" do balcão: opcional, no passo do
+// pagamento. O campo é um só (`fiscal_tax_id`) e
 // já vem com o documento que a casa conhece (cadastro ou última entrega). A
 // tela confere o que foi digitado, cedo e no campo; a trava do servidor
 // continua sendo a da emissão.
@@ -215,7 +218,7 @@ const taxIdPrefillNote = computed(() => {
 // conhecida, o cadastro dela ainda não tem documento e há um documento certo
 // indo para a nota.
 const offerSaveTaxId = computed(() => !!checkout.value?.offer_save_tax_id && isValidTaxId(noteTaxId(state)))
-const taxIdIssue = computed(() => deliveryTaxIdError(state.fiscal_tax_id, showTaxIdField.value))
+const taxIdIssue = computed(() => taxIdError(state.fiscal_tax_id))
 function onTaxIdInput (value: string | number) {
   state.fiscal_tax_id = formatTaxId(String(value ?? ''))
 }
@@ -431,7 +434,18 @@ const pixProviderTestMessage = computed(() => {
 const submitDisabled = computed(() =>
   !action.value?.enabled || !!cart.value?.is_empty || submitting.value || pixProviderTestExceeded.value
 )
-const slots = computed(() => checkout.value?.pickup_slots || [])
+// Retirada mostra os turnos de retirada; entrega, a grade de entrega (a mesma da
+// concierge). O resto da tela trata as duas do mesmo jeito.
+const slots = computed(() => checkoutWindows(checkout.value, state.fulfillment_type))
+const isDeliveryWindows = computed(() => state.fulfillment_type === 'delivery')
+// Na grade de entrega o motivo da janela apagada é um só (o item que segura o
+// pedido): sai uma vez acima da grade, não repetido em cada célula.
+const deliveryWindowsReason = computed(() => {
+  if (!isDeliveryWindows.value) return ''
+  const reason = slots.value.find(slot => !slot.enabled && slot.reason)?.reason || ''
+  if (!reason) return ''
+  return slots.value.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
+})
 const selectedSlot = computed(() => selectedPickupSlot(slots.value, state.delivery_time_slot))
 const paymentMethodLabel = computed(() => resolvePaymentMethodLabel(checkout.value, state.payment_method))
 const selectedSlotLabel = computed(() => selectedSlot.value?.label || state.delivery_time_slot || '')
@@ -612,9 +626,7 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
         ? 'Escolha ou informe o endereço de entrega.'
         : deliveryUncovered.value
           ? 'Ainda não entregamos nesse endereço.'
-          : showTaxIdField.value && !taxIdDigits(state.fiscal_tax_id)
-            ? 'Falta o CPF ou CNPJ para a nota fiscal.'
-            : '',
+          : '',
       run: continueFromAddress
     }
   }
@@ -711,11 +723,10 @@ function pickDeliveryDate (value: string) {
 }
 
 function reconcileDeliverySlot () {
-  const nextSlotRef = reconciledPickupSlotRef(
-    state.fulfillment_type,
+  const nextSlotRef = reconciledWindowRef(
     state.delivery_time_slot,
     slots.value,
-    checkout.value?.earliest_slot_ref
+    earliestCheckoutWindowRef(checkout.value, state.fulfillment_type)
   )
   if (nextSlotRef !== state.delivery_time_slot) state.delivery_time_slot = nextSlotRef
 }
@@ -728,7 +739,6 @@ watch(() => checkout.value, value => {
   if (!value) return
   const fulfillments = availableFulfillmentOptions(value)
   const methods = value.payment_methods || []
-  const projectedSlots = value.pickup_slots || []
 
   setFromServer(value.cart)
   // Fidelidade: a sessão é a fonte única. Espelha o estado aplicado no cart
@@ -753,7 +763,6 @@ watch(() => checkout.value, value => {
   // entrega e vale; a pessoa troca aqui para a nota sair no documento de outra
   // pessoa. Nunca sobre o que já digitou.
   if (!state.fiscal_tax_id && value.prefill_tax_id) state.fiscal_tax_id = formatTaxId(value.prefill_tax_id)
-  if (!state.delivery_time_slot) state.delivery_time_slot = value.earliest_slot_ref || projectedSlots.find(slot => slot.enabled)?.ref || ''
   if (!checkoutHydrated && !hasRestoredCheckoutDraft) {
     state.fulfillment_type = fulfillments.includes(value.default_fulfillment_type)
       ? value.default_fulfillment_type
@@ -1021,8 +1030,9 @@ function validateWhenStep (): boolean {
   delete errors.delivery_time_slot
   if (!state.delivery_date) errors.delivery_date = checkout.value?.copy.when_required || 'Escolha a data.'
   if (state.delivery_date && isCheckoutDateUnavailable(state.delivery_date, dateBounds.value, closedDateEntries.value, closedWeekdays.value)) errors.delivery_date = 'Escolha uma data disponível.'
-  if (state.fulfillment_type === 'pickup' && slots.value.length && !state.delivery_time_slot) errors.delivery_time_slot = 'Escolha um horário.'
-  if (state.fulfillment_type === 'pickup' && state.delivery_time_slot && !selectedSlot.value?.enabled) {
+  if (state.delivery_date && isDeliveryWindows.value && !slots.value.length) errors.delivery_time_slot = 'Não há horário de entrega nesse dia. Escolha outra data.'
+  if (slots.value.length && !state.delivery_time_slot) errors.delivery_time_slot = 'Escolha um horário.'
+  if (state.delivery_time_slot && slots.value.length && !selectedSlot.value?.enabled) {
     errors.delivery_time_slot = selectedSlot.value?.reason || 'Escolha um horário disponível.'
   }
   fieldErrors.value = errors
@@ -1108,14 +1118,9 @@ function onFulfillmentSelected (value: string) {
   }
 }
 
-// O picker confirma o endereço e o fluxo avançaria sozinho. Com o CPF ainda em
-// branco, o próximo gesto é o CPF, no mesmo passo: a página vai até ele sem
-// acusar erro (ninguém errou ainda). O erro fica para quem tenta seguir sem ele.
+// O picker confirma o endereço e o fluxo segue sozinho: o CPF da entrega é
+// opcional, e quem quiser a nota no documento preenche antes de confirmar.
 function onAddressConfirmed () {
-  if (showTaxIdField.value && !taxIdDigits(state.fiscal_tax_id)) {
-    reveal(() => document.getElementById('checkout-tax-id'), { align: 'center' })
-    return
-  }
   void continueFromAddress()
 }
 
@@ -1660,15 +1665,14 @@ useSeoMeta({
                 <UiProgress :model-value="freeDeliveryUpsell.percent" />
               </div>
 
-              <!-- NOTA DA ENTREGA: o CPF/CNPJ no mesmo passo do endereço, com o
-                   porquê numa linha. Sem ele a entrega não fecha; a retirada fica
-                   a um toque, sem CPF. -->
+              <!-- NOTA DA ENTREGA: o CPF/CNPJ no mesmo passo do endereço,
+                   opcional. Sem ele a nota sai sem identificar o consumidor. -->
               <div
                 v-if="showTaxIdField"
                 class="shop-stack-tight rounded-lg border bg-card p-4"
                 data-checkout-tax-id
               >
-                <UiLabel for="checkout-tax-id">CPF ou CNPJ para a nota fiscal</UiLabel>
+                <UiLabel for="checkout-tax-id">CPF ou CNPJ na nota (opcional)</UiLabel>
                 <p class="shop-meta">{{ TAX_ID_WHY }}</p>
                 <UiInput
                   id="checkout-tax-id"
@@ -1700,16 +1704,6 @@ useSeoMeta({
                     <UiSwitch id="checkout-save-tax-id" v-model="state.save_fiscal_tax_id" />
                   </UiField>
                 </UiFieldLabel>
-                <UiButton
-                  v-if="availableFulfillment.includes('pickup')"
-                  variant="link"
-                  size="sm"
-                  class="h-auto self-start p-0"
-                  data-checkout-tax-id-pickup
-                  @click="switchToPickup"
-                >
-                  Prefere não informar? Retire na loja, sem CPF.
-                </UiButton>
               </div>
             </CheckoutProgressSection>
 
@@ -1785,6 +1779,47 @@ useSeoMeta({
                   </UiRadioGroup>
                   <UiFieldError v-if="fieldErrors.delivery_date" :errors="fieldErrors.delivery_date" />
                   <p v-if="deliveryDateHint" class="shop-meta text-muted-foreground" data-checkout-preorder-hint>{{ deliveryDateHint }}</p>
+                </div>
+
+                <!-- Entrega: o cliente escolhe a janela na grade da casa (a mesma da
+                     concierge, conferida no commit). Meia hora hoje vira uma grade
+                     compacta de células iguais; o motivo da janela apagada sai uma
+                     vez acima dela. -->
+                <div v-if="isDeliveryWindows && state.delivery_date" class="space-y-2" data-checkout-delivery-windows>
+                  <UiLabel>Horário da entrega</UiLabel>
+                  <p v-if="!slots.length" class="shop-meta text-muted-foreground" data-checkout-delivery-windows-empty>
+                    Não há horário de entrega nesse dia. Escolha outra data.
+                  </p>
+                  <template v-else>
+                    <p v-if="deliveryWindowsReason" class="shop-meta text-muted-foreground">
+                      {{ deliveryWindowsReason }}
+                    </p>
+                    <UiRadioGroup v-model="state.delivery_time_slot" class="grid grid-cols-2 gap-2">
+                      <UiFieldLabel
+                        v-for="slot in slots"
+                        :key="slot.ref"
+                        :for="`checkout-window-${slot.ref}`"
+                        class="bg-card has-data-[state=checked]:bg-card has-data-[state=checked]:ring-1 has-data-[state=checked]:ring-primary"
+                        :class="!slot.enabled ? 'opacity-50' : ''"
+                        :title="slot.enabled ? slot.label : `${slot.label}: ${slot.reason}`"
+                      >
+                        <UiField orientation="horizontal" :data-disabled="!slot.enabled || undefined">
+                          <UiRadioGroupItem
+                            :id="`checkout-window-${slot.ref}`"
+                            :value="slot.ref"
+                            :disabled="!slot.enabled"
+                            :aria-label="slot.enabled ? slot.label : `${slot.label}: ${slot.reason}`"
+                          />
+                          <UiFieldContent>
+                            <UiFieldTitle class="whitespace-nowrap">
+                              <span :class="!slot.enabled ? 'line-through' : ''">{{ slot.label }}</span>
+                            </UiFieldTitle>
+                          </UiFieldContent>
+                        </UiField>
+                      </UiFieldLabel>
+                    </UiRadioGroup>
+                  </template>
+                  <UiFieldError v-if="fieldErrors.delivery_time_slot" :errors="fieldErrors.delivery_time_slot" />
                 </div>
 
                 <div v-if="state.fulfillment_type === 'pickup' && slots.length" class="space-y-2">
@@ -2244,6 +2279,7 @@ useSeoMeta({
                     <dd class="tabular-nums">{{ cart.delivery_fee_display }}</dd>
                   </div>
                 </dl>
+                <p v-if="cart.group_savings_message" class="mt-2 shop-body text-primary">{{ cart.group_savings_message }}</p>
               </template>
             </div>
 

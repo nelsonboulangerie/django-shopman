@@ -14,8 +14,9 @@ Invariants under test:
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.cache import cache
 from django.test import TestCase
@@ -29,17 +30,34 @@ from shopman.shop.models import Channel, RuleConfig
 
 
 def _wide_window_params(discount_percent: int) -> dict:
-    """Happy-hour params whose [start, end) window always contains 'now'."""
+    """Happy-hour params whose [start, end) window always contains 'now'.
+
+    Perto da meia-noite a janela atravessa a virada (``start > end``), e o
+    modificador a entende assim. O atalho antigo (``00:00–23:59``) deixava o
+    último minuto do dia de fora e reprovava a suíte às 23:59 de Brasília.
+    """
     now = timezone.localtime()
     start = (now - timedelta(hours=1)).strftime("%H:%M")
     end = (now + timedelta(hours=1)).strftime("%H:%M")
-    # Guard against midnight wrap making start > end (window would be empty).
-    if start > end:
-        start, end = "00:00", "23:59"
     return {"discount_percent": discount_percent, "start": start, "end": end}
 
 
+# Os dois lados da meia-noite de Brasília (UTC-3), onde a CI reprovou em 10/10/2026.
+# No ``subTest`` eles entram como texto (``isoformat``): com pytest 9.0.x o xdist
+# não serializa ``datetime`` no relatório do subteste e o teste reprova sem defeito.
+VIRADA_ANTES = datetime(2026, 10, 10, 2, 59, 30, tzinfo=UTC)  # 23:59:30 local
+VIRADA_DEPOIS = datetime(2026, 10, 10, 3, 1, tzinfo=UTC)  # 00:01 local
+
+
 class DiscountStackingAuditTests(TestCase):
+    def _happy_hour(self, **fields) -> RuleConfig:
+        # A regra de horário só vale onde está listada (``channels_required``).
+        # Aqui ela serve de desconto genérico do motor, então é listada no canal
+        # da sessão; na casa ela é a Xepa e só vale no PDV.
+        rule = RuleConfig.objects.create(**fields)
+        rule.channels.add(self.channel)
+        return rule
+
     def setUp(self) -> None:
         super().setUp()
         cache.clear()
@@ -71,11 +89,24 @@ class DiscountStackingAuditTests(TestCase):
     def _line(self, session: Session):
         return next(i for i in session.items if i.get("sku") == self.product.sku)
 
-    # ── HOLE: employee discount must NOT compound on a promo line (best-wins) ─
-    def test_employee_does_not_compound_on_promotion(self) -> None:
+    # ── HOLE: group discount must NOT compound on a promo line (best-wins) ───
+    def test_group_discount_does_not_compound_on_promotion(self) -> None:
+        from shopman.guestman.models import PriceTier
+
         from shopman.shop.models import Promotion
 
         now = timezone.now()
+        PriceTier.objects.create(ref="staff", name="Equipe")
+        Promotion.objects.create(
+            ref="grupo-staff",
+            name="Equipe",
+            type=Promotion.PERCENT,
+            value=20,
+            customer_segments=["staff"],
+            is_active=True,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=1),
+        )
         Promotion.objects.create(
             ref="promo-30",
             name="Promo 30",
@@ -88,7 +119,7 @@ class DiscountStackingAuditTests(TestCase):
         cache.clear()
 
         key = self._open_session()
-        # Link a staff customer so the employee discount (20%) fires.
+        # Link a staff customer so the group discount (20%) fires.
         ModifyService.modify_session(
             session_key=key, channel_ref="web",
             ops=[{"op": "set_data", "path": "customer", "value": {"price_tier": "staff"}}],
@@ -98,19 +129,19 @@ class DiscountStackingAuditTests(TestCase):
             ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
         )
         unit = self._line(session)["unit_price_q"]
-        # Best-wins: max(30% promo, 20% employee) = 30% → 700. Bug compounds:
-        # 1000→700 (promo)→560 (−20% employee on the reduced price).
-        self.assertEqual(unit, 700, f"employee compounded on promo: got {unit}, expected 700")
+        # Best-wins: max(30% promo, 20% grupo) = 30% → 700. Bug compounds:
+        # 1000→700 (promo)→560 (−20% do grupo sobre o preço reduzido).
+        self.assertEqual(unit, 700, f"desconto do grupo compôs na promo: got {unit}, expected 700")
 
     # ── HOLE: desconto de valor FIXO substituído deixava valor fantasma ───────
-    def test_employee_beating_a_fixed_coupon_leaves_no_phantom_discount(self) -> None:
-        """Cupom de valor FIXO perdendo para o desconto de funcionário some da tela.
+    def test_group_beating_a_fixed_coupon_leaves_no_phantom_discount(self) -> None:
+        """Cupom de valor FIXO perdendo para o desconto do GRUPO some da tela.
 
         Este caso faltava na suíte: os testes de "maior desconto ganha" compõem
         PERCENTUAL × PERCENTUAL, onde ``meta["_disc"]`` sempre existe. O rateio do
         desconto de PEDIDO era o único que não passava por ``_stamp_disc``, então
-        ``_reverse_prior_pricing`` não achava nada para abater: o funcionário vencia,
-        o preço da linha caía de novo, e o fixo continuava inteiro em
+        ``_reverse_prior_pricing`` não achava nada para abater: o desconto do grupo
+        vencia, o preço da linha caía de novo, e o fixo continuava inteiro em
         ``pricing["discount"]`` E em ``pricing["coupon"]``.
 
         Duas consequências, ambas de dinheiro: a tela somava um desconto que não
@@ -118,9 +149,22 @@ class DiscountStackingAuditTests(TestCase):
         ``pricing["coupon"]["discount_q"] > 0`` faz o lifecycle CONSUMIR o cupom, de
         modo que o cliente queimava um cupom de uso único que não lhe deu nada.
         """
+        from shopman.guestman.models import PriceTier
+
         from shopman.shop.models import Coupon, Promotion
 
         now = timezone.now()
+        PriceTier.objects.create(ref="staff", name="Equipe")
+        Promotion.objects.create(
+            ref="grupo-staff",
+            name="Equipe",
+            type=Promotion.PERCENT,
+            value=20,
+            customer_segments=["staff"],
+            is_active=True,
+            valid_from=now - timedelta(days=1),
+            valid_until=now + timedelta(days=1),
+        )
         promo = Promotion.objects.create(
             ref="fixo-1",
             name="Fixo R$1",
@@ -148,11 +192,10 @@ class DiscountStackingAuditTests(TestCase):
 
         pricing = session.pricing or {}
         line = self._line(session)
-        # Funcionário (20% de R$10 = R$2) vence o fixo (R$1) — sem composição.
+        # Grupo (20% de R$10 = R$2) vence o fixo (R$1) — sem composição.
         self.assertEqual(line["unit_price_q"], 800)
-        self.assertEqual(pricing.get("employee_discount", {}).get("total_discount_q"), 200)
+        self.assertEqual(pricing.get("discount", {}).get("total_discount_q"), 200)
         # O fixo perdeu: não pode sobrar NADA dele na transparência.
-        self.assertEqual(pricing.get("discount", {}).get("total_discount_q"), 0)
         self.assertEqual(pricing.get("coupon", {}).get("discount_q"), 0)
         # A soma dos descontos declarados == o que o total de fato caiu.
         charged = sum(int(i.get("line_total_q", 0)) for i in session.items)
@@ -162,7 +205,7 @@ class DiscountStackingAuditTests(TestCase):
     def _declared_discount_q(pricing: dict) -> int:
         """Tudo que a tela declara como desconto (``coupon`` é recorte de ``discount``)."""
         total = int((pricing.get("discount") or {}).get("total_discount_q") or 0)
-        for key in ("lot_discount", "employee_discount", "happy_hour", "loyalty_redeem", "manual_discount"):
+        for key in ("lot_discount", "happy_hour", "loyalty_redeem", "manual_discount"):
             total += int((pricing.get(key) or {}).get("total_discount_q") or 0)
         return total
 
@@ -176,7 +219,7 @@ class DiscountStackingAuditTests(TestCase):
             name="Promo 50", type=Promotion.PERCENT, value=50, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
-        RuleConfig.objects.create(
+        self._happy_hour(
             ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="Happy Hour", params=_wide_window_params(25), enabled=True,
         )
@@ -208,7 +251,7 @@ class DiscountStackingAuditTests(TestCase):
             name="Promo 10", type=Promotion.PERCENT, value=10, is_active=True,
             valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
         )
-        RuleConfig.objects.create(
+        self._happy_hour(
             ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="Happy Hour", params=_wide_window_params(40), enabled=True,
         )
@@ -226,6 +269,35 @@ class DiscountStackingAuditTests(TestCase):
         pricing = session.pricing or {}
         self.assertNotIn(self.product.sku, [d.get("sku") for d in (pricing.get("discount") or {}).get("items", [])])
         self.assertEqual((pricing.get("happy_hour") or {}).get("total_discount_q"), 400)
+
+    def test_flat_discount_wins_on_both_sides_of_midnight(self) -> None:
+        for instant in (VIRADA_ANTES, VIRADA_DEPOIS):
+            with self.subTest(instant=instant.isoformat()), patch("django.utils.timezone.now", return_value=instant):
+                Session.objects.all().delete()
+                RuleConfig.objects.all().delete()
+                from shopman.shop.models import Promotion
+
+                Promotion.objects.all().delete()
+                self.test_flat_discount_wins_when_bigger_than_existing()
+
+    def test_happy_hour_window_crossing_midnight(self) -> None:
+        # Janela 23:00–01:00 configurada no Admin: vale dos dois lados da virada
+        # e não vale fora dela.
+        self._happy_hour(
+            ref="happy_hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
+            label="Happy Hour", params={"discount_percent": 40, "start": "23:00", "end": "01:00"},
+            enabled=True,
+        )
+        fora = datetime(2026, 10, 10, 4, 30, tzinfo=UTC)  # 01:30 local
+        for instant, esperado in ((VIRADA_ANTES, 600), (VIRADA_DEPOIS, 600), (fora, 1000)):
+            with self.subTest(instant=instant.isoformat()), patch("django.utils.timezone.now", return_value=instant):
+                cache.clear()
+                key = self._open_session()
+                session = ModifyService.modify_session(
+                    session_key=key, channel_ref="web",
+                    ops=[{"op": "add_line", "sku": self.product.sku, "qty": 1, "unit_price_q": 1000}],
+                )
+                self.assertEqual(self._line(session)["unit_price_q"], esperado)
 
     # ── HOLE 5: manual order-level discount residue lost on a skipped tail ───
     def test_manual_discount_residue_not_swallowed_by_fee_line(self) -> None:

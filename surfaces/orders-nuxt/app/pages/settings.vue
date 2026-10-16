@@ -5,39 +5,51 @@
 // ("1 desligado") aparece no item Ajustes do rail e na linha de Canais.
 const { settings } = useGestorSections();
 const { expeditesOnly } = useGestorAccess();
+const settingsItems = computed(() =>
+  settings.value.map((entry) => ({
+    label: entry.label,
+    description: entry.description,
+    icon: entry.icon.replace("lucide:", "i-lucide-"),
+    to: entry.to,
+    badge: entry.attention || undefined,
+    "data-settings-section": entry.key,
+  })),
+);
 useHead({ title: "Ajustes" });
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Ajustes">
-    </OperatorPageHeader>
+    <OperatorPageHeader title="Ajustes" />
 
-    <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
-      <p v-if="expeditesOnly" class="rounded-md border border-dashed p-6 text-center op-body text-muted-foreground">
-        Os ajustes do Gestor são de quem gerencia pedidos. Daqui você opera a Saída.
-      </p>
-      <nav v-else class="mx-auto flex max-w-3xl flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-card" aria-label="Ajustes do Gestor">
-        <NuxtLink
-          v-for="entry in settings"
-          :key="entry.key"
-          :to="entry.to"
-          class="flex min-h-16 items-center gap-3.5 px-4 py-3 transition hover:bg-accent"
-          :data-settings-section="entry.key"
+    <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+      <NuxtEmpty
+        v-if="expeditesOnly"
+        icon="i-lucide-lock"
+        title="Ajustes restritos"
+        description="Os ajustes do Gestor são de quem gerencia pedidos. Daqui você opera a Saída."
+      />
+      <!-- Navegação entre áreas: PageGrid de PageCard (contrato de Card do kit), com
+           a descrição de cada área à vista e o aviso de atenção como Badge. -->
+      <NuxtPageGrid
+        v-else
+        class="gap-[var(--op-region-gap)]"
+        aria-label="Ajustes do Gestor"
+      >
+        <NuxtPageCard
+          v-for="item in settingsItems"
+          :key="item.to"
+          :to="item.to"
+          :icon="item.icon"
+          :title="item.label"
+          :description="item.description"
+          :data-settings-section="item['data-settings-section']"
         >
-          <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground">
-            <Icon :name="entry.icon" class="size-5" aria-hidden="true" />
-          </span>
-          <span class="min-w-0 flex-1">
-            <span class="block op-title">{{ entry.label }}</span>
-            <span class="block truncate op-micro text-muted-foreground">{{ entry.description }}</span>
-          </span>
-          <span v-if="entry.attention" class="inline-flex shrink-0 items-center gap-1.5 rounded-full pill-warning px-2 py-0.5 op-micro font-semibold">
-            <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />{{ entry.attention }}
-          </span>
-          <Icon name="lucide:chevron-right" class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        </NuxtLink>
-      </nav>
+          <template v-if="item.badge" #footer>
+            <NuxtBadge color="warning" :label="item.badge" />
+          </template>
+        </NuxtPageCard>
+      </NuxtPageGrid>
     </section>
   </main>
 </template>

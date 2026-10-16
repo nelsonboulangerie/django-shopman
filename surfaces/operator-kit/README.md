@@ -29,6 +29,11 @@ npm run catalog:build
 npm run test:visual
 ```
 
+`<OperatorSideColumn>` é a coluna da direita de largura ajustável (a `DashboardSidebar`
+oficial do lado direito, `resizable`, em rem, num `DashboardGroup` próprio, gravada em
+cookie). Primeiro consumidor: a comanda do PDV. Fora da mesa (`docked = false`) o
+conteúdo sai num `<aside>` no fluxo.
+
 Nenhum app deve criar shell, Sidebar, NavigationMenu, Page ou Splitter local. Uma
 necessidade operacional comprovada entra no ledger com responsável e teste.
 O léxico, anatomias, matriz dos oito apps, exceções e guia de adoção ficam em
@@ -71,7 +76,7 @@ O layer contribui, via auto-import do Nuxt:
 | `server/utils/healthProbe.ts` | `ProbeRateLimiter`, `checkDjangoReadiness`, `respondHealthLive`, `respondHealthReady` | corpo pobre (`ok`/`fail`), `no-store` e limitador em memória dos probes |
 | `server/utils/apiVersion.ts` | `warnOnApiVersionMismatch` | warning estruturado de major divergente do contrato |
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
-| `app/components/OfflineBanner.vue` | `<OfflineBanner>` | aviso calmo de conexão (colocar no layout raiz) |
+| `app/components/OfflineBanner.vue` | `<OfflineBanner>` | faixa "Sem conexão" (colocar no layout raiz); não cobre nada: os shells do kit descem a altura dela (`--operator-offline-inset`) |
 | `app/plugins/errorReporter.client.ts` | — | captura erro não-tratado → telemetria (inerte em dev) |
 | `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do DISPOSITIVO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
 | `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do dispositivo, não só a dele |
@@ -80,15 +85,20 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useOperatorLock.ts` | `useOperatorLock` | read/write do lock de operador (PIN/crachá) via proxy |
 | `app/components/OperatorLock.vue` | `<OperatorLock>` | overlay de lock (picker + PIN pad + crachá + troca forçada) |
 | `app/components/OperatorPinChange.vue` | `<OperatorPinChange>` | numpad de troca de PIN (forçada e voluntária) |
+| `app/components/OperatorPinPad.vue` | `<OperatorPinPad>` | o PIN da suíte: campo (4 casas, uma a mais por dígito além do quarto, até 8; só mostra, bolinhas) + teclado de dedo no meio do cartão; usado pela identificação (trava, gerente) e pela troca de PIN |
 | `app/components/OperatorNumpad.vue` | `<OperatorNumpad>` | numpad de quantidade (inteiro): POS e quiosque de QC |
 | `app/components/OperatorDayPicker.vue` | `<OperatorDayPicker>` | Tipo 1 de data, "Escolha rápida de dia": Hoje, Amanhã, próxima data, Outra data (ver "Datas") |
 | `app/components/OperatorPeriodPicker.vue` | `<OperatorPeriodPicker>` | Tipo 2 de data, "Período": botão que diz a janela, chips no popover, ‹ › (ver "Datas") |
+| `app/components/OperatorMetric.vue` | `<OperatorMetric>` | métrica: `NuxtCard` com `title`/`description`, a figura e o delta pronto da presentation (`MetricDelta` em `presentation/metric.ts`) num `NuxtBadge`; `size="statement"` diz a resposta em uma frase (ver "Peças de leitura") |
+| `app/components/ReadFreshness.vue` | `<ReadFreshness>` | frescor da leitura: "Última leitura útil: 15:36:22 · há 1 s", pelo relógio do servidor (`useNowTick`); `inline` para a linha de recortes (ver "Peças de leitura") |
+| `app/composables/useNowTick.ts` | `useNowTick` | o relógio do servidor: um timer só para a tela, ancorado no `server_now_iso`/`generated_at` da projeção |
 | `app/components/UiToolbar.vue` | `<UiToolbar>` | barra de trabalho sob o nav: slot padrão à esquerda, slot `end` à direita (com `flex-wrap`) |
 | `app/components/UiSearchInput.vue` | `<UiSearchInput>` | busca da barra: ícone, limpar, expand-on-focus, `focus()` exposto para o atalho `/` |
-| `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem e slot de ícone — alvo de toque de 44 px (`min-h-control`) |
+| `app/components/UiFilterChip.vue` | `<UiFilterChip>` | pílula de filtro da barra, com contagem (o chip de contagem) e slot de ícone — alvo de toque de 32 px (`min-h-control`) |
+| `app/components/OperatorCountChip.vue` | `<OperatorCountChip>` | o chip de contagem da suíte, no fluxo (ver "Chip de contagem") |
 | `app/components/FilterBar.vue` | `<FilterBar>` | filtro universal: "+ Filtro" → campo → valores, chip removível que reabre a edição, painel de baixo no celular (ver "Filtro universal") |
 | `app/composables/useRouteFilters.ts` | `useRouteFilters` | o recorte da `FilterBar` na URL (`filtersToQuery`/`filtersFromQuery` em `presentation/filterBar.ts`) |
-| `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (44 px, `size-control`), com `active` e `spinning` |
+| `app/components/UiIconButton.vue` | `<UiIconButton>` | ação quadrada de ícone da barra (32 px, `size-control`), com `active` e `spinning` |
 | `app/presentation/windowTitle.ts` | `operatorAppName`, `windowTitle` | regra pura do nome e do título: `"<Casa> · <App> · <Página>"`, sempre com ponto médio — ver "Nome do app instalado" |
 | `app/composables/useOperatorWindowTitle.ts` | `useOperatorWindowTitle`, `useOperatorAppName` | instala o `titleTemplate` no `app.vue` (e `error.vue`) e expõe o nome resolvido; as páginas passam só o próprio título |
 | `app/presentation/nextFocus.ts` | `revealPlan`, `needsInitialReveal`, … | regra pura do próximo foco (alinhamento, movimento, quando rolar na montagem) |
@@ -105,9 +115,14 @@ O layer contribui, via auto-import do Nuxt:
 | `app/composables/useOperatorReloadHold.ts` | `useOperatorReloadHold` | a TELA declara, pelo nome, o que impede recarregar agora (venda, comanda, pagamento) |
 | `app/composables/useConfirm.ts` | `useConfirm` | a pergunta antes de descartar o que não foi salvo (ou de um ato normal, `tone: "primary"`), no diálogo da casa: devolve `Promise<boolean>` (ver "Pergunta antes de descartar") |
 | `app/components/OperatorConfirmDialog.vue` | `<OperatorConfirmDialog>` | a caixa do `useConfirm`; montada UMA vez pelo `OperatorPwaRuntime`, nenhum app a monta |
+| `app/components/OperatorFormShell.vue` | `<OperatorFormShell>` | o casco canônico de um cadastro: seções, aviso do que não foi salvo, ação na base (salvar/descartar) e a pergunta antes de descartar (ver "Casco de cadastro") |
+| `app/components/OperatorFormSection.vue` | `<OperatorFormSection>` | a seção de um cadastro: título, descrição e a chave do próximo foco (`data-focus-target`) |
+| `app/composables/useDirtyForm.ts` | `useDirtyForm` | estado sujo de um cadastro: um retrato na abertura e as diferenças a partir dele |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
 | `app/composables/useOrientationLock.ts` | `useOrientationLock` | trava de giro por dispositivo (Screen Orientation API): item "Travar giro" no `OperatorRail` só em dispositivo de toque; trava só com o navegador confirmando (Android/ChromeOS instalado), recusa vira aviso ("use o bloqueio de rotação do sistema") em iOS/Windows; preferência no `localStorage`, reaplicada pelo `OperatorPwaRuntime` no boot do app instalado |
+| `app/composables/useCodeScanner.ts` | `useCodeScanner` | leitor de TECLADO (cunha HID): a rajada com o prefixo vira código e a digitação humana volta ao campo; a regra pura é `presentation/codeScan.ts` (ver "Leitor de código") |
+| `app/composables/useBarcodeScanner.ts` | `useBarcodeScanner` | leitor de CÂMERA nativo (`BarcodeDetector`); onde o detector não existe, a tela segue no gesto manual (ver "Leitor de código") |
 
 Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
@@ -397,7 +412,7 @@ migrou não muda um pixel. O Gestor é o piloto; os outros apps entram um a um, 
 Como um app migra:
 
 1. Põe `data-suite="v3"` no elemento raiz do `app.vue`. Os primitivos do kit
-   (`UiFilterChip`, `UiSearchInput`, `UiIconButton`, `ColumnPicker`) trazem o visual novo
+   (`UiFilterChip`, `UiSearchInput`, `UiIconButton`) trazem o visual novo
    atrás da variante `suite:` e só a vestem dentro desse atributo.
 2. Troca `OperatorRail` + `<OperatorAppBar>` por `<OperatorSuiteRail>` (as mesmas
    `OperatorSection`, agora dentro do rail, do tablet para cima) e monta
@@ -419,12 +434,26 @@ Como um app migra:
 | `RailSection` | o item do rail (64px de largura, ≥ 44px de altura, inativo a 80%, ativo com fundo na cor do texto do rail; no toque, `shortLabel` ou só o ícone) | `.rail-item` |
 | `OperatorSectionBar` | barra de baixo no celular e no tablet em pé: até 4 seções + "Mais" (o resto, o slot `#more` e o menu do operador) | `orders-phone3.html`, `cozinha-celular4.html` |
 | `OperatorPageHeader` | cabeçalho de uma linha; sem rail, barra de 56px com selo, título, ponto ao vivo, lupa, ações de polegar e Avisos; o posto do dispositivo no eyebrow; controles e recortes descem para linhas que rolam | `orders-board3.html` |
-| `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso | `.live-dot` |
+| `OperatorToolbar` | a barra de trabalho que o app monta sem tocar a estrutura do Nuxt UI (o ledger proíbe `NuxtDashboardToolbar` direto nos apps): camada fina sobre o `NuxtDashboardToolbar`, slots `#left`, `#right` e o padrão (que ocupa a barra inteira, como no oficial), `as` = `div` (padrão), `header` ou `footer`; `class`, `data-*` e `aria-*` chegam ao elemento. Sem pele própria: o fundo vem do tema (`dashboardToolbar.slots.root` em `app.config.ts`) | DashboardToolbar do Nuxt UI |
+| `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso. Rótulo que cabe: completo → `shortLabel` escrito pelo app ("A cada 30 s") → só o ponto ou o ícone de atualizar, com o completo na dica e no nome acessível. Invólucro em volta do selo leva `min-w-0` | `.live-dot` |
 | `OperatorInbox` | "Avisos": UM item no rail e UM sino na barra de 56px; um painel (portal) com duas abas, a operação (alertas do app, capacidade acima do limite) e a caixa pessoal (avisos, Meus acessos); um selo somado | `_rail3bottom.html` |
 | `OperatorShortcutsHelp` | a ajuda de atalhos de todo app: "Em todo o app" (Alt 1…9, "?") e os grupos da tela | "Atalhos (?)" de `_rail3bottom.html` |
 | `OperatorPhoneMenu` | o menu do operador sem o rail: o "Mais" da barra de baixo (`variant="bar"`) ou as iniciais na barra de 56px (`variant="header"`, a Central) | menu de `_rail3bottom.html` |
 | `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
+| `OperatorSwipeRow` | deslizar uma linha no toque (F7, 09/10/2026): à esquerda revela `actions` (gaveta que fica aberta depois da metade); à direita faz `commit` depois do ponto de compromisso, com o verbo e o alvo atrás da linha. Mouse não desliza; o eixo se decide no começo (rolar nunca vira deslize); `motion-safe:` na volta. Nunca a única porta: o mesmo ato existe num botão visível, e a camada de trás é `aria-hidden` | `cozinha-celular` (a), v4 |
+| `OperatorTimedButton` | a ação que só vale até um prazo, com o tempo dentro do botão: o fundo esvazia até a janela fechar; prazo absoluto (`until`), movimento reduzido só com os segundos, rótulo fixo e "Disponível até HH:MM:SS" na descrição; ao fim some ou desabilita. Ver "Ação com prazo" | proposta #1575, aprovada 09/10/2026 |
+
+**O título da barra do topo não se corta** (PR-K5, achado do B.I. a 390 px: "Quem compra
+no balc…"). O `NuxtDashboardNavbar` oficial leva `truncate` no título; o tema do kit
+(`dashboardNavbar` em `app/app.config.ts`) o troca por quebra de linha (`text-clip
+whitespace-normal`, sem `line-clamp`) e a barra passa de `h-(--ui-header-height)` a
+`min-h-(--ui-header-height)`: com título de uma linha ela segue com 56 px; com título
+longo, cresce e mostra o título inteiro. A coluna da direita é `shrink-0` no oficial: o
+título quebra antes de empurrar a lupa, as ações e Avisos para fora. Vale para toda barra
+do topo (o `OperatorPageHeader`, o `OperatorOfficeShell`, a do Kitchen Sink operacional,
+em `?mode=operational`). Não há `short-title`: o título é o mesmo `h1` para quem enxerga
+e para o leitor de tela, e uma tela que precise de título curto o escolhe curto.
 
 Opções do rail e da barra (todas opcionais): `print-shortcuts` (padrão ligado) imprime
 a tecla de cada seção sob o nome ("Alt1"), só com ponteiro fino; `dense-labels` usa
@@ -440,30 +469,1048 @@ script. Alvos ≥ 44px em tudo (as prévias tinham chips de
 `data-suite`. Contrato em `tests/components/SuiteChrome.test.ts`;
 `tests/guardrails.appBar.test.ts` lista quem migrou.
 
-## Busca da suíte (`OperatorSuiteSearch`)
+## Conjunto mínimo da suíte (dono, 08/10/2026)
 
-Uma busca, uma tecla (SUITE-UX-V2 §2.2, FUNCTION §7; prévias v3 `depois-gestor-busca`,
-`depois-hub-celular` e o campo do cabeçalho das v4). O `OperatorPageHeader` já a traz
-(`search = true`): toda tela tem o campo de 22rem do tablet para cima e a lupa na barra de
-56px do celular, que abre a busca em tela cheia (com a câmera onde o navegador lê código).
+Aprovado no PR #1539, sobre o laudo `docs/plans/WP-BI-CANON-LAUDO.md` (seção F). A
+referência viva é a página `/proposal` do Kitchen Sink. O tema do kit (`app/app.config.ts`
+e o módulo em `nuxt.config.ts`) fixa o default de cada peça, e a trava
+`tests/guardrails.minimalSet.test.ts` conta o que ainda foge do conjunto: o número só
+cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 
-- **Esta tela**: a tela que filtra a própria lista passa a sua no `#search`, com `v-model`
-  (e `screen-label="filtrando o quadro"`, `screen-count` se souber contar). Digitar filtra a
-  tela, como antes; Esc fecha o painel e mantém o filtro.
-- **App** e **Toda a suíte**: `GET /api/v1/backstage/search/?q=` (projeção
-  `shopman/backstage/projections/suite_search.py`): pedidos, encomendas, clientes, produtos,
-  insumos, fornecedores, lotes, receitas, campanhas e telas que o operador abre, agrupados por
-  tipo, cada um com o link profundo para o app de destino. "App" recorta pelo app atual
-  (`operatorPwa.app`; o Gestor é `orders` no kit e `gestor` no Django).
-- Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem; ↑↓ anda, Enter abre, Tab
-  troca o alcance. Impressas só com ponteiro fino.
-- Variantes: `header` (padrão), `hero` (a barra grande da Central, 34rem, "/" e Ctrl K) e
-  `hotkey` (sem campo na tela: a Venda e as Encomendas do PDV, onde o `/` é do campo do
-  produto e do "cliente veio buscar"; só Ctrl K e a lupa abrem a suíte).
+| peça | conjunto | como se escreve |
+|---|---|---|
+| Botão | tamanho `md` (todo lugar) e `xl` (toque crítico: PDV, Cozinha, quiosque, teclado numérico); variante `solid` (o gesto principal, um por região), `outline` (secundário) e `ghost` (terciário, ícone, menu); cor `primary`, `neutral` e `error` | estado ativo por `active` + `active-variant`/`active-color`, nunca `:variant="ativo ? … : …"`. Botão só de ícone é `square`. Aviso, informação e sucesso moram no selo ou no aviso, não na cor do botão; a exceção é a ação de aviso (abaixo). O default continua o do Nuxt UI (`primary` `solid` `md`): trocá-lo repintaria em silêncio todo botão sem cor escrita |
+| Selo (Badge) | uma variante, `soft` (sem borda), nas 6 cores `neutral`, `primary`, `info`, `success`, `warning`, `error` | o tema dá `soft` (`badge.defaultVariants`); ninguém escreve `variant` num selo. O `primary` usa a tinta `--primary-ink` (AA) |
+| Cartão (Card) | `outline` no topo; `soft` para cartão dentro de outro cartão (só fundo, sem borda dupla) | `outline` é o default; o aninhado escreve `variant="soft"` na chamada. `subtle` e `solid` não entram. Destaque navegável é `NuxtPageCard` |
+| Aviso (Alert) | `subtle` × `info`, `success`, `warning`, `error` | fundo opaco pré-composto no tema (compoundVariants). `primary` e `neutral` ainda têm uso e morrem com a migração deles; `secondary` saiu |
+| Cores geradas | `primary`, `info`, `success`, `warning`, `error` (e o `neutral`, que o Nuxt UI sempre gera) | `theme.colors` no módulo: cor que não é gerada não existe no tipo do `color` |
+| Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. `UiNativeSelect` está aposentado |
+| Texto | 5 tamanhos: `text-xs` 12 (rótulo e meta), `text-sm` 14 (texto corrido e controles), `text-base` 16 (título de cartão), `text-xl` (título de tela), `text-2xl` (figura); 2 pesos: `font-medium` e `font-semibold` | nenhum tamanho arbitrário novo (`text-[13px]`, `text-[0.625rem]`); a trava conta os que existem. Os papéis `op-*` de `operator-suite.css` ainda não foram reduzidos a esses cinco |
+| Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+". Toda contagem é o **chip de contagem** (`OperatorCountChip`, ver abaixo); selo com número não existe |
+| Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Barra lateral em três estados" abaixo |
+| Raio | ainda o do kit (`--radius` e `--radius-sm/md/lg/xl` em `operator-base.css`) | `--ui-radius` não entrou: nenhum valor único reproduz os raios de hoje (ver o PR-K3) |
+
+**Exceção declarada: a ação de aviso repete a cor do aviso** (dono, 08/10/2026, PR #1545).
+O botão de ação dentro de um `NuxtAlert` (no slot `#actions`, no `#description`, ou
+declarado em objeto no prop `actions`) usa a cor do próprio aviso: `warning`, `info`,
+`success` ou `error`. É a saída daquele aviso; neutro, ele se descola do estado que o
+chamou. Fora de um aviso, a cor do botão continua `primary`, `neutral` ou `error`. A
+trava `guardrails.minimalSet` não conta em `buttonColor` o botão dentro de um aviso cuja
+cor é a do aviso (com a cor do aviso ligada, qualquer cor de aviso passa). Desde 09/10
+(dono) a principal é `solid` e a secundária `outline`, as duas na cor do aviso, por
+`alertActions` (ver "Ação dentro de aviso", no "Aviso da tela").
+
+### Chip de contagem (`OperatorCountChip`)
+
+Decisão do dono, 09/10/2026, com a barra lateral aberta da Cozinha como referência
+("Bancada" com o 7 num círculo âmbar). **Toda contagem da suíte é este chip**, e ele
+substitui o contador de cantos arredondados (selo escuro ou contornado com número) que
+os botões, abas e recortes usavam ("Todos 7", "Entrega 3", "Atrasados").
+
+| Onde | Posição | Como |
+| --- | --- | --- |
+| item da barra lateral aberta, botão, aba, recorte (`UiFilterChip`), valor do `FilterBar`, "Filtros" da barra do topo, contagem ao lado de um título | no fluxo: ponta direita da linha, centro vertical | `<OperatorCountChip :count="n" />` (na aba: slot `#trailing` do `NuxtTabs`; no menu: `#item-trailing` do `NuxtNavigationMenu`) |
+| barra lateral compactada, barra inferior do celular | canto superior direito do ícone (`inset: false`) | `chip: countChipProps(n)` no item do `NuxtNavigationMenu` (a barra lateral usa `railSignalChip`, que é o mesmo) |
+
+- **Desenho**: o `NuxtChip` canônico, círculo preenchido de 16 px (`4xl` do kit), número
+  de 12 px. Vira pílula só quando o número não cabe ("99+"), com as pontas inteiramente
+  redondas. Cor da referência: `warning` (o âmbar da casa); a barra lateral passa a cor
+  da seção (`tone`). Número em `text-inverted`, AA nos dois temas: branco sobre o âmbar
+  queimado no claro, marrom quase preto sobre o âmbar claro no escuro.
+- **Anel de 2 px na cor do fundo do pai.** No canto do ícone é `ring-bg` (separa o chip
+  do ícone; na barra lateral o `--ui-bg` do escopo é a cor dela). No fluxo o chip não
+  cobre nada e o anel é `ring-transparent` (o `:ui` único do componente), que é exatamente o fundo do pai em qualquer
+  pai: o dourado do botão ativo, o `soft` translúcido do recorte, a linha ativa da barra
+  lateral, o hover.
+- **Contraste com o pai** (coordenação, 09/10/2026): círculo × fundo do pai ≥ 3:1 e
+  número × círculo AA, nos dois temas. Sobre pai PREENCHIDO de cor próxima o chip
+  **inverte**: círculo na cor do texto do pai, número na cor do fundo do pai, mesmo
+  tamanho e forma. Inverte na aba ativa preenchida (`NuxtTabs` `pill`, nos dois temas),
+  no botão ligado (`aria-pressed="true"`, o `solid` primário do ativo da suíte)
+  e na barra lateral clara (latão); nos demais pais fica o âmbar. A inversão sai do
+  próprio pai pelo CSS (`COUNT_CHIP_INVERT_CLASSES`, aba ativa do Nuxt UI e escopo
+  `.bg-rail`), sem prop nem `:ui` por tela; a tabela `COUNT_CHIP_INVERTED_ON` é medida
+  por `tests/countChipContrast.test.ts` contra os tokens do tema.
+- **Zero não aparece.** Um círculo âmbar com "0" aponta para o nada. Sem contagem maior
+  que zero, o chip não é desenhado; `dot` desenha o ponto de estado (sem número) no
+  tamanho padrão do ponto.
+- **Descrição acessível**: o número é parte do nome do botão ("Todos 7"). Na barra
+  lateral, na gaveta, no "Mais" e na barra inferior, o nome do item é
+  `sectionDescription`: "Seção · N pendências" ("1 pendência").
+- **Atributos** (`data-*`, `aria-*`) vão no número (o `NuxtChip` não repassa atributos
+  sem filho no slot padrão); a classe vai na raiz (`class="ms-auto"`).
+
+Trava: `tests/guardrails.countChip.test.ts` varre o kit e os apps de operador e reprova
+`NuxtBadge` com rótulo só numérico, item de aba ou menu com `badge:` numérico e número
+escrito à mão numa caixa de cantos não redondos. Contrato do componente em
+`tests/components/OperatorCountChip.test.ts`; a parte pura em `presentation/countChip.ts`.
+
+### Rail da suíte em três estados (`OperatorSuiteShell`)
+
+### Barra lateral em três estados (`OperatorSuiteShell`)
+
+Na tela, a peça se chama **barra lateral** (dono, 08/10/2026, PR #1544): nenhum texto
+visível nem `aria-label` diz "rail". No código, `rail` continua sendo o nome
+(`SUITE_RAIL_*`, `data-suite-rail`, `useSuiteRail`).
+
+Aprovado pelo dono em 08/10/2026 (PR #1539; referência viva em
+`kitchensink-nuxt/app/pages/proposal/rail.vue` do branch da proposta). Montado só com
+peças oficiais: `NuxtDashboardGroup` (`unit="rem"`), `NuxtDashboardSidebar`
+(`collapsible`, `resizable`, 12 a 20 rem aberto, `collapsed-size` 4) e
+`NuxtNavigationMenu` vertical com `tooltip` e `popover`. Nenhum `:ui` por instância; o
+dourado mora no `ui.dashboardSidebar` deste `app.config`.
+
+| Estado | O que é | Onde mora |
+| --- | --- | --- |
+| aberto | ícone e nome; a borda redimensiona de 12 a 20 rem | cookie do DashboardGroup (`<storage-key>-sidebar-suite`: `{ size, collapsed }`) |
+| compacto | só ícone; o nome (com o sinal) vira tooltip | o mesmo cookie |
+| oculto | o sidebar não é montado (só desktop) | cookie do kit `<storage-key>-rail-hidden` |
+
+- **Um botão só** na barra do topo (`OperatorPageHeader`, `data-rail-cycle`, a partir de
+  `lg`) percorre aberto → compacto → oculto → aberto; o ícone e o `aria-label` dizem o
+  PRÓXIMO estado ("Compactar a barra lateral", "Ocultar a barra lateral", "Mostrar a
+  barra lateral"). A tecla
+  **C** faz o mesmo (`SUITE_RAIL_SHORTCUT`, listada na ajuda de atalhos). O shell
+  entrega o controle à barra por `provideSuiteRail`/`useSuiteRail`; fora do shell a
+  barra segue como era.
+- Ao voltar do oculto, o sidebar remonta e relê o cookie (compacto): o shell reafirma
+  o aberto depois da montagem.
+- Arrastar alterna aberto e compacto (canônico); ocultar não é por arrasto. Abaixo de
+  `lg`, o comportamento oficial: a barra lateral abre como slideover (a gaveta) pelo ☰
+  da barra do topo, e a barra inferior fica embaixo (ver "Barra lateral e barra
+  inferior").
+- Sem o rail na tela (oculto ou abaixo de `lg`), Avisos sobe para a barra do topo.
+- **Sinais** (`sectionRailSignal`, `railSignalChip`, `railSignalLabel` em
+  `presentation/suiteChrome.ts`): `badge` numérico maior que zero vira o chip de
+  contagem (`4xl` do kit, "99+" acima de 99); `attention` vira ponto (tamanho padrão do
+  NavigationMenu). A cor é `tone` da seção (`success`, `warning` padrão, `error`).
+  Compacto: chip no canto do ícone (`chip` do item, `inset: false`). Aberto: o MESMO
+  chip na ponta direita da linha, no centro vertical (`OperatorCountChip` no slot
+  `item-trailing`). Tooltip e `aria-label`:
+  `sectionDescription(section)`, "Seção · estado" ou "Seção · N pendências"
+  ("1 pendência").
+- O pé: seções do pé do app, Atalhos (só ponteiro fino), Bloquear, Avisos e o menu do
+  operador (o "Ocultar a barra lateral" do menu leva ao estado oculto).
+- **Variante "início"** (`home`, só a Central): o selo do topo da barra lateral e da
+  gaveta é identidade, sem "voltar à Central" e sem link para a própria tela. Nos outros
+  apps o selo leva à Central (`operatorHubUrl`).
+
+Contrato em `tests/components/OperatorSuiteShell.test.ts` e `tests/suiteChrome.test.ts`.
+
+### Barra lateral e barra inferior
+
+Regra única para todo app do shell, inclusive app novo (dono, 08/10/2026, PR #1544):
+
+- **Gaveta** (a barra lateral pelo ☰, abaixo de `lg`) = o menu **completo** do app.
+  Sempre disponível.
+- **Barra inferior** (`OperatorQuickBar`, só abaixo de `lg`) = o menu **rápido**, de
+  **3 a 5 vagas**, escolhidas por importância de uso.
+
+O contrato (`quickBarLayout` e `quickBarProblems` em `presentation/suiteChrome.ts`):
+
+| O app declara | A barra mostra |
+| --- | --- |
+| nada | as primeiras seções, até 4, e "Mais" quando sobra seção |
+| `quick: true` em 1 a 4 seções | essas, na ordem da lista, e "Mais" se alguma ficou de fora |
+| `quick: true` em 5 seções | as cinco, **sem** "Mais" (o ☰ já leva ao completo) |
+| `quick: true` em mais de 5 | o kit corta em 5, e `quickBarProblems` acusa |
+
+- "Mais" abre a gaveta; só existe quando sobra seção.
+- **Quantas vagas aparecem**: de 3 a 5 é a regra; com 2, mostra as 2; com **1, a barra
+  some** (`shown: false` no `quickBarLayout`, e o `OperatorQuickBar` não monta). O ☰ já
+  dá o menu completo, e um item sozinho embaixo é ruído. É o caso da Central, que tem
+  só "Início".
+- Menos de 3 vagas (seções + "Mais") é erro de configuração, que o teste das seções do
+  app acusa com `expect(quickBarProblems(sections)).toEqual([])`. App com menos de 3
+  seções ao todo mostra todas, sem erro.
+- **Exceção** só declarada com motivo: `quickBarProblems(sections, "motivo")` dispensa o
+  mínimo (nunca o máximo). Hoje não há nenhuma.
+- Seção com `where: "rail"` não entra na barra inferior.
+- **Desenho**: o exemplo oficial "With bottom tab bar" do `NavigationMenu`
+  (<https://ui.nuxt.com/docs/components/navigation-menu#with-bottom-tab-bar>):
+  horizontal, `class="w-full"`, ícone em cima e rótulo embaixo, ativo pelo `active` do
+  item. O `:ui` do exemplo mora UMA vez no `OperatorQuickBar`, nunca nas telas; o
+  `text-[10px]/3` do rótulo é o valor da documentação, exceção declarada no teto da
+  trava do conjunto mínimo. O kit soma a fixação embaixo, a área segura
+  (`pb-[env(safe-area-inset-bottom)]`) e o alvo de toque (`min-h-control` no link).
+- **Sinal**: o mesmo chip da barra lateral (`chip` do item: ponto, ou número `4xl` com
+  `inset: false`), e a mesma descrição.
+
+**Descrição de contagem única.** Barra lateral, gaveta e barra inferior dizem a mesma
+coisa da mesma seção, por `sectionDescription`: "Seção · N pendências" ("1 pendência")
+ou "Seção · estado". A seção não traz contagem por extenso própria (o antigo
+`badgeLabel` saiu: a Saída era "2 pedidos na Saída" embaixo e "2 pendências" ao lado).
+A barra lateral e a barra do polegar dos apps ainda fora do shell
+(`OperatorSuiteRail`, `OperatorSectionBar`) usam a mesma descrição.
+
+Os apps ainda fora do shell seguem com a barra do polegar antiga (`OperatorSectionBar`:
+até 4 + "Mais", com o "Mais" guardando também o menu do operador, porque lá não há
+gaveta) até a onda de cada um.
+
+Contrato em `tests/suiteChrome.test.ts` (máximo 5, mínimo 3, "Mais" só quando sobra) e
+`tests/components/OperatorSuiteShell.test.ts`.
+
+**O desenho das duas barras de baixo é um só** (`TAB_BAR_UI` em
+`presentation/tabBar.ts`): a barra inferior do shell (`OperatorQuickBar`) e a barra do
+polegar dos apps ainda fora do shell (`OperatorSectionBar`, com o "Mais" como item da
+mesma barra). Ícone em cima, nome **inteiro** embaixo: o rótulo quebra em vez de cortar
+(o oficial leva `truncate`, e a 320 px o Marketing dizia "De…", "Age…", "En…").
+
+### Régua de tela (`useScreen`)
+
+Uma régua só, a do CSS: `useScreen()` devolve `belowSm`, `belowMd`, `belowLg` e
+`belowXl`, as mesmas bordas do `max-sm:`/`max-md:`/`max-lg:`/`max-xl:` do Tailwind
+(`presentation/screen.ts`). O servidor não sabe a largura, então **até a hidratação
+terminar toda leitura responde "mesa"** (falso), no servidor e no cliente; depois, a
+largura real entra como reatividade comum. Tela montada depois da hidratação (navegação
+interna) já nasce com a largura real.
+
+- O que é **só apresentação** decide no CSS (`max-sm:hidden`, `hidden md:inline-flex`):
+  o servidor já desenha certo e nada troca.
+- O que **muda a árvore** (slot, `v-if`, prop de componente) lê `useScreen()`. Nunca
+  `useMediaQuery` de largura na tela, nunca `ssrWidth`: a árvore hidratada tem de ser a
+  que o servidor mandou.
+- **O primeiro desenho no celular é do celular.** Como a régua responde "mesa" até
+  montar, tudo que ela decide aparece primeiro no layout da mesa (em rede lenta,
+  segundos). Por isso a barra do topo, a toolbar e as barras de base NÃO decidem por
+  ela: declare as duas variantes e deixe o CSS escolher. O `OperatorPageHeader` desenha,
+  antes de hidratar, a linha do celular e a toolbar da mesa (`sm:hidden` /
+  `max-sm:hidden`) e os dois ⋯, e tira da árvore a que não serve depois de montar. A
+  tela passa `phone-actions` sempre (não `isNarrow ? [...] : undefined`), `actions-from`
+  para dizer de que largura o `#actions` aparece, `desk-only-filters` quando o
+  `#filters` só existe na mesa e `phone-title` para o título curto. `useScreen()` fica
+  para o que a árvore precisa mesmo mudar depois de montar (as colunas da fila que
+  viram abas, a Fila "Precisa de você" só do `lg`, a direção da gaveta, o puxar para
+  atualizar), sempre com um comentário dizendo por quê. Prova:
+  `orders-nuxt/tests/ssr/directLoadPhone.spec.ts` abre cada rota a 390 px **sem
+  JavaScript** (o HTML do servidor) e exige a barra inteira: título sem nada por cima,
+  nenhum controle da mesa visível, nenhum corte na largura.
+- Dado lido só no cliente (`useFetch` com `server: false`) segue a mesma regra: o
+  esqueleto aparece também antes de hidratar (`pending || !screen.ready`), senão o
+  cliente hidrata um nó que o servidor não mandou.
+
+Por quê (alpha, 09/10/2026): o Gestor tinha a régua redeclarada em dez telas (`isNarrow`
+valia 639 px em nove e 1279 px na fila) e decidia `v-if` com ela. Na carga direta no
+celular (recarregar, PWA, link) a Fila ficava no esqueleto para sempre (`Cannot read
+properties of null (reading 'emitsOptions')`) e a toolbar do Histórico, dos Clientes e do
+Catálogo sumia. Travas: `tests/guardrails.screen.test.ts` (só a régua e o rail usam
+`useMediaQuery` no kit; Gestor e Cozinha são zero; os apps não migrados têm teto que só cai) e
+`orders-nuxt/tests/ssr/directLoadPhone.spec.ts` (build de produção, 390 e 1440 px, toda
+rota aberta direto: nenhum mismatch, nenhum erro de página).
+
+### Barra do topo no celular
+
+Regra única para todo app (dono, 08/10/2026: "no mobile tem muitas opções na navbar
+superior que estão se sobrepondo"). Abaixo de `sm`, a barra do topo
+(`OperatorPageHeader`) mostra no máximo:
+
+- **☰** (a gaveta, no shell);
+- **o título**, que quebra em até 2 linhas e nunca se corta (a coluna da esquerda ocupa
+  a sobra: `dashboardNavbar.slots.left`/`title` em `app.config.ts`);
+- **até 2 ícones fixos**: Avisos (onde a barra lateral não está) e a Busca, ou a ação da
+  tela de `priority` menor que a da Busca (`SEARCH_PRIORITY`);
+- **um ⋯ "Mais ações"** (o `OperatorMoreMenu`, ver "Peças de tela") com todo o resto,
+  na ordem declarada. A
+  Busca que perde a vaga vira "Buscar" no ⋯.
+
+O que **não** fica na barra: o estado (`#status`, o selo ao vivo) e o posto do
+dispositivo descem para uma segunda linha da barra (`data-page-header-status`), em vez de
+se espremer por cima do título. O selo do app sai da barra no shell (a gaveta o mostra no
+topo). Controles de leitura (período, frescor, recortes) moram na toolbar, nunca na barra.
+
+A tela declara as ações como **dados**, e o kit decide o que transborda
+(`phoneHeaderLayout` em `presentation/pageHeader.ts`):
+
+```vue
+<OperatorPageHeader
+  title="Pedidos"
+  :actions="[
+    { label: 'Visto', icon: 'i-lucide-check', priority: 1, onSelect: ack },
+    { label: 'Atualizar', icon: 'i-lucide-refresh-cw', onSelect: refresh },
+    { label: 'Exportar CSV', icon: 'i-lucide-download', onSelect: exportCsv },
+  ]"
+  actions-label="Mais ações da fila"
+/>
+```
+
+- Com `actions`, o `#actions` some abaixo de `sm` (o que importa ao polegar está nos
+  dados); do `sm` para cima, nada muda: o `#actions` segue como está e as ações
+  declaradas aparecem num ⋯ ao lado dele. Quem tem as mesmas ações no `#actions` (ou na
+  toolbar) passa `phone-actions`: o mesmo papel no celular, sem ⋯ delas na mesa. Sempre
+  declaradas, nunca `isNarrow ? [...] : undefined`: o servidor não sabe a largura e o
+  celular nasceria com a barra da mesa (o flash do Gestor, 09/10/2026).
+- `actions-from="md"`: o `#actions` só do `md` para cima (pelo CSS), para a tela cujo
+  celular vai até o `md` (a fila e o pedido do Gestor).
+- `phone-title`: o título curto do celular ("W01" para "Pedido W01"), escolhido pelo CSS.
+- Página de leitura: `useReadingPageActions(items)` dá "Copiar link desta leitura" mais
+  as da página, e o nome do ⋯ (`actions-label`).
+- `#phone-actions` é para o ⋯ PRÓPRIO da tela, quando o menu é um painel e não uma lista
+  (o pedido do Gestor): conta como o ⋯.
+
+Trava: `tests/pageHeader.test.ts` (quem ganha a vaga, nada se perde) e
+`tests/catalog/phone-header.spec.ts` (no navegador, a 320 e a 390 px, na bancada
+`/__operator_kit_catalog/phone-header`: nenhuma caixa se cruza ou sai da largura, título
+inteiro em até 2 linhas, no máximo 3 controles à direita, todas as ações no ⋯).
+
+### Toolbar no celular
+
+Abaixo de `sm`, no shell (`phone-filters="drawer"`, o padrão com `OperatorSuiteShell`),
+a toolbar do cabeçalho é **uma linha só, de altura fixa**:
+
+| slot | do `sm` para cima | abaixo do `sm` |
+| --- | --- | --- |
+| `#filters-primary` | começo da linha | na linha (até 2 controles; o período em `compact`) |
+| `#filters` | a linha de sempre | no painel "Filtros" (`NuxtDrawer` de baixo), inteiros e rotulados, com "Limpar" e "Ver resultados" |
+| `#filters-end` | fim da linha (o frescor, a contagem) | faixa de texto logo abaixo da linha (ou na linha, se não há primário) |
+| `active-filters` | (a própria barra mostra) | número no "Filtros" e chips removíveis numa faixa que rola, só quando há algum |
+
+- O botão "Filtros" só existe se há `#filters`; abaixo de 360 px ele fica só com o
+  ícone (o nome segue no `aria-label` e no `title`).
+- `clear-filters` faz o "Limpar"; sem ele, o kit remove cada recorte ativo.
+  `filterBarActiveFilters(dimensions, filtros, atualizar)` converte os campos da
+  `FilterBar` em recortes ativos.
+- Aba ou segmentado com mais de 3 opções vira `NuxtSelect` no celular (a Coleção do
+  Catálogo); com até 3, rola na horizontal, sem cortar rótulo.
+- Ação não é filtro: "Atualizar", "Exportar", "Admin" vão para as `actions` da barra,
+  nunca para o painel "Filtros".
+- Os apps ainda fora do shell seguem com a linha de sempre (`row`) até a onda de cada um;
+  `phone-filters="drawer"` os traz antes.
+- `desk-only-filters`: o `#filters` só existe na mesa (ali moram ações, que no celular
+  já estão nas `phone-actions`); no celular não há "Filtros" nem painel. Melhor que
+  `v-if="!isNarrow"` no slot, que só vale depois de montar.
+- A linha do celular e a toolbar da mesa vão as duas no HTML do servidor, cada uma
+  escondida pelo CSS na largura da outra; depois de montar, a que não serve sai.
+
+Trava: `tests/catalog/phone-header.spec.ts` (linha de no máximo 64 px, primário sem
+rolagem escondida, o painel abre, o recorte vira chip e sai pelo ×).
+
+### Escolha numa lista: `NuxtSelect` e `NuxtSelectMenu`
+
+`UiNativeSelect` **está aposentado** (dono, 08/10/2026): nada de lista do sistema, em
+nenhum dispositivo. Os usos de hoje (43, nos apps ainda não migrados) são teto no ledger
+(`ui_native_select_occurrences` em `docs/reference/operator-component-ledger.json`,
+conferido por `scripts/check_operator_component_ledger.py`): o número só cai, e nenhum
+uso novo passa. Escolha nova nasce em Nuxt UI:
+
+- **Lista curta e fixa:** `NuxtSelect`.
+- **Lista longa ou que cresce:** `NuxtSelectMenu` com busca. A busca recebe o foco ao
+  abrir só onde há teclado físico; no toque, o teclado virtual sobe quando a pessoa toca
+  na busca:
+
+```vue
+<script setup lang="ts">
+import { useMediaQuery } from "@vueuse/core";
+const touch = useMediaQuery("(pointer: coarse)");
+</script>
+
+<template>
+  <NuxtSelectMenu v-model="product" :items="products" :search-input="{ autofocus: !touch }" />
+</template>
+```
+
+O `UiSelect` também fica fora do conjunto: escolha nova não nasce nele.
+
+### Cartão dentro de cartão
+
+O cartão de topo é `outline` (borda e fundo do cartão). Um cartão dentro dele (o lote
+dentro do plano, o item dentro do pedido) é `variant="soft"`: só o fundo, sem a segunda
+borda. A regra mora na chamada, não no CSS: um seletor que adivinhasse o aninhamento
+pintaria errado o cartão que só está dentro de uma coluna.
+
+### Conteúdo do botão no meio
+
+O `NuxtButton` oficial só centra o conteúdo com `block`. Sem ele, o botão que a grade ou um
+`w-full`/`flex-1` esticou (tecla de teclado, ação que divide a linha, opção de um grupo)
+deixava rótulo e ícone encostados à esquerda (dono, 10/10/2026). O tema do kit põe
+`justify-center` na base do botão, uma vez, para os nove apps. Botão que é LINHA de lista
+(rótulo à esquerda de propósito: item de paleta, sugestão de endereço, método de
+pagamento) escreve `justify-start` na chamada; o `class` de quem chama vence o tema.
+
+### PIN
+
+A regra é a do doorman: no mínimo 4 dígitos, só dígitos (`PIN_MIN_LENGTH`,
+`PIN_DIGITS_ONLY`), sem máximo no servidor; a tela para no oitavo (`PIN_MAX_DIGITS`). O
+PIN temporário do reset do gerente nasce com 4. O `OperatorPinPad` desenha exatamente
+isso: 4 casas, e uma casa a mais a cada dígito além do quarto, até 8. O campo só mostra
+(bolinhas, nunca o dígito; sem foco, para não abrir o teclado do sistema por cima do pad
+nem tirar o Enter e o crachá da captura).
+
+### Idioma das peças do Nuxt UI
+
+O `OperatorAppRoot` passa o `pt_br` oficial do Nuxt UI ao `UApp` (`:locale`): o texto
+que as peças escrevem sozinhas (lista vazia, "Selecionar", incrementar e decrementar,
+fechar) já sai em português. ⚠️ Duas frases ficam em inglês porque o `reka-ui` as
+escreve sem passar pelo locale e sem prop para trocar: o `aria-label` de cada casa do
+`NuxtPinInput` ("pin input 1 of 4") e o do grupo do `NuxtStepper` ("progress"). Não se
+remenda pelo DOM: o PIN do kit já dá o nome do campo inteiro (o `aria-label` do grupo
+no `OperatorPinPad`). Quando o `reka-ui` aceitar o rótulo, ele entra
+aqui, uma vez.
+
+### Rótulo que cabe (`OperatorButton`, `OperatorFitGroup`, `op-fixed-lines`)
+
+Pedido do dono (10/10/2026): copy de botão estourando em vários apps. Um tratamento
+só na suíte, sem exceção por tela.
+
+**Ação (botão).** O rótulo se adapta ao espaço nesta ordem:
+
+1. o rótulo completo ("Enviar à cozinha");
+2. o rótulo curto **declarado pela própria ação** (`short-label`, "Cozinha"). Quem
+   conhece a ação escreve o curto: o código nunca abrevia sozinho, e o curto segue a copy
+   da casa (inequívoco, vocabulário de `docs/reference/suite-vocabulary.md`, sem travessão);
+3. só o ícone, com o rótulo completo no nome acessível (`aria-label`) e na dica (`title`).
+
+Nunca cortar no meio sem reticências, nunca vazar do botão, nunca empurrar a barra para
+fora. Ação sem ícone não tem o degrau 3: o último texto fica e quebra linha. Por isso toda
+ação que pode ficar apertada declara um ícone.
+
+```vue
+<!-- Sozinho: o contêiner mais próximo é quem decide (aqui, a coluna). -->
+<div class="op-fit-scope">
+  <OperatorButton label="Enviar à cozinha" short-label="Cozinha" icon="i-lucide-chef-hat" />
+</div>
+
+<!-- Várias ações na mesma barra: trocam de degrau juntas. -->
+<OperatorFitGroup :actions="acoes" class="flex items-center gap-2">
+  <OperatorButton v-for="acao in acoes" :key="acao.label" v-bind="acao" />
+</OperatorFitGroup>
+```
+
+- **A troca é pelo espaço do CONTÊINER, não da tela, e é CSS.** O contêiner declara
+  `container-type: inline-size` (`op-fit-scope`, ou o `@container` do Tailwind) e o CSS
+  (`assets/css/operator-fit.css`) compara `100cqi` com a largura que a ação precisa
+  (`--op-fit-full`, `--op-fit-short`). Essa largura sai de `presentation/actionLabel.ts`,
+  calculada do texto com as larguras de glifo da Instrument Sans, igual no servidor e no
+  cliente: nada de `window.innerWidth`, nada de medir depois de montar, nenhum flash.
+- **O contêiner precisa ter largura dada pelo layout** (`w-full`, `flex-1`, coluna de
+  grade): a contenção de tamanho zera a largura que viria do conteúdo. Sem contêiner
+  declarado, o navegador compara com a viewport.
+- **Uma barra é um grupo.** `OperatorFitGroup` soma as ações e os espaços entre elas e as
+  troca juntas, para a barra nunca misturar "Enviar à cozinha" com um ícone solto. As
+  barras do kit já fazem isso por dentro: `OperatorActionBar` (as ações aceitam
+  `shortLabel`), `OperatorBulkBar` (idem) e `OperatorTimedButton` (`short-label`). O
+  `OperatorMoreMenu` e as `actions` do `OperatorPageHeader` não precisam: o item do ⋯
+  quebra linha, e no celular a ação vira ícone fixo ou item do ⋯ pela regra da barra do
+  topo. Os `OperatorQuickFilters` rolam na faixa, sem cortar, e as abas (`NuxtTabs`,
+  pílula e sublinhada) também: o tema do kit tira o encolhimento da aba e deixa a lista
+  rolar de lado quando não cabe. O mês do `NuxtCalendar` (o botão que troca a vista)
+  quebra linha em vez de cortar.
+- **Grade de colunas iguais é `equal`.** Quando as irmãs moram numa grade
+  (`grid-cols-n`, cada uma com 1/n da largura), o `OperatorFitGroup equal` pede n vezes a
+  MAIS LARGA (não a soma) e as células não são contêiner: o grupo é. Assim "Enviar 3
+  marcadas" nunca fica ao lado de um "Transferir" curto. A contagem de uma ação entra
+  pelo `reserve` da própria ação, e a tecla pelo `shortcut` dela: as teclas caem juntas
+  (`--op-fit-keyed`). Usos: o pé da comanda e os destinos do "Transferir itens" no PDV.
+- **A tecla cai primeiro.** `shortcut="F9"` desenha a tecla ao lado do rótulo e ela é
+  a primeira a sair quando o espaço aperta (o limite dela é o do completo mais a largura
+  da tecla): o verbo fica, a tecla vai. Contagem ao lado do rótulo vem no slot
+  `trailing` e entra na conta pelo `reserve` do `OperatorFitGroup`.
+- **Grupo numa linha que quebra.** O `OperatorFitGroup`/a barra também publicam
+  `--op-fit-min` (todas no último degrau): numa linha com `flex-wrap`, use
+  `min-w-(--op-fit-min)` no contêiner, e o grupo desce de linha em vez de vazar.
+- **Texto do botão.** O `textContent` do botão é só o completo (o curto é conteúdo
+  gerado, `::before`), então `getByRole("button", { name })` e `toHaveText` seguem
+  achando o botão pelo nome inteiro.
+- O `:ui` mora uma vez na peça; quem chama passa cor, variante e tamanho do conjunto
+  mínimo, e o `title` de quem chama (o motivo de uma ação desligada) vence a dica.
+
+**Texto que não é ação, em peça de tamanho fixo** (refinamento do dono, 10/10/2026):
+cartão de produto, linha de grade, tile. O nome **reserva sempre a altura de duas
+linhas** (`op-fixed-lines`), para o cartão não mudar de tamanho nem deformar com uma ou
+duas, e passando de duas **trunca com reticências**, com o texto completo no `title` e no
+nome acessível. `--op-lines` muda o número de linhas. Em lista e tabela de leitura, onde a
+altura da linha pode variar, o texto continua quebrando: não use a classe lá.
+
+```vue
+<p class="op-fixed-lines" :title="produto.nome">{{ produto.nome }}</p>
+```
+
+**A trava.** O scanner de geometria (`visual/scanner.ts`) reprova, em toda matriz que o
+usa: texto de controle que passa da caixa ou é cortado sem reticência
+(`control-text-overflow`; reticência só com o completo na dica ou no nome acessível),
+controles sobrepostos (`control-overlap`: só controles da mesma camada, na caixa que
+de fato aparece; o que rola por baixo de uma barra fixa é `covered-by-chrome`) e texto de
+peça fixa que não reserva as linhas
+ou corta sem o completo (`fixed-text`). O catálogo do kit (seção "Rótulo que cabe",
+`OperatorKitchenSinkFit.vue`) mostra os três degraus e os cartões de uma, duas e três
+linhas, e o spec confere degrau e altura em todos os viewports. Onde a trava roda na
+CI: catálogo do kit, Kitchen Sink, Compras e Gestor (a varredura inteira, por
+`captureOperatorEvidence`); Cozinha, Marketing e Produção (só a do rótulo, por
+`expectOperatorLabelsFit`, porque essas matrizes ainda não passam a varredura inteira).
+
+## Peças de tela (fase 2)
+
+As atividades comuns do operador, uma peça para cada uma
+(`docs/plans/WP-FASE2-UX-OPERADOR.md`). Cada peça nasce aqui com teste, entra no
+catálogo do kit (Kitchen Sink, seção "Peças de tela",
+`OperatorKitchenSinkScreenPieces.vue`) no mesmo PR, e o `:ui` mora uma vez na peça.
+
+### Mais ações: o ⋯ único (`OperatorMoreMenu`)
+
+Um ⋯ só na suíte, o mesmo no cabeçalho, no cartão, na linha da tabela e no quadro de
+leitura, no celular e na mesa. A tela declara as ações como **dados**; a peça desenha o
+botão e o menu:
+
+```vue
+<OperatorMoreMenu
+  label="Mais ações do pedido 1048"
+  :items="[
+    [
+      { label: 'Atender este pedido', icon: 'i-lucide-user-plus', onSelect: assign },
+      {
+        label: 'Voltar para a Cozinha',
+        icon: 'i-lucide-rotate-ccw',
+        disabled: true,
+        reason: 'A Cozinha já fechou o pedido 1048.',
+      },
+    ],
+    [{ type: 'label', label: 'Leitura' }, { label: 'Atualizar', icon: 'i-lucide-refresh-cw', kbds: ['R'], onSelect: refresh }],
+    [{ label: 'Cancelar pedido', icon: 'i-lucide-x', color: 'error', onSelect: cancel }],
+  ]"
+/>
+```
+
+- **Os itens** têm o formato do `NuxtDropdownMenu` (`OperatorMoreMenuItem`,
+  `presentation/moreMenu.ts`): lista simples ou lista de grupos, o rótulo de grupo é um
+  item `type: "label"`, a destrutiva é `color: "error"`, atalho em `kbds`, link em `to`.
+  Grupo vazio, ou só com o rótulo, some.
+- **`reason`**: o motivo de uma ação desabilitada, escrito sob o rótulo (no toque não há
+  dica de ponteiro). Ação desabilitada por regra do negócio leva motivo; a desabilitada
+  só enquanto um pedido anda dispensa.
+- **`label`**: o nome do ⋯, o que ele guarda ("Mais ações do pedido 1048", "Mais ações de
+  Pão francês"). Vira `aria-label` e `title`. Padrão: "Mais ações".
+- **O botão** é sempre o mesmo: reticências deitadas, `ghost`, `neutral`, quadrado. Nada
+  de `outline`, nada de reticências de pé, nada de botão rotulado.
+- **Texto da casa não se corta**: o rótulo e o motivo quebram linha, e o menu não passa
+  da largura que sobra na tela.
+- Atributos (`class`, `data-*`) chegam ao botão; `v-model:open` controla o menu; slot de
+  item (`slot: "freshness"` → `#freshness`) passa direto.
+- **As ações da barra do topo são o mesmo formato**: o ⋯ do `OperatorPageHeader` (as
+  `actions`) é esta peça, e `OperatorHeaderAction` aceita `reason`. O quadro de leitura
+  (`OperatorReadingCard`) e o ⋯ da página de leitura (`OperatorReadingPageMenu`) também.
+
+O que **não** é este ⋯: o "Mais" da barra inferior e o menu do operador (navegação, não
+ação), e o ⋯ que abre um **painel** (o pedido do Gestor, com o pedido inteiro; o
+cenário do B.I., com campo de nome).
+
+Trava: `tests/guardrails.moreMenu.test.ts` reprova o ícone de reticências fora da peça,
+com as exceções acima listadas com motivo e teto (o número só cai), e o ⋯ de pé em
+qualquer lugar. Os apps ainda fora do shell (Marketing, Compras, Produção, PDV) desenham o
+⋯ com `UiPopover`: trocam pela peça na onda de cada um. Contrato em
+`tests/components/OperatorMoreMenu.test.ts` e `tests/moreMenu.test.ts`.
+
+### Anterior e próximo (`OperatorRecordNav` + `useRecordTrail`)
+
+"‹ 3 de 18 ›" no detalhe de um registro: anda DENTRO da lista de onde a pessoa veio, com
+o recorte dela (a busca, o escopo, a ordenação). "18" são os que ela via.
+
+```ts
+// Na lista: grava a ordem que a tela mostra (a cada mudança).
+const { remember } = useRecordTrail("orders-queue");
+watch(visibleRefs, (refs) => remember(refs, { from: route.fullPath, label: "Pedidos" }), { immediate: true });
+```
+
+```vue
+<!-- No detalhe, no #status do OperatorPageHeader (a barra do topo; no celular, a 2ª linha). -->
+<OperatorRecordNav
+  trail="orders-queue"
+  :current="orderRef"
+  :to="(ref) => `/${ref}`"
+  previous-label="Pedido anterior"
+  next-label="Próximo pedido"
+/>
+```
+
+- **A trilha** (`presentation/recordTrail.ts`) mora na sessão do navegador, por chave:
+  o detalhe recarregado ainda sabe de que lista veio; outra aba começa sem trilha. Duas
+  listas que abrem o mesmo detalhe usam chaves diferentes (a fila e o histórico do
+  Gestor), e o detalhe lê a da lista por onde a pessoa chegou.
+- **Sem trilha, sem par**: aberto por link, por outro app, ou com o registro fora da
+  lista (que já mudou), o par não aparece. Sozinho na lista, também não.
+- **Cada lado é um link** (`to`): a URL é a do registro, abre em outra aba, e o voltar do
+  navegador volta ao registro anterior. Na ponta, o lado que falta fica desabilitado.
+- **Teclas** J (próximo) e K (anterior), e as setas → e ← (`RECORD_NAV_SHORTCUTS`, pela
+  infraestrutura de atalhos do kit). Não agem com o foco num campo, com diálogo aberto
+  nem onde as setas já têm dono (abas, rádio, menu, lista, divisor:
+  `ignoreWithin` do comando de atalho).
+- **O lugar** é a barra do topo, o papel "onde estou": o `#status` do `OperatorPageHeader`.
+  No celular ele é a segunda linha da barra; nunca uma barra própria.
+- No servidor não há trilha: o par aparece depois de montar e nunca diverge na
+  hidratação.
+
+Contrato em `tests/components/OperatorRecordNav.test.ts` e `tests/recordTrail.test.ts`.
+Primeiro uso: o pedido do Gestor (`orders-nuxt/app/pages/[ref].vue`), com a trilha da
+fila (`pages/index.vue`) e a do histórico (`pages/history.vue`).
+
+### Ação na base (`OperatorActionBar`)
+
+A ação do momento no celular e no tablet: a estrutura de sucesso do Storefront
+(`.shop-action-dock` da sacola) como regra, não como classe. A linha de contexto (o que a
+ação mexe), UMA ação larga e o motivo escrito quando ela não pode, num cartão
+**flutuante em superfície invertida** (dono, 09/10/2026): escura no tema claro, creme no
+escuro (`bg-inverted`/`text-inverted`, os tokens do tema), com sombra, como a sacola do
+Storefront. Contraste AA do rótulo dentro de cada botão e o contorno da segunda ação
+contra ela, nos dois temas, travados em `tests/actionBarContrast.test.ts`.
+
+```vue
+<OperatorActionBar
+  :action="{ label: 'Iniciar preparo', icon: 'i-lucide-lock', disabled: true,
+             reason: 'O Pix ainda não caiu. O pedido libera sozinho quando cair.' }"
+  :secondary="{ label: 'Recusar', onSelect: reject }"
+  context-label="Pedido 1049 · Pix"
+  context-value="R$ 93,20"
+/>
+```
+
+- **Em fluxo**: a tela a põe como irmã do conteúdo que rola, DEPOIS dele (o rodapé do
+  painel, a posição do `#footer` do `NuxtDashboardPanel`). Nada de `fixed`, nada de
+  `bottom-16` adivinhando a altura da barra inferior.
+- **A ação** (`OperatorActionBarAction`, `presentation/actionBar.ts`) leva verbo e alvo
+  ("Pronto para retirar"), `xl`. A PRINCIPAL é `primary` `solid` (o dourado); a segunda
+  (`secondary`), se houver, é SECUNDÁRIA (`outline`), nunca discreta (`ghost`) (dono,
+  09/10/2026). A principal é o `solid` canônico, sem anel (dono, 09/10/2026): o 3:1 de
+  componente (WCAG 1.4.11) vale para a informação que identifica o botão, e aqui são o
+  rótulo e o ícone, AA dentro dele nos dois temas; o dourado contra a superfície (2,8:1
+  no claro, 1,8:1 no escuro) não precisa separar. A segunda leva o contorno da variante,
+  na cor do texto invertido, travado em 3:1 contra a superfície. A cor de cada uma é da
+  peça, não da tela.
+- **`reason`**: com `disabled`, o motivo aparece escrito sob a ação (`role="status"`, e o
+  botão aponta para ele com `aria-describedby`).
+- **Ação com prazo** (`action.timed = { until, since?, duration?, serverNow?, onExpire? }`,
+  o "Desfazer"): a barra NÃO muda (dono, 09/10/2026). Mesmo cartão invertido, mesma
+  linha de contexto, mesma segunda ação; o botão tocado fica no lugar, mesma cor,
+  variante e tamanho, troca só o texto ("Pronto 0131" vira "Desfazer 0131", com
+  `ariaLabel` para o nome completo) e ganha o fundo que esvazia (`OperatorTimedButton`).
+  Ao fim do prazo o botão fica no lugar, desligado, até quem chama trocar a ação.
+- **Só abaixo de `lg`**: na mesa, a ação sobe para a barra superior primária.
+- **Some com o teclado aberto** (`data-keyboard="open"` no `<html>`, do
+  `plugins/visualViewport.client.ts`): o campo que a pessoa digita fica com a tela.
+- Marca `data-focus-obstruction`: o próximo foco e o "Tem mais abaixo" descontam a altura.
+
+**Convivência na base do celular**, de baixo para cima:
+
+1. a **barra inferior** (`OperatorQuickBar`, 3 a 5 vagas, do shell), sempre visível;
+2. a **ação na base**, uma por tela, colada em cima dela;
+3. o **conteúdo**, que rola acima das duas e nunca fica coberto.
+
+Enquanto houver seleção numa lista, a barra de seleção (`OperatorBulkBar`, por vir)
+ocupa o lugar da ação na base. O polegar da Saída do Gestor no celular (F7, #1564) é
+uma ação na base sem linha de contexto: "Entregar U13 a Ana", no rodapé do painel,
+depois da área que rola (`orders-nuxt/app/pages/index.vue`, `data-exit-base-action`).
+Não existe outra peça de polegar.
+
+Trava: `tests/guardrails.actionBar.test.ts` conta, por arquivo, o texto de classe com
+`sticky`/`fixed` e `bottom-*` nos templates dos apps de operador e do kit: uso novo
+reprova, e o teto das barras feitas à mão (Cozinha, Marketing, PDV, Compras) só cai.
+Contrato em `tests/components/OperatorActionBar.test.ts`. Primeiro uso: o pedido do
+Gestor no celular (`orders-nuxt/app/pages/[ref].vue`: a ação primária, "Recusar" como
+segunda, o motivo do bloqueio escrito).
+
+### Ação com prazo (`OperatorTimedButton`)
+
+A ação que só vale até um prazo, com o tempo **dentro do botão**: o fundo esvazia até a
+janela fechar (dono, 09/10/2026, sobre a proposta #1575: "é exatamente assim: fundo
+esvazia! ótimo! poderia canonizar isso para outros casos de uso"). Serve a todo gesto
+que o sistema segura por alguns segundos antes de valer: desfazer o Pronto na Cozinha,
+desfazer a saída no Gestor.
+
+```vue
+<OperatorTimedButton
+  :until="handoff.untilIso"
+  :since="handoff.sinceIso"
+  :server-now="card.server_now_iso"
+  label="Desfazer"
+  icon="i-lucide-undo-2"
+  block
+  @click="undo()"
+  @expire="closed()"
+/>
+```
+
+- **Prazo absoluto.** O fim é `until`, não "5 s a partir de agora": montar de novo
+  (teleporte para o polegar, foco que muda, recarga da lista) ou a aba dormir em segundo
+  plano não reinicia a janela. Na volta da aba, a janela que passou fecha na hora. O
+  prazo do servidor vem com `server-now`, e o desvio do relógio do dispositivo sai da
+  conta. `since` (ou `duration`) dá o tamanho da janela, para o fundo começar na
+  proporção certa; sem nenhum dos dois, conta do primeiro instante em que a peça viu o
+  prazo. Quem guarda o prazo é o dono do estado (o quadro, a projeção), nunca a peça.
+- **Uma animação só**, em CSS, do tamanho da janela, com atraso negativo para começar
+  onde a janela já está. Nada redesenha a cada quadro.
+- **A menor interferência possível** (dono, 09/10/2026): o botão com prazo é o MESMO
+  botão que ele substitui, no mesmo lugar. Quem chama passa a cor, a variante e o
+  tamanho do botão de origem (o padrão é o da ação principal, `primary` `solid` `md`);
+  só o texto muda ("Pronto 0131" vira "Desfazer 0131") e o fundo esvazia atrás dele.
+  Nada de trocar para contornado ou neutro, nada de mudar altura ou largura. Trava: o
+  teste compara, classe por classe, com o `NuxtButton` de mesma cor, variante e tamanho.
+- **O esvaziamento se vê de relance, e é um SOBRETOM da cor do botão** (dono,
+  09/10/2026: a primeira versão era "muito sutil"; dono, 13/10/2026: o quase branco
+  sobre o verde no escuro era "árido e ríspido"). No sólido de cor (`primary`, `error` e
+  o verde do Pronto da Cozinha com `fill-tint="inverted"`) são duas partes e o rótulo é
+  AA sobre as duas: o que RESTA é a mesma cor um tom mais funda no claro (preto a 35%) e
+  um tom mais clara no escuro (branco a 40%), sempre na direção que aumenta o contraste
+  do rótulo; o que esvaziou é a cor do botão. A diferença entre as partes fica entre
+  1,4:1 e 2,2:1: visível, sem virar quase preto nem quase branco. A borda entre elas é
+  seca, sem degradê. Os valores moram no `<style>` da peça
+  (`--timed-remaining`, `--timed-spent`) e a trava `tests/timedButtonContrast.test.ts`
+  lê de lá. O neutro sólido (`fill-tint="page"`) e o contornado não comportam duas
+  partes com o rótulo AA e ficam com o tom leve (contornado: a cor do rótulo a 10%).
+  Conjunto mínimo: `md`/`xl` × `outline`/`solid` × `primary`/`neutral`/`error`; as
+  cores de aviso (`info`,
+  `success`, `warning`) só como ação de um `NuxtAlert` daquela cor (a exceção declarada).
+- **Movimento reduzido** (`prefers-reduced-motion: reduce`): nada anima; o botão mostra
+  o número de segundos ("4 s"), que muda uma vez por segundo.
+- **Leitor de tela**: o nome do botão é o rótulo, fixo (ou o `aria-label` de quem chama:
+  "Desfazer o Pronto do pedido W07"). O tempo vai numa descrição fixa, "Disponível até
+  10:42:15", que não muda a cada segundo; uma região educada fala duas vezes, ao abrir
+  ("Desfazer: disponível até 10:42:15.") e ao fechar ("Desfazer: o prazo acabou."). O
+  número visível e a camada do fundo são `aria-hidden`.
+- **Ao fim**, `expire` sai uma vez, e o botão some (`when-expired="hide"`, o padrão) ou
+  fica no lugar desabilitado (`"disable"`). O toque que chega depois do prazo não sai.
+- `class`, `data-*` e `aria-*` chegam ao botão. SFC puro (imports explícitos): os
+  harnesses sem runtime Nuxt dos apps montam a peça de verdade.
+
+Onde mora: o Desfazer do Pronto na Cozinha (na mesa, o mesmo Pronto verde do
+`KdsCardButton`; no celular, a ação na base com `action.timed`; prazo guardado pelo
+`useKdsBoard`) e o Desfazer da saída no Gestor (o primário sólido do `OrderCard`; no
+detalhe, o primário do cabeçalho e a ação na base; prazo e começo da janela vindos da
+projeção: `undo_until_iso`/`undo_since_iso`). A conta
+é pura em `presentation/timedAction.ts`. Trava: `tests/timedAction.test.ts` e
+`tests/components/OperatorTimedButton.test.ts`. Vitrine: "Ação com prazo", nas peças de
+tela do catálogo.
+
+### Estado da tela (`OperatorScreenState`)
+
+Carregando, vazio, erro e sem conexão, com UMA frase por estado
+(`presentation/screenState.ts`). A tela diz o que mostra, com artigo, e a peça escreve:
+
+| estado | peça | frase |
+| --- | --- | --- |
+| `loading` | `NuxtEmpty loading` | "Carregando a fila" |
+| `empty` | `NuxtEmpty` com ícone | o título da tela, no presente e sobre a pessoa ("Nenhum pedido precisa de você agora."); sem título, "Nada para mostrar agora." |
+| `error` | `NuxtAlert subtle error` + "Tentar de novo" | "Não foi possível carregar a fila" (o tom é do dono, 09/10/2026) |
+| `offline` | `NuxtAlert subtle warning` | "Sem conexão." + "O que está na tela é de 10:42." |
+
+```vue
+<OperatorScreenState v-if="error" state="error" what="os lotes do período" @retry="refresh()" />
+<OperatorScreenState v-else-if="pending && !report" state="loading" what="os lotes do período" in-card />
+```
+
+- **"Tentar de novo" na cor do aviso** (a exceção declarada do conjunto mínimo), `solid`
+  (é a principal do aviso, por `alertActions`),
+  tamanho `md` como o resto da suíte: o `xs` que o `NuxtAlert` dá por padrão às ações
+  fica fora do conjunto. Vale para toda ação dentro de aviso montada pelo kit.
+- **`in-card`**: dentro de um cartão o vazio e o carregando perdem a moldura própria
+  (`naked`); no corpo da página, ficam com ela. Uma regra, em vez de cada tela escolher.
+- `description` acrescenta a segunda linha (no B.I., "Os números na tela são os da
+  leitura anterior."); `#actions` dá a saída do vazio.
+- Substituiu o `BiPageState` (3 usos) e os cinco avisos de erro escritos à mão no B.I.
+
+### Aviso da tela (`alerts` do `OperatorPageHeader`)
+
+O que a tela precisa que a pessoa saiba agora tem **um lugar só**: as `alerts` do
+cabeçalho, logo abaixo da toolbar.
+
+```vue
+<OperatorPageHeader
+  title="Pedidos"
+  :alerts="[{ id: 'late', color: 'warning', title: '2 pedidos passaram do horário',
+              description: 'O 1049 e o 1053 já deveriam ter saído.',
+              action: { label: 'Ver os atrasados', onSelect: showLate } }]"
+/>
+```
+
+- `NuxtAlert subtle` nas 4 cores do conjunto (`info`, `success`, `warning`, `error`); o
+  ícone vem da cor se a tela não escolher. A saída (`action`) é a principal do aviso:
+  `solid` na cor dele, `md` (ver "Ação dentro de aviso" abaixo).
+- **Um aviso inteiro**; os outros ficam atrás de "e mais N avisos", que abre todos. A
+  ordem é a da tela: o mais importante primeiro.
+- O aviso fica fixo com o cabeçalho (não rola com o conteúdo): o "um inteiro, o resto em
+  e mais N" é o que impede que ele coma a tela do celular.
+
+**Ação dentro de aviso** (dono, 09/10/2026): a ação acompanha a cor do aviso. A
+**principal** é `solid` na cor do aviso; a **secundária**, `outline` na mesma cor. Nunca um
+`primary` ou `neutral` "normal" dentro de um aviso `info`/`warning`/`error`/`success`.
+
+```vue
+<NuxtAlert color="warning" variant="subtle" title="Seu rascunho foi preservado"
+  :actions="alertActions('warning', [
+    { label: 'Manter meu rascunho', onClick: keep },
+    { label: 'Usar o valor atual', onClick: discard },
+  ])" />
+```
+
+- `alertActions(cor, ações)` (`app/utils/alertActions.ts`, auto-import) tira a cor e a
+  variante do aviso: a primeira é a principal, as outras secundárias; `secondary: true` ou
+  `false` diz quando a ordem não é essa (o convite de instalação: "Agora não" antes de
+  "Instalar"). O tamanho é `md`.
+- O `OperatorPageHeader` (`alerts`), o `OperatorScreenState` (erro), os convites (versão,
+  instalação, avisos) e a busca da suíte já passam por ela. Botão no slot `#actions` do
+  aviso segue a mesma regra à mão: a cor do aviso, `solid` na principal.
+- Trava: `tests/guardrails.alertActions.test.ts` lê o kit e os apps de operador e reprova
+  `NuxtAlert`/`UAlert` com `:actions` fora de `alertActions(<cor do aviso>, …)` e botão de
+  `#actions` com outra cor.
+
+**Onde cada aviso mora** (a regra; nenhuma tela monta faixa própria):
+
+| o que é | onde mora |
+| --- | --- |
+| aviso de uma tela ("33 produtos sem vocação", "2 pedidos atrasados") | `alerts` do `OperatorPageHeader` |
+| o conteúdo não veio (erro ao carregar, vazio, carregando) | `OperatorScreenState`, no lugar do conteúdo |
+| sem rede no app inteiro | `OfflineBanner` (do app) |
+| prazo correndo que interrompe ("o pedido cancela em 2 min") | `OperatorUrgentAlert` (modal) |
+| resultado de uma ação ("Pedido aceito", "Não deu para aceitar") | toast (`useSonner`/`useToast`), ou o erro escrito junto do controle |
+| alerta da operação que fica (capacidade, canal parado) | caixa de Avisos (`provideOperatorInboxAlerts`) |
+
+O `#feedback` do cabeçalho segue para sinal que não é aviso (o `ChannelQueueSignal` do
+Gestor).
+
+Trava: `tests/components/OperatorScreenState.test.ts` (as frases, sem travessão; a saída
+do erro; um aviso inteiro e "e mais N") e `tests/catalog/phone-header.spec.ts` (no
+navegador, a 320, 390 e 1440 px: um aviso visível, "e mais 2 avisos" abre os três, a saída
+do aviso no tamanho da suíte e sem rolagem lateral). Primeiro uso do estado: o B.I. (oito
+erros de leitura, em sete telas); do aviso: a bancada do catálogo.
+
+### Tabela (`OperatorTable` + `OperatorTableView`)
+
+A `NuxtTable` oficial dentro do cartão branco, com o que toda tabela de operador repete.
+Decisões do dono (09/10/2026): **compacta é o padrão**; Confortável é a alternância,
+guardada por dispositivo; **a linha aberta não compacta** (o conteúdo de `#expanded`
+ganha o respiro da confortável).
+
+```vue
+<!-- toolbar da tela (só na mesa; no celular as colunas já são as que cabem) -->
+<OperatorTableView table-key="orders-history" />
+
+<OperatorTable
+  :data="items"
+  :columns="[
+    { id: 'order', header: 'Pedido', enableHiding: false },
+    { accessorKey: 'customer', header: 'Cliente', enableSorting: true },
+    { id: 'payment', header: 'Pagamento', meta: { supporting: true } },
+  ]"
+  :row-key="(row) => row.ref"
+  :row-label="(row) => `o pedido ${row.ref}`"
+  :on-select="(row) => open(row.ref)"
+  :loading="pending" :error="Boolean(error)" what="o histórico" @retry="refresh()"
+  empty-title="Nenhum pedido neste recorte."
+  pinned="order" view-key="orders-history" selectable
+  v-model:row-selection="selection" v-model:expanded="expanded"
+  caption="Pedidos concluídos e cancelados"
+>
+  <template #order-cell="{ row }">…</template>
+  <template #expanded="{ row }">…</template>
+  <template #footer><NuxtPagination … /></template>
+</OperatorTable>
+```
+
+- **Exibir** (`OperatorTableView`, só o ícone): Linhas (Compacta, Confortável) e as colunas
+  visíveis, num menu só. Muda a FORMA da tabela, por isso nunca mora no painel de
+  filtros. A lista de colunas vem da própria tabela com a mesma chave; ficam de fora a
+  que diz `enableHiding: false` e as fixadas.
+- **Por dispositivo, sem piscar**: cookie `op-table-<chave>` (lido no servidor, que já
+  desenha a densidade e as colunas certas). Guarda as OCULTAS: coluna nova nasce visível.
+- **Ordenação pelo cabeçalho**: a coluna que diz `enableSorting: true` ganha o botão com
+  a seta e o nome acessível ("Ordenar por total"). Tabela paginada no servidor não liga
+  ordenação local (ordenaria só a página da vez).
+- **Seleção múltipla** (`selectable`, `v-model:row-selection`): caixa em cada linha e o
+  "todos" no cabeçalho; marcar não abre a linha.
+- **Linha expansível**: basta o slot `#expanded`; a seta entra sozinha.
+- **Coluna fixada** (`pinned`, e `pinned-end` para o ⋯ de uma matriz larga): presa ao
+  rolar de lado e, no celular, com largura máxima (o texto dela quebra).
+- **Colunas de apoio** (`meta.supporting`): somem no celular por CSS (`max-sm:hidden`),
+  nunca por media query em JS.
+- **Estado** pelo `OperatorScreenState`: carregando sem linhas, vazio (título da tela,
+  `#empty-actions` para a saída) e erro com "Tentar de novo" (as linhas da leitura
+  anterior continuam abaixo).
+- `fill`: a tabela ocupa a altura que sobra e rola por dentro, com o cabeçalho preso (a
+  matriz do Catálogo). `row-class` dá à tela a classe da linha (arrastar); `active-key`
+  marca o registro aberto ao lado.
+- `in-card`: a tabela mora dentro de outro cartão (o `OperatorReadingCard` do B.I.). O
+  cartão da tabela vira `soft` e o vazio e o carregando perdem a moldura: nunca cartão
+  `outline` dentro de cartão.
+- **A célula quebra** (`whitespace-normal`): texto da casa nunca é cortado. Número e ação
+  que não devem quebrar dizem isso na própria célula (`whitespace-nowrap`, `min-w-max`).
+- **Sem `:ui` na tela**: a densidade é o único `:ui` da tabela e mora no componente
+  (`presentation/operatorTable.ts`).
+- Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
+  matriz do Catálogo) e aposentou o `ColumnPicker`.
+
+### Painel de filtros (`OperatorFilterPanel` + `useSavedViews` + `#filter-panel`)
+
+UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), sobre o
+`NuxtCommandPalette` oficial (busca, teclado e submenus de graça), na ordem fixa:
+
+1. **Favoritos** (os da pessoa, fixados primeiro) e "Gerenciar favoritos" (fixar nos
+   filtros rápidos, apagar);
+2. **Filtros rápidos** (os favoritos fixados e as opções que a tela declara em `quick`);
+3. **Data**: o período das LISTAS mora aqui (`period-presets`, `custom-period` abre
+   "Escolher as datas"); as setas ‹ › ficam para as telas de leitura (B.I., Fechamento);
+4. **Agrupar por** (só onde a tela agrupa, `groups`);
+5. **Filtros completos**: cada dimensão de lista abre as opções dela; digitar oferece
+   "Cliente contém …" para as dimensões de texto. Intervalos ficam com o `FilterBar`.
+
+No pé, **Limpar** e **Salvar como favorito** (o diálogo pede o nome e "Mostrar nos
+filtros rápidos da tela"). O botão: só o ícone com o número no celular; ícone, "Filtros"
+e o número na mesa. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
+Na mesa os recortes ativos viram chips ao lado do botão (`chips`); no celular, os chips
+são os do cabeçalho (`active-filters`).
+
+```vue
+<OperatorPageHeader title="Histórico" :active-filters="activeFilters" :actions="[atualizar]">
+  <template #filter-panel>
+    <OperatorFilterPanel
+      v-model="filters" v-model:period="period"
+      :dimensions="dimensions" :period-presets="HISTORY_PRESETS" custom-period
+      :default-period="{ preset: 'day', from: '', to: '' }"
+      surface="orders" screen="history"
+    />
+  </template>
+</OperatorPageHeader>
+```
+
+- O recorte é o mesmo `ActiveFilters` do `FilterBar` (a URL já sabe guardá-lo), mais
+  `period` e `group`. O favorito guarda `{ filters, period?, group? }`.
+- **Favoritos no servidor, por pessoa** (`useSavedViews(surface, screen)` →
+  `/api/v1/backstage/saved-views/`, modelo `SavedView`). Cada tela se registra em
+  `shopman/backstage/api/saved_views.py` (`SCREENS`: a permissão de quem lê a tela e a
+  gramática do recorte); recorte fora da gramática não salva. O B.I. guarda ali os
+  cenários do explorador (`bi`/`explore`; a migração `backstage.0090` levou os antigos
+  `BIView` sem perder nenhum). "Publicar para a equipe" (gerente) fica para depois.
+- `#filter-panel` do `OperatorPageHeader`: no celular, fixo na ponta da linha da
+  toolbar (o último a sair); na mesa, logo depois dos recortes primários.
+- Trava: `guardrails.filterPanel.test.ts` (nenhum `FilterBar` no Gestor; toda tela
+  que guarda favorito está no registro do servidor).
+
+### Filtros rápidos (`OperatorQuickFilters` + `#filters-primary`)
+
+O recorte de todo dia é UM toque, com a contagem ao lado (dono, P1 de 02/10/2026).
+Filtro rápido é navegação secundária: mora na toolbar do `OperatorPageHeader`, à
+esquerda (`#filters-primary`), e o `OperatorFilterPanel` segue sendo o lugar dos filtros
+completos. Itens como dados `{ key, label, count?, icon?, to?, disabled? }`; três
+jeitos, pela forma dos itens:
+
+| jeito | quando | base | teclado e papel |
+|---|---|---|---|
+| sub-seção | todo item com `to` | `NuxtTabs` que navegam; a ativa é a da rota | `tablist`; setas andam, Enter abre |
+| um recorte | `v-model` com uma chave | `NuxtTabs` `pill` | `tablist`; setas trocam |
+| vários | `v-model` com várias, `multiple` | `NuxtButton` `outline`; ligado é `active` com `QUICK_ACTIVE` (`solid` primário) e `aria-pressed` | `toolbar`; setas andam, Enter/Espaço ligam |
+
+```vue
+<template #filters-primary>
+  <OperatorQuickFilters
+    v-model="recortes" :items="quickItems" multiple label="Recortes das encomendas"
+    surface="pos" screen="preorders" :query="panelQuery" @apply="applyFavorite"
+  />
+</template>
+```
+
+- **Um ativo só na suíte** (coordenação, 09/10/2026): o recorte ligado é `solid`
+  primário (`QUICK_ACTIVE`), o mesmo peso da aba dourada do modo de um recorte; o
+  desligado é `outline` (o favorito fixado, `ghost`). O `soft` primário de antes ficava
+  quase igual ao `outline` e deixava dúvida sobre o que estava ligado; a régua é
+  `tests/countChipContrast.test.ts` (ligado × desligado ≥ 3:1 nos dois temas).
+- A contagem é o `OperatorCountChip` (zero não aparece); na aba ativa preenchida e no
+  botão ligado (`aria-pressed="true"`) ele inverte sozinho.
+- **Favoritos fixados** (`surface`/`screen`, os mesmos do painel) entram no FIM da
+  faixa, com a estrela; tocar emite `apply` com o recorte inteiro do favorito, e o
+  ativo é o que bate com `query`.
+- **Celular:** até 3 opções rolam na faixa sem cortar rótulo; mais que isso viram um
+  `NuxtSelect` (WP-FASE2-UX-OPERADOR §11; `phone-max` só para exceção declarada). Favorito fixado não vira aba no celular quando as abas já
+  não cabem: ele está no topo do painel. As duas formas existem e a régua é CSS.
+- O recorte rápido ligado aparece também como chip removível (`active-filters` do
+  cabeçalho, chips do painel na mesa).
+- Trava: `guardrails.filterPanel.test.ts` (filtro rápido declarado no painel, `:quick`,
+  só existe ao lado da faixa na mesma tela; favorito de faixa e de painel só em tela
+  registrada no servidor).
+- **Sub-seção mora aqui, não na barra lateral.** Consumidores do modo de rota: a Base do
+  Compras (`PurchaseBaseSections`) e os Ajustes do Marketing (`MarketingSettingsNav`).
+  O `OperatorSuiteShell` não aceita `children` (sub-seção como filha do item da barra
+  lateral) de propósito: nenhum app precisa, porque a sub-seção é a faixa da toolbar
+  (WP-FASE2-UX-OPERADOR §5). Volta à mesa só com um consumidor real que a faixa não
+  resolva.
+
+### Barra de seleção (`OperatorBulkBar` + `#selection` do `OperatorPageHeader`)
+
+Uma por tela, desenhada pela mesma peça em dois lugares (dono, 09/10/2026):
+
+- **Mesa** (do `lg` para cima): no `#selection` do cabeçalho, que **toma o lugar da
+  toolbar** enquanto houver marcados. Diz em que recorte a seleção foi feita ("3
+  selecionados em Rústicos"): o recorte não muda com marcados fora da vista.
+- **Abaixo do `lg`**: `placement="base"`, no lugar e no desenho da `OperatorActionBar`
+  (cartão flutuante, em fluxo, entre o conteúdo e a barra inferior), na superfície
+  invertida (`bg-inverted`). Campo e botões levam o próprio fundo (`outline`, nunca
+  `ghost`, nem o ×) e por isso ficam legíveis sobre ela nos dois temas. O tema do kit
+  não muda (mudar o tema repinta as baselines das consumidoras).
+
+```vue
+<OperatorPageHeader title="Catálogo">
+  <template v-if="selected.size" #selection>
+    <OperatorBulkBar :count="selected.size" :scope="collection" :items="items('toolbar')" @clear="clear">
+      <template #lead="{ size, block }">
+        <NuxtSelect v-model="channel" :items="channels" :size="size" :class="block ? 'w-full' : 'min-w-56'" />
+      </template>
+      <template #price><ReusePrice /></template>
+    </OperatorBulkBar>
+  </template>
+</OperatorPageHeader>
+<!-- … o conteúdo … -->
+<OperatorBulkBar v-if="selected.size" placement="base" … />
+```
+
+- **Ordem fixa**: quantos | o `#lead` (o campo da tela, ex.: o canal) | as ações, na
+  ordem dada | ×. Pares de gestos opostos (Pausar/Ativar, Ocultar/Exibir) vão num
+  array: viram um `NuxtFieldGroup`, com o **mesmo peso** (todos `outline`). Uma ação só
+  pode ser `primary` (a principal, `solid`).
+- **Altura**: campo e botão na mesma altura, `md` na mesa e `lg` no toque. O `#lead`
+  recebe `size` e `block` (na base o campo ocupa a linha).
+- **Painel**: a ação com `panel: "price"` abre um `NuxtPopover` com o slot `#price`;
+  `open`/`onUpdateOpen` são da tela. Com as duas barras na tela, abra só o da largura da
+  vez (`useScreen().belowLg`), senão abririam os dois.
+- **Modo de seleção** (a Fila): `empty` é a instrução com zero marcados; `clear-label`
+  dá o nome do × ("Sair da seleção").
+- **Esc** limpa (uma escuta, a da mesa), salvo com lista, menu ou diálogo aberto.
+- Na tabela, a célula fixada acompanha a cor da linha marcada (na `OperatorTable`, `PINNED_SELECTED_CELL`; o tema não muda).
+- Trava: `guardrails.bulkBar.test.ts` (no Gestor, nenhuma barra de lote à mão; toda
+  tela com `#selection` tem a barra nos dois lugares).
+
+## Busca da suíte em níveis (`OperatorSuiteSearch`)
+
+Uma busca, uma tecla, três níveis (fase 2, K6; dono, 09/10/2026: "busca em níveis no
+canônico"). O botão é o `NuxtDashboardSearchButton` e o painel é o `NuxtDashboardSearch`
+oficial (o `Modal` com o `CommandPalette` do Nuxt UI: teclado, grupos e tela cheia no
+celular vêm dele). O `OperatorPageHeader` já a traz (`search = true`): toda tela tem o
+botão de 22rem do tablet para cima e a lupa na barra de 56px do celular.
+
+Os níveis são os GRUPOS do painel, em ordem fixa (`preserve-group-order`):
+
+1. **Nesta tela** (só onde a tela filtra a própria lista e passa o `v-model` no
+   `#search`): "Filtrar o quadro por “maria”" vira o recorte da tela; com a tela já
+   filtrada, "Tirar o filtro “maria” do quadro". O alvo sai do `screen-label`, sempre na
+   forma "filtrando <o|a|os|as> <nome>": o artigo que a tela escreve decide a contração
+   (do/da/dos/das), nunca a terminação do nome. A trava
+   `guardrails.suiteSearch.test.ts` reprova rótulo fora da forma.
+2. **No app (Gestor)**: o que a suíte achou no app atual.
+3. **Na suíte**: o que achou nos outros apps (`GET /api/v1/backstage/search/?q=`,
+   projeção `shopman/backstage/projections/suite_search.py`), cada um com o tipo ao lado
+   ("Pedidos", "Clientes") e o link profundo para o app de destino.
+
+- **Digitar não mexe na tela**: o recorte entra quando a pessoa escolhe "Filtrar … por";
+  Esc fecha sem mudar nada. Aberto com a tela filtrada, o painel já traz o termo.
+- O estado da suíte (falta letra, buscando, não respondeu com "Tentar de novo", nada
+  achado) é o último item de "Na suíte", para não sumir atrás do recorte da tela.
+- Teclas: `/` fora de campo e Ctrl K (⌘K) em qualquer lugar abrem, pela infraestrutura de
+  atalhos do kit (`SUITE_SEARCH_SHORTCUTS`); o atalho próprio do `DashboardSearch` fica
+  desligado (`shortcut=""`) para não abrir duas vezes. O clique do botão é desta busca
+  (o `toggleSearch` do grupo do Dashboard abriria todas as buscas montadas).
+- Câmera (onde o navegador lê código): no pé do painel, "Ler um código com a câmera".
+- Variantes: `header` (padrão, em todo app e na Central, que desde a fase 2 usa a busca do
+  cabeçalho como os outros) e `hotkey` (sem botão na tela: a Venda e as Encomendas do PDV,
+  onde o `/` é do campo do produto; só Ctrl K e a lupa abrem a suíte). A barra grande da
+  Central (`hero`) saiu com a fase 2.
 
 Contrato em `tests/components/OperatorSuiteSearch.test.ts` e `tests/suiteSearch.test.ts`;
-`tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm e que o
-`#search` do cabeçalho é sempre ela, e uma só.
+`tests/guardrails.suiteSearch.test.ts` trava que os oito apps e a Central a têm, que o
+`#search` do cabeçalho é sempre ela, e uma só, e que ela é o `NuxtDashboardSearch` (sem
+`Modal`, `Tabs` ou `CommandPalette` montados à mão).
 
 ## Próximo foco (`useNextFocus`)
 
@@ -531,8 +1578,14 @@ Contrato:
   baixo, e é o `scroll-margin-bottom` dele (igual ao obstáculo) que faz o fim parar
   ACIMA do card em vez de atrás — o mesmo truque do `scroll-margin-top` do próximo
   foco, do outro lado da tela.
-- **Só o chevron captura o toque.** A faixa teleportada cobre a largura inteira da
-  tela: `pointer-events-none` nela, `pointer-events-auto` no botão. O degradê continua
+- **A dica mora no painel de conteúdo, nunca na barra lateral.** Ela é `fixed` na
+  janela, e as bordas laterais vêm do painel do shell (`data-operator-content-panel`,
+  no `DashboardPanel` dos três shells do kit), medidas e reacompanhadas quando a barra
+  lateral abre ou compacta. Com `inset-x-0`, a 1366, o degradê lavava o pé da barra
+  lateral (Avisos, menu do operador) no B.I., no Compras e no Kitchen Sink (10/10/2026).
+  Fora de um shell, vale a janela inteira. Trava: `tests/catalog/more-below.spec.ts`.
+- **Só o chevron captura o toque.** A faixa teleportada cobre a largura do painel:
+  `pointer-events-none` nela, `pointer-events-auto` no botão. O degradê continua
   `aria-hidden` — ele é desenho.
 - **O que a impede de se ler como botão gordo é a translucidez, não o tamanho**: fundo
   sólido com sombra vira chip pesado em qualquer medida. Com o fundo a 33% e sem
@@ -542,6 +1595,10 @@ Contrato:
   operador.
 - `prefers-reduced-motion`: a dica fica **parada**, não some — e o toque salta para o
   fim de uma vez, sem deslizar.
+- **Nunca por cima de overlay.** Os overlays do Nuxt UI (gaveta, popover, modal) não
+  têm z-index e valem pela ordem no DOM; com `z-30` a dica passava por cima do painel de
+  filtros aberto no celular. Com qualquer diálogo aberto (`role=dialog` +
+  `data-state=open`) ela some, por CSS (`body:has(...)`).
 
 ⚠️ O `BottomSheet` do storefront ainda tem a versão antiga inline. Migrá-lo pede um
 tom de degradê por superfície (`card`/`muted`) e marcar o rodapé do sheet como
@@ -557,6 +1614,47 @@ as setas (`scrollIntoView({ block: "nearest" })` em `PosCartPanel`/`PosCustomerS
 O storefront tem cópia espelhada (`storefront-nuxt/app/composables/useNextFocus.ts`);
 o checkout (`pages/finalizar.vue`) é o primeiro consumidor; o PDV, o segundo; o login
 do storefront (`pages/entrar.vue`: telefone, código, nome — um bloco por passo), o terceiro.
+
+## Leitor de código: teclado, câmera nativa e @zxing
+
+São TRÊS primitivas de leitura, com papéis diferentes, e nenhuma faz o trabalho da outra.
+Duas vivem aqui no kit; a terceira, por enquanto, vive nos apps.
+
+- **`useCodeScanner`, leitor de TECLADO (cunha HID), no kit.** O leitor de hardware "digita"
+  o código depressa e fecha com Enter. O composable escuta na fase de captura da janela,
+  reconhece a rajada pelo PREFIXO e pela cadência de máquina, e não deixa o código cair no
+  campo com foco; o que era digitação humana volta para o campo, tecla por tecla. A regra
+  pura (o que é rajada de leitor, o que é dedo) vive em `app/presentation/codeScan.ts`,
+  testada em `tests/codeScan.test.ts`. O formato (prefixo, padrão e teto) é parâmetro de
+  quem chama. É a primitiva canônica do kit, e NÃO há duplicata dela em app nenhum.
+  Consumidor: a conferência de volumes do despacho, em
+  `orders-nuxt/app/composables/useVolumeCheck.ts`.
+- **`useBarcodeScanner`, leitor de CÂMERA nativo, no kit.** Usa a `BarcodeDetector` do
+  navegador (Chrome/Android). Onde ela não existe, o composable diz que a câmera não lê e a
+  tela segue pelo gesto manual. Consumidor: o cadastro de produto do Gestor, em
+  `orders-nuxt/app/components/CatalogProductCreatePanel.vue`.
+- **`useZxingScanner`, leitor de CÂMERA `@zxing`, nos apps.** Existe porque a
+  `BarcodeDetector` não cobre iOS/Safari, e é um composable local de `purchase-nuxt` e
+  `production-nuxt`, ainda duplicado entre os dois. O nome diz o motor (`@zxing`) para não
+  colidir com a primitiva de teclado do kit. Detalhe e condição de migração na seção abaixo.
+
+A escolha é do ato, não do dispositivo: a cunha lê crachá, QR de conferência e etiqueta
+impressa em segundos; a câmera lê o que não passou por um leitor de hardware.
+
+### A câmera `@zxing` dos apps (decisão do dono, 14/10/2026)
+
+`purchase-nuxt` e `production-nuxt` mantêm hoje, cada um, um composable local
+`useZxingScanner`, leitor de CÂMERA por `@zxing/browser` (funciona em iOS/Safari, onde a
+`BarcodeDetector` não existe): `purchase-nuxt/app/composables/useZxingScanner.ts`, usado por
+`CodeScannerSheet.vue` no recebimento, e
+`production-nuxt/app/composables/useZxingScanner.ts`, usado por `LotLabelScanner.vue` na
+etiqueta de lote.
+
+É a mesma câmera `@zxing` duplicada em dois apps. Decisão do dono (14/10/2026): a duplicata
+FICA, documentada, enquanto a primitiva nativa não cobrir iOS/Safari. Quando
+`useBarcodeScanner` cobrir o parque, incluindo iOS/Safari, os dois `useZxingScanner` migram
+para cá e as cópias morrem. Até lá, comportamento inalterado; a primitiva de teclado não é
+substituta deles, e nenhum leitor de câmera foi movido.
 
 ## Clique nunca inerte (`usePendingAction`)
 
@@ -626,8 +1724,8 @@ Contrato:
   `window.confirm`. Ocupado (`busy`), o diálogo não fecha nem confirma de novo.
 - A autorização do gerente fica **fora**: o `OperatorManagerAuth` sobe por cima, e o
   motivo digitado continua embaixo.
-- ⚠️ Usa `UiDialog`, `UiButton` e `UiTextarea` do app hospedeiro, o mesmo limite do
-  `OperatorManagerAuth`.
+- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtSelect`, `NuxtFormField`
+  com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
 
 ## Pergunta antes de descartar (`useConfirm`)
 
@@ -677,7 +1775,7 @@ Contrato:
 - **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
   gatilhos do mesmo gesto (o Esc do campo e o Esc do popover) não empilham caixas.
 - **Abre sobre o diálogo do app.** O kit faz `dedupe` do `reka-ui` (`nuxt.config.ts`), para
-  que a pergunta e o `UiDialog` do app dividam a mesma pilha de camadas: o toque dentro
+  que a pergunta e o `NuxtModal` do app dividam a mesma pilha de camadas: o toque dentro
   da pergunta não fecha o diálogo de baixo.
 - **A função que só espera a pergunta não é clique inerte.** A trava do "Clique nunca
   inerte" reconhece o `async function` cujos `await` são todos o `useConfirm` (o toque
@@ -690,7 +1788,89 @@ Contrato:
   Nuxt e da layer e reprova `window.confirm(` (e o `confirm(` solto). O que ainda existe
   está declarado com motivo numa lista que **só encolhe** (hoje: dois pontos da Produção).
 
+## Casco de cadastro (`OperatorFormShell` + `useDirtyForm`)
+
+O mesmo casco em Compras, Produção e Gestor: a entidade e a condução mudam, o casco
+não. Ele nasceu no painel do Gestor (`CatalogProductCreatePanel`, #1786) e reúne o que
+todo cadastro precisa e que antes cada tela escrevia por conta própria.
+
+```vue
+<OperatorFormShell
+  :open="open"
+  title="Novo produto"
+  description="Cria um produto do zero."
+  :dirty="dirty"
+  :dirty-count="changedKeys.length"
+  :busy="busy"
+  save-label="Criar produto"
+  :save-disabled="!valid"
+  save-disabled-reason="Informe o código e o nome para salvar."
+  :active-section="activeSection"
+  :save-attrs="{ 'data-testid': 'create-submit' }"
+  @update:open="open = $event"
+  @save="submit"
+>
+  <template #lead><!-- ação extra antes do descarte (ex.: "Trocar intenção") --></template>
+
+  <OperatorFormSection section-key="identity" title="Identificação">
+    <NuxtFormField label="SKU" required>
+      <NuxtInput v-model="form.sku" data-focus-control />
+    </NuxtFormField>
+  </OperatorFormSection>
+
+  <OperatorFormSection section-key="price" title="Preço" description="Quanto custa.">
+    <NuxtFormField label="Preço (R$)"><NuxtInput v-model="form.priceText" /></NuxtFormField>
+  </OperatorFormSection>
+</OperatorFormShell>
+```
+
+```ts
+const { dirty, changedKeys, capture } = useDirtyForm(() => ({
+  ...form, intent: intent.value, accepted: [...accepted.value],
+}));
+// Ao abrir (ou limpar) o cadastro, tira o retrato do que está em tela:
+capture();
+```
+
+Contrato:
+
+- **O casco é a gaveta lateral.** `OperatorFormShell` desenha o `NuxtSlideover`
+  em largura de formulário (`wide`, `sm:max-w-2xl`, tela inteira no celular), com
+  `size="standard"` (`sm:max-w-lg`) para gestos curtos como uma duplicação de dois
+  campos. Título, descrição, corpo com o slot padrão e barra de ação vêm juntos. Quem chama
+  continua dono do formulário e do salvamento: o casco só conduz.
+- **Seções com nome.** Cada `OperatorFormSection` é um bloco `data-focus-target` com
+  `tabindex="-1"`; o título e a descrição são opcionais, e quem chama decide o chrome
+  (um `NuxtCard` em volta, ou os campos direto na superfície do painel). O controle que
+  deve receber o foco de teclado se marca com `data-focus-control`.
+- **Próximo foco por seção.** `active-section` é a chave do momento; quando ela muda, a
+  página vai à seção (`useNextFocus`) e foca o controle marcado, ou a própria seção. O
+  casco também expõe `reveal(alvo, opções)` para o foco fora do fluxo.
+- **Estado sujo com aviso.** `dirty` liga o aviso (`dirtyCountLabel`) e arma a pergunta
+  do descarte. O `useDirtyForm` compara o formulário de agora com o retrato tirado em
+  `capture()`: o retrato é uma cópia, e o que muda desde a abertura é "não salvo".
+- **Barra de ação na base.** Abaixo de `lg` é o `OperatorActionBar` da suíte (principal
+  é salvar, secundária é descartar, o motivo escrito quando não pode, e o aviso do que
+  não foi salvo na linha de contexto). Na mesa a mesma ação vira a linha do rodapé, com
+  o aviso ou o motivo à esquerda. O slot `lead` recebe uma ação extra antes do descarte.
+- **A pergunta antes de descartar é da casa.** Com `dirty`, fechar (o X, o Esc ou o
+  descartar) chama `useConfirm` com `FORM_DISCARD_COPY` ("Descartar o que você
+  preencheu?" / "Continuar preenchendo"); sem alteração, fecha direto. O
+  `confirmDiscard` troca a pergunta quando o cadastro tem nome próprio. Nada de
+  `window.confirm`.
+- **Nada de salvar no escuro.** `save-disabled` com `save-disabled-reason` diz o que
+  falta ("Informe o código e o nome para salvar."); o botão continua no lugar.
+- Consumidor: o criar/duplicar produto do Gestor
+  (`orders-nuxt/app/components/CatalogProductCreatePanel.vue`). O próximo é a criação
+  de receita da Produção (`recipes/new`), quando a porta Manual virar o formulário
+  canônico.
+- Testes: `tests/formShell.test.ts` (a conta pura), `tests/composables/useDirtyForm.test.ts`
+  e `tests/components/OperatorFormShell.test.ts` (DOM, foco e a caixa da casa).
+
 ## Filtro universal (`FilterBar` + `useRouteFilters`)
+
+> Nas telas migradas da fase 2 o recorte de lista é o `OperatorFilterPanel` (acima, em
+> "Peças de tela"). O `FilterBar` segue para intervalos e para os apps ainda não migrados.
 
 Uma barra só para recortar qualquer lista, a do plano SUITE-UX ("Filtrar"). Os 3 a 6
 recortes mais usados podem continuar como `UiFilterChip` com contagem na linha; o resto
@@ -773,8 +1953,8 @@ Agora os três vivem aqui, com nome global `Ui<Nome>`, e o `MaterialPicker` foi
 
 Contrato:
 
-- **Alvo de toque de 44 px pelo token** (`min-h-control`/`h-control`/`size-control`),
-  nunca literal. `UiCheckbox` sem rótulo vira um quadrado de 44 px; com rótulo, a linha
+- **Alvo de toque de 32 px pelo token** (altura `md`, decisão do dono de 09/10/2026) (`min-h-control`/`h-control`/`size-control`),
+  nunca literal. `UiCheckbox` sem rótulo vira um quadrado de 32 px; com rótulo, a linha
   inteira é o alvo. Quem atende balcão está com uma mão só e o celular na outra.
 - **ARIA de verdade, não `<input>` pintado**: `role="checkbox"` com
   `aria-checked="true|false|mixed"`, `role="radiogroup"`/`role="radio"`,
@@ -805,8 +1985,9 @@ Do `UiSelect`, três coisas que valem a leitura:
   `<span id>` e passe `labelledBy`. Isto é memória de um defeito pago no recebimento do
   Compras; o teste que a prende vive em `tests/components/UiChoicePrimitives.test.ts`.
 
-O `UiNativeSelect` ao lado **continua sendo a peça certa** para lista curta e fixa: no
-celular ele abre a roda do sistema, que é ótima. O `UiSelect` é para lista longa.
+O `UiNativeSelect` **está aposentado** e o `UiSelect` saiu do conjunto (dono,
+08/10/2026): escolha nova é `NuxtSelect` ou `NuxtSelectMenu`. Ver "Conjunto mínimo da
+suíte", acima.
 
 ### `UiToggleChip` — escolha múltipla desenhada como pílula
 
@@ -900,10 +2081,10 @@ Passo de wizard e campo de formulário (PDV agendar e reagendar; Compras recebim
   motivo curto no próprio botão (`fechado`, `fora do prazo`, `indisponível`).
 - `availableDates` é a lista de dias em que a casa abre. Dia dentro da lista que não
   está nela é fechado; depois da última data, quem decide é o servidor.
-- **Outra data** abre o seletor nativo (com `min`/`max`) e deixa o campo à vista logo
-  abaixo: há navegador que recusa `showPicker()`, e o toque não pode ser inerte. Dia
-  fechado escolhido ali é recusado com a frase do motivo. A data escolhida por lá vira
-  a legenda do botão.
+- **Outra data** mostra logo abaixo o campo canônico de data (`UiDateField`, com
+  `min`/`max`): os segmentos dia/mês/ano e o calendário do Nuxt UI no gatilho do
+  campo. Nunca o seletor nativo. Dia fechado escolhido ali é recusado com a frase do
+  motivo. A data escolhida por lá vira a legenda do botão.
 - `today` é o hoje da LOJA (vem do servidor), não o do dispositivo.
 - ARIA: `role="radiogroup"` + `role="radio"`/`aria-checked`, uma parada de tabulação,
   setas andam entre as opções.
@@ -922,6 +2103,20 @@ que fazem sentido para ele.
 | Próximos | 7D, 14D, 28D (`next7d`, `next14d`, `next28d`) | os N dias começando hoje (quem trabalha com o que está por vir) |
 | Últimos | 7D, 28D, 3M, 6M, 1A, 5A, Máx (`7d` … `max`) | os N dias terminando hoje |
 | Personalizado | De/Até (`custom`) | o intervalo escolhido; `max-span-days` recusa o que passa do teto do servidor |
+
+**Os campos de data do popover são os canônicos** (decisão do dono, não se reabre):
+De e Até são dois `UiDateField`, um por linha, com o `min`/`max` do consumidor; sem
+personalizado, "Ir para o dia" é um `UiDateField`. Nunca `type="date"`, nem pelo
+`NuxtInput`: a trava `kitOwnership.guardrails.test.ts` varre o kit e os apps atrás de
+`input`, `NuxtInput`, `UInput` e `UiInput` com tipo temporal, literal ou no `:type`.
+Por que dois `UiDateField` e não o `UiDateRangeField`: o intervalo oferece "Sem início"
+e "Sem fim", e o período precisa das duas pontas; o motivo de recusa (`max-span-days`,
+fora de `min`/`max`) aparece num `NuxtAlert` sob os campos depois que as duas datas
+existem. Os chips são `NuxtTabs` com `activation-mode="manual"`: o popover põe o foco
+no primeiro chip ao abrir, e no modo automático esse foco escolhia "Dia" e fechava o
+popover de quem estava em 28D. O nome por extenso do chip ("Próximos 7 dias") vai
+escrito para o leitor de tela no conteúdo do gatilho, porque o `NuxtTabs` não repassa
+atributo do item.
 
 ```html
 <!-- B.I.: todo o passado, personalizado, calendário até hoje -->
@@ -950,8 +2145,35 @@ que fazem sentido para ele.
   (Abertura, Fechamento, Qualidade, TV, Encomendas) usa a ponte `periodOfDay(preset, dia, hoje)` /
   `periodAnchor(seleção, hoje)` num `computed` com setter.
 - **Consumidores hoje**: B.I. (barra e Projeção), Encomendas (Dia a Mês, Próximos, 7D e 28D, personalizado), Produção
-  (grade, Fechamento, Qualidade, quadro da TV, Preparação, Relatórios). KDS e Gestor não têm seletor
-  de dia.
+  (grade, Fechamento, Qualidade, quadro da TV, Preparação, Relatórios) e Gestor (Histórico). O KDS não
+  tem seletor de dia.
+
+### Celular e leitura de um dia (`compact`, `prev-day`/`next-day`)
+
+- **`compact`**: abaixo de `sm`, o botão diz a forma curta da janela (`periodShortLabel`:
+  "Ontem", "Ter 29/09", "28D · 04/09 a 01/10"); do `sm` para cima, a frase inteira. O nome
+  acessível é sempre a frase inteira. Para a barra do celular, onde a frase longa empurra
+  as setas para a segunda linha.
+- **Um dia com ‹ ›**: `presets` só com `day` (o padrão). As setas andam um dia de calendário;
+  quem sabe que nem todo dia existe na leitura (dia fechado não tem venda) passa
+  `prev-day`/`next-day` com o dia aberto anterior/seguinte que o servidor informou, e
+  `""` desliga a seta. É o que substitui o `BiDayStepper` do B.I.
+
+```html
+<OperatorPeriodPicker v-model="day" compact :max="yesterday"
+                      :prev-day="reading.previous" :next-day="reading.next" label="Dia da leitura" />
+```
+
+### Campos de data e hora (`UiDateField`, `UiDateRangeField`, `UiTimeField`, `UiTimeRangeField`, `UiDateTimeField`)
+
+Camadas finas sobre `NuxtInputDate`, `NuxtInputTime` e `NuxtCalendar`, com valor ISO no
+contrato (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`). São a única forma de pedir data ou
+hora nos apps de operador. Consumidores: os dois tipos acima, B.I. (`UiDateField`) e
+Marketing (`UiDateRangeField`, `UiTimeField`, `UiTimeRangeField`, `UiDateTimeField`).
+
+- `UiDateTimeField` divide o instante em data e hora. `min`/`max` são instantes: a data
+  recebe o dia, e a hora recebe o limite **só no dia-limite** (no dia de `min`, a hora
+  mínima; no de `max`, a máxima; nos outros dias, toda hora vale).
 - **‹ › andam um período igual**: dia → dia anterior; semana (segunda a domingo) → semana
   anterior; mês → mês anterior; janela de N dias (7D, 28D, personalizado) → os N dias
   antes; próximos N dias → os N dias depois, e ‹ para em hoje. "Máx" não anda. A seta
@@ -964,6 +2186,28 @@ que fazem sentido para ele.
   `Ter 29/09`); o resto diz o nome por extenso e o intervalo (`Semana · 28/09 a 04/10`,
   `Últimos 28 dias · 04/09 a 01/10`, `Próximos 7 dias · 01/10 a 07/10`). O chip diz `7D`
   porque o grupo diz para que lado; o botão não tem grupo. Sem travessão.
+
+## Peças de leitura (`OperatorMetric`, `ReadFreshness`)
+
+Subiram no PR-K2 do WP-BI-CANON-LAUDO, para o B.I., a Central, o Marketing e o Compras
+não reescreverem número-herói nem selo de atualização. O Kitchen Sink mostra as duas
+(seção "Peças de leitura") junto do período compacto.
+
+- **`OperatorMetric`** é a receita do Kitchen Sink virada peça: `NuxtCard` com `title` e
+  `description` (a anatomia do Card, nunca rótulo escrito à mão em `<p>`), a figura
+  (`op-figure`; `hero` maior; `statement` para uma frase), a unidade na mesma linha, o
+  veredito em `tone` (`error`/`warning`/`success`) e a comparação. **A peça não calcula**:
+  o delta chega pronto da presentation como `MetricDelta` (`text` inteiro para o leitor
+  de tela, `tone` por melhorou/piorou e não por sinal, `percent` da pílula, `direction`
+  da seta, `caption` com o "contra o quê"). Sem base de comparação, `percent` vazio: a
+  pílula some e a frase fica.
+- **`ReadFreshness`** diz quando o servidor gerou o que está na tela e há quanto tempo,
+  pelo relógio do servidor (o dispositivo com hora errada não muda a idade). É a frase
+  das leituras sem tempo real, onde um selo "ao vivo" seria rótulo que mente; `failed`
+  acrescenta "atualização falhou"; `realtime-label` diz o estado do transporte com o
+  vocabulário do app ("Conexão: Ao vivo"), porque conexão e leitura são estados distintos.
+  `inline` é a mesma frase sem faixa própria, no fim da linha de recortes. Nasceu no
+  Gestor e subiu sem mudar de comportamento.
 
 ## Colunas de fila ajustáveis e recolhíveis (`QueueColumnStrip`, `QueueColumnResizeHandle`)
 
@@ -1022,7 +2266,7 @@ há `node_modules` acima de `surfaces/`. Na base eles não resolveriam.
 **Tail legítimo** é o que pertence a um app só: impressão térmica de 80 mm e
 `.pos-tile-fallback` no POS; `.date-input-hit-area` e `forced-colors` no Produção;
 `@font-face` self-hosted, alvos de toque de 44 px e `prefers-reduced-motion` no
-Marketing (piloto do ADR-026). Os outros cinco apps não têm tail.
+Marketing (piloto do ADR-038). Os outros cinco apps não têm tail.
 
 ⚠️ **A armadilha do `@source`:** o caminho é relativo ao arquivo que o declara. Na
 base, `../..` é a raiz `operator-kit/app`. Errar não quebra o build — o CSS compila
@@ -1032,6 +2276,81 @@ Medido: um `@source` errado derrubou 14 KB do CSS do `production-nuxt` com exit 
 zero avisos. `tests/guardrails.test.ts` resolve o caminho declarado e exige que ele
 ainda alcance esses componentes; o mesmo arquivo recusa que qualquer app volte a
 copiar o núcleo.
+
+## Gráfico e quadro de leitura (`OperatorReadingChart`, `OperatorReadingCard`, `OperatorReadingPageMenu`)
+
+PR-K1 do `docs/plans/WP-BI-CANON-LAUDO.md` (itens C1 e C2). Servem B.I., Gestor, Compras,
+Marketing e Central. A parte pura (frase do ponto, legenda, tabela, CSV, teclado, eixo,
+domínio) mora em `app/presentation/readingChart.ts`, testada em `tests/readingChart.test.ts`;
+os componentes em `tests/components/OperatorReadingChart.test.ts`.
+
+```html
+<OperatorReadingPageMenu />  <!-- no cabeçalho da página: "Copiar link desta leitura" -->
+
+<OperatorReadingCard title="Faturamento por dia" description="Esta semana contra a anterior"
+                     :csv="readingChartCsv('Dia', series, points, { money: true })" :heading-level="3">
+  <OperatorReadingChart title="Faturamento por dia" kind="comparison" axis-label="Dia"
+                        :series="series" :points="points" :format="readingMoneyFormat" />
+</OperatorReadingCard>
+```
+
+- **Cinco formas, e só cinco** (`kind`): `bars` (séries lado a lado), `stacked` (séries
+  que são PARTES de um todo, numa barra só: "vendeu" mais "sobrou" é o que a casa fez),
+  `comparison` (barras da primeira série e o traço tracejado da segunda, o período de
+  comparação), `diverging` (uma série com sinal; `diverging` dá o nome de cada lado,
+  "Sobrou" e "Faltou", e do zero) e `line` (linha com área). O desenho é Unovis (o Nuxt
+  UI não tem Chart; o template oficial de dashboard usa Unovis), dentro de `<ClientOnly>`
+  com `NuxtSkeleton` da mesma altura. Cores só do tema (`READING_TONE_COLOR`), nunca
+  hexadecimal.
+- **Preenchimento é a segunda codificação** (`fill` da série, nas barras): `solid` (o
+  padrão), `tint` (o mesmo tom a 30%, a parte que completa o todo) e `hatch` (listrado,
+  a estimativa). Os tons do tema são quentes e vizinhos (latão, âmbar, tijolo): medidos
+  com o validador de paleta, latão × âmbar e latão × tijolo não se separam para quem não
+  distingue vermelho de verde, e âmbar × latão nem para quem distingue. Dois segmentos
+  vizinhos se diferenciam pelo preenchimento, não pela cor. A legenda desenha o mesmo
+  preenchimento.
+- **Deitado** (`horizontal`, só nas formas de barra): quando o eixo é de NOMES (produto,
+  receita), não de datas. As categorias descem pelo eixo vertical, a primeira no topo,
+  TODAS com rótulo (até 120 px, quebrando em duas linhas), e a altura cresce com elas
+  (`readingHorizontalHeight`: 40 px por faixa mais a régua; `height` não vale). Cada
+  faixa tem um trilho discreto que é a régua e o alvo do ponteiro (a barra curta não
+  encolhe o alvo); a faixa lida fica cheia e as outras esmaecem. Sem linha de grade: ela
+  cruzava as barras por cima.
+- **O ponto em leitura é um só** para mouse, toque e teclado: a frase dele fica acima do
+  gráfico e o traço vertical marca onde ele está. A área do gráfico é uma parada de
+  tabulação (`role="group"`, nome = `title`); setas andam, Home e End vão às pontas,
+  Escape solta, e o leitor de tela ouve a frase a cada seta (`role="status"`, que o passar
+  do mouse não aciona). O teclado força o traço (`forceShowAt`); o ponteiro não, porque
+  forçar travava o traço no primeiro ponto tocado.
+- **A tabela equivalente sai no SSR** (`NuxtTable` com `caption`), com os mesmos números já
+  formatados; ponto sem dado diz "sem dado", nunca zero. Ela existe sempre para o leitor de
+  tela; `table-visible` a mostra também a quem enxerga.
+- **O eixo tem formato próprio** (`axis-format`, PR-K5). O eixo vertical é régua e é
+  estreito no celular: o dinheiro por extenso quebrava ("R$ 15." numa linha, "000,00" na
+  outra). `format` vale para a frase do ponto e para a tabela; `axis-format`, só para o
+  eixo. Sem `axis-format`, o eixo usa `format`, com uma exceção: com `readingMoneyFormat`
+  (reais por extenso, "R$ 15.000,00"), o eixo vira `readingMoneyAxisFormat` ("R$ 15 mil",
+  "R$ 1,2 mi"). O gráfico recebe reais; quem tem centavos (`_q`) divide por 100 ao montar
+  os pontos. O rótulo do eixo tem 96 px antes de quebrar.
+- **Buraco na série** (`null`): a linha quebra, e na forma `line` a área quebra junto. O
+  Unovis lê o ponto ausente como zero, e a área descia até a base no buraco; ela agora sai
+  trecho a trecho (`readingRuns`), e ponto isolado não vira área. O ponto isolado (sem
+  dado antes e depois, ou entre o buraco e a ponta) não tem com quem ligar e a linha o
+  desenhava com comprimento zero: ele sai como marcador no tom da série
+  (`readingIsolatedIndices`), do tamanho do círculo do ponto em leitura
+  (`READING_POINT_SIZE`, 6 px). Nas linhas da `comparison` vale o mesmo.
+- **Sem pontos**, o gráfico é o `NuxtEmpty` (`empty-title`, `empty-description`).
+- **O quadro** é o `NuxtCard` com `title`/`description` (Nuxt UI 4.7+). O título vira
+  cabeçalho (`heading-level`, padrão 2) e nomeia a região. Com `csv`, o ⋯ oferece
+  "Exportar CSV deste quadro" (ponto e vírgula, UTF-8 com marca de ordem de bytes, nome do
+  arquivo saído do título); `items` acrescenta ações ao mesmo ⋯. O número sai como a
+  planilha em português o lê: vírgula decimal e nenhum separador de milhar ("1234,5";
+  `readingCsvNumber`), porque "1.2" ela lia como milhar ou texto. Com `{ money: true }` no
+  `readingChartCsv`, os valores (em reais) saem com duas casas e sem "R$" ("1500,50";
+  `readingCsvMoney`), e o cabeçalho ganha a unidade ("Esta semana (R$)").
+- ⚠️ O `VisCrosshair` do `@unovis/vue` 1.7 não declara props e repassa os atributos como
+  vieram: atributo hifenizado não vira config. No `OperatorReadingChartPlot.client.vue` ele
+  é escrito em camelCase, com o `eslint-disable` da hifenização só em volta dele.
 
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 

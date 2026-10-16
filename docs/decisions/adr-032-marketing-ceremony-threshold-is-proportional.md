@@ -1,7 +1,8 @@
 # ADR-032 — O limiar da cerimônia é proporcional à casa, e mede pessoas
 
-**Status:** Aceito em 2026-09-17 · **emendada** por
-[ADR-033](adr-033-marketing-typed-phrase-follows-the-irreversible.md) em 2026-09-18: o
+**Status:** Aceito; emendado por ADR-033
+**Data:** 2026-09-17
+**Emenda:** [ADR-033](adr-033-marketing-typed-phrase-follows-the-irreversible.md): o
 limiar abaixo continua valendo inteiro, mas deixou de governar a FRASE digitada, que hoje
 é pedida sempre que sai mensagem direta. O limiar governa o resto — senha, autenticador,
 segunda pessoa.

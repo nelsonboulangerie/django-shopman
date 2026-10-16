@@ -10,7 +10,8 @@ export const OPERATOR_SESSION_COOKIE_NAME = "shopman_operator_sessionid";
 export const OPERATOR_CSRF_COOKIE_NAME = "shopman_operator_csrftoken";
 
 const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-const COOKIE_VALUE = /^(?:[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*|"[\x20-\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*")$/;
+const COOKIE_VALUE =
+  /^(?:[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*|"[\x20-\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*")$/;
 const COOKIE_DOMAIN = /^\.?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 const COOKIE_ATTRIBUTE_VALUE = /^[\x20-\x3A\x3C-\x7E]*$/;
 
@@ -18,7 +19,8 @@ export function isSafeDjangoSetCookieHeader(header: string): boolean {
   // Casar caractere de controle É o ponto: um Set-Cookie com CR/LF/NUL injeta cabeçalho
   // na resposta que o BFF devolve ao operador. A regra supõe engano; aqui é a defesa.
   // eslint-disable-next-line no-control-regex
-  if (!header || header.length > 4096 || /[\x00-\x1F\x7F]/.test(header)) return false;
+  if (!header || header.length > 4096 || /[\x00-\x1F\x7F]/.test(header))
+    return false;
 
   const [pair = "", ...rawAttributes] = header.split(";");
   const separator = pair.indexOf("=");
@@ -36,18 +38,30 @@ export function isSafeDjangoSetCookieHeader(header: string): boolean {
     const attribute = rawAttribute.trim();
     if (!attribute) continue;
     const attributeSeparator = attribute.indexOf("=");
-    const attributeName = (attributeSeparator < 0 ? attribute : attribute.slice(0, attributeSeparator)).toLowerCase();
-    const attributeValue = attributeSeparator < 0 ? undefined : attribute.slice(attributeSeparator + 1).trim();
+    const attributeName = (
+      attributeSeparator < 0
+        ? attribute
+        : attribute.slice(0, attributeSeparator)
+    ).toLowerCase();
+    const attributeValue =
+      attributeSeparator < 0
+        ? undefined
+        : attribute.slice(attributeSeparator + 1).trim();
 
     if (["secure", "httponly", "partitioned"].includes(attributeName)) {
       if (attributeValue !== undefined) return false;
       if (attributeName === "secure") secure = true;
       continue;
     }
-    if (attributeValue === undefined || !COOKIE_ATTRIBUTE_VALUE.test(attributeValue)) return false;
+    if (
+      attributeValue === undefined ||
+      !COOKIE_ATTRIBUTE_VALUE.test(attributeValue)
+    )
+      return false;
 
     if (attributeName === "path") {
-      if (!attributeValue.startsWith("/") || attributeValue.includes("\\")) return false;
+      if (!attributeValue.startsWith("/") || attributeValue.includes("\\"))
+        return false;
       path = attributeValue;
     } else if (attributeName === "domain") {
       if (!COOKIE_DOMAIN.test(attributeValue)) return false;
@@ -58,7 +72,12 @@ export function isSafeDjangoSetCookieHeader(header: string): boolean {
     } else if (attributeName === "max-age") {
       if (!/^-?\d+$/.test(attributeValue)) return false;
     } else if (attributeName === "expires") {
-      if (!/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(attributeValue)) return false;
+      if (
+        !/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(
+          attributeValue,
+        )
+      )
+        return false;
     } else if (attributeName === "priority") {
       if (!/^(?:low|medium|high)$/i.test(attributeValue)) return false;
     } else {
@@ -68,7 +87,11 @@ export function isSafeDjangoSetCookieHeader(header: string): boolean {
 
   if (sameSite === "none" && !secure) return false;
   if (name.startsWith("__Secure-") && !secure) return false;
-  if (name.startsWith("__Host-") && (!secure || domain !== undefined || path !== "/")) return false;
+  if (
+    name.startsWith("__Host-") &&
+    (!secure || domain !== undefined || path !== "/")
+  )
+    return false;
   return true;
 }
 
@@ -81,7 +104,8 @@ function cookiePairs(header: string | undefined): CookiePair[] {
     if (separator <= 0) continue;
     const name = rawPair.slice(0, separator).trim();
     const value = rawPair.slice(separator + 1).trim();
-    if (COOKIE_NAME.test(name) && COOKIE_VALUE.test(value)) pairs.push({ name, value });
+    if (COOKIE_NAME.test(name) && COOKIE_VALUE.test(value))
+      pairs.push({ name, value });
   }
   return pairs;
 }
@@ -96,7 +120,9 @@ function cookiePairs(header: string | undefined): CookiePair[] {
  * atividade do dispositivo (`app/utils/deviceActivity.ts`) e assunto do navegador
  * — a trava do PDV — e tambem morre aqui: o Django nao tem o que fazer com ele.
  */
-export function operatorCookieHeaderForDjango(browserCookie: string | undefined): string {
+export function operatorCookieHeaderForDjango(
+  browserCookie: string | undefined,
+): string {
   let operatorSession: string | undefined;
   let operatorCsrf: string | undefined;
   const passthrough: CookiePair[] = [];
@@ -107,16 +133,19 @@ export function operatorCookieHeaderForDjango(browserCookie: string | undefined)
     } else if (pair.name === OPERATOR_CSRF_COOKIE_NAME) {
       operatorCsrf = pair.value;
     } else if (
-      pair.name !== DJANGO_SESSION_COOKIE_NAME
-      && pair.name !== DJANGO_CSRF_COOKIE_NAME
-      && pair.name !== DEVICE_ACTIVITY_COOKIE_NAME
+      pair.name !== DJANGO_SESSION_COOKIE_NAME &&
+      pair.name !== DJANGO_CSRF_COOKIE_NAME &&
+      pair.name !== DEVICE_ACTIVITY_COOKIE_NAME
     ) {
       passthrough.push(pair);
     }
   }
 
   if (operatorSession !== undefined) {
-    passthrough.push({ name: DJANGO_SESSION_COOKIE_NAME, value: operatorSession });
+    passthrough.push({
+      name: DJANGO_SESSION_COOKIE_NAME,
+      value: operatorSession,
+    });
   }
   if (operatorCsrf !== undefined) {
     passthrough.push({ name: DJANGO_CSRF_COOKIE_NAME, value: operatorCsrf });
@@ -129,14 +158,47 @@ export function operatorCookieHeaderForDjango(browserCookie: string | undefined)
  * Preserva Domain/Path/Secure/HttpOnly/SameSite e tambem a expiracao vazia que
  * `logout()` emite, portanto login e logout continuam SSO entre as surfaces.
  */
-export function operatorSetCookieHeaderForBrowser(djangoHeader: string): string | null {
+export interface OperatorCookieBrowserTarget {
+  hostname: string;
+  protocol: string;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  );
+}
+
+export function operatorSetCookieHeaderForBrowser(
+  djangoHeader: string,
+  target?: OperatorCookieBrowserTarget,
+): string | null {
   if (!isSafeDjangoSetCookieHeader(djangoHeader)) return null;
   const separator = djangoHeader.indexOf("=");
   const name = djangoHeader.slice(0, separator).trim();
-  const mappedName = name === DJANGO_SESSION_COOKIE_NAME
-    ? OPERATOR_SESSION_COOKIE_NAME
-    : name === DJANGO_CSRF_COOKIE_NAME
-      ? OPERATOR_CSRF_COOKIE_NAME
-      : name;
-  return `${mappedName}${djangoHeader.slice(separator)}`;
+  const mappedName =
+    name === DJANGO_SESSION_COOKIE_NAME
+      ? OPERATOR_SESSION_COOKIE_NAME
+      : name === DJANGO_CSRF_COOKIE_NAME
+        ? OPERATOR_CSRF_COOKIE_NAME
+        : name;
+  const mapped = `${mappedName}${djangoHeader.slice(separator)}`;
+
+  // O Django de desenvolvimento usa a mesma configuração de cookie do domínio
+  // real. Em localhost/127.0.0.1 o navegador rejeita Domain=.boulangerie.com.br e,
+  // em HTTP, também Secure. O login então responde 200 sem conservar a sessão e a
+  // tela pede senha novamente. Somente no loopback adaptamos para cookie host-only;
+  // produção continua recebendo os atributos do Django sem alteração.
+  if (!target || !isLoopbackHostname(target.hostname)) return mapped;
+  const insecure = target.protocol === "http:";
+  return mapped
+    .split(";")
+    .filter((part, index) => {
+      if (index === 0) return true;
+      const attribute = part.trim().toLowerCase();
+      if (attribute.startsWith("domain=")) return false;
+      if (insecure && attribute === "secure") return false;
+      return true;
+    })
+    .join(";");
 }

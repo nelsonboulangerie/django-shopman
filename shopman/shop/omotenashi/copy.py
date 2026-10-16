@@ -172,6 +172,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CHECKOUT_LOYALTY_SAVINGS_PREFIX": {
         WILDCARD: {WILDCARD: CopyEntry(message="Seus pontos cobrem até")},
     },
+    # Mensagem de economia do grupo comercial. O texto por grupo é
+    # PriceTier.metadata.savings_message; este é o padrão. {amount} e {group}
+    # são interpolados pelo modifier (decisão do dono, 14/10/2026).
+    "CHECKOUT_GROUP_SAVINGS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Hoje você economizou {amount} por ser {group}")},
+    },
     "CHECKOUT_CONFIRM_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar pedido")},
     },
@@ -794,7 +800,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # Pago e conferindo é UM momento: a frase absorve o fato do pagamento em vez
     # de empilhar um "Pagamento recebido." solto (o histórico já registra o passo).
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE_PAID": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos conferindo a disponibilidade.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")},
     },
     "TRACKING_PROMISE_AVAILABILITY_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Avisamos em seguida.")},
@@ -917,7 +923,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Está esperando por você no balcão.")},
     },
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")},
     },
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pedido aceito. Acompanhe o andamento por aqui.")},
@@ -974,6 +980,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_ACTION_CONFIRM_RECEIVED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebi meu pedido")},
+    },
+    # O link da TaOn para seguir o entregador, o mesmo do aviso de saída.
+    "TRACKING_ACTION_TRACK_COURIER": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Acompanhar o entregador")},
     },
     "TRACKING_PROMISE_RETURNED_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Pedido devolvido.")},

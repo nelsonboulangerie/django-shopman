@@ -150,7 +150,10 @@ def test_unacknowledged_cancellation_stays_visible_while_same_order_has_active_w
 
     board = build_kds_board(prep.ref)
 
-    assert [ticket.pk for ticket in board.cancelled_tickets] == [cancelled.pk]
+    # O cancelado mora no card vivo do mesmo pedido, até alguém dar Visto.
+    assert board.cancelled_tickets == ()
+    assert board.tickets[0].change_ticket_pks == (cancelled.pk,)
+    assert [c.text for c in board.tickets[0].changes] == ["Cancelado: 1× Item retirado"]
 
 
 @pytest.mark.django_db
@@ -294,6 +297,37 @@ def test_customer_board_includes_fired_unpaid_pickup_comanda(kds_setup):
     refs = [p.ref for p in status.preparing]
     assert "1012" in refs
     assert all(p.ref != "1012" for p in status.ready)
+
+
+@pytest.mark.django_db
+def test_customer_board_moves_comanda_to_ready_when_the_kitchen_finishes(kds_setup):
+    # A comanda não vira Order antes do pagamento: quem diz que ficou pronta é o
+    # Pronto da cozinha. Sem isso ela ficava em "Em preparo" e o painel parecia
+    # parado (alpha, 13/10/2026).
+    prep, *_ = kds_setup
+    Session.objects.create(
+        session_key="sk-cust-pronta",
+        state="open",
+        handle_ref="00001007",
+        data={"fired_lines": ["1", "2"], "tab_ref": "00001007", "fulfillment_type": "pickup"},
+    )
+    KDSTicket.objects.create(session_key="sk-cust-pronta", kds_instance=prep, items=[], status="done")
+    second = KDSTicket.objects.create(session_key="sk-cust-pronta", kds_instance=prep, items=[], status="in_progress")
+    KDSTicket.objects.create(session_key="sk-cust-pronta", kds_instance=prep, items=[], status="cancelled")
+
+    # Um ticket ainda no fogo: a comanda segue em preparo.
+    status = build_kds_customer_status()
+    assert "1007" in [p.ref for p in status.preparing]
+    assert "1007" not in [p.ref for p in status.ready]
+
+    # O último Pronto (o cancelado não conta): vai para "Pronto para retirar".
+    second.status = "done"
+    second.completed_at = timezone.now()
+    second.save(update_fields=["status", "completed_at"])
+    status = build_kds_customer_status()
+    [ready] = [p for p in status.ready if p.ref == "1007"]
+    assert ready.status_label == "Pronto para retirar"
+    assert "1007" not in [p.ref for p in status.preparing]
 
 
 @pytest.mark.django_db

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
 // editável (nome, insumo com busca, quantidade, unidade, papel), partes, etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
@@ -110,11 +111,11 @@ function onItemQuantity(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
   formula.value = updateItem(formula.value, index, { quantity: Number(raw) || 0 });
 }
-function onItemUnit(index: number, event: Event) {
-  formula.value = updateItem(formula.value, index, { unit: (event.target as HTMLSelectElement).value as FormulaUnit });
+function onItemUnit(index: number, unit: string) {
+  formula.value = updateItem(formula.value, index, { unit: unit as FormulaUnit });
 }
-function onItemRole(index: number, event: Event) {
-  formula.value = updateItem(formula.value, index, { role: (event.target as HTMLSelectElement).value as IngredientRole });
+function onItemRole(index: number, role: string) {
+  formula.value = updateItem(formula.value, index, { role: role as IngredientRole });
 }
 function onItemGramsPerUnit(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
@@ -149,22 +150,32 @@ function move(index: number, delta: number) {
 }
 
 // ── Âncora ──────────────────────────────────────────────────────────────────
-function onAnchorKind(event: Event) {
-  const next = (event.target as HTMLSelectElement).value as AnchorKind;
+function onAnchorKind(kind: string) {
+  const next = kind as AnchorKind;
   const firstSku = formula.value.items.find((item) => item.sku)?.sku ?? "";
   formula.value = setAnchor(formula.value, next, next === "ingredient" ? firstSku : "");
 }
-function onAnchorSku(event: Event) {
-  formula.value = setAnchor(formula.value, "ingredient", (event.target as HTMLSelectElement).value);
+function onAnchorSku(sku: string) {
+  formula.value = setAnchor(formula.value, "ingredient", sku);
 }
-const anchorCandidates = computed(() => formula.value.items.filter((item) => item.sku));
+const anchorCandidates = computed(() =>
+  formula.value.items
+    .filter((item) => item.sku)
+    .map((item) => ({ value: item.sku, label: item.name || item.sku })),
+);
+// Listas curtas e fixas da ficha: `NuxtSelect` (o `[...]` tira o readonly do tipo).
+const yieldUnits = [...YIELD_UNIT_OPTIONS];
+const units = [...UNIT_OPTIONS];
+const roles = [...ROLE_OPTIONS];
+const anchors = [...ANCHOR_OPTIONS];
+const partKinds = [...PART_KIND_OPTIONS];
 
 // ── Partes ──────────────────────────────────────────────────────────────────
 function addNewPart() {
   formula.value = addPart(formula.value, emptyPart("preferment"));
 }
-function onPartKind(index: number, event: Event) {
-  const next = (event.target as HTMLSelectElement).value as PartKind;
+function onPartKind(index: number, kind: string) {
+  const next = kind as PartKind;
   formula.value = updatePart(formula.value, index, next === "old_dough" ? { kind: next, cap_pct: 20 } : { kind: next, cap_pct: null });
 }
 function onPartSku(index: number, sku: string) {
@@ -177,8 +188,8 @@ function onPartNumber(index: number, field: "flour_pct" | "quantity" | "cap_pct"
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
   formula.value = updatePart(formula.value, index, { [field]: raw ? Number(raw) || null : null });
 }
-function onPartUnit(index: number, event: Event) {
-  formula.value = updatePart(formula.value, index, { unit: (event.target as HTMLSelectElement).value as FormulaUnit });
+function onPartUnit(index: number, unit: string) {
+  formula.value = updatePart(formula.value, index, { unit: unit as FormulaUnit });
 }
 function dropPart(index: number) {
   formula.value = removePart(formula.value, index);
@@ -262,6 +273,7 @@ async function startDraft() {
   const result = await createVersion(
     base
       ? {
+          ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
           from_version: base.number,
           formula: formulaFromServed(base.formula),
           yield_quantity: base.yield_quantity,
@@ -270,11 +282,20 @@ async function startDraft() {
           notes: base.notes,
           label: "",
         }
-      : { formula: emptyFormula(), yield_quantity: "1", yield_unit: "kg", steps: [], notes: "", label: "" },
+      : {
+          ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
+          formula: emptyFormula(),
+          yield_quantity: "1",
+          yield_unit: "kg",
+          steps: [],
+          notes: "",
+          label: "",
+        },
   );
   if (result.ok && result.version) await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`, { replace: true });
 }
 
+const touch = useTouchPointer();
 </script>
 
 <template>
@@ -287,26 +308,25 @@ async function startDraft() {
     >
       <template #actions>
         <template v-if="draft && canEdit">
-          <UiButton
-            type="button"
+          <NuxtButton
+            color="neutral"
             variant="outline"
-            size="sm"
+            icon="i-lucide-save"
+            aria-label="Salvar rascunho"
             :disabled="busy"
             @click="save"
           >
-            <Icon name="lucide:save" class="size-4" />
             <span class="hidden sm:inline">Salvar rascunho</span>
-          </UiButton>
-          <UiButton
-            type="button"
-            size="sm"
+          </NuxtButton>
+          <NuxtButton
+            icon="i-lucide-check"
+            aria-label="Salvar e publicar"
             :disabled="busy || unmatchedCount > 0 || !entry?.output_sku"
             :title="!entry?.output_sku ? 'Associe um SKU na receita antes de publicar' : unmatchedCount ? 'Case todos os ingredientes antes de publicar' : ''"
             @click="saveAndPublish"
           >
-            <Icon name="lucide:check" class="size-4" />
             <span class="hidden sm:inline">Salvar e publicar</span>
-          </UiButton>
+          </NuxtButton>
         </template>
       </template>
     </RecipeHeader>
@@ -337,15 +357,14 @@ async function startDraft() {
       >
         <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
         <p class="text-base font-medium text-foreground">Não foi possível carregar a receita.</p>
-        <UiButton
-          type="button"
+        <NuxtButton
           class="mt-1"
+          color="neutral"
           variant="outline"
-          size="sm"
+          icon="i-lucide-refresh-cw"
+          label="Tentar de novo"
           @click="refresh()"
-        >
-          <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </UiButton>
+        />
       </div>
 
       <div
@@ -357,55 +376,64 @@ async function startDraft() {
           {{ requestedNotDraft ? "Essa versão já foi publicada e não se edita." : "Sem rascunho para editar." }}
         </p>
         <p class="text-sm">Uma nova versão copia a mais recente em rascunho; a publicada continua intacta.</p>
-        <UiButton
+        <NuxtButton
           v-if="!entry.is_archived"
-          type="button"
           class="mt-1"
-          size="sm"
+          icon="i-lucide-copy-plus"
+          label="Nova versão"
           :disabled="busy"
           @click="startDraft"
-        >
-          <Icon name="lucide:copy-plus" class="size-4" /> Nova versão
-        </UiButton>
+        />
       </div>
 
       <div v-else-if="entry && draft" class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
         <!-- ── Editor ──────────────────────────────────────────────────── -->
         <div class="grid min-w-0 content-start gap-4">
-          <p v-if="saveError" class="rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive">{{ saveError }}</p>
+          <NuxtAlert
+            v-if="saveError"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="saveError"
+            :actions="alertActions('error', [{ label: 'Salvar de novo', disabled: busy, onClick: () => save() }])"
+          />
 
           <!-- Rendimento, âncora, o que mudou -->
           <div class="grid gap-3 rounded-md border bg-card p-3 sm:grid-cols-[auto_auto_1fr]">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
-                <UiInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-20" />
-                <UiNativeSelect v-model="yieldUnit" class="w-auto">
-                  <option v-for="unit in YIELD_UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                </UiNativeSelect>
+                <NuxtInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-20" />
+                <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
               </span>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Âncora (100%)
               <span class="flex items-center gap-1">
-                <UiNativeSelect :value="formula.anchor.kind" class="w-auto" @change="onAnchorKind">
-                  <option v-for="option in ANCHOR_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-                </UiNativeSelect>
-                <UiNativeSelect
+                <NuxtSelect
+                  :model-value="formula.anchor.kind"
+                  :items="anchors"
+                  value-key="value"
+                  class="w-44"
+                  aria-label="Âncora (100%)"
+                  @update:model-value="onAnchorKind"
+                />
+                <NuxtSelectMenu
                   v-if="formula.anchor.kind === 'ingredient'"
-                  :value="formula.anchor.sku ?? ''"
-                  class="w-auto"
+                  :model-value="formula.anchor.sku || undefined"
+                  :items="anchorCandidates"
+                  value-key="value"
+                  placeholder="Escolha o ingrediente"
+                  class="w-48"
+                  :search-input="{ autofocus: !touch, placeholder: 'Buscar ingrediente' }"
                   aria-label="Ingrediente-âncora"
-                  @change="onAnchorSku"
-                >
-                  <option value="">Escolha…</option>
-                  <option v-for="item in anchorCandidates" :key="item.sku" :value="item.sku">{{ item.name || item.sku }}</option>
-                </UiNativeSelect>
+                  @update:model-value="onAnchorSku"
+                />
               </span>
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               O que mudou (rótulo curto)
-              <UiInput v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" />
+              <NuxtInput v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" class="w-full" />
             </label>
           </div>
 
@@ -416,15 +444,7 @@ async function startDraft() {
               <span class="text-xs tabular-nums text-muted-foreground">
                 âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
               </span>
-              <UiButton
-                type="button"
-                class="ml-auto"
-                variant="outline"
-                size="sm"
-                @click="add"
-              >
-                <Icon name="lucide:plus" class="size-4" /> Ingrediente
-              </UiButton>
+              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Ingrediente" @click="add" />
             </div>
             <p v-if="!formula.items.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
               Nenhum ingrediente ainda. Toda a farinha entra aqui, inclusive a do levain e da autólise.
@@ -438,7 +458,7 @@ async function startDraft() {
               >
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Nome
-                  <UiInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" @input="onItemName(index, $event)" />
+                  <NuxtInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" class="w-full" @input="onItemName(index, $event)" />
                 </label>
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Insumo
@@ -451,45 +471,49 @@ async function startDraft() {
                 </div>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Qtd
-                  <UiInput
-                    :model-value="item.quantity || ''"
+                  <NuxtInput
+                    :model-value="String(item.quantity || '')"
                     type="text"
                     inputmode="decimal"
-                    class="w-24 text-right tabular-nums"
+                    class="w-24"
+                    :ui="{ base: 'text-right tabular-nums' }"
                     @input="onItemQuantity(index, $event)"
                   />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Un
-                  <UiNativeSelect :value="item.unit" class="w-auto" @change="onItemUnit(index, $event)">
-                    <option v-for="unit in UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                  </UiNativeSelect>
+                  <NuxtSelect
+                    :model-value="item.unit"
+                    :items="units"
+                    class="w-24"
+                    :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
+                    @update:model-value="(unit: string) => onItemUnit(index, unit)"
+                  />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Papel
-                  <UiNativeSelect :value="item.role" class="w-auto" @change="onItemRole(index, $event)">
-                    <option v-for="role in ROLE_OPTIONS" :key="role.value" :value="role.value">{{ role.label }}</option>
-                  </UiNativeSelect>
+                  <NuxtSelect
+                    :model-value="item.role"
+                    :items="roles"
+                    value-key="value"
+                    class="w-36"
+                    :aria-label="`Papel de ${item.name || 'ingrediente'}`"
+                    @update:model-value="(role: string) => onItemRole(index, role)"
+                  />
                 </label>
                 <div class="flex items-end gap-1">
                   <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a âncora (prévia local)'">
                     {{ pctOf(item, localAnchorTotal) ? `${pctOf(item, localAnchorTotal)}%` : "" }}
                   </span>
-                  <!-- Ícones de 36px formam a microbarra de ordenação da linha; não são CTAs UiButton. -->
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent disabled:opacity-40" aria-label="Subir" :disabled="index === 0" @click="move(index, -1)">
-                    <Icon name="lucide:chevron-up" class="size-4" />
-                  </button>
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent disabled:opacity-40" aria-label="Descer" :disabled="index === formula.items.length - 1" @click="move(index, 1)">
-                    <Icon name="lucide:chevron-down" class="size-4" />
-                  </button>
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive" aria-label="Remover ingrediente" @click="remove(index)">
-                    <Icon name="lucide:trash-2" class="size-4" />
-                  </button>
+                  <!-- A microbarra da linha: ordenar e remover, ícones `ghost`. -->
+                  <NuxtButton icon="i-lucide-chevron-up" color="neutral" variant="ghost" square aria-label="Subir" :disabled="index === 0" @click="move(index, -1)" />
+                  <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer" :disabled="index === formula.items.length - 1" @click="move(index, 1)" />
+                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="remove(index)" />
                 </div>
                 <label v-if="item.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-6">
                   Gramas por unidade (sem isso a contagem fica fora da conta)
-                  <UiInput
-                    :model-value="item.grams_per_unit ?? ''"
+                  <NuxtInput
+                    :model-value="String(item.grams_per_unit ?? '')"
                     type="text"
                     inputmode="decimal"
                     class="w-28"
@@ -505,30 +529,27 @@ async function startDraft() {
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Partes</p>
               <span class="text-xs text-muted-foreground">quanto da base passa por levain, autólise, embebido ou massa velha</span>
-              <UiButton
-                type="button"
-                class="ml-auto"
-                variant="outline"
-                size="sm"
-                @click="addNewPart"
-              >
-                <Icon name="lucide:plus" class="size-4" /> Parte
-              </UiButton>
+              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Parte" @click="addNewPart" />
             </div>
             <p v-if="!formula.parts.length" class="px-3 py-4 text-center text-sm text-muted-foreground">Sem partes: tudo vai direto na mistura.</p>
             <ol v-else class="divide-y">
               <li v-for="(part, index) in formula.parts" :key="index" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Tipo
-                  <UiNativeSelect :value="part.kind" class="w-auto" @change="onPartKind(index, $event)">
-                    <option v-for="option in PART_KIND_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
-                  </UiNativeSelect>
+                  <NuxtSelect
+                    :model-value="part.kind"
+                    :items="partKinds"
+                    value-key="value"
+                    class="w-44"
+                    aria-label="Tipo da parte"
+                    @update:model-value="(kind: string) => onPartKind(index, kind)"
+                  />
                 </label>
                 <template v-if="part.kind === 'old_dough'">
                   <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">A própria base da véspera; declara só o teto.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Teto (%)
-                    <UiInput :model-value="part.cap_pct ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'cap_pct', $event)" />
+                    <NuxtInput :model-value="String(part.cap_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'cap_pct', $event)" />
                   </label>
                 </template>
                 <template v-else>
@@ -544,24 +565,26 @@ async function startDraft() {
                   </div>
                   <label v-if="anchorIsFlour" class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Farinha (%)
-                    <UiInput :model-value="part.flour_pct ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'flour_pct', $event)" />
+                    <NuxtInput :model-value="String(part.flour_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'flour_pct', $event)" />
                   </label>
                   <label v-else class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <span class="flex items-center gap-1">
-                      <UiInput :model-value="part.quantity ?? ''" type="text" inputmode="decimal" class="w-20 text-right" @input="onPartNumber(index, 'quantity', $event)" />
-                      <UiNativeSelect :value="part.unit ?? 'g'" class="w-auto" @change="onPartUnit(index, $event)">
-                        <option v-for="unit in UNIT_OPTIONS" :key="unit" :value="unit">{{ unit }}</option>
-                      </UiNativeSelect>
+                      <NuxtInput :model-value="String(part.quantity ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'quantity', $event)" />
+                      <NuxtSelect
+                        :model-value="part.unit ?? 'g'"
+                        :items="units"
+                        class="w-24"
+                        aria-label="Unidade da parte"
+                        @update:model-value="(unit: string) => onPartUnit(index, unit)"
+                      />
                     </span>
                   </label>
                   <span v-if="anchorIsFlour" class="hidden sm:block" />
                 </template>
                 <div class="flex items-end">
                   <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->
-                  <button type="button" class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive" aria-label="Remover parte" @click="dropPart(index)">
-                    <Icon name="lucide:trash-2" class="size-4" />
-                  </button>
+                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover parte" @click="dropPart(index)" />
                 </div>
               </li>
             </ol>
@@ -571,11 +594,11 @@ async function startDraft() {
           <div class="grid gap-3 rounded-md border bg-card p-3">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Etapas (uma por linha)
-              <UiTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" />
+              <NuxtTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" class="w-full" />
             </label>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Notas desta versão
-              <UiTextarea v-model="notes" :rows="3" />
+              <NuxtTextarea v-model="notes" :rows="3" class="w-full" />
             </label>
           </div>
         </div>
@@ -585,17 +608,15 @@ async function startDraft() {
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Prévia da lente</p>
             <Icon v-if="lensPending" name="lucide:loader-circle" class="size-4 animate-spin text-muted-foreground" />
-            <UiButton
-              type="button"
+            <NuxtButton
               class="ml-auto"
+              color="neutral"
               variant="outline"
-              size="sm"
+              icon="i-lucide-scale"
+              :label="standardizing ? 'Padronizando…' : `Padronizar para ${HOUSE_BASIS_G} g ${anchorNoun}`"
               :disabled="standardizing || !formula.items.length"
               @click="standardizeToHouse"
-            >
-              <Icon name="lucide:scale" class="size-4" />
-              {{ standardizing ? "Padronizando…" : `Padronizar para ${HOUSE_BASIS_G} g ${anchorNoun}` }}
-            </UiButton>
+            />
           </div>
 
           <div v-if="before" class="grid gap-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
@@ -605,22 +626,23 @@ async function startDraft() {
               <br />
               Depois: âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
             </p>
-            <UiButton type="button" variant="link" size="sm" class="justify-self-start p-0" @click="undoStandardize">Desfazer</UiButton>
+            <NuxtButton class="justify-self-start" color="primary" variant="ghost" label="Desfazer" @click="undoStandardize" />
           </div>
 
           <FormulaLens :lens="lens" :pending="lensPending" :error="lensError" compact />
 
           <div v-if="origin.length" class="rounded-md border">
             <!-- Cabeçalho de disclosure ocupa a linha inteira; é o acionador estrutural do painel. -->
-            <button
-              type="button"
-              class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              block
+              :icon="originOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              label="Como foi informada"
+              :ui="{ base: 'justify-start px-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground' }"
               :aria-expanded="originOpen"
               @click="originOpen = !originOpen"
-            >
-              <Icon :name="originOpen ? 'lucide:chevron-down' : 'lucide:chevron-right'" class="size-4" />
-              Como foi informada
-            </button>
+            />
             <ul v-if="originOpen" class="divide-y border-t text-sm">
               <li v-for="(line, index) in origin" :key="index" class="px-3 py-1.5 text-muted-foreground">{{ line }}</li>
             </ul>

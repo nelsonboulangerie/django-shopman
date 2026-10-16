@@ -536,6 +536,59 @@ class TestOrderProgressSteps:
         assert "Confirme aqui quando receber" in proj.promise.message
         assert "avisamos" not in proj.promise.message.lower()
 
+    def _dispatch_with_courier(self, order, courier: dict):
+        order.data = {"fulfillment_type": "delivery", "courier": courier}
+        order.save(update_fields=["data"])
+        for status in ("accepted", "preparing", "ready", "dispatched"):
+            order.transition_status(status, actor="test")
+        order.refresh_from_db()
+        return build_order_tracking(order)
+
+    def test_dispatched_with_courier_link_offers_follow_the_courier(self, order):
+        """P1-11: o link da TaOn ia só no aviso do WhatsApp; a página não o mostrava."""
+        proj = self._dispatch_with_courier(
+            order,
+            {"provider": "machine", "id_mch": "184532", "status": "E", "tracking_url": "https://taon.example/r/abc"},
+        )
+
+        actions = {action.ref: action for action in proj.promise.actions}
+        assert "track_courier" in actions
+        track = actions["track_courier"]
+        assert track.kind == "external"
+        assert track.href == "https://taon.example/r/abc"
+        assert track.label == "Acompanhar o entregador"
+        assert track.priority == "secondary"
+        # "Recebi meu pedido" continua sendo o gesto principal.
+        assert proj.promise.actions[0].ref == "confirm_received"
+
+    @pytest.mark.parametrize(
+        "courier",
+        [
+            {"status": "E", "tracking_url": ""},
+            {"status": "F", "tracking_url": "https://taon.example/r/abc"},
+            {"status": "E", "tracking_url": "javascript:alert(1)"},
+        ],
+        ids=["sem-link", "corrida-finalizada", "link-nao-http"],
+    )
+    def test_no_usable_courier_link_no_follow_button(self, order, courier):
+        proj = self._dispatch_with_courier(order, courier)
+
+        assert "track_courier" not in {action.ref for action in proj.promise.actions}
+
+    def test_courier_link_waits_for_the_order_to_leave(self, order):
+        order.data = {
+            "fulfillment_type": "delivery",
+            "courier": {"status": "A", "tracking_url": "https://taon.example/r/abc"},
+        }
+        order.save(update_fields=["data"])
+        for status in ("accepted", "preparing", "ready"):
+            order.transition_status(status, actor="test")
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert "track_courier" not in {action.ref for action in proj.promise.actions}
+
     def test_cancelled_order_has_cancelled_terminal_step(self, order):
         order.transition_status("cancelled", actor="test")
         order.refresh_from_db()
@@ -848,8 +901,8 @@ class TestStatusColours:
         `cancellation_reason` é campo de AUDITORIA e carrega códigos
         (`customer_requested`, `pix_timeout`, `card_timeout`,
         `confirmation_timeout`). O `data-schemas.md` é explícito: "nunca exibir
-        ao cliente". Quem fala com o cliente é `cancellation_note`, escrita pelo
-        operador — a mesma regra que o lifecycle já aplica na notificação.
+        ao cliente". Quem fala com o cliente é o texto revisado da chave
+        (`cancellation_reason_key`), a mesma regra da notificação.
 
         Sem nota, a tela não inventa motivo: fica vazia.
         """
@@ -866,23 +919,38 @@ class TestStatusColours:
         assert proj.cancellation_note == ""
         assert "customer_requested" not in str(proj.cancellation_note)
 
-    def test_operator_note_is_what_the_customer_reads(self, order, product):
-        """A justificativa escrita pelo operador é o que a tela mostra."""
+    def test_the_customer_reads_the_text_of_the_reason_key(self, order, product):
+        """P1-10: a tela mostra o texto revisado da chave; a observação interna nunca."""
         from shopman.orderman.models import Order as _Order
+
+        from shopman.shop.services.cancel_reasons import cancel_reason
 
         _Order.objects.filter(pk=order.pk).update(
             status="cancelled",
             data={
                 **(order.data or {}),
-                "cancellation_reason": "customer_requested",
-                "cancellation_note": "Sem um dos ingredientes hoje",
+                "cancellation_reason": "Acabou um item",
+                "cancellation_reason_key": "out_of_stock",
+                "cancellation_internal_note": "Faltou farinha",
             },
         )
         order.refresh_from_db()
 
         proj = build_order_tracking(order)
 
-        assert proj.cancellation_note == "Sem um dos ingredientes hoje"
+        assert proj.cancellation_note == cancel_reason("out_of_stock").customer_text
+        assert "farinha" not in proj.cancellation_note
+
+    def test_other_reason_shows_no_invented_reason(self, order, product):
+        from shopman.orderman.models import Order as _Order
+
+        _Order.objects.filter(pk=order.pk).update(
+            status="cancelled",
+            data={**(order.data or {}), "cancellation_reason_key": "other", "cancellation_internal_note": "Cliente sumiu"},
+        )
+        order.refresh_from_db()
+
+        assert build_order_tracking(order).cancellation_note == ""
 
     def test_todays_batch_does_not_charge_to_hold_a_spot(self, order_with_payment, product):
         """Fornada de HOJE não cobra para garantir vaga (política da casa, 28/08/2026).
@@ -992,7 +1060,7 @@ class TestStatusColours:
         # Pago e conferindo é UMA frase: antes o painel empilhava a mensagem, um
         # "Pagamento recebido." solto e o rótulo do contador repetindo tudo.
         assert proj.promise.message == (
-            "Pagamento recebido. Estamos conferindo a disponibilidade."
+            "Pagamento recebido. Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor."
         )
 
     def test_closed_store_new_order_defers_availability_without_countdown(
@@ -1096,7 +1164,7 @@ class TestStatusColours:
         assert proj.payment_status_label == "Pagamento expirado"
         assert proj.confirmation_countdown is False
         assert proj.promise.requires_active_notification is True
-        assert proj.promise.notification_topic == "payment_expired"
+        assert proj.promise.notification_topic == "order_cancelled"
         assert proj.promise.actions == ()
         assert "cancelamos o pedido" in proj.promise.message.lower()
         assert any(action.ref == "reorder" and action.label == "Repetir pedido" for action in proj.actions)

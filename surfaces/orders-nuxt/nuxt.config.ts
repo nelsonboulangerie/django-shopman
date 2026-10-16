@@ -20,6 +20,10 @@ export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
   extends: ["../operator-kit"],
 
+  // A matriz visual roda em modo client-only (sem SSR): o backend é o mock
+  // hermético do runner. Em qualquer outro modo o SSR continua ligado.
+  ssr: process.env.ORDERS_VISUAL_CLIENT_ONLY !== "1",
+
   compatibilityDate: "2026-05-16",
   devtools: { enabled: false },
 
@@ -84,8 +88,7 @@ export default defineNuxtConfig({
     '@vueuse/nuxt',
     '@nuxt/icon',
     '@nuxt/fonts',
-    '@nuxt/eslint',
-    "vue-sonner/nuxt"
+    '@nuxt/eslint'
   ],
 
   // Instrument Sans self-hospedada com os PESOS da escala do operador (body=500,
@@ -107,8 +110,9 @@ export default defineNuxtConfig({
       name: 'VariantProps',
       type: true
     }, {
-      from: "vue-sonner",
-      name: "toast",
+      // Contrato de aviso da suíte → toast do Nuxt UI (utils/operatorToast.ts).
+      from: "~/utils/operatorToast",
+      name: "operatorToast",
       as: "useSonner"
     }]
   },

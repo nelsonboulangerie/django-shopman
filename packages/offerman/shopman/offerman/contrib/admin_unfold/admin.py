@@ -31,6 +31,7 @@ from shopman.utils.admin.mixins import AutofillInlineMixin
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
 from shopman.utils.monetary import format_money
+from taggit.forms import TagWidgetMixin
 from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.numeric_filters import RangeNumericFilter
 from unfold.contrib.import_export.forms import ExportForm, ImportForm
@@ -41,6 +42,20 @@ from unfold.widgets import (
     UnfoldAdminTextareaWidget,
     UnfoldAdminTextInputWidget,
 )
+
+
+class UnfoldTagWidget(TagWidgetMixin, UnfoldAdminTextInputWidget):
+    """Campo de etiquetas com o desenho do Unfold e a formatação do taggit.
+
+    ⚠️ O ``TagWidgetMixin`` não é enfeite. O valor inicial de um ``TaggableManager``
+    é uma LISTA de objetos ``Tag``, e quem a transforma em "pao, hamburger" é o
+    ``format_value`` do mixin. Trocar o widget por um campo de texto puro fazia a
+    tela mostrar o repr ("[<Tag: pao>, <Tag: hamburger>]"), e salvar sem mexer
+    gravava esse texto de volta como etiquetas novas ("[<Tag: pao>",
+    "<Tag: hamburger>]"), piorando a cada save. O taggit continua dono do PARSE
+    (vírgula, aspas, etiqueta nova na hora); o Unfold, só do desenho.
+    """
+
 
 # Unregister basic admins
 for model in [Collection, Listing, Product]:
@@ -307,12 +322,10 @@ class ProductActionForm(ActionForm):
 class ProductAdmin(_ProductImportExportBase):
     from shopman.offerman.contrib.admin_unfold.resources import ProductResource
 
-    # O campo de etiquetas vem do taggit, cujo widget é um campo de texto cru:
-    # dentro de um form Unfold ele aparecia com a borda do Django antigo. O taggit
-    # continua dono do PARSE (vírgula, aspas, etiqueta nova na hora); troca só o
-    # desenho.
+    # O campo de etiquetas vem do taggit; o widget tem o desenho do Unfold e a
+    # formatação do taggit (ver `UnfoldTagWidget`).
     formfield_overrides = {
-        TaggableManager: {"widget": UnfoldAdminTextInputWidget},
+        TaggableManager: {"widget": UnfoldTagWidget},
     }
 
     form = ProductAdminForm

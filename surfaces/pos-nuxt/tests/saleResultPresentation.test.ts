@@ -11,7 +11,9 @@ import {
   danfeOffer,
   enterAdvances,
   fiscalStateLabel,
+  nextActionLabel,
   orderReadback,
+  orderTicketLabel,
   pixAwaiting,
   resolveFiscalState,
   saleResultTitle,
@@ -266,5 +268,23 @@ describe("danfeOffer — a DANFE por existência da nota, não por previsão", (
     expect(danfeOffer("awaiting_delivery")).toEqual({ kind: "awaiting_handoff", label: "NFC-e sai na entrega" });
     expect(fiscalStateLabel("awaiting_pickup")).toBe("NFC-e sai na retirada");
     expect(fiscalStateLabel("awaiting_delivery")).toBe("NFC-e sai na entrega");
+  });
+});
+
+describe("P2-31: a próxima ação da tela de resultado", () => {
+  it("encomenda puxa outra encomenda; venda puxa outra venda", () => {
+    expect(nextActionLabel("order", false)).toBe("Nova encomenda");
+    expect(nextActionLabel("counter", false)).toBe("Nova venda");
+    expect(nextActionLabel(undefined, false)).toBe("Nova venda");
+  });
+
+  it("com o Pix aguardando, a saída é gesto deliberado nos dois modos", () => {
+    expect(nextActionLabel("order", true)).toBe("Nova encomenda mesmo assim");
+    expect(nextActionLabel("counter", true)).toBe("Nova venda mesmo assim");
+  });
+
+  it("o papel da encomenda tem o verbo inteiro, como no detalhe", () => {
+    expect(orderTicketLabel(false)).toBe("Imprimir Via Pedido");
+    expect(orderTicketLabel(true)).toBe("Imprimindo…");
   });
 });

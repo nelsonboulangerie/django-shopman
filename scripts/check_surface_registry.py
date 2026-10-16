@@ -69,6 +69,10 @@ class Surface:
     def is_deployed(self) -> bool:
         return self.deployment != "preview"
 
+    @property
+    def is_digitalocean_deployed(self) -> bool:
+        return self.deployment is None
+
 
 class Registry:
     def __init__(self, root: Path):
@@ -89,6 +93,10 @@ class Registry:
     @property
     def deployed_surfaces(self) -> list[Surface]:
         return [s for s in self.surfaces if s.is_deployed]
+
+    @property
+    def digitalocean_surfaces(self) -> list[Surface]:
+        return [s for s in self.surfaces if s.is_digitalocean_deployed]
 
     @property
     def deployed_operators(self) -> list[Surface]:
@@ -124,8 +132,8 @@ def check_registry_shape(reg: Registry) -> list[str]:
         if extra:
             errors.append(f"{where}: {key} com campo desconhecido {sorted(extra)}")
     for s in reg.surfaces:
-        if s.deployment not in {None, "preview"}:
-            errors.append(f"{where}: {s.id} com deployment {s.deployment!r} (use preview ou omita)")
+        if s.deployment not in {None, "preview", "external"}:
+            errors.append(f"{where}: {s.id} com deployment {s.deployment!r} (use preview, external ou omita)")
         if s.kind not in KINDS:
             errors.append(f"{where}: {s.id} com kind {s.kind!r} (use {sorted(KINDS)})")
         if s.dir != f"{s.id}-nuxt":
@@ -136,6 +144,10 @@ def check_registry_shape(reg: Registry) -> list[str]:
             errors.append(f"{where}: {s.id} é de operador e não tem subdomínio")
         if not s.is_deployed and any((s.service, s.subdomain, s.base_url_env, s.hub_tile)):
             errors.append(f"{where}: {s.id} é preview e não pode declarar service, subdomain, base_url_env ou hub_tile")
+        if s.deployment == "external" and (s.service or s.base_url_env or s.hub_tile or not s.subdomain):
+            errors.append(
+                f"{where}: {s.id} é externo e exige subdomain, sem service, base_url_env ou hub_tile"
+            )
     for field in ("dev_port", "subdomain", "base_url_env", "hub_tile"):
         values = [getattr(s, field) for s in reg.surfaces if getattr(s, field) is not None]
         for value in sorted({v for v in values if values.count(v) > 1}, key=str):
@@ -167,13 +179,32 @@ def check_dependabot(reg: Registry) -> list[str]:
 
 def check_surfaces_gate(reg: Registry) -> list[str]:
     where = ".github/workflows/surfaces-gate.yml"
-    jobs = reg.yaml(where)["jobs"]
+    contract_where = "surfaces/contracts.json"
+    contracts = json.loads(reg.read(contract_where)).get("surfaces") or {}
     errors = []
-    quality = set(jobs["app-quality"]["strategy"]["matrix"]["app"])
-    errors += _diff(f"{where} (app-quality)", "o app", {s.dir for s in reg.surfaces} | {"operator-kit"}, quality)
-    pwa_matrix = jobs["pwa-quality"]["strategy"]["matrix"]["include"]
-    pwa = {(entry["app"], entry["surface"]) for entry in pwa_matrix}
-    errors += _diff(f"{where} (pwa-quality)", "a entrada", {(s.id, s.dir) for s in reg.surfaces}, pwa)
+    quality = {value.get("dir") for value in contracts.values()}
+    errors += _diff(
+        f"{contract_where} (quality)",
+        "o app",
+        {s.dir for s in reg.surfaces} | {"operator-kit"},
+        quality,
+    )
+    pwa = {
+        (key, value.get("dir"))
+        for key, value in contracts.items()
+        if (value.get("capabilities") or {}).get("pwa")
+    }
+    errors += _diff(
+        f"{contract_where} (pwa)",
+        "a entrada",
+        {(s.id, s.dir) for s in reg.surfaces},
+        pwa,
+    )
+    workflow = reg.read(where)
+    for job, output in (("app-quality", "quality"), ("pwa-quality", "pwa")):
+        marker = f"fromJSON(needs.surface-contract.outputs.{output})"
+        if marker not in workflow:
+            errors.append(f"{where} ({job}): matriz não vem do contrato ({marker})")
     return errors
 
 
@@ -266,7 +297,7 @@ def check_deploy_spec(reg: Registry, path: Path) -> list[str]:
     if domain is None:
         return [f"{where}: sem host `api.` no ingress; não sei qual é o domínio da loja"]
 
-    for s in reg.deployed_surfaces:
+    for s in reg.digitalocean_surfaces:
         if s.service not in services:
             errors.append(f"{where}: falta o service {s.service} (de {s.id})")
         if s.subdomain:
@@ -312,10 +343,17 @@ def check_django_settings(reg: Registry) -> list[str]:
     source = reg.read(where)
     errors = []
     origins = "".join(re.findall(r"^\s*CSRF_TRUSTED_ORIGINS \+= \[(.*?)^\s*\]", source, re.M | re.S))
+    # Superfícies externas não chamam endpoints autenticados do Django no
+    # navegador. Incluí-las aqui aumentaria a confiança do backend sem uso: o
+    # Status consulta apenas health checks públicos a partir do Worker isolado.
+    django_browser_surfaces = [s for s in reg.surfaces if s.deployment != "external"]
     for host in ("localhost", "127.0.0.1"):
         ports = {int(p) for p in re.findall(rf'"http://{re.escape(host)}:(\d+)"', origins)}
         errors += _diff(
-            f"{where} (CSRF_TRUSTED_ORIGINS, {host})", "a porta de dev", {s.dev_port for s in reg.surfaces}, ports
+            f"{where} (CSRF_TRUSTED_ORIGINS, {host})",
+            "a porta de dev",
+            {s.dev_port for s in django_browser_surfaces},
+            ports,
         )
     for s in reg.surfaces:
         if s.base_url_env and not re.search(rf"^{s.base_url_env}\s*=", source, re.M):

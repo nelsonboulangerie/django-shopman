@@ -8,10 +8,11 @@ import type { IFoodStoreProjection } from "~/types/ifoodStore";
 /** Uma linha: o que o iFood está fazendo com os pedidos neste momento. */
 export function ifoodStatusLine(store: IFoodStoreProjection): string {
   if (store.ifood_available === null) return store.ifood_status_label;
-  const when = store.ifood_checked_at_display ? ` (conferido às ${store.ifood_checked_at_display})` : "";
+  const when = store.ifood_checked_at_display
+    ? ` (conferido às ${store.ifood_checked_at_display})`
+    : "";
   return `iFood: ${store.ifood_status_label.toLowerCase()}${when}`;
 }
 
 /** O ref do canal iFood — o card da aba Canais que carrega o estado da loja. */
 export const IFOOD_CHANNEL_REF = "ifood";
-

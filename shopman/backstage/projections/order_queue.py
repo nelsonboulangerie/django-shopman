@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -43,12 +43,13 @@ from shopman.backstage.projections.order_attention import (
 )
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
+from shopman.backstage.services.courier_reminder import CourierReminderProjection, courier_reminder
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
     TimelineEventProjection,
 )
-from shopman.shop.services import operator_orders, order_composition
+from shopman.shop.services import operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
 
@@ -151,8 +152,22 @@ class AwaitingWorkOrderProjection:
 
 
 @dataclass(frozen=True)
+class CancelReasonProjection:
+    """Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``).
+
+    ``key`` é o que a tela devolve no cancelar; ``label`` é o que o operador
+    escolhe; ``customer_text`` é a frase que o cliente vai ler, mostrada na hora
+    da escolha para o operador saber o que sai.
+    """
+
+    key: str
+    label: str
+    customer_text: str
+
+
+@dataclass(frozen=True)
 class CancellationPresetGroupProjection:
-    """Motivos de recusa/cancelamento sob um cabeçalho (``label`` vazio = sem cabeçalho)."""
+    """Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho)."""
 
     label: str
     presets: tuple[str, ...]
@@ -194,7 +209,9 @@ class UndoProjection:
     gesto. ``action_ref`` é a ação de ``actions`` que desfaz. ``held_effect``
     diz o que espera a janela, na voz do card; ``already_out`` diz o que NÃO
     espera e já saiu (o ``readyToPickup`` do iFood: ver ``order_undo``), para o
-    operador saber que desfazer não alcança aquilo.
+    operador saber que desfazer não alcança aquilo. ``undo_since_iso`` é o
+    começo da janela: com ``undo_until_iso``, dá o tamanho dela, para o botão
+    Desfazer mostrar quanto ainda resta mesmo montado no meio da janela.
     """
 
     kind: str
@@ -204,6 +221,7 @@ class UndoProjection:
     action_ref: str
     held_effect: str = ""
     already_out: str = ""
+    undo_since_iso: str = ""
 
 
 def _undo_projection(order: Order) -> UndoProjection | None:
@@ -220,6 +238,7 @@ def _undo_projection(order: Order) -> UndoProjection | None:
             undo_until_iso=str(pending.get("commit_at") or "") if window_open else "",
             action_ref="undo-handoff",
             held_effect="Aviso ao cliente e fim do pedido" if pending.get("to_status") != Order.Status.DISPATCHED else "Aviso ao cliente e saída do pedido",
+            undo_since_iso=str(pending.get("requested_at") or "") if window_open else "",
         )
     record = order_undo.auto_ready_record(order)
     if record and order.status == Order.Status.READY:
@@ -233,6 +252,7 @@ def _undo_projection(order: Order) -> UndoProjection | None:
             action_ref="undo-ready",
             held_effect="Aviso de pronto ao cliente" if hold else "",
             already_out="iFood já avisado" if order.channel_ref == "ifood" else "",
+            undo_since_iso=str(record.get("at") or "") if hold else "",
         )
     return None
 
@@ -269,6 +289,8 @@ class KitchenStationProjection:
     can_mark_ready: bool = False
     #: "Voltar para Lanches": o ticket concluído que volta à cozinha.
     recall_ticket_pk: int | None = None
+    #: O que foi para esta estação ("2x Croissant"): conferir se chegou onde devia.
+    items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -351,6 +373,10 @@ class OrderCardProjection:
     # countdown para o cliente não ficar no escuro sobre o prazo.
     confirmation_deadline_iso: str = ""
     confirmation_action: str = ""  # "confirm" | "cancel" — ação do directive ao vencer
+    # Cartão da loja online autorizado e esperando aceite: quando a reserva vence
+    # no Stripe (ISO). Vazio fora de NEW ou sem autorização de pé. O card mostra o
+    # aviso com Aceitar/Recusar (``services/card_authorization``).
+    card_authorization_expires_iso: str = ""
     # Número que o CANAL deu ao pedido (``displayId`` do iFood). Desde que o ref
     # adota esse número (``IFOOD-260919-4994``), o card já o mostra em destaque e
     # este campo fica VAZIO — ele só se preenche quando o ref divergiu: colisão no
@@ -417,6 +443,11 @@ class OrderCardProjection:
     # uma linha escrita como instrução. Vazia no caso normal.
     ifood_remote_ahead_label: str = ""
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # O aceite saiu daqui e não chegou ao iFood (P1-3): o card avisa, mantém o
+    # prazo do iFood contando fora de ``new`` e oferece ``ifood-accept-retry``.
+    # ``ifood_accept_notice`` é a frase inteira do aviso; vazia no caso normal.
+    ifood_accept_failed: bool = False
+    ifood_accept_notice: str = ""
     # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
     # operável como qualquer outro e por isso tem de dizer, na tela, que é de
     # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
@@ -445,6 +476,13 @@ class OrderCardProjection:
     # 0 = ninguém declarou: o cartão mostra a contagem de itens, nunca um volume
     # deduzido.
     volumes: int = 0
+    # Conferência das sacolas no despacho (``shop.services.volume_check``): quantas
+    # o leitor da Saída já bipou, valendo para o total atual (declarado, ou 1).
+    # 0 = ninguém conferiu (o cartão não fala da conferência). ``volume_check_label``
+    # é a frase pronta ("2 de 3 sacolas conferidas"); vazia quando não começou.
+    volumes_checked: int = 0
+    volumes_to_check: int = 0
+    volume_check_label: str = ""
     # Quando o pedido ficou PRONTO desta vez (a última entrada em READY no log de
     # eventos; ``Order.ready_at`` guarda só a primeira, e o pronto desfeito volta).
     # Vazio fora de READY. É o "pronto há N min" do cartão e da Fila.
@@ -462,6 +500,10 @@ class OrderCardProjection:
     # Na Cozinha (aceito ou em preparo): quando deve ficar pronto, pelo início real e
     # pelo tempo que os preparos estão levando agora (G10, ``order_attention.ready_eta``).
     ready_eta_iso: str = ""
+    # Lembrete TEMPORÁRIO de chamar o entregador (``services.courier_reminder``):
+    # entrega da casa em preparo sem corrida pedida. A tela mostra o aviso quando o
+    # relógio passa de ``due_at_iso``. ``None`` quando não cabe.
+    courier_reminder: CourierReminderProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -594,6 +636,9 @@ class OperatorOrderProjection:
     gift_message: str
     gift_hide_values: bool
     cancellation_presets: tuple[CancellationPresetGroupProjection, ...]
+    # Os motivos de CANCELAR (lista única, chave estável). Os presets acima
+    # ficam para a recusa.
+    cancel_reasons: tuple[CancelReasonProjection, ...]
     kitchen_note_tags: tuple[str, ...]
     # Quem é este cliente (WP-360): recorrência, recência, ticket, favorito e o
     # que o cadastro sabe. ``None`` quando o pedido não tem cliente identificado
@@ -660,6 +705,9 @@ class OperatorOrderProjection:
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
     ifood_negotiations: tuple[IFoodNegotiationProjection, ...] = ()
+    # O mesmo aviso do card (P1-3): o aceite não chegou ao iFood.
+    ifood_accept_failed: bool = False
+    ifood_accept_notice: str = ""
     # Homologação do iFood roda contra o ambiente VIVO: o pedido de teste é
     # operável como qualquer outro e por isso tem de dizer, na tela, que é de
     # teste. ``test_order_label`` é o crachá do card; ``test_order_notice`` é a
@@ -687,10 +735,15 @@ class OperatorOrderProjection:
     # O prazo do pedido novo, o MESMO do cartão ("Confirma sozinho em 4:32", G15).
     confirmation_deadline_iso: str = ""
     confirmation_action: str = ""
+    # O vencimento da autorização do cartão, o MESMO do card do quadro.
+    card_authorization_expires_iso: str = ""
     # Onde fica a loja (G18, "fora da loja: mostrando o que pede decisão"): o celular
     # que consentiu compara a própria posição com esta, no dispositivo; a posição de
     # quem opera nunca vem ao servidor. ``None`` sem coordenadas no cadastro da loja.
     store_location: dict[str, float] | None = None
+    # O RASTRO da comanda do PDV (dono, T1=1, 13/10/2026): "Transferida da comanda #13"
+    # quando o pedido nasceu de uma comanda separada de outra. Vazio no resto.
+    transferred_from_label: str = ""
 
 
 #: Os contextos que leem o detalhe do pedido (:func:`build_operator_order`).
@@ -714,7 +767,14 @@ _ORDERS_FLOW_OFF = {
 }
 
 #: As ações do detalhe que o balcão executa (o resto do fluxo é do Gestor).
-_POS_DETAIL_ACTIONS = frozenset({"comment"})
+#: "Entregador voltou" (``courier-back``) também mora no balcão (dono, P=1,
+#: 14/10/2026): o MESMO gesto do Gestor, que fecha a saída inteira (entrega,
+#: dinheiro, troco e maquininha), com a mesma permissão.
+_POS_DETAIL_ACTIONS = frozenset({"comment", "courier-back"})
+
+#: As ações da corrida que o balcão executa: chamar, chamar de novo e cancelar a
+#: corrida antes da coleta (dono, P=1, 14/10/2026). Cotar fica no Gestor.
+_POS_COURIER_ACTIONS = frozenset({"courier-dispatch", "courier-dispatch-again", "courier-cancel"})
 
 
 @dataclass(frozen=True)
@@ -853,6 +913,15 @@ def _approver_options(user) -> tuple[dict[str, str], ...]:
     return _manager_cards(user)
 
 
+def transferred_from_label(data: dict) -> str:
+    """ "Transferida da comanda #13" (dono, 13/10/2026), de ``transferred_from``; "" sem rastro."""
+    origin = data.get("transferred_from") or {}
+    display = str(origin.get("tab_display") or origin.get("tab_ref") or "").strip()
+    if not display:
+        return ""
+    return f"Transferida da comanda {'#' + display if display.isdigit() else display}"
+
+
 def build_operator_order(order: Order, *, user=None, context: str = "orders") -> OperatorOrderProjection:
     """O detalhe de UM pedido — o mesmo contrato para o Gestor e para o PDV.
 
@@ -946,24 +1015,33 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         context=context,
         channel_name=_channel_name(order.channel_ref or ""),
         opened_line=f"aberto às {timezone.localtime(order.created_at):%H:%M}" if order.created_at else "",
+        transferred_from_label=transferred_from_label(order.data or {}),
     )
 
     if context == "pos":
         from shopman.backstage.projections import preorders
 
+        # A corrida do entregador (TaOn): o MESMO bloco e as MESMAS ações do Gestor,
+        # para a encomenda de entrega da casa (decisão do dono, 13/10/2026).
+        courier_block = _courier_block(order)
+        pos_authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
         return OperatorOrderProjection(
             **common,
             **_ORDERS_FLOW_OFF,
-            actions=tuple(
-                action for action in operator_orders.operational_actions(order, user=user)
-                if action.ref in _POS_DETAIL_ACTIONS
+            actions=(
+                *(action for action in operator_orders.operational_actions(order, user=user)
+                  if action.ref in _POS_DETAIL_ACTIONS),
+                *_courier_actions(order, user, courier_block, authorized=pos_authorized, refs=_POS_COURIER_ACTIONS),
             ),
+            courier=courier_block,
+            **_equipment_fields(order),
             # A prova de envio do link fica (é leitura); o reenvio é do Gestor.
             payment_link_notice=_payment_link_fields(order, method).get("payment_link_notice", ""),
             counter=preorders.build_counter_block(order, user=user),
-            # O cancelar do balcão usa os MESMOS motivos prontos do Gestor (decisão
-            # do dono, P7 do redesenho das Encomendas): a lista é uma só, no Admin.
+            # O cancelar do balcão usa os MESMOS motivos do Gestor: a lista é uma
+            # só, no backend (``cancel_reasons``).
             cancellation_presets=_cancellation_presets(),
+            cancel_reasons=_cancel_reasons(),
         )
 
     bloqueio = operator_orders.gestor_advance_block(order)
@@ -982,33 +1060,17 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
     )
     extra_actions = [cancel_action, *_cash_settlement_actions(order, user, None)]
     courier_block = _courier_block(order)
-    if courier_block:
-        from shopman.shop.services.courier import dispatch_revision
-
-        extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
-            enabled=authorized and courier_block["can_dispatch"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
-            method="POST", idempotency="required",
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
-            enabled=authorized and courier_block["can_cancel"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
-            method="POST", idempotency="required", confirmation={"required": True},
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
-        extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
-            enabled=authorized and courier_block["can_quote"],
-            reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
-                "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
-            method="POST", idempotency="required",
-            payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.extend(_courier_actions(order, user, courier_block, authorized=authorized))
     if fiscal_status == "failed":
         from shopman.backstage.services.orders import fiscal_revision
 
         extra_actions.append(Action(ref="requeue-fiscal", kind="mutation", label="Reprocessar NFC-e", enabled=authorized,
             reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.", method="POST", idempotency="required",
             payload_schema={"base_revision": fiscal_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    from shopman.shop.services import ifood_accept_sync
+
+    accept = ifood_accept_sync.state_for(order)
+    extra_actions.extend(_ifood_accept_actions(order, accept, user))
     if method == "link":
         from shopman.shop.services import notification as notification_svc
 
@@ -1030,23 +1092,32 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         advance_block_reason=block_reason,
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         cancellation_presets=_cancellation_presets(),
+        cancel_reasons=_cancel_reasons(),
         kitchen_note_tags=_kitchen_note_tags(),
         courier=courier_block,
         **_courier_change_fields(order),
         **_equipment_fields(order),
         **_payment_link_fields(order, method),
-        **_detail_deadline(order),
+        **_detail_deadline(order, accept),
+        **_ifood_accept_fields(order, accept),
+        card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         store_location=_store_location(),
     )
 
 
 def _channel_name(ref: str) -> str:
-    """O nome do canal como a loja o chama ("Loja online"); o ref cru só sem cadastro."""
+    """O nome do canal como a loja o chama ("Loja online", "PDV").
+
+    Nunca o ref cru (identificador técnico na tela): sem cadastro ou sem nome, o
+    rótulo humano das Encomendas (``preorders._fallback_channel_label``).
+    """
     if not ref:
         return ""
+    from shopman.backstage.projections.preorders import _fallback_channel_label
     from shopman.shop.models import Channel
 
-    return Channel.objects.filter(ref=ref).values_list("name", flat=True).first() or ref
+    name = Channel.objects.filter(ref=ref).values_list("name", flat=True).first()
+    return (name or "").strip() or _fallback_channel_label(ref)
 
 
 #: Até onde ainda é "na loja" (metros do ponto cadastrado): o pátio e a calçada.
@@ -1063,10 +1134,63 @@ def _store_location() -> dict[str, float] | None:
     return {"lat": float(shop.latitude), "lng": float(shop.longitude), "radius_m": float(STORE_RADIUS_METERS)}
 
 
-def _detail_deadline(order: Order) -> dict[str, str]:
-    """O prazo da confirmação do pedido novo, pela mesma régua do cartão."""
+def _card_authorization_expires_iso(order: Order, method: str, payment_status: str) -> str:
+    """Quando vence a autorização do cartão do pedido novo; vazio sem uma de pé."""
+    if order.status != Order.Status.NEW or str(method or "").lower() != "card":
+        return ""
+    if str(payment_status or "").lower() != "authorized":
+        return ""
+    from shopman.shop.services import card_authorization
+
+    deadline = card_authorization.expires_at(order)
+    return deadline.isoformat() if deadline else ""
+
+
+def _courier_actions(order: Order, user, courier_block: dict | None, *, authorized: bool, refs=None) -> list[Action]:
+    """As ações da corrida do entregador, as MESMAS no Gestor e no PDV.
+
+    ``refs`` filtra quais (o balcão chama, chama de novo e cancela a corrida;
+    cotar fica no Gestor). Sem bloco (retirada, marketplace, sem TaOn), nada.
+    """
+    if not courier_block:
+        return []
+    from shopman.shop.services.courier import dispatch_revision
+
+    extra_actions: list[Action] = []
+    extra_actions.append(Action(ref="courier-dispatch", kind="mutation", label="Chamar entregador",
+        enabled=authorized and courier_block["can_dispatch"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_dispatch"] else "Confira o estado do pedido e da corrida antes de despachar."),
+        method="POST", idempotency="required",
+        confirmation={"required": True, "description": _courier_dispatch_question(order)},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-dispatch-again", kind="mutation", label="Chamar de novo",
+        enabled=authorized and courier_block["can_dispatch_again"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_dispatch_again"] else "Não há chamada sem resposta da TaOn neste pedido."),
+        method="POST", idempotency="required",
+        confirmation={"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-cancel", kind="mutation", label="Solicitar cancelamento da corrida",
+        enabled=authorized and courier_block["can_cancel"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_cancel"] else "Confira o estado da corrida e de solicitações anteriores."),
+        method="POST", idempotency="required", confirmation={"required": True},
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    extra_actions.append(Action(ref="courier-quote", kind="mutation", label="Cotar entrega",
+        enabled=authorized and courier_block["can_quote"],
+        reason=("Identifique uma pessoa com permissão para gerenciar pedidos." if not authorized else
+            "" if courier_block["can_quote"] else "Confira o estado do pedido e da corrida antes de cotar."),
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": dispatch_revision(order), "expected_actor_id": getattr(user, "pk", None)}))
+    return [action for action in extra_actions if refs is None or action.ref in refs]
+
+
+def _detail_deadline(order: Order, accept=None) -> dict[str, str]:
+    """O prazo da confirmação, pela mesma régua do cartão (o do iFood segue no aceite que não chegou)."""
     if order.status != Order.Status.NEW:
-        return {}
+        external = _external_deadline(order, accept)
+        return {"confirmation_deadline_iso": external[0], "confirmation_action": external[1]} if external else {}
     deadline = _confirmation_deadlines([order.ref]).get(order.ref) or _external_deadline(order)
     return {"confirmation_deadline_iso": deadline[0], "confirmation_action": deadline[1]} if deadline else {}
 
@@ -1094,13 +1218,38 @@ COURIER_STATUS_LABELS = {
     "G": "Aguardando aceite",
     "P": "Procurando entregador",
     "A": "Entregador a caminho da loja",
-    "S": "Entregador na loja",
+    # S é "em espera": o entregador aceitou e termina outra entrega antes.
+    # "Na loja" é a chegada (``progress.arrived_pickup_at``), não esta letra.
+    "S": "Entregador vem após outra entrega",
     "E": "Saiu para entrega",
     "F": "Entregue",
     "N": "Não atendida",
     "C": "Corrida cancelada",
     "U": "Junto com outra corrida",
 }
+
+
+def _courier_dispatch_question(order: Order) -> str:
+    """A pergunta do toque de confirmação: quem vem, para qual pedido, quem paga.
+
+    O nome da central é configuração do deployment (``SHOPMAN_MACHINE["company_name"]``),
+    nunca código; sem ele, a frase diz "da central de entregas".
+    """
+    from django.conf import settings
+
+    company = str((getattr(settings, "SHOPMAN_MACHINE", {}) or {}).get("company_name") or "").strip()
+    who = f"da {company}" if company else "da central de entregas"
+    return (f"Chamar um entregador {who} para o pedido {operator_orders.short_ref(order.ref)}? "
+            "A corrida é cobrada da casa.")
+
+
+#: A última chamada à TaOn ficou sem resposta: não se sabe se a corrida abriu lá.
+COURIER_NO_ANSWER_MESSAGE = "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu."
+
+#: A confirmação do "Chamar de novo", uma frase: o que aconteceu e o que conferir antes.
+COURIER_DISPATCH_AGAIN_CONFIRMATION = (
+    "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."
+)
 
 
 def _courier_block(order: Order) -> dict | None:
@@ -1127,9 +1276,17 @@ def _courier_block(order: Order) -> dict | None:
         if not block and not adapter_on:
             return None
 
+        from shopman.shop.services.courier import RIDE_ORDER_STATUSES, house_dispatches
+
+        # Entrega do marketplace nunca oferece Chamar/Cotar (falha fechado; o
+        # servidor recusa também em ``courier.redispatch``).
+        house = house_dispatches(order)
+        if not block and not house:
+            return None
+
         ride_status = str(block.get("status") or "")
         active = bool(block.get("id_mch")) and ride_status not in TERMINAL_STATUSES
-        order_can_ride = order.status in (Order.Status.READY, Order.Status.DISPATCHED)
+        order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
         estimate_display = ""
@@ -1145,7 +1302,7 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
-        from shopman.shop.services.courier import can_quote, latest_cancellation, unresolved_dispatch
+        from shopman.shop.services.courier import can_quote, charge_outdated, latest_cancellation, unresolved_dispatch
 
         unresolved = unresolved_dispatch(order)
         cancellation = latest_cancellation(order) if active else None
@@ -1153,7 +1310,7 @@ def _courier_block(order: Order) -> dict | None:
         error = block.get("error") if isinstance(block.get("error"), dict) else None
 
         if unresolved is not None:
-            error = {"message": "Despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.", "at": unresolved.updated_at.isoformat()}
+            error = {"message": COURIER_NO_ANSWER_MESSAGE, "at": unresolved.updated_at.isoformat()}
         if cancellation is not None:
             cancel_state = (cancellation.payload or {}).get("cancel_attempt", {}).get("state")
             cancellation_pending = cancellation.status in {"queued", "running"} or cancel_state in {"started", "unknown", "accepted"}
@@ -1163,10 +1320,18 @@ def _courier_block(order: Order) -> dict | None:
             if not cancellation_pending:
                 error = {"message": cancellation.last_error or "Solicitação não aplicada. Confira o estado atual antes de tentar novamente.",
                     "at": cancellation.updated_at.isoformat()}
+        from shopman.shop.services.courier import progress_view
+
+        progress = progress_view(block)
+        status_label = COURIER_STATUS_LABELS.get(ride_status, "")
+        if ride_status in ("A", "S") and progress["arrived_pickup_at"]:
+            status_label = "Entregador na loja"
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
-            "status_label": "Despacho sem resultado confirmado" if unresolved is not None else COURIER_STATUS_LABELS.get(ride_status, ""),
+            "status_label": "Sem resposta da TaOn" if unresolved is not None else status_label,
+            # O andamento, em instantes ISO; a tela conta os minutos com o relógio dela.
+            **progress,
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             "tracking_url": str(block.get("tracking_url") or ""),
@@ -1184,19 +1349,38 @@ def _courier_block(order: Order) -> dict | None:
             "position": position,
             "error": error,
             "can_quote": can_quote(order),
-            "can_dispatch": adapter_on and not active and order_can_ride and unresolved is None,
+            "can_dispatch": adapter_on and house and not active and order_can_ride and unresolved is None,
+            "can_dispatch_again": adapter_on and house and not active and order_can_ride and unresolved is not None,
             "can_cancel": adapter_on and active and ride_status in CANCELLABLE_STATUSES and not cancellation_pending,
+            # O lembrete temporário de chamar (o mesmo do cartão), ou ``None``.
+            "reminder": asdict(reminder) if (reminder := courier_reminder(order)) is not None else None,
+            # O que a chamada pergunta: troco da gaveta e maquininha da casa
+            # que vão com o entregador da TaOn (``partner_custody_asks``).
+            "custody": operator_orders.partner_custody_asks(order),
+            # O pedido mudou depois da chamada e a observação da corrida (o que
+            # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
+            "charge_outdated": charge_outdated(order),
         }
     except Exception:
         logger.debug("orders.courier_block_failed order=%s", order.ref, exc_info=True)
         return None
 
 
+def _cancel_reasons() -> tuple[CancelReasonProjection, ...]:
+    from shopman.shop.services.cancel_reasons import OPERATOR_CANCEL_REASONS
+
+    return tuple(
+        CancelReasonProjection(key=r.key, label=r.label, customer_text=r.customer_text)
+        for r in OPERATOR_CANCEL_REASONS
+    )
+
+
 def _cancellation_presets() -> tuple[CancellationPresetGroupProjection, ...]:
-    """Store-configured reject/cancel justification presets (Admin/Unfold), grouped.
+    """Store-configured REJECT justification presets (Admin/Unfold), grouped.
 
     The operator injects one with a tap in the gestor; the chosen text is sent to
-    the customer in the cancellation notification. Read from the Shop singleton;
+    the customer in the rejection notification. Cancelling uses the canonical
+    ``cancel_reasons`` list instead. Read from the Shop singleton;
     never fails the projection. Order is the stored order: groups appear where
     their first preset is, presets keep their order inside the group. Presets
     without a group form groups with an empty ``label`` (no heading).
@@ -1511,6 +1695,12 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     method_labels = {method: payment_method_label(method) for method in methods}
     new_orders = [o for o in all_orders if o.status == "new"]
     deadlines = _confirmation_deadlines([o.ref for o in new_orders])
+    from shopman.shop.services import ifood_accept_sync
+
+    # O aceite que não chegou ao iFood (P1-3): uma consulta para a tela inteira.
+    accept_batch = ifood_accept_sync.latest_directives(
+        [o.ref for o in all_orders if o.channel_ref == "ifood" and o.status != "new"]
+    )
     # Uma consulta ao livro para todos os cards: o troco que saiu e voltou.
     courier_change = operator_orders.courier_change_by_order([o.ref for o in all_orders if _is_delivery(o)])
     # Encomenda para data futura não é trabalho do dia — vive no grupo "Agendados",
@@ -1520,7 +1710,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     # mantém o prazo de confirmação (auto-confirm) e o botão de aceitar; o
     # despertador (preorder.activate) devolve o pedido ao fluxo na data (WP-D).
     intake = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
         for o in new_orders
         if not _is_future_preorder(o)
     )
@@ -1533,7 +1723,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
     kitchen = kitchen_station_chips([o for o in (*prep_orders, *ready_orders) if not _is_future_preorder(o)])
     ready_moments = ready_moments_for(ready_orders)
     expectation = prep_expectation(now=timezone.now())
-    prep = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
+    prep = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, expectation=expectation) for o in prep_orders if not _is_future_preorder(o))
     # Só estados pré-fulfillment viram "Agendados"; ready/dispatched/delivered
     # seguem nas colunas de expedição mesmo que a data combinada seja futura.
     future_preorders = [
@@ -1541,15 +1731,15 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         if o.status in ("new", "accepted", "preparing") and _is_future_preorder(o)
     ]
     preorders = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, deadline=deadlines.get(o.ref))
         for o in sorted(future_preorders, key=lambda o: (get_commitment_date(o), o.created_at))
     )
     preparing_count = len(prep)
 
-    expedition_pickup = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
-    expedition_delivery = tuple(_build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
+    expedition_pickup = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if not _is_delivery(o))
+    expedition_delivery = tuple(_build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change, kitchen_chips=kitchen, ready_moments=ready_moments) for o in ready_orders if _is_delivery(o))
     expedition_delivery_transit = tuple(
-        _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
+        _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user, courier_change=courier_change)
         for o in all_orders
         if o.status in ("dispatched", "delivered")
     )
@@ -1567,7 +1757,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
-            _build_card(o, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
+            _build_card(o, accept_batch=accept_batch, fiscal_states=fiscal_states, status_labels=status_labels, method_labels=method_labels, cash_context=cash_context, channel_config=channel_configs.get(o.channel_ref), payment_reads=payment_reads, waitlist_states=waitlist_states, danfe_reads=danfe_reads, user=user)
             for o in all_orders if o.channel_ref == "ifood" and ((o.data or {}).get("ifood") or {}).get("handshake_pending")
         ),
         intake=intake,
@@ -1600,16 +1790,42 @@ def _channel_display_id(order) -> str:
     return "" if str(order.ref or "").upper().endswith(f"-{display_id.upper()}") else display_id
 
 
-def _external_deadline(order) -> tuple[str, str] | None:
-    """Prazo do marketplace (ISO, ação) enquanto o pedido ainda espera confirmação.
+def _external_deadline(order, accept=None) -> tuple[str, str] | None:
+    """Prazo do marketplace (ISO, ação) enquanto o iFood ainda espera a confirmação.
 
     Gravado na ingestão em ``data.ifood.confirm_by``. Vencido, quem cancela é o
     marketplace — daí a ação ser ``cancel``, igual ao timer de ``auto_cancel``.
+    Vale em ``new`` e também depois do aceite local enquanto o ``confirm`` não
+    chegou ao iFood (``accept.failed``, P1-3): para o iFood o pedido continua sem
+    aceite, e o relógio dele continua correndo com a cozinha trabalhando.
     """
-    if order.status != "new":
+    if order.status != "new" and not (accept is not None and accept.failed):
         return None
     confirm_by = str(((order.data or {}).get("ifood") or {}).get("confirm_by") or "").strip()
     return (confirm_by, "cancel") if confirm_by else None
+
+
+def _ifood_accept_fields(order, sync) -> dict:
+    """Os campos do aviso "o iFood ainda não recebeu o aceite" (card e detalhe)."""
+    if not sync.failed:
+        return {}
+    from shopman.shop.services import ifood_accept_sync
+
+    return {"ifood_accept_failed": True, "ifood_accept_notice": ifood_accept_sync.notice_text(order)}
+
+
+def _ifood_accept_actions(order, sync, user) -> tuple[Action, ...]:
+    """``ifood-accept-retry``: reenvia o ``confirm``. Só existe quando o aceite falhou."""
+    if not sync.failed:
+        return ()
+    authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_orders"))
+    return (Action(
+        ref="ifood-accept-retry", kind="mutation", label="Tentar de novo", priority="primary",
+        enabled=authorized,
+        reason="" if authorized else "Identifique uma pessoa com permissão para gerenciar pedidos.",
+        method="POST", idempotency="required",
+        payload_schema={"base_revision": sync.revision, "expected_actor_id": getattr(user, "pk", None)},
+    ),)
 
 
 def _confirmation_deadlines(refs: list[str]) -> dict[str, tuple[str, str]]:
@@ -1753,6 +1969,7 @@ def items_summary(items) -> str:
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
+    accept_batch: dict | None = None,
     courier_change: dict[str, tuple[int, int | None]] | None = None,
     waitlist_states: dict[str, str] | None = None,
     user=None,
@@ -1814,6 +2031,10 @@ def _build_card(
     danfe = order_danfe.card_state(order, reads=danfe_reads, now=now)
 
     actions = operator_orders.operational_actions(order, user=user, waitlist_state=batch_state, payment_reads=payment_reads, channel_config=channel_config)
+    from shopman.shop.services import ifood_accept_sync
+
+    accept = ifood_accept_sync.state_for(order, batch=accept_batch)
+    external_deadline = _external_deadline(order, accept)
     # Reuse only this read's canonical action revisions; commands still recompute under lock.
     revision_actions = {"advance": {"advance", "confirm", "reject"}, "kitchen_note": {"notes"}, "assignment": {"assign", "unassign"}}
     revisions = {}
@@ -1824,7 +2045,7 @@ def _build_card(
     card = OrderCardProjection(
         ref=order.ref,
         status=order.status,
-        actions=(*actions, *_cash_settlement_actions(order, user, cash_context)),
+        actions=(*actions, *_cash_settlement_actions(order, user, cash_context), *_ifood_accept_actions(order, accept, user)),
         revisions=revisions,
         status_label=status_labels[order.status] if status_labels is not None else order_status_label(order.status),
         status_color=status_color(order.status),
@@ -1850,6 +2071,9 @@ def _build_card(
         next_action_label=next_label,
         undo=_undo_projection(order),
         volumes=_declared_volumes(order),
+        volumes_checked=len(volume_check.checked_volumes(order)),
+        volumes_to_check=volume_check.declared_total(order),
+        volume_check_label=volume_check.progress_label(order),
         ready_at_iso=_ready_moment_iso(order, ready_moments),
         dispatched_at_iso=order.dispatched_at.isoformat() if order.dispatched_at and order.status in ("dispatched", "delivered") else "",
         payment_method=method,
@@ -1859,6 +2083,7 @@ def _build_card(
         ifood_schedule_label=ifood_projection.schedule_label(order),
         ifood_remote_ahead_label=ifood_projection.remote_ahead_label(order),
         ifood_negotiations=negotiations(order, user=user),
+        **_ifood_accept_fields(order, accept),
         test_order_label=_test_order_label(order),
         test_order_notice=_test_order_notice(order),
         payment_status=payment_status,
@@ -1879,8 +2104,9 @@ def _build_card(
         awaiting_work_orders=_awaiting_work_orders(order),
         # Directive agendada (canais da casa) ou prazo do marketplace (iFood): o card
         # conta um prazo só, porque para quem opera a pergunta é uma só — quanto falta.
-        confirmation_deadline_iso=(deadline or _external_deadline(order) or ("", ""))[0],
-        confirmation_action=(deadline or _external_deadline(order) or ("", ""))[1],
+        confirmation_deadline_iso=(deadline or external_deadline or ("", ""))[0],
+        confirmation_action=(deadline or external_deadline or ("", ""))[1],
+        card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         channel_display_id=_channel_display_id(order),
         courier_status=_card_courier_status(order),
         courier_status_label=COURIER_STATUS_LABELS.get(_card_courier_status(order), ""),
@@ -1897,6 +2123,7 @@ def _build_card(
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
         kitchen=_kitchen_progress(order, (kitchen_chips or {}).get(order.ref)),
+        courier_reminder=courier_reminder(order) if order.status == Order.Status.PREPARING else None,
     )
     attention = card_attention(order, card, channel_config)
     if expectation is not None:
@@ -1933,6 +2160,7 @@ def _kitchen_progress(order: Order, chips) -> KitchenProgressProjection | None:
             cancelled_items=chip.cancelled_items,
             can_mark_ready=chip.can_mark_ready,
             recall_ticket_pk=None if leaving else chip.recall_ticket_pk,
+            items=chip.items,
         )
         for chip in chips
     )
@@ -2724,6 +2952,8 @@ _EVENT_LABELS = {
     "created": "Pedido criado",
     "payment_collected": "Pagamento recebido",
     "equipment_returned": "Maquininha devolvida",
+    "partner_custody_recorded": "Separado para o entregador da TaOn (troco ou maquininha)",
+    "partner_custody_returned": "A corrida não coletou: o que ia com o entregador voltou",
     "order_rescheduled": "Data combinada alterada",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
@@ -2733,6 +2963,10 @@ _EVENT_LABELS = {
     "handoff_refused": "Saída não gravada",
     "auto_ready_undone": "Pronto automático desfeito",
     "volumes_declared": "Volumes declarados",
+    "ifood_accept_failed": "O aceite não chegou ao iFood",
+    "ifood_accept_retried": "Aceite enviado de novo ao iFood",
+    "ifood_accept_sent": "O iFood recebeu o aceite",
+    "ifood_accept_confirmed": "O iFood confirmou o pedido",
     "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
 }
@@ -2791,12 +3025,10 @@ def _short_date(raw) -> str:
 def _event_detail(payload: dict) -> str:
     if not payload:
         return ""
-    old_status = payload.get("old_status")
-    new_status = payload.get("new_status")
-    if old_status or new_status:
-        old_label = order_status_label(old_status, old_status or "-")
-        new_label = order_status_label(new_status, new_status or "-")
-        return f"{old_label} -> {new_label}"
+    # Mudança de status não ganha detalhe próprio: o título do evento já é o status
+    # novo e o anterior é a linha de cima. O "Aceito -> Pronto" repetia o título, e o
+    # primeiro evento saía "- -> Novo" (dono, 08/10/2026). O motivo, quando houver,
+    # continua aparecendo pelo fim da função.
     if payload.get("to_date"):
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"

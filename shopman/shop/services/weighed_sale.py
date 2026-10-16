@@ -205,7 +205,13 @@ def price_per_kg_q(sku: str, channel) -> int:
     return int(OffermanPricingBackend().get_price(sku, channel, qty=Decimal(1)) or 0)
 
 
-def apply_to_payload(payload: dict, *, channel, skip_line_ids: frozenset[str] | set[str] = frozenset()) -> None:
+def apply_to_payload(
+    payload: dict,
+    *,
+    channel,
+    skip_line_ids: frozenset[str] | set[str] = frozenset(),
+    price_per_kg_from_line: bool = False,
+) -> None:
     """Resolve, no payload do PDV já parseado, toda linha de produto vendido por peso.
 
     Escreve na linha ``qty`` (kg, 3 casas), ``unit_price_q`` (o preço do quilo) e
@@ -218,6 +224,11 @@ def apply_to_payload(payload: dict, *, channel, skip_line_ids: frozenset[str] | 
     peso dela é o que foi vendido; reconvertê-la pelo preço do quilo de hoje
     mudaria a peça, e com a entrada por peso desligada a peça registrada pelo
     peso nem passaria.
+
+    ``price_per_kg_from_line``: o preço do quilo é o que a LINHA traz
+    (``unit_price_q``), não o do catálogo de agora. Só a venda feita sem conexão
+    usa (``pos_offline_sale``): ela foi cobrada pelo quilo da última leitura da
+    tela, e é essa cobrança que o pedido registra.
     """
     from shopman.offerman.models import Product
 
@@ -268,7 +279,9 @@ def apply_to_payload(payload: dict, *, channel, skip_line_ids: frozenset[str] | 
             line = resolve(
                 name=name,
                 entry=entry,
-                price_per_kg_q=price_per_kg_q(sku, channel),
+                price_per_kg_q=(
+                    int(item.get("unit_price_q") or 0) if price_per_kg_from_line else price_per_kg_q(sku, channel)
+                ),
                 label_q=declared.get("label_q"),
                 weight_g=declared.get("weight_g"),
             )

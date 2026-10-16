@@ -24,6 +24,12 @@ export interface OperatorShortcutCommand<Context extends string = string> {
   allowInEditable?: boolean;
   allowInOverlay?: boolean;
   allowRepeat?: boolean;
+  /**
+   * Seletor de onde a tecla é de OUTRO dono: com o foco dentro dele, o atalho não age (e
+   * não toma a tecla). As setas do anterior/próximo deixam as abas, os grupos de rádio e
+   * os menus andarem com as próprias setas.
+   */
+  ignoreWithin?: string;
 }
 
 export interface OperatorShortcutCollision {

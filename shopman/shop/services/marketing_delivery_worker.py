@@ -712,16 +712,13 @@ def _select_for_update(query):
     # consent recheck stays bounded. ``member`` is nullable for public publications,
     # therefore PostgreSQL renders that path as an OUTER JOIN and refuses a broad
     # ``FOR UPDATE`` (it cannot lock the nullable side). We only mutate
-    # ``DeliveryTarget`` here, so lock precisely the base rows when the backend
-    # supports ``FOR UPDATE OF``.
-    if connection.features.has_select_for_update_of:
-        return query.select_for_update(
-            of=("self",),
-            skip_locked=connection.features.has_select_for_update_skip_locked,
-        )
-    if connection.features.has_select_for_update_skip_locked:
-        return query.select_for_update(skip_locked=True)
-    return query.select_for_update()
+    # ``DeliveryTarget`` here, so lock precisely the base rows. ``of`` is
+    # unconditional: a backend without ``FOR UPDATE`` (the SQLite test suite)
+    # ignores the whole clause, and a broad lock is never correct here.
+    return query.select_for_update(
+        of=("self",),
+        skip_locked=connection.features.has_select_for_update_skip_locked,
+    )
 
 
 def _aware_now(now: datetime | None) -> datetime:

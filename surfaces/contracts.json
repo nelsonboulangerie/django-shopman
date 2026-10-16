@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "policy": {
+    "node": "22",
+    "browserRetries": 0,
+    "visualServer": "production-build",
+    "maxSignatureViews": 8,
+    "evidenceRetentionDays": 14
+  },
+  "surfaces": {
+    "operator-kit": {
+      "dir": "operator-kit",
+      "kind": "layer",
+      "commands": { "unit": "test", "lint": "lint", "typecheck": "typecheck", "build": "catalog:build" },
+      "capabilities": { "catalog": true, "visual": "test:visual", "npmAudit": true }
+    },
+    "storefront": {
+      "dir": "storefront-nuxt",
+      "kind": "customer",
+      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "pwaBrowser": "test:pwa" }
+    },
+    "hub": {
+      "dir": "hub-nuxt",
+      "kind": "operator",
+      "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true },
+      "exceptions": [{ "capability": "browser", "reason": "Fluxo Playwright ainda não foi promovido ao gate canônico.", "owner": "engineering", "expires": "2026-11-14" }]
+    },
+    "pos": {
+      "dir": "pos-nuxt",
+      "kind": "operator",
+      "runner": "macos-15",
+      "signatureViews": [
+        "preorders-search-390x844-light.png",
+        "preorders-week-1440x900-light.png",
+        "preorders-day-390x844-light.png",
+        "preorders-week-768x1024-light.png"
+      ],
+      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "visual": "test:visual", "geometry": "test:geometry", "browser": "test:e2e" }
+    },
+    "kds": {
+      "dir": "kds-nuxt",
+      "kind": "operator",
+      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "visual": "test:visual" },
+      "exceptions": [{ "capability": "browser", "reason": "E2E funcional existente aguarda fixtures canônicas.", "owner": "engineering", "expires": "2026-11-14" }]
+    },
+    "orders": {
+      "dir": "orders-nuxt",
+      "kind": "operator",
+      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e", "ssr": "test:ssr" }
+    },
+    "production": {
+      "dir": "production-nuxt",
+      "kind": "operator",
+      "environment": { "build": { "NUXT_SHOPMAN_ENVIRONMENT": "test", "SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM": "1", "NUXT_DJANGO_BASE_URL": "http://127.0.0.1:1" } },
+      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "browserSuite": "test:e2e" },
+      "browserEngines": "chromium webkit",
+      "browserWithDeps": true
+    },
+    "marketing": {
+      "dir": "marketing-nuxt",
+      "kind": "operator",
+      "runner": "macos-15",
+      "browserEngines": "chromium",
+      "visualConfig": "playwright.config.ts",
+      "pythonMock": true,
+      "signatureViews": [
+        "login__anonymous__1280x800__light.png",
+        "panel__normal__1280x800__light.png",
+        "panel__normal__390x844__dark.png",
+        "fire-campaign__review-handoff__1440x900__light.png",
+        "settings__offers__1280x800__light.png",
+        "simulated-preview__feed__390x844__light.png"
+      ],
+      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e", "a11y": "test:a11y", "browserSuite": "test:browser-contract", "security": "test:security", "npmAudit": true }
+    },
+    "bi": {
+      "dir": "bi-nuxt",
+      "kind": "operator",
+      "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "visual": "test:visual" }
+    },
+    "purchase": {
+      "dir": "purchase-nuxt",
+      "kind": "operator",
+      "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "visual": "test:visual" },
+      "exceptions": [{ "capability": "browser", "reason": "A matriz visual cobre o fluxo atual; separação funcional será feita antes da expiração.", "owner": "engineering", "expires": "2026-11-14" }]
+    },
+    "kitchensink": {
+      "dir": "kitchensink-nuxt",
+      "kind": "operator",
+      "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true, "visual": "test:visual" }
+    },
+    "status": {
+      "dir": "status-nuxt",
+      "kind": "customer",
+      "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
+      "capabilities": { "pwa": true }
+    }
+  }
+}

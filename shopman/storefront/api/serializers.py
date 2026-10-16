@@ -57,9 +57,10 @@ class CheckoutSerializer(serializers.Serializer):
     # Troco para entrega em dinheiro ("50", "50,00") — o entregador precisa saber.
     change_for = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
     use_loyalty = serializers.BooleanField(required=False, default=False)
-    # CPF/CNPJ PEDIDO na nota (vira ``fiscal.tax_id``). Na ENTREGA a nota não
-    # sai sem ele; a exigência é do servidor (``DeliveryFiscalIdentityRule``),
-    # aqui só chega o dado. Na RETIRADA é o "CPF na nota?" do balcão: opcional.
+    # CPF/CNPJ PEDIDO na nota (vira ``fiscal.tax_id``), opcional na entrega e
+    # na retirada. Sem ele, a nota da entrega sai presencial, consumidor não
+    # identificado (decisão do dono, 13/10/2026). Informado e inválido, o
+    # servidor recusa (``DeliveryFiscalIdentityRule``); aqui só chega o dado.
     fiscal_tax_id = serializers.CharField(required=False, default="", allow_blank=True, max_length=32)
     # A pessoa RESPONDEU "sim" a "guardar no seu cadastro?". Nunca se grava o
     # documento no cadastro sem essa resposta, e mesmo com ela só se preenche
@@ -150,7 +151,9 @@ class CollectionSerializer(serializers.Serializer):
 
 class AvailabilityResponseSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
-    available_qty = serializers.CharField()
+    available_qty = serializers.CharField(allow_null=True)
+    orderable_ceiling = serializers.CharField(allow_null=True)
+    is_tracked = serializers.BooleanField(allow_null=True)
     badge_text = serializers.CharField()
     badge_class = serializers.CharField()
     is_bundle = serializers.BooleanField()

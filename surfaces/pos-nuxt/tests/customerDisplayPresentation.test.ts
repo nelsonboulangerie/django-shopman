@@ -223,15 +223,29 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
     expect(snap.publishedAtMs).toBe(123);
   });
 
-  it("venda: itens ao vivo + total interino líquido quando não há review", () => {
+  it("venda sem revisão: itens ao vivo, total Calculando… e nenhum número", () => {
+    // Regra do dono (09/10): total que ainda pode mudar não aparece como
+    // definitivo, nem na venda. A soma do carrinho não viaja para a parede.
     const snap = buildCustomerDisplaySnapshot(inputs({
       items: [item({ qty: 3, price_q: 500 })],
     }));
     expect(snap.phase).toBe("sale");
     expect(snap.itemCount).toBe(3);
     expect(snap.items[0]?.name).toBe("Pão francês");
-    expect(snap.totalDisplay).toBe(formatBRL(1500));
+    expect(snap.totalPending).toBe(true);
+    expect(snap.totalDisplay).toBe("");
     expect(snap.discountDisplay).toBe("");
+    expect(snap.grossTotalDisplay).toBe("");
+  });
+
+  it("venda com revisão: o total é o do servidor, não a soma local", () => {
+    const snap = buildCustomerDisplaySnapshot(inputs({
+      items: [item({ qty: 3, price_q: 500 })],
+      review: review({ total_q: 1350, total_display: "R$ 13,50", discount_q: 0, discount_display: "R$ 0,00" }),
+    }));
+    expect(snap.phase).toBe("sale");
+    expect(snap.totalPending).toBe(false);
+    expect(snap.totalDisplay).toBe("R$ 13,50");
   });
 
   it("pagamento (pré-fechamento): o total do review prevalece e o desconto aparece", () => {
@@ -320,16 +334,13 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
     expect(snap.totalDisplay).toBe("R$ 8,00");
   });
 
-  it("desconto só local (sem review): risca a soma de restauração, e o desconto fecha a conta", () => {
-    // Na fase de venda o review ainda não existe. `price_q` é o preço de
-    // restauração (pré-desconto manual) e `charged_price_q` o cobrado: a
-    // diferença é o MESMO desconto manual que o review vai anunciar no "Cobrar"
-    // — o rodapé não muda de história quando ele chega.
+  it("venda com desconto na revisão: risca o total antes do desconto, e o desconto fecha a conta", () => {
     const snap = buildCustomerDisplaySnapshot(inputs({
       items: [
         item({ qty: 2, price_q: 500, charged_price_q: 450, discount: { value: 10, reason: "cortesia" } }),
         item({ sku: "CAFE", name: "Café", qty: 1, price_q: 300, charged_price_q: 300 }),
       ],
+      review: review({ total_q: 1200, total_display: formatBRL(1200), discount_q: 100, discount_display: formatBRL(100) }),
     }));
     expect(snap.phase).toBe("sale");
     expect(snap.grossTotalDisplay).toBe(formatBRL(1300));
@@ -337,9 +348,9 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
     expect(snap.totalDisplay).toBe(formatBRL(1200));
   });
 
-  it("desconto local que o servidor DESCARTOU não risca nada", () => {
-    // Xepa −25% já levou o unitário a 450; a cortesia de 10% perdeu o "maior
-    // ganha" e o servidor cobra 450 mesmo. Riscar aqui inventaria um desconto.
+  it("desconto local sem revisão não risca nada: quem diz se ele vale é o servidor", () => {
+    // Xepa −25% já levou o unitário a 450; a cortesia de 10% pode perder o
+    // "maior ganha". Sem a revisão, a parede não risca nem anuncia desconto.
     const snap = buildCustomerDisplaySnapshot(inputs({
       items: [item({ qty: 2, price_q: 450, charged_price_q: 450, discount: { value: 10, reason: "cortesia" } })],
     }));

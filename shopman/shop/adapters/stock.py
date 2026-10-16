@@ -891,6 +891,34 @@ def get_availability(
         include_nonconforming=include_nonconforming,
         allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
+def get_availability_for_skus(
+    skus: list[str],
+    *,
+    target_date: date | None = None,
+    safety_margin: int = 0,
+    allowed_positions: list[str] | None = None,
+    excluded_positions: list[str] | None = None,
+    expiry_margin_days: int = 0,
+    include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, dict]:
+    """``get_availability`` de vários SKUs numa leitura só: ``{sku: info}``.
+
+    Delega para ``availability_for_skus`` do Stockman, a versão em lote de
+    ``availability_for_sku`` (mesmo recorte, consultas constantes em N).
+    """
+    from shopman.stockman.services.availability import availability_for_skus
+
+    return availability_for_skus(
+        list(skus),
+        safety_margin,
+        target_date=target_date,
+        allowed_positions=allowed_positions,
+        excluded_positions=excluded_positions,
+        expiry_margin_days=expiry_margin_days,
+        include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
+    )
 
 
 def get_channel_scope(channel_ref: str | None) -> dict:
@@ -968,49 +996,4 @@ def get_promise_decision(
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
         allowed_quality_grade_refs=allowed_quality_grade_refs,
-    )
-
-
-def promise_decision_from_availability(
-    sku: str,
-    qty,
-    info: dict,
-    *,
-    target_date: date | None = None,
-):
-    """Return the default promise decision from an already-loaded availability dict."""
-    from shopman.stockman.protocols.sku import PromiseDecision
-
-    qty_d = Decimal(str(qty))
-    available_qty = Decimal(str(info.get("total_promisable", 0)))
-    availability_policy = info.get("availability_policy", "planned_ok")
-    is_paused = bool(info.get("is_paused", False))
-
-    if is_paused:
-        approved = False
-        effective_available_qty = Decimal("0")
-    elif availability_policy == "demand_ok":
-        approved = True
-        effective_available_qty = max(available_qty, qty_d)
-    else:
-        approved = qty_d <= available_qty
-        effective_available_qty = available_qty
-
-    reason_code = None
-    if not approved:
-        reason_code = "paused" if is_paused else "insufficient_supply"
-
-    return PromiseDecision(
-        approved=approved,
-        sku=sku,
-        requested_qty=qty_d,
-        target_date=target_date,
-        availability_policy=availability_policy,
-        reason_code=reason_code,
-        available_qty=effective_available_qty,
-        available=Decimal(str(info.get("available", 0))),
-        expected=Decimal(str(info.get("expected", 0))),
-        planned=Decimal(str(info.get("planned", 0))),
-        is_planned=bool(info.get("is_planned", False)),
-        is_paused=is_paused,
     )

@@ -11,12 +11,12 @@ it("balcão esconde entrega e data; modo encomenda emite intenção sem apagar i
   }, global: { stubs: { PosCustomerModal: true } } });
   expect(w.text()).not.toContain("Retirada");
   expect(w.text()).not.toContain("Para hoje");
-  const modeButton = (label: string) => w.findAll("button").find((b) => b.text() === label)!;
-  // O modo ligado é o cartão sobre o trilho (v4: `bg-card`) e diz isso ao leitor de tela; o outro não.
+  const modeButton = (label: string) => w.findAll("button").find((b) => b.find(".sr-only").exists() && b.find(".sr-only").text() === label)!;
+  // O modo ligado é o `solid` da suíte (marca `data-pos-sales-mode-active`) e diz isso ao leitor de tela; o outro não.
   expect(modeButton("Balcão").attributes("aria-pressed")).toBe("true");
-  expect(modeButton("Balcão").classes()).toContain("bg-card");
+  expect(modeButton("Balcão").attributes("data-pos-sales-mode-active")).toBeDefined();
   expect(modeButton("Encomendas").attributes("aria-pressed")).toBe("false");
-  expect(modeButton("Encomendas").classes()).not.toContain("bg-card");
+  expect(modeButton("Encomendas").attributes("data-pos-sales-mode-active")).toBeUndefined();
   await modeButton("Encomendas").trigger("click");
   expect(w.emitted("salesModeChange")).toEqual([["order"]]);
   expect(w.emitted("clear")).toBeUndefined();
@@ -24,8 +24,8 @@ it("balcão esconde entrega e data; modo encomenda emite intenção sem apagar i
   expect(w.text()).toContain("Retirada");
   expect(w.text()).toContain("Para hoje");
   expect(modeButton("Encomendas").attributes("aria-pressed")).toBe("true");
-  expect(modeButton("Encomendas").classes()).toContain("bg-card");
-  expect(modeButton("Balcão").classes()).not.toContain("bg-card");
+  expect(modeButton("Encomendas").attributes("data-pos-sales-mode-active")).toBeDefined();
+  expect(modeButton("Balcão").attributes("data-pos-sales-mode-active")).toBeUndefined();
   w.unmount();
 });
 
@@ -47,4 +47,24 @@ it("cliente travado (edição de encomenda): o chip diz por quê e não abre o m
   expect(w.emitted("customerLocked")).toHaveLength(2);
   expect(w.findComponent({ name: "PosCustomerModal" }).attributes("open")).not.toBe("true");
   w.unmount();
+});
+
+it("a comanda que nasceu de uma transferência mostra o selo do rastro (dono, T1=1)", async () => {
+  const base = {
+    salesMode: "counter", tabDisplay: "13-2", hasOpenTab: true, canRename: false,
+    customerName: "", customerPhone: "", customerTaxId: "", customerEmail: "", customerLookup: null,
+    lookupBusy: false, searchResults: [], searchBusy: false, fulfillmentType: "pickup",
+    fulfillmentLabel: "Retirada", scheduleLabel: "Para hoje", scheduled: false, loading: false,
+  };
+  const w = await mountSuspended(PosTabHeader, {
+    props: { ...base, transferredFrom: { label: "Transf. da #13", title: "Transferida da comanda #13" } },
+    global: { stubs: { PosCustomerModal: true } },
+  });
+  const seal = w.find("[data-pos-tab-transferred-from]");
+  expect(seal.text()).toBe("Transf. da #13");
+  expect(seal.attributes("title")).toBe("Transferida da comanda #13");
+  w.unmount();
+  const plain = await mountSuspended(PosTabHeader, { props: base, global: { stubs: { PosCustomerModal: true } } });
+  expect(plain.find("[data-pos-tab-transferred-from]").exists()).toBe(false);
+  plain.unmount();
 });

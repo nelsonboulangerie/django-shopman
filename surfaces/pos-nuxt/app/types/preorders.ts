@@ -5,7 +5,8 @@
 // `POST /api/v1/backstage/pos/preorders/<ref>/hand-over/`.
 
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
-import type { ReasonPresetGroup } from "../../../operator-kit/app/types/reason";
+import type { KeyedReason } from "../../../operator-kit/app/types/reason";
+import type { CourierChargeOutdated } from "../../../operator-kit/app/presentation/courierCharge";
 
 import type { POSManagerProjection, POSTabPayload } from "./pos";
 
@@ -52,6 +53,15 @@ export interface PreorderCard {
   items_count: number;
   /** A Via Pedido já saiu (o carimbo `ticket_printed_at`). */
   ticket_printed: boolean;
+  /**
+   * A corrida do entregador (TaOn) numa linha, lida do bloco do Gestor
+   * (`preorders.courier_line`): "Entregador não chamado", "Procurando
+   * entregador", "Não atendida"... "" quando não há o que dizer.
+   */
+  courier_label?: string;
+  courier_tone?: "" | "neutral" | "info" | "success" | "warning" | "danger";
+  /** O detalhe oferece "Chamar entregador" ou "Chamar de novo" agora. */
+  courier_call?: boolean;
 }
 
 export interface PreorderDay {
@@ -125,10 +135,58 @@ export interface PreorderCounter {
  */
 export interface PreorderDetail extends OperatorOrderDetail {
   counter: PreorderCounter;
+  /**
+   * A corrida do entregador: o MESMO bloco do Gestor (`order_queue._courier_block`).
+   * `null` quando não se aplica (retirada, entrega do marketplace, TaOn desligada).
+   */
+  courier?: PreorderCourier | null;
+  /** As maquininhas da casa (e quem está na rua com elas), para a custódia da chamada. */
+  equipment_options?: PreorderEquipmentOption[];
+  /** "Entregador voltou": o que a mão do operador deve receber (a lista do diálogo do
+   *  Gestor, `order_queue._trip_fields`). Vazio quando não há saída aberta. */
+  courier_return_lines?: string[];
   /** Quem pode assinar o cancelamento de pedido pago (a lista do PDV). */
   managers: POSManagerProjection[];
-  /** Os motivos prontos de cancelar, os mesmos do Gestor (Admin, `Shop.cancellation_presets`). */
-  cancellation_presets: ReasonPresetGroup[];
+  /** Os motivos de cancelar: a lista única do backend, a mesma do Gestor (`cancel_reasons`). */
+  cancel_reasons: KeyedReason[];
+}
+
+/** O bloco da corrida — espelho do `CourierBlock` do Gestor (`orders-nuxt/types/orders.ts`). */
+export interface PreorderCourier {
+  provider: string;
+  /** A letra da TaOn (D/G/P/U procurando, A/S aceita, E coletou, F entregue, N/C não concluída). */
+  status: string;
+  status_label: string;
+  active: boolean;
+  driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string; vehicle_color?: string } | null;
+  tracking_url: string;
+  confirmation_code: string;
+  attempts_count: number;
+  /** Andamento lido da TaOn, em instantes ISO (`courier.progress_view`); a tela conta os minutos. */
+  pickup_eta_at?: string;
+  arrived_pickup_at?: string;
+  delivery_eta_at?: string;
+  /** Desde quando a TaOn não informa a corrida (vazio com a leitura em dia). */
+  sync_since?: string;
+  error: { message: string; at: string } | null;
+  can_dispatch: boolean;
+  /** A última chamada ficou sem resposta da TaOn: "Chamar de novo" libera e chama outra. */
+  can_dispatch_again?: boolean;
+  /** A corrida pode ser cancelada (antes da coleta, régua da central). */
+  can_cancel?: boolean;
+  /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
+  custody?: { change_out_suggested_q: number; needs_machine: boolean; recorded: boolean };
+  /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
+  charge_outdated?: CourierChargeOutdated | null;
+}
+
+/** Uma maquininha da casa (`card_machine:<ref>`), livre ou na rua com um pedido. */
+export interface PreorderEquipmentOption {
+  ref: string;
+  label: string;
+  enabled?: boolean;
+  reason?: string;
+  order_ref?: string;
 }
 
 /** `GET /api/v1/backstage/pos/preorders/<ref>/` — o envelope de leitura do Gestor. */
@@ -153,6 +211,11 @@ export interface PreorderHandOver {
    * mostra antes de confirmar. "" quando não há cobrança digital viva.
    */
   digital_charge_notice: string;
+  /**
+   * A cozinha ainda não deu o pronto: entregar afirma o pronto (como o "Marcar
+   * pronto" do Gestor). A linha que o diálogo mostra; "" quando já está pronta.
+   */
+  kitchen_notice?: string;
 }
 
 export type CounterMethod = "cash" | "debit" | "credit";
@@ -202,6 +265,11 @@ export interface PreorderHandOverResponse {
   ref: string;
   received_q: number;
   status: string;
+  /**
+   * Onde a NFC-e está depois da entrega (`fiscal_service.fiscal_state`):
+   * `queued`/`authorized` = há DANFE a imprimir quando autorizar.
+   */
+  fiscal_state?: string;
 }
 
 // ── Editar a encomenda na tela de venda (WP-E6) ─────────────────────────────

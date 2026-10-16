@@ -99,6 +99,8 @@ class ProductionActionProjection:
         "oven_conclude",
         "acknowledge_alert",
         "open_alert_context",
+        "confirm_order",
+        "allocate_blind_codes",
         "print_labels",
     ]
     label: str
@@ -447,6 +449,7 @@ class ProductionWeighingProjection:
     scale_precision_display: str
     scale_rounding_note: str
     tickets: tuple[ProductionWeighingTicketProjection, ...]
+    codes_ready: bool
     print_destination: ProductionPrintDestinationProjection | None
     access: ProductionSurfaceAccess
     actions: tuple[ProductionActionProjection, ...] = ()
@@ -1509,6 +1512,14 @@ def build_production_weighing(
     ingredient_skus = {item.input_sku for entry in tickets.values() for item in entry["items"]}
     product_names = _product_names(ingredient_skus)
     counting_conversions = _counting_conversions(ingredient_skus)
+    from shopman.backstage.models import BlindPrepCode
+
+    blind_codes = dict(
+        BlindPrepCode.objects.filter(
+            date=selected_date,
+            recipe_ref__in=[entry["recipe"].ref for entry in tickets.values()],
+        ).values_list("recipe_ref", "code")
+    )
 
     projected_tickets = tuple(
         _build_weighing_ticket(
@@ -1517,6 +1528,7 @@ def build_production_weighing(
             product_names=product_names,
             counting_conversions=counting_conversions,
             selected_date=selected_date,
+            blind_codes=blind_codes,
         )
         for entry in sorted(tickets.values(), key=lambda item: item["recipe"].name)
     )
@@ -1533,9 +1545,21 @@ def build_production_weighing(
         scale_precision_display=f"{_plain_decimal(precision_g)} g",
         scale_rounding_note=(f"Alvos arredondados para cima · balança {_plain_decimal(precision_g)} g"),
         tickets=projected_tickets,
+        codes_ready=all(ticket.blind_code for ticket in projected_tickets),
         print_destination=None,
         access=access,
         actions=(
+            _production_action(
+                ref=f"allocate_blind_codes:{selected_date.isoformat()}:{position_ref}:{base_recipe}",
+                kind="allocate_blind_codes",
+                label="Preparar códigos de pesagem",
+                priority=70,
+                enabled=bool(projected_tickets and not all(ticket.blind_code for ticket in projected_tickets)),
+                reason="Os códigos já estão preparados." if projected_tickets else "Não há preparos.",
+                href="/api/v1/backstage/production/weighing/blind-codes/",
+                payload_schema="ProductionBlindCodeAllocationRequest",
+                expected_rev=None,
+            ),
             _production_action(
                 ref=action_ref,
                 kind="print_labels",
@@ -1708,143 +1732,6 @@ _YIELD_MARGIN_NOTE = (
     "masseira por lote e uma folga para a variação. O que sobrar vira massa "
     "velha de amanhã, dentro do teto."
 )
-
-
-# Alfabeto do código cego: ultra legível e memorizável (pedido do Pablo) —
-# 1 letra + 1 número, sem 0/1/O/I. Espaço = 24×8 = 192 códigos/dia.
-_BLIND_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
-_BLIND_DIGITS = "23456789"
-
-# Famílias sonoras (pt-BR) para o reuso de número em "voltas": quando um
-# número reaparece no dia (9º código em diante), a letra que o acompanha deve
-# vir de OUTRA família da(s) que já carregam esse número — "Z7" na 1ª volta
-# veta "D7" na 2ª (dê soa como zê no grito da cozinha), mas libera "M7".
-_BLIND_LETTER_FAMILIES = {
-    **dict.fromkeys("BCDGPTVZ", "ê"),  # bê cê dê gê pê tê vê zê
-    "M": "êm",
-    "N": "êm",  # ême/êne
-    "F": "és",
-    "S": "és",  # éfe/ésse
-    "K": "cá",
-    "Q": "cá",  # cá/quê
-    "L": "él",
-    "R": "él",  # éle/érre
-    # A, E, H, J, U, W, X, Y — sons únicos, família própria (a própria letra)
-}
-
-
-def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
-    """Código cego de um preparo — pesagem sem revelar a receita.
-
-    Formato "B7": 1 letra + 1 número (sem 0/1/O/I — ultra legível). Sorteio
-    simples com retry só na colisão; a alocação persiste em ``BlindPrepCode``
-    (estável o dia todo, reimpressão sempre bate). Regras anticonfusão:
-
-    - NO DIA, a letra NUNCA repete entre códigos (Z7 veta Z9) — teto de 24
-      preparos/dia, estouro falha explícito;
-    - os 8 primeiros do dia saem ESTRITOS: número também não repete (Z7 veta
-      S7) — máxima distinção enquanto os dígitos duram; do 9º em diante o
-      número pode repetir (a letra continua mandando);
-    - na JANELA de expediente (dia útil anterior · dia · próximo dia útil,
-      domingo/feriado pulam via calendário da loja) o código completo não
-      repete: etiquetas de dias adjacentes convivendo na cozinha nunca se
-      confundem.
-    """
-    import secrets
-
-    from django.db import IntegrityError, transaction
-
-    from shopman.backstage.models import BlindPrepCode
-
-    existing = BlindPrepCode.objects.filter(date=selected_date, recipe_ref=recipe_ref).first()
-    if existing:
-        return existing.code
-
-    window = _blind_window(selected_date)
-    space = [letter + digit for letter in _BLIND_LETTERS for digit in _BLIND_DIGITS]
-    for _attempt in range(len(space)):
-        window_taken = set(BlindPrepCode.objects.filter(date__in=window).values_list("code", flat=True))
-        day_codes = set(BlindPrepCode.objects.filter(date=selected_date).values_list("code", flat=True))
-        day_letters = {code[0] for code in day_codes}
-        day_digits = {code[1] for code in day_codes}
-        by_letter = [code for code in space if code not in window_taken and code[0] not in day_letters]
-        # Escada de qualidade (nunca bloqueia — o código é uma CONVENIÊNCIA
-        # anticonfusão, não um gargalo da operação):
-        #   1º–8º   ótimos: letra única + número único;
-        #   9º–24º  bons: número reaparece com letra de OUTRA família sonora
-        #           ("Z7" veta "D7" na volta, libera "M7"); letra ainda única;
-        #   25º+    aceitáveis: letra pode repetir — vale só o código completo
-        #           inédito no dia e na janela de expediente.
-        strict = [code for code in by_letter if code[1] not in day_digits]
-        if strict:
-            free = strict
-        elif by_letter:
-            digit_families = {
-                digit: {_BLIND_LETTER_FAMILIES.get(code[0], code[0]) for code in day_codes if code[1] == digit}
-                for digit in day_digits
-            }
-            quality = [
-                code
-                for code in by_letter
-                if _BLIND_LETTER_FAMILIES.get(code[0], code[0]) not in digit_families.get(code[1], set())
-            ]
-            free = quality or by_letter
-        else:
-            free = [code for code in space if code not in window_taken and code not in day_codes]
-        if not free:
-            raise RuntimeError(
-                "Sem código cego disponível: espaço esgotado no dia e na janela "
-                "de expediente. Verifique refs duplicadas."
-            )
-        candidate = secrets.choice(free)
-        try:
-            with transaction.atomic():
-                row = BlindPrepCode.objects.create(date=selected_date, recipe_ref=recipe_ref, code=candidate)
-        except IntegrityError:
-            # Colidiu (código do dia levado numa corrida, ou o ref já alocou).
-            existing = BlindPrepCode.objects.filter(date=selected_date, recipe_ref=recipe_ref).first()
-            if existing:
-                return existing.code
-            continue  # retry com outro sorteio
-        # Regra dura numa corrida = só o código completo na janela (a escada
-        # de qualidade — letra/família/número — degrada; corrida que a fure
-        # não é violação, e a constraint por dia já cobre o código exato).
-        window_clash = (
-            BlindPrepCode.objects.filter(date__in=window, code=candidate)
-            .exclude(pk=row.pk)
-            .filter(pk__lt=row.pk)
-            .exists()
-        )
-        if window_clash:
-            row.delete()
-            continue
-        return candidate
-    raise RuntimeError("Alocação de código cego não convergiu: investigar concorrência.")
-
-
-def _blind_window(selected_date: date) -> tuple[date, date, date]:
-    """Janela de unicidade: dia útil anterior · dia · próximo dia útil.
-
-    "Útil" segue o calendário da loja (``is_open_on``: domingo sem expediente,
-    feriados em ``closed_dates``); sem agenda configurada degrada para
-    ontem·hoje·amanhã. Busca limitada a 14 dias para nunca laçar em config
-    quebrada.
-    """
-    from shopman.shop.services.business_calendar import is_open_on
-
-    def step(start: date, delta: int) -> date:
-        candidate = start
-        for _ in range(14):
-            candidate = candidate + timedelta(days=delta)
-            try:
-                if is_open_on(candidate):
-                    return candidate
-            except Exception:
-                logger.debug("blind_window.calendar_failed", exc_info=True)
-                return start + timedelta(days=delta)
-        return start + timedelta(days=delta)
-
-    return (step(selected_date, -1), selected_date, step(selected_date, 1))
 
 
 @dataclass(frozen=True)
@@ -3736,6 +3623,7 @@ def _build_weighing_ticket(
     product_names: dict[str, str],
     counting_conversions: dict[str, _CountingConversion],
     selected_date: date,
+    blind_codes: dict[str, str],
 ) -> ProductionWeighingTicketProjection:
     recipe = entry["recipe"]
     output_quantity = Decimal(str(entry["quantity"]))
@@ -3892,7 +3780,7 @@ def _build_weighing_ticket(
         sources_display=", ".join(entry["sources"]),
         ingredients=ingredients,
         table=table,
-        blind_code=blind_prep_code(recipe.ref, selected_date),
+        blind_code=blind_codes.get(recipe.ref, ""),
         made_display=selected_date.strftime("%d/%m"),
         expiry_display=expiry.strftime("%d/%m") if expiry is not None else "",
         validity_configured=expiry is not None,

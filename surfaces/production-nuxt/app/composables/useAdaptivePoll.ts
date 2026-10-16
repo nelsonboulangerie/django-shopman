@@ -3,9 +3,9 @@
 //     pressure (live floor: 30s → 10s while something is late);
 //   - a hidden tab skips the fetch (tablet parked on another app costs zero);
 //   - coming back to the tab refreshes immediately (no stale first paint).
-// Polling over SSE is deliberate for production: the floor clock moves in
-// minutes, alerts are low-frequency, and the SSE channel infra is order-scoped
-// today — revisit post-alpha if cadence ever tightens (decision: WP-PE4).
+// Na grade da Produção (useProductionBoard) este poll é a RESERVA: a mudança
+// chega pelo SSE `backstage-production` (ADR-016). Onde ainda não há canal, ele
+// é a cadência da tela.
 export function useAdaptivePoll(refresh: () => unknown, interval: () => number): void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;

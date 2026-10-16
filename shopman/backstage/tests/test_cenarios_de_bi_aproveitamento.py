@@ -10,10 +10,13 @@ from __future__ import annotations
 import importlib
 
 import pytest
-from django.apps import apps
 from django.contrib.auth.models import User
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
 
-from shopman.backstage.models import BIView
+# O ``BIView`` saiu na ``backstage.0090`` (os cenários viraram ``SavedView``): a 0082 é
+# exercitada no estado em que rodou, o da 0089.
+BEFORE_SAVED_VIEWS = [("backstage", "0089_alerta_responder_ate")]
 
 migration = importlib.import_module(
     "shopman.backstage.migrations.0082_cenarios_de_bi_falam_aproveitamento"
@@ -40,18 +43,30 @@ def test_word_swap_preserves_initial_case_and_whole_word() -> None:
     assert migration.BACKWARDS("Aproveitamento por receita") == "Rendimento por receita"
 
 
-@pytest.mark.django_db
-def test_migration_renames_only_yield_scenarios_and_reverts() -> None:
+@pytest.fixture
+def bi_view_apps():
+    """O banco no estado da 0089 (com o ``BIView``), devolvido à folha no fim."""
+    executor = MigrationExecutor(connection)
+    executor.migrate(BEFORE_SAVED_VIEWS)
+    yield executor.loader.project_state(BEFORE_SAVED_VIEWS).apps
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migration_renames_only_yield_scenarios_and_reverts(bi_view_apps) -> None:
+    apps = bi_view_apps
+    BIView = apps.get_model("backstage", "BIView")
     ana = User.objects.create(username="ana")
     bia = User.objects.create(username="bia")
-    by_recipe = BIView.objects.create(owner=ana, name="Rendimento por receita", config=YIELD)
-    lowercase = BIView.objects.create(owner=ana, name="Forno 2: rendimento", config=YIELD)
-    other_metric = BIView.objects.create(owner=ana, name="Perda e rendimento", config=LOSS)
-    untouched = BIView.objects.create(owner=ana, name="Por dia", config=YIELD)
+    by_recipe = BIView.objects.create(owner_id=ana.pk, name="Rendimento por receita", config=YIELD)
+    lowercase = BIView.objects.create(owner_id=ana.pk, name="Forno 2: rendimento", config=YIELD)
+    other_metric = BIView.objects.create(owner_id=ana.pk, name="Perda e rendimento", config=LOSS)
+    untouched = BIView.objects.create(owner_id=ana.pk, name="Por dia", config=YIELD)
     # Bia já salvou o nome novo: renomear o antigo apagaria um dos dois.
-    BIView.objects.create(owner=bia, name="Aproveitamento por receita", config=YIELD)
-    collides = BIView.objects.create(owner=bia, name="Rendimento por receita", config=YIELD)
-    too_long = BIView.objects.create(owner=bia, name="Rendimento " + "x" * 69, config=YIELD)
+    BIView.objects.create(owner_id=bia.pk, name="Aproveitamento por receita", config=YIELD)
+    collides = BIView.objects.create(owner_id=bia.pk, name="Rendimento por receita", config=YIELD)
+    too_long = BIView.objects.create(owner_id=bia.pk, name="Rendimento " + "x" * 69, config=YIELD)
 
     migration.forwards(apps, None)
 
@@ -74,8 +89,10 @@ def test_migration_renames_only_yield_scenarios_and_reverts() -> None:
     assert other_metric.name == "Perda e rendimento"
 
 
-@pytest.mark.django_db
-def test_migration_runs_on_empty_database() -> None:
+@pytest.mark.django_db(transaction=True)
+def test_migration_runs_on_empty_database(bi_view_apps) -> None:
+    apps = bi_view_apps
+    BIView = apps.get_model("backstage", "BIView")
     migration.forwards(apps, None)
     migration.backwards(apps, None)
     assert not BIView.objects.exists()

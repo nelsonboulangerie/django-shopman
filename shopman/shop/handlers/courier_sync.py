@@ -2,9 +2,13 @@
 
 Fallback do webhook da Machine (e única via enquanto o webhook não estiver
 homologado): heartbeat auto-reagendável por pedido, no padrão do
-``production.late_check``. Para sozinho quando a corrida chega a um status
-terminal (F/N/C), quando a corrida some do pedido, ou quando o polling é
-desligado (``Shop.defaults.delivery.courier_poll_seconds = 0``).
+``production.late_check``. Cada batida lê a corrida inteira
+(``adapter.read_ride``: status, entregador, previsão de chegada à loja,
+coleta, viagem, valor) e aplica pelo funil ``courier.apply_snapshot``. Para
+sozinho quando a corrida chega a um status terminal (F/N/C), quando a corrida
+some do pedido, quando passa de ``courier.MAX_POLL_HOURS`` ou quando o polling
+é desligado (``Shop.defaults.delivery.courier_poll_seconds = 0``). Leitura que
+falha aparece na tela (``courier.sync``) e vira aviso ao operador.
 
 Webhook e polling convergem no mesmo funil (``courier.apply_status``), que é
 idempotente — receber o mesmo status pelas duas vias é inofensivo.
@@ -51,27 +55,35 @@ class CourierSyncHandler:
             return
 
         seconds = courier.poll_seconds()
+        ride_id = block["id_mch"]
+        if courier.poll_expired(block):
+            logger.warning("courier.sync_expired order=%s id_mch=%s", order.ref, ride_id)
+            return
 
         try:
-            status = adapter.get_status(block["id_mch"])
+            read_ride = getattr(adapter, "read_ride", None)
+            snapshot = read_ride(ride_id) if read_ride else {"status": adapter.get_status(ride_id)}
         except CourierError as exc:
-            # Transient ou não, o heartbeat não "falha": loga e re-agenda — a
-            # próxima batida (ou o webhook) recupera o estado.
+            # A batida não "falha" (o heartbeat segue), mas não fica calada: a
+            # tela do Gestor diz desde quando a TaOn não informa a corrida, e
+            # depois de algumas batidas vira aviso ao operador. Em 13/10/2026 a
+            # primeira corrida real ficou parada em D por 30 min só com WARNING
+            # no log (``solicitacaoStatus`` → 400 [67] a cada minuto).
             logger.warning(
                 "courier.sync_failed order=%s id_mch=%s: %s",
-                order.ref, block.get("id_mch"), exc,
+                order.ref, ride_id, exc,
             )
+            courier.record_sync_failure(order, exc, ride_id=ride_id)
             if seconds > 0:
                 courier.schedule_sync(order, delay_seconds=seconds)
             return
 
-        if status:
-            courier.apply_status(order, status, source="poll")
+        if snapshot:
+            courier.apply_snapshot(order, snapshot, source="poll")
 
         block = courier.get_block(order)
         still_active = bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
         if still_active and seconds > 0:
             courier.schedule_sync(order, delay_seconds=seconds)
-
 
 __all__ = ["CourierSyncHandler"]

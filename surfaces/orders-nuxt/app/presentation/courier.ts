@@ -39,7 +39,14 @@ export function courierSteps(letter: string): CourierStep[] {
   if (idx === undefined) return [];
   return STEPS.map((step, i) => ({
     ...step,
-    state: i < idx ? "done" : i === idx ? (letter === "F" ? "done" : "current") : "pending",
+    state:
+      i < idx
+        ? "done"
+        : i === idx
+          ? letter === "F"
+            ? "done"
+            : "current"
+          : "pending",
   }));
 }
 
@@ -49,7 +56,8 @@ export function courierTone(letter: string): CourierTone {
   if (letter === "F") return "success";
   if (letter === "E") return "active";
   if (letter === "A" || letter === "S") return "info";
-  if (letter === "D" || letter === "G" || letter === "P" || letter === "U") return "muted";
+  if (letter === "D" || letter === "G" || letter === "P" || letter === "U")
+    return "muted";
   return "muted";
 }
 
@@ -57,14 +65,43 @@ export function courierTone(letter: string): CourierTone {
 export function courierToneBadge(tone: CourierTone): string {
   switch (tone) {
     case "danger":
-      return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
+      return "border-error/40 bg-error/10 text-error";
     case "success":
-      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+      return "border-success/40 bg-success/10 text-success";
     case "active":
       return "border-primary/40 bg-primary/10 text-primary";
     case "info":
-      return "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+      return "border-info/40 bg-info/10 text-info";
     default:
       return "border-border bg-muted text-muted-foreground";
   }
 }
+
+/** O lembrete temporário de chamar o entregador, como o servidor o projeta. */
+export interface CourierReminder {
+  due_at_iso: string;
+  since_iso: string;
+  since_basis: string;
+  short_ref: string;
+}
+
+/**
+ * A frase do lembrete quando ele já vale (o relógio passou de `due_at_iso`), ou `null`.
+ * "Pedido 0042 em preparo há 10 min. Já dá para chamar o entregador?" — os minutos
+ * contam do início do preparo e andam com o relógio da tela.
+ */
+export function courierReminderLine(
+  reminder: CourierReminder | null | undefined,
+  nowMs: number,
+): string | null {
+  if (!reminder) return null;
+  const due = Date.parse(reminder.due_at_iso);
+  const since = Date.parse(reminder.since_iso);
+  if (!Number.isFinite(due) || !Number.isFinite(since) || nowMs < due)
+    return null;
+  const minutes = Math.max(1, Math.floor((nowMs - since) / 60_000));
+  return `Pedido ${reminder.short_ref} em preparo há ${minutes} min. Já dá para chamar o entregador?`;
+}
+
+/** O detalhe do pedido abre com a confirmação de "Chamar entregador" já armada. */
+export const COURIER_CALL_HASH = "#courier-call";

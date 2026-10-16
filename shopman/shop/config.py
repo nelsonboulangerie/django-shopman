@@ -118,6 +118,10 @@ class ChannelConfig:
         # "cash"     — dinheiro no ato
         # "pix"      — PIX com QR code
         # "card"     — cartão via Stripe
+        # "link"     — link de pagamento (pedido remoto anotado no balcão)
+        # "credit"   — crédito na maquininha
+        # "debit"    — débito na maquininha
+        # "account"  — conta na casa (cliente com conta aberta)
         # "external" — já pago (marketplace)
         # ["pix", "card"] — múltiplos métodos (cliente escolhe)
         timing: str = "post_commit"
@@ -176,7 +180,7 @@ class ChannelConfig:
         # "auto" — pedido delivery marcado "pronto" abre corrida no adapter
         #          courier (SHOPMAN_COURIER_ADAPTER diz QUEM; isto diz SE)
         equipment: list[str] = field(default_factory=list)
-        # Equipamento que o entregador da casa pode levar no despacho (refs
+        # Equipamento que sai com o entregador no despacho (refs
         # curtas, ex. ["card_machine"] — hoje, a maquininha). Vazio = o despacho
         # não pergunta. A custódia é do equipamento, não de dinheiro: mora em
         # Order.data.dispatch.equipment,
@@ -314,6 +318,12 @@ class ChannelConfig:
         # valor até 2%"; padrão 2,5%, decidido por ele no mesmo dia). Aceita decimal;
         # 0 desliga. O desconto entra como cupom de uso único,
         # pelo mesmo caminho do cupom do site (``storefront/concierge/discount.py``).
+        listing_from: str = ""
+        # Ref do canal cuja VITRINE este canal espelha: mesmos itens, mesmo preço,
+        # mesmas flags, sempre (``services/listing_mirror.py``). Vazio = vitrine
+        # própria. Lido CRU do ``Channel.config`` (sem a cascata da loja): é
+        # decisão de um canal, nunca default da casa. O WhatsApp aponta para a
+        # loja online (P1-14).
 
     # ── 7. Editing ──
 
@@ -509,7 +519,10 @@ class ChannelConfig:
             raise ValueError(
                 f"timeout_minutes deve ser > 0 para mode={self.confirmation.mode}",
             )
-        valid_methods = {"cash", "pix", "card", "external"}
+        # Os métodos que o PDV e os adapters conhecem (``services/pos.py``,
+        # ``payment_gate``). ``mixed`` fica de fora: é o resultado de uma venda
+        # com mais de uma forma, não algo que um canal declara.
+        valid_methods = {"cash", "pix", "card", "link", "credit", "debit", "account", "external"}
         if not self.payment.available_methods:
             raise ValueError("payment.method deve declarar pelo menos um método")
         for m in self.payment.available_methods:

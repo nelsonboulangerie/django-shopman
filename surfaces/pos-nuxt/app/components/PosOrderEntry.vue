@@ -76,8 +76,8 @@ function isReady(key: OrderSetupStepKey) {
   return steps.value.find((step) => step.key === key)?.ready ?? false;
 }
 
-// "Hoje · horário a combinar" já diz; um dia futuro sem janela, não.
-const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.scheduleLabel.includes("a combinar"));
+// "Hoje, o quanto antes" já diz; um dia futuro sem janela, não.
+const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.scheduleLabel.includes("o quanto antes"));
 </script>
 
 <template>
@@ -91,10 +91,11 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
     <nav aria-label="Etapas da encomenda">
       <ol class="grid gap-1 rounded-lg border bg-muted/30 p-1" :style="{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }">
         <li v-for="(step, index) in steps" :key="step.key">
-          <button
-            type="button"
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
             data-order-step-nav
-            class="flex min-h-11 w-full items-center justify-center gap-2 rounded-md px-2 text-xs font-medium transition sm:justify-start"
+            class="flex min-h-8 w-full items-center justify-center gap-2 rounded-md px-2 text-xs font-medium transition sm:justify-start"
             :class="step.key === current ? 'bg-background text-foreground shadow-sm' : step.ready ? 'text-success' : 'text-muted-foreground'"
             :disabled="loading || !orderSetupStepEnabled(steps, index)"
             :aria-current="step.key === current ? 'step' : undefined"
@@ -109,7 +110,7 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
               <template v-else>{{ index + 1 }}</template>
             </span>
             <span class="hidden truncate text-left sm:inline">{{ step.label }}</span>
-          </button>
+          </NuxtButton>
         </li>
       </ol>
     </nav>

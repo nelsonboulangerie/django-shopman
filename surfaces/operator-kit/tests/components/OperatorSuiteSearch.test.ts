@@ -1,13 +1,16 @@
-// A peça da busca da suíte (V6-BUSCA; SUITE-UX-V2 §2.2, prévias v3 `depois-gestor-busca`
-// e `depois-hub-celular`). O que se trava aqui:
+// A busca da suíte em níveis (V6-BUSCA; fase 2, K6: "busca em níveis no canônico", dono
+// 09/10/2026). O que se trava aqui:
 //
-// - o campo filtra a tela (v-model) enquanto se digita e abre o painel com o alcance;
-// - os resultados da suíte chegam agrupados por tipo, como links para o app de destino;
-// - teclado: ↑↓ anda (aria-activedescendant), Tab troca o alcance, Esc fecha e MANTÉM o filtro;
+// - o painel é o `NuxtDashboardSearch` oficial, aberto pelo `NuxtDashboardSearchButton`;
+// - os níveis são os grupos do painel em ordem fixa: Nesta tela, No app, Na suíte;
+// - digitar não mexe na tela: "Filtrar … por “x”" vira o recorte (o `v-model`), e com a
+//   tela filtrada aparece "Tirar o filtro";
+// - os resultados são links para o app de destino, com o tipo ao lado;
+// - teclado: ↑↓ anda (aria-activedescendant), Esc fecha e MANTÉM o filtro da tela;
 // - "/" e Ctrl K abrem de qualquer lugar da tela; a lupa do cabeçalho pede a busca;
-// - a variante `hotkey` (Venda do PDV) não põe campo na tela e abre num diálogo;
-// - acessível: combobox + listbox, opções com nome que diz o que é e onde abre.
+// - a variante `hotkey` (Venda do PDV) não põe campo na tela e abre num diálogo.
 import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
+import { DOMWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import type { VueWrapper } from "@vue/test-utils";
@@ -83,123 +86,148 @@ async function settle() {
   await nextTick();
 }
 
+const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+const commandInput = () => new DOMWrapper(dialog()!.querySelector("input")!);
+const groupLabels = () =>
+  [...dialog()!.querySelectorAll("[data-slot='group'] > [data-slot='label']")].map((el) => el.textContent?.trim());
+
+async function openSearch(wrapper: VueWrapper) {
+  await wrapper.get("[data-suite-search-input]").trigger("click");
+  await nextTick();
+  await nextTick();
+  return commandInput();
+}
+
 describe("OperatorSuiteSearch", () => {
-  it("digitar filtra a tela e abre o painel com o alcance e a suíte por tipo", async () => {
+  it("os níveis em ordem fixa: Nesta tela, No app, Na suíte", async () => {
     const wrapper = await mountSearch({ modelValue: "", screenLabel: "filtrando o quadro", "onUpdate:modelValue": () => {} });
-    const input = wrapper.get("[data-suite-search-input]");
-    expect(input.attributes("role")).toBe("combobox");
+    const input = await openSearch(wrapper);
     await input.setValue("maria");
-    expect(wrapper.emitted("update:modelValue")!.at(-1)).toEqual(["maria"]);
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]![1]).toEqual({ query: { q: "maria" } });
+    expect(groupLabels()).toEqual(["Nesta tela", "No app (Gestor)", "Na suíte"]);
+    expect(dialog()!.textContent).toContain("Filtrar o quadro por “maria”");
 
-    const panel = wrapper.get("[data-suite-search-panel]");
-    const scopes = panel.findAll("[data-suite-search-scope]");
-    expect(scopes.map((s) => s.text())).toEqual(["Esta tela", "Gestor 2", "Toda a suíte 3"]);
-    expect(panel.text()).toContain("Nesta tela · filtrando o quadro");
-    expect(panel.findAll("[data-suite-search-group]").map((g) => g.text())).toEqual(["Pedidos", "Clientes", "Encomendas"]);
-    const results = panel.findAll("[data-suite-search-result]");
-    expect(results.map((r) => r.attributes("href"))).toEqual([
+    const results = [...dialog()!.querySelectorAll<HTMLElement>("[data-suite-search-result]")];
+    expect(results.map((r) => r.getAttribute("href"))).toEqual([
       "https://gestor.test/X36",
       "https://gestor.test/customers/C1",
       "https://pdv.test/preorders/X36",
     ]);
-    expect(results[0]!.attributes("role")).toBe("option");
-    expect(results[0]!.attributes("aria-label")).toBe("X36 · Maria Santos, Gestor › Pedidos, Em preparo");
-    expect(results[0]!.find("mark").text()).toBe("Maria");
+    expect(results[0]!.getAttribute("aria-label")).toBe("X36 · Maria Santos, Gestor › Pedidos, Em preparo");
+    expect(results[0]!.textContent).toContain("Pedidos");
   });
 
-  it("Tab troca o alcance: o App recorta pelo app atual", async () => {
-    const wrapper = await mountSearch();
-    const input = wrapper.get("[data-suite-search-input]");
+  it("digitar não mexe na tela; Filtrar … por vira o recorte", async () => {
+    const wrapper = await mountSearch({ modelValue: "", screenLabel: "filtrando o quadro", "onUpdate:modelValue": () => {} });
+    const input = await openSearch(wrapper);
     await input.setValue("maria");
     await settle();
-    // Sem v-model, a tela não filtra: o primeiro alcance é o App.
-    const panel = () => wrapper.get("[data-suite-search-panel]");
-    expect(panel().findAll("[data-suite-search-scope]").map((s) => s.attributes("data-suite-search-scope"))).toEqual(["app", "suite"]);
-    expect(panel().findAll("[data-suite-search-result]")).toHaveLength(2);
-    await input.trigger("keydown", { key: "Tab" });
-    expect(panel().get("[data-suite-search-scope='suite']").attributes("aria-checked")).toBe("true");
-    expect(panel().findAll("[data-suite-search-result]")).toHaveLength(3);
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+    dialog()!.querySelector<HTMLElement>("[data-suite-search-screen='apply']")!.click();
+    await settle();
+    expect(wrapper.emitted("update:modelValue")!.at(-1)).toEqual(["maria"]);
+    expect(dialog()).toBeNull();
   });
 
-  it("↑↓ anda pelos resultados (aria-activedescendant) e Esc fecha mantendo o filtro", async () => {
+  it("com a tela filtrada, o painel abre com o termo e oferece tirar o filtro", async () => {
+    const wrapper = await mountSearch({ modelValue: "maria", screenLabel: "filtrando o quadro", "onUpdate:modelValue": () => {} });
+    expect(wrapper.get("[data-suite-search-input]").text()).toContain("maria");
+    const input = await openSearch(wrapper);
+    expect((input.element as HTMLInputElement).value).toBe("maria");
+    await settle();
+    const clear = dialog()!.querySelector<HTMLElement>("[data-suite-search-screen='clear']")!;
+    expect(clear.textContent).toContain("Tirar o filtro “maria” do quadro");
+    clear.click();
+    await settle();
+    expect(wrapper.emitted("update:modelValue")!.at(-1)).toEqual([""]);
+  });
+
+  it("sem filtro de tela (a Central): só No app e Na suíte", async () => {
+    const wrapper = await mountSearch();
+    const input = await openSearch(wrapper);
+    await input.setValue("maria");
+    await settle();
+    expect(groupLabels()).toEqual(["No app (Gestor)", "Na suíte"]);
+  });
+
+  it("o CommandPalette navega por teclado e Esc fecha mantendo o filtro", async () => {
     const wrapper = await mountSearch({ modelValue: "", "onUpdate:modelValue": () => {} });
-    const input = wrapper.get("[data-suite-search-input]");
+    const input = await openSearch(wrapper);
     await input.setValue("maria");
     await settle();
     await input.trigger("keydown", { key: "ArrowDown" });
     const activeId = input.attributes("aria-activedescendant");
     expect(activeId).toBeTruthy();
-    expect(wrapper.get(`#${activeId}`).attributes("aria-selected")).toBe("true");
-    await input.trigger("keydown", { key: "ArrowUp" });
-    expect(input.attributes("aria-activedescendant")).not.toBe(activeId);
+    expect(document.getElementById(activeId!)).not.toBeNull();
     await input.trigger("keydown", { key: "Escape" });
-    expect(wrapper.find("[data-suite-search-panel]").exists()).toBe(false);
-    expect((input.element as HTMLInputElement).value).toBe("maria");
-    expect(wrapper.emitted("update:modelValue")!.some((e) => e[0] === "")).toBe(false);
+    await settle();
+    expect(dialog()).toBeNull();
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 
   it("termo curto não vai ao servidor e diz o que falta", async () => {
     const wrapper = await mountSearch();
-    const input = wrapper.get("[data-suite-search-input]");
+    const input = await openSearch(wrapper);
     await input.setValue("m");
     await settle();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(wrapper.get("[data-suite-search-hint]").text()).toBe("Digite pelo menos 2 letras para buscar na suíte.");
+    expect(dialog()!.querySelector("[data-suite-search-hint]")?.textContent).toContain(
+      "Digite pelo menos 2 letras para buscar na suíte.",
+    );
   });
 
   it("a suíte fora do ar não apaga o filtro da tela", async () => {
     fetchMock.mockRejectedValue(new Error("offline"));
     const wrapper = await mountSearch({ modelValue: "", "onUpdate:modelValue": () => {} });
-    await wrapper.get("[data-suite-search-input]").setValue("maria");
+    await (await openSearch(wrapper)).setValue("maria");
     await settle();
-    expect(wrapper.get("[data-suite-search-error]").text()).toContain("O filtro desta tela continua valendo.");
+    expect(dialog()!.querySelector("[data-suite-search-error]")?.textContent).toContain(
+      "O filtro desta tela continua valendo.",
+    );
   });
 
-  it("`/` e Ctrl K levam ao campo de qualquer lugar da tela", async () => {
-    const wrapper = await mountSearch();
-    const input = wrapper.get("[data-suite-search-input]").element as HTMLInputElement;
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true }));
-    await nextTick();
-    expect(document.activeElement).toBe(input);
-    input.blur();
-    const ctrlK = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true });
+  it("`/` e Ctrl K abrem a busca canônica de qualquer lugar da tela", async () => {
+    await mountSearch();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", code: "Slash", bubbles: true, cancelable: true }));
+    await settle();
+    expect(dialog()).not.toBeNull();
+    await commandInput().trigger("keydown", { key: "Escape" });
+    await settle();
+    expect(dialog()).toBeNull();
+    const ctrlK = new KeyboardEvent("keydown", { key: "k", code: "KeyK", ctrlKey: true, bubbles: true, cancelable: true });
     window.dispatchEvent(ctrlK);
-    await nextTick();
+    await settle();
     expect(ctrlK.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(input);
+    expect(dialog()).not.toBeNull();
   });
 
-  it("a tecla não é impressa no toque (só com ponteiro fino)", async () => {
+  it("o DashboardSearchButton expõe o atalho com Kbd canônico", async () => {
     const wrapper = await mountSearch();
-    expect(wrapper.get("[data-search-shortcut]").classes()).toEqual(expect.arrayContaining(["hidden", "pointer-fine:flex"]));
+    expect(wrapper.get("kbd").text()).toBe("/");
   });
 
   it("a lupa do cabeçalho pede a busca, e a variante `hotkey` abre num diálogo sem campo na tela", async () => {
     const wrapper = await mountSearch({ variant: "hotkey" });
     expect(wrapper.find("[data-suite-search-input]").exists()).toBe(false);
     // `/` é do campo da tela (PDV): não abre a suíte.
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true }));
-    await nextTick();
-    expect(document.querySelector("[data-suite-search-dialog]")).toBeNull();
-    useSuiteSearchRequest().request();
-    await nextTick();
-    await nextTick();
-    const dialog = document.querySelector("[data-suite-search-dialog]")!;
-    expect(dialog.getAttribute("role")).toBe("dialog");
-    expect(dialog.getAttribute("aria-modal")).toBe("true");
-    const input = dialog.querySelector<HTMLInputElement>("[data-suite-search-dialog-input]")!;
-    input.value = "maria";
-    input.dispatchEvent(new Event("input"));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", code: "Slash", bubbles: true, cancelable: true }));
     await settle();
-    expect([...dialog.querySelectorAll("[data-suite-search-result]")].map((a) => a.getAttribute("href"))).toEqual(["https://gestor.test/X36", "https://gestor.test/customers/C1"]);
-    // Os chips: o alcance (o App primeiro, sem filtro de tela) e, depois, os tipos dele.
-    expect([...dialog.querySelectorAll("[data-suite-search-scope]")].map((c) => c.getAttribute("data-suite-search-scope"))).toEqual(["app", "suite"]);
-    expect([...dialog.querySelectorAll("[data-suite-search-type]")].map((c) => c.getAttribute("data-suite-search-type"))).toEqual(["orders", "customers"]);
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-    await nextTick();
-    expect(document.querySelector("[data-suite-search-dialog]")).toBeNull();
+    expect(dialog()).toBeNull();
+    useSuiteSearchRequest().request();
+    await settle();
+    expect(dialog()).not.toBeNull();
+    const input = commandInput();
+    await input.setValue("maria");
+    await settle();
+    expect([...dialog()!.querySelectorAll("[data-suite-search-result]")].map((a) => a.getAttribute("href"))).toEqual([
+      "https://gestor.test/X36",
+      "https://gestor.test/customers/C1",
+      "https://pdv.test/preorders/X36",
+    ]);
+    await input.trigger("keydown", { key: "Escape" });
+    await settle();
+    expect(dialog()).toBeNull();
   });
 });

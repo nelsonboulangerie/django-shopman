@@ -23,7 +23,7 @@ from shopman.shop.services.sku_records import SkuRoles, sku_roles_map
 
 logger = logging.getLogger(__name__)
 
-REQUEST_STATUSES = {"review", "approved", "sent"}
+REQUEST_STATUSES = {"review", "sent"}
 
 
 @dataclass(frozen=True)
@@ -107,6 +107,8 @@ class MaterialProjection:
     #: conferidos (``Material.metadata.purchase.eans``): o "Ler EAN" do receber
     #: acha o item da caixa pela câmera.
     eans: tuple[str, ...] = ()
+    #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
+    revision: str = ""
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,10 @@ class SupplierProjection:
     tradeName: str
     displayName: str
     document: str
+    #: E-mail e telefone da central, os campos que o cadastro do Compras edita.
+    #: contact continua sendo o texto que a ficha mostra.
+    email: str
+    phone: str
     contact: str
     #: As pessoas cadastradas. Vazio significa que tudo cai na central da empresa.
     contacts: tuple[SupplierContactProjection, ...]
@@ -141,6 +147,8 @@ class SupplierProjection:
     isActive: bool
     lastDeliveryAt: str
     paymentTerm: str
+    #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
+    revision: str = ""
 
 
 @dataclass(frozen=True)
@@ -509,6 +517,7 @@ def _material_projection(
         netContentKg=net_content_kg,
         lastDeliveryExpiry=last_delivery_expiry,
         eans=tuple(str(code) for code in (meta.get("eans") or ()) if str(code).strip()),
+        revision=material.updated_at.isoformat() if material.updated_at else "",
     )
 
 
@@ -672,6 +681,8 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
         tradeName=supplier.trade_name,
         displayName=supplier.display_name,
         document=supplier.document,
+        email=supplier.email,
+        phone=supplier.phone,
         contact=contact,
         contacts=contacts,
         orderContactName=order_contact.name if order_contact else "",
@@ -680,6 +691,7 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
         isActive=bool(supplier.is_active),
         lastDeliveryAt=_meta_str(meta, "last_delivery_at", "lastDeliveryAt") or last_delivery_at,
         paymentTerm=_meta_str(meta, "payment_term", "paymentTerm") or "A combinar",
+        revision=supplier.updated_at.isoformat() if supplier.updated_at else "",
     )
 
 
@@ -782,16 +794,9 @@ def _stock_on_hand_map(skus: list[str]) -> dict[str, Decimal]:
     try:
         from shopman.stockman import stock
 
-        result: dict[str, Decimal] = {}
-        for sku in skus:
-            try:
-                result[sku] = Decimal(stock.available(sku))
-            except Exception:
-                logger.debug("purchase.stock_available_failed sku=%s", sku, exc_info=True)
-                result[sku] = Decimal("0")
-        return result
+        return stock.available_many(skus)
     except Exception:
-        logger.debug("purchase.stock_service_unavailable", exc_info=True)
+        logger.debug("purchase.stock_availability_failed", exc_info=True)
         return {sku: Decimal("0") for sku in skus}
 
 

@@ -99,6 +99,28 @@ class POSProductProjection:
     # A estação dele tem o envio automático ligado (opcional por estação,
     # desligado por padrão): o PDV envia a linha nova sozinho ao sair da comanda.
     kitchen_auto_fire: bool = False
+    # Janela de desconto por horário aberta (Hora da Xepa): ``price_q`` já é o
+    # preço que o motor cobra AGORA, e a etiqueta cheia vem aqui para o tile
+    # mostrá-la riscada. Zero/vazio = sem desconto, ``price_q`` é a etiqueta.
+    list_price_q: int = 0
+    list_price_display: str = ""
+    discount_label: str = ""
+
+
+@dataclass(frozen=True)
+class POSPriceWindowProjection:
+    """A janela de desconto por horário do PDV (Hora da Xepa) no instante da leitura.
+
+    ``next_change_at`` é quando ela abre (fechada) ou fecha (aberta): a tela relê
+    a projeção nesse instante e o preço da grade troca sem recarregar a página.
+    """
+
+    active: bool
+    label: str
+    discount_percent: int | float
+    starts_at: str
+    ends_at: str
+    next_change_at: str
 
 
 @dataclass(frozen=True)
@@ -242,8 +264,9 @@ class POSPendingCashRefundProjection:
 
 @dataclass(frozen=True)
 class POSPendingCardMachineRefundProjection:
-    """Encomenda reduzida paga na maquininha: o estorno é feito NA maquininha.
+    """Venda paga na maquininha que precisa de estorno NA maquininha.
 
+    Cancelada, devolvida (toda ou em parte) ou encomenda que ficou mais barata.
     O sistema não fala com a maquininha (o cartão do balcão é atestado), então o
     estorno também é: o operador estorna nela e toca "Estornei na maquininha", e
     só então o Payman registra. Até lá a pendência fica no *Precisa de você*.
@@ -254,6 +277,12 @@ class POSPendingCardMachineRefundProjection:
     amount_display: str
     customer_name: str
     method_label: str  # "Crédito" · "Débito" · "Cartão"
+    #: ``cancelled`` · ``returned`` · ``partial_return`` · ``reduced``.
+    reason: str = "reduced"
+    reason_label: str = ""  # "Venda cancelada" · "Venda devolvida" · ...
+    #: Como achar a transação na maquininha: hora da aprovação, NSU e
+    #: autorização quando houver ("Aprovado em 13/10 às 14:32 · NSU 123456").
+    lookup_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -357,6 +386,11 @@ class POSCustomerLookupProjection:
     # Sem a flag o PDV nem mostra a opção: dado opcional faz a tela crescer.
     house_account: bool = False
     account_balance_q: int = 0
+    #: O desconto automático do GRUPO do cliente neste balcão ("Aliança Francesa ·
+    #: 10%"). É a promoção que o Core aplica sozinha no reprice (``customer_segments``
+    #: casa a faixa); aqui ela só ganha nome, para o operador saber que vai entrar.
+    #: Vazio = o grupo do cliente não tem desconto no PDV, e a tela não promete nada.
+    group_discount_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -426,6 +460,10 @@ class POSTabProjection:
     opened_at_display: str = ""
     # A mesa do Salão vinculada a esta comanda (opcional), para o quadro e o Salão.
     seating_spot_ref: str = ""
+    # A cozinha terminou tudo o que foi disparado (todo ticket vivo no Pronto):
+    # o balcão chama o cliente. O quadro mostra "Tudo pronto", sobe a comanda e toca
+    # (decisão do dono, 13/10/2026).
+    kitchen_ready: bool = False
 
 
 @dataclass(frozen=True)
@@ -506,6 +544,9 @@ class POSProjection:
     # Desligado = só valor, e a tela nem mostra a opção. Ver
     # ``weighed_sale.weight_entry_enabled`` (``Shop.defaults.pos.weighed_weight_entry``).
     weighed_weight_entry: bool = False
+    # A janela de desconto por horário (Hora da Xepa), ou ``None`` sem regra
+    # ligada para o PDV. Ver ``POSPriceWindowProjection``.
+    price_window: POSPriceWindowProjection | None = None
 
 
 # ── Constants ──────────────────────────────────────────────────────────
@@ -579,7 +620,10 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
     duas gavetas funcionar: cada balcão resolve o seu, em vez de os dois
     disputarem o primeiro em ordem alfabética.
     """
-    products = _load_products()
+    from shopman.shop.modifiers import time_window_offer
+
+    offer = time_window_offer(POS_CHANNEL_REF)
+    products = _load_products(offer=offer)
 
     collections = tuple(
         POSCollectionProjection(ref=c["ref"], name=c["name"])
@@ -648,6 +692,7 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
+        price_window=_price_window_projection(offer),
         delivery_today=_delivery_today().isoformat(),
         delivery_slots_today=tuple(_delivery_slots_today()),
         delivery_slots_canonical=tuple(_delivery_slots_canonical()),
@@ -709,6 +754,11 @@ def _kitchen_status_by_line(session_key: str) -> dict[str, str]:
         for entry in ticket.items or []:
             line_id = str((entry or {}).get("line_id") or "")
             if not line_id:
+                continue
+            # O comprovante de uma DIFERENÇA que o balcão cancelou (a conta diminuiu,
+            # decisão do dono 10/10/2026) não é a linha cancelada: ela segue viva no
+            # outro ticket, e quem está no caixa já sabe (foi ele que pediu).
+            if status == "cancelled" and (entry or {}).get("partial_cancel"):
                 continue
             current = out.get(line_id)
             if current is None or rank[status] < rank[current]:
@@ -840,25 +890,38 @@ def _manager_cards(operator=None) -> tuple[dict, ...]:
 
 
 def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSummaryProjection:
-    """Build today's shift summary for the POS."""
-    from django.db.models import Sum
+    """Build today's shift summary for the POS.
+
+    UMA leitura das vendas do dia, só com as colunas que o resumo usa. Eram
+    quatro (contagem, soma, a lista inteira com o ``snapshot`` de cada pedido e a
+    última venda) sobre ``created_at__date``, que converte cada linha para o fuso
+    antes de comparar e por isso não usa o índice de ``created_at``: a tabela
+    inteira era varrida a cada leitura da projeção do PDV, e a projeção é relida a
+    cada aviso de comanda.
+    """
+    from datetime import datetime, time, timedelta
+
     from django.utils import timezone
     from shopman.orderman.models import Order
 
     today = timezone.localdate()
-    qs = Order.objects.filter(
-        channel_ref=channel_ref,
-        created_at__date=today,
-    ).exclude(status="cancelled")
+    start = timezone.make_aware(datetime.combine(today, time.min))
+    end = timezone.make_aware(datetime.combine(today + timedelta(days=1), time.min))
+    rows = list(
+        Order.objects.filter(channel_ref=channel_ref, created_at__gte=start, created_at__lt=end)
+        .exclude(status="cancelled")
+        .order_by("created_at", "pk")
+        .values_list("ref", "total_q", "data")
+    )
 
-    shift_count = qs.count()
-    shift_total_q = qs.aggregate(t=Sum("total_q"))["t"] or 0
+    shift_count = len(rows)
+    shift_total_q = sum(int(total_q or 0) for _ref, total_q, _data in rows)
     pickup_count = 0
     delivery_count = 0
     cod_pending_count = 0
     cod_pending_q = 0
-    for order in qs:
-        data = order.data or {}
+    for _ref, total_q, data in rows:
+        data = data or {}
         if data.get("fulfillment_type") == "delivery":
             delivery_count += 1
         else:
@@ -866,17 +929,17 @@ def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSu
         payment = data.get("payment") or {}
         if payment.get("collection") == "on_delivery" and not payment.get("cod_settled_at"):
             cod_pending_count += 1
-            cod_pending_q += int(order.total_q or 0)
+            cod_pending_q += int(total_q or 0)
 
-    last_order = qs.order_by("-created_at").first()
+    last_ref, last_total_q = (rows[-1][0], rows[-1][1]) if rows else ("", None)
 
     return POSShiftSummaryProjection(
         count=shift_count,
         total_display=format_money(shift_total_q),
         pickup_count=pickup_count,
         delivery_count=delivery_count,
-        last_ref=last_order.ref if last_order else "",
-        last_total_display=format_money(last_order.total_q) if last_order else "",
+        last_ref=last_ref,
+        last_total_display=format_money(last_total_q) if rows else "",
         cod_pending_count=cod_pending_count,
         cod_pending_display=format_money(cod_pending_q),
     )
@@ -897,7 +960,7 @@ def build_pos_tabs(
         for session in Session.objects.filter(
             channel_ref=channel_ref,
             state="open",
-        ).filter(handle_type="pos_tab")
+        ).filter(handle_type="pos_tab").prefetch_related("session_items")
     }
     sessions.update({
         str((session.data or {}).get("tab_ref") or "").strip(): session
@@ -905,7 +968,7 @@ def build_pos_tabs(
             channel_ref=channel_ref,
             state="open",
             data__has_key="tab_ref",
-        )
+        ).prefetch_related("session_items")
     })
     sessions = {ref: session for ref, session in sessions.items() if ref}
 
@@ -920,11 +983,22 @@ def build_pos_tabs(
         if ref not in refs:
             refs.append(ref)
 
+    from shopman.shop.services.kds import kitchen_done_session_keys
+
+    # A comanda pronta pela mesma conta do pedido que vira READY (``kds``).
+    ready_keys = kitchen_done_session_keys(
+        [session.session_key for session in sessions.values() if (session.data or {}).get("fired_lines")]
+    )
     tabs = []
     for ref in refs:
         session = sessions.get(ref)
         session_display = str(((session.data or {}) if session is not None else {}).get("tab_display") or "").strip()
-        tab = _tab_projection(ref=ref, session=session, display_ref=session_display or tab_displays.get(ref, ""))
+        tab = _tab_projection(
+            ref=ref,
+            session=session,
+            display_ref=session_display or tab_displays.get(ref, ""),
+            kitchen_ready=session is not None and session.session_key in ready_keys,
+        )
         if query_norm and query_norm not in _tab_haystack(tab, sessions.get(ref)):
             continue
         tabs.append(tab)
@@ -1017,7 +1091,7 @@ def _customer_lookup_projection(customer, fallback_phone: str = "") -> POSCustom
     from shopman.shop.projections import customer_context
 
     name = getattr(customer, "name", "") or f"{getattr(customer, 'first_name', '')} {getattr(customer, 'last_name', '')}".strip()
-    tier_ref = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
+    tier_ref = customer.primary_price_tier.ref if getattr(customer, "primary_price_tier_id", None) else ""
     summary = customer_history_summary(customer.ref)
     addresses = customer_context.saved_addresses(customer.ref)
     from shopman.shop.services import house_account
@@ -1049,7 +1123,23 @@ def _customer_lookup_projection(customer, fallback_phone: str = "") -> POSCustom
         ),
         house_account=eligible,
         account_balance_q=house_account.balance_q(customer.ref) if eligible else 0,
+        group_discount_label=_group_discount_label(customer),
     )
+
+
+def _group_discount_label(customer) -> str:
+    """O MELHOR desconto entre os grupos do cliente no PDV, ou "" (ver ``group_discount_label``)."""
+    refs = [tier.ref for tier in customer.price_tiers.all()]
+    if not refs:
+        return ""
+    from shopman.shop.services import promotions as promotion_service
+
+    try:
+        promo = promotion_service.customer_group_promotion(refs, channel_ref=POS_CHANNEL_REF)
+    except Exception:  # silêncio-deliberado: sem rótulo, a tela não promete desconto; o motor aplica igual
+        logger.debug("pos_lookup_group_discount_failed refs=%s", refs, exc_info=True)
+        return ""
+    return promotion_service.group_discount_label(promo)
 
 
 def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSearchResult, ...]:
@@ -1091,8 +1181,25 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
 # ── Internals ──────────────────────────────────────────────────────────
 
 
-def _load_products() -> list[POSProductProjection]:
-    """Load products with prices for the POS grid."""
+def _price_window_projection(offer) -> POSPriceWindowProjection | None:
+    if offer is None:
+        return None
+    return POSPriceWindowProjection(
+        active=offer.active,
+        label=offer.label,
+        discount_percent=offer.discount_percent,
+        starts_at=offer.start.strftime("%H:%M"),
+        ends_at=offer.end.strftime("%H:%M"),
+        next_change_at=offer.next_change_at().isoformat(),
+    )
+
+
+def _load_products(*, offer=None) -> list[POSProductProjection]:
+    """Load products with prices for the POS grid.
+
+    ``offer`` é a janela de desconto por horário (``modifiers.time_window_offer``):
+    aberta, o tile mostra o preço que o motor cobra agora, com a etiqueta riscada.
+    """
     entries: list[tuple[Product, int]] = []
 
     # A coleção primária (ref + metadata cor/ícone do tile) vem prefetchada
@@ -1155,6 +1262,7 @@ def _load_products() -> list[POSProductProjection]:
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
             kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
+            offer=offer,
         )
         for p, price_q in entries
     ]
@@ -1305,6 +1413,9 @@ def _pos_actions() -> tuple[Action, ...]:
                     "manual_discount",
                     "manager_approval",
                     "client_request_id",
+                    # A venda que esperou na fila do PDV sem conexão (só registro).
+                    "offline_captured_at",
+                    "offline_prices_at",
                 ],
             },
             idempotency="required",
@@ -2205,16 +2316,36 @@ def _pending_cash_refunds(cash_shift) -> tuple[POSPendingCashRefundProjection, .
             customer_name=item.customer_name,
             cancelled_at=item.cancelled_at,
             reason=item.reason,
-            reason_label="Encomenda ficou mais barata" if item.reason == "reduced" else "Venda cancelada",
+            reason_label=payment_service.REFUND_REASON_LABELS.get(item.reason, "Venda cancelada"),
         )
         for item in payment_service.pending_cash_refunds(channel_ref=cash_shift.terminal.channel_ref)
     )
 
 
-_CARD_MACHINE_METHOD_LABELS = {"credit": "Crédito", "debit": "Débito"}
+_CARD_MACHINE_METHOD_LABELS = {"credit": "Crédito", "debit": "Débito", "pix": "Pix"}
+
+
+def _card_machine_lookup_display(item) -> str:
+    from django.utils.dateparse import parse_datetime
+
+    parts = []
+    paid_at = parse_datetime(item.paid_at) if item.paid_at else None
+    if paid_at is not None:
+        parts.append(f"Aprovado em {timezone.localtime(paid_at).strftime('%d/%m às %H:%M')}")
+    if item.nsu:
+        parts.append(f"NSU {item.nsu}")
+    if item.authorization:
+        parts.append(f"Autorização {item.authorization}")
+    return " · ".join(parts)
 
 
 def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefundProjection, ...]:
+    """Todas as pendências da maquininha, de qualquer canal.
+
+    A devolução em dinheiro é da gaveta deste terminal; o estorno na maquininha
+    não: a entrega cobrada no cartão do entregador também se estorna no balcão,
+    e o pedido cancelado no Gestor de noite aparece aqui de manhã.
+    """
     from shopman.shop.services import payment as payment_service
 
     return tuple(
@@ -2224,8 +2355,11 @@ def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefu
             amount_display=f"R$ {format_money(item.amount_q)}",
             customer_name=item.customer_name,
             method_label=_CARD_MACHINE_METHOD_LABELS.get(item.method, "Cartão"),
+            reason=item.reason,
+            reason_label=payment_service.REFUND_REASON_LABELS.get(item.reason, ""),
+            lookup_display=_card_machine_lookup_display(item),
         )
-        for item in payment_service.pending_card_machine_refunds(channel_ref=cash_shift.terminal.channel_ref)
+        for item in payment_service.pending_card_machine_refunds()
     )
 
 
@@ -2269,7 +2403,21 @@ def _address_autocomplete_capability() -> AddressAutocompleteProjection:
         public_api_key=api_key,
         shop_latitude=lat,
         shop_longitude=lng,
+        map_confirmation_enabled=_address_map_confirmation_enabled(),
     )
+
+
+def _address_map_confirmation_enabled() -> bool:
+    """A loja confirma o ponto no mapa? A mesma chave do checkout do site."""
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.objects.order_by("pk").first()
+    except Exception:
+        logger.debug("pos_address_map_flag_lookup_failed", exc_info=True)
+        return False
+    storefront = (shop.defaults or {}).get("storefront") if shop else None
+    return bool(isinstance(storefront, dict) and storefront.get("address_map_confirmation_enabled", False))
 
 
 def _shop_name() -> str:
@@ -2323,6 +2471,7 @@ def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
     kitchen_station: str = "",
     kitchen_auto_fire: bool = False,
+    offer=None,
 ) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
@@ -2338,11 +2487,21 @@ def _product_projection(
     meta = collection.metadata if collection and isinstance(collection.metadata, dict) else {}
 
     sold_by_weight = weighed_sale.is_sold_by_weight(product.unit)
+    unit_suffix = "/kg" if sold_by_weight else ""
+    # A Hora da Xepa aberta: o tile mostra o preço que o fechamento vai cobrar
+    # (a mesma conta do ``TimeWindowDiscountModifier``), e a etiqueta riscada.
+    list_price_q, list_price_display, discount_label = 0, "", ""
+    if offer is not None and offer.active and price_q > 0:
+        now_q = offer.price_q(price_q)
+        if now_q < price_q:
+            list_price_q, list_price_display = price_q, f"R$ {format_money(price_q)}{unit_suffix}"
+            discount_label = offer.label
+            price_q = now_q
     # Sem preço não vende em canal nenhum: o tile diz isso, não "R$ 0,00".
     if price_q <= 0:
         price_display = "Sem preço"
     else:
-        price_display = f"R$ {format_money(price_q)}" + ("/kg" if sold_by_weight else "")
+        price_display = f"R$ {format_money(price_q)}{unit_suffix}"
     return POSProductProjection(
         sku=product.sku,
         name=product.name,
@@ -2361,6 +2520,9 @@ def _product_projection(
         option_groups=tuple(product_option_groups(product)),
         kitchen_station=kitchen_station,
         kitchen_auto_fire=kitchen_auto_fire,
+        list_price_q=list_price_q,
+        list_price_display=list_price_display,
+        discount_label=discount_label,
     )
 
 
@@ -2449,7 +2611,9 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
         return set()
 
 
-def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "") -> POSTabProjection:
+def _tab_projection(
+    *, ref: str, session: Session | None, display_ref: str = "", kitchen_ready: bool = False,
+) -> POSTabProjection:
     from shopman.shop.services.pos_sales_mode import sales_mode
 
     display_ref = display_ref or _display_ref(ref)
@@ -2501,6 +2665,7 @@ def _tab_projection(*, ref: str, session: Session | None, display_ref: str = "")
         sales_mode=sales_mode(data),
         opened_at_display=_format_time(session.opened_at) if session.opened_at else "",
         seating_spot_ref=str(data.get("seating_spot_ref") or ""),
+        kitchen_ready=kitchen_ready,
     )
 
 
@@ -2688,12 +2853,12 @@ def _tab_payload_line_discount(item: dict) -> dict | None:
 #: O rótulo sempre esteve no dado (`meta._disc.label`); morria neste filtro.
 #: ``manual`` fica fora de propósito: tem badge próprio, com o motivo digitado.
 _AUTO_PRICING_DISCOUNT_TYPES = frozenset({
-    "lot_discount", "happy_hour", "employee_discount", "promotion", "coupon",
+    "lot_discount", "happy_hour", "promotion", "coupon",
 })
 
 
 def _tab_payload_pricing_discount(item: dict) -> dict | None:
-    """O desconto automático que venceu a linha (lote, happy hour, funcionário).
+    """O desconto automático que venceu a linha (lote, happy hour, grupo).
 
     O kernel baixa ``unit_price_q`` e carimba tipo, valor por unidade e RÓTULO
     de cliente em ``meta._disc`` — mas o PDV não mostrava nada: o operador via
@@ -2780,6 +2945,47 @@ def _tab_line_list_price_q(item: dict, manual_originals: dict[str, int]) -> int:
     return pre_manual + _int_q(auto.get("amount_q"))
 
 
+def _tab_line_price_fields(item: dict, manual_originals: dict[str, int]) -> dict:
+    """O que a linha COBRA, depois que o kernel decidiu os descontos.
+
+    Vai na comanda aberta e no eco de cada gravação (:func:`tab_line_prices`): o
+    desconto manual muda o preço no servidor, e a tela que só relesse estes
+    números ao reabrir a comanda mostraria o total velho até um recarregar.
+    """
+    return {
+        "pricing_discount": _tab_payload_pricing_discount(item),
+        "list_price_q": _tab_line_list_price_q(item, manual_originals),
+        "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+    }
+
+
+def tab_line_prices(session: Session) -> dict[str, dict]:
+    """``line_id -> preço cobrado`` da comanda recém-gravada, para o eco do salvar.
+
+    Sem consulta: lê só ``session.items`` e ``session.pricing``.
+    """
+    manual_originals = _manual_discount_originals(session)
+    return {
+        item["line_id"]: _tab_line_price_fields(item, manual_originals)
+        for item in (session.items or [])
+        if item.get("line_id") and not _is_delivery_fee_item(item)
+    }
+
+
+def review_line_prices(priced_lines) -> dict[str, dict]:
+    """``line_id -> preço cobrado`` da venda SEM comanda, a partir da revisão.
+
+    Mesmo formato do eco do salvar (:func:`tab_line_prices`): as linhas que a
+    revisão devolve (``PosSaleReview.priced_lines``) já têm o feitio da linha da
+    comanda, e o desconto manual já foi decidido contra o automático ali.
+    """
+    return {
+        line["line_id"]: _tab_line_price_fields(line, {})
+        for line in (priced_lines or ())
+        if line.get("line_id")
+    }
+
+
 def _tab_payload_weighed(item: dict) -> dict | None:
     weighed = (item.get("meta") or {}).get("weighed")
     if not isinstance(weighed, dict) or weighed.get("entry") not in ("label", "weight"):
@@ -2798,6 +3004,15 @@ def _tab_payload_payment_tenders(payment: dict) -> list[dict]:
     if method == "mixed" or len(tenders) > 1:
         return tenders
     return []
+
+
+def _transferred_from_view(data: dict) -> dict | None:
+    origin = data.get("transferred_from") or {}
+    display = str(origin.get("tab_display") or origin.get("tab_ref") or "").strip()
+    if not display:
+        return None
+    shown = f"#{display}" if display.isdigit() else display
+    return {"tab_display": display, "label": f"Transf. da {shown}", "title": f"Transferida da comanda {shown}"}
 
 
 def build_open_tab(session: Session) -> dict:
@@ -2853,9 +3068,7 @@ def build_open_tab(session: Session) -> dict:
             # Os tickets desta linha, para o card da cozinha que o toque abre.
             "kitchen_tickets": tickets_by_line.get(item.get("line_id", ""), []),
             "discount": _tab_payload_line_discount(item),
-            "pricing_discount": _tab_payload_pricing_discount(item),
-            "list_price_q": _tab_line_list_price_q(item, manual_originals),
-            "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+            **_tab_line_price_fields(item, manual_originals),
             # Quem lançou e quem editou (``pos_intent.stamp_line_authorship``).
             "authorship": (item.get("meta") or {}).get("pos_authorship") or None,
         }
@@ -2875,6 +3088,9 @@ def build_open_tab(session: Session) -> dict:
         "opened_at_display": _format_time(session.opened_at) if session.opened_at else "",
         # A mesa do Salão vinculada (opcional; ``set_pos_tab_seating``).
         "seating_spot_ref": str(data.get("seating_spot_ref") or ""),
+        # O RASTRO (dono, T1=1): a comanda que nasceu de uma transferência mostra o selo
+        # "Transf. da #13" (o texto inteiro, "Transferida da comanda #13", na dica).
+        "transferred_from": _transferred_from_view(data),
         "edit_of": edit_of,
         "items": items,
         "customer_phone": customer.get("phone", ""),

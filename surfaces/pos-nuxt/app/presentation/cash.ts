@@ -408,21 +408,21 @@ export function attentionTiles(input: {
       key: "attention:refunds",
       icon: "lucide:rotate-ccw",
       label: refunds === 1 ? "Devolução em dinheiro" : "Devoluções em dinheiro",
-      description: "Venda cancelada ou encomenda mais barata · o dinheiro sai desta gaveta com PIN do gerente",
+      description: "Entregar ao cliente · PIN do gerente",
       disabled: false,
       tone: "attention",
       badge: String(refunds),
     });
   }
-  // Encomenda paga na maquininha que ficou mais barata: o estorno é feito NA
-  // maquininha, e registrado aqui. Nada sai da gaveta.
+  // Venda paga na maquininha cancelada ou devolvida, ou encomenda que ficou mais
+  // barata: o estorno é feito NA maquininha, e registrado aqui. Nada sai da gaveta.
   const machine = input.pendingCardMachineRefunds?.length ?? 0;
   if (machine) {
     tiles.push({
       key: "attention:card_machine",
       icon: "lucide:credit-card",
       label: machine === 1 ? "Estorno na maquininha" : "Estornos na maquininha",
-      description: "Encomenda mais barata · estorne na maquininha e registre, com PIN do gerente",
+      description: "Estornar no cartão do cliente · PIN do gerente",
       disabled: false,
       tone: "attention",
       badge: String(machine),

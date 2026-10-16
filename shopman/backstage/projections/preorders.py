@@ -129,6 +129,13 @@ class PreorderCardProjection:
     # A Via Pedido já saiu (``ticket_printed_at``): o filtro "Falta imprimir" e
     # o sinal da impressora no card leem isto.
     ticket_printed: bool
+    # A corrida do entregador (TaOn), numa linha: a frase e o tom
+    # (:func:`courier_line`). Vazio quando não há o que dizer (retirada, entrega
+    # do marketplace, corrida que ainda não pode ser chamada). ``courier_call``:
+    # o detalhe oferece "Chamar entregador" ou "Chamar de novo" agora.
+    courier_label: str = ""
+    courier_tone: str = ""
+    courier_call: bool = False
 
 
 @dataclass(frozen=True)
@@ -210,6 +217,10 @@ class PreorderHandOverProjection:
     # Pix ou link pendente que o balcão vai cancelar ao receber: a linha que a
     # tela mostra antes de confirmar. Vazio quando não há cobrança digital viva.
     digital_charge_notice: str = ""
+    # A cozinha ainda não deu o pronto (aceita ou em preparo): entregar afirma
+    # o pronto, como o "Marcar pronto" do Gestor. A linha que a tela mostra
+    # antes de confirmar; vazio quando a encomenda já está pronta.
+    kitchen_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -475,7 +486,12 @@ def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHand
         suggested_method=method if method in {"cash", "debit", "credit"} else "",
         block_reason=reason,
         digital_charge_notice=counter_takeover.notice_for(digital) if digital else "",
+        kitchen_notice=KITCHEN_NOTICE if not reason and order.status != "ready" else "",
     )
+
+
+#: Entregar antes do pronto da cozinha: o que acontece com a tela dela.
+KITCHEN_NOTICE = "A cozinha ainda não marcou pronto. Ao entregar, a encomenda sai da tela da cozinha."
 
 
 def _reschedule(order, card: PreorderCardProjection) -> PreorderRescheduleProjection:
@@ -586,7 +602,45 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
         items_summary=order_queue.items_summary(items),
         items_count=len(items),
         ticket_printed=bool(data.get("ticket_printed_at")),
+        **(_courier_fields(order) if is_delivery else {}),
     )
+
+
+#: A corrida ainda não foi pedida e já pode ser: a frase da linha e do painel.
+COURIER_NOT_CALLED_LABEL = "Entregador não chamado"
+
+#: O tom de cada estado da corrida (a letra da TaOn), para o selo do balcão.
+_COURIER_TONES = {"N": "danger", "C": "danger", "F": "success", "A": "info", "S": "info", "E": "info"}
+
+
+def courier_line(block: dict | None) -> tuple[str, str]:
+    """A corrida numa linha: a frase e o tom, lidos do bloco do Gestor.
+
+    O bloco é :func:`order_queue._courier_block` (as condições de chamar, a frase
+    de cada estado, a chamada sem resposta): o balcão não tem régua própria.
+    """
+    if not block:
+        return "", ""
+    if block.get("can_dispatch_again"):
+        return str(block.get("status_label") or ""), "warning"
+    status = str(block.get("status") or "")
+    if status:
+        return str(block.get("status_label") or ""), _COURIER_TONES.get(status, "neutral")
+    if block.get("can_dispatch"):
+        return COURIER_NOT_CALLED_LABEL, "warning"
+    return "", ""
+
+
+def _courier_fields(order) -> dict:
+    from shopman.backstage.projections import order_queue
+
+    block = order_queue._courier_block(order)
+    label, tone = courier_line(block)
+    return {
+        "courier_label": label,
+        "courier_tone": tone,
+        "courier_call": bool(block and (block.get("can_dispatch") or block.get("can_dispatch_again"))),
+    }
 
 
 def _balance_q(order, reads) -> int | None:

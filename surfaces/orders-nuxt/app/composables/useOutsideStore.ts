@@ -1,5 +1,10 @@
 import type { Ref } from "vue";
-import { distanceMeters, OUTSIDE_CONSENT_KEY, outsideConsent, type OutsideConsent } from "~/presentation/outsideStore";
+import {
+  distanceMeters,
+  OUTSIDE_CONSENT_KEY,
+  outsideConsent,
+  type OutsideConsent,
+} from "~/presentation/outsideStore";
 
 /**
  * "Você está fora da loja: mostrando o que pede decisão" (G18, prévia v3
@@ -20,37 +25,78 @@ export function useOutsideStore(
   const forcedAll = ref(false);
 
   function read() {
-    try { consent.value = outsideConsent(localStorage.getItem(OUTSIDE_CONSENT_KEY)); } catch { consent.value = "unknown"; }
+    try {
+      consent.value = outsideConsent(localStorage.getItem(OUTSIDE_CONSENT_KEY));
+    } catch {
+      consent.value = "unknown";
+    }
   }
   function save(value: OutsideConsent) {
     consent.value = value;
-    try { localStorage.setItem(OUTSIDE_CONSENT_KEY, value); } catch { /* a escolha vale até recarregar */ }
+    try {
+      localStorage.setItem(OUTSIDE_CONSENT_KEY, value);
+    } catch {
+      /* a escolha vale até recarregar */
+    }
   }
   function locate() {
     const point = store();
-    if (consent.value !== "granted" || !point?.lat || !point?.lng || !("geolocation" in navigator)) return;
+    if (
+      consent.value !== "granted" ||
+      !point?.lat ||
+      !point?.lng ||
+      !("geolocation" in navigator)
+    )
+      return;
     navigator.geolocation.getCurrentPosition(
-      (position) => { distance.value = distanceMeters(position.coords.latitude, position.coords.longitude, point.lat!, point.lng!); },
-      () => { distance.value = null; },
+      (position) => {
+        distance.value = distanceMeters(
+          position.coords.latitude,
+          position.coords.longitude,
+          point.lat!,
+          point.lng!,
+        );
+      },
+      () => {
+        distance.value = null;
+      },
       { maximumAge: 60_000, timeout: 10_000 },
     );
   }
 
-  onMounted(() => { read(); locate(); });
+  onMounted(() => {
+    read();
+    locate();
+  });
   watch([store, enabled], () => locate());
 
   const hasStore = computed(() => Boolean(store()?.lat && store()?.lng));
-  const askConsent = computed(() => enabled.value && hasStore.value && consent.value === "unknown");
+  const askConsent = computed(
+    () => enabled.value && hasStore.value && consent.value === "unknown",
+  );
   const away = computed(() => {
     const radius = store()?.radius_m ?? 300;
-    return enabled.value && !forcedAll.value && consent.value === "granted" && distance.value !== null && distance.value > radius;
+    return (
+      enabled.value &&
+      !forcedAll.value &&
+      consent.value === "granted" &&
+      distance.value !== null &&
+      distance.value > radius
+    );
   });
 
   return {
     askConsent,
     away,
-    allow() { save("granted"); locate(); },
-    decline() { save("declined"); },
-    showAll() { forcedAll.value = true; },
+    allow() {
+      save("granted");
+      locate();
+    },
+    decline() {
+      save("declined");
+    },
+    showAll() {
+      forcedAll.value = true;
+    },
   };
 }

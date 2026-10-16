@@ -7,6 +7,7 @@ docs/reference/data-schemas.md), espelha na timeline do pedido e emite SSE.
 
 Transições de pedido derivadas do status da corrida:
   E (coletou)   → advance_order  → DISPATCHED → notificação "saiu para entrega"
+                  (também com cobrança na porta, que foi na observação da corrida)
   F (finalizou) → confirm_received → DELIVERED → notificação "entregue"
   N/C (falhou)  → OperatorAlert + re-despacho manual habilitado no gestor
 
@@ -43,6 +44,19 @@ ESTIMATE_CACHE_SECONDS = 600
 #: Intervalo default de polling quando Shop.defaults não configura.
 DEFAULT_POLL_SECONDS = 60
 
+#: Em que estados do pedido a casa pode chamar o entregador: desde o aceite.
+#: Quem chama é o operador, conscientemente, e só ele sabe se a sacola já está
+#: pronta (decisão do dono, 13/10/2026): a entrega da casa se despacha na hora,
+#: sem esperar o "pronto" do sistema. O lembrete do Gestor (``courier_reminder``)
+#: cobra a chamada durante o preparo (WP-ENTREGADOR-CHAMADA-ANTECIPADA).
+RIDE_ORDER_STATUSES = frozenset({
+    Order.Status.ACCEPTED, Order.Status.PREPARING, Order.Status.READY, Order.Status.DISPATCHED,
+})
+
+#: Chamada antes do pronto: a coleta (``E``) leva o pedido pelos degraus que
+#: faltam até a saída, porque a sacola foi com o entregador.
+_BEFORE_READY_STATUSES = frozenset({Order.Status.ACCEPTED, Order.Status.PREPARING})
+
 
 # ── Bloco Order.data["courier"] ─────────────────────────────────────
 
@@ -73,9 +87,136 @@ def has_active_ride(order) -> bool:
     return bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES
 
 
+def house_dispatches(order) -> bool:
+    """A casa pode chamar entregador para este pedido? Falha fechado.
+
+    Só quando a entrega é compromisso da casa
+    (:func:`order_helpers.delivery_ownership` == ``"house"``). Entrega do
+    marketplace (iFood com ``delivered_by=IFOOD``) já tem entregador vindo pelo
+    app dele; responsável não informado é falta de prova, e falta de prova não
+    abre corrida paga. Pedido do canal iFood sem o bloco ``data["ifood"]``
+    também fica de fora: o canal é de marketplace, e só o ``MERCHANT`` explícito
+    diz que quem leva é a casa.
+    """
+    from shopman.shop.services.order_helpers import delivery_ownership
+
+    if delivery_ownership(order) != "house":
+        return False
+    if (order.channel_ref or "") == "ifood":
+        facts = (order.data or {}).get("ifood")
+        return isinstance(facts, dict) and str(facts.get("delivered_by") or "").strip().upper() == "MERCHANT"
+    return True
+
+
+def not_house_dispatch_message(order) -> str:
+    """Por que este pedido não aceita entregador da casa, em palavras do operador."""
+    from shopman.shop.services.order_helpers import delivery_ownership
+
+    if delivery_ownership(order) == "marketplace":
+        return "Quem entrega este pedido é o iFood. O entregador vem pelo app do iFood."
+    return "O iFood não informou quem entrega este pedido. Chamar entregador vale só para entrega da casa."
+
+
 def is_enabled_for(order) -> bool:
-    """Adapter configurado + pedido é entrega. (O "auto" por canal é gate do lifecycle.)"""
-    return get_adapter("courier") is not None and get_fulfillment_type(order) == "delivery"
+    """Adapter configurado + entrega da casa. (O "auto" por canal é gate do lifecycle.)"""
+    return (
+        get_adapter("courier") is not None
+        and get_fulfillment_type(order) == "delivery"
+        and house_dispatches(order)
+    )
+
+
+# ── Cobrança na porta ───────────────────────────────────────────────
+
+
+def door_charge(order) -> dict:
+    """O que o entregador da TaOn cobra na porta, em centavos.
+
+    ``{"cash_q", "change_for_q", "card_q"}``: a parcela em dinheiro, com quanto o
+    cliente disse que paga (zero quando não pediu troco ou pediu abaixo da
+    parcela) e a parcela no cartão. Tudo zero quando o pagamento já entrou.
+    A casa não tem entregador próprio (decisão do dono, 13/10/2026): toda
+    cobrança na porta sai com a corrida, e é esta a régua que vai na observação.
+    """
+    from shopman.shop.services import operator_orders
+
+    payment = (order.data or {}).get("payment") or {}
+    if payment.get("cod_settled_at"):
+        return {"cash_q": 0, "change_for_q": 0, "card_q": 0}
+    cash_q = operator_orders.cash_due_on_delivery_q(order)
+    change_for_q = operator_orders._change_for_q(order) if cash_q > 0 else 0
+    return {
+        "cash_q": cash_q,
+        "change_for_q": change_for_q if change_for_q > cash_q else 0,
+        "card_q": operator_orders.card_due_on_delivery_q(order),
+    }
+
+
+def door_charge_note(order) -> str:
+    """A observação da corrida: o pedido e a cobrança na porta, numa linha.
+
+    ``Pedido A47 · Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00``,
+    ``Pedido A47 · Cobrar R$ 58,00 no cartão (maquininha)`` ou
+    ``Pedido A47 · Pago, não cobrar``. O entregador lê no celular, na porta.
+    """
+    from shopman.utils.monetary import format_money
+
+    from shopman.shop.services.operator_orders import short_ref
+
+    charge = door_charge(order)
+    parts = [f"Pedido {short_ref(order.ref)}"]
+    if charge["cash_q"] > 0:
+        parts.append(f"Cobrar R$ {format_money(charge['cash_q'])} em dinheiro")
+        parts.append(
+            f"troco para R$ {format_money(charge['change_for_q'])}" if charge["change_for_q"] else "sem troco"
+        )
+    if charge["card_q"] > 0:
+        parts.append(f"Cobrar R$ {format_money(charge['card_q'])} no cartão (maquininha)")
+    if len(parts) == 1:
+        parts.append("Pago, não cobrar")
+    return " · ".join(parts)
+
+
+def ride_note(body: dict) -> str:
+    """A observação que um corpo de ``/abrirSolicitacao`` leva ao entregador."""
+    stops = body.get("paradas") if isinstance(body, dict) else None
+    stop = stops[0] if isinstance(stops, list) and stops and isinstance(stops[0], dict) else {}
+    return str(stop.get("observacao_parada") or "")
+
+
+def _charge_part(note: str) -> str:
+    """A observação sem o "Pedido A47 · " do começo: só a cobrança."""
+    head, sep, rest = note.partition(" · ")
+    return rest if sep and head.startswith("Pedido ") else note
+
+
+def charge_outdated(order) -> dict | None:
+    """A corrida aberta leva uma cobrança que o pedido já não diz.
+
+    A TaOn não altera a observação de uma corrida aberta (a API só abre,
+    consulta e cancela). Editar o pedido depois da chamada (itens, troco, forma
+    de pagar, pagamento que entrou) muda o que o entregador deve cobrar, e a
+    observação que ele lê no celular fica para trás. Compara a observação que
+    foi (``courier.door_charge_note``, gravada na abertura) com a de agora.
+
+    ``{"sent", "current", "collected"}`` (só a cobrança, sem o número do
+    pedido), ou ``None`` quando bate, quando não há corrida ativa, ou quando a
+    corrida não guardou o que levou.
+    """
+    if not has_active_ride(order):
+        return None
+    block = get_block(order)
+    sent = str(block.get("door_charge_note") or "")
+    if not sent:
+        return None
+    current = door_charge_note(order)
+    if sent == current:
+        return None
+    return {
+        "sent": _charge_part(sent),
+        "current": _charge_part(current),
+        "collected": block.get("status") not in CANCELLABLE_STATUSES,
+    }
 
 
 # ── Payload Machine ─────────────────────────────────────────────────
@@ -109,7 +250,7 @@ def build_machine_payload(order) -> dict:
         "estado_parada": handoff["state_code"],
         "referencia_parada": handoff["delivery_instructions"],
         "id_externo": order.ref,
-        "observacao_parada": f"Pedido {order.ref}",
+        "observacao_parada": door_charge_note(order),
         "nome_cliente_parada": handoff["customer_name"],
         "telefone_cliente_parada": handoff["customer_phone"],
     }
@@ -252,7 +393,7 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     ensure_dispatch_resolved(order)
     if not is_enabled_for(order):
         return None
-    if order.status not in (Order.Status.READY, Order.Status.DISPATCHED):
+    if order.status not in RIDE_ORDER_STATUSES:
         return None
     if has_active_ride(order):
         return None
@@ -275,6 +416,11 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     )
     if directive is None:
         return None
+    if not get_block(order).get("called_at"):
+        # A primeira chamada do pedido, com quem chamou: encerra o lembrete do
+        # Gestor (``backstage.services.courier_reminder``) e é o marco "chamada
+        # pedida" que a chamada antecipada vai aprender.
+        merge_order_data(order, {"called_at": timezone.now().isoformat(), "called_by": actor}, block="courier")
     order.emit_event(event_type="courier_dispatch_requested", actor=actor)
     logger.info("courier.dispatch_requested order=%s actor=%s", order.ref, actor)
     return directive
@@ -305,8 +451,10 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
         raise ValueError("Nenhum adapter de courier configurado.")
     if get_fulfillment_type(order) != "delivery":
         raise ValueError("Re-despacho só se aplica a pedidos de entrega.")
-    if order.status not in (Order.Status.READY, Order.Status.DISPATCHED):
-        raise ValueError("Re-despacho só é possível com o pedido pronto ou em entrega.")
+    if not house_dispatches(order):
+        raise ValueError(not_house_dispatch_message(order))
+    if order.status not in RIDE_ORDER_STATUSES:
+        raise ValueError("Chamar entregador só é possível depois de aceitar o pedido.")
     if has_active_ride(order):
         raise ValueError("Já existe uma corrida ativa para este pedido.")
 
@@ -320,6 +468,39 @@ def redispatch(order, *, actor: str, expected_revision: str | None = None) -> Di
     if directive is None:
         raise ValueError("Não foi possível enfileirar o re-despacho.")
     return directive
+
+
+@transaction.atomic
+def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | None = None) -> Directive:
+    """"Chamar de novo": a última chamada ficou sem resposta da TaOn.
+
+    O despacho sem resultado confirmado trava qualquer outra chamada (não se
+    sabe se a corrida abriu lá). Quem conferiu na central e não achou a corrida
+    libera aqui: a tentativa pendente vira ``released`` (com quem e quando, na
+    própria Directive e na timeline do pedido) e uma chamada nova é enfileirada
+    no mesmo gesto. A tentativa liberada nunca mais chama a TaOn.
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict
+
+    order = Order.objects.select_for_update().get(pk=order.pk)
+    if expected_revision is not None and dispatch_revision(order) != expected_revision:
+        raise OrderStateConflict("O pedido ou a corrida mudou. Confira o contexto antes de chamar de novo.")
+    pending = unresolved_dispatch(order)
+    if pending is None:
+        raise ValueError("Não há chamada sem resposta para liberar. Atualize o pedido.")
+    task = Directive.objects.select_for_update().get(pk=pending.pk)
+    payload = dict(task.payload or {})
+    receipt = dict(payload.get("dispatch_attempt") or {})
+    previous = receipt.get("state", "")
+    now_iso = timezone.now().isoformat()
+    receipt.update(state="released", released_from=previous, released_by=actor, released_at=now_iso, updated_at=now_iso)
+    payload["dispatch_attempt"] = receipt
+    task.payload = payload
+    task.save(update_fields=["payload", "updated_at"])
+    order.emit_event(event_type="courier_dispatch_released", actor=actor,
+                     payload={"directive_id": task.pk, "previous_state": previous})
+    logger.info("courier.dispatch_released order=%s directive=%s actor=%s", order.ref, task.pk, actor)
+    return redispatch(order, actor=actor)
 
 
 def latest_cancellation(order, *, pending_only=False):
@@ -371,6 +552,75 @@ def cancel_ride(order, *, actor: str, reason_id: int | None = None, expected_rev
     return task
 
 
+#: O aviso que o cancelamento do pedido deixa quando a corrida não volta sozinha.
+#: Tipo existente (sem migração) e fora da resolução automática por status do
+#: pedido: só sai quando o operador resolve com a central.
+_CANCELLED_ORDER_ALERT_TYPE = "integration_failed"
+
+
+def on_order_cancelled(order) -> None:
+    """Pedido cancelado: a corrida dele não pode seguir aberta na central.
+
+    - Antes da coleta (``CANCELLABLE_STATUSES``): enfileira o cancelamento da
+      corrida pelo caminho de sempre (:func:`cancel_ride`, Directive
+      ``courier.cancel``, dedupe por corrida). Cancelamento já pedido é no-op.
+    - Depois da coleta (``E``): a central não cancela mais. Aviso crítico ao
+      operador, uma vez por pedido.
+    - Despacho sem resultado confirmado: pode haver corrida na central que o
+      pedido não conhece. Mesmo aviso, porque a conferência é a mesma.
+
+    Nunca levanta: o cancelamento do pedido não depende da central.
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict, short_ref
+
+    code = short_ref(order.ref)
+    try:
+        block = get_block(order)
+        status = str(block.get("status") or "")
+        if not has_active_ride(order):
+            if unresolved_dispatch(order) is not None:
+                _alert_cancelled_order(order, f"O pedido {code} foi cancelado com um pedido de entregador sem "
+                    "resultado confirmado: confira na central e cancele a corrida, se ela existir.")
+            else:
+                # Nenhuma corrida viva nem possível: a custódia da chamada volta já.
+                _return_custody(order, actor="lifecycle.on_cancelled", reason="order_cancelled")
+            return
+        if status == "E":
+            _alert_cancelled_order(order, f"O entregador já coletou o pedido {code}, que foi cancelado: fale com a central.")
+            return
+        if status in CANCELLABLE_STATUSES:
+            try:
+                cancel_ride(order, actor="lifecycle.on_cancelled")
+            except OrderStateConflict:  # silêncio-deliberado: cancelamento desta corrida já pedido, o worker cuida dele
+                pass
+            except ValueError:
+                _alert_cancelled_order(order, f"O pedido {code} foi cancelado e a corrida segue aberta na central: "
+                    "cancele a corrida por lá.")
+            return
+        _alert_cancelled_order(order, f"O pedido {code} foi cancelado e a corrida segue aberta na central: "
+            "cancele a corrida por lá.")
+    except Exception:
+        logger.exception("courier.on_order_cancelled_failed order=%s", order.ref)
+
+
+def _return_custody(order, *, actor: str, reason: str) -> None:
+    """Devolve a custódia da chamada; nunca derruba o funil da corrida, mas grita."""
+    from shopman.shop.services import operator_orders
+
+    try:
+        operator_orders.return_partner_custody(order, actor=actor, reason=reason)
+    except Exception:
+        logger.exception("courier.custody_return_failed order=%s reason=%s", order.ref, reason)
+
+
+def _alert_cancelled_order(order, message: str) -> None:
+    from shopman.shop.adapters import alert as alert_adapter
+
+    if alert_adapter.recent_exists(_CANCELLED_ORDER_ALERT_TYPE, None, order_ref=order.ref, message_contains="foi cancelado"):
+        return
+    alert_adapter.create(_CANCELLED_ORDER_ALERT_TYPE, "critical", message, order_ref=order.ref)
+
+
 def _archive_current_ride(block: dict) -> None:
     """Move a corrida corrente para o histórico ``attempts``."""
     attempts = list(block.get("attempts") or [])
@@ -379,12 +629,13 @@ def _archive_current_ride(block: dict) -> None:
             "id_mch": block.get("id_mch", ""),
             "status": block.get("status", ""),
             "requested_at": block.get("requested_at", ""),
+            "status_at": dict(block.get("status_at") or {}),
             "ended_at": timezone.now().isoformat(),
         }
     )
     block["attempts"] = attempts
-    for key in ("id_mch", "status", "dispatched_at", "finished_at", "driver",
-                "tracking_url", "confirmation_code", "final_value_q"):
+    for key in ("id_mch", "status", "status_at", "dispatched_at", "finished_at", "driver",
+                "tracking_url", "confirmation_code", "final_value_q", "progress", "sync", "door_charge_note"):
         block.pop(key, None)
 
 
@@ -393,8 +644,12 @@ def _archive_current_ride(block: dict) -> None:
 _STATUS_EVENT = "courier_status"
 
 
-def apply_status(order, machine_status: str, *, source: str, details: dict | None = None) -> None:
+def apply_status(order, machine_status: str, *, source: str, details: dict | None = None,
+                 at: str | None = None) -> None:
     """Persist the external fact once; every replay retries its local derivation.
+
+    ``at`` is when the provider says the step happened (``status_at``); absent,
+    the moment it reached us.
 
     Enrichment uses the observed ride outside the lock. A replacement ride cannot
     adopt its response. A local custody refusal never rolls back the external fact.
@@ -426,8 +681,16 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
                 if key in enrichment:
                     block[key] = enrichment[key]
             block.update(status=status, last_event_at=now_iso, last_source=source)
+            # Cada letra com a hora em que chegou pela primeira vez (A aceita, S em
+            # espera, E coletou, F finalizou): o B.I. mede daqui o tempo de chegada do
+            # entregador. ``last_event_at`` só guarda a última.
+            status_at = dict(block.get("status_at") or {})
+            status_at.setdefault(status, at or now_iso)
+            block["status_at"] = status_at
             if status == "E":
                 block.setdefault("dispatched_at", now_iso)
+                # A cobrança que saiu com o entregador da TaOn, registrada na coleta.
+                block.setdefault("door_charge", door_charge(order))
             if status == "F":
                 block["finished_at"] = now_iso
             order.emit_event(event_type=_STATUS_EVENT, actor=source,
@@ -438,6 +701,10 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
             _save_block(order, block, emit={"kind": "ride_ended" if failed_ride else "status", "status": status})
     if failed_ride and not source.startswith("operator:"):
         _alert_ride_failed(order, status)
+    if failed_ride and not observed.get("dispatched_at"):
+        # A corrida acabou sem coleta: o troco volta à gaveta e a maquininha
+        # é liberada (custódia registrada na chamada).
+        _return_custody(order, actor=f"courier:{status}", reason="not_attended" if status == "N" else "ride_cancelled")
     if not failed_ride:
         # Uma corrida viva (a de agora, ou a nova depois da que falhou): os
         # avisos de corrida que não abriu, não foi aceita ou foi cancelada
@@ -446,6 +713,10 @@ def apply_status(order, machine_status: str, *, source: str, details: dict | Non
 
         resolve_on_commit(order.ref, COURIER_TYPES, actor=f"courier:{status}")
         recover_local_status(order, ride_id=ride_id)
+        if status == "E" and order.status == Order.Status.CANCELLED:
+            # Coleta que chegou depois do cancelamento (a corrida não cancelou
+            # a tempo): o mesmo aviso de "já coletou", uma vez por pedido.
+            on_order_cancelled(order)
 
 
 def recover_local_status(order, *, ride_id: str) -> None:
@@ -457,13 +728,43 @@ def recover_local_status(order, *, ride_id: str) -> None:
     if block.get("id_mch") != ride_id:
         return
     status = block.get("status")
+    if status in ("E", "F") and order.status in _BEFORE_READY_STATUSES:
+        _collected_before_ready(order, ride_id=ride_id)
+        order.refresh_from_db()
     if status in ("E", "F") and order.status == Order.Status.READY:
+        # A coleta despacha também com cobrança na porta (decisão do dono,
+        # 13/10/2026): a cobrança foi na observação e fica em ``door_charge``.
+        # Se a casa despachou antes no Gestor, com troco ou maquininha, o
+        # pedido já não está pronto e nada aqui roda.
         operator_orders.advance_order(
             order, actor="courier:machine", target_status=Order.Status.DISPATCHED,
-            expected_courier_id=ride_id,
+            expected_courier_id=ride_id, partner_collects=True,
         )
     if status == "F":
         operator_orders.confirm_received(order, actor="courier:machine", expected_courier_id=ride_id)
+
+
+def _collected_before_ready(order, *, ride_id: str) -> None:
+    """O entregador coletou um pedido que ninguém marcou pronto.
+
+    O operador chamou a corrida sabendo que a sacola estava pronta (a chamada é
+    consciente desde o aceite): a coleta é o fato de que ela saiu. O pedido sobe
+    os degraus que faltam até o pronto pelo mesmo ``advance_order`` (avisos e
+    trava de pagamento incluídos); a saída segue no fluxo de sempre. Se um degrau
+    for recusado, o pedido fica onde está e o Gestor mostra a corrida em curso.
+    """
+    from shopman.shop.services import operator_orders
+
+    for _ in range(len(_BEFORE_READY_STATUSES)):
+        if order.status not in _BEFORE_READY_STATUSES:
+            return
+        try:
+            operator_orders.advance_order(order, actor="courier:machine", expected_courier_id=ride_id)
+        except Exception:
+            logger.warning("courier.collected_before_ready_refused order=%s status=%s",
+                           order.ref, order.status, exc_info=True)
+            return
+        order.refresh_from_db()
 
 
 def _enrich_accepted(block: dict, details: dict | None) -> None:
@@ -472,7 +773,9 @@ def _enrich_accepted(block: dict, details: dict | None) -> None:
     if adapter is None:
         return
     try:
-        info = details or adapter.get_details(block["id_mch"])
+        # A leitura do polling já traz o entregador; o corpo do webhook não
+        # (só a letra e os links): aí os detalhes vêm da central.
+        info = details if isinstance(details, dict) and "driver" in details else adapter.get_details(block["id_mch"])
         driver = info.get("driver") or {}
         if driver:
             block["driver"] = {
@@ -480,6 +783,7 @@ def _enrich_accepted(block: dict, details: dict | None) -> None:
                 "phone": str(driver.get("phone") or ""),
                 "vehicle_plate": str(driver.get("vehicle_plate") or ""),
                 "vehicle_model": str(driver.get("vehicle_model") or ""),
+                "vehicle_color": str(driver.get("vehicle_color") or ""),
             }
     except CourierError as exc:
         logger.warning("courier.details_failed id_mch=%s: %s", block.get("id_mch"), exc)
@@ -498,8 +802,11 @@ def _enrich_finished(block: dict, details: dict | None) -> None:
     adapter = get_adapter("courier")
     if adapter is None:
         return
+    if isinstance(details, dict) and details.get("final_value_q") is not None:
+        block["final_value_q"] = int(details["final_value_q"])
+        return
     try:
-        info = details or adapter.get_details(block["id_mch"])
+        info = details if isinstance(details, dict) and "finished" in details else adapter.get_details(block["id_mch"])
         finished = info.get("finished") or {}
         final_value = finished.get("final_value")
         if final_value is not None:
@@ -516,19 +823,275 @@ def _alert_ride_failed(order, status: str) -> None:
     if status == "N":
         alert_type, message = (
             "courier_not_attended",
-            f"Nenhum entregador aceitou a corrida do pedido {order.ref}. "
-            "Abra o pedido e chame outro entregador, ou leve com um entregador da casa.",
+            f"Nenhum entregador da TaOn aceitou a corrida do pedido {order.ref}. "
+            "Abra o pedido e chame o entregador de novo.",
         )
     else:
         alert_type, message = (
             "courier_ride_cancelled",
-            f"A central cancelou a corrida do pedido {order.ref}. "
-            "Abra o pedido e chame outro entregador, ou leve com um entregador da casa.",
+            f"A TaOn cancelou a corrida do pedido {order.ref}. "
+            "Abra o pedido e chame o entregador de novo.",
         )
     try:
         alert_adapter.create(alert_type, "warning", message, order_ref=order.ref)
     except Exception:
         logger.warning("courier.alert_failed order=%s", order.ref, exc_info=True)
+
+
+# ── Leitura da corrida: progresso e falha de leitura ────────────────
+
+#: Batidas seguidas sem conseguir ler a corrida até o aviso ao operador (~3 min).
+SYNC_ALERT_AFTER = 3
+
+#: Idade máxima da corrida para o polling seguir batendo. Corrida real dura
+#: minutos; passado isto, ninguém mais acompanha e a batida só gasta cota.
+MAX_POLL_HOURS = 6
+
+_SYNC_ALERT_TYPE = "integration_failed"
+
+
+def _sync_failures_key(ride_id: str) -> str:
+    return f"courier:sync_failures:{ride_id}"
+
+
+def _sync_alert_marker(ride_id: str) -> str:
+    return f"corrida {ride_id}"
+
+
+#: O que cada marco do progresso lido prova sobre a corrida, na ordem em que acontece.
+_PROGRESS_STEPS = (("accepted_at", "A"), ("picked_up_at", "E"), ("finished_at", "F"))
+
+#: Quão adiantada está cada letra (D/G/P, a procura, valem zero).
+_STATUS_RANK = {"A": 1, "S": 1, "E": 2, "F": 3, "N": 3, "C": 3}
+
+
+def statuses_from_reading(current: str | None, reported: str, progress: dict | None) -> list[tuple[str, str | None]]:
+    """As letras que uma leitura prova, em ordem, cada uma com a hora em que aconteceu.
+
+    A letra que a central devolve pode ficar para trás do progresso da mesma
+    leitura. Medido no alpha em 13/10/2026 (PDV-261013-L34, corrida 776753357):
+    o progresso trouxe aceite 19:42, chegada à loja 19:44, coleta 19:45 e fim
+    19:55, e a letra seguiu em D por 44 batidas; o pedido só soube do fim às
+    20:26, quando a letra mudou. Vale o que estiver mais adiante: um marco do
+    progresso avança o status sozinho, e os marcos pulados entram no caminho
+    (a coleta registra a cobrança que saiu com o entregador antes do fim).
+    """
+    current = (current or "").strip().upper()
+    reported = (reported or "").strip().upper()
+    if reported in ("N", "C"):
+        return [(reported, None)]
+    progress = progress if isinstance(progress, dict) else {}
+    floor = _STATUS_RANK.get(current, 0)
+    steps = [(letter, str(progress[key])) for key, letter in _PROGRESS_STEPS
+             if progress.get(key) and _STATUS_RANK[letter] > floor]
+    if progress.get("cancelled_at") and not progress.get("finished_at") and current not in TERMINAL_STATUSES:
+        return [("C", str(progress["cancelled_at"]))]
+    reached = max((_STATUS_RANK[letter] for key, letter in _PROGRESS_STEPS if progress.get(key)), default=0)
+    if reported and _STATUS_RANK.get(reported, 0) >= reached and all(letter != reported for letter, _ in steps):
+        steps.append((reported, None))
+    return steps
+
+
+def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
+    """Aplica uma leitura da corrida (``adapter.read_ride``): status, entregador e progresso.
+
+    O status entra pelo funil de sempre (:func:`apply_status`). O resto
+    (estimativa de chegada à loja, chegada, coleta, viagem, valor final) só é
+    gravado quando muda, para a revisão do pedido não girar a cada batida.
+    Uma leitura que deu certo encerra o aviso de "TaOn sem notícias".
+    """
+    if not snapshot:
+        return
+    ride_id = get_block(order).get("id_mch")
+    if not ride_id:
+        return
+    status = str(snapshot.get("status") or "")
+    for step, at in statuses_from_reading(get_block(order).get("status"), status, snapshot.get("progress")):
+        apply_status(order, step, source=source, details=snapshot, at=at)
+    cache.delete(_sync_failures_key(ride_id))
+    order.refresh_from_db()
+    tracking = _tracking_retry(ride_id, status, known=bool(get_block(order).get("tracking_url")))
+
+    had_sync = False
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") == ride_id:
+            had_sync = block.pop("sync", None) is not None
+            changed = had_sync
+            fresh = {k: v for k, v in (snapshot.get("progress") or {}).items() if v not in (None, "")}
+            previous = dict(block.get("progress") or {})
+            merged = {**previous, **fresh}
+            if merged != previous:
+                block["progress"] = merged
+                changed = True
+            driver = snapshot.get("driver")
+            if isinstance(driver, dict) and driver.get("name") and driver != block.get("driver"):
+                block["driver"] = driver
+                changed = True
+            final_value_q = snapshot.get("final_value_q")
+            if final_value_q is not None and final_value_q != block.get("final_value_q"):
+                block["final_value_q"] = int(final_value_q)
+                changed = True
+            if tracking and not block.get("tracking_url"):
+                block.update(tracking)
+                changed = True
+            if changed:
+                _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
+    if had_sync or str(get_block(order).get("status") or "") in TERMINAL_STATUSES or not get_block(order).get("id_mch"):
+        _resolve_sync_alert(ride_id)
+
+
+def _tracking_retry(ride_id: str, status: str, *, known: bool) -> dict:
+    """Link de rastreio que faltou no aceite: tenta de novo, no máximo a cada 5 min."""
+    if known or status not in ("A", "S", "E"):
+        return {}
+    gate = f"courier:tracking_retry:{ride_id}"
+    if not cache.add(gate, 1, 300):
+        return {}
+    adapter = get_adapter("courier")
+    if adapter is None:
+        return {}
+    try:
+        links = adapter.tracking_links(ride_id)
+    except CourierError as exc:
+        logger.warning("courier.tracking_failed id_mch=%s: %s", ride_id, exc)
+        return {}
+    if not links:
+        return {}
+    code = links[0].get("codigo_confirmacao")
+    return {
+        "tracking_url": str(links[0].get("link_rastreio") or ""),
+        "confirmation_code": str(code) if code is not None else "",
+    }
+
+
+def record_sync_failure(order, exc: Exception, *, ride_id: str) -> None:
+    """A batida não conseguiu ler a corrida: o operador precisa saber que a tela parou.
+
+    O contador fica no cache (a revisão do pedido não gira a cada minuto). O
+    pedido só muda duas vezes: na primeira falha (``sync.failing_since``, que a
+    tela mostra) e quando vira aviso (``SYNC_ALERT_AFTER`` falhas seguidas).
+    """
+    key = _sync_failures_key(ride_id)
+    failures = int(cache.get(key) or 0) + 1
+    cache.set(key, failures, MAX_POLL_HOURS * 3600)
+    first = "sync" not in get_block(order)
+    if not first and failures != SYNC_ALERT_AFTER:
+        return
+    now_iso = timezone.now().isoformat()
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id:
+            return
+        sync = dict(block.get("sync") or {})
+        sync.setdefault("failing_since", now_iso)
+        sync["last_error"] = str(exc)[:300]
+        if failures >= SYNC_ALERT_AFTER:
+            sync["alerted_at"] = now_iso
+        block["sync"] = sync
+        _save_block(order, block, emit={"kind": "sync_failed", "status": block.get("status", "")})
+    if failures == SYNC_ALERT_AFTER:
+        _alert_sync_failed(order, ride_id)
+
+
+def _alert_sync_failed(order, ride_id: str) -> None:
+    from shopman.shop.adapters import alert as alert_adapter
+    from shopman.shop.services.operator_orders import short_ref
+
+    marker = _sync_alert_marker(ride_id)
+    try:
+        if alert_adapter.recent_exists(_SYNC_ALERT_TYPE, None, order_ref=order.ref, message_contains=marker):
+            return
+        alert_adapter.create(
+            _SYNC_ALERT_TYPE,
+            "warning",
+            f"A TaOn não está informando o andamento da {marker} do pedido {short_ref(order.ref)}. "
+            "O status na tela pode estar parado: confira no painel da TaOn.",
+            order_ref=order.ref,
+        )
+    except Exception:
+        logger.warning("courier.sync_alert_failed order=%s", order.ref, exc_info=True)
+
+
+def _resolve_sync_alert(ride_id: str) -> None:
+    from shopman.shop.adapters import alert as alert_adapter
+
+    def _resolve():
+        try:
+            alert_adapter.resolve_matching(_SYNC_ALERT_TYPE, message_contains=_sync_alert_marker(ride_id),
+                                           actor="courier:sync")
+        except Exception:
+            logger.warning("courier.sync_alert_resolve_failed id_mch=%s", ride_id, exc_info=True)
+
+    transaction.on_commit(_resolve)
+
+
+def progress_view(block: dict) -> dict:
+    """O que as telas mostram do andamento, em instantes ISO (o relógio é da tela).
+
+    ``pickup_eta_at``: quando o entregador chega à loja (aceite + "tempo até o
+    local de coleta" da TaOn). ``delivery_eta_at``: quando chega ao cliente
+    (coleta, ou a chegada prevista à loja, + a viagem estimada; sem a viagem da
+    central, a da cotação). ``sync_since``: desde quando a TaOn não informa a
+    corrida (vazio quando a leitura está em dia).
+    """
+    from django.utils.dateparse import parse_datetime
+
+    progress = block.get("progress") if isinstance(block.get("progress"), dict) else {}
+    status_at = block.get("status_at") if isinstance(block.get("status_at"), dict) else {}
+    estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
+    sync = block.get("sync") if isinstance(block.get("sync"), dict) else {}
+    status = str(block.get("status") or "")
+
+    pickup_eta_at = str(progress.get("pickup_eta_at") or "")
+    picked_up_at = str(progress.get("picked_up_at") or (status_at.get("E") if status in ("E", "F") else "") or "")
+    trip_minutes = progress.get("trip_minutes") or estimate.get("minutes")
+    delivery_eta_at = ""
+    base = parse_datetime(picked_up_at or pickup_eta_at) if (picked_up_at or pickup_eta_at) else None
+    if base is not None and trip_minutes and status not in TERMINAL_STATUSES:
+        delivery_eta_at = (base + timedelta(minutes=float(trip_minutes))).isoformat()
+    return {
+        "pickup_eta_at": pickup_eta_at if status in ("A", "S") else "",
+        "arrived_pickup_at": str(progress.get("arrived_pickup_at") or "") if status in ("A", "S", "E", "F") else "",
+        "picked_up_at": picked_up_at,
+        "delivery_eta_at": delivery_eta_at,
+        "arrived_dropoff_at": str(progress.get("arrived_dropoff_at") or ""),
+        "sync_since": str(sync.get("failing_since") or ""),
+    }
+
+
+def poll_expired(block: dict) -> bool:
+    """A corrida passou da idade em que o polling ainda acompanha."""
+    from django.utils.dateparse import parse_datetime
+
+    opened = parse_datetime(str(block.get("requested_at") or ""))
+    return opened is not None and timezone.now() - opened > timedelta(hours=MAX_POLL_HOURS)
+
+
+def record_arrival(order, *, at: str | None = None, source: str = "webhook") -> None:
+    """O entregador avisou que chegou (``AP`` do webhook): na loja antes da coleta, no cliente depois."""
+    block = get_block(order)
+    ride_id = block.get("id_mch")
+    if not ride_id or block.get("status") in TERMINAL_STATUSES:
+        return
+    key = "arrived_dropoff_at" if block.get("status") == "E" else "arrived_pickup_at"
+    with transaction.atomic():
+        Order.objects.select_for_update().get(pk=order.pk)
+        order.refresh_from_db()
+        block = dict(get_block(order))
+        if block.get("id_mch") != ride_id:
+            return
+        progress = dict(block.get("progress") or {})
+        if progress.get(key):
+            return
+        progress[key] = at or timezone.now().isoformat()
+        block["progress"] = progress
+        block.update(last_event_at=timezone.now().isoformat(), last_source=source)
+        _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
 
 
 # ── Polling (fallback do webhook) ───────────────────────────────────

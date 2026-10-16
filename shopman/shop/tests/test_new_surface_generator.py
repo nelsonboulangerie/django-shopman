@@ -32,6 +32,7 @@ generator = _load("new_surface")
 
 FILES = (
     "surfaces/registry.json",
+    "surfaces/contracts.json",
     ".github/dependabot.yml",
     ".github/workflows/surfaces-gate.yml",
     "Makefile",
@@ -105,6 +106,13 @@ def test_the_generated_app_extends_the_kit_and_locks_on_its_permission(repo: Pat
     assert package["name"] == "loyalty-nuxt"
     registry = json.loads((repo / "surfaces/registry.json").read_text())
     assert package["scripts"]["dev"] == f"nuxt dev --host 127.0.0.1 --port {registry['surfaces']['loyalty']['dev_port']}"
+    contract = json.loads((repo / "surfaces/contracts.json").read_text())
+    assert contract["surfaces"]["loyalty"] == {
+        "dir": "loyalty-nuxt",
+        "kind": "operator",
+        "commands": {"unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build"},
+        "capabilities": {"pwa": True},
+    }
     ledger = json.loads((repo / "docs/reference/operator-component-ledger.json").read_text())
     generated = next(item for item in ledger["apps"] if item["id"] == "loyalty")
     assert generated["owner"] == "surface:loyalty"

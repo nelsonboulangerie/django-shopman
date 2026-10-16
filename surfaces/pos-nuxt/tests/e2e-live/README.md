@@ -34,7 +34,7 @@ Django semeado + pos-nuxt.
 createdb shopman_sonda
 DATABASE_URL=postgres://localhost/shopman_sonda DJANGO_DEBUG=1 .venv/bin/python manage.py migrate
 DATABASE_URL=postgres://localhost/shopman_sonda DJANGO_DEBUG=1 .venv/bin/python manage.py seed --profile qa
-# o bloqueio "Entrega com nota fiscal: falta o CPF" só aparece com um resolver
+# os avisos da nota da entrega (endereço incompleto) só aparecem com um resolver
 # fiscal que emita na entrega (o do alpha):
 SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement" \
 DATABASE_URL=postgres://localhost/shopman_sonda DJANGO_DEBUG=1 .venv/bin/python manage.py runserver 127.0.0.1:8811
@@ -57,3 +57,25 @@ não acharam o que procuravam (`skipped`).
 
 A sonda cria comandas e fecha uma venda de verdade no banco que você apontar.
 Use um banco descartável.
+
+# Sonda ao vivo do PDV — tempo até o total
+
+`checkout-latency.live.spec.ts` lança dez produtos numa comanda, toca em
+**Pagamento** e mede o tempo até o total confirmado pelo servidor (nenhum
+"Calculando…" na tela), listando cada requisição do intervalo com início e fim:
+é o mapa de série × paralelo do caminho do total.
+
+Roda contra o mesmo PDV de verdade da sonda acima. Para reproduzir o alpha,
+ponha atrasos entre as peças (navegador → BFF ~150 ms de ida e volta, BFF →
+Django, Django → Postgres) com qualquer proxy TCP de latência, e suba o Django
+com `daphne`, como em produção.
+
+```bash
+PDV_LIVE_URL=http://127.0.0.1:3312 PDV_LIVE_USER=<usuário> PDV_LIVE_PASSWORD=<senha> \
+  PDV_LIVE_ROUNDS=3 PDV_LIVE_REPORT=/tmp/total.json \
+  npx playwright test -c playwright.live.config.ts checkout-latency
+```
+
+Variáveis: `PDV_LIVE_LINES` (itens por venda, padrão 10), `PDV_LIVE_TAP_MS`
+(intervalo entre toques, padrão 250), `PDV_LIVE_PAUSE_MS` (do último toque ao
+Pagamento, padrão 300), `PDV_LIVE_ROUNDS`.

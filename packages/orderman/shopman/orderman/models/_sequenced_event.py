@@ -46,3 +46,37 @@ def create_sequenced_event(*, model, scope: dict, **fields):
             # colisão de seq com emissão concorrente — recalcula e tenta de novo.
     # Inalcançável: o último attempt ou retorna ou re-levanta.
     raise RuntimeError("create_sequenced_event: laço de retry terminou sem resultado")
+
+
+def create_sequenced_events(*, model, scope: dict, rows: list[dict]) -> list:
+    """Vários eventos de ``model`` com ``seq`` consecutivos a partir de ``MAX(seq)+1``.
+
+    Mesma resiliência de ``create_sequenced_event`` (savepoint por tentativa,
+    retry só na colisão de ``seq``), com um ``MAX`` e um INSERT para todos.
+    """
+    from django.db import IntegrityError, transaction
+    from django.db.models import Max, Value
+    from django.db.models.functions import Coalesce
+
+    if not rows:
+        return []
+    if len(rows) == 1:
+        return [create_sequenced_event(model=model, scope=scope, **rows[0])]
+    for attempt in range(_MAX_ATTEMPTS):
+        first = None
+        try:
+            with transaction.atomic():
+                last_seq = model.objects.filter(**scope).aggregate(
+                    m=Coalesce(Max("seq"), Value(-1))
+                )["m"]
+                first = last_seq + 1
+                return model.objects.bulk_create(
+                    [model(seq=first + offset, **fields) for offset, fields in enumerate(rows)]
+                )
+        except IntegrityError:
+            seqs = range(first, first + len(rows)) if first is not None else ()
+            if first is None or not model.objects.filter(seq__in=list(seqs), **scope).exists():
+                raise
+            if attempt == _MAX_ATTEMPTS - 1:
+                raise
+    raise RuntimeError("create_sequenced_events: laço de retry terminou sem resultado")

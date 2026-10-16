@@ -320,6 +320,7 @@ INSTALLED_APPS = [
     # Shopman core apps
     "shopman.refs",
     "shopman.utils",
+    "shopman.watchman",
     "shopman.offerman",
     "shopman.stockman",
     "shopman.craftsman",
@@ -365,7 +366,140 @@ INSTALLED_APPS = [
     *SHOPMAN_INSTANCE_APPS,
 ]
 
+# Watchman is the shared execution contract for local probes, CI diagnostics and
+# management commands. Shopman-specific adapters stay in the host layer; public
+# URLs and their rate limiter remain in shopman.shop.
+WATCHMAN = {
+    "CHECKS": [
+        "shopman.watchman.checks.ProcessCheck",
+        "shopman.shop.watchman_checks.PoolCheck",
+        "shopman.shop.watchman_checks.DatabaseCheck",
+        "shopman.shop.watchman_checks.CacheCheck",
+        "shopman.shop.watchman_checks.MigrationsCheck",
+        "shopman.shop.watchman_checks.QueueCheck",
+        "shopman.watchman.performance.PerformanceBudgetCheck",
+        "shopman.shop.watchman_infrastructure.ProductionContractCheck",
+        "shopman.shop.watchman_infrastructure.DeploymentDriftCheck",
+        "shopman.shop.watchman_infrastructure.ExternalMonitoringContractCheck",
+        "shopman.watchman.expiry.ExpiryLifecycleCheck",
+    ],
+    "PROFILES": {
+        "liveness": ["process", "pool"],
+        "platform_readiness": ["database"],
+        "readiness": ["database", "cache", "migrations", "queue"],
+        "performance": ["performance_budgets"],
+        "infrastructure": ["production_contract", "deployment_drift", "external_monitoring", "expiry_lifecycle"],
+        # O diagnóstico interativo permanece curto. Os contratos de infraestrutura
+        # são deliberadamente um perfil CLI separado porque podem levar minutos.
+        "diagnostic": ["process", "pool", "database", "cache", "migrations", "queue", "performance_budgets"],
+    },
+    # Metadados, nunca os segredos. A CI publica as datas em repository vars;
+    # o Watchman transforma o calendário em ação antes de qualquer serviço parar.
+    "EXPIRING_RESOURCES": [
+        {
+            "id": "digitalocean_watchman_read_token",
+            "label": "Token de leitura da DigitalOcean usado pelo Watchman",
+            "kind": "credential",
+            "deadline_env": "DIGITALOCEAN_READ_TOKEN_EXPIRES_AT",
+            "deadline_type": "expires",
+            "warning_days": 60,
+            "critical_days": 14,
+            "owner": "ti@boulangerie.com.br",
+            "impact": "A auditoria diária deixa de conferir drift e contratos da infraestrutura.",
+            "action": "Criar um token read-only substituto, atualizar o secret e provar o job antes de revogar o anterior.",
+            "runbook": "docs/runbooks/watchman-renewable-resources.md",
+            "verification": "Executar Watchman Infrastructure e exigir todos os checks verdes.",
+        },
+        {
+            "id": "digitalocean_ci_registry_token",
+            "label": "Token da DigitalOcean usado pelo CI para imagens e leituras do app",
+            "kind": "credential",
+            "deadline_env": "DIGITALOCEAN_ACCESS_TOKEN_EXPIRES_AT",
+            "deadline_type": "expires",
+            "warning_days": 60,
+            "critical_days": 14,
+            "owner": "ti@boulangerie.com.br",
+            "impact": "Builds deixam de publicar imagens e sondas do app perdem acesso.",
+            "action": "Rotacionar DIGITALOCEAN_ACCESS_TOKEN com sobreposição e provar deploy-images e alpha-smoke.",
+            "runbook": "docs/runbooks/watchman-renewable-resources.md",
+            "verification": "Executar deploy-images e alpha-smoke com sucesso antes de revogar o token anterior.",
+        },
+        {
+            "id": "digitalocean_ci_app_deploy_token",
+            "label": "Token da DigitalOcean usado pelo CI para atualizar o app",
+            "kind": "credential",
+            "deadline_env": "DIGITALOCEAN_APP_DEPLOY_TOKEN_EXPIRES_AT",
+            "deadline_type": "expires",
+            "warning_days": 60,
+            "critical_days": 14,
+            "owner": "ti@boulangerie.com.br",
+            "impact": "O CI publica imagens, mas não consegue promover a nova imagem no App Platform.",
+            "action": "Rotacionar DIGITALOCEAN_APP_DEPLOY_TOKEN com sobreposição e provar um deploy completo.",
+            "runbook": "docs/runbooks/watchman-renewable-resources.md",
+            "verification": "Executar deploy-images até o deploy saudável antes de revogar o token anterior.",
+        },
+        {
+            "id": "digitalocean_app_admin_token",
+            "label": "Token administrativo do app na DigitalOcean",
+            "kind": "credential",
+            "deadline_env": "DIGITALOCEAN_APP_ADMIN_TOKEN_EXPIRES_AT",
+            "deadline_type": "expires",
+            "warning_days": 60,
+            "critical_days": 14,
+            "owner": "ti@boulangerie.com.br",
+            "impact": "Operações administrativas do app e do banco que dependem dessa credencial deixam de funcionar.",
+            "action": "Identificar consumidores ativos, criar substituto de menor privilégio e migrá-los com sobreposição.",
+            "runbook": "docs/runbooks/watchman-renewable-resources.md",
+            "verification": "Provar cada consumidor inventariado antes de revogar o token anterior.",
+        },
+        {
+            "id": "sentry_watchman_read_token",
+            "label": "Token de leitura do Sentry usado pelo Watchman",
+            "kind": "credential",
+            "deadline_env": "SENTRY_AUTH_TOKEN_ROTATE_BY",
+            "deadline_type": "rotate_by",
+            "warning_days": 60,
+            "critical_days": 14,
+            "owner": "ti@boulangerie.com.br",
+            "impact": "A auditoria deixa de provar que monitores, workflow e destinatário continuam corretos.",
+            "action": "Criar um token de leitura substituto, atualizar o secret, provar o job e só então revogar o anterior.",
+            "runbook": "docs/runbooks/watchman-renewable-resources.md",
+            "verification": "Executar Watchman Infrastructure e exigir external_monitoring=pass.",
+        },
+    ],
+    # Limites generosos o bastante para não paginar por jitter, mas baixos o
+    # bastante para capturar regressões humanas como o N+1 de Compras (29 s).
+    # A chave é o padrão resolvido da URL: nunca inclui SKU, pessoa ou query string.
+    # O pulso é por observações, não por relógio: não cria thread, timer, I/O ou
+    # consulta. A primeira observação e depois uma a cada 1.000 provam que o
+    # medidor está vivo, inclusive em rotas de baixo volume.
+    "BUDGET_HEARTBEAT_SAMPLES": 1000,
+    "BUDGETS": {
+        "storefront_catalog": {
+            "method": "GET",
+            "route": "/api/v1/storefront/public/catalog/<slug:collection>/",
+            "max_duration_ms": 1500,
+            "max_queries": 60,
+        },
+        "pos_projection": {
+            "method": "GET",
+            "route": "/api/v1/backstage/pos/",
+            "max_duration_ms": 2000,
+            "max_queries": 55,
+        },
+        "purchase_board": {
+            "method": "GET",
+            "route": "/api/v1/backstage/purchase/",
+            "max_duration_ms": 6000,
+            "max_queries": 80,
+        },
+    },
+}
+
 MIDDLEWARE = [
+    # Primeiro da cadeia: mede o request inteiro e vê o status final, inclusive o
+    # que um middleware de baixo responde sozinho. Opt-in por SHOPMAN_ACCESS_LOG.
+    "shopman.shop.middleware.AccessLogMiddleware",
     "shopman.shop.middleware.AppPlatformHealthCheckHostMiddleware",
     "shopman.shop.middleware.BackupSheetDomainMiddleware",
     # Scopes session/CSRF cookies to the operator zone's parent domain (no-op
@@ -478,6 +612,34 @@ _DB_URL = os.environ.get("DATABASE_URL", "").strip()
 if _DB_URL:
     _parsed = _urlparse.urlparse(_DB_URL)
     _conn_max_age = int(os.environ.get("DATABASE_CONN_MAX_AGE", "60"))
+    # Reuso de conexão sob ASGI: pool do psycopg, um por processo.
+    #
+    # Sob Daphne cada request roda numa thread nova, então `CONN_MAX_AGE > 0` não
+    # reaproveita nada: só deixa backend ocioso até o GC (bancada de 01/10, D21). Por
+    # isso o deploy roda com `DATABASE_CONN_MAX_AGE=0`, e cada request pagava uma
+    # conexão nova (no ar, 30 a 160 ms de TLS até o PgBouncer). O pool resolve as
+    # duas coisas: as conexões são do PROCESSO, não da thread, e voltam ao pool no
+    # fim de cada request (e depois de cada leitura do SSE, ver shop/eventstream.py).
+    #
+    # Liga sozinho quando `CONN_MAX_AGE` é 0 (o Django recusa os dois juntos);
+    # `DATABASE_POOL_MAX_SIZE=0` desliga sem deploy de código. Compatível com o
+    # PgBouncer em modo transaction: o Django já desliga prepared statements
+    # (`prepare_threshold=None`) e usa cursor de binding no cliente, e o deploy
+    # mantém `DATABASE_DISABLE_SERVER_SIDE_CURSORS=true`. Quem conta conexão de
+    # servidor é o PgBouncer (pool de 5); daqui saem só conexões de cliente até ele.
+    # O teto por processo fica abaixo do `max_connections` (25) do banco também no
+    # caso de alguém apontar `DATABASE_URL` para a conexão direta.
+    _pool_max_size = int(os.environ.get("DATABASE_POOL_MAX_SIZE", "8"))
+    _db_options: dict = {}
+    if _conn_max_age == 0 and _pool_max_size > 0:
+        _db_options["pool"] = {
+            "min_size": min(int(os.environ.get("DATABASE_POOL_MIN_SIZE", "1")), _pool_max_size),
+            "max_size": _pool_max_size,
+            # Espera por conexão livre antes de falhar o request (PoolTimeout).
+            "timeout": float(os.environ.get("DATABASE_POOL_TIMEOUT", "10")),
+            # Conexão parada sai do pool: não segura cliente no PgBouncer à toa.
+            "max_idle": float(os.environ.get("DATABASE_POOL_MAX_IDLE", "300")),
+        }
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -489,6 +651,7 @@ if _DB_URL:
             "CONN_MAX_AGE": _conn_max_age,
             "CONN_HEALTH_CHECKS": _env_bool("DATABASE_CONN_HEALTH_CHECKS", True),
             "DISABLE_SERVER_SIDE_CURSORS": _env_bool("DATABASE_DISABLE_SERVER_SIDE_CURSORS", False),
+            "OPTIONS": _db_options,
         }
     }
 else:
@@ -702,6 +865,9 @@ MANYCHAT_FLOW_MAP = {
     # Encomendas (templates aprovados em 29/09/2026; flows "Aviso: …" na conta):
     "order_rescheduled": "content20260929125821_042737",  # pedido_nova_data
     "order_updated": "content20260929130117_994990",  # pedido_atualizado
+    # Variante do `order_dispatched` com o botão de rastreio do entregador
+    # (`pedido_saiu_entrega_rastreio`): chave "order_dispatched_courier", ligada só
+    # depois de aprovado o template. Sem ela o aviso sai pelo `pedido_saiu_entrega`.
 }
 try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))
@@ -924,6 +1090,9 @@ if SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED:
 # delivery tem fulfillment.courier="auto". Sem credenciais o deploy-check
 # SHOPMAN_E011 bloqueia produção. Ver docs/plans/DELIVERY-EXTERNAL-LOGISTICS-PLAN.md.
 SHOPMAN_MACHINE = {
+    # Nome da central contratada, como o operador a conhece (ex.: "TaOn"). Só
+    # copy: entra na pergunta de "Chamar entregador". Vazio: "central de entregas".
+    "company_name": os.environ.get("MACHINE_COMPANY_NAME", "").strip(),
     "base_url": os.environ.get("MACHINE_API_BASE", "https://api.taximachine.com.br/api/integracao"),
     "details_base": os.environ.get("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/api/integracao/v1"),
     "username": os.environ.get("MACHINE_API_USER", "").strip(),
@@ -939,6 +1108,12 @@ SHOPMAN_MACHINE = {
     "retorno": _env_bool("MACHINE_RETORNO", False),
     "timeout": int(os.environ.get("MACHINE_TIMEOUT", "15")),
     "cancel_reason_id": int(os.environ.get("MACHINE_CANCEL_REASON_ID", "1")),
+    # Parte FIXA do link de rastreio do entregador (tudo antes do pedaço que muda por
+    # corrida). O botão "Acompanhar entregador" do template `pedido_saiu_entrega_rastreio`
+    # é `<esta base>{{1}}`, e a Meta só aceita a variável no FIM de um prefixo fixo.
+    # VAZIA = o WhatsApp sai pelo template sem rastreio (log de erro se o flow do
+    # rastreio estiver ligado). Medir o formato real do link antes de preencher.
+    "tracking_link_base": os.environ.get("MACHINE_TRACKING_LINK_BASE", "").strip(),
 }
 SHOPMAN_COURIER_ADAPTER = os.environ.get("SHOPMAN_COURIER_ADAPTER", "").strip() or None
 
@@ -1792,10 +1967,14 @@ SHOPMAN_FISCAL_ADAPTER = os.environ.get("SHOPMAN_FISCAL_ADAPTER") or None
 # e-mail). Os três são o mesmo gesto: pedir. E nem DANFE nem XML existem sem NFC-e
 # autorizada — o papel e o anexo são espelhos da nota —, então o pedido de impressão e o
 # pedido de e-mail têm que valer como pedido de nota, sob pena de o operador prometer a
-# bobina (ou a caixa de entrada) e nada sair. Pablo redefine no go-live via env.
+# bobina (ou a caixa de entrada) e nada sair. E intermediated_sale: a venda por marketplace
+# (iFood) emite sempre, presencial quando sem CPF (decisão de 24/09 e ADR-035); o pagamento
+# dela é `external` e nenhum resolver de forma de pagamento o enxerga. Pablo redefine no
+# go-live via env.
 SHOPMAN_FISCAL_EMISSION_RESOLVER = (
     os.environ.get("SHOPMAN_FISCAL_EMISSION_RESOLVER")
-    or "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt"
+    or "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt,"
+    "shopman.shop.fiscal_resolvers.intermediated_sale"
 )
 # Porteiro fiscal do catálogo: com isto LIGADO, publicar um vendável num canal de
 # venda exige classificação fiscal completa (perfil + NCM; CEST na revenda) — em
@@ -1945,6 +2124,19 @@ SHOPMAN_EFI = {
     "pix_key": os.environ.get("EFI_PIX_KEY", ""),
 }
 
+# Ambiente de cobrança (Efí) e fiscal (Focus) é decisão EXPLÍCITA do spec de
+# deploy. Os defaults acima (`EFI_SANDBOX=true`, `homologacao`) continuam
+# servindo o dev local e o staging, mas em produção a omissão não pode virar
+# política: Pix que cobra num gateway que não recebe e NFC-e que não existe no
+# SEFAZ, os dois calados. Esta lista diz quais das duas variáveis o ambiente
+# NÃO declarou; o `SHOPMAN_E026` reprova o deploy de produção enquanto ela não
+# estiver vazia (shopman/shop/checks.py). Vazio conta como não declarado.
+SHOPMAN_UNDECLARED_PROVIDER_ENVIRONMENTS = tuple(
+    name
+    for name in ("EFI_SANDBOX", "FOCUS_NFE_ENVIRONMENT")
+    if not os.environ.get(name, "").strip()
+)
+
 SHOPMAN_EFI_WEBHOOK = {
     # Shared secret between EFI dashboard and this service. MUST be set in
     # every environment — including local dev — because webhook authentication
@@ -1987,6 +2179,18 @@ SHOPMAN_EFI_WEBHOOK = {
 # any process reaches every active SSE listener across Daphne/ASGI workers.
 EVENTSTREAM_STORAGE_CLASS = "django_eventstream.storage.DjangoModelStorage"
 EVENTSTREAM_CHANNELMANAGER_CLASS = "shopman.shop.eventstream.ShopmanChannelManager"
+# Vida máxima de um stream SSE: no fim o servidor encerra e o EventSource reconecta
+# sozinho (com Last-Event-ID). Limpa de quebra a conexão meio-aberta (cliente sumiu
+# sem FIN), que de outra forma só cai quando o TCP desiste. 0 desliga.
+SHOPMAN_SSE_MAX_LIFETIME_SECONDS = _env_int("SHOPMAN_SSE_MAX_LIFETIME_SECONDS", 1800)
+# Teto de streams abertos ao mesmo tempo por sessão (por navegador). O excedente
+# recebe 429 e a tela fica no poll de fallback. Higiene, não segurança: a chave é o
+# cookie de sessão. 0 desliga.
+SHOPMAN_SSE_MAX_STREAMS_PER_SESSION = _env_int("SHOPMAN_SSE_MAX_STREAMS_PER_SESSION", 12)
+# Liveness (/health/live/): por quanto tempo o pool deste processo pode ficar sem
+# entregar conexão, com o banco respondendo por fora, antes de a sonda pedir
+# reinício (shopman/shop/pool_liveness.py).
+SHOPMAN_LIVENESS_POOL_STUCK_SECONDS = _env_int("SHOPMAN_LIVENESS_POOL_STUCK_SECONDS", 30)
 
 ASGI_APPLICATION = "config.asgi.application"
 
@@ -2210,8 +2414,6 @@ SHOPMAN_STOREFRONT_CHANNEL_REF = os.environ.get("SHOPMAN_STOREFRONT_CHANNEL_REF"
 SHOPMAN_BACKUP_SHEET_HOST = os.environ.get("SHOPMAN_BACKUP_SHEET_HOST", "")
 SHOPMAN_BACKUP_SHEET_URL = os.environ.get("SHOPMAN_BACKUP_SHEET_URL", "")
 
-SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = int(os.environ.get("SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT", "20"))
-
 SHOPMAN_CART_MUTATION_PERF_LOG_MS = float(os.environ.get("SHOPMAN_CART_MUTATION_PERF_LOG_MS", "0"))
 
 # ── Rules security — allowed module prefixes for RuleConfig.rule_path ──
@@ -2231,6 +2433,12 @@ SHOPMAN_JSON_LOGS = os.environ.get(
     "true" if not DEBUG else "false",
 ).lower() in ("true", "1", "yes")
 _SHOPMAN_LOG_FORMATTER = "json" if SHOPMAN_JSON_LOGS else "verbose"
+
+# Access log da aplicação (logger `shopman.access`): método, ROTA resolvida,
+# status e duração, sem IP, usuário, query string ou caminho cru. Substitui o do
+# daphne, que segue em /dev/null por gravar `?token=` do webhook da Efí. Ver
+# AccessLogMiddleware e docs/runbooks/web-operator-resiliencia.md.
+SHOPMAN_ACCESS_LOG = _env_bool("SHOPMAN_ACCESS_LOG", False)
 
 LOGGING = {
     "version": 1,
@@ -2349,6 +2557,9 @@ SECURE_SSL_REDIRECT = os.environ.get(
 SECURE_REDIRECT_EXEMPT = [
     r"^health/live/$",
     r"^health/ready/$",
+    r"^health/database/$",
+    r"^api/v1/health/live/$",
+    r"^api/v1/health/ready/$",
     r"^health/$",
     r"^ready/$",
 ]

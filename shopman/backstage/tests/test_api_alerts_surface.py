@@ -241,7 +241,7 @@ def test_cancellation_request_alert_opens_the_exact_order(client, operator):
     context = next(action for action in row["actions"] if action["kind"] == "open_alert_context")
 
     assert row["type_label"] == "Cliente solicitou cancelamento"
-    assert context["label"] == "Resolver no contexto"
+    assert context["label"] == "Abrir o pedido"
     assert context["href"] == "/WEB-42"
 
 

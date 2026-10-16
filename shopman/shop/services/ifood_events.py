@@ -34,7 +34,7 @@ originais, divergindo o que a cozinha prepara, o estoque, a cobrança e a nota.
 Agora há três destinos, e nenhum deles é silêncio:
 
 - **tratado** — tem processador (``PLC``, ``CFM``, ``DSP``, ``CAN``, ``CON``,
-  handshake e ``ORDER_PATCHED``);
+  handshake, ``ORDER_PATCHED`` e ``CANCELLATION_REQUEST_FAILED``);
 - **inerte** (``_INERT_CODES``) — ACK calado, mas por DECISÃO escrita e com
   motivo ao lado de cada código;
 - **qualquer outro** — ACK (não ackar faria o iFood reentregar em laço) + log de
@@ -50,7 +50,7 @@ import threading
 from django.conf import settings
 
 from shopman.shop.services import fiscal as fiscal_service
-from shopman.shop.services import ifood_http, ifood_ingest, ifood_orders, webhook_idempotency
+from shopman.shop.services import ifood_accept_sync, ifood_http, ifood_ingest, ifood_orders, webhook_idempotency
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,12 @@ _HANDSHAKE_CODES = {"HSD", "HANDSHAKE_DISPUTE", "HSS", "HANDSHAKE_SETTLEMENT"}
 # uma sigla aparecer no vivo, ela cai no ramo de código não tratado logo abaixo,
 # que grita — em vez de ser engolida como era até 19/09/2026.
 _PATCH_CODES = {"ORDER_PATCHED"}
+# O iFood RECUSOU o cancelamento que a loja pediu (``requestCancellation`` já
+# tinha voltado 202). Só o ``fullCode``, pela mesma disciplina do PATCHED: o
+# laço lê ``fullCode`` antes de ``code``, e uma sigla que apareça sozinha cai
+# no ramo não tratado, que grita. Sem tratamento, o pedido ficava "cancelamento
+# pendente" para sempre: nem aceitava, nem avançava.
+_CANCELLATION_REFUSED_CODES = {"CANCELLATION_REQUEST_FAILED"}
 # Códigos documentados que esta casa decidiu não tratar, COM motivo. Não é
 # silêncio: é decisão escrita, e o ACK calado é a resposta certa para eles.
 _INERT_CODES = {
@@ -192,10 +198,12 @@ def process_events(events: list[dict]) -> dict:
         # Remote state changes reconcile only after the order exists.
         if code in (
             _CANCELLATION_CODES | _CONCLUSION_CODES | _CONFIRMATION_CODES
-            | _DISPATCH_CODES | _HANDSHAKE_CODES | _PATCH_CODES
+            | _DISPATCH_CODES | _HANDSHAKE_CODES | _PATCH_CODES | _CANCELLATION_REFUSED_CODES
         ):
             if code in _PATCH_CODES:
                 outcome = _process_patch(event, event_id, order_id)
+            elif code in _CANCELLATION_REFUSED_CODES:
+                outcome = _process_cancellation_refused(event, event_id, order_id)
             elif code in _HANDSHAKE_CODES:
                 outcome = _process_handshake(event, settlement=code in {"HSS", "HANDSHAKE_SETTLEMENT"})
             elif code in _CANCELLATION_CODES:
@@ -530,10 +538,12 @@ def _process_patch(event: dict, event_id: str, order_id: str) -> str:
                 record["reconciled"] = True
                 record["reconciliation"] = outcome
 
-            patches.append(record)
             # Relido DEPOIS de ``_apply_patch``, que gravou o ajuste no mesmo
             # ``data`` — copiar antes apagaria o ajuste ao salvar aqui.
             data = dict(order.data or {})
+            if payload is not None:
+                record["previous_financials"] = _refresh_financials(data, payload, outcome)
+            patches.append(record)
             data["ifood"] = {**(data.get("ifood") or {}), "patches": patches}
             order.data = data
             order.save(update_fields=["data", "updated_at"])
@@ -585,6 +595,51 @@ def _apply_patch(order, payload: dict, event_id: str) -> dict:
         event_id=event_id,
         stock_reference=f"ifood_patch:{order.ref}",
     )
+
+
+def _refresh_financials(data: dict, payload: dict, outcome: dict | None) -> dict:
+    """Traz o dinheiro do pedido para o pedido RELIDO, e devolve o que havia.
+
+    ``_apply_patch`` ajusta itens e total efetivo; os fatos financeiros do
+    iFood gravados na ingestão (``ifood.totals``, ``ifood.payments``,
+    ``ifood.benefits``) e o ``payment`` derivado deles ficavam com os valores
+    de antes. É deles que a nota tira a base da casa
+    (``fiscal_intermediary.seller_amounts``: subtotal, taxas, cupom de quem) e
+    que o Gestor diz quanto falta receber (``payment.balance_due_q``): a nota
+    saía com a base velha sobre os itens novos. Regrava os três com o estado
+    final, pela mesma leitura da ingestão.
+
+    O ``payment`` só é refeito enquanto nada foi recebido: com um tender já
+    liquidado (o dinheiro da porta entrou), a cobrança é fato e não se reescreve.
+    O que havia volta para o registro da alteração (``previous_financials``).
+    """
+    facts = dict(data.get("ifood") or {})
+    previous = {
+        "totals": facts.get("totals") or {},
+        "payments": facts.get("payments") or {},
+        "benefits": facts.get("benefits") or [],
+        "payment_status": str((data.get("payment") or {}).get("status") or ""),
+    }
+    facts["totals"] = payload.get("totals") or {}
+    facts["payments"] = payload.get("payments") or {}
+    facts["benefits"] = payload.get("benefits") or []
+    data["ifood"] = facts
+
+    payment = dict(data.get("payment") or {})
+    tenders = payment.get("tenders") or []
+    settled = any(
+        isinstance(t, dict) and str(t.get("status") or "pending").lower() != "pending" for t in tenders
+    )
+    if not settled:
+        total_q = int((outcome or {}).get("total_q") or 0) or int(facts["totals"].get("order_amount_q") or 0)
+        for key in ("collection", "tenders", "change_for_q"):
+            payment.pop(key, None)
+        payment["status"] = ifood_ingest.payment_status_from_payload(facts["payments"], total_q)
+        payment.update(ifood_ingest._collection_on_delivery(
+            payload, payload.get("delivery") or {}, str(data.get("fulfillment_type") or ""),
+        ))
+        data["payment"] = payment
+    return previous
 
 
 def _fiscal_authorized_explanation(order) -> str:
@@ -711,6 +766,8 @@ def _alert_patched(order, record: dict, outcome: dict | None, *, fiscal_authoriz
         applied.append("o estoque acompanhou")
     if kds_outcome.get("unfired") or kds_outcome.get("refired"):
         applied.append("a cozinha recebeu a comanda atualizada")
+    if record.get("previous_financials") is not None:
+        applied.append("o pagamento e os cupons foram relidos no iFood, e a nota sai pelos valores novos")
     if stock_outcome.get("gaps"):
         applied.append(
             "FALTOU estoque para o que foi acrescentado: veja o alerta de reserva ao lado"
@@ -781,6 +838,8 @@ def _process_remote_progress(event_id: str, order_id: str, *, dispatch: bool) ->
             # O fato é gravado ANTES de qualquer transição, para o aviso dela não
             # ecoar ao iFood o que veio dele.
             _record_remote(order, marker, event_id)
+            # O iFood tem o aceite: o aviso de "não recebeu o aceite" perde o objeto.
+            ifood_accept_sync.on_remote_confirmed(order)
             if not already_applied and order.status != expected:
                 # ACK é "armazenei", não "apliquei" (doc do polling). O fato fica no
                 # pedido e a reconciliação o aplica quando o estado local chegar lá
@@ -877,6 +936,61 @@ def _process_cancellation(event_id: str, order_id: str) -> str:
 
     webhook_idempotency.mark_done(claim, response_body={"status": "cancelled", "order_ref": order.ref})
     return outcome
+
+
+def _process_cancellation_refused(event: dict, event_id: str, order_id: str) -> str:
+    """O iFood recusou o cancelamento pedido pela loja: destrava e avisa.
+
+    O pedido volta a ser operável no estado em que estava (ele não mudou
+    enquanto esperava), o motivo do iFood fica gravado no pedido e vai no aviso
+    ao operador, com as duas saídas: seguir com o pedido ou tentar cancelar de
+    novo. Fatos do iFood que esperavam a decisão (um CFM, por exemplo) são
+    aplicados em seguida pela reconciliação de sempre.
+
+    Sem pedido de cancelamento pendente (já resolvido, ou o CAN chegou antes),
+    o evento é só registrado: nada a destravar.
+    """
+    if not order_id:
+        logger.warning("ifood_events: CANCELLATION_REQUEST_FAILED %s without orderId", event_id)
+        return "failed"
+    claim = webhook_idempotency.claim(
+        _IDEMPOTENCY_SCOPE, f"event:{webhook_idempotency.stable_webhook_key(event_id)}",
+    )
+    if claim.replayed:
+        return "deduped"
+    if claim.in_progress:
+        return "failed"
+
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import ifood_cancellation
+
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    reason = ifood_cancellation.refusal_reason(metadata)
+    try:
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(
+                channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, external_ref=order_id,
+            ).first()
+            if order is None:
+                webhook_idempotency.mark_failed(claim)
+                return "failed"
+            refused = ifood_cancellation.refuse_locked(
+                order, reason=reason, event_id=event_id, metadata=metadata,
+            )
+            webhook_idempotency.mark_done(
+                claim, response_body={"status": "refused" if refused else "nothing_pending", "order_ref": order.ref},
+            )
+    except Exception:
+        logger.exception("ifood_events: failed to record cancellation refusal for order %s (event %s)", order_id, event_id)
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+    if not refused:
+        logger.info("ifood_events: CANCELLATION_REQUEST_FAILED for order %s with nothing pending", order_id)
+        return "deduped"
+    reconcile_remote(order)
+    return "ingested"
 
 
 def _process_conclusion(event_id: str, order_id: str) -> str:

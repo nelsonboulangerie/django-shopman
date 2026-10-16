@@ -91,7 +91,7 @@ function props(overrides: Record<string, unknown> = {}) {
 // Os quatro rótulos que o botão principal assume. "Tentar de novo" entrou quando
 // a revisão que falha deixou de girar para sempre e virou a própria saída.
 const cta = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
-  w.findAll("button").find((b) => /Validar|Pedir autorização|Atualizando|Tentar de novo/.test(b.text()));
+  w.findAll("button").find((b) => /Validar|Pedir autorização|Calculando o total|Tentar de novo/.test(b.text()));
 
 // A FAIXA ÚNICA DE AVISOS, no topo da coluna do valor: o bloqueio primeiro (com
 // o toque que resolve), depois as consequências, depois as ressalvas da review.
@@ -235,12 +235,12 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
     expect(wrapper.emitted("submit")).toBeUndefined();
   });
 
-  it("review sem total (stale) mostra 'Atualizando…' e mantém desabilitado", async () => {
+  it("review sem total (stale) mostra 'Calculando o total…' e mantém desabilitado", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ review: null, paymentCovered: true }),
     });
     const button = cta(wrapper)!;
-    expect(button.text()).toContain("Atualizando");
+    expect(button.text()).toContain("Calculando o total");
     expect(button.attributes("disabled")).toBeDefined();
   });
 
@@ -322,18 +322,56 @@ describe("PosPaymentWorkspace — Exato e Limpar na coluna do numpad", () => {
   });
 });
 
-describe("PosPaymentWorkspace — total interino (sem review)", () => {
-  it("o hero usa o paymentTotalQ do composable, não o bruto dos itens", async () => {
+describe("PosPaymentWorkspace — total que ainda pode mudar não aparece como total", () => {
+  // Regra do dono: sem a revisão do servidor, o herói não mostra número. Nem o
+  // interino do composable (último total vencido ou estimativa do carrinho),
+  // nem o bruto dos itens. O valor bruto aparecer noutro lugar da tela é
+  // legítimo (o resumo do pedido lista a linha pelo preço dela), então a
+  // negativa é sobre o herói.
+  it("em cálculo, o herói diz 'Calculando…' e nenhum valor", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ review: null, paymentTotalQ: 900 }), // itens brutos = 1000
     });
-    // O que não pode acontecer é o HERO somar os itens por conta própria. O
-    // valor bruto aparecer noutro lugar da tela é legítimo — o resumo do pedido
-    // lista a linha pelo preço dela —, então a negativa é sobre o hero, não
-    // sobre a tela inteira.
-    const hero = wrapper.find('[aria-label="Total a cobrar"]');
-    expect(hero.text()).toContain(formatBRL(900));
-    expect(hero.text()).not.toContain(formatBRL(1000));
+    const hero = wrapper.find("[data-pos-total]");
+    expect(hero.attributes("data-pos-total-state")).toBe("calculating");
+    expect(hero.attributes("aria-busy")).toBe("true");
+    expect(hero.text()).toContain("Calculando…");
+    expect(hero.text()).not.toMatch(/R\$/);
+  });
+
+  it("com troco na mesa e total em cálculo, nem troco nem restante aparecem", async () => {
+    // O troco é conta sobre o total: com o interino, a tela anunciaria um troco
+    // que o total confirmado desmente (o desconto acabou de mudar).
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        review: null, paymentTotalQ: 1000, paymentTenders: [{ ...tender, amount_q: 2000 }],
+        paymentChangeQ: 1000, paymentRemainingQ: 0, paymentCovered: true,
+      }),
+    });
+    const hero = wrapper.find("[data-pos-total]");
+    expect(hero.text()).not.toContain("Troco");
+    expect(hero.text()).not.toMatch(/R\$/);
+    expect(wrapper.text()).toContain("espera o total");
+  });
+
+  it("falhou: o herói diz que não há total e por quê", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ review: null, reviewFailed: true, reviewFailureReason: "Sem conexão com o servidor." }),
+    });
+    const hero = wrapper.find("[data-pos-total]");
+    expect(hero.attributes("data-pos-total-state")).toBe("failed");
+    expect(hero.text()).toContain("Total não calculado");
+    expect(hero.text()).toContain("Sem conexão com o servidor.");
+    expect(hero.text()).not.toMatch(/R\$/);
+  });
+
+  it("confirmado: o herói mostra o total do servidor", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ review: review({ total_q: 850, total_display: "R$ 8,50" }), paymentTotalQ: 850 }),
+    });
+    const hero = wrapper.find("[data-pos-total]");
+    expect(hero.attributes("data-pos-total-state")).toBe("confirmed");
+    expect(hero.text()).toContain("R$ 8,50");
   });
 });
 
@@ -493,7 +531,7 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
       props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
     });
     const semAjuste = desligado.find('section[aria-label="Ajustes da conta"]');
-    expect(semAjuste.find(".border-primary").exists()).toBe(false);
+    expect(semAjuste.find("[class*='ring-primary']").exists()).toBe(false);
     expect(semAjuste.text()).toContain("F9");
 
     const ligado = await mountSuspended(PosPaymentWorkspace, {
@@ -1016,6 +1054,23 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     expect(avisos(wrapper).text()).toContain(`Desconto acima de ${formatBRL(5000)}.`);
   });
 
+  it("conta na casa acima do limite: o aviso diz em aberto, limite e quanto passa", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        review: review({
+          requires_manager_approval: true,
+          approval_reasons: ["house_account_over_limit"],
+          house_account_limit: { balance_q: 18000, limit_q: 20000, charge_q: 5000, over_q: 3000 },
+        }),
+      }),
+    });
+    const text = avisos(wrapper).text();
+    expect(text).toContain("Esta venda precisa de um gerente.");
+    expect(text).toContain(
+      `Conta na casa acima do limite. Em aberto ${formatBRL(18000)}, limite ${formatBRL(20000)}: esta venda passa ${formatBRL(3000)}.`,
+    );
+  });
+
   it("avisos de pagamento do servidor não sobrevivem: a tela responde por eles ao vivo", async () => {
     // A review só é refeita quando o CARRINHO muda. Um aviso "os pagamentos não
     // cobrem o total" ficava congelado dez centímetros acima de um "Restante
@@ -1162,16 +1217,24 @@ describe("PosPaymentWorkspace — a revisão que falha tem saída", () => {
 
   it("e a tela diz o que aconteceu, em vez de girar calada", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: falhou() });
-    expect(avisos(wrapper).text()).toContain("Não deu para atualizar o total.");
+    expect(avisos(wrapper).text()).toContain("O total não foi calculado.");
     expect(avisos(wrapper).text()).toContain("Confira a conexão e tente de novo.");
   });
 
-  it("review em trânsito (sem falha) continua sendo 'Atualizando…' e travado", async () => {
+  it("com o motivo em mãos, o aviso diz o motivo", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: falhou({ reviewFailureReason: "O servidor demorou para responder." }),
+    });
+    expect(avisos(wrapper).text()).toContain("O total não foi calculado.");
+    expect(avisos(wrapper).text()).toContain("O servidor demorou para responder.");
+  });
+
+  it("review em trânsito (sem falha) continua sendo 'Calculando o total…' e travado", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: falhou({ reviewFailed: false }),
     });
     const botao = cta(wrapper)!;
-    expect(botao.text()).toContain("Atualizando");
+    expect(botao.text()).toContain("Calculando o total");
     expect(botao.attributes("disabled")).toBeDefined();
   });
 });
@@ -1240,7 +1303,8 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
       props: props({ discountTypes: [{ ref: "percent", label: "%" }], splitCount: 3 }),
     });
     expect(gatilho(armado).attributes("aria-pressed")).toBe("true");
-    expect(gatilho(armado).classes()).toContain("border-primary");
+    // Ligado, o gatilho é o `outline` primário do conjunto mínimo (anel primário).
+    expect(gatilho(armado).classes().join(" ")).toMatch(/\bring-primary/);
     expect(gatilho(armado).text()).toContain("3");
   });
 
@@ -1593,4 +1657,55 @@ it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
   await nextTick();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(w.text()).not.toContain("Como o cliente vai receber?");
+});
+
+// P1-7: o Pix da venda mista não liquida pela palavra solta. Antes de validar, o
+// mesmo degrau da maquininha pede a conferência, e o botão diz o que afirma.
+describe("Pix na venda mista: Recebi o Pix", () => {
+  afterEach(() => { document.body.innerHTML = ""; });
+  const mixed = [
+    { method: "cash", amount_q: 200, collection: "terminal" as const },
+    { method: "pix", amount_q: 800, collection: "terminal" as const },
+  ];
+
+  it("Validar abre a conferência do Pix; confirmar marca e só então submete", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentTenders: mixed, paymentCovered: true, paymentRemainingQ: 0 }),
+    });
+    await cta(w)!.trigger("click");
+    await w.vm.$nextTick();
+    expect(w.emitted("submit")).toBeUndefined();
+    expect(document.body.textContent).toContain("Confira o Pix");
+    const confirm = document.querySelector<HTMLButtonElement>("[data-pos-machine-charged]")!;
+    expect(confirm.textContent).toContain("Recebi o Pix");
+    confirm.click();
+    await w.vm.$nextTick();
+    expect(w.emitted("confirmPix")).toHaveLength(1);
+    expect(w.emitted("submit")).toHaveLength(1);
+  });
+
+  it("Pix sozinho segue sem o gesto: quem confirma é o provedor", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" as const }],
+        paymentCovered: true, paymentRemainingQ: 0,
+      }),
+    });
+    await cta(w)!.trigger("click");
+    expect(w.emitted("submit")).toHaveLength(1);
+    expect(w.emitted("confirmPix")).toBeUndefined();
+  });
+
+  it("encomenda já na cozinha não valida com Pix pendente (gêmea de preorder_fired_unpaid)", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        salesMode: "order",
+        items: [item({ sku: "QUICHE", name: "Quiche", fired: true, fired_qty: 1 })],
+        paymentTenders: [{ method: "pix", amount_q: 1000, collection: "terminal" as const }],
+        paymentCovered: true, paymentRemainingQ: 0,
+      }),
+    });
+    expect(cta(w)!.attributes("disabled")).toBeDefined();
+    expect(w.text()).toContain("Esta encomenda já está na cozinha.");
+  });
 });

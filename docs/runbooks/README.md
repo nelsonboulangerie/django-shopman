@@ -44,6 +44,7 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 - [Loja aberta/fechada em estado errado](loja-estado-incorreto.md)
 - [Pedido remoto preso](pedido-remoto-preso.md)
 - [Rollback de deploy quebrado](rollback-de-deploy.md)
+- [Admin fora do ar com instância única: sondas, access log e a 2ª instância](web-operator-resiliencia.md)
 - [Backup antes do `migrate`, e restore ensaiado](backup-e-restore.md)
 - [Alpha tecnico pronto-para-virar](alpha-technical-readiness.md)
 - [Alpha DigitalOcean - handoff operacional](alpha-digitalocean-handoff.md)
@@ -53,6 +54,9 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 ## Procedimentos
 
 - [Go-live — checklist de cutover (staging → produção)](go-live-cutover.md)
+- [Go-live: o delta do spec no dia D (chave a chave, com script de conferência)](go-live-delta-do-spec.md)
+- [Roteiros da QA física, do ensaio geral e do canário de um](qa-fisica-e-canario.md)
+- [Ensaio geral da virada (banco copiado, app local com o spec do dia D, travas, gates e a volta, sem tocar o vivo)](ensaio-geral-da-virada.md)
 - [Ligar o Sentry (error tracking)](ativar-sentry.md)
 - [Guardar arquivos no Cloudflare R2: o que o dono faz](r2-passo-a-passo-do-dono.md)
 - [Conferir o spec antes de `doctl apps update`](conferir-spec-digitalocean.md)

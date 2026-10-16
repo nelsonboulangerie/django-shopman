@@ -248,39 +248,62 @@ class TestRenderDosTresCanais:
 def _renders_expired(context: dict) -> dict[str, str]:
     ctx = derive_context(context)
     return {
-        "whatsapp": notification_manychat._build_message("payment_expired", ctx),
-        "sms": notification_sms._build_message("payment_expired", ctx),
-        "email.body": render_message("payment_expired", ctx, notification_email.BODY_TEMPLATES),
-        "email.subject": render_template(notification_email.SUBJECT_TEMPLATES["payment_expired"], ctx),
-        "seed": render_template(NOTIFICATION_TEMPLATES["payment_expired"]["body"], ctx),
-        "seed.subject": render_template(NOTIFICATION_TEMPLATES["payment_expired"]["subject"], ctx),
+        "whatsapp": notification_manychat._build_message("order_cancelled", ctx),
+        "sms": notification_sms._build_message("order_cancelled", ctx),
+        "email.body": render_message("order_cancelled", ctx, notification_email.BODY_TEMPLATES),
+        "email.subject": render_template(notification_email.SUBJECT_TEMPLATES["order_cancelled"], ctx),
+        "seed": render_template(NOTIFICATION_TEMPLATES["order_cancelled"]["body"], ctx),
+        "seed.subject": render_template(NOTIFICATION_TEMPLATES["order_cancelled"]["subject"], ctx),
     }
 
 
 @pytest.mark.django_db
 class TestPrazoVencidoEmTodoCanal:
-    """O vencimento é copy da casa: "liberamos a reserva", não "expirou /
-    cancelado automaticamente" — e o cliente sabe que basta falar com a gente."""
+    """O vencimento é UM aviso só (P1-9): o ``order_cancelled`` com a frase do
+    prazo vencido. Diz que o pedido foi cancelado, que nada foi cobrado e o que
+    fazer se ainda quiser, igual em todo canal, sem vocabulário de sistema."""
 
     @pytest.fixture
     def expired(self):
-        return _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_expired")
+        from shopman.shop.services import cancel_reasons
 
-    def test_todo_canal_diz_que_a_reserva_foi_liberada(self, expired):
+        order = _order()
+        order.status = "cancelled"
+        order.data["cancellation_reason"] = "payment_timeout"
+        order.data["cancellation_reason_key"] = cancel_reasons.payment_deadline_reason_key("link")
+        return _build_context(
+            order,
+            {"order_ref": "PDV-260925-A47", "status_note": cancel_reasons.customer_text(order.data)},
+            "order_cancelled",
+        )
+
+    def test_todo_canal_diz_cancelado_nada_cobrado_e_como_pedir_de_novo(self, expired):
         for channel, text in _renders_expired(expired).items():
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
-            assert "A47" in text and "PDV-260925" not in text, f"{channel}: {text!r}"
+            # O pedido é chamado pelo final; o ref inteiro só aparece no link.
+            assert "A47" in text, f"{channel}: {text!r}"
+            assert "PDV-260925" not in text.split("/pedido/")[0], f"{channel}: {text!r}"
             assert "expirou" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
-            assert "cancelado" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
+            assert "payment_timeout" not in text, f"código de máquina em {channel}: {text!r}"
+            assert "—" not in text, f"travessão em {channel}: {text!r}"
             if channel.endswith("subject"):
-                assert "reserva liberada" in text, f"{channel}: {text!r}"
-            else:
-                assert "liberamos a reserva" in text, f"{channel}: {text!r}"
-                assert "Nada foi cobrado" in text, f"{channel}: {text!r}"
+                assert "cancelado" in text, f"{channel}: {text!r}"
+                continue
+            assert "cancelado" in text.lower(), f"{channel}: {text!r}"
+            assert "prazo para pagar acabou" in text, f"{channel}: {text!r}"
+            assert "nada foi cobrado" in text, f"{channel}: {text!r}"
+            assert "novo pedido" in text, f"{channel}: {text!r}"
 
-    def test_o_sms_e_sem_acento(self, expired):
+    def test_o_pix_diz_que_o_pix_venceu(self):
+        from shopman.shop.services import cancel_reasons
+
+        text = cancel_reasons.cancel_reason(cancel_reasons.payment_deadline_reason_key("pix")).customer_text
+        assert text.startswith("O Pix venceu e nada foi cobrado.")
+
+    def test_o_sms_nao_leva_o_negrito_do_whatsapp(self, expired):
         sms = _renders_expired(expired)["sms"]
-        assert sms.isascii(), sms
+        assert "*" not in sms, sms
+        assert "pedido A47 foi cancelado" in sms, sms
 
 
 class TestSeedDoTemplate:

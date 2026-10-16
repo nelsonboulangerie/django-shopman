@@ -104,3 +104,35 @@ def test_full_seed_flush_drops_an_orphan_rule_and_its_channel_links(monkeypatch)
     # Toda regra sobrevivente importa: é isto que o boot do engine cobra.
     for rule in RuleConfig.objects.all():
         rule.full_clean()
+
+
+def test_migracao_0096_apaga_a_regra_aposentada():
+    """A linha da EmployeeRule morre em banco EXISTENTE, sem depender do --flush."""
+    import importlib
+
+    from django.apps import apps
+
+    RuleConfig.objects.bulk_create([
+        RuleConfig(
+            ref="employee_discount",
+            rule_path="shopman.shop.rules.pricing.EmployeeRule",
+            label="Desconto Funcionário",
+            params={},
+            priority=60,
+        ),
+        RuleConfig(
+            ref="happy_hour",
+            rule_path="shopman.shop.rules.pricing.HappyHourRule",
+            label="Hora da Xepa",
+            params={},
+            priority=65,
+        ),
+    ])
+
+    migration = importlib.import_module(
+        "shopman.shop.migrations.0096_retire_employee_rule_config"
+    )
+    migration.forwards(apps, None)
+
+    assert not RuleConfig.objects.filter(rule_path__endswith="EmployeeRule").exists()
+    assert RuleConfig.objects.filter(ref="happy_hour").exists()

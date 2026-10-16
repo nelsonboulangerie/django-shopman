@@ -4,6 +4,39 @@
 
 ---
 
+## `watchman`
+
+Executa o mesmo contrato versionado de saúde localmente, na CI e no app
+publicado. `check --profile diagnostic` é curto e serve para diagnóstico vivo;
+`check --profile infrastructure` é exclusivo de CLI e pode executar o contrato
+hermético de produção e confrontar um snapshot da DigitalOcean.
+
+```bash
+python manage.py watchman check --profile diagnostic --format json
+python manage.py watchman check --profile performance --format json
+WATCHMAN_LIVE_DO_SPEC=/tmp/live.yaml SENTRY_AUTH_TOKEN=... \
+  python manage.py watchman check --profile infrastructure --format json
+SENTRY_AUTH_TOKEN=... python scripts/watchman_sentry.py check
+```
+
+O reconciliador é deliberadamente somente leitura: a conta externa só é alterada
+pelo dono no painel, seguindo `docs/runbooks/watchman-sentry-painel.md`. O token
+precisa apenas de `alerts:read` (ou `org:read`); o DSN não substitui esse acesso,
+porque é uma chave de ingestão de eventos, não de leitura da configuração.
+Sem `SENTRY_AUTH_TOKEN` ou sem `WATCHMAN_LIVE_DO_SPEC`, o perfil valida o que é
+possível mas marca a conferência viva como `UNKNOWN` e sai com erro; ausência de
+acesso nunca vira um resultado verde.
+
+O workflow diário `Watchman Infrastructure` roda esse perfil fora dos serviços,
+sempre em modo somente leitura. Ele exige o secret `DIGITALOCEAN_READ_TOKEN`
+(Apps e Databases: leitura), usa `SENTRY_AUTH_TOKEN` apenas para conferir drift e
+preserva o relatório JSON por 30 dias. A falta temporária do token de leitura do
+Sentry vira pendência visível sem bloquear; drift real, falha de contrato ou
+evidência indisponível da DigitalOcean deixam o job vermelho. Com `SENTRY_DSN`
+configurado nos secrets do repositório, uma falha também abre um evento sanitizado
+na escada externa do Watchman. O workflow não contém chamada de escrita à API da
+DigitalOcean ou do Sentry.
+
 ## Visão Geral
 
 | Comando | App | Categoria | Descrição |
@@ -14,14 +47,16 @@
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
+| [`repair_corrupted_tags`](#repair_corrupted_tags) | shop | Dados | Conserta etiquetas gravadas pelo Admin como repr de objeto ("[<Tag: pao>"); sem `--apply` só relata |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
 | [`import_recipe_versions`](#import_recipe_versions) | backstage | Dados | Importa de um JSON gerado na hora (nunca versionado) uma versão nova por receita do inventário; sem `--apply` só mostra, `--publish` publica a parte antes da massa |
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
-| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
+| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` do concierge no banco vivo, sem reseed, e liga o espelho da vitrine na loja online |
 | [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
 | [`migration_safety`](#migration_safety) | shop | Release | Recusa o deploy com migração destrutiva pendente e nenhum ponto de restauração declarado (roda antes do `migrate` no release) |
+| [`setup_commercial_groups`](#setup_commercial_groups) | shop | Release | Instala os grupos comerciais Equipe e Aliança Francesa que ainda faltarem no banco vivo, sem sobrescrever edições do gestor |
 | [`issue_menuboard_player_credential`](#issue_menuboard_player_credential) | shop | Operação | Emite credenciais escopadas e o JSON do player Raspberry Pi dos menuboards |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
@@ -70,15 +105,28 @@
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 | [`apply_search_presence`](#apply_search_presence) | config | Seed | Grava textos de busca, perfis da marca e FAQ inicial que faltam num banco SEMEADO, sem reseed |
+| [`relocate_product_images`](#relocate_product_images) | config | Dados | Leva as fotos de produto para o host dedicado (`img.`), conferindo cada destino antes (relatório por padrão) |
 | [`apply_product_brands`](#apply_product_brands) | config | Seed | Grava a Marca (e o GTIN conferido) do Catálogo: a da casa nos feitos aqui, a do fabricante na revenda |
 | [`apply_grocery_catalog`](#apply_grocery_catalog) | config | Seed | Cria a revenda real da Mercearia e as caixas presente (PDV; canal remoto só com foto) e troca os placeholders que já têm produto real |
 | [`apply_catalog_decisions`](#apply_catalog_decisions) | config | Dados | Executa o que o dono decidiu que sai do catálogo (apaga, com lápide) ou sai da loja (despublica) — ensaio por padrão |
 | [`apply_material_skus`](#apply_material_skus) | config | Dados | Aplica a curadoria da LISTA DE INSUMOS num banco que já roda: renomeia, cria o que falta, reaponta a ficha (ensaio por padrão) |
+| [`purge_synthetic_data`](#purge_synthetic_data) | config | Dados | Dia D: apaga o dado do ensaio e mantém o cadastro do Dia 1 no mesmo banco (ensaio por padrão; `--apply` com o nome do banco digitado) |
 | [`calibrate_conversions`](#calibrate_conversions) | buyman | Dados | Lista as equivalências APROXIMADAS que ninguém pesou, e grava a pesagem da casa com carimbo de procedência |
 
 ---
 
 ## Detalhes
+
+### setup_commercial_groups
+
+Cria, somente quando ainda faltarem no banco vivo, os grupos Equipe (30% na
+retirada) e Aliança Francesa (15%). O `setup_groups` chama este comando no hook
+de release já existente. Depois da primeira criação, edições e pausas feitas no
+Gestor são preservadas nos deploys seguintes.
+
+```bash
+python manage.py setup_commercial_groups
+```
 
 ### issue_menuboard_player_credential
 
@@ -263,6 +311,34 @@ cobra; quem as troca é o commit.
 ---
 
 
+### purge_synthetic_data
+
+Passo "Dia D · dados" do [cutover](../runbooks/go-live-cutover.md) (D-029: a
+loja vira produção no próprio app, no mesmo banco). Apaga pedidos, pagamentos,
+clientes e suas contas, turnos e livro-caixa, produção, estoque, conversas e o
+marketing de ensaio; mantém catálogo, preços, fichas, insumos, fornecedores,
+canais, regras, Shop, operadores (com PIN e 2FA), terminais, estações pareadas e
+o histórico real do Yooga.
+
+```bash
+python manage.py purge_synthetic_data                                    # ensaio: executa, mede e desfaz
+python manage.py purge_synthetic_data --json relatorio.json              # o relatório inteiro, por tabela
+python manage.py purge_synthetic_data --apply --confirm-database shopman # grava
+```
+
+A política mora em `config/synthetic_purge.py` (`POLICY`): **todo** modelo tem
+destino e motivo. Modelo novo sem linha, ou cadastro que aponta por FK para
+tabela que vai ser apagada, faz o comando recusar antes de tocar em qualquer
+coisa. Uma transação só; antes de terminar, as constraints são conferidas e a
+contagem de cada tabela mantida tem de bater com a de antes, ou tudo é
+desfeito. O `--apply` recusa com a política do go-live armada
+(`SHOPMAN_GO_LIVE`/tag `go-live-v1`) ou com `SHOPMAN_ENVIRONMENT=production`.
+Idempotente. Depois: inventário de abertura (o estoque fica zerado),
+`refresh_bi_daily_series --all` e o `compute_product_affinity` do worker.
+
+---
+
+
 ### calibrate_conversions
 
 Lista as equivalências **aproximadas** que ninguém pesou, e grava a pesagem da
@@ -314,6 +390,34 @@ pela `ref`) e só acrescenta perfil que **falta**; tira o link de exemplo
 do dono, que é bloqueio de go-live (`config/public_copy_review.py`, check
 `production.public_copy_review` do `make production-readiness`). **Não** mexe em horário,
 endereço, coordenadas, preço nem catálogo. Idempotente.
+
+---
+
+
+### relocate_product_images
+
+Conserto do dado que o check `catalog.product_image_host` do `make
+production-readiness` reprova: foto de produto fora do host dedicado
+(`SHOPMAN_PRODUCT_IMAGE_BASE`, hoje `https://img.nelsonboulangerie.com.br/products`).
+
+```bash
+python manage.py relocate_product_images            # relatório (não escreve)
+python manage.py relocate_product_images --apply    # grava
+```
+
+O destino de cada foto vem, nesta ordem, de `config/product_photos.py`
+(`HOSTED_PHOTOS`, SKU → arquivo em `surfaces/storefront-nuxt/public/img/products/`)
+ou, para foto da casa servida por um host de site (`.../img/products/<arquivo>`),
+do mesmo arquivo no host dedicado (foto principal e galeria). Cada destino é
+conferido no host (HEAD 200, `image/*`) antes de gravar; o que não responde fica
+como está. O que não tem destino (o placeholder do Unsplash sem foto da casa) sai
+no relatório com o SKU e não é apagado: sem foto o produto sai dos canais remotos,
+e isso é decisão do dono. Idempotente; grava com histórico (`simple_history`).
+
+Foto nova entra por `scripts/import_product_photo.py <SKU> <arquivo ou URL>`
+(receita da casa: quadrado, 1200 px, webp q80, sem EXIF; recusa sobrescrever,
+porque o host serve com cache imutável), mais a linha em `HOSTED_PHOTOS` no mesmo
+PR. O `seed` lê a mesma tabela. Depois do deploy, `--apply` no banco vivo.
 
 ---
 
@@ -396,6 +500,29 @@ Roda no ciclo do `maintenance_worker`, entre `cleanup_stale_sessions` e `cleanup
 ```bash
 python manage.py sweep_orphan_holds --dry-run
 python manage.py sweep_orphan_holds
+```
+
+---
+
+### repair_corrupted_tags
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/repair_corrupted_tags.py`
+
+Até 13/10/2026 o campo de etiquetas do Admin (palavras-chave do Produto, etiquetas do Cliente)
+mostrava o repr da lista (`[<Tag: pao>, <Tag: hamburger>]`) e cada save sem mexer gravava esse
+texto de volta, quebrado na vírgula. O comando acha as etiquetas corrompidas (`<Tag: `,
+`<CustomerTag: ` ou `[]`), tira as camadas de repr até sobrar o nome, religa o objeto à etiqueta
+limpa (reusando a que existe), solta a ligação quando não sobra nome e apaga a corrompida.
+Cobre `taggit.Tag` e `guestman.CustomerTag`. Idempotente.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--apply` | — | Grava a correção. Sem ela, só relata (dry-run) |
+
+```bash
+python manage.py repair_corrupted_tags
+python manage.py repair_corrupted_tags --apply
 ```
 
 ---
@@ -623,10 +750,12 @@ python manage.py process_directives --watch --interval 5 --limit 100 --max-attem
 **Arquivo:** `shopman/shop/management/commands/bootstrap_whatsapp_channel.py`
 
 Põe de pé, no banco vivo, o canal de venda dos pedidos do [concierge de WhatsApp](../guides/whatsapp-concierge.md):
-`Channel` ref `whatsapp` (pagamento `["pix","card"]` a `at_commit`, confirmação `auto_confirm` em 5 min)
-e o listing `whatsapp` espelhando o da web. Idempotente: cria o que falta, ativa o que está inativo,
-não sobrescreve config existente. É o equivalente ao que o `seed` faz num banco novo, para quem
-não pode reseedar (produção/alpha).
+`Channel` ref `whatsapp` (pagamento `["pix","card"]` a `at_commit`, aceite `manual`) e a vitrine `whatsapp`
+**espelhando** a da loja online pelo ponteiro `pricing.listing_from` (`shop/services/listing_mirror.py`).
+Idempotente: cria o que falta, ativa o que está inativo, só preenche chave de config que falta. Alinha a
+vitrine uma vez (item que só o WhatsApp tinha sai, preço diferente vira o do site); dali em diante cada
+mudança no site chega ao WhatsApp sozinha, sem rodar nada. `pricing.listing_from = ""` gravado no canal
+mantém vitrine própria (chave presente não é tocada). Roda no release do alpha. `--dry-run` mostra o plano.
 
 ```bash
 python manage.py bootstrap_whatsapp_channel
@@ -1633,6 +1762,65 @@ check falhou ou, em modo estrito, se há bloqueio externo). O JSON ganha
 ```bash
 make production-readiness read_only=1 json=1 manual_qa=docs/reports/manual-qa.md preprod_url=https://staging.example.com
 ```
+
+#### Numa worktree ou na CI, sem segredo
+
+Os alvos de prontidão rodam igual no checkout principal, numa worktree e na CI.
+Numa worktree (sem `.venv`), usam o `.venv` da árvore principal com o código
+da worktree à frente no `PYTHONPATH`. Sem `.env` e sem `DJANGO_SECRET_KEY`, a
+medição **local** roda no perfil de desenvolvimento com chave descartável (o
+`settings` recusa subir fora de DEBUG sem segredo, e localmente não há segredo
+a medir); o que vier do ambiente, como na CI, é preservado. Banco vazio não
+derruba mais o relatório: cada passo que quebra vira uma linha `FAIL` com o
+motivo (e a dica `make migrate seed` quando faltam tabelas), e os demais passos
+seguem medindo.
+
+#### Modo alvo (`target=1`): o app VIVO, não esta árvore
+
+A medição local responde sobre o `settings` do processo que a roda, nunca sobre
+o app que atende a loja. Para a linha `production-readiness` da
+[matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md), use o modo alvo
+(`scripts/release_readiness_target.py`). Ele não importa Django nem toca banco:
+
+- lê o spec vivo com `doctl apps spec get` (só leitura; nenhum `update`);
+- avalia o ambiente efetivo (app + componente) de cada componente que roda
+  Django contra a **tabela única do dia D** (`DELTA` de
+  `scripts/golive_spec_delta.py`, explicada em
+  [go-live-delta-do-spec.md](../runbooks/go-live-delta-do-spec.md)), em quatro
+  checks: perfil `production` (interruptores de ensaio), dinheiro e nota
+  (`EFI_SANDBOX=false`, `FOCUS_NFE_ENVIRONMENT=producao`, Stripe `pk_live_`,
+  segredos de produção colados; ausência reprova, porque o default do
+  `settings` é de ensaio), as chaves que só se ligam no corte
+  (`SHOPMAN_ADMIN_REQUIRE_2FA`, `SHOPMAN_GO_LIVE`) e as que já estão em dia e
+  não podem sair; mais o job de release com `migration_safety` antes do `migrate`;
+- sonda `/health/` e `/ready/` do domínio da API (`/ready/` com qualquer
+  dependência fora de `ok` reprova, mesmo com 200).
+
+Valor de segredo nunca é lido nem impresso; regra que dependa de um vira
+`WARN`. Com `baseline=<spec guardado antes da troca>`, a troca de cada segredo
+de produção se prova pelo cifrado que mudou, e o `WARN` some. É sempre estrito:
+sai 1 enquanto houver qualquer `FAIL`. A lista do que colar no painel, chave a
+chave, sai do mesmo avaliador: `.venv/bin/python scripts/golive_spec_delta.py`.
+
+| Variável/flag | Default | Descrição |
+|---------------|---------|-----------|
+| `target=1` / `--target` | — | Liga o modo alvo |
+| `context=...` / `--doctl-context=...` | `SHOPMAN_DOCTL_CONTEXT` | Contexto do `doctl` (hoje `shopman-do-app-admin`) |
+| `app=...` / `--target-app=...` | `shopman-nelson` | Nome ou UUID do app |
+| `target_spec=...` / `--target-spec=...` | — | Spec já baixado (pula o `doctl`) |
+| `target_url=...` / `--target-url=...` | `https://api.boulangerie.com.br` | Base das sondas |
+| `baseline=...` / `--target-baseline=...` | — | Spec guardado antes da troca: prova que os segredos de produção foram colados |
+
+```bash
+make production-readiness target=1 context=shopman-do-app-admin
+make production-readiness target=1 context=shopman-do-app-admin json=1
+make production-readiness target=1 context=shopman-do-app-admin baseline=~/golive-spec-antes.yaml
+```
+
+No **ensaio geral da virada** o mesmo gate roda contra o spec do dia D gerado
+fora do vivo (`scripts/golive_ensaio.py depois`) e contra o app local com o
+banco restaurado (`target_spec=<depois.ensaio.yaml> target_url=http://127.0.0.1:37210`).
+Roteiro em [ensaio-geral-da-virada.md](../runbooks/ensaio-geral-da-virada.md).
 
 ---
 

@@ -53,7 +53,7 @@ def customer_pricing_hints(request) -> tuple[str, str]:
         customer = get_authenticated_customer(request)
         if customer is None:
             return "", ""
-        tier = customer.price_tier.ref if getattr(customer, "price_tier_id", None) else ""
+        tier = customer.primary_price_tier.ref if getattr(customer, "primary_price_tier_id", None) else ""
         try:
             segment = customer.insight.rfm_segment or ""
         except ObjectDoesNotExist:

@@ -221,6 +221,13 @@ class StripeWebhookView(APIView):
                     logger.debug("stripe._trigger_order_hooks degraded; using fallback", exc_info=True)
                     return
 
+        if order and intent.status == "authorized" and order.status == Order.Status.NEW:
+            # Cartão autorizado esperando aceite: a reserva vence no Stripe em
+            # 7 dias. O vigia avisa o Gestor antes e, vencida, fecha o pedido.
+            from shopman.shop.services import card_authorization
+
+            card_authorization.watch(order)
+
         if order and payment_service.has_sufficient_captured_payment(order) is True:
             # Dispatch to flow for downstream effects.
             dispatch(order, "on_paid")

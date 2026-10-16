@@ -116,7 +116,7 @@ ROUTE_GATEWAY = "gateway"
 ROUTE_CARD_MACHINE = "card_machine"
 ROUTE_ACCOUNT = "account"
 
-_CARD_MACHINE_METHODS = frozenset({"credit", "debit", "external"})
+CARD_MACHINE_METHODS = frozenset({"credit", "debit", "external"})
 _COUNTER_METHODS = frozenset({"cash", "credit", "debit"})
 
 
@@ -745,6 +745,7 @@ def _receiving(order, fulfillment, before: str, fee_lines, products_q: int, next
 
     resolution = resolve_delivery_fee(
         address_structured=structured, address_text=address_text, merchandise_q=products_q, override_q=override_q,
+        channel_ref=order.channel_ref, customer_ref=str((data.get("customer") or {}).get("ref") or ""),
     )
     if resolution.blocked:
         raise EditRefused(
@@ -781,7 +782,7 @@ def _address_key(structured) -> tuple:
 
 
 def _require_delivery_identity(order, data_updates: dict, *, total_q: int) -> None:
-    """Entrega com nota exige CPF/CNPJ e endereço completo — a régua da venda (24/09)."""
+    """Entrega com nota exige endereço completo e CPF/CNPJ válido quando informado — a régua da venda (13/10)."""
     from shopman.shop.services import delivery_fiscal_identity as identity
 
     view_data = dict(order.data or {})
@@ -903,7 +904,7 @@ def refund_route(intent) -> str:
         return ROUTE_CASH
     if method == "account":
         return ROUTE_ACCOUNT
-    if method in _CARD_MACHINE_METHODS:
+    if method in CARD_MACHINE_METHODS:
         return ROUTE_CARD_MACHINE
     if not intent.gateway:
         # Pix/cartão ATESTADOS no balcão (venda mista): não há gateway, a prova
@@ -1047,7 +1048,7 @@ def _tender_route(tender: dict) -> str:
     method = str(tender.get("method") or "")
     if method == "cash":
         return ROUTE_CASH
-    if method in _CARD_MACHINE_METHODS or str(tender.get("collection") or "") == "terminal":
+    if method in CARD_MACHINE_METHODS or str(tender.get("collection") or "") == "terminal":
         return ROUTE_CARD_MACHINE
     return ROUTE_GATEWAY
 
@@ -1216,7 +1217,7 @@ class _Pricing:
             try:
                 from shopman.guestman.models import Customer
 
-                self._customer = Customer.objects.select_related("price_tier").filter(ref=customer_ref).first()
+                self._customer = Customer.objects.prefetch_related("price_tiers").filter(ref=customer_ref).first()
             except Exception:
                 logger.warning("order_edit: faixa do cliente indisponível order=%s", self.order.ref, exc_info=True)
 

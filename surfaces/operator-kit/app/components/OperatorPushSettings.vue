@@ -36,13 +36,25 @@ function surfaceLabel(ref: string): string {
   return OPERATOR_APPS[ref as keyof typeof OPERATOR_APPS]?.label || ref;
 }
 
+/**
+ * Bloqueado pelo navegador: o site não consegue reabrir o pedido de permissão nem abrir
+ * os ajustes do navegador. A frase diz onde fica o gesto (o ícone à esquerda do endereço
+ * abre os ajustes do site em Chrome, Edge, Safari e Firefox) e o botão "Recarregar"
+ * fecha o caminho: a permissão nova só vale depois de recarregar.
+ */
+const BLOCKED_STEPS =
+  "Permita as notificações nos ajustes do site (o ícone à esquerda do endereço) e toque em Recarregar.";
+function reloadPage(): void {
+  window.location.reload();
+}
+
 /** A linha (`variant="line"`): o estado em poucas palavras, a causa inteira quando falta algo. */
 const canActivate = computed(() => permission.value !== "denied" && supported.value && !active.value);
 const hasDetails = computed(() => Boolean(currentDevice.value) || devices.value.length > 0);
 const detailsOpen = ref(false);
 const lineState = computed(() => {
   if (permission.value === "denied") {
-    return "este navegador está bloqueando os avisos deste site. Libere a permissão de notificações nos ajustes do site e recarregue esta tela.";
+    return `bloqueados pelo navegador. ${BLOCKED_STEPS}`;
   }
   if (active.value) return "ligados. Chegam mesmo com a janela fechada.";
   if (supported.value) return `desligados. Ligue para receber mesmo com a janela ${hubNamedOf} fechada.`;
@@ -75,6 +87,16 @@ async function updateCategorySelection(next: string[]): Promise<void> {
           <span class="min-w-0" role="status" data-push-line-state :data-push-unavailable="unavailableReason || undefined">
             Avisos neste dispositivo<template v-if="lineState">: {{ lineState }}</template>
           </span>
+          <NuxtButton
+            v-if="permission === 'denied'"
+            label="Recarregar"
+            icon="i-lucide-rotate-cw"
+            color="neutral"
+            variant="outline"
+            size="md"
+            data-push-reload
+            @click="reloadPage"
+          />
           <button
             v-if="canActivate"
             type="button"
@@ -111,10 +133,20 @@ async function updateCategorySelection(next: string[]): Promise<void> {
         Avisos da operação chegam a este dispositivo mesmo com a janela {{ hubNamedOf }} fechada.
       </p>
 
-      <p v-if="permission === 'denied'" role="status" class="mt-4 text-sm text-muted-foreground">
-        Este navegador está bloqueando os avisos deste site. Libere a permissão de notificações
-        nos ajustes do site e recarregue esta tela.
-      </p>
+      <div v-if="permission === 'denied'" class="mt-4 grid justify-items-start gap-2">
+        <p role="status" class="text-sm text-muted-foreground" data-push-blocked>
+          Os avisos estão bloqueados pelo navegador. {{ BLOCKED_STEPS }}
+        </p>
+        <NuxtButton
+          label="Recarregar"
+          icon="i-lucide-rotate-cw"
+          color="neutral"
+          variant="outline"
+          size="md"
+          data-push-reload
+          @click="reloadPage"
+        />
+      </div>
       <button
         v-else-if="supported && !active"
         type="button"

@@ -191,6 +191,29 @@ def nfce_authorized_at(order):
     return parsed if timezone.is_aware(parsed) else timezone.make_aware(parsed)
 
 
+def goods_left_the_house(order) -> bool:
+    """A mercadoria desta venda saiu da casa? (a segunda condição do art. 35)
+
+    Pedido vivo responde pelo status (:data:`GOODS_NOT_DISPATCHED`). Os dois
+    finais de desfazer respondem pelo que significam, não pelo nome:
+
+    - ``returned`` é a mercadoria que SAIU e voltou: houve saída, e a nota de
+      venda entregue não se cancela.
+    - ``cancelled`` é a venda que não aconteceu, e o cancelamento devolve a
+      mercadoria ao saldo (``stock.release``/``stock.revert_fulfilled``). Depois
+      que o entregador saiu, o fato é devolução (``returned``), não
+      cancelamento: o canal não deixa ``dispatched``/``delivered`` virar
+      ``cancelled``. O que sobra é o desfazer do balcão, com o cliente na frente
+      do caixa, e esse decide pelo relógio.
+    """
+    status = str(getattr(order, "status", ""))
+    if status == "returned":
+        return True
+    if status == "cancelled":
+        return False
+    return status not in GOODS_NOT_DISPATCHED
+
+
 def cancellation_path(order) -> dict:
     """Como desfazer a NFC-e já autorizada deste pedido.
 
@@ -215,7 +238,14 @@ def cancellation_path(order) -> dict:
     """
     window = cancellation_window_minutes()
     authorized_at = nfce_authorized_at(order)
+    dispatched = goods_left_the_house(order)
     if authorized_at is None:
+        if dispatched:
+            # A saída fecha a porta sozinha: não precisa do relógio para saber.
+            return {
+                "path": RETURN_NOTE, "deadline": None,
+                "minutes_left": None, "reason": "goods_dispatched",
+            }
         return {
             "path": CANCELLATION_PATH_UNKNOWN, "deadline": None,
             "minutes_left": None, "reason": "",
@@ -223,7 +253,6 @@ def cancellation_path(order) -> dict:
 
     deadline = authorized_at + timedelta(minutes=window)
     minutes_left = (deadline - timezone.now()).total_seconds() / 60
-    dispatched = str(getattr(order, "status", "")) not in GOODS_NOT_DISPATCHED
     if minutes_left <= 0 or dispatched:
         return {
             "path": RETURN_NOTE, "deadline": deadline, "minutes_left": minutes_left,
@@ -461,9 +490,9 @@ def build_emission_payload(order) -> dict:
         raise ValueError("Pagamento fiscal abaixo da base da nota. Corrija antes de reprocessar.")
     payment = _payment_net_of_change(payment, note_base_q(order))
     customer = _fiscal_customer(data)
-    # Entrega intermediada sem documento sai presencial, sem destinatário nem
-    # frete — ver fiscal_intermediary.issues_as_presential. Canal próprio nunca.
-    presential = fiscal_intermediary.issues_as_presential(
+    # Entrega sem documento sai presencial, sem destinatário nem frete, em
+    # TODO canal — ver delivery_issues_as_presential.
+    presential = delivery_issues_as_presential(
         order, requested_tax_id=customer.get("tax_id") or "",
     )
     delivery = None
@@ -478,6 +507,14 @@ def build_emission_payload(order) -> dict:
     if order.channel_ref:
         payload["channel_ref"] = order.channel_ref
     items = _build_fiscal_items(order)
+    if presential:
+        # A taxa da casa que veio como linha do carrinho (canal próprio) sai
+        # da nota presencial como outras despesas, igual à do intermediador.
+        items = [
+            _intermediary_freight_item(int(item.get("total_q") or 0), as_other_expense=True)
+            if _is_delivery_fee_line(item) else item
+            for item in items
+        ]
     amounts = fiscal_intermediary.seller_amounts(order)
     if amounts is not None and amounts["freight_q"] > 0:
         items.append(_intermediary_freight_item(amounts["freight_q"], as_other_expense=presential))
@@ -490,6 +527,39 @@ def build_emission_payload(order) -> dict:
     _alert_intermediary_base_unknown(order)
     _alert_intermediary_benefit_unattributed(order)
     return payload
+
+
+def delivery_issues_as_presential(order, *, requested_tax_id: str) -> bool:
+    """Esta entrega sai como NFC-e PRESENCIAL, sem destinatário?
+
+    Decisão do dono (13/10/2026, substitui a de 24/09): a praxe do delivery
+    (ERPs de restaurante fazem assim) vale para TODOS os canais, da casa e
+    intermediados. A confirmação do contador fica registrada como pendência
+    dele (``docs/plans/LEVA-CONTADOR-ADVOGADO.md``, item 2.1).
+
+    A nota de entrega a domicílio (``indPres=4``) exige destinatário
+    identificado (E01-20 → 787) e endereço (E05-20 → 788), as duas vivas. O
+    transportador NÃO é mais exigido: a X03-20 (rejeição 786) foi desabilitada
+    pela NT 2023.004, seção 2.3.2, em produção desde 01/07/2024. Sem o CPF/CNPJ
+    do destinatário, a venda é declarada como **presencial** (``indPres=1``),
+    consumidor não identificado, sem endereço, sem frete e sem transportador.
+    A taxa de entrega que foi da casa não some da nota: vira **outras
+    despesas** (``vOutro``), para o total bater com o que o cliente pagou à
+    casa. Com documento, segue a nota de entrega completa (``indPres=4``).
+
+    ``requested_tax_id`` é o documento PEDIDO para esta nota (``fiscal.tax_id``),
+    nunca o do cadastro. Documento informado e inválido **não** entra aqui: é
+    pedido de nota com dado errado, e a recusa ruidosa do adapter continua
+    sendo a resposta certa.
+    """
+    if (order.data or {}).get("fulfillment_type") != "delivery":
+        return False
+    return not re.sub(r"\D", "", str(requested_tax_id or ""))
+
+
+def _is_delivery_fee_line(item: dict) -> bool:
+    meta = item.get("meta") or {}
+    return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") == "delivery_fee"
 
 
 def _fiscal_payment(order, data: dict) -> dict:
@@ -524,7 +594,7 @@ def _intermediary_freight_item(freight_q: int, *, as_other_expense: bool = False
     classificação fiscal.
 
     ``as_other_expense``: a nota sai presencial, sem frete
-    (``fiscal_intermediary.issues_as_presential``), e a mesma taxa entra como
+    (``delivery_issues_as_presential``), e a mesma taxa entra como
     **outras despesas** (``vOutro``). A linha ganha outra marca, e o adapter a
     declara em ``valor_outras_despesas``, nunca como frete nem como mercadoria.
     """
@@ -829,12 +899,163 @@ def cancel(order) -> None:
     if (order.data or {}).get("nfce_cancelled"):
         return
 
+    # Fora da janela do art. 35, ou com a mercadoria já fora, cancelar não é
+    # caminho: a SEFAZ recusa e a nota continua valendo. O caminho é a nota de
+    # estorno, que o sistema ainda não emite: abre a pendência para alguém
+    # levá-la ao contador (P1-12). Sem a hora da autorização o prazo não se
+    # mede, e a tentativa segue como antes: a recusa, se vier, também avisa.
+    if cancellation_path(order)["path"] == RETURN_NOTE:
+        open_return_note(order)
+        return
+
     directives.queue(
         FISCAL_CANCEL_NFCE, order,
         reason=(order.data or {}).get("cancellation_reason", "cancelled"),
     )
 
     logger.info("fiscal.cancel: queued for order %s", order.ref)
+
+
+#: A pendência "nota de estorno": a NFC-e autorizada que não pode mais ser
+#: cancelada e precisa de documento de estorno, que o sistema ainda não emite.
+RETURN_NOTE_ALERT_TYPE = "fiscal_return_note_due"
+
+#: A chave em ``Order.data`` (``docs/reference/data-schemas.md``): uma entrada
+#: por pendência aberta, para não abrir a mesma duas vezes.
+RETURN_NOTES_KEY = "nfce_return_notes"
+
+#: O que houve, na primeira frase do aviso.
+_RETURN_NOTE_FACTS = {
+    "window_closed": "Passou o prazo de cancelar a NFC-e.",
+    "goods_dispatched": "A mercadoria já saiu, e a NFC-e não pode mais ser cancelada.",
+    "partial_return": "Devolução de parte da venda: a NFC-e não pode ser cancelada.",
+}
+
+_MONTH_NAMES = (
+    "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+)
+
+
+def _return_note_deadline(order) -> str:
+    """Até quando: o fim do mês da venda, por extenso; passado ele, já."""
+    if not order.created_at:
+        return "Envie ao contador:"
+    sale = timezone.localtime(order.created_at)
+    today = timezone.localdate()
+    month = _MONTH_NAMES[sale.month - 1]
+    if (today.year, today.month) > (sale.year, sale.month):
+        return f"Envie ao contador agora (a venda é de {month}):"
+    return f"Envie ao contador até o fim de {month}:"
+
+
+def _qty_text(value) -> str:
+    """``2``, ``0,35``: a quantidade como se lê, sem zeros à direita."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        qty = Decimal(str(value)).normalize()
+    except (InvalidOperation, ValueError):
+        return str(value)
+    return f"{qty:f}".replace(".", ",")
+
+
+def _return_note_lines(order, record: dict | None) -> tuple[list[str], int]:
+    """Os itens devolvidos, por extenso, e o valor: o que a nota de estorno desfaz."""
+    names = {item.line_id: item.name for item in order_composition.effective_items(order)}
+    if record is not None:
+        lines = []
+        for item in record.get("items") or []:
+            name = names.get(item.get("line_id")) or item.get("sku") or ""
+            lines.append(f"{_qty_text(item.get('qty'))} × {name}, R$ {format_money(int(item.get('refund_q') or 0))}")
+        return lines, int(record.get("refund_total_q") or 0)
+    lines = [
+        f"{_qty_text(item.qty)} × {item.name}, R$ {format_money(item.line_total_q)}"
+        for item in order_composition.effective_items(order)
+    ]
+    return lines, note_base_q(order)
+
+
+def _return_note_reason_text(order, record: dict | None) -> str:
+    """O motivo, como o operador escreveu ou escolheu; nunca o código de máquina."""
+    data = order.data or {}
+    if record is not None and str(record.get("reason") or "").strip():
+        return str(record["reason"]).strip()
+    returns = [r for r in data.get("returns") or [] if isinstance(r, dict)]
+    if str(order.status) == "returned" and returns and str(returns[-1].get("reason") or "").strip():
+        return str(returns[-1]["reason"]).strip()
+    if str(order.status) == "cancelled":
+        from shopman.shop.services import cancel_reasons
+
+        reason = cancel_reasons.cancel_reason(cancel_reasons.reason_key_of(data))
+        if reason is not None and reason.key != cancel_reasons.OTHER:
+            return reason.label
+        note = str(data.get("cancellation_internal_note") or "").strip()
+        return note or "não informado"
+    return "não informado"
+
+
+def open_return_note(order, *, return_index: int | None = None) -> bool:
+    """Abre a pendência "nota de estorno" no Gestor. Idempotente por origem.
+
+    ``return_index`` é a devolução PARCIAL (``order.data["returns"][i]``): a
+    venda continua de pé em parte, então a nota inteira nunca se cancela. Sem
+    ele, é a venda inteira desfeita fora da janela do art. 35.
+
+    Não emite documento nenhum: grava a pendência em
+    :data:`RETURN_NOTES_KEY` e avisa quem gere os pedidos com o roteiro do que
+    juntar para o contador. Devolve ``True`` quando abriu agora.
+    """
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    source = "order" if return_index is None else f"return:{return_index}"
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        data = dict(locked.data or {})
+        access_key = str(data.get("nfce_access_key") or "")
+        if not access_key or data.get("nfce_cancelled"):
+            return False
+        notes = [n for n in data.get(RETURN_NOTES_KEY) or [] if isinstance(n, dict)]
+        if any(n.get("source") == source for n in notes):
+            return False
+        record = None
+        if return_index is not None:
+            returns = data.get("returns") or []
+            if not 0 <= return_index < len(returns):
+                return False
+            record = returns[return_index]
+            reason = "partial_return"
+        else:
+            reason = cancellation_path(locked)["reason"] or "window_closed"
+        notes.append({"source": source, "reason": reason, "opened_at": timezone.now().isoformat()})
+        data[RETURN_NOTES_KEY] = notes
+        locked.data = data
+        locked.save(update_fields=["data", "updated_at"])
+
+    order.data = data
+    lines, amount_q = _return_note_lines(locked, record)
+    logger.warning("fiscal.return_note_due order=%s source=%s reason=%s", locked.ref, source, reason)
+    # Uma frase com o fato e o gesto; depois os dados, um por linha. O pedido
+    # não se repete: o aviso já o mostra no rodapé.
+    create_operator_alert(
+        type=RETURN_NOTE_ALERT_TYPE,
+        severity="warning",
+        message="\n".join((
+            f"{_RETURN_NOTE_FACTS.get(reason, _RETURN_NOTE_FACTS['window_closed'])} "
+            f"{_return_note_deadline(locked)}",
+            "Chave:",
+            access_key,
+            f"Devolvido: {' · '.join(lines) or 'todos os itens do pedido'}",
+            f"Total: R$ {format_money(amount_q)}",
+            f"Motivo: {_return_note_reason_text(locked, record)}",
+        )),
+        order_ref=locked.ref,
+        dedupe_key=f"{RETURN_NOTE_ALERT_TYPE}:{locked.ref}:{source}",
+    )
+    return True
 
 
 def _verify_failed_emission(order) -> None:

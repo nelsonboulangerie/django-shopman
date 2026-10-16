@@ -15,6 +15,8 @@ import type {
   RecipeCompareProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeSheetDetailProjection,
+  RecipeSheetListProjection,
   RecipeVersionProjection,
 } from "~/generated/recipeBookContract";
 
@@ -27,8 +29,10 @@ export type {
   FormulaMetricProjection,
   FormulaPartProjection,
   FormulaWarningProjection,
+  ExecutionSheetProjection,
   IngredientOptionProjection,
   KindOptionProjection,
+  LifecycleOptionProjection,
   QualityShareProjection,
   RatingCriterionProjection,
   RecipeBookAccessProjection,
@@ -40,6 +44,11 @@ export type {
   RecipeEntryCardProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeSheetCardProjection,
+  RecipeSheetDetailProjection,
+  RecipeSheetItemProjection,
+  RecipeSheetListProjection,
+  RecipeSheetMassBalanceProjection,
   RecipeStepProjection,
   RecipeUsageProjection,
   RecipeVersionProjection,
@@ -154,6 +163,7 @@ export interface RecipeStepInput {
 
 /** Corpo de `POST recipes/<ref>/versions/` e do `version` de `POST recipes/`. */
 export interface VersionPayload {
+  expectedRevision?: string;
   from_version?: number;
   formula: Formula;
   yield_quantity: string;
@@ -167,6 +177,7 @@ export interface VersionPayload {
 
 /** Campos do rascunho aceitos por `PATCH recipes/<ref>/versions/<n>/`. */
 export interface DraftPatch {
+  expectedRevision?: string;
   formula?: Formula;
   yield_quantity?: string;
   yield_unit?: string;
@@ -203,6 +214,25 @@ export interface EntryPatch {
   notes?: string;
   is_archived?: boolean;
   external_references?: ExternalReferenceInput[];
+  expectedRevision?: string;
+}
+
+export interface RecipeDuplicatePayload {
+  name: string;
+  ref?: string;
+  outputSku?: string;
+  fromVersion?: number;
+  expectedRevision: string;
+}
+
+export interface ExecutionPatch {
+  expectedRevision: string;
+  maxStartedMinutes?: number | null;
+  capacityPerDay?: string | null;
+  requiresBatchTracking?: boolean;
+  shelfLifeDays?: number | null;
+  shelfLifeReviewed?: boolean;
+  productionLifecycle?: string;
 }
 
 /** Corpo de `PUT recipes/<ref>/versions/<n>/rating/`: id do critério → nota inteira de 0 a 5. */
@@ -226,6 +256,20 @@ export interface RecipeBookListResponse {
 export interface RecipeEntryResponse {
   entry: RecipeEntryDetailProjection;
   access?: RecipeBookAccessProjection;
+}
+
+export interface RecipeDuplicateResponse extends RecipeEntryResponse {
+  ok: boolean;
+  outcome: "applied" | "not_applied" | "unknown";
+  resource: { kind: "recipe"; ref: string };
+}
+
+export type RecipeCreateResponse = RecipeDuplicateResponse;
+export interface RecipeVersionMutationResponse extends RecipeEntryResponse {
+  version?: RecipeVersionProjection;
+  ok: boolean;
+  outcome: "applied" | "not_applied" | "unknown";
+  resource: { kind: "recipe-version"; ref: string };
 }
 
 /** POST/DELETE recipes/<ref>/favorite/ — a estrela do operador, idempotente. */
@@ -267,3 +311,73 @@ export interface CaptureResponse {
 export interface AccessResponse {
   access: RecipeBookAccessProjection;
 }
+
+// ── Ficha de execução (cadastro direto de craftsman.Recipe + RecipeItem) ────
+
+/** Uma linha da ficha como o formulário a edita (valores crus, sem projeção). */
+export interface RecipeSheetItemDraft {
+  inputSku: string;
+  quantity: string;
+  unit: string;
+  usableFactor: string;
+  isOptional: boolean;
+  note: string;
+}
+
+/** Uma linha da ficha como a API a recebe. */
+export interface RecipeSheetItemPayload {
+  input_sku: string;
+  quantity: string;
+  unit: string;
+  usable_factor: string;
+  sort_order?: number;
+  is_optional: boolean;
+  note: string;
+}
+
+/**
+ * Corpo de `POST sheets/` e de `PATCH sheets/<ref>/`. A identidade e o BOM
+ * falam snake_case (o dialeto das entry de receita); a operação fala o mesmo
+ * camelCase do `/execution/`, porque é o MESMO serviço que a aplica.
+ */
+export interface RecipeSheetPayload {
+  name: string;
+  ref?: string;
+  output_sku: string;
+  batch_size: string;
+  is_active?: boolean;
+  steps?: RecipeStepInput[];
+  items: RecipeSheetItemPayload[];
+  expectedRevision?: string;
+  maxStartedMinutes?: number | null;
+  capacityPerDay?: string | null;
+  requiresBatchTracking?: boolean;
+  shelfLifeDays?: number | null;
+  shelfLifeReviewed?: boolean;
+  productionLifecycle?: string;
+}
+
+/** Corpo de `POST sheets/<ref>/duplicate/`: a cópia nasce inativa. */
+export interface RecipeSheetDuplicatePayload {
+  name: string;
+  ref?: string;
+  output_sku?: string;
+  expectedRevision: string;
+}
+
+export interface RecipeSheetListResponse {
+  sheets: RecipeSheetListProjection;
+  access: RecipeBookAccessProjection;
+}
+
+export interface RecipeSheetResponse {
+  sheet: RecipeSheetDetailProjection;
+  access?: RecipeBookAccessProjection;
+}
+
+export interface RecipeSheetMutationResponse extends RecipeSheetResponse {
+  ok: boolean;
+  outcome: "applied" | "not_applied" | "unknown";
+  resource: { kind: "recipe-sheet"; ref: string };
+}
+

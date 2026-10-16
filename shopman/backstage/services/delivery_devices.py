@@ -90,6 +90,12 @@ def guard_dispatch(sender, instance, raw=False, **kwargs):
     order = instance if sender is Order else instance.order
     if not needs_card_machine(order) and not (order.data or {}).get("dispatch", {}).get("device_ref"):
         return
+    # Coleta da TaOn sem maquininha registrada no Gestor
+    # (``advance_order(partner_collects=True)``): fato externo não reserva
+    # maquininha. Lido do banco porque o ``instance.order`` de um Fulfillment
+    # pode estar em cache.
+    if Order.objects.filter(pk=order.pk, data__dispatch__collector="courier_partner").exists():
+        return
     # No implicit selection/reservation from courier or KDS. The authorized
     # operator chooses at dispatch; alternative entries explain that next action.
     with transaction.atomic():

@@ -8,7 +8,7 @@ const port = Number(process.env.MOCK_PORT || 8796);
 // Sessão autenticada e destravada → o shell passa dos gates e mostra o board.
 // Uma identidade: `locked` é literalmente "não há operador", então um mock com
 // `operator: null, locked: false` descreve um estado que o servidor não produz.
-const SESSION = { station: "balcao", operator: { id: 1, username: "admin", name: "Admin" }, locked: false, pin_must_change: false };
+const SESSION = { station: "balcao", operator: { id: 1, username: "admin", name: "Admin" }, locked: false, pin_must_change: false, authorized: true };
 
 const CARD = {
   ref: "WEB-20260625-0007",
@@ -124,6 +124,30 @@ const QUEUE = {
   },
 };
 
+// O detalhe de um pedido da fila: o card + o que só o detalhe traz. Sem isto o
+// `/<ref>` recebia `{}` e a e2e não alcançava o resumo do iFood, que mora no detalhe.
+const DETAIL_EXTRA = {
+  customer_phone: "", customer_phone_uri: "", customer_whatsapp_url: "", customer_email: "", customer_ref: "",
+  delivery_address: "", delivery_instructions: "",
+  items: [{ sku: "PAO", name: "Pão", qty: "1", unit_price_display: "R$ 16,00", total_display: "R$ 16,00" }],
+  timeline: [], kitchen_note: "", customer_note: "", fiscal_links: [], equipment_options: [], equipment_out: [],
+  cancellation_presets: [], kitchen_note_tags: [], customer_profile: null,
+  can_cancel: true, cancel_requires_approval: false,
+  // A lista única de motivos de cancelar (`shop/services/cancel_reasons.py`).
+  cancel_reasons: [
+    { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },
+    { key: "cannot_deliver", label: "Não dá para entregar", customer_text: "Não conseguimos fazer a entrega no endereço e no horário do pedido." },
+    { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+    { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo." },
+    { key: "store_closing", label: "A loja vai fechar", customer_text: "Precisamos encerrar o atendimento antes do horário do seu pedido." },
+    { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
+  ],
+};
+
+function queueCard(ref) {
+  return Object.values(QUEUE.queue).flat().find((card) => card && typeof card === "object" && card.ref === ref);
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -137,6 +161,11 @@ const server = createServer((req, res) => {
   if (/\/operator\/session\/?(\?|$)/.test(url)) return json(res, 200, SESSION);
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   if (/\/orders\/?(\?|$)/.test(url)) return json(res, 200, QUEUE);
+  const detail = url.match(/\/orders\/([A-Z0-9-]+)\/?(\?|$)/);
+  if (detail) {
+    const card = queueCard(detail[1]);
+    return card ? json(res, 200, { order: { ...card, ...DETAIL_EXTRA } }) : json(res, 404, { detail: "Pedido não encontrado." });
+  }
   if (/\/alerts\/?(\?|$)/.test(url)) return json(res, 200, { alerts: [], counts: { active: 0, critical: 0 } });
   return json(res, 200, {});
 });

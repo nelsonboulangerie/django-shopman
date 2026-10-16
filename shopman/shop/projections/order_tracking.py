@@ -322,9 +322,11 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     payment_pending, payment_confirmed, payment_status_key, payment_expires_at = _payment_info(order)
     # ⚠️ `cancellation_reason` carrega CÓDIGO DE MÁQUINA (pix_timeout,
     # customer_requested…) e é campo de auditoria — data-schemas.md diz "nunca
-    # exibir ao cliente". O que chega ao cliente é a nota do operador, a mesma
-    # que o lifecycle usa na notificação. Sem nota, a tela não inventa motivo.
-    cancellation_note = str(order_data.get("cancellation_note") or "")
+    # exibir ao cliente". O que chega ao cliente é o texto revisado da chave do
+    # motivo (`cancellation_reason_key`), o mesmo da notificação; a observação
+    # interna do operador nunca. Sem chave ou com "Outro motivo", a tela não
+    # inventa motivo; no Pix vencido quem explica é a promessa da tela.
+    cancellation_note = "" if _is_payment_timeout_cancelled(order) else _cancellation_customer_text(order_data)
     refund_status_key = _refund_status_key(order)
     cancellation_request = _cancellation_request(order)
     progress_steps = _build_progress_steps(
@@ -972,13 +974,14 @@ def _build_promise(
     # ── 1. TERMINAL — o pedido acabou; nada mais importa ────────────
     if payment_expired:
         # Prazo do Pix vencido e pedido cancelado: expiração é mais específica
-        # que "cancelado" genérico, então vem antes.
+        # que "cancelado" genérico, então vem antes. O aviso que o cliente recebe
+        # é UM só, o ``order_cancelled`` com a frase do prazo vencido (P1-9).
         return promise(
             state="payment_expired",
             tone="danger",
             deadline_kind="payment",
             requires_active_notification=True,
-            notification_topic="payment_expired",
+            notification_topic="order_cancelled",
         )
     terminal_tone = {
         "delivered": "success",
@@ -1004,7 +1007,7 @@ def _build_promise(
             tone="danger",
             deadline_kind="payment",
             requires_active_notification=True,
-            notification_topic="payment_expired",
+            notification_topic="order_cancelled",
         )
 
     # Daqui para frente: status ∈ {new, accepted, preparing, ready, dispatched}.
@@ -1141,7 +1144,8 @@ def _build_promise(
     if order.status == "dispatched":
         # Produto saiu, courier terceirizado, sem rastreio nem detecção de
         # chegada. Não prometemos "avisamos quando chegar": damos janela estimada
-        # e deixamos o cliente fechar o loop ("Recebi").
+        # e deixamos o cliente fechar o loop ("Recebi"). Quando a corrida é da
+        # TaOn e ela deu o link da parada, o cliente segue o entregador por ele.
         actions: tuple[Action, ...] = ()
         if is_delivery:
             actions = (
@@ -1160,6 +1164,18 @@ def _build_promise(
                     idempotency="required",
                 ),
             )
+            courier_url = _courier_tracking_url(order)
+            if courier_url:
+                actions += (
+                    _action(
+                        ref="track_courier",
+                        kind="external",
+                        label=_copy_title("TRACKING_ACTION_TRACK_COURIER", "Acompanhar o entregador"),
+                        priority="secondary",
+                        href=courier_url,
+                        idempotency="none",
+                    ),
+                )
         return promise(
             state="dispatched",
             tone="info",
@@ -1171,6 +1187,29 @@ def _build_promise(
 
     # ── 6. REPOUSO — recebido (fallback) ────────────────────────────
     return promise(state="received", tone="info")
+
+
+#: Letras da corrida (Machine) em que ela já acabou: finalizada, não atendida,
+#: cancelada. O link da parada deixa de mostrar o entregador.
+_COURIER_ENDED_STATUSES = frozenset({"F", "N", "C"})
+
+
+def _courier_tracking_url(order) -> str:
+    """O link da TaOn para o cliente seguir o entregador, ou ``""``.
+
+    Vem de ``order.data.courier.tracking_url`` (gravado no aceite da corrida,
+    ``services/courier._enrich_accepted``), o mesmo que vai no aviso de saída.
+    Só link http(s): o valor vem de terceiro e vira ``href`` na página.
+    """
+    courier = (order.data or {}).get("courier")
+    if not isinstance(courier, dict):
+        return ""
+    if str(courier.get("status") or "") in _COURIER_ENDED_STATUSES:
+        return ""
+    url = str(courier.get("tracking_url") or "").strip()
+    if not url.lower().startswith(("https://", "http://")):
+        return ""
+    return url
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
@@ -1786,6 +1825,15 @@ def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
         "waitlist_deadline": block.get("deadline") if state == waitlist.CONFIRMING else None,
         "waitlist_planned_for": planned_for,
     }
+
+
+def _cancellation_customer_text(order_data: dict) -> str:
+    from shopman.shop.services import cancel_reasons
+
+    reason = cancel_reasons.cancel_reason(order_data.get("cancellation_reason_key"))
+    if reason is None or reason.key == cancel_reasons.OTHER:
+        return ""
+    return reason.customer_text
 
 
 def _is_payment_timeout_cancelled(order) -> bool:

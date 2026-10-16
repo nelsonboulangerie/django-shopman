@@ -9,7 +9,6 @@ from shopman.backstage.models import POSTab
 from shopman.backstage.projections.pos import build_open_tab, build_pos_tabs
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import pos as pos_service
-from shopman.shop.services.pos_intent import PosIntentError
 
 
 def _grant_pos_perm(user):
@@ -157,15 +156,20 @@ class POSTabSessionTests(TestCase):
         self.assertEqual(review.total_q, 2000)
         self.assertEqual(review.change_q, 0)
 
-    def test_review_without_session_and_prices_fails_loudly(self) -> None:
-        """F1: sem sessao e sem preco declarado, a review recusa com clareza."""
+    def test_review_without_session_and_prices_asks_the_pricing_engine(self) -> None:
+        """F1 + P0-1: sem sessao e sem preco declarado, a review pergunta ao motor.
+
+        Antes a review recusava (``price_not_resolved``) porque so sabia somar o
+        preco que a tela mandava. Agora a venda sem comanda e precificada pelo
+        mesmo motor do fechamento, e o preco de catalogo aparece na revisao.
+        """
         payload = _payload(tab_ref="", tab_session_key="")
         payload["items"] = [{"sku": "POS-TAB-ITEM", "name": "Tab Item", "qty": 1}]
-        with self.assertRaises(PosIntentError) as ctx:
-            pos_service.review_sale(
-                channel_ref="pdv", payload=payload, operator_username="alice",
-            )
-        self.assertEqual(ctx.exception.code, "price_not_resolved")
+        review = pos_service.review_sale(
+            channel_ref="pdv", payload=payload, operator_username="alice",
+        )
+        self.assertEqual(review.subtotal_q, 1000)
+        self.assertEqual(review.total_q, 1000)
 
     def test_open_tab_exposes_the_pricing_discount_stamped_on_the_line(self) -> None:
         """Transparência do desconto automático (o caso Batard 13,00 → 11,05).

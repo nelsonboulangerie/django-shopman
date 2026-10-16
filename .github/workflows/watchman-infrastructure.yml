@@ -1,0 +1,167 @@
+name: Watchman Infrastructure
+
+"on":
+  schedule:
+    - cron: "23 09 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watchman-infrastructure
+  cancel-in-progress: false
+
+jobs:
+  read-only-contract:
+    name: Contrato vivo somente leitura
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings
+      SHOPMAN_ENVIRONMENT: production
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: ci-watchman-infrastructure-aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1zC
+      DJANGO_ALLOWED_HOSTS: shop.example.invalid
+      DJANGO_SECURE_SSL_REDIRECT: "true"
+      CSRF_TRUSTED_ORIGINS: https://shop.example.invalid
+      AUTH_DEFAULT_DOMAIN: shopman-ci.example
+      SHOPMAN_DOMAIN: https://shop.example.invalid
+      DATABASE_URL: postgresql://shopman:synthetic@db.invalid:5432/shopman
+      REDIS_URL: rediss://cache.invalid:6379/0
+      SHOPMAN_PIX_ADAPTER: shopman.shop.adapters.payment_efi
+      SHOPMAN_CARD_ADAPTER: shopman.shop.adapters.payment_stripe
+      SHOPMAN_LINK_ADAPTER: shopman.shop.adapters.payment_stripe
+      SHOPMAN_FISCAL_ADAPTER: shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend
+      SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS: "false"
+      SHOPMAN_EXPOSE_MOCK_CAPTURE: "false"
+      SHOPMAN_MOCK_PIX_AUTO_CONFIRM: "false"
+      SHOPMAN_EXPOSE_DEBUG_OTP: "false"
+      SHOPMAN_STAGING_AUTOPILOT: "false"
+      SHOPMAN_ENABLE_CONSOLE_NOTIFICATION_ADAPTER: "false"
+      SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "false"
+      EFI_SANDBOX: "false"
+      EFI_CLIENT_ID: ci-efi-client
+      EFI_CLIENT_SECRET: ci-efi-secret
+      EFI_PIX_KEY: ci-efi-pix-key
+      EFI_WEBHOOK_TOKEN: ci-efi-webhook-token
+      EFI_CERTIFICATE_PATH: /tmp/ci-watchman-infrastructure.pem
+      STRIPE_SECRET_KEY: sk_live_ci_contract_only
+      STRIPE_PUBLISHABLE_KEY: pk_live_ci_contract_only
+      STRIPE_WEBHOOK_SECRET: whsec_ci_contract_only
+      FOCUS_NFE_TOKEN: ci-focus-token
+      FOCUS_NFE_ENVIRONMENT: producao
+      FOCUS_NFE_CNPJ_EMITENTE: "00000000000191"
+      DOORMAN_ACCESS_LINK_API_KEY: ci-doorman-access-link-key
+      COMTELE_API_KEY: ci-comtele-key
+      COMTELE_ROUTE: ci-comtele-route
+      IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
+      MANYCHAT_API_TOKEN: ci-manychat-api-token
+      MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
+      SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY: ci-only-privacy-receipt-hmac-key-at-least-32-bytes
+      SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY_VERSION: "1"
+      SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS: "{}"
+      GOOGLE_MAPS_API_KEY: ""
+      GOOGLE_MAPS_BROWSER_API_KEY: ci-maps-browser-key
+      GOOGLE_MAPS_SERVER_API_KEY: ci-maps-server-key
+      # Legacy filename, but this is the versioned mirror of live app shopman-nelson.
+      # `.do/app.subdomains.yaml` is the separate hypothetical headless blueprint.
+      WATCHMAN_VERSIONED_DO_SPEC: .do/app.alpha-subdomains.yaml
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_AUTH_TOKEN_ROTATE_BY: ${{ vars.SENTRY_AUTH_TOKEN_ROTATE_BY }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      DO_READ_TOKEN: ${{ secrets.DIGITALOCEAN_READ_TOKEN }}
+      DIGITALOCEAN_READ_TOKEN_EXPIRES_AT: ${{ vars.DIGITALOCEAN_READ_TOKEN_EXPIRES_AT }}
+      DIGITALOCEAN_ACCESS_TOKEN_EXPIRES_AT: ${{ vars.DIGITALOCEAN_ACCESS_TOKEN_EXPIRES_AT }}
+      DIGITALOCEAN_APP_DEPLOY_TOKEN_EXPIRES_AT: ${{ vars.DIGITALOCEAN_APP_DEPLOY_TOKEN_EXPIRES_AT }}
+      DIGITALOCEAN_APP_ADMIN_TOKEN_EXPIRES_AT: ${{ vars.DIGITALOCEAN_APP_ADMIN_TOKEN_EXPIRES_AT }}
+      DO_APP_NAME: ${{ vars.DO_APP_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Create ephemeral synthetic certificate
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+            -subj '/CN=ci-watchman-infrastructure.invalid' \
+            -keyout /tmp/ci-watchman-infrastructure.key \
+            -out /tmp/ci-watchman-infrastructure.crt
+          cp /tmp/ci-watchman-infrastructure.key /tmp/ci-watchman-infrastructure.pem
+          cat /tmp/ci-watchman-infrastructure.crt >> /tmp/ci-watchman-infrastructure.pem
+
+      - name: Record missing DigitalOcean read-only credential
+        if: ${{ env.DO_READ_TOKEN == '' }}
+        run: |
+          echo "::error title=Watchman DigitalOcean::DIGITALOCEAN_READ_TOKEN ausente; deployment_drift será unknown"
+          echo "WATCHMAN_DO_EVIDENCE_ERROR=missing DIGITALOCEAN_READ_TOKEN" >> "${GITHUB_ENV}"
+
+      - name: Set up doctl with read-only credential
+        if: ${{ env.DO_READ_TOKEN != '' }}
+        continue-on-error: true
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_READ_TOKEN }}
+
+      - name: Read live DigitalOcean spec
+        if: ${{ always() && env.DO_READ_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          record_failure() {
+            echo "::error title=Watchman DigitalOcean::$1; deployment_drift será unknown"
+            echo "WATCHMAN_DO_EVIDENCE_ERROR=$1" >> "${GITHUB_ENV}"
+          }
+          if ! command -v doctl >/dev/null 2>&1; then
+            record_failure "doctl setup failed"
+            exit 0
+          fi
+          if [[ -z "${DO_APP_NAME}" ]]; then
+            record_failure "missing DO_APP_NAME"
+            exit 0
+          fi
+          # `--live-spec` makes the drift checker intentionally offline, so
+          # prove here that the credential sees both provider families. A token
+          # limited to App Platform returns a dangerously truncated databases
+          # block from `apps spec get` (incident of 29-30/09/2026).
+          if ! doctl databases list --format ID --no-header >/dev/null; then
+            record_failure "DigitalOcean token cannot read databases"
+            exit 0
+          fi
+          if ! apps=$(doctl apps list --format ID,Spec.Name --no-header); then
+            record_failure "DigitalOcean app list failed"
+            exit 0
+          fi
+          app_id=$(awk -v name="${DO_APP_NAME}" '$2 == name {print $1; exit}' <<< "${apps}")
+          if [[ -z "${app_id}" ]]; then
+            record_failure "DigitalOcean app not found"
+            exit 0
+          fi
+          if ! doctl apps spec get "${app_id}" > "${RUNNER_TEMP}/watchman-live-do.yaml"; then
+            record_failure "DigitalOcean live spec read failed"
+            exit 0
+          fi
+          echo "WATCHMAN_LIVE_DO_SPEC=${RUNNER_TEMP}/watchman-live-do.yaml" >> "${GITHUB_ENV}"
+
+      - name: Run Watchman infrastructure profile
+        if: always()
+        run: .venv/bin/python scripts/run_watchman_infrastructure_ci.py --output watchman-infrastructure.json
+
+      - name: Preserve evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: watchman-infrastructure-${{ github.run_id }}
+          path: watchman-infrastructure.json
+          if-no-files-found: warn
+          retention-days: 30

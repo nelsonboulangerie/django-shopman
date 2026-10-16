@@ -176,7 +176,7 @@ def test_customer_update_locks_only_customer_with_nullable_price_tier():
     customer = Customer.objects.create(
         ref="CUST-NULLABLE-TIER",
         first_name="Antes",
-        price_tier=None,
+        price_tiers=None,
     )
 
     updated = customer_service.update(customer.ref, first_name="Depois")

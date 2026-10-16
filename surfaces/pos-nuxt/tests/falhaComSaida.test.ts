@@ -47,7 +47,7 @@ import { describe, expect, it } from "vitest";
 
 /** O que conta como saída: um verbo que o operador pode executar agora. */
 const GESTO =
-  /\b(tente|tenta|confira|confirme|avise|chame|peça|refaça|digite|atualize|reabra|feche|corrija|cancele|siga|repetir|repita|identifique|configure|reinicie|escolha|informe|aguarde|volte|busque|selecione|copie|mande|reimprima)\b/i;
+  /\b(tente|tenta|confira|confirme|avise|chame|peça|refaça|digite|atualize|reabra|feche|corrija|cancele|siga|repetir|repita|identifique|configure|reinicie|escolha|informe|aguarde|volte|busque|selecione|copie|mande|reimprima|estorne)\b/i;
 
 // ───────────────────────────────────────────────────────────────────────────
 // A varredura
@@ -73,7 +73,7 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
   },
   {
     arquivo: "composables/usePosCashSession.ts",
-    trecho: 'detail: httpErrorMessage(error, "o servidor não montou o comprovante")',
+    trecho: 'detail: httpErrorMessage(error, "o comprovante não ficou pronto")',
     porque: "fragmento: entra em 'O comprovante não saiu: …', cuja saída é a ação 'Tentar de novo' do toast",
   },
   {
@@ -93,7 +93,7 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
   },
   {
     arquivo: "pages/index.vue",
-    trecho: 'danfeFallbackToast(orderRef, httpErrorMessage(error, "o servidor não montou a DANFE"))',
+    trecho: 'danfeFallbackToast(orderRef, httpErrorMessage(error, "a DANFE não ficou pronta"))',
     porque: "fragmento: o danfeFallbackToast traz 'Ver a nota na tela' ou 'Reimprima nas últimas vendas'",
   },
 ];

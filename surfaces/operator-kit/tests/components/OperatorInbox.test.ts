@@ -90,6 +90,12 @@ function click(selector: string) {
   document.querySelector<HTMLElement>(selector)!.click();
   return nextTick();
 }
+function clickButton(label: string) {
+  const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.includes(label));
+  button!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+  button!.click();
+  return nextTick();
+}
 
 describe("OperatorInbox", () => {
   beforeEach(() => {
@@ -121,17 +127,15 @@ describe("OperatorInbox", () => {
     useOperatorInboxAlerts().value = { items: [], count: 3 };
     await mount("rail");
     const trigger = mounted!.get("[data-operator-inbox-trigger]");
-    expect(trigger.text()).toContain("Avisos");
-    expect(trigger.get("[data-rail-badge]").text()).toBe("5");
     expect(trigger.attributes("aria-label")).toBe("Avisos (5 pedem sua atenção)");
   });
 
   it("o contador some quando não há nada", async () => {
     await mount();
-    expect(mounted!.find("[data-operator-inbox-count]").exists()).toBe(false);
+    expect(mounted!.get("[data-operator-inbox-trigger]").attributes("aria-label")).toBe("Avisos");
     unread.value = 3;
     await nextTick();
-    expect(mounted!.get("[data-operator-inbox-count]").text()).toBe("3");
+    expect(mounted!.get("[data-operator-inbox-trigger]").attributes("aria-label")).toBe("Avisos (3 pedem sua atenção)");
   });
 
   it("o painel abre num portal, com a cor do popover e o título visível (K05)", async () => {
@@ -139,8 +143,7 @@ describe("OperatorInbox", () => {
     await openPanel();
     const node = panel()!;
     expect(mounted!.element.contains(node)).toBe(false);
-    expect(node.className).toContain("text-popover-foreground");
-    expect(node.className).toContain("bg-popover");
+    expect(node.closest("[data-reka-popper-content-wrapper]")).not.toBeNull();
     expect(node.querySelector("h2")?.textContent).toBe("Avisos");
   });
 
@@ -157,14 +160,45 @@ describe("OperatorInbox", () => {
     };
     await mount();
     await openPanel();
-    expect(document.querySelector("[data-operator-inbox-tab='operation']")?.getAttribute("aria-selected")).toBe("true");
     const alert = document.querySelector<HTMLElement>("[data-operator-inbox-alert]")!;
     expect(alert.textContent).toContain("Pix do W07 falhou");
     expect(alert.querySelector("a")?.getAttribute("href")).toBe("/W07");
     await click("[data-alert-ack]");
     expect(ack).toHaveBeenCalledWith(7);
-    await click("[data-operator-inbox-tab='personal']");
+    await clickButton("Para você");
     expect(document.querySelectorAll("[data-notification-item]")).toHaveLength(1);
+  });
+
+  it("o gesto que resolve ali mesmo (P2-19: Aceitar) é o botão cheio, e o Abrir vira contorno", async () => {
+    const act = vi.fn();
+    useOperatorInboxAlerts().value = {
+      items: [
+        {
+          key: 9, tone: "warning", eyebrow: "Aviso · Pedido parado", message: "O pedido W09 espera aceite.",
+          meta: "21:55 · pedido W09", canAck: true, href: "/W09", hrefLabel: "Abrir o pedido", actLabel: "Aceitar",
+        },
+      ],
+      count: 1,
+      ack: vi.fn(),
+      act,
+    };
+    await mount();
+    await openPanel();
+    const botao = document.querySelector<HTMLElement>("[data-alert-act]")!;
+    expect(botao.textContent).toContain("Aceitar");
+    await click("[data-alert-act]");
+    expect(act).toHaveBeenCalledWith(9);
+  });
+
+  it("sem quem execute (o app não declarou act), o gesto direto não aparece", async () => {
+    useOperatorInboxAlerts().value = {
+      items: [{ key: 9, tone: "warning", message: "x", href: "/W09", hrefLabel: "Abrir o pedido", actLabel: "Aceitar" }],
+      count: 1,
+    };
+    await mount();
+    await openPanel();
+    expect(document.querySelector("[data-alert-act]")).toBeNull();
+    expect(document.querySelector("[data-alert-open]")).not.toBeNull();
   });
 
   it("sem fonte de alertas, a caixa é só a pessoal (sem abas)", async () => {
@@ -179,7 +213,7 @@ describe("OperatorInbox", () => {
     authorized.value = true;
     reading.value = capacity(95);
     await mount();
-    expect(mounted!.get("[data-operator-inbox-count]").text()).toBe("1");
+    expect(mounted!.get("[data-operator-inbox-trigger]").attributes("aria-label")).toBe("Avisos (1 pede sua atenção)");
     await openPanel();
     const item = document.querySelector<HTMLElement>("[data-operator-inbox-capacity]")!;
     expect(item.textContent).toContain("Capacidade do serviço · Crítica");
@@ -211,6 +245,36 @@ describe("OperatorInbox", () => {
     await mount();
     await openPanel();
     expect(panel()!.textContent).toContain("Nada por aqui");
+  });
+
+  it("aviso pessoal que pede um gesto leva aonde ele se faz (dono, 09/10/2026)", async () => {
+    items.value = [
+      {
+        ...ROTINA,
+        pk: 7,
+        category: "production" as const,
+        title: "Lote aguardando revisão de qualidade",
+        message: "Pão de forma foi finalizado e entrou na fila da Qualidade.",
+        action_url: "https://prod.example.test/quality?q=WO-7&date=2026-10-09",
+        action_label: "Revisar a qualidade do lote",
+        action_data: {},
+      },
+    ];
+    unread.value = 1;
+    await mount();
+    await openPanel();
+    const abrir = document.querySelector<HTMLAnchorElement>("[data-notification-open]");
+    expect(abrir?.textContent).toContain("Revisar a qualidade do lote");
+    expect(abrir?.getAttribute("href")).toBe("https://prod.example.test/quality?q=WO-7&date=2026-10-09");
+    abrir!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(markRead).toHaveBeenCalledWith(7);
+  });
+
+  it("sem destino declarado pelo servidor, o aviso pessoal não ganha botão", async () => {
+    items.value = [ROTINA];
+    await mount();
+    await openPanel();
+    expect(document.querySelector("[data-notification-open]")).toBeNull();
   });
 
   it("marcar como lida não navega para lugar nenhum", async () => {

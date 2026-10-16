@@ -142,13 +142,14 @@ onBeforeUnmount(stop);
       data-pos-code-scanner
     >
       <div class="flex h-16 shrink-0 items-center gap-3 px-3">
-        <button type="button" class="grid size-12 place-items-center rounded-full bg-white/15" aria-label="Fechar leitor" @click="close">
+        <NuxtButton color="neutral" variant="ghost" class="grid size-12 place-items-center rounded-full bg-white/15 justify-center text-white hover:bg-white/25" aria-label="Fechar leitor" @click="close">
           <Icon name="lucide:x" class="size-6" />
-        </button>
+        </NuxtButton>
         <p class="min-w-0 flex-1 truncate text-center text-base font-semibold">{{ title }}</p>
-        <button
-          type="button"
-          class="grid size-12 place-items-center rounded-full disabled:opacity-30"
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          class="grid size-12 place-items-center rounded-full disabled:opacity-30 justify-center text-white hover:bg-white/25"
           :class="torchOn ? 'bg-white text-black' : 'bg-white/15'"
           :disabled="!canTorch"
           :aria-pressed="torchOn"
@@ -156,7 +157,7 @@ onBeforeUnmount(stop);
           @click="toggleTorch"
         >
           <Icon name="lucide:flashlight" class="size-6" />
-        </button>
+        </NuxtButton>
       </div>
       <div class="relative min-h-0 flex-1 overflow-hidden">
         <video ref="video" muted playsinline class="size-full object-cover" />
@@ -166,10 +167,10 @@ onBeforeUnmount(stop);
       </div>
       <div class="grid shrink-0 gap-3 p-4 text-center">
         <p class="text-sm text-white/80" role="status">{{ error || hint }}</p>
-        <button type="button" class="mx-auto inline-flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 text-base font-semibold" @click="typeInstead">
+        <NuxtButton color="neutral" variant="ghost" class="mx-auto inline-flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 text-base font-semibold text-white hover:bg-white/25" @click="typeInstead">
           <Icon name="lucide:keyboard" class="size-5" />
           Digite o código
-        </button>
+        </NuxtButton>
       </div>
     </UiDialogContent>
   </UiDialog>

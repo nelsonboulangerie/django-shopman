@@ -1,6 +1,6 @@
 # ADR-019 - A promocao tem um dono: orquestrador, escopada por canal, com renuncia de frete
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-08-08
 **Escopo:** `shopman/shop` (`Promotion`, `Coupon`, `DeliveryZone`, `DeliveryDistanceBand`,
 `modifiers.py`, `adapters/promotion.py`, `adapters/pricing.py`, `rules/`), `shopman/storefront`
@@ -61,7 +61,9 @@ desliga promocao nem cupom.** E a mesma "mentira de admin" que a ADR-017 recusou
 
 ### 1. `Promotion` e `Coupon` voltam para `shopman/shop`
 
-Nao vao para `offerman`, apesar de a constituicao §4.1 atribuir a ele um *"pricing core: preco base,
+Nao vao para `offerman`, apesar de a
+[Constituição v1 §4.1 (histórica)](../_archive/constitution-v1.md#41-offerman)
+atribuir a ele um *"pricing core: preco base,
 preco contextual, promocoes e politicas futuras"*. O motivo e dependencia: os campos da `Promotion` sao
 de tres dominios estrangeiros ao offerman — `customer_segments` guarda segmento RFM ou ref de grupo do
 guestman (casado em `modifiers.py:601-604`), `birthday_only` le `Customer.birthday` do guestman,
@@ -109,7 +111,8 @@ ref = models.SlugField(_("codigo"), max_length=64, unique=True, db_index=True)
 ```
 
 Hoje `Promotion` so tem `name` e `pk` (`storefront/models/promotions.py:15`), o que viola a
-constituicao §3.1: *"`ref` deve ser o identificador canonico exposto a operacoes, logs e
+[Constituição v1 §3.1 (histórica)](../_archive/constitution-v1.md#31-identificadores):
+*"`ref` deve ser o identificador canonico exposto a operacoes, logs e
 integracoes"*. E e o que a `Campaign` aponta (ADR-020).
 
 Apontar para `Coupon.code` seria mais barato — ja e unique (`:71`) — e esta errado: cupom e o
@@ -322,7 +325,9 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
 
 ## Alternativas descartadas
 
-**`Promotion` em `offerman`.** E o que a constituicao §4.1 sugere ao dar a offerman um "pricing core",
+**`Promotion` em `offerman`.** E o que a
+[Constituição v1 §4.1 (histórica)](../_archive/constitution-v1.md#41-offerman)
+sugere ao dar a offerman um "pricing core",
 mas os campos da promocao sao de tres dominios estrangeiros a ele (`customer_segments` de guestman,
 `birthday_only` de guestman, `fulfillment_types` de orderman). Um pacote kernel nao pode importar tres
 irmaos, e o gate de fronteira barra. A §4.1 e honrada pela costura `PRICING_BACKEND` que offerman ja
@@ -360,7 +365,9 @@ consumidor que o peca. Fica declarado e inerte, como esta.
 
 ## Referencias
 
-- [Constituicao Semantica](../constitution.md) — §2.1, §3.1, §3.2, §4.1, §8.3, §10
+- [Constituição v1 (histórica)](../_archive/constitution-v1.md) — bases históricas citadas acima
+- [Constituição vigente C3](../constitution.md#c3-identidade-cross-domain-usa-refs-textuais)
+- [Constituição vigente §4.1](../constitution.md#41-preço)
 - [ADR-001 - Protocol/Adapter e fronteiras de core](adr-001-protocol-adapter.md)
 - [ADR-004 - String refs para identificadores cross-domain](adr-004-string-refs.md)
 - [ADR-005 - Orquestrador como centro de coordenacao](adr-005-orchestrator-as-coordination-center.md)

@@ -111,9 +111,11 @@ Documentação de consulta rápida gerada a partir do código.
 | [Configurações](reference/settings.md) | Settings por app (STOCKMAN, CRAFTSMAN, DOORMAN, SHOPMAN_*, etc.) com defaults |
 | [Management Commands](reference/commands.md) | Comandos disponíveis com flags, exemplos e cron recomendado |
 | [Exceções e Erros](reference/errors.md) | Hierarquia de exceções, códigos de erro e quando ocorrem |
+| [Cenários de pedido](reference/cenarios-de-pedido.md) | Balcão, encomenda imediata e agendada no PDV, loja/WhatsApp e iFood, com retirada e entrega: caminho feliz, exceções, matriz OK/LACUNA/ATRITO, status e prioridades |
 | [Comprovante de Entrega](reference/comprovante-de-entrega.md) | Avisos ao cliente: aceite × entrega, o que cada canal comprova, quais avisos são críticos e por quê |
 | [Sinais (Signals)](reference/signals.md) | Sinais emitidos e consumidos por cada app, payload e fluxos |
 | [Glossário](reference/glossary.md) | Termos de domínio: Quant, Hold, Move, Session, Order, Channel, etc. |
+| [Mapa semântico dos pacotes](reference/semantic-map.md) | Pergunta canônica, verbos, estados, sinais e eventos de cada diretório físico de `packages/` |
 | [Data Schemas](reference/data-schemas.md) | Inventário de chaves em Session.data, Order.data, Directive.payload |
 | [Headless Surface Contract](reference/headless-surface-contract.md) | Contrato canônico para Nuxt, Ionic, ManyChat, POS e futuras superfícies: Projection com Actions |
 | [Contrato da superfície Marketing](reference/marketing-surface-contract.md) | Ownership, rotas verificadas, plataformas, capabilities, flags, probes e estado de rollout |
@@ -122,6 +124,7 @@ Documentação de consulta rápida gerada a partir do código.
 | [Vocabulários fechados das superfícies](reference/suite-vocabulary.md) | Objeto, atos e grandezas do PDV, da Produção/KDS e da loja; os gestos com um nome só nos nove apps; o que já foi decidido e não se reabre |
 | [Omotenashi Copy](reference/omotenashi-copy.md) | Critérios da linguagem de UI: a definição, o teste de uma frase, os oito defeitos nomeados, as travas e a ordem da varredura |
 | [Filtro de Design de Superfícies](reference/design-surface-filter.md) | Checklist transversal para UI: tipografia, ícones, espaçamento, contraste, foco, responsividade e estados |
+| [Baselines visuais e tema do operator-kit](reference/operator-visual-baselines.md) | Como uma mudança de tema do kit regenera as baselines das consumidoras, com aceite do dono e sem baseline cega |
 
 ---
 
@@ -140,7 +143,7 @@ packages/                            shopman/
 ├── payman       (pagamentos)        ├── storefront/       (API headless do cliente)
 ├── buyman       (compras)           └── backstage/        (API headless operador + Admin)
 └── fiscalman    (fiscal NFC-e)
-                                     surfaces/  9 apps Nuxt 4 + operator-kit (layer)
+                                     surfaces/  11 apps registrados + layer + router
                                      config/    settings, urls, seed do deployment
 ```
 

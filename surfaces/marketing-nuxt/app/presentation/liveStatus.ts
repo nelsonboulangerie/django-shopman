@@ -10,6 +10,8 @@ export type MarketingRealtime = "connecting" | "live" | "polling";
 export interface MarketingLiveStatus {
   tone: "live" | "calm" | "late" | "off";
   label: string;
+  /** O curto do selo quando a barra aperta (kit `OperatorLiveStatus`, degrau 2). */
+  shortLabel?: string;
   time: string;
   detail: string;
 }
@@ -47,7 +49,8 @@ export function marketingLiveStatus(input: {
   if (input.realtime === "polling") {
     return {
       tone: "calm",
-      label: "Atualiza a cada 1 min",
+      label: "Atualiza sozinho a cada 1 min",
+      shortLabel: "A cada 1 min",
       time,
       detail: "O aviso imediato caiu; a tela confere sozinha a cada minuto.",
     };

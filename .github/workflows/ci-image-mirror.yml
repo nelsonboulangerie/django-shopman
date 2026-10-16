@@ -1,0 +1,92 @@
+name: CI image mirror
+
+# Copia para o GHCR DESTE repositório as poucas imagens públicas que a CI puxa
+# (services e bases de build). Motivo medido: o pull anônimo do Docker Hub cai com
+# 429 (09/10/2026) e o do ECR público também tem limite (`toomanyrequests` no
+# Storefront E2E do PR #1609, 10/10/2026). Pull AUTENTICADO no GHCR com o
+# GITHUB_TOKEN do próprio repositório não tem esse limite, e não precisa de
+# credencial de ninguém.
+#
+# A cópia é registro→registro (`buildx imagetools create`): mantém o índice
+# multi-arquitetura e o digest da imagem oficial. A fonte tenta o ECR público, depois
+# o espelho do Google, depois o Docker Hub: este job roda uma vez por dia, então uma
+# janela de limite em uma fonte só atrasa a cópia, não reprova PR nenhum.
+#
+# O deploy (deploy-images.yml, .do/) NÃO usa este espelho: os ARGs de imagem dos
+# Dockerfiles seguem com o default oficial.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/ci-image-mirror.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ci-image-mirror
+  cancel-in-progress: false
+
+env:
+  MIRROR: ghcr.io/${{ github.repository_owner }}/ci-mirror
+
+jobs:
+  mirror:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # alvo (sob $MIRROR) = fontes, em ordem de preferência
+        include:
+          - target: postgres:16-alpine
+            sources: public.ecr.aws/docker/library/postgres:16-alpine mirror.gcr.io/library/postgres:16-alpine docker.io/library/postgres:16-alpine
+          - target: postgres:16
+            sources: public.ecr.aws/docker/library/postgres:16 mirror.gcr.io/library/postgres:16 docker.io/library/postgres:16
+          - target: redis:7-alpine
+            sources: public.ecr.aws/docker/library/redis:7-alpine mirror.gcr.io/library/redis:7-alpine docker.io/library/redis:7-alpine
+          - target: valkey:8
+            sources: public.ecr.aws/valkey/valkey:8 mirror.gcr.io/valkey/valkey:8 docker.io/valkey/valkey:8
+          - target: node:22-alpine
+            sources: public.ecr.aws/docker/library/node:22-alpine mirror.gcr.io/library/node:22-alpine docker.io/library/node:22-alpine
+          - target: python:3.12-slim
+            sources: public.ecr.aws/docker/library/python:3.12-slim mirror.gcr.io/library/python:3.12-slim docker.io/library/python:3.12-slim
+          - target: dockerfile:1
+            sources: mirror.gcr.io/docker/dockerfile:1 public.ecr.aws/docker/library/dockerfile:1 docker.io/docker/dockerfile:1
+          - target: buildkit:buildx-stable-1
+            sources: mirror.gcr.io/moby/buildkit:buildx-stable-1 docker.io/moby/buildkit:buildx-stable-1
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Copy ${{ matrix.target }}
+        env:
+          TARGET: ${{ env.MIRROR }}/${{ matrix.target }}
+          SOURCES: ${{ matrix.sources }}
+        run: |
+          for attempt in 1 2 3; do
+            for src in $SOURCES; do
+              echo "::group::$src → $TARGET (tentativa $attempt)"
+              if docker buildx imagetools create --tag "$TARGET" "$src"; then
+                echo "::endgroup::"
+                docker buildx imagetools inspect "$TARGET" | head -20
+                exit 0
+              fi
+              echo "::endgroup::"
+            done
+            sleep $((attempt * 30))
+          done
+          echo "::error::nenhuma fonte respondeu para $TARGET"
+          exit 1

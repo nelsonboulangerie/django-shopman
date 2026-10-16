@@ -143,6 +143,17 @@ def test_manual_ready_moves_to_the_menu_while_the_kitchen_works(channel):
     assert advance.label == "Marcar pronto"
 
 
+def test_manual_ready_stays_in_sight_for_delivery_while_the_kitchen_works(channel):
+    """Na entrega quem decide o pronto é o operador (dono, 13/10/2026): ele sabe
+    se a sacola está pronta e chama o entregador na hora."""
+    order = _order("UNDO-A4D", fulfillment="delivery", channel_ref="pdv")
+    _ticket(order, "lanches")
+
+    advance = next(a for a in operator_orders.operational_actions(order) if a.ref == "advance")
+    assert advance.priority == "primary"
+    assert advance.label == "Marcar pronto"
+
+
 def test_manual_ready_stays_primary_without_kitchen_ticket(channel):
     order = _order("UNDO-A5")
     advance = next(a for a in operator_orders.operational_actions(order) if a.ref == "advance")
@@ -351,6 +362,68 @@ def test_ifood_ready_callback_is_not_held_and_the_card_says_so(channel):
     assert undo.kind == "auto_ready"
     assert undo.already_out == "iFood já avisado"
     assert undo.held_effect == "Aviso de pronto ao cliente"
+
+
+def _ifood_order_with_ticket(ref: str):
+    Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood", "config": {}})
+    order = _order(ref, channel_ref="ifood")
+    Order.objects.filter(pk=order.pk).update(external_ref=f"ifood-{ref.lower()}")
+    order.refresh_from_db()
+    return order, _ticket(order, "lanches")
+
+
+def _ifood_callbacks(order: Order, status: str):
+    return Directive.objects.filter(topic=IFOOD_STATUS_CALLBACK, payload__order_ref=order.ref, payload__status=status)
+
+
+def _announce(order: Order) -> None:
+    """O receptor do sinal de status, como o pedido está agora (o teste chama à mão)."""
+    from shopman.shop.handlers import ifood_status
+
+    order.refresh_from_db()
+    ifood_status._enqueue_callback(order, "kds:op")
+
+
+def test_ifood_ready_redone_after_undo_is_not_sent_again(channel):
+    """P2-29: desfazer o Pronto e marcar de novo não reenvia o readyToPickup.
+
+    O iFood não tem "desfazer pronto": o entregador já foi chamado no primeiro.
+    Nem a volta ao preparo vira ``startPreparation`` (o iFood não anda para trás).
+    """
+    order, ticket = _ifood_order_with_ticket("UNDO-I2")
+
+    kds_core.complete_ticket(ticket, actor="kds:op")
+    _announce(order)
+    assert _ifood_callbacks(order, "ready").count() == 1
+    _ifood_callbacks(order, "ready").update(status="done")  # o iFood recebeu o pronto
+
+    order.refresh_from_db()
+    order_undo.undo_auto_ready(order, token=order.data["auto_ready"]["token"], actor="gestor:ana")
+    _announce(order)
+    assert order.status == Order.Status.PREPARING
+    assert _ifood_callbacks(order, "preparing").count() == 0
+
+    ticket.refresh_from_db()
+    kds_core.complete_ticket(ticket, actor="kds:op")
+    _announce(order)
+    assert order.status == Order.Status.READY
+    assert _ifood_callbacks(order, "ready").count() == 1
+
+
+def test_ifood_ready_that_failed_is_tried_again_on_the_next_ready(channel):
+    """O que não chegou ao iFood (directive falhou) volta a sair no próximo Pronto."""
+    order, ticket = _ifood_order_with_ticket("UNDO-I3")
+
+    kds_core.complete_ticket(ticket, actor="kds:op")
+    _announce(order)
+    _ifood_callbacks(order, "ready").update(status="failed")
+    ticket.refresh_from_db()
+    kds_core.reopen_ticket(ticket, actor="kds:op")
+    ticket.refresh_from_db()
+    kds_core.complete_ticket(ticket, actor="kds:op")
+    _announce(order)
+
+    assert _ifood_callbacks(order, "ready").filter(status="queued").count() == 1
 
 
 # ── Entregar / Despachar ─────────────────────────────────────────────────

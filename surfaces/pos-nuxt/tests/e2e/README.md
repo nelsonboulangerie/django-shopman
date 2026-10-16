@@ -29,6 +29,11 @@ artefatos de build.
   aparece ao cair a rede e some ao voltar.
 - **`customer-display.spec.ts`** — transporte real por `BroadcastChannel` entre
   duas janelas e renderização das fases venda/resultado sem gate de operador.
+- **`offline-sale.spec.ts`** — a venda sem conexão (WP-PDV-SEM-CONEXAO): a rede cai
+  no meio da venda (e com o fechamento em voo), a venda fecha guardada e a fila envia
+  o mesmo fechamento na volta. O cookie `pos_e2e=offline-sale` leva esse tráfego ao
+  mock do cenário da venda (`tests/visual/mockBackend.mjs`, `MOCK_SCENARIO=sale
+  MOCK_DIRECT=1`), que o `mockBackend.mjs` sobe na porta seguinte à dele.
 
 ## Fora daqui (precisa de Django real — reviewer local)
 

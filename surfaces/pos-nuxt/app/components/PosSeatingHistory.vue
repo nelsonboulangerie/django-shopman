@@ -9,27 +9,28 @@ const emit = defineEmits<{ "update:open": [value: boolean] }>();
 </script>
 
 <template>
-  <UiSheet :open="open" @update:open="(value) => emit('update:open', value)">
-    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-md" :title="undefined">
-      <template #header>
-        <div class="border-b border-border px-4 pt-4 pb-3">
-          <UiSheetTitle class="op-title">Histórico do salão</UiSheetTitle>
-          <UiSheetDescription class="op-micro text-muted-foreground">
-            Quem mudou o quê, e quando. As últimas 30 mudanças.
-          </UiSheetDescription>
-        </div>
-      </template>
-      <template #content>
-        <div class="min-h-0 flex-1 overflow-y-auto">
-          <p v-if="!entries.length" class="p-4 op-body text-muted-foreground">Nenhuma mudança registrada ainda.</p>
-          <ol v-else class="divide-y divide-border" data-seating-history>
-            <li v-for="entry in entries" :key="entry.id" class="flex flex-col gap-1 px-4 py-3">
-              <p class="op-body">{{ entry.summary }}</p>
-              <p class="op-micro text-muted-foreground tabular-nums">{{ entry.who || "Admin" }} · {{ entry.at_label }}</p>
-            </li>
-          </ol>
-        </div>
-      </template>
-    </UiSheetContent>
-  </UiSheet>
+  <NuxtSlideover
+    :open="open"
+    title="Histórico do salão"
+    description="Quem mudou o quê, e quando. As últimas 30 mudanças."
+    :ui="{ body: 'p-0 sm:p-0' }"
+    data-seating-history-sheet
+    @update:open="(value) => emit('update:open', value)"
+  >
+    <template #body>
+      <OperatorScreenState
+        v-if="!entries.length"
+        state="empty"
+        icon="i-lucide-history"
+        title="Nenhuma mudança registrada ainda."
+        in-card
+      />
+      <ol v-else class="divide-y divide-border" data-seating-history>
+        <li v-for="entry in entries" :key="entry.id" class="flex flex-col gap-1 px-4 py-3">
+          <p class="op-body">{{ entry.summary }}</p>
+          <p class="op-micro text-muted-foreground tabular-nums">{{ entry.who || "Admin" }} · {{ entry.at_label }}</p>
+        </li>
+      </ol>
+    </template>
+  </NuxtSlideover>
 </template>

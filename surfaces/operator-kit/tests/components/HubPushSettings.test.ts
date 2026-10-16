@@ -98,6 +98,25 @@ describe("HubPushSettings", () => {
       expect(wrapper.find("[data-activate-push]").exists()).toBe(false);
     });
 
+    // "recarregue ela" (onda da Central, 09/10/2026): a frase errava a gramática e não
+    // dizia onde ficam os ajustes. Agora diz o lugar exato e entrega o último gesto.
+    it("bloqueado pelo navegador: onde permitir, e o Recarregar à mão", async () => {
+      const state = holder.state;
+      state.permission.value = "denied";
+      const wrapper = await mountSuspended(OperatorPushSettings, { props: { variant: "line" } });
+      const line = wrapper.get("[data-push-line-state]").text();
+      expect(line).toBe(
+        "Avisos neste dispositivo: bloqueados pelo navegador. Permita as notificações nos ajustes do site (o ícone à esquerda do endereço) e toque em Recarregar.",
+      );
+      expect(line).not.toMatch(/recarregue|—/);
+      expect(wrapper.find("[data-activate-push]").exists()).toBe(false);
+      const reload = vi.fn();
+      vi.stubGlobal("location", { ...window.location, reload });
+      await wrapper.get("[data-push-reload]").trigger("click");
+      expect(reload).toHaveBeenCalledOnce();
+      vi.unstubAllGlobals();
+    });
+
     it("ligado: o que chega e os dispositivos ficam a um toque, com as mesmas ações", async () => {
       const state = holder.state;
       const device = { id: 7, endpoint: "https://push.test/7", surface_ref: "hub", device_label: "iPhone", categories: ["order"] };

@@ -77,17 +77,30 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", onVisibility);
 });
 
-async function onPin(payload: { person: IdentifiablePerson | null; username: string; pin: string }) {
+async function onPin(payload: {
+  person: IdentifiablePerson | null;
+  username: string;
+  pin: string;
+}) {
   // A peça compartilhada devolve o mínimo comum (`username`, `name`). Aqui o
   // bloqueio precisa do ID numérico, então recupera o card completo da lista —
   // é o que evita a peça ter de conhecer o formato de cada consumidor.
-  const card = eligible.value.find((op) => op.username === payload.username) ?? null;
+  const card =
+    eligible.value.find((op) => op.username === payload.username) ?? null;
   if (!card) return;
   picked.value = card;
   const ok = await unlock({ operatorId: card.id, pin: payload.pin });
   // Recusa apaga o PIN e mantém a pessoa: ela erra o dedo, não a identidade.
   if (!ok) identify.value?.reset(true);
 }
+
+// As duas portas do rodapé da trava, só texto: discretas, e o nome inteiro cabe
+// na coluna do teclado. Apertou, "Trocar meu PIN" cai para o curto da própria
+// ação; sem ícone, o último texto quebra linha em vez de virar símbolo mudo.
+const footerActions = [
+  { label: "Trocar meu PIN", shortLabel: "Trocar PIN" },
+  { label: "Perdi meu crachá" },
+] as const;
 
 function startChange() {
   changing.value = true;
@@ -141,9 +154,15 @@ async function submitForcedChange(payload: {
     ref="overlay"
     data-operator-lock
     tabindex="-1"
-    class="fixed inset-0 outline-none z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm"
+    class="fixed inset-0 top-[var(--operator-offline-inset,0px)] outline-none z-[100] grid place-items-center overflow-y-auto bg-background/95 p-4 backdrop-blur-sm"
   >
-    <div class="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg">
+    <!-- O cartão tem a largura do teclado: a lista de nomes, o campo do PIN, o
+         teclado e os avisos são UMA coluna e batem borda com borda (dono,
+         10/10/2026). -->
+    <NuxtCard class="w-full max-w-xs">
+      <!-- Tela baixa (até 700 px de altura, o celular com a barra do navegador):
+           sem o cadeado e com respiro menor, para a trava caber sem rolar. -->
+      <div class="grid gap-5 [@media(max-height:43.75rem)]:gap-3">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange
         v-if="mustChange && operator"
@@ -168,15 +187,13 @@ async function submitForcedChange(payload: {
       <!-- "Perdi meu crachá": o crachá morre agora. A tela É a confirmação —
            diz o que acontece e só age depois do PIN. -->
       <template v-else-if="lostBadge">
-        <div class="mb-3 flex items-center gap-2">
-          <Icon name="lucide:badge-x" class="size-5 text-muted-foreground" />
-          <h2 class="text-lg font-bold">Perdi meu crachá</h2>
-        </div>
-        <div class="mb-4 space-y-1 rounded-lg border border-dashed p-3 text-sm">
-          <p>Seu crachá para de funcionar agora.</p>
-          <p>Seu PIN continua valendo: você segue trabalhando.</p>
-          <p class="text-muted-foreground">Um gerente emite outro crachá.</p>
-        </div>
+        <NuxtAlert
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-badge-x"
+          title="Perdi meu crachá"
+          description="Seu crachá para de funcionar agora. Seu PIN continua valendo: você segue trabalhando. Um gerente emite outro crachá."
+        />
 
         <!-- O erro é desenhado pelo `OperatorIdentify` (que também limpa o PIN
              quando ele muda): repeti-lo aqui daria a mesma frase duas vezes. -->
@@ -190,13 +207,14 @@ async function submitForcedChange(payload: {
           @pin="submitLostBadge"
         />
 
-        <button
-          type="button"
-          class="mt-3 inline-flex w-full items-center justify-center text-sm text-muted-foreground hover:text-foreground"
-          @click="lostBadge = false"
-        >
-          Cancelar
-        </button>
+        <div class="flex justify-center">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            label="Cancelar"
+            @click="lostBadge = false"
+          />
+        </div>
       </template>
 
       <template v-else>
@@ -208,19 +226,24 @@ async function submitForcedChange(payload: {
 
                aqui         → você ASSUME o balcão (a sessão troca)
                autorização  → você CONTINUA quem era (o gerente só assina) -->
-        <div class="mb-4 flex items-center gap-2">
-          <Icon name="lucide:lock" class="size-5 text-muted-foreground" />
-          <h2 class="text-lg font-bold">Identifique-se para operar</h2>
-        </div>
-        <p class="-mt-3 mb-4 text-sm text-muted-foreground">Você assume o balcão.</p>
+        <!-- O título é o cabeçalho da tela de bloqueio (h2): o leitor de tela
+             navega por ele. O mesmo desenho do cabeçalho do login do operador
+             (`OperatorLoginForm`): o cadeado no centro, título e uma linha. -->
+        <header class="grid justify-items-center gap-3 text-center">
+          <NuxtAvatar size="3xl" icon="i-lucide-lock" alt="" class="[@media(max-height:43.75rem)]:hidden" />
+          <div class="grid gap-1">
+            <h2 class="text-lg font-semibold">Identifique-se para operar</h2>
+            <p class="text-sm text-muted-foreground">Você assume o balcão.</p>
+          </div>
+        </header>
 
-        <div
+        <!-- Dentro do cartão, `soft`: sem borda (cartão dentro de cartão, dono 08/10). -->
+        <NuxtEmpty
           v-if="!eligible.length"
-          class="grid place-items-center gap-1.5 rounded-lg border border-dashed py-8 text-center text-muted-foreground"
-        >
-          <Icon name="lucide:user-x" class="size-6" />
-          <p class="text-sm">Nenhum operador habilitado para esta tela.</p>
-        </div>
+          variant="soft"
+          icon="i-lucide-user-x"
+          title="Nenhum operador habilitado para esta tela"
+        />
 
         <!-- A identificação inteira (crachá, lista, PIN) mora no
              `OperatorIdentify`, e o diálogo de autorização do gerente usa a
@@ -240,25 +263,26 @@ async function submitForcedChange(payload: {
           <template #footer>
             <!-- Discreto, mas não escondido: quem perdeu o crachá precisa achar
                  sozinho, então é texto legível ao lado do irmão, e não um menu. -->
-            <div class="flex items-center justify-center gap-4">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            <!-- Uma linha no meio da coluna, cada uma do tamanho do próprio nome
+                 (rótulo que cabe: apertou, cai para o curto; não coube, desce). -->
+            <OperatorFitGroup :actions="footerActions" class="flex flex-wrap justify-center gap-2">
+              <OperatorButton
+                color="neutral"
+                variant="ghost"
+                v-bind="footerActions[0]"
                 @click="startChange"
-              >
-                <Icon name="lucide:key-round" class="size-4" /> Trocar meu PIN
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              />
+              <OperatorButton
+                color="neutral"
+                variant="ghost"
+                v-bind="footerActions[1]"
                 @click="lostBadge = true"
-              >
-                <Icon name="lucide:badge-x" class="size-4" /> Perdi meu crachá
-              </button>
-            </div>
+              />
+            </OperatorFitGroup>
           </template>
         </OperatorIdentify>
       </template>
-    </div>
+      </div>
+    </NuxtCard>
   </div>
 </template>

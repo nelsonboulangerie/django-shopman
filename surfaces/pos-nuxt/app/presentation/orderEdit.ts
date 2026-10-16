@@ -174,11 +174,12 @@ export function needsDeliveryPaymentMethod(code: string): boolean {
 }
 
 /**
- * A recusa que pede o CPF/CNPJ da entrega com nota (regra de 24/09). O pedido
- * sai ali mesmo, na caixa de "Salvar alterações" — não em outra tela.
+ * A recusa do CPF/CNPJ da entrega que não confere. Sem documento a entrega
+ * passa (a nota sai presencial, decisão do dono de 13/10/2026); digitado
+ * errado, o conserto sai ali mesmo, na caixa de "Salvar alterações".
  */
 export function needsDeliveryTaxId(code: string): boolean {
-  return code === "delivery_tax_id_required" || code === "delivery_tax_id_invalid";
+  return code === "delivery_tax_id_invalid";
 }
 
 /**

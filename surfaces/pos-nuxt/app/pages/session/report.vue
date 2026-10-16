@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
+
 // RELATÓRIO da sessão de caixa na antesala (WP-ADM-4, benchmark Odoo POS):
 // leitura X (parcial do turno ABERTO do operador), leituras Z (turnos
 // FECHADOS do dia) e o histórico agregado de turnos/vendas. Read-only sobre
@@ -34,62 +36,77 @@ function reprint(entryId: number) {
   void reprintMovementReceipt(entryId);
 }
 
-async function goToCashSession() {
-  await navigateTo("/session");
-}
+// A volta à Sessão de caixa é um link (`to`), não um clique que navega: sem espera
+// para declarar, e o endereço aparece no toque longo.
+
+const NUM = { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } };
+const dayMethodColumns = [
+  { accessorKey: "method_label", header: "Método" },
+  { accessorKey: "orders_count", header: "Pagamentos", meta: NUM },
+  { id: "amount", header: "Valor", meta: NUM },
+];
+
+const headerActions = computed<OperatorHeaderAction[]>(() => [
+  { label: "Atualizar", icon: "i-lucide-refresh-cw", priority: 1, disabled: pending.value, onSelect: () => void refresh() },
+]);
 </script>
 
 <template>
   <main class="min-h-dvh bg-background text-foreground">
-    <header class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
-      <UiButton
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Voltar à sessão de caixa"
-        title="Sessão de caixa"
-        @click="goToCashSession"
-      >
-        <Icon name="lucide:arrow-left" class="size-5" />
-      </UiButton>
-      <h1 class="shrink-0 whitespace-nowrap text-lg font-semibold">Relatório de caixa</h1>
-      <span v-if="report" class="ml-auto min-w-0 text-right text-sm text-muted-foreground">
-        {{ report.date_display }} · leituras X/Z do dia
-      </span>
-      <UiButton
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Atualizar relatório"
-        title="Atualizar"
-        :disabled="pending"
-        @click="refresh()"
-      >
-        <Icon name="lucide:refresh-cw" class="size-4" :class="pending ? 'animate-spin' : ''" />
-      </UiButton>
-    </header>
+    <!-- O cabeçalho da suíte, no papel de corredor (WP-FASE2 §6, K6): voltar ao Caixa,
+         o título, o dia e o Atualizar no ⋯; sem campo de busca, sem Avisos, sem navegação.
+         ⚠️ O kit não tem a variante `task` do cabeçalho: o corredor é o cabeçalho comum
+         com `:inbox="false"` e a busca só no atalho. -->
+    <OperatorPageHeader title="Relatório de caixa" :inbox="false" :actions="headerActions" actions-label="Mais ações do relatório">
+      <!-- A busca da suíte só no Ctrl K (e na lupa do celular): no corredor não há campo
+           de busca na tela, e o "/" não tira a pessoa da contagem. -->
+      <template #search>
+        <OperatorSuiteSearch variant="hotkey" placeholder="Buscar pedido, cliente, produto ou tela" />
+      </template>
+      <template #lead>
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          square
+          to="/session"
+          aria-label="Voltar à sessão de caixa"
+          title="Sessão de caixa"
+          data-report-back
+        />
+      </template>
+      <template v-if="report" #status>
+        <span class="text-xs text-muted-foreground">{{ report.date_display }} · leituras X/Z do dia</span>
+      </template>
+    </OperatorPageHeader>
 
-    <div class="mx-auto grid w-full max-w-2xl gap-4 p-4 md:py-8">
+    <div class="mx-auto grid w-full max-w-2xl gap-6 p-4 md:py-8">
       <!-- Sem permissão de operação do PDV. -->
-      <section v-if="accessDenied" class="grid gap-2 rounded-md border bg-card p-4">
-        <div class="flex items-center gap-2">
-          <Icon name="lucide:lock" class="size-4 text-muted-foreground" />
-          <h2 class="text-base font-semibold">Relatório é de quem audita</h2>
-        </div>
-        <p class="text-sm text-muted-foreground">
-          Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita: quem vê a
-          apuração é a gestão.
-        </p>
-        <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
-      </section>
+      <OperatorScreenState
+        v-if="accessDenied"
+        state="empty"
+        icon="i-lucide-lock"
+        title="Relatório é de quem audita"
+        description="Esta tela mostra o faturamento do dia. Sua conta opera o caixa, mas não audita: quem vê a apuração é a gestão."
+      >
+        <template #actions>
+          <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar à sessão de caixa" to="/session" />
+        </template>
+      </OperatorScreenState>
 
       <!-- Balcão errado (409 da estação): o operador precisa saber ONDE está. -->
-      <section v-else-if="stationRefusal" class="grid gap-2 rounded-md border bg-card p-4" data-station-refusal>
-        <div class="flex items-center gap-2">
-          <Icon name="lucide:monitor-x" class="size-4 text-warning" />
-          <h2 class="text-base font-semibold">{{ stationRefusal.title }}</h2>
-        </div>
-        <p class="text-sm text-muted-foreground">{{ stationRefusal.message }}</p>
-        <UiButton variant="outline" size="sm" @click="goToCashSession">Voltar à sessão de caixa</UiButton>
-      </section>
+      <OperatorScreenState
+        v-else-if="stationRefusal"
+        state="empty"
+        icon="i-lucide-monitor-x"
+        :title="stationRefusal.title"
+        :description="stationRefusal.message"
+        data-station-refusal
+      >
+        <template #actions>
+          <NuxtButton color="neutral" variant="outline" icon="i-lucide-arrow-left" label="Voltar à sessão de caixa" to="/session" />
+        </template>
+      </OperatorScreenState>
 
       <template v-else-if="report">
         <!-- Leitura X: parcial do turno aberto do operador. -->
@@ -100,10 +117,10 @@ async function goToCashSession() {
           :busy="busy"
           @reprint="reprint"
         />
-        <section v-else class="grid gap-2 rounded-md border bg-card p-4">
+        <section v-else class="grid gap-2" aria-labelledby="x-reading-empty">
           <div class="flex items-center gap-2">
             <Icon name="lucide:receipt-text" class="size-4 text-muted-foreground" />
-            <h2 class="text-base font-semibold">Leitura X</h2>
+            <h2 id="x-reading-empty" class="text-base font-semibold">Leitura X</h2>
           </div>
           <p class="text-sm text-muted-foreground">
             Sem turno aberto neste terminal. Abra o caixa na sessão para acompanhar a parcial do turno.
@@ -121,67 +138,56 @@ async function goToCashSession() {
             @reprint="reprint"
           />
         </template>
-        <section v-else class="grid gap-2 rounded-md border bg-card p-4">
+        <section v-else class="grid gap-2" aria-labelledby="z-reading-empty">
           <div class="flex items-center gap-2">
             <Icon name="lucide:archive" class="size-4 text-muted-foreground" />
-            <h2 class="text-base font-semibold">Leituras Z</h2>
+            <h2 id="z-reading-empty" class="text-base font-semibold">Leituras Z</h2>
           </div>
           <p class="text-sm text-muted-foreground">Nenhum turno fechado hoje.</p>
         </section>
 
         <!-- Histórico do dia: totais agregados dos turnos fechados. -->
-        <section v-if="report.has_closed_shifts" class="grid gap-2 rounded-md border bg-card p-4">
+        <section v-if="report.has_closed_shifts" class="grid gap-3" aria-labelledby="day-history-title" data-day-history>
           <div class="flex items-center gap-2">
             <Icon name="lucide:history" class="size-4 text-muted-foreground" />
-            <h2 class="text-base font-semibold">Histórico do dia</h2>
+            <h2 id="day-history-title" class="text-base font-semibold">Histórico do dia</h2>
           </div>
-          <div class="grid grid-cols-2 gap-2 rounded-md border bg-muted/40 p-3 text-sm sm:grid-cols-4">
-            <div class="flex flex-col">
-              <span class="text-xs text-muted-foreground">Turnos fechados</span>
-              <span class="font-medium tabular-nums">{{ report.day_totals.shifts_count }}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="text-xs text-muted-foreground">Vendas</span>
-              <span class="font-medium tabular-nums">{{ report.day_totals.sales_count }}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="text-xs text-muted-foreground">Total vendido</span>
-              <span class="font-medium tabular-nums">R$ {{ report.day_totals.sales_total_display }}</span>
-            </div>
-            <div class="flex flex-col">
-              <span class="text-xs text-muted-foreground">Total contado</span>
-              <span class="font-medium tabular-nums">R$ {{ report.day_totals.counted_total_display }}</span>
-            </div>
-          </div>
-          <div v-if="report.day_totals.sales_by_method.length" class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b text-left text-xs text-muted-foreground">
-                  <th class="py-1.5 pr-3 font-medium">Método</th>
-                  <th class="py-1.5 pr-3 font-medium">Pagamentos</th>
-                  <th class="py-1.5 font-medium">Valor</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in report.day_totals.sales_by_method"
-                  :key="row.method"
-                  class="border-b border-border/60 last:border-0"
-                >
-                  <td class="py-1.5 pr-3 font-medium">{{ row.method_label }}</td>
-                  <td class="py-1.5 pr-3 tabular-nums">{{ row.orders_count }}</td>
-                  <td class="py-1.5 tabular-nums">R$ {{ row.amount_display }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <NuxtCard>
+            <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <div class="flex flex-col">
+                <dt class="text-xs text-muted-foreground">Turnos fechados</dt>
+                <dd class="font-medium tabular-nums">{{ report.day_totals.shifts_count }}</dd>
+              </div>
+              <div class="flex flex-col">
+                <dt class="text-xs text-muted-foreground">Vendas</dt>
+                <dd class="font-medium tabular-nums">{{ report.day_totals.sales_count }}</dd>
+              </div>
+              <div class="flex flex-col">
+                <dt class="text-xs text-muted-foreground">Total vendido</dt>
+                <dd class="font-medium tabular-nums">R$ {{ report.day_totals.sales_total_display }}</dd>
+              </div>
+              <div class="flex flex-col">
+                <dt class="text-xs text-muted-foreground">Total contado</dt>
+                <dd class="font-medium tabular-nums">R$ {{ report.day_totals.counted_total_display }}</dd>
+              </div>
+            </dl>
+          </NuxtCard>
+          <OperatorTable
+            v-if="report.day_totals.sales_by_method.length"
+            :data="report.day_totals.sales_by_method"
+            :columns="dayMethodColumns"
+            :row-key="(row) => row.method"
+            caption="Vendas do dia por método"
+          >
+            <template #amount-cell="{ row }">R$ {{ row.original.amount_display }}</template>
+          </OperatorTable>
           <p class="text-xs text-muted-foreground">
             A conferência do contado com o esperado fica na retaguarda.
           </p>
         </section>
       </template>
 
-      <p v-else-if="pending" class="text-sm text-muted-foreground">Carregando relatório…</p>
+      <OperatorScreenState v-else-if="pending" state="loading" what="o relatório de caixa" />
     </div>
   </main>
 </template>

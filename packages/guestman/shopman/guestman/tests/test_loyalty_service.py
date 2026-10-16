@@ -38,7 +38,7 @@ def customer(db, tier):
         last_name="Silva",
         email="maria@example.com",
         phone="+5543999990001",
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 
@@ -50,7 +50,7 @@ def customer2(db, tier):
         last_name="Santos",
         email="joao@example.com",
         phone="+5543999990002",
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 

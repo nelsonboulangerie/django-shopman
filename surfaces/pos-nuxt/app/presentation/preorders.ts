@@ -1,10 +1,10 @@
 // ENCOMENDAS — a seção do PDV que lê o que a casa prometeu (ENCOMENDAS-PDV-PLAN).
 //
 // Uma tela só (redesenho aprovado pelo dono, 28/09/2026): a busca "Cliente veio
-// buscar" sempre no topo, o Período do kit na barra (o dia, a semana, os próximos
-// dias, um intervalo; ‹ › e a data),
-// a linha "Hoje", os recortes de todo dia em botões de um toque com o "Filtrar"
-// do kit para o resto, e o lote das vias que faltam no que está visível. O estado inteiro
+// buscar" na busca do cabeçalho, o Período do kit na toolbar (o dia, a semana, os
+// próximos dias, um intervalo; ‹ › e a data), a linha "Hoje", os recortes de todo
+// dia como filtros rápidos do painel único da suíte, e o lote das vias que faltam no
+// que está visível. O estado inteiro
 // (modo, data, filtros, busca) mora na URL, para a volta do detalhe cair no
 // mesmo lugar e para o kiosk guardar o favorito.
 //
@@ -590,117 +590,88 @@ export function railBadge(list: Pick<PreorderListResponse, "days"> | null | unde
   return count > 0 ? String(count) : undefined;
 }
 
-/** O nome acessível do item da barra, com o selo por extenso. */
-export function railAriaLabel(badge: string | undefined): string {
-  if (!badge) return "Encomendas";
-  return badge === "1" ? "Encomendas: 1 para entregar hoje" : `Encomendas: ${badge} para entregar hoje`;
-}
-
-// ── Os recortes de um toque (decisão do dono, P1 de 02/10) ──────────────────
+// ── O painel de filtros da suíte (`OperatorFilterPanel`, fase 2) ────────────
 //
-// Os recortes de todo dia do balcão saem de trás do menu de dois passos e viram
-// botões de um toque: A receber, Sem Via Pedido, Retiradas, Entregas. Cada um
-// liga e desliga o MESMO estado da URL que o "Filtrar" escrevia (nenhum estado
-// novo). O "Filtrar" do kit fica para o resto (Pagas, Na conta da casa, e o
-// "A conferir" que o aviso liga): um recorte mora num lugar só, e a barra não
-// repete em chip o botão que já está apertado.
+// Os recortes de todo dia do balcão (decisão do dono, P1 de 02/10: A receber, Sem
+// Via Pedido, Retiradas, Entregas) são UM toque, com a contagem: a faixa de filtros
+// rápidos da suíte (`OperatorQuickFilters`, vários que somam), à esquerda da toolbar.
+// O painel único (`OperatorFilterPanel`) guarda o resto (Pagas, Na conta da casa e o
+// "A conferir" que o aviso liga) nos filtros completos; os recortes ligados viram
+// chips removíveis (na mesa ao lado do botão, no celular abaixo da linha). O estado
+// continua o de sempre (`PreorderFilters`, na URL); aqui só se traduz.
 
-export interface Shortcut {
-  /** A dimensão do estado que o botão escreve. */
+export interface QuickFilter {
+  /** A chave do item na faixa. */
+  key: string;
+  /** A dimensão do estado que o filtro rápido escreve. */
   dimension: keyof PreorderFilters;
   value: string;
   label: string;
 }
 
-export const SHORTCUTS: readonly Shortcut[] = [
-  { dimension: "pay", value: "to_receive", label: "A receber" },
-  { dimension: "print", value: "pending", label: "Sem Via Pedido" },
-  { dimension: "fulfillment", value: "pickup", label: "Retiradas" },
-  { dimension: "fulfillment", value: "delivery", label: "Entregas" },
+export const QUICK_FILTERS: readonly QuickFilter[] = [
+  { key: "to_receive", dimension: "pay", value: "to_receive", label: "A receber" },
+  { key: "unprinted", dimension: "print", value: "pending", label: "Sem Via Pedido" },
+  { key: "pickup", dimension: "fulfillment", value: "pickup", label: "Retiradas" },
+  { key: "delivery", dimension: "fulfillment", value: "delivery", label: "Entregas" },
 ];
 
-export interface ShortcutChip extends Shortcut {
-  count: number;
-  pressed: boolean;
-}
-
-function isShortcut(dimension: keyof PreorderFilters, value: string | undefined): boolean {
-  return SHORTCUTS.some((shortcut) => shortcut.dimension === dimension && shortcut.value === value);
+/** As chaves da faixa ligadas no estado da tela. */
+export function quickKeysOf(filters: PreorderFilters): string[] {
+  return QUICK_FILTERS.filter((quick) => filters[quick.dimension] === quick.value).map((quick) => quick.key);
 }
 
 /**
- * Os botões de um toque, com a contagem do que cada um mostraria com os outros
- * filtros como estão (a mesma conta do "Filtrar"). Botão que não mostraria nada
- * não aparece, a menos que esteja apertado: zero não é código.
+ * O que a faixa devolveu → o estado da tela. O desligado volta a "Todas" na dimensão
+ * dele; o ligado escreve a dele. Retiradas e Entregas moram na mesma dimensão: a
+ * tocada vence a que estava.
  */
-export function shortcutChips(cards: readonly FilterCard[], filters: PreorderFilters): ShortcutChip[] {
+export function filtersFromQuickKeys(current: PreorderFilters, keys: readonly string[]): PreorderFilters {
+  const before = new Set(quickKeysOf(current));
+  const after = new Set(keys);
+  const next: PreorderFilters = { ...current };
+  for (const quick of QUICK_FILTERS) {
+    if (before.has(quick.key) && !after.has(quick.key) && next[quick.dimension] === quick.value) {
+      (next as Record<keyof PreorderFilters, string>)[quick.dimension] = "all";
+    }
+  }
+  for (const quick of QUICK_FILTERS) {
+    if (after.has(quick.key) && !before.has(quick.key)) {
+      (next as Record<keyof PreorderFilters, string>)[quick.dimension] = quick.value;
+    }
+  }
+  return next;
+}
+
+/**
+ * Os itens da faixa, com a contagem de cada um: o que ELE mostraria com os OUTROS
+ * filtros como estão (a mesma conta das opções do painel).
+ */
+export function quickFilterItems(
+  cards: readonly FilterCard[],
+  filters: PreorderFilters,
+): { key: string; label: string; count: number }[] {
   const chips = filterChips(cards, filters);
-  return SHORTCUTS.map((shortcut) => {
-    const options = chips[shortcut.dimension] as FilterChip<string>[];
-    const count = options.find((chip) => chip.key === shortcut.value)?.count ?? 0;
-    return { ...shortcut, count, pressed: filters[shortcut.dimension] === shortcut.value };
-  }).filter((chip) => chip.pressed || chip.count > 0);
-}
-
-export interface ShortcutBlock {
-  dimension: keyof PreorderFilters;
-  /** O nome do bloco para o leitor de tela ("Pagamento", "Via Pedido", "Recebimento"). */
-  label: string;
-  chips: ShortcutChip[];
+  const count = (dimension: keyof PreorderFilters, value: string) =>
+    (chips[dimension] as FilterChip<string>[]).find((chip) => chip.key === value)?.count ?? 0;
+  return QUICK_FILTERS.map((quick) => ({ key: quick.key, label: quick.label, count: count(quick.dimension, quick.value) }));
 }
 
 /**
- * Os botões de um toque em BLOCOS, um por dimensão, na ordem dos botões: as
- * pílulas da mesma pergunta ficam juntas (Retiradas e Entregas se excluem; A
- * receber e Sem Via Pedido somam), e o bloco diz qual é a pergunta.
+ * O que o painel devolveu → o estado da tela. Cada dimensão das Encomendas tem um
+ * valor só (Retiradas e Entregas se excluem); quando o painel devolve dois numa
+ * dimensão (o favorito fixado do grupo "Filtros rápidos" dele soma), o valor novo
+ * vence o que já estava.
  */
-export function shortcutBlocks(chips: readonly ShortcutChip[]): ShortcutBlock[] {
-  const blocks: ShortcutBlock[] = [];
-  for (const chip of chips) {
-    const block = blocks.find((candidate) => candidate.dimension === chip.dimension);
-    if (block) block.chips.push(chip);
-    else blocks.push({ dimension: chip.dimension, label: FILTER_LABELS[chip.dimension], chips: [chip] });
-  }
-  return blocks;
-}
-
-/** Apertar o botão liga o recorte; apertado, desliga (a dimensão volta a "Todas"). */
-export function toggleShortcut(filters: PreorderFilters, shortcut: Pick<Shortcut, "dimension" | "value">): PreorderFilters {
-  const pressed = filters[shortcut.dimension] === shortcut.value;
-  return fromActiveFilters({
-    ...toActiveFilters(filters),
-    [shortcut.dimension]: pressed ? [] : [shortcut.value],
-  });
-}
-
-/** O "Filtrar" sem o que já tem botão: só as dimensões e as opções que sobram. */
-export function barDimensions(cards: readonly FilterCard[], filters: PreorderFilters): FilterDimension[] {
-  return filterDimensions(cards, filters)
-    .map((dimension) => ({
-      ...dimension,
-      options: dimension.options.filter((option) => !isShortcut(dimension.id as keyof PreorderFilters, option.value)),
-    }))
-    .filter((dimension) => dimension.options.length > 0);
-}
-
-/** O estado da tela → o da barra do "Filtrar", sem os recortes que moram nos botões. */
-export function toBarFilters(filters: PreorderFilters): ActiveFilters {
-  return Object.fromEntries(Object.entries(toActiveFilters(filters))
-    .filter(([key, values]) => !isShortcut(key as keyof PreorderFilters, values[0])));
-}
-
-/**
- * O que a barra devolveu → o estado da tela. A barra só fala do que ela mostra:
- * a dimensão que ela não traz e que está num botão apertado continua como está.
- */
-export function fromBarFilters(current: PreorderFilters, bar: ActiveFilters): PreorderFilters {
-  const merged: ActiveFilters = {};
+export function fromPanelFilters(current: PreorderFilters, next: ActiveFilters): PreorderFilters {
+  const single: ActiveFilters = {};
   for (const key of Object.keys(FILTER_LABELS) as (keyof PreorderFilters)[]) {
-    const fromBar = bar[key];
-    if (fromBar?.length) merged[key] = fromBar;
-    else if (isShortcut(key, current[key])) merged[key] = [current[key]];
+    const values = (next[key] ?? []).filter(Boolean);
+    if (!values.length) continue;
+    const added = values.filter((value) => value !== current[key]);
+    single[key] = [added.length ? added[added.length - 1]! : values[0]!];
   }
-  return fromActiveFilters(merged);
+  return fromActiveFilters(single);
 }
 
 // ── A linha "Hoje" ──────────────────────────────────────────────────────────
@@ -842,8 +813,8 @@ export interface LayoutOption {
 
 /** Os dois botões do alternador, com o rótulo que o leitor de tela diz. */
 export const LAYOUT_OPTIONS: readonly LayoutOption[] = [
-  { value: "grid", label: "Ver em grade", icon: "lucide:layout-grid" },
-  { value: "list", label: "Ver em lista", icon: "lucide:list" },
+  { value: "grid", label: "Ver em grade", icon: "i-lucide-layout-grid" },
+  { value: "list", label: "Ver em lista", icon: "i-lucide-list" },
 ];
 
 /** O que veio guardado no dispositivo; qualquer outra coisa é a grade. */

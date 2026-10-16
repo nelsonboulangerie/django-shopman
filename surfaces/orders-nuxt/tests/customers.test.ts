@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  customersCsv,
   listQueryFromRoute,
   mergePair,
   routeQueryFromList,
@@ -9,11 +10,11 @@ import {
 
 describe("listQueryFromRoute", () => {
   it("lê busca, filtro e página da URL", () => {
-    expect(listQueryFromRoute({ q: " maria ", filter: "no_phone", page: "3" })).toEqual({ q: "maria", filter: "no_phone", page: 3 });
+    expect(listQueryFromRoute({ q: " maria ", filter: "no_phone", page: "3" })).toEqual({ q: "maria", filter: "no_phone", page: 3, sort: "recent" });
   });
 
   it("filtro desconhecido e página inválida voltam ao padrão", () => {
-    expect(listQueryFromRoute({ filter: "hackers", page: "-2" })).toEqual({ q: "", filter: "all", page: 1 });
+    expect(listQueryFromRoute({ filter: "hackers", page: "-2" })).toEqual({ q: "", filter: "all", page: 1, sort: "recent" });
     expect(listQueryFromRoute({ page: "abc" }).page).toBe(1);
   });
 
@@ -24,11 +25,11 @@ describe("listQueryFromRoute", () => {
 
 describe("routeQueryFromList", () => {
   it("URL limpa quando tudo está no padrão", () => {
-    expect(routeQueryFromList({ q: "", filter: "all", page: 1 })).toEqual({});
+    expect(routeQueryFromList({ q: "", filter: "all", page: 1, sort: "recent" })).toEqual({});
   });
 
   it("volta pela mesma URL", () => {
-    const query = { q: "ana", filter: "possible_duplicates" as const, page: 2 };
+    const query = { q: "ana", filter: "possible_duplicates" as const, page: 2, sort: "name" as const };
     expect(listQueryFromRoute(routeQueryFromList(query))).toEqual(query);
   });
 });
@@ -57,5 +58,23 @@ describe("mergePair", () => {
   it("quem fica é o target; o outro é o source", () => {
     expect(mergePair("CLI-1", "IF-1", "current")).toEqual({ source_ref: "IF-1", target_ref: "CLI-1" });
     expect(mergePair("CLI-1", "IF-1", "other")).toEqual({ source_ref: "CLI-1", target_ref: "IF-1" });
+  });
+});
+
+describe("customersCsv", () => {
+  it("exporta a seleção com ponto e vírgula e BOM, como a planilha em português lê", () => {
+    const csv = customersCsv([
+      {
+        name: "Ana Silva",
+        ref: "CUST-1",
+        phone_display: "(43) 99999-1111",
+        document_display: "529.982.247-25",
+        orders_label: "2 pedidos",
+      },
+    ]);
+
+    expect(csv.startsWith("\uFEFF")).toBe(true);
+    expect(csv).toContain("Cliente;Referência;Telefone;CPF;Pedidos");
+    expect(csv).toContain("Ana Silva;CUST-1;(43) 99999-1111;529.982.247-25;2 pedidos");
   });
 });

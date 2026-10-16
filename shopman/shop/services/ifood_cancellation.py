@@ -13,6 +13,13 @@ from shopman.shop.directives import IFOOD_STATUS_CALLBACK, create_deduped
 
 KEY = "ifood_cancellation_request"
 TERMINAL_STATUSES = {"cancelled", "completed", "returned"}
+#: O iFood recusou o cancelamento pedido pela loja. O pedido continua ativo e
+#: alguém decide: seguir com ele ou tentar cancelar de novo com outro motivo.
+REFUSED_ALERT_TYPE = "ifood_cancellation_refused"
+#: Onde o motivo pode vir no ``metadata`` do evento ``CANCELLATION_REQUEST_FAILED``.
+#: A referência de eventos não fixa a chave; lemos as conhecidas e, sem nenhuma,
+#: qualquer texto cujo nome fale de motivo. O ``metadata`` cru fica gravado.
+_REASON_KEYS = ("reason", "description", "message", "details", "cancellationReason", "CANCEL_REASON")
 
 
 def requires_remote_decision(order) -> bool:
@@ -75,6 +82,72 @@ def should_send(payload) -> bool:
     )
 
 
+def refusal_reason(metadata) -> str:
+    """O motivo da recusa, em texto, como o iFood mandou (ou vazio)."""
+    if not isinstance(metadata, dict):
+        return ""
+    for key in _REASON_KEYS:
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:300]
+    for key, value in metadata.items():
+        if "reason" in str(key).lower() and isinstance(value, str) and value.strip():
+            return value.strip()[:300]
+    return ""
+
+
+def refuse_locked(order, *, reason: str, event_id: str = "", metadata: dict | None = None) -> bool:
+    """O iFood recusou o cancelamento: destrava o pedido e avisa quem decide.
+
+    O pedido nunca mudou de estado enquanto esperava (o pedido de cancelamento
+    só TRAVA as transições, ``is_pending``). Destravar é tirar o pedido do
+    "cancelamento pendente": o estado ``refused`` não é pendente, então o
+    operador volta a poder aceitar, avançar ou pedir o cancelamento de novo
+    (um pedido novo substitui este). Sem isto, o pedido ficava travado para
+    sempre: ninguém aceitava, ninguém avançava, e o iFood seguia contando o prazo.
+
+    O chamador segura o lock da linha. Devolve ``True`` quando havia pedido de
+    cancelamento pendente e ele foi recusado agora.
+    """
+    data = dict(order.data or {})
+    if order.status in TERMINAL_STATUSES or data.get("ifood_cancelled") or not is_pending(order):
+        return False
+    request = dict(data.get(KEY) or {})
+    request.update(
+        state="refused", retryable=False, refused_at=timezone.now().isoformat(),
+        refusal_reason=reason, refusal_event_id=event_id,
+        last_error="O iFood recusou o cancelamento. O pedido continua ativo.",
+    )
+    if metadata:
+        request["refusal_metadata"] = dict(metadata)
+    data[KEY] = request
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+    alert_refused(order, reason=reason)
+    return True
+
+
+def alert_refused(order, *, reason: str) -> None:
+    """Aviso acionável: o motivo do iFood e as duas saídas possíveis."""
+    from shopman.shop.services.observability import create_operator_alert
+
+    request = (order.data or {}).get(KEY) or {}
+    display = str(((order.data or {}).get("ifood") or {}).get("display_id") or "").strip()
+    name = f"{order.ref} (iFood #{display})" if display else order.ref
+    because = f"Motivo do iFood: {reason.rstrip('.')}." if reason else "O iFood não informou o motivo."
+    create_operator_alert(
+        type=REFUSED_ALERT_TYPE,
+        severity="error",
+        message=(
+            f"O iFood recusou o cancelamento do pedido {name}. {because} "
+            "O pedido continua ativo: siga com ele ou tente cancelar de novo com outro motivo."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"{REFUSED_ALERT_TYPE}:{order.ref}:{request.get('id') or ''}",
+        debounce_minutes=24 * 60,
+    )
+
+
 @transaction.atomic
 def record_result(payload, *, state: str, retryable: bool = False) -> None:
     order = Order.objects.select_for_update().filter(ref=payload.get("order_ref"), channel_ref="ifood").first()
@@ -92,3 +165,7 @@ def record_result(payload, *, state: str, retryable: bool = False) -> None:
     data[KEY] = request
     order.data = data
     order.save(update_fields=["data", "updated_at"])
+    if state == "error" and not retryable:
+        # Recusa na hora do envio (4xx do iFood): o pedido já não está pendente,
+        # mas ninguém sabia. Mesmo aviso da recusa que chega por evento.
+        alert_refused(order, reason="")

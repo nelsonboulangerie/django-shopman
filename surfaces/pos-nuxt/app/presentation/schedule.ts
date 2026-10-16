@@ -83,7 +83,8 @@ export function scheduleLabel(
 ): string {
   const agendado = Boolean(deliveryDate) && deliveryDate !== today;
   const janela = inSentence(windowLabel);
-  if (!agendado) return janela ? `Hoje, ${janela}` : (deliveryDate ? "Hoje · horário a combinar" : "Sem agendamento");
+  // Hoje sem janela é "o quanto antes" (dono, 13/10/2026): o operador despacha na hora.
+  if (!agendado) return janela ? `Hoje, ${janela}` : (deliveryDate ? "Hoje, o quanto antes" : "Sem agendamento");
   const dia = dateLabel(deliveryDate, today);
   return janela ? `${dia}, ${janela}` : dia;
 }

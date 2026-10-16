@@ -67,7 +67,7 @@ export function capacitySourceText(reading: CapacityResponse | null): string {
   switch (reading.source) {
     case "cgroup-v2":
     case "cgroup-v1":
-      return "Número medido no servidor.";
+      return "Número medido.";
     case "proc":
       return "Número estimado: a memória pode aparecer maior do que é.";
     default:

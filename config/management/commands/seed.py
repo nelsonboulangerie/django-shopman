@@ -1301,7 +1301,6 @@ class Command(BaseCommand):
                     "first_name": "Teste",
                     "last_name": f"Marketing {index:02d}",
                     "customer_type": "individual",
-                    "price_tier": tier,
                     "phone": phone,
                     # Cohort sintética explicitamente adulta: a resolução real
                     # de Marketing exige DOB canônico >= 18 anos e deve poder
@@ -1310,6 +1309,8 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
+            if tier is not None:
+                customer.price_tiers.set([tier])
             ContactPoint.objects.update_or_create(
                 customer=customer,
                 type="whatsapp",
@@ -2027,6 +2028,8 @@ class Command(BaseCommand):
             "https://img.nelsonboulangerie.com.br/products",
         ).rstrip("/")
         IMG = image_base
+        from config.product_photos import hosted_photo_url
+
         UNSPLASH = "https://images.unsplash.com"
 
         def unsplash(photo_id: str) -> str:
@@ -2771,7 +2774,10 @@ class Command(BaseCommand):
                     "is_published": sku not in sem_ficha and sku not in fora_da_loja,
                     "is_sellable": sellable,
                     "availability_policy": AvailabilityPolicy.PLANNED_OK,
-                    "image_url": image,
+                    # A tabela de fotos no host dedicado vence o placeholder de fora
+                    # (config/product_photos.py; o banco vivo vai pelo
+                    # `relocate_product_images`).
+                    "image_url": hosted_photo_url(sku, IMG) or image,
                     "unit_weight_g": weight_g,
                     "storage_tip": storage,
                 },
@@ -3493,7 +3499,9 @@ class Command(BaseCommand):
             defaults={"name": "Loja online", "is_active": True, "priority": 7},
         )
         # WhatsApp: a vitrine do concierge. Espelha a loja online (mesmo recorte,
-        # mesmo preço) porque é o mesmo cliente remoto, só que conversando.
+        # mesmo preço) porque é o mesmo cliente remoto, só que conversando. Quem
+        # a preenche é o espelho (`pricing.listing_from` no canal, mais abaixo):
+        # o laço de itens daqui não a toca.
         whatsapp, _ = Listing.objects.update_or_create(
             ref="whatsapp",
             defaults={"name": "WhatsApp", "is_active": True, "priority": 5},
@@ -3512,7 +3520,7 @@ class Command(BaseCommand):
         # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
         so_no_balcao = {"HOL", "BRBB", "PIT"}
 
-        for listing_obj in [pdv, ifood, web, whatsapp]:
+        for listing_obj in [pdv, ifood, web]:
             ListingItem.objects.filter(listing=listing_obj).delete()
             markup = Decimal(markup_map[listing_obj.ref]) / 100
             for _sku, product in products.items():
@@ -3614,7 +3622,7 @@ class Command(BaseCommand):
 
         from datetime import timedelta as _td
 
-        yesterday = date.today() - _td(days=1)
+        yesterday = timezone.localdate() - _td(days=1)
         for sku, qty in LEFTOVER_ITEMS:
             if sku not in products:
                 continue
@@ -6223,9 +6231,30 @@ class Command(BaseCommand):
             ref="atacado",
             defaults={"name": "Atacado"},
         )
+        # Grupos comerciais com desconto automático (dono, 14/10/2026): o
+        # desconto de cada um é a promoção `grupo-<ref>` logo abaixo, e o metadata
+        # diz o tipo (B.I.), o arredondamento e a mensagem de economia.
         staff_tier, _ = PriceTier.objects.update_or_create(
             ref="staff",
-            defaults={"name": "Funcionarios"},
+            defaults={
+                "name": "Equipe",
+                "metadata": {
+                    "discount_kind": "equipe",
+                    "rounding": 50,
+                    "savings_message": "Hoje você economizou {amount} por ser da Equipe",
+                },
+            },
+        )
+        PriceTier.objects.update_or_create(
+            ref="alianca-francesa",
+            defaults={
+                "name": "Aliança Francesa",
+                "metadata": {
+                    "discount_kind": "parceiro",
+                    "rounding": 50,
+                    "savings_message": "Hoje você economizou {amount} por ser da Aliança Francesa",
+                },
+            },
         )
 
         customers_data = [
@@ -6256,11 +6285,12 @@ class Command(BaseCommand):
                     "first_name": first,
                     "last_name": last,
                     "customer_type": ctype,
-                    "price_tier": price_tier,
                     "phone": phone,
                     **extras,
                 },
             )
+            if price_tier is not None:
+                c.price_tiers.set([price_tier])
             ContactPoint.objects.update_or_create(
                 customer=c,
                 type="whatsapp",
@@ -6480,6 +6510,11 @@ class Command(BaseCommand):
             "notifications": _remote_notifications,
             "stock": _remote_stock,
             "waitlist": _remote_waitlist,
+            # A vitrine do WhatsApp É a da loja online: mesmo cliente remoto, só
+            # que conversando. O ponteiro mantém as duas iguais sempre
+            # (`shop/services/listing_mirror.py`, P1-14); no Catálogo o WhatsApp
+            # não tem edição própria.
+            "pricing": {"listing_from": STOREFRONT_REF},
         }
         channels_data = [
             # (ref, name, display_order, is_active, config_overrides)
@@ -6496,6 +6531,14 @@ class Command(BaseCommand):
             # iFood ficam no default "auto" (operador presente / marketplace).
             (STOREFRONT_REF, "Loja online", 2, True, {
                 **_remote_config,
+                # Loja online PAGA AO PEDIR, como no WhatsApp (decisão do dono,
+                # 14/10/2026, L1=1): o Pix/cartão nasce no pedido, sem "pagar na
+                # entrega" no site (L2=1). A loja tem 30 min de loja aberta para
+                # aceitar (aviso no Gestor aos 10); recusou ou venceu, o pedido é
+                # cancelado e o dinheiro volta sozinho. Nota do dono: "se os
+                # estornos ficarem constantes, reavaliar". Banco vivo: shop.0094.
+                "confirmation": {"mode": "auto_cancel", "timeout_minutes": 30, "stale_new_alert_minutes": 10},
+                "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
                 "short_name": "Site",
                 "order_ref_prefix": "NB",
                 "fulfillment": {"prep_start": "operator", "equipment": ["card_machine"]},
@@ -8122,6 +8165,34 @@ class Command(BaseCommand):
             },
         )
 
+        # Grupos comerciais: o desconto do PriceTier, derivado pelo Admin do grupo
+        # (ref `grupo-<ref>`). A Equipe é −30% e SÓ NA RETIRADA; a Aliança é −15%.
+        Promotion.objects.update_or_create(
+            ref="grupo-staff",
+            defaults={
+                "name": "Equipe",
+                "type": Promotion.PERCENT,
+                "value": 30,
+                "valid_from": now,
+                "valid_until": now + timedelta(days=3650),
+                "customer_segments": ["staff"],
+                "fulfillment_types": ["pickup"],
+                "is_active": True,
+            },
+        )
+        Promotion.objects.update_or_create(
+            ref="grupo-alianca-francesa",
+            defaults={
+                "name": "Aliança Francesa",
+                "type": Promotion.PERCENT,
+                "value": 15,
+                "valid_from": now,
+                "valid_until": now + timedelta(days=3650),
+                "customer_segments": ["alianca-francesa"],
+                "is_active": True,
+            },
+        )
+
         # Promotion: Parabéns! — 10% off no dia do aniversário
         Promotion.objects.update_or_create(
             ref="aniversario",
@@ -8687,13 +8758,6 @@ class Command(BaseCommand):
 
         RULE_CONFIGS = [
             {
-                "ref": "employee_discount",
-                "rule_path": "shopman.shop.rules.pricing.EmployeeRule",
-                "label": "Desconto Funcionário",
-                "params": {"discount_percent": 20, "price_tier": "staff"},
-                "priority": 60,
-            },
-            {
                 "ref": "happy_hour",
                 "rule_path": "shopman.shop.rules.pricing.HappyHourRule",
                 "label": "Hora da Xepa",
@@ -8751,13 +8815,13 @@ class Command(BaseCommand):
             if created:
                 count += 1
 
-        # Happy Hour ("Hora da Xepa") is an in-store, end-of-day clearance —
-        # it must NOT touch the online storefront (where listed prices would
-        # diverge from the cart). Scope the rule to every non-web channel; an
-        # empty channel set would mean "all channels", including web.
+        # A Hora da Xepa é liquidação de fim de dia de quem está na loja: vale SÓ
+        # no balcão (decisão do dono, 14/10/2026). Nem site, nem WhatsApp, nem
+        # iFood. A regra exige canal listado (``HappyHourRule.channels_required``):
+        # sem o PDV aqui, ela não valeria em lugar nenhum.
         happy_hour = rules_by_ref.get("happy_hour")
         if happy_hour is not None:
-            happy_hour.channels.set(Channel.objects.exclude(ref="web"))
+            happy_hour.channels.set(Channel.objects.filter(ref="pdv"))
 
         self.stdout.write(f"  ✅ {len(RULE_CONFIGS)} rule configs ({count} novos)")
 

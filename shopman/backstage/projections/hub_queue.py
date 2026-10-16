@@ -1,9 +1,11 @@
-"""Precisa de você: a fila das filas da Central (SUITE-UX §4.1 e §6, UX-H1).
+"""A fila das filas da Central (SUITE-UX §4.1 e §6, UX-H1).
 
-A Central soma as filas dos papéis do operador e mostra o ITEM EXATO primeiro: "Pedido K7Q2
-para aceitar", "Pedido F15 atrasado", "Lote de Croissant passou do tempo". Cada item traz o
-essencial da decisão, a hora que importa (há quanto espera, ou quanto falta) e um gesto que
-abre o lugar exato no app certo.
+A Central soma as filas dos papéis do operador e leva o ITEM EXATO para a linha de cada app
+(``next_item``, a pendência mais urgente dele): "Pedido K7Q2 para aceitar", "Pedido F15
+atrasado", "Lote de Croissant passou do tempo". Cada item traz o essencial da decisão, a hora
+que importa (há quanto espera, ou quanto falta) e um gesto que abre o lugar exato no app
+certo. A lista inteira não viaja mais no JSON (dono, 09/10/2026: "Precisa de você" saiu da
+Central); dela sai só ``total_count``.
 
 **Só fontes que já existem.** Nada aqui é regra nova: cada fonte é a mesma leitura que o app
 de destino já faz, recortada para o que pede alguém agora.
@@ -46,9 +48,6 @@ from django.utils.dateparse import parse_datetime
 from shopman.backstage import permissions
 
 logger = logging.getLogger(__name__)
-
-#: Quantos itens a Central mostra em foco; o resto vira "+N" (FILA nunca pagina).
-FOCUS_LIMIT = 6
 
 #: Meta do aceite: o card do Gestor fica urgente aos 4 minutos (`order_queue._timer_class`).
 ACCEPT_TARGET_SECONDS = 240
@@ -106,10 +105,26 @@ class HubAppStatusProjection:
 
 @dataclass(frozen=True)
 class HubQueueProjection:
-    items: tuple[HubQueueItemProjection, ...]
+    """O que a Central recebe da fila: quantas pendências e o relógio do servidor (os
+    itens chegam pela linha de cada app, em ``next_item``)."""
+
     total_count: int
-    more_count: int
     server_now: str
+
+
+@dataclass(frozen=True)
+class HubQueueCollection:
+    """O resultado da coleta: a projeção da fila, a linha de estado de cada app, a
+    pendência mais urgente de cada app e a fila inteira, ordenada por urgência.
+
+    ``items`` é interno (não viaja no JSON da Central): é dele que saem ``most_urgent`` e
+    ``total_count``, e é o que os testes leem para travar a ordem e a permissão por item.
+    """
+
+    queue: HubQueueProjection
+    statuses: dict[str, HubAppStatusProjection]
+    most_urgent: dict[str, HubQueueItemProjection]
+    items: tuple[HubQueueItemProjection, ...]
 
 
 @dataclass
@@ -497,7 +512,7 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
         if alert.type in OperatorAlert.PRODUCTION_TYPES:
             # Alerta de produção carrega o ref do LOTE em ``order_ref``: nunca vira "Abrir o
             # pedido" no Gestor. Sem a Produção, ele fica no sino de quem a opera.
-            app = "production" if can_production else ""
+            app, surface = ("production", "production") if can_production else ("", "")
         elif can_orders and (alert.audience == "orders" or alert.order_ref) and alert.type not in alert_service.ORDERS_SCOPE_EXCLUDED:
             app, surface = "gestor", "orders"
         if not app:
@@ -534,7 +549,8 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
                 time_mode="since",
                 attention=critical,
                 action_label=action.label,
-                url=_join_url(urls[app], action.href),
+                # O aviso que se resolve noutro app já vem com o endereço inteiro.
+                url=action.href if action.href.startswith(("http://", "https://")) else _join_url(urls[app], action.href),
                 # Crítico vai para o topo; erro entra no meio, atrás do que estourou a meta.
                 slack_seconds=-3600 if critical else DUE_SOON_SECONDS,
             )
@@ -585,32 +601,27 @@ def _marketing_status(user, base: str, label: str, now: datetime, out: _Collecte
 
 
 def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
-    """Compras: pedido pronto para enviar (pede alguém) e pedido enviado ao fornecedor.
+    """Compras: pedido enviado ao fornecedor e ainda aguardando entrega.
 
     A mesma marca que o quadro do Compras lê (``metadata.purchase.request_status``):
-    ``approved`` é "Pronto" (falta enviar), ``sent`` é "Enviado". Um pedido é um
-    ``request_ref``; insumo enviado sem ``request_ref`` conta como um pedido.
+    ``sent`` é o pedido em aberto, que o recebimento ou o cancelamento encerram. Um
+    pedido é um ``request_ref``; insumo enviado sem ``request_ref`` conta como um pedido.
     """
     from django.apps import apps
 
     from shopman.backstage.projections.purchase import _purchase_meta, _purchase_request_status
 
     Material = apps.get_model("buyman", "Material")
-    to_send = 0
     on_the_way: set[str] = set()
     for material in Material.objects.filter(is_active=True).only("sku", "metadata"):
-        status = _purchase_request_status(material)
-        if status == "approved":
-            to_send += 1
-        elif status == "sent":
+        if _purchase_request_status(material) == "sent":
             ref = str(_purchase_meta(material).get("request_ref") or "").strip()
             on_the_way.add(ref or f"sku:{material.sku}")
     out.statuses["purchase"] = HubAppStatusProjection(
-        attention=_plural(to_send, "pedido para enviar", "pedidos para enviar") if to_send else "",
         # Todo bloco tem estado (prévia v4): sem pedido, o estado calmo diz isso.
         summary=_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho")
         if on_the_way
-        else ("" if to_send else "Nenhum pedido em andamento"),
+        else "Nenhum pedido em andamento",
     )
 
 
@@ -735,8 +746,9 @@ def collect_hub_queue(
     urls: dict[str, str],
     labels: dict[str, str],
     now: datetime | None = None,
-) -> tuple[HubQueueProjection, dict[str, HubAppStatusProjection]]:
-    """A fila das filas de ``user`` e a linha de estado de cada app que ele abre.
+) -> HubQueueCollection:
+    """A fila das filas de ``user``, a linha de estado de cada app que ele abre e a
+    pendência mais urgente de cada app (a ação direta da linha do app na Central).
 
     ``urls`` e ``labels`` vêm do registro da Central: só entra item de app que o operador
     pode abrir E que tem URL configurada.
@@ -756,14 +768,15 @@ def collect_hub_queue(
     except Exception:
         logger.warning("hub_queue.source_failed app=alerts", exc_info=True)
 
-    ordered = sorted(out.items, key=lambda item: (item.slack_seconds, item.waiting_since or item.due_at, item.key))
-    focus = tuple(ordered[:FOCUS_LIMIT])
-    return (
-        HubQueueProjection(
-            items=focus,
-            total_count=len(ordered),
-            more_count=max(0, len(ordered) - len(focus)),
-            server_now=_iso(now),
-        ),
-        out.statuses,
+    ordered = tuple(
+        sorted(out.items, key=lambda item: (item.slack_seconds, item.waiting_since or item.due_at, item.key))
+    )
+    most_urgent: dict[str, HubQueueItemProjection] = {}
+    for item in ordered:
+        most_urgent.setdefault(item.app, item)
+    return HubQueueCollection(
+        queue=HubQueueProjection(total_count=len(ordered), server_now=_iso(now)),
+        statuses=out.statuses,
+        most_urgent=most_urgent,
+        items=ordered,
     )

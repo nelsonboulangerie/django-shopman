@@ -41,6 +41,12 @@ class ShopmanConfig(AppConfig):
         # 0. Register system checks
         import shopman.shop.checks  # noqa: F401
 
+        # 0a. Conexão de banco cuja thread morreu volta ao pool (request cancelado
+        #     no meio sob ASGI; ver shop/orphan_connections.py).
+        from shopman.shop import orphan_connections
+
+        orphan_connections.connect()
+
         # 0b. Dashboard do Admin: template próprio, registrado explicitamente.
         #     "admin/index.html" de app é sombreado pelo do Unfold (que vem
         #     antes em INSTALLED_APPS), então o nome precisa ser exclusivo.
@@ -256,6 +262,15 @@ class ShopmanConfig(AppConfig):
             invalidate_rules_cache,
             sender=RuleConfig,
             dispatch_uid="shopman.shop.rules.invalidate_cache",
+        )
+        # Os canais da regra moram num M2M, gravado DEPOIS do post_save: sem
+        # isto, tirar a Xepa de um canal no Admin só valia quando o cache vencesse.
+        from django.db.models.signals import m2m_changed
+
+        m2m_changed.connect(
+            invalidate_rules_cache,
+            sender=RuleConfig.channels.through,
+            dispatch_uid="shopman.shop.rules.invalidate_cache_channels",
         )
 
         # O registro de atributos é lido a cada sugestão e a cada leitura de

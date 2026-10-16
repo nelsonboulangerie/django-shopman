@@ -16,7 +16,10 @@ const WHEN = new Intl.DateTimeFormat("pt-BR", {
 });
 
 /** "Usado por último em 03/10, 14:20" ou "Ainda não usado". */
-export function deviceUsageLine(device: WorkstationDevice, copy: Partial<WorkstationCopy>): string {
+export function deviceUsageLine(
+  device: WorkstationDevice,
+  copy: Partial<WorkstationCopy>,
+): string {
   if (!device.last_used_at) return copy.manage_device_never_used ?? "";
   const when = WHEN.format(new Date(device.last_used_at));
   return (copy.manage_device_last_used ?? "{when}").replace("{when}", when);
@@ -28,7 +31,10 @@ export function deviceName(device: WorkstationDevice): string {
 }
 
 /** "2 dispositivos", "1 dispositivo", ou a frase de nenhum. */
-export function devicesSummary(row: WorkstationManageRow, copy: Partial<WorkstationCopy>): string {
+export function devicesSummary(
+  row: WorkstationManageRow,
+  copy: Partial<WorkstationCopy>,
+): string {
   const n = row.devices.length;
   if (n === 0) return copy.manage_devices_none ?? "";
   if (n === 1) return copy.devices_one ?? "";
@@ -36,11 +42,16 @@ export function devicesSummary(row: WorkstationManageRow, copy: Partial<Workstat
 }
 
 /** Os tipos que o cadastro pode criar: o Caixa nasce com o caixa, não aqui. */
-export function creatableKinds(kinds: WorkstationKindOption[]): WorkstationKindOption[] {
+export function creatableKinds(
+  kinds: WorkstationKindOption[],
+): WorkstationKindOption[] {
   return kinds.filter((kind) => kind.kind !== "cash_desk");
 }
 
 /** Os tipos para que um posto pode mudar: Caixa só para quem tem caixa. */
-export function editableKinds(kinds: WorkstationKindOption[], row: WorkstationManageRow): WorkstationKindOption[] {
+export function editableKinds(
+  kinds: WorkstationKindOption[],
+  row: WorkstationManageRow,
+): WorkstationKindOption[] {
   return row.has_cash_desk ? kinds : creatableKinds(kinds);
 }

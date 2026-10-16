@@ -22,7 +22,9 @@ def test_seeded_owned_remote_channels_require_human_confirmation():
     command.stdout = StringIO()
     channels = command._seed_channels()
 
-    assert ChannelConfig.for_channel(channels["web"]).confirmation.mode == "manual"
+    # A loja online paga ao pedir e tem prazo de aceite (ADR-036): quem não aceita
+    # a tempo CANCELA e devolve, nunca aceita sozinho.
+    assert ChannelConfig.for_channel(channels["web"]).confirmation.mode == "auto_cancel"
     assert ChannelConfig.for_channel(channels["whatsapp"]).confirmation.mode == "manual"
     assert ChannelConfig.for_channel(channels["pdv"]).confirmation.mode == "immediate"
 

@@ -48,6 +48,9 @@ export interface PosSaleResultSnapshot {
    *  é o que o operador lê de volta ao cliente antes de desligar o telefone. */
   fulfillmentLabel?: string;
   scheduleLabel?: string;
+  /** Venda feita SEM CONEXÃO: guardada na fila do dispositivo, ainda sem pedido
+   *  no servidor. `orderRef` é o rótulo local ("Sem conexão 3F2A"). */
+  offline?: { capturedAt: string; id: string; sentOrderRef?: string };
 }
 
 /**
@@ -64,6 +67,22 @@ export function orderReadback(result: Pick<PosSaleResultSnapshot, "salesMode" | 
   const schedule = (result.scheduleLabel || "").trim();
   if (!fulfillment && !schedule) return null;
   return { fulfillment, schedule };
+}
+
+/**
+ * A PRÓXIMA AÇÃO da tela de resultado (P2-31 do mapa de cenários): o CTA diz o
+ * que vem a seguir no mesmo modo. Encomenda registrada puxa outra encomenda (a
+ * mesma "Nova encomenda" da seção Encomendas); venda puxa outra venda. A volta
+ * ao quadro de comandas continua no F2, para os dois.
+ */
+export function nextActionLabel(salesMode: PosSaleResultSnapshot["salesMode"], pixPending: boolean): string {
+  const base = salesMode === "order" ? "Nova encomenda" : "Nova venda";
+  return pixPending ? `${base} mesmo assim` : base;
+}
+
+/** O papel da encomenda, com o verbo inteiro: o mesmo rótulo do detalhe da encomenda. */
+export function orderTicketLabel(printing: boolean): string {
+  return printing ? "Imprimindo…" : "Imprimir Via Pedido";
 }
 
 export interface SaleResultAdvanceInputs {

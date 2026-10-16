@@ -53,3 +53,13 @@ export type {
   ForecastOccasion,
   OccasionYear,
 } from "~/generated/biContract";
+
+/**
+ * A resposta de toda leitura do B.I. (`shopman/backstage/api/bi.py::_bi_reading`):
+ * o relatório em `bi` e, fora dele, a hora em que o SERVIDOR o gerou (ISO com fuso).
+ * É o carimbo que o `ReadFreshness` mostra.
+ */
+export interface BIReading<T> {
+  bi: T;
+  generated_at?: string | null;
+}

@@ -26,6 +26,7 @@ ended up adopting only one of them.
 from __future__ import annotations
 
 import logging
+import re
 from decimal import Decimal
 
 from django.utils import timezone
@@ -35,6 +36,27 @@ from shopman.shop.services import lead_time as lead_time_service
 from shopman.shop.services.order_helpers import get_commitment_date, is_test_order
 
 logger = logging.getLogger(__name__)
+
+
+def untracked_hold_entry(sku: str) -> dict:
+    """Persist an untracked hold marker during the expand-contract window.
+
+    ``is_tracked`` is the canonical representation. ``untracked`` remains a
+    dual-written compatibility key until historical ``Order.data`` readers no
+    longer need the pre-WP-2 shape; no data migration is required.
+    """
+    return {
+        "sku": sku,
+        "hold_id": None,
+        "qty": 0,
+        "is_tracked": False,
+        "untracked": True,
+    }
+
+
+def is_untracked_hold_entry(entry: dict) -> bool:
+    """Read canonical and historical untracked markers from ``hold_ids``."""
+    return entry.get("is_tracked") is False or entry.get("untracked") is True
 
 
 def _items_to_hold(order) -> list[dict]:
@@ -176,8 +198,17 @@ def hold(order, *, require_all: bool = False) -> None:
                         raise _unknown_sku_error(item, comp_sku)
                     # Pedido já existe (caminho brando pós-commit, ex.: canal
                     # externo) — não dá para recusar; alertar o operador.
-                    _alert_unknown_sku(order, comp_sku)
-                hold_ids.append({"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True})
+                    _alert_unknown_sku(order, comp_sku, item)
+                hold_ids.append(untracked_hold_entry(comp_sku))
+                continue
+            # O mesmo SKU fora do catálogo, quando o Stockman o lê como pausado
+            # (o contrato de oferta não o conhece): a reserva falharia com
+            # ``product_not_found`` e o aviso diria "sem reserva" sem dizer por
+            # quê. No pedido que já existe (iFood: item sem ``externalCode`` ou
+            # com código velho), é o aviso de SKU fora do catálogo, com o item.
+            if not require_all and not allow_untracked and _sku_absent_from_catalog(comp_sku):
+                _alert_unknown_sku(order, comp_sku, item)
+                hold_ids.append(untracked_hold_entry(comp_sku))
                 continue
 
             # 1) Adopt session holds by quantity until comp_qty is met.
@@ -270,9 +301,7 @@ def hold(order, *, require_all: bool = False) -> None:
                         raise _unknown_sku_error(item, comp_sku)
                     # SKU fora do catálogo (sessão de integração/smoke): não há
                     # o que reservar — segue como untracked, sem travar o commit.
-                    hold_ids.append(
-                        {"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True}
-                    )
+                    hold_ids.append(untracked_hold_entry(comp_sku))
                     continue
                 # Caminho brando (pedido já consumado fora: PDV, iFood). A
                 # reserva é 1:1 por quant e desconta as sacolas alheias; o que
@@ -562,7 +591,7 @@ def reconcile_to_items(order, *, items: list[dict], reference: str, require_all:
         if entry.get("hold_id"):
             held[entry["sku"]] = held.get(entry["sku"], Decimal("0")) + Decimal(str(entry.get("qty") or 0))
 
-    untracked_skus = {entry["sku"] for entry in entries if entry.get("untracked")}
+    untracked_skus = {entry["sku"] for entry in entries if is_untracked_hold_entry(entry)}
     prior_decisions = {
         d["sku"]: d
         for d in (order.data or {}).get("availability_decision", {}).get("decisions", [])
@@ -595,7 +624,7 @@ def reconcile_to_items(order, *, items: list[dict], reference: str, require_all:
             # reservar. Registrar a linha mantém o inventário de ``hold_ids``
             # honesto sobre o que o pedido carrega.
             if sku not in held and sku not in untracked_skus:
-                entries.append({"sku": sku, "hold_id": None, "qty": 0, "untracked": True})
+                entries.append(untracked_hold_entry(sku))
             continue
         if delta > 0:
             _reconcile_increase(
@@ -707,6 +736,22 @@ def _reconcile_decrease(adapter, order, sku, qty, entries, summary, *, hold_kwar
 
 
 # ── helpers ──
+
+
+def _sku_absent_from_catalog(sku: str) -> bool:
+    """True só quando o contrato de catálogo RESPONDE que não conhece o SKU.
+
+    O avesso de :func:`_sku_known_to_catalog` para o caminho brando: lá, a
+    dúvida exige a reserva; aqui, a dúvida também (contrato que não responde
+    não autoriza pular a reserva, que segue tentando e avisando se falhar).
+    """
+    from shopman.stockman.adapters.sku_validation import get_sku_validator
+
+    try:
+        return get_sku_validator().get_sku_info(sku) is None
+    except Exception:
+        logger.warning("stock.sku_catalog_lookup_failed sku=%s", sku, exc_info=True)
+        return False
 
 
 def _sku_known_to_catalog(sku: str) -> bool:
@@ -824,21 +869,49 @@ def _lead_time_error(order, item: dict, comp_sku: str, earliest):
     )
 
 
-def _alert_unknown_sku(order, sku: str) -> None:
+def _alert_unknown_sku(order, sku: str, item: dict | None = None) -> None:
     """Pedido já commitado (caminho brando) carregou SKU fora do catálogo em
-    canal gated — o operador precisa saber que não há reserva possível."""
+    canal gated — o operador precisa saber que não há reserva possível.
+
+    No iFood o SKU é o ``externalCode`` do item; sem ele, a ingestão usa o id da
+    linha (``ifood_orders._map_items``). O aviso diz QUAL item e qual dos dois
+    casos, porque o conserto é ligar o item do iFood a um produto da casa
+    (``backstage.projections.alerts`` leva à revisão de vínculos do canal).
+    """
+    from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
     from shopman.shop.services.observability import create_operator_alert
 
+    item = item or {}
+    name = str(item.get("name") or "").strip()
+    if getattr(order, "channel_ref", "") == IFOOD_CHANNEL_REF and name:
+        why = "veio sem código externo" if sku == str(item.get("line_id") or "") else f"veio com o código {sku}"
+        message = (
+            f'Pedido {order.ref}: o item "{name}" do iFood {why} e não tem produto da casa ligado. '
+            "Saiu sem reserva de estoque."
+        )
+    else:
+        message = (
+            f"Pedido {order.ref} contém SKU fora do catálogo ({sku}) em canal "
+            "que não permite item sem reserva. Conferir o pedido."
+        )
     create_operator_alert(
         type="stock_unknown_sku",
         severity="warning",
-        message=(
-            f"Pedido {order.ref} contém SKU fora do catálogo ({sku}) em canal "
-            "que não permite item sem reserva. Conferir o pedido."
-        ),
+        message=message,
         order_ref=order.ref,
-        dedupe_key=f"stock_unknown_sku:{order.ref}:{sku}",
+        dedupe_key=f"{UNKNOWN_SKU_ALERT_TYPE}:{order.ref}:{sku}",
     )
+
+
+#: O tipo do aviso e o marcador do SKU na mensagem (o sufixo de dedupe).
+UNKNOWN_SKU_ALERT_TYPE = "stock_unknown_sku"
+_UNKNOWN_SKU_MARK = re.compile(r"stock_unknown_sku:[^:\s]+:(\S+)")
+
+
+def unknown_sku_alert_sku(message: str) -> str:
+    """O SKU de um aviso ``stock_unknown_sku``, lido do marcador; ``""`` sem ele."""
+    match = _UNKNOWN_SKU_MARK.search(str(message or ""))
+    return match.group(1) if match else ""
 
 
 def _alert_hold_gap(order, sku: str, qty, error_code) -> None:
@@ -1026,13 +1099,15 @@ def _channel_allows_preorder(order) -> bool:
     try:
         return bool(ChannelConfig.for_channel(order.channel_ref).stock.preorder)
     except Exception:
-        # Defaults aceitam encomenda; config ilegível não pode virar recusa
-        # de venda (o gate de estoque do Stockman continua valendo).
-        logger.warning(
-            "stock._channel_allows_preorder: config lookup failed channel=%s",
-            getattr(order, "channel_ref", None),
-        )
-        return bool(ChannelConfig().stock.preorder)
+        logger.error("stock.channel_config_unreadable knob=preorder channel=%s order=%s",
+                     getattr(order, "channel_ref", None), getattr(order, "ref", ""), exc_info=True)
+        # Config ilegível NÃO recusa encomenda, e é de propósito: recusar aqui
+        # derruba a venda de um pão que existe por causa de um JSON quebrado no
+        # Admin, e o gate de estoque do Stockman continua valendo (produto
+        # pausado segue recusado). O que não pode é ser calado: aceitar a
+        # encomenda que o canal talvez proíba vira alerta na tela do operador.
+        _alert_unreadable_channel_stock_config(order, knob="preorder")
+        return True
 
 
 def _channel_allows_untracked(order) -> bool:
@@ -1043,13 +1118,41 @@ def _channel_allows_untracked(order) -> bool:
     try:
         return bool(ChannelConfig.for_channel(order.channel_ref).stock.allow_untracked)
     except Exception:
-        # Defaults permitem untracked; config ilegível não pode virar recusa
-        # de venda (mesma postura do _channel_allows_preorder).
-        logger.warning(
-            "stock._channel_allows_untracked: config lookup failed channel=%s",
-            getattr(order, "channel_ref", None),
-        )
-        return bool(ChannelConfig().stock.allow_untracked)
+        logger.error("stock.channel_config_unreadable knob=allow_untracked channel=%s order=%s",
+                     getattr(order, "channel_ref", None), getattr(order, "ref", ""), exc_info=True)
+        # Aqui o lado seguro é o RESTRITIVO, diferente da encomenda: o portão só
+        # alcança SKU que o CATÁLOGO não conhece (``_sku_known_to_catalog``),
+        # então nenhum produto de verdade deixa de ser vendido. O que ele barra
+        # é o typo de SKU virar pedido sem reserva, que é justamente o que um
+        # canal de cliente declara ``allow_untracked: false`` para impedir.
+        _alert_unreadable_channel_stock_config(order, knob="allow_untracked")
+        return False
+
+
+def _alert_unreadable_channel_stock_config(order, *, knob: str) -> None:
+    """Leva à tela do operador a leitura de config de estoque que falhou."""
+    from django.db import transaction
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    channel_ref = getattr(order, "channel_ref", None) or ""
+    try:
+        # Savepoint: o alerta não pode envenenar a transação do commit.
+        with transaction.atomic():
+            create_operator_alert(
+                type="integration_config_drift",
+                severity="warning",
+                message=(
+                    f"A configuração de estoque do canal {channel_ref or '(sem canal)'} não pôde ser lida. "
+                    f"O pedido {getattr(order, 'ref', '')} seguiu com "
+                    f"{'encomenda permitida' if knob == 'preorder' else 'SKU fora do catálogo recusado'}. "
+                    "Corrija o canal no Admin."
+                ),
+                order_ref=getattr(order, "ref", "") or "",
+                dedupe_key=f"stock_channel_config_unreadable:{channel_ref}:{knob}",
+            )
+    except Exception:
+        logger.exception("stock.channel_config_unreadable_alert_failed channel=%s", channel_ref)
 
 
 def _is_untracked(sku: str, prior_decisions: dict[str, dict], adapter) -> bool:
@@ -1060,6 +1163,9 @@ def _is_untracked(sku: str, prior_decisions: dict[str, dict], adapter) -> bool:
     """
     if sku in prior_decisions:
         d = prior_decisions[sku]
+        if d.get("is_tracked") is False:
+            return True
+        # Historical ``availability_decision`` payloads used these markers.
         return d.get("untracked", False) or d.get("source") == "stock.untracked"
     info = adapter.get_availability(sku)
     return not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions")))

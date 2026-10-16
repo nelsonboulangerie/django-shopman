@@ -4,7 +4,7 @@ import {
   EXTERNAL_LINK_ATTRS,
   type CrossAppLinkAttrs,
 } from "../../../operator-kit/app/presentation/appLaunch";
-import type { HubQueueItemProjection, HubQueueProjection, HubTileProjection } from "~/types/hub";
+import type { HubQueueItemProjection, HubTileProjection } from "~/types/hub";
 
 // Presentation pura da Central — sem estado, sem Nuxt; testável isolada.
 
@@ -160,9 +160,11 @@ export function hubFailureCopy(failure: HubFailure): { title: string; hint: stri
   }
 }
 
-// ── Precisa de você: a fila das filas (UX-H1) ────────────────────────────────
+// ── A pendência de cada app (UX-H1; dono, 09/10/2026) ────────────────────────
 //
-// O Django manda os instantes (ISO) e a Central conta o tempo aqui, com um relógio que anda
+// A seção "Precisa de você" saiu: cada linha de app traz a pendência mais urgente dele
+// (`next_item`), como ação direta que leva ao item exato. O Django manda os instantes (ISO)
+// e a Central conta o tempo aqui, com um relógio que anda
 // a cada segundo: "aceita sozinho em 2:40" não pode congelar entre uma leitura e outra. A
 // conta usa a hora do SERVIDOR (`server_now`) como referência, para um dispositivo com o
 // relógio errado não dizer "há 3 horas" de um pedido que chegou agora.
@@ -227,45 +229,26 @@ export function queueDueText(item: HubQueueItemProjection, nowMs: number): strin
   return "";
 }
 
-/** A linha de baixo do item: o essencial da decisão e, quando há, o prazo. */
-export function queueDetailLine(item: HubQueueItemProjection, nowMs: number): string {
-  return [item.detail, queueDueText(item, nowMs)].filter(Boolean).join(" · ");
-}
-
-/** Quantas linhas "Precisa de você" mostra no celular antes do "Ver mais" (v3 nota 3). */
-export const PHONE_QUEUE_ROWS = 3;
-
-/** A linha de baixo do item no celular (v3 `depois-hub-celular`: "Cozinha · 14 min"):
- *  de que app é e há quanto tempo espera, numa linha que cabe. */
-export function queuePhoneLine(item: HubQueueItemProjection, nowMs: number): string {
-  return [item.app_label, queueTimeLabel(item, nowMs)].filter(Boolean).join(" · ");
-}
-
 /** O nome acessível do gesto: o verbo sozinho ("Revisar") não diz o quê. */
 export function queueActionAriaLabel(item: HubQueueItemProjection): string {
   return `${item.action_label}: ${item.title}`;
 }
 
-/** Quantos itens a fila tem ao todo (os em foco e o excedente). */
-export function queueCount(queue: HubQueueProjection | null | undefined): number {
-  return queue?.total_count ?? 0;
+/**
+ * A linha miúda da pendência, sob o título dela: o prazo, quando ele corre ("aceita
+ * sozinho em 2:40", "retira às 10:30"); senão há quanto espera ("há 14 min").
+ */
+export function nextItemMeta(item: HubQueueItemProjection, nowMs: number): string {
+  return queueDueText(item, nowMs) || queueTimeLabel(item, nowMs);
 }
 
-/** O excedente vira número, nunca página: "Mais 3 esperando nos apps abaixo." */
-export function queueMoreLabel(more: number): string {
-  if (more <= 0) return "";
-  return more === 1 ? "Mais 1 esperando nos apps abaixo." : `Mais ${more} esperando nos apps abaixo.`;
-}
-
-/** Fila vazia: a frase calma que diz que nada espera, sem comemorar. */
-export const QUEUE_EMPTY_COPY = "Nada esperando por você agora.";
-
-/** O subtítulo da seção: de onde vem a fila e quando um item sai dela. */
-export const QUEUE_HINT_COPY = "A soma das filas dos seus papéis, o mais urgente primeiro. Some quando resolvido.";
-
-/** O tile de destino de um item (para o ícone do app na linha), ou `null`. */
-export function tileForItem(tiles: HubTileProjection[], item: Pick<HubQueueItemProjection, "app">): HubTileProjection | null {
-  return tiles.find((tile) => tile.ref === item.app) ?? null;
+/**
+ * Os apps com pendência primeiro, cada grupo na ordem do registro (a de sempre): a lista
+ * não pula quando a urgência entre apps muda, só quando um app passa a ter (ou deixa de
+ * ter) algo para alguém.
+ */
+export function tilesByPendency(tiles: readonly HubTileProjection[]): HubTileProjection[] {
+  return [...tiles.filter((tile) => tile.next_item), ...tiles.filter((tile) => !tile.next_item)];
 }
 
 /**
@@ -301,11 +284,47 @@ export function tileStatus(
 /** A cada quantos ms a Central relê a fila. Sem canal SSE próprio, o poll é calmo (ADR-016). */
 export const QUEUE_POLL_MS = 30_000;
 
+/** O selo do cabeçalho: a cadência por extenso (a voz aprovada, "Atualiza sozinho a cada 30 s"). */
+export const HUB_REFRESH_LABEL = `Atualiza sozinho a cada ${QUEUE_POLL_MS / 1000} s`;
+/** O curto do mesmo selo, quando a barra aperta (kit `OperatorLiveStatus`, degrau 2). */
+export const HUB_REFRESH_SHORT_LABEL = `A cada ${QUEUE_POLL_MS / 1000} s`;
+
+/** "10:42": a hora de uma leitura, no fuso do dispositivo (o da loja). */
+export function readClockLabel(ms: number, timeZone?: string): string {
+  if (!Number.isFinite(ms)) return "";
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(new Date(ms));
+}
+
+/**
+ * O aviso da tela quando a releitura falha com a fila já na tela: a tela não some (o
+ * que está nela continua valendo como leitura antiga), e o aviso diz de quando ela é e
+ * leva ao gesto que resolve. A fila inteira só vira tela de erro quando nunca chegou.
+ */
+export function staleQueueAlert(readClock: string): { title: string; description: string } {
+  return {
+    title: "Os apps não foram atualizados.",
+    description: readClock ? `O que está na tela é de ${readClock}.` : "O que está na tela pode estar desatualizado.",
+  };
+}
+
+/**
+ * O nome acessível do bloco do app: o nome, para que serve e a linha de estado inteira.
+ * O link do cartão cobre o cartão todo; sem isto o leitor de tela ouviria só "PDV".
+ */
+export function tileAriaLabel(
+  tile: Pick<HubTileProjection, "label" | "description" | "kind" | "status_attention" | "status_summary"> &
+    Partial<Pick<HubTileProjection, "status_positive">>,
+): string {
+  const status = tileStatus(tile).parts.map((part) => part.text).join(", ");
+  const opens = tile.kind === "external" ? "Abre em outra janela" : "";
+  return [`${tile.label}: ${tile.description}`, status, opens].filter(Boolean).join(". ");
+}
+
 // ── Camada visual da suíte (prévia v4, `hub4.html`) ─────────────────────────
 
 /**
- * A única seção da Central no rail da suíte: "Início". O selo troca de app; Avisos e o
- * menu do operador moram no pé (prévia v4, nota 1).
+ * A única seção da Central na barra lateral do shell da suíte: "Início". Avisos e o menu
+ * do operador moram no pé dela (no celular, na gaveta do ☰).
  */
 export const HUB_SECTIONS = [{ key: "home", label: "Início", icon: "lucide:house", to: "/" }];
 

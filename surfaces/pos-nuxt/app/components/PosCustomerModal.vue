@@ -190,7 +190,7 @@ watch(() => props.open, (open) => { if (!open) emit("search", ""); });
 // resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
 // fechada e o operador veria a venda seguir com o cliente errado.
 const isReceiptDecision = computed(() => props.customerDecision?.kind === "receipt_identity");
-const receiptTitleRef = ref<{ $el?: HTMLElement } | null>(null);
+const receiptTitleRef = ref<HTMLElement | null>(null);
 const receiptActionRef = ref<{ $el?: HTMLElement } | null>(null);
 const decisionCopy = computed(() =>
   props.customerDecision ? customerDecisionCopy(props.customerDecision) : null,
@@ -198,7 +198,7 @@ const decisionCopy = computed(() =>
 watch(() => props.customerDecision, (decision, previous) => {
   if (decision && !props.open) emit("update:open", true);
   if (!decision && previous?.kind === "receipt_identity") emit("update:open", false);
-  if (decision?.kind === "receipt_identity") void nextTick(() => receiptTitleRef.value?.$el?.focus());
+  if (decision?.kind === "receipt_identity") void nextTick(() => receiptTitleRef.value?.focus());
 });
 // O contato que o painel libera: o que o operador digitou, ou o valor do dono
 // quando a recusa veio sem o digitado.
@@ -298,7 +298,7 @@ function receiptButtons() {
   return [...(receiptPanelRef.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || [])];
 }
 watch(confirmingAttend, () => {
-  if (isReceiptDecision.value) void nextTick(() => receiptTitleRef.value?.$el?.focus());
+  if (isReceiptDecision.value) void nextTick(() => receiptTitleRef.value?.focus());
 });
 function onReceiptKey(event: KeyboardEvent) {
   if (!isReceiptDecision.value || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
@@ -399,7 +399,7 @@ const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
-    if (isReceiptDecision.value) receiptTitleRef.value?.$el?.focus();
+    if (isReceiptDecision.value) receiptTitleRef.value?.focus();
     else if (!hasCustomer.value) {
       if (props.seedQuery) searchRef.value?.seed(props.seedQuery);
       searchRef.value?.focus();
@@ -416,16 +416,22 @@ const newCustomerNote = computed(() => {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="$emit('update:open', Boolean($event))">
-    <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário. -->
-    <UiDialogContent class="max-h-[85vh] overflow-y-auto" :class="isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg'" @open-auto-focus="onOpenAutoFocus" @keydown.capture="onReceiptKey">
-      <UiDialogHeader>
-        <UiDialogTitle ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" :class="isReceiptDecision ? 'pr-4 text-left' : undefined">{{ isReceiptDecision ? receiptTitle : "Cliente" }}</UiDialogTitle>
-        <UiDialogDescription v-if="!isReceiptDecision">
-          Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.
-        </UiDialogDescription>
-      </UiDialogHeader>
-
+  <!-- A decisão do documento usa largura compacta; o cadastro mantém seu formulário.
+       As teclas da decisão (1 2 3, setas, Enter, Esc) são ouvidas na captura do
+       conteúdo inteiro, inclusive com o foco no título. -->
+  <NuxtModal
+    :open="open"
+    :title="isReceiptDecision ? receiptTitle : 'Cliente'"
+    :description="isReceiptDecision ? undefined : 'Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.'"
+    :content="{ onOpenAutoFocus, ...({ onKeydownCapture: onReceiptKey } as object) }"
+    :ui="{ content: isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg', title: isReceiptDecision ? 'pr-4 text-left' : undefined }"
+    data-pos-customer-modal
+    @update:open="$emit('update:open', Boolean($event))"
+  >
+    <template #title>
+      <span ref="receiptTitleRef" :tabindex="isReceiptDecision ? -1 : undefined" class="outline-none" data-pos-customer-title>{{ isReceiptDecision ? receiptTitle : "Cliente" }}</span>
+    </template>
+    <template #body>
       <div>
         <div class="grid gap-5">
           <!-- 1 · A PERGUNTA — e ela vem antes do resto porque é o que trava
@@ -500,7 +506,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   :disabled="customerReleaseBusy"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="$emit('decisionRelease', confirmingRelease); confirmingRelease = null"
                 >
                   <Icon
@@ -513,7 +519,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   variant="outline"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingRelease = null"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
@@ -532,7 +538,7 @@ const newCustomerNote = computed(() => {
               <div class="grid gap-2 sm:grid-cols-2">
                 <UiButton
                   type="button"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false; $emit('decisionConfirm')"
                 >
                   <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
@@ -541,7 +547,7 @@ const newCustomerNote = computed(() => {
                 <UiButton
                   type="button"
                   variant="outline"
-                  class="h-11 justify-center gap-2"
+                  class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
@@ -636,7 +642,7 @@ const newCustomerNote = computed(() => {
               v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list' && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerReleaseBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="askRelease(decisionReleaseValue)"
             >
               <Icon
@@ -664,7 +670,7 @@ const newCustomerNote = computed(() => {
               v-if="decisionCopy.merge && !decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerMergeBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
             >
               <Icon
@@ -685,7 +691,7 @@ const newCustomerNote = computed(() => {
                 ref="receiptActionRef"
                 type="button"
                 :disabled="lookupBusy"
-                class="h-11 justify-center gap-2"
+                class="h-8 justify-center gap-2"
                 @click="cancelDecision"
               >
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
@@ -696,13 +702,13 @@ const newCustomerNote = computed(() => {
                 type="button"
                 :disabled="lookupBusy"
                 :variant="isReceiptDecision ? 'outline' : 'default'"
-                class="h-11 justify-center gap-2"
+                class="h-8 justify-center gap-2"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
               </UiButton>
-              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-11 justify-center gap-2" @click="cancelDecision">
+              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-8 justify-center gap-2" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
               </UiButton>
@@ -716,7 +722,7 @@ const newCustomerNote = computed(() => {
               type="button"
               variant="ghost"
               :disabled="customerMergeBusy"
-              class="h-11 w-full justify-center gap-2"
+              class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
             >
               <Icon
@@ -803,10 +809,18 @@ const newCustomerNote = computed(() => {
 
             <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
                  Restrição alimentar é SEGURANÇA — sempre visível, cor funcional. -->
-            <div v-if="hasCustomer && (customerLookup?.dietary_restrictions || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month)" class="flex flex-wrap items-center gap-2">
+            <div v-if="hasCustomer && (customerLookup?.dietary_restrictions || customerLookup?.group_discount_label || customerLookup?.is_birthday_today || customerLookup?.is_birthday_month)" class="flex flex-wrap items-center gap-2">
               <span v-if="customerLookup?.dietary_restrictions" class="inline-flex items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
                 <Icon name="lucide:triangle-alert" class="size-3.5" /> {{ customerLookup.dietary_restrictions }}
               </span>
+              <!-- O grupo do cliente tem desconto no balcão: o motor aplica sozinho. -->
+              <UiBadge
+                v-if="customerLookup?.group_discount_label"
+                variant="secondary"
+                :title="`Desconto do grupo ${customerLookup.group_discount_label}, aplicado sozinho na venda`"
+              >
+                <Icon name="lucide:tag" /> {{ customerLookup.group_discount_label }}
+              </UiBadge>
               <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                 🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
               </span>
@@ -892,12 +906,18 @@ const newCustomerNote = computed(() => {
         </div>
       </div>
 
-      <UiDialogFooter v-if="!isReceiptDecision">
-        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision) || lookupBusy || concludePending" @click="onConclude">
-          <Icon v-if="concludePending" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" />
-          {{ footerLabel }}
-        </UiButton>
-      </UiDialogFooter>
-    </UiDialogContent>
-  </UiDialog>
+    </template>
+    <template v-if="!isReceiptDecision" #footer>
+      <NuxtButton
+        size="xl"
+        block
+        color="primary"
+        :label="footerLabel"
+        :loading="concludePending"
+        :disabled="Boolean(customerDecision) || lookupBusy || concludePending"
+        data-pos-customer-conclude
+        @click="onConclude"
+      />
+    </template>
+  </NuxtModal>
 </template>

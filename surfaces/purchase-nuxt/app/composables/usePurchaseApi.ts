@@ -1,8 +1,14 @@
 import type {
   PurchaseActionResponse,
+  PurchaseContactPatchPayload,
+  PurchaseContactUpsertPayload,
   PurchaseConversionDeclarePayload,
+  PurchaseConversionPatchPayload,
   PurchaseCostBatchPayload,
   PurchaseCostUpsertPayload,
+  PurchaseMaterialDuplicatePayload,
+  PurchaseMaterialPatchPayload,
+  PurchaseMaterialUpsertPayload,
   PurchaseMinStockPayload,
   PurchaseCountActionResponse,
   PurchaseCountConfirmPayload,
@@ -14,6 +20,9 @@ import type {
   PurchaseResponse,
   PurchaseSalePayload,
   PurchaseScanInvoicePayload,
+  PurchaseSupplierDuplicatePayload,
+  PurchaseSupplierPatchPayload,
+  PurchaseSupplierUpsertPayload,
 } from "~/types/purchase";
 
 export const PURCHASE_API_BASE = "/api/v1/backstage/purchase/";
@@ -32,12 +41,26 @@ export const PURCHASE_API_ENDPOINTS = {
   setSale: (materialSku: string) =>
     `${PURCHASE_API_BASE}materials/${encodeURIComponent(materialSku)}/sale/`,
   declareConversion: `${PURCHASE_API_BASE}conversions/`,
+  updateConversion: (conversionId: string) =>
+    `${PURCHASE_API_BASE}conversions/${encodeURIComponent(conversionId)}/`,
+  createMaterial: `${PURCHASE_API_BASE}materials/`,
+  updateMaterial: (materialSku: string) =>
+    `${PURCHASE_API_BASE}materials/${encodeURIComponent(materialSku)}/`,
+  duplicateMaterial: (materialSku: string) =>
+    `${PURCHASE_API_BASE}materials/${encodeURIComponent(materialSku)}/duplicate/`,
+  createSupplier: `${PURCHASE_API_BASE}suppliers/`,
+  updateSupplier: (ref: string) => `${PURCHASE_API_BASE}suppliers/${encodeURIComponent(ref)}/`,
+  duplicateSupplier: (ref: string) =>
+    `${PURCHASE_API_BASE}suppliers/${encodeURIComponent(ref)}/duplicate/`,
+  createSupplierContact: (ref: string) =>
+    `${PURCHASE_API_BASE}suppliers/${encodeURIComponent(ref)}/contacts/`,
+  updateContact: (contactId: string) => `${PURCHASE_API_BASE}contacts/${encodeURIComponent(contactId)}/`,
   count: `${PURCHASE_API_BASE}count/`,
   countConfirm: `${PURCHASE_API_BASE}count/confirm/`,
-  requestApprove: (materialSku: string) =>
-    `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/approve/`,
   requestSend: (materialSku: string) =>
     `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/send/`,
+  requestCancel: (materialSku: string) =>
+    `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/cancel/`,
 } as const;
 
 type FetchOptions = {
@@ -48,6 +71,14 @@ type FetchOptions = {
 function fetchOptions(): FetchOptions {
   const headers = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
   return { credentials: "include", headers };
+}
+
+function mutationOptions(idempotencyKey: string) {
+  const options = fetchOptions();
+  return {
+    ...options,
+    headers: { ...(options.headers ?? {}), "Idempotency-Key": idempotencyKey },
+  };
 }
 
 export function usePurchaseApi() {
@@ -88,16 +119,16 @@ export function usePurchaseApi() {
     });
   }
 
-  async function approveRequest(payload: PurchaseRequestActionPayload) {
-    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestApprove(payload.materialSku), {
+  async function sendRequest(payload: PurchaseRequestActionPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestSend(payload.materialSku), {
       ...fetchOptions(),
       method: "POST",
       body: payload,
     });
   }
 
-  async function sendRequest(payload: PurchaseRequestActionPayload) {
-    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestSend(payload.materialSku), {
+  async function cancelRequest(payload: PurchaseRequestActionPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestCancel(payload.materialSku), {
       ...fetchOptions(),
       method: "POST",
       body: payload,
@@ -164,6 +195,91 @@ export function usePurchaseApi() {
     });
   }
 
+  // ── Cadastro da Base ──────────────────────────────────────────────────────
+  async function createMaterial(payload: PurchaseMaterialUpsertPayload, idempotencyKey: string) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.createMaterial, {
+      ...mutationOptions(idempotencyKey),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function updateMaterial(materialSku: string, payload: PurchaseMaterialPatchPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.updateMaterial(materialSku), {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function duplicateMaterial(
+    materialSku: string,
+    payload: PurchaseMaterialDuplicatePayload,
+    idempotencyKey: string,
+  ) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.duplicateMaterial(materialSku), {
+      ...mutationOptions(idempotencyKey),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function createSupplier(payload: PurchaseSupplierUpsertPayload, idempotencyKey: string) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.createSupplier, {
+      ...mutationOptions(idempotencyKey),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function updateSupplier(ref: string, payload: PurchaseSupplierPatchPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.updateSupplier(ref), {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function duplicateSupplier(
+    ref: string,
+    payload: PurchaseSupplierDuplicatePayload,
+    idempotencyKey: string,
+  ) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.duplicateSupplier(ref), {
+      ...mutationOptions(idempotencyKey),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function createSupplierContact(
+    ref: string,
+    payload: PurchaseContactUpsertPayload,
+    idempotencyKey: string,
+  ) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.createSupplierContact(ref), {
+      ...mutationOptions(idempotencyKey),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function updateContact(contactId: string, payload: PurchaseContactPatchPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.updateContact(contactId), {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function updateConversion(conversionId: string, payload: PurchaseConversionPatchPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.updateConversion(conversionId), {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
   return {
     endpoints: PURCHASE_API_ENDPOINTS,
     fetchProjection,
@@ -171,14 +287,23 @@ export function usePurchaseApi() {
     confirmReceipt,
     rejectReceipt,
     saveReceiptVolumes,
-    approveRequest,
     sendRequest,
+    cancelRequest,
     upsertCost,
     upsertCostBatch,
     setMinStock,
     setSale,
     setOpening,
     declareConversion,
+    updateConversion,
+    createMaterial,
+    updateMaterial,
+    duplicateMaterial,
+    createSupplier,
+    updateSupplier,
+    duplicateSupplier,
+    createSupplierContact,
+    updateContact,
     fetchCount,
     confirmCount,
   };

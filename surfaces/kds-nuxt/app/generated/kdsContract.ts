@@ -9,6 +9,13 @@ export interface KDSItemProjection {
   qty: number | string;
   notes: string;
   stock_warning: string;
+  line_id: string;
+}
+
+/** Uma mudança no que já estava na cozinha, ainda sem Visto da estação. */
+export interface KDSChangeProjection {
+  kind: string;
+  text: string;
 }
 
 /** A KDS ticket card (prep/picking station). */
@@ -41,7 +48,11 @@ export interface KDSTicketProjection {
   started_at_display: string;
   is_preorder: boolean;
   due_time_display: string;
+  due_clock_display: string;
+  due_in_seconds: number | null;
   seen: boolean;
+  changes: KDSChangeProjection[];
+  change_ticket_pks: number[];
 }
 
 /** A KDS instance in the index (station selector). */
@@ -64,6 +75,27 @@ export interface KDSBoardProjection {
   recent_done: KDSTicketProjection[];
   density: string;
   sound_enabled: boolean;
+}
+
+/** Um pedido que passou pela estação hoje e já saiu do quadro (Histórico de hoje). */
+export interface KDSHistoryEntryProjection {
+  ticket: KDSTicketProjection;
+  state: string;
+  items_summary: string;
+  steps: string[];
+  undone: string[];
+  prep_display: string;
+  can_reopen: boolean;
+  reopen_block_reason: string;
+}
+
+/** O Histórico de hoje de uma estação (``GET kds/<ref>/history/``). */
+export interface KDSHistoryProjection {
+  instance_ref: string;
+  instance_name: string;
+  entries: KDSHistoryEntryProjection[];
+  total: number;
+  query: string;
 }
 
 /** Privacy-safe order status for a customer-facing ready board. */

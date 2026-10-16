@@ -302,7 +302,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "ManyChat externo inerte (trava dev/seed): template=%s",
             template,
         )
-        return True
+        return False  # inerte não é entrega: a cadeia segue (ver _external)
     from shopman.shop.adapters._notification_templates import derive_context
 
     # Também no caminho de FLOW: as variáveis do template aprovado saem dos campos
@@ -324,6 +324,14 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         )
     )
 
+    # O template do flow: o próprio evento, ou a variante com o botão de rastreio do
+    # entregador quando o `order_dispatched` tem corrida com link.
+    flow_template = template
+    if template == "order_dispatched" and not sandbox_flow_override:
+        flow_template, flow_ns, ctx = _courier_tracking_variant(
+            template, flow_ns, ctx, mc_config
+        )
+
     if flow_ns and _flow_lacks_name(template, ctx):
         # O template aprovado diz "Oi, {{1}}!" e a Meta recusa variável vazia; o campo
         # do ManyChat, sem valor novo, guardaria o nome de um envio anterior. Pedido
@@ -337,7 +345,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         # reserva, a campanha da Baguete e o aviso do Croissant para a mesma pessoa
         # intercalavam as escritas e ela recebia nome, preço e link trocados. A
         # reserva vem ANTES de qualquer campo — quem não reserva não escreve nada.
-        busy = _reserve_flow_subscriber(subscriber_id, template)
+        busy = _reserve_flow_subscriber(subscriber_id, flow_template)
         if busy is not None:
             return busy
         # ⚠️ O flow do ManyChat NÃO lê o `flow_token`: o texto vive lá dentro, e as
@@ -349,7 +357,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             subscriber_id,
             ctx,
             mc_config,
-            template=template,
+            template=flow_template,
             declared_fields=sandbox_declared_fields or None,
         )
         if not fields_ready:
@@ -358,7 +366,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             # anterior; falhar fechado é a única saída honesta.
             logger.warning(
                 "ManyChat flow não disparado: contrato de campos incompleto template=%s",
-                template,
+                flow_template,
             )
             return False
         payload = {
@@ -427,6 +435,79 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     return result["success"]
 
 
+#: Nome do template aprovado da variante com rastreio (para o log dizer o que ligar).
+COURIER_TRACKING_TEMPLATE_NAME = "pedido_saiu_entrega_rastreio"
+
+
+def _courier_tracking_path(ctx: dict) -> tuple[str | None, str]:
+    """O pedaço do link de rastreio depois da base fixa, ou ``(None, motivo)``.
+
+    O botão aprovado é ``<base>{{1}}``: a Meta só aceita a variável no FIM de um
+    prefixo fixo. A base é configuração (``SHOPMAN_MACHINE["tracking_link_base"]``)
+    porque o prefixo vive no template aprovado e não se edita.
+    """
+    url = str(ctx.get("courier_tracking_url") or "").strip()
+    base = str(
+        (getattr(settings, "SHOPMAN_MACHINE", {}) or {}).get("tracking_link_base") or ""
+    ).strip()
+    if not base:
+        return None, "base_missing"
+    if not url.startswith(base):
+        return None, "link_outside_base"
+    path = url[len(base):].strip()
+    if not path:
+        return None, "path_empty"
+    if _safe_field_value("courier_tracking_path", path, ctx) is None:
+        # Mesmo filtro de todo campo: um token de acesso na query não vira campo
+        # personalizado, e o botão sem ele sairia quebrado.
+        return None, "path_unsafe"
+    return path, ""
+
+
+def _courier_tracking_variant(
+    template: str, flow_ns: str | None, ctx: dict, mc_config: dict
+) -> tuple[str, str | None, dict]:
+    """Trocar o flow do ``order_dispatched`` pelo da variante com rastreio, se der.
+
+    Devolve ``(template do flow, flow_ns, contexto)``. A variante só sai com o link
+    inteiro: flow não ligado, base vazia, link fora da base ou resto vazio caem no
+    flow do ``order_dispatched`` (sem o botão de rastreio), nunca num botão quebrado.
+    Mesma precedência do ``send``: Admin antes do ``flow_map``.
+    """
+    from shopman.shop.services.manychat_marketing_safety import COURIER_DISPATCH_VARIANT
+
+    if not str(ctx.get("courier_tracking_url") or "").strip():
+        return template, flow_ns, ctx
+    variant_ns = _load_db_flow_ns(COURIER_DISPATCH_VARIANT) or (
+        mc_config.get("flow_map", {}).get(COURIER_DISPATCH_VARIANT)
+    )
+    if not variant_ns:
+        if flow_ns:
+            logger.warning(
+                "manychat.courier_tracking_flow_missing template=%s: o aviso de saída "
+                "para entrega saiu sem o link do entregador. Ligue o flow do modelo "
+                "%s em %s.",
+                template,
+                COURIER_TRACKING_TEMPLATE_NAME,
+                COURIER_DISPATCH_VARIANT,
+            )
+        return template, flow_ns, ctx
+    path, reason = _courier_tracking_path(ctx)
+    if path is None:
+        # Falhar gritando: o flow do rastreio está ligado e o link não cabe no botão
+        # aprovado. O cliente recebe o aviso sem o botão; a URL não vai para o log.
+        logger.error(
+            "manychat.courier_tracking_link_unusable reason=%s template=%s: o link do "
+            "entregador não cabe no botão aprovado e o aviso sai pelo template sem "
+            "rastreio. Confira SHOPMAN_MACHINE['tracking_link_base'] "
+            "(env MACHINE_TRACKING_LINK_BASE) contra o link real da corrida.",
+            reason,
+            COURIER_TRACKING_TEMPLATE_NAME,
+        )
+        return template, flow_ns, ctx
+    return COURIER_DISPATCH_VARIANT, variant_ns, {**ctx, "courier_tracking_path": path}
+
+
 def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
     """Reservar o assinante pela janela de assentamento, ou devolver o adiamento.
 
@@ -474,7 +555,7 @@ def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
 #: ``management_note`` é a exceção consciente: o flow configurado só resolve variáveis
 #: de campos personalizados, então a nota que contém a capacidade de uma única
 #: assinatura fica armazenada no perfil do ManyChat. A capacidade não identifica o
-#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-029 e o
+#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-039 e o
 #: runbook registram a limitação e os controles exigidos no provedor.
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",

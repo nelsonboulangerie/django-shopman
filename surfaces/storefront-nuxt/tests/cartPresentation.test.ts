@@ -42,6 +42,7 @@ function cart (items: CartItemProjection[] = []): CartProjection {
     discount_total_display: 'R$ 0,00',
     has_discount: false,
     discount_lines: [],
+    group_savings_message: '',
     delivery_fee_q: null,
     delivery_fee_display: null,
     delivery_is_free: false,

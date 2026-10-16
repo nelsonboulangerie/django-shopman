@@ -126,6 +126,23 @@ export function setValues(filters: ActiveFilters, id: string, values: string[]):
   return next;
 }
 
+/**
+ * Os campos aplicados como recortes ativos do cabeçalho (`active-filters` do
+ * `OperatorPageHeader`): o mesmo rótulo do chip da barra, e o × que tira o campo.
+ * `update` recebe o próximo estado (o `v-model` da tela).
+ */
+export function filterBarActiveFilters(
+  dimensions: FilterDimension[],
+  filters: ActiveFilters,
+  update: (next: ActiveFilters) => void,
+): { key: string; label: string; remove: () => void }[] {
+  return activeDimensions(dimensions, filters).map((dimension) => ({
+    key: dimension.id,
+    label: chipLabel(dimension, filters),
+    remove: () => update(clearDimension(filters, dimension.id)),
+  }));
+}
+
 // ── URL ──────────────────────────────────────────────────────────────
 //
 // Uma chave por dimensão, com o id dela: `?payment=pix,card&total=1000..5000`.

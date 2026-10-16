@@ -78,6 +78,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_LOYALTY_SAVINGS_PREFIX": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
+    "CHECKOUT_GROUP_SAVINGS": (
+        ("shopman/shop/modifiers.py", "Loja", "Preços e promoções"),
+    ),
     "CHECKOUT_REPRICING_MESSAGE": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
@@ -754,6 +757,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_ACTION_RATE_ORDER": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_ACTION_TRACK_COURIER": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_AUTO_CONFIRM_LABEL": (

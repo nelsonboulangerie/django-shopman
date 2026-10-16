@@ -32,7 +32,7 @@ const FILES = ["app", "server"].flatMap((dir) => {
 describe("indicador do lote no B.I.: aproveitamento, nunca rendimento", () => {
   it("a varredura enxerga a página de Produção", () => {
     const seen = FILES.map((file) => relative(ROOT, file));
-    expect(seen).toContain(join("app", "pages", "index.vue"));
+    expect(seen).toContain(join("app", "components", "ProductionLots.vue"));
   });
 
   it("nenhum fonte diz rendimento (a palavra é aproveitamento)", () => {
@@ -47,7 +47,7 @@ describe("indicador do lote no B.I.: aproveitamento, nunca rendimento", () => {
   });
 
   it("o aproveitamento do período divide pelo previsto, não pelo planejado", () => {
-    const page = readFileSync(join(ROOT, "app", "pages", "index.vue"), "utf8");
+    const page = readFileSync(join(ROOT, "app", "components", "ProductionLots.vue"), "utf8");
     expect(page).toContain("Aproveitamento do período");
     expect(page).not.toMatch(/\/\s*planned\b/);
   });

@@ -7,6 +7,7 @@ import type { CourierBlock } from "../../app/types/orders";
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
+vi.stubGlobal("useNowTick", () => ref(0));
 const { default: Panel } = await import("../../app/components/OrderCourierPanel.vue");
 
 describe("confirmação da corrida observada", () => {
@@ -48,7 +49,6 @@ it.each([
 
 it.each([
   ['quote', 'Cotar entrega', 'quoteAction'],
-  ['dispatch', 'Chamar entregador', 'dispatchAction'],
 ] as const)('uma Action habilitada emite %s uma vez', async (event, label, property) => {
   const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: `courier-${event}`, enabled: true };
   const wrapper = mount(Panel, { props: {
@@ -59,4 +59,207 @@ it.each([
     await wrapper.findAll('button').find(button => button.text() === label)!.trigger('click');
     expect(wrapper.emitted(event)).toHaveLength(1);
   } finally { wrapper.unmount(); }
+});
+
+describe('Chamar entregador pede um toque de confirmação', () => {
+  const question = 'Chamar um entregador da TaOn para o pedido A47? A corrida é cobrada da casa.';
+  const dispatchAction = () => ({
+    ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch', enabled: true,
+    confirmation: { required: true, description: question },
+  });
+  const mountPanel = (action = dispatchAction()) => mount(Panel, { props: {
+    courier: { status: '', can_quote: false, can_dispatch: true, can_cancel: false, attempts_count: 0 } as CourierBlock,
+    busy: false, dispatchAction: action,
+  }, global: { stubs: { Icon: true } } });
+
+  it('o primeiro toque só pergunta, em palavras; o segundo chama', async () => {
+    const wrapper = mountPanel();
+    try {
+      const button = wrapper.get('button');
+      expect(wrapper.find('[data-testid="courier-dispatch-question"]').exists()).toBe(false);
+      await button.trigger('click');
+      expect(wrapper.emitted('dispatch')).toBeUndefined();
+      expect(button.text()).toBe('Confirmar chamada');
+      expect(wrapper.get('[data-testid="courier-dispatch-question"]').text()).toBe(question);
+      await button.trigger('click');
+      expect(wrapper.emitted('dispatch')).toHaveLength(1);
+      expect(button.text()).toBe('Chamar entregador');
+    } finally { wrapper.unmount(); }
+  });
+
+  it('sair do botão ou o pedido mudar desarma a confirmação', async () => {
+    const action = dispatchAction();
+    const wrapper = mountPanel(action);
+    try {
+      const button = wrapper.get('button');
+      await button.trigger('click');
+      await button.trigger('blur');
+      expect(button.text()).toBe('Chamar entregador');
+      await button.trigger('click');
+      await wrapper.setProps({ dispatchAction: { ...action, payload_schema: { ...action.payload_schema, base_revision: 'outro' } } });
+      expect(button.text()).toBe('Chamar entregador');
+      await button.trigger('click');
+      expect(wrapper.emitted('dispatch')).toBeUndefined();
+    } finally { wrapper.unmount(); }
+  });
+});
+
+describe('Chamar entregador registra a custódia que sai com ele', () => {
+  const dispatchAction = () => ({
+    ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch', enabled: true,
+    confirmation: { required: true, description: 'Chamar um entregador da TaOn para o pedido A47? A corrida é cobrada da casa.' },
+  });
+  const machine = (label: string, enabled = true) => ({
+    ref: `card_machine:${label}`, label, enabled, order_ref: enabled ? '' : 'WEB-261013-B12',
+  }) as never;
+  const mountPanel = (custody: CourierBlock['custody'], equipmentOptions: never[] = []) => mount(Panel, { props: {
+    courier: { status: '', can_quote: false, can_dispatch: true, can_cancel: false, attempts_count: 0, custody } as CourierBlock,
+    busy: false, dispatchAction: dispatchAction(), equipmentOptions,
+  }, global: { stubs: { Icon: true } } });
+  const confirmButton = (wrapper: ReturnType<typeof mountPanel>) =>
+    wrapper.findAll('button').find(b => ['Chamar entregador', 'Confirmar chamada'].includes(b.text()))!;
+
+  it('troco pré-preenchido pelo pedido vai junto na chamada', async () => {
+    const wrapper = mountPanel({ change_out_suggested_q: 2600, needs_machine: false, recorded: false });
+    try {
+      await confirmButton(wrapper).trigger('click');
+      const input = wrapper.get('[data-testid="courier-custody-change"] input');
+      expect((input.element as HTMLInputElement).value).toBe('26,00');
+      await confirmButton(wrapper).trigger('blur');
+      expect(confirmButton(wrapper).text()).toBe('Confirmar chamada');
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.emitted('dispatch')).toEqual([[{ change_out: '26,00' }]]);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('uma maquininha livre: a frase diz qual, e ela vai na chamada', async () => {
+    const wrapper = mountPanel({ change_out_suggested_q: 0, needs_machine: true, recorded: false },
+      [machine('Azul'), machine('Preta', false)]);
+    try {
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.get('[data-testid="courier-custody-machine"]').text()).toBe('Leva a maquininha Azul.');
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.emitted('dispatch')).toEqual([[{ equipment: ['card_machine:Azul'] }]]);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('nenhuma maquininha livre: não chama, e diz onde elas estão', async () => {
+    const wrapper = mountPanel({ change_out_suggested_q: 0, needs_machine: true, recorded: false }, [machine('Azul', false)]);
+    try {
+      await confirmButton(wrapper).trigger('click');
+      expect(wrapper.get('[data-testid="courier-custody-machine"]').text()).toContain('na rua');
+      expect(confirmButton(wrapper).attributes('disabled')).toBeDefined();
+      expect(wrapper.emitted('dispatch')).toBeUndefined();
+    } finally { wrapper.unmount(); }
+  });
+
+  it('pedido pago ou custódia já registrada: só a pergunta', async () => {
+    for (const custody of [
+      { change_out_suggested_q: 0, needs_machine: false, recorded: false },
+      { change_out_suggested_q: 0, needs_machine: false, recorded: true },
+    ]) {
+      const wrapper = mountPanel(custody);
+      try {
+        await confirmButton(wrapper).trigger('click');
+        expect(wrapper.find('[data-testid="courier-custody-change"]').exists()).toBe(false);
+        expect(wrapper.find('[data-testid="courier-custody-machine"]').exists()).toBe(false);
+        await confirmButton(wrapper).trigger('click');
+        expect(wrapper.emitted('dispatch')).toEqual([[{}]]);
+      } finally { wrapper.unmount(); }
+    }
+  });
+});
+
+describe('chamada sem resposta da TaOn', () => {
+  const courier = { status: '', status_label: 'Sem resposta da TaOn', can_quote: false, can_dispatch: false,
+    can_dispatch_again: true, can_cancel: false, attempts_count: 0,
+    error: { message: 'A TaOn não respondeu à última chamada. Veja na central se a corrida abriu.', at: '' } } as CourierBlock;
+
+  it('o aviso traz o gesto curto "Chamar de novo", que emite uma vez', async () => {
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch-again', enabled: true };
+    const wrapper = mount(Panel, { props: { courier, busy: false, dispatchAgainAction: action },
+      global: { stubs: { Icon: true } } });
+    try {
+      const alert = wrapper.get('[data-courier-no-answer]');
+      expect(alert.text()).toContain('A TaOn não respondeu à última chamada.');
+      expect(alert.text()).not.toContain('conferi');
+      const button = alert.findAll('button').find(item => item.text() === 'Chamar de novo')!;
+      await button.trigger('click');
+      expect(wrapper.emitted('dispatchAgain')).toHaveLength(1);
+      expect(wrapper.findAll('button').some(item => item.text() === 'Chamar entregador')).toBe(false);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('é cautela, não erro: aviso e botão no tom de atenção, e o selo do cabeçalho sai', async () => {
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch-again', enabled: true };
+    const wrapper = mount(Panel, { props: { courier, busy: false, dispatchAgainAction: action },
+      global: { stubs: { Icon: true } } });
+    try {
+      const alert = wrapper.get('[data-courier-no-answer]');
+      expect(alert.attributes('color')).toBe('warning');
+      expect(alert.attributes('role')).toBe('status');
+      const button = alert.findAll('button').find(item => item.text() === 'Chamar de novo')!;
+      expect(button.attributes('color')).toBe('warning');
+      // O selo repetia o assunto do aviso logo abaixo: com o aviso na tela, ele sai.
+      expect(wrapper.text()).not.toContain('Sem resposta da TaOn');
+    } finally { wrapper.unmount(); }
+  });
+
+  it('bloqueado pela Action, não emite', async () => {
+    const action = { ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch-again', enabled: false, reason: 'Sem permissão para esta ação.' };
+    const wrapper = mount(Panel, { props: { courier, busy: false, dispatchAgainAction: action },
+      global: { stubs: { Icon: true } } });
+    try {
+      const button = wrapper.findAll('button').find(item => item.text() === 'Chamar de novo')!;
+      expect(button.attributes('disabled')).toBeDefined();
+      await button.trigger('click');
+      expect(wrapper.emitted('dispatchAgain')).toBeUndefined();
+    } finally { wrapper.unmount(); }
+  });
+});
+
+describe('Cotar entrega mostra o resultado em destaque (dono, 13/10/2026)', () => {
+  const quoteAction = () => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-quote', enabled: true });
+  const dispatchAction = () => ({ ...fixtureActions({ can_confirm: true })[0]!, ref: 'courier-dispatch', enabled: true });
+  const courier = (extra: Partial<CourierBlock> = {}) => ({
+    status: '', can_quote: true, can_dispatch: true, can_cancel: false, attempts_count: 0, estimate_display: '', ...extra,
+  }) as CourierBlock;
+  const mountPanel = (props: Record<string, unknown>) => mount(Panel, { props: {
+    busy: false, quoteAction: quoteAction(), dispatchAction: dispatchAction(), ...props,
+  }, global: { stubs: { Icon: true } } });
+
+  it('valor, tempo e distância numa linha forte, com Chamar entregador logo abaixo como ação primária', () => {
+    const wrapper = mountPanel({ courier: courier({ estimate_display: 'R$ 7,00 · 3 min · 1,2 km' }) });
+    try {
+      expect(wrapper.get('[data-courier-quote-value]').text()).toBe('R$ 7,00 · 3 min · 1,2 km');
+      const labels = wrapper.findAll('button').map(button => button.text());
+      expect(labels.indexOf('Chamar entregador')).toBeLessThan(labels.indexOf('Cotar de novo'));
+      expect(labels).not.toContain('Cotar entrega');
+    } finally { wrapper.unmount(); }
+  });
+
+  it('enquanto cota, diz que está cotando e o botão espera', () => {
+    const wrapper = mountPanel({ courier: courier(), quoting: true });
+    try {
+      expect(wrapper.get('[data-courier-quote-value]').text()).toBe('Cotando a entrega…');
+      expect(wrapper.get('[data-courier-quote-button]').attributes('disabled')).toBeDefined();
+    } finally { wrapper.unmount(); }
+  });
+
+  it('a falha vira aviso com Cotar de novo, e o aviso se dispensa', async () => {
+    const wrapper = mountPanel({ courier: courier(), quoteError: 'Endereço sem coordenadas.' });
+    try {
+      const alert = wrapper.get('[data-courier-quote-error]');
+      expect(alert.text()).toContain('Endereço sem coordenadas.');
+      await wrapper.get('[data-courier-quote-retry]').trigger('click');
+      expect(wrapper.emitted('quote')).toHaveLength(1);
+    } finally { wrapper.unmount(); }
+  });
+
+  it('sem cotação, nada de bloco vazio', () => {
+    const wrapper = mountPanel({ courier: courier() });
+    try {
+      expect(wrapper.find('[data-courier-quote]').exists()).toBe(false);
+    } finally { wrapper.unmount(); }
+  });
 });

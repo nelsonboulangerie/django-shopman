@@ -3,6 +3,7 @@
 // (dia da semana, faixa por ocasião) que viajam na query; o servidor normaliza
 // valor fora do vocabulário para "todos" — aqui é UX, o contrato é dele.
 import type { BIConsumptionProfilesReport } from "~/generated/biContract";
+import type { BIReading } from "~/types/bi";
 
 export interface ProfilesFilters {
   weekday: string; // "" = todos; "0" = segunda
@@ -16,7 +17,7 @@ export function useBiProfiles() {
     hour_band: "",
   }));
 
-  const { data, pending, error, refresh } = useFetch<{ bi: BIConsumptionProfilesReport }>(
+  const { data, pending, error, refresh } = useFetch<BIReading<BIConsumptionProfilesReport>>(
     "/api/v1/backstage/bi/consumption-profiles/",
     {
       key: "bi-consumption-profiles",
@@ -27,10 +28,11 @@ export function useBiProfiles() {
   );
 
   const report = computed(() => data.value?.bi ?? null);
+  const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
 
   function apply(next: Partial<ProfilesFilters>) {
     filters.value = { ...filters.value, ...next };
   }
 
-  return { filters, report, pending, error, refresh, apply };
+  return { filters, report, freshness, pending, error, refresh, apply };
 }

@@ -2,9 +2,10 @@
 
 Read model do "launcher" do operador: uma grade de tiles das superfícies de operador
 (PDV · Cozinha · Gestor · Produção · Marketing · Loja), **permission-aware** — o app que o
-operador não pode acessar nem aparece. Não hospeda CRUD: no topo, a fila "Precisa de você"
-(``projections/hub_queue.py``) leva cada item ao lugar exato no app certo; embaixo, os blocos dos
-apps, cada um com uma linha de estado que concorda com a fila (UX-H1). O tile
+operador não pode acessar nem aparece. Não hospeda CRUD: cada linha de app traz a linha de
+estado e, quando há, a pendência mais urgente dele (``next_item``, de
+``projections/hub_queue.py``), que leva direto ao item no app certo; os apps com pendência
+sobem para o topo (dono, 09/10/2026: a seção "Precisa de você" saiu da Central). O tile
 Loja abre a **loja do cliente** (storefront) em nova aba — fora da zona de operador.
 
 Registry declarativo (tipado aqui; caminho claro p/ configurável no Admin depois). Cada
@@ -34,7 +35,12 @@ from shopman.backstage.permissions import (
     can_view_bi,
     is_superuser,
 )
-from shopman.backstage.projections.hub_queue import HubQueueProjection, collect_hub_queue
+from shopman.backstage.projections.hub_queue import (
+    HubQueueCollection,
+    HubQueueItemProjection,
+    HubQueueProjection,
+    collect_hub_queue,
+)
 
 # URLs de DEV das superfícies — usadas apenas com DEBUG ligado, quando
 # `settings.SHOPMAN_SURFACE_URLS` não cobre a superfície. Fora de DEBUG não há
@@ -61,7 +67,7 @@ class HubTileProjection:
     icon: str  # nome Lucide (ícone forte da superfície, DS §6)
     url: str
     kind: str  # "launch" (superfície de operador, mesma aba) | "external" (fora da zona, nova aba)
-    #: A linha de estado do bloco, que concorda com a fila "Precisa de você" (UX-H1).
+    #: A linha de estado do bloco, que concorda com a fila (UX-H1).
     #: ``status_attention`` é o que pede alguém ("1 para aceitar"); ``status_summary`` é o
     #: resto, calmo ("11 ativos"). Vazios quando o app não tem fonte de estado.
     status_attention: str = ""
@@ -69,13 +75,18 @@ class HubTileProjection:
     #: O estado bom e sabido ("Caixa aberto", "Aberta"): o ponto do bloco fica verde
     #: quando nada pede alguém. Vazio quando o app não tem estado positivo a dizer.
     status_positive: str = ""
+    #: A pendência mais urgente deste app para este operador (o item exato, com o link
+    #: que leva a ele), ou ``None``. É a ação direta da linha do app na Central, e os apps
+    #: com pendência sobem para o topo da lista (dono, 09/10/2026).
+    next_item: HubQueueItemProjection | None = None
 
 
 @dataclass(frozen=True)
 class OperatorHubProjection:
     operator_name: str
     tiles: tuple[HubTileProjection, ...]
-    #: "Precisa de você": a soma das filas dos papéis do operador (`projections/hub_queue.py`).
+    #: A soma das filas dos papéis do operador (`projections/hub_queue.py`): quantas
+    #: pendências e o relógio do servidor. Os itens vão na linha de cada app (``next_item``).
     queue: HubQueueProjection
     #: O nome inteiro da casa (``Shop.name``, "Nelson Boulangerie"), para a assinatura
     #: "Shopman · Nelson Boulangerie" da Central (prévia v4). O nome curto é do PWA.
@@ -90,8 +101,8 @@ class _AppSpec:
     icon: str
     kind: str
     can_access: Callable[[object], bool]
-    #: Nome curto, onde o inteiro não cabe ao lado de outra coisa (a coluna do app na fila
-    #: "Precisa de você"). Vazio = o próprio ``label``. Espelha ``shortLabel`` de
+    #: Nome curto, onde o inteiro não cabe ao lado de outra coisa (o ``app_label`` dos
+    #: itens da fila). Vazio = o próprio ``label``. Espelha ``shortLabel`` de
     #: ``app-identity.json`` (o mesmo teste de identidade compara os dois).
     short_label: str = ""
 
@@ -147,6 +158,19 @@ def _surface_urls() -> dict[str, str]:
     return {**base, **override}
 
 
+def surface_link(ref: str, path: str) -> str:
+    """O endereço absoluto de ``path`` no app ``ref`` (``gestor``, ``production``…).
+
+    É o que leva um aviso de um app para o outro (o lote na Qualidade, o pedido no
+    Gestor). Vazio quando o app não tem URL configurada: aí o aviso fica sem o botão,
+    em vez de levar a um caminho que não existe no app de onde foi tocado.
+    """
+    base = _surface_urls().get(ref, "")
+    if not base:
+        return ""
+    return base.rstrip("/") + "/" + path.lstrip("/")
+
+
 def accessible_surfaces(user) -> dict[str, tuple[str, str]]:
     """Os apps de operador que ``user`` abre, na ordem do launcher: ``ref → (nome curto, URL)``.
 
@@ -178,17 +202,28 @@ def _operator_name(user) -> str:
     return full or getattr(user, "username", "") or "Operador"
 
 
-def build_operator_hub(user) -> OperatorHubProjection:
-    """Monta a Central para `user`: APENAS os tiles que ele pode acessar, e a fila
-    "Precisa de você" com os itens em que ele pode agir."""
+def _visible_specs(user) -> tuple[dict[str, str], list[_AppSpec]]:
     urls = _surface_urls()
-    visible = [spec for spec in _REGISTRY if spec.can_access(user) and urls.get(spec.ref)]
-    # Só app que o operador abre entra na fila: o item leva para dentro dele.
-    queue, statuses = collect_hub_queue(
+    return urls, [spec for spec in _REGISTRY if spec.can_access(user) and urls.get(spec.ref)]
+
+
+def collect_operator_queue(user) -> HubQueueCollection:
+    """A fila das filas de ``user`` no recorte da Central: só app que ele abre e que tem
+    URL configurada entra (o item leva para dentro dele)."""
+    urls, visible = _visible_specs(user)
+    return collect_hub_queue(
         user,
         urls={spec.ref: urls[spec.ref] for spec in visible},
         labels={spec.ref: spec.queue_label for spec in visible},
     )
+
+
+def build_operator_hub(user) -> OperatorHubProjection:
+    """Monta a Central para `user`: APENAS os tiles que ele pode acessar, cada um com a
+    sua linha de estado e a pendência mais urgente em que ele pode agir."""
+    urls, visible = _visible_specs(user)
+    collected = collect_operator_queue(user)
+    statuses, most_urgent = collected.statuses, collected.most_urgent
     tiles = tuple(
         HubTileProjection(
             ref=spec.ref,
@@ -200,11 +235,12 @@ def build_operator_hub(user) -> OperatorHubProjection:
             status_attention=statuses[spec.ref].attention if spec.ref in statuses else "",
             status_summary=statuses[spec.ref].summary if spec.ref in statuses else "",
             status_positive=statuses[spec.ref].positive if spec.ref in statuses else "",
+            next_item=most_urgent.get(spec.ref),
         )
         for spec in visible
     )
     return OperatorHubProjection(
-        operator_name=_operator_name(user), tiles=tiles, queue=queue, shop_name=_shop_name()
+        operator_name=_operator_name(user), tiles=tiles, queue=collected.queue, shop_name=_shop_name()
     )
 
 

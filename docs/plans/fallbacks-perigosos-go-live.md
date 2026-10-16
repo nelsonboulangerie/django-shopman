@@ -27,7 +27,17 @@ por facilidade.
 
 ## Tier 1 — perde dinheiro ou entrega acesso, em silêncio
 
-### 1. ⬜ `EFI_SANDBOX` nasce `true`: todo Pix real cobra num gateway que não recebe
+### 1. ✅ `EFI_SANDBOX` nasce `true`: todo Pix real cobra num gateway que não recebe
+
+> **✅ Fechado (10/10, frente A1 do go-live).** Em produção a variável tem de ser
+> DECLARADA: `SHOPMAN_UNDECLARED_PROVIDER_ENVIRONMENTS` (`config/settings.py`)
+> lista o que ficou no default, e o `SHOPMAN_E026` (`check_provider_environments_declared`
+> em `shopman/shop/checks.py`) reprova o `check --deploy` do PRE_DEPLOY com a
+> variável e o valor a escrever. O VALOR de teste em produção (`true` declarado)
+> já era reprovado pelo `SHOPMAN_E022` (prontidão dos provedores). Dev e
+> staging seguem com o default (o alpha declara `true`). O template de produção
+> (`.do/app.subdomains.yaml`) passou a declarar `EFI_SANDBOX=false`.
+> Regressão: `shopman/shop/tests/test_golive_fallbacks_fail_closed.py`.
 
 - `config/settings.py:1142` — `os.environ.get("EFI_SANDBOX", "true")`
 - `shopman/shop/adapters/payment_efi.py:49` — `return SANDBOX_URL if config.get("sandbox", True) else PRODUCTION_URL`
@@ -49,7 +59,12 @@ explícita: ausente ⇒ `ImproperlyConfigured` no boot do app (o padrão que o
 > sem `.env` falar com a Efí de produção — troca um risco por outro. A correção
 > certa é "explícito ou não sobe", e ela toca o boot do app, que é frente da Efí.
 
-### 2. ⬜ `FOCUS_NFE_ENVIRONMENT` nasce `homologacao`: nota fiscal sem validade
+### 2. ✅ `FOCUS_NFE_ENVIRONMENT` nasce `homologacao`: nota fiscal sem validade
+
+> **✅ Fechado (10/10), mesma forma do item 1.** Omissão em produção = `SHOPMAN_E026`;
+> `homologacao` declarada em produção = `SHOPMAN_E022`. O template de produção já
+> declara a linha (com `homologacao`, decisão do dono de trocar para `producao`
+> no go-live), então ele cai no E022 até essa decisão, de propósito.
 
 - `config/settings.py:1072` — `os.environ.get("FOCUS_NFE_ENVIRONMENT", "homologacao").strip().lower() or "homologacao"`
 - `shopman/shop/adapters/fiscal_focusnfe.py:204` — `str(config.get("environment") or "homologacao")`
@@ -163,7 +178,16 @@ a API, e a recuperação de `payment.initiate` (`_existing_active_intent`) entã
 que o gateway nunca viu virava a cobrança do pedido. Na Efí, `client_id` vazio
 virava tentativa de autenticação com credencial em branco (ou `KeyError` cru).
 
-### 9. ⬜ `allow_untracked` nasce `True` **e** a leitura falha para o mesmo `True`
+### 9. ✅ `allow_untracked` nasce `True` **e** a leitura falha para o mesmo `True`
+
+> **✅ Fechado (10/10): o `except` devolve o RESTRITIVO e grita.** Config de canal
+> ilegível agora devolve `False` em `_channel_allows_untracked`, com
+> `logger.error` (Sentry) e alerta `integration_config_drift` na tela do
+> operador. Recusar aqui não derruba venda de produto real: o portão só alcança
+> SKU que o catálogo não conhece (`_sku_known_to_catalog`). O DEFAULT do
+> dataclass ficou `True`: os canais de cliente já declaram `false` (seed,
+> `bootstrap_whatsapp_channel`), e inverter o default mudaria o PDV e o iFood sem
+> medição, frente própria se o dono quiser.
 
 - `shopman/shop/config.py:126` — `allow_untracked: bool = True`
 - `shopman/shop/services/stock.py:664-671` — `except Exception: return bool(ChannelConfig().stock.allow_untracked)`
@@ -181,7 +205,14 @@ nada, vendendo estoque que não existe, sem alerta.
 **Correção proposta:** dataclass nasce `False`; canal que quer vender sem rastreio
 declara. E o `except` devolve o **restritivo**, não o default.
 
-### 10. ⬜ `preorder` nasce `True` e falha aberto do mesmo jeito
+### 10. ✅ `preorder` nasce `True` e falha aberto do mesmo jeito
+
+> **✅ Fechado como "aberto e gritando" (10/10).** A leitura ilegível segue
+> aceitando encomenda, de propósito: recusar derrubaria a venda de um pão que
+> existe por causa de um JSON quebrado, e o gate do Stockman (produto pausado)
+> continua valendo. O que mudou é que não é mais calado: `logger.error` +
+> alerta `integration_config_drift` com o canal e o pedido. O default `True`
+> é decisão registrada no dataclass (encomenda nasce no balcão).
 
 - `shopman/shop/config.py:122` · `shopman/shop/services/stock.py:645-654`
 
@@ -189,7 +220,10 @@ declara. E o `except` devolve o **restritivo**, não o default.
 `preorder: False`. Um soluço de config vira hold só de demanda com `quant=None` —
 promessa de assar algo que ninguém planejou.
 
-### 11. ⬜ `_sku_known_to_catalog` degrada para `True`, e a docstring diz o contrário
+### 11. ✅ `_sku_known_to_catalog` degrada para `True`, e a docstring diz o contrário
+
+> **✅ Já estava fechado no `main`** (conferido em 10/10): o `except` devolve
+> `False` com `logger.warning`, e o comentário em `services/stock.py` conta por quê.
 
 - `shopman/shop/services/stock.py:394-406` — docstring: *"Fail-closed: se o contrato não responde, exigimos a reserva."*; código: `except Exception: return True`
 
@@ -198,7 +232,11 @@ _sku_known_to_catalog(...): raise`), `True` **pula** a rejeição de SKU
 desconhecido — fail-**open** justamente onde importa. Se o validador levantar, o
 portão `allow_untracked=False` para de funcionar.
 
-### 12. ⬜ `_from_shop_integrations` engole qualquer erro de banco
+### 12. ✅ `_from_shop_integrations` engole qualquer erro de banco
+
+> **✅ Fechado (10/10).** O `logger.debug` virou `logger.error` com `exc_info`,
+> que chega ao Sentry, dizendo o tipo e o método cuja escolha do Admin foi
+> ignorada. O fallback para o settings continua (é o adapter do deploy).
 
 - `shopman/shop/adapters/__init__.py:93-95` — `except Exception: logger.debug(...); return None, False`
 
@@ -229,7 +267,14 @@ de verificação deve dar 500, não acenar para o request passar.**
 **Risco: dinheiro-adjacente.** Hoje devolve `None` em produção (o console só é
 registrado sob `DEBUG`), mas o **desenho** é "não especificado ⇒ o falso".
 
-### 15. ⬜ `_external.inert()` devolve sucesso em qualquer ambiente após `suppress()`
+### 15. ✅ `_external.inert()` devolve sucesso em qualquer ambiente após `suppress()`
+
+> **✅ Fechado (10/10).** SMS, WhatsApp e ManyChat devolvem `False` no ramo
+> inerte, como o OTP já fazia: inerte não é entrega, e a cadeia segue. Para o
+> seed não virar retry (que o worker, NÃO suprimido, executaria de verdade
+> para os telefones sintéticos), o `NotificationSendHandler` pergunta a
+> `_external.suppressed_reason()` e grava `skipped` com
+> `reason="external_suppressed:seed"`, terminal. Nem "entregue" nem "falhou".
 
 - `shopman/shop/adapters/_external.py:42-43` — `if _suppressed_reason is not None: return True`
 - Devolvem **sucesso** no ramo inerte: `notification_sms.py:92-97`,
@@ -251,7 +296,13 @@ operador marcou" — NFC-e para de sair, venda após venda, sem nada em tela
 nenhuma. A própria docstring de `check_fiscal_emission_resolver` reconhece isso —
 e o check é `@register(deploy=True)`.
 
-### 17. ⬜ `_payment_idempotency_key_reusable` devolve `True` quando a busca falha
+### 17. ✅ `_payment_idempotency_key_reusable` devolve `True` quando a busca falha
+
+> **✅ Fechado (10/10).** Busca que falha levanta `PaymentAttemptLookupUnavailable`,
+> e `payment.initiate` registra o erro no pedido ("Não conseguimos conferir a
+> cobrança anterior...") em vez de cobrar. O irmão `_burned_intent_generations`
+> tinha o mesmo defeito por outro caminho (`except: return 0` recalculava a
+> chave da PRIMEIRA tentativa, a que pode ter morrido) e saiu junto.
 
 - `shopman/shop/services/payment.py:1233-1237`
 
@@ -352,7 +403,7 @@ Todos em `shopman/shop/checks.py`, com `@register(deploy=True)`: rodam em
 |---|---|---|
 | `check_secret_key` (E001) | `SECRET_KEY` ≠ default de dev | ⚠️ **Sim.** O default é literal (`config/settings.py:71`), e essa chave deriva o HMAC do OTP, do PIN, do link de acesso e da assinatura do comprovante de caixa. Chave conhecida = OTP/PIN/comprovante forjáveis |
 | `check_allowed_hosts` (E002) | sem `*` | ⚠️ **Sim.** Default é `"*"` (`:104`) |
-| `check_payment_adapters` (E003/W006/E009) | adapters + credenciais | ✅ Fechado para o mock (runtime em `payment_mock`). ⚠️ **Não cobre `EFI_SANDBOX` (item 1) nem chave test-vs-live do Stripe** |
+| `check_payment_adapters` (E003/W006/E009) | adapters + credenciais | ✅ Fechado para o mock (runtime em `payment_mock`). `EFI_SANDBOX` e a chave test-vs-live do Stripe são cobertos pelo E022 (valor) e E026 (omissão); o sentido contrário (chave live com porta de teste aberta, em qualquer ambiente) pelo E027 |
 | `check_debug_otp_exposure` (E010) | OTP de debug só em dev/staging | ⚠️ **Sim** (só roda em `check --deploy`), mas o valor que ele lê voltou a ser confiável: `SHOPMAN_ENVIRONMENT` é explícito, sem inferência por substring (item 3 ✅) |
 | `check_shared_cache_backend` (E006) | Redis em prod | ⚠️ **Sim.** LocMem em prod faz o `django-ratelimit` virar por-worker: os limites de OTP/login multiplicam pelo número de workers |
 | `check_fiscal_emission_resolver` (E013) | resolver configurado | ⚠️ **Sim** (item 16). E não checa `FOCUS_NFE_ENVIRONMENT` |
@@ -374,8 +425,8 @@ conferência antecipada, não a única trava.
 
 | Flag | Default | Trava em runtime | Se vazar para produção |
 |---|---|---|---|
-| `EFI_SANDBOX` | **`true`** | **nenhuma** | Pix cobra onde não entra dinheiro (item 1) |
-| `FOCUS_NFE_ENVIRONMENT` | **`homologacao`** | **nenhuma** | NFC-e sem validade fiscal (item 2) |
+| `EFI_SANDBOX` | `true` (dev/staging) | E026 (omissão) + E022 (valor) no PRE_DEPLOY de produção ✅ | Deploy de produção não sobe (item 1) |
+| `FOCUS_NFE_ENVIRONMENT` | `homologacao` (dev/staging) | E026 (omissão) + E022 (valor) no PRE_DEPLOY de produção ✅ | Deploy de produção não sobe (item 2) |
 | `SHOPMAN_EXPOSE_DEBUG_OTP` | **`false`** (item 3 ✅ — sem herdar de nada) | flag explícita + segredo `SHOPMAN_DEBUG_OTP_TOKEN` (sem token, fora de DEBUG = recusa) | OTP na resposta exige spec com flag `true` E segredo apresentado |
 | `SHOPMAN_PIX_ADAPTER` | `payment_mock` **só em DEBUG** ✅ | `_ensure_simulation_allowed` ✅ | — |
 | `SHOPMAN_CARD_ADAPTER` | `payment_stripe` ✅ | `_refuse_card` + `StripeNotConfigured` ✅ | — |

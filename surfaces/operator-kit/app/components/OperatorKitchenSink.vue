@@ -12,6 +12,8 @@ import {
   kitchenSinkSteps,
   type KitchenSinkState,
 } from "../fixtures/operatorKitchenSink";
+import { countChipProps } from "../presentation/countChip";
+import { railSignalLabel } from "../presentation/suiteChrome";
 
 const route = useRoute();
 const router = useRouter();
@@ -66,16 +68,22 @@ function selectSection(id: string, event?: Event) {
   searchOpen.value = false;
   officeShell.value?.closeNavigation();
 }
-const navigationItems = computed(() =>
-  kitchenSinkNavigation.map((item) => ({
-    label: item.label,
-    "aria-label": "badge" in item ? `${item.label}, ${item.badge} decisões pendentes` : item.label,
-    icon: item.icon,
-    badge: "badge" in item ? item.badge : undefined,
-    active: selectedSection.value === item.to.slice(1),
-    onSelect: (event: Event) => selectSection(item.to.slice(1), event),
-  })),
-);
+// A contagem da seção é o chip de contagem da suíte: no canto do ícone com a barra
+// compactada (`chip`), na ponta direita da linha com ela aberta (`item-trailing`).
+function navigationItems(collapsed: boolean) {
+  return kitchenSinkNavigation.map((item) => {
+    const count = "badge" in item ? item.badge : undefined;
+    return {
+      label: item.label,
+      "aria-label": railSignalLabel(item.label, count ? { color: "warning", count } : undefined),
+      icon: item.icon,
+      count,
+      chip: collapsed && count ? countChipProps(count) : undefined,
+      active: selectedSection.value === item.to.slice(1),
+      onSelect: (event: Event) => selectSection(item.to.slice(1), event),
+    };
+  });
+}
 const searchGroups = computed(() => [
   {
     id: "catalog",
@@ -144,6 +152,15 @@ const componentLexicon = [
     "Gestão, análise e cadastros",
   ],
   [
+    "OperatorSuiteShell",
+    "Barra lateral em três estados (aberta, compacta, oculta: um botão na barra do topo e a tecla C), sinal por seção (ponto ou número) e barra inferior de 3 a 5 vagas no celular, sobre o Dashboard canônico",
+    "App de escritório com seções persistentes",
+  ],
+  [
+    "Título, busca, filtros e ações sobre Navbar e Toolbar oficiais",
+    "Cabeçalho principal dentro do shell da suíte",
+  ],
+  [
     "OperatorOperationalShell",
     "Chrome estável e ação de chão",
     "PDV, Cozinha e Produção",
@@ -198,16 +215,24 @@ onMounted(() => {
       storage-key="operator-kitchen-sink"
     >
       <template #sidebar="{ collapsed }">
+        <!-- O rótulo que cabe (dono, 10/10/2026): "Buscar no catálogo" com o atalho não
+             cabe na barra lateral e cortava em reticência; o nome inteiro fica no
+             nome acessível. -->
         <NuxtDashboardSearchButton
-          label="Buscar no catálogo"
+          label="Buscar"
+          aria-label="Buscar no catálogo"
           :collapsed="collapsed"
         />
         <NuxtNavigationMenu
-          :items="navigationItems"
+          :items="navigationItems(collapsed)"
           orientation="vertical"
           :collapsed="collapsed"
           aria-label="Seções do catálogo"
-        />
+        >
+          <template #item-trailing="{ item }">
+            <OperatorCountChip v-if="!collapsed" :count="item.count" />
+          </template>
+        </NuxtNavigationMenu>
         <NuxtNavigationMenu
           :items="[
             {
@@ -248,7 +273,7 @@ onMounted(() => {
           :label="collapsed ? undefined : 'Guia de composição'"
           :square="collapsed"
           class="min-w-0 w-full"
-          :ui="{ label: 'truncate', base: collapsed ? 'justify-center' : '' }"
+          :class="collapsed ? undefined : 'justify-start'"
           aria-label="Guia de composição"
           color="neutral"
           variant="ghost"
@@ -298,6 +323,8 @@ onMounted(() => {
           description="Fixtures herméticas, composição real e um vocabulário visual deliberadamente curto."
         >
           <OperatorKitchenSinkDashboard />
+          <OperatorKitchenSinkReading />
+          <OperatorKitchenSinkScreenPieces />
           <OperatorKitchenSinkExercises />
           <section
             id="foundations"
@@ -324,6 +351,17 @@ onMounted(() => {
                     color="neutral"
                     variant="outline"
                   /><NuxtButton label="Discreta" color="neutral" variant="ghost" />
+                </div>
+                <p class="op-label mt-5">Recorte de fila</p>
+                <div class="mt-3 flex flex-wrap gap-2" aria-label="Pills canônicos de filtro">
+                  <UiFilterChip active :count="10">
+                    <template #icon><Icon name="lucide:check" class="size-4" /></template>
+                    Todos
+                  </UiFilterChip>
+                  <UiFilterChip :count="2">
+                    <template #icon><Icon name="lucide:bike" class="size-4" /></template>
+                    Entrega
+                  </UiFilterChip>
                 </div>
               </NuxtCard>
               <NuxtCard>
@@ -576,6 +614,64 @@ onMounted(() => {
                 Dashboard, fila, tabela, detalhe e fluxo em etapas
               </h2>
             </div>
+            <div class="grid gap-[var(--op-region-gap)] lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+              <NuxtCard
+                as="article"
+                variant="outline"
+                aria-label="Receita canônica de cartão operacional"
+              >
+                <template #header>
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <p class="op-heading">H58</p>
+                      <p class="op-title">Maria Santos · Loja online</p>
+                    </div>
+                    <NuxtBadge color="error" variant="soft" label="Bloqueado" />
+                  </div>
+                </template>
+                <div class="flex flex-wrap gap-2">
+                  <NuxtBadge color="neutral" variant="soft" icon="i-lucide-store" label="Retirada" />
+                  <NuxtBadge color="neutral" variant="soft" icon="i-lucide-package" label="1 item" />
+                </div>
+                <p class="op-body">1x Croissant</p>
+                <NuxtProgress :model-value="0" :max="100" color="primary" size="sm">
+                  <template #status>
+                    <span class="flex justify-between gap-3 op-micro">
+                      <span>CRO · Planejada</span><span class="tabular-nums">0%</span>
+                    </span>
+                  </template>
+                </NuxtProgress>
+                <NuxtAlert
+                  color="error"
+                  variant="soft"
+                  icon="i-lucide-lock"
+                  title="Expirou às 15:40"
+                  description="Gerado às 15:43. Resolva o bloqueio antes de iniciar."
+                />
+                <div class="flex items-center justify-between gap-3 op-body">
+                  <span class="text-muted"><Icon name="lucide:hourglass" class="mr-1 inline size-4" />Pix</span>
+                  <strong class="tabular-nums">R$ 13,00</strong>
+                </div>
+                <template #footer>
+                  <NuxtButton
+                    block
+                    size="xl"
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-lock"
+                    label="Iniciar preparo"
+                    disabled
+                  />
+                </template>
+              </NuxtCard>
+              <NuxtAlert
+                color="info"
+                variant="subtle"
+                icon="i-lucide-book-open-check"
+                title="Contrato do cartão operacional"
+                description="O card é NuxtCard. Situação e atributos são NuxtBadge. Andamento é NuxtProgress. Impedimento é NuxtAlert. O próximo gesto é NuxtButton. Texto solto serve apenas ao conteúdo, nunca para simular um componente."
+              />
+            </div>
             <div class="grid gap-[var(--op-region-gap)] md:grid-cols-3">
               <NuxtPageCard
                 v-for="metric in kitchenSinkMetrics"
@@ -588,7 +684,7 @@ onMounted(() => {
             <div
               class="grid gap-[var(--op-region-gap)] xl:grid-cols-[minmax(0,1fr)_20rem]"
             >
-              <NuxtCard :ui="{ root: 'overflow-visible', body: 'p-0 sm:p-0' }">
+              <NuxtCard>
                 <template #header
                   ><h3 class="op-title">
                     Comparação tabular com rolagem explícita
@@ -805,6 +901,8 @@ onMounted(() => {
             </div>
           </section>
 
+          <OperatorKitchenSinkFit />
+
           <section
             id="matrix"
             class="space-y-4"
@@ -911,7 +1009,14 @@ onMounted(() => {
             aria-label="Navegação operacional"
         /></template>
         <template #header>
-          <NuxtDashboardNavbar as="header" title="Shell operacional" />
+          <!-- Título longo de propósito (PR-K5): a 390 px ele quebra em duas linhas,
+               sem reticências, e o botão da direita fica no lugar. -->
+          <NuxtDashboardNavbar
+            as="header"
+            title="Shell operacional: o título longo quebra em linhas e não se corta"
+          >
+            <template #right><NuxtColorModeButton /></template>
+          </NuxtDashboardNavbar>
         </template>
         <div>
           <NuxtCard
@@ -955,6 +1060,11 @@ onMounted(() => {
 </template>
 
 <style>
+/* O catálogo mostra cada peça como ela é tocada no balcão: com ponteiro touch, todo
+   controle do catálogo ganha o envelope operacional de 44/48 px que a varredura de
+   geometria do Kitchen Sink exige. Estava no `main` e saiu no snapshot WIP do Gestor
+   (7e6bb83de) sem decisão escrita; volta até a decisão de alvo de toque ser tomada
+   para os nove apps (WP-OPERADOR-NUXTUI-ONDAS, onda 0). */
 @media (pointer: coarse) {
   [data-operator-catalog]
     :where(

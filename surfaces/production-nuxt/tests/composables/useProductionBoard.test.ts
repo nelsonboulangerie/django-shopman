@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { defaultPlanningDate, useProductionBoard } from "~/composables/useProductionBoard";
 
@@ -379,5 +379,131 @@ describe("defaultPlanningDate", () => {
   it("uses the bakery clock during the UTC/BRT date gap", () => {
     // 23:30 BRT ainda é 09/set, mas o planejamento já aponta para amanhã.
     expect(defaultPlanningDate(new Date("2026-09-10T02:30:00Z"))).toBe("2026-09-10");
+  });
+});
+
+/** EventSource de mentira: `failForGood` é a reconexão que recebeu 502 (CLOSED). */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  listeners = new Map<string, Array<() => void>>();
+  close = vi.fn(() => {
+    this.readyState = 2;
+  });
+  constructor(public url: string) {
+    FakeEventSource.instances.push(this);
+  }
+  addEventListener(name: string, handler: () => void) {
+    this.listeners.set(name, [...(this.listeners.get(name) ?? []), handler]);
+  }
+  emit(name: string) {
+    for (const handler of this.listeners.get(name) ?? []) handler();
+  }
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+  failForGood() {
+    this.readyState = 2;
+    this.onerror?.();
+  }
+}
+
+/** Monta o composable com lifecycle e browser mínimos, e devolve o desmontar. */
+async function withMountedBrowser<T>(build: () => T): Promise<{ value: T; unmount: () => void }> {
+  const mounts: Array<() => void> = [];
+  const unmounts: Array<() => void> = [];
+  FakeEventSource.instances = [];
+  vi.stubGlobal("onMounted", (callback: () => void) => {
+    mounts.push(callback);
+  });
+  vi.stubGlobal("onBeforeUnmount", (callback: () => void) => {
+    unmounts.push(callback);
+  });
+  vi.stubGlobal("EventSource", FakeEventSource);
+  vi.stubGlobal("ssePath", (await import("../../../operator-kit/app/utils/ssePath")).ssePath);
+  const value = build();
+  mounts.forEach((callback) => callback());
+  return { value, unmount: () => unmounts.forEach((callback) => callback()) };
+}
+
+describe("useProductionBoard — SSE da Produção (ADR-016, P2-18)", () => {
+  beforeEach(() => {
+    env.reset();
+    env.fetchData.value = boardPayload();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("ouve o canal backstage-production e refaz o GET canônico a cada lote que muda", async () => {
+    const { value, unmount } = await withMountedBrowser(() => useProductionBoard("2026-07-06"));
+    try {
+      const source = FakeEventSource.instances[0]!;
+      expect(source.url).toBe("/sse/production");
+      expect(source.listeners.has("backstage-production-update")).toBe(true);
+      source.open();
+      expect(value.realtime.value).toBe("live");
+      env.refresh.mockClear();
+      source.emit("backstage-production-update"); // o forno abriu um lote
+      await vi.advanceTimersByTimeAsync(0);
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("rajada de avisos (plano em massa) vira uma releitura em voo e uma depois, não uma por aviso", async () => {
+    const releases: Array<() => void> = [];
+    env.refresh.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    const { unmount } = await withMountedBrowser(() => useProductionBoard("2026-07-06"));
+    try {
+      const source = FakeEventSource.instances[0]!;
+      source.open();
+      env.refresh.mockClear();
+      for (let i = 0; i < 5; i++) source.emit("backstage-production-update");
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+      releases.shift()?.();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(env.refresh).toHaveBeenCalledTimes(2);
+      releases.shift()?.();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(env.refresh).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("volta a ouvir depois do 502 de deploy e cobre o que passou no meio", async () => {
+    const { value, unmount } = await withMountedBrowser(() => useProductionBoard("2026-07-06"));
+    try {
+      FakeEventSource.instances[0]!.open();
+      FakeEventSource.instances[0]!.failForGood();
+      expect(value.realtime.value).toBe("polling");
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      env.refresh.mockClear();
+      FakeEventSource.instances[1]!.open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(value.realtime.value).toBe("live");
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("desmontar fecha o stream", async () => {
+    const { unmount } = await withMountedBrowser(() => useProductionBoard("2026-07-06"));
+    const source = FakeEventSource.instances[0]!;
+    unmount();
+    expect(source.close).toHaveBeenCalled();
   });
 });

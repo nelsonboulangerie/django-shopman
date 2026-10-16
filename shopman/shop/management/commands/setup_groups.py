@@ -8,6 +8,9 @@ em produção. Ao resetar as migrações isso viraria perda silenciosa de RBAC.
 
 Agora: grupo é dado de deployment, mora aqui, e o release job chama
 `migrate && setup_groups`. Idempotente por construção (`get_or_create` + `set`).
+Ao final, a mesma porta instala também os grupos comerciais canônicos ausentes;
+isso não mistura as duas taxonomias: apenas reaproveita o hook de release que já
+existe no ambiente vivo.
 
 E `set`, não `add`: dono também TIRA. Enquanto o loop só somava, permissão retirada
 desta lista seguia concedida no banco para sempre, e como o release job roda a cada
@@ -20,6 +23,7 @@ superfície não for concedida a ninguém — o guarda contra "permission existe
 a tem, e o app fica inalcançável".
 """
 
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 
 
@@ -105,6 +109,9 @@ class Command(BaseCommand):
             "Caixa": [
                 shop_cash("operate_pos"),
                 shop_shop("manage_orders"),
+                # Quem está no balcão abre a Cozinha: vê o que está saindo e dá o
+                # Pronto quando o prato passa por ele (decisão do dono, 13/10/2026).
+                shop_kdst("operate_kds"),
             ],
             "Cozinha": [
                 # No Admin ele CONFERE o que fabrica — ficha técnica, ordem, insumo,
@@ -158,6 +165,9 @@ class Command(BaseCommand):
                 # cozinha é gesto de gestão, e a Cozinha opera nele sem cadastrá-lo.
                 *_escrever("backstage", "kdsinstance"),
                 shop_shop("manage_orders"),
+                # A Cozinha também: a gerente abre qualquer estação (decisão do dono,
+                # 13/10/2026). Antes ela só via o quadro pelas colunas do Gestor.
+                shop_kdst("operate_kds"),
                 # Cancelar depois de PRONTO (e a venda de balcão já fechada) é o
                 # degrau do gerente; a esteira normal permanece em manage_orders.
                 shop_shop("cancel_advanced_order"),
@@ -326,4 +336,8 @@ class Command(BaseCommand):
                 linha += f" — revogadas: {', '.join(revogadas)}"
             self.stdout.write(linha)
 
+        # O banco vivo não roda `seed`. Este hook de release é a porta
+        # idempotente que garante os grupos comerciais iniciais sem reverter as
+        # edições feitas depois pelo Gestor.
+        call_command("setup_commercial_groups", stdout=self.stdout)
         self.stdout.write(self.style.SUCCESS("setup_groups: OK"))

@@ -22,9 +22,9 @@ const ENDPOINT = "/api/v1/backstage/marketing/telemetry/vital/";
 export function marketingRoute(pathname: string): MarketingRoute {
   const path = pathname.split("?", 1)[0]?.split("#", 1)[0]?.replace(/\/+$/, "") || "/";
   if (path === "/") return "board";
-  if (path === "/campaigns") return "campaigns";
-  if (path === "/templates") return "templates";
-  if (path === "/platforms") return "platforms";
+  if (path === "/settings/campaigns") return "campaigns";
+  if (path === "/settings/templates") return "templates";
+  if (path === "/settings/platforms") return "platforms";
   if (path === "/history") return "history";
   if (/^\/announcements\/[^/]+$/.test(path)) return "announcement_detail";
   return "other";

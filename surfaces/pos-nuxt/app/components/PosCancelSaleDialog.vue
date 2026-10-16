@@ -73,7 +73,7 @@ function onBadge(token: string) {
           :model-value="reason"
           placeholder="Motivo do cancelamento (opcional)"
           autocomplete="off"
-          class="h-11 w-full text-center text-base"
+          class="h-8 w-full text-center text-base"
           @update:model-value="(value) => emit('update:reason', String(value))"
         />
         <OperatorIdentify

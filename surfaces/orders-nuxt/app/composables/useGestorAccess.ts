@@ -11,14 +11,19 @@ import { useOperatorResourceKey } from "./useOperatorResourceKey";
 export const GESTOR_SURFACE_PERM = "shop.manage_orders|backstage.operate_kds";
 
 export function useGestorAccess() {
-  const { data: session } = useNuxtData<{ operator?: { id: number } }>("operator-session");
+  const { data: session } = useNuxtData<{ operator?: { id: number } }>(
+    "operator-session",
+  );
   const operatorId = computed(() => session.value?.operator?.id ?? null);
-  const { data } = useFetch<{ authorized?: boolean }>("/api/v1/backstage/operator/session/", {
-    key: useOperatorResourceKey("manage-orders-access"),
-    query: { perm: "shop.manage_orders" },
-    server: true,
-    watch: [operatorId],
-  });
+  const { data } = useFetch<{ authorized?: boolean }>(
+    "/api/v1/backstage/operator/session/",
+    {
+      key: useOperatorResourceKey("manage-orders-access"),
+      query: { perm: "shop.manage_orders" },
+      server: true,
+      watch: [operatorId],
+    },
+  );
   // Só uma resposta "não" encolhe o Gestor. Enquanto a leitura não chega, a tela
   // fica como sempre foi para quem gerencia (o caso comum), e o servidor segue
   // recusando o que não é de quem só expede.

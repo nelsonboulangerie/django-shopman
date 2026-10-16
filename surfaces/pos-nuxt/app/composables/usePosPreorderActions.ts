@@ -2,7 +2,7 @@ import type { ComputedRef, Ref } from "vue";
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import { handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
+import { danfeExpected, handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
 import type {
   PreorderDetail,
   PreorderHandOverResponse,
@@ -11,6 +11,17 @@ import type {
 } from "~/types/preorders";
 import type { POSProjection } from "~/types/pos";
 import { detailAction } from "../../../operator-kit/app/presentation/orderDetail";
+
+/** Os gestos do entregador que o balcão faz (as ações do detalhe com o mesmo `ref`). */
+type CourierGesture = "courier-dispatch" | "courier-dispatch-again" | "courier-cancel" | "courier-back";
+
+/** O que o aviso diz quando o gesto passa, e o que diz quando não passa. */
+const COURIER_GESTURE_COPY: Record<CourierGesture, { done: string; failed: string }> = {
+  "courier-dispatch": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
+  "courier-dispatch-again": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
+  "courier-cancel": { done: "Cancelamento da corrida enviado à TaOn.", failed: "Não deu para cancelar a corrida." },
+  "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
+};
 
 export interface ManagerChallenge {
   code: string;
@@ -36,6 +47,9 @@ export interface ManagerChallenge {
  *   com a base que o servidor mandou na ação `comment` do detalhe — é o contexto
  *   "pos" que a oferece, e só ela.
  *
+ * - **Chamar entregador** e **Chamar de novo** (TaOn): as MESMAS rotas e ações do
+ *   Gestor, só na encomenda de entrega da casa (o servidor decide quando).
+ *
  * Depois de qualquer gesto, a leitura canônica é refeita (`refresh`).
  */
 export function usePosPreorderActions(options: {
@@ -45,6 +59,9 @@ export function usePosPreorderActions(options: {
 }) {
   const action = usePosAction();
   const drawer = useCounterAgent(options.pos);
+  // A espera da nota NÃO para quando o operador sai do detalhe: quem levou a
+  // mercadoria leva a DANFE (a espera tem fim, ~90s).
+  const danfe = usePosDanfePrint(options.pos, drawer);
   const busy = ref(false);
   const managerChallenge = ref<ManagerChallenge | null>(null);
   // O cliente pagou online antes de o balcão receber: o aviso fica na tela até a
@@ -77,6 +94,13 @@ export function usePosPreorderActions(options: {
       if (body.tenders?.some((tender) => tender.method === "cash")) void drawer.kick("preorder_cash");
       paidOnline.value = "";
       toast.success(handOverDoneMessage(response?.received_q ?? 0));
+      // A nota da retirada nasce na entrega: a DANFE sai sozinha na bobina
+      // quando autoriza, como na venda de balcão (P2-27). Sem impressora nesta
+      // estação, não há o que esperar; o detalhe já diz que o papel sai no
+      // balcão que tem impressora.
+      if (danfeExpected(response?.fiscal_state) && drawer.canPrint.value) {
+        void danfe.printWhenAuthorized(detail.ref);
+      }
       await options.refresh();
       return true;
     } catch (error) {
@@ -96,12 +120,21 @@ export function usePosPreorderActions(options: {
     }
   }
 
-  async function cancel(reason: string, managerApproval: ManagerApproval | null = null): Promise<boolean> {
+  async function cancel(
+    choice: { reasonKey: string; internalNote: string },
+    managerApproval: ManagerApproval | null = null,
+  ): Promise<boolean> {
     const detail = options.detail.value;
     if (!detail || busy.value) return false;
     busy.value = true;
     const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.ref)}/cancel/`;
-    const payload = { reason: reason.trim(), base_revision: detail.counter.revision, expected_actor_id: detail.counter.actor_id };
+    // O motivo é a chave da lista única; a observação é interna (nunca vai ao cliente).
+    const payload = {
+      reason_key: choice.reasonKey,
+      internal_note: choice.internalNote.trim(),
+      base_revision: detail.counter.revision,
+      expected_actor_id: detail.counter.actor_id,
+    };
     try {
       await action.call(path, {
         body: {
@@ -200,9 +233,46 @@ export function usePosPreorderActions(options: {
     }
   }
 
+  /**
+   * Os gestos do entregador (TaOn), pelas MESMAS rotas do Gestor
+   * (`/orders/<ref>/<gesto>/`), com a base que o servidor mandou na ação: chamar
+   * (`courier-dispatch`; depois de uma chamada sem resposta, `courier-dispatch-again`),
+   * cancelar a corrida antes da coleta (`courier-cancel`) e "Entregador voltou"
+   * (`courier-back`, que fecha a saída: entrega, dinheiro, troco e maquininha). A
+   * custódia da chamada (troco da gaveta, maquininha) vai no mesmo corpo do Gestor.
+   * A corrida se acompanha pelo SSE dos pedidos.
+   */
+  async function courier(ref: CourierGesture, custody: { change_out?: string; equipment?: string[] } = {}): Promise<boolean> {
+    const detail = options.detail.value;
+    const offered = detailAction(detail, ref);
+    if (!detail || !offered?.enabled || busy.value) return false;
+    busy.value = true;
+    const path = `/api/v1/backstage/orders/${encodeURIComponent(detail.ref)}/${ref}/`;
+    const payload = { ...offered.payload_schema, ...custody };
+    try {
+      await action.call(path, { body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) } });
+      lastAttempt = null;
+      toast.success(COURIER_GESTURE_COPY[ref].done);
+      await options.refresh();
+      return true;
+    } catch (error) {
+      toast.error(`${httpErrorMessage(error, COURIER_GESTURE_COPY[ref].failed)} Confira a encomenda e tente de novo.`);
+      await options.refresh();
+      return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   function dismissManagerChallenge() {
     managerChallenge.value = null;
   }
 
-  return { busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, comment, dismissManagerChallenge };
+  return {
+    busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, comment, dismissManagerChallenge,
+    courierDispatch: (custody: { change_out?: string; equipment?: string[] } = {}) => courier("courier-dispatch", custody),
+    courierDispatchAgain: () => courier("courier-dispatch-again"),
+    courierCancel: () => courier("courier-cancel"),
+    courierBack: () => courier("courier-back"),
+  };
 }

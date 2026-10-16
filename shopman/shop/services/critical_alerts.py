@@ -1,4 +1,4 @@
-"""Durable critical email paging, debounced by type; unknown delivery is fenced."""
+"""Durable critical email paging, debounced by type + order; unknown delivery is fenced."""
 import logging
 from datetime import timedelta
 
@@ -12,6 +12,14 @@ from shopman.shop.directives import NOTIFICATION_SEND
 from shopman.shop.notifications import notify
 
 logger = logging.getLogger(__name__)
+
+
+def _debounce_key(alert) -> str:
+    # A trava é por tipo + pedido: o segundo pedido com o mesmo problema é outro
+    # aviso, e some se a chave for só o tipo. Alerta sem pedido (backend fora,
+    # loja do iFood fechada) é do sistema inteiro, e fica por tipo.
+    order_ref = str(getattr(alert, "order_ref", "") or "").strip()
+    return f"{alert.type}:{order_ref}" if order_ref else alert.type
 
 
 def enqueue(alert):
@@ -28,7 +36,7 @@ def enqueue(alert):
         return None
     with transaction.atomic():
         receipt, created = IdempotencyKey.objects.get_or_create(
-            scope="operator_critical_email", key=alert.type,
+            scope="operator_critical_email", key=_debounce_key(alert),
             defaults={"status": "in_progress", "expires_at": None},
         )
         receipt = IdempotencyKey.objects.select_for_update().get(pk=receipt.pk)

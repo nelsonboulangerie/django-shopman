@@ -495,7 +495,8 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             required=False,
             widget=UnfoldBooleanSwitchWidget,
             help_text=(
-                "Libera a confirmação visual do ponto de entrega no checkout. "
+                "Libera a confirmação visual do ponto de entrega no checkout da loja "
+                "online e no endereço de entrega do PDV. "
                 "Começa desligado: ligue primeiro para um canário e, se houver "
                 "regressão, desligue este controle para o rollback imediato."
             ),
@@ -717,6 +718,27 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         max_value=100,
         widget=UnfoldAdminIntegerFieldWidget,
         help_text="Quantos carimbos completam uma cartela. Aplica-se às novas contas de fidelidade.",
+    )
+    fields["defaults_delivery_courier_reminder_enabled"] = forms.BooleanField(
+        label="Lembrar de chamar o entregador",
+        required=False,
+        initial=True,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=(
+            "Temporário, até o sistema ter histórico para chamar sozinho. No Gestor de pedidos, "
+            "a entrega da casa em preparo sem entregador chamado ganha um aviso com o botão "
+            "Chamar entregador. Nunca vale para entrega do iFood."
+        ),
+    )
+    fields["defaults_delivery_courier_reminder_minutes"] = forms.IntegerField(
+        label="Minutos de preparo antes do lembrete",
+        required=False,
+        min_value=1,
+        max_value=240,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text=(
+            "Conta do início do preparo (o primeiro Iniciar da Cozinha). Em branco = 10."
+        ),
     )
     fields["defaults_stock_alert_cooldown_minutes"] = forms.IntegerField(
         label="Intervalo entre avisos do mesmo alerta (min)",
@@ -1516,6 +1538,15 @@ class ShopForm(forms.ModelForm):
             for field, key, _default in OPERATOR_CAPACITY_FIELDS:
                 self.fields[field].initial = capacity.get(key)
 
+        if self._has("defaults_delivery_courier_reminder_enabled"):
+            delivery = defaults.get("delivery") if isinstance(defaults.get("delivery"), dict) else {}
+            reminder = (
+                delivery.get("courier_reminder") if isinstance(delivery.get("courier_reminder"), dict) else {}
+            )
+            self.fields["defaults_delivery_courier_reminder_enabled"].initial = reminder.get("enabled", True) is not False
+            # Mostra o GRAVADO; ausente fica em branco (= 10, dito na ajuda).
+            self.fields["defaults_delivery_courier_reminder_minutes"].initial = reminder.get("minutes")
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             cooldown = stock_alerts.get("cooldown_minutes")
@@ -2121,6 +2152,24 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("operator_capacity", None)
 
+        if self._has("defaults_delivery_courier_reminder_enabled"):
+            delivery = dict(defaults.get("delivery") if isinstance(defaults.get("delivery"), dict) else {})
+            reminder = {}
+            if not self.cleaned_data.get("defaults_delivery_courier_reminder_enabled"):
+                reminder["enabled"] = False
+            minutes = self.cleaned_data.get("defaults_delivery_courier_reminder_minutes")
+            if minutes is not None:
+                reminder["minutes"] = int(minutes)
+            # Ligado e sem minutos é o padrão: não grava nada (ausente = ligado, 10).
+            if reminder:
+                delivery["courier_reminder"] = reminder
+            else:
+                delivery.pop("courier_reminder", None)
+            if delivery:
+                defaults["delivery"] = delivery
+            else:
+                defaults.pop("delivery", None)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             stock_alerts = dict(stock_alerts)
@@ -2443,6 +2492,16 @@ _ORDERING_FIELDSETS = (
             )
             + _defaults_pickup_admin_rows(),
             "description": "Slots padrão de retirada e janela máxima para encomendas.",
+        },
+    ),
+    (
+        "Lembrete de chamar o entregador (temporário)",
+        {
+            "fields": (("defaults_delivery_courier_reminder_enabled", "defaults_delivery_courier_reminder_minutes"),),
+            "description": (
+                "Vale até o sistema ter histórico de preparo e de chegada do entregador para chamar "
+                "sozinho, durante o preparo. Depois disso este lembrete sai."
+            ),
         },
     ),
     (

@@ -22,11 +22,11 @@ const difference = computed(() => receiptLineDifference(props.preview.line));
 const unit = computed(() => props.preview.purchaseUnitLabel || props.preview.material.unit);
 const consequence = computed(() => receiptDifferenceConsequence(props.preview));
 const reasonOptions = RECEIPT_DIFFERENCE_REASONS.map((reason) => ({ value: reason, label: reason }));
-const chosen = computed(() =>
-  (RECEIPT_DIFFERENCE_REASONS as readonly string[]).includes(props.preview.line.lineNote.trim())
-    ? props.preview.line.lineNote.trim()
-    : undefined,
-);
+type DifferenceReason = (typeof RECEIPT_DIFFERENCE_REASONS)[number];
+const chosen = computed<DifferenceReason | undefined>(() => {
+  const note = props.preview.line.lineNote.trim();
+  return RECEIPT_DIFFERENCE_REASONS.find((reason) => reason === note);
+});
 
 function signed(value: number): string {
   const text = formatQty(Math.abs(value), unit.value);
@@ -35,36 +35,36 @@ function signed(value: number): string {
 </script>
 
 <template>
-  <div v-if="difference" class="space-y-3 rounded-md border border-warning/40 bg-warning/5 p-3">
-    <dl class="grid grid-cols-3 overflow-hidden rounded-md border border-border bg-card text-center">
-      <div class="p-2">
-        <dt class="text-xs text-muted-foreground">Nota</dt>
-        <dd class="mt-0.5 text-lg font-semibold tabular-nums">{{ formatQty(difference.invoiceQty, unit) }}</dd>
-      </div>
-      <div class="border-x border-border p-2">
-        <dt class="text-xs font-semibold text-warning">Chegou</dt>
-        <dd class="mt-0.5 text-lg font-semibold tabular-nums">{{ formatQty(difference.arrivedQty, unit) }}</dd>
-      </div>
-      <div class="p-2">
-        <dt class="text-xs text-muted-foreground">Diferença</dt>
-        <dd class="mt-0.5 text-lg font-semibold tabular-nums" :class="difference.difference < 0 ? 'text-destructive' : 'text-warning'">
-          {{ signed(difference.difference) }}
-        </dd>
-      </div>
-    </dl>
-    <div>
-      <p class="text-xs font-medium text-muted-foreground">Por quê?</p>
-      <UiRadioGroup
-        class="mt-1 grid-cols-2"
-        label="Motivo da diferença"
+  <NuxtCard v-if="difference" variant="soft" data-receipt-difference>
+    <div class="space-y-3">
+      <dl class="grid grid-cols-3 overflow-hidden rounded-md border border-border bg-card text-center">
+        <div class="p-2">
+          <dt class="text-xs text-muted-foreground">Nota</dt>
+          <dd class="mt-0.5 text-base font-semibold tabular-nums">{{ formatQty(difference.invoiceQty, unit) }}</dd>
+        </div>
+        <div class="border-x border-border p-2">
+          <dt class="text-xs font-semibold text-warning">Chegou</dt>
+          <dd class="mt-0.5 text-base font-semibold tabular-nums">{{ formatQty(difference.arrivedQty, unit) }}</dd>
+        </div>
+        <div class="p-2">
+          <dt class="text-xs text-muted-foreground">Diferença</dt>
+          <dd class="mt-0.5 text-base font-semibold tabular-nums" :class="difference.difference < 0 ? 'text-destructive' : 'text-warning'">
+            {{ signed(difference.difference) }}
+          </dd>
+        </div>
+      </dl>
+      <NuxtRadioGroup
+        legend="Por quê?"
+        variant="card"
         :model-value="chosen"
-        :options="reasonOptions"
+        :items="reasonOptions"
+        data-receipt-difference-reason
         @update:model-value="emit('reason', String($event))"
       />
+      <p v-if="consequence" class="flex items-start gap-1.5 text-xs text-muted-foreground">
+        <Icon name="lucide:send" class="mt-0.5 size-3.5 shrink-0" />
+        {{ consequence }}
+      </p>
     </div>
-    <p v-if="consequence" class="flex items-start gap-1.5 text-xs text-muted-foreground">
-      <Icon name="lucide:send" class="mt-0.5 size-3.5 shrink-0" />
-      {{ consequence }}
-    </p>
-  </div>
+  </NuxtCard>
 </template>

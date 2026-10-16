@@ -387,6 +387,8 @@ class CommitService:
             "recipient",
             "gift_message",
             "gift_hide_values",
+            # Comanda do PDV que nasceu de uma transferência: de qual comanda veio.
+            "transferred_from",
         ):
             if key in session_data:
                 order_data[key] = session_data[key]
@@ -452,22 +454,33 @@ class CommitService:
         if order is None:  # 5 colisões seguidas de ref: praticamente impossível
             raise last_exc  # type: ignore[misc]
 
+        # Uma ida ao banco para as linhas: o laço monta os OrderItem e o
+        # bulk_create grava tudo num INSERT. Antes era um create por linha,
+        # N INSERTs dentro da transação que segura o lock da Session (e do
+        # Customer); o Postgres atribui os ids na ordem da lista, como no
+        # laço, e a UniqueConstraint(order, line_id) continua estourando
+        # igual. OrderItem não tem save() custom nem receiver de post_save.
+        order_items = []
         for item in session.items:
             # Usa line_total_q existente ou calcula se não existir
             line_total = item.get("line_total_q")
             if line_total is None:
                 line_total = monetary_mult(Decimal(str(item["qty"])), item.get("unit_price_q", 0))
 
-            OrderItem.objects.create(
-                order=order,
-                line_id=item["line_id"],
-                sku=item["sku"],
-                name=item.get("name", ""),
-                qty=Decimal(str(item["qty"])),
-                unit_price_q=item.get("unit_price_q", 0),
-                line_total_q=int(line_total),
-                meta=item.get("meta", {}),
+            order_items.append(
+                OrderItem(
+                    order=order,
+                    line_id=item["line_id"],
+                    sku=item["sku"],
+                    name=item.get("name", ""),
+                    qty=Decimal(str(item["qty"])),
+                    unit_price_q=item.get("unit_price_q", 0),
+                    line_total_q=int(line_total),
+                    meta=item.get("meta", {}),
+                )
             )
+
+        OrderItem.objects.bulk_create(order_items)
 
         # Create event (via emit_event para seq automático)
         order.emit_event(

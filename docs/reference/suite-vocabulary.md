@@ -58,12 +58,18 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **Validar** | fica no PDV, com precedente explícito (o Odoo usa assim) | 18/09 | — |
 | **Finalizar** | o último passo do Fechamento, e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
 | **Saída** | a estação do **KDS** por onde o pedido pronto sai (entregar no balcão, despachar a entrega). A mesma palavra em dois apps mandava gente para a tela errada; desde 03/10 a tela de fechamento de lote da Produção se chama **Fechamento**, e *Expedição* é só o posto da saída dos pedidos (`workstation_vocabulary.py`). O `type` gravado continua `expedition` (identificador), e a estação do seed passou de `expedicao` para `saida` por migração (`backstage.0076`), com redirect do endereço antigo no kds-nuxt | 26/09 | — |
-| **dividir · transferir · juntar** | os três atos da comanda. *Mesclar* fora, por técnico demais | 18/09 | `presentation/moveLines.ts` |
+| **estação** (navegação da Cozinha) | cada item da navegação da Cozinha é uma estação da casa pelo NOME do cadastro (Cafés, Lanches, Encomendas), levando à sua bancada (`/<ref>`), com "Estação · N pendências"; a lista vem do índice do servidor. A **Saída** leva ao Gestor. O título da bancada é o nome da estação. ⛔ item ou título genérico *Preparo*: estação é um posto específico, não existe estação chamada "Preparo" | 09/10 | `kds-nuxt/tests/sections.test.ts` + `useKdsShell.test.ts` |
+| **Transferir** | a AÇÃO ÚNICA de levar itens de uma comanda para outra (dono, N=1, 13/10/2026), sem modos: some "Outra comanda / Comanda nova / Juntar comandas" e nada de Juntar ou Separar como botão. O diálogo "Transferir" tem um campo, **"Para qual comanda?"**, que recebe o leitor, a digitação e a escolha na lista das comandas em uso; a ação padrão, já escolhida ao abrir, é a comanda nova pré-nomeada (`13-2`, editável ali). Vão os itens marcados, ou todos sem marca. O botão diz o RESULTADO: **"Levar 3 itens para a #12"** · **"Levar tudo para a #12 e liberar a #13"** · **"Separar 2 itens na comanda nova 13-2"** (*Separar* só nessa frase de resultado). A origem que fica vazia é liberada sozinha, com Desfazer (T2=1). A **mesa do Salão** também é destino (M=1): a ocupada leva à comanda dela (**"Levar 3 itens para a Mesa 4 (#12)"**); a livre abre a comanda nova já nela (**"Separar 2 itens na comanda nova 13-2 (Mesa 5)"**), pelas listas "Comandas em uso" e "Mesas livres". O rastro: selo **"Transf. da #13"** na comanda nova, texto inteiro **"Transferida da comanda #13"** na dica e no detalhe do pedido (T1=1). **Dividir conta** é só pagar em partes e mora SÓ no Pagamento; o ⋯ da comanda fica só com Liberar (na folha do tablet e do celular, sem o pé, Transferir segue no ⋯). ⛔ *Juntar comandas*, *Outra comanda / Comanda nova* como modos, *Separada da #13*, *Veio da #13*; ⛔ *dividir* para mover itens; *Mesclar* fora, por técnico demais | 10/10 · 13/10 | `presentation/moveLines.ts`, `tests/presentation.test.ts`, `PosMoveLinesDialog.test.ts` |
+| **Envio: Auto · Manual** | o modo do envio à cozinha no cabeçalho da comanda do PDV: um controle de dois botões ("Envio" + Auto · Manual) que grava o interruptor das estações desta comanda (o mesmo de Ajustes › Envio à cozinha; vale para todas as comandas). O QUANDO do Auto (ao sair da comanda ou depois de 90 s parada) e o alcance moram na dica. ⛔ *envio automático: desligado*, *automático desligado* | 13/10 | `presentation/ticketColumn.ts`, `tests/ticketColumn.test.ts` |
+| **Tudo pronto** | o selo da comanda no quadro do PDV quando a cozinha terminou TUDO o que foi disparado (todo ticket vivo no Pronto; o cancelado não conta). A comanda sobe para o topo e o balcão ouve o toque. Selo `soft` com o sino; no cartão estreito fica só o sino, com "Tudo pronto" na dica e no aria. Só vale para a comanda inteira: parte pronta não tem selo de comanda, e o "Pronto" segue sendo o de cada ticket, no cartão da cozinha da linha. ⛔ *Pronta* | 13/10 | `components/PosTabBoard.vue`, `tests/components/PosTabBoard.test.ts` |
 | **item = unidade** | nunca linha, em nenhuma superfície | deliberado antes, reafirmado 18/09 | — |
 | **Abertura · Fechamento · Qualidade** | as abas do ciclo do lote na Produção (`/`, `/close`, `/quality`), depois de Planejamento e Preparação. Status Planejada · Aberta · Fechada · Cancelada (fonte única: `WorkOrder.Status`); quantidades planejado · previsto · realizado; indicadores perda e aproveitamento. ⛔ *Produzido* como rótulo de `started` ou `finished`; ⛔ *Estornar* para o `void` (é *Cancelar*); ⛔ *Rendimento* como KPI (fica com a ficha e a massa). Fora da Produção, qualificar: *abertura de lote*, *fechamento de lote*. Não mexe na abertura e no fechamento do caixa nem na Saída do KDS | 03/10 | trava: `production-nuxt/tests/lifecycleVocabulary.test.ts` + `test_vocabulario_abertura_fechamento.py` |
 | **Iniciar preparo** (Fila do Gestor) | fica para o pedido sem estação: é esse gesto que cria os tickets do KDS. Nada muda no código | 04/10 | — |
 | **Pronto** (Cozinha) | o ato de terminar o ticket, em todo tamanho: "Pronto W07" no card do tablet e do desktop (`cardActionLabel`) e no polegar do celular (`thumbActionLabel`). O desfazer é **Desfazer o Pronto**, e o aviso de item cancelado manda tocar em **Recebi o cancelamento** para poder marcar Pronto. ⛔ *finalizar* em qualquer flexão (*Finalizar preparo*, *finalizado*, *finalização*) no kds-nuxt e nas mensagens de `services/kds.py`. A Produção mantém o seu *finalizar* de lote | 04/10 | trava: `kds-nuxt/tests/prontoVocabulary.test.ts` + `shop/tests/test_kds_vocabulario_pronto.py` |
 | **+ na barra do celular** (Marketing) | Campanhas e Ofertas mantêm o "+" (Nova campanha, Criar oferta) na barra de 56px, como ação principal da tela. A regra do Atualizar não muda. Nada muda no código | 04/10 | — |
+| **barra lateral** | a navegação do app na lateral, nos três estados (aberta, compacta, oculta): "Compactar a barra lateral", "Ocultar a barra lateral", "Mostrar a barra lateral", também no menu do operador e na ajuda de atalhos. ⛔ **"rail"** em texto de tela ou `aria-label`; no código `rail` continua sendo o nome (`SUITE_RAIL_*`, `data-suite-rail`) | 08/10 | trava: 4ª regra de `guardrails.vocabulary.test.ts` |
+| **gaveta** · **barra inferior** | no celular, a **gaveta** é a barra lateral aberta pelo ☰: o menu COMPLETO do app. A **barra inferior** é o menu RÁPIDO, de 3 a 5 vagas; uma delas é **Mais** (abre a gaveta) só quando sobra seção. Regra única para todo app, exceção só declarada com motivo | 08/10 | `quickBarLayout`/`quickBarProblems` (`operator-kit/app/presentation/suiteChrome.ts`), README do kit, "Barra lateral e barra inferior" |
+| **Seção · N pendências** | a descrição de contagem de uma seção, a MESMA na barra lateral, na gaveta e na barra inferior: "Saída · 2 pendências", "Pedidos · 1 pendência", ou "Seção · estado" ("Canais · 1 desligado"). ⛔ contagem por extenso própria de cada app no item de navegação ("Saída, 2 pedidos na Saída") | 08/10 | `sectionDescription` (`suiteChrome.ts`), testes do kit |
 | **Screen** (código) · **tela** (categoria) | a coisa. `display` é **papel** (`Channel.CommercePolicy.DISPLAY`, `SubjectType.DISPLAY`); `painel` é dashboard; `board` sai do vocabulário de tela | 24/09 | [`WP-TELAS-DE-PAREDE.md`](../plans/WP-TELAS-DE-PAREDE.md) |
 
 ---
@@ -118,6 +124,40 @@ Duas exceções legítimas, e só duas:
 - **O Painel da TV** diz só **"sem sinal"** — a palheta é curta porque a palheta é curta. Mas
   então é só isso, sem uma segunda redação no `title`.
 
+### 2.4 Mensagens do Gestor na voz do dono (09/10/2026)
+
+Frases aprovadas pelo dono, no lugar das que o #1557 introduziu e ele recusou. A recusada
+está na trava `surfaces/orders-nuxt/tests/vocabularioFechado.guardrails.test.ts`.
+
+| Situação | Fica | Saiu |
+|---|---|---|
+| Gesto que não chegou ao servidor (sem motivo do servidor) | **"WEB-6 continua novo: o Aceitar não chegou. Tente de novo."** Forma geral: `<REF> continua <situação>: o <gesto> não chegou. Tente de novo.`, com a referência, a situação (`status_label`, inicial minúscula; "Saiu para entrega" é verbo e entra como nome do estado: `H58 continua em “Saiu para entrega”`, nunca apelido como "na rua") e o nome do botão vindos da projeção. Sem referência ou situação: `O <gesto> não chegou. Tente de novo.` | "Não deu para concluir “Aceitar”. Tente de novo." · "H58 continua na rua" |
+| Lote em que alguns pedidos falharam | **"N pedidos ficaram como estavam. Cada cartão diz por quê."** · singular **"1 pedido ficou como estava. O cartão diz por quê."** | "N pedidos não foram atualizados. O motivo está em cada cartão." |
+| Os que andam sem precisar do operador (fim da Fila) | **"Seguem sozinhos: 1 na cozinha, 2 na rua"** | "Sem pedir você: …" |
+| Selo ao vivo sem tempo real (poll) | **"Atualiza sozinho a cada 30 s"**, e a mesma forma nos outros apps: PDV "a cada 60 s", KDS "a cada 15 s", Marketing "a cada 1 min" (trava em `surfaces/marketing-nuxt/tests/operatorLanguage.test.ts`) |  "Atualiza a cada 30 s" |
+
+### 2.5 Jargão de sistema não é texto de tela (dono, 09/10/2026)
+
+O dono leu *"Conectando ao Core de compras"* no Compras e a frase de vincular o posto
+(*"Escolha uma vez. Depois ele abre direto no trabalho deste posto e pede só o PIN de
+quem for operar."*) e recusou as duas: a primeira é jargão, a segunda é prolixa.
+
+| Situação | Fica | Saiu |
+|---|---|---|
+| Compras carregando | **"Carregando as compras…"** | "Conectando ao Core de compras" |
+| Compras sem dado | **"Não foi possível carregar as compras"** · "Insumos, fornecedores e custos não carregaram. Toque em Atualizar para tentar de novo." | "Compras sem conexão operacional" · "Conecte o backend para …" |
+| Vincular o dispositivo ao posto | **"Escolha uma vez. Depois, o dispositivo abre direto no posto e só pede o PIN."** | a frase acima |
+| Postos, no Gestor | **"Onde cada dispositivo fica. Vinculado a um posto, ele abre direto ali e só pede o PIN."** | "… abre direto no trabalho do posto e pede só o PIN de quem for operar." |
+| Conflito de edição | **"Alguém mudou as coleções enquanto você editava"** (e a rotação, a configuração) · "A nota gravada é: …" / **"Usar a nota gravada"** | "… mudou no servidor" · "Usar texto do servidor" |
+| Documento de impressão que não veio | **"As vias não ficaram prontas."** · "A DANFE não ficou pronta." · "A etiqueta não carregou." | "O servidor não montou …" |
+
+A trava é `surfaces/operator-kit/tests/guardrails.jargon.test.ts`: recusa em texto de
+tela (tag, atributo, literal de ligação e literal de script com espaço) *Core, backend,
+API, endpoint, payload, projection, SSE, token, webhook, Django, Nuxt, BFF, JSON, HTTP,
+directive, servidor* e os nomes de pacote (*offerman, stockman, craftsman, orderman,
+guestman, doorman, payman, buyman, fiscalman, cashman*). "Projeção" em português fica: é
+a tela de previsão do B.I.
+
 ---
 
 ## 3. PDV
@@ -137,7 +177,11 @@ Duas exceções legítimas, e só duas:
 |---|---|
 | **validar** | cobra, chuta a gaveta, manda à cozinha e emite a NFC-e (na encomenda paga antes, só o recibo: a nota sai na retirada ou na entrega). ⛔ Fica assim por decisão do dono (precedente Odoo) — e nenhuma frase da tela pode chamar isso de *finalizar* |
 | **enviar à cozinha** | manda os itens para o KDS |
-| **transferir · dividir · juntar** | os três atos da comanda |
+| **Transferir** | levar itens para outra comanda, em uso ou nova (`13-2`); a que fica vazia é liberada. Selo **Transf. da #13** na comanda nova |
+| **dividir conta** | pagar em partes, só no Pagamento (nunca mover itens) |
+| **Envio: Auto · Envio: Manual** | o modo do envio à cozinha da estação: vai sozinho, ou só no "Enviar à cozinha" |
+| **Tudo pronto** | o selo da comanda que a cozinha terminou inteira; parte pronta não tem selo de comanda |
+| **marcados** | o alvo das ações da comanda (dono, 13/10/2026): tocar um item marca só ele; a caixa soma. O título conta ITENS ("5 itens marcados"), e os botões dizem o alcance: **Enviar marcados**, **Transferir marcados**. Sem nada marcado: **Enviar à cozinha** (com a contagem) e **Transferir itens** valem para a comanda inteira. ⛔ *3 linhas marcadas* |
 | **liberar** | devolve a comanda ao balcão |
 | **fechar caixa** | encerra o turno de custódia |
 
@@ -182,6 +226,15 @@ ser kg.
 | objeto | **pedido** · **item** · **estação** · **comanda** · **Saída** (a estação por onde o pedido sai) |
 | atos | **avançar** · **pronto** · **visto** · **recebi o cancelamento** |
 | grandezas | **item = unidade** · **pedido** — ⛔ "volumes" não é grandeza de nada |
+
+**Mudança no que já está na cozinha** (dono, 10/10/2026: "com alarde, a cada mudança. Jamais
+silenciosamente!"). O card afetado diz, acima do código, **Mudou** (ou **Cancelado**, o pedido
+inteiro) e, numa caixa vermelha, uma linha por mudança: **Cancelado: 1× Croissant** ·
+**Pão de queijo: agora 1, eram 3** · **Observação nova em Tapioca: sem glúten** ·
+**Tapioca: observação retirada** · **Tapioca: enviado de novo** · **Era a comanda Mesa 5**;
+o pedido inteiro: **Pedido cancelado às 22:01. Não preparar.** O gesto de ciência é
+**Recebi o cancelamento** quando algo saiu e **Visto** no resto (§2.1). Fonte:
+`backstage/projections/kds.py` (`_item_change`) e `kds-nuxt/app/presentation/board.ts`.
 
 ---
 

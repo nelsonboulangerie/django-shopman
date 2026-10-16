@@ -1,6 +1,7 @@
 # ADR-021 — B.I. cross-suite: agregação é leitura, o ledger segue dono do fato
 
-**Status:** Aceito (dono, 2026-08-14)
+**Status:** Aceito
+**Decisão:** dono, 2026-08-14
 **Data:** 2026-08-14
 **Escopo:** `shopman/backstage` (módulo de B.I.: projections, services, api, models de agregado derivado), `surfaces/` (superfície de gestor), `shopman/shop` (nenhuma mudança de contrato), packages core (nenhuma mudança nesta ADR)
 **Reverte parcialmente:** ADR-017 §8, `docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md` §9, `docs/plans/QC-FORNADA.md` §7
@@ -29,7 +30,7 @@ a suite tem **fontes de fato duráveis e bem modeladas** em todos os domínios:
 | `craftsman.WorkOrderEvent` | ledger de produção; o `finished` carrega a partição de qualidade (ADR-017) | append-only, `seq` único por WO, `idempotency_key` |
 | `craftsman.WorkOrderItem` | linhas OUTPUT/WASTE com `quality_grade_ref`, `quality_defect_ref`, `batch_ref` | indexado por grau/defeito × tempo |
 | `stockman.Move` | ledger de estoque (MAKE, SELL, WASTE…) | imutável por guard (update/delete levantam) |
-| `stockman.Batch` | validade + não conformidade congelada no lote | snapshot (constituição §3.3) |
+| `stockman.Batch` | validade + não conformidade congelada no lote | snapshot ([Constituição §5](../constitution.md#5-regras-de-modelagem)) |
 | `orderman.Order`/`OrderItem` | vendas: `total_q`, timestamps por status, canal; descontos em `snapshot.pricing` e `OrderItem.meta._disc` | campos selados por `ImmutabilityError` |
 | `cashman.Entry` | livro-caixa do turno: fundo, venda (efeito em dinheiro), acerto de entrega, sangria/suprimento, devolução, troco do entregador, contagem cega como lançamento (ADR-022; substituiu `backstage.CashShift`/`CashMovement` em 2026-08-19) | append-only por guard (update/delete levantam); sinal por tipo em CheckConstraint |
 | `backstage.DayClosing.data` | consolidação diária (produção, qualidade, caixa, reconciliação; write-offs após C4) | `unique(date)`, append-only na prática |
@@ -61,7 +62,8 @@ Corolários:
 
 ### 2. O B.I. mora no backstage, como módulo — não é um 4º app Django nem um package
 
-Aplicando a constituição §8.3: não é core de domínio (não tem pergunta canônica própria — é
+Aplicando a [Constituição C5](../constitution.md#c5-uma-decisão-tem-um-dono): não é core de
+domínio (não tem pergunta canônica própria — é
 leitura das respostas dos outros), não é plugin de domínio (é cross-domínio por definição), é
 **conveniência de framework** — exatamente o que o `backstage` já é para o operador. O
 `backstage` já é o precedente de leitor cross-suite (o fechamento lê pedidos, estoque,
@@ -103,7 +105,8 @@ O fato nasce como model do backstage (o dono do fato é a operação de produç�
 não o `craftsman` genérico), ligado à ordem por string ref (ADR-004). Precedente direto:
 `KDSTicket` — fato operacional de superfície que o backstage já possui. Rejeitado: novos
 kinds em `WorkOrderEvent` (`oven_in`/`oven_out`) — poria vocabulário de padaria num core
-genérico (constituição §2.6) e exigiria migração em package core sem necessidade comprovada
+genérico ([Constituição §5](../constitution.md#5-regras-de-modelagem)) e exigiria migração
+em package core sem necessidade comprovada
 (CLAUDE.md, Core é Sagrado). Se um dia outra instância precisar de etapas de processo
 genéricas no craftsman, isso será uma ADR própria com 2+ consumidores reais.
 
@@ -169,7 +172,9 @@ nos relatórios operacionais do production-nuxt.
 - [ADR-011 — Fórmula sem FormulaPlan (um fato, um dono)](adr-011-formula-and-cashshift.md)
 - [ADR-012 — Contrato headless de superfície](adr-012-headless-surface-contract.md) · [ADR-014 — Corte data/presentation](adr-014-surface-data-presentation-cut.md)
 - [ADR-017 §8 — "Os números não vão para um B.I."](adr-017-quality-as-production-outcome.md) (revertido por esta ADR)
-- [Constituição Semântica](../constitution.md) — §2.5, §2.6, §8.3
+- [Constituição v1 (histórica)](../_archive/constitution-v1.md) — bases históricas citadas acima
+- [Constituição vigente C5](../constitution.md#c5-uma-decisão-tem-um-dono)
+- [Constituição vigente §5](../constitution.md#5-regras-de-modelagem)
 - [docs/plans/BI-PLAN.md](../plans/BI-PLAN.md) — plano de execução
 - [docs/plans/QC-FORNADA.md §7](../plans/QC-FORNADA.md) · HARDENING-PLAN §9 (doutrina revertida)
 - [Contrato da superfície Marketing](../reference/marketing-surface-contract.md) — precedente Nuxt operacional realizado

@@ -1,5 +1,5 @@
 import type { POSAddressAutocompleteProjection } from "~/types/pos";
-import type { GoogleNamespace, GooglePlacesLibrary } from "~/types/googleMaps";
+import type { GoogleMapsLibrary, GoogleNamespace, GooglePlacesLibrary } from "~/types/googleMaps";
 
 declare global {
   interface Window {
@@ -71,5 +71,17 @@ export function usePosGoogleMaps(capability: Ref<POSAddressAutocompleteProjectio
     return window.__shopman_pos_maps_loading;
   }
 
-  return { isAvailable, ensureLoaded };
+  /**
+   * A biblioteca do MAPA, para a confirmação do ponto de entrega. Mesmo bootstrap
+   * (e a mesma chave) do autocompletar; a CSP do PDV já libera o host
+   * (`maps.googleapis.com`) e as imagens dos ladrilhos (`img-src https:`).
+   */
+  async function loadMaps(): Promise<GoogleMapsLibrary> {
+    await ensureLoaded();
+    const maps = await window.google?.maps?.importLibrary?.("maps");
+    if (!maps?.Map) throw new Error("Biblioteca do mapa indisponível");
+    return maps;
+  }
+
+  return { isAvailable, ensureLoaded, loadMaps };
 }

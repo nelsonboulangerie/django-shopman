@@ -218,7 +218,7 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
     catchall_map = defaultdict(list)
 
     for inst in instances:
-        col_ids = set(inst.collections.values_list("id", flat=True))
+        col_ids = {collection.pk for collection in inst.collections.all()}  # usa o prefetch
         if not col_ids:
             catchall_map[inst.type].append(inst)
         else:
@@ -325,7 +325,7 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
     type_col_map = defaultdict(list)
     catchall_map = defaultdict(list)
     for inst in instances:
-        col_ids = set(inst.collections.values_list("id", flat=True))
+        col_ids = {collection.pk for collection in inst.collections.all()}  # usa o prefetch
         if not col_ids:
             catchall_map[inst.type].append(inst)
         else:
@@ -390,7 +390,7 @@ def preview_order_for_instance(order, instance) -> list[dict]:
     type_col_map = defaultdict(list)
     catchall_map = defaultdict(list)
     for candidate in instances:
-        collection_ids = set(candidate.collections.values_list("id", flat=True))
+        collection_ids = {collection.pk for collection in candidate.collections.all()}  # usa o prefetch
         if collection_ids:
             for collection_id in collection_ids:
                 type_col_map[(candidate.type, collection_id)].append(candidate)
@@ -420,15 +420,19 @@ def preview_order_for_instance(order, instance) -> list[dict]:
     return preview
 
 
-def unfire_lines(*, session_key: str, line_ids: list[str]) -> dict:
-    """Cancel the kitchen fire for specific lines, freeing them to re-fire."""
+def unfire_lines(*, session_key: str, line_ids: list[str], fractions: dict | None = None) -> dict:
+    """Cancel the kitchen fire for specific lines, freeing them to re-fire.
+
+    ``fractions``: cancelar só parte de uma linha (a conta diminuiu); ver
+    ``adapters.kds.unfire_session_lines``.
+    """
     from django.db import transaction
 
     from shopman.shop.adapters import kds as kds_adapter
 
     with transaction.atomic():
         _lock_source_for_session(session_key)
-        return kds_adapter.unfire_session_lines(session_key, line_ids)
+        return kds_adapter.unfire_session_lines(session_key, line_ids, fractions)
 
 
 def _order_to_lines(order) -> list[dict]:
@@ -682,6 +686,31 @@ def close_open_tickets(order, *, actor: str) -> int:
     return count
 
 
+def kitchen_done_session_keys(session_keys) -> set[str]:
+    """As vendas (comanda ou pedido, por ``session_key``) cuja cozinha terminou.
+
+    A regra é uma só, e é a do pedido que vira READY: nenhum ticket aberto e ao
+    menos um no Pronto. Cancelado não conta (reprint, unfire, item retirado nunca
+    será concluído, e incluí-lo travaria o pronto para sempre); só cancelados é
+    nada produzido. A comanda pré-pagamento não tem pedido para mudar de status,
+    então quem pergunta por ela (o quadro do PDV, o painel de retirada) usa esta
+    mesma conta.
+    """
+    from shopman.shop.adapters import kds as kds_adapter
+
+    keys = [key for key in session_keys if key]
+    if not keys:
+        return set()
+    done: set[str] = set()
+    open_: set[str] = set()
+    for session_key, status in kds_adapter.get_ticket_statuses(keys):
+        if status == "done":
+            done.add(session_key)
+        elif status != "cancelled":
+            open_.add(session_key)
+    return done - open_
+
+
 def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id: int | None = None) -> bool:
     """
     Check if all KDS tickets are done and transition order to READY.
@@ -703,19 +732,8 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id
     janela (``order_undo``). Com ``auto_ready`` desligado, o pedido fica em
     preparo e o Gestor marca pronto à mão.
     """
-    from shopman.shop.adapters import kds as kds_adapter
-
-    tickets = kds_adapter.get_tickets(order)
-    if not tickets.exists():
+    if order.session_key not in kitchen_done_session_keys([order.session_key]):
         return False
-
-    # Cancelled não conta: um ticket cancelado (reprint/unfire, item retirado)
-    # jamais será concluído — incluí-lo travaria o auto-READY para sempre.
-    all_done = not tickets.exclude(status__in=["done", "cancelled"]).exists()
-    if not all_done:
-        return False
-    if not tickets.filter(status="done").exists():
-        return False  # só cancelados = nada foi produzido; nada a avançar
 
     if order.status == Order.Status.READY:
         return False
@@ -864,7 +882,17 @@ def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
     first_start = ticket.status == "pending"
     if first_start:
         ticket.status = "in_progress"
-        ticket.save(update_fields=["status"])
+        fields = ["status"]
+        if ticket.started_at is None:
+            # O marco do preparo mora no ticket: vale para a comanda ainda não paga
+            # (Session), que não tem ``Order.data`` onde gravar.
+            ticket.started_at = timezone.now()
+            ticket.started_by = str(actor or "")[:150]
+            ticket.open_tickets_at_start = (
+                ticket.__class__.objects.filter(status__in=OPEN_TICKET_STATUSES).exclude(pk=ticket.pk).count()
+            )
+            fields += ["started_at", "started_by", "open_tickets_at_start"]
+        ticket.save(update_fields=fields)
 
     order = source if isinstance(source, Order) else None
     if order is not None:
@@ -879,8 +907,9 @@ def _record_ticket_start(order, ticket, *, actor: str) -> None:
 
     Chave = ``str(ticket.pk)``, valor ``{at, by}``. Só o PRIMEIRO início conta
     (o recall reabre em preparo sem apagar). Comanda ainda não paga (``Session``)
-    não registra: o ticket dela muda de dono no commit e o registro não
-    sobreviveria sem um caminho próprio. Ver ``docs/reference/data-schemas.md``.
+    não registra aqui; o marco dela (e de todo ticket) mora no próprio ticket,
+    ``KDSTicket.started_at``/``started_by``, gravado em ``_start_ticket_locked``.
+    Ver ``docs/reference/data-schemas.md``.
     """
     data = dict(order.data or {})
     started = dict(data.get("kds_started") or {})
@@ -979,11 +1008,7 @@ def _reopen_ticket_locked(ticket, *, source, actor: str) -> bool:
     blocked = recall_block_reason(source)
     if blocked:
         raise TicketRecallBlocked(blocked)
-    ticket.status = "in_progress"
-    ticket.completed_at = None
-    ticket.completed_by = ""
-    ticket.completed_via = ""
-    ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
+    ticket.save(update_fields=ticket.undo_completion(actor=actor))
 
     order = source if isinstance(source, Order) else None
     if (
@@ -1019,9 +1044,61 @@ def _acknowledge_ticket_locked(ticket, *, source, actor: str) -> bool:
     if ticket.status != "cancelled" or ticket.acknowledged_at is not None:
         return False
     ticket.acknowledged_at = timezone.now()
-    ticket.save(update_fields=["acknowledged_at"])
+    ticket.acknowledged_by = str(actor or "")[:150]
+    ticket.save(update_fields=["acknowledged_at", "acknowledged_by"])
     logger.info("kds_ack ticket=%d session=%s actor=%s", ticket.pk, ticket.session_key, actor)
     return True
+
+
+def acknowledge_changes(ticket, *, cancelled_pks, known_ref: str, actor: str) -> dict:
+    """A estação deu Visto nas mudanças de um card vivo (decisão do dono, 10/10/2026).
+
+    Dá baixa nos tickets cancelados que o card resumia (os mesmos que travam o
+    Pronto em ``_complete_ticket_locked``) e regrava o nome com que a cozinha
+    conhece o pedido (``known_ref``). Só os cancelados da MESMA venda e da MESMA
+    estação, listados por quem tocou: um cancelamento que chegou depois do que a
+    tela mostrava continua pedindo Visto. Se o card caiu inteiro entre a leitura
+    e o toque, os cancelados que ele mostrava recebem a baixa do mesmo jeito (a
+    estação viu); o nome só se regrava em ticket aberto. Idempotente. Devolve
+    ``{"acknowledged": n, "renamed": bool}``.
+    """
+    from django.db import transaction
+
+    pks = {int(pk) for pk in (cancelled_pks or []) if str(pk).strip().lstrip("-").isdigit()}
+    with transaction.atomic():
+        source, ticket = _lock_source_then_ticket(ticket)
+        _ensure_source_due(source)
+        acknowledged = 0
+        if pks:
+            for cancelled in ticket.__class__.objects.select_for_update().filter(
+                pk__in=pks,
+                session_key=ticket.session_key,
+                kds_instance_id=ticket.kds_instance_id,
+                status="cancelled",
+                acknowledged_at__isnull=True,
+            ):
+                if _acknowledge_ticket_locked(cancelled, source=source, actor=actor):
+                    acknowledged += 1
+        renamed = False
+        fields: list[str] = []
+        known_ref = str(known_ref or "")[:150]
+        if known_ref and ticket.status in OPEN_TICKET_STATUSES and ticket.known_ref != known_ref:
+            ticket.known_ref = known_ref
+            fields.append("known_ref")
+            renamed = True
+        if ticket.status == "pending" and ticket.seen_at is None:
+            # O item que voltou com outra quantidade chega num ticket NOVO: quem deu
+            # Visto na mudança viu o pedido, e o aviso de pedido novo para junto.
+            ticket.seen_at = timezone.now()
+            ticket.seen_by = str(actor or "")[:150]
+            fields += ["seen_at", "seen_by"]
+        if fields:
+            ticket.save(update_fields=fields)
+    logger.info(
+        "kds_changes_seen ticket=%d session=%s acknowledged=%d renamed=%s actor=%s",
+        ticket.pk, ticket.session_key, acknowledged, renamed, actor,
+    )
+    return {"acknowledged": acknowledged, "renamed": renamed}
 
 
 def _lock_ticket_after_source(ticket):

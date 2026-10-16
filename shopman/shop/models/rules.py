@@ -27,7 +27,7 @@ class RuleConfig(models.Model):
     ref = models.CharField("código", max_length=80, unique=True)
     rule_path = models.CharField(
         "caminho da regra", max_length=200,
-        help_text="Dotted path to the rule class (e.g. shopman.shop.rules.pricing.EmployeeRule)",
+        help_text="Dotted path to the rule class (e.g. shopman.shop.rules.pricing.HappyHourRule)",
     )
     label = models.CharField("nome exibido", max_length=120)
     enabled = models.BooleanField("ativa", default=True)
@@ -108,7 +108,7 @@ class RuleConfig(models.Model):
         if not is_new:
             try:
                 old_path = RuleConfig.objects.values_list("rule_path", flat=True).get(pk=self.pk)
-            except RuleConfig.DoesNotExist:
+            except RuleConfig.DoesNotExist:  # silêncio-deliberado: pk sem linha no banco (fixture/race); não há path antigo e o save abaixo insere
                 pass
         super().save(*args, **kwargs)
         logger.warning(

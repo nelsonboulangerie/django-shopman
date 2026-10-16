@@ -35,7 +35,7 @@ import {
   roleLabel,
   setAnchor,
   splitDataUrl,
-  statusBadgeVariant,
+  statusBadgeColor,
   statusTone,
   stepsForPayload,
   stepsFromText,
@@ -163,9 +163,9 @@ describe("labels", () => {
     expect(statusTone("draft")).toBe("warning");
     expect(statusTone("published")).toBe("ok");
     expect(statusTone("superseded")).toBe("muted");
-    expect(statusBadgeVariant("draft")).toBe("warning");
-    expect(statusBadgeVariant("published")).toBe("success");
-    expect(statusBadgeVariant("superseded")).toBe("outline");
+    expect(statusBadgeColor("draft")).toBe("warning");
+    expect(statusBadgeColor("published")).toBe("success");
+    expect(statusBadgeColor("superseded")).toBe("neutral");
   });
 
   it("only the warning tone carries saturated color", () => {
@@ -466,6 +466,13 @@ describe("filterEntries", () => {
   it("bookQuery omits empty filters", () => {
     expect(bookQuery("", "", false)).toEqual({});
     expect(bookQuery(" pão ", "bread", true)).toEqual({ q: "pão", kind: "bread", archived: "1" });
+    expect(bookQuery("", "", false, {
+      withoutSku: true,
+      withDraft: true,
+      favorites: true,
+      sort: "name",
+      page: 2,
+    })).toEqual({ without_sku: "1", with_draft: "1", favorites: "1", sort: "name", page: "2" });
   });
 });
 

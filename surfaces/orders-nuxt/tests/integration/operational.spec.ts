@@ -47,9 +47,9 @@ test("SSE during notes draft preserves text and offers explicit same-field resol
     headers: { "Idempotency-Key": crypto.randomUUID() }, data: { ...action.payload_schema, notes: "Outra estação" },
   });
   expect(response.status()).toBe(200);
-  await expect(page.getByText("No servidor: Outra estação")).toBeVisible();
+  await expect(page.getByText("A nota gravada é: Outra estação")).toBeVisible();
   await expect(editor).toHaveValue("Rascunho preservado");
-  for (const name of ["Salvar nota", "Manter meu texto", "Usar texto do servidor"]) {
+  for (const name of ["Salvar nota", "Manter meu texto", "Usar a nota gravada"]) {
     const box = await page.getByRole("button", { name, exact: true }).boundingBox();
     expect.soft(box?.width, `${name}: largura`).toBeGreaterThanOrEqual(44);
     expect.soft(box?.height, `${name}: altura`).toBeGreaterThanOrEqual(44);
@@ -95,11 +95,11 @@ test("closed product A cannot hydrate the reopened panel for B", async ({ page }
     await delayed;
     await route.fulfill({ response });
   });
-  await page.getByRole("button", { name: "Ações de Produto laboratório", exact: true }).click();
+  await page.getByRole("button", { name: "Mais ações de Produto laboratório", exact: true }).click();
   await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
   await responseReady;
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Ações de Produto secundário", exact: true }).click();
+  await page.getByRole("button", { name: "Mais ações de Produto secundário", exact: true }).click();
   await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Produto secundário", exact: true })).toBeVisible();
   const finished = page.waitForResponse("**/api/v1/backstage/catalog/product/LAB-PROD/**");
@@ -148,11 +148,12 @@ test("cancel response loss retains the reason and reads the committed receipt", 
   });
   await page.goto(`/${lab.cancel_ref}`);
   await page.getByRole("button", { name: "Cancelar", exact: true }).click();
-  await page.getByRole("textbox", { name: "Motivo", exact: true }).fill("Motivo sintético preservado");
-  const confirm = page.getByRole("button", { name: "Confirmar", exact: true });
+  await page.getByRole("radio", { name: "Outro motivo", exact: true }).click();
+  await page.getByRole("textbox", { name: "Observação interna (opcional)", exact: true }).fill("Motivo sintético preservado");
+  const confirm = page.getByRole("button", { name: "Cancelar pedido", exact: true });
   await confirm.click({ trial: true });
   // The dialog enters at scale .95; assert its settled target without lowering the floor.
-  await expect.poll(async () => (await confirm.boundingBox())?.height, { message: "Confirmar: ação principal" }).toBeGreaterThanOrEqual(48);
+  await expect.poll(async () => (await confirm.boundingBox())?.height, { message: "Cancelar pedido: ação principal" }).toBeGreaterThanOrEqual(48);
   await page.getByRole("dialog").screenshot({ path: fileURLToPath(new URL("../../../../.orders-lab/integration-reason-targets.png", import.meta.url)) });
   await confirm.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -286,7 +287,7 @@ test("product PATCH response lost after commit closes only after receipt confirm
       await route.continue();
     }
   });
-  await page.getByRole("button", { name: `Ações de ${lab.edit_name}`, exact: true }).click();
+  await page.getByRole("button", { name: `Mais ações de ${lab.edit_name}`, exact: true }).click();
   await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
   await page.getByRole("textbox", { name: "Nome", exact: true }).fill(`${lab.edit_name} salvo`);
   await page.getByRole("button", { name: "Salvar", exact: true }).click();
@@ -301,7 +302,7 @@ test("product same-field dispute preserves draft until explicit reviewed save", 
   await page.goto("/catalog");
   const path = `/api/v1/backstage/catalog/product/${lab.edit_sku}/`;
   const before = await (await page.request.get(path)).json();
-  await page.getByRole("button", { name: `Ações de ${before.product.name}`, exact: true }).click();
+  await page.getByRole("button", { name: `Mais ações de ${before.product.name}`, exact: true }).click();
   await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
   const name = page.getByRole("textbox", { name: "Nome", exact: true });
   await expect(name).toHaveValue(before.product.name);
@@ -368,7 +369,7 @@ test("keyboard curation and frequent targets retain exact order without pointer 
   await expect.poll(async () => (await (await page.request.get(`/api/v1/backstage/catalog/?collection=${lab.curation_ref}`)).json()).matrix.rows.map((row: { sku: string }) => row.sku)).toEqual([...initial].reverse());
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
-    for (const control of [rows.first().getByRole("switch").first(), rows.first().getByRole("button", { name: /^Preço em/ }).first(), rows.first().getByRole("button", { name: /^Ações de/ })]) {
+    for (const control of [rows.first().getByRole("switch").first(), rows.first().getByRole("button", { name: /^Preço em/ }).first(), rows.first().getByRole("button", { name: /^Mais ações de/ })]) {
       const bounds = await control.boundingBox();
       expect(bounds!.width).toBeGreaterThanOrEqual(44); expect(bounds!.height).toBeGreaterThanOrEqual(44);
     }
@@ -423,7 +424,7 @@ test("global pause lost response adopts product receipt without another toggle",
     posts += 1; const response = await route.fetch(); expect(response.status()).toBe(200); await route.abort("failed");
   });
   const row = page.locator(`tr[data-dragkey="${lab.edit_sku}"]`);
-  await row.getByRole("button", { name: /^Ações de/ }).click();
+  await row.getByRole("button", { name: /^Mais ações de/ }).click();
   await page.getByRole("button", { name: "Pausar em todos os canais", exact: true }).click();
   await expect.poll(() => receipts).toBe(1); expect(posts).toBe(1);
   const detail = await (await page.request.get(`/api/v1/backstage/catalog/product/${lab.edit_sku}/`)).json();
@@ -433,7 +434,7 @@ test("global pause lost response adopts product receipt without another toggle",
 test("back navigation keeps a product draft after declining discard", async ({ page }) => {
   await login(page, "orders-lab-edit");
   await page.getByRole("link", { name: "Catálogo", exact: true }).click();
-  await page.locator(`tr[data-dragkey="${lab.edit_sku}"]`).getByRole("button", { name: /^Ações de/ }).click();
+  await page.locator(`tr[data-dragkey="${lab.edit_sku}"]`).getByRole("button", { name: /^Mais ações de/ }).click();
   await page.getByRole("button", { name: "Editar detalhes", exact: true }).click();
   const name = page.getByRole("textbox", { name: "Nome", exact: true });
   await name.fill("Rascunho antes de voltar");

@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.utils import timezone
 from shopman.orderman.models import Directive
 
 from shopman.shop.adapters import kds as kds_adapter
@@ -88,5 +89,11 @@ class KDSTicketLateHandler:
             return
         ticket = kds_adapter.get_ticket(ticket_pk)
         if ticket is None or ticket.status not in kds_alerts.OPEN_STATUSES:
+            return
+        due = kds_alerts.late_check_at(ticket)
+        if due is not None and due > timezone.now():
+            # A hora combinada mudou depois de o despertador ser armado (pedido
+            # reagendado): ele volta para a hora nova em vez de se perder.
+            Directive.objects.create(topic=KDS_TICKET_LATE, payload={"ticket_pk": ticket.pk}, available_at=due)
             return
         kds_alerts.notify_late_ticket(ticket)

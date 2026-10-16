@@ -21,7 +21,7 @@ from shopman.backstage.admin_console.settings_hub import settings_hub_view
 from shopman.backstage.views.admin_login import admin_login
 from shopman.backstage.views.two_factor import admin_2fa_enroll, admin_2fa_verify
 from shopman.shop.views.admin_host import admin_host_root
-from shopman.shop.views.health import HealthCheckView, ReadyCheckView
+from shopman.shop.views.health import DatabaseReadyView, HealthCheckView, ReadyCheckView
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,12 @@ urlpatterns = [
     # Health / readiness probes — público, sem auth, no topo para precedência.
     path("health/live/", HealthCheckView.as_view(), name="health-live"),
     path("health/ready/", ReadyCheckView.as_view(), name="health-ready"),
+    path("health/database/", DatabaseReadyView.as_view(), name="health-database"),
+    # O ingress público divide os dois processos Django por path. Estes aliases
+    # caem no web-storefront (`/api/v1`); as rotas acima caem no web-operator.
+    # Assim o monitor externo mede cada processo, não duas URLs do mesmo processo.
+    path("api/v1/health/live/", HealthCheckView.as_view(), name="storefront-health-live"),
+    path("api/v1/health/ready/", ReadyCheckView.as_view(), name="storefront-health-ready"),
     # Compatibility aliases while external monitors move to the explicit paths.
     path("health/", HealthCheckView.as_view(), name="health"),
     path("ready/", ReadyCheckView.as_view(), name="ready"),

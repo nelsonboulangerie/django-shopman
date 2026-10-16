@@ -4,6 +4,7 @@ import copy
 import uuid as uuid_lib
 
 from django.db import models, transaction
+from django.db.models.fields.json import KeyTransform
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from shopman.utils.refs import RefField
@@ -127,6 +128,14 @@ class Order(models.Model):
             # quem filtra só por data não usaria um composto com canal ou status na
             # frente. Lookup ``__date`` não usa este índice (converte o fuso na coluna).
             models.Index(fields=["created_at"], name="ord_order_created_at_idx"),
+            # Histórico do cliente (history.py) filtra por data__customer_ref; sem
+            # índice o Postgres varre orderman_order inteira. Índice de expressão
+            # sobre (data -> customer_ref), o mesmo jsonb que o ORM emite no
+            # filtro: o dado já vive no JSON, não entra campo.
+            models.Index(
+                KeyTransform("customer_ref", "data"),
+                name="ord_order_customer_ref_idx",
+            ),
         ]
         constraints = [
             models.CheckConstraint(

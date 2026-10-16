@@ -56,6 +56,18 @@ obrigatório; `error` agrega metadados estáveis de recuperação
 Um front que só entende o dialeto canônico continua funcionando (lê `detail`);
 o operator-kit usa `error.{code,focus,recovery}` para foco e ação de 1 clique.
 
+### Recusas do PDV pela política "encomenda cobra antes" (422)
+
+Encomenda não vai à cozinha enquanto não paga (política da casa, 28/08/2026), e o
+Pix que o provedor não confirma só vale com o gesto do operador (P1-7). As três
+saem no dialeto do PDV acima, com `focus: "payment"`:
+
+| `error.code` | Onde | O que aconteceu | O que resolve |
+|---|---|---|---|
+| `preorder_unpaid` | `POST pos/tabs/fire/` | Comanda de encomenda, com cobrança no balcão, ainda sem pagamento | Cobrar no Pagamento (ela vai à cozinha sozinha quando o pagamento entra), ou marcar o pagamento na retirada ou na entrega e enviar de novo. A tela oferece "Abrir Pagamento" no aviso |
+| `preorder_fired_unpaid` | `POST pos/sale/close/` | Encomenda já na cozinha fechando com Pix ou link sozinhos (pendentes até o provedor) | Receber em dinheiro ou cartão na maquininha |
+| `pix_mixed_unconfirmed` | `POST pos/sale/close/` | Pix numa venda mista sem o gesto "Recebi o Pix" (`payment_tenders[i].pix_confirmed`) | Conferir no app do banco ou na maquininha e confirmar no diálogo do Pagamento |
+
 ### Recusa de negócio nomeada: reenvio do link de pagamento (409)
 
 `POST /api/v1/backstage/pos/orders/<ref>/resend-payment-link/` (PDV) e

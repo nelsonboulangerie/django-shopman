@@ -1,6 +1,6 @@
 # ADR-027 — Inventário de receitas: autoria versionada separada da ficha de execução
 
-**Status:** Aceito (2026-09-03)
+**Status:** Aceito
 **Data:** 2026-09-03
 **Escopo:** `craftsman` (`RecipeEntry`, `RecipeVersion`, `contrib/formula/percentages.py`), orquestrador (`backstage/services/recipe_*`, `projections/recipe_book.py`, `api/recipe_book.py`) e a superfície Produção (`surfaces/production-nuxt`)
 **Plano:** [RECIPE-INVENTORY-PLAN](../plans/RECIPE-INVENTORY-PLAN.md)

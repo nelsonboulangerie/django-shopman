@@ -36,6 +36,13 @@ const label = computed(() => openDrawerLabel(props.terminalLabel));
 const sending = computed(() => props.state === "sending");
 const failed = computed(() => drawerOpeningFailed(props.state));
 const done = computed(() => drawerOpeningDone(props.state));
+/**
+ * Dispensar o cartão é sempre possível (dono, 10/10/2026: "tem que ter um
+ * dismiss"). Antes ele só aparecia depois de uma falha, e o cartão ficava de pé
+ * no topo de toda venda seguinte quando o dinheiro já tinha ido para a gaveta
+ * por outro caminho. Depois de uma falha o gesto tem nome próprio: abriu na chave.
+ */
+const dismissLabel = computed(() => (failed.value || props.state === "uncertain" ? "Abri com a chave" : "Visto"));
 </script>
 
 <template>
@@ -104,14 +111,15 @@ const done = computed(() => drawerOpeningDone(props.state));
       </p>
     </div>
     <UiButton
-      v-if="failed || state === 'uncertain'"
+      v-if="!done"
       variant="ghost"
       size="sm"
       class="justify-self-center text-muted-foreground"
+      :disabled="sending"
       data-drawer-dismiss
       @click="emit('dismiss')"
     >
-      Abri com a chave
+      {{ dismissLabel }}
     </UiButton>
   </section>
 </template>

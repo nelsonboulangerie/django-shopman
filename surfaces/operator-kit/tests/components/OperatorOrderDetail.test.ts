@@ -86,10 +86,11 @@ describe("OperatorOrderDetail", () => {
     expect(standard.find("[data-order-status]").exists()).toBe(true);
     standard.unmount();
 
-    const counter = await mount({ order: order({ context: "pos" }), showStatus: false });
+    const counter = await mount({ order: order({ context: "pos", channel_name: "Loja online" }), showStatus: false });
     expect(counter.find("[data-order-status]").exists()).toBe(false);
-    // O resto do resumo continua: canal e total.
-    expect(counter.get("[data-order-summary]").text()).toContain("web");
+    // O resto do resumo continua: canal (pelo NOME, nunca o ref cru) e total.
+    expect(counter.get("[data-order-summary]").text()).toContain("Loja online");
+    expect(counter.get("[data-order-summary]").text()).not.toContain("web");
     expect(counter.get("[data-order-total]").text()).toBe("R$ 42,00");
   });
 
@@ -178,10 +179,10 @@ describe("OperatorOrderDetail", () => {
         ],
       }),
     });
-    const rows = wrapper.findAll("[data-order-timeline] li");
-    expect(rows).toHaveLength(2);
-    expect(rows[1]!.text()).toContain("08:05 · Maria");
-    expect(rows[1]!.find("span").classes()).toContain("bg-primary");
+    const timeline = wrapper.get("[data-order-timeline]");
+    expect(timeline.text()).toContain("Pedido criado");
+    expect(timeline.text()).toContain("Cliente pediu sem açúcar");
+    expect(timeline.text()).toContain("08:05 · Maria");
   });
 
   it("comentar só aparece quando o servidor oferece a ação neste contexto", async () => {
@@ -227,6 +228,13 @@ describe("OperatorOrderDetail", () => {
     expect(split.get("[data-order-timeline] h2").text()).toBe("Linha do tempo");
     expect(split.get("[data-order-total]").text()).toBe("R$ 42,00");
     expect(split.get("[data-slot-actions]").text()).toBe("estado");
+  });
+
+  it("o pedido que veio de outra comanda do PDV diz de qual, na linha de cima (T1, 13/10)", async () => {
+    const wrapper = await mount({ order: order({ transferred_from_label: "Transferida da comanda #13" }), layout: "split" });
+    expect(wrapper.get("[data-order-meta]").text()).toContain("Transferida da comanda #13");
+    const plain = await mount({ order: order(), layout: "split" });
+    expect(plain.get("[data-order-meta]").text()).not.toContain("Transferida");
   });
 
   it("decisionOnly (fora da loja, G18): sem fiscal nem comentar", async () => {

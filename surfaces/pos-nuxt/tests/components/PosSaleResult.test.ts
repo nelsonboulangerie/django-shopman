@@ -155,6 +155,28 @@ describe("PosSaleResult — o palco pós-venda", () => {
     expect(wrapper.text()).not.toContain("Enter também avança.");
   });
 
+  it("P2-31: encomenda registrada oferece a próxima ação pronta: Nova encomenda e Imprimir Via Pedido", async () => {
+    const wrapper = await mountSuspended(PosSaleResult, { props: props({ result: result({ salesMode: "order" }) }) });
+    const cta = wrapper.find("[data-sale-result-next]");
+    expect(cta.text()).toContain("Nova encomenda");
+    expect(cta.text()).not.toContain("F2");
+    await cta.trigger("click");
+    expect(wrapper.emitted("newOrder")).toHaveLength(1);
+    expect(wrapper.emitted("newSale")).toBeUndefined();
+
+    // O papel da encomenda vem primeiro, com o verbo inteiro (o rótulo do detalhe).
+    const paper = wrapper.find("[data-sale-result-ticket]");
+    expect(paper.text()).toBe("Imprimir Via Pedido");
+    expect(paper.element.parentElement!.firstElementChild).toBe(paper.element);
+
+    // A volta às comandas segue no F2, dita na tela.
+    const toTabs = wrapper.find("[data-sale-result-to-tabs]");
+    expect(toTabs.text()).toContain("Voltar às comandas");
+    expect(toTabs.text()).toContain("F2");
+    await toTabs.trigger("click");
+    expect(wrapper.emitted("newSale")).toHaveLength(1);
+  });
+
   it("o CTA emite newSale", async () => {
     const wrapper = await mountSuspended(PosSaleResult, { props: props() });
     const cta = wrapper.findAll("button").find((b) => b.text().includes("Nova venda"));

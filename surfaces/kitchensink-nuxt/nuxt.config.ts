@@ -13,10 +13,11 @@ export default defineNuxtConfig({
     operatorUpstreamFailFast: true,
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
     public: {
-      // Harness hermético somente no dev server da matriz. Produção nunca pode
-      // transformar uma env em bypass do gate de permissão.
+      // Harness hermético somente no ambiente explicitamente `test`. Isso permite
+      // exercitar o artefato de produção sem transformar uma env do deploy real em
+      // bypass do gate de permissão.
       kitchenSinkHarness:
-        process.env.NODE_ENV !== "production" &&
+        process.env.SHOPMAN_ENVIRONMENT === "test" &&
         process.env.KITCHENSINK_VISUAL_MATRIX === "1",
       // O NOME da chave é o contrato com a env: o Nuxt deriva
       // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL.

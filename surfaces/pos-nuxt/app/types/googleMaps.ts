@@ -51,9 +51,28 @@ export interface GooglePlacesLibrary {
   AutocompleteSessionToken?: new () => unknown;
 }
 
+// O mapa da confirmação do ponto (`PosAddressMapDialog`): o mapa raster com o pin
+// fixo no centro, como o da loja. Só o que a tela toca: centro, arrastar pelo
+// teclado e o aviso de que o centro mudou.
+export interface GoogleLatLng {
+  lat: () => number;
+  lng: () => number;
+}
+
+export interface GoogleMap {
+  getCenter: () => GoogleLatLng | undefined;
+  panBy: (x: number, y: number) => void;
+  addListener: (event: string, handler: () => void) => unknown;
+}
+
+export interface GoogleMapsLibrary {
+  Map?: new (element: HTMLElement, options: Record<string, unknown>) => GoogleMap;
+}
+
 export interface GoogleMapsNamespace {
   places?: GooglePlacesLibrary;
-  importLibrary?: (name: string) => Promise<GooglePlacesLibrary | undefined>;
+  importLibrary?: (name: string) => Promise<(GooglePlacesLibrary & GoogleMapsLibrary) | undefined>;
+  event?: { clearInstanceListeners?: (instance: unknown) => void };
 }
 
 export interface GoogleNamespace {

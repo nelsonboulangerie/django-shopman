@@ -110,6 +110,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # hydrated ``member__customer`` path as an OUTER JOIN and rejects a broad
     # ``FOR UPDATE``; this regression only exists on the real database.
     "shopman/shop/tests/test_marketing_delivery_postgres.py",
+    # O mesmo FOR UPDATE no lado anulável do OUTER JOIN, no estado do trabalho
+    # de impressão: o pulso de gaveta do PDV voltava 400 em loop no alpha.
+    "shopman/backstage/tests/test_drawer_pulse_postgres.py",
     # O ciclo expand/rollback/reapply da 0053 precisa rodar no PostgreSQL real:
     # SQLite não prova compatibilidade do writer 0052 com defaults/constraints
     # do schema expandido nem a reversão transacional do banco de produção.
@@ -126,6 +129,13 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/backstage/tests/test_production_print_jobs_postgresql.py",
     "shopman/shop/tests/test_deploy_checks.py",
     "shopman/shop/tests/test_health.py",
+    # Pool do psycopg sob ASGI: conexão órfã de request cancelado volta ao pool, e
+    # streams SSE além do tamanho do pool não seguram conexão (incidente 14/10/2026).
+    # O pool só existe no PostgreSQL.
+    "shopman/shop/tests/test_orphan_connections.py",
+    # Liveness que reinicia o processo travado no pool e NÃO reinicia com o banco
+    # fora: precisa do pool e de uma conexão direta de verdade.
+    "shopman/shop/tests/test_self_healing.py",
 )
 
 

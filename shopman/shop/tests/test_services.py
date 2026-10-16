@@ -250,8 +250,11 @@ class TestAvailabilityListingMembership:
             allowed_quality_grade_refs=None,
         )
 
+    @patch("shopman.stockman.services.availability.decision_from_availability")
     @patch("shopman.shop.services.availability.get_adapter")
-    def test_check_reuses_loaded_availability_for_default_stock_adapter(self, mock_get_adapter):
+    def test_check_reuses_loaded_availability_for_stockman_decision(
+        self, mock_get_adapter, mock_decision
+    ):
         from shopman.shop.services import availability
 
         stock_adapter = SimpleNamespace(
@@ -271,17 +274,19 @@ class TestAvailabilityListingMembership:
                 "planned": Decimal("0"),
                 "positions": [{"position_ref": "vitrine"}],
             }),
-            promise_decision_from_availability=MagicMock(return_value=SimpleNamespace(
-                approved=True,
-                sku="PAO-001",
-                requested_qty=Decimal("1"),
-                available_qty=Decimal("5"),
-                reason_code=None,
-                is_paused=False,
-                is_planned=False,
-                target_date=None,
-            )),
             get_promise_decision=MagicMock(),
+        )
+        mock_decision.return_value = SimpleNamespace(
+            approved=True,
+            sku="PAO-001",
+            requested_qty=Decimal("1"),
+            available_qty=Decimal("5"),
+            orderable_ceiling=Decimal("5"),
+            is_tracked=True,
+            reason_code=None,
+            is_paused=False,
+            is_planned=False,
+            target_date=None,
         )
         catalog_adapter = MagicMock()
         catalog_adapter.listing_exists.return_value = False
@@ -293,7 +298,7 @@ class TestAvailabilityListingMembership:
             result = availability.check("PAO-001", Decimal("1"), channel_ref="ifood")
 
         assert result["ok"] is True
-        stock_adapter.promise_decision_from_availability.assert_called_once()
+        mock_decision.assert_called_once()
         stock_adapter.get_promise_decision.assert_not_called()
 
     @patch("shopman.shop.services.availability.get_adapter")
@@ -567,6 +572,14 @@ class TestStockService:
 
 
 class TestPaymentService:
+    @pytest.fixture(autouse=True)
+    def _payman_without_attempts(self):
+        # Estes testes rodam sem banco: o Payman não responde. Desde o item 17
+        # de docs/plans/fallbacks-perigosos-go-live.md, busca que falha recusa
+        # a cobrança em vez de chutar a geração 0, então a ausência de
+        # tentativas anteriores passa a ser DADO do teste, não acidente.
+        with patch("shopman.shop.services.payment._burned_intent_generations", return_value=0):
+            yield
 
     @patch("shopman.shop.services.payment.get_adapter")
     def test_initiate_pix(self, mock_get_adapter):
@@ -1162,13 +1175,17 @@ class TestNotificationSendHandler:
 
         order = _make_order(snapshot={}, data={})
 
-        with_reason = _build_context(
-            order, {"order_ref": "ORD-001", "reason": "Item indisponível"}, "order_cancelled"
+        with_note = _build_context(
+            order, {"order_ref": "ORD-001", "status_note": "Um dos itens acabou."}, "order_cancelled"
         )
-        assert with_reason["status_note"] == "Motivo: Item indisponível."
+        assert with_note["status_note"] == "Um dos itens acabou."
 
-        without_reason = _build_context(order, {"order_ref": "ORD-001"}, "order_cancelled")
-        assert without_reason["status_note"] == "Os detalhes estão no pedido."
+        # Reenvio sem a frase no payload: sai a da chave gravada (sem chave, "Outro motivo").
+        without_note = _build_context(order, {"order_ref": "ORD-001"}, "order_cancelled")
+        assert without_note["status_note"] == "Sentimos muito pelo imprevisto."
+
+        rejected = _build_context(order, {"order_ref": "ORD-001", "reason": "Item indisponível"}, "order_rejected")
+        assert rejected["status_note"] == "Motivo: Item indisponível."
 
     @pytest.mark.django_db
     def test_stock_alert_context_resolves_name_without_hiding_sku(self):
@@ -2197,10 +2214,21 @@ class TestCustomerService:
 class TestAvailabilityBundles:
     """availability.check() expands bundles and validates each component."""
 
-    def _make_check_result(self, *, ok=True, available_qty=Decimal("100"), error_code=None, is_paused=False):
+    def _make_check_result(
+        self,
+        *,
+        ok=True,
+        available_qty=Decimal("100"),
+        orderable_ceiling=None,
+        is_tracked=True,
+        error_code=None,
+        is_paused=False,
+    ):
         return {
             "ok": ok,
             "available_qty": available_qty,
+            "orderable_ceiling": orderable_ceiling,
+            "is_tracked": is_tracked,
             "is_paused": is_paused,
             "is_planned": False,
             "breakdown": {},
@@ -2234,6 +2262,43 @@ class TestAvailabilityBundles:
         assert result["is_bundle"] is True
         assert result["failed_sku"] is None
         assert result["available_qty"] == Decimal("25")
+
+    def test_mixed_bundle_preserves_tracked_component_limit(self):
+        """An untracked component neither erases nor fabricates tracked supply."""
+        from shopman.shop.services import availability
+
+        components = [
+            {"sku": "TRACKED", "qty": Decimal("2")},
+            {"sku": "UNTRACKED", "qty": Decimal("1")},
+        ]
+
+        def fake_check(sku, qty, *, channel_ref=None, target_date=None, as_component=False):
+            if sku == "TRACKED":
+                return self._make_check_result(
+                    available_qty=Decimal("8"),
+                    orderable_ceiling=Decimal("8"),
+                    is_tracked=True,
+                )
+            return self._make_check_result(
+                available_qty=None,
+                orderable_ceiling=None,
+                is_tracked=False,
+            )
+
+        with patch("shopman.shop.services.availability.check", side_effect=fake_check):
+            result = availability._check_bundle(
+                "MIXED", Decimal("1"), components,
+                channel_ref=None, target_date=None,
+            )
+
+        assert result["ok"] is True
+        assert result["available_qty"] == Decimal("4")
+        assert result["orderable_ceiling"] == Decimal("4")
+        assert result["is_tracked"] is True
+        assert result["_component_tracking"] == {
+            "TRACKED": True,
+            "UNTRACKED": False,
+        }
 
     def test_bundle_component_out_of_stock(self):
         """Bundle with 1 component insufficient stock → ok=False, failed_sku set."""
@@ -2425,6 +2490,36 @@ class TestAvailabilityReserveBundles:
         assert result["error_code"] == "insufficient_stock"
         # Rollback: released the hold already created
         adapter.release_holds.assert_called_once_with(["hold:1"])
+
+    @patch("shopman.shop.services.availability.substitutes")
+    @patch("shopman.shop.services.availability.get_adapter")
+    @patch("shopman.shop.services.availability._expand_if_bundle")
+    @patch("shopman.shop.services.availability.check")
+    def test_reserve_mixed_bundle_holds_only_tracked_components(
+        self, mock_check, mock_expand, mock_get_adapter, mock_substitutes
+    ):
+        from shopman.shop.services.availability import reserve
+
+        mock_check.return_value = {
+            **self._make_status_bundle_ok(),
+            "is_tracked": True,
+            "_component_tracking": {"TRACKED": True, "UNTRACKED": False},
+        }
+        mock_expand.return_value = [
+            {"sku": "TRACKED", "qty": Decimal("2")},
+            {"sku": "UNTRACKED", "qty": Decimal("1")},
+        ]
+        adapter = MagicMock()
+        adapter.create_hold.return_value = {"success": True, "hold_id": "hold:tracked"}
+        mock_get_adapter.return_value = adapter
+
+        result = reserve("MIXED", Decimal("1"), session_key="sess-abc")
+
+        assert result["ok"] is True
+        assert result["hold_ids"] == ["hold:tracked"]
+        assert result["untracked_skus"] == ["UNTRACKED"]
+        adapter.create_hold.assert_called_once()
+        assert adapter.create_hold.call_args.kwargs["sku"] == "TRACKED"
 
 
 # ══════════════════════════════════════════════════════════════════════

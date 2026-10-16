@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { tabTitleView } from "~/presentation/tabTitle";
+import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGroup.vue";
 // Tab Board (spec §2.3) — the map of open/free comandas. Odoo-style first
 // screen: pick or open a comanda before ringing. It renders the tabs Projection
 // through `presentation/tabBoard` (ordering, in-use/all filter, per-card shape)
 // and emits intent; it owns no orchestration. `move_lines` is Arc 4 — here the
 // board only lists, selects and opens.
 import type { POSTabProjection } from "~/types/pos";
-import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardBadge, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
 import { nextFreeNumericTabRef } from "~/utils/posTabLifecycle";
 
 const props = defineProps<{
@@ -39,11 +40,22 @@ const openCount = computed(() => countOpenTabs(props.tabs));
 // O input de referência também FILTRA os cards enquanto digita (nome/ref).
 const queried = computed(() => filterTabsByQuery(ordered.value, props.modelValue));
 const cards = computed(() =>
-  filterTabs(queried.value, tabFilter.value).map((tab) => ({ tab, view: tabCardView(tab, props.selectedTabRef) })),
+  filterTabs(queried.value, tabFilter.value).map((tab) => {
+    const view = tabCardView(tab, props.selectedTabRef);
+    return { tab, view, badge: tabCardBadge(view) };
+  }),
 );
 // A próxima comanda numérica livre — um toque abre sem digitar nada.
 const nextFreeRef = computed(() => nextFreeNumericTabRef(props.tabs, props.zeroPadTo));
 const nextFreeDisplay = computed(() => nextFreeRef.value.replace(/^0+/, "") || "0");
+// A barra do quadro: as duas ações com o curto escrito à mão e o ícone (o último degrau).
+const openFit = { label: "Abrir comanda", shortLabel: "Abrir", icon: "i-lucide-plus" } as const;
+const nextFit = computed(() => ({
+  label: `Próxima livre · #${nextFreeDisplay.value}`,
+  shortLabel: `Próxima #${nextFreeDisplay.value}`,
+  icon: "i-lucide-arrow-right-circle",
+}));
+const barActions = computed(() => [openFit, nextFit.value]);
 function openNextFree() {
   if (!nextFreeRef.value) return;
   const existing = props.tabs.find((tab) => tab.ref === nextFreeRef.value);
@@ -58,6 +70,9 @@ function openNextFree() {
 // pode receber); "em uso" recede em neutro (ocupada, em andamento, sem ação).
 function cardTone(view: TabCardView): string {
   if (view.selected) return "border-primary bg-primary/5";
+  // "Tudo pronto" vence o "não pago": toda comanda pronta foi disparada e não
+  // paga, e o que o balcão precisa fazer agora é chamar o cliente.
+  if (view.kitchenReady) return "border-success bg-success/15";
   if (view.isUnpaid) return "border-warning/40 bg-warning/10";
   if (view.isFree) return "border-success/45 bg-success/5";
   return "";
@@ -102,7 +117,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         <UiInput
           ref="inputRef"
           :model-value="modelValue"
-          class="h-11 pr-12 text-base"
+          class="h-8 pr-12 text-base"
           :maxlength="maxLength"
           :placeholder="placeholder"
           autofocus
@@ -110,63 +125,89 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         />
         <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-md:hidden" aria-hidden="true">F2</OperatorKbd>
       </div>
-      <UiButton type="submit" size="lg" class="h-11 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1" :disabled="busy || !modelValue.trim()">
-        <Icon name="lucide:plus" class="size-5" />
-        Abrir comanda
-      </UiButton>
-      <UiButton
-        type="button"
-        size="lg"
-        variant="outline"
-        class="h-11 shrink-0 gap-2 max-sm:min-w-0 max-sm:flex-1"
-        :disabled="busy"
-        :title="`Abrir a comanda ${nextFreeDisplay}`"
-        @click="openNextFree"
+      <!-- As duas ações da barra são UM grupo do rótulo que cabe (kit, dono 10/10/2026):
+           completo, curto escrito à mão, só ícone (com o completo no aria e na dica).
+           No celular dividem a linha de baixo ao meio; nada quebra nem corta. -->
+      <OperatorFitGroup
+        :actions="barActions"
+        equal
+        class="grid grid-cols-2 gap-2 max-sm:basis-full sm:flex sm:flex-1"
+        data-pos-tab-board-actions
       >
-        <Icon name="lucide:arrow-right-circle" class="size-5" />
-        <span class="truncate"><span class="max-sm:hidden">Próxima livre · </span><span class="sm:hidden">Próxima </span>#{{ nextFreeDisplay }}</span>
-      </UiButton>
+        <OperatorButton
+          type="submit"
+          :label="openFit.label"
+          :short-label="openFit.shortLabel"
+          :icon="openFit.icon"
+          class="sm:shrink-0"
+          :disabled="busy || !modelValue.trim()"
+          data-pos-open-tab
+        />
+        <OperatorButton
+          variant="outline"
+          color="neutral"
+          :label="nextFit.label"
+          :short-label="nextFit.shortLabel"
+          :icon="nextFit.icon"
+          class="sm:shrink-0"
+          :disabled="busy"
+          data-pos-open-next-free
+          @click="openNextFree"
+        />
+      </OperatorFitGroup>
     </form>
     <div v-if="tabs.length" class="flex shrink-0 flex-wrap items-center gap-2">
-      <div class="flex gap-1">
-        <UiButton
-          size="sm"
+      <!-- Recorte e arrumação: o ligado é `solid` (o ativo único da suíte), os outros
+           `outline`, como a faixa de filtros rápidos do kit (`OperatorQuickFilters`). -->
+      <div class="flex gap-1" role="group" aria-label="Quais comandas">
+        <NuxtButton
+          color="neutral"
           variant="outline"
-          :class="tabFilter === 'all' ? 'border-primary bg-primary/5' : ''"
+          active-color="primary"
+          active-variant="solid"
+          :active="tabFilter === 'all'"
+          :aria-pressed="tabFilter === 'all'"
+          :label="`Todas ${tabs.length}`"
           @click="tabFilter = 'all'"
-        >
-          Todas {{ tabs.length }}
-        </UiButton>
-        <UiButton
-          size="sm"
+        />
+        <NuxtButton
+          color="neutral"
           variant="outline"
-          :class="tabFilter === 'in_use' ? 'border-primary bg-primary/5' : ''"
+          active-color="primary"
+          active-variant="solid"
+          :active="tabFilter === 'in_use'"
+          :aria-pressed="tabFilter === 'in_use'"
+          :label="`Em uso ${openCount}`"
           @click="tabFilter = 'in_use'"
-        >
-          Em uso {{ openCount }}
-        </UiButton>
+        />
       </div>
-      <div class="ml-auto flex gap-1">
-        <UiButton
-          size="icon-sm"
+      <div class="ml-auto flex gap-1" role="group" aria-label="Arrumação das comandas">
+        <NuxtButton
+          color="neutral"
           variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          icon="i-lucide-layout-grid"
+          square
+          :active="tabView === 'grid'"
+          :aria-pressed="tabView === 'grid'"
           aria-label="Ver em grade"
           title="Grade"
-          :class="tabView === 'grid' ? 'border-primary bg-primary/5' : ''"
           @click="tabView = 'grid'"
-        >
-          <Icon name="lucide:layout-grid" class="size-4" />
-        </UiButton>
-        <UiButton
-          size="icon-sm"
+        />
+        <NuxtButton
+          color="neutral"
           variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          icon="i-lucide-list"
+          square
+          :active="tabView === 'list'"
+          :aria-pressed="tabView === 'list'"
           aria-label="Ver em lista"
           title="Lista"
-          :class="tabView === 'list' ? 'border-primary bg-primary/5' : ''"
           @click="tabView = 'list'"
-        >
-          <Icon name="lucide:list" class="size-4" />
-        </UiButton>
+        />
       </div>
     </div>
 
@@ -178,50 +219,50 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
     </p>
     <p v-else-if="!cards.length" class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
       Nenhuma comanda em uso agora.
-      <button type="button" class="font-medium underline underline-offset-4" @click="tabFilter = 'all'">Ver todas</button>
+      <NuxtButton color="neutral" variant="ghost" class="px-1 font-medium underline underline-offset-4" @click="tabFilter = 'all'">Ver todas</NuxtButton>
     </p>
     <div
       v-else
       class="max-h-[72vh] content-start overflow-y-auto pr-1 md:max-h-none md:min-h-0 md:flex-1"
       :class="tabView === 'grid' ? 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' : 'grid gap-2'"
     >
-      <button
-        v-for="{ tab, view } in cards"
+      <NuxtButton
+        v-for="{ tab, view, badge } in cards"
         :key="view.ref"
-        type="button"
-        class="flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent"
+        color="neutral"
+        variant="ghost"
+        class="@container flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent items-stretch justify-start font-normal"
         :class="cardTone(view)"
         @click="activateTab(tab)"
       >
         <div class="flex items-center justify-between gap-2">
           <span class="truncate font-semibold tabular-nums" :title="tabTitleView(view.displayRef, '').title">{{ tabTitleView(view.displayRef, "").title }}</span>
-          <span
-            v-if="view.isUnpaid"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
-            title="Disparado para a cozinha e ainda não pago"
+          <!-- O selo de estado do cartão (dono, 13/10/2026): UM selo, sempre o NuxtBadge
+               soft da suíte, do mesmo tamanho em todo estado (D1/D5/D11); a cor e o
+               ícone vêm de `tabCardBadge`. Não se corta: no cartão estreito (container
+               query do cartão) fica só o ícone, com o nome no aria-label e na dica. -->
+          <NuxtBadge
+            :color="badge.color"
+            size="md"
+            :icon="badge.icon"
+            class="shrink-0 whitespace-nowrap"
+            :aria-label="badge.label"
+            :title="badge.title"
+            :data-tab-badge="badge.kind"
+            :data-tab-kitchen-ready="view.kitchenReady ? '' : undefined"
           >
-            <Icon name="lucide:flame" class="size-3" />
-            Não pago
-          </span>
-          <span
-            v-else-if="view.pendingKitchen"
-            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
-            title="Tem itens ainda não enviados à cozinha"
-          >
-            <Icon name="lucide:utensils" class="size-3" />
-            A enviar
-          </span>
-          <span v-else class="shrink-0 text-xs text-muted-foreground">{{ view.statusLabel }}</span>
+            <span class="hidden @[9rem]:inline" data-tab-badge-label>{{ badge.label }}</span>
+          </NuxtBadge>
         </div>
-        <span class="truncate text-xs font-medium" :title="view.identity">{{ view.identity }}</span>
+        <span v-if="view.identity" class="truncate text-xs font-medium" :title="view.identity">{{ view.identity }}</span>
         <span
-          class="mt-auto truncate text-xs tabular-nums"
-          :class="view.isFree ? 'text-muted-foreground' : 'font-semibold'"
+          v-if="view.summary"
+          class="mt-auto truncate text-xs font-semibold tabular-nums"
           :title="view.summary"
         >
           {{ view.summary }}
         </span>
-      </button>
+      </NuxtButton>
     </div>
   </section>
 </template>

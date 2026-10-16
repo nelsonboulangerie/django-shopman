@@ -5,63 +5,27 @@ deploy, observabilidade e incident response.
 
 ## Health checks
 
-Dois endpoints, sem auth, sem CSRF, sem rate limit, JSON puro.
+Três endpoints, sem auth, sem CSRF, JSON puro (`ok`/`fail`/`skipped`, motivo só
+no log protegido) e com limitador por processo. Código em
+`shopman/shop/views/health.py`.
 
-### `GET /health/` — liveness
+| Rota | Pergunta | Quem usa |
+|---|---|---|
+| `GET /health/live/` | o processo atende? (zero banco) | `liveness_health_check` da plataforma: falhou, a instância reinicia |
+| `GET /health/database/` | ESTE processo alcança o banco? (um `SELECT 1` pelo pool) | `health_check` (readiness) dos dois services Django: falhou, a borda para de mandar tráfego para a instância |
+| `GET /health/ready/` | banco, cache, migrations e fila (workers vivos, nada parado) | Alpha Smoke e diagnóstico; nunca sonda de plataforma (#780) |
 
-Responde se o processo Django está vivo e consegue falar com o banco e o cache.
-Usado por **load balancers** e **k8s livenessProbe** para decidir se o container
-precisa ser reiniciado.
+`/health/` e `/ready/` são aliases de compatibilidade de `live` e `ready`.
 
-- **200 ok**: banco acessível, cache operacional (ou `skipped` se `LocMemCache`).
-- **503 error**: banco inacessível **ou** cache quebrado.
-- Migrations pendentes **não** causam 503 aqui — liveness não deve reiniciar
-  container por schema drift (isso é readiness).
-
-Exemplo:
-
-```json
-{
-  "status": "ok",
-  "checks": {
-    "database": "ok",
-    "cache": "skipped",
-    "migrations": "ok"
-  }
-}
-```
-
-### `GET /ready/` — readiness
-
-Tudo do `/health/` + verifica que **não há migrations pendentes**. Usado por
-**k8s readinessProbe** e **deploy validation** para segurar tráfego até que o
-schema esteja alinhado com o código em produção.
-
-- **200 ok**: pronto para receber tráfego.
-- **503 error**: qualquer check falhou (inclui migrations).
-
-### Snippet k8s
-
-```yaml
-livenessProbe:
-  httpGet:
-    path: /health/
-    port: 8000
-  periodSeconds: 10
-  failureThreshold: 3
-
-readinessProbe:
-  httpGet:
-    path: /ready/
-    port: 8000
-  periodSeconds: 5
-  failureThreshold: 2
-```
+Por que a readiness da plataforma não é o `/health/ready/`: a fila e as
+migrations não são motivo para tirar o Admin do ar. Um `directive-worker`
+parado deixaria o balcão inteiro em 503 sem curar nada. Motivo, custo e o que
+muda com duas instâncias: [web-operator-resiliencia.md](../runbooks/web-operator-resiliencia.md).
 
 ### Snippet uptime monitor
 
 ```bash
-curl -fsS https://seu-host/health/ || alerta
+curl -fsS https://admin.boulangerie.com.br/health/live/ || alerta
 ```
 
 ### Cache em dev e produção
@@ -87,6 +51,22 @@ Em produção, `SHOPMAN_JSON_LOGS=true` por padrão quando `DJANGO_DEBUG=false`.
 Cada linha vai para stdout como JSON compacto, com `timestamp`, `level`,
 `logger`, `message` e campos extras como `event`, `order_ref`, `intent_ref`,
 `gateway` e `provider`.
+
+### Access log
+
+O access log do daphne fica em `--access-log=/dev/null`: ele grava o caminho
+cru com query string (o `?token=` do webhook da Efí) e o IP do cliente. No lugar
+dele, com `SHOPMAN_ACCESS_LOG=true` no componente, o `AccessLogMiddleware`
+escreve uma linha por request no logger `shopman.access`:
+
+```
+access GET /api/v1/backstage/orders/<str:ref>/ 200 41ms
+```
+
+Só método, o PADRÃO da rota (nunca o caminho pedido), status e duração; `5xx`
+sai como `WARNING`. Sem IP, usuário, query string ou corpo. Sonda da plataforma
+que responde 2xx não é registrada; a que falha é. Para achar os 5xx no log:
+`doctl apps logs <app> web-operator --type run | grep '"http_status":5'`.
 
 Para voltar ao formato humano em um ambiente específico:
 
@@ -137,7 +117,15 @@ loja o BFF acrescenta `bff;dur=` (e `csrf;dur=` quando semeia o token).
 
 O log `storefront_catalog_observation` (cardápio e Continuum) traz os mesmos
 números em campos: `connect_ms`/`connect_count`, `cache_ms`/`cache_calls`,
-`gc_ms`/`gc_count`. Implementação: `shopman/storefront/observability.py`.
+`gc_ms`/`gc_count`. Implementação: `shopman/shop/observability.py`.
+
+As idas do PDV que o operador espera carimbam o mesmo header: a leitura do
+terminal (`GET pos/`), abrir e salvar a comanda (`tabs/<ref>/open/`,
+`tabs/save/`, inclusive com `?review=1`, que é o total do Pagamento), a revisão
+(`sale/review/`) e o fechamento (`sale/close/`). O BFF dos apps de operador
+repassa o `server-timing`, então ele aparece no DevTools do `pdv.` (aba Rede,
+"Timing") sem credencial extra: é a forma de saber, no ar, quanto de uma espera
+é servidor e quanto é rede.
 
 ## Alertas operacionais
 

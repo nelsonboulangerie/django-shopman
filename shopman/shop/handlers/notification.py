@@ -72,6 +72,19 @@ class NotificationSendHandler:
     def handle(self, *, message: Directive, ctx: dict) -> None:
         payload = message.payload
 
+        # Processo suprimido (o seed): dado sintético não notifica ninguém. O
+        # adapter inerte devolve falha, e falha aqui viraria retry que o worker
+        # (que NÃO é suprimido) executaria de verdade, para os telefones do seed.
+        # O registro honesto é ``skipped`` com o motivo, terminal: nem
+        # "entregue" (que era a mentira de antes) nem "falhou".
+        from shopman.shop.adapters._external import suppressed_reason
+
+        reason = suppressed_reason()
+        if reason is not None:
+            logger.info("notification.send: processo suprimido (%s), directive %s pulada", reason, message.pk)
+            self._record_skip(message, f"external_suppressed:{reason}")
+            return
+
         # Stock alert (no order_ref, has event field)
         if not payload.get("order_ref") and payload.get("event"):
             self._handle_system_notification(message)

@@ -44,7 +44,7 @@ async function refreshScreen() {
 </script>
 
 <template>
-  <PosSettingsShell title="Terminal" subtitle="saúde do balcão e dos periféricos">
+  <PosSettingsShell title="Terminal" subtitle="saúde do balcão e dos periféricos" :refresh="refreshScreen">
     <section v-if="pos" class="rounded-xl border border-border bg-card" data-settings-terminal>
       <header class="flex items-center gap-3 border-b border-border p-4">
         <span class="grid size-11 place-items-center rounded-lg bg-secondary">
@@ -69,14 +69,24 @@ async function refreshScreen() {
         </li>
       </ul>
       <footer class="flex flex-wrap items-center gap-2 border-t border-border p-4">
-        <UiButton v-if="agentConfigured" variant="outline" class="gap-1.5" :disabled="checking" @click="check">
-          <Icon name="lucide:refresh-cw" class="size-4" :class="checking ? 'animate-spin motion-reduce:animate-none' : ''" />
-          Testar o agente de novo
-        </UiButton>
-        <UiButton variant="outline" class="gap-1.5" :disabled="refreshing" data-terminal-refresh @click="refreshScreen">
-          <Icon name="lucide:rotate-cw" class="size-4" :class="refreshing ? 'animate-spin motion-reduce:animate-none' : ''" />
-          Atualizar a tela
-        </UiButton>
+        <NuxtButton
+          v-if="agentConfigured"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          label="Testar o agente de novo"
+          :loading="checking"
+          @click="check"
+        />
+        <NuxtButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-rotate-cw"
+          label="Atualizar a tela"
+          :loading="refreshing"
+          data-terminal-refresh
+          @click="refreshScreen"
+        />
         <a
           v-if="terminalAdminUrl"
           class="op-label text-muted-foreground underline underline-offset-2 hover:text-foreground"

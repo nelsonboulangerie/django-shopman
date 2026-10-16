@@ -2,6 +2,7 @@
 
 GET  /api/v1/backstage/kds/                       → list of KDS instances
 GET  /api/v1/backstage/kds/<ref>/                 → KDS board projection
+GET  /api/v1/backstage/kds/<ref>/history/?q=      → Histórico de hoje da estação
 POST /api/v1/backstage/kds/tickets/<pk>/start/    → put ticket in progress
 POST /api/v1/backstage/kds/tickets/<pk>/done/     → mark ticket done
 POST /api/v1/backstage/kds/<ref>/seen/           → "Visto" da estação (K20)
@@ -26,6 +27,7 @@ from rest_framework.views import APIView
 from shopman.backstage.projections.kds import (
     build_kds_board,
     build_kds_customer_status,
+    build_kds_history,
     build_kds_index,
     build_kds_ticket,
     build_printed_ticket_receipt,
@@ -93,6 +95,35 @@ class KDSBoardView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         return Response({"board": projection_data(board)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Histórico de hoje da estação (concluídos e cancelados desde 0h)",
+        responses={
+            200: OpenApiResponse(description="Histórico de hoje, os mais recentes primeiro."),
+            404: OpenApiResponse(description="Estação inexistente ou desativada."),
+        },
+    ),
+)
+class KDSHistoryView(APIView):
+    """Fora do quadro de propósito: o quadro vai a cada push e a cada 15 s; o
+    histórico só quando alguém abre. ``?q=`` busca pelo código ou pelo cliente."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def get(self, request, ref: str):
+        query = str(request.query_params.get("q") or "")[:60]
+        try:
+            history = build_kds_history(ref, query=query)
+        except KDSInstanceNotFound:
+            return Response(
+                {"detail": "Esta estação não existe mais. Escolha outra na lista de estações."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({"history": projection_data(history)})
 
 
 @extend_schema_view(
@@ -260,6 +291,42 @@ class KDSTicketAcknowledgeView(APIView):
             logger.debug("kds_ticket_ack_failed ticket_pk=%s", ticket_pk, exc_info=True)
             return Response({"detail": str(exc) or "Falha ao dar baixa."}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"ok": True, "ticket_pk": ticket_pk})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Acknowledge the changes shown on a live KDS ticket (Visto)",
+        responses={200: OpenApiResponse(description="Changes acknowledged.")},
+    ),
+)
+class KDSTicketChangesSeenView(APIView):
+    """O Visto da mudança no card vivo: dá baixa nos cancelados que ele resumia."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_kds"
+
+    def post(self, request, ticket_pk: int):
+        body = request.data if isinstance(request.data, dict) else {}
+        cancelled_pks = body.get("cancelled_pks") or []
+        if not isinstance(cancelled_pks, list):
+            return Response(
+                {"detail": "Lista de cancelados inválida.", "field": "cancelled_pks"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = kds_service.acknowledge_changes(
+                ticket_pk=ticket_pk,
+                cancelled_pks=cancelled_pks,
+                seen_ref=str(body.get("seen_ref") or ""),
+                actor=_actor(request),
+            )
+        except KDSTicketNotFound as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except KDSError as exc:
+            logger.debug("kds_ticket_changes_seen_failed ticket_pk=%s", ticket_pk, exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar o Visto."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"ok": True, "ticket_pk": ticket_pk, **result})
 
 
 #: Quem pode dar o "Pronto" da estação sem tela: a Saída (KDS) e o PDV. O

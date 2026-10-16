@@ -122,6 +122,17 @@ class KDSTicket(models.Model):
         "status", max_length=20, choices=STATUS_CHOICES, default="pending",
     )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
+    # O primeiro "Iniciar preparo" da estação, gravado no TICKET para valer também
+    # na comanda ainda não paga (``Order.data["kds_started"]`` só existe com pedido).
+    # É o marco que o B.I. usa para medir o preparo real, e a carga da Cozinha no
+    # mesmo instante (tickets abertos em todas as estações, fora este) é a variável
+    # que explica o preparo lento. Ver WP-ENTREGADOR-CHAMADA-ANTECIPADA.
+    started_at = models.DateTimeField("iniciado em", null=True, blank=True)
+    started_by = models.CharField("iniciado por", max_length=150, blank=True, default="")
+    open_tickets_at_start = models.PositiveIntegerField(
+        "tickets abertos no início", null=True, blank=True,
+        help_text="Carga da Cozinha quando o preparo começou: tickets abertos em todas as estações, fora este.",
+    )
     completed_at = models.DateTimeField("concluído em", null=True, blank=True)
     completed_by = models.CharField(
         "concluído por", max_length=150, blank=True, default="",
@@ -136,11 +147,30 @@ class KDSTicket(models.Model):
         "ciente em", null=True, blank=True,
         help_text="Operador deu baixa no card cancelado — sai do board.",
     )
+    # QUEM deu "Recebi o cancelamento" (o login do operador). O Histórico de hoje
+    # da estação diz "ciente 21:47 Ana"; antes só a hora ficava gravada.
+    acknowledged_by = models.CharField("ciente por", max_length=150, blank=True, default="")
+    # Cada Pronto desfeito (a estação reabriu o ticket, ou o Gestor desfez o pronto
+    # automático): o Pronto que existia e quem o desfez. Reabrir apaga
+    # ``completed_at/by/via`` do ticket, e sem esta lista o Pronto desfeito sumia sem
+    # rastro. ``[{completed_at, completed_by, completed_via, undone_at, undone_by}]``,
+    # datas ISO; o Histórico de hoje mostra "Pronto 21:51 → desfeito 21:58 Ana".
+    # Mora no ticket (e não no ``Order.data``) porque o ticket de comanda ainda sem
+    # pedido também se reabre, e a ``Session`` não leva o registro para o pedido.
+    reopenings = models.JSONField("Prontos desfeitos", default=list, blank=True)
     # "Visto" da estação (K20): o aviso de pedido novo (ou de cancelamento) para
     # em TODAS as telas da estação juntas, porque fica gravado aqui e não em cada
     # dispositivo. No cancelado, vale o "Visto" posterior ao ``cancelled_at``.
     seen_at = models.DateTimeField("visto em", null=True, blank=True)
     seen_by = models.CharField("visto por", max_length=150, blank=True, default="")
+    # O nome com que a estação conhece o pedido ("Mesa 5", "0042"): gravado no
+    # envio e regravado quando a cozinha dá Visto na mudança. Se o nome que o
+    # quadro mostra hoje é outro (a comanda foi paga e virou pedido, a linha foi
+    # transferida para outra comanda, a comanda foi renomeada), o card diz "Era a
+    # comanda Mesa 5" até alguém dar Visto (decisão do dono, 10/10/2026: mudança
+    # no que já está na cozinha chega com alarde, nunca em silêncio). Vazio =
+    # sem referência para comparar, e então nada se anuncia.
+    known_ref = models.CharField("conhecido na cozinha como", max_length=150, blank=True, default="")
 
     class Meta:
         verbose_name = "ticket KDS"
@@ -150,3 +180,35 @@ class KDSTicket(models.Model):
 
     def __str__(self):
         return f"KDS #{self.pk} · {self.session_key} → {self.kds_instance.ref}"
+
+    def undo_completion(self, *, actor: str) -> list[str]:
+        """Volta o ticket concluído ao preparo, guardando o Pronto que existia.
+
+        Não salva: devolve os ``update_fields`` para quem chama (que já travou a
+        origem e o ticket) gravar junto do resto.
+        """
+        from django.utils import timezone
+
+        self.reopenings = [
+            *(self.reopenings or []),
+            {
+                "completed_at": self.completed_at.isoformat() if self.completed_at else "",
+                "completed_by": self.completed_by,
+                "completed_via": self.completed_via,
+                "undone_at": timezone.now().isoformat(),
+                "undone_by": str(actor or "")[:150],
+            },
+        ]
+        self.status = "in_progress"
+        self.completed_at = None
+        self.completed_by = ""
+        self.completed_via = ""
+        return ["status", "completed_at", "completed_by", "completed_via", "reopenings"]
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.known_ref and self.session_key:
+            # O nome que a estação vê agora, pelo MESMO cálculo do quadro.
+            from shopman.backstage.projections.kds import current_display_ref
+
+            self.known_ref = current_display_ref(self.session_key)[:150]
+        super().save(*args, **kwargs)

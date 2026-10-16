@@ -30,8 +30,8 @@ describe("useOperatorHub", () => {
     expect(h.queue.value).toBeNull();
   });
 
-  it("expõe a fila Precisa de você como veio do servidor", async () => {
-    const queue = { items: [{ key: "gestor:order:K7Q2", app: "gestor", title: "Pedido K7Q2 para aceitar" }], total_count: 3, more_count: 2, server_now: "2026-10-03T10:00:00-03:00" };
+  it("expõe o resumo da fila como veio do servidor", async () => {
+    const queue = { total_count: 3, server_now: "2026-10-03T10:00:00-03:00" };
     fetchResult.value = asyncData({ hub: { operator_name: "Ana", tiles: [], queue } });
     const h = await useOperatorHub();
     expect(h.queue.value).toEqual(queue);

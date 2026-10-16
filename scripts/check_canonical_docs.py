@@ -94,11 +94,15 @@ READINESS_END = "<!-- canonical-readiness:end -->"
 ALLOWED_STATES = {"VERIFICADO", "PENDENTE", "BLOQUEADO", "DESCONHECIDO", "N/A"}
 
 REQUIRED_CHECKS_FILE = Path(".github/required-status-checks.json")
+SURFACE_CONTRACT_FILE = Path("surfaces/contracts.json")
 WORKFLOWS_DIR = Path(".github/workflows")
 # Um check obrigatório tem de existir no PR E na fila de merge: faltar em
 # qualquer um dos dois trava o merge para sempre.
 REQUIRED_TRIGGERS = ("pull_request", "merge_group")
 MATRIX_REF_RE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
+DYNAMIC_SURFACE_MATRIX_RE = re.compile(
+    r"matrix:\s*\$\{\{\s*fromJSON\(needs\.surface-contract\.outputs\.(quality|pwa|audit)\)\s*\}\}"
+)
 
 
 @dataclass
@@ -377,6 +381,10 @@ def _job_matrix(block: list[str]) -> dict[str, list[str]]:
     return matrix
 
 
+def _render_matrix_name(name: str, values: dict[str, str]) -> str:
+    return MATRIX_REF_RE.sub(lambda match: values[match.group(1)], name)
+
+
 def _job_check_names(job_id: str, block: list[str]) -> set[str]:
     """Nomes de check que um job publica, como o GitHub os monta."""
     name = job_id
@@ -384,6 +392,27 @@ def _job_check_names(job_id: str, block: list[str]) -> set[str]:
         if _indent(line) == 4 and line.strip().startswith("name:"):
             name = _scalar(line.strip()[len("name:") :])
             break
+    dynamic = DYNAMIC_SURFACE_MATRIX_RE.search("\n".join(block))
+    if dynamic:
+        data = json.loads(_read(SURFACE_CONTRACT_FILE))["surfaces"]
+        kind = dynamic.group(1)
+        selected = [
+            (surface_id, surface)
+            for surface_id, surface in data.items()
+            if kind == "quality"
+            or (kind == "pwa" and surface.get("capabilities", {}).get("pwa"))
+            or (kind == "audit" and surface.get("capabilities", {}).get("npmAudit"))
+        ]
+        referenced = MATRIX_REF_RE.findall(name)
+        if not referenced:
+            raise ValueError(f"job {job_id}: dynamic surface matrix must reference matrix.id or matrix.dir")
+        unknown = sorted(set(referenced) - {"id", "dir"})
+        if unknown:
+            raise ValueError(f"job {job_id}: unsupported dynamic surface axes {unknown}")
+        return {
+            _render_matrix_name(name, {"id": surface_id, "dir": surface["dir"]})
+            for surface_id, surface in selected
+        }
     matrix = _job_matrix(block)
     if not matrix:
         return {name}
@@ -487,6 +516,21 @@ def check_secrets(result: Result) -> None:
     result.ok("no high-confidence literal secret pattern found")
 
 
+def check_semantic_docs(result: Result) -> None:
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/check_semantic_docs.py")],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        details = (completed.stderr or completed.stdout).strip()
+        result.fail(f"semantic documentation gate failed: {details}")
+        return
+    result.ok("semantic map and Constitution anchors match the repository")
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     result = Result(errors=[], passed=[])
@@ -500,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         check_deploy_contract,
         check_required_status_checks,
         check_secrets,
+        check_semantic_docs,
     )
     if "--live-required-checks" in argv:
         checks += (check_required_status_checks_live,)

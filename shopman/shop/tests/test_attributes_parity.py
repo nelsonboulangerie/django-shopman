@@ -154,3 +154,30 @@ def test_the_option_list_is_closed_now_that_the_registry_owns_the_writing(produc
         attributes.set(product, "alergenos", ["glutén"])   # acento no lugar errado
 
     attributes.set(product, "alergenos", ["glúten"])       # o certo passa
+
+
+# --- o aceite do enriquecimento (WP-CATALOGO-ALERGENO-LEGADO) ---------------
+
+
+def test_the_enrichment_accept_writes_the_registry_and_the_label_reads_it(product):
+    """O aceite do GTIN grava o alérgeno no registro, e a PDP lê o mesmo valor.
+
+    A chave legada metadata["allergens"] morreu no rename (shop.0033); o risco
+    é o aceite voltar a escrever nela e a tela ficar sem o alérgeno.
+    """
+    from shopman.shop.services import product_enrichment as pe
+
+    suggestion = pe.EnrichmentSuggestion(gtin="5014271390420")
+    suggestion.add("allergens", ["glúten", "leite"], pe.SOURCE_OFF)
+    product.metadata = pe.merge_into_metadata(product.metadata, suggestion)
+    product.save()
+    product.refresh_from_db()
+
+    result = pe.accept_fields(product, ["allergens"], replace=["allergens"])
+
+    product.refresh_from_db()
+    assert result.applied == ["allergens"]
+    assert attributes.get(product, "alergenos") == ["glúten", "leite"]
+    assert list(_pdp_allergen(product).allergens) == ["glúten", "leite"]
+    assert attributes.source(product, "alergenos") == "manual"
+    assert "allergens" not in product.metadata

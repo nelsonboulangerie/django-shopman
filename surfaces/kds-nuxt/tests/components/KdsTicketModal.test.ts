@@ -4,6 +4,7 @@ import { mount } from "@vue/test-utils";
 
 import KdsTicketModal from "../../app/components/KdsTicketModal.vue";
 import type { KDSTicketProjection } from "../../app/types/kds";
+import { nuxtUiStubs } from "../support/nuxtUi";
 
 // Auto-imports do Nuxt que o SFC usa como globais (sem runtime Nuxt aqui).
 vi.stubGlobal("computed", computed);
@@ -45,15 +46,8 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
   };
 }
 
-// O diálogo do kit vira uma caixa simples: o que se testa é o conteúdo.
-const passthrough = { template: "<div><slot /></div>" };
-const stubs = {
-  Icon: true,
-  UiDialog: passthrough,
-  UiDialogContent: passthrough,
-  UiDialogTitle: passthrough,
-  UiDialogDescription: passthrough,
-};
+// O diálogo do Nuxt UI vira uma caixa simples: o que se testa é o conteúdo.
+const stubs = { Icon: true, ...nuxtUiStubs };
 
 function mountModal(props: Record<string, unknown>) {
   return mount(KdsTicketModal, { props: { open: true, ...props }, global: { stubs } });
@@ -92,5 +86,36 @@ describe("KdsTicketModal: quem iniciou", () => {
 
   it("antes do início, nada", () => {
     expect(mountModal({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
+  });
+});
+
+describe("KdsTicketModal: aberto pelo Histórico de hoje, só leitura", () => {
+  const history = (over: Record<string, unknown> = {}) => ({
+    ticket: ticket({ status: "done" }),
+    state: "done",
+    items_summary: "2x Pão na Chapa, 1x Café",
+    steps: ["recebido 21:40", "iniciado 21:42 Rafael", "Pronto 21:51 Rafael (tela)"],
+    undone: ["Pronto 21:45 Rafael (tela) → desfeito 21:47 Ana"],
+    prep_display: "9 min",
+    can_reopen: true,
+    reopen_block_reason: "",
+    ...over,
+  });
+
+  it("troca o relógio pela trilha e pelo tempo de preparo", () => {
+    const w = mountModal({ ticket: ticket({ status: "done", started_by: "Rafael" }), history: history() });
+    expect(w.get("[data-kds-ticket-history-prep]").text()).toContain("9 min");
+    const trail = w.get("[data-kds-ticket-history-trail]").text();
+    expect(trail).toContain("recebido 21:40 · iniciado 21:42 Rafael · Pronto 21:51 Rafael (tela)");
+    expect(trail).toContain("desfeito 21:47 Ana");
+    expect(w.find("[data-kds-started]").exists()).toBe(false);
+  });
+
+  it("volumes só enquanto o pedido está na casa", () => {
+    expect(mountModal({ ticket: ticket(), history: history() }).find("[data-kds-volumes]").exists()).toBe(true);
+    const gone = history({ can_reopen: false, reopen_block_reason: "Pedido despachado: não volta à cozinha." });
+    const w = mountModal({ ticket: ticket(), history: gone });
+    expect(w.find("[data-kds-volumes]").exists()).toBe(false);
+    expect(w.get("[data-kds-ticket-history-trail]").text()).toContain("Pedido despachado");
   });
 });

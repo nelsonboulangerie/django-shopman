@@ -298,42 +298,36 @@ function drop(target: string) {
     <h3 class="op-title">Cards, contraste e profundidade</h3>
     <div class="grid gap-3 lg:grid-cols-3">
       <NuxtCard
-        title="A. Branco e borda"
-        description="Plano pai discreto, conteúdo interno branco"
+        title="Unidade de trabalho"
+        description="Outline, identidade no header e decisão no footer"
+        variant="outline"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <p class="op-body">1× Croissant · Retirada</p>
+          <strong class="tnum">R$ 13,00</strong>
+        </div>
+        <template #footer>
+          <NuxtButton block label="Iniciar preparo" />
+        </template>
+      </NuxtCard>
+      <NuxtCard
+        title="Bloco subordinado"
+        description="Soft, corpo único e nenhuma cerimônia extra"
         variant="soft"
       >
-        <NuxtCard variant="outline" class="bg-card"
-          ><p class="op-label">Pedido confirmado</p>
-          <p class="op-body mb-2">O card interno é a unidade de trabalho.</p>
-          <NuxtBadge color="success" variant="soft">Pronto</NuxtBadge></NuxtCard
-        >
+        <div class="flex items-center gap-2">
+          <NuxtBadge color="success" variant="soft">Pronto</NuxtBadge>
+          <p class="op-body">Estado de apoio, sem competir com a tarefa.</p>
+        </div>
       </NuxtCard>
       <NuxtCard
-        title="B. Branco e superfície suave"
-        description="Hierarquia pela superfície, sem sombra"
-        variant="outline"
-        class="bg-card"
+        title="Contexto delimitado"
+        description="Subtle, quando fundo e contorno precisam mudar juntos"
+        variant="subtle"
       >
-        <NuxtCard variant="soft"
-          ><p class="op-label">Pedido confirmado</p>
-          <p class="op-body mb-2">Bloco interno subordinado.</p>
-          <NuxtBadge color="success" variant="outline"
-            >Pronto</NuxtBadge
-          ></NuxtCard
-        >
-      </NuxtCard>
-      <NuxtCard
-        title="C. Elevação discreta"
-        description="Sombra apenas na unidade interna"
-        variant="outline"
-      >
-        <NuxtCard variant="outline" class="bg-card shadow-sm"
-          ><p class="op-label">Pedido confirmado</p>
-          <p class="op-body mb-2">Compare se a sombra esclarece ou pesa.</p>
-          <NuxtBadge color="success" variant="subtle"
-            >Pronto</NuxtBadge
-          ></NuxtCard
-        >
+        <p class="op-body">
+          Revisão contextual com limite claro e sem sombra decorativa.
+        </p>
       </NuxtCard>
     </div>
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -645,8 +639,8 @@ function drop(target: string) {
       description="Arraste pelo mouse ou use os botões pelo teclado e toque. Esta ordem é manual, separada da tabela ordenada por valor."
     >
       <p id="priority-help" class="op-micro mb-2">
-        Use os botões ou arraste para reordenar. A ordem manual é anunciada e não
-        depende de cor nem de gesto de ponteiro.
+        Use os botões ou arraste para reordenar. A ordem manual é anunciada e
+        não depende de cor nem de gesto de ponteiro.
       </p>
       <ul
         class="space-y-2"

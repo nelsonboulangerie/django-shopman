@@ -28,7 +28,8 @@ function vueFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === "node_modules" ? [] : vueFiles(path);
+    if (entry.isDirectory())
+      return entry.name === "node_modules" ? [] : vueFiles(path);
     return entry.name.endsWith(".vue") ? [path] : [];
   });
 }
@@ -59,24 +60,24 @@ function openingTags(template: string): string[] {
 
 // Separa os blocos <script> do resto do SFC por índice, sem regex de tag
 // (o CodeQL trata regex de <script> como filtro de HTML; aqui só lemos fonte nossa).
-function splitScripts (source: string): { script: string, template: string } {
-  const lower = source.toLowerCase()
-  const scripts: string[] = []
-  let template = ""
-  let at = 0
+function splitScripts(source: string): { script: string; template: string } {
+  const lower = source.toLowerCase();
+  const scripts: string[] = [];
+  let template = "";
+  let at = 0;
   while (true) {
-    const open = lower.indexOf("<script", at)
-    if (open === -1) break
-    const bodyStart = lower.indexOf(">", open) + 1
-    const close = lower.indexOf("</script", bodyStart)
-    if (bodyStart === 0 || close === -1) break
-    template += source.slice(at, open)
-    scripts.push(source.slice(bodyStart, close))
-    const end = lower.indexOf(">", close)
-    at = end === -1 ? source.length : end + 1
+    const open = lower.indexOf("<script", at);
+    if (open === -1) break;
+    const bodyStart = lower.indexOf(">", open) + 1;
+    const close = lower.indexOf("</script", bodyStart);
+    if (bodyStart === 0 || close === -1) break;
+    template += source.slice(at, open);
+    scripts.push(source.slice(bodyStart, close));
+    const end = lower.indexOf(">", close);
+    at = end === -1 ? source.length : end + 1;
   }
-  template += source.slice(at)
-  return { script: scripts.join('\n'), template }
+  template += source.slice(at);
+  return { script: scripts.join("\n"), template };
 }
 
 // Corpo de `async function <nome>(…) {…}` por contagem de chaves (fonte nossa,
@@ -90,7 +91,8 @@ function asyncFunctionBody(script: string, name: string): string {
   let depth = 0;
   for (let i = open; i < script.length; i++) {
     if (script[i] === "{") depth += 1;
-    else if (script[i] === "}" && --depth === 0) return script.slice(open + 1, i);
+    else if (script[i] === "}" && --depth === 0)
+      return script.slice(open + 1, i);
   }
   return "";
 }
@@ -98,8 +100,15 @@ function asyncFunctionBody(script: string, name: string): string {
 // Função async que só espera a PERGUNTA da casa (`useConfirm`, direto ou por outra
 // função que também só espera por ela) não é clique inerte: o toque abre o diálogo
 // no mesmo instante. Ela sai da varredura; a que espera rede continua nela.
-function confirmOnlyNames(script: string, asyncNames: Set<string>): Set<string> {
-  const askers = new Set([...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*useConfirm\(\)/g)].map((m) => m[1]!));
+function confirmOnlyNames(
+  script: string,
+  asyncNames: Set<string>,
+): Set<string> {
+  const askers = new Set(
+    [...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*useConfirm\(\)/g)].map(
+      (m) => m[1]!,
+    ),
+  );
   if (!askers.size) return new Set();
   const confirmOnly = new Set<string>();
   let grew = true;
@@ -107,8 +116,15 @@ function confirmOnlyNames(script: string, asyncNames: Set<string>): Set<string> 
     grew = false;
     for (const name of asyncNames) {
       if (confirmOnly.has(name)) continue;
-      const awaited = [...asyncFunctionBody(script, name).matchAll(/\bawait\b\s*\(?\s*([\w$.]*)/g)].map((m) => m[1]!);
-      if (awaited.length && awaited.every((callee) => askers.has(callee) || confirmOnly.has(callee))) {
+      const awaited = [
+        ...asyncFunctionBody(script, name).matchAll(
+          /\bawait\b\s*\(?\s*([\w$.]*)/g,
+        ),
+      ].map((m) => m[1]!);
+      if (
+        awaited.length &&
+        awaited.every((callee) => askers.has(callee) || confirmOnly.has(callee))
+      ) {
         confirmOnly.add(name);
         grew = true;
       }
@@ -121,13 +137,19 @@ function inertAsyncClicks(source: string): string[] {
   const { script, template } = splitScripts(source);
   const declaredAsync = new Set([
     ...[...script.matchAll(/async\s+function\s+(\w+)/g)].map((m) => m[1]!),
-    ...[...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*async\b/g)].map((m) => m[1]!),
+    ...[...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*async\b/g)].map(
+      (m) => m[1]!,
+    ),
   ]);
   const confirmOnly = confirmOnlyNames(script, declaredAsync);
-  const asyncNames = new Set([...declaredAsync].filter((name) => !confirmOnly.has(name)));
+  const asyncNames = new Set(
+    [...declaredAsync].filter((name) => !confirmOnly.has(name)),
+  );
   const inert = new Set<string>();
   for (const tag of openingTags(template)) {
-    const click = tag.match(/@click(?:\.\w+)*="(?:void\s+)?(\w+)(?:\([^"]*\))?"/);
+    const click = tag.match(
+      /@click(?:\.\w+)*="(?:void\s+)?(\w+)(?:\([^"]*\))?"/,
+    );
     if (!click || !asyncNames.has(click[1]!)) continue;
     if (/\s:(?:loading|aria-busy|disabled)=/.test(tag)) continue;
     inert.add(click[1]!);
@@ -138,22 +160,14 @@ function inertAsyncClicks(source: string): string[] {
 // O que já existia sem pendente declarado em 01/10/2026. Só encolhe.
 const KNOWN_INERT: Record<string, string[]> = {
   "bi-nuxt/app/pages/explore.vue": ["removeLoaded"],
-  "marketing-nuxt/app/components/MarketingBoard.vue": ["confirmReject"],
-  "marketing-nuxt/app/pages/announcements/[id].vue": ["refreshAll", "trackDeliveryUntilSettled"],
-  "marketing-nuxt/app/pages/platforms.vue": ["onVerifyCatalog"],
-  "marketing-nuxt/app/pages/templates.vue": ["confirmRemove"],
-  "operator-kit/app/components/OperatorPwaInstallInvite.vue": ["install"],
+  "marketing-nuxt/app/pages/settings/templates.vue": ["confirmRemove"],
   "orders-nuxt/app/components/ChannelHealthChecklist.vue": ["copyAddress"],
-  "orders-nuxt/app/pages/catalog.vue": ["openDetail", "saveOrderDraft"],
-  "orders-nuxt/app/pages/index.vue": ["loadRejectReasons"],
+  "orders-nuxt/app/pages/catalog.vue": ["saveOrderDraft"],
   "pos-nuxt/app/components/PosAddressAutocomplete.vue": ["accept"],
   "pos-nuxt/app/components/PosCustomerModal.vue": ["cancelDecision"],
   "pos-nuxt/app/components/PosPaymentResult.vue": ["copyCode", "copyLink"],
-  "pos-nuxt/app/pages/session/closing.vue": ["goToCashReport", "goToCashSession"],
-  "pos-nuxt/app/pages/session/report.vue": ["goToCashSession"],
   "production-nuxt/app/components/ProductionStageGrid.vue": ["confirmVoid"],
   "production-nuxt/app/pages/board.vue": ["toggleFullscreen"],
-  "purchase-nuxt/app/pages/index.vue": ["addAndOpenReceiptLine", "toggleScannerTorch"],
 };
 
 describe("clique nunca inerte (layer + apps de operador)", () => {
@@ -169,7 +183,8 @@ describe("clique nunca inerte (layer + apps de operador)", () => {
   });
 
   it("a varredura reconhece o botão mudo e o que declara pendente", () => {
-    const mute = '<script setup>async function save() {}</script><template><button @click="save">Salvar</button></template>';
+    const mute =
+      '<script setup>async function save() {}</script><template><button @click="save">Salvar</button></template>';
     const declared =
       '<script setup>async function save() {}</script><template><button :aria-busy="saving || undefined" @click="save">Salvar</button></template>';
     const viaCapability =
@@ -189,9 +204,16 @@ describe("clique nunca inerte (layer + apps de operador)", () => {
   });
 
   it("o lote do Gestor de pedidos passa pela capability", () => {
-    const board = readFileSync(join(surfacesDir, "orders-nuxt/app/pages/index.vue"), "utf8");
-    expect(board).toContain("usePendingAction(async () => {");
-    expect(board).toContain(':aria-busy="bulkConfirming || undefined"');
-    expect(board).toContain(':aria-busy="bulkAdvancing || undefined"');
+    const board = readFileSync(
+      join(surfacesDir, "orders-nuxt/app/pages/index.vue"),
+      "utf8",
+    );
+    expect(board).toMatch(/usePendingAction\(\s*async \(\) => \{/);
+    // O lote mora na barra de seleção da suíte: o estado da ação vai como dado, e a
+    // peça marca `aria-busy` no botão.
+    expect(board).toContain("loading: bulkConfirming.value");
+    expect(board).toContain("loading: bulkAdvancing.value");
+    const bar = readFileSync(join(surfacesDir, "operator-kit/app/components/OperatorBulkBar.vue"), "utf8");
+    expect(bar.match(/:aria-busy="[^"]*loading \|\| undefined"/g)?.length).toBe(3);
   });
 });

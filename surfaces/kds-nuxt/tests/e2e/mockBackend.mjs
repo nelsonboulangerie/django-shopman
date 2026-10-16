@@ -2,8 +2,9 @@
 // BFF encaminha (djangoProxy repassa o header cookie ao Django):
 //   · com `e2e_session=authed` → sessão de operador AUTENTICADA + estações + board vazio;
 //   · sem o cookie → 403 nos endpoints de operador (device não autenticado → gate de login).
-// O board público do cliente (/kds/cliente/) responde 200 SEMPRE (o `/pickup` é público,
-// como o menuboard do Produção). Login/lock/ações reais rodam contra o Django (reviewer local).
+// O board público do cliente (/kds/pickup/) responde 200 SEMPRE (o `/pickup` é público,
+// como o menuboard do Produção). `POST /__mock/pickup-ready` passa o WEB-0007 de Em preparo
+// para Pronto (a chamada do painel); `POST /__mock/pickup-reset` volta ao começo. Login/lock/ações reais rodam contra o Django (reviewer local).
 //
 // PRÉVIA (`KDS_MOCK_FIXTURE=preview`): toda requisição entra autenticada (sem cookie) e as
 // estação `bancada` (preparo) serve os quadros de previewFixtures.mjs, com
@@ -27,6 +28,7 @@ const SESSION_AUTHED = {
 const INDEX = {
   instances: [
     { ref: "bancada", name: "Bancada", type: "prep", type_display: "Preparo", active_count: 0 },
+    { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: 0 },
   ],
 };
 
@@ -44,11 +46,22 @@ const BOARD = {
 };
 
 // Board público do cliente — o /pickup renderiza sem sessão de operador.
-const CUSTOMER = {
+const CUSTOMER_START = {
   status: {
     preparing: [{ ref: "WEB-0007", status: "preparing", status_label: "Preparando", updated_at_display: "08:00" }],
     ready: [{ ref: "WEB-0006", status: "ready", status_label: "Pronto", updated_at_display: "07:58" }],
     updated_at_display: "08:00",
+  },
+};
+let CUSTOMER = CUSTOMER_START;
+const CUSTOMER_CALLED = {
+  status: {
+    preparing: [],
+    ready: [
+      { ref: "WEB-0007", status: "ready", status_label: "Pronto", updated_at_display: "08:02" },
+      { ref: "WEB-0006", status: "ready", status_label: "Pronto", updated_at_display: "07:58" },
+    ],
+    updated_at_display: "08:02",
   },
 };
 
@@ -64,7 +77,15 @@ const server = createServer((req, res) => {
   const authed = Boolean(preview) || (req.headers.cookie || "").includes("e2e_session=authed");
 
   // Público — sempre 200, com ou sem sessão de operador.
-  if (/\/kds\/cliente\/?(\?|$)/.test(url)) return json(res, 200, CUSTOMER);
+  if (req.method === "POST" && url.startsWith("/__mock/pickup-ready")) {
+    CUSTOMER = CUSTOMER_CALLED;
+    return json(res, 200, {});
+  }
+  if (req.method === "POST" && url.startsWith("/__mock/pickup-reset")) {
+    CUSTOMER = CUSTOMER_START;
+    return json(res, 200, {});
+  }
+  if (/\/kds\/pickup\/?(\?|$)/.test(url)) return json(res, 200, CUSTOMER);
 
   // Sessão do dispositivo: 403 = não autenticado → o gate de login aparece.
   if (/\/operator\/session\/?(\?|$)/.test(url)) {
@@ -75,12 +96,41 @@ const server = createServer((req, res) => {
 
   if (/\/operator\/eligible\/?(\?|$)/.test(url)) return json(res, 200, { operators: [] });
   if (preview) {
+    if (req.method === "POST" && url.startsWith("/__preview/reset")) {
+      preview.reset();
+      return json(res, 200, {});
+    }
+    const settingsMatch = url.match(/\/kds\/([^/?]+)\/settings\/?(\?|$)/);
+    if (req.method === "PATCH" && settingsMatch) {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => {
+        let change = {};
+        try {
+          change = JSON.parse(raw || "{}");
+        } catch {
+          /* corpo inválido: nada muda */
+        }
+        json(res, 200, preview.saveSettings(settingsMatch[1], change));
+      });
+      return;
+    }
     if (req.method === "POST" && preview.write(url)) return json(res, 200, {});
+    const historyMatch = url.match(/\/kds\/([^/?]+)\/history\/?(\?.*)?$/);
+    if (historyMatch) {
+      const q = new URLSearchParams(historyMatch[2] ? historyMatch[2].slice(1) : "").get("q");
+      return json(res, 200, preview.history(historyMatch[1], q));
+    }
     const station = url.match(/\/kds\/([^/?]+)\/?(\?|$)/);
-    if (station && station[1] !== "cliente") return json(res, 200, preview.board(station[1]));
+    if (station) return json(res, 200, preview.board(station[1]));
     if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, preview.index());
   }
   if (/\/kds\/[^/]+\/?(\?|$)/.test(url)) return json(res, 200, BOARD); // /kds/<ref>/
+  // Operador sem a permissão da Cozinha: o índice recusa, e a tela não pode dizer
+  // "nenhuma estação cadastrada" (alpha, 13/10/2026).
+  if (/\/kds\/?(\?|$)/.test(url) && (req.headers.cookie || "").includes("e2e_kds=forbidden")) {
+    return json(res, 403, { detail: "Operador sem permissão para esta ação." });
+  }
   if (/\/kds\/?(\?|$)/.test(url)) return json(res, 200, INDEX); // índice de estações
   return json(res, 200, {});
 });

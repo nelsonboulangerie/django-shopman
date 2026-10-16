@@ -14,12 +14,32 @@ test.describe("KDS — gate de operador", () => {
     await expect(page.getByLabel("Senha")).toBeVisible();
   });
 
-  test("sessão autenticada → estações + rail da suíte (kit), sem login", async ({ page, context }) => {
+  test("sessão autenticada → estações + barra lateral do shell da suíte, sem login", async ({ page, context }) => {
     await context.addCookies([authed]);
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Estações" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Entre para operar" })).toHaveCount(0);
-    await expect(page.locator("aside[data-suite-rail]")).toBeVisible();
+    await expect(page.locator("[data-operator-suite-shell]")).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Navegação do aplicativo" })).toBeVisible();
+  });
+
+  test("operador sem permissão → a recusa do servidor, nunca 'nenhuma estação cadastrada'", async ({ page, context }) => {
+    await context.addCookies([authed, { ...authed, name: "e2e_kds", value: "forbidden" }]);
+    await page.goto("/");
+    await expect(page.getByText("Não foi possível carregar as estações")).toBeVisible();
+    await expect(page.getByText("Operador sem permissão para esta ação.")).toBeVisible();
+    await expect(page.getByText("Nenhuma estação cadastrada")).toHaveCount(0);
+  });
+
+  test("navegação pelas estações reais: a bancada pelo nome, Saída no Gestor, sem item Preparo", async ({ page, context }) => {
+    await context.addCookies([authed]);
+    await page.goto("/bancada");
+    const rail = page.getByRole("navigation", { name: "Seções da Cozinha", exact: true });
+    const bancada = rail.getByRole("link", { name: "Bancada" });
+    await expect(bancada).toHaveAttribute("href", "/bancada");
+    await expect(bancada).toHaveAttribute("aria-current", "page");
+    await expect(rail.getByRole("link", { name: "Saída" })).toHaveAttribute("href", /\?columns=expedition$/);
+    await expect(rail.getByText("Preparo", { exact: true })).toHaveCount(0);
   });
 });
 
@@ -29,7 +49,29 @@ test.describe("KDS — split operador vs público", () => {
     await page.goto("/pickup");
     await expect(page.getByRole("heading", { name: "Seu pedido" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Entre para operar" })).toHaveCount(0);
-    await expect(page.locator("aside[data-suite-rail]")).toHaveCount(0);
+    await expect(page.locator("[data-operator-suite-shell]")).toHaveCount(0);
+  });
+
+  test("/pickup CHAMA: o número que fica pronto entra em destaque e o destaque passa", async ({ page, request }) => {
+    const mock = `http://127.0.0.1:${process.env.KDS_E2E_MOCK_PORT || "8798"}`;
+    await request.post(`${mock}/__mock/pickup-reset`);
+    await page.clock.install();
+    await page.goto("/pickup");
+    const readyColumn = page.locator("section", { hasText: "Pronto para retirar" });
+    const card = (code: string) => readyColumn.locator("article", { hasText: code });
+    await expect(card("0006")).toBeVisible();
+    // O que já estava pronto quando o painel abriu não chama.
+    await expect(page.locator("article[data-calling]")).toHaveCount(0);
+
+    await request.post(`${mock}/__mock/pickup-ready`);
+    // Sem o SSE (o mock não tem stream), o poll de reserva traz a mudança.
+    await page.clock.runFor(31_000);
+    await expect(card("0007")).toHaveAttribute("data-calling", "true");
+    await expect(card("0006")).not.toHaveAttribute("data-calling", "true");
+
+    await page.clock.runFor(11_000);
+    await expect(page.locator("article[data-calling]")).toHaveCount(0);
+    await request.post(`${mock}/__mock/pickup-reset`);
   });
 });
 

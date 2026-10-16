@@ -11,6 +11,8 @@ import logging
 from django.db import transaction
 from shopman.orderman.models import Order
 
+from shopman.shop.services import cancel_reasons
+
 logger = logging.getLogger(__name__)
 
 
@@ -99,6 +101,10 @@ def cancel(
     data["cancelled_by"] = actor
     if extra_data:
         data.update(extra_data)
+    # Todo cancelamento sai com uma chave da lista única: o operador escolhe a
+    # dele; o automático (Pix vencido, cliente que cancela) recebe a do seu código.
+    if not cancel_reasons.cancel_reason(data.get("cancellation_reason_key")):
+        data["cancellation_reason_key"] = cancel_reasons.reason_key_for(reason)
     order.data = data
     order.save(update_fields=["data", "updated_at"])
 

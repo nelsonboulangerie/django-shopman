@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "print_labels";
+  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "confirm_order" | "allocate_blind_codes" | "print_labels";
   label: string;
   priority: number;
   enabled: boolean;
@@ -49,7 +49,7 @@ export interface OperatorAlertCountsProjection {
   critical: number;
 }
 
-/** OperatorAlertProjection(pk: 'int', rev: 'int', type: 'str', type_label: 'str', severity: "Literal['warning', 'error', 'critical']", severity_label: 'str', audience: 'str', message: 'str', order_ref: 'str', created_at_display: 'str', actions: 'tuple[ProductionActionProjection, ...]') */
+/** OperatorAlertProjection(pk: 'int', rev: 'int', type: 'str', type_label: 'str', severity: "Literal['warning', 'error', 'critical']", severity_label: 'str', audience: 'str', message: 'str', order_ref: 'str', created_at_display: 'str', actions: 'tuple[ProductionActionProjection, ...]', respond_by_iso: 'str' = '', deadline_kind: 'str' = '', origin_label: 'str' = '', origin_icon: 'str' = '', subject: 'str' = '') */
 export interface OperatorAlertProjection {
   pk: number;
   rev: number;
@@ -62,6 +62,11 @@ export interface OperatorAlertProjection {
   order_ref: string;
   created_at_display: string;
   actions: ProductionActionProjection[];
+  respond_by_iso: string;
+  deadline_kind: string;
+  origin_label: string;
+  origin_icon: string;
+  subject: string;
 }
 
 /** OperatorAlertsProjection(alerts: 'tuple[OperatorAlertProjection, ...]', counts: 'OperatorAlertCountsProjection', generated_at: 'str' = '', source_revision: 'str' = '', fresh_until: 'str' = '', contract_version: 'int' = 1) */
@@ -484,6 +489,7 @@ export interface ProductionWeighingProjection {
   scale_precision_display: string;
   scale_rounding_note: string;
   tickets: ProductionWeighingTicketProjection[];
+  codes_ready: boolean;
   print_destination: ProductionPrintDestinationProjection | null;
   access: ProductionSurfaceAccess;
   actions: ProductionActionProjection[];

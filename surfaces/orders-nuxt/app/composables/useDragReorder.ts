@@ -8,7 +8,11 @@
 const DRAG_ATTR = "data-dragkey";
 const THRESHOLD = 5;
 
-export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: string[]) => void, start?: () => void) {
+export function useDragReorder(
+  getKeys: () => string[],
+  commit: (orderedKeys: string[]) => void,
+  start?: () => void,
+) {
   const dragKey = ref<string | null>(null);
   const overKey = ref<string | null>(null);
 
@@ -21,14 +25,16 @@ export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: st
 
   function keyAt(x: number, y: number): string | null {
     const el = document.elementFromPoint(x, y);
-    const item = el && "closest" in el ? (el as Element).closest(`[${DRAG_ATTR}]`) : null;
+    const item =
+      el && "closest" in el ? (el as Element).closest(`[${DRAG_ATTR}]`) : null;
     return item?.getAttribute(DRAG_ATTR) ?? null;
   }
 
   function onMove(e: PointerEvent) {
     if (dragKey.value === null) {
       if (pendingKey === null) return;
-      if (Math.hypot(e.clientX - startX, e.clientY - startY) < THRESHOLD) return;
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) < THRESHOLD)
+        return;
       dragKey.value = pendingKey; // limiar cruzado → começa o arraste
       overKey.value = pendingKey;
       document.body.style.userSelect = "none";
@@ -98,7 +104,13 @@ export function useDragReorder(getKeys: () => string[], commit: (orderedKeys: st
   }
 
   function onKeyDown(key: string, event: KeyboardEvent) {
-    if (!["ArrowUp", "ArrowDown"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (
+      !["ArrowUp", "ArrowDown"].includes(event.key) ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     const keys = [...getKeys()];

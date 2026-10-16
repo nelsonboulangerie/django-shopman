@@ -118,8 +118,8 @@ describe("OperatorCapacityStatus", () => {
   });
 
   it.each([
-    ["cgroup-v2", "Número medido no servidor."],
-    ["cgroup-v1", "Número medido no servidor."],
+    ["cgroup-v2", "Número medido."],
+    ["cgroup-v1", "Número medido."],
     ["proc", "Número estimado: a memória pode aparecer maior do que é."],
   ] as const)("o detalhe diz de onde veio o número (%s), sem jargão", async (source, text) => {
     reading.value = sample(40, 10, { source });

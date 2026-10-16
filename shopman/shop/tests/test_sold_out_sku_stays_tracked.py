@@ -1,7 +1,7 @@
 """SKU esgotado continua RASTREADO — e por isso não vende.
 
 ``is_tracked`` responde "o Stockman já controlou este SKU?", não "tem saldo agora?".
-SKU não rastreado é aprovado sem limite (``available_qty = 999999``); então, se um
+SKU não rastreado é aprovado sem teto (``orderable_ceiling = None``); então, se um
 SKU esgotado deixasse de ser rastreado, ele passaria a vender sem limite exatamente
 quando acabou.
 
@@ -48,5 +48,6 @@ def test_sold_out_sku_is_still_tracked(sold_out):
 def test_sold_out_sku_is_refused_not_unlimited(sold_out):
     result = availability.check(SKU, Decimal("1"))
     assert result["ok"] is False
-    assert result["untracked"] is False
-    assert result["available_qty"] != Decimal("999999")
+    assert result["is_tracked"] is True
+    assert result["available_qty"] == Decimal("0")
+    assert result["orderable_ceiling"] == Decimal("0")

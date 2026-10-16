@@ -43,13 +43,25 @@ from shopman.backstage.projections.channel_health import (
     ChannelHealthLink,
     ChannelHealthProjection,
 )
+from shopman.backstage.projections.customer_groups import (
+    CustomerGroupAdvantageProjection,
+    CustomerGroupFormOptionsProjection,
+    CustomerGroupListProjection,
+    CustomerGroupOptionProjection,
+    CustomerGroupProjection,
+)
 from shopman.backstage.projections.customers import (
+    CustomerAddressProjection,
     CustomerCandidateProjection,
+    CustomerConsentProjection,
     CustomerDetailProjection,
     CustomerFilterOption,
+    CustomerFormOptionProjection,
+    CustomerFormOptionsProjection,
     CustomerIdentifierProjection,
     CustomerListProjection,
     CustomerOrderRowProjection,
+    CustomerPriceTierProjection,
     CustomerRowProjection,
     MergeAuditListProjection,
     MergeAuditRowProjection,
@@ -89,6 +101,7 @@ from shopman.backstage.projections.order_history import (
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
     CancellationPresetGroupProjection,
+    CancelReasonProjection,
     CustomerProfileProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
@@ -108,6 +121,7 @@ from shopman.backstage.projections.preorders import (
     PreorderHandOverProjection,
     PreorderRescheduleProjection,
 )
+from shopman.backstage.services.courier_reminder import CourierReminderProjection
 from shopman.shop.projections.types import Action, OrderItemProjection, TimelineEventProjection
 
 #: Generated artifact, relative to the repository root (``BASE_DIR``).
@@ -145,6 +159,7 @@ CONTRACT_DATACLASSES = (
     NotificationAttemptProjection,
     NotificationReceiptProjection,
     AwaitingWorkOrderProjection,
+    CancelReasonProjection,
     CancellationPresetGroupProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
@@ -152,6 +167,7 @@ CONTRACT_DATACLASSES = (
     UndoProjection,
     KitchenStationProjection,
     KitchenProgressProjection,
+    CourierReminderProjection,
     OrderCardProjection,
     PreorderCardProjection,
     PreorderHandOverProjection,
@@ -167,12 +183,22 @@ CONTRACT_DATACLASSES = (
     QueueAwarenessProjection,
     TwoZoneQueueProjection,
     CustomerFilterOption,
+    CustomerFormOptionProjection,
+    CustomerFormOptionsProjection,
+    CustomerPriceTierProjection,
     CustomerRowProjection,
     CustomerListProjection,
     CustomerIdentifierProjection,
     CustomerOrderRowProjection,
     CustomerCandidateProjection,
+    CustomerAddressProjection,
+    CustomerConsentProjection,
     CustomerDetailProjection,
+    CustomerGroupOptionProjection,
+    CustomerGroupAdvantageProjection,
+    CustomerGroupFormOptionsProjection,
+    CustomerGroupProjection,
+    CustomerGroupListProjection,
     MergeSideProjection,
     MergeMoveProjection,
     MergeFillProjection,
@@ -197,6 +223,7 @@ def render_orders_contract_ts() -> str:
             "shopman/backstage/projections/order_queue.py"
             " + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py"
             " + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py"
+            " + shopman/backstage/projections/customer_groups.py"
             " + shopman/backstage/projections/notification_receipts.py"
             " + shopman/backstage/projections/order_history.py"
             " + shopman/backstage/projections/order_attention.py"

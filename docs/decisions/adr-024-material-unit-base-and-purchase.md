@@ -1,6 +1,7 @@
 # ADR-024 — Conversão de unidade é cidadã de primeira classe: base única, conversões declaradas
 
-**Status:** **Aceito na direção** (dono, 2026-08-19). Os XMLs de NF-e de entrada que o dono vai mandar **calibram os defaults, não mudam a decisão**.
+**Status:** Aceito
+**Decisão:** direção aceita pelo dono em 2026-08-19. Os XMLs de NF-e de entrada calibram os defaults, não mudam a decisão.
 **Data:** 2026-08-19
 **Escopo:** `packages/buyman` (unidade-base do `Material`, tabela de conversões, unidade de compra no custo); `packages/craftsman` (a ficha fala na base; anotação de preparo derivada); `packages/stockman` (o ledger conta na base); `shopman/backstage` (a anotação na tela de mise-en-place/picking); `config/management/commands/seed.py`
 **Execução:** [UNIT-CONVERSION-PLAN.md](../plans/UNIT-CONVERSION-PLAN.md) — em fases, **nada implementado ainda**

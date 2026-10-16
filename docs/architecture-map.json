@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "layers": ["kernel", "orchestrator", "query_read_side", "surfaces"],
+  "transversal": "instance",
+  "delivery_boundary": {
+    "query": ["GET", "SSE"],
+    "command_ingress": ["POST", "PUT", "PATCH", "DELETE", "intent"]
+  },
+  "kernel": {
+    "domain_packages": ["buyman", "cashman", "craftsman", "doorman", "fiscalman", "guestman", "offerman", "orderman", "payman", "stockman"],
+    "shared_capabilities": ["refs", "utils", "watchman"]
+  },
+  "orchestrator": ["shopman/shop"],
+  "query_read_side": [
+    "shopman/shop/projections",
+    "shopman/storefront/presentation",
+    "shopman/storefront/api",
+    "shopman/backstage/projections",
+    "shopman/backstage/api"
+  ],
+  "surfaces": {
+    "product": ["storefront", "hub", "pos", "kds", "orders", "production", "marketing", "bi", "purchase"],
+    "internal": ["kitchensink"],
+    "external": ["status"],
+    "shared_layer": ["operator-kit"],
+    "deploy_infrastructure": ["operator-router"],
+    "registry": "surfaces/registry.json"
+  },
+  "instance": ["database", "config", "brand"]
+}

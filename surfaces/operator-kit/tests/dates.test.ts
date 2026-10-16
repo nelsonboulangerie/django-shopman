@@ -11,6 +11,7 @@ import {
   otherDayCaption,
   periodAnchor,
   periodLabel,
+  periodShortLabel,
   periodFromQuery,
   periodOfDay,
   periodToQuery,
@@ -174,6 +175,18 @@ describe("Tipo 2: período", () => {
     const label = periodLabel(sel("custom", "2026-09-01", "2026-09-05"), { date_from: "2026-09-01", date_to: "2026-09-05" }, TODAY);
     expect(label).toBe("Personalizado · 01/09 a 05/09");
     expect(label).not.toMatch(/[–—]/);
+  });
+
+  it("o gatilho curto troca o nome pelo chip e o dia perto de hoje pela palavra", () => {
+    const short = (selection: ReturnType<typeof sel>, bounds = bi) =>
+      periodShortLabel(selection, resolvePeriod(selection, bounds), TODAY);
+    expect(short(sel("day"))).toBe("Hoje");
+    expect(short(sel("day", "2026-09-30"))).toBe("Ontem");
+    expect(short(sel("day", "2026-09-29"))).toBe("Ter 29/09");
+    expect(short(sel("28d"))).toBe("28D · 04/09 a 01/10");
+    expect(short(sel("week"), { today: TODAY })).toBe("Semana · 28/09 a 04/10");
+    expect(short(sel("custom", "2026-09-01", "2026-09-05"))).toBe("01/09 a 05/09");
+    expect(short(sel("custom", "2026-09-01", "2026-09-05"))).not.toMatch(/[–—]/);
   });
 });
 

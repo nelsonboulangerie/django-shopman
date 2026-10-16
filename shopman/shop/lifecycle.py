@@ -55,7 +55,7 @@ from shopman.shop.services import (
     stock,
 )
 from shopman.shop.services.business_calendar import next_operational_deadline
-from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date
+from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date, is_counter_takeaway
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,11 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
     if (_payment_is_captured(order) if payment_reads is None else
             payment_gate.payment_is_captured(order, payment_reads=payment_reads)):
         return
+    if method == "card" and not config_failed and _card_authorization_is_held(order, payment_reads=payment_reads):
+        # Cartão autorizado no pedido (captura manual): o dinheiro está reservado
+        # e o aceite é que cobra (``_on_accepted`` → ``payment.capture``). Exigir
+        # captura ANTES do aceite travava o pedido: ninguém conseguia aceitar.
+        return
 
     raise InvalidTransition(
         code="payment_not_captured",
@@ -176,6 +181,18 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
             "intent_ref": intent_ref,
         },
     )
+
+
+def _card_authorization_is_held(order, *, payment_reads=None) -> bool:
+    """O cartão do pedido está autorizado (reservado, ainda não cobrado)?"""
+    try:
+        status = payment.get_payment_status(order) if payment_reads is None else (
+            payment.get_payment_status(order, payment_reads=payment_reads)
+        )
+    except Exception:
+        logger.warning("lifecycle.card_authorization_lookup_failed order=%s", order.ref, exc_info=True)
+        return False
+    return str(status or "").lower() == "authorized"
 
 
 def secure_stock(order) -> None:
@@ -676,6 +693,11 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     _release_coupon_use(order)
     _settle_cancelled_payment(order)
     fiscal.cancel(order)
+    # A corrida da central não segue aberta para um pedido que não existe mais:
+    # antes da coleta ela é cancelada; depois, o operador é avisado.
+    from shopman.shop.services import courier
+
+    courier.on_order_cancelled(order)
     # Venda de balcão nasce completed (counter_handoff) e pode ser cancelada na
     # janela do PIN — os pontos creditados em _on_completed voltam.
     loyalty.revoke(order, reason="cancelled")
@@ -683,31 +705,68 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # justo se a venda existiu.
     loyalty.restore(order, reason="cancelled")
 
+    # Venda de balcão cancelada não vira aviso: o cliente está na frente do
+    # caixa e vê o cancelamento acontecer. "Seu pedido foi cancelado" chega a
+    # quem nunca fez pedido nenhum (o mesmo motivo de ``order_accepted`` não sair
+    # no balcão, em ``_on_accepted``). Encomenda e entrega do PDV têm saída pela
+    # frente e seguem avisando.
+    if is_counter_takeaway(order):
+        return
+
     # Local rejections already queued order_rejected. An iFood rejection stays
     # pending without notifying until CAN, so its now-confirmed cancellation
     # must still send the final notification even though rejected_by is retained.
     if (order.data or {}).get("rejected_by") and not (order.data or {}).get("ifood_cancelled"):
         return
 
-    # Only an operator-authored, customer-facing note reaches the customer. Machine
-    # codes (pix_timeout, customer_requested) live in `cancellation_reason` and are
-    # never surfaced — no note means the plain cancellation message.
-    note = str((order.data or {}).get("cancellation_note") or "").strip()
-    if note:
-        notification.send(order, "order_cancelled", reason=note)
-    else:
-        notification.send(order, "order_cancelled")
+    # O cliente lê o texto revisado da chave do motivo (lista única em
+    # `services/cancel_reasons.py`). Nem o código de máquina de
+    # `cancellation_reason` (pix_timeout…) nem a observação interna do operador
+    # chegam a ele.
+    from shopman.shop.services import cancel_reasons
+
+    data = order.data or {}
+    notification.send(
+        order,
+        "order_cancelled",
+        status_note=cancel_reasons.customer_text(data),
+        reason_key=cancel_reasons.reason_key_of(data),
+    )
 
 
 def _settle_cancelled_payment(order) -> None:
     """Cancel unpaid intents and refund any captured balance for cancelled orders."""
     reason = str((order.data or {}).get("cancellation_reason") or "order_cancelled")
     payment.cancel(order, reason=reason)
+    _alert_if_card_authorization_held(order)
     payment.refund(order)
 
 
+def _alert_if_card_authorization_held(order) -> None:
+    """Recusou e o Stripe não anulou: o valor segue reservado no cartão do cliente.
+
+    ``payment.cancel`` engole a falha do gateway (o cancelamento do pedido não
+    pode desfazer-se por isso), e a reserva ficava presa até o Stripe vencer a
+    autorização, sete dias depois, sem ninguém saber.
+    """
+    payment_data = (order.data or {}).get("payment") or {}
+    if str(payment_data.get("method") or "").lower() != "card":
+        return
+    if (payment.get_payment_status(order) or "").lower() != "authorized":
+        return
+    from shopman.shop.services import card_authorization
+
+    card_authorization.alert_release_failed(
+        order, intent_ref=str(payment_data.get("intent_ref") or ""),
+    )
+
+
 def _on_returned(order, config: ChannelConfig) -> None:
-    """Order returned: revert stock + refund + revoke loyalty + cancel fiscal + notify."""
+    """Order returned: notify + revert stock + refund + revoke loyalty + cancel fiscal."""
+    # O aviso da devolução vai PRIMEIRO: o estorno pelo gateway tem aviso próprio
+    # (``payment_refunded``, enfileirado dentro do ``payment.refund``), e o cliente
+    # tem de ler "registramos a devolução" antes de "devolvemos R$ X", nunca depois.
+    notification.send(order, "order_returned")
     # A recorded return has its own exact items, amount and retry identity.
     # ReturnHandler owns stock/payment; replaying the whole order doubles goods.
     if not (order.data or {}).get("returns"):
@@ -716,7 +775,6 @@ def _on_returned(order, config: ChannelConfig) -> None:
     fiscal.cancel(order)
     loyalty.revoke(order, reason="returned")
     loyalty.restore(order, reason="returned")
-    notification.send(order, "order_returned")
 
 
 _PHASE_HANDLERS = {
@@ -787,6 +845,8 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
         return
 
     if mode in ("auto_confirm", "auto_cancel"):
+        # O prazo da loja só começa quando o dinheiro chega: o Pix capturado
+        # (``_on_paid``) ou o cartão autorizado (``start_acceptance_deadline``).
         action = "confirm" if mode == "auto_confirm" else "cancel"
         if _requires_captured_payment_before_confirmation(order, config) and not _payment_is_captured(order):
             return
@@ -805,6 +865,26 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
             },
             available_at=alert_at,
         )
+
+
+def start_acceptance_deadline(order) -> None:
+    """O cartão foi autorizado: começa o prazo de aceite da loja (``auto_cancel``).
+
+    O Pix começa o prazo no ``_on_paid``; o cartão de captura manual nunca passa
+    por lá antes do aceite (a cobrança É o aceite), então quem registra a
+    autorização chama aqui (``card_authorization.watch``). Loja online paga ao
+    pedir (ADR-036): sem isto, o cartão autorizado esperava sem prazo.
+    """
+    if order.status != Order.Status.NEW:
+        return
+    try:
+        config = ChannelConfig.for_channel(order.channel_ref)
+    except Exception:
+        logger.warning("lifecycle.acceptance_deadline_config_failed order=%s", order.ref, exc_info=True)
+        return
+    if config.confirmation.mode != "auto_cancel":
+        return
+    _schedule_confirmation_timeout(order, config, action="cancel", source="card_authorized")
 
 
 def _payment_is_captured(order) -> bool:
@@ -1127,13 +1207,51 @@ def _schedule_confirmation_timeout(
         existing.payload = payload
         existing.available_at = expires_at
         existing.save(update_fields=["payload", "available_at", "updated_at"])
-        return existing
+        timer = existing
+    else:
+        timer = Directive.objects.create(
+            topic="confirmation.timeout",
+            payload=payload,
+            available_at=expires_at,
+        )
+    if action == "cancel":
+        _schedule_stale_alert_before_deadline(order, config, deadline=expires_at)
+    return timer
 
-    return Directive.objects.create(
-        topic="confirmation.timeout",
-        payload=payload,
-        available_at=expires_at,
+
+def _schedule_stale_alert_before_deadline(order, config: ChannelConfig, *, deadline) -> None:
+    """O aviso de pedido parado DENTRO do prazo de aceite, dizendo até quando.
+
+    No ``auto_cancel`` o pedido some sozinho no fim do prazo (e o dinheiro volta
+    ao cliente): o Gestor precisa saber antes. O aviso sai ``stale_new_alert_minutes``
+    depois do início do prazo (em horário de loja aberta, como o próprio prazo) e
+    anda junto quando o prazo é reagendado (o pagamento chegou).
+    """
+    stale_minutes = int(getattr(config.confirmation, "stale_new_alert_minutes", 0) or 0)
+    timeout_minutes = int(config.confirmation.timeout_minutes or 0)
+    if stale_minutes <= 0 or stale_minutes >= timeout_minutes:
+        return
+    alert_at = deadline - timedelta(minutes=timeout_minutes - stale_minutes)
+    payload = {
+        "order_ref": order.ref,
+        "alert_at": alert_at.isoformat(),
+        "deadline_at": deadline.isoformat(),
+    }
+    existing = (
+        Directive.objects.filter(
+            topic="order.stale_new_alert",
+            payload__order_ref=order.ref,
+            status="queued",
+        )
+        .order_by("available_at", "id")
+        .first()
     )
+    if existing:
+        existing.payload = payload
+        existing.available_at = alert_at
+        existing.save(update_fields=["payload", "available_at", "updated_at"])
+        return
+    Directive.objects.create(topic="order.stale_new_alert", payload=payload, available_at=alert_at)
 
 
 def _check_availability(order, config: ChannelConfig) -> bool:
@@ -1176,7 +1294,11 @@ def _check_availability(order, config: ChannelConfig) -> bool:
 def _verify_holds(order) -> bool:
     """Defense-in-depth: verify held SKUs match ordered SKUs after stock.hold().
     Returns False if order was cancelled."""
-    held_skus = {h.get("sku") for h in (order.data or {}).get("hold_ids", []) if h.get("hold_id") or h.get("untracked")}
+    held_skus = {
+        h.get("sku")
+        for h in (order.data or {}).get("hold_ids", [])
+        if h.get("hold_id") or stock.is_untracked_hold_entry(h)
+    }
     ordered_skus = {item["sku"] for item in order.snapshot.get("items", [])}
     missing = ordered_skus - held_skus
 

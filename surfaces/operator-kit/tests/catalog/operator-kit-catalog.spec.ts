@@ -271,3 +271,53 @@ test("shell operacional é demonstrado como página isolada", async ({
     { allowedFindings: [] },
   );
 });
+
+test("rótulo que cabe: degraus pelo contêiner e nome de peça fixa com a mesma altura", async ({
+  page,
+}, testInfo) => {
+  const viewport = testInfo.project.metadata
+    .operatorViewport as OperatorVisualViewport;
+  await page.goto("/__operator_kit_catalog");
+  await expect(
+    page.locator('[data-operator-catalog][data-hydrated="true"]'),
+  ).toBeAttached();
+  const section = page.locator("#fit");
+  await section.scrollIntoViewIfNeeded();
+
+  // O degrau visível de cada barra: o texto com largura (os outros medem zero).
+  const tiers = await section.locator("[data-fit-demo]").evaluateAll((boxes) =>
+    boxes.map((box) => {
+      const buttons = [...box.querySelectorAll("button")];
+      const shown = buttons.map(
+        (button) =>
+          [...button.querySelectorAll<HTMLElement>(".op-fit-text")].find(
+            (text) => text.getBoundingClientRect().width > 0,
+          )?.dataset.opFitVariant ?? "icon",
+      );
+      return {
+        demo: (box as HTMLElement).dataset.fitDemo,
+        width: box.getBoundingClientRect().width,
+        shown,
+        names: buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim()),
+      };
+    }),
+  );
+  for (const tier of tiers) {
+    // O nome acessível é sempre o completo, qualquer que seja o degrau.
+    expect(tier.names.every((name) => name && name.length > 0)).toBe(true);
+  }
+  const effectiveWidth = viewport.width / (viewport.zoom ?? 1);
+  // Onde a caixa tem a largura pedida (a viewport não a estreita), o degrau é o esperado.
+  if (effectiveWidth >= 640) {
+    expect(tiers.find((tier) => tier.demo === "full")?.shown).toEqual(["full", "full"]);
+    expect(tiers.find((tier) => tier.demo === "short")?.shown).toEqual(["short", "short"]);
+  }
+  expect(tiers.find((tier) => tier.demo === "icon")?.shown).toEqual(["icon", "icon"]);
+  expect(tiers.find((tier) => tier.demo === "wrap")?.shown).toEqual(["only"]);
+
+  // Cartão com 1, 2 e 3+ linhas: a mesma altura.
+  const heights = await section
+    .locator("[data-fixed-demo-card]")
+    .evaluateAll((cards) => cards.map((card) => Math.round(card.getBoundingClientRect().height)));
+  expect(new Set(heights).size).toBe(1);
+});

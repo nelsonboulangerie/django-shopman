@@ -9,6 +9,7 @@ const setCollections = vi.fn();
 const setAutomatic = vi.fn();
 for (const [key, value] of Object.entries({ computed, ref })) vi.stubGlobal(key, value);
 vi.stubGlobal("useHead", vi.fn());
+vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
 vi.stubGlobal("useRoute", () => ({ query: {} }));
 vi.stubGlobal("useNextFocus", vi.fn());
 let leave: () => boolean | Promise<boolean>;
@@ -123,13 +124,13 @@ it("todo card tem o mesmo toggle, e o toggle abre o modal em vez de mudar direto
   expect(integration.text()).toContain("Envio de catálogo desativado");
   expect(integration.text()).toContain("1 sincronizados · 1 pendentes · 1 com erro");
   expect(integration.text()).toContain("2 retirados · 3 não enviados");
-  expect(integration.findAll("nuxtlink").map(link => link.attributes("to"))).toEqual(["/channels/ifood/catalog", "/catalog"]);
-  // Um toggle por card — venda e exibição —, com cabeçalho, corpo e rodapé.
+  expect(integration.findAll("a").map(link => link.attributes("href"))).toEqual(["/channels/ifood/catalog", "/catalog"]);
+  // Um toggle por card (venda e exibição): título com o toggle, corpo e ações, tudo no corpo do cartão.
   expect(wrapper.findAll("[data-channel-switch]")).toHaveLength(2);
   for (const card of wrapper.findAll("[data-channel-card]")) {
-    expect(card.find("[data-card-header] [data-channel-switch]").exists()).toBe(true);
+    expect(card.find("[data-card-title] [data-channel-switch]").exists()).toBe(true);
     expect(card.find("[data-card-body]").exists()).toBe(true);
-    expect(card.find("[data-card-footer]").exists()).toBe(true);
+    expect(card.find("[data-card-actions]").exists()).toBe(true);
   }
   expect(wrapper.find("[data-switch-dialog-stub]").exists()).toBe(false);
   await integration.get("[data-channel-switch]").trigger("click");

@@ -1,6 +1,30 @@
 import tailwindcss from "@tailwindcss/vite";
 import { definePwaCapability } from "../operator-kit/pwa.config";
 
+// Ícones que chegam por dado (as seções e sub-seções em `presentation/`, o estado do
+// item da entrada, o ciclo da barra lateral do kit): a varredura não os acha no
+// template, então entram no pacote do cliente por nome, pelo gancho
+// `icon:clientBundleIcons` (lá embaixo). Sem isto, o navegador busca no iconify e a CSP
+// recusa (o ícone some).
+const DATA_ICONS = [
+  "lucide:layout-dashboard",
+  "lucide:shopping-cart",
+  "lucide:package-check",
+  "lucide:database",
+  "lucide:panel-left-dashed",
+  "lucide:panel-left-close",
+  "lucide:panel-left-open",
+  "lucide:package-search",
+  "lucide:truck",
+  "lucide:calculator",
+  "lucide:clipboard-check",
+  "lucide:circle-alert",
+  "lucide:triangle-alert",
+  "lucide:circle-dashed",
+  "lucide:circle-check",
+  "lucide:circle-check-big",
+];
+
 export default defineNuxtConfig({
   extends: ["../operator-kit"],
   ssr: false,
@@ -35,7 +59,7 @@ export default defineNuxtConfig({
       kiosk: false,
       push: { surfaceRef: "purchase", categories: ["purchase"] },
       shortcuts: [
-        { name: "Recebimento", shortName: "Receber", url: "/?view=receive" },
+        { name: "Recebimento", shortName: "Receber", url: "/receive" },
       ],
     }),
     "@nuxtjs/color-mode",
@@ -74,6 +98,12 @@ export default defineNuxtConfig({
     class: "shrink-0",
     fetchTimeout: 2000,
     serverBundle: "local",
+  },
+
+  hooks: {
+    "icon:clientBundleIcons"(bundle: Set<string>) {
+      for (const name of DATA_ICONS) bundle.add(name);
+    },
   },
 
   css: ["~/assets/css/tailwind.css"],

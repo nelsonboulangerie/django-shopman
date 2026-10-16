@@ -11,6 +11,9 @@ export function useAlerts() {
     "/api/v1/backstage/alerts/",
     {
       key: "operator-alerts",
+      // O sino é lido daqui: o aviso que se resolve noutro app (o pedido no Gestor)
+      // vem com o endereço inteiro, e o da Produção com o caminho e o lote no filtro.
+      query: { surface: "production" },
       server: true,
     },
   );

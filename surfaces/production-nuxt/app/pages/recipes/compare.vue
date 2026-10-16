@@ -46,18 +46,43 @@ function setSide(side: "a" | "b", entryRef: string, number: number) {
   router.replace({ query });
 }
 
-function onEntryChange(side: "a" | "b", event: Event) {
-  const entryRef = (event.target as HTMLSelectElement).value;
+function onEntryChange(side: "a" | "b", entryRef: string) {
   const count = versionCount(entryRef);
   setSide(side, entryRef, count > 0 ? count : 1);
 }
 
-function onNumberChange(side: "a" | "b", event: Event) {
+function onNumberChange(side: "a" | "b", value: number | string | null | undefined) {
   const current = side === "a" ? sideA.value : sideB.value;
   if (!current) return;
-  const number = Math.max(1, Number((event.target as HTMLInputElement).value) || 1);
+  const number = Math.max(1, Number(value) || 1);
   setSide(side, current.ref, number);
 }
+
+// A lista do inventário cresce: `NuxtSelectMenu` com busca (por nome e SKU).
+const entryItems = computed(() =>
+  entries.value.map((entry) => ({
+    value: entry.ref,
+    label: entry.output_sku ? `${entry.name} · ${entry.output_sku}` : entry.name,
+  })),
+);
+const touch = useTouchPointer();
+
+// A tabela da suíte: o ingrediente fica (fixado); o papel é coluna de apoio.
+const NUM = { class: { th: "text-right", td: "text-right tabular-nums whitespace-nowrap" } };
+const rowColumns = [
+  { id: "ingredient", header: "Ingrediente", enableHiding: false },
+  { accessorKey: "role_label", header: "Papel", meta: { supporting: true } },
+  { id: "a", header: "A", meta: NUM },
+  { id: "b", header: "B", meta: NUM },
+  { id: "delta", header: "Diferença", meta: NUM },
+  { id: "pct", header: "%", meta: NUM },
+];
+const metricColumns = [
+  { accessorKey: "label", header: "Métrica", enableHiding: false },
+  { id: "a", header: "A", meta: NUM },
+  { id: "b", header: "B", meta: NUM },
+  { id: "delta", header: "Diferença", meta: NUM },
+];
 
 const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeCompare(a, b);
 </script>
@@ -68,66 +93,44 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mb-4 grid gap-3 sm:grid-cols-2">
-        <div v-for="side in (['a', 'b'] as const)" :key="side" class="grid gap-2 rounded-md border bg-card p-3">
-          <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">{{ side === "a" ? "Lado A" : "Lado B" }}</p>
+        <NuxtCard v-for="side in (['a', 'b'] as const)" :key="side">
           <div class="flex flex-wrap items-end gap-2">
-            <label class="grid min-w-0 flex-1 gap-1 text-xs font-medium text-muted-foreground">
-              Receita
-              <UiNativeSelect
-                :value="(side === 'a' ? sideA : sideB)?.ref ?? ''"
+            <NuxtFormField :label="side === 'a' ? 'Receita A' : 'Receita B'" class="min-w-0 flex-1">
+              <NuxtSelectMenu
+                :model-value="(side === 'a' ? sideA : sideB)?.ref"
+                :items="entryItems"
+                value-key="value"
+                placeholder="Escolha a receita"
+                class="w-full"
                 :disabled="bookPending && !entries.length"
-                @change="onEntryChange(side, $event)"
-              >
-                <option value="">Escolha…</option>
-                <option v-for="entry in entries" :key="entry.ref" :value="entry.ref">
-                  {{ entry.name }}{{ entry.output_sku ? ` · ${entry.output_sku}` : "" }}
-                </option>
-              </UiNativeSelect>
-            </label>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Versão
-              <UiInput
-                type="number"
-                min="1"
-                :max="versionCount((side === 'a' ? sideA : sideB)?.ref ?? '') || undefined"
-                :model-value="(side === 'a' ? sideA : sideB)?.number ?? ''"
-                :disabled="!(side === 'a' ? sideA : sideB)"
-                class="w-20 tabular-nums"
-                @change="onNumberChange(side, $event)"
+                :search-input="{ autofocus: !touch, placeholder: 'Buscar receita' }"
+                @update:model-value="(value: string) => onEntryChange(side, value)"
               />
-            </label>
+            </NuxtFormField>
+            <NuxtFormField label="Versão">
+              <NuxtInputNumber
+                :model-value="(side === 'a' ? sideA : sideB)?.number ?? null"
+                :min="1"
+                :max="versionCount((side === 'a' ? sideA : sideB)?.ref ?? '') || undefined"
+                :disabled="!(side === 'a' ? sideA : sideB)"
+                class="w-28"
+                @update:model-value="(value: number | null) => onNumberChange(side, value)"
+              />
+            </NuxtFormField>
           </div>
-        </div>
+        </NuxtCard>
       </div>
 
-      <div
+      <NuxtEmpty
         v-if="!ready"
-        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
-      >
-        <Icon name="lucide:git-compare" class="size-8" />
-        <p class="text-base font-medium">Escolha as duas versões para comparar.</p>
-        <p class="text-sm">Pode ser a mesma receita em dois momentos ou duas receitas diferentes.</p>
-      </div>
+        icon="i-lucide-git-compare"
+        title="Escolha as duas versões para comparar."
+        description="Pode ser a mesma receita em dois momentos ou duas receitas diferentes."
+        variant="outline"
+      />
 
-      <p v-else-if="pending && !compare" class="text-sm text-muted-foreground">Comparando…</p>
-
-      <div
-        v-else-if="error && !compare"
-        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
-      >
-        <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
-        <p class="text-base font-medium text-foreground">Não foi possível comparar.</p>
-        <p class="text-sm">Confira se as duas versões existem.</p>
-        <UiButton
-          type="button"
-          class="mt-1"
-          variant="outline"
-          size="sm"
-          @click="refresh()"
-        >
-          <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-        </UiButton>
-      </div>
+      <OperatorScreenState v-else-if="error && !compare" state="error" what="a comparação" description="Confira se as duas versões existem." @retry="refresh()" />
+      <OperatorScreenState v-else-if="pending && !compare" state="loading" what="a comparação" />
 
       <template v-else-if="compare">
         <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -135,49 +138,41 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
           <span><span class="text-muted-foreground">B</span> <b>{{ compare.b_title }}</b></span>
         </div>
 
-        <div class="overflow-x-auto rounded-md border">
-          <table class="w-full min-w-[36rem] text-sm">
-            <thead class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th class="px-3 py-2 font-semibold">Ingrediente</th>
-                <th class="hidden px-3 py-2 font-semibold sm:table-cell">Papel</th>
-                <th class="px-3 py-2 text-right font-semibold">A</th>
-                <th class="px-3 py-2 text-right font-semibold">B</th>
-                <th class="px-3 py-2 text-right font-semibold">Diferença</th>
-                <th class="px-3 py-2 text-right font-semibold">%</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y">
-              <tr v-if="!rows.length">
-                <td colspan="6" class="px-3 py-4 text-center text-muted-foreground">Nenhum ingrediente para comparar.</td>
-              </tr>
-              <tr v-for="(row, index) in rows" :key="`${row.sku || row.name}-${index}`" class="hover:bg-muted/30">
-                <td class="px-3 py-2">
-                  <p class="font-medium">{{ row.name || row.sku }}</p>
-                  <p v-if="row.sku" class="font-mono text-xs text-muted-foreground">{{ row.sku }}</p>
-                </td>
-                <td class="hidden px-3 py-2 text-muted-foreground sm:table-cell">{{ row.role_label }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ row.a_display || "—" }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ row.b_display || "—" }}</td>
-                <td class="px-3 py-2 text-right tabular-nums font-semibold" :class="toneClass(row.tone)">{{ row.delta_display || "—" }}</td>
-                <td class="px-3 py-2 text-right tabular-nums" :class="toneClass(row.tone)">{{ row.delta_pct_display || "—" }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <OperatorTable
+          :data="rows"
+          :columns="rowColumns"
+          :row-key="(row) => row.sku || row.name"
+          pinned="ingredient"
+          empty-title="Nenhum ingrediente para comparar."
+          caption="Ingredientes das duas versões"
+        >
+          <template #ingredient-cell="{ row }">
+            <span class="block font-medium">{{ row.original.name || row.original.sku }}</span>
+            <span v-if="row.original.sku" class="block font-mono text-xs text-muted-foreground">{{ row.original.sku }}</span>
+          </template>
+          <template #a-cell="{ row }">{{ row.original.a_display || "—" }}</template>
+          <template #b-cell="{ row }">{{ row.original.b_display || "—" }}</template>
+          <template #delta-cell="{ row }">
+            <span class="font-semibold" :class="toneClass(row.original.tone)">{{ row.original.delta_display || "—" }}</span>
+          </template>
+          <template #pct-cell="{ row }">
+            <span :class="toneClass(row.original.tone)">{{ row.original.delta_pct_display || "—" }}</span>
+          </template>
+        </OperatorTable>
 
-        <div v-if="metrics.length" class="mt-4 max-w-2xl overflow-hidden rounded-md border">
-          <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Métricas</p>
-          <table class="w-full text-sm">
-            <tbody class="divide-y">
-              <tr v-for="metric in metrics" :key="metric.label">
-                <td class="px-3 py-2 font-medium">{{ metric.label }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ metric.a_display || "—" }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ metric.b_display || "—" }}</td>
-                <td class="px-3 py-2 text-right tabular-nums font-semibold" :class="toneClass(metric.tone)">{{ metric.delta_display || "—" }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="metrics.length" class="mt-4 max-w-2xl">
+          <OperatorTable
+            :data="metrics"
+            :columns="metricColumns"
+            :row-key="(metric) => metric.label"
+            caption="Métricas das duas versões"
+          >
+            <template #a-cell="{ row }">{{ row.original.a_display || "—" }}</template>
+            <template #b-cell="{ row }">{{ row.original.b_display || "—" }}</template>
+            <template #delta-cell="{ row }">
+              <span class="font-semibold" :class="toneClass(row.original.tone)">{{ row.original.delta_display || "—" }}</span>
+            </template>
+          </OperatorTable>
         </div>
       </template>
     </section>

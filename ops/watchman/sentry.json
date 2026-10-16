@@ -1,0 +1,46 @@
+{
+  "schema_version": 3,
+  "organization": "nelson-boulangerie",
+  "project": "shopman",
+  "environment": "production",
+  "uptime_policy": {
+    "maximum_active_monitors": 1
+  },
+  "uptime": [
+    {
+      "name": "Uptime check for api.boulangerie.com.br/health/ready",
+      "url": "https://status.boulangerie.com.br/api/watchman-readiness",
+      "interval_seconds": 60,
+      "timeout_ms": 10000,
+      "downtime_threshold": 3,
+      "recovery_threshold": 2
+    }
+  ],
+  "error_rate": {
+    "name": "Number of errors above 20 over past 5 minutes",
+    "aggregate": "count()",
+    "dataset": "events",
+    "query": "is:unresolved level:[error,fatal]",
+    "time_window_seconds": 300,
+    "open_above": 20,
+    "resolve_at_or_below": 5
+  },
+  "notification": {
+    "name": "Watchman: operações ti@",
+    "frequency_minutes": 30,
+    "trigger_types": [
+      "first_seen_event",
+      "regression_event",
+      "reappeared_event",
+      "issue_resolved_trigger"
+    ],
+    "email_action": {
+      "target_type": "user"
+    },
+    "delivery_assurance": {
+      "intended_address": "ti@boulangerie.com.br",
+      "method": "dedicated_sentry_member",
+      "evidence_review_days": 90
+    }
+  }
+}

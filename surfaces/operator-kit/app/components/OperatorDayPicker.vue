@@ -120,12 +120,15 @@ const tileClass = (selected: boolean, blocked: boolean) => [
 </script>
 
 <template>
-  <div class="grid gap-2" data-day-picker>
+  <!-- Quatro por linha só quando o CONTÊINER cabe "Segunda-feira" em cada um (o
+       rótulo que cabe, dono 10/10/2026): num cartão estreito da tela larga, a régua da
+       viewport (`sm:`) espremia o dia a 84 px e o nome vazava da peça. -->
+  <div class="@container grid gap-2" data-day-picker>
     <div
       role="radiogroup"
       :aria-label="label"
       :aria-disabled="disabled || undefined"
-      class="grid grid-cols-2 gap-2 sm:grid-cols-4"
+      class="grid grid-cols-2 gap-2 @xl:grid-cols-4"
     >
       <button
         v-for="(option, index) in options"

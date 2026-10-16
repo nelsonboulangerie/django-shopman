@@ -33,9 +33,13 @@ TEXT_MIGRATIONS = [
     import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes"),
     import_module("shopman.shop.migrations.0079_confirmado_com_todo_carinho"),
     import_module("shopman.shop.migrations.0082_access_link_button_copy"),
+    import_module("shopman.shop.migrations.0092_avisos_de_estorno_e_devolucao"),
 ]
 DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
 REVISED = import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes")
+# Eventos que uma migração posterior APAGOU (aviso aposentado): o texto deles não
+# chega a seed nenhum, porque a linha deixa de existir.
+RETIRED_EVENTS = frozenset(import_module("shopman.shop.migrations.0095_pix_vencido_um_aviso_so").RETIRED_EVENTS)
 
 
 def _order(status: str):
@@ -73,13 +77,23 @@ def test_status_note_do_preparo_sem_hora_tem_frase_padrao():
 
 def test_status_note_do_cancelamento_diz_o_motivo_ou_aponta_o_pedido():
     order = _order("cancelled")
-    assert _status_note(order, "order_cancelled", "item indisponível") == "Motivo: item indisponível."
+    # Cancelado: a frase revisada da chave (P1-10), nunca o texto do operador.
+    assert _status_note(order, "order_cancelled", "texto do operador", note="Um dos itens acabou.") == "Um dos itens acabou."
+    assert _status_note(order, "order_rejected", "item indisponível") == "Motivo: item indisponível."
     assert _status_note(order, "order_rejected", None) == "Os detalhes estão no pedido."
 
 
 def test_status_note_so_existe_onde_o_texto_a_usa():
     users = {e for e, c in notification_copy.CUSTOMER_COPY.items() if "{status_note}" in c["body"]}
-    assert users == {"order_preparing", "order_cancelled", "order_rejected", "order_rescheduled", "order_updated"}
+    assert users == {
+        "order_preparing",
+        "order_cancelled",
+        "order_rejected",
+        "order_rescheduled",
+        "order_updated",
+        "payment_refunded",
+        "order_returned",
+    }
 
 
 # ── 2. Fonte única ────────────────────────────────────────────────────────────
@@ -149,6 +163,9 @@ def _through_later_migrations(event: str, subject: str, body: str, *, after) -> 
 @pytest.mark.parametrize("migration", TEXT_MIGRATIONS, ids=lambda m: m.__name__.rsplit(".", 1)[-1])
 def test_cada_migracao_de_texto_chega_ao_texto_do_seed(migration):
     for event, _old_subject, new_subject, _old_body, new_body in migration.TEXTS:
+        if event in RETIRED_EVENTS:
+            assert event not in NOTIFICATION_TEMPLATES, f"{event} foi aposentado e voltou ao seed"
+            continue
         final = _through_later_migrations(event, new_subject, new_body, after=migration)
         seeded = NOTIFICATION_TEMPLATES[event]
         assert (seeded["subject"], seeded["body"]) == final, event

@@ -120,7 +120,7 @@ class TestCheckoutProjectionShape:
             ref="regular", defaults={"name": "Regular", "is_default": True}
         )
         cust = Customer.objects.create(
-            ref="CUST-CHK", first_name="C", phone="11999999999", price_tier=grp,
+            ref="CUST-CHK", first_name="C", phone="11999999999", price_tiers=grp,
         )
         non_default = CustomerAddress.objects.create(
             customer=cust, label="work", formatted_address="Work",

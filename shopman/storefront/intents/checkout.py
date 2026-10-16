@@ -511,7 +511,7 @@ def _validate_lead_time(
         decision = availability.check(
             sku, Decimal(needed), channel_ref=channel_ref, target_date=chosen_date
         )
-        if decision["ok"] and not decision.get("untracked"):
+        if decision["ok"] and decision.get("is_tracked") is not False:
             continue
 
         name = getattr(line, "name", None) or sku

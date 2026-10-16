@@ -49,6 +49,11 @@ const {
 const weighing = useWeighing(selectedDate);
 
 const mode = ref<"insumos" | "preparos">("preparos");
+// As duas visões da mesma preparação, como abas que só trocam a lente (`:content="false"`).
+const MODE_ITEMS = [
+  { label: "Por preparo", value: "preparos" },
+  { label: "Por insumo", value: "insumos" },
+];
 
 // Tolerante a dado velho: se a atualização falhar mas já houver lista, mantém a lista
 // no ar e acende o chip de degradação (dado velho visível > tela em branco).
@@ -93,11 +98,15 @@ const visibleTickets = computed(() => {
   );
 });
 
-const expandedSku = ref<string | null>(null);
-function toggleBreakdown(line: MiseEnPlaceLineProjection) {
-  if (!line.breakdown.length) return;
-  expandedSku.value = expandedSku.value === line.sku ? null : line.sku;
-}
+// A linha aberta mostra as receitas que usam o insumo (o `#expanded` da tabela).
+const expandedLines = ref<Record<string, boolean>>({});
+const NUM = { class: { th: "text-right", td: "text-right tabular-nums" } };
+const lineColumns = computed(() => [
+  { id: "done", header: "Separado", enableHiding: false },
+  { id: "name", header: "Insumo", enableHiding: false },
+  { id: "quantity", header: "Quantidade", meta: NUM },
+  ...(projection.value?.has_stock_readings ? [{ id: "available", header: "Saldo", meta: NUM }] : []),
+]);
 
 // Dois artefatos de impressão, papéis distintos:
 //   · etiquetas CEGAS de pesagem (uma por preparo × ingrediente) — só o
@@ -174,9 +183,10 @@ function refreshAll() {
         :pending="isPending"
         @refresh="refreshAll()"
       >
-        <template #actions>
+        <template #primary>
           <OperatorPeriodPicker
-          v-model="period"
+            v-model="period"
+            compact
             class="[&_[data-period-today]]:hidden"
             :presets="['day']"
             :today="todayISO"
@@ -189,39 +199,14 @@ function refreshAll() {
 
     <section class="min-h-0 flex-1 overflow-auto p-3 md:p-4 print:hidden">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <div
-          class="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
-          role="group"
+        <!-- Modo: alterna duas visões da mesma preparação. -->
+        <NuxtTabs
+          v-model="mode"
+          :items="MODE_ITEMS"
+          :content="false"
+          variant="pill"
           aria-label="Modo de visualização"
-        >
-          <!-- Modo em segmento compacto: alterna duas visões da mesma preparação. -->
-          <button
-            type="button"
-            class="min-h-11 rounded-md px-4 op-label font-semibold transition"
-            :class="
-              mode === 'preparos'
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            "
-            :aria-pressed="mode === 'preparos'"
-            @click="mode = 'preparos'"
-          >
-            Por preparo
-          </button>
-          <button
-            type="button"
-            class="min-h-11 rounded-md px-4 op-label font-semibold transition"
-            :class="
-              mode === 'insumos'
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            "
-            :aria-pressed="mode === 'insumos'"
-            @click="mode = 'insumos'"
-          >
-            Por insumo
-          </button>
-        </div>
+        />
 
         <span
           v-if="mode === 'insumos' && projection?.work_order_count"
@@ -239,27 +224,25 @@ function refreshAll() {
         </span>
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
-          <UiCheckbox
+          <NuxtCheckbox
             v-if="mode === 'insumos'"
             v-model="expand"
             label="Explodir até matéria-prima"
-            class="text-muted-foreground"
           />
           <template v-if="mode === 'preparos' && visibleTickets.length">
-            <UiButton
-              type="button"
+            <NuxtButton
+              icon="i-lucide-printer"
+              label="Etiquetas de pesagem"
               @click="openLabelsPreview('pesagem')"
-            >
-              <Icon name="lucide:printer" class="size-4" /> Etiquetas de pesagem
-            </UiButton>
-            <UiButton
-              type="button"
+            />
+            <NuxtButton
+              color="neutral"
               variant="outline"
+              icon="i-lucide-tag"
+              label="Identificação interna"
               title="Identificação interna: nome, data prevista e validade configurada"
               @click="openLabelsPreview('preparo')"
-            >
-              <Icon name="lucide:tag" class="size-4" /> Identificação interna
-            </UiButton>
+            />
           </template>
         </div>
       </div>
@@ -289,15 +272,14 @@ function refreshAll() {
           <p class="text-base font-medium text-foreground">
             Não foi possível carregar a lista.
           </p>
-          <UiButton
-            type="button"
+          <NuxtButton
             class="mt-1"
+            color="neutral"
             variant="outline"
-            size="sm"
+            icon="i-lucide-refresh-cw"
+            label="Tentar de novo"
             @click="refresh()"
-          >
-            <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-          </UiButton>
+          />
         </div>
 
         <div
@@ -308,7 +290,7 @@ function refreshAll() {
           <p class="text-base font-medium">Nada para separar nesta data.</p>
           <NuxtLink
             to="/plan"
-            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-8 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>
@@ -333,180 +315,92 @@ function refreshAll() {
             <Icon name="lucide:scale" class="mt-0.5 size-4 shrink-0" />
             <span>{{ projection.yield_margin_note }}</span>
           </p>
-          <div class="overflow-hidden rounded-md border">
-            <table class="w-full text-sm">
-              <thead
-                class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
+          <!-- A tabela da suíte: o insumo fica (fixado); a caixa marca o separado (é
+               lista de conferência da bancada, não seleção de linhas); a seta abre as
+               receitas que usam o insumo. -->
+          <OperatorTable
+            v-model:expanded="expandedLines"
+            :data="visibleLines"
+            :columns="lineColumns"
+            :row-key="(line) => line.sku"
+            :row-label="(line) => line.name"
+            :row-class="(line) => (isChecked(line.sku) ? 'bg-muted/40 text-muted-foreground' : '')"
+            pinned="name"
+            :empty-title="query ? `Nenhum insumo para “${query.trim()}”.` : 'Nenhum insumo para separar.'"
+            caption="Insumos da preparação"
+            data-mise-lines
+          >
+            <template #done-header><span class="sr-only">Separado</span></template>
+            <template #done-cell="{ row }">
+              <NuxtCheckbox
+                :model-value="isChecked(row.original.sku)"
+                :aria-label="`Marcar ${row.original.name} como separado`"
+                @update:model-value="toggleChecked(row.original.sku)"
+              />
+            </template>
+            <template #name-cell="{ row }">
+              <span
+                class="block font-semibold"
+                :class="isChecked(row.original.sku) ? 'line-through decoration-1' : ''"
+                >{{ row.original.name }}</span
               >
-                <tr>
-                  <th class="w-12 px-3 py-2">
-                    <span class="sr-only">Separado</span>
-                  </th>
-                  <th class="px-3 py-2 font-semibold">Insumo</th>
-                  <th class="px-3 py-2 text-right font-semibold">Quantidade</th>
-                  <th
-                    v-if="projection?.has_stock_readings"
-                    class="px-3 py-2 text-right font-semibold"
+              <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir embaixo
+                     seria a mesma linha duas vezes. -->
+                <span v-if="row.original.name !== row.original.sku">{{ row.original.sku }}</span>
+                <NuxtBadge v-if="row.original.is_subrecipe" color="neutral" label="Pré-preparo" />
+              </span>
+            </template>
+            <template #quantity-cell="{ row }">
+              <span class="font-semibold">{{ projectedQuantityDisplay(row.original.quantity_display) }}</span>
+              <!-- O mesmo peso dito na contagem da bancada. O "≈" vem do servidor quando
+                   o fator é aproximado; aqui só se mostra. -->
+              <span v-if="row.original.annotation" class="block text-xs text-muted-foreground">{{
+                row.original.annotation
+              }}</span>
+              <!-- Os gramas a mais são margem, e a linha diz por quê: número que cresceu
+                   sozinho não entra nesta lista. O texto do motivo vem pronto do servidor. -->
+              <span
+                v-if="row.original.margin_display"
+                class="block text-xs text-muted-foreground"
+                :title="row.original.margin_reason"
+                >{{ row.original.margin_display }}</span
+              >
+            </template>
+            <template #available-cell="{ row }">
+              <span :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'">
+                {{
+                  row.original.available_display
+                    ? projectedQuantityDisplay(row.original.available_display)
+                    : "—"
+                }}
+              </span>
+              <span v-if="row.original.is_short" class="block text-xs font-medium text-error">Falta</span>
+            </template>
+            <template #expanded="{ row }">
+              <ul v-if="row.original.breakdown.length" class="flex flex-col gap-1 text-xs text-muted-foreground">
+                <li
+                  v-for="item in row.original.breakdown"
+                  :key="item.output_sku"
+                  class="flex items-center justify-between gap-3"
+                >
+                  <span
+                    >{{ item.recipe_name }} <span class="opacity-70">({{ item.output_sku }})</span></span
                   >
-                    Saldo
-                  </th>
-                  <th class="w-10 px-3 py-2">
-                    <span class="sr-only">Detalhe</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y">
-                <template v-for="line in visibleLines" :key="line.sku">
-                  <tr
-                    class="transition"
-                    :class="
-                      isChecked(line.sku)
-                        ? 'bg-muted/40 text-muted-foreground'
-                        : 'hover:bg-muted/30'
-                    "
-                  >
-                    <td class="px-3 py-2">
-                      <UiCheckbox
-                        :model-value="isChecked(line.sku)"
-                        :aria-label="`Marcar ${line.name} como separado`"
-                        @update:model-value="toggleChecked(line.sku)"
-                      />
-                    </td>
-                    <td class="px-3 py-2">
-                      <p
-                        class="font-bold"
-                        :class="
-                          isChecked(line.sku) ? 'line-through decoration-1' : ''
-                        "
-                      >
-                        {{ line.name }}
-                      </p>
-                      <p
-                        class="flex items-center gap-1.5 text-xs text-muted-foreground"
-                      >
-                        <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir
-                             embaixo seria a mesma linha duas vezes. -->
-                        <span v-if="line.name !== line.sku">{{
-                          line.sku
-                        }}</span>
-                        <UiBadge
-                          v-if="line.is_subrecipe"
-                          variant="outline"
-                          class="px-1.5 py-0 text-xs"
-                          >Pré-preparo</UiBadge
-                        >
-                      </p>
-                    </td>
-                    <td class="px-3 py-2 text-right font-semibold tabular-nums">
-                      {{ projectedQuantityDisplay(line.quantity_display) }}
-                      <!-- O mesmo peso dito na contagem da bancada. O "≈" vem do
-                           servidor quando o fator é aproximado; aqui só se mostra. -->
-                      <p
-                        v-if="line.annotation"
-                        class="text-xs font-normal text-muted-foreground"
-                      >
-                        {{ line.annotation }}
-                      </p>
-                      <!-- Os gramas a mais são margem, e a linha diz por quê:
-                           número que cresceu sozinho não entra nesta lista. O
-                           texto do motivo vem pronto do servidor. -->
-                      <p
-                        v-if="line.margin_display"
-                        class="text-xs font-normal text-muted-foreground"
-                        :title="line.margin_reason"
-                      >
-                        {{ line.margin_display }}
-                      </p>
-                    </td>
-                    <td
-                      v-if="projection?.has_stock_readings"
-                      class="px-3 py-2 text-right tabular-nums"
-                    >
-                      <span
-                        :class="
-                          line.is_short
-                            ? 'font-semibold text-destructive'
-                            : 'text-muted-foreground'
-                        "
-                      >
-                        {{
-                          line.available_display
-                            ? projectedQuantityDisplay(line.available_display)
-                            : "—"
-                        }}
-                      </span>
-                      <p
-                        v-if="line.is_short"
-                        class="text-xs font-medium text-destructive"
-                      >
-                        Falta
-                      </p>
-                    </td>
-                    <td class="px-3 py-2 text-right">
-                      <!-- Disclosure de 32px vive dentro da célula e não compete com ações primárias. -->
-                      <button
-                        v-if="line.breakdown.length"
-                        type="button"
-                        class="inline-flex size-8 items-center justify-center rounded-md border transition hover:bg-accent"
-                        :aria-label="`Ver receitas que usam ${line.name}`"
-                        :aria-expanded="expandedSku === line.sku"
-                        @click="toggleBreakdown(line)"
-                      >
-                        <Icon
-                          :name="
-                            expandedSku === line.sku
-                              ? 'lucide:chevron-up'
-                              : 'lucide:chevron-down'
-                          "
-                          class="size-4"
-                        />
-                      </button>
-                    </td>
-                  </tr>
-                  <tr v-if="expandedSku === line.sku" class="bg-muted/20">
-                    <td></td>
-                    <td colspan="3" class="px-3 pb-2.5 pt-0.5">
-                      <ul
-                        class="flex flex-col gap-1 text-xs text-muted-foreground"
-                      >
-                        <li
-                          v-for="row in line.breakdown"
-                          :key="row.output_sku"
-                          class="flex items-center justify-between gap-3"
-                        >
-                          <span
-                            >{{ row.recipe_name }}
-                            <span class="opacity-70"
-                              >({{ row.output_sku }})</span
-                            ></span
-                          >
-                          <span class="tabular-nums">{{
-                            projectedQuantityDisplay(row.quantity_display)
-                          }}</span>
-                        </li>
-                        <!-- A quebra por receita NÃO fecha com o total quando há
-                             margem, e é aqui que a diferença se explica por
-                             extenso, em vez de virar conta que não bate. -->
-                        <li
-                          v-if="line.margin_reason"
-                          class="border-t pt-1 italic"
-                        >
-                          {{ line.margin_reason }}
-                        </li>
-                      </ul>
-                    </td>
-                    <td></td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-            <p
-              v-if="query && !visibleLines.length"
-              class="border-t p-3 text-center text-sm text-muted-foreground"
-            >
-              Nenhum insumo para “{{ query.trim() }}”.
-            </p>
-          </div>
+                  <span class="tabular-nums">{{ projectedQuantityDisplay(item.quantity_display) }}</span>
+                </li>
+                <!-- A quebra por receita NÃO fecha com o total quando há margem, e é aqui
+                     que a diferença se explica por extenso, em vez de virar conta que
+                     não bate. -->
+                <li v-if="row.original.margin_reason" class="border-t pt-1 italic">
+                  {{ row.original.margin_reason }}
+                </li>
+              </ul>
+              <p v-else class="text-xs text-muted-foreground">
+                Este insumo entra direto na ficha, sem receita intermediária.
+              </p>
+            </template>
+          </OperatorTable>
         </template>
       </template>
 
@@ -526,15 +420,14 @@ function refreshAll() {
           <p class="text-base font-medium text-foreground">
             Não foi possível carregar os preparos.
           </p>
-          <UiButton
-            type="button"
+          <NuxtButton
             class="mt-1"
+            color="neutral"
             variant="outline"
-            size="sm"
+            icon="i-lucide-refresh-cw"
+            label="Tentar de novo"
             @click="weighing.refresh()"
-          >
-            <Icon name="lucide:refresh-cw" class="size-4" /> Tentar de novo
-          </UiButton>
+          />
         </div>
 
         <div
@@ -547,7 +440,7 @@ function refreshAll() {
           </p>
           <NuxtLink
             to="/plan"
-            class="inline-flex min-h-11 items-center text-sm text-primary underline-offset-2 hover:underline"
+            class="inline-flex min-h-8 items-center text-sm text-primary underline-offset-2 hover:underline"
             >Planejar produção</NuxtLink
           >
         </div>
@@ -607,17 +500,16 @@ function refreshAll() {
                     </p>
                   </div>
                 </div>
-                <UiButton
-                  type="button"
+                <NuxtButton
                   class="shrink-0"
+                  color="neutral"
                   variant="outline"
-                  size="icon"
+                  icon="i-lucide-printer"
+                  square
                   :aria-label="`Abrir etiquetas de pesagem de ${ticket.name}`"
                   :title="`Conferir etiquetas de ${ticket.name}`"
                   @click="openLabelsPreview('pesagem', ticketIdentity(ticket))"
-                >
-                  <Icon name="lucide:printer" class="size-4" />
-                </UiButton>
+                />
               </header>
               <ul class="flex flex-col divide-y text-sm">
                 <li

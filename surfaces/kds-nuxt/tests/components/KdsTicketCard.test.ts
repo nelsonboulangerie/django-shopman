@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
 import KdsTicketCard from "../../app/components/KdsTicketCard.vue";
 import { useLongPress } from "../../app/composables/useLongPress";
 import type { KDSTicketProjection } from "../../app/types/kds";
+import { nuxtUiStubs } from "../support/nuxtUi";
 
 // Auto-imports do Nuxt que o SFC usa como globais (sem runtime Nuxt aqui). Reatividade
 // Vue REAL.
@@ -60,12 +61,38 @@ function ticket(over: Partial<KDSTicketProjection> = {}): KDSTicketProjection {
     started_at_display: "",
     is_preorder: false,
     due_time_display: "",
+    due_clock_display: "",
+    due_in_seconds: null,
     seen: false,
+    changes: [],
+    change_ticket_pks: [],
     ...over,
   };
 }
 
-const stubs = { Icon: true };
+// O botão com prazo é do kit (testado lá, `operator-kit/tests/components/
+// OperatorTimedButton.test.ts`); aqui basta o contrato: rótulo, prazo e o toque.
+const OperatorTimedButton = defineComponent({
+  name: "OperatorTimedButton",
+  inheritAttrs: false,
+  props: { label: String, until: Number, duration: Number },
+  emits: ["click"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h(
+        "button",
+        {
+          ...attrs,
+          type: "button",
+          "data-until": props.until,
+          "data-duration": props.duration,
+          onClick: (event: MouseEvent) => emit("click", event),
+        },
+        props.label,
+      );
+  },
+});
+const stubs = { Icon: true, OperatorTimedButton, ...nuxtUiStubs };
 const mountCard = (props: Record<string, unknown>) =>
   mount(KdsTicketCard, { props, global: { stubs } });
 
@@ -197,14 +224,69 @@ describe("KdsTicketCard — os dois gestos", () => {
     expect(w.emitted("finish")).toHaveLength(1);
   });
 
-  it("item cancelado: o botão diz PARA ONDE ir e emite blocked, nunca finish", async () => {
-    const w = mountCard({ ticket: ticket({ status: "in_progress" }), blocked: true });
+  it("item cancelado: o card diz o que saiu e o botão é a ciência, nunca o Pronto", async () => {
+    const w = mountCard({
+      ticket: ticket({
+        status: "in_progress",
+        changes: [{ kind: "cancelled", text: "Cancelado: 1× Croissant" }],
+        change_ticket_pks: [31],
+      }),
+    });
+    expect(w.get("[data-kds-changes]").text()).toContain("Cancelado: 1× Croissant");
+    expect(w.get("[data-kds-alarm-eyebrow]").text()).toBe("Mudou");
     const action = w.get("button[data-kds-action]");
-    expect(action.text()).toContain("Item cancelado");
-    expect(action.text()).toContain("cartão vermelho");
+    expect(action.text()).toBe("Recebi o cancelamento");
+    // Na cor do aviso (D8): vermelho sólido.
+    expect(action.attributes("data-color")).toBe("error");
+    expect(action.attributes("data-variant")).toBe("solid");
     await action.trigger("click");
-    expect(w.emitted("blocked")).toHaveLength(1);
+    expect(w.emitted("seen")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("quantidade, observação e nome: uma linha por mudança, e o gesto é Visto", () => {
+    const w = mountCard({
+      ticket: ticket({
+        status: "pending",
+        changes: [
+          { kind: "moved", text: "Era a comanda Mesa 5" },
+          { kind: "qty", text: "Pão de queijo: agora 1, eram 3" },
+          { kind: "note", text: "Observação nova em Tapioca: sem glúten" },
+        ],
+      }),
+    });
+    const lines = w.findAll("[data-kds-change]").map((line) => [line.attributes("data-kds-change"), line.text()]);
+    expect(lines).toEqual([
+      ["moved", "Era a comanda Mesa 5"],
+      ["qty", "Pão de queijo: agora 1, eram 3"],
+      ["note", "Observação nova em Tapioca: sem glúten"],
+    ]);
+    expect(w.get("button[data-kds-action]").text()).toBe("Visto");
+    expect(w.get("article").classes()).toContain("border-destructive");
+  });
+
+  it("nome trocado: o nome antigo aparece uma vez só, no aviso", () => {
+    const moved = mountCard({
+      ticket: ticket({ previous_tab_ref: "Mesa 5", changes: [{ kind: "moved", text: "Era a comanda Mesa 5" }] }),
+    });
+    expect(moved.text().match(/Mesa 5/g)).toHaveLength(1);
+    expect(moved.find(".line-through").exists()).toBe(false);
+    // Depois do Visto, o riscado volta a ser a referência discreta de sempre.
+    const seen = mountCard({ ticket: ticket({ previous_tab_ref: "Mesa 5" }) });
+    expect(seen.get(".line-through").text()).toBe("Comanda Mesa 5");
+  });
+
+  it("pedido cancelado inteiro: itens riscados, Não preparar, sem relógio e sem abrir detalhe", () => {
+    const w = mountCard({
+      ticket: ticket({ status: "cancelled", is_cancelled: true, cancelled_at_display: "22:01" }),
+    });
+    expect(w.get("[data-kds-changes]").text()).toBe("Pedido cancelado às 22:01. Não preparar.");
+    expect(w.get("ul").classes()).toContain("line-through");
+    expect(w.get("[data-kds-alarm-eyebrow]").text()).toBe("Cancelado");
+    expect(w.find("[data-kds-pill]").exists()).toBe(false);
+    expect(w.find("[data-kds-open]").exists()).toBe(false);
+    expect(w.text()).not.toContain("lucide:timer");
+    expect(w.get("button[data-kds-action]").text()).toBe("Recebi o cancelamento");
   });
 
   it("a área de leitura abre o detalhe e NUNCA dispara o ato", async () => {
@@ -223,12 +305,28 @@ describe("KdsTicketCard — o Desfazer mora no card", () => {
     // O pedido continua legível — é o mesmo card, não um aviso no topo da tela.
     expect(w.text()).toContain("0007");
     expect(w.text()).toContain("Pão na Chapa");
-    expect(w.get("[data-kds-undo]").text()).toContain("Pronto. Sai em");
+    // O tempo mora no próprio botão: nada de frase "Sai em" nem barrinha acima dele.
+    expect(w.get("[data-kds-undo]").text()).not.toContain("Sai em");
     const action = w.get("button[data-kds-action]");
+    expect(Number(action.attributes("data-duration"))).toBe(5000);
+    expect(Number(action.attributes("data-until"))).toBeGreaterThan(Date.now());
     expect(action.text()).toContain("Desfazer");
+    // O MESMO botão do Pronto (dono, 09/10/2026): verde sólido, mesmo tamanho; só o
+    // texto muda. Classe por classe igual ao Pronto de antes do toque.
+    const pronto = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
+    expect(action.attributes("color")).toBe(pronto.attributes("data-color"));
+    expect(action.attributes("variant")).toBe(pronto.attributes("data-variant"));
+    expect(action.attributes("size")).toBe("xl");
+    expect(new Set(action.classes())).toEqual(new Set(pronto.classes()));
     await action.trigger("click");
     expect(w.emitted("undo")).toHaveLength(1);
     expect(w.emitted("finish")).toBeUndefined();
+  });
+
+  it("o prazo vem do quadro: montar o card de novo não reinicia a janela", () => {
+    const until = Date.now() + 2100;
+    const w = mountCard({ ticket: ticket({ status: "in_progress" }), finishing: true, finishUntil: until });
+    expect(Number(w.get("button[data-kds-action]").attributes("data-until"))).toBe(until);
   });
 
   it("durante a janela a área de leitura não aceita toque: o único gesto é desfazer", () => {
@@ -236,10 +334,9 @@ describe("KdsTicketCard — o Desfazer mora no card", () => {
     expect(w.find("[data-kds-open]").exists()).toBe(false);
   });
 
-  it("o Desfazer ganha até de um pedido travado por cancelamento", async () => {
+  it("o Desfazer ganha até de um pedido que mudou", async () => {
     const w = mountCard({
-      ticket: ticket({ status: "in_progress" }),
-      blocked: true,
+      ticket: ticket({ status: "in_progress", changes: [{ kind: "qty", text: "x" }] }),
       finishing: true,
     });
     expect(w.get("button[data-kds-action]").text()).toContain("Desfazer");
@@ -314,17 +411,29 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(mountCard({ ticket: ticket() }).find("[data-kds-started]").exists()).toBe(false);
   });
 
-  it("no polegar do celular o ato leva o código: Pronto W07", async () => {
-    document.body.innerHTML = '<div id="thumb"></div>';
-    const w = mount(KdsTicketCard, {
-      props: { ticket: ticket({ order_ref: "WEB-1-W07" }), actionTarget: "#thumb" },
-      global: { stubs },
-      attachTo: document.body,
+  it("P2-16: a encomenda das 17h mostra no relógio para quando é, não o tempo desde as 00:05", () => {
+    const w = mountCard({
+      ticket: ticket({
+        is_preorder: true,
+        elapsed_seconds: 35_700,
+        due_clock_display: "17h",
+        due_in_seconds: 25_200,
+        due_time_display: "retira a partir das 17h",
+      }),
     });
-    await nextTick();
-    await nextTick();
-    expect(document.querySelector("#thumb [data-kds-action]")?.textContent).toContain("Pronto W07");
-    w.unmount();
+    expect(w.get("[data-kds-clock]").text()).toBe("para 17h");
+    expect(w.get("[data-kds-started]").text()).toBe("retira a partir das 17h");
+    expect(mountCard({ ticket: ticket({ elapsed_seconds: 1440 }) }).get("[data-kds-clock]").text()).toBe("24m");
+  });
+
+  it("no celular o ato e o Desfazer moram na base da página; o card só apaga", () => {
+    // O Pronto foi tocado na ação na base, e é lá que o Desfazer fica, no mesmo botão
+    // (dono, 09/10/2026). O card não ganha um segundo botão.
+    const working = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true });
+    expect(working.find("[data-kds-action]").exists()).toBe(false);
+    const finishing = mountCard({ ticket: ticket({ order_ref: "WEB-1-W07" }), actionInBar: true, finishing: true });
+    expect(finishing.find("[data-kds-action]").exists()).toBe(false);
+    expect(finishing.get("article").classes()).toContain("border-dashed");
   });
 
   it("toque longo no ticket emite hold (desfazer, reabrir, ver o pedido)", async () => {
@@ -340,17 +449,17 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
   it("o botão fica DENTRO da moldura, arredondado, e não uma laje colada na borda", () => {
     const w = mountCard({ ticket: ticket({ status: "pending" }) });
     const action = w.get("button[data-kds-action]");
-    expect(action.classes()).toContain("rounded-lg");
+    expect(action.attributes("data-color")).toBeDefined();
     expect(action.element.parentElement?.className).toContain("px-3.5");
   });
 
   it("v4: só o PRÓXIMO convida sólido; os outros convites são contornados; Pronto é verde", () => {
     // A parede amarela de 21/09 (#913) não volta: um sólido de iniciar por grade.
     const proximo = mountCard({ ticket: ticket({ status: "pending" }), next: true }).get("button[data-kds-action]");
-    expect(proximo.classes()).toContain("bg-primary");
+    expect([proximo.attributes("data-color"), proximo.attributes("data-variant")]).toEqual(["primary", "solid"]);
     const outro = mountCard({ ticket: ticket({ status: "pending" }) }).get("button[data-kds-action]");
-    expect(outro.classes()).toContain("border-foreground/80");
-    expect(outro.classes().some((c) => c.startsWith("bg-primary") || c === "bg-success")).toBe(false);
+    expect([outro.attributes("data-color"), outro.attributes("data-variant")]).toEqual(["neutral", "outline"]);
+    expect(outro.classes()).not.toContain("bg-success");
     const pronto = mountCard({ ticket: ticket({ status: "in_progress" }) }).get("button[data-kds-action]");
     expect(pronto.classes()).toContain("bg-success");
   });
@@ -379,12 +488,12 @@ describe("KdsTicketCard — a anatomia da Saída", () => {
     expect(w.emitted("start")).toHaveLength(1);
   });
 
-  it("a pílula diz o estado: Próximo · atrasado, Novo, Em preparo", () => {
+  it("a pílula diz o estado: Atrasado, Novo, Em preparo", () => {
     expect(
       mountCard({ ticket: ticket({ status: "pending", timer_class: "timer-late" }), next: true })
         .get("[data-kds-pill]")
         .text(),
-    ).toContain("Próximo · atrasado");
+    ).toContain("Atrasado");
     expect(mountCard({ ticket: ticket({ status: "pending" }) }).get("[data-kds-pill]").text()).toContain("Novo");
     expect(mountCard({ ticket: ticket({ status: "in_progress" }) }).get("[data-kds-pill]").text()).toContain(
       "Em preparo",

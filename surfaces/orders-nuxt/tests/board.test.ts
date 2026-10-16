@@ -6,7 +6,6 @@ import {
   bulkableRefs,
   changeBackSuggestionQ,
   dispatchAsksChange,
-  moneyInput,
   cardAffordances,
   channelLabel,
   channelOptions,
@@ -31,14 +30,22 @@ import {
   toneBadge,
   triageCards,
   zonesView,
+  negotiationZoneView,
   zoneEmptyText,
   confirmationRemainingLabel,
   deadlineTone,
   realtimeIndicator,
+  situationAfterContinua,
 } from "../app/presentation/board";
-import type { OrderCardProjection, TwoZoneQueueProjection } from "../app/types/orders";
+import { moneyInput } from "../../operator-kit/app/presentation/custody";
+import type {
+  OrderCardProjection,
+  TwoZoneQueueProjection,
+} from "../app/types/orders";
 
-const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => ({
+const card = (
+  over: Partial<OrderCardProjection> = {},
+): OrderCardProjection => ({
   ref: "WEB-20260625-0007",
   status: "accepted",
   status_label: "Confirmado",
@@ -63,11 +70,11 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   next_action_label: "Iniciar preparo",
   payment_method: "cash",
   payment_method_label: "Dinheiro",
-    ifood_cancellation_notice: "",
-    ifood_pickup_code: "",
-    ifood_schedule_label: "",
-    ifood_remote_ahead_label: "",
-    ifood_negotiations: [],
+  ifood_cancellation_notice: "",
+  ifood_pickup_code: "",
+  ifood_schedule_label: "",
+  ifood_remote_ahead_label: "",
+  ifood_negotiations: [],
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,
@@ -94,7 +101,11 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   courier_return_orders: [],
   courier_return_lines: [],
   revisions: {},
-  actions: fixtureActions({ can_advance: true, next_action_label: "Iniciar preparo", ...over }),
+  actions: fixtureActions({
+    can_advance: true,
+    next_action_label: "Iniciar preparo",
+    ...over,
+  }),
   ...over,
 });
 
@@ -107,7 +118,7 @@ describe("statusTone", () => {
     expect(statusTone("whatever")).toBe("neutral");
   });
   it("toneBadge returns a class string per tone", () => {
-    expect(toneBadge("danger")).toContain("text-destructive");
+    expect(toneBadge("danger")).toContain("text-error");
     expect(toneBadge("neutral")).toContain("muted");
   });
 });
@@ -166,7 +177,10 @@ describe("lucideIcon", () => {
 
 describe("splitRef", () => {
   it("splits a ref into prefix + short code", () => {
-    expect(splitRef("WEB-20260625-0007")).toEqual({ prefix: "WEB-20260625-", code: "0007" });
+    expect(splitRef("WEB-20260625-0007")).toEqual({
+      prefix: "WEB-20260625-",
+      code: "0007",
+    });
     expect(splitRef("ABC")).toEqual({ prefix: "", code: "ABC" });
   });
 });
@@ -220,11 +234,36 @@ describe("zonesView", () => {
     ]);
     expect(new Set(texts).size).toBe(3);
   });
+
+  // O pedido do iFood já entregue com negociação aberta não está em etapa nenhuma: no
+  // quadro em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
+  it("a aba Negociação junta só o que está fora das etapas, e some sem nenhum", () => {
+    expect(negotiationZoneView(queue())).toBeNull();
+    const zone = negotiationZoneView({
+      ...queue(),
+      ifood_negotiation_orders: [
+        card({ ref: "B" }),
+        card({ ref: "IFOOD-DONE", status: "completed" }),
+      ],
+    });
+    expect(zone?.key).toBe("negotiation");
+    expect(zone?.title).toBe("Negociação");
+    expect(zone?.cards.map((c) => c.ref)).toEqual(["IFOOD-DONE"]);
+    expect(zone?.count).toBe(1);
+    expect(zoneEmptyText("negotiation")).toBe(
+      "Nenhuma negociação do iFood esperando resposta.",
+    );
+  });
 });
 
 describe("preorderGroups", () => {
   const preorderCard = (ref: string, date: string, label: string) =>
-    card({ ref, is_preorder: true, commitment_date: date, commitment_date_display: label });
+    card({
+      ref,
+      is_preorder: true,
+      commitment_date: date,
+      commitment_date_display: label,
+    });
 
   it("groups future preorders by commitment date preserving server order", () => {
     const groups = preorderGroups({
@@ -246,18 +285,26 @@ describe("preorderGroups", () => {
 
 describe("cardAffordances", () => {
   it("offers confirm + reject for a new order", () => {
-    const refs = cardAffordances(card({ can_confirm: true, can_advance: false })).map((a) => a.ref);
+    const refs = cardAffordances(
+      card({ can_confirm: true, can_advance: false }),
+    ).map((a) => a.ref);
     expect(refs).toContain("confirm");
     expect(refs).toContain("reject");
     expect(refs).not.toContain("advance");
   });
   it("offers advance for a confirmed order", () => {
-    const refs = cardAffordances(card({ can_confirm: false, can_advance: true })).map((a) => a.ref);
+    const refs = cardAffordances(
+      card({ can_confirm: false, can_advance: true }),
+    ).map((a) => a.ref);
     expect(refs).toEqual(["advance"]);
   });
   it("adds settle_cash when delivery cash is collectable", () => {
-    const pickup = cardAffordances(card({ can_settle_delivery_cash: true })).find((a) => a.ref === "settle_cash");
-    const delivery = cardAffordances(card({ can_settle_delivery_cash: true, fulfillment_type: "delivery" })).find((a) => a.ref === "settle_cash");
+    const pickup = cardAffordances(
+      card({ can_settle_delivery_cash: true }),
+    ).find((a) => a.ref === "settle_cash");
+    const delivery = cardAffordances(
+      card({ can_settle_delivery_cash: true, fulfillment_type: "delivery" }),
+    ).find((a) => a.ref === "settle_cash");
     expect(pickup?.label).toBe("Receber na retirada");
     expect(delivery?.label).toBe("Acertar entrega");
   });
@@ -278,6 +325,12 @@ describe("matchesQuery", () => {
     expect(matchesQuery(c, "A47")).toBe(true);
     expect(matchesQuery(c, "a47")).toBe(true);
     expect(matchesQuery(c, "B12")).toBe(false);
+  });
+
+  it("finds the iFood order by its number when the ref was drawn (P2-29)", () => {
+    const c = card({ ref: "IFOOD-261013-D09", channel_display_id: "4994" });
+    expect(matchesQuery(c, "4994")).toBe(true);
+    expect(matchesQuery(c, "4995")).toBe(false);
   });
 });
 
@@ -316,31 +369,74 @@ describe("matchesChannel", () => {
 });
 
 describe("sortCards", () => {
-  const a = card({ ref: "A", elapsed_seconds: 10, created_at_iso: "2026-06-26T08:00:00Z" });
-  const b = card({ ref: "B", elapsed_seconds: 300, created_at_iso: "2026-06-26T07:00:00Z" });
-  const c = card({ ref: "C", elapsed_seconds: 60, created_at_iso: "2026-06-26T09:00:00Z" });
+  const a = card({
+    ref: "A",
+    elapsed_seconds: 10,
+    created_at_iso: "2026-06-26T08:00:00Z",
+  });
+  const b = card({
+    ref: "B",
+    elapsed_seconds: 300,
+    created_at_iso: "2026-06-26T07:00:00Z",
+  });
+  const c = card({
+    ref: "C",
+    elapsed_seconds: 60,
+    created_at_iso: "2026-06-26T09:00:00Z",
+  });
 
   it("arrival keeps input order and does not mutate", () => {
     const input = [a, b, c];
-    expect(sortCards(input, "arrival").map((x) => x.ref)).toEqual(["A", "B", "C"]);
+    expect(sortCards(input, "arrival").map((x) => x.ref)).toEqual([
+      "A",
+      "B",
+      "C",
+    ]);
     expect(input.map((x) => x.ref)).toEqual(["A", "B", "C"]);
   });
   it("urgency puts the longest-waiting first", () => {
-    expect(sortCards([a, b, c], "urgency").map((x) => x.ref)).toEqual(["B", "C", "A"]);
+    expect(sortCards([a, b, c], "urgency").map((x) => x.ref)).toEqual([
+      "B",
+      "C",
+      "A",
+    ]);
   });
   it("recent puts the newest arrival first", () => {
-    expect(sortCards([a, b, c], "recent").map((x) => x.ref)).toEqual(["C", "A", "B"]);
+    expect(sortCards([a, b, c], "recent").map((x) => x.ref)).toEqual([
+      "C",
+      "A",
+      "B",
+    ]);
   });
 });
 
 describe("triageCards", () => {
   it("composes channel filter + query + sort", () => {
     const rows = [
-      card({ ref: "A", channel_ref: "web", customer_name: "Ana", elapsed_seconds: 10 }),
-      card({ ref: "B", channel_ref: "ifood", customer_name: "Ana", elapsed_seconds: 99 }),
-      card({ ref: "C", channel_ref: "web", customer_name: "Bia", elapsed_seconds: 50 }),
+      card({
+        ref: "A",
+        channel_ref: "web",
+        customer_name: "Ana",
+        elapsed_seconds: 10,
+      }),
+      card({
+        ref: "B",
+        channel_ref: "ifood",
+        customer_name: "Ana",
+        elapsed_seconds: 99,
+      }),
+      card({
+        ref: "C",
+        channel_ref: "web",
+        customer_name: "Bia",
+        elapsed_seconds: 50,
+      }),
     ];
-    const out = triageCards(rows, { query: "ana", channel: "web", sort: "urgency" });
+    const out = triageCards(rows, {
+      query: "ana",
+      channel: "web",
+      sort: "urgency",
+    });
     expect(out.map((x) => x.ref)).toEqual(["A"]);
   });
 });
@@ -367,9 +463,21 @@ describe("nextSort", () => {
 
 describe("troco da entrega", () => {
   it("o despacho pergunta quando o próximo passo é sair e a loja sugere troco", () => {
-    expect(dispatchAsksChange(card({ next_status: "dispatched", change_out_suggested_q: 2000 }))).toBe(true);
-    expect(dispatchAsksChange(card({ next_status: "dispatched", change_out_suggested_q: 0 }))).toBe(false);
-    expect(dispatchAsksChange(card({ next_status: "preparing", change_out_suggested_q: 2000 }))).toBe(false);
+    expect(
+      dispatchAsksChange(
+        card({ next_status: "dispatched", change_out_suggested_q: 2000 }),
+      ),
+    ).toBe(true);
+    expect(
+      dispatchAsksChange(
+        card({ next_status: "dispatched", change_out_suggested_q: 0 }),
+      ),
+    ).toBe(false);
+    expect(
+      dispatchAsksChange(
+        card({ next_status: "preparing", change_out_suggested_q: 2000 }),
+      ),
+    ).toBe(false);
   });
   it("sugere de volta o valor INTEGRAL que saiu — o entregador só leva e traz", () => {
     // A regra da casa é que o entregador nunca fica com troco: ele leva a
@@ -381,9 +489,21 @@ describe("troco da entrega", () => {
     // diferença). Com ela, cada entrega com troco deixava no livro uma falta do
     // tamanho exato do troco — que na contagem cega vira SOBRA fantasma, e sobra
     // recorrente é esconderijo para falta real.
-    expect(changeBackSuggestionQ(card({ change_out_q: 2500, change_out_suggested_q: 2000 }))).toBe(2500);
-    expect(changeBackSuggestionQ(card({ change_out_q: 2000, change_out_suggested_q: 2000 }))).toBe(2000);
-    expect(changeBackSuggestionQ(card({ change_out_q: 0, change_out_suggested_q: 0 }))).toBe(0);
+    expect(
+      changeBackSuggestionQ(
+        card({ change_out_q: 2500, change_out_suggested_q: 2000 }),
+      ),
+    ).toBe(2500);
+    expect(
+      changeBackSuggestionQ(
+        card({ change_out_q: 2000, change_out_suggested_q: 2000 }),
+      ),
+    ).toBe(2000);
+    expect(
+      changeBackSuggestionQ(
+        card({ change_out_q: 0, change_out_suggested_q: 0 }),
+      ),
+    ).toBe(0);
   });
   it("formata centavos para o campo", () => {
     expect(moneyInput(2000)).toBe("20,00");
@@ -391,20 +511,45 @@ describe("troco da entrega", () => {
     expect(moneyInput(0)).toBe("0,00");
   });
   it("saída com maquininha nunca entra no lote de avançar: a escolha mora no diálogo", () => {
-    const rows = [card({ ref: "A", can_advance: true, next_status: "dispatched", dispatch_needs_machine: true }),
-      card({ ref: "B", can_advance: true, next_status: "dispatched" })];
+    const rows = [
+      card({
+        ref: "A",
+        can_advance: true,
+        next_status: "dispatched",
+        dispatch_needs_machine: true,
+      }),
+      card({ ref: "B", can_advance: true, next_status: "dispatched" }),
+    ];
     expect(bulkableRefs(rows, new Set(["A", "B"]), "advance")).toEqual(["B"]);
   });
   it("oferece 'Maquininha voltou' independentemente do acerto pendente", () => {
-    const refs = cardAffordances(card({ can_advance: false, equipment_back_pending: true })).map((a) => a.ref);
+    const refs = cardAffordances(
+      card({ can_advance: false, equipment_back_pending: true }),
+    ).map((a) => a.ref);
     expect(refs).toContain("equipment_back");
-    const withSettle = cardAffordances(card({ can_advance: false, equipment_back_pending: true, can_settle_delivery_cash: true })).map((a) => a.ref);
+    const withSettle = cardAffordances(
+      card({
+        can_advance: false,
+        equipment_back_pending: true,
+        can_settle_delivery_cash: true,
+      }),
+    ).map((a) => a.ref);
     expect(withSettle).toContain("equipment_back");
   });
   it("despacho que pede troco fica fora do lote de avançar", () => {
     const rows = [
-      card({ ref: "A", can_advance: true, next_status: "dispatched", change_out_suggested_q: 2000 }),
-      card({ ref: "B", can_advance: true, next_status: "dispatched", change_out_suggested_q: 0 }),
+      card({
+        ref: "A",
+        can_advance: true,
+        next_status: "dispatched",
+        change_out_suggested_q: 2000,
+      }),
+      card({
+        ref: "B",
+        can_advance: true,
+        next_status: "dispatched",
+        change_out_suggested_q: 0,
+      }),
     ];
     expect(bulkableRefs(rows, new Set(["A", "B"]), "advance")).toEqual(["B"]);
   });
@@ -420,7 +565,9 @@ describe("bulkableRefs", () => {
     expect(bulkableRefs(rows, new Set(["A", "B"]), "confirm")).toEqual(["A"]);
   });
   it("returns selected refs eligible for advance", () => {
-    expect(bulkableRefs(rows, new Set(["A", "B", "C"]), "advance")).toEqual(["B"]);
+    expect(bulkableRefs(rows, new Set(["A", "B", "C"]), "advance")).toEqual([
+      "B",
+    ]);
   });
   it("ignores unselected cards", () => {
     expect(bulkableRefs(rows, new Set(["C"]), "confirm")).toEqual(["C"]);
@@ -431,18 +578,39 @@ describe("bulkableRefs", () => {
 describe("rowsToCsv", () => {
   it("writes a header + one row per card, escaping quotes", () => {
     const rows = [
-      { card: card({ ref: "A", customer_name: 'Ana "Bela"', assigned_operator: "Léo" }), zoneKey: "intake" as const, zoneTitle: "Entrada" },
+      {
+        card: card({
+          ref: "A",
+          customer_name: 'Ana "Bela"',
+          assigned_operator: "Léo",
+        }),
+        zoneKey: "intake" as const,
+        zoneTitle: "Entrada",
+      },
     ];
     const csv = rowsToCsv(rows);
     const [header, line] = csv.split("\n");
     expect(header).toContain("Código");
     expect(header).toContain("Atendente");
-    expect(line).toContain('"A"');
+    expect(line!.split(";")[0]).toBe("A");
     expect(line).toContain('"Ana ""Bela"""'); // doubled quotes
-    expect(line).toContain('"Léo"');
+    expect(line).toContain(";Léo");
   });
   it("is just a header when there are no rows", () => {
     expect(rowsToCsv([]).split("\n")).toHaveLength(1);
+  });
+  // A planilha em português lê a vírgula como decimal: o separador é ponto e vírgula,
+  // e a marca de ordem de bytes abre o UTF-8 com acento certo (o escritor do kit,
+  // `readingCsvText`, o mesmo do "Exportar CSV deste quadro").
+  it("sai como a planilha em português lê: ';' entre colunas, vírgula no valor, BOM", () => {
+    const csv = rowsToCsv([
+      { card: card({ ref: "A", total_display: "R$ 1.234,50" }), zoneKey: "intake" as const, zoneTitle: "Entrada" },
+    ]);
+    expect(csv.startsWith("﻿")).toBe(true);
+    const [header, line] = csv.slice(1).split("\n");
+    expect(header).toBe("Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente");
+    expect(line!.split(";")).toHaveLength(8);
+    expect(line).toContain(";R$ 1.234,50;");
   });
 });
 
@@ -461,7 +629,11 @@ describe("flattenZones", () => {
     });
     const flat = flattenZones(zones);
     expect(flat.map((r) => r.card.ref)).toEqual(["A", "B", "C"]);
-    expect(flat.map((r) => r.zoneKey)).toEqual(["intake", "prep", "expedition"]);
+    expect(flat.map((r) => r.zoneKey)).toEqual([
+      "intake",
+      "prep",
+      "expedition",
+    ]);
   });
 });
 
@@ -499,12 +671,18 @@ describe("confirmationRemainingLabel", () => {
   });
   it("formats M:SS remaining", () => {
     const now = Date.parse("2026-07-04T12:00:00Z");
-    expect(confirmationRemainingLabel("2026-07-04T12:02:34Z", now)).toBe("2:34");
-    expect(confirmationRemainingLabel("2026-07-04T12:00:09Z", now)).toBe("0:09");
+    expect(confirmationRemainingLabel("2026-07-04T12:02:34Z", now)).toBe(
+      "2:34",
+    );
+    expect(confirmationRemainingLabel("2026-07-04T12:00:09Z", now)).toBe(
+      "0:09",
+    );
   });
   it("clamps to 0:00 once past", () => {
     const now = Date.parse("2026-07-04T12:05:00Z");
-    expect(confirmationRemainingLabel("2026-07-04T12:00:00Z", now)).toBe("0:00");
+    expect(confirmationRemainingLabel("2026-07-04T12:00:00Z", now)).toBe(
+      "0:00",
+    );
   });
 });
 
@@ -513,7 +691,7 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
     const v = realtimeIndicator("live");
     expect(v.live).toBe(true);
     expect(v.label).toBe("Ao vivo");
-    expect(v.dotClass).toContain("green");
+    expect(v.dotClass).toBe("bg-success");
   });
 
   it("'connecting' e 'polling' NUNCA são 'live' (a bolinha não mente)", () => {
@@ -521,7 +699,7 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
     expect(realtimeIndicator("connecting").dotClass).not.toContain("green");
     const polling = realtimeIndicator("polling");
     expect(polling.live).toBe(false);
-    expect(polling.label).toContain("automática"); // ainda atualiza, mas não em tempo real
+    expect(polling.label).toBe("Atualiza sozinho a cada 30 s"); // ainda atualiza, mas não em tempo real
     expect(polling.dotClass).not.toContain("green");
   });
 });
@@ -545,28 +723,54 @@ describe("aviso de pedido tratável — nasce da projection canônica", () => {
   });
 
   it("pedido bloqueado por pagamento não é tratável", () => {
-    const waiting = card({ ref: "PIX-1", can_confirm: false, can_advance: false, payment_pending: true });
+    const waiting = card({
+      ref: "PIX-1",
+      can_confirm: false,
+      can_advance: false,
+      payment_pending: true,
+    });
     expect([...treatableOrderRefs(queue([waiting]))]).toEqual([]);
   });
 
   it("avisa quando o refresh mostra que o pagamento liberou a ação", () => {
-    const before = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
-    const after = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: true })]);
+    const before = queue([
+      card({ ref: "PIX-1", can_confirm: false, can_advance: false }),
+    ]);
+    const after = queue([
+      card({ ref: "PIX-1", can_confirm: false, can_advance: true }),
+    ]);
     expect(newlyTreatableOrderRefs(before, after)).toEqual(["PIX-1"]);
   });
 
   it("created sem mudança real de tratabilidade não produz aviso", () => {
-    const before = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
-    const after = queue([card({ ref: "PIX-1", can_confirm: false, can_advance: false })]);
+    const before = queue([
+      card({ ref: "PIX-1", can_confirm: false, can_advance: false }),
+    ]);
+    const after = queue([
+      card({ ref: "PIX-1", can_confirm: false, can_advance: false }),
+    ]);
     expect(newlyTreatableOrderRefs(before, after)).toEqual([]);
   });
 
   it("encomenda futura não toca agora e toca quando entra no fluxo do dia", () => {
-    const scheduled = card({ ref: "PRE-1", can_confirm: true, can_advance: true, is_preorder: true });
-    const before = { ...queue([]), preorders: [scheduled], preorders_count: 1, total_count: 1 };
+    const scheduled = card({
+      ref: "PRE-1",
+      can_confirm: true,
+      can_advance: true,
+      is_preorder: true,
+    });
+    const before = {
+      ...queue([]),
+      preorders: [scheduled],
+      preorders_count: 1,
+      total_count: 1,
+    };
     expect([...treatableOrderRefs(before)]).toEqual([]);
 
-    const due = { ...queue([card({ ...scheduled, is_preorder: false })]), total_count: 1 };
+    const due = {
+      ...queue([card({ ...scheduled, is_preorder: false })]),
+      total_count: 1,
+    };
     expect(newlyTreatableOrderRefs(before, due)).toEqual(["PRE-1"]);
   });
 });
@@ -578,7 +782,9 @@ describe("appendTag — tags de nota da cozinha (anexa)", () => {
   });
 
   it("anexa preservando o texto livre, separado por vírgula", () => {
-    expect(appendTag("Cliente alérgico", "Sem cebola")).toBe("Cliente alérgico, Sem cebola");
+    expect(appendTag("Cliente alérgico", "Sem cebola")).toBe(
+      "Cliente alérgico, Sem cebola",
+    );
   });
 
   it("acumula várias tags", () => {
@@ -591,7 +797,9 @@ describe("appendTag — tags de nota da cozinha (anexa)", () => {
 
   it("idempotente: não duplica uma tag já presente (case-insensitive)", () => {
     expect(appendTag("Bem assado", "Bem assado")).toBe("Bem assado");
-    expect(appendTag("bem assado, Sem cebola", "Bem Assado")).toBe("bem assado, Sem cebola");
+    expect(appendTag("bem assado, Sem cebola", "Bem Assado")).toBe(
+      "bem assado, Sem cebola",
+    );
   });
 
   it("tag vazia é no-op (retorna a nota aparada)", () => {
@@ -610,7 +818,9 @@ describe("joinFacts", () => {
   });
 
   it("um fato só: nenhum separador órfão", () => {
-    expect(joinFacts("", "última compra há 3 meses")).toBe("última compra há 3 meses");
+    expect(joinFacts("", "última compra há 3 meses")).toBe(
+      "última compra há 3 meses",
+    );
     expect(joinFacts("Primeira compra", "")).toBe("Primeira compra");
   });
 
@@ -624,9 +834,43 @@ describe("joinFacts", () => {
 });
 
 it("acerto no card exige Action autorizada e preserva o motivo de bloqueio", () => {
-  const blocked = { ...fixtureActions({ can_confirm: true })[0]!, ref: "settle-delivery-cash", enabled: false, reason: "Confira o caixa." };
-  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [blocked] })).find((item) => item.ref === "settle_cash"))
-    .toMatchObject({ disabled: true, reason: "Confira o caixa." });
-  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [] })).find((item) => item.ref === "settle_cash")?.disabled).toBe(true);
-  expect(cardAffordances(card({ can_settle_delivery_cash: true, actions: [{ ...blocked, enabled: true, reason: "" }] })).find((item) => item.ref === "settle_cash")?.disabled).toBe(false);
+  const blocked = {
+    ...fixtureActions({ can_confirm: true })[0]!,
+    ref: "settle-delivery-cash",
+    enabled: false,
+    reason: "Confira o caixa.",
+  };
+  expect(
+    cardAffordances(
+      card({ can_settle_delivery_cash: true, actions: [blocked] }),
+    ).find((item) => item.ref === "settle_cash"),
+  ).toMatchObject({ disabled: true, reason: "Confira o caixa." });
+  expect(
+    cardAffordances(card({ can_settle_delivery_cash: true, actions: [] })).find(
+      (item) => item.ref === "settle_cash",
+    )?.disabled,
+  ).toBe(true);
+  expect(
+    cardAffordances(
+      card({
+        can_settle_delivery_cash: true,
+        actions: [{ ...blocked, enabled: true, reason: "" }],
+      }),
+    ).find((item) => item.ref === "settle_cash")?.disabled,
+  ).toBe(false);
+});
+
+describe("situationAfterContinua: a situação depois de “<REF> continua” (dono, 09/10/2026)", () => {
+  it("desce só a inicial do rótulo da projeção", () => {
+    expect(situationAfterContinua("Novo")).toBe("novo");
+    expect(situationAfterContinua("Em preparo")).toBe("em preparo");
+    expect(situationAfterContinua("Pronto")).toBe("pronto");
+  });
+  it("“Saiu para entrega” é verbo: entra como o nome do estado, entre aspas, sem apelido", () => {
+    expect(situationAfterContinua("Saiu para entrega")).toBe("em “Saiu para entrega”");
+  });
+  it("sem rótulo, sem situação", () => {
+    expect(situationAfterContinua("")).toBe("");
+    expect(situationAfterContinua(undefined)).toBe("");
+  });
 });

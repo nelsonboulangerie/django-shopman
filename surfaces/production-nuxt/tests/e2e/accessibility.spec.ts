@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright";
+
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 const authed = {
   name: "e2e_session",
   value: "authed",
@@ -47,7 +53,7 @@ async function expectTouchTargets(page: Page, context: string) {
     .locator(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"]',
     )
-    .evaluateAll((elements) =>
+    .evaluateAll((elements, minTarget) =>
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
@@ -76,7 +82,17 @@ async function expectTouchTargets(page: Page, context: string) {
           rect.height === 0
         )
           return [];
-        return rect.width >= 44 && rect.height >= 44
+        // O `NuxtCheckbox`/`NuxtSwitch` do tema do kit pinta 16 px e alarga o alvo com
+        // um `::after` de `size-control` (32 px) centrado no controle: o toque cai nele,
+        // então é ele que se mede.
+        const hit = getComputedStyle(node, "::after");
+        const hitWidth = hit.content !== "none" && hit.position === "absolute" ? parseFloat(hit.width) || 0 : 0;
+        const hitHeight = hit.content !== "none" && hit.position === "absolute" ? parseFloat(hit.height) || 0 : 0;
+        const width = Math.max(rect.width, hitWidth);
+        const height = Math.max(rect.height, hitHeight);
+        // Arredonda o subpixel: o campo `md` do Nuxt UI mede 31,98 px (texto 20 px +
+        // 12 px de respiro, com a fonte em fração de pixel) e é o mesmo 32 do botão.
+        return Math.round(width) >= minTarget && Math.round(height) >= minTarget
           ? []
           : [
               {
@@ -85,11 +101,12 @@ async function expectTouchTargets(page: Page, context: string) {
                   node.textContent?.trim().slice(0, 60) ||
                   node.tagName,
                 tag: node.tagName,
-                width: Math.round(rect.width * 10) / 10,
-                height: Math.round(rect.height * 10) / 10,
+                width: Math.round(width * 10) / 10,
+                height: Math.round(height * 10) / 10,
               },
             ];
       }),
+    MIN_TARGET,
     );
   expect(failures, `${context}: ${JSON.stringify(failures, null, 2)}`).toEqual(
     [],
@@ -153,6 +170,8 @@ for (const route of criticalRoutes) {
     await expect(page.locator("main")).toBeVisible();
     await expectNoAxeViolations(page, `${route.path} ${project}`);
     await expectNoPageOverflow(page, `${route.path} ${project}`);
+    // O rótulo que cabe (dono, 10/10/2026): nenhum texto de botão vaza ou corta.
+    await expectOperatorLabelsFit(page, `${route.path} ${project}`);
     if (testInfo.project.metadata.touchTargets) {
       await expectTouchTargets(page, `${route.path} ${project}`);
     }
@@ -166,7 +185,7 @@ for (const route of criticalRoutes) {
   });
 }
 
-test("relatório populado mantém os controles compostos com alvo de 44 px", async ({
+test("relatório populado mantém os controles compostos com alvo de 32 px", async ({
   context,
   page,
 }, testInfo) => {
@@ -278,9 +297,15 @@ for (const { route, endpoint, offset } of [
     // não muda a seleção, não sai request, e o teste morre em timeout — foi
     // exatamente o que aconteceu em 17/09/2026, dia em que o literal
     // "2026-09-17" virou hoje e a matriz inteira ficou vermelha. Dois dias de
-    // distância cobrem o fuso do runner (UTC) contra o da loja (-03:00).
+    // distância. O "hoje" do alvo é o da página (o `timezoneId` do
+    // playwright.config, America/Sao_Paulo), não o do runner (UTC): entre 00h e
+    // 03h UTC os dois discordam, os dois cliques para a frente paravam um dia
+    // antes do alvo e a matriz caía em timeout (08/10/2026, 21h em Londrina).
     const target = (() => {
-      const day = new Date();
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Sao_Paulo",
+      }).format(new Date());
+      const day = new Date(`${today}T12:00:00Z`);
       day.setUTCDate(day.getUTCDate() + offset);
       return day.toISOString().slice(0, 10);
     })();

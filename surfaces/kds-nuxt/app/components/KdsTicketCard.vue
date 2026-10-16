@@ -7,11 +7,11 @@
 //   nota 6: sem canal, telefone nem cliente; só a encomenda diz o cliente, com quem a
 //   hora foi combinada); "iniciado por Rafael às 21:56 · retira às 22:30" logo abaixo
 //   quando houver (nota 7); à direita o relógio (o tempo contra a meta num número só, a cor diz se
-//   está no prazo) e a pílula do estado ("Próximo · atrasado", "Novo", "Em preparo",
+//   está no prazo; com hora combinada, "para 17h", P2-16) e a pílula do estado ("Atrasado", "Novo", "Em preparo",
 //   "Bloqueado").
 // - TAREFA (meio): os itens, inteiros. Nome e observação quebram linha, e o card
-//   cresce o quanto precisar; ticket longo ocupa duas alturas na grade em vez de
-//   cortar a lista (quem decide é a página, por `isTallTicket`).
+//   cresce o quanto precisar; ticket longo deixa a linha da grade mais alta em vez de
+//   cortar a lista (a ordem da fila não muda por isso, `focusSlice`).
 // - AÇÃO (base): UM botão, com o ato escrito: "Iniciar preparo" → "Pronto W07"
 //   (o mesmo nome no polegar do celular, `thumbActionLabel`). Quando o servidor
 //   recusaria o Pronto (pagamento não confirmado), o
@@ -21,14 +21,26 @@
 // sai da cozinha exige o botão rotulado.
 //
 // Pronto não some com o card: por 5 s ele fica no lugar, apagado, com
-// "Desfazer" exatamente onde o dedo acabou de tocar.
+// "Desfazer" exatamente onde o dedo acabou de tocar. O tempo mora no próprio botão
+// (`OperatorTimedButton` do kit: o fundo esvazia até a janela fechar), e o botão é o
+// MESMO do Pronto (verde sólido, mesmo tamanho): muda só o texto (dono, 09/10/2026).
+// No celular o Pronto foi tocado na ação na base, e é LÁ que o Desfazer fica, no
+// mesmo botão (`action.timed` da `OperatorActionBar`); o card só apaga.
 //
 // O preparo é estado do TICKET, guardado no servidor: todos os tablets veem quem
 // já pegou o pedido.
+//
+// MUDANÇA (dono, 10/10/2026: "com alarde, a cada mudança. Jamais silenciosamente!"):
+// o pedido que mudou depois de chegar à cozinha fica com moldura vermelha, a pílula
+// "Mudou" e uma caixa com o que mudou, uma linha por mudança, logo abaixo do código; o
+// botão da base vira a ciência ("Recebi o cancelamento" ou "Visto"), vermelho sólido, e
+// só depois dele o card volta a ser trabalho. O pedido que caiu inteiro chega como card
+// "Cancelado": os itens riscados, "Não preparar." e a mesma ciência.
 import type { KDSTicketProjection } from "~/types/kds";
 import {
+  cancelledHeadline,
   cardScale,
-  elapsedLabel,
+  changeIcon,
   KDS_ARM_DELAY_MS,
   KDS_UNDO_WINDOW_MS,
   pillClass,
@@ -36,10 +48,12 @@ import {
   cardActionLabel,
   thumbActionLabel,
   ticketAction,
+  ticketClockLabel,
   ticketOverline,
   ticketPill,
   ticketStartLine,
   ticketTone,
+  needsAcknowledgement,
   toneNextSurface,
   toneTimerChip,
   type KDSDensity,
@@ -52,34 +66,42 @@ const props = withDefaults(
     ticket: KDSTicketProjection;
     density?: KDSDensity;
     next?: boolean;
-    /** Há item cancelado deste pedido sem confirmação: o Pronto espera. */
-    blocked?: boolean;
     /** Ticket adicional de um pedido que já passou por esta estação. */
     addition?: boolean;
     /** Marcado Pronto com a janela de "Desfazer" ainda aberta. */
     finishing?: boolean;
+    /** Fim da janela do "Desfazer" (epoch ms), guardado pelo quadro: o card pode
+     *  montar de novo sem reiniciar a janela. Sem ele, conta do momento em que abriu. */
+    finishUntil?: number;
     /** Rótulo fino acima do código (celular: "Agora"). */
     eyebrow?: string;
-    /** Seletor para onde o botão vai (celular: a barra do polegar). Vazio = no card. */
-    actionTarget?: string;
+    /** Celular: o ato do ticket em foco mora na ação na base (`OperatorActionBar`, na
+     *  página), o Desfazer inclusive, no mesmo botão do Pronto. O card não tem botão. */
+    actionInBar?: boolean;
   }>(),
   {
     density: "cozy",
     next: false,
-    blocked: false,
     addition: false,
     finishing: false,
+    finishUntil: undefined,
     eyebrow: "",
-    actionTarget: "",
+    actionInBar: false,
   },
 );
-const emit = defineEmits<{ start: []; finish: []; blocked: []; locked: []; undo: []; open: []; hold: [] }>();
+const emit = defineEmits<{ start: []; finish: []; seen: []; locked: []; undo: []; open: []; hold: [] }>();
 
 const tone = computed(() => ticketTone(props.ticket.timer_class));
 const code = computed(() => splitRef(props.ticket.order_ref).code);
 const overline = computed(() => ticketOverline(props.ticket));
 const startLine = computed(() => ticketStartLine(props.ticket));
 const finishLocked = computed(() => Boolean(props.ticket.finish_block_label) && !props.finishing);
+// Pede ciência agora: mudou depois de chegar, ou caiu inteiro.
+const alarm = computed(() => needsAcknowledgement(props.ticket) && !props.finishing);
+const cancelled = computed(() => props.ticket.is_cancelled || props.ticket.status === "cancelled");
+// O aviso "Era a comanda Mesa 5" já diz o nome antigo: o riscado do subtítulo sai,
+// para o nome não aparecer duas vezes no mesmo card.
+const announcesRename = computed(() => (props.ticket.changes ?? []).some((change) => change.kind === "moved"));
 // Toque longo (celular, prévia v4 nota 7): desfazer, reabrir e ver o pedido, sem botões
 // a mais na tela. A página decide se escuta (`@hold`).
 const longPress = useLongPress(() => emit("hold"));
@@ -109,7 +131,6 @@ onBeforeUnmount(() => {
 const action = computed(() =>
   ticketAction(props.ticket, {
     armed: armed.value,
-    blocked: props.blocked,
     finishing: props.finishing,
   }),
 );
@@ -119,7 +140,7 @@ function onAction() {
   const kind = action.value.kind;
   if (kind === "start") emit("start");
   else if (kind === "finish") emit("finish");
-  else if (kind === "blocked") emit("blocked");
+  else if (kind === "seen") emit("seen");
   else if (kind === "locked") emit("locked");
   else if (kind === "undo") emit("undo");
 }
@@ -131,8 +152,7 @@ const actionAria = computed(() => {
   if (kind === "start") return `Iniciar o preparo do pedido ${code.value}`;
   if (kind === "finish") return `Marcar o pedido ${code.value} como pronto`;
   if (kind === "undo") return `Desfazer o Pronto do pedido ${code.value}`;
-  if (kind === "blocked")
-    return `Pedido ${code.value}: toque em Recebi o cancelamento, no cartão vermelho, para poder marcar Pronto`;
+  if (kind === "seen") return `${action.value.label}: pedido ${code.value}`;
   if (kind === "locked")
     return `Pedido ${code.value}: ${props.ticket.finish_block_label}. ${props.ticket.finish_block_reason}`;
   return "";
@@ -144,7 +164,7 @@ const actionTone = computed<KdsCardButtonTone>(() => {
   const kind = action.value.kind;
   if (kind === "start") return props.next ? "lead" : "invite";
   if (kind === "finish") return "confirm";
-  if (kind === "blocked") return "blocked";
+  if (kind === "seen") return "alarm";
   if (kind === "locked") return "locked";
   return "outline";
 });
@@ -152,22 +172,33 @@ const actionTone = computed<KdsCardButtonTone>(() => {
 const pill = computed(() =>
   props.finishing
     ? null
-    : ticketPill(props.ticket, { next: props.next, blocked: props.blocked || finishLocked.value }),
+    : ticketPill(props.ticket, { next: props.next, blocked: finishLocked.value }),
 );
 const surface = computed(() => {
   if (props.finishing) return "border border-dashed border-border bg-muted/40";
+  // A moldura do alarme é a do "próximo atrasado" (borda de 2 px e halo), em vermelho:
+  // é o card mais alto da tela até alguém dar ciência.
+  if (alarm.value) return toneNextSurface("late");
   if (props.next) return toneNextSurface(tone.value);
-  if (props.blocked || finishLocked.value) return "border border-destructive/50 bg-card";
+  if (finishLocked.value) return "border border-destructive/50 bg-card";
   if (props.ticket.status === "in_progress") return "border border-primary/50 bg-card";
   return "border border-border bg-card";
 });
 const timerChip = computed(() => toneTimerChip(tone.value));
-// O Pronto leva o código em todo tamanho ("Pronto W07"); no polegar do celular os
-// outros atos também levam, porque o card em foco fica longe do dedo.
+// O Pronto leva o código em todo tamanho ("Pronto W07"); no celular o Desfazer também
+// leva ("Desfazer W07"), porque o ato do momento está na base, longe do card.
 const actionLabel = computed(() =>
-  props.actionTarget ? thumbActionLabel(action.value, code.value) : cardActionLabel(action.value, code.value),
+  props.actionInBar ? thumbActionLabel(action.value, code.value) : cardActionLabel(action.value, code.value),
 );
-const undoWindowSeconds = Math.round(KDS_UNDO_WINDOW_MS / 1000);
+// O prazo do Desfazer: o do quadro, ou, sem ele, o instante em que o card o viu abrir.
+const undoUntil = ref(0);
+watch(
+  () => [props.finishing, props.finishUntil] as const,
+  ([finishing, until]) => {
+    undoUntil.value = finishing ? (until ?? (undoUntil.value || Date.now() + KDS_UNDO_WINDOW_MS)) : 0;
+  },
+  { immediate: true },
+);
 // Observação curta mora na linha do item ("Pão de Hambúrguer · sem gergelim"); a longa
 // ganha a caixa "Obs.:" embaixo dele, inteira. As duas em âmbar (v4).
 function isShortNote(notes: string): boolean {
@@ -197,10 +228,11 @@ const d = computed(() => ({
     <!-- ÁREA DE LEITURA: identidade + itens. Um toque aqui abre o detalhe — o gesto
          seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
     <div class="relative flex flex-1 flex-col" v-bind="longPress" data-kds-hold>
-      <button
-        v-if="!finishing"
-        type="button"
-        class="absolute inset-0 z-0 rounded-t-xl transition hover:bg-accent/20 active:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      <NuxtButton
+        v-if="!finishing && !cancelled"
+        color="neutral"
+        variant="ghost"
+        class="absolute inset-0 z-0 rounded-b-none"
         :aria-label="`Ver o detalhe do pedido ${code}`"
         data-kds-open
         @click="emit('open')"
@@ -220,7 +252,15 @@ const d = computed(() => ({
         <!-- IDENTIDADE: código · Retirada/Entrega e cliente | relógio + pílula. -->
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1">
-            <span v-if="eyebrow" class="block op-micro text-muted-foreground">{{ eyebrow }}</span>
+            <!-- O que pede ciência diz isso no lugar da posição na fila (Agora, Próximo):
+                 o código fica na mesma altura dos vizinhos da linha. -->
+            <span
+              v-if="alarm"
+              class="block op-micro font-semibold text-error"
+              data-kds-alarm-eyebrow
+              >{{ cancelled ? "Cancelado" : "Mudou" }}</span
+            >
+            <span v-else-if="eyebrow" class="block op-micro text-muted-foreground">{{ eyebrow }}</span>
             <p
               class="whitespace-nowrap font-bold leading-none tracking-tight tabular-nums"
               :class="d.code"
@@ -236,7 +276,7 @@ const d = computed(() => ({
               </span>
               <span class="min-w-0 break-words" data-kds-overline>{{ overline }}</span>
               <span
-                v-if="ticket.previous_tab_ref"
+                v-if="ticket.previous_tab_ref && !announcesRename"
                 class="line-through"
                 :title="`Comanda ${ticket.previous_tab_ref} já liberada`"
                 >Comanda {{ ticket.previous_tab_ref }}</span
@@ -247,15 +287,16 @@ const d = computed(() => ({
           <!-- À direita, o relógio (o único chip com moldura) e a pílula do estado. -->
           <div class="flex shrink-0 flex-col items-end gap-1">
             <span
+              v-if="!cancelled"
               class="inline-flex items-center gap-1.5 rounded-lg px-2.5 font-bold tabular-nums"
               :class="[timerChip, d.timerH, d.timer]"
             >
               <Icon
-                name="lucide:timer"
+                :name="ticket.due_clock_display ? 'lucide:calendar-clock' : 'lucide:timer'"
                 class="size-5 shrink-0"
                 :class="tone === 'ok' ? 'text-muted-foreground' : ''"
               />
-              {{ elapsedLabel(ticket.elapsed_seconds) }}
+              <span data-kds-clock>{{ ticketClockLabel(ticket) }}</span>
             </span>
             <span
               v-if="pill"
@@ -274,12 +315,46 @@ const d = computed(() => ({
           class="flex min-w-0 items-start gap-1.5 op-micro text-muted-foreground"
           data-kds-started
         >
-          <Icon name="lucide:user-round" class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <!-- Sem ninguém ter iniciado, a linha é só a hora combinada: o ícone é o da agenda. -->
+          <Icon
+            :name="ticket.started_by ? 'lucide:user-round' : 'lucide:calendar-clock'"
+            class="mt-px size-3.5 shrink-0"
+            aria-hidden="true"
+          />
           <span class="min-w-0 break-words">{{ startLine }}</span>
         </p>
 
-        <!-- TAREFA: só os itens, inteiros. -->
-        <ul class="flex flex-col divide-y divide-border border-t border-border">
+        <!-- MUDANÇA: o que mudou depois de chegar à cozinha, uma linha por mudança, até
+             a ciência. Caixa sem borda dentro do card (D1), na cor do alarme. -->
+        <div
+          v-if="alarm"
+          class="flex flex-col gap-1 rounded-md bg-error/12 px-2.5 py-2 font-semibold leading-snug text-error"
+          :class="d.note"
+          role="status"
+          data-kds-changes
+        >
+          <p v-if="cancelled" class="flex items-start gap-1.5" data-kds-change="cancelled">
+            <Icon name="lucide:ban" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span class="min-w-0 break-words">{{ cancelledHeadline(ticket) }}</span>
+          </p>
+          <template v-else>
+            <p
+              v-for="(change, idx) in ticket.changes"
+              :key="idx"
+              class="flex items-start gap-1.5"
+              :data-kds-change="change.kind"
+            >
+              <Icon :name="changeIcon(change.kind)" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span class="min-w-0 whitespace-pre-wrap break-words">{{ change.text }}</span>
+            </p>
+          </template>
+        </div>
+
+        <!-- TAREFA: só os itens, inteiros. No cancelado inteiro, riscados. -->
+        <ul
+          class="flex flex-col divide-y divide-border border-t border-border"
+          :class="cancelled ? 'text-muted-foreground line-through decoration-error decoration-2' : ''"
+        >
           <li
             v-for="(item, idx) in ticket.items"
             :key="idx"
@@ -347,30 +422,24 @@ const d = computed(() => ({
       </div>
     </div>
 
-    <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura (no
-         celular, o card em foco leva o botão para a barra do polegar). -->
-    <Teleport defer :to="actionTarget || 'body'" :disabled="!actionTarget">
-      <div v-if="finishing" class="flex flex-col gap-2" :class="actionTarget ? '' : d.inset" data-kds-undo>
-        <p
-          class="flex items-center justify-center gap-1.5 text-sm font-semibold text-muted-foreground"
-        >
-          <Icon name="lucide:check-check" class="size-4 shrink-0" />
-          Pronto. Sai em {{ undoWindowSeconds }}s
-        </p>
-        <div class="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-          <div class="kds-undo-drain h-full bg-foreground/50" />
-        </div>
+    <!-- AÇÃO: um botão, o ato escrito nele, na base do card, dentro da moldura. No
+         celular o ato do card em foco (e o Desfazer dele) está na ação na base da
+         página. -->
+    <div v-if="finishing && !actionInBar" :class="d.inset" data-kds-undo>
+        <!-- O Desfazer é o MESMO botão do Pronto tocado (dono, 09/10/2026): o verde
+             sólido, no mesmo tamanho e lugar; muda só o texto, e o fundo esvazia. -->
         <KdsCardButton
-          tone="outline"
-          :icon="action.icon"
+          tone="confirm"
+          icon="lucide:undo-2"
           :label="actionLabel"
           :size-class="d.action"
+          :timed="{ until: undoUntil, duration: KDS_UNDO_WINDOW_MS }"
           :aria-label="actionAria"
           data-kds-action
           @click="onAction"
         />
-      </div>
-      <div v-else :class="actionTarget ? '' : d.inset">
+    </div>
+    <div v-else-if="!actionInBar" :class="d.inset">
         <KdsCardButton
           :tone="actionTone"
           :icon="action.icon"
@@ -382,29 +451,6 @@ const d = computed(() => ({
           data-kds-action
           @click="onAction"
         />
-      </div>
-    </Teleport>
+    </div>
   </article>
 </template>
-
-<style scoped>
-/* A barra escoa no mesmo tempo da janela de "Desfazer": a pressa fica visível sem
-   um número piscando na cozinha. */
-.kds-undo-drain {
-  animation: kds-undo-drain 5s linear forwards;
-}
-@keyframes kds-undo-drain {
-  from {
-    width: 100%;
-  }
-  to {
-    width: 0%;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .kds-undo-drain {
-    animation: none;
-    width: 100%;
-  }
-}
-</style>

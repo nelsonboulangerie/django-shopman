@@ -127,7 +127,7 @@ def customer_missing() -> PosCustomerChip:
 
 def customer_found(customer, *, summary: dict, default_address) -> PosCustomerChip:
     name = f"{customer.first_name} {customer.last_name}".strip()
-    tier_ref = customer.price_tier.ref if customer.price_tier_id else ""
+    tier_ref = customer.primary_price_tier.ref if customer.primary_price_tier_id else ""
 
     bits: list[str] = []
     if summary.get("total_orders"):

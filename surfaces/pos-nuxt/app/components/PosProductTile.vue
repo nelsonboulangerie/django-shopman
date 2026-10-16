@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { POSProductProjection } from "~/types/pos";
-import { productFallbackIcon, productFallbackStyle } from "~/presentation/catalog";
+import { productFallbackIcon, productFallbackStyle, productStrikePrice } from "~/presentation/catalog";
 import { productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups } from "~/presentation/productOptions";
 
@@ -32,15 +32,20 @@ const showImage = computed(() => hasImage.value && !imageBroken.value);
 // Lucide genérico da categoria + SKU (presentation/catalog).
 const fallbackStyle = computed(() => productFallbackStyle(props.product));
 const fallbackIcon = computed(() => productFallbackIcon(props.product));
+
+// Hora da Xepa aberta: o preço do tile já é o que o motor cobra, e a etiqueta
+// cheia fica riscada ao lado (a projeção sela os dois; a tela não calcula).
+const strikePrice = computed(() => productStrikePrice(props.product));
 </script>
 
 <template>
   <!-- Tile da v4 (`pos-sale4.html`): faixa de 92 px na cor da coleção com o ícone e o
        SKU, nome e preço embaixo. Com foto, a foto ocupa a faixa; se ela não carregar,
        volta o desenho da coleção (antes ficava o texto alternativo quebrado). -->
-  <button
-    type="button"
-    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0"
+  <NuxtButton
+    color="neutral"
+    variant="ghost"
+    class="group relative flex flex-col overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition hover:border-primary/50 active:translate-y-px disabled:cursor-not-allowed disabled:hover:border-border disabled:active:translate-y-0 items-stretch gap-0 p-0 font-normal"
     :class="[
       qty > 0 ? 'border-primary' : 'border-border',
       opensChoice ? 'shadow-[4px_4px_0_-1px_var(--card),4px_4px_0_0_var(--border)]' : '',
@@ -88,11 +93,32 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
     </div>
 
     <div class="flex min-w-0 flex-col gap-0.5 px-3 py-2">
-      <!-- Nome longo (a mercearia: "Creme de Parmesão Kraeuterkaese Pomerode
-           90g") corta numa linha; o nome inteiro fica no `title`. -->
-      <p class="truncate op-label font-semibold" :class="inert ? 'text-muted-foreground' : ''" :title="product.name">{{ product.name }}</p>
+      <!-- O nome RESERVA duas linhas (dono, 10/10; `op-fixed-lines` do kit): o cartão tem a mesma altura com
+           uma ou duas, e o desenho da grade não deforma. Da terceira em diante corta
+           com reticências (a mercearia: "Creme de Parmesão Kraeuterkaese Pomerode
+           90g"); o nome inteiro fica no `title`, e o nome acessível do cartão lê o texto todo
+           (o corte é só visual). -->
+      <p
+        class="op-fixed-lines op-label leading-tight font-semibold"
+        :class="inert ? 'text-muted-foreground' : ''"
+        :title="product.name"
+        data-pos-product-name
+      >{{ product.name }}</p>
       <span class="flex min-w-0 items-center justify-between gap-1.5">
-        <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+        <!-- Na Hora da Xepa a etiqueta cheia fica riscada AO LADO, na mesma linha
+             (nunca embaixo): a altura do cartão não muda com o desconto, e o
+             riscado corta com reticências antes de empurrar o preço. -->
+        <span class="flex min-w-0 items-baseline gap-1.5" data-pos-product-price>
+          <strong class="op-title tnum whitespace-nowrap" :class="inert ? 'text-muted-foreground' : ''">{{ product.price_display }}</strong>
+          <s
+            v-if="strikePrice"
+            class="min-w-0 truncate op-micro tnum text-muted-foreground"
+            :title="product.discount_label ? `${product.discount_label}: antes ${strikePrice}` : `Antes ${strikePrice}`"
+            aria-hidden="true"
+            data-pos-product-list-price
+          >{{ strikePrice }}</s>
+          <span v-if="strikePrice" class="sr-only">, {{ product.discount_label ? `${product.discount_label}, ` : "" }}antes {{ strikePrice }}</span>
+        </span>
         <!-- Esgotado: a pílula ao lado do preço; o tile fica visível porém inerte
              (sumir da grade faria o operador procurar um botão que "sumiu"). Sem
              preço, quem diz é a linha do preço ("Sem preço"). -->
@@ -105,5 +131,5 @@ const fallbackIcon = computed(() => productFallbackIcon(props.product));
         </span>
       </span>
     </div>
-  </button>
+  </NuxtButton>
 </template>

@@ -65,6 +65,12 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "manager_approval",
     "cash_shift_id",
     "pos_terminal_ref",
+    # Venda feita SEM CONEXÃO e guardada na fila do PDV (WP-PDV-SEM-CONEXAO): a
+    # hora em que o balcão cobrou e a hora da leitura de preços que a tela usou.
+    # Só registro: o fechamento segue a mesma régua (total da tela conferido,
+    # idempotência por ``client_request_id``). Vão para ``order.data.pos.offline``.
+    "offline_captured_at",
+    "offline_prices_at",
 }
 # ⚠️ `card` continua aceito e NÃO é resíduo: é o vocabulário da loja online
 # (onde o gateway sabe a bandeira e a distinção não muda nada para quem compra) e
@@ -319,6 +325,9 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     if payload.get("cash_shift_id") not in (None, ""):
         payload["cash_shift_id"] = _nonnegative_int(payload.get("cash_shift_id"), "cash_shift_id")
     payload["pos_terminal_ref"] = _text(payload.get("pos_terminal_ref"), limit=120)
+    for key in ("offline_captured_at", "offline_prices_at"):
+        if key in payload:
+            payload[key] = _iso_instant(payload.get(key), field=key)
 
     return PosSaleIntent(version=POS_SALE_INTENT_VERSION, payload=payload)
 
@@ -610,12 +619,17 @@ def _tenders(raw) -> list[dict] | None:
         amount_q = _nonnegative_int(tender.get("amount_q"), f"payment_tenders.{idx}.amount_q")
         if amount_q <= 0:
             continue
-        tenders.append({
+        entry = {
             "method": _payment_method(tender.get("method") or "external"),
             "amount_q": amount_q,
             "collection": _payment_collection(tender.get("collection") or "terminal"),
             "reference": _text(tender.get("reference"), limit=120),
-        })
+        }
+        # O gesto "Recebi o Pix" da venda mista (P1-7). Só o booleano viaja: quem e
+        # quando são carimbados no servidor, nunca aceitos do navegador.
+        if entry["method"] == "pix" and tender.get("pix_confirmed") is True:
+            entry["pix_confirmed"] = True
+        tenders.append(entry)
     return tenders
 
 
@@ -752,6 +766,31 @@ def _flag(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "on", "yes"}
     return bool(value)
+
+
+def _iso_instant(value, *, field: str) -> str:
+    """Um instante ISO 8601 com fuso, devolvido normalizado (ou vazio).
+
+    Sem fuso é recusa: a fila guarda a hora do TABLET, e uma hora sem fuso lida
+    no servidor viraria outra hora em silêncio.
+    """
+    from datetime import datetime
+
+    raw = _text(value, limit=40)
+    if not raw:
+        return ""
+    try:
+        instant = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        instant = None
+    if instant is None or instant.tzinfo is None:
+        raise PosIntentError(
+            f"invalid_{field}",
+            "A hora da venda sem conexão chegou num formato que o servidor não lê.",
+            field=field,
+            focus="payment",
+        )
+    return instant.isoformat()
 
 
 def _text(value, *, limit: int) -> str:

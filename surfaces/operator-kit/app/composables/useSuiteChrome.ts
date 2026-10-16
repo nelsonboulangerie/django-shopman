@@ -5,18 +5,22 @@
 // Por que um registro e não props: a caixa de Avisos e a ajuda de atalhos aparecem em
 // dois lugares (o pé do rail, do tablet deitado para cima; a barra de 56px do
 // cabeçalho e o "Mais", no celular e no tablet em pé), e o cabeçalho é montado por cada
-// tela. O app declara UMA vez, na navegação dele (`GestorNav`, `ProductionNav`), e as
-// peças do kit leem daqui. O estado mora no `nuxtApp` (um por requisição no servidor,
+// tela. O app declara UMA vez, no próprio `app.vue` (`provideOperatorInboxAlerts`, como
+// o Gestor e a Produção; o Marketing ainda na `MarketingNav`), e as peças do kit leem daqui. O estado mora no `nuxtApp` (um por requisição no servidor,
 // um por app no cliente), nunca no módulo.
 import { computed, onScopeDispose, shallowRef, toValue, watchEffect, type MaybeRefOrGetter, type Ref, type ShallowRef } from "vue";
 import { useMediaQuery } from "@vueuse/core";
 
 import { SUITE_RAIL_MEDIA, type ShortcutGroup } from "../presentation/suiteChrome";
+import { useScreenReady } from "./useScreen";
 import type { CapacityResponse } from "../types/capacity";
 
-/** O rail existe nesta tela? (a mesma régua da variante `rail:` do CSS). */
+/** O rail existe nesta tela? (a mesma régua da variante `rail:` do CSS). Como a régua
+ *  de tela (`useScreen`): mesa (rail na tela) até a hidratação terminar. */
 export function useSuiteRailShown() {
-  return useMediaQuery(SUITE_RAIL_MEDIA, { ssrWidth: 1280 });
+  const ready = useScreenReady();
+  const media = useMediaQuery(SUITE_RAIL_MEDIA);
+  return computed(() => !ready.value || media.value);
 }
 
 export type InboxAlertTone = "critical" | "warning" | "info";
@@ -35,12 +39,23 @@ export interface OperatorInboxAlert {
   /** Leva ao lugar exato. */
   href?: string;
   hrefLabel?: string;
+  /** O gesto que resolve ali mesmo ("Aceitar"); o app executa por `act`. */
+  actLabel?: string;
   /** O servidor oferece "Visto" para este alerta. */
   canAck?: boolean;
+  /** Prazo em que a causa decide sozinha (ISO). Com prazo e sem Visto, o
+   *  `OperatorUrgentAlert` interrompe a tela; depois do Visto, lembra. */
+  respondByIso?: string;
+  /** `external`: vencido, sai (o mundo lá fora decidiu); `house`: vencido, fica. */
+  deadlineKind?: "external" | "house";
+  /** De onde vem ("iFood") e do que se trata ("Cliente pediu cancelamento"). */
+  origin?: string;
+  originIcon?: string;
+  subject?: string;
 }
 
 export interface OperatorInboxAlertSource {
-  /** Título da seção ("Da operação"; o Marketing diz "Decisões"). */
+  /** Título da seção ("Gerais"; o Marketing diz "Decisões"). */
   title?: string;
   /** Quando não há nada ("Nenhum alerta agora."). */
   emptyText?: string;
@@ -48,6 +63,8 @@ export interface OperatorInboxAlertSource {
   /** Quantos contam no selo (ativos). */
   count: number;
   ack?: (key: string | number) => void | Promise<void>;
+  /** Executa o gesto direto do alerta (`actLabel`). Sem ele, o botão não aparece. */
+  act?: (key: string | number) => void | Promise<void>;
   isPending?: (key: string | number) => boolean;
 }
 

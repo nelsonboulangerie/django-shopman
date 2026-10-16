@@ -8,7 +8,11 @@ import type {
   BIOverShortRow,
   BIOverShortUnavailable,
 } from "~/types/bi";
-import { formatInt, formatQty, shortDate } from "./bi";
+import type {
+  ReadingChartPoint,
+  ReadingChartSeries,
+} from "../../../operator-kit/app/presentation/readingChart";
+import { csvMoney, formatInt, formatQty, shortDate } from "./bi";
 
 /** Custo da sobra em reais inteiros ("R$ 158"), como na prévia: centavo não decide produção. */
 export function formatCostWhole(cents: number): string {
@@ -34,7 +38,6 @@ const num = (value: string) => Number(value || 0);
 
 // ── O dia e a comparação ─────────────────────────────────────────────────────
 
-const WEEKDAY_SHORT = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"] as const;
 
 /** "2026-10-03" → dia da semana 0 = segunda (a convenção da projeção). */
 function weekdayIndex(iso: string): number {
@@ -55,11 +58,6 @@ export function dayName(day: string, today: string): string {
   if (day === addDays(today, -1)) return "Ontem";
   const label = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"][weekdayIndex(day)]!;
   return label;
-}
-
-/** "sáb 03/10". */
-export function dayCaption(day: string): string {
-  return `${WEEKDAY_SHORT[weekdayIndex(day)]} ${shortDate(day)}`;
 }
 
 /** O título da tela: a pergunta, com o dia ("Sobrou ou faltou ontem?"). */
@@ -301,34 +299,26 @@ export function versusTypicalText(row: BIOverShortRow): string {
   return typical ? `típico ${typical}` : "sem típico ainda";
 }
 
-/** A escala comum das barras: o maior entre feito, vendido + perdido e típico. */
-export function barScale(rows: readonly BIOverShortRow[]): number {
-  return Math.max(
-    1,
-    ...rows.flatMap((row) => [num(row.made), num(row.sold) + num(row.lost_estimate), num(row.typical_sold)]),
-  );
-}
+// ── O gráfico "Fez × vendeu" (OperatorReadingChart do kit, deitado e empilhado) ──
 
-export interface BarGeometry {
-  made: number;
-  sold: number;
-  lostFrom: number;
-  lost: number;
-  typical: number | null;
-}
+/**
+ * Os segmentos de cada barra: o que vendeu (cheio) e o que sobrou (o mesmo latão,
+ * claro) somam o que a casa fez; as vendas perdidas depois que acabou (tijolo,
+ * listrado: é estimativa) estendem a barra além do feito. Sobra e falta não aparecem
+ * juntas no mesmo produto.
+ */
+export const MADE_SOLD_SERIES: ReadingChartSeries[] = [
+  { key: "sold", label: "Vendeu", tone: "primary" },
+  { key: "leftover", label: "Sobrou", tone: "primary", fill: "tint" },
+  { key: "lost", label: "Vendas perdidas (estimativa)", tone: "error", fill: "hatch" },
+];
 
-/** Porcentagens da barra compacta (pino 6): trilho = fez, cheio = vendeu, tracejado = perdidas, traço = típico. */
-export function barGeometry(row: BIOverShortRow, scale: number): BarGeometry {
-  const pct = (value: number) => Math.min(100, (value / scale) * 100);
-  const made = num(row.made);
-  const sold = Math.min(num(row.sold), Math.max(made, num(row.sold)));
-  return {
-    made: pct(made),
-    sold: pct(sold),
-    lostFrom: pct(sold),
-    lost: pct(num(row.lost_estimate)),
-    typical: row.typical_sold ? pct(num(row.typical_sold)) : null,
-  };
+/** Um ponto por produto, na ordem da leitura (faltou primeiro, depois a maior sobra). */
+export function madeSoldPoints(rows: readonly BIOverShortRow[]): ReadingChartPoint[] {
+  return rows.map((row) => ({
+    label: row.name,
+    values: { sold: num(row.sold), leftover: num(row.leftover), lost: num(row.lost_estimate) },
+  }));
 }
 
 /** "+4 produtos: Focaccia do dia (sobrou 6) · Madeleine e Kuro Pan (na medida)". */
@@ -426,9 +416,73 @@ export function carryLabel(planDay: string): string {
   return index >= 5 ? `Levar ao plano do próximo ${name}` : `Levar ao plano da próxima ${name}`;
 }
 
+/**
+ * A linha de contexto da ação na base do celular (`OperatorActionBar`): o que o
+ * "Levar ao plano" mexe: os produtos que faltaram ou sobraram (os que vão ao plano;
+ * o que ficou na medida não vai). Um conjunto só, contado em produtos.
+ */
+export function carryContext(report: Pick<BIOverShortReport, "summary">): { label: string; value: string } {
+  const { short, over } = report.summary;
+  const moved = short + over;
+  return {
+    label: "Faltaram ou sobraram",
+    value: moved === 1 ? "1 produto" : `${formatInt(moved)} produtos`,
+  };
+}
+
 /** O botão do plano: "Abrir o plano de sábado 10/10". */
 export function planLabel(planDay: string): string {
   if (!planDay) return "";
   const name = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"][weekdayIndex(planDay)]!;
   return `Abrir o plano de ${name} ${shortDate(planDay)}`;
+}
+
+// ── A tabela produto a produto (NuxtTable) ──────────────────────────────────
+
+/** A cor do selo do veredito (o tom carrega o sentido; o rótulo também). */
+export const VERDICT_COLOR = { short: "error", over: "warning", right: "success" } as const satisfies Record<
+  Verdict,
+  "error" | "warning" | "success"
+>;
+
+export function verdictColor(verdict: string): "error" | "warning" | "success" {
+  return VERDICT_COLOR[(verdict as Verdict) in VERDICT_COLOR ? (verdict as Verdict) : "right"];
+}
+
+/** O botão que abre o resto da tabela: "Ver os outros 3 produtos". */
+export function showHiddenLabel(count: number): string {
+  return count === 1 ? "Ver o outro produto" : `Ver os outros ${count} produtos`;
+}
+
+/**
+ * O CSV do quadro "Produto a produto": as colunas da tabela com número cru (quem abre
+ * o arquivo faz conta com ele).
+ */
+export function overShortCsv(rows: readonly BIOverShortRow[]): { header: string[]; rows: (string | number)[][] } {
+  return {
+    header: [
+      "Produto",
+      "SKU",
+      "Veredito",
+      "Fez",
+      "Vendeu",
+      "Vendas perdidas (estimativa)",
+      "Sobrou",
+      "Acabou às",
+      "Típico vendido",
+      "Custo da sobra (R$)",
+    ],
+    rows: rows.map((row) => [
+      row.name,
+      row.sku,
+      verdictMeta(row.verdict).label,
+      num(row.made),
+      num(row.sold),
+      num(row.lost_estimate),
+      num(row.leftover),
+      row.soldout_at || "",
+      row.typical_sold ? num(row.typical_sold) : "",
+      row.leftover_cost_q ? csvMoney(row.leftover_cost_q) : "",
+    ]),
+  };
 }

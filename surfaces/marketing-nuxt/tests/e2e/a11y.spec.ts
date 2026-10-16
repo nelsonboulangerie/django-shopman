@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
+// Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
+// WCAG 2.2 AA (2.5.8, 24 px).
+const MIN_TARGET = 32;
+
 type AxeViolation = {
   id: string;
   impact: string | null;
@@ -40,7 +44,7 @@ async function expectTouchTargets(page: Page, context: string) {
     .locator(
       'button, a[href], input:not([type="hidden"]), select, textarea, [role="button"], [role="switch"]',
     )
-    .evaluateAll((elements) =>
+    .evaluateAll((elements, minTarget) =>
       elements.flatMap((element) => {
         const node = element as HTMLElement;
         const style = getComputedStyle(node);
@@ -54,11 +58,14 @@ async function expectTouchTargets(page: Page, context: string) {
           return [];
         const input = node as HTMLInputElement;
         if (node.getAttribute("role") === "switch") {
-          const target = node.closest('[data-slot="switch"]');
-          if (target) {
-            const targetRect = target.getBoundingClientRect();
-            if (targetRect.width >= 44 && targetRect.height >= 44) return [];
-          }
+          // O kit dá ao NuxtSwitch a área de toque no `::after` (`after:size-control`,
+          // app.config do operator-kit): o trilho visível é menor que o alvo.
+          const hit = getComputedStyle(node, "::after");
+          if (
+            Number.parseFloat(hit.width) >= minTarget &&
+            Number.parseFloat(hit.height) >= minTarget
+          )
+            return [];
         }
         if (["checkbox", "radio"].includes(input.type)) {
           const label =
@@ -66,10 +73,10 @@ async function expectTouchTargets(page: Page, context: string) {
             document.querySelector(`label[for="${node.id}"]`);
           if (label) {
             const labelRect = label.getBoundingClientRect();
-            if (labelRect.width >= 44 && labelRect.height >= 44) return [];
+            if (labelRect.width >= minTarget && labelRect.height >= minTarget) return [];
           }
         }
-        return rect.width >= 44 && rect.height >= 44
+        return rect.width >= minTarget && rect.height >= minTarget
           ? []
           : [
               {
@@ -83,6 +90,7 @@ async function expectTouchTargets(page: Page, context: string) {
               },
             ];
       }),
+    MIN_TARGET,
     );
   expect(failures, `${context}: ${JSON.stringify(failures, null, 2)}`).toEqual(
     [],
@@ -180,10 +188,16 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   ).toBeVisible();
   await page.keyboard.press("Escape");
 
+  // Ajustes abre o índice das sub-seções (um cartão por lugar).
   await page
-    .getByRole("navigation", { name: "Seções do Marketing no celular" })
+    .getByRole("navigation", { name: "Seções do Marketing" })
     .getByRole("link", { name: "Ajustes", exact: true })
     .click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Ajustes" }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, "ajustes 320×568");
+  await page.locator('[data-settings-section="campaigns"]').click();
   await expect(
     page.getByRole("heading", { level: 1, name: "Campanhas" }),
   ).toBeVisible();
@@ -204,9 +218,10 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expect(create).toBeFocused();
 
   await page.setViewportSize({ width: 640, height: 800 });
+  // Do `sm` para cima as sub-seções de Ajustes são abas.
   await page
-    .getByRole("link", { name: "Plataformas", exact: true })
-    .first()
+    .getByRole("navigation", { name: "Seções de Ajustes" })
+    .getByRole("tab", { name: "Plataformas", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { level: 1, name: "Plataformas" }),
@@ -219,29 +234,30 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   await expectTouchTargets(page, "plataformas em equivalente a zoom 200%");
 
   await page.setViewportSize({ width: 320, height: 568 });
-  // No celular o rail não existe: tema, giro e Bloquear moram no menu do operador,
-  // no "Mais" da barra de baixo (V6-KIT).
-  await page.getByRole("button", { name: /^Mais: / }).click();
+  // Shell da suíte (fase 2): no celular a barra lateral vira gaveta pelo ☰, e tema,
+  // giro e Bloquear moram no menu do operador, no pé dela.
+  const lightBackground = await page.evaluate(
+    () => getComputedStyle(document.body).backgroundColor,
+  );
+  await page.getByRole("button", { name: "Abrir barra lateral" }).click();
+  await page.getByRole("button", { name: "Menu do operador" }).click();
   await page.getByRole("button", { name: "Tema escuro" }).click();
-  await page.keyboard.press("Escape");
-  // A folha do "Mais" fecha de verdade (o véu escuro não pode ficar por cima da
-  // página quando o axe mede o contraste).
-  await expect(page.locator("[data-operator-phone-menu-panel]")).toHaveCount(0);
+  // O menu fecha com o toque; a gaveta, pelo X dela.
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Fechar/ })
+    .click();
+  // A gaveta fecha de verdade (o véu escuro não pode ficar por cima da página
+  // quando o axe mede o contraste).
+  await expect(page.getByRole("button", { name: "Menu do operador" })).toBeHidden();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  // A classe troca antes de o navegador terminar de recalcular a cor herdada da
-  // barra. O axe não pode medir o primeiro frame escuro ainda com o token claro.
+  // A classe troca antes de o navegador terminar de recalcular as cores herdadas. O
+  // axe não pode medir o primeiro frame escuro ainda com o token claro.
   await expect
     .poll(() =>
-      page.locator("[data-operator-phone-menu]").evaluate((element) => {
-        const probe = document.createElement("span");
-        probe.style.color = "var(--muted-foreground)";
-        element.append(probe);
-        const settled = getComputedStyle(element).color === getComputedStyle(probe).color;
-        probe.remove();
-        return settled;
-      }),
+      page.evaluate(() => getComputedStyle(document.body).backgroundColor),
     )
-    .toBe(true);
+    .not.toBe(lightBackground);
   await expectNoAxeViolations(page, "plataformas 320×568 em tema escuro");
   await expectNoHorizontalOverflow(page, "plataformas 320×568 em tema escuro");
   await expectTouchTargets(page, "plataformas 320×568 em tema escuro");
@@ -250,10 +266,12 @@ test("fluxo autenticado passa teclado, axe, toque, reflow e preferências", asyn
   expect(
     await page.evaluate(() => matchMedia("(forced-colors: active)").matches),
   ).toBe(true);
-  await page.getByRole("link", { name: "Campanhas", exact: true }).focus();
+  // A barra de baixo da suíte: do Decisões, o Tab vai ao Agendados.
+  const sections = page.getByRole("navigation", { name: "Seções do Marketing" });
+  await sections.getByRole("link", { name: /^Decisões/ }).focus();
   await page.keyboard.press("Tab");
-  const forcedColorsFocus = page.getByRole("link", {
-    name: "Modelos",
+  const forcedColorsFocus = sections.getByRole("link", {
+    name: "Agendados",
     exact: true,
   });
   await expect(forcedColorsFocus).toBeFocused();
@@ -268,7 +286,7 @@ test("Ofertas e cupons preserva reflow, toque e semântica no mobile", async ({
   page,
 }) => {
   await signIn(page);
-  await page.goto("/offers");
+  await page.goto("/settings/offers");
   await expect(
     page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
   ).toBeVisible();

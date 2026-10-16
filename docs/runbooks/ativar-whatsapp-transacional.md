@@ -82,7 +82,7 @@ não há fallback escondido para SMS, email ou Meta Cloud direto.
 `order_received`, `order_accepted`, `order_rejected`, `order_preparing`,
 `order_ready_pickup`, `order_ready_delivery`, `order_dispatched`, `order_delivered`,
 `order_cancelled`, `preorder_reminder`, `payment_requested`, `payment_link_sent`,
-`payment_confirmed`, `payment_reminder`, `payment_expired`, `payment_failed`,
+`payment_confirmed`, `payment_reminder`, `payment_failed`,
 `waitlist_available`, `waitlist_released`, `stock_arrived`, `purchase_request`.
 
 > ⚠️ Esta lista dizia `order_confirmed`, **que o código nunca emitiu** — o evento é

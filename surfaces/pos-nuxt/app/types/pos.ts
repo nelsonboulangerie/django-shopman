@@ -22,8 +22,14 @@ export interface POSProductProjection {
   kitchen_station?: string;
   /** A estação tem o envio automático ligado: a linha nova vai sozinha. */
   kitchen_auto_fire?: boolean;
+  /** O preço que o motor cobra AGORA (com a Hora da Xepa aberta, já descontado). */
   price_q: number;
   price_display: string;
+  /** A etiqueta cheia, para riscar ao lado do preço; 0/"" = sem desconto agora. */
+  list_price_q?: number;
+  list_price_display?: string;
+  /** O nome do desconto que vale agora (ex.: "Hora da Xepa"). */
+  discount_label?: string;
   collection_ref: string
   // Apresentação da coleção primária (Collection.metadata): cor hex da paleta
   // NB e nome de ícone Lucide — vestem o tile sem foto. Vazio sem configuração.
@@ -199,6 +205,8 @@ export interface POSCashManagementCapability {
   /** A lista vem do SERVIDOR para não existirem duas listas de dinheiro. */
   change_denominations?: POSChangeDenomination[];
   requires_open_shift_for_sale?: boolean;
+  /** Venda sem conexão ainda na fila do dispositivo barra o fechamento do caixa. */
+  blocks_close_when_offline_queue_pending?: boolean;
   [key: string]: unknown;
 }
 export interface POSKitchenHandoffCapability {
@@ -279,18 +287,32 @@ export interface POSPendingCashRefundProjection {
   amount_display: string;
   customer_name: string;
   cancelled_at: string;
-  /** "cancelled" (venda cancelada: devolve tudo) · "reduced" (encomenda que ficou mais barata: a diferença). */
-  reason?: "cancelled" | "reduced";
+  /**
+   * "cancelled" / "returned" (venda cancelada ou devolvida inteira: devolve tudo) ·
+   * "partial_return" (devolução de parte da venda) · "reduced" (encomenda que ficou
+   * mais barata): esses dois devolvem a diferença.
+   */
+  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
   reason_label?: string;
 }
 
-/** Encomenda paga na maquininha que ficou mais barata: estornar NA maquininha e registrar. */
+/**
+ * Venda paga na maquininha cujo dinheiro precisa voltar NELA: cancelada,
+ * devolvida (toda ou em parte) ou encomenda que ficou mais barata. Estornar na
+ * maquininha e registrar; só o "Estornei" grava o estorno.
+ */
 export interface POSPendingCardMachineRefundProjection {
   order_ref: string;
   amount_q: number;
   amount_display: string;
   customer_name: string;
   method_label: string;
+  /** "cancelled" · "returned" · "partial_return" · "reduced". */
+  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
+  /** "Venda cancelada" · "Venda devolvida" · "Devolução de parte da venda" · "Encomenda ficou mais barata". */
+  reason_label?: string;
+  /** Como achar a transação na maquininha: "Aprovado em 13/10 às 14:32 · NSU 123456". */
+  lookup_display?: string;
 }
 
 /**
@@ -357,6 +379,8 @@ export interface POSAddressAutocompleteProjection {
   shop_latitude: number | null;
   shop_longitude: number | null;
   bias_radius_m: number;
+  /** A loja confirma o ponto no mapa depois da sugestão (a mesma chave do site). */
+  map_confirmation_enabled?: boolean;
 }
 
 export interface StructuredAddressProjection {
@@ -427,6 +451,9 @@ export interface POSCustomerLookupProjection {
   house_account?: boolean;
   /** Quanto o cliente deve hoje (centavos), quando tem conta. */
   account_balance_q?: number;
+  /** O desconto do GRUPO do cliente no balcão ("Aliança Francesa · 10%"). O Core
+   *  o aplica sozinho no reprice; aqui ele só ganha nome. Vazio = nenhum. */
+  group_discount_label?: string;
 }
 
 export interface POSCustomerLookupResponse {
@@ -590,6 +617,19 @@ export interface POSProjection {
   /** Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta
    *  (balança no balcão). Desligado = só valor, e a opção nem aparece. */
   weighed_weight_entry?: boolean;
+  /** A janela de desconto por horário (Hora da Xepa); null sem regra para o PDV. */
+  price_window?: POSPriceWindowProjection | null;
+}
+
+/** A janela de desconto por horário vista na leitura: `next_change_at` é quando
+ *  ela abre ou fecha, e a tela relê a projeção nesse instante. */
+export interface POSPriceWindowProjection {
+  active: boolean;
+  label: string;
+  discount_percent: number;
+  starts_at: string;
+  ends_at: string;
+  next_change_at: string;
 }
 
 export interface POSShiftSummaryProjection {
@@ -622,6 +662,8 @@ export interface POSTabProjection {
   opened_at_display?: string;
   /** A mesa do Salão vinculada (opcional). */
   seating_spot_ref?: string;
+  /** A cozinha terminou tudo o que foi disparado: o balcão chama o cliente. */
+  kitchen_ready?: boolean;
 }
 
 export interface POSResponse {
@@ -687,7 +729,7 @@ export interface POSCartItem {
    *  medido por unidade contra o preço de etiqueta. */
   discount?: { value: number; reason: string; type?: "percent" | "fixed" };
   /** Desconto AUTOMÁTICO de pricing que venceu a linha (lote/liquidação, happy
-   *  hour, funcionário), carimbado pelo kernel e exposto pelo payload da
+   *  hour, grupo de clientes), carimbado pelo kernel e exposto pelo payload da
    *  comanda. Informativo: o `price_q` da linha já vem reduzido. */
   pricing_discount?: { type: string; label: string; amount_q: number; percent: number } | null;
   /** Preço de ETIQUETA por unidade, antes de qualquer desconto. Igual a
@@ -732,6 +774,9 @@ export interface POSPaymentTenderDraft {
   amount_q: number;
   collection: PosPaymentCollection;
   reference?: string;
+  /** O gesto "Recebi o Pix" da venda mista (P1-7): o operador conferiu que o Pix
+   *  entrou. Só o booleano viaja; quem e quando o servidor carimba. */
+  pix_confirmed?: boolean;
   /** Internal: amount is still the untouched system auto-fill (first cédula
    *  replaces it). Stripped before the intent — never sent to the server. */
   _virgin?: boolean;
@@ -759,6 +804,9 @@ export interface POSTabPayload {
   opened_at_display?: string;
   /** A mesa do Salão vinculada (opcional); "" = sem mesa. */
   seating_spot_ref?: string;
+  /** O rastro (dono, T1=1, 13/10/2026): a comanda nasceu de uma transferência. O selo
+   *  diz `label` ("Transf. da #13"); a dica e o leitor de tela, `title`. */
+  transferred_from?: { tab_display: string; label: string; title: string } | null;
   /** Ref da encomenda quando esta é a comanda virtual da EDIÇÃO dela; "" numa comanda comum. */
   edit_of?: string;
   items: POSCartItem[];
@@ -912,6 +960,18 @@ export interface POSScheduleResponse {
   readiness_unavailable: boolean;
 }
 
+/** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção
+ *  `promotion_name`; `threshold`: compras a partir de `threshold_q`.
+ *  `base_fee_q` é a taxa sem a renúncia. */
+export interface POSDeliveryFeeWaiverProjection {
+  reason: "promotion" | "threshold";
+  promotion_name: string;
+  threshold_q: number;
+  base_fee_q: number;
+  threshold_display?: string;
+  base_fee_display?: string;
+}
+
 export interface POSSaleReviewProjection {
   intent_version: string;
   tab_ref: string;
@@ -943,6 +1003,9 @@ export interface POSSaleReviewProjection {
   manager_approval_threshold_q: number;
   /** Por que o gerente foi chamado — o diálogo de autorização diz o que assinar. */
   approval_reasons: string[];
+  /** Conta na casa acima do limite (motivo `house_account_over_limit`): saldo
+   *  em aberto antes da venda, limite, o que a venda põe na conta e quanto passa. */
+  house_account_limit?: { balance_q: number; limit_q: number; charge_q: number; over_q: number } | null;
   receipt_channels: string[];
   /** Vai sair nota com CPF? (o consumidor pediu o documento nesta venda) */
   fiscal_tax_id_requested: boolean;
@@ -951,6 +1014,9 @@ export interface POSSaleReviewProjection {
    * "default" · "manual" (exceção do operador) · "blocked" (fora da área). */
   delivery_fee_source: string;
   delivery_distance_km: number | null;
+  /** Frete grátis (ou abatido) pela loja, e por qual regra; `null` sem renúncia.
+   *  Opcional: a revisão sem conexão não sabe de promoção. */
+  delivery_fee_waiver?: POSDeliveryFeeWaiverProjection | null;
   /** A data que o servidor usou — em branco no pedido, é hoje pelo relógio da loja. */
   delivery_date: string;
   /** Janelas de meia hora do expediente daquele dia. Vazio = não há janela. */
@@ -959,10 +1025,13 @@ export interface POSSaleReviewProjection {
   delivery_slots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** A primeira janela oferecível deste dia para este carrinho, ou "". */
   delivery_earliest_slot?: string;
-  /** ENTREGA COM NOTA: esta entrega vai ter NFC-e mesmo sem CPF, e a nota de
-   * entrega não sai sem ele (SEFAZ 787/788). A tela trava o Validar enquanto
-   * "CPF na nota" estiver vazio; a review não é refeita quando o CPF muda. */
-  delivery_tax_id_required?: boolean;
+  /** VENDA SEM COMANDA: o que cada linha cobra pelo motor (`line_id` → cobrado,
+   *  etiqueta, desconto automático que venceu). Com comanda vem vazio: quem diz é
+   *  o eco do salvar. Mesmo formato, aplicado por `applyLinePrices`. */
+  line_prices?: Record<string, Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount">>;
+  /** Só na revisão montada pela TELA sem conexão (`offlineSaleReview`): a hora
+   *  da leitura de preços usada. O servidor nunca manda este campo. */
+  offline?: { prices_at: string };
 }
 
 export interface POSSaleReviewResponse {

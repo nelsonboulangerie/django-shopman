@@ -20,7 +20,7 @@ describe("Marketing telemetry privacy/cardinality boundary", () => {
   });
 
   it("builds only a bounded PII-free sample", () => {
-    expect(buildMarketingVital("LCP", 1843.4422, "/campaigns?customer=1", true)).toEqual({
+    expect(buildMarketingVital("LCP", 1843.4422, "/settings/campaigns?customer=1", true)).toEqual({
       name: "LCP",
       value: 1843.442,
       rating: "good",

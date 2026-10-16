@@ -1,5 +1,5 @@
 import { measureBottomObstruction } from "./useNextFocus"
-import { hintOffset, shouldHint } from "../presentation/moreBelow"
+import { CONTAINED_HINT_REACH, HINT_REACH, endReached as fimAlcancado, hintOffset, shouldHint } from "../presentation/moreBelow"
 import { FOCUS_OBSTRUCTION_ATTRIBUTE } from "../presentation/nextFocus"
 
 /**
@@ -18,11 +18,46 @@ import { FOCUS_OBSTRUCTION_ATTRIBUTE } from "../presentation/nextFocus"
  * carrega `scroll-margin-bottom` igual ao obstáculo, o fim para ACIMA do card,
  * não atrás dele.
  */
-export function useMoreBelow() {
+export interface UseMoreBelowOptions {
+  /**
+   * A dica mora DENTRO de um contêiner que rola (uma coluna lateral), não na janela.
+   * A área observada é a do contêiner: o que flutua fora dele (o bloco de ação e o pé
+   * da comanda) já está fora da área por construção, sem medida de obstrução.
+   */
+  contained?: boolean;
+}
+
+/** O painel de conteúdo do shell da suíte (o `DashboardPanel`, ao lado da barra lateral). */
+export const CONTENT_PANEL_ATTRIBUTE = "data-operator-content-panel";
+
+/** As bordas laterais da dica na janela: as do painel de conteúdo, ou a janela inteira. */
+export interface MoreBelowLane {
+  left: number;
+  right: number;
+}
+
+/** O ancestral que rola (o contêiner da dica contida). */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node;
+  }
+  return null;
+}
+
+export function useMoreBelow(options: UseMoreBelowOptions = {}) {
+  const contained = Boolean(options.contained);
+  const reach = contained ? CONTAINED_HINT_REACH : HINT_REACH;
   const sentinel = ref<HTMLElement | null>(null);
   const endReached = ref(true);
   const obstruction = ref(0);
   const offset = computed(() => hintOffset(obstruction.value));
+  // A DICA DA JANELA FICA NO PAINEL DE CONTEÚDO. Ela é `fixed` na janela, e com
+  // `inset-x-0` o degradê atravessava a barra lateral e lavava o pé dela (Avisos, o
+  // menu do operador) a 1366 no B.I., no Compras e no Kitchen Sink (10/10/2026). A
+  // dica fala do conteúdo que rola, então mora na largura dele: as bordas vêm do
+  // painel do shell (`data-operator-content-panel`). Fora de um shell, a janela toda.
+  const lane = ref<MoreBelowLane | null>(null);
+  let laneSize: ResizeObserver | null = null;
   let observer: IntersectionObserver | null = null;
   let obstructionSizes: ResizeObserver | null = null;
 
@@ -38,6 +73,17 @@ export function useMoreBelow() {
     observer?.disconnect();
     observer = null;
     if (!import.meta.client || !el || typeof IntersectionObserver !== "function") return;
+    if (contained) {
+      const root = scrollParent(el);
+      observer = new IntersectionObserver(entries => {
+        const entry = entries[entries.length - 1];
+        if (!entry) return;
+        const limite = entry.rootBounds?.bottom ?? root?.getBoundingClientRect().bottom ?? window.innerHeight;
+        chegouAoFim(entry.boundingClientRect.top, limite);
+      }, { root, threshold: [0, 1] });
+      observer.observe(el);
+      return;
+    }
     const recuo = Math.round(Math.max(0, obstaculo));
     observer = new IntersectionObserver(entries => {
       const entry = entries[entries.length - 1];
@@ -49,15 +95,17 @@ export function useMoreBelow() {
       // Medido no login em 375x667: sentinela em 752 (dica certa), 37 (some,
       // certo), -11 (voltava). A pergunta certa não é "está à vista", é "o fim
       // do conteúdo já passou da linha de baixo da área observada".
-      const limite = entry.rootBounds?.bottom ?? window.innerHeight - recuo;
+      // A área observada desce `HINT_REACH` além da linha de baixo: o resto que
+      // cabe sob a própria dica não ganha dica (`endReached`).
+      const limite = (entry.rootBounds?.bottom ?? window.innerHeight - recuo + HINT_REACH) - HINT_REACH;
       chegouAoFim(entry.boundingClientRect.top, limite);
-    }, { rootMargin: `0px 0px -${recuo}px 0px` });
+    }, { rootMargin: `0px 0px ${HINT_REACH - recuo}px 0px` });
     observer.observe(el);
   }
 
-  /** O fim chegou quando o sentinela está na linha de baixo da área observada, ou acima dela. */
+  /** O fim chegou quando o sentinela está na linha de baixo da área visível, ou a menos de uma dica dela. */
   function chegouAoFim (topoDoSentinela: number, limite: number) {
-    endReached.value = topoDoSentinela <= limite;
+    endReached.value = fimAlcancado(topoDoSentinela, limite, reach);
   }
 
   // ⚠️ SALTO NÃO DISPARA OBSERVADOR. O IntersectionObserver só avisa quando o
@@ -70,11 +118,42 @@ export function useMoreBelow() {
   function reavaliar () {
     const el = sentinel.value;
     if (!el) return;
+    if (contained) {
+      const root = scrollParent(el);
+      chegouAoFim(el.getBoundingClientRect().top, root?.getBoundingClientRect().bottom ?? window.innerHeight);
+      return;
+    }
     chegouAoFim(el.getBoundingClientRect().top, window.innerHeight - obstruction.value);
+  }
+
+  function contentPanel(): HTMLElement | null {
+    return sentinel.value?.closest<HTMLElement>(`[${CONTENT_PANEL_ATTRIBUTE}]`) ?? null;
+  }
+
+  function measureLane() {
+    if (!import.meta.client || contained) return;
+    const panel = contentPanel();
+    if (!panel) {
+      lane.value = null;
+      return;
+    }
+    const box = panel.getBoundingClientRect();
+    const next = {
+      left: Math.max(0, Math.round(box.left)),
+      right: Math.max(0, Math.round(document.documentElement.clientWidth - box.right)),
+    };
+    if (lane.value && lane.value.left === next.left && lane.value.right === next.right) return;
+    lane.value = next;
   }
 
   function measure() {
     if (!import.meta.client) return;
+    measureLane();
+    if (contained) {
+      // A coluna muda de altura sem a janela mexer (o bloco de ação abre e fecha).
+      reavaliar();
+      return;
+    }
     const medido = measureBottomObstruction();
     if (Math.abs(medido - obstruction.value) < 1) return;
     obstruction.value = medido;
@@ -111,16 +190,52 @@ export function useMoreBelow() {
   // aviso do mínimo aparece): a folga e a área de observação acompanham.
   useEventListener(() => (import.meta.client ? window : null), 'resize', measure)
   useEventListener(() => (import.meta.client ? window : null), 'scrollend', reavaliar);
+  // ⚠️ DENTRO DE UM CONTÊINER ROLÁVEL O OBSERVADOR NÃO BASTA. O shell da suíte rola o
+  // `<main>`, não a janela: o sentinela é recortado pelo contêiner, a área estendida
+  // por `HINT_REACH` não o alcança, e o resto de 30 px que cabe sob a dica nunca
+  // dispara callback (medido na Central a 390x600: a dica ficava). A rolagem de um
+  // elemento não borbulha até a janela; na fase de captura do documento ela chega.
+  // Um quadro por rolagem, no máximo.
+  let quadro = 0;
+  function reavaliarNoQuadro () {
+    if (quadro) return;
+    quadro = requestAnimationFrame(() => {
+      quadro = 0;
+      reavaliar();
+    });
+  }
+  useEventListener(() => (import.meta.client ? document : null), 'scroll', reavaliarNoQuadro, { capture: true, passive: true });
+  let containerSize: ResizeObserver | null = null;
   onMounted(() => {
     measure();
+    if (contained) {
+      const root = scrollParent(sentinel.value);
+      if (root && typeof ResizeObserver === "function") {
+        containerSize = new ResizeObserver(() => reavaliar());
+        containerSize.observe(root);
+      }
+      return;
+    }
     watchObstructionSizes();
+    // A barra lateral abre, compacta e some sem a janela mexer: o painel muda de
+    // largura, e a dica acompanha.
+    const panel = contentPanel();
+    if (panel && typeof ResizeObserver === "function") {
+      laneSize = new ResizeObserver(measureLane);
+      laneSize.observe(panel);
+    }
   });
   onBeforeUnmount(() => {
+    if (quadro) cancelAnimationFrame(quadro);
     observer?.disconnect();
     observer = null;
     obstructionSizes?.disconnect();
     obstructionSizes = null;
+    containerSize?.disconnect();
+    containerSize = null;
+    laneSize?.disconnect();
+    laneSize = null;
   });
 
-  return { sentinel, visible, offset, measure, scrollToEnd };
+  return { sentinel, visible, offset, lane, measure, scrollToEnd };
 }

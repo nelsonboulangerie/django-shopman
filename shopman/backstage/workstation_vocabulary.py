@@ -61,8 +61,7 @@ SURFACE_KINDS: dict[str, tuple[str, ...]] = {
 COPY: dict[str, str] = {
     "setup_title": "Vincular este dispositivo a um posto de trabalho?",
     "setup_lead": (
-        "Escolha uma vez. Depois ele abre direto no trabalho deste posto e pede só o "
-        "PIN de quem for operar."
+        "Escolha uma vez. Depois, o dispositivo abre direto no posto e só pede o PIN."
     ),
     "setup_choice_label": "Posto:",
     "setup_confirm": "Vincular a este posto",
@@ -88,8 +87,8 @@ COPY: dict[str, str] = {
     "not_a_workstation": "Este dispositivo não está vinculado a nenhum posto.",
     "manage_title": "Postos",
     "manage_lead": (
-        "Onde cada dispositivo fica. Vinculado a um posto, ele abre direto no "
-        "trabalho do posto e pede só o PIN de quem for operar."
+        "Onde cada dispositivo fica. Vinculado a um posto, ele abre direto ali e só "
+        "pede o PIN."
     ),
     "manage_new": "Novo posto",
     "manage_name_label": "Nome do posto",

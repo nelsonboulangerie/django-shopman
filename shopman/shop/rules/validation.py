@@ -200,11 +200,12 @@ class PricedItemsRule(BaseRule):
 
 
 class DeliveryFiscalIdentityRule(BaseRule):
-    """Entrega com NFC-e não entra sem CPF/CNPJ válido e endereço completo.
+    """Entrega com NFC-e não entra com CPF/CNPJ inválido nem sem endereço completo.
 
-    Decisão do dono, 24/09/2026: a SEFAZ recusa a nota de entrega sem isso
-    (787/788), e a recusa aparecia na emissão, com o entregador na rua. Aqui
-    ela aparece na porta. A régua é a da emissão e a pergunta "vai ter nota?"
+    A SEFAZ recusa a nota de entrega sem destinatário e endereço (787/788), e a
+    recusa aparecia na emissão, com o entregador na rua. Aqui ela aparece na
+    porta. Sem CPF/CNPJ a entrega entra: a nota sai presencial, consumidor não
+    identificado (decisão do dono, 13/10/2026, que substitui a de 24/09). A régua é a da emissão e a pergunta "vai ter nota?"
     é a do resolver fiscal (``services/delivery_fiscal_identity``).
 
     Registrado sempre (``handlers._register_validators``), fora do
@@ -266,7 +267,14 @@ class DeliveryZoneRule(BaseRule):
         if fulfillment_type != "delivery":
             return
 
-        if session_data.get("delivery_zone_error"):
+        from shopman.shop.modifiers import operator_agreed_delivery_fee_q
+
+        # Taxa assumida no balcão (com nome e hora): a área e a coordenada não
+        # decidiram o preço, então não há cobertura nem coerência a provar aqui.
+        # O mínimo de entrega continua valendo.
+        agreed_by_operator = operator_agreed_delivery_fee_q(session_data) is not None
+
+        if session_data.get("delivery_zone_error") and not agreed_by_operator:
             raise OrderValidationError(
                 code="delivery_zone_not_covered",
                 message="Não entregamos neste endereço ainda.",
@@ -281,7 +289,7 @@ class DeliveryZoneRule(BaseRule):
                 message="Confirme o endereço com CEP para calcularmos a entrega.",
             )
 
-        if not _coordinates_match_claimed_address(session_data):
+        if not agreed_by_operator and not _coordinates_match_claimed_address(session_data):
             raise OrderValidationError(
                 code="delivery_address_mismatch",
                 message="O endereço e a localização não conferem. Confirme o endereço no mapa.",

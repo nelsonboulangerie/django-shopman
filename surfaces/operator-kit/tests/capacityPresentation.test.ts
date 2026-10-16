@@ -70,8 +70,8 @@ describe("textos em pt-BR", () => {
   });
 
   it("de onde veio o número, sem jargão — e nada quando não há leitura", () => {
-    expect(capacitySourceText(reading(50, 10, { source: "cgroup-v2" }))).toBe("Número medido no servidor.");
-    expect(capacitySourceText(reading(50, 10, { source: "cgroup-v1" }))).toBe("Número medido no servidor.");
+    expect(capacitySourceText(reading(50, 10, { source: "cgroup-v2" }))).toBe("Número medido.");
+    expect(capacitySourceText(reading(50, 10, { source: "cgroup-v1" }))).toBe("Número medido.");
     expect(capacitySourceText(reading(50, 10, { source: "proc" }))).toBe("Número estimado: a memória pode aparecer maior do que é.");
     expect(capacitySourceText(reading(50, 10, { source: "none", available: false }))).toBe("");
     expect(capacitySourceText(reading(50, 10, { source: "proc", available: false }))).toBe("");

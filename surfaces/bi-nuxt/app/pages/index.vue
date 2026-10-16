@@ -1,50 +1,60 @@
 <script setup lang="ts">
-// Produção: a âncora do B.I. Em cima, a pergunta nº 1 do dono (prévia
-// `bi-sobra4.html`, LEITURA: pergunta, resposta, comparação, aprofundar): "Sobrou ou
-// faltou ontem?", produto a produto, contra o mesmo dia da semana. Embaixo, os lotes
-// no período: a série do que saiu do forno, o aproveitamento e o tempo REAL de forno
-// (só o par armar→Concluir mede; a cobertura declara o resto, ADR-021 §4).
+// Produção: a âncora do B.I. A pergunta nº 1 do dono (prévia `bi-sobra4.html`,
+// LEITURA: pergunta, resposta, comparação, aprofundar): "Sobrou ou faltou ontem?",
+// produto a produto, contra o mesmo dia da semana.
 //
-// Dois tempos na mesma tela, cada um no seu lugar: o DIA da leitura mora no cabeçalho
-// (`?day=`), e a JANELA de análise mora no quadro dos lotes (`?period=`), que é onde
-// ela vale. As outras telas do B.I. só têm a janela, e ela vai no cabeçalho delas.
-import type { BIProductionReport } from "~/types/bi";
+// Um tempo por tela (laudo F08): esta lê UM dia, e o dia mora no cabeçalho, no
+// `OperatorPeriodPicker` do kit em modo de um dia (‹ › andam para o dia aberto
+// anterior/seguinte que o servidor informa). Os lotes no período (a janela de
+// análise) são a segunda aba (`?view=lots`, `ProductionLots`), e o cabeçalho dela
+// troca o dia pelo período; as abas abrem a linha de recortes (`ProductionViewNav`).
+//
+// O dia continua na URL (`?day=`, `useBiOverShort`): o "Copiar link desta leitura"
+// do ⋯ leva a mesma leitura. O endereço não aparece mais escrito na tela (F14).
+import type { TableColumn } from "#ui/types";
+import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
+import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
+import type { BIOverShortRow, BIProductionReport, BIReading } from "~/types/bi";
+import { formatInt, formatQty } from "~/presentation/bi";
 import {
-  BUCKET_SPAN_LABELS,
-  bucketLabel,
-  bucketRows,
-  coverageLabel,
-  delta,
-  formatInt,
-  formatMinutes,
-  formatQty,
-  startedAssumedHint,
-} from "~/presentation/bi";
-import {
+  MADE_SOLD_SERIES,
   VERDICTS,
-  barScale,
+  carryContext,
   carryLabel,
   collectionsOf,
   compareCaption,
-  compareName,
   compareOptions,
   filterRows,
   hiddenRowsSummary,
   historyHeading,
+  madeSoldPoints,
+  historyText,
+  outcomeText,
   overShortAnswer,
+  overShortCsv,
   overShortTitle,
   overUnit,
   planLabel,
   shortUnit,
+  showHiddenLabel,
+  soldoutText,
   typicalLine,
+  verdictColor,
   verdictMeta,
+  versusTypicalText,
 } from "~/presentation/overShort";
-import { todayIso } from "../../../operator-kit/app/presentation/dates";
-
-// ── Sobrou ou faltou ─────────────────────────────────────────────────────────
+import { productionView } from "~/presentation/production";
+import { readingChartCsv } from "../../../operator-kit/app/presentation/readingChart";
+import {
+  periodAnchor,
+  periodOfDay,
+  todayIso,
+  type PeriodSelection,
+} from "../../../operator-kit/app/presentation/dates";
 
 const {
   report: day,
+  freshness: dayFreshness,
   pending: dayPending,
   error: dayError,
   refresh: dayRefresh,
@@ -53,50 +63,105 @@ const {
   setCompare,
 } = useBiOverShort();
 
+const route = useRoute();
+const router = useRouter();
 const today = todayIso();
+const view = computed(() => productionView(route.query.view));
+const { selection: lotsWindow, bounds, presets } = useBiWindow();
+// O frescor da aba aberta: o dia (over-short) ou os lotes (a leitura de produção, que
+// o `ProductionLots` busca; aqui só se lê o que ele já trouxe, pela mesma chave).
+const { data: lotsReading } = useNuxtData<BIReading<BIProductionReport>>("bi-production");
+const freshness = computed(() =>
+  view.value === "lots" ? { generated_at: lotsReading.value?.generated_at ?? null } : dayFreshness.value,
+);
 const yesterday = computed(() => {
   const [y, m, d] = today.split("-").map(Number);
   return new Date(Date.UTC(y!, (m ?? 1) - 1, (d ?? 1) - 1)).toISOString().slice(0, 10);
 });
 
-// No celular a barra de 56px não comporta a pergunta com o dia: o dia já está no
-// controle logo abaixo, então o título fica só com a pergunta (nunca cortado).
-const isPhone = useMediaQuery("(max-width: 767.98px)");
+// O dia da leitura no período do kit (modo de um dia). Sem `?day=`, o servidor lê o
+// último dia aberto, e é esse dia que o controle mostra.
+const readingDay = computed<PeriodSelection>({
+  get: () => periodOfDay("day", day.value?.day ?? yesterday.value, today),
+  // "Voltar para hoje" do controle pede o dia em curso, que ainda não tem resposta:
+  // aí a leitura volta ao padrão do servidor (o último dia aberto), sem `?day=`.
+  set: (selection) => {
+    const anchor = periodAnchor(selection, today);
+    if (anchor <= yesterday.value) {
+      setDay(anchor);
+      return;
+    }
+    const rest = { ...route.query };
+    delete rest.day;
+    void router.replace({ query: rest });
+  },
+});
+
+// O título é o mesmo em toda largura: no celular a barra do kit quebra a linha em vez
+// de cortar. `ssrWidth` (do `isPhone` da dica do "Comparar com"): o servidor e a
+// primeira pintura concordam (sem erro de hidratação).
+const isPhone = useMediaQuery("(max-width: 767.98px)", { ssrWidth: 1280 });
+// A régua do celular da toolbar do kit (abaixo de `sm`).
+const isNarrow = useMediaQuery("(max-width: 639.98px)", { ssrWidth: 1280 });
 const title = computed(() => {
-  if (isPhone.value) return "Sobrou ou faltou?";
+  if (view.value === "lots") return "Como foram os lotes no período?";
   return day.value ? overShortTitle(day.value.day, today) : "Sobrou ou faltou ontem?";
 });
 
 const query = ref("");
-const verdict = ref("");
-const collection = ref("");
+const verdict = ref("all");
+const collection = ref("all");
 const showAll = ref(false);
-const openSku = ref<string | null>(null);
-watch(() => day.value?.day, () => {
-  openSku.value = null;
-  showAll.value = false;
-});
+const expanded = ref<Record<string, boolean>>({});
+watch(
+  () => day.value?.day,
+  () => {
+    expanded.value = {};
+    showAll.value = false;
+  },
+);
 
-/** Linhas em foco antes do "+N produtos" (densidade pela atenção, SPEC4 §4). */
+/** Linhas em foco antes do "Ver os outros N" (densidade pela atenção, SPEC4 §4). */
 const FOCUS_ROWS = 8;
 const rows = computed(() => day.value?.rows ?? []);
-const filtered = computed(() =>
-  filterRows(rows.value, { verdict: verdict.value, collection: collection.value, query: query.value }),
-);
-const narrowed = computed(() => Boolean(verdict.value || collection.value || query.value.trim()));
+const filters = computed(() => ({
+  verdict: verdict.value === "all" ? "" : verdict.value,
+  collection: collection.value === "all" ? "" : collection.value,
+  query: query.value,
+}));
+const filtered = computed(() => filterRows(rows.value, filters.value));
+const narrowed = computed(() => Boolean(filters.value.verdict || filters.value.collection || query.value.trim()));
 const visible = computed(() => (showAll.value || narrowed.value ? filtered.value : filtered.value.slice(0, FOCUS_ROWS)));
 const hidden = computed(() => (showAll.value || narrowed.value ? [] : filtered.value.slice(FOCUS_ROWS)));
-const scale = computed(() => barScale(rows.value));
-const collections = computed(() => collectionsOf(rows.value));
+// O gráfico "Fez × vendeu" lê os mesmos produtos que a tabela mostra (recorte e "Ver
+// os outros" valem para os dois).
+const madeSold = computed(() => madeSoldPoints(visible.value));
 const counts = computed(() => ({
   short: day.value?.summary.short ?? 0,
   over: day.value?.summary.over ?? 0,
   right: day.value?.summary.right ?? 0,
 }));
 
-/** Grade da tabela: um bloco de duas colunas no celular e no tablet; sete colunas no desktop largo. */
-const COLUMNS =
-  "grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1.3fr)_104px_minmax(200px,230px)_92px_118px_minmax(0,1.1fr)_168px]";
+// Recorte por veredito: os filtros rápidos da suíte (`OperatorQuickFilters`, um de cada
+// vez, com a contagem ao lado). A peça cuida do celular sozinha: a faixa rola sem cortar
+// rótulo (laudo F18, "Na me…") e, acima do teto, vira seletor.
+const verdictItems = computed<QuickFilterItem[]>(() => [
+  { key: "all", label: "Todos", count: rows.value.length },
+  ...VERDICTS.map((key) => ({ key, label: verdictMeta(key).label, count: counts.value[key] })),
+]);
+const VERDICT_TEXT = { error: "text-error", warning: "text-warning", success: "text-success" } as const;
+
+// Coleção: a lista cresce com o catálogo, então é NuxtSelectMenu com busca; a busca
+// só recebe o foco ao abrir onde há teclado físico.
+const touch = useMediaQuery("(pointer: coarse)");
+const collectionItems = computed(() => [
+  { value: "all", label: "Todas as coleções" },
+  ...collectionsOf(rows.value).map((item) => ({ value: item.ref, label: item.name })),
+]);
+
+const compareItems = computed(() =>
+  day.value ? compareOptions(day.value.day).map((option) => ({ value: option.key, label: `${option.label} (${option.reach})` })) : [],
+);
 
 const config = useRuntimeConfig().public as { productionUrl?: string; ordersUrl?: string };
 const productionUrl = (config.productionUrl || "").replace(/\/?$/, "/");
@@ -105,14 +170,6 @@ const planUrl = computed(() => (day.value?.plan_day && productionUrl ? `${produc
 const closeUrl = computed(() => (day.value && productionUrl ? `${productionUrl}close?date=${day.value.day}` : ""));
 const { attrsFor } = useOperatorAppLink();
 const planLink = computed(() => attrsFor(planUrl.value));
-
-const shareQuery = computed(() => {
-  if (!day.value) return "";
-  return day.value.compare && day.value.compare !== "typical"
-    ? `?day=${day.value.day}&compare=${day.value.compare}`
-    : `?day=${day.value.day}`;
-});
-const compareChoices = computed(() => (day.value ? compareOptions(day.value.day) : []));
 
 // "Levar ao plano do próximo sábado" (pino 3): a falta e a sobra viram o porquê ao
 // lado da sugestão do Planejamento. Não muda número nenhum do plano.
@@ -135,7 +192,55 @@ const { run: carryToPlan, pending: carrying } = usePendingAction(async () => {
     useSonner.error(httpErrorMessage(error, "Não deu para levar ao plano. Tente de novo."));
   }
 });
+// No celular e no tablet o mesmo gesto mora na base (`OperatorActionBar`, em fluxo
+// depois da área que rola); da `lg` para cima ele fica logo depois da resposta.
+const carryAction = computed<OperatorActionBarAction | null>(() =>
+  view.value === "day" && day.value?.plan_day
+    ? {
+        label: carryLabel(day.value.plan_day),
+        icon: "i-lucide-arrow-right-left",
+        loading: carrying.value,
+        onSelect: () => void carryToPlan(),
+      }
+    : null,
+);
+const carryLine = computed(() => (day.value ? carryContext(day.value) : null));
 const explainOpen = ref(false);
+// "Como é calculado" é um item do ⋯ da página (o menu do kit recebe os itens por prop).
+const shareItems = useBiShareMenuItems();
+const pageMenuItems = computed(() => [
+  ...shareItems.value,
+  ...(view.value === "lots" ? [] : [{
+    label: explainOpen.value ? "Esconder como é calculado" : "Como é calculado",
+    icon: "i-lucide-circle-help",
+    onSelect: () => {
+      explainOpen.value = !explainOpen.value;
+    },
+  }]),
+]);
+const { actions: readingActions, label: readingLabel } = useReadingPageActions(pageMenuItems);
+
+// Os recortes ativos da tabela do dia (chips removíveis no celular, número no
+// "Filtros"). "Comparar com" é a régua da leitura, não um recorte.
+const activeFilters = computed(() => {
+  if (view.value !== "day") return [];
+  return [
+    ...(verdict.value !== "all"
+      ? [{
+          key: "verdict",
+          label: `Veredito: ${verdictItems.value.find((item) => item.key === verdict.value)?.label ?? verdict.value}`,
+          remove: () => (verdict.value = "all"),
+        }]
+      : []),
+    ...(collection.value !== "all"
+      ? [{
+          key: "collection",
+          label: `Coleção: ${collectionItems.value.find((item) => item.value === collection.value)?.label ?? collection.value}`,
+          remove: () => (collection.value = "all"),
+        }]
+      : []),
+  ];
+});
 
 // Teclas do desktop: [ e ] andam um dia aberto; / leva à busca.
 const search = ref<{ focus: () => void } | null>(null);
@@ -144,11 +249,11 @@ function typing(event: KeyboardEvent) {
   return Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
 }
 onKeyStroke("[", (event) => {
-  if (typing(event) || !day.value?.previous_day) return;
+  if (typing(event) || view.value !== "day" || !day.value?.previous_day) return;
   setDay(day.value.previous_day);
 });
 onKeyStroke("]", (event) => {
-  if (typing(event) || !day.value?.next_day) return;
+  if (typing(event) || view.value !== "day" || !day.value?.next_day) return;
   setDay(day.value.next_day);
 });
 onKeyStroke("/", (event) => {
@@ -157,311 +262,263 @@ onKeyStroke("/", (event) => {
   search.value?.focus();
 });
 
-const CHIP_DOT = { short: "bg-destructive", over: "bg-warning", right: "bg-success" } as const;
-
-// ── Os lotes no período (a janela de análise) ───────────────────────────────
-
-const { report, pending, error, refresh } = useBiReport<BIProductionReport>("production");
-
-const sum = (values: (string | number)[]) => values.reduce((total: number, v) => total + Number(v), 0);
-
-const finishedSeries = computed(() => {
-  const previous = report.value?.previous.finished_by_day ?? [];
-  const rows = (report.value?.days ?? []).map((day, index) => ({
-    ...day,
-    prev_finished: Number(previous[index] ?? 0),
-  }));
-  return bucketRows(rows).map((bucket) => ({
-    label: bucketLabel(bucket.date, bucket.span),
-    value: sum(bucket.rows.map((d) => d.finished)),
-    previous: sum(bucket.rows.map((d) => d.prev_finished)),
-    detail: [
-      BUCKET_SPAN_LABELS[bucket.span],
-      `previsto ${formatQty(String(sum(bucket.rows.map((d) => d.started))))}`,
-      `perda ${formatQty(String(sum(bucket.rows.map((d) => d.loss))))}`,
-    ]
-      .filter(Boolean)
-      .join(" · "),
-  }));
-});
-
-const yieldSeries = computed(() =>
-  bucketRows(report.value?.days ?? []).map((bucket) => {
-    const started = sum(bucket.rows.map((d) => d.started));
-    const finished = sum(bucket.rows.map((d) => d.finished));
-    return {
-      label: bucketLabel(bucket.date, bucket.span),
-      value: started ? Math.round((finished * 100) / started) : 0,
-      detail: started
-        ? [
-            BUCKET_SPAN_LABELS[bucket.span],
-            `cheio ${formatQty(String(sum(bucket.rows.map((d) => d.full_price))))}`,
-            `desconto ${formatQty(String(sum(bucket.rows.map((d) => d.discounted))))}`,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        : "sem produção",
-    };
-  }),
-);
-
-const lossTotal = computed(() => (report.value?.days ?? []).reduce((total, d) => total + Number(d.loss), 0));
-const finishedTotal = computed(() => (report.value?.days ?? []).reduce((total, d) => total + Number(d.finished), 0));
-const startedTotal = computed(() => (report.value?.days ?? []).reduce((total, d) => total + Number(d.started), 0));
-
-// Aproveitamento do período inteiro: realizado ÷ previsto (UX-PROD-AF).
-const yieldPercent = (finished: number, started: number) => (started ? Math.round((finished * 100) / started) : 0);
-const yieldTotal = computed(() => yieldPercent(finishedTotal.value, startedTotal.value));
-const yieldPrevious = computed(() => {
-  const prev = report.value?.previous;
-  if (!prev) return 0;
-  return yieldPercent(Number(prev.finished_total), Number(prev.started_total));
-});
-
-const ovenRows = (rows: BIProductionReport["oven_time_by_recipe"]) =>
-  rows.map((row) => ({
-    label: row.label,
-    value: Number(row.avg_minutes),
-    display: formatMinutes(row.avg_minutes),
-    hint: `p90 ${formatMinutes(row.p90_minutes)} · armado ${formatMinutes(row.avg_planned_minutes)} · ${formatInt(row.runs)} ${row.runs === 1 ? "medição" : "medições"}`,
-  }));
+// A tabela (laudo F04): a `OperatorTable` do kit dentro do quadro (`in-card`), com
+// cabeçalho de verdade e a linha que abre o detalhe (lotes e vendas) embaixo dela pela
+// seta da própria peça. Produto e "Acabou às" ordenam pelo cabeçalho. Do celular ao desktop largo as colunas
+// secundárias recolhem para dentro da célula do produto (`meta.class`): nenhuma
+// informação fica só no desktop, e a página não rola de lado.
+const HIDE_BELOW_SM = { th: "max-sm:hidden", td: "max-sm:hidden" };
+const HIDE_BELOW_MD = { th: "max-md:hidden", td: "max-md:hidden" };
+const HIDE_BELOW_LG = { th: "max-lg:hidden", td: "max-lg:hidden" };
+const columns = computed<TableColumn<BIOverShortRow>[]>(() => [
+  { id: "product", accessorFn: (row) => row.name, header: "Produto", enableSorting: true, enableHiding: false },
+  { id: "verdict", header: "Veredito", meta: { class: HIDE_BELOW_MD } },
+  { id: "made_sold", header: "Fez × vendeu", meta: { class: HIDE_BELOW_SM } },
+  // Quem não acabou vai para o fim ("99:99"): na ordem crescente, o que acabou mais cedo vem primeiro.
+  { id: "soldout", accessorFn: (row) => row.soldout_at || "99:99", header: "Acabou às", enableSorting: true, meta: { class: HIDE_BELOW_LG } },
+  {
+    id: "history",
+    header: day.value ? historyHeading(day.value.day, day.value.compare_days) : "Nos dias iguais",
+    meta: { class: HIDE_BELOW_LG },
+  },
+  { id: "typical", header: "Contra o típico", meta: { class: HIDE_BELOW_LG } },
+]);
+const csv = computed(() => overShortCsv(filtered.value));
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader :title="title">
-      <template #search>
+    <OperatorPageHeader
+      :title="title"
+      :actions="readingActions"
+      :actions-label="readingLabel"
+      :active-filters="activeFilters"
+    >
+      <template v-if="view === 'day'" #search>
         <OperatorSuiteSearch ref="search" v-model="query" screen-label="filtrando a tabela" placeholder="Buscar produto ou SKU" aria-label="Buscar produto ou SKU" />
       </template>
-      <template #actions>
-        <BiDayStepper
-          v-if="day"
-          :day="day.day"
-          :today="today"
-          :previous="day.previous_day"
-          :next="day.next_day"
-          :max="yesterday"
-          @change="setDay"
+      <!-- Um tempo por aba, no mesmo lugar das outras telas: o primeiro da linha de
+           recortes. A aba "Sobrou ou faltou" lê um dia; "Lotes no período", a janela.
+           O veredito é filtro rápido, na mesma linha (um toque, com a contagem);
+           comparar, coleção e o frescor moram no painel "Filtros". -->
+      <template #filters-primary>
+        <OperatorPeriodPicker
+          v-if="view === 'lots'"
+          v-model="lotsWindow"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+          data-bi-window
         />
-        <BiPageMenu v-slot="{ itemClass, close }">
-          <button type="button" role="menuitem" :class="itemClass" @click="explainOpen = !explainOpen; close()">
-            <Icon name="lucide:circle-help" class="size-4 text-muted-foreground" aria-hidden="true" />
-            {{ explainOpen ? "Esconder como é calculado" : "Como é calculado" }}
-          </button>
-        </BiPageMenu>
-        <UiButton
-          v-if="day?.plan_day"
-          class="hidden md:inline-flex"
-          :disabled="carrying"
-          data-bi-carry
-          @click="carryToPlan()"
-        >
-          <Icon name="lucide:arrow-right-left" class="size-4" aria-hidden="true" />
-          {{ carryLabel(day.plan_day) }}
-        </UiButton>
+        <OperatorPeriodPicker
+          v-else-if="day"
+          v-model="readingDay"
+          compact
+          :today="today"
+          :max="yesterday"
+          :prev-day="day.previous_day || ''"
+          :next-day="day.next_day || ''"
+          align="start"
+          label="Dia da leitura"
+          data-bi-reading-day
+        />
+        <ProductionViewNav v-if="!isNarrow" />
+        <!-- O recorte de todo dia, um toque com a contagem (filtro rápido da suíte). -->
+        <OperatorQuickFilters
+          v-if="!isNarrow && view === 'day' && day"
+          v-model="verdict"
+          :items="verdictItems"
+          label="Recorte por veredito"
+          data-bi-verdict-tabs
+        />
       </template>
-      <template #phone-actions>
-        <BiShareButton />
+      <!-- Celular: a troca de leitura não cabe ao lado do tempo e do "Filtros" (sumia
+           atrás da rolagem); ela desce para a navegação da tela, logo abaixo. -->
+      <template v-if="isNarrow" #below>
+        <OperatorToolbar class="py-2" data-bi-production-nav-phone>
+          <div class="flex min-w-0 flex-col gap-2">
+            <ProductionViewNav />
+            <!-- No celular o veredito desce junto com a troca de leitura: a linha de cima
+                 já leva o dia e o "Filtros", e a faixa espremida mostrava só "Todos". -->
+            <OperatorQuickFilters
+              v-if="view === 'day' && day"
+              v-model="verdict"
+              :items="verdictItems"
+              label="Recorte por veredito"
+              data-bi-verdict-tabs-phone
+            />
+          </div>
+        </OperatorToolbar>
       </template>
-      <template v-if="day" #filters>
-        <label
-          class="relative inline-flex min-h-control items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40 hover:bg-accent"
-          data-bi-compare
-        >
-          <Icon name="lucide:git-compare-arrows" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <span class="font-normal text-muted-foreground">Comparar com:</span>
-          <span class="font-semibold">{{ compareName(day.day, day.compare) }}</span>
-          <span class="hidden tnum font-normal text-muted-foreground sm:inline">({{ compareCaption(day.day, day.compare_days) }})</span>
-          <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-          <select
-            :value="compare"
-            class="absolute inset-0 cursor-pointer opacity-0"
-            aria-label="Comparar com"
-            @change="setCompare(($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="option in compareChoices" :key="option.key" :value="option.key">
-              {{ option.label }} ({{ option.reach }})
-            </option>
-          </select>
-        </label>
-        <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
-        <UiFilterChip :active="!verdict" :count="rows.length" :aria-pressed="!verdict" @click="verdict = ''">
-          <template #icon><Icon v-if="!verdict" name="lucide:check" class="size-4 text-primary" aria-hidden="true" /></template>
-          Todos
-        </UiFilterChip>
-        <UiFilterChip
-          v-for="key in VERDICTS"
-          :key="key"
-          :active="verdict === key"
-          :count="counts[key]"
-          :aria-pressed="verdict === key"
-          @click="verdict = verdict === key ? '' : key"
-        >
-          <template #icon><span class="size-2 rounded-full" :class="CHIP_DOT[key]" aria-hidden="true" /></template>
-          {{ verdictMeta(key).label }}
-        </UiFilterChip>
-        <template v-if="collections.length">
-          <span class="mx-1 h-6 w-px bg-border" aria-hidden="true" />
-          <label
-            class="relative inline-flex min-h-control items-center gap-2 rounded-full border px-3 op-label transition focus-within:ring-2 focus-within:ring-ring/40"
-            :class="collection ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card'"
-          >
-            <Icon name="lucide:layers" class="size-4" aria-hidden="true" />
-            Coleção: {{ collections.find((c) => c.ref === collection)?.name ?? "todas" }}
-            <Icon name="lucide:chevron-down" class="size-4 text-muted-foreground" aria-hidden="true" />
-            <select v-model="collection" class="absolute inset-0 cursor-pointer opacity-0" aria-label="Coleção">
-              <option value="">Todas as coleções</option>
-              <option v-for="item in collections" :key="item.ref" :value="item.ref">{{ item.name }}</option>
-            </select>
-          </label>
+      <template v-if="view === 'day' && day" #filters>
+        <template v-if="day">
+          <NuxtFormField label="Comparar com" orientation="horizontal" :hint="isPhone ? undefined : compareCaption(day.day, day.compare_days)" data-bi-compare>
+            <NuxtSelect :model-value="compare" :items="compareItems" @update:model-value="setCompare(String($event))" />
+          </NuxtFormField>
+          <NuxtFormField v-if="collectionItems.length > 1" label="Coleção" orientation="horizontal" data-bi-collection>
+            <NuxtSelectMenu v-model="collection" :items="collectionItems" value-key="value" :search-input="{ autofocus: !touch, placeholder: 'Buscar coleção' }" />
+          </NuxtFormField>
+          <ClientOnly>
+            <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="Boolean(dayError)" />
+          </ClientOnly>
         </template>
-        <span class="hidden flex-1 lg:block" aria-hidden="true" />
-        <span class="hidden items-center gap-1.5 op-micro text-muted-foreground lg:inline-flex" :title="'O dia da leitura mora no endereço: o link copiado abre esta mesma leitura.'">
-          <Icon name="lucide:link" class="size-3.5" aria-hidden="true" />{{ shareQuery }}
-        </span>
+      </template>
+      <!-- Sem recorte (os lotes, ou o dia ainda sem leitura): o frescor fica na linha. -->
+      <template v-if="view === 'lots' || !day" #filters-end>
+        <ClientOnly>
+          <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="view === 'day' && Boolean(dayError)" />
+        </ClientOnly>
       </template>
     </OperatorPageHeader>
 
-    <main class="flex flex-1 flex-col gap-3 px-4 pt-3 pb-4">
-      <BiPageState :pending="dayPending && !day" :error="dayError" what="a leitura do dia" @retry="dayRefresh()" />
+    <main class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pt-3 pb-4">
+      <template v-if="view === 'day'">
+        <OperatorScreenState v-if="dayError" state="error" what="a leitura do dia" @retry="dayRefresh()" />
 
-      <template v-if="day">
-        <div v-if="explainOpen" class="rounded-lg border border-border bg-card px-4 py-3 op-label leading-6" data-bi-explain>
-          <p class="op-eyebrow text-muted-foreground">Como é calculado</p>
+        <NuxtCard v-if="day && explainOpen" title="Como é calculado" class="text-sm leading-6" data-bi-explain>
           <p><b>Fez</b>: o realizado dos lotes fechados do dia. <b>Vendeu</b>: as vendas do dia, de todos os canais.</p>
           <p><b>Acabou às</b>: a hora da venda em que o vendido alcançou o feito. <b>Vendas perdidas</b>: o ritmo até acabar, estendido até o fechamento{{ day.closes_at ? ` (${day.closes_at})` : "" }}, com teto de 2× o vendido. É a mesma conta que a sugestão do Planejamento usa.</p>
           <p><b>Faltou</b>: acabou antes da última hora. <b>Na medida</b>: acabou na última hora, sobrou até 2, ou vendeu mais do que fez (havia estoque de antes). <b>Sobrou</b>: sobrou mais que isso. A comparação é a média dos últimos {{ day.compare_days.length || 4 }} dias iguais com a loja aberta.</p>
           <p><b>Custo</b>: a ficha técnica ativa vezes o custo do fornecedor preferencial de cada insumo. Insumo sem custo deixa o produto sem custo (nada é estimado).</p>
-        </div>
+        </NuxtCard>
 
         <!-- A resposta: uma frase e três números, cada um com o típico ao lado. -->
-        <div class="grid gap-3 sm:grid-cols-3 xl:grid-cols-[1.4fr_1fr_1fr_1fr]">
-          <BiAnswer :text="overShortAnswer(day)" class="sm:col-span-3 xl:col-span-1" />
-          <StatTile label="Faltou" :value="formatInt(day.summary.short)" tone="destructive" :unit="shortUnit(day)" :hint="typicalLine(day, 'short')" />
-          <StatTile label="Sobrou" :value="formatInt(day.summary.over)" tone="warning" :unit="overUnit(day)" :hint="typicalLine(day, 'over')" />
-          <StatTile label="Na medida" :value="formatInt(day.summary.right)" tone="success" :unit="day.summary.right === 1 ? 'produto' : 'produtos'" :hint="typicalLine(day, 'right')" />
+        <div v-if="day" class="grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          <OperatorMetric title="A resposta" :value="overShortAnswer(day)" size="statement" class="sm:col-span-3 xl:col-span-1" />
+          <OperatorMetric title="Faltou" :value="formatInt(day.summary.short)" tone="error" :unit="shortUnit(day)" :hint="typicalLine(day, 'short')" />
+          <OperatorMetric title="Sobrou" :value="formatInt(day.summary.over)" tone="warning" :unit="overUnit(day)" :hint="typicalLine(day, 'over')" />
+          <OperatorMetric title="Na medida" :value="formatInt(day.summary.right)" tone="success" :unit="day.summary.right === 1 ? 'produto' : 'produtos'" :hint="typicalLine(day, 'right')" />
         </div>
-        <!-- No celular o gesto principal não cabe na barra de cima (BI-11): desce para
-             logo depois da resposta, na largura toda, ao alcance do polegar. -->
-        <UiButton
-          v-if="day.plan_day"
-          class="h-12 w-full md:hidden"
-          :disabled="carrying"
-          data-bi-carry-phone
+        <!-- O gesto principal, na mesa, mora logo depois da resposta (BI-11: na barra de
+             cima ele espremia o título até cortá-lo). Abaixo de `lg` ele desce para a
+             ação na base, ao alcance do polegar (o `OperatorActionBar` no fim da tela). -->
+        <NuxtButton
+          v-if="day?.plan_day"
+          size="xl"
+          class="self-start max-lg:hidden"
+          icon="i-lucide-arrow-right-left"
+          :label="carryLabel(day.plan_day)"
+          :loading="carrying"
+          data-bi-carry
           @click="carryToPlan()"
+        />
+
+        <!-- A pergunta da tela em figura: quanto a casa fez e quanto vendeu de cada
+             produto, e onde sobrou ou faltou. Deitado, para o nome de cada produto caber;
+             empilhado, porque vendeu e sobrou são partes do que se fez. -->
+        <OperatorReadingCard
+          v-if="!dayError && day && madeSold.length"
+          title="Fez × vendeu"
+          description="Vendeu mais sobrou é o que a casa fez. As vendas perdidas são estimativa, contadas depois que o produto acabou."
+          :csv="readingChartCsv('Produto', MADE_SOLD_SERIES, madeSold)"
+          data-made-sold-chart
         >
-          <Icon name="lucide:arrow-right-left" class="size-4" aria-hidden="true" />
-          {{ carryLabel(day.plan_day) }}
-        </UiButton>
+          <OperatorReadingChart
+            title="Fez × vendeu, produto a produto"
+            kind="stacked"
+            horizontal
+            axis-label="Produto"
+            :series="MADE_SOLD_SERIES"
+            :points="madeSold"
+            :format="(value) => formatQty(String(value))"
+          />
+        </OperatorReadingCard>
 
-        <div class="overflow-hidden rounded-lg border border-border bg-card" data-over-short-table>
-          <div
-            class="hidden h-10 items-center gap-3 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid"
-            :class="COLUMNS"
-            aria-hidden="true"
+        <OperatorReadingCard
+          v-if="!dayError"
+          title="Produto a produto"
+          description="Abra a linha para ver os lotes e as vendas por hora"
+          :csv="day ? csv : undefined"
+          data-over-short-table
+        >
+          <OperatorTable
+            v-model:expanded="expanded"
+            in-card
+            :data="visible"
+            :columns="columns"
+            :loading="dayPending"
+            what="a leitura do dia"
+            :row-key="(row: BIOverShortRow) => row.sku"
+            :row-label="(row: BIOverShortRow) => row.name"
+            caption="Sobrou ou faltou, produto a produto"
+            :empty-icon="rows.length ? 'i-lucide-filter-x' : 'i-lucide-chef-hat'"
+            :empty-title="rows.length ? 'Nenhum produto neste recorte' : 'Nenhum lote fechado neste dia'"
+            :empty-description="rows.length ? 'Troque o veredito, a coleção ou a busca para ver os outros produtos.' : 'A leitura começa quando a Produção fecha o primeiro lote.'"
           >
-            <div>Produto</div>
-            <div>Veredito</div>
-            <div class="flex items-center gap-3">
-              Fez × vendeu
-              <span class="inline-flex items-center gap-1 font-normal tracking-normal normal-case"><span class="h-3 w-0.5 bg-foreground" />típico</span>
+            <template #product-cell="{ row }">
+              <div class="flex min-w-0 flex-col gap-1 whitespace-normal" data-over-short-row :data-verdict="row.original.verdict">
+                <p class="text-sm font-medium text-highlighted">
+                  {{ row.original.name }} <span class="font-mono text-xs font-normal text-muted">{{ row.original.sku }}</span>
+                </p>
+                <NuxtBadge class="self-start md:hidden" :color="verdictColor(row.original.verdict)" :label="verdictMeta(row.original.verdict).label" />
+                <p class="text-xs tnum text-muted sm:hidden">
+                  fez <b class="text-default">{{ formatQty(row.original.made) }}</b> · vendeu <b class="text-default">{{ formatQty(row.original.sold) }}</b> ·
+                  {{ outcomeText(row.original) }}
+                </p>
+                <p class="text-xs tnum text-muted lg:hidden">
+                  {{ row.original.soldout_at ? `acabou às ${row.original.soldout_at}` : "não acabou" }} · {{ historyText(row.original) }} · {{ versusTypicalText(row.original) }}
+                </p>
+              </div>
+            </template>
+            <template #verdict-cell="{ row }">
+              <NuxtBadge :color="verdictColor(row.original.verdict)" :label="verdictMeta(row.original.verdict).label" data-over-short-verdict />
+            </template>
+            <template #made_sold-cell="{ row }">
+              <p class="tnum text-muted">
+                fez <b class="text-default">{{ formatQty(row.original.made) }}</b> · vendeu <b class="text-default">{{ formatQty(row.original.sold) }}</b> ·
+                <span class="font-medium" :class="VERDICT_TEXT[verdictColor(row.original.verdict)]">{{ outcomeText(row.original) }}</span>
+              </p>
+            </template>
+            <template #soldout-cell="{ row }">
+              <span class="tnum" :class="row.original.verdict === 'short' ? 'font-medium text-error' : ''">{{ soldoutText(row.original) }}</span>
+            </template>
+            <template #history-cell="{ row }">
+              <span class="tnum text-muted">{{ historyText(row.original) }}</span>
+            </template>
+            <template #typical-cell="{ row }">
+              <span class="whitespace-normal text-xs text-muted">{{ versusTypicalText(row.original) }}</span>
+            </template>
+            <template #expanded="{ row }">
+              <OverShortDetail
+                v-if="day"
+                :row="row.original"
+                :day="day.day"
+                :compare="day.compare"
+                :close-url="closeUrl"
+                :orders-url="ordersUrl"
+              />
+            </template>
+          </OperatorTable>
+          <template v-if="hidden.length" #footer>
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-over-short-more>
+              <p class="text-xs text-muted">{{ hiddenRowsSummary(hidden) }}</p>
+              <NuxtButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-chevron-down"
+                :label="showHiddenLabel(hidden.length)"
+                class="self-start sm:self-auto"
+                @click="showAll = true"
+              />
             </div>
-            <div>Acabou às</div>
-            <div>{{ historyHeading(day.day, day.compare_days) }}</div>
-            <div>Contra o típico</div>
-            <div />
-          </div>
-          <template v-if="visible.length">
-            <OverShortRow
-              v-for="row in visible"
-              :key="row.sku"
-              :row="row"
-              :scale="scale"
-              :columns="COLUMNS"
-              :open="openSku === row.sku"
-              @toggle="openSku = openSku === row.sku ? null : row.sku"
-            >
-              <OverShortDetail :row="row" :day="day.day" :compare="day.compare" :close-url="closeUrl" :orders-url="ordersUrl" />
-            </OverShortRow>
           </template>
-          <p v-else-if="rows.length" class="px-4 py-4 op-body text-muted-foreground">Nenhum produto neste recorte.</p>
-          <p v-else class="px-4 py-4 op-body text-muted-foreground">
-            Nenhum lote fechado neste dia. A leitura começa quando a Produção fecha o primeiro lote.
-          </p>
-          <button
-            v-if="hidden.length"
-            type="button"
-            class="flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left op-label text-muted-foreground transition hover:bg-accent"
-            data-over-short-more
-            @click="showAll = true"
-          >
-            <Icon name="lucide:chevron-down" class="size-4 shrink-0" aria-hidden="true" />
-            {{ hiddenRowsSummary(hidden) }}
-          </button>
-        </div>
+        </OperatorReadingCard>
       </template>
-
-      <!-- Os lotes no período: a janela de análise do B.I. -->
-      <section class="mt-2 flex flex-col gap-3" aria-labelledby="bi-lots-heading" data-bi-lots>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 id="bi-lots-heading" class="op-title">Como foram os lotes no período?</h2>
-            <p class="op-micro text-muted-foreground">Aproveitamento, perda e tempo de forno na janela escolhida</p>
-          </div>
-          <BiWindowPicker />
-        </div>
-        <BiPageState :pending="pending && !report" :error="error" @retry="refresh()" />
-        <template v-if="report">
-          <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatTile
-              label="Lotes fechados"
-              :value="formatInt(report.batches_finished)"
-              :delta="delta(report.batches_finished, report.previous.batches_finished)"
-            />
-            <StatTile
-              label="Tempo de forno medido"
-              :value="`${report.oven_coverage_percent}%`"
-              :hint="coverageLabel(report.batches_measured, report.batches_finished)"
-            />
-            <StatTile
-              label="Perda no período"
-              :value="formatInt(lossTotal)"
-              :delta="delta(lossTotal, Number(report.previous.loss_total), { downIsGood: true })"
-              hint="Unidades que não saíram do forno"
-            />
-            <StatTile
-              label="Aproveitamento do período"
-              :value="`${yieldTotal}%`"
-              :delta="delta(yieldTotal, yieldPrevious)"
-              :hint="startedAssumedHint(report.batches_started_assumed, report.batches_finished)"
-            />
-          </div>
-
-          <BiSection title="Produção por dia" caption="Unidades que saíram do forno; traço = período anterior; o detalhe traz previsto e perda">
-            <ChartBarSeries :points="finishedSeries" :format="(v) => formatInt(v)" />
-          </BiSection>
-
-          <BiSection title="Aproveitamento por dia" caption="Realizado ÷ previsto, em %">
-            <ChartBarSeries :points="yieldSeries" :format="(v) => `${v}%`" />
-          </BiSection>
-
-          <div class="grid gap-3 lg:grid-cols-2">
-            <BiSection title="Tempo de forno por receita">
-              <template #caption>
-                Média medida (armar → Concluir) · {{ coverageLabel(report.batches_measured, report.batches_finished) }}
-              </template>
-              <ChartHBarList v-if="report.oven_time_by_recipe.length" :rows="ovenRows(report.oven_time_by_recipe)" />
-              <p v-else class="op-body text-muted-foreground">Nenhuma medição no período ainda. O timer do forno alimenta este quadro.</p>
-            </BiSection>
-            <BiSection title="Tempo de forno por forno" caption="Lotes sem posição declarada ficam de fora deste corte">
-              <ChartHBarList v-if="report.oven_time_by_oven.length" :rows="ovenRows(report.oven_time_by_oven)" />
-              <p v-else class="op-body text-muted-foreground">Nenhuma medição com forno atribuído no período.</p>
-            </BiSection>
-          </div>
-        </template>
-      </section>
-      <BiSwipeHint />
+      <ProductionLots v-else />
       <MoreBelow />
     </main>
+    <OperatorActionBar
+      v-if="carryAction"
+      :action="carryAction"
+      :context-label="carryLine?.label"
+      :context-value="carryLine?.value"
+      label="Levar ao plano"
+      data-bi-carry-bar
+    />
   </div>
 </template>

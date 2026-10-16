@@ -24,6 +24,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 from shopman.stockman import stock
 from shopman.stockman.models import Hold, Position, PositionKind, Quant
 from shopman.stockman.services.movements import StockMovements
@@ -34,7 +35,9 @@ from shopman.storefront.tests.web.conftest import _ensure_listing_item
 
 pytestmark = pytest.mark.django_db
 
-TOMORROW = date.today() + timedelta(days=1)
+def _tomorrow() -> date:
+    """Amanhã na hora do TESTE, não na coleta (perto da meia-noite os dois divergem)."""
+    return timezone.localdate() + timedelta(days=1)
 
 
 def _position():
@@ -52,7 +55,7 @@ def _enable_waitlist(channel):
 
 def _plan_tomorrow(product, qty: str):
     stock.plan(
-        quantity=Decimal(qty), product=product, target_date=TOMORROW,
+        quantity=Decimal(qty), product=product, target_date=_tomorrow(),
         position=_position(), reason="fornada de amanhã (teste de ajuste)",
     )
 
@@ -119,7 +122,7 @@ class TestQueueReservationAdjustments:
 
         assert resp.status_code == 200, resp.content[:400]
         assert _reserved(queue.sku) == Decimal("4")
-        assert {h.target_date for h in _active_holds(queue.sku)} == {TOMORROW}, (
+        assert {h.target_date for h in _active_holds(queue.sku)} == {_tomorrow()}, (
             "o acréscimo entra na mesma fornada, não em HOJE"
         )
         assert all(h.metadata.get("planned") for h in _active_holds(queue.sku))
@@ -155,7 +158,7 @@ class TestQueueReservationAdjustments:
         assert "remainder hold failed" not in caplog.text
         holds = _active_holds(queue.sku)
         assert sum(h.quantity for h in holds) == Decimal("1"), "a linha diz 1 e a reserva também"
-        assert {h.target_date for h in holds} == {TOMORROW}
+        assert {h.target_date for h in holds} == {_tomorrow()}
         assert all(h.metadata.get("planned") for h in holds)
         assert all(h.expires_at is None for h in holds), "vaga na fila continua sem relógio"
         assert _line_qty(client, queue.sku) == 1
@@ -179,7 +182,7 @@ class TestQueueReservationAdjustments:
         )
         _plan_tomorrow(product, "4")
         assert _set_qty(client, product.sku, 3).status_code == 200
-        assert {h.target_date for h in _active_holds(product.sku)} == {TOMORROW}
+        assert {h.target_date for h in _active_holds(product.sku)} == {_tomorrow()}
 
         _receive_ready(product, "5")  # chega a pronta-entrega
         assert _set_qty(client, product.sku, 2).status_code == 200

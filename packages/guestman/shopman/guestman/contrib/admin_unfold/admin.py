@@ -10,6 +10,7 @@ the Unfold versions.
 from __future__ import annotations
 
 import csv
+from decimal import Decimal
 
 from django import forms
 from django.apps import apps
@@ -30,14 +31,35 @@ from shopman.guestman.models import (
     CustomerAddress,
     ExternalIdentity,
     PriceTier,
+    PriceTierAdvantage,
 )
 from shopman.utils import unfold_link
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
+from taggit.forms import TagWidgetMixin
 from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.dropdown_filters import ChoicesDropdownFilter
 from unfold.decorators import display
-from unfold.widgets import UnfoldAdminRadioSelectWidget, UnfoldAdminTextInputWidget, UnfoldBooleanSwitchWidget
+from unfold.widgets import (
+    UnfoldAdminDecimalFieldWidget,
+    UnfoldAdminRadioSelectWidget,
+    UnfoldAdminTextInputWidget,
+    UnfoldBooleanSwitchWidget,
+)
+
+
+class UnfoldTagWidget(TagWidgetMixin, UnfoldAdminTextInputWidget):
+    """Campo de etiquetas com o desenho do Unfold e a formatação do taggit.
+
+    ⚠️ O ``TagWidgetMixin`` não é enfeite. O valor inicial de um ``TaggableManager``
+    é uma LISTA de objetos ``Tag``, e quem a transforma em "pao, hamburger" é o
+    ``format_value`` do mixin. Trocar o widget por um campo de texto puro fazia a
+    tela mostrar o repr ("[<Tag: pao>, <Tag: hamburger>]"), e salvar sem mexer
+    gravava esse texto de volta como etiquetas novas ("[<Tag: pao>",
+    "<Tag: hamburger>]"), piorando a cada save. O taggit continua dono do PARSE
+    (vírgula, aspas, etiqueta nova na hora); o Unfold, só do desenho.
+    """
+
 
 # Unregister basic admins
 for model in [Customer, PriceTier, CustomerAddress, ContactPoint, ExternalIdentity]:
@@ -145,8 +167,17 @@ class RFMSegmentFilter(admin.SimpleListFilter):
 # =============================================================================
 
 
+class PriceTierAdvantageInline(BaseTabularInline):
+    """As vantagens tipadas do grupo (frete grátis, coleções e avisos exclusivos)."""
+
+    model = PriceTierAdvantage
+    extra = 0
+    fields = ["kind", "priority", "is_active", "config"]
+
+
 @admin.register(PriceTier)
 class PriceTierAdmin(BaseModelAdmin):
+    inlines = [PriceTierAdvantageInline]
     list_display = [
         "ref",
         "name",
@@ -237,6 +268,21 @@ class CustomerForm(forms.ModelForm):
         widget=UnfoldBooleanSwitchWidget,
         help_text=_("O cliente pode comprar \"em conta\" no PDV e acertar por período. Não se divulga; é por cliente."),
     )
+    # Limite OPCIONAL da conta (decisão do dono, 14/10/2026): em reais na tela,
+    # centavos em ``metadata.house_account_limit_q``. Em branco = sem limite, e
+    # nada muda. Com limite, a venda em conta que passaria dele pede o PIN do
+    # gerente no PDV (``shop/services/house_account.over_limit``).
+    house_account_limit = forms.DecimalField(
+        label=_("Limite da conta (R$)"),
+        required=False,
+        min_value=Decimal("0.01"),
+        max_digits=10,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text=_(
+            "Em branco, sem limite. Com limite, a venda em conta que passar dele pede o PIN do gerente no PDV."
+        ),
+    )
     # Preferências fiscais persistentes — mesma chave que o PDV lê/edita
     # (metadata.fiscal_prefs). O balcão liga/desliga no painel do cliente; aqui
     # é a paridade de config do cadastro completo.
@@ -263,6 +309,9 @@ class CustomerForm(forms.ModelForm):
         if instance is not None:
             metadata = instance.metadata or {}
             self.fields["house_account"].initial = bool(metadata.get("house_account"))
+            limit_q = metadata.get("house_account_limit_q")
+            if isinstance(limit_q, int) and not isinstance(limit_q, bool) and limit_q > 0:
+                self.fields["house_account_limit"].initial = Decimal(limit_q) / 100
             prefs = metadata.get("fiscal_prefs") or {}
             self.fields["fiscal_cpf_na_nota"].initial = bool(prefs.get("cpf_na_nota"))
             self.fields["fiscal_email_receipt"].initial = bool(prefs.get("email_receipt"))
@@ -274,6 +323,11 @@ class CustomerForm(forms.ModelForm):
             metadata["house_account"] = True
         else:
             metadata.pop("house_account", None)
+        limit = self.cleaned_data.get("house_account_limit")
+        if limit:
+            metadata["house_account_limit_q"] = int((limit * 100).to_integral_value())
+        else:
+            metadata.pop("house_account_limit_q", None)
         prefs = {
             "cpf_na_nota": bool(self.cleaned_data.get("fiscal_cpf_na_nota")),
             "email_receipt": bool(self.cleaned_data.get("fiscal_email_receipt")),
@@ -292,18 +346,16 @@ class CustomerForm(forms.ModelForm):
 @admin.register(Customer)
 class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
     form = CustomerForm
-    # O campo de etiquetas vem do taggit, cujo widget é um campo de texto cru:
-    # dentro de um form Unfold ele aparecia com a borda do Django antigo. O taggit
-    # continua dono do PARSE (vírgula, aspas, etiqueta nova na hora); troca só o
-    # desenho.
+    # O campo de etiquetas vem do taggit; o widget tem o desenho do Unfold e a
+    # formatação do taggit (ver `UnfoldTagWidget`).
     formfield_overrides = {
-        TaggableManager: {"widget": UnfoldAdminTextInputWidget},
+        TaggableManager: {"widget": UnfoldTagWidget},
     }
 
     list_display = [
         "customer_header",
         "customer_type_badge",
-        "price_tier",
+        "primary_price_tier",
         "tag_list",
         "orders_count",
         "rfm_segment_badge",
@@ -313,7 +365,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
     list_display_links = ["customer_header"]
     list_filter = [
         "customer_type",
-        ("price_tier", ChoicesDropdownFilter),
+        ("price_tiers", ChoicesDropdownFilter),
         "tags",
         "is_active",
         RFMSegmentFilter,
@@ -362,7 +414,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
             },
         ),
         ("Contato", {"fields": ["email", "phone"]}),
-        ("Segmentação", {"fields": ["price_tier", "tags", "house_account", "fiscal_cpf_na_nota", "fiscal_email_receipt", "notes"]}),
+        ("Segmentação", {"fields": ["price_tiers", "tags", "house_account", "house_account_limit", "fiscal_cpf_na_nota", "fiscal_email_receipt", "notes"]}),
         (
             "Sistema",
             {
@@ -554,7 +606,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
             "ref", "first_name", "last_name", "customer_type",
             "email", "phone", "price_tier", "is_active",
         ])
-        for customer in queryset.select_related("price_tier"):
+        for customer in queryset.prefetch_related("price_tiers"):
             writer.writerow([
                 customer.ref,
                 customer.first_name,
@@ -562,7 +614,7 @@ class CustomerAdmin(CustomerPrivacyFenceAdminMixin, BaseModelAdmin):
                 customer.customer_type,
                 customer.email or "",
                 customer.phone or "",
-                customer.price_tier.ref if customer.price_tier else "",
+                customer.primary_price_tier.ref if customer.primary_price_tier else "",
                 customer.is_active,
             ])
         return response

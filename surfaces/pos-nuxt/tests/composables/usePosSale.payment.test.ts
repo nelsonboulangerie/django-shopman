@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { toast } from "vue-sonner";
 
+import { lineTotalQ } from "~/presentation/lineDiscounts";
+
 import { makeProjection, makeSale } from "./_posSaleHarness";
 
 // O toast é efeito colateral do watcher de serverError — silenciamos.
@@ -18,12 +20,20 @@ function freeCartProjection() {
   });
 }
 
-/** Carrinho com dois pães (R$ 10,00) pronto para lançar pagamento. */
+/** O servidor confirmou o total do carrinho: só então uma forma de pagamento
+ *  nasce dimensionada por ele (total em cálculo não lança linha). */
+function confirmTotal(h: ReturnType<typeof makeSale>) {
+  const q = h.sale.paymentTotalQ.value;
+  h.sale.review.value = { total_q: q, total_display: `R$ ${(q / 100).toFixed(2).replace(".", ",")}` } as never;
+}
+
+/** Carrinho com dois pães (R$ 10,00), total confirmado, pronto para lançar pagamento. */
 function saleWithTotal1000() {
   const h = makeSale({ projection: freeCartProjection() });
   const pao = h.handles.posValue.value!.products[0]!;
   h.sale.addProduct(pao);
   h.sale.addProduct(pao);
+  confirmTotal(h);
   return h;
 }
 
@@ -145,17 +155,20 @@ describe("usePosSale — tenders (injeção de pagamento estilo Odoo)", () => {
 });
 
 describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
-  it("sem review, o total NÃO antecipa o desconto que o servidor ainda não aplicou", () => {
-    // Pedir 10% na linha não muda o total na hora: o autosave persiste, o
-    // servidor decide (a política é "maior desconto ganha, um por item") e o
-    // preço cobrado volta no payload. Antecipar aqui era a tela discordar do
-    // servidor em dinheiro, na frente do cliente — a linha dizia R$ 9,00 e o
-    // Total parcial R$ 8,10 na mesma tela. Segundos de defasagem custam menos
-    // que um número que o servidor vai desmentir.
+  it("sem review, o total acompanha o desconto da linha pela régua do servidor, e a linha concorda", () => {
+    // Antes o total esperava o servidor, e o servidor só devolvia o preço
+    // cobrado ao reabrir a comanda: o dono deu R$ 1,00 numa linha e nada mudou
+    // até recarregar (13/10/2026). Agora o toque escreve o preço cobrado da
+    // LINHA pela régua do kernel ("maior desconto ganha, um por item"), e o
+    // total soma as linhas: os dois números saem do mesmo lugar, e não voltam a
+    // discordar como no caso da Tabatière (linha R$ 9,00, Total parcial R$ 8,10).
+    // O eco do salvar confirma o preço logo depois.
     const h = saleWithTotal1000();
-    h.sale.setLineDiscount(h.sale.cart.items[0]!.line_id, 10, "cortesia");
-    expect(h.sale.cart.items[0]!.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
-    expect(h.sale.paymentTotalQ.value).toBe(1000);
+    const line = h.sale.cart.items[0]!;
+    h.sale.setLineDiscount(line.line_id, 10, "cortesia");
+    expect(line.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
+    expect(lineTotalQ(line)).toBe(900);
+    expect(h.sale.paymentTotalQ.value).toBe(900);
     h.handles.dispose();
   });
 
@@ -392,6 +405,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     h.sale.addProduct(pao);
     h.sale.cart.fulfillmentType = "delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     h.sale.cart.paymentTenders[0]!.amount_q = 400; // sobra para a segunda forma
     h.sale.addTender("card");
@@ -415,6 +429,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     expect(h.sale.cart.paymentTenders[0]!.collection).toBe("on_delivery");
     h.handles.dispose();
@@ -427,6 +442,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     // O operador DIGITOU com quanto o cliente vai pagar (a linha deixou de ser
     // o auto-preenchimento do sistema).
@@ -450,6 +466,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     expect(h.sale.cart.paymentTenders[0]!._virgin).toBe(true);
     await h.sale.reviewCheckout();
@@ -465,6 +482,7 @@ describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu pr
     await nextTick();
     h.sale.cart.paymentCollection = "on_delivery";
     await nextTick();
+    confirmTotal(h);
     h.sale.addTender("cash");
     h.sale.tenderAdd(2000); // a cédula de R$ 20 substitui o auto-preenchimento
     expect(h.sale.cart.paymentTenders[0]!._virgin).toBe(false);

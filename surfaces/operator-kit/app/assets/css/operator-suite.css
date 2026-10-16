@@ -19,6 +19,13 @@
 
 @custom-variant suite (&:where([data-suite="v3"], [data-suite="v3"] *));
 
+/* A PÁGINA veste a suíte (ou é o catálogo do kit): casa em qualquer lugar do documento,
+   inclusive nos overlays em portal (lista do select, popover), que nascem fora da
+   subárvore marcada e por isso escapam de `suite:`. Usado pelo tema do kit para
+   devolver aos sete apps não migrados as alturas de toque do `main` sem tocar o Gestor
+   (WP-OPERADOR-NUXTUI-ONDAS, onda 0). */
+@custom-variant suite-page (&:where(:root:has([data-suite="v3"], [data-operator-catalog]) *));
+
 /* Onde mora a navegação do app (V6-KIT, `depois-navegacao.jpg`, nível 1 "Seção"):
    rail compacto no tablet DEITADO e no desktop; barra de seções embaixo no celular e
    no tablet EM PÉ (820×1180). `rail:` casa onde o rail existe. A mesma régua em JS:

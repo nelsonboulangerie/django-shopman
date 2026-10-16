@@ -17,6 +17,7 @@ import {
   lucideIcon,
   slaPercent,
   sortByUrgency,
+  ticketClockLabel,
   splitRef,
   targetLabel,
   ticketTone,
@@ -27,12 +28,16 @@ import {
   ticketPill,
   focusSlice,
   focusGrid,
-  isTallTicket,
+  queuePositionLabel,
   restSummary,
   boardFilterCounts,
   matchesBoardFilter,
-  cancelledSummary,
   queueLine,
+  alarmsFirst,
+  cancelledHeadline,
+  changeAckLabel,
+  changeIcon,
+  needsAcknowledgement,
 } from "../app/presentation/board";
 import type { KDSBoardProjection, KDSTicketProjection } from "../app/types/kds";
 
@@ -75,7 +80,11 @@ const ticket = (
   started_at_display: "",
   is_preorder: false,
   due_time_display: "",
+  due_clock_display: "",
+  due_in_seconds: null,
   seen: false,
+  changes: [],
+  change_ticket_pks: [],
   ...over,
 });
 
@@ -103,7 +112,6 @@ describe("kds board presentation", () => {
     expect(view.cards).toHaveLength(2);
     expect(view.cancelled).toHaveLength(1);
     expect(view.total).toBe(2);
-    expect(view.blockedRefs.has("PDV-1")).toBe(true);
     // Densidade e som vêm da estação provisionada (v4 nota 1).
     expect(view.density).toBe("roomy");
     expect(view.soundEnabled).toBe(false);
@@ -230,7 +238,9 @@ describe("kds board presentation", () => {
 
   it("a pílula do card diz o estado num estilo só", () => {
     const late = ticket({ timer_class: "timer-late", status: "pending" });
-    expect(ticketPill(late, { next: true })).toEqual({ label: "Próximo · atrasado", tone: "destructive" });
+    expect(ticketPill(late, { next: true })).toEqual({ label: "Atrasado", tone: "destructive" });
+    // O de agora no prazo diz o estado, nunca "Próximo" (a posição está no rótulo "Agora").
+    expect(ticketPill(ticket({ status: "pending" }), { next: true })).toEqual({ label: "Novo", tone: "info" });
     expect(ticketPill(ticket({ status: "pending" }), {})).toEqual({ label: "Novo", tone: "info" });
     expect(ticketPill(ticket({ status: "in_progress" }), {})).toEqual({ label: "Em preparo", tone: "primary" });
     expect(ticketPill(ticket({ status: "in_progress" }), { blocked: true })?.label).toBe("Bloqueado");
@@ -265,6 +275,34 @@ describe("kds board presentation", () => {
     expect(sorted.map((c) => (c as KDSTicketProjection).pk)).toEqual([
       3, 2, 4, 1,
     ]);
+  });
+
+  it("P2-16: a encomenda entra na fila pela hora combinada, não pela madrugada", () => {
+    // Às 10h: balcão chegou há 2 min (meta 10 min → vence em 8 min); encomenda das
+    // 10h05 vence em 5 min; encomenda das 17h chegou às 00:05 e vence em 7 h.
+    const balcao = ticket({ pk: 1, timer_class: "timer-ok", elapsed_seconds: 120, target_seconds: 600 });
+    const das17 = ticket({
+      pk: 2,
+      timer_class: "timer-ok",
+      elapsed_seconds: 35_700,
+      target_seconds: 600,
+      due_clock_display: "17h",
+      due_in_seconds: 25_200,
+    });
+    const das10h05 = ticket({
+      pk: 3,
+      timer_class: "timer-ok",
+      elapsed_seconds: 35_700,
+      target_seconds: 600,
+      due_clock_display: "10h05",
+      due_in_seconds: 300,
+    });
+    expect(sortByUrgency([das17, balcao, das10h05]).map((c) => c.pk)).toEqual([3, 1, 2]);
+  });
+
+  it("P2-16: com hora combinada o relógio diz para quando; sem ela, o tempo corrido", () => {
+    expect(ticketClockLabel(ticket({ due_clock_display: "17h", elapsed_seconds: 35_700 }))).toBe("para 17h");
+    expect(ticketClockLabel(ticket({ elapsed_seconds: 1440 }))).toBe("24m");
   });
 
   it("splits the ref into a recessive prefix + the hero code", () => {
@@ -328,7 +366,7 @@ it("soma quantidades decimais sem concatenar strings nem arredondar unidades", (
 });
 
 describe("o botão do card", () => {
-  const armed = { armed: true, blocked: false };
+  const armed = { armed: true };
 
   it("o rótulo é o ATO, e ele muda com o estado do pedido", () => {
     expect(ticketAction(ticket({ status: "pending" }), armed)).toMatchObject({
@@ -344,21 +382,27 @@ describe("o botão do card", () => {
   });
 
   it("recém-iniciado ainda não aceita o Pronto: o rótulo não pisca, só o toque não passa", () => {
-    const justStarted = ticketAction(ticket({ status: "in_progress" }), {
-      armed: false,
-      blocked: false,
-    });
+    const justStarted = ticketAction(ticket({ status: "in_progress" }), { armed: false });
     expect(justStarted.kind).toBe("finish");
     expect(justStarted.label).toBe("Pronto");
     expect(justStarted.enabled).toBe(false);
   });
 
-  it("item cancelado trava o Pronto e diz PARA ONDE ir, mas não trava o iniciar", () => {
-    const blocked = { armed: true, blocked: true };
-    const stuck = ticketAction(ticket({ status: "in_progress" }), blocked);
-    expect(stuck.kind).toBe("blocked");
-    expect(stuck.label).toContain("cartão vermelho");
-    expect(ticketAction(ticket({ status: "pending" }), blocked).kind).toBe("start");
+  it("pedido que mudou: o único ato é a ciência, antes de iniciar ou dar Pronto", () => {
+    const cancelledItem = [{ kind: "cancelled", text: "Cancelado: 1× Croissant" }];
+    const qty = [{ kind: "qty", text: "Pão de queijo: agora 1, eram 3" }];
+    for (const status of ["pending", "in_progress"]) {
+      expect(ticketAction(ticket({ status, changes: cancelledItem }), armed)).toMatchObject({
+        kind: "seen",
+        label: "Recebi o cancelamento",
+        enabled: true,
+      });
+      expect(ticketAction(ticket({ status, changes: qty }), armed)).toMatchObject({ kind: "seen", label: "Visto" });
+    }
+    // O pedido que caiu inteiro: a mesma ciência, com o nome do cancelamento.
+    expect(ticketAction(ticket({ status: "cancelled", is_cancelled: true }), armed).label).toBe("Recebi o cancelamento");
+    // No celular a base leva o código junto.
+    expect(thumbActionLabel(ticketAction(ticket({ changes: qty }), armed), "W07")).toBe("Visto W07");
   });
 
   it("dentro da janela, o botão é o Desfazer — e ele ganha de qualquer outro estado", () => {
@@ -366,9 +410,8 @@ describe("o botão do card", () => {
       ticketAction(ticket({ status: "in_progress" }), { ...armed, finishing: true }),
     ).toMatchObject({ kind: "undo", label: "Desfazer", enabled: true });
     expect(
-      ticketAction(ticket({ status: "in_progress" }), {
+      ticketAction(ticket({ status: "in_progress", changes: [{ kind: "qty", text: "x" }] }), {
         armed: true,
-        blocked: true,
         finishing: true,
       }).kind,
     ).toBe("undo");
@@ -379,10 +422,11 @@ describe("o botão do card", () => {
     const locked = ticketAction(ticket({ status: "in_progress", ...unpaid }), armed);
     expect(locked).toMatchObject({ kind: "locked", label: "Pronto", icon: "lucide:lock", enabled: true });
     expect(ticketAction(ticket({ status: "pending", ...unpaid }), armed).kind).toBe("start");
-    // O cancelamento fala primeiro (é a cozinha que destrava), e o Desfazer ganha de tudo.
-    expect(ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, blocked: true }).kind).toBe("blocked");
+    // A mudança fala primeiro (é a cozinha que dá ciência), e o Desfazer ganha de tudo.
+    const changed = { ...unpaid, changes: [{ kind: "cancelled", text: "Cancelado: 1× Croque" }] };
+    expect(ticketAction(ticket({ status: "in_progress", ...changed }), armed).kind).toBe("seen");
     expect(
-      ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, blocked: false, finishing: true }).kind,
+      ticketAction(ticket({ status: "in_progress", ...unpaid }), { armed: true, finishing: true }).kind,
     ).toBe("undo");
   });
 
@@ -429,33 +473,38 @@ describe("a fila do cozinheiro (v4: 4 a 6 em foco, o resto vira +N)", () => {
   const short = (pk: number) => ticket({ pk, items: items(2) });
   const tall = (pk: number) => ticket({ pk, items: items(7) });
 
-  it("3×2 com um ticket longo: cinco em foco, o longo em duas alturas, o resto no +N", () => {
+  it("3×2: seis em foco na ordem de leitura, o resto no +N na mesma ordem", () => {
     const cards = [short(1), tall(2), short(3), short(4), short(5), short(6), short(7)];
     const slice = focusSlice(cards, { columns: 3, rows: 2 });
-    expect(slice.visible.map((c) => c.pk)).toEqual([1, 2, 3, 4, 5]);
-    expect(slice.rest.map((c) => c.pk)).toEqual([6, 7]);
-    expect(slice.placements.get(2)).toEqual({ pk: 2, column: 1, row: 0, span: 2 });
-    expect(slice.placements.get(4)).toMatchObject({ column: 0, row: 1 });
-    expect(slice.placements.get(5)).toMatchObject({ column: 2, row: 1 });
+    expect(slice.visible.map((c) => c.pk)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(slice.rest.map((c) => c.pk)).toEqual([7]);
+    expect(slice.placements.get(2)).toEqual({ pk: 2, column: 1, row: 0 });
+    expect(slice.placements.get(4)).toEqual({ pk: 4, column: 0, row: 1 });
   });
 
-  it("nunca pula um mais urgente para mostrar um menos urgente", () => {
-    // O longo não cabe na última linha: ele e todos depois dele vão para o +N.
-    const cards = [short(1), short(2), short(3), tall(4), short(5)];
-    const slice = focusSlice(cards, { columns: 3, rows: 2 });
-    expect(slice.visible.map((c) => c.pk)).toEqual([1, 2, 3]);
-    expect(slice.rest.map((c) => c.pk)).toEqual([4, 5]);
+  it("a ordem visual é a ordem da fila: esquerda para a direita, linha a linha, sem buraco", () => {
+    // Dono, 09/10/2026: mosaico (ticket longo em duas alturas, vizinhos encaixados em
+    // buracos) deixava o cozinheiro em dúvida sobre o próximo.
+    const cards = [tall(1), short(2), tall(3), short(4), tall(5), short(6), short(7)];
+    for (const columns of [1, 2, 3, 4, 5]) {
+      const slice = focusSlice(cards, { columns, rows: 2 });
+      const reading = [...slice.placements.values()]
+        .sort((a, b) => a.row - b.row || a.column - b.column)
+        .map((place) => place.pk);
+      expect(reading).toEqual(slice.visible.map((c) => c.pk));
+      expect(reading).toEqual(cards.slice(0, reading.length).map((c) => c.pk));
+      slice.visible.forEach((card, index) => {
+        expect(slice.placements.get(card.pk)).toEqual({
+          pk: card.pk,
+          column: index % columns,
+          row: Math.floor(index / columns),
+        });
+      });
+    }
   });
 
-  it("em uma coluna ninguém ocupa duas alturas", () => {
-    const slice = focusSlice([tall(1), short(2)], { columns: 1, rows: 3 });
-    expect(slice.placements.get(1)?.span).toBe(1);
-    expect(slice.visible).toHaveLength(2);
-  });
-
-  it("o ticket longo conta as observações como linha", () => {
-    expect(isTallTicket(ticket({ items: items(5) }))).toBe(false);
-    expect(isTallTicket(ticket({ items: items(5), kitchen_note: "Bem assado" }))).toBe(true);
+  it("a posição na fila tem nome, o mesmo em toda largura", () => {
+    expect([0, 1, 2, 5].map(queuePositionLabel)).toEqual(["Agora", "Próximo", "Depois", "Depois"]);
   });
 
   it("colunas pela densidade, linhas pela altura (2 sem medida)", () => {
@@ -481,13 +530,38 @@ describe("a fila do cozinheiro (v4: 4 a 6 em foco, o resto vira +N)", () => {
     expect(cards.filter((c) => matchesBoardFilter(c, "late")).map((c) => c.pk)).toEqual([2]);
   });
 
-  it("cancelamento: item que saiu de pedido que continua x pedido inteiro", () => {
-    const cancelled = ticket({ order_ref: "F22", cancelled_at_display: "22:01" });
-    expect(cancelledSummary(cancelled, new Set(["F22"]))).toEqual({
-      label: "Item cancelado 22:01",
-      rest: "o resto continua",
-    });
-    expect(cancelledSummary(cancelled, new Set())).toEqual({ label: "Cancelado 22:01", rest: "" });
+  it("mudança com alarde: o que pede ciência vem antes da fila, e diz o que é", () => {
+    const changed = ticket({ pk: 9, changes: [{ kind: "note", text: "Observação nova em Tapioca: sem glúten" }] });
+    const cancelled = ticket({ pk: 8, status: "cancelled", is_cancelled: true, cancelled_at_display: "22:01" });
+    const ordered = alarmsFirst([ticket({ pk: 1 }), changed, ticket({ pk: 2 }), cancelled]);
+    expect(ordered.map((card) => card.pk)).toEqual([9, 8, 1, 2]);
+    expect(needsAcknowledgement(ticket())).toBe(false);
+    expect(cancelledHeadline(cancelled)).toBe("Pedido cancelado às 22:01. Não preparar.");
+    expect(cancelledHeadline(ticket({ cancelled_at_display: "" }))).toBe("Pedido cancelado. Não preparar.");
+    expect(changeAckLabel({ changes: [{ kind: "moved", text: "Era a comanda Mesa 5" }] })).toBe("Visto");
+    expect(changeIcon("cancelled")).toBe("lucide:ban");
+    expect(changeIcon("qty")).toBe("lucide:hash");
+    expect(changeIcon("desconhecido")).toBe("lucide:triangle-alert");
+    // A pílula segue dizendo o estado do preparo; o cancelado inteiro não tem pílula.
+    expect(ticketPill(changed, {})?.label).toBe("Em preparo");
+    expect(ticketPill(cancelled, {})).toBeNull();
+  });
+
+  it("o que mudou não é o PRÓXIMO da fila: o próximo é o primeiro que é trabalho", () => {
+    const board: KDSBoardProjection = {
+      instance_ref: "cafes",
+      instance_name: "Cafés",
+      instance_type: "prep",
+      tickets: [ticket({ pk: 1, elapsed_seconds: 900 }), ticket({ pk: 2, changes: [{ kind: "qty", text: "x" }] })],
+      counts: { total: 2, pending: 0, in_progress: 2 },
+      cancelled_tickets: [],
+      recent_done: [],
+      density: "cozy",
+      sound_enabled: true,
+    };
+    const view = boardView(board);
+    expect(view.cards.map((card) => card.pk)).toEqual([2, 1]);
+    expect(view.nextPk).toBe(1);
   });
 
   it("a linha compacta do celular: o primeiro item e quantos mais", () => {

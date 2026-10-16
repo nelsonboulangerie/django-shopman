@@ -191,8 +191,8 @@ pipeline:
 ```yaml
 preset: remote
 cenário: Venda remota com pagamento online
-confirmação: otimista (10 min para operador cancelar)
-pagamento: [pix, card] (15 min timeout para pagamento)
+confirmação: manual (alerta de pedido parado após 10 min sem decisão)
+pagamento: [pix, card] (Pix vence em 10 min sem pagamento: `payment.timeout_minutes`)
 estoque:
   hold: 30 minutos
   safety_margin: 10 unidades
@@ -378,7 +378,7 @@ Canal.config  ←  Shop.defaults  ←  ChannelConfig.defaults()
 ### 5.1 Máquina de Estados
 
 ```
-NEW → CONFIRMED → PROCESSING → READY → DISPATCHED → DELIVERED → COMPLETED
+NEW → ACCEPTED → PREPARING → READY → DISPATCHED → DELIVERED → COMPLETED
   ↘ CANCELLED (de qualquer estado não-terminal)
                                                         ↘ RETURNED (pós-entrega)
 ```
@@ -398,7 +398,7 @@ NEW → CONFIRMED → PROCESSING → READY → DISPATCHED → DELIVERED → COMP
 8. Se PIX: gera QR code → cliente paga
 9. Webhook (Efi/Stripe) → payment confirmed
 10. on_payment_confirmed → stock.commit (materializa reservas)
-11. Operador prepara → PROCESSING → READY
+11. Operador prepara → PREPARING → READY
 12. Fulfillment criado → DISPATCHED → DELIVERED
 13. COMPLETED → loyalty.earn (1 ponto por R$ 1,00)
 ```
@@ -409,7 +409,7 @@ NEW → CONFIRMED → PROCESSING → READY → DISPATCHED → DELIVERED → COMP
 Pedido criado (NEW)
   ├─ Cria diretiva CONFIRMATION_TIMEOUT com available_at = now + timeout
   ├─ Se operador cancela antes do timeout → CANCELLED
-  └─ Se timeout expira sem cancelamento → auto CONFIRMED
+  └─ Se timeout expira sem cancelamento → auto ACCEPTED
 ```
 
 ### 5.4 Fluxo PIX
@@ -498,7 +498,13 @@ happy_hour:
   janela: 17:30 – 18:00   # Configurável via RuleConfig "happy_hour"
   exclusão: NÃO acumula com desconto funcionário
   aplicação: pós-pricing, sobre unit_price_q
+  canais: só os listados no RuleConfig; sem canal, não vale em lugar nenhum
 ```
+
+Na casa é a **Hora da Xepa**, e vale **só no balcão (PDV)**: decisão do dono, 14/10/2026.
+É liquidação de fim de dia de quem está na loja. Site, WhatsApp e iFood não têm Xepa,
+e a loja online não a anuncia. A regra declara `channels_required`, então o "vazio =
+todos" das outras regras não vale para ela (migração `shop.0093`).
 
 ---
 
@@ -816,7 +822,6 @@ checkout_defaults:
 | `order_delivered`    | Pedido entregue                     |
 | `order_cancelled`    | Pedido cancelado                    |
 | `payment_confirmed`  | Pagamento confirmado                |
-| `payment_expired`    | Pagamento expirado                  |
 | `stock_alert`        | Alerta de estoque baixo             |
 
 ### Cadeia de Resolução

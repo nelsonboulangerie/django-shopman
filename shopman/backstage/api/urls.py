@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from django.urls import path
 
+from shopman.shop.eventstream import events as eventstream_view
+
 from .alerts import AlertAckView, AlertListView
 from .backup import BackupExportView
 from .bi import (
@@ -11,6 +13,7 @@ from .bi import (
     BIChangeView,
     BIConsumptionProfilesView,
     BICustomersView,
+    BIDeliveryTimingView,
     BIExploreView,
     BIForecastView,
     BIOverShortCarryView,
@@ -18,16 +21,21 @@ from .bi import (
     BIProductionView,
     BISalesView,
     BIScenariosView,
-    BIViewDetailView,
-    BIViewListView,
 )
 from .catalog import (
     CatalogAiAssistView,
     CatalogBulkPriceView,
     CatalogBulkView,
+    CatalogCellsView,
     CatalogCellView,
     CatalogMatrixView,
+    CatalogProductCreateView,
     CatalogProductDetailView,
+    CatalogProductDraftView,
+    CatalogProductDuplicateView,
+    CatalogProductImportView,
+    CatalogProductPhotoUploadView,
+    CatalogProductPhotoView,
     CatalogProductPurchaseView,
     CatalogProductView,
     CatalogReorderCollectionsView,
@@ -38,8 +46,13 @@ from .catalog import (
 )
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
+from .customer_groups import CustomerGroupDetailView, CustomerGroupListView
 from .customers import (
+    CustomerAddressDetailView,
+    CustomerAddressListView,
+    CustomerBulkView,
     CustomerDetailView,
+    CustomerDuplicateView,
     CustomerListView,
     CustomerMergeListView,
     CustomerMergePreviewView,
@@ -60,6 +73,7 @@ from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
     KDSExitPrintedStationDoneView,
+    KDSHistoryView,
     KDSIndexView,
     KDSPrintedTicketDoneView,
     KDSPrintedTicketScanView,
@@ -67,6 +81,7 @@ from .kds import (
     KDSStationSeenView,
     KDSStationSettingsView,
     KDSTicketAcknowledgeView,
+    KDSTicketChangesSeenView,
     KDSTicketDoneView,
     KDSTicketRecallView,
     KDSTicketStartView,
@@ -144,13 +159,16 @@ from .operations import (
     OrderConfirmView,
     OrderCourierBackView,
     OrderCourierCancelView,
+    OrderCourierDispatchAgainView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
+    OrderCourierReminderDismissView,
     OrderDanfeEscposView,
     OrderDetailView,
     OrderEditPreviewView,
     OrderEditView,
     OrderEquipmentBackView,
+    OrderIFoodAcceptRetryView,
     OrderIFoodEvidenceView,
     OrderIFoodHandshakeView,
     OrderNotesView,
@@ -167,6 +185,7 @@ from .operations import (
     OrderUnassignView,
     OrderUndoHandoffView,
     OrderUndoReadyView,
+    OrderVolumeCheckView,
     OrderVolumesView,
     POSAccountBalancesView,
     POSAccountSettleView,
@@ -220,6 +239,7 @@ from .operations import (
     POSTabSaveView,
     POSTabUnfireView,
     POSView,
+    ProductionBlindCodeAllocationView,
     ProductionBlindMapView,
     ProductionBoardView,
     ProductionForecastView,
@@ -258,19 +278,28 @@ from .product_promise import CatalogPromiseView, ProductPromiseView
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
+    PurchaseContactView,
+    PurchaseConversionDetailView,
     PurchaseConversionView,
     PurchaseCostBatchView,
     PurchaseCostView,
     PurchaseCountConfirmView,
     PurchaseCountView,
+    PurchaseMaterialDetailView,
+    PurchaseMaterialDuplicateView,
+    PurchaseMaterialView,
     PurchaseMinStockView,
     PurchaseOpeningView,
     PurchaseReceiptVolumesView,
     PurchaseRejectReceiptView,
-    PurchaseRequestApproveView,
+    PurchaseRequestCancelView,
     PurchaseRequestSendView,
     PurchaseSaleView,
     PurchaseScanInvoiceView,
+    PurchaseSupplierContactView,
+    PurchaseSupplierDetailView,
+    PurchaseSupplierDuplicateView,
+    PurchaseSupplierView,
 )
 from .recipe_book import (
     FormulaLensView,
@@ -280,14 +309,20 @@ from .recipe_book import (
     RecipeBookListView,
     RecipeCaptureView,
     RecipeCompareView,
+    RecipeDuplicateView,
     RecipeEntryView,
+    RecipeExecutionView,
     RecipeFavoriteView,
     RecipeReferenceView,
+    RecipeSheetDuplicateView,
+    RecipeSheetListView,
+    RecipeSheetView,
     RecipeVersionCreateView,
     RecipeVersionPublishView,
     RecipeVersionRatingView,
     RecipeVersionView,
 )
+from .saved_views import SavedViewDetailView, SavedViewListView
 from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
@@ -319,13 +354,27 @@ urlpatterns = [
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
+    # Push do painel de retirada: canal público ``pickup-board``, efêmero e de
+    # corpo vazio. O painel refaz o GET acima no evento (ADR-016).
+    path(
+        "kds/pickup/events/",
+        eventstream_view,
+        {"channels": ["pickup-board"]},
+        name="api-backstage-kds-customer-events",
+    ),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
+    path("kds/<slug:ref>/history/", KDSHistoryView.as_view(), name="api-backstage-kds-history"),
     path("kds/<slug:ref>/seen/", KDSStationSeenView.as_view(), name="api-backstage-kds-station-seen"),
     path("kds/<slug:ref>/settings/", KDSStationSettingsView.as_view(), name="api-backstage-kds-station-settings"),
     path("kds/<slug:ref>/follow/", KDSStationFollowView.as_view(), name="api-backstage-kds-station-follow"),
     path("kds/tickets/<int:ticket_pk>/start/", KDSTicketStartView.as_view(), name="api-backstage-kds-ticket-start"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
     path("kds/tickets/<int:ticket_pk>/recall/", KDSTicketRecallView.as_view(), name="api-backstage-kds-ticket-recall"),
+    path(
+        "kds/tickets/<int:ticket_pk>/changes/seen/",
+        KDSTicketChangesSeenView.as_view(),
+        name="api-backstage-kds-ticket-changes-seen",
+    ),
     path(
         "kds/tickets/<int:ticket_pk>/acknowledge/",
         KDSTicketAcknowledgeView.as_view(),
@@ -407,6 +456,11 @@ urlpatterns = [
         name="api-backstage-production-weighing",
     ),
     path(
+        "production/weighing/blind-codes/",
+        ProductionBlindCodeAllocationView.as_view(),
+        name="api-backstage-production-weighing-blind-codes",
+    ),
+    path(
         "production/weighing/print-jobs/",
         ProductionWeighingPrintJobCreateView.as_view(),
         name="api-backstage-production-print-job-create",
@@ -468,7 +522,17 @@ urlpatterns = [
     path("recipes/ingredients/", IngredientOptionsView.as_view(), name="api-backstage-recipes-ingredients"),
     path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
     path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
+    # Ficha de execução: rotas fixas ANTES de recipes/<slug:ref>/ ("sheets" também é slug).
+    path("recipes/sheets/", RecipeSheetListView.as_view(), name="api-backstage-recipe-sheets"),
+    path("recipes/sheets/<slug:ref>/", RecipeSheetView.as_view(), name="api-backstage-recipe-sheet"),
+    path(
+        "recipes/sheets/<slug:ref>/duplicate/",
+        RecipeSheetDuplicateView.as_view(),
+        name="api-backstage-recipe-sheet-duplicate",
+    ),
     path("recipes/<slug:ref>/", RecipeEntryView.as_view(), name="api-backstage-recipe"),
+    path("recipes/<slug:ref>/duplicate/", RecipeDuplicateView.as_view(), name="api-backstage-recipe-duplicate"),
+    path("recipes/<slug:ref>/execution/", RecipeExecutionView.as_view(), name="api-backstage-recipe-execution"),
     path("recipes/<slug:ref>/favorite/", RecipeFavoriteView.as_view(), name="api-backstage-recipe-favorite"),
     path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
     path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
@@ -525,6 +589,45 @@ urlpatterns = [
         PurchaseOpeningView.as_view(),
         name="api-backstage-purchase-opening",
     ),
+    # Cadastro da Base. A ordem importa: `min-stock` e os subgestos de um SKU
+    # vêm antes do detalhe, senão "min-stock" casaria com <material_sku>.
+    path("purchase/materials/", PurchaseMaterialView.as_view(), name="api-backstage-purchase-materials"),
+    path(
+        "purchase/materials/<str:material_sku>/duplicate/",
+        PurchaseMaterialDuplicateView.as_view(),
+        name="api-backstage-purchase-material-duplicate",
+    ),
+    path(
+        "purchase/materials/<str:material_sku>/",
+        PurchaseMaterialDetailView.as_view(),
+        name="api-backstage-purchase-material",
+    ),
+    path("purchase/suppliers/", PurchaseSupplierView.as_view(), name="api-backstage-purchase-suppliers"),
+    path(
+        "purchase/suppliers/<str:ref>/duplicate/",
+        PurchaseSupplierDuplicateView.as_view(),
+        name="api-backstage-purchase-supplier-duplicate",
+    ),
+    path(
+        "purchase/suppliers/<str:ref>/contacts/",
+        PurchaseSupplierContactView.as_view(),
+        name="api-backstage-purchase-supplier-contacts",
+    ),
+    path(
+        "purchase/suppliers/<str:ref>/",
+        PurchaseSupplierDetailView.as_view(),
+        name="api-backstage-purchase-supplier",
+    ),
+    path(
+        "purchase/contacts/<int:contact_id>/",
+        PurchaseContactView.as_view(),
+        name="api-backstage-purchase-contact",
+    ),
+    path(
+        "purchase/conversions/<int:conversion_id>/",
+        PurchaseConversionDetailView.as_view(),
+        name="api-backstage-purchase-conversion",
+    ),
     # Contagem de insumos — auditoria de estoque, restrita a gestor/dono.
     path("purchase/count/", PurchaseCountView.as_view(), name="api-backstage-purchase-count"),
     path(
@@ -538,17 +641,18 @@ urlpatterns = [
         name="api-backstage-purchase-conversions",
     ),
     path(
-        "purchase/requests/<str:material_sku>/approve/",
-        PurchaseRequestApproveView.as_view(),
-        name="api-backstage-purchase-request-approve",
-    ),
-    path(
         "purchase/requests/<str:material_sku>/send/",
         PurchaseRequestSendView.as_view(),
         name="api-backstage-purchase-request-send",
     ),
+    path(
+        "purchase/requests/<str:material_sku>/cancel/",
+        PurchaseRequestCancelView.as_view(),
+        name="api-backstage-purchase-request-cancel",
+    ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
+    path("bi/delivery-timing/", BIDeliveryTimingView.as_view(), name="api-backstage-bi-delivery-timing"),
     path("bi/over-short/", BIOverShortView.as_view(), name="api-backstage-bi-over-short"),
     path("bi/over-short/carry/", BIOverShortCarryView.as_view(), name="api-backstage-bi-over-short-carry"),
     path("bi/sales/", BISalesView.as_view(), name="api-backstage-bi-sales"),
@@ -562,8 +666,10 @@ urlpatterns = [
     ),
     path("bi/forecast/", BIForecastView.as_view(), name="api-backstage-bi-forecast"),
     path("bi/change/", BIChangeView.as_view(), name="api-backstage-bi-change"),
-    path("bi/views/", BIViewListView.as_view(), name="api-backstage-bi-views"),
-    path("bi/views/<int:pk>/", BIViewDetailView.as_view(), name="api-backstage-bi-view"),
+    # Leituras salvas (favoritos do painel de filtros), por pessoa e por tela; o B.I.
+    # guarda os cenários do explorador aqui (``bi``/``explore``).
+    path("saved-views/", SavedViewListView.as_view(), name="api-backstage-saved-views"),
+    path("saved-views/<int:pk>/", SavedViewDetailView.as_view(), name="api-backstage-saved-view"),
     path("bi/scenarios/", BIScenariosView.as_view(), name="api-backstage-bi-scenarios"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
     path(
@@ -597,6 +703,9 @@ urlpatterns = [
     # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
     # se chama "merge", mas a ordem não deveria depender disso.
     path("customers/", CustomerListView.as_view(), name="api-backstage-customers"),
+    path("customers/bulk/", CustomerBulkView.as_view(), name="api-backstage-customers-bulk"),
+    path("customers/groups/", CustomerGroupListView.as_view(), name="api-backstage-customer-groups"),
+    path("customers/groups/<str:ref>/", CustomerGroupDetailView.as_view(), name="api-backstage-customer-group-detail"),
     path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
     path("customers/merge/", CustomerMergeView.as_view(), name="api-backstage-customers-merge"),
     path("customers/merges/", CustomerMergeListView.as_view(), name="api-backstage-customers-merges"),
@@ -606,9 +715,32 @@ urlpatterns = [
         name="api-backstage-customers-merge-undo",
     ),
     path("customers/<str:ref>/", CustomerDetailView.as_view(), name="api-backstage-customer-detail"),
+    path(
+        "customers/<str:ref>/duplicate/",
+        CustomerDuplicateView.as_view(),
+        name="api-backstage-customer-duplicate",
+    ),
+    path(
+        "customers/<str:ref>/addresses/",
+        CustomerAddressListView.as_view(),
+        name="api-backstage-customer-addresses",
+    ),
+    path(
+        "customers/<str:ref>/addresses/<int:address_id>/",
+        CustomerAddressDetailView.as_view(),
+        name="api-backstage-customer-address-detail",
+    ),
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
+    path("catalog/cells/", CatalogCellsView.as_view(), name="api-backstage-catalog-cells"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
+    # ⚠️ ANTES de `catalog/product/<str:sku>/`: `create` e `duplicate` casariam com `<str:sku>`.
+    path("catalog/product/create/", CatalogProductCreateView.as_view(), name="api-backstage-catalog-product-create"),
+    path("catalog/product/duplicate/", CatalogProductDuplicateView.as_view(), name="api-backstage-catalog-product-duplicate"),
+    path("catalog/product/draft/", CatalogProductDraftView.as_view(), name="api-backstage-catalog-product-draft"),
+    path("catalog/product/import/", CatalogProductImportView.as_view(), name="api-backstage-catalog-product-import"),
+    path("catalog/product/photo/", CatalogProductPhotoView.as_view(), name="api-backstage-catalog-product-photo"),
+    path("catalog/product/photo/upload/", CatalogProductPhotoUploadView.as_view(), name="api-backstage-catalog-product-photo-upload"),
     path("catalog/product/<str:sku>/", CatalogProductDetailView.as_view(), name="api-backstage-catalog-product-detail"),
     path(
         "catalog/product/<str:sku>/purchase/",
@@ -652,6 +784,8 @@ urlpatterns = [
         name="api-backstage-order-tickets-escpos",
     ),
     # Orders — operator actions
+    # Antes do detalhe: "volume-check" não é ref de pedido.
+    path("orders/volume-check/", OrderVolumeCheckView.as_view(), name="api-backstage-order-volume-check"),
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path(
         "orders/<str:ref>/ticket-escpos/",
@@ -681,6 +815,11 @@ urlpatterns = [
         "orders/<str:ref>/ifood-handshake/",
         OrderIFoodHandshakeView.as_view(),
         name="api-backstage-order-ifood-handshake",
+    ),
+    path(
+        "orders/<str:ref>/ifood-accept-retry/",
+        OrderIFoodAcceptRetryView.as_view(),
+        name="api-backstage-order-ifood-accept-retry",
     ),
     path("orders/<str:ref>/reject/", OrderRejectView.as_view(), name="api-backstage-order-reject"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
@@ -716,6 +855,16 @@ urlpatterns = [
         "orders/<str:ref>/courier-dispatch/",
         OrderCourierDispatchView.as_view(),
         name="api-backstage-order-courier-dispatch",
+    ),
+    path(
+        "orders/<str:ref>/courier-dispatch-again/",
+        OrderCourierDispatchAgainView.as_view(),
+        name="api-backstage-order-courier-dispatch-again",
+    ),
+    path(
+        "orders/<str:ref>/courier-reminder-dismiss/",
+        OrderCourierReminderDismissView.as_view(),
+        name="api-backstage-order-courier-reminder-dismiss",
     ),
     path(
         "orders/<str:ref>/courier-cancel/", OrderCourierCancelView.as_view(), name="api-backstage-order-courier-cancel"

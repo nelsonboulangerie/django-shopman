@@ -4,7 +4,7 @@ import { mount } from "@vue/test-utils";
 
 import PlanReasonCard from "../../app/components/PlanReasonCard.vue";
 import type { ProductionSuggestionProjection } from "../../app/types/production";
-import { UiButtonStub } from "../support/nativeUiStubs";
+import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 // O conteúdo do "Por quê" (UX-P2): cada bloco só aparece quando o backend tem
 // o dado. A conta é sempre; histórico, falta de insumo, atalho do Compras e a
@@ -70,9 +70,9 @@ function mountCard(
     },
     global: {
       stubs: {
+        ...nuxtUiStubs,
         Icon: true,
         OperatorKbd: { template: "<kbd><slot /></kbd>" },
-        UiButton: UiButtonStub,
       },
     },
   });
@@ -135,6 +135,9 @@ describe("PlanReasonCard", () => {
     expect(link.text()).toContain("Pedir no Compras");
     expect(link.attributes("href")).toBe("https://compras.example/");
     expect(link.attributes("rel")).toBe("noopener");
+    // O aviso é acionável e a ação repete a cor do aviso.
+    expect(material.attributes("data-color")).toBe("warning");
+    expect(link.attributes("data-color")).toBe("warning");
 
     // Com a alternativa à mão, ela é a ação do detalhe.
     expect(button(w, "Planejar 52")).toBeUndefined();

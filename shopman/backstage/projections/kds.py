@@ -25,6 +25,7 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.services import operator_orders
+from shopman.shop.services.fulfillment_window import promised_at, window_label
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
@@ -37,9 +38,11 @@ from .order_queue import (
 logger = logging.getLogger(__name__)
 
 ACTIVE_TICKET_STATUSES = ("pending", "in_progress")
-RECENT_CANCELLED_WINDOW = timedelta(minutes=10)
 RECENT_DONE_WINDOW = timedelta(minutes=30)
 RECENT_DONE_LIMIT = 12
+#: O Histórico de hoje mostra no máximo isto (os mais recentes); a busca pelo
+#: código alcança o resto do dia.
+HISTORY_LIMIT = 100
 
 
 # ── Projections ────────────────────────────────────────────────────────
@@ -54,6 +57,27 @@ class KDSItemProjection:
     qty: int | str
     notes: str
     stock_warning: str  # "" = no warning
+    # A identidade da linha da venda: é por ela que o quadro sabe que o item
+    # cancelado VOLTOU (outra quantidade, outra observação) em vez de ter saído.
+    line_id: str = ""
+
+
+@dataclass(frozen=True)
+class KDSChangeProjection:
+    """Uma mudança no que já estava na cozinha, ainda sem Visto da estação.
+
+    Decisão do dono (10/10/2026): o PDV ajusta sozinho o que já foi enviado, e a
+    cozinha recebe cada mudança "com alarde, a cada mudança. Jamais
+    silenciosamente!". O card mostra a mudança até alguém da estação dar Visto.
+
+    ``kind``: ``cancelled`` (o item saiu: não preparar) · ``qty`` (a quantidade
+    mudou) · ``note`` (a observação mudou) · ``resent`` (o item foi enviado de
+    novo, igual) · ``moved`` (o pedido mudou de nome: a comanda foi paga e virou
+    pedido, foi transferida ou renomeada).
+    """
+
+    kind: str
+    text: str
 
 
 @dataclass(frozen=True)
@@ -113,13 +137,28 @@ class KDSTicketProjection:
     # "Encomenda · <cliente>" (prévia v4, nota 6). Venda do dia não mostra cliente,
     # canal nem telefone: o código chama o pedido.
     is_preorder: bool = False
-    # Hora combinada com o cliente, quando o pedido tem uma: "retira às 22:30" /
-    # "entrega às 22:30". Vazio sem hora combinada.
+    # Hora combinada com o cliente, quando o pedido tem uma, na régua da janela
+    # (``fulfillment_window``): "retira a partir das 17h" / "entrega das 14:00 às
+    # 14:30" / "entrega às 17:30" (iFood agendado). Vazio sem hora combinada.
     due_time_display: str = ""
+    # A mesma hora, curta, para o relógio do card: "17h" / "14h30". Com ela o
+    # relógio diz "para 17h" em vez do tempo desde que o ticket nasceu: a
+    # encomenda chega à cozinha às 00:05 e contar dali era acusar atraso de horas
+    # num pedido que ainda está no prazo (P2-16).
+    due_clock_display: str = ""
+    # Segundos até a hora combinada (negativo quando passou), no instante da
+    # projeção; ``None`` sem hora combinada. É a chave da fila: a cozinha trabalha
+    # pelo que vence antes.
+    due_in_seconds: int | None = None
     # Alguém da estação já deu "Visto" neste ticket (ou já o iniciou): o aviso de
     # pedido novo para em todas as telas da estação juntas (K20, registrado no
     # servidor por estação). No cancelado, é o "Visto" DEPOIS do cancelamento.
     seen: bool = False
+    # As mudanças neste pedido que a estação ainda não viu (``KDSChangeProjection``),
+    # e os tickets cancelados que elas resumem: o Visto do card dá baixa neles
+    # (``kds/tickets/<pk>/changes/seen/``) e só então o Pronto destrava.
+    changes: tuple[KDSChangeProjection, ...] = ()
+    change_ticket_pks: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -155,6 +194,9 @@ class KDSExitStationChipProjection:
     #: devolve à cozinha ("Voltar para Lanches", ``kds/tickets/<pk>/recall/``).
     #: ``None`` quando não há o que devolver.
     recall_ticket_pk: int | None = None
+    #: O que foi para esta estação ("2x Croissant"), dos tickets vivos: é como o
+    #: Gestor confere se cada item chegou onde devia (dono, 07/10/2026).
+    items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -189,6 +231,49 @@ class KDSBoardProjection:
     # ``KDSInstance.config["density"]``) e todas as telas da estação seguem.
     density: str = "cozy"
     sound_enabled: bool = True
+
+
+@dataclass(frozen=True)
+class KDSHistoryEntryProjection:
+    """Um pedido que passou pela estação hoje e já saiu do quadro (Histórico de hoje).
+
+    Decisão do dono (13/10/2026): só o turno de hoje e só desta estação; o que
+    já saiu da cozinha só se VÊ (refazer nasce no PDV ou no Gestor). ``steps``
+    é a trilha pronta, na ordem: "recebido 21:40", "iniciado 21:42 Rafael",
+    "Pronto 21:51 Rafael (tela)" ou "Cancelado 21:45", "ciente 21:47 Ana".
+    ``undone`` são os Prontos desfeitos ("Pronto 21:51 → desfeito 21:58 Ana").
+    """
+
+    #: O card do ticket, para o detalhe em só leitura.
+    ticket: KDSTicketProjection
+    #: "done" · "cancelled"
+    state: str
+    #: Os itens numa linha ("2x Croissant, 1x Café coado").
+    items_summary: str
+    steps: tuple[str, ...]
+    undone: tuple[str, ...] = ()
+    #: Do início (ou da chegada, sem início) ao Pronto: "9 min". Vazio no cancelado.
+    prep_display: str = ""
+    #: Reabrir devolve o ticket à fila (a mesma régua do servidor, ``recall_block_reason``).
+    can_reopen: bool = False
+    #: Por que não reabre, quando o Pronto já não volta ("Pedido despachado: ...").
+    reopen_block_reason: str = ""
+
+
+@dataclass(frozen=True)
+class KDSHistoryProjection:
+    """O Histórico de hoje de uma estação (``GET kds/<ref>/history/``).
+
+    Fora do quadro de propósito: o quadro vai a cada push e a cada 15 s, e o
+    histórico só quando alguém abre. ``total`` conta o dia inteiro (com a busca);
+    ``entries`` traz no máximo ``HISTORY_LIMIT``, os mais recentes primeiro.
+    """
+
+    instance_ref: str
+    instance_name: str
+    entries: tuple[KDSHistoryEntryProjection, ...]
+    total: int
+    query: str = ""
 
 
 @dataclass(frozen=True)
@@ -269,6 +354,11 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
     )
     active_session_keys = {ticket.session_key for ticket in active_all if ticket.session_key}
     now = timezone.now()
+    # O cancelado fica no quadro até alguém da estação dar ciência. Antes ele
+    # sumia sozinho depois de 10 minutos, e a cozinha que não olhou a tela nesse
+    # intervalo nunca sabia que o pedido tinha caído (decisão do dono, 10/10/2026:
+    # jamais em silêncio). O limite é o turno: cancelado de outro dia não volta.
+    start_of_today = timezone.make_aware(datetime.combine(today, time.min))
     cancelled_all = list(
         KDSTicket.objects.filter(
             kds_instance=instance,
@@ -276,7 +366,7 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
             acknowledged_at__isnull=True,
         )
         .filter(
-            Q(cancelled_at__gte=now - RECENT_CANCELLED_WINDOW)
+            Q(cancelled_at__gte=start_of_today)
             | Q(session_key__in=active_session_keys)
         )
         .order_by("-cancelled_at", "-created_at")
@@ -308,8 +398,18 @@ def build_kds_board(instance_ref: str) -> KDSBoardProjection:
     ]
 
     names = _operator_names(active, sources)
-    tickets = tuple(_build_ticket(t, instance, source=sources[t.pk], names=names) for t in active)
-    cancelled_tickets = tuple(_build_ticket(t, instance, source=sources[t.pk]) for t in cancelled)
+    absorbed, changes_by_pk = _changes_on_live_tickets(active, cancelled)
+    tickets = tuple(
+        _build_ticket(
+            t, instance, source=sources[t.pk], names=names, changes=changes_by_pk.get(t.pk),
+        )
+        for t in active
+    )
+    # O cancelado que não tem card vivo da mesma venda nesta estação (o pedido
+    # inteiro caiu, a comanda foi liberada) vira card próprio na grade.
+    cancelled_tickets = tuple(
+        _build_ticket(t, instance, source=sources[t.pk]) for t in cancelled if t.pk not in absorbed
+    )
     recent_done = tuple(_build_ticket(t, instance, source=sources[t.pk]) for t in done)
     pending = sum(1 for t in tickets if t.status == "pending")
     in_progress = sum(1 for t in tickets if t.status == "in_progress")
@@ -343,14 +443,211 @@ def station_density(instance) -> str:
     return value if value in STATION_DENSITIES else "cozy"
 
 
+#: Por onde o Pronto veio, na voz da trilha ("Pronto 21:51 Rafael (tela)").
+_COMPLETED_VIA_LABELS = {
+    "station": "tela",
+    "exit": "Saída",
+    "pos": "PDV",
+    "scanner": "leitor",
+    "order_advanced": "Gestor",
+}
+
+
+def build_kds_history(instance_ref: str, *, query: str = "", limit: int = HISTORY_LIMIT) -> KDSHistoryProjection:
+    """O Histórico de hoje da estação: concluídos e cancelados desde 0h (hora da loja).
+
+    A régua do dia é a mesma do cancelado no quadro (``start_of_today``). A busca
+    olha o código do pedido, a comanda anterior e o nome do cliente.
+    """
+    from shopman.backstage.models import KDSInstance, KDSTicket
+    from shopman.backstage.services.exceptions import KDSInstanceNotFound
+
+    instance = KDSInstance.objects.filter(ref=instance_ref, is_active=True).first()
+    if instance is None or instance.type == "expedition":
+        raise KDSInstanceNotFound(f"Estação de KDS não encontrada: {instance_ref}.")
+
+    today = timezone.localdate()
+    start_of_today = timezone.make_aware(datetime.combine(today, time.min))
+    rows = list(
+        KDSTicket.objects.filter(kds_instance=instance).filter(
+            Q(status="done", completed_at__gte=start_of_today)
+            | Q(status="cancelled", cancelled_at__gte=start_of_today)
+        )
+    )
+    rows.sort(key=lambda t: (t.completed_at or t.cancelled_at or t.created_at, t.pk), reverse=True)
+    sources = _resolve_ticket_sources(rows)
+
+    needle = " ".join(str(query or "").split()).lower()
+    matched: list[tuple] = []
+    for ticket in rows:
+        source = sources.get(ticket.session_key)
+        if needle and needle not in _history_haystack(ticket, source):
+            continue
+        matched.append((ticket, source))
+    shown = matched[: max(0, int(limit))]
+
+    logins: set[str] = set()
+    for ticket, _source in shown:
+        logins.update((ticket.completed_by, ticket.acknowledged_by))
+        for record in ticket.reopenings or []:
+            if isinstance(record, dict):
+                logins.update((str(record.get("completed_by") or ""), str(record.get("undone_by") or "")))
+    names = {**_first_names(logins), **_operator_names([t for t, _ in shown], {t.pk: s for t, s in shown})}
+
+    return KDSHistoryProjection(
+        instance_ref=instance.ref,
+        instance_name=instance.name,
+        entries=tuple(
+            _history_entry(ticket, instance, source=source, names=names, today=today)
+            for ticket, source in shown
+        ),
+        total=len(matched),
+        query=needle,
+    )
+
+
+def _history_haystack(ticket, source) -> str:
+    """O que a busca do histórico olha: o código, a comanda anterior e o cliente."""
+    source_data = (getattr(source, "data", None) or {}) if source is not None else {}
+    order_ref, previous = _display_order_refs(
+        source, source_data, getattr(source, "handle_ref", "") or "", ticket.session_key
+    )
+    customer = str((source_data.get("customer") or {}).get("name") or "")
+    return " ".join((order_ref, previous, customer)).lower()
+
+
+def _history_entry(ticket, instance, *, source, names, today) -> KDSHistoryEntryProjection:
+    from shopman.shop.services import kds as kds_core
+
+    card = _build_ticket(ticket, instance, source=source, names=names)
+    steps = [f"recebido {_format_time(ticket.created_at)}"]
+    if card.started_at_display:
+        steps.append(_join("iniciado", card.started_at_display, card.started_by))
+    undone = tuple(
+        _join(
+            "Pronto",
+            _format_iso_time(record.get("completed_at")),
+            _who(record.get("completed_by"), names),
+            _via(record.get("completed_via")),
+        )
+        + " → "
+        + _join("desfeito", _format_iso_time(record.get("undone_at")), _who(record.get("undone_by"), names))
+        for record in (ticket.reopenings or [])
+        if isinstance(record, dict)
+    )
+    prep_display = ""
+    can_reopen = False
+    reopen_block_reason = ""
+    if ticket.status == "done":
+        steps.append(
+            _join(
+                "Pronto",
+                _format_time(ticket.completed_at),
+                _who(ticket.completed_by, names),
+                _via(ticket.completed_via),
+            )
+        )
+        if ticket.completed_at is not None:
+            began = _started_at(ticket, source) or ticket.created_at
+            prep_display = _duration_display((ticket.completed_at - began).total_seconds())
+        if kds_core.recall_block_reason(source):
+            reopen_block_reason = (
+                f"Pedido {source.get_status_display().lower()}: não volta à cozinha. "
+                "Para refazer, peça pelo PDV ou pelo Gestor."
+            )
+        elif _due_today(source, today=today):
+            can_reopen = True
+    else:
+        steps.append(_join("Cancelado", _format_time(ticket.cancelled_at)))
+        if ticket.acknowledged_at is not None:
+            steps.append(_join("ciente", _format_time(ticket.acknowledged_at), _who(ticket.acknowledged_by, names)))
+    return KDSHistoryEntryProjection(
+        ticket=card,
+        state=ticket.status,
+        items_summary=", ".join(_station_items([ticket])),
+        steps=tuple(steps),
+        undone=undone,
+        prep_display=prep_display,
+        can_reopen=can_reopen,
+        reopen_block_reason=reopen_block_reason,
+    )
+
+
+def _join(*parts) -> str:
+    return " ".join(str(part) for part in parts if part)
+
+
+def _who(login, names: dict[str, str]) -> str:
+    """O nome de chamada de quem agiu. O ator do sistema ("system:...", "kds.all_done")
+    não é gente e não aparece."""
+    login = str(login or "")
+    if login in names:
+        return names[login]
+    if not login or ":" in login or "." in login:
+        return ""
+    return login
+
+
+def _via(value) -> str:
+    label = _COMPLETED_VIA_LABELS.get(str(value or ""), "")
+    return f"({label})" if label else ""
+
+
+def _parse_iso(value):
+    try:
+        at = datetime.fromisoformat(str(value or ""))
+    except ValueError:
+        return None
+    return timezone.make_aware(at) if timezone.is_naive(at) else at
+
+
+def _format_iso_time(value) -> str:
+    return _format_time(_parse_iso(value))
+
+
+def _started_at(ticket, source):
+    """Quando o ticket foi iniciado (``Order.data["kds_started"]``); None sem registro."""
+    started = ((getattr(source, "data", None) or {}) if source is not None else {}).get("kds_started")
+    record = started.get(str(ticket.pk)) if isinstance(started, dict) else None
+    return _parse_iso(record.get("at")) if isinstance(record, dict) else None
+
+
+def _duration_display(seconds: float) -> str:
+    """ "9 min", "1 h 05 min"; abaixo de um minuto, "menos de 1 min"."""
+    minutes = int(max(0, seconds) // 60)
+    if minutes < 1:
+        return "menos de 1 min"
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60} h {minutes % 60:02d} min"
+
+
+def _resolve_ticket_sources(tickets) -> dict:
+    """``session_key → origem`` (o pedido mais novo, senão a comanda aberta), em duas consultas.
+
+    A mesma régua de ``_resolve_ticket_source``, para muitos tickets de uma vez.
+    """
+    from shopman.orderman.models import Session
+
+    keys = {ticket.session_key for ticket in tickets if ticket.session_key}
+    if not keys:
+        return {}
+    sources: dict = {}
+    for order in Order.objects.filter(session_key__in=keys).order_by("id"):
+        sources[order.session_key] = order
+    missing = keys - set(sources)
+    if missing:
+        for session in Session.objects.filter(session_key__in=missing, state="open").order_by("id"):
+            sources[session.session_key] = session
+    return sources
+
+
 def _operator_names(tickets, sources: dict) -> dict[str, str]:
     """``login → nome de chamada`` de quem iniciou estes tickets, numa consulta só.
 
     ``Order.data["kds_started"][pk]["by"]`` guarda o login (o ator da API); o card
     diz o primeiro nome da conta ("iniciado por Rafael"). Sem nome, o login.
     """
-    from django.contrib.auth import get_user_model
-
     logins: set[str] = set()
     for ticket in tickets:
         source = sources.get(ticket.pk)
@@ -358,6 +655,14 @@ def _operator_names(tickets, sources: dict) -> dict[str, str]:
         record = started.get(str(ticket.pk)) if isinstance(started, dict) else None
         if isinstance(record, dict) and record.get("by"):
             logins.add(str(record["by"]))
+    return _first_names(logins)
+
+
+def _first_names(logins) -> dict[str, str]:
+    """``login → nome de chamada`` (o primeiro nome da conta; sem nome, o login)."""
+    from django.contrib.auth import get_user_model
+
+    logins = {str(login) for login in logins if login}
     if not logins:
         return {}
     names: dict[str, str] = {}
@@ -486,6 +791,8 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     """
     from shopman.orderman.models import Session
 
+    from shopman.shop.services.kds import kitchen_done_session_keys
+
     # O painel é do DIA: pedido de outro dia que ficou aberto (esquecido em
     # "pronto", ticket que nunca recebeu o Pronto) não é chamada para o cliente do salão,
     # e encomenda de amanhã também não. O dia do pedido é a data do compromisso
@@ -529,15 +836,32 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
             preparing.append(projection)
 
     # Pre-commit POS comandas fired to the kitchen but not yet paid (open Sessions).
-    sessions_qs = Session.objects.filter(state="open", updated_at__gte=day_start).order_by("-updated_at")[:fetch]
-    for session in sessions_qs:
-        if session.session_key in committed_session_keys:
-            continue  # already surfaced as its committed Order (dedup on payment)
+    sessions = [
+        session
+        for session in Session.objects.filter(state="open", updated_at__gte=day_start).order_by("-updated_at")[:fetch]
+        if session.session_key not in committed_session_keys  # dedup on payment
+    ]
+    # A comanda não tem Order para virar READY: quem diz que ficou pronta é a
+    # cozinha, pela mesma conta do pedido (``kitchen_done_session_keys``). Antes
+    # ela ficava em "Em preparo" até o pagamento, e o painel parecia parado
+    # (alpha, 13/10/2026).
+    ready_keys = kitchen_done_session_keys([s.session_key for s in sessions])
+    for session in sessions:
         data = session.data or {}
         if not data.get("fired_lines"):
             continue  # nothing fired to the kitchen yet → not "em preparo"
         if (data.get("fulfillment_type") or data.get("delivery_method") or "pickup") == "delivery":
             continue  # pickup/counter only — delivery never shows on the pickup board
+        if session.session_key in ready_keys:
+            ready.append(
+                KDSCustomerOrderProjection(
+                    ref=_public_comanda_code(session),
+                    status=Order.Status.READY,
+                    status_label="Pronto para retirar",
+                    updated_at_display=_format_time(session.updated_at),
+                )
+            )
+            continue
         preparing.append(
             KDSCustomerOrderProjection(
                 ref=_public_comanda_code(session),
@@ -591,6 +915,18 @@ def _public_comanda_code(session) -> str:
 
 
 _EXIT_STATE_LABELS = {"pending": "na fila", "in_progress": "em preparo", "done": "pronto"}
+
+
+def _station_items(tickets) -> tuple[str, ...]:
+    """Os itens dos tickets de uma estação, na régua do resumo do card ("2x Croissant")."""
+    from shopman.shop.services.order_helpers import json_quantity
+
+    return tuple(
+        f"{json_quantity(item.get('qty', 1))}x {item.get('name') or item.get('sku') or ''}".strip()
+        for ticket in tickets
+        for item in (ticket.items or [])
+        if isinstance(item, dict)
+    )
 
 
 def exit_station_chips(order: Order, tickets, *, papers) -> tuple[KDSExitStationChipProjection, ...]:
@@ -651,6 +987,7 @@ def exit_station_chips(order: Order, tickets, *, papers) -> tuple[KDSExitStation
                 cancelled_items=cancelled_items,
                 can_mark_ready=prints and bool(open_tickets),
                 recall_ticket_pk=recall_ticket_pk,
+                items=_station_items(live),
             )
         )
     # Quem ainda falta vem primeiro; a ordem entre estações é a do nome.
@@ -756,22 +1093,111 @@ def _display_order_refs(source, source_data: dict, handle_ref: str, session_key:
     return tab_label or display_tab_ref(handle_ref or session_key), ""
 
 
-def _build_ticket(ticket, instance, *, source=None, names: dict[str, str] | None = None) -> KDSTicketProjection:
+def _changes_on_live_tickets(active: list, cancelled: list) -> tuple[set[int], dict[int, tuple]]:
+    """As mudanças que cada card vivo carrega, a partir dos cancelados sem ciência.
+
+    Desfazer o envio de uma linha (PDV: remover, diminuir, observação nova,
+    cancelar o envio; iFood: o cliente alterou o pedido) sempre deixa um ticket
+    ``cancelled`` com a linha como estava (``unfire_session_lines``). Se a mesma
+    linha (``line_id``) está de novo num ticket vivo da venda, ela MUDOU; se não
+    está, ela SAIU. O cancelado da mesma venda vai inteiro para UM card vivo desta
+    estação (o que tem a linha de volta, senão o mais antigo), para o Visto dele
+    dar baixa no cancelado inteiro.
+
+    Devolve os pks dos cancelados absorvidos e ``{pk do card: (mudanças, pks)}``.
+    """
+    live_by_session: dict[str, list] = {}
+    for ticket in active:
+        live_by_session.setdefault(ticket.session_key, []).append(ticket)
+
+    absorbed: set[int] = set()
+    found: dict[int, tuple[list[KDSChangeProjection], list[int]]] = {}
+    for cancelled_ticket in sorted(cancelled, key=lambda t: (t.cancelled_at or t.created_at, t.pk)):
+        live = live_by_session.get(cancelled_ticket.session_key)
+        if not live:
+            continue
+        line_ids = {str(it.get("line_id") or "") for it in cancelled_ticket.items or []} - {""}
+        target = next(
+            (t for t in live if line_ids & {str(it.get("line_id") or "") for it in t.items or []}),
+            live[0],
+        )
+        live_items = {
+            str(it.get("line_id")): it for t in live for it in (t.items or []) if it.get("line_id")
+        }
+        changes, pks = found.setdefault(target.pk, ([], []))
+        for item in cancelled_ticket.items or []:
+            changes.append(_item_change(item, live_items.get(str(item.get("line_id") or ""))))
+        pks.append(cancelled_ticket.pk)
+        absorbed.add(cancelled_ticket.pk)
+    return absorbed, {pk: (tuple(changes), tuple(pks)) for pk, (changes, pks) in found.items()}
+
+
+def _item_change(before: dict, now: dict | None) -> KDSChangeProjection:
+    """O que aconteceu com uma linha que saiu de um ticket vivo, em palavras da cozinha."""
+    name = before.get("name") or before.get("sku") or "item"
+    qty = json_quantity(before.get("qty", 1))
+    if now is None:
+        return KDSChangeProjection(kind="cancelled", text=f"Cancelado: {qty}× {name}")
+    new_qty = json_quantity(now.get("qty", 1))
+    if str(new_qty) != str(qty):
+        return KDSChangeProjection(kind="qty", text=f"{name}: agora {new_qty}, eram {qty}")
+    old_note = str(before.get("notes") or "").strip()
+    new_note = str(now.get("notes") or "").strip()
+    if new_note != old_note:
+        if new_note:
+            return KDSChangeProjection(kind="note", text=f"Observação nova em {name}: {new_note}")
+        return KDSChangeProjection(kind="note", text=f"{name}: observação retirada")
+    return KDSChangeProjection(kind="resent", text=f"{name}: enviado de novo")
+
+
+def current_display_ref(session_key: str) -> str:
+    """O nome que o quadro mostra hoje para esta venda ("Mesa 5", "0042").
+
+    O mesmo cálculo do card (``_display_order_refs``), para o ``known_ref`` gravado
+    no envio poder ser comparado com o que a estação vê depois.
+    """
+    from types import SimpleNamespace
+
+    source = _resolve_ticket_source(SimpleNamespace(session_key=session_key))
+    if source is None:
+        return ""
+    source_data = getattr(source, "data", None) or {}
+    order_ref, _previous = _display_order_refs(
+        source, source_data, getattr(source, "handle_ref", "") or "", session_key
+    )
+    return order_ref
+
+
+def _build_ticket(
+    ticket,
+    instance,
+    *,
+    source=None,
+    names: dict[str, str] | None = None,
+    changes: tuple | None = None,
+) -> KDSTicketProjection:
     now = timezone.now()
     is_cancelled = ticket.status == "cancelled"
     elapsed_until = ticket.cancelled_at if is_cancelled and ticket.cancelled_at else now
     elapsed = (elapsed_until - ticket.created_at).total_seconds()
     target_sec = instance.target_time_minutes * 60
 
-    if elapsed < target_sec:
+    if source is None:
+        source = _resolve_ticket_source(ticket)
+    promised = promised_at(source)
+    due_in = int((promised - now).total_seconds()) if promised is not None else None
+
+    if due_in is not None:
+        # Com hora combinada, o prazo é ela, não a meta da estação contada desde
+        # que o ticket nasceu (a encomenda nasce às 00:05).
+        timer_class = "timer-ok" if due_in > 0 else "timer-late"
+    elif elapsed < target_sec:
         timer_class = "timer-ok"
     elif elapsed < target_sec * 2:
         timer_class = "timer-warning"
     else:
         timer_class = "timer-late"
 
-    if source is None:
-        source = _resolve_ticket_source(ticket)
     source_data = (getattr(source, "data", None) or {}) if source is not None else {}
     handle_ref = getattr(source, "handle_ref", "") if source is not None else ""
     order_ref, previous_tab_ref = _display_order_refs(
@@ -798,9 +1224,18 @@ def _build_ticket(ticket, instance, *, source=None, names: dict[str, str] | None
             qty=json_quantity(it.get("qty", 1)),
             notes=it.get("notes", ""),
             stock_warning=it.get("stock_warning", ""),
+            line_id=str(it.get("line_id") or ""),
         )
         for it in raw_items
     )
+
+    item_changes, change_ticket_pks = changes or ((), ())
+    if ticket.status in ACTIVE_TICKET_STATUSES and ticket.known_ref and ticket.known_ref != order_ref:
+        # O pedido mudou de nome na cozinha (comanda paga, transferida ou renomeada).
+        item_changes = (
+            KDSChangeProjection(kind="moved", text=f"Era a comanda {ticket.known_ref}"),
+            *item_changes,
+        )
 
     return KDSTicketProjection(
         pk=ticket.pk,
@@ -823,8 +1258,12 @@ def _build_ticket(ticket, instance, *, source=None, names: dict[str, str] | None
         customer_note=str(source_data.get("order_notes", "") or ""),
         test_order_label=_test_order_label(source) if source is not None else "",
         is_preorder=_is_preorder(source),
-        due_time_display=_due_time_display(source_data, is_delivery=is_delivery),
+        due_time_display=_due_time_display(source, promised, is_delivery=is_delivery),
+        due_clock_display=_clock(promised),
+        due_in_seconds=due_in,
         seen=ticket_seen(ticket),
+        changes=tuple(item_changes),
+        change_ticket_pks=tuple(change_ticket_pks),
         **_finish_block(ticket, source),
         **_volumes_fields(source),
         **_start_fields(ticket, source_data, names or {}),
@@ -854,17 +1293,31 @@ def _is_preorder(source) -> bool:
     return timezone.localdate(created_at) < commitment
 
 
-def _due_time_display(source_data: dict, *, is_delivery: bool) -> str:
-    """ "retira às 22:30" / "entrega às 22:30"; vazio sem hora combinada."""
-    value = str(
-        source_data.get("delivery_time")
-        or source_data.get("pickup_time")
-        or source_data.get("scheduled_time")
-        or ""
-    ).strip()[:5]
-    if len(value) != 5 or value[2] != ":" or not (value[:2] + value[3:]).isdigit():
+def _due_time_display(source, promised, *, is_delivery: bool) -> str:
+    """ "retira a partir das 17h" / "entrega das 14:00 às 14:30"; vazio sem hora.
+
+    O rótulo é o da janela combinada (``window_label``, o mesmo do Gestor, do
+    papel e do aviso ao cliente); o iFood agendado não tem janela da casa e diz
+    a hora que prometeu.
+    """
+    if promised is None:
         return ""
-    return f"{'entrega' if is_delivery else 'retira'} às {value}"
+    verb = "entrega" if is_delivery else "retira"
+    slot = str(((getattr(source, "data", None) or {}).get("delivery_time_slot")) or "").strip()
+    label = window_label(slot) if slot else ""
+    if not label:
+        return f"{verb} às {timezone.localtime(promised):%H:%M}"
+    if label[:2].isdigit():
+        return f"{verb} das {label}"
+    return f"{verb} {label[:1].lower()}{label[1:]}"
+
+
+def _clock(moment) -> str:
+    """ "17h" / "14h30": a hora como a casa fala; vazio sem hora."""
+    if moment is None:
+        return ""
+    local = timezone.localtime(moment)
+    return f"{local.hour}h" if local.minute == 0 else f"{local.hour}h{local.minute:02d}"
 
 
 def _volumes_fields(source) -> dict:

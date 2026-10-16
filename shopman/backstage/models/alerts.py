@@ -68,6 +68,10 @@ class OperatorAlert(models.Model):
         # sai (senão o iFood reentrega para sempre), mas nunca calado: é assim
         # que um evento novo do marketplace aparece antes de virar prejuízo.
         ("ifood_event_unhandled", "Evento do iFood sem tratamento"),
+        # A loja pediu o cancelamento e o iFood RECUSOU. O pedido sai do
+        # "cancelamento pendente" e volta a andar; quem decide é gente: seguir com
+        # ele ou tentar cancelar de novo com outro motivo.
+        ("ifood_cancellation_refused", "iFood recusou o cancelamento"),
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
@@ -75,6 +79,13 @@ class OperatorAlert(models.Model):
         # ainda em NEW, antes de alguém confirmar. Não é falha — é o aviso de
         # que existe pedido PAGO esperando decisão do balcão.
         ("payment_awaiting_confirmation", "Pagamento chegou antes da confirmação"),
+        # Cartão da loja online autorizado (captura manual) e ninguém aceita: a
+        # reserva vence no Stripe em 7 dias e o dinheiro some do pedido. O aviso
+        # traz o prazo; vencido, o pedido é cancelado sem cobrança e o crítico
+        # diz isso. E a recusa que o Stripe não anulou: o valor segue retido.
+        ("card_authorization_expiring", "Cartão autorizado esperando aceite"),
+        ("card_authorization_expired", "Autorização do cartão venceu sem aceite"),
+        ("card_authorization_release_failed", "Recusa não liberou a autorização do cartão"),
         ("stock_low", "Estoque baixo"),
         # Estoque do sistema acima do físico, pelos três caminhos: a baixa que
         # não saiu na entrega, o pedido que passou sem reserva, e o item fora
@@ -131,17 +142,24 @@ class OperatorAlert(models.Model):
         # A maquininha não aparece na tela enquanto está na rua (o card da saída
         # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
         ("card_machine_overdue", "Maquininha fora há muito tempo"),
+        # Venda paga na maquininha cancelada ou devolvida: o sistema não fala
+        # com a maquininha, então o dinheiro só volta ao cartão do cliente
+        # quando alguém estorna nela. Resolve no "Estornei na maquininha".
+        ("card_machine_refund_due", "Estornar na maquininha"),
         # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
         # porque o pagamento gravado é menor que o total; nota autorizada cujo
         # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
-        # cancelada é passivo); e devolução parcial com a nota inteira de pé.
+        # cancelada é passivo); e a nota que não pode mais ser cancelada (fora
+        # dos 30 minutos, mercadoria já fora, devolução parcial) e espera a nota
+        # de estorno, que o sistema ainda não emite: a pendência leva ao
+        # contador o que ele precisa (P1-12).
         # Nenhum desses se resolve com retry — todos terminam em alguém.
         ("fiscal_emit_failed", "Emissão da NFC-e falhou após tentativas"),
         ("fiscal_receipt_promised", "Nota prometida ao cliente e não emitida"),
         ("fiscal_payment_mismatch", "NFC-e barrada: pagamento abaixo do total"),
         ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
         ("fiscal_cancel_failed", "Cancelamento da NFC-e falhou"),
-        ("fiscal_partial_return", "Devolução parcial com NFC-e em pé"),
+        ("fiscal_return_note_due", "Nota de estorno para o contador"),
         # Venda por marketplace indo para a nota sem identificar quem intermediou
         # (Ajuste SINIEF 22/20). A nota sai VÁLIDA e fora da regra — defeito que
         # não reclama sozinho —, e o que falta é configuração, não retry.
@@ -160,6 +178,9 @@ class OperatorAlert(models.Model):
         # com a emissão morta. Nenhum portão barra — é aviso, e a decisão de
         # barrar é do dono.
         ("fiscal_handoff_without_nfce", "Pedido saiu sem NFC-e autorizada"),
+        # Conferência de sacolas começada e não terminada na saída: o pedido
+        # saiu com volume sem bipar. Aviso, nunca portão (a mesma régua da nota).
+        ("dispatch_unchecked_volumes", "Pedido saiu com sacola sem conferir"),
         # A SEFAZ recusou o GTIN de um produto: a nota já foi reemitida "SEM
         # GTIN" (a venda não espera) e o produto ficou marcado
         # (``metadata.gtin_nf_rejected``). O que sobra é gente conferir o
@@ -227,6 +248,11 @@ class OperatorAlert(models.Model):
         # Este é o aviso do instante, com o pedido no nome, para alguém conferir
         # a gaveta ANTES de o dinheiro virar diferença anônima.
         ("cash_sale_after_shift_close", "Venda entrou depois do fechamento do turno"),
+        # A venda que o PDV fez sem conexão entrou com ajuste: valeu o cobrado
+        # contra o preço daquela hora, a comanda mudada em outro dispositivo
+        # fechou só o que foi cobrado, ou a comanda já estava paga (cobrança em
+        # dobro). Nada foi recusado; o gerente lê a frase e decide (devolução).
+        ("pos_offline_sale_adjusted", "Venda sem conexão entrou com ajuste"),
         # A trava da gaveta caiu numa estação que TINHA medição. Ela falha
         # aberta de propósito (fila de cliente nunca para por sensor ruim), e
         # por isso mesmo precisa gritar: sem este aviso, desligar a proteção era
@@ -293,6 +319,15 @@ class OperatorAlert(models.Model):
         # NCM —, então a divergência precisa chegar a alguém (decisão do dono,
         # 24/09/2026: "pendências que sobrarem confirmamos nas próximas NFs").
         ("purchase_invoice_fiscal_divergence", "Compras: NF-e diverge do cadastro fiscal"),
+        # O cliente abriu uma negociação no iFood (cancelamento, reembolso) e a loja
+        # tem minutos para responder; sem resposta, o iFood aplica a ação de prazo
+        # dele. Tem `respond_by`: o Gestor interrompe a tela até alguém ver.
+        ("ifood_negotiation_open", "iFood: negociação esperando resposta"),
+        # O aceite saiu daqui e não chegou ao iFood (o ``confirm`` falhou): a cozinha
+        # trabalha e o iFood cancela sozinho no prazo dele. Tem `respond_by` (o prazo
+        # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
+        # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
+        ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -318,21 +353,31 @@ class OperatorAlert(models.Model):
         "stock_discrepancy",
         "stock_low",
     }
+    #: Financeiro PANORÂMICO: só o dono vê (público ``finance``, permissão de
+    #: auditar o caixa). Diferença de contagem, total do dia, livro contra gateway:
+    #: mostrar o esperado ao gerente quebra a contagem cega (dono, 08/10/2026).
+    #: O financeiro de UM pedido (pagamento falhou, abaixo do total, contestação,
+    #: pago depois de cancelar) é do gerente e mora em ``ORDER_TYPES``.
     FINANCE_TYPES = {
-        "payment_failed",
-        "payment_insufficient",
         "payment_reconciliation_failed",
-        "payment_disputed",
-        "payment_after_cancel",
+        "payment_ledger_drift",
         "cash_shift_open_at_closing",
         "cash_sale_after_shift_close",
         "cash_out_of_tolerance",
         "bi_cash_variance",
     }
     ORDER_TYPES = {
+        "payment_failed",
+        "payment_insufficient",
+        "payment_disputed",
+        "payment_after_cancel",
+        "card_authorization_expiring",
+        "card_authorization_expired",
+        "card_authorization_release_failed",
         "marketplace_rejected_unavailable",
         "marketplace_rejected_oos",
         "pos_rejected_unavailable",
+        "pos_offline_sale_adjusted",
         "stale_new_order",
         "customer_cancellation_requested",
         "lifecycle_phase_stuck",
@@ -342,9 +387,14 @@ class OperatorAlert(models.Model):
         "ifood_store_open_while_closed",
         "ifood_store_sync_failed",
         "card_machine_overdue",
+        "card_machine_refund_due",
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",
+        "ifood_negotiation_open",
+        "ifood_cancellation_refused",
+        "ifood_accept_not_delivered",
+        "fiscal_return_note_due",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)
@@ -383,6 +433,15 @@ class OperatorAlert(models.Model):
         max_length=100,
         blank=True,
         help_text="Processo ou identidade que confirmou a resolução da causa.",
+    )
+    respond_by = models.DateTimeField(
+        "responder até",
+        null=True,
+        blank=True,
+        help_text=(
+            "Prazo em que a causa decide sozinha (ex.: o iFood aplica a ação de prazo). "
+            "Com prazo e sem Visto, a superfície interrompe a tela até alguém ver."
+        ),
     )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
 

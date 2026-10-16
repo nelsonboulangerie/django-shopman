@@ -16,9 +16,9 @@ RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
-SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils
+SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close operator-visual new-surface help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift adr-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -43,7 +43,7 @@ install: ## Instala deps + apps da suite em modo editável
 		"django-unfold>=0.107,<0.108" \
 		"daphne>=4.2,<5.0" \
 		"redis>=5.1,<8.0" \
-		"psycopg[binary]>=3.2,<4.0" \
+		"psycopg[binary,pool]>=3.2,<4.0" \
 		"python-dotenv>=1.0,<2.0" \
 		"pywebpush>=2.5,<3.0" \
 		"django-storages[s3]>=1.14,<2.0" \
@@ -57,6 +57,7 @@ install: ## Instala deps + apps da suite em modo editável
 	# Instala cada app em modo editável
 	$(PYTHON) -m pip install -e packages/refs
 	$(PYTHON) -m pip install -e packages/utils
+	$(PYTHON) -m pip install -e packages/watchman
 	$(PYTHON) -m pip install -e packages/offerman
 	$(PYTHON) -m pip install -e packages/stockman
 	$(PYTHON) -m pip install -e packages/craftsman
@@ -72,14 +73,14 @@ install: ## Instala deps + apps da suite em modo editável
 
 # ── Testes ────────────────────────────────────────────────────────────
 
-# Os 11 pacotes do Core juntos. Existe para a matriz do CI ter um alvo só com
+# Os 13 pacotes independentes juntos. Existe para a matriz do CI ter um alvo só com
 # tudo que é rápido — na prática ~1 min somado, contra ~12 do framework. Sem
-# ele, ou o CI listava onze entradas de matriz (onze `make install`, cada um
+# ele, ou o CI listava treze entradas de matriz (treze `make install`, cada um
 # custando mais que o teste) ou os cores voltavam a esperar o framework.
-test-cores: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman ## Todos os pacotes do Core
+test-cores: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman ## Todos os pacotes do Core
 	@echo "✓ Cores passaram"
 
-test: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-framework test-counter-agent ## Roda todos os testes
+test: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-framework test-counter-agent ## Roda todos os testes
 	@echo "✓ Todos os testes passaram"
 
 # ── Por que NÃO tem `-x` (fail-fast) em nenhum alvo ───────────────────────
@@ -105,6 +106,10 @@ test-refs: ## Testes do shopman.refs
 test-utils: ## Testes do shopman.utils
 	@echo "── Utils ──"
 	cd packages/utils && $(PYTHON) -m pytest -q
+
+test-watchman: ## Testes do shopman.watchman
+	@echo "── Watchman ──"
+	cd packages/watchman && $(PYTHON) -m pytest -q
 
 test-offerman: ## Testes do shopman.offering
 	@echo "── Offerman ──"
@@ -400,6 +405,23 @@ test-operator-ux: test-operator-components ## Gates transversais do Operator Kit
 	$(PYTHON) scripts/check_operator_shortcuts.py
 	@echo "── Layouts e tokens canônicos do operador ──"
 	$(PYTHON) scripts/check_operator_layout_guardrails.py
+	@echo "── Tema compartilhado do kit × baselines consumidoras ──"
+	$(PYTHON) scripts/check_theme_baseline_contract.py
+
+# O tema do kit é herdado por extends: as baselines de Marketing e POS dependem
+# dele. Este gate não regenera nada — ele reprova quando o tema muda sem que o
+# aceite (e as baselines) sejam regerados no mesmo PR. Ver
+# docs/reference/operator-visual-baselines.md.
+theme-baselines: ## Gate: tema compartilhado do kit casado com o aceite das baselines consumidoras
+	@echo "── Tema compartilhado do operator-kit × baselines ──"
+	$(PYTHON) scripts/check_theme_baseline_contract.py
+
+# ⚠️ Regravar o aceite NÃO regenera baseline. Só rode depois de regerar as
+# baselines afetadas no MESMO PR e de o dono ter revisado o antes/depois;
+# owner é obrigatório e fica registrado no contrato.
+theme-baselines-accept: ## Regrava o aceite do tema (SÓ após regenerar e revisar as baselines; owner=<quem aceitou>)
+	@test -n "$(owner)" || (echo 'uso: make theme-baselines-accept owner="<quem aceitou>"' >&2; exit 2)
+	$(PYTHON) scripts/check_theme_baseline_contract.py --accept --owner="$(owner)"
 
 test-operator-audit-close: ## Gate de fechamento: reprova pending, tela não visitada e captura ausente
 	$(PYTHON) scripts/check_operator_component_ledger.py --require-complete
@@ -450,7 +472,11 @@ deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; ANTE
 	@echo "── Drift do spec do App Platform ──"
 	$(PYTHON) scripts/check_do_spec_drift.py $(if $(spec),--spec $(spec),) $(if $(context),--context $(context),)
 
-canonical-docs: ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
+adr-governance: ## Gate: número, status e índice canônicos das ADRs
+	@echo "── ADR governance ──"
+	$(PYTHON) scripts/check_adr_governance.py
+
+canonical-docs: adr-governance ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
 	@echo "── Canonical go-live documentation ──"
 	$(PYTHON) scripts/check_canonical_docs.py
 
@@ -568,17 +594,39 @@ coordination: ## Leitura de coordenação só com git: main, fila, PRs abertos, 
 inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
 	@bash scripts/inflight.sh
 
+# Prontidão: roda igual no checkout principal, numa worktree e na CI.
+# - Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore
+#   principal, com o código DESTA árvore à frente no PYTHONPATH (os editable
+#   installs do .venv apontam para a árvore principal).
+# - Sem .env e sem DJANGO_SECRET_KEY (worktree), a medição LOCAL roda no perfil
+#   de desenvolvimento com chave descartável: o settings recusa subir fora de
+#   DEBUG sem segredo, e aqui não há segredo a medir. A CI exporta os dela e o
+#   teste `[ -z ]` preserva o que vier do ambiente.
+# - Banco: o do .env ou o SQLite da árvore; numa worktree nova rode antes
+#   `make migrate seed`, senão os checks de migração e de seed reprovam (é a
+#   medição honesta de um banco vazio).
+# O ALVO (app vivo) se mede com `make production-readiness target=1`, que não lê
+# nada local: ver scripts/release_readiness_target.py.
+GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
+READINESS_PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
+READINESS_RUN = if [ ! -f .env ] && [ -z "$${DJANGO_SECRET_KEY:-}" ]; then \
+	export DJANGO_DEBUG=true DJANGO_SECRET_KEY=local-readiness-not-a-secret; \
+	echo "(sem .env nem DJANGO_SECRET_KEY: medição local em perfil de desenvolvimento)"; \
+	fi; PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(READINESS_PYTHON) scripts/check_release_readiness.py
+READINESS_ARGS = $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+READINESS_TARGET_ARGS = --target $(if $(json),--json,) $(if $(app),--target-app=$(app),) $(if $(target_spec),--target-spec=$(target_spec),) $(if $(target_url),--target-url=$(target_url),) $(if $(context),--doctl-context=$(context),) $(if $(baseline),--target-baseline=$(baseline),)
+
 release-readiness: ## Consolida prontidao local e bloqueios externos de piloto/release
-	$(PYTHON) scripts/check_release_readiness.py $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	@$(READINESS_RUN) $(if $(profile),--profile=$(profile),) $(READINESS_ARGS)
 
 release-readiness-strict: ## Igual ao release-readiness, mas falha em bloqueios externos
-	$(PYTHON) scripts/check_release_readiness.py --strict-external $(if $(profile),--profile=$(profile),) $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	@$(READINESS_RUN) --strict-external $(if $(profile),--profile=$(profile),) $(READINESS_ARGS)
 
 alpha-readiness: ## Gate para alpha tecnico publicavel: aceita mocks explicitos, bloqueia externos relevantes
-	$(PYTHON) scripts/check_release_readiness.py --profile=alpha --strict-external $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+	@$(READINESS_RUN) --profile=alpha --strict-external $(READINESS_ARGS)
 
-production-readiness: ## Gate final de go-live: real money, sem mocks/debug/staging
-	$(PYTHON) scripts/check_release_readiness.py --profile=production --strict-external $(if $(json),--json,) $(if $(read_only),--read-only,) $(if $(manual_qa),--manual-qa-evidence=$(manual_qa),) $(if $(preprod_url),--preprod-url=$(preprod_url),)
+production-readiness: ## Gate final de go-live (target=1 lê o app VIVO: spec via doctl + /health/ /ready/; context=<ctx do doctl>; baseline=<spec de antes> prova a troca dos segredos)
+	@$(if $(target),PYTHONPATH="$(SHOPMAN_PYTHONPATH)" $(READINESS_PYTHON) scripts/check_release_readiness.py $(READINESS_TARGET_ARGS),$(READINESS_RUN) --profile=production --strict-external $(READINESS_ARGS))
 
 production-contract: ## Contrato hermético de produção com credenciais sintéticas e rede bloqueada
 	$(PYTHON) scripts/check_production_contract.py
@@ -698,7 +746,7 @@ lint: admin ## Ruff + Admin/Unfold
 # endereço do checkout parou de avançar sozinho, e nada acusou.
 #
 # Um app por vez, sem `-` no comando: o primeiro que quebrar para a linha.
-SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt purchase-nuxt marketing-nuxt bi-nuxt kitchensink-nuxt
+SURFACES := storefront-nuxt hub-nuxt pos-nuxt kds-nuxt orders-nuxt production-nuxt purchase-nuxt marketing-nuxt bi-nuxt kitchensink-nuxt status-nuxt
 
 surfaces: ## Superfícies Nuxt: typecheck + vitest de todos os apps
 	@for app in $(SURFACES); do \

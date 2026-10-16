@@ -84,10 +84,9 @@ function pick(next: unknown) {
       class="min-h-control w-full"
     >
       <template #trailing>
-        <NuxtPopover
-          :reference="inputDate?.inputsRef?.[3]?.$el"
-          :ui="{ content: 'z-[60]' }"
-        >
+        <!-- Sem `:ui` por instância: o calendário nasce no portal DEPOIS do popover ou
+             do modal que contém o campo, e com o mesmo z do tema fica por cima dele. -->
+        <NuxtPopover :reference="inputDate?.inputsRef?.[3]?.$el">
           <NuxtButton
             color="neutral"
             variant="link"

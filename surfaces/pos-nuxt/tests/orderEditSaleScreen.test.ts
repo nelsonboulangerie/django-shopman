@@ -29,15 +29,16 @@ describe("tela de venda em modo edição", () => {
   });
 
   it("cabeçalho inequívoco e saída por Descartar alterações", () => {
-    expect(page).toContain("data-order-edit-banner");
-    expect(page).toContain("orderEditTitle(editOrderRef)");
+    // O aviso da tela mora no lugar da suíte (`alerts` do cabeçalho), com a saída.
+    expect(page).toContain('id: "order-edit"');
+    expect(page).toContain("orderEditTitle(editOrderRef.value)");
     expect(page).toContain("Descartar alterações");
   });
 
   it("não dispara cozinha, não transfere, não vai ao quadro e não vira balcão", () => {
     expect(page).toContain('resolveAffordance(editing.value ? [] : actions.value, "fire_tab")');
     expect(page).toContain(':hide-move="editing"');
-    expect(page).toContain("cart.items.length && !editing.value) fireTab();");
+    expect(page).toContain("cart.items.length && !editing.value && !cartPanelRef.value?.fireSelection()) fireTab();");
     expect(page).toContain("if (editing.value) return; // a edição sai por Salvar ou Descartar");
     expect(page).toContain("Na edição, a encomenda continua encomenda.");
   });

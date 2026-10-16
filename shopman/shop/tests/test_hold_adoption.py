@@ -442,6 +442,50 @@ class TestReconcileSimple:
             call(["hold:B1"]),
         ])
 
+    @patch("shopman.shop.services.availability._load_session_holds_for_sku", return_value=[])
+    @patch("shopman.shop.services.availability._reserve_listing_gate_error", return_value=None)
+    @patch("shopman.shop.services.availability.get_adapter")
+    @patch("shopman.shop.services.availability.check")
+    def test_reconcile_mixed_bundle_holds_only_tracked_component(
+        self, mock_check, mock_get_adapter, mock_gate, mock_load,
+    ):
+        from shopman.shop.services.availability import _reconcile_bundle_components
+
+        def component_status(sku, qty, **kwargs):
+            return {
+                **_ok_status(available=8 if sku == "TRACKED" else 0),
+                "available_qty": Decimal("8") if sku == "TRACKED" else None,
+                "orderable_ceiling": Decimal("8") if sku == "TRACKED" else None,
+                "is_tracked": sku == "TRACKED",
+            }
+
+        mock_check.side_effect = component_status
+        adapter = MagicMock()
+        adapter.create_hold.return_value = {
+            "success": True,
+            "hold_id": "hold:tracked",
+        }
+        mock_get_adapter.return_value = adapter
+
+        result = _reconcile_bundle_components(
+            "MIXED",
+            Decimal("1"),
+            [
+                {"sku": "TRACKED", "qty": Decimal("2")},
+                {"sku": "UNTRACKED", "qty": Decimal("1")},
+            ],
+            session_key="s1",
+            channel_ref="web",
+            target_date=object(),
+            ttl_minutes=30,
+        )
+
+        assert result["ok"] is True
+        assert result["hold_ids"] == ["hold:tracked"]
+        assert result["untracked_skus"] == ["UNTRACKED"]
+        adapter.create_hold.assert_called_once()
+        assert adapter.create_hold.call_args.kwargs["sku"] == "TRACKED"
+
 
 # ══════════════════════════════════════════════════════════════════════
 # Cart mutation integration — update_qty / remove_item invoke reconcile

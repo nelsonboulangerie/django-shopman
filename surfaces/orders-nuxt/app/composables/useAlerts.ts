@@ -6,20 +6,27 @@ import { useOperatorResourceKey } from "./useOperatorResourceKey";
 //
 // `scope=orders`: o sino do Gestor mostra só o que é de pedido. Infraestrutura,
 // marketing e B.I. ficam no Admin, onde alguém pode agir.
-import type { AlertProjection, AlertsResponse } from "~/types/orders";
+import type { AlertProjection, AlertsResponse, OrderDetailResponse } from "~/types/orders";
+import { useOrderIntention } from "./useOrderIntention";
 
 function newAckKey(): string {
   const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid || `ack-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return (
+    uuid ||
+    `ack-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
 export function useAlerts() {
   const config = useRuntimeConfig();
-  const { data, refresh } = useFetch<AlertsResponse>("/api/v1/backstage/alerts/", {
-    key: useOperatorResourceKey("operator-alerts"),
-    query: { scope: "orders" },
-    server: true,
-  });
+  const { data, refresh } = useFetch<AlertsResponse>(
+    "/api/v1/backstage/alerts/",
+    {
+      key: useOperatorResourceKey("operator-alerts"),
+      query: { scope: "orders" },
+      server: true,
+    },
+  );
 
   const alerts = computed<AlertProjection[]>(() => data.value?.alerts ?? []);
   const activeCount = computed(() => data.value?.counts?.active ?? 0);
@@ -48,12 +55,19 @@ export function useAlerts() {
   });
   onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (source) { source.close(); source = null; }
+    if (source) {
+      source.close();
+      source = null;
+    }
   });
 
   /** O alerta ainda não foi marcado como visto (o servidor oferece o gesto). */
   function ackAction(alert: AlertProjection) {
-    return alert.actions?.find((action) => action.kind === "acknowledge_alert" && action.enabled) ?? null;
+    return (
+      alert.actions?.find(
+        (action) => action.kind === "acknowledge_alert" && action.enabled,
+      ) ?? null
+    );
   }
 
   // Uma chave por alerta, mantida entre tentativas: o servidor deduplica.
@@ -94,12 +108,84 @@ export function useAlerts() {
         // A leitura venceu ou o alerta mudou: relê e deixa o operador tocar de novo.
         attempts.delete(alert.pk);
         await refresh();
-        useSonner.error("Os alertas mudaram. Confira e toque em Visto de novo.");
+        useSonner.error(
+          "Os alertas mudaram. Confira e toque em Visto de novo.",
+        );
         return;
       }
-      useSonner.error(httpErrorMessage(error, "Não deu para marcar o alerta como visto. Tente de novo."));
+      useSonner.error(
+        httpErrorMessage(
+          error,
+          "Não deu para marcar o alerta como visto. Tente de novo.",
+        ),
+      );
     }
   }
 
-  return { alerts, activeCount, criticalCount, refresh, ack, ackAction };
+  /** O gesto que resolve ali mesmo, quando o servidor o oferece (P2-19: "Aceitar"). */
+  function acceptAction(alert: AlertProjection) {
+    return (
+      alert.actions?.find(
+        (action) => action.kind === "confirm_order" && action.enabled,
+      ) ?? null
+    );
+  }
+
+  const intentions = useOrderIntention();
+  // Por aviso, não global: aceitar um pedido não trava o aviso de outro.
+  const accepting = ref<Set<number>>(new Set());
+  const isAccepting = (pk: number) => accepting.value.has(pk);
+
+  /**
+   * "Aceitar" no aviso do pedido parado: o MESMO aceite do cartão. Relê o pedido e
+   * manda a intenção canônica dele (`base_revision`, `expected_actor_id`) pela
+   * rota que o aviso trouxe; o servidor revalida tudo sob trava. O aviso fecha
+   * sozinho quando o pedido sai de "novo", e o quadro se atualiza pelo SSE.
+   */
+  async function accept(alert: AlertProjection): Promise<boolean> {
+    const action = acceptAction(alert);
+    const ref_ = alert.order_ref;
+    if (!action || !ref_ || accepting.value.has(alert.pk)) return false;
+    accepting.value = new Set(accepting.value).add(alert.pk);
+    try {
+      const detail = await $fetch<OrderDetailResponse>(
+        `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/`,
+      );
+      const confirm = detail.order.actions?.find((item) => item.ref === "confirm");
+      if (!confirm) {
+        useSonner.error(`O pedido ${ref_} não espera mais aceite. Abra o pedido para conferir.`);
+        return false;
+      }
+      await intentions.executePath(`${ref_}:confirm`, action.href, confirm, {});
+      useSonner.success(`Pedido ${ref_} aceito.`);
+      return true;
+    } catch (error) {
+      const fallback = `${ref_} continua novo: o Aceitar não chegou. Tente de novo.`;
+      // Recusa do servidor fala pelo `detail`; a da intenção local (identificação
+      // trocada, gravação anterior sem resultado) fala pela própria mensagem.
+      useSonner.error(
+        !httpError(error).status && error instanceof Error && error.message
+          ? error.message
+          : httpErrorMessage(error, fallback),
+      );
+      return false;
+    } finally {
+      const next = new Set(accepting.value);
+      next.delete(alert.pk);
+      accepting.value = next;
+      await refresh();
+    }
+  }
+
+  return {
+    alerts,
+    activeCount,
+    criticalCount,
+    refresh,
+    ack,
+    ackAction,
+    accept,
+    acceptAction,
+    isAccepting,
+  };
 }

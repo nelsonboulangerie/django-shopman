@@ -156,6 +156,80 @@ class StockQueries:
         return total - held
 
     @classmethod
+    def available_many(
+        cls,
+        skus: list[str],
+        target_date: date | None = None,
+        position: Position | None = None,
+    ) -> dict[str, Decimal]:
+        """Return :meth:`available` for many SKUs with a fixed query budget.
+
+        This is the inventory/read-model counterpart of ``available``: it
+        intentionally keeps the same broad position scope and subtracts holds
+        by SKU/date.  Channel availability has a richer contract and continues
+        to use ``availability_for_skus`` instead.
+        """
+        unique_skus = list(dict.fromkeys(skus))
+        if not unique_skus:
+            return {}
+
+        from shopman.stockman.adapters.sku_validation import get_sku_validator
+        from shopman.stockman.models.batch import Batch
+
+        target = target_date or timezone.localdate()
+        zero = Decimal("0")
+        infos = get_sku_validator().get_sku_infos(unique_skus)
+        shelf_life = {
+            sku: (info.shelflife_days if info is not None else None)
+            for sku, info in infos.items()
+        }
+        expired_refs = set(
+            Batch.objects.filter(
+                sku__in=unique_skus,
+                expiry_date__lt=target,
+            ).values_list("ref", flat=True)
+        )
+
+        quants = Quant.objects.filter(sku__in=unique_skus).filter(
+            Q(target_date__isnull=True) | Q(target_date__lte=target)
+        )
+        if position:
+            quants = quants.filter(position=position)
+
+        totals = dict.fromkeys(unique_skus, zero)
+        for sku, planned_for, created_at, batch_ref, quantity in quants.values_list(
+            "sku",
+            "target_date",
+            "created_at",
+            "batch",
+            "_quantity",
+        ):
+            if batch_ref in expired_refs:
+                continue
+            days = shelf_life.get(sku)
+            if days is not None:
+                min_production = target - timedelta(days=days)
+                production_day = (
+                    timezone.localdate(created_at)
+                    if planned_for is None
+                    else planned_for
+                )
+                if production_day < min_production:
+                    continue
+            totals[sku] += quantity
+
+        holds = Hold.objects.filter(
+            sku__in=unique_skus,
+            target_date=target,
+        ).active()
+        if position:
+            holds = holds.filter(quant__position=position)
+        for row in holds.values("sku").annotate(total=Sum("quantity")):
+            totals[row["sku"]] -= row["total"] or zero
+
+        return totals
+
+    @classmethod
     def promise(
         cls,
         sku: str,

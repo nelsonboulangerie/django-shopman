@@ -176,7 +176,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 24
+        "native_control_occurrences": 0,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -396,7 +397,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 3
+        "native_control_occurrences": 3,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -438,7 +440,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 24
+        "native_control_occurrences": 24,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -526,7 +529,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 0
+        "native_control_occurrences": 0,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -766,6 +770,32 @@
           "runner": {
             "config": "playwright.visual.config.ts"
           }
+        },
+        {
+          "id": "suite",
+          "source_files": [
+            "app/pages/suite.vue"
+          ],
+          "routes": [
+            "/suite"
+          ],
+          "variants": [
+            "alerts-none",
+            "alerts-one",
+            "alerts-three",
+            "swipe",
+            "stacked-chart",
+            "action-bar"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
         }
       ]
     },
@@ -782,7 +812,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 31
+        "native_control_occurrences": 0,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -813,10 +844,10 @@
         {
           "id": "campaigns",
           "source_files": [
-            "app/pages/campaigns.vue"
+            "app/pages/settings/campaigns.vue"
           ],
           "routes": [
-            "/campaigns"
+            "/settings/campaigns"
           ],
           "variants": [
             "list",
@@ -900,10 +931,10 @@
         {
           "id": "offers",
           "source_files": [
-            "app/pages/offers.vue"
+            "app/pages/settings/offers.vue"
           ],
           "routes": [
-            "/offers"
+            "/settings/offers"
           ],
           "variants": [
             "offers",
@@ -926,10 +957,10 @@
         {
           "id": "platforms",
           "source_files": [
-            "app/pages/platforms.vue"
+            "app/pages/settings/platforms.vue"
           ],
           "routes": [
-            "/platforms"
+            "/settings/platforms"
           ],
           "variants": [
             "connections",
@@ -998,10 +1029,10 @@
         {
           "id": "templates",
           "source_files": [
-            "app/pages/templates.vue"
+            "app/pages/settings/templates.vue"
           ],
           "routes": [
-            "/templates"
+            "/settings/templates"
           ],
           "variants": [
             "list",
@@ -1016,6 +1047,23 @@
             "data-display",
             "feedback",
             "search"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "settings",
+          "source_files": [
+            "app/pages/settings/index.vue"
+          ],
+          "routes": [
+            "/settings"
+          ],
+          "variants": [
+            "list"
+          ],
+          "families": [
+            "navigation",
+            "data-display"
           ],
           "status": "pending"
         }
@@ -1034,7 +1082,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 232
+        "native_control_occurrences": 232,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -1063,7 +1112,12 @@
             "feedback",
             "search"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/orders-board.spec.ts",
+            "grep": "orders-board"
+          }
         },
         {
           "id": "order-detail",
@@ -1090,7 +1144,10 @@
             "data-display",
             "feedback"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "catalog",
@@ -1118,7 +1175,10 @@
             "search",
             "file-capture"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "channel-catalog",
@@ -1143,7 +1203,10 @@
             "feedback",
             "search"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "customers",
@@ -1168,7 +1231,10 @@
             "feedback",
             "search"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "customer-detail",
@@ -1194,7 +1260,40 @@
             "data-display",
             "feedback"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
+          "id": "customer-groups",
+          "source_files": [
+            "app/pages/customers/groups.vue"
+          ],
+          "routes": [
+            "/customers/groups"
+          ],
+          "variants": [
+            "list",
+            "create",
+            "edit",
+            "duplicate",
+            "empty"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "customer-merges",
@@ -1217,7 +1316,10 @@
             "data-display",
             "feedback"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "channels",
@@ -1242,7 +1344,10 @@
             "data-display",
             "feedback"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "history",
@@ -1267,7 +1372,10 @@
             "search",
             "date-time"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "settings",
@@ -1290,7 +1398,10 @@
             "navigation",
             "feedback"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         },
         {
           "id": "workstations",
@@ -1314,7 +1425,10 @@
             "data-display",
             "feedback"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         }
       ]
     },
@@ -1331,7 +1445,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 157
+        "native_control_occurrences": 57,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -1649,7 +1764,8 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 96
+        "native_control_occurrences": 0,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
@@ -1928,6 +2044,35 @@
           "status": "pending"
         },
         {
+          "id": "recipe-sheets",
+          "source_files": [
+            "app/pages/recipes/sheets/index.vue"
+          ],
+          "routes": [
+            "/recipes/sheets"
+          ],
+          "variants": [
+            "list",
+            "empty",
+            "create",
+            "edit",
+            "duplicate",
+            "forbidden",
+            "stale"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending"
+        },
+        {
           "id": "reports",
           "source_files": [
             "app/pages/reports.vue"
@@ -2015,11 +2160,12 @@
         "local_ui_files": 0,
         "direct_reka_import_files": 0,
         "manual_overlay_files": 0,
-        "native_control_occurrences": 132
+        "native_control_occurrences": 0,
+        "ui_native_select_occurrences": 0
       },
       "surfaces": [
         {
-          "id": "purchase-workspace",
+          "id": "purchase-panel",
           "source_files": [
             "app/pages/index.vue"
           ],
@@ -2028,16 +2174,72 @@
           ],
           "variants": [
             "dashboard",
-            "buy",
-            "receive-list",
+            "needs-you",
+            "empty"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts",
+            "grep": "purchase-panel"
+          }
+        },
+        {
+          "id": "purchase-buy",
+          "source_files": [
+            "app/pages/buy.vue"
+          ],
+          "routes": [
+            "/buy"
+          ],
+          "variants": [
+            "reorder-cards",
+            "blockers",
+            "empty"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts",
+            "grep": "purchase-buy"
+          }
+        },
+        {
+          "id": "purchase-receive",
+          "source_files": [
+            "app/pages/receive.vue"
+          ],
+          "routes": [
+            "/receive"
+          ],
+          "variants": [
+            "receive-start",
             "receive-invoice",
-            "base-materials",
-            "base-suppliers",
-            "base-costs",
-            "base-count",
-            "material-detail",
-            "supplier-detail",
-            "minimums-bulk"
+            "receive-manual",
+            "exception-flow",
+            "line-sheet",
+            "voucher",
+            "scanner"
           ],
           "families": [
             "action",
@@ -2051,7 +2253,164 @@
             "date-time",
             "file-capture"
           ],
-          "status": "pending"
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts",
+            "grep": "purchase-receive"
+          }
+        },
+        {
+          "id": "purchase-base",
+          "source_files": [
+            "app/pages/base/index.vue"
+          ],
+          "routes": [
+            "/base"
+          ],
+          "variants": [
+            "redirect"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts"
+          }
+        },
+        {
+          "id": "purchase-base-materials",
+          "source_files": [
+            "app/pages/base/materials.vue",
+            "app/pages/base/materials/index.vue",
+            "app/pages/base/materials/[sku].vue"
+          ],
+          "routes": [
+            "/base/materials",
+            "/base/materials/:sku"
+          ],
+          "variants": [
+            "table",
+            "minimums-bulk",
+            "material-detail"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts",
+            "grep": "purchase-base-materials"
+          }
+        },
+        {
+          "id": "purchase-base-suppliers",
+          "source_files": [
+            "app/pages/base/suppliers.vue",
+            "app/pages/base/suppliers/index.vue",
+            "app/pages/base/suppliers/[ref].vue"
+          ],
+          "routes": [
+            "/base/suppliers",
+            "/base/suppliers/:ref"
+          ],
+          "variants": [
+            "table",
+            "supplier-detail"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts",
+            "grep": "purchase-base-suppliers"
+          }
+        },
+        {
+          "id": "purchase-base-costs",
+          "source_files": [
+            "app/pages/base/costs.vue"
+          ],
+          "routes": [
+            "/base/costs"
+          ],
+          "variants": [
+            "supplier-table",
+            "quote",
+            "costs-table"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts",
+            "grep": "purchase-base-costs"
+          }
+        },
+        {
+          "id": "purchase-base-count",
+          "source_files": [
+            "app/pages/base/count.vue"
+          ],
+          "routes": [
+            "/base/count"
+          ],
+          "variants": [
+            "count-table",
+            "confirm",
+            "forbidden"
+          ],
+          "families": [
+            "action",
+            "field",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "search"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts",
+            "spec": "tests/visual/purchase.spec.ts",
+            "grep": "purchase-base-count"
+          }
         }
       ]
     }

@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("/fonts/instrument-sans-latin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Mesmos tokens semânticos da superfície storefront. */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.147 0.004 49.25);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.147 0.004 49.25);
+  --primary: oklch(0.374 0.010 67.558);
+  --primary-foreground: oklch(0.985 0.001 106.4);
+  --muted: oklch(0.970 0.001 106.4);
+  --muted-foreground: oklch(0.553 0.013 58.1);
+  --border: oklch(0.923 0.003 48.7);
+  --ring: oklch(0.553 0.013 58.071);
+  --success: #10b981;
+  --success-foreground: #ffffff;
+  --warning: #f59e0b;
+  --warning-foreground: #422006;
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+}
+
+html { background: var(--background); }
+body { margin: 0; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+
+.skip-link { @apply fixed top-3 left-3 z-50 -translate-y-20 rounded-md bg-primary px-4 py-2 text-primary-foreground transition-transform focus:translate-y-0; }
+.status-panel { @apply rounded-lg border border-border bg-card p-5 sm:p-6; }
+.status-panel--operational { @apply border-l-4 border-l-success; }
+.status-panel--degraded, .status-panel--maintenance { @apply border-l-4 border-l-warning; }
+.status-panel--outage { @apply border-l-4 border-l-destructive; }
+.status-panel--unknown { @apply border-l-4 border-l-muted-foreground; }
+.refresh-button { @apply inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50; }
+.status-icon { @apply flex size-10 shrink-0 items-center justify-center rounded-full; }
+.status-pill { @apply inline-flex min-h-8 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-semibold; }
+.status-dot { @apply size-2 rounded-full bg-current; }
+.status-icon--operational { @apply bg-success/10 text-success; }
+.status-pill--operational { @apply bg-success/10 text-foreground; }
+.status-pill--operational .status-dot { @apply bg-success; }
+.status-icon--degraded, .status-pill--degraded, .status-icon--maintenance, .status-pill--maintenance { @apply bg-warning/15 text-warning-foreground; }
+.status-icon--outage, .status-pill--outage { @apply bg-destructive/10 text-destructive; }
+.status-icon--unknown, .status-pill--unknown { @apply bg-muted text-muted-foreground; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
+@media (forced-colors: active) {
+  .status-panel { border-left-width: 4px; }
+  .status-dot { forced-color-adjust: none; }
+}

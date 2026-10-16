@@ -88,15 +88,18 @@ def listing_exists(listing_ref: str) -> bool:
 
 
 def bulk_sku_to_collection_id(skus: list[str]) -> dict[str, int]:
-    """Mapa sku → collection_id (primary) para múltiplos SKUs."""
+    """Mapa sku → collection_id (primary) para múltiplos SKUs, numa consulta só.
+
+    Lia ``ci.product.sku`` de cada linha sem trazer o produto junto: uma ida ao
+    banco por SKU. A projeção do PDV pergunta pelo catálogo inteiro (o "vai à
+    cozinha" de cada produto) e pagava ~120 consultas a cada leitura.
+    """
     from shopman.offerman.models import CollectionItem
 
-    result: dict[str, int] = {}
-    for ci in CollectionItem.objects.filter(
-        product__sku__in=skus, is_primary=True,
-    ).select_related("collection"):
-        result[ci.product.sku] = ci.collection_id
-    return result
+    return dict(
+        CollectionItem.objects.filter(product__sku__in=skus, is_primary=True)
+        .values_list("product__sku", "collection_id")
+    )
 
 
 def find_substitutes(sku: str, limit: int = 8) -> list:
@@ -123,3 +126,76 @@ def bulk_listing_price_map(skus: list[str], listing_ref: str) -> dict[str, int]:
     ):
         price_map.setdefault(item.product.sku, item.price_q)
     return price_map
+
+
+def bulk_bundle_skus(skus: list[str]) -> set[str]:
+    """Os SKUs da lista que são bundle (têm componente), numa consulta só.
+
+    É o mesmo critério de ``CatalogService.expand``: bundle é o produto que tem
+    ``ProductComponent``. SKU inexistente não é bundle.
+    """
+    from shopman.offerman.models import ProductComponent
+
+    if not skus:
+        return set()
+    return set(
+        ProductComponent.objects.filter(parent__sku__in=skus)
+        .values_list("parent__sku", flat=True)
+        .distinct()
+    )
+
+
+def bulk_listing_items(skus: list[str], listing_ref: str) -> dict[str, dict]:
+    """``get_listing_item`` para vários SKUs numa consulta só.
+
+    Mesmo filtro e mesma forma de ``get_listing_item``; SKU sem vínculo fica de
+    fora do mapa. Com mais de um vínculo (faixas de quantidade) vale o primeiro
+    na ordem do modelo, como o ``.first()`` de lá.
+    """
+    from shopman.offerman.models import ListingItem
+
+    result: dict[str, dict] = {}
+    if not skus:
+        return result
+    for item in ListingItem.objects.filter(
+        listing__ref=listing_ref,
+        listing__is_active=True,
+        product__sku__in=skus,
+    ).select_related("product"):
+        result.setdefault(item.product.sku, {
+            "price_q": item.price_q,
+            "min_qty": item.min_qty,
+            "is_published": item.is_published,
+            "is_sellable": item.is_sellable,
+        })
+    return result
+
+
+def bulk_listing_tiers(skus: list[str], listing_ref: str) -> dict[str, list[dict]]:
+    """``find_listing_tiers`` para vários SKUs numa consulta só (mesmo filtro, mesma ordem)."""
+    from shopman.offerman.models import ListingItem
+
+    result: dict[str, list[dict]] = {sku: [] for sku in skus}
+    if not skus:
+        return result
+    for row in (
+        ListingItem.objects.filter(
+            listing__ref=listing_ref,
+            product__sku__in=skus,
+            is_sellable=True,
+        )
+        .order_by("-min_qty")
+        .values("product__sku", "min_qty", "price_q", "is_sellable")
+    ):
+        sku = row.pop("product__sku")
+        result.setdefault(sku, []).append(row)
+    return result
+
+
+def bulk_product_base_prices(skus: list[str]) -> dict[str, int]:
+    """``get_product_base_price`` para vários SKUs; SKU inexistente fica de fora."""
+    from shopman.offerman.models import Product
+
+    if not skus:
+        return {}
+    return dict(Product.objects.filter(sku__in=skus).values_list("sku", "base_price_q"))

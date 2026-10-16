@@ -32,7 +32,27 @@
 // estava; só o degradê desceu.
 import { HINT_GAP, hintMotionClass, hintScrollBehavior } from '../presentation/moreBelow'
 
-const { sentinel, visible, offset, scrollToEnd } = useMoreBelow()
+const props = withDefaults(defineProps<{
+  /**
+   * A dica mora dentro de um contêiner que rola (a coluna da comanda do PDV), e não
+   * flutua na janela: ela gruda na base do contêiner (`sticky`), na largura dele.
+   * O que fica fora do contêiner (o bloco de ação, o pé) já não conta como área
+   * visível, então não há obstrução a medir.
+   */
+  contained?: boolean
+  /** A cor que o degradê lava: a da página (padrão) ou a do cartão, numa coluna. */
+  surface?: 'background' | 'card'
+}>(), { contained: false, surface: 'background' })
+
+const { sentinel, visible, offset, lane, scrollToEnd } = useMoreBelow({ contained: props.contained })
+// Na janela, a dica ocupa a largura do painel de conteúdo (nunca a barra lateral).
+const windowStyle = computed(() => ({
+  bottom: `${offset.value}px`,
+  left: `${lane.value?.left ?? 0}px`,
+  right: `${lane.value?.right ?? 0}px`,
+}))
+const washClass = computed(() => (props.surface === 'card' ? 'from-card' : 'from-background'))
+const pillClass = computed(() => (props.surface === 'card' ? 'bg-card/33 hover:bg-card/60' : 'bg-background/33 hover:bg-background/60'))
 
 // Menos movimento: a dica fica PARADA, não some. A informação é a mesma.
 const reducedMotion = ref(false)
@@ -56,6 +76,36 @@ function irAteOFim() {
        em vez de atrás dele — o mesmo truque do `scroll-margin-top` do próximo
        foco, do outro lado da tela. A dica é teleportada para fora, para não
        herdar recorte nem contexto de empilhamento de quem a chamou. -->
+  <!-- CONTIDA: a dica é a última coisa do conteúdo, grudada na base do contêiner que
+       rola. Com altura zero ela não ocupa lugar; o degradê e o chevron sobem dela. -->
+  <div
+    v-if="contained"
+    class="pointer-events-none sticky bottom-0 z-10 h-0"
+    data-more-below-contained
+  >
+    <Transition
+      enter-active-class="transition-opacity duration-300"
+      leave-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="visible" class="absolute inset-x-0 bottom-0" data-more-below>
+        <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t to-transparent" :class="washClass" aria-hidden="true" />
+        <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
+          <button
+            type="button"
+            class="pointer-events-auto flex size-12 items-center justify-center rounded-full text-foreground ring-1 ring-border/40 backdrop-blur-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+            :class="[pillClass, motionClass]"
+            aria-label="Ir para o fim do conteúdo"
+            data-more-below-jump
+            @click="irAteOFim"
+          >
+            <Icon name="lucide:chevron-down" class="size-6" />
+          </button>
+        </div>
+      </div>
+    </Transition>
+  </div>
   <span
     ref="sentinel"
     aria-hidden="true"
@@ -63,7 +113,7 @@ function irAteOFim() {
     :style="{ scrollMarginBottom: `${offset}px` }"
     data-more-below-sentinel
   />
-  <ClientOnly>
+  <ClientOnly v-if="!contained">
     <Teleport to="body">
       <Transition
         enter-active-class="transition-opacity duration-300"
@@ -71,18 +121,28 @@ function irAteOFim() {
         enter-from-class="opacity-0"
         leave-to-class="opacity-0"
       >
-        <div v-if="visible" class="pointer-events-none fixed inset-x-0 z-30" :style="{ bottom: `${offset}px` }" data-more-below>
+        <!-- NUNCA POR CIMA DE OVERLAY. Os overlays do Nuxt UI (gaveta, popover,
+             modal) não têm z-index: valem pela ordem no DOM. A dica, com z-30,
+             passava por cima do painel de filtros aberto no celular. Com qualquer
+             diálogo aberto (`role=dialog` + `data-state=open`, o par do Reka) ela
+             some, por CSS: nada a observar, e o servidor desenha igual. -->
+        <div
+          v-if="visible"
+          class="pointer-events-none fixed z-30 [body:has([role=dialog][data-state=open])_&]:hidden"
+          :style="windowStyle"
+          data-more-below
+        >
           <!-- O degradê é metade da dica: sem ele a pílula boia sobre um texto
                qualquer e vira artefato. Com ele, o conteúdo DISSOLVE para baixo,
                que é a própria mensagem. Mesmo par do bottom-sheet da loja.
                Mais alto que a pílula de propósito: ela precisa ficar DENTRO da
                lavagem, e a lavagem precisa chegar colada no card. -->
-          <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" aria-hidden="true" />
+          <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t to-transparent" :class="washClass" aria-hidden="true" />
           <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
             <button
               type="button"
-              class="pointer-events-auto flex size-12 items-center justify-center rounded-full bg-background/33 text-foreground ring-1 ring-border/40 backdrop-blur-sm transition hover:bg-background/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
-              :class="motionClass"
+              class="pointer-events-auto flex size-12 items-center justify-center rounded-full text-foreground ring-1 ring-border/40 backdrop-blur-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
+              :class="[pillClass, motionClass]"
               aria-label="Ir para o fim do conteúdo"
               data-more-below-jump
               @click="irAteOFim"

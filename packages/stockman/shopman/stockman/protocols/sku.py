@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 
@@ -42,6 +43,13 @@ class SkuInfo:
     metadata: dict | None = None
 
 
+class PromiseReasonCode(StrEnum):
+    """Closed vocabulary for Stockman's operational promise refusals."""
+
+    PAUSED = "paused"
+    INSUFFICIENT_SUPPLY = "insufficient_supply"
+
+
 @dataclass(frozen=True)
 class PromiseDecision:
     """Operational promise decision for a SKU in a given time scope.
@@ -56,8 +64,14 @@ class PromiseDecision:
     requested_qty: Decimal
     target_date: date | None
     availability_policy: str = "planned_ok"
-    reason_code: str | None = None
-    available_qty: Decimal = Decimal("0")
+    reason_code: PromiseReasonCode | None = None
+    # Factual supply observed in this scope. ``None`` means Stockman has no
+    # ledger for the SKU; it never means "unlimited" or a synthetic amount.
+    available_qty: Decimal | None = None
+    # Policy ceiling for ordering. ``None`` means the policy has no finite
+    # ceiling (for example ``demand_ok`` or an untracked SKU).
+    orderable_ceiling: Decimal | None = None
+    is_tracked: bool = False
     available: Decimal = Decimal("0")
     expected: Decimal = Decimal("0")
     planned: Decimal = Decimal("0")

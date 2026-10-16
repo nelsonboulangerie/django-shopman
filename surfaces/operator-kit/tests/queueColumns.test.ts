@@ -12,7 +12,6 @@ import {
   queueColumnForKey,
   queueGridTemplate,
   queueStripLabel,
-  queueViewLabel,
   resizeQueueColumns,
   showAllQueueColumns,
   toggleQueueColumn,
@@ -21,7 +20,6 @@ import {
 } from "../app/presentation/queueColumns";
 
 const KEYS = ["intake", "prep", "expedition"] as const;
-const TITLES = { intake: "Entrada", prep: "Preparo", expedition: "Saída" };
 
 describe("colunas de fila: arrumação padrão e higiene", () => {
   it("quem nunca mexeu vê todas abertas, em partes iguais", () => {
@@ -56,7 +54,6 @@ describe("recolher e abrir", () => {
     layout = toggleQueueColumn(layout, KEYS, "intake");
     layout = toggleQueueColumn(layout, KEYS, "prep");
     expect(queueGridTemplate(layout, KEYS)).toBe("56px 56px minmax(0, 1fr)");
-    expect(queueViewLabel(layout, KEYS, TITLES)).toBe("Visão: Saída");
   });
 
   it("recolher a última aberta não faz nada", () => {
@@ -70,12 +67,6 @@ describe("recolher e abrir", () => {
     expect(openQueueColumn(fechada, "prep").prep!.open).toBe(true);
     const aberta = defaultQueueLayout(KEYS);
     expect(openQueueColumn(aberta, "prep")).toBe(aberta);
-  });
-
-  it("com duas abertas, a visão nomeia as duas; com todas, não diz nada", () => {
-    const layout = toggleQueueColumn(defaultQueueLayout(KEYS), KEYS, "intake");
-    expect(queueViewLabel(layout, KEYS, TITLES)).toBe("Visão: Preparo e Saída");
-    expect(queueViewLabel(defaultQueueLayout(KEYS), KEYS, TITLES)).toBe("");
   });
 
   it("Mostrar as 3 colunas volta ao padrão, larguras inclusive", () => {

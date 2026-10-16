@@ -3,7 +3,7 @@
 // UCalendar(range). O contrato externo continua em ISO (`YYYY-MM-DD`) para não
 // contaminar APIs e projections com os objetos de @internationalized/date.
 import { parseDate, type CalendarDate, type DateValue } from "@internationalized/date";
-import { useMediaQuery } from "@vueuse/core";
+import { useScreen } from "../composables/useScreen";
 import type { DateRange } from "reka-ui";
 import { computed, ref, useAttrs } from "vue";
 import { vLocalizedSegments } from "../utils/localizedSegments";
@@ -48,7 +48,8 @@ const emit = defineEmits<{
 
 const attrs = useAttrs();
 const inputDate = ref<InputDateRef | null>(null);
-const desktop = useMediaQuery("(min-width: 640px)");
+const screen = useScreen();
+const desktop = computed(() => !screen.belowSm.value);
 
 const fieldAttrs = computed(() => {
   const rest = { ...attrs };
@@ -85,14 +86,6 @@ const value = computed<DateRange>({
 });
 const minValue = computed(() => asDate(props.min));
 const maxValue = computed(() => asDate(props.max));
-const inputUi = {
-  // O range oficial tem seis segmentos. No celular eles preservam a anatomia,
-  // mas usam a largura compacta do próprio tema para não disputar espaço com
-  // o gatilho do calendário dentro de sheets e diálogos.
-  segment:
-    "max-sm:data-[segment=day]:w-6 max-sm:data-[segment=month]:w-6 max-sm:data-[segment=year]:w-10",
-  separatorIcon: "max-sm:size-3",
-};
 
 function clearStart() {
   emit("update:modelValue", {
@@ -137,14 +130,14 @@ function clearAll() {
       :disabled="disabled"
       :readonly="readonly"
       :required="required"
-      :ui="inputUi"
       class="min-h-control w-full min-w-0"
     >
       <template #trailing>
-        <NuxtPopover
-          :reference="inputDate?.inputsRef?.[0]?.$el"
-          :ui="{ content: 'z-[60]' }"
-        >
+        <!-- Sem `:ui` por instância: o calendário nasce no portal DEPOIS do popover ou
+             do modal que contém o campo, e com o mesmo z do tema fica por cima dele. Os
+             segmentos no celular usam a largura oficial (o `w-6` local quebrava o "mm" em
+             duas linhas a 390 px, no diálogo de canais do Gestor). -->
+        <NuxtPopover :reference="inputDate?.inputsRef?.[0]?.$el">
           <NuxtButton
             color="neutral"
             variant="link"

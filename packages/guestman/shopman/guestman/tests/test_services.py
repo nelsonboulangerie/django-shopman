@@ -41,7 +41,7 @@ class TestCustomerService:
             ref="DOC-TEST",
             first_name="Doc",
             document="12345678901",
-            price_tier=tier_regular,
+            price_tiers=tier_regular,
         )
 
         result = customer_service.get_by_document("123.456.789-01")
@@ -78,12 +78,12 @@ class TestCustomerService:
         c1 = Customer.objects.create(
             ref="DUP-EMAIL-1",
             first_name="First",
-            price_tier=tier_regular,
+            price_tiers=tier_regular,
         )
         c2 = Customer.objects.create(
             ref="DUP-EMAIL-2",
             first_name="Second",
-            price_tier=tier_regular,
+            price_tiers=tier_regular,
         )
         # Set duplicate email directly (bypassing _sync_contact_points)
         Customer.objects.filter(pk=c1.pk).update(email="dup@example.com")
@@ -103,7 +103,7 @@ class TestCustomerService:
         customer = Customer.objects.create(
             ref="CONTACT-PHONE-1",
             first_name="Phone",
-            price_tier=tier_regular,
+            price_tiers=tier_regular,
         )
         ContactPoint.objects.create(
             customer=customer,
@@ -124,7 +124,7 @@ class TestCustomerService:
         customer = Customer.objects.create(
             ref="CONTACT-EMAIL-1",
             first_name="Email",
-            price_tier=tier_regular,
+            price_tiers=tier_regular,
         )
         ContactPoint.objects.create(
             customer=customer,
@@ -163,7 +163,7 @@ class TestCustomerService:
             phone="11111111111",
         )
         assert cust.ref == "NEW-001"
-        assert cust.price_tier == tier_regular
+        assert cust.primary_price_tier == tier_regular
 
     def test_purge_pii_reports_partial_failure_after_finishing_other_layers(
         self,

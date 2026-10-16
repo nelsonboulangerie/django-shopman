@@ -239,7 +239,7 @@ export function recoveryActionExplanation(
   if (action.kind === "cancel_announcement") {
     return "Cancela somente as plataformas que ainda não começaram. O que já começou segue até o fim.";
   }
-  return "A consequência será revalidada pelo servidor antes de confirmar.";
+  return "Se algo mudar antes de você confirmar, a ação é recusada.";
 }
 
 export function recoveryDisabledReason(reason: string): string {
@@ -394,7 +394,7 @@ export function marketingLoadError(error: unknown): {
     return {
       title: "Muitas consultas em pouco tempo",
       detail:
-        "Aguarde o prazo indicado pelo servidor e tente novamente; nenhuma ação foi repetida.",
+        "Espere um pouco e tente de novo. Nada foi repetido.",
       canRetry: true,
     };
   }

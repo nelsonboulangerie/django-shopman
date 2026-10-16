@@ -1,48 +1,89 @@
 <script setup lang="ts">
-// Aviso calmo e global de conexão para as superfícies de operador. Aparece só quando
-// offline; feedback nunca no vácuo. Usa tokens do design system canônico (âmbar =
-// aviso). Auto-importado pelo operator-kit — colocar uma vez no layout raiz de cada app.
-import { computed, onMounted, ref } from "vue";
+// Aviso global de conexão para as superfícies de operador. Aparece só quando offline;
+// feedback nunca no vácuo. Auto-importado pelo operator-kit: colocar uma vez no layout
+// raiz de cada app.
+//
+// A faixa NÃO cobre nada (10/10/2026: no PDV ela escondia o cabeçalho da coluna da
+// comanda e a barra do topo). Ela ocupa uma faixa própria no topo da janela, e o shell
+// desce o mesmo tanto: enquanto a faixa existe, `html[data-operator-offline]` liga
+// `--operator-offline-inset`, e os shells do kit (`OperatorSuiteShell`,
+// `OperatorOfficeShell`, `OperatorOperationalShell`) e a trava (`OperatorLock`) usam
+// essa variável como `top`. O shell é `fixed inset-0` (o DashboardGroup do Nuxt UI),
+// então empurrar é mudar o `top`, não somar margem no fluxo.
+//
+// Sem salto: a altura é fixa (a do Banner do Nuxt UI, h-12, mais a área segura do
+// topo), conhecida antes de a faixa aparecer; o shell desliza 200 ms (nada com
+// movimento reduzido); e uma piscada de rede menor que `SHOW_AFTER_MS` não mexe na
+// tela. Sem `z-index`: nada fica sob a faixa, e o que é sobreposto por natureza
+// (diálogo, gaveta, aviso) passa por cima dela.
+//
+// "Sem conexão" leva o ponto vermelho (dono, 08/10/2026, conjunto mínimo #1539).
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+
+/** Piscada de rede menor que isto não move a tela. */
+const SHOW_AFTER_MS = 1000;
+/** O mesmo tempo do deslizar do shell: a faixa fica até ele cobrir o lugar dela. */
+const LEAVE_MS = 200;
 
 const { isOnline } = useConnectivity();
-// So depois da hidratacao: no SSR o useOnline devolve false (sem navigator) e
-// o banner entraria no HTML do servidor para o cliente (online) o remover —
-// o "Hydration completed but contains mismatches" de toda superficie.
-const mounted = ref(false);
+// Só depois da hidratação: no SSR o useOnline devolve false (sem navigator) e a faixa
+// entraria no HTML do servidor para o cliente (online) a remover.
+const show = ref(false);
+let timer: ReturnType<typeof setTimeout> | undefined;
+
+function settle(online: boolean) {
+  if (timer) clearTimeout(timer);
+  timer = undefined;
+  if (online) {
+    show.value = false;
+    return;
+  }
+  timer = setTimeout(() => {
+    show.value = true;
+  }, SHOW_AFTER_MS);
+}
+
 onMounted(() => {
-  mounted.value = true;
+  watch(isOnline, (online) => settle(online !== false), { immediate: true });
+  watch(
+    show,
+    (offline) => document.documentElement.toggleAttribute("data-operator-offline", offline),
+    { immediate: true },
+  );
 });
-const show = computed(() => mounted.value && isOnline.value === false);
+onBeforeUnmount(() => {
+  if (timer) clearTimeout(timer);
+  document.documentElement.removeAttribute("data-operator-offline");
+});
 </script>
 
 <template>
-  <Transition name="operator-offline">
+  <Transition :duration="{ enter: 0, leave: LEAVE_MS }">
     <div
       v-if="show"
-      role="status"
-      aria-live="polite"
-      class="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center px-3 pt-[env(safe-area-inset-top)]"
+      class="fixed inset-x-0 top-0 pt-[env(safe-area-inset-top)]"
+      aria-live="assertive"
+      data-operator-offline-band
     >
-      <div
-        class="pointer-events-auto mt-2 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/12 px-3 py-1.5 text-sm font-medium text-amber-700 shadow-sm backdrop-blur-sm dark:text-amber-300"
-      >
-        <Icon name="lucide:wifi-off" class="size-4" aria-hidden="true" />
-        <span>Sem conexão — tentando reconectar…</span>
-      </div>
+      <NuxtBanner color="neutral" data-operator-offline-banner>
+        <template #title>
+          <span class="flex min-w-0 items-center gap-2">
+            <OperatorCountChip dot color="error" aria-hidden="true" />
+            <span>Sem conexão. Tentando reconectar…</span>
+          </span>
+        </template>
+      </NuxtBanner>
     </div>
   </Transition>
 </template>
 
-<style scoped>
-.operator-offline-enter-active,
-.operator-offline-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+<style>
+/* A faixa e o shell combinam a altura aqui, uma vez: a do Banner (h-12) mais a área
+   segura do topo. Sem a faixa, 0. */
+:root {
+  --operator-offline-inset: 0px;
 }
-.operator-offline-enter-from,
-.operator-offline-leave-to {
-  opacity: 0;
-  transform: translateY(-0.5rem);
+:root[data-operator-offline] {
+  --operator-offline-inset: calc(3rem + env(safe-area-inset-top));
 }
 </style>

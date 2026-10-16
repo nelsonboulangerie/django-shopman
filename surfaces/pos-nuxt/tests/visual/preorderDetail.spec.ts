@@ -33,14 +33,19 @@ for (const size of SIZES) {
       return box.width > 0 && (box.left < frame.left - 1 || box.right > frame.right + 1);
     }));
     expect(overflow).toBe(false);
-    // Alvo de toque: todo botão do painel tem pelo menos 44 px de altura, e
-    // nenhum rótulo passa da borda do próprio botão.
-    const buttons = await panel.locator("button").evaluateAll((els) => els.map((el) => ({
+    // Alvo de toque: em perfis touch todo botão visível tem pelo menos 44 px;
+    // no desktop com ponteiro, 40 px. Nenhum rótulo passa da própria borda.
+    // O shell mantém ações responsivas alternativas no DOM com `display:none`.
+    // Alvo de toque só existe para controles renderizados; incluir os ocultos
+    // fabrica altura zero e fazia o gate medir implementação, não a tela.
+    const buttons = (await panel.locator("button").evaluateAll((els) => els.map((el) => ({
+      label: el.getAttribute("aria-label") || el.textContent?.trim() || "sem nome",
       height: el.getBoundingClientRect().height,
       fits: el.scrollWidth <= el.clientWidth,
-    })));
+    })))).filter(({ height }) => height > 0);
+    expect(buttons.length).toBeGreaterThan(0);
     for (const button of buttons) {
-      expect(button.height).toBeGreaterThanOrEqual(44);
+      expect(button.height, button.label).toBeGreaterThanOrEqual(size.width < 1024 ? 44 : 40);
       expect(button.fits).toBe(true);
     }
 
@@ -54,9 +59,10 @@ for (const size of SIZES) {
       await expect(page.locator("[data-preorder-hand-over]")).toBeInViewport();
     } else {
       expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(detailBox.y);
-      // Tela estreita: o saldo e o gesto principal são a primeira coisa da tela.
+      // Tela estreita: o saldo abre o conteúdo e o gesto principal fica na barra
+      // fixa de polegar; a variante do painel existe no DOM, mas fica oculta.
       await expect(page.locator("[data-preorder-money]")).toBeInViewport();
-      await expect(page.locator("[data-preorder-hand-over]")).toBeInViewport();
+      await expect(page.locator("[data-preorder-hand-over-bar]")).toBeInViewport();
     }
   });
 }

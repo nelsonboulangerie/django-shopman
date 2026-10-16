@@ -1,19 +1,30 @@
 <script setup lang="ts">
 // O botão da base do ticket: largura inteira, DENTRO da moldura (com a margem do card
-// em volta), cantos de 8px, o ato escrito. Numa linha da grade todos caem na mesma
-// altura, ao alcance do polegar. Desenho da prévia v4 (`cozinha-estacao4.html`).
+// em volta), o ato escrito. Numa linha da grade todos caem na mesma altura, ao alcance
+// do polegar. Desenho da prévia v4 (`cozinha-estacao4.html`), sobre o `NuxtButton` do
+// conjunto mínimo (`xl`, o toque crítico).
 //
 // Tons (cor só onde tem significado):
 //  - `lead`    o convite do PRÓXIMO: "Iniciar preparo" sólido na cor da casa. É um só
 //    na grade (o destacado), então não vira a parede amarela de 21/09 (#913): os
 //    outros convites são contornados.
 //  - `invite`  convite para começar, contornado: "Iniciar preparo" dos demais.
-//  - `confirm` o ato que tira o pedido da tela: "Pronto W07", sólido verde.
-//  - `outline` o gesto de volta: "Desfazer".
-//  - `blocked` contornado em vermelho: item cancelado, não se convida ninguém.
+//  - `confirm` o ato que tira o pedido da tela: "Pronto W07", sólido verde. O verde
+//    do Pronto é a assinatura da Cozinha (v4); ele mora aqui, uma vez, sobre o neutro
+//    sólido, e não vira cor de botão da suíte.
+//  - `outline` o gesto de volta.
+//  - `alarm`   sólido em vermelho: o pedido mudou ou caiu depois de chegar à cozinha, e o
+//    ato é a ciência ("Recebi o cancelamento", "Visto"). É a cor do aviso do card (D8).
 //  - `locked`  tracejado e listrado, com cadeado: o servidor recusaria o Pronto
 //    (pagamento não confirmado). O toque diz o motivo.
-export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "blocked" | "locked";
+//
+// Com prazo (`timed`, o Desfazer do Pronto): o MESMO botão, no mesmo tom, tamanho e
+// lugar (dono, 09/10/2026); muda só o texto, e o fundo esvazia atrás dele
+// (`OperatorTimedButton` do kit). O verde do Pronto pinta um neutro sólido, então a
+// camada vem da superfície invertida (`fill-tint="inverted"`), como nas cores.
+import OperatorTimedButton from "../../../operator-kit/app/components/OperatorTimedButton.vue";
+
+export type KdsCardButtonTone = "lead" | "invite" | "confirm" | "outline" | "alarm" | "locked";
 
 const props = withDefaults(
   defineProps<{
@@ -23,32 +34,74 @@ const props = withDefaults(
     /** Altura + corpo de texto (escala de densidade; nunca abaixo de h-11). */
     sizeClass: string;
     disabled?: boolean;
+    /** A ação só vale até um prazo: fim (epoch ms) e tamanho da janela (ms). */
+    timed?: { until: number; duration?: number };
   }>(),
-  { icon: "", disabled: false },
+  { icon: "", disabled: false, timed: undefined },
 );
 defineEmits<{ click: [event: MouseEvent] }>();
+// `aria-label`, `title` e `data-*` chegam ao botão nos dois casos (no com prazo, pela
+// peça do kit, que os passa ao NuxtButton).
+defineOptions({ inheritAttrs: false });
 
-const TONES: Record<KdsCardButtonTone, string> = {
-  lead: "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
-  invite: "border-2 border-foreground/80 text-foreground hover:bg-foreground/10 active:bg-foreground/20",
-  confirm: "bg-success text-success-foreground hover:bg-success/90 active:bg-success/80",
-  outline: "border border-border bg-card hover:bg-accent active:bg-accent/70",
-  blocked: "border border-destructive/60 bg-destructive/10 text-destructive",
-  locked:
-    "border-2 border-dashed border-border text-muted-foreground bg-[repeating-linear-gradient(135deg,transparent_0_7px,color-mix(in_oklab,var(--destructive)_9%,transparent)_7px_14px)]",
+type Look = { color: "primary" | "neutral" | "error"; variant: "solid" | "outline"; extra: string };
+const LOOKS: Record<KdsCardButtonTone, Look> = {
+  lead: { color: "primary", variant: "solid", extra: "" },
+  invite: { color: "neutral", variant: "outline", extra: "" },
+  confirm: {
+    color: "neutral",
+    variant: "solid",
+    extra: "bg-success text-success-foreground hover:bg-success/90 active:bg-success/80 disabled:bg-success",
+  },
+  outline: { color: "neutral", variant: "outline", extra: "" },
+  alarm: { color: "error", variant: "solid", extra: "" },
+  locked: {
+    color: "neutral",
+    variant: "outline",
+    extra:
+      "ring-0 border-2 border-dashed border-border text-muted-foregroundbg-[repeating-linear-gradient(135deg,transparent_0_7px,color-mix(in_oklab,var(--destructive)_9%,transparent)_7px_14px)]",
+  },
 };
-const toneClass = computed(() => TONES[props.tone]);
+const look = computed(() => LOOKS[props.tone]);
+// O rótulo do ato quebra em até duas linhas, nunca "Pronto W0…" (o oficial corta).
+const BUTTON_UI = { label: "line-clamp-2 whitespace-normal text-center leading-tight" };
+// O ícone segue `lucide:nome` (o mesmo nome que o `<Icon>` do card e o bundle de
+// ícones do app já conhecem); o NuxtButton aceita esse formato.
+const icon = computed(() => props.icon || undefined);
 </script>
 
 <template>
-  <button
-    type="button"
-    class="flex w-full shrink-0 items-center justify-center gap-2.5 rounded-lg px-2 font-semibold transition active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
-    :class="[sizeClass, toneClass]"
+  <OperatorTimedButton
+    v-if="timed"
+    v-bind="$attrs"
+    :until="timed.until"
+    :duration="timed.duration"
+    size="xl"
+    block
+    :color="look.color"
+    :variant="look.variant"
+    :fill-tint="tone === 'confirm' ? 'inverted' : undefined"
+    :icon="icon"
+    :label="label"
     :disabled="disabled"
+    :ui="BUTTON_UI"
+    class="shrink-0 justify-center font-semibold"
+    :class="[sizeClass, look.extra]"
     @click="$emit('click', $event)"
-  >
-    <Icon v-if="icon" :name="icon" class="size-5 shrink-0" />
-    <span class="line-clamp-2 text-center leading-tight">{{ label }}</span>
-  </button>
+  />
+  <NuxtButton
+    v-else
+    v-bind="$attrs"
+    size="xl"
+    block
+    :color="look.color"
+    :variant="look.variant"
+    :icon="icon"
+    :label="label"
+    :disabled="disabled"
+    :ui="BUTTON_UI"
+    class="shrink-0 justify-center font-semibold"
+    :class="[sizeClass, look.extra]"
+    @click="$emit('click', $event)"
+  />
 </template>

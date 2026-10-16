@@ -373,3 +373,20 @@ def test_migracao_cria_um_posto_por_caixa_e_preserva_a_confianca(client):
     migration.backward(django_apps, None)
     passe.refresh_from_db()
     assert passe.metadata["gestor_board"] == board
+
+
+# ── A copy do posto na voz da casa (dono, 09/10/2026) ──────────────────────────
+
+
+def test_copy_do_posto_e_curta_e_sem_jargao():
+    """A frase de vincular foi recusada por prolixa; a de Postos repetia o mesmo
+    defeito. Nenhuma frase do posto fala a língua do sistema (a trava irmã das telas
+    é ``surfaces/operator-kit/tests/guardrails.jargon.test.ts``)."""
+    import re
+
+    from shopman.backstage.workstation_vocabulary import COPY
+
+    assert COPY["setup_lead"] == "Escolha uma vez. Depois, o dispositivo abre direto no posto e só pede o PIN."
+    assert "quem for operar" not in COPY["manage_lead"]
+    jargon = re.compile(r"\b(Core|backend|servidor|endpoint|payload|token|API|SSE)\b", re.IGNORECASE)
+    assert [key for key, text in COPY.items() if jargon.search(text)] == []

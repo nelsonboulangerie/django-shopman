@@ -51,13 +51,14 @@
           },
           "baseline": {
             "type": "object",
-            "required": ["local_ui_files", "direct_reka_import_files", "manual_overlay_files", "native_control_occurrences"],
+            "required": ["local_ui_files", "direct_reka_import_files", "manual_overlay_files", "native_control_occurrences", "ui_native_select_occurrences"],
             "additionalProperties": false,
             "properties": {
               "local_ui_files": { "type": "integer", "minimum": 0 },
               "direct_reka_import_files": { "type": "integer", "minimum": 0 },
               "manual_overlay_files": { "type": "integer", "minimum": 0 },
-              "native_control_occurrences": { "type": "integer", "minimum": 0 }
+              "native_control_occurrences": { "type": "integer", "minimum": 0 },
+              "ui_native_select_occurrences": { "type": "integer", "minimum": 0 }
             }
           },
           "surfaces": {

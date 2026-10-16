@@ -5,9 +5,9 @@ Cobre o furo em que uma promoção restrita a um grupo/segmento
 mas descontava ZERO na loja.
 
 Causa raiz: duas fontes distintas do grupo do cliente. O gate de elegibilidade
-lia ``customer.price_tier.ref`` do request e passava; já o ``DiscountModifier`` (e o
+lia ``customer.primary_price_tier.ref`` do request e passava; já o ``DiscountModifier`` (e o
 ``PromotionPricingBackend`` do cardápio) liam o grupo/segmento do CONTEXTO de
-pricing, que a loja nunca populava — só o PDV escrevia ``customer.price_tier`` na
+pricing, que a loja nunca populava — só o PDV escrevia ``customer.primary_price_tier`` na
 sessão.
 
 Correção (ver ``PERSONA_FINDINGS.md``):
@@ -92,7 +92,7 @@ def loyal_setup(db):
 
     tier = PriceTier.objects.create(ref="fieis", name="Fiéis")
     member = Customer.objects.create(
-        ref="CUST-FIEL01", first_name="Ana", last_name="Fiel", price_tier=tier
+        ref="CUST-FIEL01", first_name="Ana", last_name="Fiel", price_tiers=tier
     )
     return member
 
@@ -190,7 +190,7 @@ def test_group_coupon_rejected_for_non_member(segmented_coupon):
     """Cliente fora do grupo é recusado no gate (não grava cupom mudo)."""
     other = PriceTier.objects.create(ref="novatos", name="Novatos")
     outsider = Customer.objects.create(
-        ref="CUST-NOV01", first_name="Beto", last_name="Novato", price_tier=other
+        ref="CUST-NOV01", first_name="Beto", last_name="Novato", price_tiers=other
     )
     session_key = _cart_session_with_item()
     request = _FakeRequest(session_key=session_key, customer_uuid=outsider.uuid)

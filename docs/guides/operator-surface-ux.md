@@ -168,7 +168,8 @@ uso no contexto em que o operador está.
 - ordem de foco estável;
 - atalhos visíveis quando existirem;
 - hover como melhoria, nunca como única forma de descobrir ação;
-- densidade eficiente sem reduzir alvo abaixo de 44 px para controles;
+- densidade oficial do Nuxt UI no ponteiro fino; o envelope mínimo de 44 px é
+  aplicado por capacidade quando o dispositivo usa ponteiro grosso;
 - tabelas e listas com ações previsíveis por teclado.
 
 ### Tablet com toque e giro

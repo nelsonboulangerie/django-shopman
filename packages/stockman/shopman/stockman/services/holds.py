@@ -200,7 +200,9 @@ class StockHolds:
             )
             policy = profile["availability_policy"] or decision.availability_policy
             approved = decision.approved
-            available = decision.available_qty
+            available = decision.orderable_ceiling
+            if available is None:
+                available = decision.available_qty or Decimal("0")
 
             # Production reservations (insumos for a WorkOrder) are NOT sales: the
             # sale-availability gate — pause/sellability and demand/planned policy —
@@ -218,7 +220,6 @@ class StockHolds:
                 available = Decimal("0")
             elif policy == "demand_ok" or allow_demand:
                 approved = True
-                available = max(decision.available_qty, quantity)
             elif policy == "stock_only":
                 approved = quantity <= decision.available
                 available = decision.available

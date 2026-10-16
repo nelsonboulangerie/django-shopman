@@ -103,7 +103,7 @@ describe("usePosOrderEdit", () => {
     expect(edit.error.value).toContain("Nada foi gravado");
   });
 
-  it("entrega com nota sem CPF: a caixa pede o documento ali mesmo, com o cadastro de valor inicial", async () => {
+  it("entrega com CPF que não confere: a caixa pede o documento ali mesmo, com o cadastro de valor inicial", async () => {
     const { edit } = await started();
     const entrega = {
       ...INTENT,
@@ -114,7 +114,7 @@ describe("usePosOrderEdit", () => {
     };
     call.mockRejectedValueOnce({
       status: 400,
-      data: { detail: "Entrega com nota fiscal: a SEFAZ exige o CPF ou CNPJ do cliente.", error: { code: "delivery_tax_id_required" } },
+      data: { detail: "Confira o CPF ou CNPJ: os números não conferem.", error: { code: "delivery_tax_id_invalid" } },
     });
 
     expect(await edit.review(entrega)).toBe(false);

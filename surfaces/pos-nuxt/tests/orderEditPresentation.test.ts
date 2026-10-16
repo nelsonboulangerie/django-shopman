@@ -185,7 +185,7 @@ describe("frases — quem paga ou devolve, quanto e onde", () => {
 
 describe("o que a caixa de salvar colhe ali mesmo", () => {
   it("a recusa do CPF da entrega abre o campo do documento", () => {
-    expect(needsDeliveryTaxId("delivery_tax_id_required")).toBe(true);
+    expect(needsDeliveryTaxId("delivery_tax_id_required")).toBe(false);
     expect(needsDeliveryTaxId("delivery_tax_id_invalid")).toBe(true);
     expect(needsDeliveryTaxId("delivery_address_incomplete")).toBe(false);
   });

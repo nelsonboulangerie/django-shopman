@@ -42,7 +42,10 @@ export function danfeLine(card: DanfeFields): DanfeLine | null {
     case "sending":
       return line("DANFE saindo na impressora", { sending: true });
     case "not_printed":
-      return line("DANFE não impressa", { problem: card.danfe_problem || "", attention: true });
+      return line("DANFE não impressa", {
+        problem: card.danfe_problem || "",
+        attention: true,
+      });
     case "on_dispatch":
       return line("A DANFE sai sozinha quando a entrega sair");
     default:

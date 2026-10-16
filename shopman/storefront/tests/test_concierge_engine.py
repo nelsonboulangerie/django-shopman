@@ -500,6 +500,18 @@ def test_fulfillment_tools_obey_the_canonical_channel_policy(ctx):
     assert selected["error"] == "fulfillment_unavailable"
 
 
+def test_delivery_slots_are_the_same_grid_the_site_offers(ctx):
+    """P2-30a: a concierge e o site leem a MESMA grade de entrega (turno na encomenda)."""
+    from shopman.shop.services.fulfillment_window import delivery_windows_for
+
+    tomorrow = _tomorrow()
+    slots = tools.list_fulfillment_slots(ctx, tomorrow, "delivery")
+
+    assert slots["ok"], slots
+    assert slots["delivery_slots"] == delivery_windows_for(date.fromisoformat(tomorrow))
+    assert [s["ref"] for s in slots["delivery_slots"]] == ["slot-09", "slot-12", "slot-15"]
+
+
 def test_set_item_reserves_stock_and_tells_the_real_balance(ctx, conversation):
     ok = tools.set_item(ctx, SKU, 3)
     assert ok["ok"] and ok["lines"][0]["qty"] == 3
@@ -708,15 +720,18 @@ def _delivery_note_expected(monkeypatch, settings):
     _geocode_text(monkeypatch, route="Rua das Flores", street_number="10", neighborhood="Centro")
 
 
-def test_review_order_asks_for_the_tax_id_when_the_delivery_has_a_note(ctx, monkeypatch, settings):
-    """Entrega com nota: a revisão diz ao modelo o que PEDIR, antes de qualquer token."""
+def test_review_order_does_not_ask_for_the_tax_id_on_a_delivery_with_a_note(ctx, monkeypatch, settings):
+    """Decisão do dono (13/10/2026): entrega sem CPF entra; a nota sai presencial.
+
+    A revisão continua pedindo o endereço completo, nunca o documento.
+    """
     _delivery_note_expected(monkeypatch, settings)
     tools.set_item(ctx, SKU, 1)
     assert tools.set_fulfillment(ctx, "delivery", _tomorrow(), "", "Rua das Flores, 10, Centro")["ok"]
     review = tools.review_order(ctx, "pix")
-    assert "fiscal_tax_id" in review["missing"]
-    assert "quote_token" not in review
-    assert "CPF ou CNPJ" in tools.render_result("review_order", review)
+    assert "fiscal_tax_id" not in review["missing"]
+    assert "delivery_address_details" in review["missing"]
+    assert "CPF" not in tools.render_result("review_order", review)
 
 
 def test_set_fulfillment_records_the_tax_id_and_refuses_a_wrong_one(ctx, monkeypatch, settings):

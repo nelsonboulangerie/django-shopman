@@ -69,7 +69,7 @@ def _make_customer(phone: str = PHONE) -> Customer:
         first_name="João",
         last_name="Silva",
         phone=phone,
-        price_tier=tier,
+        price_tiers=tier,
     )
 
 

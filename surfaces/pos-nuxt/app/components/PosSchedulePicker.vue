@@ -22,7 +22,7 @@ const props = withDefaults(defineProps<{
   today: string;
   /** O dia escolhido (vazio: nenhum ainda). */
   date: string;
-  /** A janela escolhida (vazio: a combinar). */
+  /** A janela escolhida (vazio: o quanto antes, hoje; a combinar, outro dia). */
   timeSlot: string;
   /** Datas em que a casa realmente opera, já sem os dias fechados. */
   availableDates: string[];
@@ -56,6 +56,13 @@ const emptyMessage = computed(() => {
   if (props.failed) return "Não deu para carregar os horários. Tente de novo.";
   return "Não há horário combinável neste dia.";
 });
+
+// HOJE, sem janela, é "o quanto antes" (decisão do dono, 13/10/2026): o operador
+// sabe quando a sacola fica pronta e despacha na hora. É uma escolha à vista, a
+// primeira da lista, e não um "a combinar" escondido. Em outro dia, sem janela
+// continua sendo "a combinar": a encomenda é por turno.
+const isToday = computed(() => Boolean(props.today) && props.date === props.today);
+const asapSelected = computed(() => isToday.value && !props.timeSlot);
 
 function pickDate(iso: string) {
   if (iso === props.date) return;
@@ -98,25 +105,40 @@ function pickDate(iso: string) {
     <div class="grid gap-2">
       <div class="flex items-baseline justify-between gap-2">
         <span class="text-sm font-medium">Horário</span>
-        <button
-          v-if="timeSlot"
-          type="button"
-          class="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        <NuxtButton
+          v-if="timeSlot && !isToday"
+          color="neutral"
+          variant="ghost"
+          class="px-1 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
           @click="emit('update:timeSlot', '')"
         >
           A combinar
-        </button>
+        </NuxtButton>
       </div>
 
       <!-- A janela impossível APARECE, desabilitada, com o motivo. Sumir com ela
            deixa o operador sem resposta para "e às 9h não dá?", e ele acaba
            prometendo por fora do sistema. -->
-      <div v-if="windows.length" class="grid gap-1.5 sm:grid-cols-2">
-        <button
+      <div v-if="windows.length || isToday" class="grid gap-1.5 sm:grid-cols-2">
+        <NuxtButton
+          v-if="isToday"
+          color="neutral"
+          variant="ghost"
+          class="justify-start rounded-md border px-3 py-2 text-left text-sm transition flex-col items-start gap-0 font-normal hover:bg-accent"
+          :class="asapSelected ? 'border-primary bg-primary/5 font-semibold' : 'border-border'"
+          :aria-pressed="asapSelected"
+          data-schedule-slot="asap"
+          @click="emit('update:timeSlot', '')"
+        >
+          <span class="block">O quanto antes</span>
+          <span class="block text-xs text-muted-foreground">Sai assim que ficar pronto</span>
+        </NuxtButton>
+        <NuxtButton
           v-for="option in windows"
           :key="option.ref"
-          type="button"
-          class="rounded-md border px-3 py-2 text-left text-sm transition"
+          color="neutral"
+          variant="ghost"
+          class="justify-start rounded-md border px-3 py-2 text-left text-sm transition flex-col items-start gap-0 font-normal"
           :class="[
             option.enabled === false ? 'cursor-not-allowed border-dashed opacity-50' : 'hover:bg-accent',
             timeSlot === option.ref ? 'border-primary bg-primary/5 font-semibold' : 'border-border',
@@ -130,10 +152,10 @@ function pickDate(iso: string) {
           <span v-if="option.enabled === false && option.reason" class="block text-xs opacity-80">
             {{ option.reason }}
           </span>
-        </button>
+        </NuxtButton>
       </div>
-      <p v-else class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-        {{ emptyMessage }}
+      <p v-if="!windows.length" class="rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+        {{ isToday && !pending && !failed ? "Não há outro horário combinável hoje." : emptyMessage }}
       </p>
 
       <!-- A escolha que virou impossível SOZINHA: na venda, o operador marcou

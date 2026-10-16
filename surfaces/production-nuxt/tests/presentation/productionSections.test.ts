@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  phoneSections,
   productionSections,
   stageSections,
 } from "../../app/presentation/productionSections";
 import { activeSectionKey } from "../../../operator-kit/app/presentation/appBar";
+import { quickBarLayout, quickBarProblems } from "../../../operator-kit/app/presentation/suiteChrome";
 
 // V4-PROD: as etapas do lote moram no rail da suíte (e na barra do polegar no
 // celular). Era a fileira de abas do cabeçalho; o contrato (ordem, rótulo, rota,
@@ -26,9 +26,12 @@ describe("seções da Produção no rail", () => {
     ]);
   });
 
-  it("barra do polegar (V6-KIT): a mesma ordem do rail; a barra mostra 4 e o resto vai para o Mais", () => {
-    const input = { canViewRecipes: true, timersActive: 1 };
-    expect(phoneSections(input).map((s) => s.key)).toEqual(productionSections(input).map((s) => s.key));
+  it("barra inferior do shell: as quatro primeiras etapas e o Mais, que abre a gaveta", () => {
+    const sections = productionSections({ canViewRecipes: true, timersActive: 1 });
+    expect(quickBarProblems(sections)).toEqual([]);
+    const layout = quickBarLayout(sections);
+    expect(layout.items.map((s) => s.key)).toEqual(["plan", "mise-en-place", "open", "close"]);
+    expect(layout.more).toBe(true);
   });
 
   it("depois do ciclo, um traço, Timers e Ajustes (v4 plano-porque, R02); nada no pé", () => {
@@ -50,7 +53,6 @@ describe("seções da Produção no rail", () => {
       (s) => s.key === "timers",
     )!;
     expect(busy.badge).toBe("3");
-    expect(busy.badgeLabel).toBe("3 timers ativos");
     expect(busy.attention).toBe("1 tocando");
   });
 
@@ -63,7 +65,6 @@ describe("seções da Produção no rail", () => {
       (s) => s.key === "quality",
     )!;
     expect(quality.badge).toBe("8");
-    expect(quality.badgeLabel).toBe("8 lotes para confirmar");
   });
 
   it("a rota acende a seção certa; Receitas acende Ajustes, onde ela mora", () => {

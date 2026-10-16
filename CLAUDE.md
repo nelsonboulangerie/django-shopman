@@ -151,7 +151,7 @@ outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
 ## Estrutura do Projeto
 
 ```
-packages/               12 apps pip-instaláveis (sem dependência entre si)
+packages/               13 apps pip-instaláveis (sem dependência entre si)
 ├── utils/              Utilitários compartilhados (monetary, phone, admin)          [shopman-utils]
 ├── refs/               Registro de refs tipadas, rename/audit e campos reutilizáveis [shopman-refs]
 ├── offerman/           Catálogo: produtos, preços, listings, coleções, bundles      [shopman-offerman]
@@ -163,7 +163,8 @@ packages/               12 apps pip-instaláveis (sem dependência entre si)
 ├── payman/             Pagamentos: intents, transactions, service                   [shopman-payman]
 ├── buyman/             Compras: fornecedores, materiais, custos (procurement, Fase 1) [shopman-buyman]
 ├── fiscalman/          Fiscal: classificação NFC-e (schema em Product.metadata)      [shopman-fiscalman]
-└── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
+├── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
+└── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
 
 shopman/                Namespace package (PEP 420) — sem __init__.py
 ├── shop/               Orquestrador (app Django, label="shop") — health/readiness views [django-shopman]
@@ -213,7 +214,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)
     └── tests/          POS, KDS, produção, fechamento, contratos de superfície, e2e
 
-surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro único em surfaces/registry.json
+surfaces/               11 apps registrados (9 produto + internal + external), 1 layer e 1 roteador — fonte: registry.json
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
 ├── hub-nuxt/          Central — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
@@ -224,6 +225,7 @@ surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro 
 ├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
 ├── kitchensink-nuxt/ Catálogo do operador (:3009)        → api./backstage
+├── status-nuxt/      status público independente (:3010) → liveness pública
 ├── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
 │                      retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
 │                      BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
@@ -242,7 +244,7 @@ pyproject.toml          Build + test config (repo root)
 ```
 
 > **Cutover headless:** os apps Django `storefront`/`backstage` NÃO renderizam mais
-> HTML — servem API JSON + projections. As superfícies são os 9 apps Nuxt em
+> HTML — servem API JSON + projections. As superfícies de produto são os 9 apps Nuxt em
 > `surfaces/`, que falam com o Django via BFF (cookie de sessão cross-subdomínio
 > `.boulangerie`). A seção "Frontend: HTMX ↔ Alpine" abaixo vale só para as telas
 > Admin/Unfold que ainda são Django-rendered.
@@ -398,7 +400,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   `style-src-elem` via `import.meta.dev`; `script-src` continua nonce-only e produção
   estrita. Antes de habilitar outro app, inventarie recursos externos, use allowlist
   mínima por diretiva e rode testes do kit + consumer. POS (Maps/ViaCEP) e Storefront
-  exigem tratamento específico. Ver [ADR-026](docs/decisions/adr-026-operator-surface-security-envelope.md)
+  exigem tratamento específico. Ver [ADR-038](docs/decisions/adr-038-operator-surface-security-envelope.md)
   e o follow-up `SEC-SURF-001`.
 - **Marketing tem um contrato factual único**: antes de alterar cockpit, rotas, projeções,
   permissões, canais ou deploy, leia
@@ -480,7 +482,7 @@ make migrate           # Migrações
 
 ## Core é Sagrado — Regras de Integridade
 
-O `packages/` é um conjunto de 12 apps pip-instaláveis, muito bem desenhado, robusto e flexível.
+O `packages/` é um conjunto de 13 apps pip-instaláveis, muito bem desenhado, robusto e flexível.
 Antes de alterar qualquer coisa no Core, **compreenda como ele já resolve o problema**.
 
 1. **Não adicionar campos a modelos do Core sem necessidade comprovada.** Os modelos `Session`, `Order`,
@@ -515,6 +517,7 @@ Antes de alterar qualquer coisa no Core, **compreenda como ele já resolve o pro
 
 ## Referências
 
+- [docs/plans/COORDENACAO-GO-LIVE.md](docs/plans/COORDENACAO-GO-LIVE.md) — **Quem assume a coordenação lê primeiro**: papel, regras dos agentes, checklist de design D1–D12, estado, decisões do dono e frentes abertas até o go-live
 - [docs/reference/data-schemas.md](docs/reference/data-schemas.md) — **Obrigatório**: inventário de chaves em Session.data, Order.data, Directive.payload
 - [docs/guides/lifecycle.md](docs/guides/lifecycle.md) — Guia da arquitetura: Lifecycle, Services, Adapters, Rules
 - [docs/ROADMAP.md](docs/ROADMAP.md) — Visão geral de próximos passos e ideias futuras

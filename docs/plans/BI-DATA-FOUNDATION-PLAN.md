@@ -123,7 +123,7 @@ Não há modelo unificado. Há **regras em código** que unificam na leitura:
   `cash`, `shelf`, `outage`, `payment`, `room`) × 20 dimensões, gramática estrita, ranking com
   `MAX_ROWS=60` e corte declarado; dimensões de contexto (`day_kind`, `temperature`, `rain`) só
   aparecem se `DayContext` tiver dado.
-- **`BIView`** (`models/bi_view.py`): cenário salvo do explorador — config, não dado.
+- **`SavedView`** (`models/saved_view.py`, `surface=bi`, `screen=explore`): cenário salvo do explorador, config e não dado. Tomou o lugar do `BIView` em `backstage.0090` (#1587).
 - **Materialização: zero.** Sem `django.core.cache` em nenhum `bi_*`, sem tabela agregada, sem view
   SQL, sem comando `refresh_*`. Política: ADR-021 §3 — só com gatilho medido (p95 > 2 s ou
   varredura > 12 meses por request); `bi_production.py:22-26` e BI-FORECAST-PLAN §13 repetem. As
@@ -320,7 +320,7 @@ Nenhum destes exige mudança no `cashman`. Todos são combinações de ordem e c
 | 5 | `bi-nuxt` `pages/cash.vue` | `GET bi/cash/` → `bi_cash` | `CashShift`, `CashMovement`, `DayClosing.data` | `cashman.Entry` via adaptador (P4, com WP-4/8) |
 | 6 | `bi-nuxt` `pages/index.vue` (produção) | `GET bi/production/` → `bi_production` | `WorkOrder*`, `OvenRun`, `QualityGrade` | **não muda** (ledger nativo, sem fonte externa) |
 | 7 | `bi-nuxt` `pages/customers.vue` | `GET bi/customers/` → `bi_customers` | `guestman.CustomerInsight`, `Customer` | não muda em v1; ganha profundidade histórica quando o de-para de cliente existir (fora de escopo) |
-| 8 | `bi-nuxt` cenários | `bi/views/` → `BIView` | config | não muda |
+| 8 | `bi-nuxt` cenários | `saved-views/?surface=bi&screen=explore` → `SavedView` | config | não muda |
 | 9 | `hub-nuxt` tile | `projections/hub.py:85` | permissão + URL | não muda |
 | 10 | `services/room.py:154` | `bi_explore._consumption_modes` | cesta nativa+histórica | passa a consumir a canônica (P2) |
 | 11 | `sales_series.py:56` | `bi_sales._local_datetime_window` | helper | vira utilitário da canônica |

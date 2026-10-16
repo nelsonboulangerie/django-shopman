@@ -81,18 +81,24 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
     expect(cart).not.toContain("toggleDetails(item.line_id)");
     expect(cart).not.toContain('data-testid="kitchen-card-open"\n');
   });
-  it("modo seleção numa faixa só", () => {
-    expect(cart).toContain("data-pos-selection-bar");
+  it("marcar sem modo (dono, 10/10): sem faixa de seleção, o bloco de N no lugar do de 1", () => {
+    expect(cart).not.toContain("data-pos-selection-bar");
+    expect(cart).toContain("data-pos-marked-title");
     expect(cart).not.toContain('class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2"');
   });
   it("no toque, um instrumento só: caixa grande, numérico e a coluna com Pronto", () => {
     expect(cart).toContain("data-pos-touch-editor");
     expect(cart).toContain("(era {{ qtyWas }})");
-    expect(cart).toMatch(/Pronto<\/button>/);
+    expect(cart).toContain('{{ discountOpen ? "Aplicar" : "Pronto" }}</NuxtButton>');
   });
   it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, PIX e Maquininha", () => {
-    expect(cart).toContain("data-pos-sheet-fire");
+    // A folha fechada é a barra da ação do momento do kit; a primária é o envio
+    // quando há o que enviar (`sheetFirePrimary`), e a gaveta aberta paga direto.
+    expect(cart).toContain("<OperatorActionBar");
+    expect(cart).toContain("sheetFirePrimary.value");
+    expect(cart).toContain("<NuxtDrawer");
     expect(cart).toContain("data-pos-sheet-pay");
+    expect(cart).not.toContain("<UiScrim");
   });
   it("a folha aberta leva o dinheiro da V6-CAIXA uma vez só, secundário, e a gaveta não abre dali", () => {
     const page = read("../app/pages/index.vue");
@@ -103,7 +109,7 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
   });
   it("'vai à cozinha' na linha nova e o envio automático à vista", () => {
     expect(cart).toContain("data-pos-line-goes-to-kitchen");
-    expect(cart).toContain("envio automático:");
+    expect(cart).toContain("data-pos-auto-fire-control");
   });
 });
 
@@ -150,5 +156,51 @@ describe("P39: pinça para zoom na planta", () => {
   it("a planta escuta dois dedos e a página aplica o zoom", () => {
     expect(read("../app/components/PosSeatingPlan.vue")).toContain('emit("pinch"');
     expect(read("../app/pages/settings/seating.vue")).toContain('@pinch="onPinch"');
+  });
+});
+
+// Limpeza final da fase 2 no PDV: cada item que pode voltar tem a trava pela fonte.
+describe("Fase 2, limpeza do PDV", () => {
+  const sources = () =>
+    ["PosCartPanel", "PosTabHeader", "PosPaymentWorkspace", "PosTabPickerDialog", "PosFulfillmentModal", "PosTabBoard"]
+      .map((name) => [name, read(`../app/components/${name}.vue`)] as const);
+  it("nenhum <button> cru: o botão é o NuxtButton do conjunto mínimo", () => {
+    for (const [name, source] of sources()) {
+      // Só o markup: os comentários do template (que citam `<button>` na história) saem.
+      const parts = source.slice(source.indexOf("<template>")).split("<!--");
+      const markup = [parts[0], ...parts.slice(1).map((part) => part.split("-->").slice(1).join("-->"))].join("");
+      expect(markup, name).not.toMatch(/<button[\s>]/);
+    }
+  });
+  it("os campos de cédula do Fim do dia têm a altura dos botões md (32 px)", () => {
+    const counter = read("../app/components/PosDenominationCounter.vue");
+    expect(counter).not.toContain('class="h-12 w-full');
+    expect(counter).toContain('class="h-8 w-full');
+  });
+  it("no celular o Sair do Fim do dia mora na linha do título", () => {
+    const page = read("../app/pages/session/closing.vue");
+    expect(page).toContain("#phone-actions");
+    expect(page).toContain('v-if="!phoneHeader" #actions');
+  });
+  it("gaveta vazia pede a confirmação com o nome dela", () => {
+    expect(read("../app/pages/session/closing.vue")).toContain("Confirmar gaveta vazia?");
+  });
+  it("o Atualizar dos Ajustes relê os Ajustes, não o terminal", () => {
+    const shell = read("../app/components/PosSettingsShell.vue");
+    expect(shell).toContain('refreshNuxtData("pos-settings")');
+    expect(shell).not.toContain("onSelect: () => void refreshPos()");
+  });
+  it("as Encomendas partem do dia da loja, não do relógio do dispositivo", () => {
+    const page = read("../app/pages/preorders/index.vue");
+    expect(page).toContain("pos.value?.delivery_today");
+    expect(page).not.toContain("parseView(route.query, today)");
+  });
+  it("grade/lista: o ligado é solid", () => {
+    const page = read("../app/pages/preorders/index.vue");
+    const toggle = page.slice(page.indexOf("data-preorders-layout"), page.indexOf("data-preorders-layout-option"));
+    expect(toggle).toContain('active-variant="solid"');
+    const board = read("../app/components/PosTabBoard.vue");
+    expect(board).not.toContain(":class=\"tabView === 'grid' ? 'border-primary bg-primary/5' : ''\"");
+    expect(board.match(/active-variant="solid"/g)).toHaveLength(4);
   });
 });

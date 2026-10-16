@@ -55,6 +55,7 @@ def create_operator_alert(
     order_ref: str = "",
     debounce_minutes: int = 15,
     dedupe_key: str = "",
+    respond_by=None,
     **fields: Any,
 ):
     """Create a debounced OperatorAlert and log the decision."""
@@ -90,6 +91,7 @@ def create_operator_alert(
             severity,
             _alert_message(message, dedupe_text=dedupe_text),
             order_ref=order_ref,
+            respond_by=respond_by,
         )
     except Exception:
         logger.exception(

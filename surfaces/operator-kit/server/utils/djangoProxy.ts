@@ -28,7 +28,10 @@ import { applyPrivateNoStore } from "./operatorSecurity";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-export const DJANGO_CONDITIONAL_REQUEST_HEADERS = ["if-none-match", "x-request-id"] as const;
+export const DJANGO_CONDITIONAL_REQUEST_HEADERS = [
+  "if-none-match",
+  "x-request-id",
+] as const;
 export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
   "content-disposition",
   "retry-after",
@@ -45,20 +48,28 @@ export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
   "x-ratelimit-limit",
   "x-ratelimit-remaining",
   "x-ratelimit-reset",
+  // Tempo do servidor por estágio (SQL, abrir conexão, cache, GC), no formato do
+  // cardápio. Só números, sem dado de ninguém: é o que deixa medir no navegador,
+  // em produção, onde vai o tempo das idas do PDV (salvar, revisar, fechar).
+  "server-timing",
 ] as const;
 
 export function isSafeDjangoLocation(location: string): boolean {
-  return location.startsWith("/")
-    && !location.startsWith("//")
-    && !location.includes("\\")
+  return (
+    location.startsWith("/") &&
+    !location.startsWith("//") &&
+    !location.includes("\\") &&
     // Casar caractere de controle É o ponto: CR/LF/NUL num Location refletido pelo
     // Django viram response splitting. A regra supõe que control char em regex é engano
     // de digitação; aqui é a defesa, não o descuido.
     // eslint-disable-next-line no-control-regex
-    && !/[\x00-\x1F\x7F]/.test(location);
+    !/[\x00-\x1F\x7F]/.test(location)
+  );
 }
 
-export function mutationHeaders(read: (name: string) => string | undefined): Record<string, string> {
+export function mutationHeaders(
+  read: (name: string) => string | undefined,
+): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const name of ["idempotency-key", "if-match", "x-correlation-id"]) {
     const value = read(name);
@@ -68,14 +79,19 @@ export function mutationHeaders(read: (name: string) => string | undefined): Rec
 }
 
 export function csrfTokenFromCookieHeader(cookie: string | undefined): string {
-  return cookie
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("csrftoken="))
-    ?.slice("csrftoken=".length) || "";
+  return (
+    cookie
+      ?.split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("csrftoken="))
+      ?.slice("csrftoken=".length) || ""
+  );
 }
 
-export function mergeSetCookieIntoCookieHeader(cookie: string | undefined, setCookie: string): string {
+export function mergeSetCookieIntoCookieHeader(
+  cookie: string | undefined,
+  setCookie: string,
+): string {
   if (!isSafeDjangoSetCookieHeader(setCookie)) return cookie || "";
   const [pair = ""] = setCookie.split(";");
   const [name, ...valueParts] = pair.split("=");
@@ -88,7 +104,9 @@ export function mergeSetCookieIntoCookieHeader(cookie: string | undefined, setCo
     if (cookieName) next.set(cookieName, cookieValue.join("="));
   }
   next.set(name, value);
-  return Array.from(next.entries()).map(([cookieName, cookieValue]) => `${cookieName}=${cookieValue}`).join("; ");
+  return Array.from(next.entries())
+    .map(([cookieName, cookieValue]) => `${cookieName}=${cookieValue}`)
+    .join("; ");
 }
 
 async function ensureDjangoCsrfCookie(
@@ -112,7 +130,14 @@ async function ensureDjangoCsrfCookie(
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
-      const browserCookieHeader = operatorSetCookieHeaderForBrowser(cookieHeader);
+      const requestUrl = getRequestURL(event);
+      const browserCookieHeader = operatorSetCookieHeaderForBrowser(
+        cookieHeader,
+        {
+          hostname: requestUrl.hostname,
+          protocol: requestUrl.protocol,
+        },
+      );
       if (!browserCookieHeader) continue;
       appendResponseHeader(event, "set-cookie", browserCookieHeader);
       mergedCookie = mergeSetCookieIntoCookieHeader(mergedCookie, cookieHeader);
@@ -120,7 +145,10 @@ async function ensureDjangoCsrfCookie(
   }
 
   token = csrfTokenFromCookieHeader(mergedCookie);
-  return { cookie: mergedCookie, token: token ? decodeURIComponent(token) : "" };
+  return {
+    cookie: mergedCookie,
+    token: token ? decodeURIComponent(token) : "",
+  };
 }
 
 /**
@@ -138,11 +166,12 @@ async function ensureDjangoCsrfCookie(
  * `%252e%252e` são o mesmo pedido escrito de outro jeito. Percent-encoding
  * malformado é recusa, não tentativa de adivinhação.
  */
-export function hasPathTraversal (path: string): boolean {
+export function hasPathTraversal(path: string): boolean {
   let current = path;
   for (let i = 0; i < 3; i++) {
     if (current.includes("\\")) return true;
-    if (current.split("/").some((seg) => seg === "." || seg === "..")) return true;
+    if (current.split("/").some((seg) => seg === "." || seg === ".."))
+      return true;
     let next: string;
     try {
       next = decodeURIComponent(current);
@@ -152,7 +181,7 @@ export function hasPathTraversal (path: string): boolean {
     if (next === current) return false;
     current = next;
   }
-  return true // não estabilizou em 3 voltas: recusa
+  return true; // não estabilizou em 3 voltas: recusa
 }
 
 /**
@@ -191,7 +220,10 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   const method = event.method || "GET";
   const isUnsafeMethod = UNSAFE_METHODS.has(method.toUpperCase());
   const normalizedPath = fullPath.endsWith("/") ? fullPath : `${fullPath}/`;
-  const target = withQuery(`${djangoBaseUrl}${normalizedPath}`, getQuery(event));
+  const target = withQuery(
+    `${djangoBaseUrl}${normalizedPath}`,
+    getQuery(event),
+  );
   const djangoOrigin = new URL(djangoBaseUrl).origin;
 
   const headers: Record<string, string> = {
@@ -199,7 +231,9 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
     ...mutationHeaders((name) => getRequestHeader(event, name)),
   };
 
-  let cookie = operatorCookieHeaderForDjango(getRequestHeader(event, "cookie")) || undefined;
+  let cookie =
+    operatorCookieHeaderForDjango(getRequestHeader(event, "cookie")) ||
+    undefined;
   if (cookie) headers.cookie = cookie;
 
   const contentType = getRequestHeader(event, "content-type");
@@ -242,13 +276,18 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
 
   if (isUnsafeMethod) {
     if (isForeignMutationOrigin(event)) {
-      throw createError({ statusCode: 403, statusMessage: "Origem não autorizada." });
+      throw createError({
+        statusCode: 403,
+        statusMessage: "Origem não autorizada.",
+      });
     }
     headers.origin = djangoOrigin;
     headers.referer = `${djangoOrigin}/`;
   }
 
-  const clientCsrfHeader = getRequestHeader(event, "x-csrftoken") || getRequestHeader(event, "x-csrf-token");
+  const clientCsrfHeader =
+    getRequestHeader(event, "x-csrftoken") ||
+    getRequestHeader(event, "x-csrf-token");
   const csrfCookie = csrfTokenFromCookieHeader(cookie);
   if (csrfCookie) headers["x-csrftoken"] = decodeURIComponent(csrfCookie);
   else if (clientCsrfHeader) headers["x-csrftoken"] = clientCsrfHeader;
@@ -260,7 +299,9 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
     if (csrf.token) headers["x-csrftoken"] = csrf.token;
   }
 
-  const body = ["GET", "HEAD"].includes(method) ? undefined : await readRawBody(event, false);
+  const body = ["GET", "HEAD"].includes(method)
+    ? undefined
+    : await readRawBody(event, false);
 
   const response = await $fetch.raw(target, {
     method,
@@ -273,22 +314,33 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   // Sanidade de contrato: o Django carimba /api/v1/ com X-API-Version; major
   // divergente vira warning estruturado no Nitro (apiVersion.ts ao lado,
   // auto-importado) — nunca bloqueia a resposta.
-  warnOnApiVersionMismatch(response.headers.get("x-api-version"), { path: normalizedPath });
+  warnOnApiVersionMismatch(response.headers.get("x-api-version"), {
+    path: normalizedPath,
+  });
 
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     for (const cookieHeader of splitCookiesString(setCookie)) {
-      const browserCookieHeader = operatorSetCookieHeaderForBrowser(cookieHeader);
+      const requestUrl = getRequestURL(event);
+      const browserCookieHeader = operatorSetCookieHeaderForBrowser(
+        cookieHeader,
+        {
+          hostname: requestUrl.hostname,
+          protocol: requestUrl.protocol,
+        },
+      );
       if (!browserCookieHeader) continue;
       appendResponseHeader(event, "set-cookie", browserCookieHeader);
     }
   }
 
   const location = response.headers.get("location");
-  if (location && isSafeDjangoLocation(location)) setResponseHeader(event, "location", location);
+  if (location && isSafeDjangoLocation(location))
+    setResponseHeader(event, "location", location);
 
   const responseContentType = response.headers.get("content-type");
-  if (responseContentType) setResponseHeader(event, "content-type", responseContentType);
+  if (responseContentType)
+    setResponseHeader(event, "content-type", responseContentType);
 
   // Allowlist operacional: o browser precisa saber quando repetir e qual
   // receipt/request citar, sem espelhar headers arbitrários do upstream.

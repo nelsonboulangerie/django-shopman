@@ -130,7 +130,8 @@ server/
 - E2E do caminho principal e da recuperação crítica;
 - axe + teclado + foco;
 - matriz visual nos viewports/temas/estados relevantes;
-- contratos de segurança e auditoria de dependências;
+- contratos de segurança;
+- auditoria de dependências no job `Supply chain — npm audit`, não no job do app;
 - instalação limpa e determinística.
 
 No Marketing, essa cadeia é o job `Marketing — cadeia completa`: 320 px, mobile,

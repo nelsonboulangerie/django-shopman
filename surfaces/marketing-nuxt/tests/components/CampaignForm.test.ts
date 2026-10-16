@@ -5,7 +5,6 @@ import CampaignForm from "~/components/CampaignForm.vue";
 import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
 import type { Campaign } from "~/types/campaign";
 import { installMemoryLocalStorage } from "../support/localStorage";
-import { UiNativeSelectStub } from "../support/nativeUiStubs";
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
 beforeAll(() => {
@@ -98,7 +97,7 @@ function form(rule: Campaign | null = null, draftOwner = "") {
       draftOwner,
     },
     global: {
-      components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+      components: { DraftRecoveryNotice },
       stubs: { Icon: true },
     },
   });
@@ -162,7 +161,14 @@ describe("CampaignForm — a oferta anunciada", () => {
 
   it("relê a oferta da regra aberta", () => {
     const wrapper = form(makeRule({ promotion_ref: "relampago-17h30" }));
-    expect(wrapper.get("#rule-offer").text()).toContain("Relâmpago das 17h30");
+    // A lista com busca recebe o ITEM escolhido (`NuxtSelectMenu`), e é ele que o
+    // gatilho mostra.
+    const offer = wrapper
+      .findAllComponents({ name: "NuxtSelectMenu" })
+      .find((menu) => menu.find("#rule-offer").exists())!;
+    expect(
+      (offer.props("modelValue") as { label?: string } | undefined)?.label,
+    ).toBe("Relâmpago das 17h30");
   });
 
   it("some quando não há oferta viva — seletor vazio não ajuda ninguém", () => {
@@ -175,7 +181,7 @@ describe("CampaignForm — a oferta anunciada", () => {
         offers: [],
         platformLabels: {},
       },
-      global: { stubs: { Icon: true, UiNativeSelect: UiNativeSelectStub } },
+      global: { stubs: { Icon: true } },
     });
     expect(wrapper.find("#rule-offer").exists()).toBe(false);
   });
@@ -308,13 +314,10 @@ describe("CampaignForm — quando disparar", () => {
   it("manda só os dias marcados", async () => {
     const wrapper = form(makeRule());
 
-    // Os dias são `UiToggleChip`: `role="checkbox"` com `aria-checked`, e não botão
-    // com `aria-pressed` — marcar dia é marcar item, não apertar botão que fica
-    // apertado.
-    const days = wrapper
-      .findAll('[role="checkbox"]')
-      .filter((chip) => ["sex", "sáb"].includes(chip.text()));
-    for (const day of days) await day.trigger("click");
+    // Os dias são um grupo de caixas (`NuxtCheckboxGroup`): `role="checkbox"` com
+    // `aria-checked`, e não botão com `aria-pressed`. Marcar dia é marcar item, não
+    // apertar botão que fica apertado.
+    for (const day of ["sex", "sáb"]) await checkboxNamed(wrapper, day).trigger("click");
     await wrapper.find("form").trigger("submit");
 
     const [payload] = wrapper.emitted("submit")![0] as [
@@ -410,7 +413,7 @@ describe("CampaignForm — quando disparar", () => {
     ).toBe("06:00");
     const marked = wrapper
       .findAll('[role="checkbox"][aria-checked="true"]')
-      .map((chip) => chip.text());
+      .map((box) => box.element.closest('[data-slot="item"]')?.textContent);
     expect(marked).toContain("seg");
   });
 
@@ -435,7 +438,7 @@ describe("CampaignForm — quando disparar", () => {
     ];
     expect(payload.schedule).toEqual(schedule);
     expect(wrapper.text()).toContain(
-      "Horários adicionais preservados: 16:00–18:00",
+      "Horários adicionais preservados: 16:00 a 18:00",
     );
   });
 
@@ -774,7 +777,7 @@ describe("CampaignForm — a voz do gestor", () => {
         ],
       },
       global: {
-        components: { DraftRecoveryNotice, UiNativeSelect: UiNativeSelectStub },
+        components: { DraftRecoveryNotice },
         stubs: { Icon: true, NuxtLink: true },
       },
     });

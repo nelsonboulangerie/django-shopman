@@ -132,6 +132,8 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
     response = client.get(reverse("api-backstage-purchase"))
 
     assert response.status_code == 200
+    assert "projection;dur=" in response["Server-Timing"]
+    assert response._watchman_query_count > 0
     purchase = response.json()["purchase"]
     assert purchase["materials"][0]["sku"] == "FARINHA-NOVARA-T55"
     assert purchase["materials"][0]["stockOnHand"] == 12.0
@@ -617,12 +619,9 @@ def test_upsert_cost_and_request_status_actions(client, purchase_operator, mater
     assert cost_response.status_code == 200
     assert SupplierMaterialCost.objects.get(material=material, supplier=supplier).is_preferred is True
 
-    approve = client.post(reverse("api-backstage-purchase-request-approve", args=[material.sku]))
-    assert approve.status_code == 200
-    assert approve.json()["purchase"]["purchaseRequestStatuses"][material.sku] == "approved"
-
     sent = client.post(reverse("api-backstage-purchase-request-send", args=[material.sku]))
     assert sent.status_code == 200
+    assert sent.json()["purchase"]["purchaseRequestStatuses"][material.sku] == "sent"
     material.refresh_from_db()
     assert material.metadata["purchase"]["request_status"] == "sent"
     assert material.metadata["purchase"]["request_supplier_ref"] == supplier.ref

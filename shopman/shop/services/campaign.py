@@ -699,6 +699,7 @@ _TRANSACTIONAL_TEST_VALUES = {
     "product_url": "https://shopman.invalid/teste/produto",
     "purchase_qty_display": "2 kg",
     "purchase_ref": "COMPRA-TESTE-A47",
+    "refund_amount_display": "R$ 12,00",
     "reorder_url": "https://shopman.invalid/teste/refazer",
     "reserve_note": "Reserva sintética para validar o modelo.",
     "revoke_url": "https://shopman.invalid/teste/revogar",
@@ -1908,8 +1909,10 @@ def dispatch(announcement: Announcement) -> int:
     ``dispatch`` ressuscitar a mensagem já retirada.
     """
     with transaction.atomic():
+        # ``of=("self",)``: só o anúncio muda aqui, e ``rule`` é FK anulável; o
+        # PostgreSQL recusa ``FOR UPDATE`` no lado anulável do OUTER JOIN.
         current = (
-            Announcement.objects.select_for_update()
+            Announcement.objects.select_for_update(of=("self",))
             .select_related("rule")
             .get(pk=announcement.pk)
         )

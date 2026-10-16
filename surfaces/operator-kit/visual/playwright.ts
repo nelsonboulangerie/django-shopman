@@ -1,10 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Page, PlaywrightTestConfig, TestInfo } from "@playwright/test";
+import type { Locator, Page, PlaywrightTestConfig, TestInfo } from "@playwright/test";
 
 import { selectedOperatorViewports, type OperatorVisualViewport } from "./matrix";
-import { scanOperatorGeometry, type OperatorGeometryFinding } from "./scanner";
+import { OPERATOR_LABEL_FINDINGS, scanOperatorGeometry, type OperatorGeometryFinding } from "./scanner";
 
 const visualRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -108,4 +108,41 @@ export async function captureOperatorEvidence(
     throw new Error(blocking.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"));
   }
   return { screenshot, findings };
+}
+
+/**
+ * Barreira comum entre "a página hidratou" e "a cena está pronta para ser
+ * avaliada". O marcador pertence ao app e só muda para `ready` depois dos dados
+ * que definem a cena; `subject` protege uma interação (por exemplo um diálogo)
+ * contra uma remontagem tardia durante a estabilização de fontes/layout.
+ */
+export async function waitForOperatorScene(
+  page: Page,
+  ready: Locator,
+  subject?: Locator,
+) {
+  await ready.waitFor({ state: "visible" });
+  if (subject) await subject.waitFor({ state: "visible" });
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  );
+  await ready.waitFor({ state: "visible" });
+  if (subject) await subject.waitFor({ state: "visible" });
+}
+
+/**
+ * A trava do rótulo que cabe para as matrizes que ainda não passam a varredura de
+ * geometria inteira (Marketing, Produção, Cozinha): só texto de controle que vaza ou
+ * corta, controles sobrepostos e texto de peça fixa. Reprova com a lista do que achou.
+ */
+export async function expectOperatorLabelsFit(page: Page, context = "") {
+  await page.evaluate(() => document.fonts.ready);
+  const findings = await scanOperatorGeometry(page, { only: OPERATOR_LABEL_FINDINGS });
+  if (findings.length) {
+    throw new Error(
+      `${context ? `${context}: ` : ""}rótulo que não cabe\n` +
+        findings.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"),
+    );
+  }
 }

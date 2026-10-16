@@ -1,6 +1,7 @@
 # ADR-033 — A frase digitada segue o que não tem desfazer
 
-**Status:** Aceito em 2026-09-18
+**Status:** Aceito
+**Data:** 2026-09-18
 **Emenda:** [ADR-032](adr-032-marketing-ceremony-threshold-is-proportional.md), cujo
 limiar proporcional continua valendo inteiro — ele só deixa de governar a **frase** e
 passa a governar apenas o **resto** da cerimônia. Não mexe na

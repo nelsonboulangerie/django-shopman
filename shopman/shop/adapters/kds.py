@@ -43,7 +43,21 @@ def fired_line_ids_for_session(session_key: str) -> set[str]:
             line_id = item.get("line_id")
             if line_id:
                 fired.add(line_id)
-    return fired
+    return fired | inherited_fired_line_ids(session_key)
+
+
+#: Linhas que já estão na cozinha num ticket de OUTRA sessão e passaram para esta.
+#: Hoje só a venda feita sem conexão grava (``pos_offline_sale``): a comanda mudada
+#: em outro dispositivo fecha só o que foi cobrado, e o resto segue numa comanda
+#: nova; a linha já enviada não pode voltar à cozinha por ter trocado de sessão.
+KDS_INHERITED_KEY = "kds_inherited_lines"
+
+
+def inherited_fired_line_ids(session_key: str) -> set[str]:
+    from shopman.orderman.models import Session
+
+    data = Session.objects.filter(session_key=session_key).values_list("data", flat=True).first() or {}
+    return {str(line_id) for line_id in (data.get(KDS_INHERITED_KEY) or []) if line_id}
 
 
 def create_ticket(session_key: str, kds_instance, items: list) -> Any:
@@ -54,7 +68,95 @@ def create_ticket(session_key: str, kds_instance, items: list) -> Any:
     )
 
 
-def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
+def carry_lines_to_session(*, from_session_key: str, to_session_key: str, line_map: dict[str, str]) -> dict:
+    """A linha que mudou de comanda leva junto o que a cozinha já tem dela.
+
+    ``line_map`` é ``{line_id na origem: line_id no destino}`` (o kernel dá
+    identidade nova à linha movida). Cada ticket VIVO da origem com linha movida:
+
+    - se só tem linhas movidas, passa inteiro para o destino (mesmo ticket, mesmo
+      estado, mesmo papel impresso): só troca a chave e os ``line_id``;
+    - se tem linhas que ficam, divide: a origem fica com as suas e o destino
+      ganha um ticket com as movidas, no MESMO estado, estação e hora do envio.
+      O ticket do destino nasce por ``bulk_create`` de propósito: não é pedido
+      novo, é o mesmo prato mudando de mesa, então não reimprime a Via Cozinha
+      nem apita "pedido novo" na estação (os dois só reagem a ``post_save``); a
+      tela recebe o evento de atualização, como o do ticket que encolheu, e o
+      card diz de que comanda o prato veio (``known_ref``), com o aviso de
+      mudança, até a estação dar Visto.
+
+    O ticket cancelado fica na origem: é comprovante de um fato que já foi.
+    Pré-condição: o chamador segura o lock das duas sessões (ordem global
+    ``source -> ticket``). Devolve ``{"moved": n, "split": n}``.
+    """
+    from django.db import transaction
+
+    from shopman.backstage.models import KDSTicket
+
+    line_map = {str(old): str(new) for old, new in (line_map or {}).items() if old and new}
+    if not line_map:
+        return {"moved": 0, "split": 0}
+
+    def relabel(item: dict) -> dict:
+        return {**item, "line_id": line_map[str(item.get("line_id"))]}
+
+    moved = split = 0
+    twins: list = []
+    with transaction.atomic():
+        tickets = (
+            KDSTicket.objects.select_for_update()
+            .filter(session_key=from_session_key)
+            .exclude(status="cancelled")
+            .order_by("pk")
+        )
+        for ticket in tickets:
+            items = ticket.items or []
+            going = [it for it in items if str(it.get("line_id")) in line_map]
+            if not going:
+                continue
+            staying = [it for it in items if str(it.get("line_id")) not in line_map]
+            if not staying:
+                ticket.session_key = to_session_key
+                ticket.items = [relabel(it) for it in items]
+                ticket.save(update_fields=["session_key", "items"])
+                moved += 1
+                continue
+            ticket.items = staying
+            ticket.save(update_fields=["items"])
+            twin = KDSTicket(
+                session_key=to_session_key,
+                kds_instance_id=ticket.kds_instance_id,
+                items=[relabel(it) for it in going],
+                status=ticket.status,
+                completed_at=ticket.completed_at,
+                completed_by=ticket.completed_by,
+                completed_via=ticket.completed_via,
+                seen_at=ticket.seen_at,
+                seen_by=ticket.seen_by,
+                # O nome com que a cozinha conhece o prato: o card do destino diz
+                # "Era a comanda <origem>" até alguém dar Visto (dono, 10/10/2026).
+                known_ref=ticket.known_ref,
+            )
+            (twin,) = KDSTicket.objects.bulk_create([twin])
+            # ``auto_now_add`` sobrescreve no insert: a hora do envio é a da origem.
+            KDSTicket.objects.filter(pk=twin.pk).update(created_at=ticket.created_at)
+            twin.created_at = ticket.created_at
+            twins.append(twin)
+            split += 1
+
+    if twins:
+        from shopman.shop.handlers._sse_emitters import emit_kds_change
+
+        for twin in twins:
+            emit_kds_change(twin)  # o emissor já adia a publicação para o commit
+    return {"moved": moved, "split": split}
+
+
+def unfire_session_lines(
+    session_key: str,
+    line_ids: list[str],
+    fractions: dict[str, Any] | None = None,
+) -> dict:
     """Un-fire specific lines for a session: remove them from their live tickets.
 
     Precondition: the caller holds the source Session/Order row lock.  KDS
@@ -66,13 +168,27 @@ def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
     prep progress. The model save re-emits the KDS SSE event either way. Removing
     a line drops it from the fire-ledger, so it may be fired again (reprint =
     un-fire + fire). Returns ``{"cancelled": n, "trimmed": n}``.
+
+    ``fractions`` (opcional, ``{line_id: fração}`` com 0 < fração < 1): a conta
+    DIMINUIU uma linha que já está na cozinha (decisão do dono, 10/10/2026: diminuir
+    cancela só a diferença). A linha fica no ticket vivo com o que sobra, e o
+    comprovante cancelado leva só a diferença (a mesma fração de cada item da linha,
+    o que cobre o combo). A linha continua no ledger: segue enviada.
     """
+    from decimal import Decimal
+
     from django.db import transaction
     from django.utils import timezone
 
     from shopman.backstage.models import KDSTicket
+    from shopman.shop.services.order_helpers import json_quantity
 
     targets = {str(lid) for lid in (line_ids or []) if str(lid)}
+    partial: dict[str, Decimal] = {}
+    for line_id, fraction in (fractions or {}).items():
+        value = Decimal(str(fraction))
+        if str(line_id) in targets and Decimal(0) < value < Decimal(1):
+            partial[str(line_id)] = value
     cancelled = trimmed = 0
     if not targets:
         return {"cancelled": 0, "trimmed": 0}
@@ -85,8 +201,23 @@ def unfire_session_lines(session_key: str, line_ids: list[str]) -> dict:
         )
         for ticket in tickets:
             items = ticket.items or []
-            removed = [it for it in items if it.get("line_id") in targets]
-            kept = [it for it in items if it.get("line_id") not in targets]
+            removed = []
+            kept = []
+            for it in items:
+                line_id = it.get("line_id")
+                if line_id not in targets:
+                    kept.append(it)
+                    continue
+                fraction = partial.get(line_id)
+                if fraction is None:
+                    removed.append(it)
+                    continue
+                qty = Decimal(str(it.get("qty") or 0))
+                gone = qty * fraction
+                # `partial_cancel`: o comprovante é de uma DIFERENÇA, pedida pelo balcão;
+                # a linha segue viva no outro ticket (o selo do PDV não vira "Cancelado").
+                removed.append({**it, "qty": json_quantity(gone), "partial_cancel": True})
+                kept.append({**it, "qty": json_quantity(qty - gone)})
             if not removed:
                 continue
             cancelled_at = timezone.now()
@@ -167,7 +298,7 @@ def complete_open_tickets_for_session(session_key: str, *, actor: str, via: str)
         return len(tickets)
 
 
-def reopen_done_tickets(session_key: str, ticket_ids) -> list[int]:
+def reopen_done_tickets(session_key: str, ticket_ids, *, actor: str) -> list[int]:
     """Volta ao preparo os tickets concluídos indicados (desfazer do pronto automático).
 
     O chamador já travou a origem. Salva um a um, pelo mesmo motivo de
@@ -182,11 +313,8 @@ def reopen_done_tickets(session_key: str, ticket_ids) -> list[int]:
         for ticket in KDSTicket.objects.select_for_update().filter(
             pk__in=list(ticket_ids or []), session_key=session_key, status="done",
         ):
-            ticket.status = "in_progress"
-            ticket.completed_at = None
-            ticket.completed_by = ""
-            ticket.completed_via = ""
-            ticket.save(update_fields=["status", "completed_at", "completed_by", "completed_via"])
+            # O Pronto desfeito fica guardado no ticket (``KDSTicket.reopenings``).
+            ticket.save(update_fields=ticket.undo_completion(actor=actor))
             reopened.append(ticket.pk)
     return reopened
 
@@ -195,6 +323,13 @@ def get_tickets(order):
     from shopman.backstage.models import KDSTicket
 
     return KDSTicket.objects.filter(session_key=order.session_key)
+
+
+def get_ticket_statuses(session_keys) -> list[tuple[str, str]]:
+    """[(session_key, status)] dos tickets destas vendas (comanda ou pedido)."""
+    from shopman.backstage.models import KDSTicket
+
+    return list(KDSTicket.objects.filter(session_key__in=list(session_keys)).values_list("session_key", "status"))
 
 
 def get_completed_ticket_timestamps(order) -> list[tuple[int, Any]]:

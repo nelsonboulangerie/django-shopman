@@ -21,6 +21,7 @@ import pytest
 from django.contrib.auth.models import User
 from shopman.offerman.models import Product
 
+from shopman.shop.services import attributes
 from shopman.shop.services import product_enrichment as pe
 
 
@@ -244,8 +245,9 @@ def test_aceita_so_os_campos_marcados(geleia, gestor, monkeypatch):
     geleia.refresh_from_db()
     assert result.applied == ["ncm", "allergens"]
     assert geleia.metadata["fiscal"]["ncm"] == "20079990"
-    assert geleia.metadata["allergens"] == ["glúten", "leite"]
-    assert geleia.metadata["dietary_auto_filled"] is False
+    # O aceite grava no REGISTRO de atributos, não na chave legada do metadata.
+    assert attributes.get(geleia, "alergenos") == ["glúten", "leite"]
+    assert "allergens" not in geleia.metadata
     # o resto continua rascunho
     assert geleia.ingredients_text == ""
     assert "brand" not in (geleia.metadata.get("social") or {})
@@ -274,15 +276,14 @@ def test_nome_preenchido_a_mao_so_muda_com_substituir(geleia, gestor, monkeypatc
 
 
 def test_alergeno_a_mao_nao_e_sobrescrito_sem_confirmacao(geleia, gestor, monkeypatch):
-    geleia.metadata = {**geleia.metadata, "allergens": ["leite"]}
-    geleia.save()
+    attributes.set(geleia, "alergenos", ["leite"], source="manual")
     _com_rascunho(geleia, monkeypatch)
 
     result = pe.accept_fields(geleia, ["allergens"], user=gestor)
 
     geleia.refresh_from_db()
     assert result.conflicts == {"allergens": ["leite"]}
-    assert geleia.metadata["allergens"] == ["leite"]
+    assert attributes.get(geleia, "alergenos") == ["leite"]
 
 
 def test_aceitar_nunca_promove_foto_para_a_vitrine(geleia, gestor, monkeypatch):

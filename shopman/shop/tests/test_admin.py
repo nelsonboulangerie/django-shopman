@@ -1736,24 +1736,31 @@ class TestRuleConfigTypedParams:
         from shopman.shop.admin.rules import RuleConfigForm
 
         rule = RuleConfig.objects.create(
-            ref="employee_discount",
-            rule_path="shopman.shop.rules.pricing.EmployeeRule",
-            label="Desconto Funcionário",
-            params={"discount_percent": 20, "price_tier": "staff"},
-            priority=60,
+            ref="happy_hour",
+            rule_path="shopman.shop.rules.pricing.HappyHourRule",
+            label="Hora da Xepa",
+            params={"discount_percent": 25, "start": "17:30", "end": "18:00", "legacy_flag": "x"},
+            priority=65,
         )
         data = {
-            "ref": "employee_discount",
-            "rule_path": "shopman.shop.rules.pricing.EmployeeRule",
-            "label": "Desconto Funcionário",
+            "ref": "happy_hour",
+            "rule_path": "shopman.shop.rules.pricing.HappyHourRule",
+            "label": "Hora da Xepa",
             "enabled": "on",
-            "priority": "60",
-            "param_discount_percent": "15",
+            "priority": "65",
+            "param_discount_percent": "30",
+            "param_start": "17:30",
+            "param_end": "18:00",
         }
         form = RuleConfigForm(data=data, instance=rule)
         assert form.is_valid(), form.errors
         saved = form.save()
-        assert saved.params == {"discount_percent": 15, "price_tier": "staff"}
+        assert saved.params == {
+            "discount_percent": 30,
+            "start": "17:30",
+            "end": "18:00",
+            "legacy_flag": "x",
+        }
 
     def test_happy_hour_rejects_inverted_window(self, happy_hour_rule):
         from shopman.shop.admin.rules import RuleConfigForm

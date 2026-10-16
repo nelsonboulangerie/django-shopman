@@ -107,7 +107,7 @@ def invalidate_featured_ranking() -> None:
 
 
 class FeaturedResolver:
-    """Destaques: mais vendidos nos últimos 30 dias; fallback: sort_order."""
+    """Destaques: mais vendidos nos últimos 30 dias; sem venda, os marcados ou por nome."""
 
     meta = DynamicCollectionMeta(
         ref="featured",
@@ -134,7 +134,9 @@ class FeaturedResolver:
             if skus:
                 return skus
 
-        # Fallback: produtos com is_featured no metadata ou menor sort_order
+        # Sem venda na janela (o Dia 1 começa assim): os marcados com
+        # ``is_featured`` no metadata, ou os publicados por nome. ``Product`` não
+        # tem ``sort_order``; ordenar por ele derrubava a seção inteira.
         qs = Product.objects.filter(is_published=True, is_sellable=True)
         featured_in_meta = [
             sku for sku, metadata in qs.values_list("sku", "metadata")
@@ -142,7 +144,7 @@ class FeaturedResolver:
         ]
         if featured_in_meta:
             return featured_in_meta[:limit]
-        return list(qs.order_by("sort_order", "name").values_list("sku", flat=True)[:limit])
+        return list(qs.order_by("name").values_list("sku", flat=True)[:limit])
 
     def _top_selling_skus(self, limit: int) -> list[str]:
         """Os ``limit`` SKUs mais vendidos da janela, do cache curto ou do banco.

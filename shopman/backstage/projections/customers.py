@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db.models import Count, Q, Value
 from django.db.models.functions import Concat, Lower, Trim
@@ -115,6 +116,32 @@ class CustomerRowProjection:
 
 
 @dataclass(frozen=True)
+class CustomerFormOptionProjection:
+    value: str
+    label: str
+
+
+@dataclass(frozen=True)
+class CustomerPriceTierProjection:
+    """Um grupo comercial do cliente. O cliente tem MUITOS, e todos precificam.
+
+    ``is_primary`` marca o de maior prioridade, que é o que a tela e o PDV mostram
+    quando só cabe um. Quem decide preço é o motor, e ele olha a lista inteira:
+    vale a melhor vantagem por tipo, sem acumular.
+    """
+
+    ref: str
+    name: str
+    is_primary: bool
+
+
+@dataclass(frozen=True)
+class CustomerFormOptionsProjection:
+    customer_types: tuple[CustomerFormOptionProjection, ...]
+    price_tiers: tuple[CustomerFormOptionProjection, ...]
+
+
+@dataclass(frozen=True)
 class CustomerListProjection:
     query: str
     filter: str
@@ -126,12 +153,44 @@ class CustomerListProjection:
     has_next: bool
     # "34 clientes" / "Nenhum cliente com esse filtro".
     total_label: str
+    sort: str
+    form: CustomerFormOptionsProjection
 
 
 @dataclass(frozen=True)
 class CustomerIdentifierProjection:
     type_label: str
     value: str
+
+
+@dataclass(frozen=True)
+class CustomerConsentProjection:
+    channel_label: str
+    purpose_label: str
+    status_label: str
+    allowed: bool
+    proof_label: str
+    source: str
+    updated_display: str
+
+
+@dataclass(frozen=True)
+class CustomerAddressProjection:
+    id: int
+    revision: str
+    label: str
+    label_code: str
+    formatted_address: str
+    route: str
+    street_number: str
+    complement: str
+    neighborhood: str
+    city: str
+    state_code: str
+    postal_code: str
+    delivery_instructions: str
+    is_default: bool
+    is_verified: bool
 
 
 @dataclass(frozen=True)
@@ -174,10 +233,25 @@ class CustomerDetailProjection:
     total_spent_display: str
     last_order_display: str
     identifiers: tuple[CustomerIdentifierProjection, ...]
-    addresses: tuple[str, ...]
+    consents: tuple[CustomerConsentProjection, ...]
+    addresses: tuple[CustomerAddressProjection, ...]
     recent_orders: tuple[CustomerOrderRowProjection, ...]
     candidates: tuple[CustomerCandidateProjection, ...]
     actions: tuple[Action, ...]
+    revision: str
+    first_name: str
+    last_name: str
+    customer_type: str
+    document: str
+    birthday: str
+    phone: str
+    price_tiers: tuple[CustomerPriceTierProjection, ...]
+    tags: tuple[str, ...]
+    house_account: bool
+    house_account_limit: str
+    fiscal_cpf_na_nota: bool
+    fiscal_email_receipt: bool
+    form: CustomerFormOptionsProjection
 
 
 @dataclass(frozen=True)
@@ -249,6 +323,20 @@ def _customer_model():
     from shopman.guestman.models import Customer
 
     return Customer
+
+
+def build_customer_form_options() -> CustomerFormOptionsProjection:
+    from shopman.guestman.models import CustomerType, PriceTier
+
+    return CustomerFormOptionsProjection(
+        customer_types=tuple(
+            CustomerFormOptionProjection(value=str(value), label=str(label)) for value, label in CustomerType.choices
+        ),
+        price_tiers=tuple(
+            CustomerFormOptionProjection(value=tier.ref, label=tier.name)
+            for tier in PriceTier.objects.order_by("-is_default", "-priority", "name", "ref")
+        ),
+    )
 
 
 def _full_name_expr():
@@ -380,11 +468,14 @@ def _search_q(query: str) -> Q:
     return q
 
 
-def build_customer_list(query: str = "", filter_ref: str = "all", page: int = 1) -> CustomerListProjection:
+def build_customer_list(
+    query: str = "", filter_ref: str = "all", page: int = 1, sort: str = "recent",
+) -> CustomerListProjection:
     Customer = _customer_model()
     query = (query or "").strip()
     filter_ref = filter_ref if filter_ref in _FILTER_REFS else "all"
     page = max(int(page or 1), 1)
+    sort = sort if sort in {"recent", "name"} else "recent"
 
     qs = Customer.objects.filter(is_active=True).annotate(full_name=_full_name_expr())
     names: set[str] = set()
@@ -401,7 +492,10 @@ def build_customer_list(query: str = "", filter_ref: str = "all", page: int = 1)
         qs = qs.filter(_search_q(query))
 
     # Duplicados em sequência: quem está comparando lê os dois lado a lado.
-    ordering = ("full_name", "ref") if filter_ref == "possible_duplicates" else ("-created_at", "ref")
+    if filter_ref == "possible_duplicates" or sort == "name":
+        ordering = ("full_name", "ref")
+    else:
+        ordering = ("-created_at", "ref")
     total = qs.count()
     start = (page - 1) * PAGE_SIZE
     customers = list(qs.order_by(*ordering)[start:start + PAGE_SIZE])
@@ -447,6 +541,8 @@ def build_customer_list(query: str = "", filter_ref: str = "all", page: int = 1)
         total=total,
         has_next=start + PAGE_SIZE < total,
         total_label=total_label,
+        sort=sort,
+        form=build_customer_form_options(),
     )
 
 
@@ -554,7 +650,7 @@ def _status_label(status: str) -> str:
 
 def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
     Customer = _customer_model()
-    customer = Customer.objects.filter(ref=ref).first()
+    customer = Customer.objects.prefetch_related("price_tiers", "tags", "addresses").filter(ref=ref).first()
     if customer is None:
         return None
 
@@ -590,16 +686,54 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
     except ImportError:
         pass
 
+    consents: tuple[CustomerConsentProjection, ...] = ()
+    try:
+        from shopman.guestman.contrib.consent.models import CommunicationConsent
+
+        consents = tuple(
+            CustomerConsentProjection(
+                channel_label=str(consent.get_channel_display()),
+                purpose_label=str(consent.get_purpose_display()),
+                status_label=str(consent.get_status_display()),
+                allowed=bool(consent.is_active),
+                proof_label=str(consent.get_proof_status_display()),
+                source=consent.source or "",
+                updated_display=_local(consent.updated_at),
+            )
+            for consent in CommunicationConsent.objects.filter(customer=customer).order_by("channel")
+        )
+    except ImportError:
+        pass
+
     addresses = tuple(
-        str(address.formatted_address)
-        for address in customer.addresses.all().order_by("-is_default", "pk")[:5]
-        if address.formatted_address
+        CustomerAddressProjection(
+            id=address.pk,
+            revision=address.updated_at.isoformat(),
+            label=address.display_label,
+            label_code=address.label,
+            formatted_address=address.formatted_address or "",
+            route=address.route or "",
+            street_number=address.street_number or "",
+            complement=address.complement or "",
+            neighborhood=address.neighborhood or "",
+            city=address.city or "",
+            state_code=address.state_code or "",
+            postal_code=address.postal_code or "",
+            delivery_instructions=address.delivery_instructions or "",
+            is_default=bool(address.is_default),
+            is_verified=bool(address.is_verified),
+        )
+        for address in customer.addresses.all().order_by("-is_default", "pk")[:20]
     )
 
     from shopman.backstage.projections.order_queue import _customer_registry_fields
 
     registry = _customer_registry_fields(customer)
     candidates = build_customer_candidates(customer) if customer.is_active else ()
+    metadata = dict(customer.metadata or {})
+    fiscal = dict(metadata.get("fiscal_prefs") or {})
+    limit_q = metadata.get("house_account_limit_q")
+    limit = f"{Decimal(limit_q) / 100:.2f}" if isinstance(limit_q, int) and not isinstance(limit_q, bool) else ""
 
     actions: tuple[Action, ...] = ()
     if customer.is_active:
@@ -614,6 +748,14 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
                 payload_schema={"required": ["source_ref", "target_ref"]},
             ),
         )
+
+    # ``price_tiers`` vem do prefetch: a ordem é a do ``PriceTier.Meta`` (maior
+    # prioridade primeiro), então o primeiro é o primário.
+    tiers = list(customer.price_tiers.all())
+    price_tiers = tuple(
+        CustomerPriceTierProjection(ref=tier.ref, name=tier.name, is_primary=index == 0)
+        for index, tier in enumerate(tiers)
+    )
 
     return CustomerDetailProjection(
         ref=customer.ref,
@@ -632,10 +774,25 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
         total_spent_display=f"R$ {format_money(int(stats_spent))}" if stats_spent else "",
         last_order_display=_elapsed_label(stats_last),
         identifiers=identifiers,
+        consents=consents,
         addresses=addresses,
         recent_orders=recent_orders,
         candidates=candidates,
         actions=actions,
+        revision=customer.updated_at.isoformat(),
+        first_name=customer.first_name or "",
+        last_name=customer.last_name or "",
+        customer_type=customer.customer_type,
+        document=customer.document or "",
+        birthday=customer.birthday.isoformat() if customer.birthday else "",
+        phone=customer.phone or "",
+        price_tiers=price_tiers,
+        tags=tuple(customer.tags.names()),
+        house_account=bool(metadata.get("house_account")),
+        house_account_limit=limit,
+        fiscal_cpf_na_nota=bool(fiscal.get("cpf_na_nota")),
+        fiscal_email_receipt=bool(fiscal.get("email_receipt")),
+        form=build_customer_form_options(),
     )
 
 

@@ -1,7 +1,7 @@
 // Presentation — transparência de desconto por linha (o caso Batard R$ 13,00 → R$ 11,05).
 //
 // O kernel carimba na linha o desconto automático vencedor (lote/liquidação,
-// happy hour, funcionário) e o payload da comanda o expõe como
+// happy hour, grupo de clientes) e o payload da comanda o expõe como
 // `pricing_discount` (tipo + rótulo de cliente + valor). Aqui vive só a DECISÃO
 // de badge: preferir o percentual ("Liquidação −15%") e cair no valor em R$
 // quando o percentual não fecha limpo. É o mesmo idioma visual da tela do
@@ -9,7 +9,7 @@
 
 import type { POSCartItem } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
-import { lineAmountQ } from "~/presentation/weighed";
+import { isWeighedLine, lineAmountQ } from "~/presentation/weighed";
 
 /** "Liquidação −15%" (ou "Liquidação −R$ 1,95"). "" quando não há desconto automático. */
 export function pricingDiscountBadge(item: POSCartItem): string {
@@ -136,4 +136,160 @@ export function lineListTotalQ(item: POSCartItem): number {
 /** Quanto esta linha economizou, em centavos. 0 quando não houve desconto. */
 export function lineSavingsQ(item: POSCartItem): number {
   return Math.max(0, lineListTotalQ(item) - lineTotalQ(item));
+}
+
+/** O que a linha cobra por unidade, segundo o servidor, no eco de cada gravação. */
+export type POSLinePrice = Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount">;
+
+/** O preço por unidade que a linha passa a cobrar com o desconto manual que ela
+ *  tem AGORA, pela régua do kernel: etiqueta menos o MAIOR entre o manual e o
+ *  automático conhecido (um desconto por item, o maior ganha).
+ *
+ *  É a resposta instantânea do toque em Aplicar. Sem ela, o total da linha
+ *  esperava o servidor, e o servidor só o devolvia ao reabrir a comanda: o dono
+ *  deu R$ 1,00 numa linha e o total só mudou quando recarregou a página
+ *  (13/10/2026). O eco da gravação (`applyLinePrices`) confirma logo depois.
+ *
+ *  O automático conhecido é o que venceu a linha (`pricing_discount`). Um
+ *  automático que o manual anterior tinha batido não aparece aqui; nesse caso
+ *  raro o eco corrige o número em seguida.
+ */
+export function manualDiscountChargedQ(item: POSCartItem): number {
+  const listQ = lineListUnitQ(item);
+  const autoQ = Math.max(0, item.pricing_discount?.amount_q || 0);
+  return Math.max(0, listQ - Math.max(manualDiscountPerUnitQ(item), autoQ));
+}
+
+/** Aplica o preço que o servidor diz que cada linha cobra (eco do salvar).
+ *  Só escreve o que mudou: cada escrita na linha reagenda a gravação. */
+export function applyLinePrices(
+  items: POSCartItem[],
+  linePrices: Record<string, POSLinePrice> | undefined | null,
+): void {
+  if (!linePrices) return;
+  for (const item of items) {
+    const price = linePrices[item.line_id];
+    if (!price) continue;
+    if (typeof price.charged_price_q === "number" && item.charged_price_q !== price.charged_price_q) {
+      item.charged_price_q = price.charged_price_q;
+    }
+    if (typeof price.list_price_q === "number" && item.list_price_q !== price.list_price_q) {
+      item.list_price_q = price.list_price_q;
+    }
+    const next = price.pricing_discount ?? null;
+    if (JSON.stringify(item.pricing_discount ?? null) !== JSON.stringify(next)) {
+      item.pricing_discount = next;
+    }
+  }
+}
+
+/** As linhas SEM o eco de preço do servidor, para a chave que decide rever o total.
+ *
+ *  A revisão da venda sem comanda devolve o que cada linha cobra (o desconto do
+ *  grupo do cliente, a Xepa) e a tela grava isso na linha. Se esses campos
+ *  entrassem na chave, gravar o eco pediria outra revisão, e a tela voltaria a
+ *  dizer "Calculando…" depois de cada resposta. Eles não mudam o total: é o
+ *  servidor que os calcula a partir do resto da linha.
+ */
+export function linesWithoutServerPrices(items: readonly POSCartItem[]): Array<Partial<POSCartItem>> {
+  return items.map(({ charged_price_q: _charged, list_price_q: _list, pricing_discount: _auto, ...rest }) => rest);
+}
+
+/** O alcance de um desconto de linha: quanto ele tira por unidade e na linha. */
+export type DiscountReach = {
+  /** Quanto sai de CADA unidade, em centavos. */
+  perUnitQ: number;
+  /** Quanto sai da linha inteira, em centavos. */
+  lineQ: number;
+  /** O percentual, quando o desconto foi dado em %. `null` quando foi em R$. */
+  percent: number | null;
+  /** A linha tem mais de uma unidade (a peça pesada nunca tem). */
+  multiUnit: boolean;
+};
+
+function percentText(percent: number): string {
+  return `${String(Math.round(percent * 100) / 100).replace(".", ",")}%`;
+}
+
+/** O alcance dito por extenso, pela régua do kernel (`_calc_manual`: o desconto em
+ *  R$ é POR UNIDADE).
+ *
+ *  Em R$ numa linha de 3: "R$ 1,00 por unidade · R$ 3,00 na linha". Sem isso o
+ *  operador lia "R$ 1,00" e esperava R$ 1,00 a menos na linha (dono, 14/10/2026).
+ *  Em %: "10% · R$ 2,07 na linha", porque percentual sozinho não diz quanto saiu.
+ *  Em R$ numa linha de 1, o valor basta: por unidade e na linha são o mesmo número.
+ *  `sign` é o "−" do selo; o editor fala sem ele (ali o assunto já é o desconto).
+ */
+export function discountReachText(reach: DiscountReach, sign = ""): string {
+  if (reach.perUnitQ <= 0) return "";
+  if (reach.percent !== null && reach.percent > 0) {
+    return `${sign}${percentText(reach.percent)} · ${sign}${formatBRL(reach.lineQ)} na linha`;
+  }
+  if (!reach.multiUnit) return `${sign}${formatBRL(reach.perUnitQ)}`;
+  return `${sign}${formatBRL(reach.perUnitQ)} por unidade · ${sign}${formatBRL(reach.lineQ)} na linha`;
+}
+
+/** Quanto sai da linha quando cada unidade perde `perUnitQ`, com o arredondamento
+ *  da peça pesada (o kernel multiplica o preço já descontado pelo peso). */
+function lineReachQ(listQ: number, perUnitQ: number, item: Pick<POSCartItem, "qty" | "weighed">): number {
+  return Math.max(0, lineAmountQ(listQ, item) - lineAmountQ(listQ - perUnitQ, item));
+}
+
+/** O alcance do desconto que VENCEU a linha, medido no que o servidor cobra.
+ *  O mesmo vencedor do selo (`lineDiscountBadge`): o automático, se houver, senão o
+ *  manual. `null` quando a linha não tem desconto. */
+export function lineDiscountReach(item: POSCartItem): DiscountReach | null {
+  const auto = pricingDiscountBadge(item) ? item.pricing_discount! : null;
+  const manualQ = manualDiscountPerUnitQ(item);
+  if (!auto && manualQ <= 0) return null;
+  const listQ = lineListUnitQ(item);
+  const measuredQ = typeof item.list_price_q === "number" ? listQ - unitChargedQ(item) : 0;
+  const perUnitQ = measuredQ > 0 ? measuredQ : auto ? Math.max(0, auto.amount_q) : manualQ;
+  if (perUnitQ <= 0) return null;
+  const percent = auto
+    ? auto.percent > 0 ? auto.percent : null
+    : item.discount?.type === "fixed" ? null : item.discount?.value || null;
+  const savedQ = lineSavingsQ(item);
+  return {
+    perUnitQ,
+    lineQ: savedQ > 0 ? savedQ : lineReachQ(listQ, perUnitQ, item),
+    percent,
+    multiUnit: !isWeighedLine(item) && item.qty > 1,
+  };
+}
+
+/** O selo da linha, sem o motivo: "−R$ 1,00 por unidade · −R$ 3,00 na linha". */
+export function lineDiscountFact(item: POSCartItem): string {
+  const reach = lineDiscountReach(item);
+  return reach ? discountReachText(reach, "−") : "";
+}
+
+/** O detalhe da linha, com o motivo: "Cortesia −R$ 1,00 por unidade · −R$ 3,00 na linha". */
+export function lineDiscountDetail(item: POSCartItem, reasons: readonly DiscountReasonOption[] = []): string {
+  const fact = lineDiscountFact(item);
+  if (!fact) return "";
+  const label = pricingDiscountBadge(item)
+    ? item.pricing_discount?.label || "Desconto"
+    : reasons.find((option) => option.ref === item.discount?.reason)?.label || item.discount?.reason || "Desconto";
+  return `${label} ${fact}`;
+}
+
+/** O alcance do desconto que o operador está DIGITANDO, antes do Aplicar: a mesma
+ *  conta do kernel sobre a etiqueta da linha. `null` sem valor. */
+export function draftDiscountReach(
+  item: POSCartItem,
+  kind: "percent" | "fixed",
+  value: number,
+): DiscountReach | null {
+  if (!(value > 0)) return null;
+  const listQ = lineListUnitQ(item);
+  const askedQ = kind === "fixed" ? Math.round(value * 100) : Math.round((listQ * value) / 100);
+  const perUnitQ = Math.min(askedQ, listQ);
+  if (perUnitQ <= 0) return null;
+  return {
+    perUnitQ,
+    lineQ: lineReachQ(listQ, perUnitQ, item),
+    percent: kind === "percent" ? value : null,
+    multiUnit: !isWeighedLine(item) && item.qty > 1,
+  };
 }

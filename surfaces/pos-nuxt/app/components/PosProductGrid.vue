@@ -192,7 +192,7 @@ function onSearchEscape() {
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col gap-2.5">
+  <section class="@container flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
     <div class="flex shrink-0 items-center gap-2">
@@ -207,101 +207,120 @@ function onSearchEscape() {
         @keydown.enter.prevent="onSearchEnter"
         @keydown.esc.prevent="onSearchEscape"
       />
-      <button
+      <NuxtButton
         v-if="coarsePointer"
-        type="button"
-        class="inline-flex h-14 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3.5 op-label font-semibold transition hover:bg-accent"
+        size="xl"
+        color="neutral"
+        variant="outline"
+        class="h-14 shrink-0"
         aria-label="Ler código pela câmera"
         data-pos-scan-code
         @click="scannerOpen = true"
       >
-        <Icon name="lucide:scan-barcode" class="size-6" />
+        <Icon name="lucide:scan-barcode" class="size-6" aria-hidden="true" />
         <span class="max-sm:sr-only">Ler código</span>
-      </button>
-      <div v-else class="inline-flex h-11 shrink-0 items-center gap-1 rounded-md bg-secondary p-1" role="group" aria-label="Densidade da grade" title="Densidade da grade">
-        <button
+      </NuxtButton>
+      <NuxtFieldGroup v-else class="shrink-0" role="group" aria-label="Densidade da grade" title="Densidade da grade">
+        <NuxtButton
           v-for="opt in DENSITIES"
           :key="opt.key"
-          type="button"
-          class="inline-flex h-full items-center justify-center gap-1.5 rounded op-label transition"
-          :class="density === opt.key
-            ? 'bg-card px-2 font-semibold text-foreground shadow-sm'
-            : 'w-9 text-muted-foreground hover:text-foreground'"
+          color="neutral"
+          variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          :active="density === opt.key"
+          :square="density !== opt.key"
           :aria-label="`Densidade ${opt.label}`"
           :aria-pressed="density === opt.key"
           :title="opt.label"
           @click="setDensity(opt.key)"
         >
-          <Icon :name="opt.icon" class="size-4 shrink-0" />
-          <span v-if="density === opt.key" class="max-xl:sr-only">{{ opt.label }}</span>
-        </button>
-      </div>
+          <Icon :name="opt.icon" class="size-4 shrink-0" aria-hidden="true" />
+          <span v-if="density === opt.key" class="sr-only">{{ opt.label }}</span>
+          <span v-if="density === opt.key" class="hidden @min-[48rem]:inline" aria-hidden="true">{{ opt.label }}</span>
+        </NuxtButton>
+      </NuxtFieldGroup>
     </div>
 
     <!-- O que a busca achou além de produto: comanda em uso e, sem comanda, o
          cliente. Uma faixa só, acima da grade, e só enquanto há busca. -->
     <div v-if="search.trim() && (matchedTabs.length || (customerSearch && !coarsePointer))" class="flex shrink-0 flex-wrap items-center gap-1.5" data-pos-search-more>
-      <button
+      <NuxtButton
         v-for="tab in matchedTabs"
         :key="tab.ref"
-        type="button"
-        class="inline-flex h-10 items-center gap-2 rounded-md border border-primary/50 bg-primary/5 px-3 op-label transition hover:bg-primary/10"
+        variant="outline"
         :data-pos-search-tab="tab.ref"
         @click="openMatchedTab(tab.ref)"
       >
-        <Icon name="lucide:receipt-text" class="size-4 text-primary" />
+        <Icon name="lucide:receipt-text" class="size-4" aria-hidden="true" />
         <span class="font-semibold">Comanda {{ tab.display_ref }}</span>
-        <span v-if="tab.customer_name" class="max-w-40 truncate text-muted-foreground">{{ tab.customer_name }}</span>
-        <span class="text-muted-foreground tnum">{{ tab.item_count }} {{ tab.item_count === 1 ? "item" : "itens" }}</span>
-      </button>
-      <button
+        <span v-if="tab.customer_name" class="max-w-40 truncate font-normal text-muted-foreground">{{ tab.customer_name }}</span>
+        <span class="font-normal text-muted-foreground tnum">{{ tab.item_count }} {{ tab.item_count === 1 ? "item" : "itens" }}</span>
+      </NuxtButton>
+      <NuxtButton
         v-if="customerSearch && !coarsePointer"
-        type="button"
-        class="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 op-label transition hover:bg-accent"
+        color="neutral"
+        variant="outline"
         data-pos-search-customer
         @click="findCustomer"
       >
-        <Icon name="lucide:user-round-search" class="size-4 text-muted-foreground" />
+        <Icon name="lucide:user-round-search" class="size-4 text-muted-foreground" aria-hidden="true" />
         Buscar cliente “<span class="max-w-40 truncate">{{ search.trim() }}</span>”
-      </button>
+      </NuxtButton>
     </div>
 
     <!-- Coleções em chips (v4): 32 px no balcão, 48 px no toque com "Favoritos"
          primeiro. Ocultar indisponíveis é preferência deste dispositivo e mora no fim
          da fila (a v4 não tem o olho ao lado da busca). -->
-    <div class="-mx-1 flex shrink-0 overflow-x-auto px-1 pb-1 no-scrollbar" :class="coarsePointer ? 'gap-2' : 'gap-1'">
-      <button
+    <!-- As coleções rolam na faixa (com o esmaecer na borda dizendo que há mais); o
+         "Ocultar indisponíveis" fica FORA dela, sempre à vista, e vira só o olho
+         quando a área de produtos estreita. -->
+    <div class="flex shrink-0 items-start" :class="coarsePointer ? 'gap-2' : 'gap-1'">
+    <div class="-mx-1 flex min-w-0 flex-1 overflow-x-auto px-1 pb-1 no-scrollbar [mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]" :class="coarsePointer ? 'gap-2' : 'gap-1'" data-pos-collections>
+      <NuxtButton
         v-if="coarsePointer && favoriteRefs.length"
-        type="button"
-        class="inline-flex h-12 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 op-label transition"
-        :class="activeCollection === FAVORITES_COLLECTION ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent'"
+        size="xl"
+        color="neutral"
+        variant="outline"
+        active-color="primary"
+        active-variant="solid"
+        :active="activeCollection === FAVORITES_COLLECTION"
+        class="shrink-0 whitespace-nowrap rounded-full"
         :aria-pressed="activeCollection === FAVORITES_COLLECTION"
         data-pos-chip-favorites
         @click="activeCollection = FAVORITES_COLLECTION"
       >
         <Icon name="lucide:star" class="size-4 text-primary" aria-hidden="true" />
         Favoritos
-      </button>
-      <button
-        type="button"
-        class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border op-label transition"
-        :class="[coarsePointer ? 'h-12 px-3.5' : 'h-8 px-2.5', activeCollection === '' ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent']"
+      </NuxtButton>
+      <NuxtButton
+        :size="coarsePointer ? 'xl' : 'md'"
+        color="neutral"
+        variant="outline"
+        active-color="primary"
+        active-variant="solid"
+        :active="activeCollection === ''"
+        class="shrink-0 whitespace-nowrap rounded-full"
         :aria-pressed="activeCollection === ''"
         @click="activeCollection = ''"
       >
-        <Icon v-if="activeCollection === ''" name="lucide:check" class="size-3.5 text-primary" aria-hidden="true" />
+        <Icon v-if="activeCollection === ''" name="lucide:check" class="size-3.5" aria-hidden="true" />
         Tudo
-      </button>
-      <button
+      </NuxtButton>
+      <NuxtButton
         v-for="collection in orderedCollections"
         :key="collection.ref"
-        type="button"
-        class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border op-label transition"
-        :class="[coarsePointer ? 'h-12 px-3.5' : 'h-8 px-2.5', activeCollection === collection.ref ? 'border-primary bg-primary/10 font-semibold' : 'border-border bg-card hover:bg-accent']"
+        :size="coarsePointer ? 'xl' : 'md'"
+        color="neutral"
+        variant="outline"
+        active-color="primary"
+        active-variant="solid"
+        :active="activeCollection === collection.ref"
+        class="shrink-0 whitespace-nowrap rounded-full"
         :aria-pressed="activeCollection === collection.ref"
         @click="activeCollection = collection.ref"
       >
-        <Icon v-if="activeCollection === collection.ref" name="lucide:check" class="size-3.5 text-primary" aria-hidden="true" />
+        <Icon v-if="activeCollection === collection.ref" name="lucide:check" class="size-3.5" aria-hidden="true" />
         <span
           v-else
           class="size-2 shrink-0 rounded-full bg-muted-foreground"
@@ -309,20 +328,27 @@ function onSearchEscape() {
           aria-hidden="true"
         />
         {{ collection.name }}
-      </button>
-      <button
-        type="button"
-        class="relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border op-label transition hover:bg-accent"
-        :class="[coarsePointer ? 'h-12 px-3.5' : 'h-8 px-2.5', hideUnavailable ? 'border-primary bg-primary/10 font-semibold text-primary' : 'border-dashed border-border bg-card text-muted-foreground']"
+      </NuxtButton>
+      <span class="w-4 shrink-0" aria-hidden="true" />
+    </div>
+      <NuxtButton
+        :size="coarsePointer ? 'xl' : 'md'"
+        color="neutral"
+        variant="outline"
+        active-color="primary"
+        active-variant="solid"
+        :active="hideUnavailable"
+        class="shrink-0 whitespace-nowrap rounded-full"
         :aria-label="hideUnavailableActionLabel"
         :aria-pressed="hideUnavailable"
         :title="hideUnavailableActionLabel"
         data-pos-hide-unavailable
         @click="setHideUnavailable(!hideUnavailable)"
       >
-        <Icon :name="hideUnavailable ? 'lucide:eye-off' : 'lucide:eye'" class="size-3.5" />
-        {{ hideUnavailable ? `Indisponíveis ocultos${hiddenCount ? ` (${hiddenCount})` : ""}` : "Ocultar indisponíveis" }}
-      </button>
+        <Icon :name="hideUnavailable ? 'lucide:eye-off' : 'lucide:eye'" class="size-3.5" aria-hidden="true" />
+        <span class="hidden @min-[52rem]:inline" aria-hidden="true">{{ hideUnavailable ? `Indisponíveis ocultos${hiddenCount ? ` (${hiddenCount})` : ""}` : "Ocultar indisponíveis" }}</span>
+        <span v-if="hideUnavailable && hiddenCount" class="tnum @min-[52rem]:hidden" aria-hidden="true">{{ hiddenCount }}</span>
+      </NuxtButton>
     </div>
 
     <div class="@container -mx-1 px-1 md:min-h-0 md:flex-1 md:overflow-y-auto">

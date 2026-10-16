@@ -28,6 +28,7 @@ dependencies = [
     "shopman-buyman>=0.1.0",
     "shopman-fiscalman>=0.1.0",
     "shopman-cashman>=0.1.0",
+    "shopman-watchman>=0.1.0",
     "anthropic>=0.117,<1.0",
     "django-ratelimit>=4.1,<5.0",
     "django-csp>=4.0,<5.0",
@@ -45,7 +46,10 @@ dependencies = [
     "erpbrasil.edoc>=3.1,<4.0",
     "cryptography>=42",
     "defusedxml>=0.7,<1.0",
-    "psycopg[binary]>=3.2,<4.0",
+    # `pool`: o pool de conexões do psycopg (config/settings.py, DATABASES). Sob ASGI é o
+    # único reuso de conexão que funciona: CONN_MAX_AGE é por thread, e cada request
+    # do Daphne roda numa thread nova.
+    "psycopg[binary,pool]>=3.2,<4.0",
     "python-dotenv>=1.0,<2.0",
     "redis>=5.1,<8.0",
     "openpyxl>=3.1,<4.0",

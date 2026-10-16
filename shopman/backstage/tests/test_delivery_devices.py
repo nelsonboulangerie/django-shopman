@@ -70,24 +70,38 @@ def test_inactive_and_missing_do_not_block_unrelated_cash(inventory):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("entry", ["order", "fulfillment", "courier"])
+@pytest.mark.parametrize("entry", ["order", "fulfillment"])
 def test_alternative_dispatch_cannot_bypass_allocation(inventory, entry):
     pending = order("BYPASS")
     with pytest.raises(ValueError, match="maquininha"):
         if entry == "order":
             pending.transition_status("dispatched")
-        elif entry == "courier":
-            from shopman.shop.services import courier
-
-            pending.data["courier"] = {"id_mch": "synthetic-ride", "status": "E"}
-            pending.save(update_fields=("data",))
-            courier.recover_local_status(pending, ride_id="synthetic-ride")
         else:
             fulfillment = Fulfillment.objects.create(order=pending, status="in_progress")
             fulfillment.status = "dispatched"
             fulfillment.save()
     pending.refresh_from_db()
     assert pending.status == "ready"
+
+
+@pytest.mark.django_db
+def test_taon_collection_dispatches_card_order_without_reserving_house_machine(inventory):
+    """Decisão do dono (13/10/2026): a coleta da TaOn despacha também com cartão na porta.
+
+    Fato externo não reserva maquininha: a da casa segue livre, e o pedido
+    grava que saiu pela coleta da parceira.
+    """
+    from shopman.shop.services import courier
+
+    pending = order("TAON")
+    pending.data["courier"] = {"id_mch": "synthetic-ride", "status": "E"}
+    pending.save(update_fields=("data",))
+    courier.recover_local_status(pending, ride_id="synthetic-ride")
+    pending.refresh_from_db()
+    inventory.refresh_from_db()
+    assert pending.status == "dispatched"
+    assert pending.data["dispatch"]["collector"] == "courier_partner"
+    assert inventory.current_order_id is None
 
 
 @pytest.mark.django_db

@@ -98,7 +98,7 @@ def test_anonymous_customer_cannot_apply_staff_coupon(client: Client, funcionari
 def test_non_staff_customer_cannot_apply_staff_coupon(client: Client, funcionario_coupon):
     varejo = PriceTier.objects.create(ref="varejo", name="Varejo")
     customer = Customer.objects.create(
-        ref="CUS-VAREJO-01", first_name="Cliente", phone="+5543988887777", price_tier=varejo
+        ref="CUS-VAREJO-01", first_name="Cliente", phone="+5543988887777", price_tiers=varejo
     )
     _login_as_customer(client, customer)
     _fill_cart(client)
@@ -110,7 +110,7 @@ def test_non_staff_customer_cannot_apply_staff_coupon(client: Client, funcionari
 def test_staff_customer_can_apply_staff_coupon(client: Client, funcionario_coupon):
     staff = PriceTier.objects.create(ref="staff", name="Equipe")
     customer = Customer.objects.create(
-        ref="CUS-STAFF-01", first_name="Funcionário", phone="+5543988886666", price_tier=staff
+        ref="CUS-STAFF-01", first_name="Funcionário", phone="+5543988886666", price_tiers=staff
     )
     _login_as_customer(client, customer)
     _fill_cart(client)

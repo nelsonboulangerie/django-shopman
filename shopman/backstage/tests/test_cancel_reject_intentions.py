@@ -67,7 +67,7 @@ def test_paid_cancel_preserves_signature_and_never_retains_pin(client, context):
     user, order = context
     order = Order.objects.create(ref="CANCEL-PAID-RECEIPT", status="new", channel_ref="web", data={"payment": {"method": "cash"}})
     url = reverse("api-backstage-order-cancel", args=[order.ref])
-    body = {"expected_actor_id": user.pk, "base_revision": operator_orders.operational_revision(order), "reason": "Sintético"}
+    body = {"expected_actor_id": user.pk, "base_revision": operator_orders.operational_revision(order), "reason_key": "customer_request"}
     key = str(uuid.uuid4())
     paid = cancellation.OperatorCancelPolicy(allowed=True, requires_approval=True)
     with patch.object(cancellation, "operator_cancel_policy", return_value=paid):

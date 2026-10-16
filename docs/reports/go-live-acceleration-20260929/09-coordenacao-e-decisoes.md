@@ -228,8 +228,8 @@ Procurei em `docs/`, `.claude/`, `.codex/`, `scripts/`, `Makefile`, `.github/`. 
 
 | Número | Arquivo A | Arquivo B |
 |---|---|---|
-| 026 | `adr-026-operator-surface-security-envelope.md` — **Aceito · 2026-09-09** | `adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md` — **Proposto (2026-09-03)** |
-| 029 | `adr-029-marketing-fire-logical-rate-limit.md` — Aceito em 2026-09-11 | `adr-029-persistent-stock-alert-occurrences.md` — aceito, 2026-09-11 |
+| 026 | `adr-038-operator-surface-security-envelope.md` — **Aceito · 2026-09-09** (então ADR-026, hoje ADR-038) | `adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md` — **Proposto (2026-09-03)** |
+| 029 | `adr-029-marketing-fire-logical-rate-limit.md` — Aceito em 2026-09-11 | `adr-039-persistent-stock-alert-occurrences.md` — aceito, 2026-09-11 (então ADR-029, hoje ADR-039) |
 
 `docs/decisions/README.md` lista **os dois** sob `026` (linhas 47 e 67). O cabeçalho do próprio README (linhas 8-11) diz: *"**Numeração é endereço, não ordem de importância.** Nunca renumere: o número é citado em código, em outros ADRs, em PR e em memória de sessão."*
 

@@ -28,7 +28,6 @@ import {
   formatMoneyCompact,
   formatPercent,
   formatQty,
-  hourLabel,
   missingLabel,
   rangeLabel,
   rangeText,
@@ -102,7 +101,6 @@ describe("presentation/bi", () => {
 
   it("datas curtas e rótulos", () => {
     expect(shortDate("2026-08-14")).toBe("14/08");
-    expect(hourLabel(5)).toBe("5h");
     expect(WEEKDAY_LABELS[0]).toBe("seg");
   });
 

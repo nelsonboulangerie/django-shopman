@@ -1,13 +1,23 @@
 // Presentation — Clientes do Gestor. Transforms puros: a query da lista na URL e a
 // decisão de quem FICA numa unificação. Sem rede e sem DOM.
 
-export const CUSTOMER_FILTERS = ["all", "possible_duplicates", "ifood", "no_phone"] as const;
+import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
+
+export const CUSTOMER_FILTERS = [
+  "all",
+  "possible_duplicates",
+  "ifood",
+  "no_phone",
+] as const;
 export type CustomerFilter = (typeof CUSTOMER_FILTERS)[number];
+export const CUSTOMER_SORTS = ["recent", "name"] as const;
+export type CustomerSort = (typeof CUSTOMER_SORTS)[number];
 
 export interface CustomerListQuery {
   q: string;
   filter: CustomerFilter;
   page: number;
+  sort: CustomerSort;
 }
 
 type RouteQueryValue = string | null | (string | null)[] | undefined;
@@ -17,22 +27,29 @@ function first(value: RouteQueryValue): string {
 }
 
 /** A URL é a fonte da busca: voltar da ficha devolve a mesma lista, na mesma página. */
-export function listQueryFromRoute(query: Record<string, RouteQueryValue>): CustomerListQuery {
+export function listQueryFromRoute(
+  query: Record<string, RouteQueryValue>,
+): CustomerListQuery {
   const filter = first(query.filter) as CustomerFilter;
   const page = Number.parseInt(first(query.page), 10);
+  const sort = first(query.sort) as CustomerSort;
   return {
     q: first(query.q),
     filter: CUSTOMER_FILTERS.includes(filter) ? filter : "all",
     page: Number.isFinite(page) && page > 1 ? page : 1,
+    sort: CUSTOMER_SORTS.includes(sort) ? sort : "recent",
   };
 }
 
 /** O inverso, sem os valores padrão — a URL limpa é `/customers`. */
-export function routeQueryFromList(list: CustomerListQuery): Record<string, string> {
+export function routeQueryFromList(
+  list: CustomerListQuery,
+): Record<string, string> {
   const out: Record<string, string> = {};
   if (list.q) out.q = list.q;
   if (list.filter !== "all") out.filter = list.filter;
   if (list.page > 1) out.page = String(list.page);
+  if (list.sort !== "recent") out.sort = list.sort;
   return out;
 }
 
@@ -54,7 +71,10 @@ export type Keeper = "current" | "other";
  *    casa é o que alguém conferiu com a pessoa na frente.
  * 3. Empate: fica o cadastro que está aberto na tela.
  */
-export function suggestedKeeper(current: MergeCandidateSide, other: MergeCandidateSide): Keeper {
+export function suggestedKeeper(
+  current: MergeCandidateSide,
+  other: MergeCandidateSide,
+): Keeper {
   const currentPhone = Boolean(current.phone_display);
   const otherPhone = Boolean(other.phone_display);
   if (currentPhone !== otherPhone) return currentPhone ? "current" : "other";
@@ -65,8 +85,37 @@ export function suggestedKeeper(current: MergeCandidateSide, other: MergeCandida
 }
 
 /** O par que o servidor recebe: `source` SAI (fica desativado), `target` FICA. */
-export function mergePair(currentRef: string, otherRef: string, keeper: Keeper) {
+export function mergePair(
+  currentRef: string,
+  otherRef: string,
+  keeper: Keeper,
+) {
   return keeper === "current"
     ? { source_ref: otherRef, target_ref: currentRef }
     : { source_ref: currentRef, target_ref: otherRef };
+}
+
+export interface CustomerCsvRow {
+  name: string;
+  ref: string;
+  phone_display: string;
+  document_display: string;
+  orders_label: string;
+}
+
+/**
+ * O CSV da seleção: as colunas que a lista mostra, com ";" e BOM para a planilha em
+ * português ler o acento certo (mesmo contrato de `catalogCsv`).
+ */
+export function customersCsv(rows: readonly CustomerCsvRow[]): string {
+  return readingCsvText({
+    header: ["Cliente", "Referência", "Telefone", "CPF", "Pedidos"],
+    rows: rows.map((row) => [
+      row.name,
+      row.ref,
+      row.phone_display,
+      row.document_display,
+      row.orders_label,
+    ]),
+  });
 }

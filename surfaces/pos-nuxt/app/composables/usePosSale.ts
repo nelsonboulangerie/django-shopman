@@ -1,4 +1,5 @@
 import type { ComputedRef } from "vue";
+import { useOnline } from "@vueuse/core";
 
 import type {
   Action,
@@ -36,10 +37,12 @@ import {
   isTotalChangedRefusal,
   moneyInputToQ,
   newLineId,
+  POS_SALE_INTENT_VERSION,
   resolvePayment,
   withExpectedTotal,
 } from "~/utils/posIntent";
 import { cartQtyForSku } from "~/presentation/catalog";
+import { fireRefusalView } from "~/presentation/kitchen";
 import { lineUnits, productBlockedLabel } from "~/presentation/weighed";
 import { hasOptionGroups, lineUnitPriceQ, optionLineName, optionsSignature } from "~/presentation/productOptions";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
@@ -62,8 +65,18 @@ import {
   tabRefMaxLength,
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
+import { saleTotalView } from "~/presentation/saleTotal";
+import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
-import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
+import {
+  applyLinePrices,
+  lineListUnitQ,
+  linesWithoutServerPrices,
+  manualDiscountChargedQ,
+  manualDiscountWasOverridden,
+  winningDiscountLabel,
+  type POSLinePrice,
+} from "~/presentation/lineDiscounts";
 import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type {
   CustomerDecision,
@@ -84,6 +97,14 @@ import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+import { sourceReleasedMessage } from "~/presentation/moveLines";
+import { tabTitleView } from "~/presentation/tabTitle";
+import {
+  offlineSaleBlockers,
+  offlinePaymentLabel,
+  offlineSaleLabel,
+  offlineSaleReview,
+} from "~/presentation/offlineSales";
 
 type FulfillmentType = "pickup" | "delivery";
 type PaymentCollection = "terminal" | "on_delivery";
@@ -173,6 +194,8 @@ interface PosSaleDeps {
   tabs: ComputedRef<POSTabProjection[]>;
   actions: ComputedRef<Action[]>;
   refresh: () => Promise<void>;
+  /** Relê só o quadro de comandas (`?only=tabs`); sem ele, a releitura inteira. */
+  refreshTabs?: () => Promise<void>;
   /** Command transport (REST + Action) — created in the shell setup. */
   action: {
     call: <T = unknown>(
@@ -198,6 +221,7 @@ interface PosSaleDeps {
  */
 export function usePosSale(deps: PosSaleDeps) {
   const { pos, tabs, actions, refresh, action, apiPath, requestHeaders, ordersUrl } = deps;
+  const refreshTabs = deps.refreshTabs ?? refresh;
 
   // O momento mais comum de abrir a gaveta é dar troco. Antes o único jeito era
   // a chave física — ou o gancho "abrir ao imprimir" do driver, que só dispara
@@ -221,6 +245,22 @@ export function usePosSale(deps: PosSaleDeps) {
     minutes: computed(() => Number(pos.value?.cash_drawer?.idle_open_alert_minutes ?? 0)),
     blocked: computed(() => drawerLock.open.value),
   });
+
+  // A VENDA SEM CONEXÃO (WP-PDV-SEM-CONEXAO): a fila local que guarda a venda de
+  // balcão feita sem rede e a reenvia, idempotente, quando a conexão volta.
+  const offlineSales = usePosOfflineSales();
+  /** Sem rede AGORA, pelo navegador (o mesmo sinal do aviso de conexão). */
+  const offlineNow = () => import.meta.client && globalThis.navigator?.onLine === false;
+  /** Quando a tela leu os preços pela última vez: a nota do total sem conexão. */
+  const pricesAt = ref(new Date().toISOString());
+  // A tela de resultado de uma venda guardada passa a dizer o pedido quando a
+  // fila a envia (a venda pode subir com a tela ainda de pé).
+  watch(() => offlineSales.sentOrderRefs.value, (sent) => {
+    const offline = result.value?.offline;
+    if (!offline || offline.sentOrderRef || !sent[offline.id]) return;
+    result.value = { ...result.value!, offline: { ...offline, sentOrderRef: sent[offline.id] } };
+  });
+  watch(() => pos.value?.products, () => { pricesAt.value = new Date().toISOString(); });
 
   const tabInput = ref("");
   const busy = ref(false);
@@ -600,6 +640,21 @@ export function usePosSale(deps: PosSaleDeps) {
   // (persist + reload da comanda) para o spinner interno do diálogo.
   const movePreparing = ref(false);
   const review = ref<POSSaleReviewProjection | null>(null);
+  // O TOTAL TEM UM DONO SÓ: a revisão do servidor. Toda mudança que mexe nele
+  // invalida a revisão e avança a GERAÇÃO. Uma resposta que volta de uma geração
+  // anterior descreve um carrinho que já não existe (o desconto mudou com a
+  // revisão em voo) e é descartada. Sem isto, a resposta velha caía por cima da
+  // invalidação nova: a tela mostrava como confirmado o total SEM o desconto que
+  // o operador acabara de dar, o Validar liberava, e a maquininha era passada
+  // pelo valor errado antes de o fechamento recusar.
+  let reviewGeneration = 0;
+  let reviewedGeneration = -1;
+  function invalidateReview() {
+    reviewGeneration += 1;
+    review.value = null;
+  }
+  /** O motivo da última falha de revisão, para a tela dizer por que não há total. */
+  const reviewFailureReason = ref("");
   const customerLookup = ref<POSCustomerLookupProjection | null>(null);
   /** O cadastro como régua da oferta: falta o campo, é igual, ou diverge. */
   const offerCustomer = () =>
@@ -630,6 +685,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabNumber: "",
     tabOpenedAt: "",
     tabSeatingSpot: "",
+    tabTransferredFrom: null as { label: string; title: string } | null,
     tabSessionKey: "",
     expectedRevision: "",
     items: [] as POSCartItem[],
@@ -660,7 +716,7 @@ export function usePosSale(deps: PosSaleDeps) {
     orderNotes: "",
     paymentMethod: "",
     paymentCollection: "terminal" as PaymentCollection,
-    paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; _virgin?: boolean }>,
+    paymentTenders: [] as Array<{ method: string; amount_q: number; collection: PaymentCollection; reference?: string; pix_confirmed?: boolean; _virgin?: boolean }>,
     tenderedAmountInput: "",
     /** "Troco para quanto?" do dinheiro na entrega (entrada livre, "50" / "50,00"). */
     changeForInput: "",
@@ -684,6 +740,12 @@ export function usePosSale(deps: PosSaleDeps) {
     managerUsername: "",
     managerPin: "",
     clientRequestId: "",
+    /**
+     * Comanda aberta SEM CONEXÃO: só o número, na tela, sem sessão no servidor
+     * (não há servidor para abri-la). Fecha como venda de balcão direta; o
+     * número fica só na tela e no recibo. Ver `openTab`.
+     */
+    localTab: false,
   });
 
   const receiptIdentityChoices = ref<POSReceiptIdentityChoice[]>([]);
@@ -721,7 +783,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.salesMode = mode;
     orderSetupComplete.value = false;
     checkoutMode.value = false;
-    review.value = null;
+    invalidateReview();
     cart.fulfillmentConfirmed = mode === "counter";
     if (mode === "counter") {
       cart.fulfillmentType = "pickup";
@@ -773,7 +835,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const totalDisplay = computed(() => formatBRL(cartTotalQ(cart.items)));
   const itemCount = computed(() => cart.items.reduce((sum, item) => sum + lineUnits(item), 0));
   const hasOpenTab = computed(() => Boolean(cart.tabSessionKey));
-  const inSaleView = computed(() => !showTabs.value && hasOpenTab.value);
+  const inSaleView = computed(() => !showTabs.value && (hasOpenTab.value || cart.localTab));
   function goToTabs() {
     showTabs.value = true;
   }
@@ -786,6 +848,7 @@ export function usePosSale(deps: PosSaleDeps) {
   );
   const deliveryFeeQ = computed(() => review.value?.delivery_fee_q ?? 0);
   const deliveryFeeSource = computed(() => review.value?.delivery_fee_source ?? "");
+  const deliveryFeeWaiver = computed(() => review.value?.delivery_fee_waiver ?? null);
   // A review (que resolve a taxa) só roda no pagamento. Fora dele, a tela de
   // Recebimento diz isso, em vez de mostrar R$ 0,00 como se fosse a taxa.
   const deliveryFeeStatus = computed<"resolved" | "calculating" | "failed" | "at_payment">(() => {
@@ -930,9 +993,22 @@ export function usePosSale(deps: PosSaleDeps) {
       splitPaidCount.value = 0;
     }
   });
+  // ⚠️ O interino é CONTA, nunca TELA. Regra do dono: total que ainda pode mudar
+  // não aparece como se fosse o total. Ele serve à aritmética que não pode ver
+  // zero no meio do caminho (excedente em cartão, por exemplo); a tela lê
+  // `totalStatus` e só mostra número com `confirmed`.
   const paymentTotalQ = computed(
     () => review.value?.total_q ?? (lastReviewTotalQ.value || cartNetTotalQ(cart.items)),
   );
+  /** De quem é o total agora: do servidor (`confirmed`), em cálculo, ou sem
+   *  resposta (`failed`, com o motivo em `reviewFailureReason`). */
+  const totalStatus = computed<"confirmed" | "calculating" | "failed">(() => {
+    if (review.value) return "confirmed";
+    return reviewFailed.value ? "failed" : "calculating";
+  });
+  const totalPendingMessage = () => (reviewFailed.value
+    ? "O total não foi calculado. Toque em Tentar de novo."
+    : "Calculando o total. A forma libera assim que ele chegar.");
   const paymentRemainingQ = computed(() => computeRemainingQ(cart.paymentTenders, paymentTotalQ.value));
   const paymentChangeQ = computed(() => computeChangeQ(cart.paymentTenders, paymentTotalQ.value));
   const paymentCovered = computed(() => isPaymentCovered(cart.paymentTenders, paymentTotalQ.value));
@@ -988,7 +1064,8 @@ export function usePosSale(deps: PosSaleDeps) {
     splitPaidCount.value,
     paymentRemainingQ.value,
   ));
-  const splitNote = computed(() => splitHint(
+  // A parte de cada pessoa é fração do total: sem total confirmado, não há parte.
+  const splitNote = computed(() => totalStatus.value !== "confirmed" ? "" : splitHint(
     paymentTotalQ.value,
     splitCount.value,
     splitPaidCount.value,
@@ -1030,6 +1107,13 @@ export function usePosSale(deps: PosSaleDeps) {
       toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
       return;
     }
+    // A linha nasce do tamanho do total: sem total confirmado, ela nasceria do
+    // interino e ninguém a redimensionaria depois. A tela já trava os botões;
+    // esta é a mesma porta para qualquer outro caminho (tecla, folha da mesa).
+    if (totalStatus.value !== "confirmed") {
+      toast.info(totalPendingMessage());
+      return;
+    }
     const amountQ = Math.max(0, splitNextShareQ.value);
     if (amountQ <= 0) {
       // Tocar num método com o total já coberto era silêncio absoluto — o
@@ -1061,6 +1145,17 @@ export function usePosSale(deps: PosSaleDeps) {
       selectedTenderIndex.value = cart.paymentTenders.length - 1;
     }
     tenderEntry.value = null;
+  }
+
+  /**
+   * O gesto "Recebi o Pix" da venda mista (P1-7): o operador conferiu que o Pix
+   * entrou. Marca as linhas de Pix logo antes de validar; o servidor recusa o
+   * Pix misto sem a marca (`pix_mixed_unconfirmed`) e carimba quem e quando.
+   */
+  function confirmPixTenders() {
+    for (const tender of cart.paymentTenders) {
+      if (tender.method === "pix") tender.pix_confirmed = true;
+    }
   }
 
   function selectTender(index: number) {
@@ -1133,6 +1228,10 @@ export function usePosSale(deps: PosSaleDeps) {
   function tenderExact() {
     const tender = cart.paymentTenders[selectedTenderIndex.value];
     if (!tender) return;
+    if (totalStatus.value !== "confirmed") {
+      toast.info(totalPendingMessage());
+      return;
+    }
     const others = cart.paymentTenders.reduce(
       (sum, line, idx) => (idx === selectedTenderIndex.value ? sum : sum + line.amount_q),
       0,
@@ -1162,7 +1261,16 @@ export function usePosSale(deps: PosSaleDeps) {
   const otherOpenTabs = computed(() =>
     sortedTabs.value.filter((tab) => tab.state === "in_use" && tab.session_key && tab.ref !== cart.tabRef),
   );
-  const suggestedSplitRef = computed(() => (cart.tabDisplay ? `${cart.tabDisplay}-2` : ""));
+  // O nome da comanda nova que o Transferir propõe (dono, N=1): "13-2", ou o próximo
+  // livre ("13-3") quando o "13-2" já está em uso.
+  const suggestedNewTabRef = computed(() => {
+    const base = String(cart.tabDisplay || "").trim();
+    if (!base) return "";
+    const taken = new Set(sortedTabs.value.filter((tab) => tab.session_key).map((tab) => String(tab.display_ref || tab.ref).toLowerCase()));
+    let n = 2;
+    while (taken.has(`${base}-${n}`.toLowerCase())) n += 1;
+    return `${base}-${n}`;
+  });
 
   // ⚠️ Sem cláusula de método. `cart.paymentMethod` é campo LEGADO (o primeiro
   // método da projeção, "cash", ou o que a comanda salva trouxe): filtrar por
@@ -1205,13 +1313,29 @@ export function usePosSale(deps: PosSaleDeps) {
   let autoReviewTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleAutoReview() {
     if (!checkoutMode.value) return;
-    review.value = null;
+    invalidateReview();
     reviewFailed.value = false;
+    reviewFailureReason.value = "";
+    queueReview(450);
+  }
+  // ⚠️ A revisão agendada NUNCA se perde. Ela já era descartada em silêncio
+  // quando o timer disparava com outra revisão em voo (`busy`): a resposta da
+  // revisão anterior chegava depois, e a tela ficava com o total velho como se
+  // fosse o novo. Agora, com algo em voo, ela espera a vez; e se a revisão já
+  // respondeu pela geração atual, não há o que pedir de novo.
+  function queueReview(delayMs: number) {
     if (autoReviewTimer) clearTimeout(autoReviewTimer);
     autoReviewTimer = setTimeout(() => {
       autoReviewTimer = null;
-      if (checkoutMode.value && cart.items.length) reviewCheckout();
-    }, 450);
+      if (!checkoutMode.value || !cart.items.length) return;
+      if (review.value && reviewedGeneration === reviewGeneration) return;
+      if (reviewFailed.value) return;
+      if (busy.value) {
+        queueReview(150);
+        return;
+      }
+      void reviewCheckout();
+    }, delayMs);
   }
   watch(() => [
     cart.salesMode,
@@ -1336,7 +1460,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
-    review.value = null;
+    invalidateReview();
     checkoutMode.value = false;
     // Cada peça pesada é uma linha: duas etiquetas são duas peças, com pesos
     // diferentes — somar "mais um" a uma linha de 0,312 kg não quer dizer nada.
@@ -1376,9 +1500,43 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
+  /**
+   * MAIS numa linha que JÁ FOI À COZINHA (o + do editor, ou um número maior digitado):
+   * as unidades novas vão numa linha a enviar, nunca na linha enviada (o servidor
+   * deduplica por `line_id`, e a unidade nova não chegaria ao KDS). Soma na linha irmã
+   * ainda não enviada (mesmo produto, mesmas escolhas) quando existe; senão cria uma.
+   * Devolve o `line_id` da linha que recebeu as unidades.
+   */
+  function addLineLike(lineId: string, qty = 1): string {
+    if (!canUseCart.value || orderSetupPending.value) return "";
+    const source = cart.items.find((item) => item.line_id === lineId);
+    if (!source || source.weighed || qty <= 0) return "";
+    invalidateReview();
+    checkoutMode.value = false;
+    const signature = optionsSignature(source.options);
+    const sibling = cart.items.find(
+      (item) => item.sku === source.sku && !item.fired && !item.weighed && optionsSignature(item.options) === signature,
+    );
+    if (sibling) {
+      sibling.qty += qty;
+      return sibling.line_id;
+    }
+    const line: POSCartItem = {
+      line_id: newLineId(),
+      sku: source.sku,
+      name: source.name,
+      price_q: source.price_q,
+      qty,
+      ...(source.options?.length ? { options: source.options.map((option) => ({ ...option })) } : {}),
+      notes: "",
+    };
+    cart.items.push(line);
+    return line.line_id;
+  }
+
   function setQty(lineId: string, qty: number) {
     if (!canUseCart.value || orderSetupPending.value) return;
-    review.value = null;
+    invalidateReview();
     checkoutMode.value = false;
     const existing = cart.items.find((item) => item.line_id === lineId);
     if (!existing) return;
@@ -1404,14 +1562,14 @@ export function usePosSale(deps: PosSaleDeps) {
   function restoreItem(item: POSCartItem) {
     if (!canUseCart.value) return;
     if (cart.items.some((entry) => entry.line_id === item.line_id)) return;
-    review.value = null;
+    invalidateReview();
     cart.items.push({ ...item });
   }
 
   function setLineDiscount(lineId: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
     const item = cart.items.find((entry) => entry.line_id === lineId);
     if (!item) return;
-    review.value = null;
+    invalidateReview();
     if (value > 0) {
       item.discount = { value, reason, type };
       // "Maior desconto ganha, um por item": o servidor DESCARTA um manual menor
@@ -1426,6 +1584,12 @@ export function usePosSale(deps: PosSaleDeps) {
     } else {
       delete item.discount;
     }
+    // O total da linha, o da comanda e o do Pagamento mudam no mesmo toque: o
+    // preço cobrado sai da régua do kernel aqui, e o eco da gravação confirma.
+    // A etiqueta fica fixada antes, porque sem ela a régua leria o preço já
+    // descontado como etiqueta no próximo desconto.
+    item.list_price_q = lineListUnitQ(item);
+    item.charged_price_q = manualDiscountChargedQ(item);
   }
 
   function resetCart() {
@@ -1437,6 +1601,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.tabNumber = "";
     cart.tabOpenedAt = "";
     cart.tabSeatingSpot = "";
+    cart.tabTransferredFrom = null;
     cart.tabSessionKey = "";
     cart.expectedRevision = "";
     cart.items = [];
@@ -1479,9 +1644,10 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.managerUsername = "";
     cart.managerPin = "";
     cart.clientRequestId = "";
+    cart.localTab = false;
     customerLookup.value = null;
     checkoutMode.value = false;
-    review.value = null;
+    invalidateReview();
     showTabs.value = true;
   }
 
@@ -1498,6 +1664,7 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.tabNumber = payload.tab_number || "";
     cart.tabOpenedAt = payload.opened_at_display || "";
     cart.tabSeatingSpot = payload.seating_spot_ref || "";
+    cart.tabTransferredFrom = payload.transferred_from ? { label: payload.transferred_from.label, title: payload.transferred_from.title } : null;
     cart.tabSessionKey = payload.tab_session_key || payload.session_key;
     cart.expectedRevision = payload.revision || "";
     showTabs.value = false;
@@ -1570,7 +1737,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // de pagamento já aberto — sair do modo aqui devolveria o operador à venda.
     if (!options.preserveCheckout) {
       checkoutMode.value = false;
-      review.value = null;
+      invalidateReview();
     }
     void nextTick(() => { tabLoading.value = false; });
   }
@@ -1640,6 +1807,23 @@ export function usePosSale(deps: PosSaleDeps) {
     // Abrir comanda com a tela de resultado ainda de pé é sair dela: passa pelo
     // mesmo caminho do CTA (PIX aguardando vira chip, nunca é descartado).
     dismissResult();
+    // SEM CONEXÃO: só comanda LIVRE abre, e abre só na tela. A em uso tem itens
+    // e dono no servidor, que não dá para ler agora.
+    if (offlineNow()) {
+      const known = tabs.value.find((row) => row.ref === tabRef);
+      if (known && known.state !== "empty") {
+        serverError.value = `Sem conexão, a comanda ${known.display_ref || tabRef} não abre: ela está em uso. Escolha uma comanda livre.`;
+        return;
+      }
+      if (!options.preserveDraft) resetCart();
+      cart.tabRef = tabRef;
+      cart.tabDisplay = known?.display_ref || tabRef;
+      cart.tabNumber = tabRef;
+      cart.localTab = true;
+      tabInput.value = "";
+      showTabs.value = false;
+      return;
+    }
     busy.value = true;
     try {
       const path = concreteActionHref(
@@ -1655,7 +1839,7 @@ export function usePosSale(deps: PosSaleDeps) {
         }
         assignTabIdentityFromPayload(payload);
         checkoutMode.value = false;
-        review.value = null;
+        invalidateReview();
       } else {
         await setFromTabPayload(payload);
         // `salesMode`: a comanda abre já no modo pedido (a "Nova encomenda" da
@@ -1665,7 +1849,10 @@ export function usePosSale(deps: PosSaleDeps) {
         if (options.salesMode && !(payload.items || []).length) setSalesMode(options.salesMode);
       }
       tabInput.value = "";
-      await refresh();
+      // Abrir a comanda muda o QUADRO (ela passa a estar em uso), não o catálogo,
+      // o turno nem os operadores. A releitura inteira aqui custava 2,6 s de CPU
+      // no alpha e disputava com a revisão do total que a tela pede em seguida.
+      await refreshTabs();
     } catch (error) {
       serverError.value = httpErrorMessage(error, "Não foi possível abrir a comanda. Confira a referência ou escolha uma no quadro.");
     } finally {
@@ -1715,14 +1902,18 @@ export function usePosSale(deps: PosSaleDeps) {
       delivery_instructions: cart.deliveryInstructions.trim() || cart.deliveryAddressStructured.delivery_instructions || "",
       reference: cart.deliveryInstructions.trim() || cart.deliveryAddressStructured.reference || "",
     };
-    const deliveryAddressParts = [
-      structured.formatted_address || "",
-      structured.route || "",
-      structured.street_number || "",
-      structured.neighborhood || "",
-    ]
-      .filter(Boolean);
-    const deliveryAddress = structured.formatted_address || deliveryAddressParts.join(", ");
+    // A linha do endereço é RECOMPOSTA dos campos, como na loja (`addressForm`):
+    // a do Google ficava velha no instante em que o operador corrigia o número, e
+    // era ela que ia para o pedido, a nota e o entregador.
+    structured.formatted_address = composedAddressLine({
+      ...emptyAddressDraft(),
+      route: structured.route || "",
+      street_number: structured.street_number || "",
+      neighborhood: structured.neighborhood || "",
+      city: structured.city || "",
+      state_code: structured.state_code || "",
+    }) || structured.formatted_address || "";
+    const deliveryAddress = structured.formatted_address;
     const discountValueNum = Number(String(cart.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0;
     const manualDiscount = discountValueNum > 0
       ? { type: cart.discountType, value: discountValueNum, reason: cart.discountReason || "cortesia" }
@@ -1732,7 +1923,10 @@ export function usePosSale(deps: PosSaleDeps) {
       : null;
     const resolvedPayment = resolvePayment(cart.paymentTenders, paymentTotalQ.value);
     return {
-      tabRef: cart.tabRef,
+      // A comanda aberta sem conexão não existe no servidor: a venda sobe como
+      // balcão direto, sem identidade de comanda (senão o servidor pediria a
+      // sessão que nunca nasceu).
+      tabRef: cart.localTab ? "" : cart.tabRef,
       tabSessionKey: cart.tabSessionKey,
       expectedRevision: cart.expectedRevision,
       items: cart.items,
@@ -1848,6 +2042,16 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   // Defaults pertencem à escolha de um cliente; reabrir comanda só recupera o cadastro.
+  /** O cliente é de um grupo com desconto no balcão: o operador fica sabendo que
+   *  ele entra sozinho (e por quê), em vez de descobrir o preço menor na linha. */
+  function announceGroupDiscount(customer: POSCustomerLookupProjection) {
+    if (!customer.group_discount_label) return;
+    toast.info(`Desconto do grupo: ${customer.group_discount_label}`, {
+      description: "Entra sozinho na venda.",
+      duration: 6000,
+    });
+  }
+
   function applyCustomerDefaults(customer: POSCustomerLookupProjection) {
     cart.customerRef = customer.ref;
     cart.customerName = customer.name || cart.customerName;
@@ -1870,6 +2074,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
     // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
     // é só o parabéns.
+    announceGroupDiscount(customer);
     if (customer.is_birthday_today) {
       const nome = (customer.name || "").split(" ")[0] || "o cliente";
       toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
@@ -1939,7 +2144,7 @@ export function usePosSale(deps: PosSaleDeps) {
     });
     if (fields.some((item) => !item.value || receiptIdentityValue(item.field) !== item.value)
       || cart.customerRef !== (failure.customer_ref || "") || cart.clientRequestId !== failure.client_request_id) {
-      review.value = null;
+      invalidateReview();
       serverError.value = "Os dados do documento mudaram. Revise a venda novamente.";
       return true;
     }
@@ -2076,6 +2281,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // balcão. Só promete desconto se uma promoção de aniversariante EXISTE
       // configurada (o Core a aplica sozinho no reprice); sem promoção, o aviso
       // é só o parabéns.
+      announceGroupDiscount(response.customer);
       if (response.customer.is_birthday_today) {
         const nome = (response.customer.name || "").split(" ")[0] || "o cliente";
         toast.info(`🎂 Hoje é aniversário de ${nome}!`, {
@@ -2205,7 +2411,7 @@ export function usePosSale(deps: PosSaleDeps) {
         }));
         customerDecision.value = null;
         pendingReceiptDecision.value = null;
-        review.value = null;
+        invalidateReview();
         if (checkoutMode.value) await reviewCheckout();
       } catch (error) {
         if (customerDecision.value === decision && receiptDecisionMatches()) {
@@ -2563,36 +2769,61 @@ export function usePosSale(deps: PosSaleDeps) {
     );
   }
 
+  /** A comanda como o salvar a grava, sem a revisão (que muda a cada ida). */
+  function intentContent(): string {
+    return JSON.stringify({ ...buildCurrentIntent(), expected_revision: undefined });
+  }
+  /** O conteúdo da última gravação que o servidor aceitou. */
+  let lastPersistedContent = "";
+
   // Serialize all tab persistence so the debounced autosave can never race the
   // explicit save inside checkout/fire/move (concurrent save_tab → DB lock).
+  type SavedTab = {
+    revision?: string;
+    line_authors?: Record<string, POSLineAuthorship>;
+    /** O preço que cada linha cobra agora (`line_id` → cobrado, etiqueta, automático). */
+    line_prices?: Record<string, POSLinePrice>;
+    /** Só com `{ review: true }`: a revisão da venda, calculada logo depois do salvar. */
+    review?: POSSaleReviewProjection;
+    review_error?: { status?: number; detail?: string };
+  };
   let persistQueue: Promise<unknown> = Promise.resolve();
-  function persistTab(quiet = false): Promise<void> {
-    const run = async () => {
+  function persistTab(quiet = false, options: { review?: boolean } = {}): Promise<SavedTab | undefined> {
+    const run = async (): Promise<SavedTab | undefined> => {
       if (orderSetupPending.value && cart.items.length) {
         unsaved.value = true;
-        return;
+        return undefined;
       }
       const state = currentIntentState();
       cart.clientRequestId = state.clientRequestId;
       if (tabConflict.value) throw new Error("Confira a versão atual da comanda antes de salvar.");
       const body = buildPosSaleIntent(state, checkoutContract.value?.intent_version);
       const savedContent = JSON.stringify({ ...body, expected_revision: undefined });
-      type SavedTab = { revision?: string; line_authors?: Record<string, POSLineAuthorship> };
       let saved: SavedTab | undefined;
+      const path = actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/");
       try {
-        saved = await action.call<SavedTab>(actionHref(actions.value, "save_tab", "/api/v1/backstage/pos/tabs/save/"), { body });
+        // `?review=1`: o servidor salva e devolve a revisão na mesma resposta (uma
+        // ida, não duas). É o caminho do Pagamento, onde o total é o que se espera.
+        saved = await action.call<SavedTab>(options.review ? `${path}${path.includes("?") ? "&" : "?"}review=1` : path, { body });
       } catch (error) {
         if ([409, 422].includes(httpError(error).status)) tabConflict.value = true;
         throw error;
       }
       cart.expectedRevision = saved?.revision || cart.expectedRevision;
+      lastPersistedContent = savedContent;
       // O autosave fica na comanda: a autoria que o servidor carimbou volta aqui.
       applyLineAuthors(cart.items, saved?.line_authors);
-      unsaved.value = savedContent !== JSON.stringify({ ...buildCurrentIntent(), expected_revision: undefined });
+      unsaved.value = savedContent !== intentContent();
+      // E o preço que cada linha cobra, decidido pelo servidor (desconto manual
+      // contra o automático). Só quando a tela ainda é a que foi gravada: um toque
+      // feito durante a ida já tem o próprio preço, e o próximo salvar o confirma.
+      if (!unsaved.value) applyLinePrices(cart.items, saved?.line_prices);
       if (!quiet) await refresh();
+      return saved;
     };
-    persistQueue = persistQueue.then(run, run);
-    return persistQueue as Promise<void>;
+    const queued = persistQueue.then(run, run);
+    persistQueue = queued;
+    return queued;
   }
 
   // Retry do autosave: numa rede instável, uma comanda parada com save falho
@@ -2631,6 +2862,9 @@ export function usePosSale(deps: PosSaleDeps) {
     autosaveTimer = setTimeout(() => {
       autosaveTimer = null;
       if (!hasOpenTab.value || customerDraftPending.value || checkoutMode.value || busy.value || saving.value || (orderSetupPending.value && cart.items.length)) return;
+      // O eco do servidor (autoria, preço cobrado) também mexe nas linhas e passa
+      // por aqui; gravar de novo a mesma comanda seria uma ida à toa.
+      if (lastPersistedContent && intentContent() === lastPersistedContent) return;
       persistTab(true).catch((error) => onAutosaveFailed(error));
     }, 1200);
   }
@@ -2685,19 +2919,62 @@ export function usePosSale(deps: PosSaleDeps) {
     await refresh();
   }
 
+  /** O total sem o servidor, pela última leitura de preços (ver `offlineSaleReview`). */
+  function localReview(): POSSaleReviewProjection {
+    return offlineSaleReview({
+      items: cart.items,
+      tenders: cart.paymentTenders,
+      intentVersion: checkoutContract.value?.intent_version || POS_SALE_INTENT_VERSION,
+      pricesAt: pricesAt.value,
+    });
+  }
+
+  /** O que impede esta venda de seguir sem conexão (vazio = pode). */
+  function currentOfflineBlockers(): string[] {
+    return offlineSaleBlockers({
+      salesMode: cart.salesMode,
+      fulfillmentType: cart.fulfillmentType,
+      items: cart.items,
+      orderDiscountValue: cart.discountValue,
+      tenderMethods: cart.paymentTenders.map((tender) => tender.method),
+      paymentCollection: cart.paymentCollection,
+    });
+  }
+
   async function reviewSale() {
     if (!cart.items.length) return null;
     const state = currentIntentState();
     cart.clientRequestId = state.clientRequestId;
+    const generation = reviewGeneration;
+    if (offlineNow()) {
+      const local = localReview();
+      review.value = local;
+      reviewedGeneration = generation;
+      return local;
+    }
     try {
       const response = await action.call<POSSaleReviewResponse>(
         actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
         { body: buildPosSaleIntent(state, checkoutContract.value?.intent_version) },
       );
+      // Resposta de um carrinho que já mudou: descartada (ver `invalidateReview`).
+      if (generation !== reviewGeneration) return null;
       review.value = response.review;
+      if (!hasOpenTab.value) applyLinePrices(cart.items, response.review.line_prices);
+      reviewedGeneration = generation;
       return response.review;
     } catch (error) {
+      // A falha também é do carrinho velho: quem responde pelo atual é a
+      // revisão que a mudança já agendou.
+      if (generation !== reviewGeneration) return null;
       if (handleReceiptIdentityFailure(error, "review")) return null;
+      // A rede caiu com a revisão em voo: o total sai da última leitura.
+      if (!httpError(error).status && offlineNow()) {
+        const local = localReview();
+        review.value = local;
+        reviewedGeneration = generation;
+        return local;
+      }
       throw error;
     }
   }
@@ -2711,13 +2988,35 @@ export function usePosSale(deps: PosSaleDeps) {
     // vez de segurar o operador na tela de venda durante os round-trips de
     // persistência — era isso que fazia a tela "piscar" duas vezes no Cobrar.
     checkoutMode.value = true;
-    review.value = null;
-    try {
-      if (hasOpenTab.value) {
-        await persistTab();
-        await reloadCurrentTab({ preserveCheckout: true });
-      }
+    invalidateReview();
+    // O total é a primeira coisa que o Pagamento precisa, e só ele bloqueia a
+    // cobrança. Por isso UMA ida ao servidor: com comanda, salvar e revisar na
+    // mesma resposta; sem comanda, só revisar. Eram cinco em série (salvar,
+    // reler a projeção do terminal, reabrir a comanda, reler a projeção, revisar),
+    // e no alpha isso passava de 20 s. A projeção do terminal não muda o total;
+    // e a revisão lê a comanda gravada, então não há o que recarregar antes.
+    const generation = reviewGeneration;
+    // SEM CONEXÃO não há comanda a salvar nem revisão a pedir: o total sai da
+    // última leitura de preços (`reviewSale` responde local) e a venda segue.
+    if (offlineNow()) {
       await reviewSale();
+      busy.value = false;
+      return;
+    }
+    try {
+      let reviewed = false;
+      if (hasOpenTab.value) {
+        const saved = await persistTab(true, { review: true });
+        if (saved?.review && generation === reviewGeneration) {
+          review.value = saved.review;
+          reviewedGeneration = generation;
+          reviewed = true;
+        }
+      }
+      // Sem comanda, ou a revisão não veio junto (recusa no corpo): a revisão
+      // avulsa diz o motivo pelo caminho de sempre.
+      if (!reviewed && generation === reviewGeneration) await reviewSale();
+      if (generation !== reviewGeneration) queueReview(0);
     } catch (error) {
       if (handleReceiptIdentityFailure(error, "review")) return;
       // O checkout não abriu de verdade: volta à venda com o motivo no toast.
@@ -2732,14 +3031,27 @@ export function usePosSale(deps: PosSaleDeps) {
   const reviewFailed = ref(false);
 
   async function reviewCheckout() {
-    if (busy.value) return; // guarda de reentrância
+    // Guarda de reentrância: com algo em voo, a revisão espera a vez em vez de
+    // sumir (ver `queueReview`).
+    if (busy.value) {
+      queueReview(150);
+      return;
+    }
     if (!cart.items.length) return;
     serverError.value = "";
     dismissResult();
     busy.value = true;
+    const generation = reviewGeneration;
     try {
       await reviewSale();
+      if (generation !== reviewGeneration) {
+        // O carrinho mudou com a revisão em voo: a resposta foi descartada, e a
+        // do carrinho atual é pedida agora.
+        queueReview(0);
+        return;
+      }
       reviewFailed.value = false;
+      reviewFailureReason.value = "";
     } catch (error) {
       // ⚠️ SEM ISTO O PDV TRAVAVA PARA SEMPRE. `scheduleAutoReview` zera a
       // `review` e agenda o refetch; se ele lançasse (um piscar de Wi-Fi), o
@@ -2749,7 +3061,10 @@ export function usePosSale(deps: PosSaleDeps) {
       // justo nesse ramo — zero explicação na tela, com o cliente na frente. A
       // única saída era F4 (não documentado) ou Esc, que derruba o checkout.
       reviewFailed.value = true;
-      serverError.value = `${httpErrorMessage(error, "Não deu para recalcular o total.")} Os itens seguem na comanda e nada foi cobrado. Tente de novo.`;
+      // O motivo FICA na tela (o toast some em segundos): é o que explica por
+      // que não há total e por que o botão virou "Tentar de novo".
+      reviewFailureReason.value = httpErrorMessage(error, "Não deu para calcular o total. Tente de novo.");
+      serverError.value = `${httpErrorMessage(error, "Não deu para calcular o total.")} Os itens seguem na comanda e nada foi cobrado. Tente de novo.`;
     } finally {
       busy.value = false;
     }
@@ -2759,7 +3074,9 @@ export function usePosSale(deps: PosSaleDeps) {
     | { kind: "ok"; response: Partial<POSCloseSaleResponse>; orderRef: string }
     | { kind: "error"; error: unknown }
     | { kind: "invalid" }
-    | { kind: "blocked" };
+    | { kind: "blocked" }
+    /** A rede caiu com o fechamento em voo e a venda pode esperar na fila. */
+    | { kind: "queue" };
 
   async function requestCloseUnderGuard(expectedTotalQ: number): Promise<GuardedCloseResult> {
     const lockManager = globalThis.navigator?.locks;
@@ -2825,6 +3142,16 @@ export function usePosSale(deps: PosSaleDeps) {
           } | null)?.error;
           const outcomeUnknown = Boolean(failure?.order_created)
             || failure?.code === "sale_payment_outcome_unknown";
+          // A rede caiu no meio do fechamento de uma venda que pode esperar
+          // (dinheiro ou maquininha, sem comanda): ela vai para a fila com a
+          // MESMA chave. Se o servidor chegou a fechar, o reenvio devolve o mesmo
+          // pedido (`client_request_id`); se não chegou, fecha agora. Por isso o
+          // marcador de resultado incerto pode sair: a dúvida passa para a fila,
+          // que a resolve sozinha, em vez de travar o balcão.
+          if (!errorInfo.status && offlineNow() && !currentOfflineBlockers().length) {
+            releaseOwnedCloseGuard(marker);
+            return { kind: "queue" };
+          }
           // Só 4xx sem sinal de outcome incerto prova rejeição pré-commit. Status
           // 0 e TODO 5xx retêm o marcador, mesmo quando trazem error.code.
           if (errorInfo.status >= 400 && errorInfo.status < 500 && !outcomeUnknown) {
@@ -2874,6 +3201,10 @@ export function usePosSale(deps: PosSaleDeps) {
     }
     serverError.value = "";
     managerApprovalError.value = "";
+    if (offlineNow()) {
+      await closeOffline();
+      return;
+    }
     result.value = null;
     busy.value = true;
     try {
@@ -2882,131 +3213,18 @@ export function usePosSale(deps: PosSaleDeps) {
       // `if (!review.value)` acima garante existir neste ponto.
       const guarded = await requestCloseUnderGuard(review.value.total_q);
       if (guarded.kind === "blocked") return;
+      if (guarded.kind === "queue") {
+        busy.value = false;
+        await closeOffline();
+        return;
+      }
       if (guarded.kind === "invalid") {
         serverError.value = closeOutcomeUncertainMessage;
         return;
       }
       if (guarded.kind === "error") throw guarded.error;
       const { response, orderRef } = guarded;
-      // COBRANÇA NA ENTREGA/RETIRADA: o dinheiro ainda não entrou. O troco
-      // calculado é o que o entregador vai separar, não o que sai da gaveta.
-      const paidOnDelivery = cart.paymentCollection === "on_delivery";
-      // Freeze a receipt snapshot before the cart resets (spec §D3): the
-        // printed receipt is a record of what was sold, not live state.
-        const receipt: PosReceiptSnapshot = {
-          orderRef,
-          tabDisplay: cart.tabDisplay,
-          customerName: cart.customerName,
-          items: cart.items.map((item) => ({
-            name: item.name,
-            qty: item.qty,
-            price_q: item.price_q,
-            discountPct: item.discount?.value || 0,
-            ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
-          })),
-          totalDisplay: review.value?.total_display || "",
-          payments: cart.paymentTenders.map((tender) => ({
-            method: tender.method,
-            amount_q: tender.amount_q,
-            // ONDE foi recebido viaja com a linha: é o que separa dinheiro na
-            // gaveta de dinheiro que sai com o entregador.
-            collection: tender.collection,
-          })),
-          fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
-          printedAtMs: Date.now(),
-          // O recibo do navegador imprime como o servidor (`receipt_escpos`):
-          // "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58", e não a linha
-          // como digitada. "Recebido" é medição — só viaja quando o operador
-          // digitou (`tendered_q`, dinheiro sozinho no caixa).
-          tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
-          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
-          paymentPending: paidOnDelivery,
-          fiscalHandoffLine: receiptFiscalHandoffLine(resolveFiscalState(response)),
-        };
-        // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
-        // operador confere de relance e repete ao cliente.
-        function orderFulfillmentLabel(): string {
-          const base = receipt.fulfillmentLabel;
-          if (cart.fulfillmentType !== "delivery") return base;
-          const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
-          return bairro ? `${base} · ${bairro}` : base;
-        }
-        const proof = paymentProofView(response.payment);
-        result.value = {
-          salesMode: cart.salesMode,
-          orderRef,
-          nextUrl: orderUrl(ordersUrl.value, orderRef),
-          payment: proof,
-          paymentDelivery: response.payment_delivery || null,
-          receipt,
-          // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
-          // emitem por forma de pagamento, sem o operador marcar nada.
-          fiscalExpected: !!response.fiscal_expected,
-          // Onde a nota está: dito pelo close; sem `fiscal_state`, deriva.
-          fiscalState: resolveFiscalState(response),
-          // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
-          // o troco computado voltaria a zero. Uma fonte só: a tela de
-          // resultado do operador e a tela do cliente leem daqui.
-          //
-          // ⚠️ Na cobrança na entrega/retirada o troco é ZERO aqui: a tela
-          // anunciava "TROCO R$ 58 · Confira o troco" e travava Enter e
-          // auto-avanço por um dinheiro que ainda não tinha entrado. O que o
-          // entregador leva vai em `courierChangeQ`, informativo.
-          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
-          courierChangeQ: paidOnDelivery ? Math.max(0, paymentChangeQ.value) : 0,
-          // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
-          // apaga os canais, e a nota autoriza depois — segundos ou minutos.
-          wantsPrintedInvoice: cart.receiptChannels.includes("print"),
-          // ENCOMENDA: a leitura de volta ("Retirada · sáb, 10:00 às 10:30")
-          // congela aqui pelo mesmo motivo do troco — o `resetCart` apaga a
-          // data, a janela e o bairro, e a tela de resultado precisa deles.
-          fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
-          scheduleLabel: cart.salesMode === "order"
-            ? scheduleLabel(cart.deliveryDate, deliveryWindowLabel.value, scheduleToday.value)
-            : "",
-        };
-        // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
-        if (proof?.isPix && proof?.hasProof) {
-          if (pendingPixOrderRef.value) {
-            // Um só polling por estação: a prova anterior ainda pendente não
-            // pode ser abandonada calada — acusa e aponta o gestor.
-            toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
-            pendingPixOrderRef.value = "";
-          }
-          startPixPolling(orderRef);
-        } else if (proof?.isLink && response.payment_delivery
-          && ["queued", "sending"].includes(response.payment_delivery.status)) {
-          startDeliveryPolling(orderRef);
-        } else if (!pendingPixOrderRef.value) {
-          // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
-          // polling da venda anterior segue vivo até resolver/expirar.)
-          stopPixPolling();
-          pixStatus.value = "idle";
-        }
-        // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
-        // do snapshot congelado, não do cart, que a linha abaixo já zerou.
-        // Sem await: a venda terminou, e a tela não espera o spooler.
-        // SÓ o dinheiro que entrou NA GAVETA a faz abrir — ver `cashLandedInDrawer`.
-        //
-        // No TABLET (o agente do Balcão não está nesta máquina) ela NUNCA abre
-        // sozinha: o atendente ainda está na mesa. A venda vira o cartão
-        // "Dinheiro da comanda · leve ao Balcão", e ele toca "Abrir gaveta do
-        // Balcão" na frente da gaveta (`useDrawerOpening`, pulso pelo relay).
-        if (cashLandedInDrawer(receipt.payments)) {
-          void drawerOpening.afterCashSale(
-            { orderRef, tabDisplay: receipt.tabDisplay || "", changeQ: Math.max(0, result.value?.changeQ ?? 0) },
-            drawer.opensOnCashSale.value,
-          );
-        }
-        resetCart();
-        try {
-          await refresh();
-        } catch {
-          // `ok + order_ref` já confirmou o fechamento. Refresh é só leitura:
-          // sua falha não desfaz pedido, recibo nem pagamento, e não pode cair
-          // no catch do close como se o resultado da venda fosse desconhecido.
-          toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
-        }
+      await completeSale(response, orderRef);
     } catch (error) {
       const errorInfo = httpError(error);
       const failure = (errorInfo.data as {
@@ -3022,12 +3240,16 @@ export function usePosSale(deps: PosSaleDeps) {
         // do servidor diz os dois valores; a revisão é refeita para o operador
         // conferir o total novo com o cliente e finalizar de novo.
         serverError.value = httpErrorMessage(error, "O total mudou. Confira com o cliente antes de cobrar.");
-        review.value = null;
+        invalidateReview();
+        const generation = reviewGeneration;
         try {
           await reviewSale();
+          if (generation !== reviewGeneration) queueReview(0);
           reviewFailed.value = false;
-        } catch {
+          reviewFailureReason.value = "";
+        } catch (reviewError) {
           reviewFailed.value = true;
+          reviewFailureReason.value = httpErrorMessage(reviewError, "Não deu para calcular o total. Tente de novo.");
         }
         return;
       }
@@ -3078,6 +3300,186 @@ export function usePosSale(deps: PosSaleDeps) {
       } else {
         serverError.value = httpErrorMessage(error, "Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
       }
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /**
+   * O que acontece depois que a venda FECHOU (no servidor, ou guardada na fila sem
+   * conexão): congela o recibo e o troco, monta a tela de resultado, abre a gaveta
+   * do dinheiro e zera o carrinho. Sem conexão não há o que pollar nem reler.
+   */
+  async function completeSale(
+    response: Partial<POSCloseSaleResponse>,
+    orderRef: string,
+    offline?: { capturedAt: string; id: string },
+  ) {
+      // COBRANÇA NA ENTREGA/RETIRADA: o dinheiro ainda não entrou. O troco
+      // calculado é o que o entregador vai separar, não o que sai da gaveta.
+      const paidOnDelivery = cart.paymentCollection === "on_delivery";
+      // Freeze a receipt snapshot before the cart resets (spec §D3): the
+        // printed receipt is a record of what was sold, not live state.
+        const receipt: PosReceiptSnapshot = {
+          orderRef,
+          tabDisplay: cart.tabDisplay,
+          customerName: cart.customerName,
+          items: cart.items.map((item) => ({
+            name: item.name,
+            qty: item.qty,
+            price_q: item.price_q,
+            discountPct: item.discount?.value || 0,
+            ...(item.weighed ? { weightG: item.weighed.weight_g } : {}),
+          })),
+          totalDisplay: review.value?.total_display || "",
+          payments: cart.paymentTenders.map((tender) => ({
+            method: tender.method,
+            amount_q: tender.amount_q,
+            // ONDE foi recebido viaja com a linha: é o que separa dinheiro na
+            // gaveta de dinheiro que sai com o entregador.
+            collection: tender.collection,
+          })),
+          fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
+          printedAtMs: Date.now(),
+          // O recibo do navegador imprime como o servidor (`receipt_escpos`):
+          // "Dinheiro R$ 42 / Recebido R$ 100 / Troco R$ 58", e não a linha
+          // como digitada. "Recebido" é medição — só viaja quando o operador
+          // digitou (`tendered_q`, dinheiro sozinho no caixa).
+          tenderedQ: paidOnDelivery ? 0 : (resolvePayment(cart.paymentTenders, paymentTotalQ.value).tenderedQ ?? 0),
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          paymentPending: paidOnDelivery,
+          fiscalHandoffLine: receiptFiscalHandoffLine(resolveFiscalState(response)),
+        };
+        // Com entrega, o BAIRRO diz mais que a palavra "entrega" — é o que o
+        // operador confere de relance e repete ao cliente.
+        function orderFulfillmentLabel(): string {
+          const base = receipt.fulfillmentLabel;
+          if (cart.fulfillmentType !== "delivery") return base;
+          const bairro = cart.deliveryNeighborhood.trim() || cart.deliveryAddressStructured?.neighborhood?.trim() || "";
+          return bairro ? `${base} · ${bairro}` : base;
+        }
+        const proof = paymentProofView(response.payment);
+        result.value = {
+          salesMode: cart.salesMode,
+          orderRef,
+          nextUrl: offline ? "" : orderUrl(ordersUrl.value, orderRef),
+          payment: proof,
+          paymentDelivery: response.payment_delivery || null,
+          receipt,
+          // O botão da DANFE segue a REGRA fiscal, não o toggle: cartão e pix
+          // emitem por forma de pagamento, sem o operador marcar nada.
+          fiscalExpected: !!response.fiscal_expected,
+          // Onde a nota está: dito pelo close; sem `fiscal_state`, deriva.
+          fiscalState: resolveFiscalState(response),
+          // Troco congelado AGORA — o resetCart logo abaixo apaga os tenders e
+          // o troco computado voltaria a zero. Uma fonte só: a tela de
+          // resultado do operador e a tela do cliente leem daqui.
+          //
+          // ⚠️ Na cobrança na entrega/retirada o troco é ZERO aqui: a tela
+          // anunciava "TROCO R$ 58 · Confira o troco" e travava Enter e
+          // auto-avanço por um dinheiro que ainda não tinha entrado. O que o
+          // entregador leva vai em `courierChangeQ`, informativo.
+          changeQ: paidOnDelivery ? 0 : Math.max(0, paymentChangeQ.value),
+          courierChangeQ: paidOnDelivery ? Math.max(0, paymentChangeQ.value) : 0,
+          // Congelado pelo mesmo motivo do troco: o `resetCart` logo abaixo
+          // apaga os canais, e a nota autoriza depois — segundos ou minutos.
+          wantsPrintedInvoice: cart.receiptChannels.includes("print"),
+          // ENCOMENDA: a leitura de volta ("Retirada · sáb, 10:00 às 10:30")
+          // congela aqui pelo mesmo motivo do troco — o `resetCart` apaga a
+          // data, a janela e o bairro, e a tela de resultado precisa deles.
+          fulfillmentLabel: cart.salesMode === "order" ? orderFulfillmentLabel() : "",
+          scheduleLabel: cart.salesMode === "order"
+            ? scheduleLabel(cart.deliveryDate, deliveryWindowLabel.value, scheduleToday.value)
+            : "",
+          ...(offline ? { offline: { capturedAt: offline.capturedAt, id: offline.id } } : {}),
+        };
+        // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
+        if (proof?.isPix && proof?.hasProof) {
+          if (pendingPixOrderRef.value) {
+            // Um só polling por estação: a prova anterior ainda pendente não
+            // pode ser abandonada calada — acusa e aponta o gestor.
+            toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
+            pendingPixOrderRef.value = "";
+          }
+          startPixPolling(orderRef);
+        } else if (proof?.isLink && response.payment_delivery
+          && ["queued", "sending"].includes(response.payment_delivery.status)) {
+          startDeliveryPolling(orderRef);
+        } else if (!pendingPixOrderRef.value) {
+          // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
+          // polling da venda anterior segue vivo até resolver/expirar.)
+          stopPixPolling();
+          pixStatus.value = "idle";
+        }
+        // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
+        // do snapshot congelado, não do cart, que a linha abaixo já zerou.
+        // Sem await: a venda terminou, e a tela não espera o spooler.
+        // SÓ o dinheiro que entrou NA GAVETA a faz abrir — ver `cashLandedInDrawer`.
+        //
+        // No TABLET (o agente do Balcão não está nesta máquina) ela NUNCA abre
+        // sozinha: o atendente ainda está na mesa. A venda vira o cartão
+        // "Dinheiro da comanda · leve ao Balcão", e ele toca "Abrir gaveta do
+        // Balcão" na frente da gaveta (`useDrawerOpening`, pulso pelo relay).
+        if (cashLandedInDrawer(receipt.payments)) {
+          void drawerOpening.afterCashSale(
+            { orderRef, tabDisplay: receipt.tabDisplay || "", changeQ: Math.max(0, result.value?.changeQ ?? 0) },
+            drawer.opensOnCashSale.value,
+          );
+        }
+        resetCart();
+        if (offline) return;
+        try {
+          await refresh();
+        } catch {
+          // `ok + order_ref` já confirmou o fechamento. Refresh é só leitura:
+          // sua falha não desfaz pedido, recibo nem pagamento, e não pode cair
+          // no catch do close como se o resultado da venda fosse desconhecido.
+          toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
+        }
+  }
+
+  /**
+   * Fecha a venda SEM CONEXÃO: guarda na fila local o mesmo `close_sale` que iria
+   * ao servidor (mesma chave, mesmo total da tela, mais a hora da cobrança) e
+   * segue para a tela de resultado. A fila envia sozinha quando a rede voltar.
+   */
+  async function closeOffline() {
+    const blockers = currentOfflineBlockers();
+    if (blockers.length) {
+      serverError.value = blockers[0] || "";
+      return;
+    }
+    const shown = review.value;
+    if (!shown) return;
+    busy.value = true;
+    result.value = null;
+    try {
+      const capturedAt = new Date().toISOString();
+      const pricesAtIso = shown.offline?.prices_at || pricesAt.value;
+      const body: Record<string, unknown> = {
+        ...withExpectedTotal(buildCurrentIntent(), shown.total_q),
+        offline_captured_at: capturedAt,
+        offline_prices_at: pricesAtIso,
+      };
+      const id = String(body.client_request_id || newClientRequestId());
+      body.client_request_id = id;
+      try {
+        await offlineSales.enqueue({
+          id,
+          capturedAt,
+          pricesAt: pricesAtIso,
+          body,
+          totalQ: shown.total_q,
+          itemCount: cart.items.reduce((sum, item) => sum + lineUnits(item), 0),
+          paymentLabel: offlinePaymentLabel(cart.paymentTenders.map((tender) => tender.method)),
+          status: "pending",
+          attempts: 0,
+        });
+      } catch {
+        serverError.value = "A venda não foi guardada neste dispositivo e não está registrada. Tente finalizar de novo.";
+        return;
+      }
+      await completeSale({ ok: true, order_ref: offlineSaleLabel(id), fiscal_expected: false }, offlineSaleLabel(id), { capturedAt, id });
     } finally {
       busy.value = false;
     }
@@ -3135,10 +3537,11 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function submitMove(payload: {
-    mode: "split" | "transfer" | "merge";
+    mode: "split" | "transfer";
     lineIds: string[];
     toTabRef?: string;
     toSessionKey?: string;
+    seatingSpotRef?: string;
     closeSource?: boolean;
   }) {
     if (!cart.tabSessionKey) return;
@@ -3152,6 +3555,7 @@ export function usePosSale(deps: PosSaleDeps) {
       };
       if (payload.toTabRef) body.to_tab_ref = payload.toTabRef;
       if (payload.toSessionKey) body.to_session_key = payload.toSessionKey;
+      if (payload.seatingSpotRef) body.seating_spot_ref = payload.seatingSpotRef;
       const targetRef = payload.toTabRef || otherOpenTabs.value.find(tab => tab.session_key === payload.toSessionKey)?.ref;
       if (targetRef) {
         try {
@@ -3169,12 +3573,21 @@ export function usePosSale(deps: PosSaleDeps) {
         { body },
       );
       moveDialogOpen.value = false;
+      const sourceRef = cart.tabRef;
+      const sourceTitle = tabTitleView(cart.tabDisplay, "").title;
       if (response.source_closed || !response.source) {
         resetCart();
       } else {
         await setFromTabPayload(response.source);
       }
       await refresh();
+      // A ORIGEM QUE FICOU VAZIA FOI LIBERADA SOZINHA (dono, T2=1, 13/10/2026): a frase diz
+      // isso e o Desfazer reabre a comanda (vazia), para quem ainda vai lançar nela.
+      if (response.source_closed && sourceRef) {
+        toast.info(sourceReleasedMessage(sourceTitle), {
+          action: { label: "Desfazer", onClick: () => { void openTab(sourceRef); } },
+        });
+      }
     } catch (error) {
       serverError.value = `${httpErrorMessage(error, "Os itens não foram movidos.")} Eles seguem na comanda de origem. Tente de novo.`;
     } finally {
@@ -3223,6 +3636,16 @@ export function usePosSale(deps: PosSaleDeps) {
       await refresh();
       return true;
     } catch (error) {
+      // Encomenda ainda não paga (`preorder_unpaid`): não é falha, é a política da
+      // casa (encomenda cobra antes). O aviso diz por quê e leva ao Pagamento.
+      const refusal = fireRefusalView((httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error);
+      if (refusal) {
+        toast.warning(refusal.title, {
+          description: refusal.description,
+          action: { label: refusal.action.label, onClick: () => { void prepareCheckout(); } },
+        });
+        return false;
+      }
       // "a comanda recusa o envio repetido" é fato, não conforto: o envio que deu
       // certo muda a revisão da comanda, e o `expected_revision` desta chamada
       // recusa a segunda com `tab_revision_conflict` (api/pos_concurrency.py).
@@ -3241,6 +3664,46 @@ export function usePosSale(deps: PosSaleDeps) {
     );
     if (response.tab) await setFromTabPayload(response.tab);
     await refresh();
+  }
+
+  /**
+   * LINHA JÁ NA COZINHA QUE SAIU OU DIMINUIU NA CONTA (decisão do dono, 10/10/2026):
+   * cancela na cozinha pelo caminho canônico, o mesmo "cancelar envio" (`unfire_tab`).
+   * Primeiro grava a conta (o servidor passa a ter a quantidade nova, ou não ter a
+   * linha), depois pede o cancelamento: a linha inteira, ou só `units` dela
+   * (`quantities`, o servidor cancela a diferença e a linha segue enviada). Devolve se
+   * a cozinha recebeu; quem chamou diz isso em palavra.
+   */
+  async function cancelLinesInKitchen(entries: Array<{ lineId: string; units?: number }>): Promise<boolean> {
+    const targets = entries.filter((entry) => entry.lineId);
+    if (!cart.tabSessionKey || !targets.length) return false;
+    serverError.value = "";
+    firing.value = true;
+    try {
+      await persistTab(true);
+      const quantities = Object.fromEntries(
+        targets.filter((entry) => entry.units && entry.units > 0).map((entry) => [entry.lineId, entry.units]),
+      );
+      const response = await action.call<{ tab: POSTabPayload | null }>(
+        actionHref(actions.value, "unfire_tab", "/api/v1/backstage/pos/tabs/unfire/"),
+        {
+          body: {
+            session_key: cart.tabSessionKey,
+            expected_revision: cart.expectedRevision,
+            line_ids: targets.map((entry) => entry.lineId),
+            ...(Object.keys(quantities).length ? { quantities } : {}),
+          },
+        },
+      );
+      if (response.tab) await setFromTabPayload(response.tab);
+      await refresh();
+      return true;
+    } catch (error) {
+      serverError.value = `${httpErrorMessage(error, "A cozinha não recebeu o cancelamento.")} Avise a cozinha de voz.`;
+      return false;
+    } finally {
+      firing.value = false;
+    }
   }
 
   async function unfireTab(lineId: string) {
@@ -3325,7 +3788,7 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       const orderRef = result.value.orderRef;
       const reason = cancelSaleReason.value.trim();
-      await action.call(
+      const response = await action.call<{ card_machine_refund?: { amount_display: string; method_label: string } | null }>(
         actionHref(actions.value, "cancel_recent_sale", "/api/v1/backstage/pos/sale/recent/cancel/"),
         {
           body: {
@@ -3346,9 +3809,20 @@ export function usePosSale(deps: PosSaleDeps) {
       }
       // Confirmação como toast padrão de sucesso — o banner fixo de antes nunca
       // expirava e ficava na tela até a próxima venda.
-      toast.success("Venda cancelada", {
-        description: "O pedido foi cancelado dentro da janela do operador.",
-      });
+      // Venda paga na maquininha: cancelar não devolve o dinheiro ao cartão. A
+      // tela diz o estorno a fazer AGORA, com o cliente na frente; a pendência
+      // fica na Sessão de caixa até o "Estornei na maquininha".
+      const machine = response?.card_machine_refund;
+      if (machine) {
+        toast.warning("Venda cancelada. Falta estornar na maquininha", {
+          description: `Estorne ${machine.amount_display} no ${machine.method_label}, na maquininha. Depois toque em Estornei na maquininha, na Sessão de caixa.`,
+          duration: 15000,
+        });
+      } else {
+        toast.success("Venda cancelada", {
+          description: "O pedido foi cancelado dentro da janela do operador.",
+        });
+      }
       await refresh();
     } catch (error) {
       // QUALQUER falha fica inline no diálogo (aberto): um toast passageiro com o
@@ -3364,9 +3838,106 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  // ── O total da VENDA, antes de abrir o pagamento ─────────────────────────
+  // Regra do dono (09/10): total que ainda pode mudar não aparece como
+  // definitivo. O botão do Pagamento e a folha da mesa mostravam a soma local
+  // do carrinho, que não sabe do desconto automático, da taxa de entrega nem do
+  // desconto manual que o servidor descarta. A fonte é a MESMA do pagamento: a
+  // revisão do servidor, aqui pedida em silêncio (sem `busy`, sem toast, sem
+  // mexer no `clientRequestId` do carrinho) a cada mudança que pode mexer no
+  // total. Enquanto ela não volta, a tela diz "Calculando…" e nenhum número.
+  const saleReview = ref<POSSaleReviewProjection | null>(null);
+  const saleReviewFailed = ref(false);
+  /** A edição de encomenda tem a prévia própria (no "Salvar alterações"): ali a
+   *  revisão de venda não é pedida, e a tela não mostra total. */
+  const saleTotalPaused = ref(false);
+  let saleReviewTimer: ReturnType<typeof setTimeout> | null = null;
+  let saleReviewSeq = 0;
+  // A conexão também mexe no total: o número confirmado pelo servidor não vale para
+  // a venda feita sem rede (ela cobra a soma da TELA, `localReview`), e ao voltar a
+  // rede o servidor confirma de novo. Sem isto, o total revisado antes da queda
+  // ficava "confirmado" sem conexão até o carrinho mudar.
+  const online = useOnline();
+  const saleTotalKey = computed(() => JSON.stringify([
+    online.value,
+    checkoutMode.value,
+    saleTotalPaused.value,
+    linesWithoutServerPrices(cart.items),
+    cart.salesMode,
+    cart.fulfillmentConfirmed,
+    cart.fulfillmentType,
+    cart.deliveryAddress,
+    cart.deliveryAddressStructured,
+    cart.deliveryStreetNumber,
+    cart.deliveryNeighborhood,
+    cart.deliveryDate,
+    cart.deliveryTimeSlot,
+    cart.deliveryFeeOverrideInput,
+    cart.deliveryFeeOverride,
+    cart.discountType,
+    cart.discountValue,
+    cart.customerRef,
+    cart.tabRef,
+  ]));
+  function scheduleSaleReview() {
+    saleReviewSeq += 1;
+    saleReview.value = null;
+    saleReviewFailed.value = false;
+    if (saleReviewTimer) clearTimeout(saleReviewTimer);
+    saleReviewTimer = null;
+    if (checkoutMode.value || saleTotalPaused.value || !cart.items.length) return;
+    const seq = saleReviewSeq;
+    saleReviewTimer = setTimeout(() => {
+      saleReviewTimer = null;
+      void runSaleReview(seq);
+    }, 450);
+  }
+  async function runSaleReview(seq: number) {
+    if (offlineNow()) {
+      saleReview.value = localReview();
+      return;
+    }
+    try {
+      const response = await action.call<POSSaleReviewResponse>(
+        actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
+        { body: buildPosSaleIntent(currentIntentState(), checkoutContract.value?.intent_version) },
+      );
+      // Resposta de um carrinho que já mudou: descartada.
+      if (seq !== saleReviewSeq) return;
+      saleReview.value = response.review;
+      // Sem comanda, a revisão é quem diz o que cada linha cobra (o desconto do
+      // grupo do cliente, a Xepa): o selo entra na linha junto com o total.
+      if (!hasOpenTab.value) applyLinePrices(cart.items, response.review.line_prices);
+    } catch {
+      // Sem toast: quem diz o motivo é o Pagamento, que revisa de novo ao abrir
+      // e oferece "Tentar de novo". Aqui a tela só não mostra número.
+      if (seq !== saleReviewSeq) return;
+      if (offlineNow()) {
+        saleReview.value = localReview();
+        return;
+      }
+      saleReviewFailed.value = true;
+    }
+  }
+  watch(saleTotalKey, () => scheduleSaleReview(), { immediate: true });
+  /** O total que a tela de venda mostra: do servidor, ou o estado sem número. */
+  const saleTotal = computed(() => saleTotalView({
+    checkoutMode: checkoutMode.value,
+    checkoutReview: review.value,
+    checkoutReviewFailed: reviewFailed.value,
+    saleReview: saleReview.value,
+    saleReviewFailed: saleReviewFailed.value,
+    paused: saleTotalPaused.value,
+    hasItems: cart.items.length > 0,
+  }));
+
   onScopeDispose(() => {
     stopPixPolling();
     stopDeliveryPolling();
+    if (autoReviewTimer) clearTimeout(autoReviewTimer);
+    autoReviewTimer = null;
+    if (saleReviewTimer) clearTimeout(saleReviewTimer);
+    saleReviewTimer = null;
   });
 
   return {
@@ -3417,6 +3988,11 @@ export function usePosSale(deps: PosSaleDeps) {
     movePreparing,
     review,
     reviewFailed,
+    reviewFailureReason,
+    totalStatus,
+    saleReview,
+    saleTotal,
+    saleTotalPaused,
     customerLookup,
     tabDialogOpen,
     tabDialogReason,
@@ -3449,6 +4025,7 @@ export function usePosSale(deps: PosSaleDeps) {
     // entrega — o que o servidor respondeu, para a tela PERGUNTAR em vez de pedir
     deliveryFeeQ,
     deliveryFeeSource,
+    deliveryFeeWaiver,
     deliveryFeeStatus,
     deliveryDistanceKm,
     deliverySlots,
@@ -3474,7 +4051,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tabDialogDescription,
     sortedTabs,
     otherOpenTabs,
-    suggestedSplitRef,
+    suggestedNewTabRef,
     // commands / handlers
     goToTabs,
     addTender,
@@ -3496,6 +4073,8 @@ export function usePosSale(deps: PosSaleDeps) {
     lineQty,
     addProduct,
     setQty,
+    addLineLike,
+    cancelLinesInKitchen,
     restoreItem,
     setLineNotes,
     setLineDiscount,
@@ -3543,6 +4122,7 @@ export function usePosSale(deps: PosSaleDeps) {
     submitMove,
     fireTab,
     unfireTab,
+    confirmPixTenders,
     unfireSelected,
     renameTab,
     openCancelSaleDialog,

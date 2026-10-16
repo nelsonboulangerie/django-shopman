@@ -9,8 +9,91 @@ import type {
 } from "~/generated/ordersContract";
 import type { ReadMetadata } from "./readMetadata";
 
-export type CustomerListResponse = ReadMetadata & { list: CustomerListProjection };
-export type CustomerDetailResponse = ReadMetadata & { customer: CustomerDetailProjection };
-export type MergePreviewResponse = ReadMetadata & { preview: MergePreviewProjection };
-export type MergeAuditListResponse = ReadMetadata & { merges: MergeAuditListProjection };
-export type MergeResponse = { ok: boolean; source_ref: string; target_ref: string; audit_id: string };
+export type CustomerListResponse = ReadMetadata & {
+  list: CustomerListProjection;
+};
+export type CustomerDetailResponse = ReadMetadata & {
+  customer: CustomerDetailProjection;
+};
+export type MergePreviewResponse = ReadMetadata & {
+  preview: MergePreviewProjection;
+};
+export type MergeAuditListResponse = ReadMetadata & {
+  merges: MergeAuditListProjection;
+};
+export type MergeResponse = {
+  ok: boolean;
+  source_ref: string;
+  target_ref: string;
+  audit_id: string;
+};
+
+export interface CustomerMutationPayload {
+  expectedRevision?: string;
+  firstName?: string;
+  lastName?: string;
+  customerType?: string;
+  document?: string;
+  birthday?: string;
+  email?: string;
+  phone?: string;
+  /** Os grupos comerciais do cliente: MUITOS, e todos precificam. */
+  priceTierRefs?: string[];
+  tags?: string[];
+  notes?: string;
+  houseAccount?: boolean;
+  houseAccountLimit?: string;
+  fiscalCpfNaNota?: boolean;
+  fiscalEmailReceipt?: boolean;
+}
+
+export type CustomerMutationResponse = {
+  customer: CustomerDetailProjection;
+  ok?: boolean;
+  outcome?: "applied" | "not_applied" | "unknown";
+  resource?: { kind: "customer" | "customer-address"; ref: string };
+};
+
+export interface CustomerAddressMutationPayload {
+  expectedRevision?: string;
+  label?: string;
+  labelCustom?: string;
+  formattedAddress?: string;
+  route?: string;
+  streetNumber?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  stateCode?: string;
+  postalCode?: string;
+  deliveryInstructions?: string;
+  isDefault?: boolean;
+}
+
+export type CustomerAddressMutationResponse = CustomerMutationResponse;
+
+/** A cópia: leva a revisão do original e, opcionalmente, a nova identidade/contato. */
+export interface CustomerDuplicatePayload {
+  expectedRevision: string;
+  firstName?: string;
+  lastName?: string;
+  document?: string;
+  phone?: string;
+  email?: string;
+}
+
+export type CustomerBulkOperation = "add_tags" | "remove_tags";
+
+export interface CustomerBulkPayload {
+  refs: string[];
+  operation: CustomerBulkOperation;
+  tags: string[];
+}
+
+export type CustomerBulkResponse = {
+  ok?: boolean;
+  outcome?: "applied" | "not_applied" | "unknown";
+  operation: CustomerBulkOperation;
+  applied: string[];
+  skipped: { ref: string; reason: string }[];
+};

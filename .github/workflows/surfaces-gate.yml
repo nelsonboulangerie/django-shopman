@@ -28,6 +28,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  surface-contract:
+    name: Contrato canônico das superfícies
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      quality: ${{ steps.matrix.outputs.quality }}
+      pwa: ${{ steps.matrix.outputs.pwa }}
+      audit: ${{ steps.matrix.outputs.audit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Validar manifestos, capabilities e exceções
+        run: node scripts/surface_contract.mjs validate
+      - name: Gerar matrizes por capability
+        id: matrix
+        run: |
+          echo "quality=$(node scripts/surface_contract.mjs matrix quality)" >> "$GITHUB_OUTPUT"
+          echo "pwa=$(node scripts/surface_contract.mjs matrix pwa)" >> "$GITHUB_OUTPUT"
+          echo "audit=$(node scripts/surface_contract.mjs matrix audit)" >> "$GITHUB_OUTPUT"
+
   # Deriva de versão entre as superfícies. Roda ANTES da matriz e em segundos:
   # é leitura de `package.json` + `package-lock.json`, sem `npm ci`, sem rede.
   #
@@ -73,30 +93,65 @@ jobs:
       - name: Gate de layouts e tokens do operador
         run: python scripts/check_operator_layout_guardrails.py
 
-  app-quality:
-    name: ${{ matrix.app }}
+      # O tema compartilhado do kit (app.config.ts + CSS de tokens) é herdado por
+      # extends; mexer nele reapinta as baselines visuais das apps consumidoras. O
+      # contrato registra o fingerprint aceito e o gate reprova quando o tema muda
+      # sem que as baselines afetadas sejam regeradas no MESMO PR, com aceite do
+      # dono. Baseline não se regenera cego — ver o relatório de saúde do Marketing.
+      - name: Gate do tema compartilhado x baselines consumidoras
+        run: python scripts/check_theme_baseline_contract.py
+
+  # Supply chain: o `npm audit` das superfícies Nuxt vive aqui, não dentro do job de
+  # um app. Antes, o audit do operator-kit rodava no job "Marketing — cadeia completa"
+  # (o Marketing instala a layer e era o único job macOS com o kit à mão). Efeito
+  # medido: o Marketing ficava vermelho por dívida TRANSITIVA do toolchain Nuxt do kit
+  # — simple-git/node-forge via @nuxt/devtools/listhen — que não é dele. O check de
+  # Marketing deixava de significar Marketing, e um vermelho crônico e alheio é pior
+  # que nenhum check.
+  #
+  # O audit NÃO precisa de `node_modules`: `npm audit` lê o `package-lock.json` e a
+  # API do registry. Por isso este job é checkout + Node + leitura — sem `npm ci`,
+  # sem build e sem macOS. A allowlist versionada (`surfaces/npm-audit-allowlist.json`)
+  # é a única exceção, e cada entrada tem prazo e motivo.
+  supply-chain:
+    name: Supply chain — ${{ matrix.id }}
+    needs: surface-contract
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     strategy:
       fail-fast: false
-      matrix:
-        app:
-          - operator-kit
-          - storefront-nuxt
-          - pos-nuxt
-          - kds-nuxt
-          - orders-nuxt
-          - production-nuxt
-          - purchase-nuxt
-          - hub-nuxt
-          - marketing-nuxt
-          - bi-nuxt
-          - kitchensink-nuxt
+      matrix: ${{ fromJSON(needs.surface-contract.outputs.audit) }}
 
     defaults:
       run:
-        working-directory: surfaces/${{ matrix.app }}
+        working-directory: surfaces/${{ matrix.dir }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Audit ${{ matrix.id }} supply chain
+        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
+
+  app-quality:
+    name: ${{ matrix.dir }}
+    needs: surface-contract
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.surface-contract.outputs.quality) }}
+
+    defaults:
+      run:
+        working-directory: surfaces/${{ matrix.dir }}
 
     steps:
       - name: Checkout
@@ -108,22 +163,32 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
-            surfaces/${{ matrix.app }}/package-lock.json
+            surfaces/${{ matrix.dir }}/package-lock.json
             surfaces/operator-kit/package-lock.json
+
+      - name: Set up Python for declared browser mock
+        if: matrix.python_mock
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
 
       # Apps que estendem a layer resolvem módulos da própria operator-kit já
       # no `nuxt prepare` do postinstall. Portanto o kit precisa existir antes
       # do `npm ci` da surface, não apenas antes do typecheck.
       - name: Install operator-kit layer deps
-        if: matrix.app != 'operator-kit' && matrix.app != 'storefront-nuxt'
+        if: matrix.install_layer
         working-directory: surfaces/operator-kit
         run: npm ci
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Vitest
-        run: npm test
+      - name: Unit tests
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" unit
+
+      - name: Component tests
+        if: matrix.component
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" component
 
       # `eslint .` roda a partir do diretório de cada app e NUNCA alcança
       # `../operator-kit`. Resultado: o layer — BFF (`server/utils/djangoProxy.ts`),
@@ -133,72 +198,74 @@ jobs:
       # opt-in (só Marketing e Produção o rodavam, nos seus jobs de browser).
       # `--if-present` pelo mesmo motivo do typecheck: mantém a matriz uniforme.
       - name: Lint
-        run: npm run lint --if-present
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" lint
 
       # `--if-present`: o operator-kit (layer, sem app Nuxt próprio) não tem
       # typecheck; todos os 6 apps têm — storefront e pos ganharam o script
       # junto com este gate.
       - name: Typecheck
-        run: npm run typecheck --if-present
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" typecheck
 
       - name: Build do catálogo canônico
-        if: matrix.app == 'operator-kit'
-        run: npm run catalog:build
+        if: matrix.catalog
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" build
 
-      - name: Install pinned Chromium for the shared visual runner
-        if: matrix.app == 'operator-kit'
-        run: npx playwright install chromium
+      - name: Install declared browser engines
+        if: matrix.visual || matrix.geometry || matrix.browser || matrix.a11y || matrix.browser_suite
+        run: ${{ matrix.browser_install }}
 
-      - name: Shared visual runner and geometry scanner
-        if: matrix.app == 'operator-kit'
-        run: npm run test:visual
+      - name: Visual and responsive contract
+        if: matrix.visual && !matrix.browser_suite
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" visual
 
-      - name: Install Chromium for the Kitchen Sink consumer matrix
-        if: matrix.app == 'kitchensink-nuxt'
-        run: npx playwright install chromium
+      - name: Geometry contract
+        if: matrix.geometry
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" geometry
 
-      - name: Kitchen Sink SSR, hydration, accessibility and visual matrix
-        if: matrix.app == 'kitchensink-nuxt'
-        run: npm run test:visual
+      - name: Functional browser contract
+        if: matrix.browser && !matrix.browser_suite
+        env:
+          MARKETING_E2E_MANAGED: "1"
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" browser
 
-      - name: Upload shared operator evidence
-        if: always() && matrix.app == 'operator-kit'
+      - name: Accessibility contract
+        if: matrix.a11y && !matrix.browser_suite
+        env:
+          MARKETING_E2E_MANAGED: "1"
+          MARKETING_E2E_USERNAME: operadora-e2e
+          MARKETING_E2E_PASSWORD: senha-sintetica-ci
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" a11y
+
+      - name: Shared browser contract (functional, a11y, visual)
+        if: matrix.browser_suite
+        env:
+          MARKETING_E2E_MANAGED: "1"
+          MARKETING_E2E_USERNAME: operadora-e2e
+          MARKETING_E2E_PASSWORD: senha-sintetica-ci
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" browserSuite
+
+      - name: Security contract
+        if: matrix.security
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" security
+
+      - name: Upload canonical browser evidence
+        if: always() && (matrix.visual || matrix.geometry || matrix.browser || matrix.a11y || matrix.browser_suite)
         uses: actions/upload-artifact@v7
         with:
-          name: operator-kit-visual-evidence
-          path: surfaces/operator-kit/test-results/operator-evidence
-          if-no-files-found: error
+          name: ${{ matrix.id }}-browser-evidence
+          path: surfaces/${{ matrix.dir }}/test-results
+          if-no-files-found: ignore
           retention-days: 14
 
   pwa-quality:
-    name: PWA — ${{ matrix.app }}
+    name: PWA — ${{ matrix.id }}
+    needs: surface-contract
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - app: storefront
-            surface: storefront-nuxt
-          - app: pos
-            surface: pos-nuxt
-          - app: hub
-            surface: hub-nuxt
-          - app: orders
-            surface: orders-nuxt
-          - app: kds
-            surface: kds-nuxt
-          - app: production
-            surface: production-nuxt
-          - app: marketing
-            surface: marketing-nuxt
-          - app: purchase
-            surface: purchase-nuxt
-          - app: bi
-            surface: bi-nuxt
-          - app: kitchensink
-            surface: kitchensink-nuxt
+      matrix: ${{ fromJSON(needs.surface-contract.outputs.pwa) }}
 
     steps:
       - name: Checkout
@@ -210,184 +277,64 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: |
-            surfaces/${{ matrix.surface }}/package-lock.json
+            surfaces/${{ matrix.dir }}/package-lock.json
             surfaces/operator-kit/package-lock.json
 
       - name: Install operator-kit capability dependencies
-        if: matrix.app != 'storefront'
+        if: matrix.install_layer
         working-directory: surfaces/operator-kit
         run: npm ci
 
       - name: Install surface dependencies
-        working-directory: surfaces/${{ matrix.surface }}
+        working-directory: surfaces/${{ matrix.dir }}
         run: npm ci
 
-      - name: Install Storefront browser
-        if: matrix.app == 'storefront'
-        working-directory: surfaces/storefront-nuxt
+      - name: Install declared PWA browser
+        if: matrix.pwa_browser
+        working-directory: surfaces/${{ matrix.dir }}
         run: npx playwright install --with-deps chromium
 
       - name: Production build
-        if: matrix.app != 'production'
-        working-directory: surfaces/${{ matrix.surface }}
-        run: npm run build
-
-      - name: Production build (hermetic test upstream)
-        if: matrix.app == 'production'
-        working-directory: surfaces/production-nuxt
-        env:
-          NUXT_SHOPMAN_ENVIRONMENT: test
-          SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1"
-          NUXT_DJANGO_BASE_URL: http://127.0.0.1:1
-        run: npm run build
+        working-directory: surfaces/${{ matrix.dir }}
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" build
 
       - name: Structural PWA gate
-        run: node tools/pwa-gate/check.mjs --app=${{ matrix.app }}
+        run: node tools/pwa-gate/check.mjs --app=${{ matrix.id }}
+
+      # Carga direta com SSR no build de produção (o mesmo `.output` acima), a 390 e a
+      # 1440 px: nenhum mismatch de hidratação, nenhum erro de página. A matriz visual
+      # do Gestor é client-only e não via a Fila presa no esqueleto (09/10/2026).
+      - name: Orders SSR direct load (celular e mesa)
+        if: matrix.ssr
+        working-directory: surfaces/${{ matrix.dir }}
+        run: |
+          npx playwright install --with-deps chromium
+          node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" ssr
 
       - name: Storefront PWA browser smoke
-        if: matrix.app == 'storefront'
-        working-directory: surfaces/storefront-nuxt
-        run: npx playwright test tests/e2e/pwa.spec.ts
+        if: matrix.pwa_browser
+        working-directory: surfaces/${{ matrix.dir }}
+        run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" pwaBrowser
 
       # O deploy usa esta receita genérica, não o workspace já preparado pelo
       # job. Construí-la aqui prova a ordem real de instalação e impede que o
       # postinstall do consumer só falhe depois do merge, ao publicar no DOCR.
+      - name: Log in to GHCR (espelho das imagens da CI)
+        if: matrix.install_layer
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build operator deployment image
-        if: matrix.app != 'storefront'
-        run: docker build --file surfaces/Dockerfile.surface --build-arg SURFACE=${{ matrix.surface }} .
-
-  marketing-complete:
-    name: Marketing — cadeia completa
-    # Os screenshots foram revisados em macOS e usam o Chromium pinado pelo
-    # Playwright. Fixar ambos evita aprovar ruído de rasterização entre sistemas.
-    runs-on: macos-15
-    timeout-minutes: 30
-
-    defaults:
-      run:
-        working-directory: surfaces/marketing-nuxt
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # O backend hermético dos fluxos E2E usa sintaxe Python 3.10+ e o runner
-      # macOS não oferece uma versão contratada por default. Sem o setup, o
-      # processo pode morrer antes de abrir a porta e o Playwright só relata um
-      # timeout opaco de 30 s. O runtime do projeto já é Python 3.12.
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            surfaces/marketing-nuxt/package-lock.json
-            surfaces/operator-kit/package-lock.json
-
-      - name: Install operator-kit layer dependencies
-        working-directory: surfaces/operator-kit
-        run: npm ci
-
-      - name: Install deterministic Marketing dependencies
-        run: npm ci
-
-      - name: Install pinned Playwright Chromium
-        run: npx playwright install chromium
-
-      - name: Unit and component tests
-        run: npm test
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Production build
-        run: npm run build
-
-      - name: Browser E2E
-        env:
-          MARKETING_E2E_MANAGED: "1"
-        run: npm run test:e2e
-
-      - name: Accessibility
-        env:
-          MARKETING_E2E_MANAGED: "1"
-          MARKETING_E2E_USERNAME: operadora-e2e
-          MARKETING_E2E_PASSWORD: senha-sintetica-ci
-        run: npm run test:a11y
-
-      - name: Visual regression matrix
-        run: npm run test:visual
-
-      - name: Security contracts
-        run: npm run test:security
-
-      - name: Audit operator-kit supply chain
-        working-directory: surfaces/operator-kit
-        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
-
-      - name: Audit Marketing supply chain
-        run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
-
-      - name: Upload browser evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: marketing-browser-gates
-          path: surfaces/marketing-nuxt/test-results
-          if-no-files-found: ignore
-          retention-days: 14
-
-  production-browser:
-    name: Produção — matriz Playwright AA
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    defaults:
-      run:
-        working-directory: surfaces/production-nuxt
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            surfaces/production-nuxt/package-lock.json
-            surfaces/operator-kit/package-lock.json
-
-      - name: Install operator-kit layer dependencies
-        working-directory: surfaces/operator-kit
-        run: npm ci
-
-      - name: Install deterministic Produção dependencies
-        run: npm ci
-
-      - name: Lint Produção browser suite and surface
-        run: npm run lint
-
-      - name: Install pinned browser engines
-        run: npx playwright install --with-deps chromium webkit
-
-      - name: Browser, accessibility and viewport matrix
-        run: npm run test:e2e
-
-      - name: Upload browser evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: production-browser-gates
-          path: surfaces/production-nuxt/test-results
-          if-no-files-found: ignore
-          retention-days: 14
+        if: matrix.install_layer
+        # Base e frontend vêm do espelho da MESMA imagem oficial no GHCR do
+        # repositório (ci-image-mirror.yml); o pull anônimo cai com 429 no Docker Hub
+        # e no ECR público. O deploy segue no default do ARG.
+        run: >-
+          docker build --file surfaces/Dockerfile.surface
+          --build-arg SURFACE=${{ matrix.dir }}
+          --build-arg NODE_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/node:22-alpine
+          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
+          .

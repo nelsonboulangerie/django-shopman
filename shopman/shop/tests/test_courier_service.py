@@ -47,7 +47,7 @@ def shop():
     )
 
 
-def _delivery_order(ref="CR-1", status=Order.Status.READY, **data_overrides) -> Order:
+def _delivery_order(ref="CR-1", status=Order.Status.READY, channel_ref="web", **data_overrides) -> Order:
     data = {
         "fulfillment_type": "delivery",
         "customer": {"name": "Ana Lima", "phone": "5543999990000"},
@@ -67,7 +67,7 @@ def _delivery_order(ref="CR-1", status=Order.Status.READY, **data_overrides) -> 
     data.update(data_overrides)
     return Order.objects.create(
         ref=ref,
-        channel_ref="web",
+        channel_ref=channel_ref,
         session_key=f"S-{ref}",
         status=status,
         snapshot={"items": []},
@@ -101,8 +101,37 @@ def test_request_dispatch_noop_for_pickup_and_wrong_status(shop):
     pickup = _delivery_order(ref="CR-P", fulfillment_type="pickup")
     assert courier.request_dispatch(pickup, actor="test") is None
 
-    preparing = _delivery_order(ref="CR-W", status=Order.Status.PREPARING)
-    assert courier.request_dispatch(preparing, actor="test") is None
+    new = _delivery_order(ref="CR-W", status=Order.Status.NEW)
+    assert courier.request_dispatch(new, actor="test") is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("status", [Order.Status.ACCEPTED, Order.Status.PREPARING])
+def test_house_delivery_calls_courier_from_acceptance_on_pdv_channel(shop, status):
+    """O operador chama na hora, desde o aceite (decisão do dono, 13/10/2026).
+
+    Caso do alpha: encomenda do PDV, entrega, em preparo (o KDS mandou) e o
+    Gestor só oferecia "Cotar entrega".
+    """
+    order = _delivery_order(ref=f"PDV-{status}", status=status, channel_ref="pdv")
+    assert courier.request_dispatch(order, actor="test") is not None
+    _run_dispatch(order)
+    assert courier.get_block(order)["id_mch"] == f"MOCK-{order.ref}"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("status", [Order.Status.ACCEPTED, Order.Status.PREPARING])
+def test_collection_before_ready_takes_the_order_out(shop, status):
+    """Chamou antes do pronto e o entregador coletou: o pedido sai, não fica no preparo."""
+    order = _delivery_order(ref=f"CR-EARLY-{status}", status=status)
+    courier.request_dispatch(order, actor="test")
+    _run_dispatch(order)
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert order.status == Order.Status.DISPATCHED
+    courier.apply_status(order, "F", source="webhook")
+    order.refresh_from_db()
+    assert order.status in (Order.Status.DELIVERED, Order.Status.COMPLETED)
 
 
 def test_request_dispatch_noop_without_adapter(shop):
@@ -158,7 +187,8 @@ def test_dispatch_handler_skips_cancelled_order(shop):
     order.refresh_from_db()
     directive = Directive.objects.filter(topic=COURIER_DISPATCH).first()
     CourierDispatchHandler().handle(message=directive, ctx={})
-    assert courier.get_block(order) == {}
+    order.refresh_from_db()
+    assert "id_mch" not in courier.get_block(order)
     assert not courier_mock.rides()
 
 
@@ -211,8 +241,8 @@ def test_dispatch_handler_unknown_failure_requires_verification(shop, monkeypatc
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def _dispatched_order(shop) -> Order:
-    order = _delivery_order()
+def _dispatched_order(shop, ref="CR-1") -> Order:
+    order = _delivery_order(ref=ref)
     courier.request_dispatch(order, actor="test")
     _run_dispatch(order)
     return order
@@ -340,6 +370,89 @@ def test_cancel_ride_blocked_after_pickup(shop):
         courier.cancel_ride(order, actor="maria")
 
 
+# ── pedido cancelado: a corrida não segue aberta ────────────────────
+
+
+def _cancel_order(order) -> None:
+    """O pedido vira cancelado e a fase on_cancelled do lifecycle roda."""
+    from shopman.shop.lifecycle import dispatch
+
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+    order.refresh_from_db()
+    dispatch(order, "on_cancelled")
+
+
+def _cancelled_order_alerts(order):
+    return OperatorAlert.objects.filter(order_ref=order.ref, type="integration_failed", severity="critical")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+@pytest.mark.parametrize("ride_status", ["D", "A"])
+def test_cancelling_order_before_pickup_cancels_the_ride_once(shop, ride_status):
+    from shopman.shop.directives import COURIER_CANCEL
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    if ride_status != "D":
+        courier.apply_status(order, ride_status, source="poll")
+    _cancel_order(order)
+    tasks = Directive.objects.filter(topic=COURIER_CANCEL, payload__order_ref=order.ref)
+    assert tasks.count() == 1  # enfileirado pela fase on_cancelled do lifecycle
+    courier.on_order_cancelled(order)  # replay da fase: idempotente
+    assert tasks.count() == 1
+    assert tasks.get().payload["courier_ref"] == ride
+    CourierCancelHandler().handle(message=tasks.get(), ctx={})
+    order.refresh_from_db()
+    assert courier_mock.rides()[ride]["status"] == "C"
+    assert not courier.has_active_ride(order)
+    courier.on_order_cancelled(order)  # corrida já cancelada: nada a fazer
+    assert tasks.count() == 1
+    assert not _cancelled_order_alerts(order).exists()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_cancelling_order_after_pickup_warns_operator_once(shop):
+    from shopman.shop.directives import COURIER_CANCEL
+
+    order = _dispatched_order(shop, ref="NB-261013-A47")
+    block = {**courier.get_block(order), "status": "E"}
+    Order.objects.filter(pk=order.pk).update(data={**order.data, "courier": block})
+    order.refresh_from_db()
+    _cancel_order(order)
+    assert _cancelled_order_alerts(order).count() == 1  # aviso da fase on_cancelled
+    courier.on_order_cancelled(order)
+    courier.apply_status(order, "E", source="webhook")  # replay do fato
+
+    alert = _cancelled_order_alerts(order).get()
+    assert alert.message == "O entregador já coletou o pedido A47, que foi cancelado: fale com a central."
+    assert not Directive.objects.filter(topic=COURIER_CANCEL).exists()
+    assert courier_mock.rides()[block["id_mch"]]["status"] != "C"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_pickup_arriving_after_cancellation_warns_operator(shop):
+    """A coleta chega antes de o worker cancelar a corrida: o aviso sai do fato."""
+    from shopman.shop.directives import COURIER_CANCEL
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+
+    order = _dispatched_order(shop)
+    courier.apply_status(order, "A", source="poll")
+    _cancel_order(order)
+    courier.apply_status(order, "E", source="webhook")
+    CourierCancelHandler().handle(message=Directive.objects.get(topic=COURIER_CANCEL), ctx={})
+    order.refresh_from_db()
+    assert order.status == Order.Status.CANCELLED
+    assert _cancelled_order_alerts(order).count() == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_cancelling_order_without_ride_is_silent(shop):
+    order = _delivery_order(ref="CR-SEM")
+    _cancel_order(order)
+    assert not _cancelled_order_alerts(order).exists()
+
+
 # ── polling (courier.sync) ──────────────────────────────────────────
 
 
@@ -391,6 +504,176 @@ def test_sync_handler_respects_poll_disabled(shop):
     _run_dispatch(order)
     # com polling desligado o despacho não agenda heartbeat
     assert not Directive.objects.filter(topic=COURIER_SYNC, payload__order_ref=order.ref).exists()
+
+
+def _beat(order):
+    """Uma batida do polling, do jeito que o worker roda."""
+    directive = Directive.objects.filter(
+        topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED
+    ).first()
+    Directive.objects.filter(pk=directive.pk).update(status=Directive.Status.DONE)
+    CourierSyncHandler().handle(message=directive, ctx={})
+    order.refresh_from_db()
+
+
+def _sync_alerts(order):
+    return OperatorAlert.objects.filter(type="integration_failed", order_ref=order.ref,
+                                        message__contains=f"corrida {courier.get_block(order).get('id_mch')}")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_sync_failure_is_not_silent(shop, django_capture_on_commit_callbacks):
+    """13/10/2026: a leitura recusou a cada minuto e nem o pedido nem o operador souberam."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.fail_reads(ride)
+
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "D"
+    assert block["sync"]["failing_since"]
+    assert "[67]" in block["sync"]["last_error"]
+    assert not _sync_alerts(order).exists()
+
+    revision = courier.dispatch_revision(order)
+    _beat(order)
+    assert courier.dispatch_revision(order) == revision  # a batida que falha de novo não gira a revisão
+    _beat(order)
+    assert _sync_alerts(order).filter(resolved_at__isnull=True).count() == 1
+    assert courier.progress_view(courier.get_block(order))["sync_since"]
+
+    _beat(order)
+    assert _sync_alerts(order).count() == 1  # um aviso por corrida
+
+    # A central voltou a responder: a tela se corrige e o aviso sai sozinho.
+    courier_mock.rides()[ride].pop("read_error")
+    courier_mock.set_status(ride, "A")
+    with django_capture_on_commit_callbacks(execute=True):
+        _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "A"
+    assert "sync" not in block
+    assert not _sync_alerts(order).filter(resolved_at__isnull=True).exists()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_sync_stores_the_ride_progress_and_the_screen_view(shop):
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "A")
+    courier_mock.set_progress(ride, {
+        "accepted_at": "2026-10-13T18:42:00+00:00",
+        "pickup_eta_at": "2026-10-13T18:49:00+00:00",
+        "pickup_eta_minutes": 7,
+        "trip_minutes": 9,
+    })
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["progress"]["pickup_eta_at"] == "2026-10-13T18:49:00+00:00"
+    view = courier.progress_view(block)
+    assert view["pickup_eta_at"] == "2026-10-13T18:49:00+00:00"
+    assert view["delivery_eta_at"].startswith("2026-10-13T18:58:00")  # chegada à loja + viagem
+
+    courier_mock.set_progress(ride, {"arrived_pickup_at": "2026-10-13T18:50:00+00:00"})
+    _beat(order)
+    assert courier.progress_view(courier.get_block(order))["arrived_pickup_at"] == "2026-10-13T18:50:00+00:00"
+
+    courier_mock.set_status(ride, "E")
+    courier_mock.set_progress(ride, {"picked_up_at": "2026-10-13T18:52:00+00:00"})
+    _beat(order)
+    view = courier.progress_view(courier.get_block(order))
+    assert view["pickup_eta_at"] == ""  # já coletou: a chegada à loja sai da tela
+    assert view["delivery_eta_at"].startswith("2026-10-13T19:01:00")  # coleta + viagem
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_progress_advances_the_status_when_the_letter_lags(shop):
+    """13/10/2026, PDV-261013-L34: a letra ficou em D e o progresso já dizia aceite, coleta e fim."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "D")  # a letra não sai de D na corrida inteira
+
+    courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z"})
+    _beat(order)
+    assert courier.get_block(order)["status"] == "A"
+    assert order.status == Order.Status.READY
+
+    courier_mock.set_progress(ride, {"arrived_pickup_at": "2026-10-13T19:44:24Z",
+                                     "picked_up_at": "2026-10-13T19:45:52Z"})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "E"
+    assert block["status_at"]["E"] == "2026-10-13T19:45:52Z"
+    assert "door_charge" in block
+    assert order.status == Order.Status.DISPATCHED
+
+    courier_mock.set_progress(ride, {"finished_at": "2026-10-13T19:55:36Z"})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "F"
+    assert block["status_at"] == {
+        "D": block["status_at"]["D"],
+        "A": "2026-10-13T19:42:38Z",
+        "E": "2026-10-13T19:45:52Z",
+        "F": "2026-10-13T19:55:36Z",
+    }
+    assert order.status in (Order.Status.DELIVERED, Order.Status.COMPLETED)
+    assert not Directive.objects.filter(
+        topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED
+    ).exists()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_finish_read_in_one_beat_passes_through_the_collection(shop):
+    """Só o fim apareceu numa batida: a coleta pulada entra antes, com a cobrança da porta."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "D")
+    courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z",
+                                     "picked_up_at": "2026-10-13T19:45:52Z",
+                                     "finished_at": "2026-10-13T19:55:36Z"})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "F"
+    assert set(block["status_at"]) == {"D", "A", "E", "F"}
+    assert block["dispatched_at"]
+    assert "door_charge" in block
+
+
+def test_reading_never_moves_the_status_back():
+    progress = {"accepted_at": "2026-10-13T19:42:38Z"}
+    assert courier.statuses_from_reading("A", "D", progress) == []
+    assert courier.statuses_from_reading("A", "S", progress) == [("S", None)]
+    assert courier.statuses_from_reading("D", "D", {}) == [("D", None)]
+    assert courier.statuses_from_reading("D", "N", progress) == [("N", None)]
+    assert courier.statuses_from_reading("A", "", {"accepted_at": "x", "cancelled_at": "y"}) == [("C", "y")]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_unchanged_reading_does_not_rewrite_the_order(shop):
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["id_mch"]
+    courier_mock.set_status(ride, "A")
+    _beat(order)
+    revision = courier.dispatch_revision(order)
+    _beat(order)
+    assert courier.dispatch_revision(order) == revision
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_sync_gives_up_on_a_ride_older_than_the_cap(shop):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    order = _dispatched_order(shop)
+    block = dict(courier.get_block(order))
+    block["requested_at"] = (timezone.now() - timedelta(hours=courier.MAX_POLL_HOURS + 1)).isoformat()
+    courier._save_block(order, block)
+    _beat(order)
+    assert not Directive.objects.filter(
+        topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED
+    ).exists()
 
 
 # ── cotação ─────────────────────────────────────────────────────────
@@ -499,28 +782,72 @@ def test_channel_config_validates_courier_values():
 
 
 @pytest.mark.parametrize("status", ["E", "F"])
-def test_repeated_external_fact_keeps_custody_refusal_until_operator_resolves(status, django_user_model):
+def test_collection_dispatches_with_cash_at_the_door_without_inventing_custody(status):
+    """Decisão do dono (13/10/2026): a coleta da TaOn despacha também com cobrança na porta."""
+    from shopman.cashman.models import Entry
+
+    order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 10000},
+                            courier={"id_mch": "LAB-RIDE", "status": "A"})
+    courier.apply_status(order, status, source="poll")
+    courier.apply_status(order, status, source="poll")  # replay: no-op
+    order.refresh_from_db()
+    assert order.status in ({"dispatched"} if status == "E" else {"delivered", "completed"})
+    assert order.data["dispatch"]["collector"] == "courier_partner"
+    # Fato externo não lança troco da gaveta.
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref).exists()
+    assert order.events.filter(type="courier_status").count() == 1
+    if status == "E":
+        assert courier.get_block(order)["door_charge"] == {"cash_q": 5000, "change_for_q": 10000, "card_q": 0}
+
+
+def test_collection_dispatches_card_at_the_door_without_reserving_a_house_machine():
+    order = _delivery_order(payment={"method": "credit", "collection": "on_delivery"},
+                            courier={"id_mch": "LAB-CARD", "status": "A"})
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert order.status == "dispatched"
+    assert "device_ref" not in order.data["dispatch"]
+    assert courier.get_block(order)["door_charge"] == {"cash_q": 0, "change_for_q": 0, "card_q": 5000}
+
+
+def test_operator_dispatch_before_collection_keeps_drawer_change(django_user_model):
+    """Troco da gaveta que vai com o entregador da TaOn: despacha no Gestor antes da coleta."""
     from shopman.cashman import services as cash
 
     from shopman.shop.services import operator_orders
 
     order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 5500},
                             courier={"id_mch": "LAB-RIDE", "status": "A"})
-    for _ in range(2):
-        with pytest.raises(operator_orders.ChangeOutRequired):
-            courier.apply_status(order, status, source="poll")
-        order.refresh_from_db()
-        assert order.status == "ready"
-        assert courier.get_block(order)["status"] == status
-    assert order.events.filter(type="courier_status").count() == 1
-    # An explicit synthetic operator/custody action, never an invented provider cash movement.
     user = django_user_model.objects.create_user(username="custodian")
     shift = cash.open_shift(operator=user, float_q=1000)
     operator_orders.advance_order(order, actor=user.username, change_out_q=500, cash_shift=shift)
-    courier.apply_status(order, status, source="poll")
+    courier.apply_status(order, "E", source="poll")
     order.refresh_from_db()
-    assert order.status in ({"dispatched"} if status == "E" else {"delivered", "completed"})
-    assert order.events.filter(type="courier_status").count() == 1
+    assert order.status == "dispatched"
+    assert "collector" not in order.data.get("dispatch", {})
+    assert operator_orders.courier_change(order).out_q == 500
+
+
+@pytest.mark.parametrize(("payment", "expected"), [
+    ({"method": "cash", "collection": "on_delivery", "change_for_q": 10000},
+     "Pedido 1 · Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00"),
+    ({"method": "cash", "collection": "on_delivery"},
+     "Pedido 1 · Cobrar R$ 50,00 em dinheiro · sem troco"),
+    ({"method": "debit", "collection": "on_delivery"},
+     "Pedido 1 · Cobrar R$ 50,00 no cartão (maquininha)"),
+    ({"method": "mixed", "collection": "on_delivery", "change_for_q": 5000, "tenders": [
+        {"method": "cash", "amount_q": 3000, "collection": "on_delivery", "status": "pending"},
+        {"method": "credit", "amount_q": 2000, "collection": "on_delivery", "status": "pending"}]},
+     "Pedido 1 · Cobrar R$ 30,00 em dinheiro · troco para R$ 50,00 · Cobrar R$ 20,00 no cartão (maquininha)"),
+    ({"method": "pix", "status": "captured"}, "Pedido 1 · Pago, não cobrar"),
+    ({"method": "cash", "collection": "on_delivery", "cod_settled_at": "2026-10-13T12:00:00+00:00"},
+     "Pedido 1 · Pago, não cobrar"),
+])
+def test_ride_observation_says_what_to_charge_at_the_door(shop, payment, expected):
+    order = _delivery_order(ref="CR-1", payment=payment)
+    body = courier.build_machine_payload(order)
+    assert body["paradas"][0]["observacao_parada"] == expected
+    assert body["paradas"][0]["id_externo"] == "CR-1"
 
 
 def test_terminal_fact_recovers_local_failure_without_polling_provider(monkeypatch):
@@ -725,3 +1052,72 @@ def test_ensaio_a_seco_despacho_status_e_cancelamento(shop):
     order.refresh_from_db()
     assert courier_mock.rides()[ride]["status"] == "C"
     assert not courier.has_active_ride(order)
+
+
+# ── Edição depois da chamada (P2-28) ────────────────────────────────
+
+
+def _cod_order(ref="CR-EDIT") -> Order:
+    order = _delivery_order(ref=ref, status=Order.Status.PREPARING, payment={
+        "method": "cash", "collection": "on_delivery", "change_for_q": 10000})
+    courier.request_dispatch(order, actor="test")
+    _run_dispatch(order)
+    return order
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_keeps_the_observation_it_carried(shop):
+    """A corrida guarda a observação que foi à TaOn: é com ela que o entregador cobra."""
+    order = _cod_order()
+    block = courier.get_block(order)
+    sent = courier_mock.rides()[block["id_mch"]]["payload"]["paradas"][0]["observacao_parada"]
+    assert block["door_charge_note"] == sent
+    assert "troco para R$ 100,00" in sent
+    assert courier.charge_outdated(order) is None
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_editing_the_charge_after_the_call_flags_the_ride(shop):
+    """Troco ou forma de pagar mudou com a corrida aberta: a TaOn não altera a
+    observação, e a tela precisa dizer que o entregador vai cobrar o antigo."""
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _cod_order()
+    merge_order_data(order, {"payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order) == {
+        "sent": "Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00",
+        "current": "Cobrar R$ 50,00 em dinheiro · sem troco",
+        "collected": False,
+    }
+
+    merge_order_data(order, {"payment": {"method": "debit", "collection": "on_delivery"}})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order)["current"] == "Cobrar R$ 50,00 no cartão (maquininha)"
+
+    # Coletou: cancelar já não serve, a tela pede o telefone.
+    courier.apply_status(order, "E", source="webhook")
+    order.refresh_from_db()
+    assert courier.charge_outdated(order)["collected"] is True
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_new_call_after_cancel_carries_the_new_charge(shop):
+    """Cancelar e chamar de novo: a corrida nova leva a cobrança de agora."""
+    from shopman.shop.handlers.courier_cancel import CourierCancelHandler
+    from shopman.shop.services.order_helpers import merge_order_data
+
+    order = _cod_order()
+    merge_order_data(order, {"payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}})
+    order.refresh_from_db()
+    CourierCancelHandler().handle(message=courier.cancel_ride(order, actor="maria"), ctx={})
+    order.refresh_from_db()
+    assert courier.charge_outdated(order) is None
+    assert "door_charge_note" not in courier.get_block(order)
+
+    Directive.objects.filter(topic=COURIER_DISPATCH).update(status=Directive.Status.DONE)
+    CourierDispatchHandler().handle(message=courier.redispatch(order, actor="operator:maria"), ctx={})
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert block["door_charge_note"].endswith("Cobrar R$ 50,00 em dinheiro · sem troco")
+    assert courier.charge_outdated(order) is None

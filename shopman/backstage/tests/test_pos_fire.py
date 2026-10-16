@@ -181,6 +181,9 @@ class POSFireTabTests(TestCase):
             "pos": {**((session.data or {}).get("pos") or {}), "sales_mode": "order"},
             "fulfillment_type": "pickup",
             "delivery_date": delivery_day.isoformat(),
+            # Paga na retirada (presencial): a única encomenda que vai à cozinha
+            # antes de o dinheiro entrar. Ver ``test_encomenda_do_dia_*``.
+            "payment": {**((session.data or {}).get("payment") or {}), "collection": "on_delivery"},
         }
         session.save(update_fields=["data"])
 
@@ -217,6 +220,66 @@ class POSFireTabTests(TestCase):
 
         self.assertEqual(result.fired_count, 1)
         self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 1)
+
+    def _same_day_preorder(self, *, collection: str, method: str = "pix") -> Session:
+        session = self._open_tab_with_two_items()
+        session.data = {
+            **(session.data or {}),
+            "pos": {**((session.data or {}).get("pos") or {}), "sales_mode": "order"},
+            "fulfillment_type": "pickup",
+            "delivery_date": timezone.localdate().isoformat(),
+            "payment": {"method": method, "collection": collection},
+        }
+        session.save(update_fields=["data"])
+        return session
+
+    def test_encomenda_do_dia_cobrada_agora_nao_vai_a_cozinha_antes_de_paga(self) -> None:
+        """P1-7: encomenda cobra antes. Pix ou link ainda por pagar não fazem trabalho.
+
+        A comanda de encomenda é anotada antes de cobrar. Enviar à cozinha agora e
+        fechar com Pix ou link deixava os tickets na cozinha com a cobrança pendente:
+        o lifecycle segura o KDS do pedido não pago, mas o atalho da comanda corria
+        antes do pedido existir.
+        """
+        from shopman.shop.services.pos_intent import PosIntentError
+
+        session = self._same_day_preorder(collection="terminal")
+        for method in ("pix", "link", "cash"):
+            with self.subTest(method=method):
+                session.data = {**session.data, "payment": {"method": method, "collection": "terminal"}}
+                session.save(update_fields=["data"])
+                with self.assertRaises(PosIntentError) as raised:
+                    pos_service.fire_pos_tab(
+                        channel_ref="pdv", session_key=session.session_key,
+                        actor="pos:alice", operator_username="alice",
+                    )
+                error = raised.exception
+                self.assertEqual(error.code, "preorder_unpaid")
+                self.assertEqual(error.focus, "payment")
+                self.assertIn("ainda não foi paga", error.message)
+                self.assertNotIn("—", error.message + error.recovery)
+                self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 0)
+                session.refresh_from_db()
+                self.assertFalse((session.data or {}).get("fired_lines"))
+
+    def test_encomenda_do_dia_paga_na_retirada_vai_a_cozinha(self) -> None:
+        """Receber na retirada (dinheiro ou maquininha) é decisão da casa: não trava."""
+        session = self._same_day_preorder(collection="on_delivery", method="cash")
+        result = pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertGreaterEqual(result.fired_count, 1)
+        self.assertEqual(sorted(result.fired_lines), ["L-A", "L-B"])
+
+    def test_comanda_de_balcao_continua_indo_a_cozinha_sem_pagar(self) -> None:
+        """A comanda de balcão (consumo na casa) não é encomenda: segue como sempre."""
+        session = self._open_tab_with_two_items()
+        result = pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertEqual(sorted(result.fired_lines), ["L-A", "L-B"])
 
     def test_pedir_mais_do_mesmo_item_vira_uma_linha_nova_na_cozinha(self) -> None:
         """O segundo chá. Ele é uma LINHA, não uma unidade a mais na primeira.
@@ -509,6 +572,32 @@ class POSFireTabTests(TestCase):
         after = {t.ref: t for t in build_pos_tabs(channel_ref="pdv")}
         assert after["00002001"].fired is True
 
+    def test_tab_board_says_ready_when_the_kitchen_finishes_everything(self) -> None:
+        # A comanda fica "Tudo pronto" no quadro do PDV só com TODO ticket vivo no
+        # Pronto; o cancelado não segura (decisão do dono, 13/10/2026).
+        from shopman.backstage.projections.pos import build_pos_tabs
+        from shopman.shop.services import kds as kds_core
+
+        session = self._open_tab_with_two_items()
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        [ticket] = KDSTicket.objects.filter(session_key=session.session_key)
+        KDSTicket.objects.create(
+            session_key=session.session_key, kds_instance=ticket.kds_instance, items=[], status="cancelled",
+            cancelled_at=timezone.now(), acknowledged_at=timezone.now(),  # a cozinha já deu a ciência
+        )
+
+        def ready() -> bool:
+            return {t.ref: t for t in build_pos_tabs(channel_ref="pdv")}["00002001"].kitchen_ready
+
+        self.assertFalse(ready())
+        kds_core.start_ticket(ticket, actor="rafael")
+        self.assertFalse(ready())
+        kds_core.complete_ticket(KDSTicket.objects.get(pk=ticket.pk), actor="rafael")
+        self.assertTrue(ready())
+
     def test_fire_unknown_tab_raises(self) -> None:
         from shopman.shop.services.pos_intent import PosIntentError
 
@@ -575,6 +664,55 @@ class POSFireTabTests(TestCase):
         self.assertEqual(ticket.status, "cancelled")
         self.assertIsNotNone(ticket.cancelled_at)
         self.assertEqual(list(cancel.fired_lines), [first_line])
+
+    def test_diminuir_cancela_na_cozinha_so_a_diferenca(self) -> None:
+        """Decisão do dono (10/10/2026): a conta diminui uma linha já enviada e a
+        cozinha recebe o cancelamento SÓ da diferença; a linha segue enviada."""
+        from shopman.backstage.projections.pos import _kitchen_status_by_line
+
+        session = self._save(self._open_tab(), [
+            {"line_id": "L-A", "sku": "FIRE-A", "name": "Fire A", "qty": 3, "unit_price_q": 1000},
+        ])
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        # O balcão grava a conta com 1 e pede o cancelamento das 2 que sobraram.
+        self._save(session.session_key, [
+            {"line_id": "L-A", "sku": "FIRE-A", "name": "Fire A", "qty": 1, "unit_price_q": 1000},
+        ])
+        result = pos_service.cancel_fired_pos_tab_lines(
+            channel_ref="pdv", session_key=session.session_key,
+            line_ids=["L-A"], quantities={"L-A": 2},
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertEqual(list(result.fired_lines), ["L-A"])
+        live = KDSTicket.objects.exclude(status="cancelled").get(session_key=session.session_key)
+        self.assertEqual([(it["line_id"], it["qty"]) for it in live.items], [("L-A", 1)])
+        receipt = KDSTicket.objects.get(session_key=session.session_key, status="cancelled")
+        self.assertEqual([(it["line_id"], it["qty"], it["partial_cancel"]) for it in receipt.items], [("L-A", 2, True)])
+        self.assertIsNone(receipt.acknowledged_at)
+        result.session.refresh_from_db()
+        self.assertEqual(result.session.data["fired_qty"], {"L-A": 1})
+        # O selo da linha segue o ticket vivo, não o comprovante da diferença.
+        self.assertEqual(_kitchen_status_by_line(session.session_key), {"L-A": "pending"})
+        item = build_open_tab(result.session)["items"][0]
+        self.assertTrue(item["fired"])
+
+    def test_diminuir_tudo_ou_mais_cancela_a_linha_inteira(self) -> None:
+        session = self._open_tab_with_two_items()
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        result = pos_service.cancel_fired_pos_tab_lines(
+            channel_ref="pdv", session_key=session.session_key,
+            line_ids=["L-A"], quantities={"L-A": 5},
+            actor="pos:alice", operator_username="alice",
+        )
+        self.assertEqual(list(result.fired_lines), ["L-B"])
+        receipt = KDSTicket.objects.get(session_key=session.session_key, status="cancelled")
+        self.assertNotIn("partial_cancel", receipt.items[0])
 
     def test_unfire_only_touches_targeted_progressive_ticket(self) -> None:
         session = self._open_tab_with_two_items()

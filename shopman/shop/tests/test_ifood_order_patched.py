@@ -408,7 +408,6 @@ def test_an_unknown_code_is_acknowledged_but_never_silent():
     "DELIVERY_ADDRESS_CHANGE",
     "DELIVERY_PHONE_CHANGE",
     "DELIVERY_RETURNED_TO_ORIGIN",
-    "CANCELLATION_REQUEST_FAILED",
 ])
 def test_documented_codes_we_do_not_handle_yet_are_visible(code):
     """Estes têm ação oficial e NÃO têm tratamento aqui: têm de aparecer.

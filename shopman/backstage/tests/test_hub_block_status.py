@@ -95,8 +95,7 @@ def test_pdv_sem_gaveta_aberta_diz_caixa_fechado_sem_verde(client):
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
-def test_compras_conta_pedido_para_enviar_e_pedido_a_caminho(client):
-    Material.objects.create(sku="FAR", name="Farinha", unit="g", metadata={"purchase": {"request_status": "approved"}})
+def test_compras_conta_pedido_a_caminho(client):
     # Dois insumos no MESMO pedido enviado contam como um pedido a caminho.
     for sku in ("MAN", "LEI"):
         Material.objects.create(
@@ -107,7 +106,7 @@ def test_compras_conta_pedido_para_enviar_e_pedido_a_caminho(client):
 
     purchase = _tiles(client, _admin("hub-b-compras"))["purchase"]
 
-    assert purchase["status_attention"] == "1 pedido para enviar"
+    assert purchase["status_attention"] == ""
     assert purchase["status_summary"] == "2 pedidos a caminho"
 
 
@@ -239,13 +238,13 @@ def test_loja_no_horario_com_o_canal_desligado_nao_fica_verde(client, monkeypatc
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_cada_bloco_so_aparece_com_estado_para_quem_abre_o_app(client):
-    Material.objects.create(sku="FAR", name="Farinha", unit="g", metadata={"purchase": {"request_status": "approved"}})
+    Material.objects.create(sku="FAR", name="Farinha", unit="g", metadata={"purchase": {"request_status": "sent"}})
     comprador = _operator("hub-b-comprador", ("backstage", "operate_purchase"))
 
     tiles = _tiles(client, comprador)
 
     assert list(tiles) == ["purchase"]
-    assert tiles["purchase"]["status_attention"] == "1 pedido para enviar"
+    assert tiles["purchase"]["status_summary"] == "1 pedido a caminho"
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -256,7 +255,8 @@ def test_a_fila_usa_o_nome_curto_do_app(client):
 
     hub = client.get(reverse("api-backstage-hub")).json()["hub"]
 
-    item = next(item for item in hub["queue"]["items"] if item["key"] == f"gestor:order:{order.ref}")
+    item = next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")["next_item"]
+    assert item["key"] == f"gestor:order:{order.ref}"
     assert item["app_label"] == "Gestor"
     # O bloco continua com o nome inteiro.
     assert next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")["label"] == "Gestor de pedidos"

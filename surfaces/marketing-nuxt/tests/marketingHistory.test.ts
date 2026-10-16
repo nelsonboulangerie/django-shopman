@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  HISTORY_FILTERS,
+  historyActiveFilters,
+  historyDimensions,
+  historyFiltersFromPanel,
+  historyPanelFilters,
   historyActorLabel,
   historyAnnouncementId,
   historyHref,
@@ -93,5 +98,56 @@ describe("apresentação do histórico canônico", () => {
     expect(historyAnnouncementId("campaign:42")).toBeNull();
     expect(historyHref("announcement:42")).toBe("/announcements/42");
     expect(historyHref("announcement:0")).toBe("/history");
+  });
+});
+
+describe("recortes de Enviados", () => {
+  it("são os quatro de hoje, cada um uma escolha única do painel de filtros", () => {
+    expect(historyDimensions().map((dimension) => [dimension.id, dimension.label, dimension.type])).toEqual([
+      ["outcome", "Situação", "single-select"],
+      ["platform", "Plataforma", "single-select"],
+      ["period", "Criado em", "single-select"],
+      ["actor", "Origem da decisão", "single-select"],
+    ]);
+    // "Sem recorte" é a ausência do valor, não uma opção da lista.
+    for (const filter of HISTORY_FILTERS) {
+      expect(filter.options.every((option) => option.value !== "" && option.value !== "all")).toBe(true);
+    }
+    expect(
+      HISTORY_FILTERS.find((filter) => filter.name === "period")!.options.map(
+        (option) => option.value,
+      ),
+    ).toEqual(["today", "7d", "30d"]);
+  });
+
+  it("vai e volta da URL sem mudar o contrato do backend", () => {
+    expect(historyPanelFilters({ period: "all" })).toEqual({});
+    expect(historyPanelFilters({ outcome: "desconhecido", platform: "instagram", period: "7d" })).toEqual({
+      platform: ["instagram"],
+      period: ["7d"],
+    });
+    expect(historyFiltersFromPanel({ platform: ["instagram"] })).toEqual({
+      outcome: "",
+      platform: "instagram",
+      period: "",
+      actor: "",
+    });
+  });
+
+  it("vira um chip por recorte fora do padrão, com o nome do recorte", () => {
+    expect(historyActiveFilters({ period: "all" })).toEqual([]);
+    expect(
+      historyActiveFilters({
+        outcome: "",
+        platform: "instagram",
+        period: "7d",
+        actor: "automation",
+      }),
+    ).toEqual([
+      { name: "platform", label: "Plataforma: Instagram" },
+      { name: "period", label: "Criado em: Últimos 7 dias" },
+      { name: "actor", label: "Origem da decisão: Automação" },
+    ]);
+    expect(historyActiveFilters({ outcome: "desconhecido" })).toEqual([]);
   });
 });
