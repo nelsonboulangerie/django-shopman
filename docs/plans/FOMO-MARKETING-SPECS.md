@@ -1,6 +1,6 @@
 # FOMO-MARKETING-SPECS — marketing operacional + FOMO orgânico
 
-> **Atualização de contrato (2026-09-11):** a ADR-029 substitui referências a
+> **Atualização de contrato (2026-09-11):** a ADR-039 substitui referências a
 > `StockAlertSubscription.notified_at` como fila consumível. “Avise-me” é uma
 > assinatura persistente; cada fornada/reposição legítima tem ocorrência e recibo próprios.
 

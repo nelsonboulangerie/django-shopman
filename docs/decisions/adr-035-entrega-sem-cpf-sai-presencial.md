@@ -1,6 +1,8 @@
 # ADR-035 — Entrega sem CPF é aceita em todo canal, e a NFC-e sai presencial
 
-**Status:** Aceito em 2026-10-13 (decisão do dono). Substitui a decisão de 24/09/2026.
+**Status:** Aceito
+**Data:** 2026-10-13
+**Decisão:** dono; substitui a decisão de 24/09/2026
 **Pendência:** confirmação do contador (`docs/plans/LEVA-CONTADOR-ADVOGADO.md`, itens 2.1 e 2.2).
 
 ## Contexto

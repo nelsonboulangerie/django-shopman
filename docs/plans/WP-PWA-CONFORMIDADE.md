@@ -21,7 +21,7 @@
 >
 > | # | Pergunta | Decidido / recomendado |
 > |---|---|---|
-> | 1 | Onde mora? | **Capability opt-in do `operator-kit`**, no mesmo modelo do envelope de segurança ([ADR-026](../decisions/adr-026-operator-surface-security-envelope.md)): nada implícito, cada app liga e declara o seu manifesto. O Storefront tem PWA própria (superfície de cliente, marca própria) |
+> | 1 | Onde mora? | **Capability opt-in do `operator-kit`**, no mesmo modelo do envelope de segurança ([ADR-038](../decisions/adr-038-operator-surface-security-envelope.md)): nada implícito, cada app liga e declara o seu manifesto. O Storefront tem PWA própria (superfície de cliente, marca própria) |
 > | 2 | Módulo ou manual? | `@vite-pwa/nuxt` (Workbox) em modo `generateSW`, com **runtime caching desligado para `/api/` e `/events/`**. Um SW por app, escopo `/` |
 > | 3 | Offline? | **Só o casco**: assets imutáveis, ícones e uma tela "sem conexão" honesta. Offline-first de dados (PDV) continua sendo o WP-9+ do [POS-FIRST-CLASS-PLAN](POS-FIRST-CLASS-PLAN.md), não este |
 > | 4 | Notificação ativa? | **Web Push com VAPID**, segundo canal do `UserNotification` que já existe. Nada de Firebase, OneSignal ou app nativo |
@@ -201,7 +201,7 @@ Share Target.
 
 ## Referências
 
-- [ADR-026 (envelope de segurança das surfaces)](../decisions/adr-026-operator-surface-security-envelope.md)
+- [ADR-038 (envelope de segurança das surfaces)](../decisions/adr-038-operator-surface-security-envelope.md)
 - [ADR-016 (SSE first)](../decisions/adr-016-sse-first-realtime.md)
 - [ADR-003 (directives sem Celery)](../decisions/adr-003-directives-sem-celery.md)
 - `shop/services/user_notifications.py`, `shop/models/user_notification.py`

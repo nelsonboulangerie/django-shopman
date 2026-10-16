@@ -465,7 +465,7 @@ acessíveis: "Mais: Ofertas e cupons", `menuitem` "Criar cupom", `dialog` "Nova 
 
 ## 9. Riscos específicos que a migração não pode quebrar
 
-1. **CSP estrita (ADR-026, piloto do Marketing).** `server/middleware/00-security.ts` +
+1. **CSP estrita (ADR-038, piloto do Marketing).** `server/middleware/00-security.ts` +
    `server/plugins/cspNonce.ts` aplicam `operator-kit/server/utils/securityHeaders.ts:28-50`:
    `script-src 'self' 'nonce-…'`, `style-src-elem 'self' 'nonce-…'` (inline só em dev),
    `connect-src 'self'`, `img-src 'self' data: https:` (sem `blob:`). Riscos: (a) peça Nuxt UI que

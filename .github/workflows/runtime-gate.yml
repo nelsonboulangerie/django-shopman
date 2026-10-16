@@ -90,7 +90,9 @@ jobs:
       # It runs in the already-required Quality context, so drift blocks merge
       # without creating another workflow/context that could race the R5 gates.
       - name: Canonical go-live docs have no drift
-        run: python scripts/check_canonical_docs.py
+        run: |
+          python scripts/check_adr_governance.py
+          python scripts/check_canonical_docs.py
 
       # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode
       # ADICIONAR arquivos em */migrations/ e (2) todo marcador DEPRECATED

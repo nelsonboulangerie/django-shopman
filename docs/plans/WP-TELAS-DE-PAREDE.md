@@ -258,7 +258,7 @@ já está inteiro.
 
 | Peça | Onde vive | O que faz |
 |---|---|---|
-| **Capability de rota** | `operator-kit`, opt-in (ADR-026) | o envelope técnico da §6 |
+| **Capability de rota** | `operator-kit`, opt-in (ADR-038) | o envelope técnico da §6 |
 | **Seção do Hub** | `backstage/projections/hub.py` | o caminho de descoberta da §7 |
 | **Sujeito de confiança** | `doorman`, `subject_type="display"` | a credencial de dispositivo, já genérica |
 
@@ -284,7 +284,7 @@ indexada, `prices_from` é lido). Virar "Aceito" com a evidência é item da Fas
 
 Esta é a razão técnica de a coisa ter virado quatro gambiarras, e ela é medível.
 
-O `operator-kit` **já tem** capability de kiosk, e ela é opt-in, como a ADR-026 exige.
+O `operator-kit` **já tem** capability de kiosk, e ela é opt-in, como a ADR-038 exige.
 Só que ela é declarada **no `nuxt.config.ts` do app inteiro**
 (`OperatorPwaCapabilityOptions`): `display: "fullscreen"`, `wakeLock`, `kiosk`,
 `idleReloadPaths`.
@@ -435,7 +435,7 @@ ociosidade (generalizando `operatorActivity: false`), tela cheia + wake lock **d
 e não do app, recarga ociosa para pegar versão nova, dark da rota, e a regra de falha —
 último quadro no ar, nunca pergunta.
 
-**Como isso respeita a ADR-026, que é o ponto que o dono mandou ler antes de propor:**
+**Como isso respeita a ADR-038, que é o ponto que o dono mandou ler antes de propor:**
 
 - É **capability declarada explicitamente por consumidor**, nunca ativação implícita —
   a §1 e a §4 da ADR exigem isso literalmente, e o modelo já existe em
@@ -457,7 +457,7 @@ Tentador unificar as quatro telas numa tecnologia. **Recusado, por três razões
    inteiro no HTML; sem JS, a TV mostra o cardápio. Uma tela na parede que depende de
    JS para mostrar qualquer coisa é pior que a que tem hoje.
 2. **Não há app de destino legítimo.** Ele é voz de cliente; o app de cliente é o
-   `storefront-nuxt`, e a **ADR-026 §6** o mantém deliberadamente fora do `operator-kit`
+   `storefront-nuxt`, e a **ADR-038 §6** o mantém deliberadamente fora do `operator-kit`
    (*"exige perfil e threat model próprios"*). Metê-lo num app de operador seria repetir
    o erro que a §6.1 acabou de nomear.
 3. **Custa componente ou custa coerência**, e nenhum dos dois se paga.
@@ -1094,7 +1094,7 @@ pareada **sem recarregar**, e o transporte é o mesmo.
 
 - [ADR-018 — Superfície e canal: uma entidade, com política comercial](../decisions/adr-018-surface-is-channel-with-commerce-policy.md) — §5.1 (menuboard é interno), §9
 - [ADR-016 — Tempo real por SSE](../decisions/adr-016-sse-first-realtime.md)
-- [ADR-026 — Envelope de segurança das surfaces de operador](../decisions/adr-026-operator-surface-security-envelope.md) — §1, §4, §6
+- [ADR-038 — Envelope de segurança das surfaces de operador](../decisions/adr-038-operator-surface-security-envelope.md) — §1, §4, §6
 - [Omotenashi — Espectro de Superfícies e Mapa × Portões](../omotenashi.md) — a linha "Sinalização"
 - [Omotenashi Copy](../reference/omotenashi-copy.md) — D7 (colisão de vocabulário)
 - [`surfaces/operator-kit/README.md`](../../surfaces/operator-kit/README.md) — como um app consome

@@ -1,7 +1,8 @@
 # ADR-028 — Pesagem e identificação interna não são rótulo de venda
 
+**Status:** Aceito
 **Data:** 2026-09-10  
-**Status:** aceito para o fluxo interno; enquadramento local pendente de validação pela VISA/RT  
+**Pendência:** enquadramento local pendente de validação pela VISA/RT
 **Escopo:** Preparação, documentos congelados de impressão e revisão de parâmetros legais
 
 ## Contexto

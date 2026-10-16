@@ -1,8 +1,8 @@
 # ADR-009 — WhatsApp via ManyChat: vendor lock-in consciente
 
-**Data**: 2026-04-18
-**Atualizado**: 2026-09-17
-**Status**: Accepted
+**Status:** Aceito
+**Data:** 2026-04-18
+**Atualizado:** 2026-09-17
 
 ---
 

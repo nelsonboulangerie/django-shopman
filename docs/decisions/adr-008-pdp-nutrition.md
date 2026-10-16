@@ -131,7 +131,7 @@ o PDP seguia mostrando o número velho com cara de atual.
 - **Carimbo de origem.** Toda derivação grava
   `Product.metadata["derived_from"][<fato>] = {source, recipe_ref, version_ref, by, at}`
   (`shop.services.derived_provenance`). O `version_ref` sai de `Recipe.meta["version_ref"]`,
-  que o inventário já escreve ao publicar (ADR-026).
+  que o inventário já escreve ao publicar (ADR-027).
 - **Vencido é comparação exata**, nunca heurística: versão de origem gravada ≠ versão atual
   da ficha. Sem limiar, sem tolerância, sem data — data sabe que o tempo passou, não que a
   ficha andou.

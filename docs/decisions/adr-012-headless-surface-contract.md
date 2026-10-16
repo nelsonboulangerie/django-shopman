@@ -1,6 +1,6 @@
 # ADR-012 - Contrato headless de superficie: Projection com Actions
 
-**Status:** Accepted
+**Status:** Aceito
 **Data:** 2026-05-15
 **Escopo:** Nuxt, Ionic, ManyChat, Django/Penguin, POS e futuras superficies/adapters.
 

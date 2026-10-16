@@ -1,6 +1,6 @@
 # ADR-018 - Superficie e canal: uma entidade, com politica comercial
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-08-08
 **Escopo:** `shopman/shop` (`Channel`, `Showcase`, `ChannelConfig`, `CatalogSyncState`, projections de
 menuboard e feed), `shopman/backstage` (matriz de catalogo), `offerman` (nenhuma mudanca de model)

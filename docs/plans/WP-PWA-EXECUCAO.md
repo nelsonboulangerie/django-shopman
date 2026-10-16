@@ -116,7 +116,7 @@ Lidas de [CLAUDE.md](../../CLAUDE.md) e das ADRs. Violar qualquer uma reprova o 
 |---|---|---|---|
 | F1.1 | Extrair do Storefront para o kit, como capability **opt-in** (mesma forma do envelope de segurança): `definePwaCapability({ app, manifest, display, wakeLock, kiosk })` que registra o módulo com a config A1–A6, a rota do manifesto (nome/cores por app, `short_name` por app), o middleware do `/sw.js`, `usePwaInstall`, `usePwaUpdate`, `useWakeLock`, `useKioskMode`. Nada implícito: app que não chama não ganha nada. | `surfaces/operator-kit/` (`server/utils/pwa.ts`, `app/composables/usePwa*.ts`, `app/components/Pwa*.vue`) | testes do kit (vitest) para cada composable com API ausente (Safari velho não quebra); `securityHeaders.test.ts` intacto; nonce presente no script de registro |
 | F1.2 | `useWakeLock()`: pede `navigator.wakeLock.request('screen')` ao montar e re-pede em `visibilitychange`; nunca lança. | kit | teste com API ausente e com `release` |
-| F1.3 | PDV liga: `display: standalone`, Wake Lock ligado, ícone próprio (Anexo A item 8), atalhos (Venda, Caixa), `theme-color` do tema neutro do PDV (`pos_neutral_design_system`). Sem push ainda. | `surfaces/pos-nuxt/nuxt.config.ts` | `make pwa app=pos`; suíte do PDV verde; Maps/ViaCEP continuam (CSP do PDV é específica, ver ADR-026 do envelope: não copiar a do Marketing) |
+| F1.3 | PDV liga: `display: standalone`, Wake Lock ligado, ícone próprio (Anexo A item 8), atalhos (Venda, Caixa), `theme-color` do tema neutro do PDV (`pos_neutral_design_system`). Sem push ainda. | `surfaces/pos-nuxt/nuxt.config.ts` | `make pwa app=pos`; suíte do PDV verde; Maps/ViaCEP continuam (CSP do PDV é específica, ver ADR-038 do envelope: não copiar a do Marketing) |
 | F1.4 | Gate `make pwa` ganha `app=<qualquer>` e roda no CI `surfaces-gate` para os apps que optaram. | `tools/pwa-gate/`, workflow | CI verde |
 
 ## 5. Fase F2 — backstage inteiro
@@ -201,7 +201,7 @@ e a `theme-color` para light e dark do `color-mode`.
 ## Anexo B — Referências
 
 - [WP-PWA-CONFORMIDADE](WP-PWA-CONFORMIDADE.md): o que entra, o que fica de fora, por surface.
-- [ADR-026, envelope de segurança das surfaces](../decisions/adr-026-operator-surface-security-envelope.md)
+- [ADR-038, envelope de segurança das surfaces](../decisions/adr-038-operator-surface-security-envelope.md)
 - [ADR-016, SSE first](../decisions/adr-016-sse-first-realtime.md) · [ADR-003, directives](../decisions/adr-003-directives-sem-celery.md)
 - Armadilhas conhecidas: env `NUXT_PUBLIC_*` deriva da chave; fallback de `runtimeConfig.public` é assado no build; node 26 quebra o storefront; `stat` não prova existência sob sandbox.
 - `shopman/shop/brand_tokens.py` (cores), `shopman/storefront/presentation/shop.py` (projeção da loja), `shopman/shop/services/user_notifications.py` (avisos).
