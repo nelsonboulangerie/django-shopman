@@ -1,6 +1,6 @@
 # ADR-019 - A promocao tem um dono: orquestrador, escopada por canal, com renuncia de frete
 
-**Status:** Proposto
+**Status:** Aceito
 **Data:** 2026-08-08
 **Escopo:** `shopman/shop` (`Promotion`, `Coupon`, `DeliveryZone`, `DeliveryDistanceBand`,
 `modifiers.py`, `adapters/promotion.py`, `adapters/pricing.py`, `rules/`), `shopman/storefront`

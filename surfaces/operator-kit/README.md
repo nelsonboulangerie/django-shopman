@@ -2266,7 +2266,7 @@ há `node_modules` acima de `surfaces/`. Na base eles não resolveriam.
 **Tail legítimo** é o que pertence a um app só: impressão térmica de 80 mm e
 `.pos-tile-fallback` no POS; `.date-input-hit-area` e `forced-colors` no Produção;
 `@font-face` self-hosted, alvos de toque de 44 px e `prefers-reduced-motion` no
-Marketing (piloto do ADR-026). Os outros cinco apps não têm tail.
+Marketing (piloto do ADR-038). Os outros cinco apps não têm tail.
 
 ⚠️ **A armadilha do `@source`:** o caminho é relativo ao arquivo que o declara. Na
 base, `../..` é a raiz `operator-kit/app`. Errar não quebra o build — o CSS compila

@@ -555,7 +555,7 @@ def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
 #: ``management_note`` é a exceção consciente: o flow configurado só resolve variáveis
 #: de campos personalizados, então a nota que contém a capacidade de uma única
 #: assinatura fica armazenada no perfil do ManyChat. A capacidade não identifica o
-#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-029 e o
+#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-039 e o
 #: runbook registram a limitação e os controles exigidos no provedor.
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",

@@ -1,6 +1,6 @@
 # ADR-014 - Corte dado/apresentação nas superfícies: Projection de dado vs Presentation
 
-**Status:** Accepted
+**Status:** Aceito
 **Data:** 2026-06-05
 **Escopo:** Orquestrador (`shopman/shop/`) e superfícies (storefront, PDV/Nuxt, backstage/admin, agentic).
 **Refina:** [ADR-005](adr-005-orchestrator-as-coordination-center.md) (orquestrador = centro de

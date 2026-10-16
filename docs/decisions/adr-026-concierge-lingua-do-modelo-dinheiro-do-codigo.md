@@ -1,6 +1,7 @@
 # ADR-026 — Concierge de WhatsApp: a língua é do modelo, o dinheiro é do código
 
-**Status:** Proposto (2026-09-03), aguarda palavra do dono
+**Status:** Proposto
+**Decisão:** aguarda palavra do dono desde 2026-09-03
 **Data:** 2026-09-03
 **Escopo:** o atendimento conversacional de pedidos no WhatsApp da casa (o "concierge"): quem decide o que dizer, quem decide o que vale, e por onde a resposta viaja
 **Origem:** [WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md); supera o mecanismo do [MANYCHAT-CONVERSACIONAL-PLAN](../plans/MANYCHAT-CONVERSACIONAL-PLAN.md) (um endpoint por intenção), que fica como registro

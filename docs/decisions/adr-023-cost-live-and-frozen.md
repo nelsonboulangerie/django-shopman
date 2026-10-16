@@ -1,6 +1,7 @@
 # ADR-023 — Custo: vivo para precificar, congelado no fato para contar história
 
-**Status:** **Aceito** (dono, 2026-08-19) — opção A: dois custos
+**Status:** Aceito
+**Decisão:** dono, 2026-08-19; opção A, dois custos
 **Data:** 2026-08-19 (proposta e decisão no mesmo dia)
 **Escopo:** `shopman/shop` (adapter de custo composto, `OFFERMAN["COST_BACKEND"]`); `packages/craftsman` (snapshot de custo no `finish`); `packages/buyman` (leitura do custo preferencial); `docs/reference/data-schemas.md`
 **Implementado (custo vivo, 04/10/2026, V6-BI):** `shopman/shop/adapters/cost.py` (`RecipeCostBackend`), ligado em `OFFERMAN["COST_BACKEND"]`, já na base única da [ADR-024](adr-024-material-unit-base-and-purchase.md) (`SupplierMaterialCost.cost_per_base_unit`). Lê o "R$ de custo" da sobra no B.I. **Falta:** o custo congelado no `finish` do lote (§3).

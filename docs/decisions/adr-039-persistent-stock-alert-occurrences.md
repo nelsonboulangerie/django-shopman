@@ -1,9 +1,9 @@
-# ADR-029 — “Avise-me” é assinatura persistente com ocorrências distintas
+# ADR-039 — “Avise-me” é assinatura persistente com ocorrências distintas
 
 **Data:** 2026-09-11
 **Emenda de comprovação de identidade web:** 2026-09-14
 
-**Status:** aceito
+**Status:** Aceito
 **Escopo:** Storefront, disponibilidade, produção/QC e entrega de comunicação com finalidade específica
 
 ## Contexto

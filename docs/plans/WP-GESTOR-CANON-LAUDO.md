@@ -208,7 +208,7 @@ Mudanças que chegaram aos outros apps sem eles pedirem (detalhe no anexo D):
 - o `#phone-actions` aparece no desktop;
 - a busca inline virou modal no KDS, na Produção, no Marketing, no Compras e no B.I.
 
-O README do kit e o ADR-026 pedem capability **opt-in**.
+O README do kit e o ADR-038 pedem capability **opt-in**.
 
 ### P1-10. Card dentro de card sem decisão registrada [tela + código]
 

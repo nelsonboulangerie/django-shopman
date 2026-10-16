@@ -1,6 +1,7 @@
 # ADR-015 - Política de backward-compat e migrations pós-produção
 
-**Status:** Accepted; ativa a partir do go-live (`git tag go-live-v1`)
+**Status:** Aceito
+**Vigência:** ativa a partir do go-live (`git tag go-live-v1`)
 **Data:** 2026-06-26
 **Escopo:** migrations, renames, política de código pós-produção, WP-GAP-07
 

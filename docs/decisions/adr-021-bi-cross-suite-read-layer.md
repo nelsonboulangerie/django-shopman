@@ -1,6 +1,7 @@
 # ADR-021 — B.I. cross-suite: agregação é leitura, o ledger segue dono do fato
 
-**Status:** Aceito (dono, 2026-08-14)
+**Status:** Aceito
+**Decisão:** dono, 2026-08-14
 **Data:** 2026-08-14
 **Escopo:** `shopman/backstage` (módulo de B.I.: projections, services, api, models de agregado derivado), `surfaces/` (superfície de gestor), `shopman/shop` (nenhuma mudança de contrato), packages core (nenhuma mudança nesta ADR)
 **Reverte parcialmente:** ADR-017 §8, `docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md` §9, `docs/plans/QC-FORNADA.md` §7

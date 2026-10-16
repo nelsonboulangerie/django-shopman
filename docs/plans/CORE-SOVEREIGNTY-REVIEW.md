@@ -271,8 +271,8 @@ Renumerá-las violaria a regra explícita de renumerar somente os quatro arquivo
 reutilizar 035/036 criaria novas colisões. A alocação precisa ser refeita na ponta da fila.
 
 **Recomendação:** no estado observado, titularidade = ADR-037;
-`adr-026-operator-surface-security-envelope.md` = ADR-038 (criado em 2026-09-09, depois
-do Concierge de 2026-09-03); `adr-029-persistent-stock-alert-occurrences.md` = ADR-039
+`adr-038-operator-surface-security-envelope.md` = ADR-038 (criado em 2026-09-09, depois
+do Concierge de 2026-09-03); `adr-039-persistent-stock-alert-occurrences.md` = ADR-039
 (os dois cabeçalhos dizem 2026-09-11, mas os commits de criação são `a17e1ef97` às 11:44
 para Marketing e `0beeddbc2` às 13:09 para Stock Alert). A regra precisa dizer “commit de
 criação”, porque “data” empata no par 029. Revalidar imediatamente antes do commit e do

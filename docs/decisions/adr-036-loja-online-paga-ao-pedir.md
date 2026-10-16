@@ -1,7 +1,8 @@
 # ADR-036 — Loja online paga ao pedir, com prazo de aceite e estorno automático
 
-**Status:** Aceito em 2026-10-14 (decisão do dono, perguntas 1 e 2 de
-`docs/reference/cenarios-de-pedido.md`, L1=1 e L2=1).
+**Status:** Aceito
+**Data:** 2026-10-14
+**Decisão:** dono, perguntas 1 e 2 de `docs/reference/cenarios-de-pedido.md`, L1=1 e L2=1
 **Nota do dono:** "se os estornos ficarem constantes, reavaliar".
 
 ## Contexto

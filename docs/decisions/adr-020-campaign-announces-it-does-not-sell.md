@@ -1,6 +1,7 @@
 # ADR-020 - Campanha anuncia, nao vende
 
-**Status:** Aceito; implementação técnica local concluída em 2026-09-10, rollout pendente
+**Status:** Aceito
+**Implementação:** técnica local concluída em 2026-09-10; rollout pendente
 **Data:** 2026-08-08
 **Escopo:** `shopman/shop` (models/services/handlers de Marketing, `audience.py`, `directives.py`),
 `shopman/backstage` (API + projections), `surfaces/marketing-nuxt`, `guestman`

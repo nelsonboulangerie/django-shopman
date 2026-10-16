@@ -346,4 +346,4 @@ o lugar onde cada uma é cobrada, está em
 - `surfaces/operator-kit/README.md` — contrato das peças da layer
 - `docs/reference/omotenashi-copy.md` — os oito defeitos de copy com nome
 - `docs/reference/marketing-surface-contract.md` — contrato factual do Marketing
-- `docs/decisions/adr-026-operator-surface-security-envelope.md` — envelope de segurança
+- `docs/decisions/adr-038-operator-surface-security-envelope.md` — envelope de segurança

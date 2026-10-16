@@ -1,6 +1,7 @@
 # ADR-016 — Tempo real por SSE, cross-surface e site-wide
 
-**Status:** Aceito · 2026-07-07
+**Status:** Aceito
+**Data:** 2026-07-07
 
 ## Contexto
 
