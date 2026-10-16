@@ -26,6 +26,8 @@ Como identifica sessão viva:
    processo filho no instante da medição.
 
 Sem ``--apply`` a ferramenta só relata: é o modo para revisar antes de apagar.
+O checkout de onde a ferramenta está rodando também é sempre protegido, mesmo
+que já esteja limpo e integrado ao ``main``.
 
 Uso:
     python3 scripts/prune_worktrees.py                 # relatório (dry-run)
@@ -126,10 +128,11 @@ class Worktree:
     merged: bool
     sessions: list[Session] = field(default_factory=list)
     managed: bool = True
+    current: bool = False
 
     @property
     def safe(self) -> bool:
-        return self.managed and self.merged and self.dirty == 0 and not self.sessions
+        return self.managed and not self.current and self.merged and self.dirty == 0 and not self.sessions
 
 
 def inspect(recent_hours: float) -> tuple[list[Worktree], Path]:
@@ -147,6 +150,7 @@ def inspect(recent_hours: float) -> tuple[list[Worktree], Path]:
         return [], Path.cwd()
     main_checkout = paths[0]
     managed_root = main_checkout / ".claude" / "worktrees"
+    invocation_checkout = Path(_git("rev-parse", "--show-toplevel").strip())
 
     sessions = known_sessions()
     cutoff = time.time() - recent_hours * 3600 if recent_hours > 0 else None
@@ -185,6 +189,7 @@ def inspect(recent_hours: float) -> tuple[list[Worktree], Path]:
                 merged=merged,
                 sessions=related,
                 managed=path.is_relative_to(managed_root),
+                current=path == invocation_checkout,
             )
         )
     return worktrees, main_checkout
@@ -214,13 +219,15 @@ def main(argv: list[str] | None = None) -> int:
 
     worktrees, main_checkout = inspect(args.recent_hours)
 
-    protected = [w for w in worktrees if w.sessions]
-    foreign = [w for w in worktrees if not w.managed and not w.sessions]
-    dirty = [w for w in worktrees if w.managed and w.dirty and not w.sessions]
-    unmerged = [w for w in worktrees if w.managed and not w.merged and not w.dirty and not w.sessions]
+    current = [w for w in worktrees if w.current]
+    protected = [w for w in worktrees if w.sessions and not w.current]
+    foreign = [w for w in worktrees if not w.managed and not w.sessions and not w.current]
+    dirty = [w for w in worktrees if w.managed and w.dirty and not w.sessions and not w.current]
+    unmerged = [w for w in worktrees if w.managed and not w.merged and not w.dirty and not w.sessions and not w.current]
     safe = [w for w in worktrees if w.safe]
 
     print(f"worktrees analisadas: {len(worktrees)}")
+    print(f"  checkout em uso:          {len(current)}")
     print(f"  protegidas (tem sessao):  {len(protected)}")
     print(f"  fora do escopo do Claude: {len(foreign)}")
     print(f"  sujas:                    {len(dirty)}")

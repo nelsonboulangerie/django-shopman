@@ -144,6 +144,8 @@ def test_casamento_de_caminho_e_exato_e_nao_por_basename(tmp_path, monkeypatch):
                 f"worktree {main_checkout}\nHEAD 1111111\nbranch refs/heads/main\n\n"
                 f"worktree {codex_worktree}\nHEAD 2222222\nbranch refs/heads/codex/algo\n"
             )
+        if args == ("rev-parse", "--show-toplevel"):
+            return f"{main_checkout}\n"
         if args == ("rev-parse", "--abbrev-ref", "HEAD") and cwd == codex_worktree:
             return "codex/algo\n"
         if args == ("status", "--porcelain") and cwd == codex_worktree:
@@ -169,3 +171,7 @@ def test_casamento_de_caminho_e_exato_e_nao_por_basename(tmp_path, monkeypatch):
 
 def test_worktree_de_outro_gerenciador_nunca_e_removida_automaticamente():
     assert _worktree(managed=False).safe is False
+
+
+def test_worktree_de_onde_o_script_roda_nunca_e_removida():
+    assert _worktree(current=True).safe is False
