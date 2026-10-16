@@ -30,6 +30,7 @@ from shopman.craftsman.models import Recipe, WorkOrderEvent
 from shopman.stockman import Position
 
 from shopman.backstage.models import DayClosing
+from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes
 
 
 def _perm(codename: str) -> Permission:
@@ -520,6 +521,10 @@ def test_management_returns_day_kpis(client, manager, report_data):
 
 @pytest.mark.django_db
 def test_blind_map_correlates_codes_to_preps(client, manager, report_data):
+    allocate_blind_prep_codes(
+        recipe_refs=(report_data["recipe"].ref,),
+        selected_date=report_data["today"],
+    )
     client.force_login(manager)
     response = client.get(
         reverse("api-backstage-production-blind-map"),

@@ -27,6 +27,7 @@ from shopman.backstage.projections.production import (
     resolve_production_access,
 )
 from shopman.backstage.services import print_jobs
+from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes
 
 
 class PrintJobAPIError(APIException):
@@ -178,6 +179,12 @@ class ProductionWeighingPrintJobCreateView(APIView):
                     status_code=409,
                 )
             )
+        if not projection.codes_ready:
+            allocate_blind_prep_codes(
+                recipe_refs=tuple(ticket.recipe_ref for ticket in projection.tickets),
+                selected_date=body["selected_date"],
+            )
+            projection = _weighing_for_request(request, body)
         try:
             job = print_jobs.create_job(
                 projection=projection,

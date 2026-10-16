@@ -7,6 +7,40 @@ import type {
   WeighingResponse,
   WeighingTicketProjection,
 } from "~/types/production";
+import { newProductionMutationKey } from "~/utils/mutationKey";
+
+export async function allocateColdWeighingProjection(
+  current: WeighingResponse["weighing"] | null,
+  allocationAttempts: Set<string>,
+): Promise<WeighingResponse | null> {
+  if (!current || current.codes_ready !== false) return null;
+  const action = current.actions?.find(
+    (candidate) => candidate.kind === "allocate_blind_codes" && candidate.enabled,
+  );
+  const attemptRef = current.source_revision;
+  if (!action?.proof || !attemptRef || allocationAttempts.has(attemptRef)) return null;
+  allocationAttempts.add(attemptRef);
+  try {
+    return await $fetch<WeighingResponse>(action.href, {
+      method: "POST",
+      body: {
+        selected_date: current.selected_date,
+        position: current.selected_position_ref,
+        base_recipe: current.selected_base_recipe,
+        idempotency_key: newProductionMutationKey(),
+        projection_generated_at: current.generated_at,
+        source_revision: current.source_revision,
+        fresh_until: current.fresh_until,
+        contract_version: current.contract_version,
+        action_ref: action.ref,
+        action_proof: action.proof,
+      },
+    });
+  } catch {
+    // O poll buscará uma revisão nova. Não repetimos a mesma autorização.
+    return null;
+  }
+}
 
 export function useWeighing(selectedDate: Ref<string>) {
   const { data, pending, error, refresh } = useFetch<WeighingResponse>(
@@ -25,6 +59,20 @@ export function useWeighing(selectedDate: Ref<string>) {
   );
   const dateDisplay = computed(
     () => data.value?.weighing?.selected_date_display ?? "",
+  );
+
+  // GET nunca aloca códigos. Uma projeção fria oferece um comando explícito;
+  // cada revisão o dispara no máximo uma vez e substitui o dado local pela
+  // resposta já pronta do POST, sem ciclo GET→POST→GET.
+  const allocationAttempts = new Set<string>();
+  watch(
+    projection,
+    async (current) => {
+      if (!import.meta.client) return;
+      const ready = await allocateColdWeighingProjection(current, allocationAttempts);
+      if (ready) data.value = ready;
+    },
+    { immediate: true },
   );
 
   useAdaptivePoll(refresh, () => 60_000);

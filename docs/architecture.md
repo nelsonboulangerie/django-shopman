@@ -1,209 +1,126 @@
-# Arquitetura — Django Shopman
+# Arquitetura canônica da suite Shopman
 
-> ⚠️ **Documento em revisão (2026-04-26)**: este arquivo ainda reflete terminologia anterior em alguns pontos. Para a verdade atual, consulte [docs/reference/system-spec.md](reference/system-spec.md). Correções estruturais completas ficam para WP separado.
+Este é o mapa único para localizar código por responsabilidade. A lei de
+titularidade está na [ADR-037](decisions/adr-037-decision-ownership.md); o
+contrato headless e o corte dado/apresentação estão nas ADRs
+[012](decisions/adr-012-headless-surface-contract.md) e
+[014](decisions/adr-014-surface-data-presentation-cut.md).
 
-> **Contrato das superfícies (vivo, 2026-07-11).** O backend é headless: o read-side
-> expõe **Projections de dado** (frozen, surface-agnostic, policy-laden, semânticas —
-> `_q`/enums/refs, nunca copy nem formatação) com `actions[]`, construídas no
-> orquestrador; cada superfície tem sua camada **Presentation** (copy, formatação,
-> layout) — no Nuxt, `app/presentation/` pura. A lei é [ADR-012](decisions/adr-012-headless-surface-contract.md)
-> (Projection com Actions) + [ADR-014](decisions/adr-014-surface-data-presentation-cut.md)
-> (corte dado × apresentação); o blueprint histórico que originou o corte está em
-> [`_archive/redesign/04-architecture.md`](_archive/redesign/04-architecture.md).
+## O mapa
 
-## Visão Geral
-
-Django Shopman é composto por **9 apps core** independentes e um **orquestrador** (`shopman/shop/`) que os conecta para cenários de negócio concretos. Cada app core é um pacote pip instalável separadamente.
-
-## Diagrama de Camadas
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         PROJETO DJANGO                               │
-│                     (config/)                              │
-│                   settings.py · urls.py · wsgi                       │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │              SHOP (shopman/shop/)                       │    │
-│  │         Shop (singleton), Promotion, Coupon                  │    │
-│  │         Configuração global + defaults de canal              │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │            SHOPMAN — Orquestrador (shopman/shop/)        │    │
-│  │                                                              │    │
-│  │  config.py   presets.py   topics.py   hooks.py   setup.py   │    │
-│  │                                                              │    │
-│  │  handlers/                    backends/                      │    │
-│  │  ├── stock.py                 ├── stock.py                   │    │
-│  │  ├── payment.py               ├── payment_mock.py            │    │
-│  │  ├── notification.py          ├── payment_efi.py             │    │
-│  │  ├── confirmation.py          ├── payment_stripe.py          │    │
-│  │  ├── customer.py              ├── notification_*.py (6)      │    │
-│  │  ├── fiscal.py                ├── customer.py                │    │
-│  │  ├── accounting.py            ├── pricing.py                 │    │
-│  │  ├── returns.py               ├── fiscal_*.py                │    │
-│  │  ├── fulfillment.py           └── accounting_*.py            │    │
-│  │  ├── loyalty.py                                              │    │
-│  │  ├── pricing.py                                              │    │
-│  │  └── _stock_receivers.py                                     │    │
-│  └────────────┬────────┬────────┬────────┬────────┬─────────────┘    │
-│           Protocol  Protocol  Protocol  Protocol  Protocol           │
-├───────────────┴────────┴────────┴────────┴────────┴──────────────────┤
-│                                                                      │
-│  ┌─────────────────────── CORE APPS ──────────────────────────────┐  │
-│  │                    (packages/*)                                 │  │
-│  │                                                                │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │  │
-│  │  │offerman  │ │stockman  │ │craftsman │ │orderman  │          │  │
-│  │  │ catálogo │ │ estoque  │ │ produção │ │ pedidos  │          │  │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │  │
-│  │                                                                │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │  │
-│  │  │guestman  │ │ doorman  │ │  payman  │ │  utils   │          │  │
-│  │  │ clientes │ │   auth   │ │  pagam.  │ │  comum   │          │  │
-│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │  │
-│  └────────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-├──────────────────────────────────────────────────────────────────────┤
-│              CANAIS DE VENDA (shopman/shop/web/)                 │
-│                    web · api · (futuro: pos)                         │
-└──────────────────────────────────────────────────────────────────────┘
+```text
+Kernel  ->  Orquestrador  ->  Query/read-side  ->  Superfícies
+  ^              ^                  ^                   ^
+  +--------------+------------------+-------------------+
+              Instância (DB + config de deploy + marca)
 ```
 
-## Protocol/Adapter Pattern
+As setas indicam consumo, não transferência de titularidade. A API é a
+**fronteira de entrega**, não uma superfície de produto:
 
-Toda comunicacao entre apps usa `typing.Protocol` (PEP 544) com `@runtime_checkable`. Nenhum app importa outro diretamente.
+- `GET` e SSE entram pelo lado query/read-side; efeitos novos são proibidos
+  pelo gate AST e a baseline histórica abaixo não pode crescer;
+- `POST`, `PUT`, `PATCH`, `DELETE` e intents entram pelo command ingress,
+  autenticam, validam idempotência/concorrência e delegam ao dono;
+- o transporte não recalcula decisão de kernel ou política do orquestrador.
 
-### Como funciona
+### 1. Kernel
 
-1. O app **consumidor** define o Protocol (contrato) no seu codigo
-2. O app **provedor** implementa um Adapter
-3. A ligacao e feita via settings (dotted path) ou registry (`AppConfig.ready()`)
+`packages/*` contém 13 distribuições pip independentes:
 
-### Exemplo: Stock
+- dez kernels de domínio: `offerman`, `stockman`, `craftsman`, `orderman`,
+  `guestman`, `doorman`, `payman`, `buyman`, `fiscalman`, `cashman`;
+- duas primitivas compartilhadas sem regra de negócio: `utils`, `refs`;
+- uma capacidade operacional horizontal: `watchman`.
 
-```python
-# shopman/shop/protocols.py — consumidor define o contrato
-@runtime_checkable
-class StockBackend(Protocol):
-    def check_availability(self, sku: str, quantity: Decimal, ...) -> AvailabilityResult: ...
-    def create_hold(self, sku: str, quantity: Decimal, ...) -> HoldResult: ...
-    def release_hold(self, hold_id: str) -> None: ...
-    def fulfill_hold(self, hold_id: str) -> None: ...
+Cada kernel possui sua pergunta canônica, seus invariantes e, quando existe,
+seu ledger. Código de domínio de kernel não importa outro kernel. Bridges
+opt-in só vivem em `adapters/` ou `contrib/<alvo>/`, com import lazy, conforme
+a ADR-001.
 
-# shopman/shop/backends/stock.py — adapter que conecta ao stockman
-class StockingBackend:
-    def check_availability(self, sku, quantity, ...):
-        # Delega para shopman.stockman.service
-        ...
+### 2. Orquestrador
 
-# settings.py — ligação via config
-SHOPMAN_STOCK_BACKEND = "channels.backends.stock.StockingBackend"
-```
+`shopman/shop/` é o único encontro deliberado de domínios. Ele sequencia
+services, adapters, handlers, directives e lifecycle; também possui política
+que só existe quando dois ou mais domínios se encontram. Pode consumir APIs
+públicas de vários kernels, mas não reimplementa a decisão canônica deles e
+não renderiza interface.
 
-### Protocols existentes
+### 3. Query/read-side e command ingress
 
-| Protocol | Definido em | Adapters |
-|----------|-------------|----------|
-| `StockBackend` | `shopman/protocols` | `StockingBackend`, `NoopStockBackend` |
-| `PaymentBackend` | `shopman.payman.protocols` | `MockPaymentBackend`, `EfiPixBackend`, `StripeBackend` |
-| `FiscalBackend` | `shopman.orderman.protocols` | `MockFiscalBackend`, `FocusBackend` |
-| `AccountingBackend` | `shopman.orderman.protocols` | `MockAccountingBackend`, `ContaazulBackend` |
-| `NotificationBackend` | `shopman/protocols` | `ConsoleBackend`, `ManychatBackend`, `EmailBackend`, `SmsBackend`, `WebhookBackend`, `WhatsappBackend` |
-| `CustomerBackend` | `shopman/protocols` | `CustomersBackend`, `NoopCustomerBackend` |
-| `PricingBackend` | `shopman/protocols` | `OffermanBackend`, `CatalogPricingBackend`, `ChannelPricingBackend` |
+O read-side reúne projections e apresentação de dados em:
 
-### Vantagens
+- `shopman/shop/projections/`;
+- `shopman/storefront/presentation/` e `shopman/storefront/api/`;
+- `shopman/backstage/projections/` e `shopman/backstage/api/`.
 
-- **Deploy independente:** cada app pode ser instalado e testado isoladamente
-- **Substituibilidade:** trocar o sistema de estoque requer apenas um novo adapter
-- **Testabilidade:** mocks implementam o mesmo Protocol, sem dependencias externas
-- **Sem dependencias circulares:** cada app depende apenas de `utils`
+`storefront` e `backstage` são apps Django de **entrega headless**. Um módulo
+nesses apps deve ser classificado pelo que faz: GET/SSE e projections são
+read-side; endpoints mutáveis e intents são command ingress. Eles não são as
+superfícies de produto e não ganham titularidade só por possuir a URL.
 
-## Mapa de Dependências
+Projection lê estado e decisões já resolvidas, devolve dados semânticos e
+Actions, e não escreve. Command ingress traduz HTTP, aplica permissões,
+freshness, idempotência e concorrência, e chama o orquestrador ou o dono.
 
-```
-utils ← offerman
-utils ← stockman
-utils ← craftsman  ← (protocols: stockman, offerman)
-utils ← orderman
-utils ← guestman   ← (protocols: orderman)
-utils ← doorman    ← (protocols: guestman)
-utils ← payman
-```
+### 4. Superfícies
 
-Setas indicam dependência de pacote. Dependências via Protocol (runtime) são indicadas entre parênteses — não criam acoplamento de pacote.
+`surfaces/registry.json` registra 11 apps Nuxt:
 
-## Orquestrador — Fluxo de um Pedido
+- nove superfícies de produto: `storefront`, `hub`, `pos`, `kds`, `orders`,
+  `production`, `marketing`, `bi`, `purchase`;
+- `kitchensink`, preview interno de desenvolvimento;
+- `status`, superfície pública externa de saúde.
 
-```
-1. Session criada (modify_session)
-   │
-2. Modifiers rodam (ItemPricingModifier, SessionTotalModifier, promoções)
-   │
-3. Validators de draft rodam
-   │
-4. Commit (commit_session)
-   │
-   ├── Validators de commit rodam (StockCheckValidator, etc.)
-   ├── Order criada com snapshot dos itens
-   ├── order_changed signal (event_type="created")
-   │     └── on_order_lifecycle() lê ChannelConfig.pipeline
-   │
-   ├── Serviços chamados diretamente pelo lifecycle (síncronos):
-   │     ├── customer.ensure   → services/customer.py (chamada direta)
-   │     ├── stock.hold        → services/stock.py → adapter.create_hold()
-   │     ├── payment.initiate  → services/payment.py → adapter.create_intent()
-   │     └── fulfillment.create → services/fulfillment.py
-   │
-   ├── Directives assíncronas criadas por services:
-   │     ├── notification.send → NotificationSendHandler → NotificationBackend.send()
-   │     ├── loyalty.earn      → LoyaltyEarnHandler
-   │     ├── fiscal.emit_nfce  → NFCeEmitHandler
-   │     └── ...
-   │
-5. Confirmação (conforme modo do canal):
-   │  ├── immediate    → auto-confirma
-   │  ├── auto_confirm → confirmation.timeout directive (auto-confirma no prazo)
-   │  ├── auto_cancel  → confirmation.timeout directive (auto-cancela no prazo)
-   │  └── manual       → aguarda operador
-   │
-6. Pós-confirmação (se PIX):
-   │  └── pix.generate → PixGenerateHandler → PaymentBackend.create_intent()
-   │       └── pix.timeout directive agendada
-   │
-7. Pagamento confirmado (webhook):
-      └── stock.commit, notification.send, fulfillment.create, loyalty.earn
-```
+`operator-kit` é a layer compartilhada dos apps de operador e
+`operator-router` é infraestrutura de deploy; nenhum dos dois é app de
+produto. Admin/Unfold é outra superfície, voltada a configuração, auditoria e
+operações explicitamente mantidas no Admin.
 
-## Configuração de Canal (cascata `ChannelConfig`)
+Superfícies falam com a fronteira de entrega por HTTP/SSE. Não importam kernel,
+não consultam banco e não recalculam política. Presentation possui copy,
+formatação e interação; a Projection possui fatos semânticos.
 
-Não existe sistema de presets factory em código (o conceito foi planejado em planos arquivados mas nunca implementado; referências remanescentes são resíduo). Cada canal é configurado via dict literal em seed, ou pelo admin em runtime, no campo `Channel.config` (JSONField).
+### 5. Instância, transversal
 
-A dataclass `ChannelConfig` em [shopman/shop/config.py](../shopman/shop/config.py) define 8 aspectos com defaults sensatos: `confirmation`, `payment`, `fulfillment`, `stock`, `notifications`, `pricing`, `editing`, `rules`. A config efetiva é resolvida por `ChannelConfig.for_channel(channel)` via `deep_merge(dataclass_defaults, shop.defaults, channel.config)` — dicts merged recursivamente, lists replaced.
+A Instância não é uma quinta camada nem um pacote Python. O DB é a verdade de
+runtime; `config/`, settings de infraestrutura e marca completam o deployment.
+Ela parametriza todas as camadas sem alterar o código delas. Seed e descritor
+versionado são mecanismos de bootstrap/diff, não uma segunda verdade.
 
-Exemplos (de Nelson seed):
+## Teste de localização
 
-| Canal | Confirmação | Pagamento | Stock hold TTL | Editing | Notes |
-|-------|-------------|-----------|----------------|---------|-------|
-| `balcao` | `immediate` | `counter` | — | `open` | POS screen |
-| `delivery` / `web` | `auto_confirm` (5 min) | `[pix, card]` | 30 min | `open` | Storefront |
-| `whatsapp` | `auto_confirm` (5 min) | `[pix, card]` | 30 min | `open` | Fluxo via bot |
-| `ifood` | `auto_cancel` (5 min) | `external` | — | `locked` | Pré-pago marketplace |
+| Pergunta | Endereço inicial |
+|---|---|
+| O que é vendável e qual o preço de lista? | `packages/offerman/` |
+| Quanto e quando pode ser prometido? | `packages/stockman/` |
+| Qual compromisso foi assumido? | `packages/orderman/` |
+| Como domínios são sequenciados? | `shopman/shop/` |
+| Qual dado/API um cliente lê? | `*/projections`, `*/presentation`, GET/SSE em `*/api` |
+| Onde uma intenção HTTP é validada? | command ingress em `storefront/api` ou `backstage/api` |
+| Onde a pessoa opera? | `surfaces/*-nuxt` ou Admin/Unfold |
+| Qual horário, canal, regra ativa ou marca? | DB da Instância + `config/` |
 
-Veja [guia de pagamentos](guides/payments.md) para o fluxo PIX completo.
+## Setas protegidas
 
-## Namespaces dos Core Apps
+1. Kernel não importa host nem outro kernel no código de domínio.
+2. Orquestrador só toca apps de entrega por bridge nomeada e não acessa
+   internals protegidos dos kernels.
+3. Query/read-side não chama escrita ORM nem service de mutação.
+4. Superfície não importa kernel; comunica-se somente pela fronteira HTTP/SSE.
+5. Command ingress delega a mutação; não contém uma segunda implementação.
 
-| Persona | Pacote pip | Namespace Python | App Label |
-|---------|-----------|-----------------|-----------|
-| Utils | shopman-utils | shopman.utils | utils |
-| Offerman | shopman-offerman | shopman.offerman | offerman |
-| Stockman | shopman-stockman | shopman.stockman | stockman |
-| Craftsman | shopman-craftsman | shopman.craftsman | craftsman |
-| Orderman | shopman-orderman | shopman.orderman | orderman |
-| Guestman | shopman-guestman | shopman.guestman | guestman |
-| Doorman | shopman-doorman | shopman.doorman | doorman |
-| Payman | shopman-payman | shopman.payman | payman |
+O gate bloqueia arestas novas já neste WP. A dependência histórica
+`doorman/services/verification.py -> guestman` fica explicitamente isolada na
+baseline até o WP-4 retirar essa última exceção.
+
+O mesmo ratchet registra sete efeitos de leitura anteriores ao WP-8:
+reconciliação de notificações (2), estado de impressão (1), coleção ativa (1)
+e acompanhamento de pedido — reconciliação, intent e consumo de celebração
+(3). Eles permanecem dívida explícita; qualquer chamada adicional falha. A
+alocação de `BlindPrepCode` não está nessa baseline: foi movida para POST neste
+WP e não pode voltar a um handler GET.
+
+O inventário físico verificável vive em
+[`architecture-map.json`](architecture-map.json). Os testes de fronteira
+validam o inventário e as regras estruturais acima.
