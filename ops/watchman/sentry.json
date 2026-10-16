@@ -17,7 +17,7 @@
     }
   ],
   "error_rate": {
-    "name": "Watchman — error volume",
+    "name": "Number of errors above 20 over past 5 minutes",
     "aggregate": "count()",
     "dataset": "events",
     "query": "is:unresolved level:[error,fatal]",

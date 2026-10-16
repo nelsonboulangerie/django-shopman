@@ -62,7 +62,8 @@ criados antes desta revisão, desative-os antes de criar o composto.
 
 Em **Alerts → Create Monitor → Metric**:
 
-- nome: `Watchman — error volume`;
+- nome imutável atribuído pelo Sentry:
+  `Number of errors above 20 over past 5 minutes`;
 - dataset: events;
 - medida: `count()`;
 - filtro: `is:unresolved level:[error,fatal]`;
