@@ -62,14 +62,22 @@ class DeploymentDriftCheck:
     def run(self, context: CheckContext) -> CheckResult:
         live_spec = os.environ.get("WATCHMAN_LIVE_DO_SPEC", "").strip()
         if not live_spec:
+            collection_error = os.environ.get("WATCHMAN_DO_EVIDENCE_ERROR", "").strip()
             return CheckResult(
                 id=self.id,
                 status=Status.UNKNOWN,
-                summary="live DigitalOcean spec was not supplied",
-                evidence={"required_env": "WATCHMAN_LIVE_DO_SPEC"},
+                summary=(
+                    f"live DigitalOcean spec was not supplied: {collection_error}"
+                    if collection_error
+                    else "live DigitalOcean spec was not supplied"
+                ),
+                evidence={
+                    "required_env": "WATCHMAN_LIVE_DO_SPEC",
+                    **({"collection_error": collection_error} if collection_error else {}),
+                },
                 remediation="Download the live spec read-only and rerun with WATCHMAN_LIVE_DO_SPEC.",
             )
-        versioned = os.environ.get("WATCHMAN_VERSIONED_DO_SPEC", ".do/app.subdomains.yaml")
+        versioned = os.environ.get("WATCHMAN_VERSIONED_DO_SPEC", ".do/app.alpha-subdomains.yaml")
         return _run(
             self.id,
             [sys.executable, "scripts/check_do_spec_drift.py", "--spec", versioned, "--live-spec", live_spec],

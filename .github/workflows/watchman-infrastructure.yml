@@ -64,7 +64,9 @@ jobs:
       GOOGLE_MAPS_API_KEY: ""
       GOOGLE_MAPS_BROWSER_API_KEY: ci-maps-browser-key
       GOOGLE_MAPS_SERVER_API_KEY: ci-maps-server-key
-      WATCHMAN_VERSIONED_DO_SPEC: .do/app.subdomains.yaml
+      # Legacy filename, but this is the versioned mirror of live app shopman-nelson.
+      # `.do/app.subdomains.yaml` is the separate hypothetical headless blueprint.
+      WATCHMAN_VERSIONED_DO_SPEC: .do/app.alpha-subdomains.yaml
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_AUTH_TOKEN_ROTATE_BY: ${{ vars.SENTRY_AUTH_TOKEN_ROTATE_BY }}
       SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
@@ -99,22 +101,60 @@ jobs:
           cp /tmp/ci-watchman-infrastructure.key /tmp/ci-watchman-infrastructure.pem
           cat /tmp/ci-watchman-infrastructure.crt >> /tmp/ci-watchman-infrastructure.pem
 
+      - name: Record missing DigitalOcean read-only credential
+        if: ${{ env.DO_READ_TOKEN == '' }}
+        run: |
+          echo "::error title=Watchman DigitalOcean::DIGITALOCEAN_READ_TOKEN ausente; deployment_drift será unknown"
+          echo "WATCHMAN_DO_EVIDENCE_ERROR=missing DIGITALOCEAN_READ_TOKEN" >> "${GITHUB_ENV}"
+
       - name: Set up doctl with read-only credential
+        if: ${{ env.DO_READ_TOKEN != '' }}
+        continue-on-error: true
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_READ_TOKEN }}
 
       - name: Read live DigitalOcean spec
+        if: ${{ always() && env.DO_READ_TOKEN != '' }}
         run: |
           set -euo pipefail
-          test -n "${DO_READ_TOKEN}" || { echo "::error::DIGITALOCEAN_READ_TOKEN ausente"; exit 1; }
-          test -n "${DO_APP_NAME}" || { echo "::error::DO_APP_NAME ausente"; exit 1; }
-          app_id=$(doctl apps list --format ID,Spec.Name --no-header | awk -v name="${DO_APP_NAME}" '$2 == name {print $1; exit}')
-          test -n "${app_id}" || { echo "::error::app ${DO_APP_NAME} não encontrado"; exit 1; }
-          doctl apps spec get "${app_id}" > "${RUNNER_TEMP}/watchman-live-do.yaml"
+          record_failure() {
+            echo "::error title=Watchman DigitalOcean::$1; deployment_drift será unknown"
+            echo "WATCHMAN_DO_EVIDENCE_ERROR=$1" >> "${GITHUB_ENV}"
+          }
+          if ! command -v doctl >/dev/null 2>&1; then
+            record_failure "doctl setup failed"
+            exit 0
+          fi
+          if [[ -z "${DO_APP_NAME}" ]]; then
+            record_failure "missing DO_APP_NAME"
+            exit 0
+          fi
+          # `--live-spec` makes the drift checker intentionally offline, so
+          # prove here that the credential sees both provider families. A token
+          # limited to App Platform returns a dangerously truncated databases
+          # block from `apps spec get` (incident of 29-30/09/2026).
+          if ! doctl databases list --format ID --no-header >/dev/null; then
+            record_failure "DigitalOcean token cannot read databases"
+            exit 0
+          fi
+          if ! apps=$(doctl apps list --format ID,Spec.Name --no-header); then
+            record_failure "DigitalOcean app list failed"
+            exit 0
+          fi
+          app_id=$(awk -v name="${DO_APP_NAME}" '$2 == name {print $1; exit}' <<< "${apps}")
+          if [[ -z "${app_id}" ]]; then
+            record_failure "DigitalOcean app not found"
+            exit 0
+          fi
+          if ! doctl apps spec get "${app_id}" > "${RUNNER_TEMP}/watchman-live-do.yaml"; then
+            record_failure "DigitalOcean live spec read failed"
+            exit 0
+          fi
           echo "WATCHMAN_LIVE_DO_SPEC=${RUNNER_TEMP}/watchman-live-do.yaml" >> "${GITHUB_ENV}"
 
       - name: Run Watchman infrastructure profile
+        if: always()
         run: .venv/bin/python scripts/run_watchman_infrastructure_ci.py --output watchman-infrastructure.json
 
       - name: Preserve evidence
