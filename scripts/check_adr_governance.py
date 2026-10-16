@@ -32,6 +32,7 @@ class Adr:
     path: Path
     title: str
     status: str
+    governance_header: str
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,8 @@ def _read_adrs(root: Path, errors: list[str]) -> list[Adr]:
             status = status_match.group(1)
             if STATUS_VALUE_RE.fullmatch(status) is None:
                 errors.append(f"{_relative(path, root)}: status não canônico: {status!r}")
-        adrs.append(Adr(file_number, path, title_match.group(2), status))
+        governance_header = re.split(r"^---\s*$", text, maxsplit=1, flags=re.MULTILINE)[0]
+        adrs.append(Adr(file_number, path, title_match.group(2), status, governance_header))
     return adrs
 
 
@@ -150,6 +152,13 @@ def check(root: Path) -> list[str]:
                 errors.append(f"{_relative(adr.path, root)}: ADR não pode emendar/substituir a si própria")
             elif target not in unique_adrs:
                 errors.append(f"{_relative(adr.path, root)}: alvo ADR-{target} não existe")
+            else:
+                successor = unique_adrs[target]
+                if re.search(rf"\bADR-{re.escape(number)}\b", successor.governance_header) is None:
+                    errors.append(
+                        f"{_relative(successor.path, root)}: alvo ADR-{target} não referencia "
+                        f"a predecessora ADR-{number} no cabeçalho de governança"
+                    )
 
     for number in sorted(set(unique_entries) - set(unique_adrs)):
         errors.append(f"docs/decisions/README.md: ADR-{number} indexada sem arquivo")

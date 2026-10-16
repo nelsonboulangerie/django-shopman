@@ -20,11 +20,18 @@ def gate():
     sys.modules.pop(spec.name, None)
 
 
-def _write_adr(root: Path, filename: str, number: str, status: str = "Aceito") -> None:
+def _write_adr(
+    root: Path,
+    filename: str,
+    number: str,
+    status: str = "Aceito",
+    governance: str = "",
+) -> None:
     decisions = root / "docs" / "decisions"
     decisions.mkdir(parents=True, exist_ok=True)
     (decisions / filename).write_text(
-        f"# ADR-{number} — Decisão {number}\n\n**Status:** {status}\n**Data:** 2026-10-16\n",
+        f"# ADR-{number} — Decisão {number}\n\n"
+        f"**Status:** {status}\n**Data:** 2026-10-16\n{governance}\n---\n",
         encoding="utf-8",
     )
 
@@ -67,3 +74,44 @@ def test_adr_missing_from_index_fails(gate, tmp_path):
     _write_index(tmp_path, [])
 
     assert any("sem entrada no índice" in error for error in gate.check(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["Aceito; emendado por ADR-002", "Substituído por ADR-002"],
+)
+def test_status_target_without_predecessor_backlink_fails(gate, tmp_path, status):
+    _write_adr(tmp_path, "adr-001-one.md", "001", status=status)
+    _write_adr(tmp_path, "adr-002-two.md", "002")
+    _write_index(
+        tmp_path,
+        [
+            _row("001", "adr-001-one.md", status=status),
+            _row("002", "adr-002-two.md"),
+        ],
+    )
+
+    assert any(
+        "alvo ADR-002 não referencia a predecessora ADR-001" in error
+        for error in gate.check(tmp_path)
+    )
+
+
+def test_successor_backlink_does_not_require_circular_status(gate, tmp_path):
+    status = "Aceito; emendado por ADR-002"
+    _write_adr(tmp_path, "adr-001-one.md", "001", status=status)
+    _write_adr(
+        tmp_path,
+        "adr-002-two.md",
+        "002",
+        governance="**Emenda:** [ADR-001](adr-001-one.md)\n",
+    )
+    _write_index(
+        tmp_path,
+        [
+            _row("001", "adr-001-one.md", status=status),
+            _row("002", "adr-002-two.md"),
+        ],
+    )
+
+    assert gate.check(tmp_path) == []
