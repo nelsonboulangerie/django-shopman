@@ -791,7 +791,8 @@ class MalformedSessionTests(TestCase):
         order = Order.objects.get(ref=result.order_ref)
         entries = order.data.get("hold_ids", [])
         self.assertEqual(len(entries), 1)
-        self.assertTrue(entries[0].get("untracked"))
+        self.assertIs(entries[0].get("is_tracked"), False)
+        self.assertNotIn("untracked", entries[0])
         self.assertIsNone(entries[0].get("hold_id"))
         self.assertEqual(_active_holds().count(), 0)
 

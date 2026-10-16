@@ -283,7 +283,8 @@ class CommitStockGateTests(TestCase):
         order = Order.objects.get(ref=result.order_ref)
         hold_ids = (order.data or {}).get("hold_ids", [])
         self.assertEqual(len(hold_ids), 1)
-        self.assertTrue(hold_ids[0].get("untracked"))
+        self.assertIs(hold_ids[0].get("is_tracked"), False)
+        self.assertNotIn("untracked", hold_ids[0])
 
 
 class CommitStockGateExternalChannelTests(TestCase):

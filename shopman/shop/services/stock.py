@@ -39,24 +39,18 @@ logger = logging.getLogger(__name__)
 
 
 def untracked_hold_entry(sku: str) -> dict:
-    """Persist an untracked hold marker during the expand-contract window.
-
-    ``is_tracked`` is the canonical representation. ``untracked`` remains a
-    dual-written compatibility key until historical ``Order.data`` readers no
-    longer need the pre-WP-2 shape; no data migration is required.
-    """
+    """Persist the canonical marker for a SKU without a Stockman ledger."""
     return {
         "sku": sku,
         "hold_id": None,
         "qty": 0,
         "is_tracked": False,
-        "untracked": True,
     }
 
 
 def is_untracked_hold_entry(entry: dict) -> bool:
-    """Read canonical and historical untracked markers from ``hold_ids``."""
-    return entry.get("is_tracked") is False or entry.get("untracked") is True
+    """Return whether a ``hold_ids`` entry uses the canonical untracked marker."""
+    return entry.get("is_tracked") is False
 
 
 def _items_to_hold(order) -> list[dict]:
@@ -1169,10 +1163,6 @@ def _is_untracked(sku: str, prior_decisions: dict[str, dict], adapter) -> bool:
     query for channels that skip the availability gate (e.g. POS).
     """
     if sku in prior_decisions:
-        d = prior_decisions[sku]
-        if d.get("is_tracked") is False:
-            return True
-        # Historical ``availability_decision`` payloads used these markers.
-        return d.get("untracked", False) or d.get("source") == "stock.untracked"
+        return prior_decisions[sku].get("is_tracked") is False
     info = adapter.get_availability(sku)
     return not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions")))
