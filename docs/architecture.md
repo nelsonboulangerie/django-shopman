@@ -18,7 +18,8 @@ Kernel  ->  Orquestrador  ->  Query/read-side  ->  Superfícies
 As setas indicam consumo, não transferência de titularidade. A API é a
 **fronteira de entrega**, não uma superfície de produto:
 
-- `GET` e SSE entram pelo lado query/read-side e não produzem efeitos;
+- `GET` e SSE entram pelo lado query/read-side; efeitos novos são proibidos
+  pelo gate AST e a baseline histórica abaixo não pode crescer;
 - `POST`, `PUT`, `PATCH`, `DELETE` e intents entram pelo command ingress,
   autenticam, validam idempotência/concorrência e delegam ao dono;
 - o transporte não recalcula decisão de kernel ou política do orquestrador.
@@ -112,6 +113,13 @@ versionado são mecanismos de bootstrap/diff, não uma segunda verdade.
 O gate bloqueia arestas novas já neste WP. A dependência histórica
 `doorman/services/verification.py -> guestman` fica explicitamente isolada na
 baseline até o WP-4 retirar essa última exceção.
+
+O mesmo ratchet registra sete efeitos de leitura anteriores ao WP-8:
+reconciliação de notificações (2), estado de impressão (1), coleção ativa (1)
+e acompanhamento de pedido — reconciliação, intent e consumo de celebração
+(3). Eles permanecem dívida explícita; qualquer chamada adicional falha. A
+alocação de `BlindPrepCode` não está nessa baseline: foi movida para POST neste
+WP e não pode voltar a um handler GET.
 
 O inventário físico verificável vive em
 [`architecture-map.json`](architecture-map.json). Os testes de fronteira

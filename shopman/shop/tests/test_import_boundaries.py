@@ -42,6 +42,43 @@ READ_SIDE_ROOTS = (
     BACKSTAGE_ROOT / "projections",
     STOREFRONT_ROOT / "presentation",
 )
+API_ROOTS = (
+    BACKSTAGE_ROOT / "api",
+    STOREFRONT_ROOT / "api",
+)
+
+# Command modules are delivery-visible, but never callable from GET handlers.
+# Keep this list small and explicit; mutation-shaped calls are caught as a
+# second line of defence even when they live outside these modules.
+COMMAND_SERVICE_MODULES = (
+    "shopman.backstage.services.blind_prep_codes",
+)
+MUTATION_CALL_PREFIXES = (
+    "add_",
+    "allocate_",
+    "consume_",
+    "create_",
+    "delete_",
+    "ensure_",
+    "issue_",
+    "mark_",
+    "mutate_",
+    "process_",
+    "reconcile_",
+    "record_",
+    "save_",
+    "send_",
+    "set_",
+    "update_",
+)
+ORM_MUTATION_METHODS = {
+    "bulk_create",
+    "bulk_update",
+    "create",
+    "get_or_create",
+    "update",
+    "update_or_create",
+}
 
 HOST_PREFIXES = (
     "config",
@@ -68,6 +105,19 @@ DOMAIN_KERNEL_PACKAGES = {
 LEGACY_CROSS_KERNEL_DEBT = {
     ("doorman", "shopman/doorman/services/verification.py", "guestman"),
 }
+
+# Read effects that predate WP-8. Counts make this a ratchet: an extra call in
+# the same file still fails, while later WPs may remove entries without first
+# changing the gate. BlindPrepCode is intentionally not on this list.
+LEGACY_GET_WRITE_DEBT = {
+    ("shopman/backstage/api/notifications.py", "notification_lifecycle.reconcile_user_notifications"): 2,
+    ("shopman/backstage/api/print_jobs.py", "print_jobs.reconcile_job_state"): 1,
+    ("shopman/storefront/api/surface.py", "catalog_service.ensure_active_collection"): 1,
+    ("shopman/storefront/api/tracking.py", "order_service.consume_just_placed"): 1,
+    ("shopman/storefront/api/tracking.py", "order_service.ensure_payment_intent"): 1,
+    ("shopman/storefront/api/tracking.py", "order_service.reconcile_payment_with_gateway_if_due"): 1,
+}
+KNOWN_NON_MUTATING_GET_CALLS = {"response.add_post_render_callback"}
 
 PROTECTED_KERNEL_PACKAGES = (
     "refs",
@@ -116,6 +166,45 @@ def _format_violations(violations: list[tuple[Path, int, str]]) -> str:
         f"  {path.relative_to(REPO_ROOT)}:{line}: {module}"
         for path, line, module in violations
     )
+
+
+def _get_handler_write_calls(path: Path) -> list[tuple[Path, int, str]]:
+    """Return command/write calls made inside HTTP ``get`` handlers."""
+    tree = ast.parse(path.read_text(), filename=str(path))
+    imported_command_names: set[str] = set()
+    imported_command_modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and _matches_prefix(
+            node.module, COMMAND_SERVICE_MODULES
+        ):
+            imported_command_names.update(alias.asname or alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if _matches_prefix(alias.name, COMMAND_SERVICE_MODULES):
+                    imported_command_modules.add(alias.asname or alias.name)
+
+    violations: list[tuple[Path, int, str]] = []
+    for handler in ast.walk(tree):
+        if not isinstance(handler, (ast.FunctionDef, ast.AsyncFunctionDef)) or handler.name != "get":
+            continue
+        for node in ast.walk(handler):
+            if not isinstance(node, ast.Call):
+                continue
+            label = ast.unparse(node.func)
+            if isinstance(node.func, ast.Name):
+                if node.func.id in imported_command_names or node.func.id.startswith(MUTATION_CALL_PREFIXES):
+                    violations.append((path, node.lineno, label))
+            elif isinstance(node.func, ast.Attribute):
+                owner = ast.unparse(node.func.value)
+                if node.func.attr in ORM_MUTATION_METHODS and ".objects" in owner:
+                    violations.append((path, node.lineno, label))
+                elif node.func.attr in {"save", "delete"}:
+                    violations.append((path, node.lineno, label))
+                elif node.func.attr.startswith(MUTATION_CALL_PREFIXES):
+                    violations.append((path, node.lineno, label))
+                elif any(owner == module or owner.startswith(f"{module}.") for module in imported_command_modules):
+                    violations.append((path, node.lineno, label))
+    return violations
 
 
 def test_kernel_packages_do_not_import_host_layers():
@@ -506,14 +595,6 @@ def test_presentation_reads_only_the_read_side():
 
 def test_read_side_does_not_write():
     """GET/projection code must be observational, including during SSR/polling."""
-    mutation_methods = {
-        "create",
-        "get_or_create",
-        "update_or_create",
-        "bulk_create",
-        "bulk_update",
-        "update",
-    }
     violations: list[tuple[Path, int, str]] = []
     for root in READ_SIDE_ROOTS:
         if not root.exists():
@@ -524,7 +605,7 @@ def test_read_side_does_not_write():
                 if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
                     continue
                 chain = ast.unparse(node.func.value)
-                if node.func.attr in mutation_methods and ".objects" in chain:
+                if node.func.attr in ORM_MUTATION_METHODS and ".objects" in chain:
                     violations.append((path, node.lineno, f"{chain}.{node.func.attr}()"))
                 elif node.func.attr in {"save", "delete"}:
                     violations.append((path, node.lineno, f"{chain}.{node.func.attr}()"))
@@ -536,6 +617,46 @@ def test_read_side_does_not_write():
             "Move allocation/mutation to an explicit command service reached by POST; "
             "GET and Projection builders only read."
         )
+
+
+def test_get_handlers_do_not_invoke_commands_or_write():
+    """HTTP GET/SSE delivery may assemble a read model but never mutate it."""
+    observed = [
+        violation
+        for root in API_ROOTS
+        for path in _py_files(root, skip_parts={"tests"})
+        for violation in _get_handler_write_calls(path)
+    ]
+    debt_counts: dict[tuple[str, str], int] = {}
+    violations = []
+    for path, line, call in observed:
+        if call in KNOWN_NON_MUTATING_GET_CALLS:
+            continue
+        key = (path.relative_to(REPO_ROOT).as_posix(), call)
+        debt_counts[key] = debt_counts.get(key, 0) + 1
+        if debt_counts[key] > LEGACY_GET_WRITE_DEBT.get(key, 0):
+            violations.append((path, line, call))
+    if violations:
+        pytest.fail(
+            "GET handlers invoked command-side code or direct writes:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Expose an Action in the projection and invoke it through POST/command ingress."
+        )
+
+
+def test_get_write_detector_rejects_command_service(tmp_path):
+    """Negative fixture: the gate catches the BlindPrepCode regression shape."""
+    source = tmp_path / "regression.py"
+    source.write_text(
+        "from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes\n"
+        "class RegressedView:\n"
+        "    def get(self, request):\n"
+        "        allocate_blind_prep_codes(recipe_refs=(), selected_date=None)\n",
+        encoding="utf-8",
+    )
+
+    violations = _get_handler_write_calls(source)
+    assert [(line, call) for _, line, call in violations] == [(4, "allocate_blind_prep_codes")]
 
 
 # Tailwind colour/tone design-token classes — appearance, owned by each
