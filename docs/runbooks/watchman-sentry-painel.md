@@ -14,8 +14,9 @@ mantém o contrato versionado e o drift verificável.
 
 O `SENTRY_DSN` que já existe não substitui essa credencial. O DSN é a porta de
 entrada para a aplicação enviar eventos; ele não permite listar monitores,
-workflows ou destinatários. Para a conferência, o token precisa de `alerts:read`
-ou `org:read`, nunca `alerts:write`.
+workflows ou destinatários. Para a conferência, o token precisa ler alertas **e
+membros**: `alerts:read` mais `member:read` (ou os escopos administrativos
+equivalentes aceitos pelos dois endpoints), nunca `alerts:write`.
 
 ## Antes de salvar qualquer coisa
 
@@ -83,22 +84,20 @@ pelo endereço `ti@boulangerie.com.br`. Não usar `issue owners`, `recent active
 members` nem a conta pessoal do dono: esses alvos mudam sem alterar o nome do
 workflow.
 
-Depois que o convite estiver aceito, obtenha o `user.id` desse membro em
-**Settings → Members** (ou pela leitura de `GET
-/api/0/organizations/nelson-boulangerie/members/`). Esse é o valor que o Sentry
-serializa como `targetIdentifier`; não confundir com o ID da associação
-`member.id`. Registrar o ID real em
-`notification.email_action.target_identifier` de `ops/watchman/sentry.json` por
-PR. Enquanto ele estiver `null`, a auditoria falha fechada com “target_identifier
-is not declared”; isso é uma pendência intencional, não um valor a inventar.
+Depois que o convite estiver aceito, o Watchman lê paginadamente `GET
+/api/0/organizations/nelson-boulangerie/members/`, exige exatamente um membro
+ativo e aceito com o endereço declarado no contrato, obtém seu `user.id` e o
+compara ao `targetIdentifier` da ação. O ID não fica versionado: ele é uma
+identidade externa mutável e deve ser resolvido na fonte em toda auditoria. Não
+confundir `user.id` com o ID da associação `member.id`.
 
-Se o membro dedicado implicar custo ou se o painel só permitir um time, não criar
-um assento pago: usar um usuário/time existente cuja entrega para a caixa
-operacional tenha sido provada, registrar seu ID real e mudar
-`delivery_assurance.method` para `evidenced_email_routing`. Para time, registrar
-`target_type: team` e provar separadamente que o roteamento alcança a caixa. A
-opção recomendada continua sendo o membro dedicado quando gratuito, porque liga
-a identidade verificada diretamente ao endereço decidido pelo dono.
+Se o membro dedicado implicar custo, não criar um assento pago. Um usuário ou time
+existente com encaminhamento de e-mail pode ser provado manualmente, mas o Sentry
+não expõe pela API a rota final até a caixa operacional. Portanto
+`evidenced_email_routing` **não satisfaz o aceite automático atual**: o Watchman
+falha fechado até existir um adaptador que consulte uma evidência externa
+verificável. A opção automatizável neste contrato é o membro dedicado quando
+gratuito.
 
 ### 4.2 Gatilhos e ação
 
@@ -128,32 +127,34 @@ Antes de criar credencial:
 1. abrir cada monitor e conferir URL, ambiente, limiares e estado ativo;
 2. abrir o workflow e conferir os três vínculos;
 3. conferir na resposta de leitura que a ação ativa está em
-   `actionFilters[].actions`, com o `targetType` e `targetIdentifier` versionados;
+   `actionFilters[].actions`, com `targetType=user` e o `targetIdentifier` do
+   membro dedicado resolvido pelo Watchman;
 4. usar o teste de notificação do Sentry, se disponível, e confirmar recebimento em
    `ti@boulangerie.com.br`;
 5. registrar UTC e capturas sem token no registro operacional da execução.
 
-O ID torna a identidade de destino verificável por máquina; ele não prova que a
-caixa continua encaminhando e sendo acompanhada. Repetir a prova de recebimento
-a cada **90 dias** e depois de qualquer mudança no membro, no grupo de e-mail ou
-no workflow. O contrato registra essa periodicidade em
-`delivery_assurance.evidence_review_days`. Uma execução automática não deve
-declarar entrega comprovada só porque o ID bate.
+O membro e o ID tornam a identidade de destino verificável por máquina; ainda é
+prudente provar que a caixa é acompanhada. Repetir a prova de recebimento a cada
+**90 dias** e depois de qualquer mudança no membro, no grupo de e-mail ou no
+workflow. O contrato registra essa periodicidade em
+`delivery_assurance.evidence_review_days`.
 
 ## 6. Credencial de conferência
 
 No painel, o dono cria uma credencial de organização limitada a leitura de alertas
-(`alerts:read`; `org:read` também é aceito pela API) e a guarda no repositório como
-secret `SENTRY_AUTH_TOKEN`. Não colar no App Platform: o token pertence ao job
-externo de auditoria, não aos serviços web.
+e membros (`alerts:read` + `member:read`, ou equivalentes mínimos aceitos) e a
+guarda no repositório como secret `SENTRY_AUTH_TOKEN`. Não colar no App Platform:
+o token pertence ao job externo de auditoria, não aos serviços web. Sem permissão
+para listar membros, a conferência falha fechada; ela não rebaixa a prova para uma
+busca textual no workflow.
 
 Depois, executar manualmente o workflow `Watchman Infrastructure`. O resultado
 esperado é `external_monitoring: pass`. Qualquer `missing` ou `has drift` significa
 que o painel não corresponde ao contrato; corrigir no painel e rodar novamente.
 
-A conferência percorre todas as páginas de monitores e workflows e falha fechada
-se a paginação estiver incompleta ou ambígua. Nomes esperados duplicados também
-são drift: não basta uma das cópias estar correta.
+A conferência percorre todas as páginas de monitores, membros e workflows e falha
+fechada se a paginação estiver incompleta ou ambígua. Nomes esperados duplicados
+também são drift: não basta uma das cópias estar correta.
 
 ## Reversão
 

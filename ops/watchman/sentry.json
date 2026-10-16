@@ -40,8 +40,7 @@
       "issue_resolved_trigger"
     ],
     "email_action": {
-      "target_type": "user",
-      "target_identifier": null
+      "target_type": "user"
     },
     "delivery_assurance": {
       "intended_address": "ti@boulangerie.com.br",

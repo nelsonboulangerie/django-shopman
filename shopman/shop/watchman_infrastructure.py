@@ -117,9 +117,9 @@ class ExternalMonitoringContractCheck:
                 and notification["name"] == "Watchman: operações ti@"
                 and recipient == "ti@boulangerie.com.br"
                 and notification["frequency_minutes"] == 30
-                and email_action["target_type"] in {"user", "team"}
-                and email_action["target_identifier"] not in (None, "")
-                and delivery["method"] in {"dedicated_sentry_member", "evidenced_email_routing"}
+                and email_action["target_type"] == "user"
+                and "target_identifier" not in email_action
+                and delivery["method"] == "dedicated_sentry_member"
                 and delivery["evidence_review_days"] > 0
                 and len(detector_names) == len(set(detector_names))
                 and "issue_resolved_trigger" in trigger_types
@@ -141,11 +141,11 @@ class ExternalMonitoringContractCheck:
                 evidence={
                     "uptime_monitors": len(endpoints),
                     "recipient": recipient,
-                    "target_declared": email_action.get("target_identifier") not in (None, ""),
+                    "target_resolution": "sentry_members_api",
                 },
                 remediation=(
-                    "Declare both services, cadence, rate alert, opening/recovery triggers and the real "
-                    "Sentry user/team ID that routes to ti@."
+                    "Declare both services, cadence, rate alert, opening/recovery triggers and the dedicated "
+                    "Sentry member route to ti@."
                 ),
             )
         if not os.environ.get("SENTRY_AUTH_TOKEN", "").strip():

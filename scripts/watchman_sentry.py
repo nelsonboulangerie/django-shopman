@@ -39,8 +39,7 @@ class SentryClient:
             with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310 - configured Sentry base
                 return json.load(response), response.headers.get("Link", "")
         except urllib.error.HTTPError as exc:
-            detail = exc.read(1000).decode(errors="replace")
-            raise RuntimeError(f"Sentry API GET {path} returned {exc.code}: {detail}") from exc
+            raise RuntimeError(f"Sentry API GET {path} returned {exc.code}") from exc
 
     def get_all(self, path: str) -> list[dict]:
         """Read every page of a list endpoint, failing closed on ambiguous pagination."""
@@ -154,7 +153,7 @@ def _active_email_targets(found: dict) -> set[tuple[str, str]]:
     return targets
 
 
-def _workflow_matches(found: dict, contract: dict, detector_ids: set[str]) -> bool:
+def _workflow_matches(found: dict, contract: dict, detector_ids: set[str], target_identifier: str | None) -> bool:
     expected = contract["notification"]
     triggers = found.get("triggers") or {}
     conditions = triggers.get("conditions") or []
@@ -165,9 +164,10 @@ def _workflow_matches(found: dict, contract: dict, detector_ids: set[str]) -> bo
     }
     required_triggers = set(expected["trigger_types"])
     email = expected["email_action"]
-    expected_target = (email.get("target_type"), str(email.get("target_identifier")))
+    expected_target = (email.get("target_type"), str(target_identifier))
     return (
-        found.get("name") == expected["name"]
+        target_identifier is not None
+        and found.get("name") == expected["name"]
         and found.get("enabled") is True
         and found.get("environment") == contract["environment"]
         and (found.get("config") or {}).get("frequency") == expected["frequency_minutes"]
@@ -178,6 +178,34 @@ def _workflow_matches(found: dict, contract: dict, detector_ids: set[str]) -> bo
         and any(item != "issue_resolved_trigger" for item in required_triggers)
         and expected_target in _active_email_targets(found)
     )
+
+
+def _dedicated_member_target_id(members: list[dict], intended_address: str) -> tuple[str | None, str | None]:
+    expected = intended_address.casefold()
+    matches = []
+    for member in members:
+        user = member.get("user") or {}
+        addresses = {str(member.get("email") or "").casefold(), str(user.get("email") or "").casefold()}
+        if expected in addresses:
+            matches.append(member)
+    if not matches:
+        return None, "missing dedicated notification member"
+    if len(matches) != 1:
+        return None, "duplicate dedicated notification members"
+    member = matches[0]
+    user = member.get("user") or {}
+    if not (
+        str(member.get("email") or "").casefold() == expected
+        and str(user.get("email") or "").casefold() == expected
+        and member.get("pending") is False
+        and member.get("expired") is False
+        and member.get("inviteStatus") == "approved"
+        and user.get("id") not in (None, "")
+        and user.get("isActive") is True
+        and user.get("isSuspended") is False
+    ):
+        return None, "dedicated notification member is not active and accepted"
+    return str(user["id"]), None
 
 
 def _contract_errors(contract: dict) -> list[str]:
@@ -191,17 +219,14 @@ def _contract_errors(contract: dict) -> list[str]:
     notification = contract.get("notification") or {}
     email = notification.get("email_action") or {}
     target_type = email.get("target_type")
-    target_identifier = email.get("target_identifier")
-    if target_type not in {"user", "team"}:
-        errors.append("invalid contract: notification email target_type must be user or team")
-    if target_identifier in (None, ""):
-        errors.append("invalid contract: notification email target_identifier is not declared")
+    if target_type != "user":
+        errors.append("invalid contract: dedicated notification email target_type must be user")
+    if "target_identifier" in email:
+        errors.append("invalid contract: notification target_identifier must be resolved from Sentry membership")
     delivery = notification.get("delivery_assurance") or {}
     delivery_method = delivery.get("method")
-    if delivery_method not in {"dedicated_sentry_member", "evidenced_email_routing"}:
-        errors.append("invalid contract: unsupported notification delivery assurance method")
-    if delivery_method == "dedicated_sentry_member" and target_type != "user":
-        errors.append("invalid contract: dedicated Sentry member must use a user target")
+    if delivery_method != "dedicated_sentry_member":
+        errors.append("invalid contract: notification delivery assurance is not machine-verifiable")
     review_days = delivery.get("evidence_review_days")
     if (
         not delivery.get("intended_address")
@@ -248,6 +273,12 @@ def reconcile(client: SentryClient, contract: dict) -> list[str]:
         else:
             expected_detectors.append(found_rate)
 
+    members = client.get_all(f"/api/0/organizations/{org}/members/")
+    target_identifier, member_drift = _dedicated_member_target_id(
+        members, contract["notification"]["delivery_assurance"]["intended_address"]
+    )
+    if member_drift:
+        changes.append(member_drift)
     workflows = client.get_all(f"/api/0/organizations/{org}/workflows/")
     workflow_name = contract["notification"]["name"]
     duplicate_workflows = _duplicates(workflows, {workflow_name})
@@ -257,7 +288,9 @@ def reconcile(client: SentryClient, contract: dict) -> list[str]:
         changes.append(f"duplicate notification workflow name: {workflow_name}")
     elif not expected_workflow:
         changes.append(f"missing notification workflow: {workflow_name}")
-    elif len(detector_ids) != len(expected_names) or not _workflow_matches(expected_workflow, contract, detector_ids):
+    elif len(detector_ids) != len(expected_names) or not _workflow_matches(
+        expected_workflow, contract, detector_ids, target_identifier
+    ):
         changes.append(f"notification workflow has drift: {workflow_name}")
     return changes
 
@@ -270,7 +303,7 @@ def main() -> int:
     token = os.environ.get("SENTRY_AUTH_TOKEN", "").strip()
     if not token:
         print(
-            "SENTRY_AUTH_TOKEN ausente: o DSN envia eventos, mas a conferência requer alerts:read ou org:read",
+            "SENTRY_AUTH_TOKEN ausente: a conferência requer alerts:read e member:read",
             file=sys.stderr,
         )
         return 2

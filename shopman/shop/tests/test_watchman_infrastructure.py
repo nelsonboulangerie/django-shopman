@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from shopman.watchman.contracts import CheckContext, Status
@@ -13,31 +11,8 @@ def _context():
     return CheckContext(profile="infrastructure", deadline=9999999999)
 
 
-ROOT = Path(__file__).resolve().parents[3]
-
-
-def _root_with_declared_sentry_target(tmp_path):
-    payload = json.loads((ROOT / "ops/watchman/sentry.json").read_text())
-    payload["notification"]["email_action"]["target_identifier"] = "user-456"
-    contract = tmp_path / "ops/watchman/sentry.json"
-    contract.parent.mkdir(parents=True)
-    contract.write_text(json.dumps(payload), encoding="utf-8")
-    return tmp_path
-
-
-def test_external_monitoring_contract_fails_closed_until_target_id_is_declared(monkeypatch):
+def test_external_monitoring_contract_is_unknown_without_live_credential(monkeypatch):
     monkeypatch.delenv("SENTRY_AUTH_TOKEN", raising=False)
-
-    result = ExternalMonitoringContractCheck().run(_context())
-
-    assert result.status is Status.FAIL
-    assert result.evidence["recipient"] == "ti@boulangerie.com.br"
-    assert result.evidence["target_declared"] is False
-
-
-def test_external_monitoring_contract_is_unknown_without_live_credential(monkeypatch, tmp_path):
-    monkeypatch.delenv("SENTRY_AUTH_TOKEN", raising=False)
-    monkeypatch.setattr("shopman.shop.watchman_infrastructure.ROOT", _root_with_declared_sentry_target(tmp_path))
 
     result = ExternalMonitoringContractCheck().run(_context())
 
@@ -50,9 +25,8 @@ def test_external_monitoring_contract_is_unknown_without_live_credential(monkeyp
 
 
 @patch("shopman.shop.watchman_infrastructure._run")
-def test_external_monitoring_contract_checks_live_drift_when_credential_exists(run, monkeypatch, tmp_path):
+def test_external_monitoring_contract_checks_live_drift_when_credential_exists(run, monkeypatch):
     monkeypatch.setenv("SENTRY_AUTH_TOKEN", "test-token")
-    monkeypatch.setattr("shopman.shop.watchman_infrastructure.ROOT", _root_with_declared_sentry_target(tmp_path))
     run.return_value = Mock(status=Status.PASS)
 
     result = ExternalMonitoringContractCheck().run(_context())
