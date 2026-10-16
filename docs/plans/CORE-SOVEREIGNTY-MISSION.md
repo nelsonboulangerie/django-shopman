@@ -23,7 +23,9 @@ Leitura obrigatória: `docs/constitution.md`, ADR-001/-005/-019/-021/-022, `CORE
 O plano foi atacado nos dez pontos obrigatórios e em quatro adicionais. O parecer em
 `docs/plans/CORE-SOVEREIGNTY-REVIEW.md` registrou veredito por item, riscos, remoções e
 sequência; o dono aceitou os reparos em 2026-10-16. Fases seguintes continuam obrigadas a
-revalidar evidência, tag `go-live-v1` e compatibilidade antes de cada corte.
+revalidar evidência e a tag `go-live-v1` antes de cada corte. Enquanto a tag não existir,
+o regime é pré-go-live: corte único, contrato único e zero compatibilidade runtime. Se a
+tag existir, a ADR-015 passa a exigir expand-contract.
 
 ---
 
@@ -79,8 +81,10 @@ derivados de `packages/*`, `surfaces/registry.json` e `docs/architecture-map.jso
 ### 1.5 Estado factual da Fase 1
 
 ADR-037 e Constituição: PR #1843; governança/renumeração/índice/gate: PR #1844; mapa e
-enforcement de command/query: PR #1845. Todos estão em `main`. WPs 2, 3, 4, 7, 11, 10,
-6 e 12 permanecem futuros até seus próprios PRs e aceites.
+enforcement de command/query: PR #1845. O WP-2 base foi mergeado no PR #1846. Sua
+canonicalização de `reason_code` está no PR #1848 e ainda falta remover o dual-read/write
+de `Order.data.hold_ids` em correção própria; ambos são bloqueantes antes do WP-3. WPs 3,
+4, 7, 11, 10, 6 e 12 permanecem futuros até seus próprios PRs e aceites.
 
 ---
 
@@ -88,7 +92,7 @@ enforcement de command/query: PR #1845. Todos estão em `main`. WPs 2, 3, 4, 7, 
 
 Detalhe e aceite de cada WP estão em `CORE-SOVEREIGNTY-PLAN.md` §5. Resumo dos pontos que o agente não pode reinterpretar:
 
-- **WP-2 stockman:** a decisão de promessa volta para o stockman; a cópia do orquestrador é deletada; `reason_code` vira enum; `untracked` não devolve `999999`. O contrato separa `available_qty` factual de `orderable_ceiling` político, ambos opcionais, com `is_tracked`; bordas evoluem por expand-contract.
+- **WP-2 stockman:** a decisão de promessa volta para o stockman; a cópia do orquestrador é deletada; `reason_code` vira enum; `untracked` não devolve `999999`. O contrato separa `available_qty` factual de `orderable_ceiling` político, ambos opcionais, com `is_tracked`. Pré-go-live há um único formato canônico, sem dual-read/write, alias ou serializer legado. O PR #1846 entregou o núcleo; #1848 e a correção de `hold_ids` fecham os resíduos antes do WP-3.
 - **WP-3 preço:** um entrypoint canônico por decisão; `resolve` morto; preço contextual preserva `ContextualPrice.adjustments[]`. Elegibilidade não é renomeada para ajuste e total de cesta não é confundido com cotação unitária.
 - **WP-4 doorman:** porto `IdentityView` com handles; resolução `identifier`-first; sem import direto de guestman em service de domínio; PII minimizada e redigida em logs.
 - **WP-7 orquestrador:** inventário em dois eixos (**responsabilidade semântica + mecanismo/touchpoint**) sem mover código; schema e gate dos manifestos antes do piloto; cenários e baseline de arquivos congelados; piloto `promotion`; enforcement. Se a métrica composta não melhorar, se só surgir uma façade ou se o teste isolado depender de Django/DB, o piloto e o WP são **abortados**.
@@ -107,7 +111,10 @@ Detalhe e aceite de cada WP estão em `CORE-SOVEREIGNTY-PLAN.md` §5. Resumo dos
 - Não importar outro kernel no código de domínio; somente bridges opt-in, nomeadas e lazy da ADR-001 podem cruzar kernels.
 - Não renumerar ADR em massa; não renomear app por estética.
 - Não reescrever lógica: os movimentos são de **titularidade**.
-- Não fazer shadow/dual-run de efeito: apenas cálculo puro pode rodar em paralelo.
+- Não fazer shadow/dual-run de efeito. Comparação temporária de cálculo puro só pode
+  existir em teste ou instrumentação descartável e não autoriza dois contratos runtime.
+- Antes de `go-live-v1`: corte único e zero legado. Depois da tag: aplicar ADR-015 e
+  expand-contract.
 - Não commitar no checkout principal; `git add` só de arquivo nomeado.
 
 ---

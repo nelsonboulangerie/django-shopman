@@ -5,6 +5,8 @@
 > símbolo; cada WP revalida paths e linhas contra sua própria base.
 > **Rebaseline:** `main @ 1d0bc7d76`, após ADR-037, governança de 39 ADRs, mapa de camadas e
 > correções A1-A2. Parecer: [CORE-SOVEREIGNTY-REVIEW.md](CORE-SOVEREIGNTY-REVIEW.md).
+> **Regime de corte:** enquanto `go-live-v1` não existir, contrato único e zero
+> compatibilidade runtime. A ADR-015 ativa expand-contract somente depois da tag.
 > **Natureza:** plano de **fronteira**, não de feature. Nenhuma capacidade nova é pedida.
 > **Autor:** sessão de arquitetura (DSH), a partir de leitura de `packages/*`, `shopman/shop` e ADRs.
 
@@ -224,12 +226,16 @@ no próprio parecer.
   observado, opcional) de `orderable_ceiling` (limite de política, opcional), com
   `is_tracked`, decisão e razão explícitas. `demand_ok` não transforma uma autorização
   sem teto em quantidade factual.
-- Fazer caracterização + dual-run somente da função pura; migrar bordas por
-  expand-contract e manter serializer legado temporário quando necessário. Shadow nunca
-  duplica hold, ledger ou outro efeito.
+- Caracterizar em teste e, se útil, comparar temporariamente somente a função pura. O
+  corte pré-go-live é direto para o contrato único: sem serializer legado, alias,
+  dual-read/write ou segunda árvore runtime. Comparação descartável nunca duplica hold,
+  ledger ou outro efeito.
 - **Aceite:** teste prova que a produção chama o Stockman; busca proíbe a duplicata e
   `999999`; matriz de contrato distingue saldo factual, teto e estoque não rastreado;
-  rollback está demonstrado antes da contração.
+  zero vocabulário/formato legado permanece no runtime.
+- **Estado:** núcleo mergeado no PR #1846. O PR #1848 canonicaliza `reason_code`; depois
+  dele, uma correção própria remove o dual-read/write de `Order.data.hold_ids`. WP-3 só
+  começa após ambos, e só então o WP-2 está fechado sob a regra pré-go-live.
 
 ### WP-3 — Preço: um dono por decisão, um caminho canônico
 - Eliminar o segundo cálculo morto em `shopman/shop/services/pricing.py::resolve`. Preço
@@ -391,7 +397,8 @@ Missão completa do agente externo em [CORE-SOVEREIGNTY-MISSION.md](CORE-SOVEREI
 - Não transformar composição/política em pacotes pip: elas vivem no orquestrador (ADR-005 §3).
 - Não colocar verbo de domínio de um único domínio no orquestrador.
 - Não importar model de um kernel dentro de outro kernel.
-- Não mexer em migração de kernel antes da lei (WP-1) e sem expand-contract (ADR-015).
+- Não mexer em migração de kernel antes da lei (WP-1). Antes de `go-live-v1`, não criar
+  compatibilidade runtime; depois da tag, toda evolução persistida segue a ADR-015.
 - Não renomear app/pacote por estética enquanto houver decisão dividida.
 - Não reescrever lógica: os movimentos são de **titularidade**.
 
@@ -408,8 +415,9 @@ Missão completa do agente externo em [CORE-SOVEREIGNTY-MISSION.md](CORE-SOVEREI
    opt-in e nomeadas; command/query ingress não decide.
 5. **Localidade:** o cenário congelado de mudança toca uma unidade de política + testes e
    melhora a métrica de acoplamento, não só a aparência do caminho.
-6. **Reversível:** dual-run só de cálculo puro; toda evolução de contrato tem
-   expand-contract e caminho de volta.
+6. **Regime de corte:** antes de `go-live-v1`, comparação só de cálculo puro e
+   descartável, seguida de corte único sem legado. Depois da tag, evolução de contrato
+   segue expand-contract e caminho de volta conforme ADR-015.
 
 ---
 
