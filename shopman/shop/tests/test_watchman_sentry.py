@@ -145,8 +145,10 @@ def _workflow(contract, detector_ids, target_identifier="user-456"):
 
 
 def _live_objects(contract):
-    detectors = [_uptime(contract, 0, "1"), _uptime(contract, 1, "2"), _error_rate(contract, "3")]
-    return detectors, _workflow(contract, ["1", "2", "3"])
+    uptimes = [_uptime(contract, index, str(index + 1)) for index in range(len(contract["uptime"]))]
+    error_id = str(len(uptimes) + 1)
+    detectors = [*uptimes, _error_rate(contract, error_id)]
+    return detectors, _workflow(contract, [str(index + 1) for index in range(len(detectors))])
 
 
 def test_repository_contract_resolves_target_from_live_membership_instead_of_storing_an_id():
@@ -162,7 +164,7 @@ def test_check_detects_every_missing_detector_and_workflow():
 
     changes = reconcile(client, contract)
 
-    assert len(changes) == 5
+    assert len(changes) == len(contract["uptime"]) + 3
     assert "missing dedicated notification member" in changes
     assert any("missing notification workflow" in item for item in changes)
     assert all(path.startswith("/api/0/organizations/") for path in client.calls)
@@ -242,18 +244,19 @@ def test_live_detector_comparison_rejects_same_name_with_wrong_configuration():
 
 def test_workflow_requires_all_detectors_frequency_opening_resolution_and_structural_email_target():
     contract = _contract()
-    workflow = _workflow(contract, ["1", "2"])
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    expected_ids = {"1", "2"}
+    workflow = _workflow(contract, ["1"])
+    assert _workflow_matches(workflow, contract, expected_ids, "user-456") is False
 
-    workflow["detectorIds"].append("3")
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is True
+    workflow["detectorIds"].append("2")
+    assert _workflow_matches(workflow, contract, expected_ids, "user-456") is True
 
     workflow["triggers"]["conditions"] = [{"type": "issue_resolved_trigger"}]
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    assert _workflow_matches(workflow, contract, expected_ids, "user-456") is False
 
-    workflow = _workflow(contract, ["1", "2", "3"])
+    workflow = _workflow(contract, ["1", "2"])
     workflow["triggers"]["conditions"] = [{"type": "first_seen_event"}]
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    assert _workflow_matches(workflow, contract, expected_ids, "user-456") is False
 
 
 @pytest.mark.parametrize(
@@ -267,40 +270,40 @@ def test_workflow_requires_all_detectors_frequency_opening_resolution_and_struct
 )
 def test_workflow_rejects_inactive_wrong_type_or_wrong_identity_email_actions(mutation):
     contract = _contract()
-    workflow = _workflow(contract, ["1", "2", "3"])
+    workflow = _workflow(contract, ["1", "2"])
     mutation(workflow)
 
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    assert _workflow_matches(workflow, contract, {"1", "2"}, "user-456") is False
 
 
 def test_recipient_text_elsewhere_cannot_create_false_positive():
     contract = _contract()
-    workflow = _workflow(contract, ["1", "2", "3"])
+    workflow = _workflow(contract, ["1", "2"])
     workflow["actionFilters"] = []
     workflow["description"] = "manda para ti@boulangerie.com.br user-456"
 
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    assert _workflow_matches(workflow, contract, {"1", "2"}, "user-456") is False
 
 
 def test_email_behind_an_extra_filter_cannot_create_false_positive():
     contract = _contract()
-    workflow = _workflow(contract, ["1", "2", "3"])
+    workflow = _workflow(contract, ["1", "2"])
     workflow["actionFilters"][0]["conditions"] = [
         {"type": "tagged_event", "comparison": {"key": "never", "value": "matches"}}
     ]
 
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    assert _workflow_matches(workflow, contract, {"1", "2"}, "user-456") is False
 
 
 def test_disabled_trigger_or_wrong_trigger_logic_cannot_create_false_positive():
     contract = _contract()
-    workflow = _workflow(contract, ["1", "2", "3"])
+    workflow = _workflow(contract, ["1", "2"])
     workflow["triggers"]["conditions"][0]["conditionResult"] = False
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    assert _workflow_matches(workflow, contract, {"1", "2"}, "user-456") is False
 
-    workflow = _workflow(contract, ["1", "2", "3"])
+    workflow = _workflow(contract, ["1", "2"])
     workflow["triggers"]["logicType"] = "all"
-    assert _workflow_matches(workflow, contract, {"1", "2", "3"}, "user-456") is False
+    assert _workflow_matches(workflow, contract, {"1", "2"}, "user-456") is False
 
 
 def test_duplicate_expected_live_detector_and_workflow_names_fail_closed():
@@ -317,13 +320,32 @@ def test_duplicate_expected_live_detector_and_workflow_names_fail_closed():
 
 def test_duplicate_detector_names_in_contract_are_rejected_before_api_access():
     contract = _contract()
-    contract["uptime"][1]["name"] = contract["uptime"][0]["name"]
+    contract["uptime"].append(deepcopy(contract["uptime"][0]))
     client = FakeClient([])
 
     assert reconcile(client, contract) == [
-        f"invalid contract: duplicate expected detector name: {contract['uptime'][0]['name']}"
+        f"invalid contract: duplicate expected detector name: {contract['uptime'][0]['name']}",
+        "invalid contract: free-plan policy requires exactly one uptime detector",
     ]
     assert client.calls == []
+
+
+@pytest.mark.parametrize("invalid_limit", [None, True, 0, 2])
+def test_free_plan_limit_must_be_exactly_one_integer(invalid_limit):
+    contract = _contract()
+    contract["uptime_policy"]["maximum_active_monitors"] = invalid_limit
+
+    assert "invalid contract: free-plan policy requires exactly one uptime detector" in _contract_errors(contract)
+
+
+def test_free_plan_policy_rejects_any_unexpected_active_uptime_detector():
+    contract = _contract()
+    detectors, workflow = _live_objects(contract)
+    legacy = deepcopy(detectors[0])
+    legacy.update(id="legacy", name="Legacy uptime")
+    client = FakeClient([[*detectors, legacy], [_member(contract)], [workflow]])
+
+    assert reconcile(client, contract) == ["unexpected active uptime detector: Legacy uptime"]
 
 
 def test_indirect_email_routing_is_rejected_without_a_machine_verifiable_adapter():
