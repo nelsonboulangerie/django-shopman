@@ -396,7 +396,28 @@ Aceitar a missão com estas emendas, em especial:
 
 Sem esse aceite, a Fase 1 permanece bloqueada.
 
-## 8. Escopo efetivamente executado
+## 8. Decisão do dono
+
+**Aceito em 2026-10-16.** A autorização para a Fase 1 incorpora os reparos deste
+parecer e fixa quatro interpretações para a execução:
+
+1. números de ADR são alocados pela realidade da `main` no instante do trabalho;
+   035/036 não são reutilizados e somente os duplicados mais novos são renumerados;
+2. API é fronteira de entrega, não superfície de produto: consultas pertencem ao
+   query/read-side e comandos entram por command ingress, que delega sem decidir;
+3. `ContextualPrice.adjustments[]` permanece o contrato de efeitos aplicados;
+   condições/regras de elegibilidade não substituem esse vocabulário;
+4. WP-7 usa inventário em dois eixos, manifesto verificável e um piloto Promotion
+   com cenário congelado; se a mudança continuar tocando os mesmos arquivos ou só
+   ganhar uma fachada, o piloto e o WP são abortados.
+
+Para V3, o aceite também distingue fato de política: retirar `999999` é obrigatório,
+mas o contrato não pode colapsar estoque observado e teto de venda num único `None`.
+A evolução deve separar `available_qty` (fato observado, opcional) de
+`orderable_ceiling` (limite de política, opcional), com `is_tracked`, decisão e razão
+explícitas, por expand-contract nas bordas que ainda consumirem o formato legado.
+
+## 9. Escopo efetivamente executado
 
 - Lidos integralmente `AGENTS.md`/`CLAUDE.md`, missão, plano, Constituição, ADR-001,
   ADR-005, ADR-019, ADR-021, ADR-022, ADR-015 e `CORE-BOUNDARIES-AUDIT.md`.
