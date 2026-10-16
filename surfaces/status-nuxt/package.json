@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "nuxi typecheck && npm run typecheck:functions",
-    "typecheck:functions": "tsc --ignoreConfig --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022 --types @cloudflare/workers-types functions/api/status.ts",
+    "typecheck:functions": "tsc --ignoreConfig --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022 --types @cloudflare/workers-types functions/api/status.ts functions/api/watchman-readiness.ts",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {

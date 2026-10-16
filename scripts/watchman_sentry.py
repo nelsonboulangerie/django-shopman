@@ -216,6 +216,14 @@ def _contract_errors(contract: dict) -> list[str]:
         for name, count in Counter(detector_names).items()
         if name and count > 1
     ]
+    maximum_active = (contract.get("uptime_policy") or {}).get("maximum_active_monitors")
+    if (
+        not isinstance(maximum_active, int)
+        or isinstance(maximum_active, bool)
+        or maximum_active != 1
+        or len(contract.get("uptime") or []) != 1
+    ):
+        errors.append("invalid contract: free-plan policy requires exactly one uptime detector")
     notification = contract.get("notification") or {}
     email = notification.get("email_action") or {}
     target_type = email.get("target_type")
@@ -251,6 +259,15 @@ def reconcile(client: SentryClient, contract: dict) -> list[str]:
     expected_names = {item["name"] for item in contract["uptime"]} | {contract["error_rate"]["name"]}
     duplicate_detectors = _duplicates(detectors, expected_names)
     changes = [f"duplicate detector name: {name}" for name in sorted(duplicate_detectors)]
+    expected_uptime_names = {item["name"] for item in contract["uptime"]}
+    unexpected_uptime = sorted(
+        str(item.get("name") or item.get("id") or "<unnamed>")
+        for item in detectors
+        if item.get("type") == "uptime_domain_failure"
+        and item.get("enabled", item.get("status") == "active") is True
+        and item.get("name") not in expected_uptime_names
+    )
+    changes.extend(f"unexpected active uptime detector: {name}" for name in unexpected_uptime)
     expected_detectors: list[dict] = []
     for uptime in contract["uptime"]:
         found = _unique_by_name(detectors, uptime["name"])

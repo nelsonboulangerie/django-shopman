@@ -33,12 +33,12 @@ descrição ou display não prova entrega.
 
 Organização: `nelson-boulangerie`. Projeto: `shopman`. Ambiente: `production`.
 
-## 1. Monitor de disponibilidade do operador
+## 1. Monitor composto de disponibilidade
 
 Em **Alerts → Create Monitor → Uptime**:
 
-- nome: `Watchman — web-operator readiness`;
-- URL: `https://api.boulangerie.com.br/health/ready/`;
+- nome: `Watchman — composite readiness`;
+- URL: `https://status.boulangerie.com.br/api/watchman-readiness`;
 - método: GET;
 - intervalo: 1 minuto;
 - timeout: 10 segundos;
@@ -49,16 +49,15 @@ Em **Alerts → Create Monitor → Uptime**:
 
 Salvar sem associar ainda à regra antiga de prioridade.
 
-## 2. Monitor de disponibilidade da loja online
+Essa URL roda na borda independente do Cloudflare e sonda em paralelo as duas
+readiness, que continuam servidas por processos diferentes. Ela responde 503 se
+qualquer perna falhar e o corpo sanitizado identifica `web_operator` ou
+`web_storefront`. Assim o único Uptime incluído sem custo no plano cobre os dois
+serviços; um segundo Uptime criaria cobrança. O verificador acusa qualquer outro
+Uptime ativo no projeto como drift. Se os dois monitores legados tiverem sido
+criados antes desta revisão, desative-os antes de criar o composto.
 
-Criar outro Uptime com os mesmos números e:
-
-- nome: `Watchman — web-storefront readiness`;
-- URL: `https://api.boulangerie.com.br/api/v1/health/ready/`.
-
-São dois monitores porque os dois paths são servidos por processos diferentes.
-
-## 3. Monitor de volume de erros
+## 2. Monitor de volume de erros
 
 Em **Alerts → Create Monitor → Metric**:
 
@@ -74,9 +73,9 @@ Em **Alerts → Create Monitor → Metric**:
 Isso percebe o mesmo erro repetido centenas de vezes; a regra antiga de issue de
 alta prioridade não faz essa pergunta.
 
-## 4. Workflow de aviso
+## 3. Workflow de aviso
 
-### 4.1 Identidade que recebe o e-mail
+### 3.1 Identidade que recebe o e-mail
 
 Primeiro confirme no plano atual que adicionar um membro não cria assento pago.
 Se não houver custo, criar ou confirmar um **membro Sentry dedicado**, autenticado
@@ -99,12 +98,12 @@ falha fechado até existir um adaptador que consulte uma evidência externa
 verificável. A opção automatizável neste contrato é o membro dedicado quando
 gratuito.
 
-### 4.2 Gatilhos e ação
+### 3.2 Gatilhos e ação
 
 Criar um workflow com:
 
 - nome: `Watchman: operações ti@`;
-- ligado aos três monitores acima, e somente a eles;
+- ligado aos dois detectores acima (um Uptime e um de volume), e somente a eles;
 - ambiente: `production`;
 - frequência de repetição: 30 minutos enquanto durar;
 - gatilhos de abertura `first_seen_event`, `regression_event` e
@@ -120,7 +119,7 @@ evita abrir por uma falha isolada e o aviso de resolução fecha o ciclo.
 Não apagar nem editar a regra de alta prioridade nesta sessão. Ela é independente;
 a substituição só pode ser decidida depois que o fluxo de `ti@` tiver sido provado.
 
-## 5. Prova no painel
+## 4. Prova no painel
 
 Antes de criar credencial:
 
@@ -139,7 +138,7 @@ prudente provar que a caixa é acompanhada. Repetir a prova de recebimento a cad
 workflow. O contrato registra essa periodicidade em
 `delivery_assurance.evidence_review_days`.
 
-## 6. Credencial de conferência
+## 5. Credencial de conferência
 
 No painel, o dono cria uma credencial de organização limitada a leitura de alertas
 e membros (`alerts:read` + `member:read`, ou equivalentes mínimos aceitos) e a
@@ -159,6 +158,6 @@ também são drift: não basta uma das cópias estar correta.
 ## Reversão
 
 Se o novo workflow enviar para o destinatário errado ou repetir indevidamente, o
-dono o desliga no painel. Não apagar os três monitores durante o diagnóstico: assim
+dono o desliga no painel. Não apagar os dois detectores durante o diagnóstico: assim
 o estado e o histórico ficam disponíveis. O Watchman acusará o workflow desabilitado
 como drift até a correção.
