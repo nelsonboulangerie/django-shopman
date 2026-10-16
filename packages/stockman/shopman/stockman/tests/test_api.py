@@ -224,6 +224,8 @@ class PromiseTests(StockmanAPITestBase):
         assert data["availability_policy"] == "planned_ok"
         assert Decimal(data["requested_qty"]) == Decimal("5.000")
         assert Decimal(data["available_qty"]) == Decimal("20.000")
+        assert Decimal(data["orderable_ceiling"]) == Decimal("20.000")
+        assert data["is_tracked"] is True
         assert Decimal(data["available"]) == Decimal("20.000")
         assert Decimal(data["expected"]) == Decimal("20.000")
 
@@ -249,7 +251,9 @@ class PromiseTests(StockmanAPITestBase):
         data = resp.json()
         assert data["approved"] is True
         assert data["availability_policy"] == "demand_ok"
-        assert Decimal(data["available_qty"]) == Decimal("7.000")
+        assert data["available_qty"] is None
+        assert data["orderable_ceiling"] is None
+        assert data["is_tracked"] is False
 
     @override_settings(STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.PausedSkuValidator"})
     def test_promise_paused_offer_rejects(self):

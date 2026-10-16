@@ -14,7 +14,7 @@ from django.utils import timezone
 from shopman.stockman.adapters.sku_validation import get_sku_validator
 from shopman.stockman.models import Hold, Quant
 from shopman.stockman.models.enums import HoldStatus
-from shopman.stockman.protocols.sku import PromiseDecision
+from shopman.stockman.protocols.sku import PromiseDecision, PromiseReasonCode
 from shopman.stockman.services.scope import quants_eligible_for
 
 STARTED_BATCH = "started"
@@ -204,6 +204,11 @@ def availability_for_sku(
     sellable = _sku_is_sellable(sku)
     availability_policy = _sku_availability_policy(sku)
 
+    # Preserve whether the ledger knows the SKU even when the offering gate
+    # pauses it. The batch path already does this; the single path must not
+    # erase historical tracking merely because the product is not orderable.
+    is_tracked = Quant.objects.filter(sku=sku).exists()
+
     # If product is paused, return zeros (stock exists but not for sale)
     if not sellable:
         return _zero_availability_dict(
@@ -211,11 +216,10 @@ def availability_for_sku(
             availability_policy,
             safety_margin,
             is_paused=True,
+            is_tracked=is_tracked,
         )
 
     target = target_date or timezone.localdate()
-
-    is_tracked = Quant.objects.filter(sku=sku).exists()
 
     planned_supply = _planned_supply_for_target(sku, target)
     is_planned = planned_supply > 0
@@ -292,6 +296,64 @@ def availability_for_sku(
     )
 
 
+def decision_from_availability(
+    sku: str,
+    qty: Decimal,
+    info: dict,
+    *,
+    target_date: date | None = None,
+) -> PromiseDecision:
+    """Decide a promise from an already-loaded availability reading.
+
+    This function is pure: callers that already paid for the availability
+    query can use Stockman's canonical decision without issuing a second one.
+    Factual supply and policy ceiling deliberately remain separate.
+    """
+    qty_d = Decimal(str(qty))
+    availability_policy = info.get("availability_policy", "planned_ok")
+    is_paused = bool(info.get("is_paused", False))
+    is_tracked = bool(info.get("is_tracked", bool(info.get("positions"))))
+    factual_qty = Decimal(str(info.get("total_promisable", 0))) if is_tracked else None
+
+    if is_paused:
+        approved = False
+        orderable_ceiling = Decimal("0")
+    elif not is_tracked:
+        approved = True
+        orderable_ceiling = None
+    elif availability_policy == "demand_ok":
+        approved = True
+        orderable_ceiling = None
+    else:
+        orderable_ceiling = factual_qty
+        approved = factual_qty is not None and qty_d <= factual_qty
+
+    reason_code = None
+    if not approved:
+        reason_code = (
+            PromiseReasonCode.PAUSED
+            if is_paused
+            else PromiseReasonCode.INSUFFICIENT_SUPPLY
+        )
+
+    return PromiseDecision(
+        approved=approved,
+        sku=sku,
+        requested_qty=qty_d,
+        target_date=target_date,
+        availability_policy=availability_policy,
+        reason_code=reason_code,
+        available_qty=factual_qty,
+        orderable_ceiling=orderable_ceiling,
+        is_tracked=is_tracked,
+        available=Decimal(str(info.get("available", 0))),
+        expected=Decimal(str(info.get("expected", 0))),
+        planned=Decimal(str(info.get("planned", 0))),
+        is_planned=bool(info.get("is_planned", False)),
+        is_paused=is_paused,
+    )
+
+
 def promise_decision_for_sku(
     sku: str,
     qty: Decimal,
@@ -316,36 +378,11 @@ def promise_decision_for_sku(
         include_nonconforming=include_nonconforming,
         allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
-    available_qty = info["total_promisable"]
-    availability_policy = info.get("availability_policy", "planned_ok")
-    is_paused = info.get("is_paused", False)
-    if is_paused:
-        approved = False
-        effective_available_qty = Decimal("0")
-    elif availability_policy == "demand_ok":
-        approved = True
-        effective_available_qty = max(available_qty, qty_d)
-    else:
-        approved = qty_d <= available_qty
-        effective_available_qty = available_qty
-
-    reason_code = None
-    if not approved:
-        reason_code = "paused" if is_paused else "insufficient_supply"
-
-    return PromiseDecision(
-        approved=approved,
-        sku=sku,
-        requested_qty=qty_d,
+    return decision_from_availability(
+        sku,
+        qty_d,
+        info,
         target_date=target_date,
-        availability_policy=availability_policy,
-        reason_code=reason_code,
-        available_qty=effective_available_qty,
-        available=info.get("available", Decimal("0")),
-        expected=info.get("expected", Decimal("0")),
-        planned=info.get("planned", Decimal("0")),
-        is_planned=info.get("is_planned", False),
-        is_paused=is_paused,
     )
 
 

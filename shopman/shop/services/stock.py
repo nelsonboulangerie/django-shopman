@@ -38,6 +38,27 @@ from shopman.shop.services.order_helpers import get_commitment_date, is_test_ord
 logger = logging.getLogger(__name__)
 
 
+def untracked_hold_entry(sku: str) -> dict:
+    """Persist an untracked hold marker during the expand-contract window.
+
+    ``is_tracked`` is the canonical representation. ``untracked`` remains a
+    dual-written compatibility key until historical ``Order.data`` readers no
+    longer need the pre-WP-2 shape; no data migration is required.
+    """
+    return {
+        "sku": sku,
+        "hold_id": None,
+        "qty": 0,
+        "is_tracked": False,
+        "untracked": True,
+    }
+
+
+def is_untracked_hold_entry(entry: dict) -> bool:
+    """Read canonical and historical untracked markers from ``hold_ids``."""
+    return entry.get("is_tracked") is False or entry.get("untracked") is True
+
+
 def _items_to_hold(order) -> list[dict]:
     """As linhas que a reserva cobre: as que VALEM agora.
 
@@ -178,7 +199,7 @@ def hold(order, *, require_all: bool = False) -> None:
                     # Pedido já existe (caminho brando pós-commit, ex.: canal
                     # externo) — não dá para recusar; alertar o operador.
                     _alert_unknown_sku(order, comp_sku, item)
-                hold_ids.append({"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True})
+                hold_ids.append(untracked_hold_entry(comp_sku))
                 continue
             # O mesmo SKU fora do catálogo, quando o Stockman o lê como pausado
             # (o contrato de oferta não o conhece): a reserva falharia com
@@ -187,7 +208,7 @@ def hold(order, *, require_all: bool = False) -> None:
             # com código velho), é o aviso de SKU fora do catálogo, com o item.
             if not require_all and not allow_untracked and _sku_absent_from_catalog(comp_sku):
                 _alert_unknown_sku(order, comp_sku, item)
-                hold_ids.append({"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True})
+                hold_ids.append(untracked_hold_entry(comp_sku))
                 continue
 
             # 1) Adopt session holds by quantity until comp_qty is met.
@@ -280,9 +301,7 @@ def hold(order, *, require_all: bool = False) -> None:
                         raise _unknown_sku_error(item, comp_sku)
                     # SKU fora do catálogo (sessão de integração/smoke): não há
                     # o que reservar — segue como untracked, sem travar o commit.
-                    hold_ids.append(
-                        {"sku": comp_sku, "hold_id": None, "qty": 0, "untracked": True}
-                    )
+                    hold_ids.append(untracked_hold_entry(comp_sku))
                     continue
                 # Caminho brando (pedido já consumado fora: PDV, iFood). A
                 # reserva é 1:1 por quant e desconta as sacolas alheias; o que
@@ -572,7 +591,7 @@ def reconcile_to_items(order, *, items: list[dict], reference: str, require_all:
         if entry.get("hold_id"):
             held[entry["sku"]] = held.get(entry["sku"], Decimal("0")) + Decimal(str(entry.get("qty") or 0))
 
-    untracked_skus = {entry["sku"] for entry in entries if entry.get("untracked")}
+    untracked_skus = {entry["sku"] for entry in entries if is_untracked_hold_entry(entry)}
     prior_decisions = {
         d["sku"]: d
         for d in (order.data or {}).get("availability_decision", {}).get("decisions", [])
@@ -605,7 +624,7 @@ def reconcile_to_items(order, *, items: list[dict], reference: str, require_all:
             # reservar. Registrar a linha mantém o inventário de ``hold_ids``
             # honesto sobre o que o pedido carrega.
             if sku not in held and sku not in untracked_skus:
-                entries.append({"sku": sku, "hold_id": None, "qty": 0, "untracked": True})
+                entries.append(untracked_hold_entry(sku))
             continue
         if delta > 0:
             _reconcile_increase(
@@ -1144,6 +1163,9 @@ def _is_untracked(sku: str, prior_decisions: dict[str, dict], adapter) -> bool:
     """
     if sku in prior_decisions:
         d = prior_decisions[sku]
+        if d.get("is_tracked") is False:
+            return True
+        # Historical ``availability_decision`` payloads used these markers.
         return d.get("untracked", False) or d.get("source") == "stock.untracked"
     info = adapter.get_availability(sku)
     return not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions")))

@@ -45,14 +45,15 @@ _AVAIL_OK = {
     "approved": True,
     "sku": "CROIS-01",
     "requested_qty": Decimal("1"),
-    "available_qty": Decimal("999"),
+    "available_qty": None,
+    "orderable_ceiling": None,
+    "is_tracked": False,
     "reason_code": None,
     "is_paused": False,
     "is_planned": False,
     "target_date": None,
     "failed_sku": None,
-    "source": "stock.untracked",
-    "untracked": True,
+    "source": "stock.promise_decision",
 }
 
 _PATCHES = [

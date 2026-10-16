@@ -48,6 +48,8 @@ def product(db):
 AVAILABLE_RESULT = {
     "ok": True,
     "available_qty": Decimal("100"),
+    "orderable_ceiling": Decimal("100"),
+    "is_tracked": True,
     "is_paused": False,
     "is_planned": False,
     "breakdown": {"ready": Decimal("100"), "in_production": Decimal("0")},
@@ -59,6 +61,8 @@ AVAILABLE_RESULT = {
 SOLD_OUT_RESULT = {
     "ok": False,
     "available_qty": Decimal("0"),
+    "orderable_ceiling": Decimal("0"),
+    "is_tracked": True,
     "is_paused": False,
     "is_planned": False,
     "breakdown": {"ready": Decimal("0"), "in_production": Decimal("0")},
@@ -70,6 +74,8 @@ SOLD_OUT_RESULT = {
 NOT_IN_LISTING_RESULT = {
     "ok": False,
     "available_qty": Decimal("0"),
+    "orderable_ceiling": Decimal("0"),
+    "is_tracked": None,
     "is_paused": False,
     "is_planned": False,
     "breakdown": {"ready": Decimal("0"), "in_production": Decimal("0")},
@@ -97,6 +103,24 @@ class TestAvailabilityView:
         assert data["badge_class"] == "badge-available"
         assert data["badge_text"] == "Disponível"
         assert data["is_bundle"] is False
+        assert data["available_qty"] == "100"
+        assert data["orderable_ceiling"] == "100"
+        assert data["is_tracked"] is True
+
+    def test_untracked_sku_preserves_null_factual_and_policy_quantities(self, client, product):
+        result = {
+            **AVAILABLE_RESULT,
+            "available_qty": None,
+            "orderable_ceiling": None,
+            "is_tracked": False,
+        }
+        with patch("shopman.storefront.api.availability.avail_service.check", return_value=result):
+            resp = client.get(self._url(product.sku))
+
+        assert resp.status_code == 200
+        assert resp.json()["available_qty"] is None
+        assert resp.json()["orderable_ceiling"] is None
+        assert resp.json()["is_tracked"] is False
 
     def test_sold_out_sku(self, client, product):
         with patch("shopman.storefront.api.availability.avail_service.check", return_value=SOLD_OUT_RESULT):

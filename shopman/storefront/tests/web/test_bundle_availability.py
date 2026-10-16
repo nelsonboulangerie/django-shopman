@@ -60,10 +60,14 @@ def _combo_projection(channel_ref: str = "web"):
     return None
 
 
-def test_bundle_unavailable_when_a_component_is_out_of_stock(listing):
+def test_bundle_unavailable_when_a_tracked_component_is_sold_out(listing):
+    from shopman.stockman import stock
+    from shopman.stockman.models import Quant
+
     _bundle_item(listing)
     _seed_stock("PAO-COMBO", Decimal("50"))
-    # CAFE-COMBO sem estoque: o combo não pode ser montado.
+    _seed_stock("CAFE-COMBO", Decimal("1"))
+    stock.adjust(Quant.objects.get(sku="CAFE-COMBO"), 0, reason="sold out")
     item = _combo_projection()
     assert item is not None
     assert item.availability == Availability.UNAVAILABLE
@@ -78,6 +82,33 @@ def test_bundle_available_when_all_components_have_stock(listing):
     assert item is not None
     assert item.availability == Availability.AVAILABLE
     assert item.can_add_to_cart is True
+
+
+def test_untracked_component_does_not_hide_tracked_bundle_limit():
+    from shopman.shop.projections.catalog_context import bundle_availability_from_components
+
+    raw = bundle_availability_from_components([
+        (
+            Decimal("1"),
+            {
+                "is_tracked": False,
+                "total_promisable": Decimal("0"),
+                "available": Decimal("0"),
+            },
+        ),
+        (
+            Decimal("2"),
+            {
+                "is_tracked": True,
+                "total_promisable": Decimal("8"),
+                "available": Decimal("8"),
+                "ready_physical": Decimal("8"),
+            },
+        ),
+    ])
+
+    assert raw is not None
+    assert raw["total_promisable"] == Decimal("4")
 
 
 def test_bundle_capped_by_scarcest_component(listing):

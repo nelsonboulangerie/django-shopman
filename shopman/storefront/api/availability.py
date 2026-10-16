@@ -140,7 +140,9 @@ class AvailabilityView(APIView):
     Response:
         {
             "ok": bool,
-            "available_qty": str,   # Decimal as string
+            "available_qty": str | None,      # factual Decimal as string
+            "orderable_ceiling": str | None, # finite policy limit
+            "is_tracked": bool | None,
             "badge_text": str,      # Human-readable label (pt-BR)
             "badge_class": str,     # CSS class for badge rendering
             "is_bundle": bool,
@@ -170,7 +172,17 @@ class AvailabilityView(APIView):
 
         data = {
             "ok": result["ok"],
-            "available_qty": str(result["available_qty"]),
+            "available_qty": (
+                str(result["available_qty"])
+                if result["available_qty"] is not None
+                else None
+            ),
+            "orderable_ceiling": (
+                str(result["orderable_ceiling"])
+                if result.get("orderable_ceiling") is not None
+                else None
+            ),
+            "is_tracked": result.get("is_tracked"),
             "badge_text": badge_text,
             "badge_class": badge_class,
             "is_bundle": result.get("is_bundle", False),

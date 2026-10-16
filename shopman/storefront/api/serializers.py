@@ -151,7 +151,9 @@ class CollectionSerializer(serializers.Serializer):
 
 class AvailabilityResponseSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
-    available_qty = serializers.CharField()
+    available_qty = serializers.CharField(allow_null=True)
+    orderable_ceiling = serializers.CharField(allow_null=True)
+    is_tracked = serializers.BooleanField(allow_null=True)
     badge_text = serializers.CharField()
     badge_class = serializers.CharField()
     is_bundle = serializers.BooleanField()
