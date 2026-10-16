@@ -15,8 +15,10 @@ O status é exatamente um destes valores:
 - `Substituído por ADR-NNN`
 
 O dono é a parte arquitetural responsável por manter a decisão. O gate
-`make adr-governance` confere número único, título e status canônicos e a bijeção entre
-este índice e os arquivos.
+`make adr-governance` confere número único, título e status canônicos, a bijeção entre
+este índice e os arquivos e a relação em ambas as pontas: quando o status aponta para uma
+ADR sucessora, o cabeçalho da sucessora deve referenciar a predecessora. O backlink não
+altera o status da sucessora nem cria uma relação circular.
 
 | # | Título | Status | Dono | Data | Tema |
 |---|---|---|---|---|---|
