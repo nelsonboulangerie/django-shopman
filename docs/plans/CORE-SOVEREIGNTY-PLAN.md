@@ -284,6 +284,7 @@ Unidade de composição
 - Taxonomia por **trabalho/persona**, não por módulo.
 - Decidir em ADR entre: app único; shell + módulos; apps separados + shell. Recomendação preliminar: **shell único + áreas**, com kiosk standalone e PWA por área.
 - Fechar lacunas de operação diária: catálogo, clientes, fornecedores/estoque, fechamento.
+- **Kitchensink é recurso interno de Dev**: não é superfície de operador; sai dos tiles/ingress de produção e entra no registry como `internal` (decisão do dono).
 - **Aceite:** o operador entra num lugar e chega a qualquer ferramenta com um login; cada área é instalável como PWA quando fizer sentido.
 
 ### WP-11 — Fronteira Admin/Unfold × Superfícies
@@ -294,6 +295,12 @@ Unidade de composição
 ### WP-12 — Renascimento: reorganização do repo, ADRs e docs
 - Depois de WP-1..WP-11, uma passada única de reorganização: congelar a Constituição, marcar as pétreas, arquivar planos concluídos e reconstruir o índice de docs.
 - **Aceite:** repo navegável pela hierarquia declarada; nenhuma doc contradiz ADR aceito.
+
+### Sequência de execução
+
+**Fase 1** Lei e governança (ADR-035, Constituição, governança de ADRs, WP-8) → **Fase 2** Soberania do kernel (WP-2/3/4) → **Fase 3** Orquestrador (WP-7) → **Fase 4** Superfícies e Admin (WP-10/11) → **Fase 5** Instância e contratos (WP-6) → **Fase 6** Renascimento (WP-12).
+
+Missão completa do agente externo em [CORE-SOVEREIGNTY-MISSION.md](CORE-SOVEREIGNTY-MISSION.md).
 
 ## 6. Cercas (não fazer)
 
