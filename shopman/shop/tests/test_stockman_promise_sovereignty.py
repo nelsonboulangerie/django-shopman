@@ -21,7 +21,7 @@ def test_orchestrator_delegates_loaded_reading_to_stockman():
     assert "decision = decision_from_availability(" in service_source
 
 
-def test_untracked_hold_marker_dual_writes_expand_contract_shape():
+def test_untracked_hold_marker_has_one_canonical_shape():
     from shopman.shop.services.stock import untracked_hold_entry
 
     assert untracked_hold_entry("NO-LEDGER") == {
@@ -29,13 +29,34 @@ def test_untracked_hold_marker_dual_writes_expand_contract_shape():
         "hold_id": None,
         "qty": 0,
         "is_tracked": False,
-        "untracked": True,
     }
 
 
-def test_untracked_hold_reader_accepts_canonical_and_historical_shapes():
+def test_untracked_hold_reader_rejects_historical_shapes():
     from shopman.shop.services.stock import is_untracked_hold_entry
 
     assert is_untracked_hold_entry({"is_tracked": False}) is True
-    assert is_untracked_hold_entry({"untracked": True}) is True
     assert is_untracked_hold_entry({"is_tracked": True}) is False
+    assert is_untracked_hold_entry({"untracked": True}) is False
+    assert is_untracked_hold_entry({"source": "stock.untracked"}) is False
+    assert is_untracked_hold_entry({"is_tracked": True, "untracked": True}) is False
+
+
+def test_cached_availability_accepts_only_canonical_tracking_flag():
+    from shopman.shop.services.stock import _is_untracked
+
+    assert _is_untracked("NO-LEDGER", {"NO-LEDGER": {"is_tracked": False}}, None) is True
+    assert _is_untracked("NO-LEDGER", {"NO-LEDGER": {"untracked": True}}, None) is False
+    assert _is_untracked(
+        "NO-LEDGER",
+        {"NO-LEDGER": {"source": "stock.untracked"}},
+        None,
+    ) is False
+
+
+def test_stock_runtime_contains_no_historical_untracked_contract():
+    service_source = (ROOT / "shopman" / "shop" / "services" / "stock.py").read_text()
+
+    assert '"untracked": True' not in service_source
+    assert '.get("untracked")' not in service_source
+    assert '"stock.untracked"' not in service_source
