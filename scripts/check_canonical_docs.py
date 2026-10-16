@@ -516,6 +516,21 @@ def check_secrets(result: Result) -> None:
     result.ok("no high-confidence literal secret pattern found")
 
 
+def check_semantic_docs(result: Result) -> None:
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/check_semantic_docs.py")],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        details = (completed.stderr or completed.stdout).strip()
+        result.fail(f"semantic documentation gate failed: {details}")
+        return
+    result.ok("semantic map and Constitution anchors match the repository")
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     result = Result(errors=[], passed=[])
@@ -529,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         check_deploy_contract,
         check_required_status_checks,
         check_secrets,
+        check_semantic_docs,
     )
     if "--live-required-checks" in argv:
         checks += (check_required_status_checks_live,)
