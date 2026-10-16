@@ -81,6 +81,25 @@ Instância = config/ + DB + marca               parametriza tudo acima
 Ordem de grandeza (main): `shopman/shop/projections` 21, `shopman/backstage/projections` 54, `shopman/backstage/api` 40, `shopman/storefront/presentation` 21, `shopman/storefront/api` 20, `shopman/shop/admin` 14, 13 arquivos de template/static.
 
 **Projeção é mecanismo de leitura, não política.** A política pode exigir uma projeção, mas a projeção não é o lugar da decisão.
+**Regras de dependência (seta única, testada):**
+
+- **Superfícies** (Nuxt) → só falam HTTP/SSE com o read-side; nunca importam kernel nem orquestrador.
+- **Read-side** → lê do orquestrador/kernel; **nunca escreve decisão**.
+- **Orquestrador** → importa vários kernels (é o único lugar onde se encontram — ADR-005 §3); nunca renderiza.
+- **Kernel** → não conhece nenhum dos outros; fala por porto/signal/directive.
+- **Instância** → não é camada; parametriza todas as outras (config + DB + marca).
+
+**Onde mora o quê (teste de localização):**
+
+| Pergunta | Camada |
+|---|---|
+| "onde está o saldo / o ledger?" | Kernel |
+| "posso prometer?" | Kernel (decisão) + Orquestrador (gate) |
+| "que desconto vale?" | Orquestrador (política) |
+| "qual o JSON da sacola?" | Read-side (projeção) |
+| "onde fica a tela da sacola?" | Superfície |
+| "qual o horário da loja?" | Instância |
+
 
 ### 2.3 O que é invariante entre instâncias
 
@@ -247,6 +266,35 @@ Unidade de composição
 
 ---
 
+### WP-8 — Mapa de camadas e documentação canônica
+- Declarar num único documento a hierarquia **Kernel > Orquestrador > Read-side > Superfícies** (+ Instância transversal).
+- Testes de fronteira por seta: superfície não importa kernel; read-side não escreve; kernel não importa kernel.
+- Reescrever `docs/architecture.md` como o mapa; corrigir contagem de pacotes e apps.
+- **Aceite:** um dev localiza qualquer artefato pelo mapa; testes de fronteira verdes.
+
+### WP-9 — Governança: Constituição, ADRs e Docs (renascimento)
+- Separar **cláusulas pétreas** (constituição curta e estável) de **ADRs** (decisões datadas e revisáveis) e de guias/referência.
+- Corrigir os defeitos medidos: números duplicados (`adr-026` ×2, `adr-029` ×2), status divergente (Aceito/Accepted/aceito; Proposto em ADR já implementado), supersessões não marcadas (011, 031, 032).
+- Marcar como pétreas: 001 (Porto/Adapter), 002 (centavos), 004 (refs), 005 (orquestrador), 006 (status de Order), 007 (lifecycle config-driven), 015 (compat pós-prod), 021 (BI read layer), 022 (ledger), 035 (titularidade).
+- Índice único de ADRs com ciclo de vida: Proposto → Aceito → Substituído; dono e data.
+- Reorganizar a árvore de docs (uma fonte por tema) e aposentar o que está stale.
+- **Aceite:** zero número duplicado; todo ADR com status canônico; o índice responde "qual a lei e o que a revisou".
+
+### WP-10 — Topologia das superfícies (experiência do operador)
+- Taxonomia por **trabalho/persona**, não por módulo.
+- Decidir em ADR entre: app único; shell + módulos; apps separados + shell. Recomendação preliminar: **shell único + áreas**, com kiosk standalone e PWA por área.
+- Fechar lacunas de operação diária: catálogo, clientes, fornecedores/estoque, fechamento.
+- **Aceite:** o operador entra num lugar e chega a qualquer ferramenta com um login; cada área é instalável como PWA quando fizer sentido.
+
+### WP-11 — Fronteira Admin/Unfold × Superfícies
+- Regra por **frequência + público + risco**: Admin = configuração avançada, rara, destrutiva, integração, segredo, permissão, auditoria; Superfície = CRUD do dia a dia.
+- Revisar a política "nasce no Admin" — ela puxou `pos`, `terminal`, `closing` e `accounts` para o Admin.
+- **Aceite:** nenhuma tarefa diária mora exclusivamente no Admin.
+
+### WP-12 — Renascimento: reorganização do repo, ADRs e docs
+- Depois de WP-1..WP-11, uma passada única de reorganização: congelar a Constituição, marcar as pétreas, arquivar planos concluídos e reconstruir o índice de docs.
+- **Aceite:** repo navegável pela hierarquia declarada; nenhuma doc contradiz ADR aceito.
+
 ## 6. Cercas (não fazer)
 
 - Não criar pacote de kernel novo sem **2+ consumidores reais** (ADR-001).
@@ -279,6 +327,12 @@ Unidade de composição
 - P5: qual o teto de tamanho do orquestrador antes de virar god-module — e como medir?
 - P6: unidades de composição viram pacotes pip algum dia? (preliminar: não; ADR-005/019/022)
 - P7: o read-side ganha a mesma taxonomia? (frente separada; ADR-012/014 já governa)
+**Recomendações (para o dono decidir):**
+
+- **P1 — motor de condições virar pacote?** Recomendação: **não agora**. Definir o contrato `Quote { base, conditions[], total }` já; extrair para pacote só quando (a) o motor não tiver vocabulário de outro domínio, (b) houver 2+ consumidores reais, (c) o ruleset não couber mais em código.
+- **P4 — a Instância é arquivo ou DB?** Recomendação: **DB é a verdade de runtime**; um descritor versionado (YAML/JSON) serve para bootstrap e diff (`instance-apply` / `instance-dump`). Nunca duas verdades.
+- **P6 — unidades de composição viram pacotes?** Recomendação: **não**. Elas vivem no orquestrador (ADR-005 §3). Pacote só para domínio com invariante/ledger próprio (ADR-022).
+
 
 ---
 
