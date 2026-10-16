@@ -36,6 +36,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from shopman.stockman.protocols.sku import PromiseReasonCode
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.models import Channel
@@ -46,6 +47,11 @@ logger = logging.getLogger(__name__)
 
 CART_SOURCE_SKU_META = "cart_source_sku"
 BUNDLE_PARENT_SKU_META = "cart_bundle_sku"
+
+
+def _reason_value(reason: PromiseReasonCode | str | None) -> str | None:
+    """Serialize the canonical enum while preserving non-promise gate codes."""
+    return reason.value if isinstance(reason, PromiseReasonCode) else reason
 
 
 def _cart_hold_metadata(source_sku: str, *, bundle_parent_sku: str | None = None) -> dict[str, str]:
@@ -595,7 +601,7 @@ def _stock_decision(_adapter, sku: str, qty_d: Decimal, info: dict, *, target_da
         "available_qty": decision.available_qty,
         "orderable_ceiling": decision.orderable_ceiling,
         "is_tracked": decision.is_tracked,
-        "reason_code": decision.reason_code.value if decision.reason_code is not None else None,
+        "reason_code": decision.reason_code,
         "is_paused": decision.is_paused,
         "is_planned": decision.is_planned,
         "target_date": decision.target_date,
@@ -1009,8 +1015,9 @@ def _reserve_checked_status(
             "available_qty": status["available_qty"],
             "is_paused": status["is_paused"],
             "is_planned": status.get("is_planned", False),
-            "error_code": status.get("error_code") or (
-                "paused" if status["is_paused"] else "insufficient_stock"
+            "error_code": _reason_value(
+                status.get("error_code")
+                or (PromiseReasonCode.PAUSED if status["is_paused"] else PromiseReasonCode.INSUFFICIENT_SUPPLY)
             ),
             "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
         }
@@ -1084,7 +1091,7 @@ def _reserve_checked_status(
                 "available_qty": partial["available_qty"],
                 "is_paused": False,
                 "is_planned": False,
-                "error_code": "insufficient_stock",
+                "error_code": PromiseReasonCode.INSUFFICIENT_SUPPLY.value,
                 "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
             }
 
@@ -1454,7 +1461,9 @@ def _reconcile_simple(
                 "available_qty": status["available_qty"],
                 "is_paused": status.get("is_paused", False),
                 "is_planned": status.get("is_planned", False),
-                "error_code": status.get("error_code") or "insufficient_stock",
+                "error_code": _reason_value(
+                    status.get("error_code") or PromiseReasonCode.INSUFFICIENT_SUPPLY
+                ),
                 "substitutes": substitutes.find(sku, qty=delta, channel=channel_ref),
             }
 
@@ -1485,7 +1494,7 @@ def _reconcile_simple(
                 "released_ids": [],
                 "available_qty": split["available_qty"],
                 "is_paused": False,
-                "error_code": "insufficient_stock",
+                "error_code": PromiseReasonCode.INSUFFICIENT_SUPPLY.value,
                 "substitutes": substitutes.find(sku, qty=delta, channel=channel_ref),
             }
 

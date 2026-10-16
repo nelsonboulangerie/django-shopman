@@ -227,7 +227,7 @@ def test_sem_saldo_na_data_recusa_e_nada_muda(vitrine):
     with pytest.raises(EditRefused) as refused:
         order_edit.edit(order, lines=[{"line_id": "L1", "sku": BAGUETE, "qty": 5}], actor="pos:marina")
 
-    assert refused.value.code == "insufficient_stock"
+    assert refused.value.code == "insufficient_supply"
     assert "Baguete não tem saldo" in refused.value.message
     order.refresh_from_db()
     assert not order_composition.is_adjusted(order)

@@ -46,7 +46,7 @@ def _shortage_status(available=0):
         "is_paused": False,
         "is_planned": False,
         "breakdown": {},
-        "error_code": "insufficient_stock",
+        "error_code": "insufficient_supply",
         "is_bundle": False,
         "failed_sku": None,
     }
@@ -262,7 +262,7 @@ class TestReconcileSimple:
         result = reconcile("X", Decimal("999"), session_key="s1", channel_ref="web")
 
         assert result["ok"] is False
-        assert result["error_code"] == "insufficient_stock"
+        assert result["error_code"] == "insufficient_supply"
         assert result["substitutes"] == [{"sku": "ALT-1"}]
         adapter.create_hold.assert_called_once()
         mock_check.assert_called_once()
@@ -577,7 +577,7 @@ class TestCartReconcileIntegration:
             "released_ids": [],
             "available_qty": Decimal("3"),
             "is_paused": False,
-            "error_code": "insufficient_stock",
+            "error_code": "insufficient_supply",
             "substitutes": [],
         }
         # A linha segura 2: o 409 publica o TETO da linha (2 + 3 livres), não o livre.

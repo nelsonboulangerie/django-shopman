@@ -306,8 +306,10 @@ def _move_holds(order, day: date_type) -> None:
 
 
 def _stock_refusal(order, exc, day: date_type) -> str:
+    from shopman.stockman.protocols.sku import PromiseReasonCode
+
     context = getattr(exc, "context", None) or {}
-    if exc.code == "insufficient_stock":
+    if exc.code == PromiseReasonCode.INSUFFICIENT_SUPPLY.value:
         sku = context.get("sku") or context.get("component_sku") or ""
         name = next(
             (item.name for item in order_composition.effective_items(order) if item.sku == sku),

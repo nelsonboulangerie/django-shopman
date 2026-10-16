@@ -98,7 +98,7 @@ def hold(order, *, require_all: bool = False) -> None:
     é o sinal de "já executou".
 
     ``require_all=True`` (gate de commit, ``lifecycle.secure_stock``): componente
-    rastreado sem reserva possível levanta ``ValidationError(insufficient_stock)``
+    rastreado sem reserva possível levanta a recusa externa de falta de estoque
     em vez do caminho brando (alerta + continue). Chamado DENTRO da transação do
     ``CommitService._do_commit`` — a exceção desfaz o pedido inteiro, e é isso que
     impede o oversell: o ``select_for_update`` de Quant no Stockman serializa os
@@ -106,7 +106,7 @@ def hold(order, *, require_all: bool = False) -> None:
     pedido existir.
 
     Dois gates de política de canal vivem aqui, no mesmo molde do
-    ``insufficient_stock`` (falha limpa no require_all: sem pedido, sem hold;
+    recusa de falta de estoque (falha limpa no require_all: sem pedido, sem hold;
     alerta de operador no caminho brando):
 
     - ``unknown_sku``: SKU fora do CATÁLOGO em canal com
@@ -294,7 +294,7 @@ def hold(order, *, require_all: bool = False) -> None:
                             order, item, comp_sku, lead_time_earliest
                         )
                     if _sku_known_to_catalog(comp_sku):
-                        raise _insufficient_stock_error(
+                        raise _insufficient_supply_error(
                             item, comp_sku, unmet_qty, result.get("error_code")
                         )
                     if not allow_untracked:
@@ -565,7 +565,7 @@ def reconcile_to_items(order, *, items: list[dict], reference: str, require_all:
     caminho brando do ``hold``: venda acima do estoque de verdade é fato
     operacional, não erro de programa. ``require_all=True`` é o gate do balcão:
     quem edita a encomenda está com o cliente na linha e pode escolher outra
-    coisa, então o que falta levanta ``ValidationError(insufficient_stock)`` e a
+    coisa, então o que falta levanta a recusa externa de falta de estoque e a
     transação do chamador desfaz tudo — reservas inclusive. O iFood segue no
     caminho brando: lá a alteração já aconteceu do lado do cliente.
 
@@ -666,7 +666,7 @@ def _reconcile_increase(
     if require_all:
         covered = sum((part_qty for _hold_id, part_qty in parts), Decimal("0"))
         if covered < qty:
-            raise _insufficient_stock_error({"sku": sku}, sku, qty, "")
+            raise _insufficient_supply_error({"sku": sku}, sku, qty, "")
     remaining = qty
     for hold_id, part_qty in parts:
         entries.append({"sku": sku, "hold_id": hold_id, "qty": float(part_qty)})
@@ -686,7 +686,13 @@ def _reconcile_increase(
             summary["gaps"].append({"sku": sku, "qty": float(part_qty), "reason": "fulfill_failed"})
     if remaining > 0:
         _alert_hold_gap(order, sku, remaining, "patched_increase")
-        summary["gaps"].append({"sku": sku, "qty": float(remaining), "reason": "insufficient_stock"})
+        from shopman.stockman.protocols.sku import PromiseReasonCode
+
+        summary["gaps"].append({
+            "sku": sku,
+            "qty": float(remaining),
+            "reason": PromiseReasonCode.INSUFFICIENT_SUPPLY.value,
+        })
 
 
 def _reconcile_decrease(adapter, order, sku, qty, entries, summary, *, hold_kwargs, reference) -> None:
@@ -790,7 +796,7 @@ def _sku_known_to_catalog(sku: str) -> bool:
 def _require_current_sellability(adapter, item: dict, sku: str, qty, *, channel_ref: str | None) -> None:
     # Unknown SKUs retain the channel's explicit allow_untracked policy below.
     if _sku_known_to_catalog(sku) and adapter.get_availability(sku).get("is_paused") is True:
-        raise _insufficient_stock_error(item, sku, qty, "SKU_PAUSED")
+        raise _insufficient_supply_error(item, sku, qty, "SKU_PAUSED")
     # O ``is_paused`` do Stockman só enxerga a pausa GLOBAL (Product). A pausa
     # POR CANAL mora no ListingItem do canal — a mesma régua de
     # ``availability.decide``. Só a pausa explícita recusa: canal sem listing
@@ -799,18 +805,19 @@ def _require_current_sellability(adapter, item: dict, sku: str, qty, *, channel_
 
     listing_item = _sku_in_channel_listing(sku, channel_ref)
     if isinstance(listing_item, dict) and not listing_item.get("is_sellable", True):
-        raise _insufficient_stock_error(item, sku, qty, "SKU_PAUSED")
+        raise _insufficient_supply_error(item, sku, qty, "SKU_PAUSED")
 
 
-def _insufficient_stock_error(item: dict, comp_sku: str, qty, error_code):
+def _insufficient_supply_error(item: dict, comp_sku: str, qty, error_code):
     """ValidationError do gate de commit — o CommitService trata como falha
     conhecida (idempotency key vira failed) e a superfície mapeia para erro
     de checkout amigável (``checkout.map_checkout_error``)."""
     from shopman.orderman.exceptions import ValidationError
+    from shopman.stockman.protocols.sku import PromiseReasonCode
 
     display = item.get("name") or item.get("sku") or comp_sku
     return ValidationError(
-        code="insufficient_stock",
+        code=PromiseReasonCode.INSUFFICIENT_SUPPLY.value,
         message=(
             f"{display} ficou indisponível antes de concluirmos a sua reserva. "
             "Ajuste o carrinho e tente novamente, por favor."
@@ -826,7 +833,7 @@ def _insufficient_stock_error(item: dict, comp_sku: str, qty, error_code):
 
 def _unknown_sku_error(item: dict, comp_sku: str):
     """ValidationError do gate ``allow_untracked=False`` — mesmo dialeto do
-    ``insufficient_stock``: o CommitService desfaz a transação (sem pedido,
+    recusa de estoque: o CommitService desfaz a transação (sem pedido,
     sem hold) e a superfície mapeia via ``checkout.map_checkout_error``."""
     from shopman.orderman.exceptions import ValidationError
 
@@ -847,7 +854,7 @@ def _unknown_sku_error(item: dict, comp_sku: str):
 def _lead_time_error(order, item: dict, comp_sku: str, earliest):
     """ValidationError do gate de lead time — demanda para data mais cedo que a
     antecedência do produto/canal. Mensagem omotenashi com a primeira data
-    possível; mesmo dialeto do ``insufficient_stock``."""
+    possível; mesmo dialeto da recusa de estoque."""
     from shopman.orderman.exceptions import ValidationError
 
     display = item.get("name") or item.get("sku") or comp_sku

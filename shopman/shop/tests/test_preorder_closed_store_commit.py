@@ -18,7 +18,7 @@ decisão de produto 2026-07-14 — encomenda é cidadã de 1ª classe):
   default) → o commit FECHA registrando DEMANDA (hold ``quant=None`` datado),
   que alimenta a sugestão de produção e materializa com prioridade na fornada;
 - canal com ``stock.preorder=False`` (PDV, marketplace) → o gate REPROVA
-  (`insufficient_stock`) e nenhum pedido nasce.
+  (`insufficient_supply`) e nenhum pedido nasce.
 
 É a versão determinística (sequencial, SQLite) do gate; irmã de
 `test_commit_stock_gate.py`, mas no eixo de DATA (encomenda), não de quantidade.
@@ -139,7 +139,7 @@ class PreorderClosedStoreCommitTests(TestCase):
     def test_preorder_for_day_without_production_registers_demand(self) -> None:
         """Dia sem produção planejada ("segunda"): a encomenda FECHA registrando demanda.
 
-        Era o beco sem saída do QA (recusa por ``insufficient_stock``); a
+        Era o beco sem saída do QA (recusa por ``insufficient_supply``); a
         decisão de produto do WP-C inverte: o canal aceita encomenda por
         padrão, a demanda vira hold datado ``quant=None`` que alimenta a
         sugestão de produção e materializa com prioridade de pedido.
@@ -177,7 +177,7 @@ class PreorderClosedStoreCommitTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             _commit("PRE-REJ", self.channel.ref, "PRE-KEY-REJ")
 
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(ctx.exception.context.get("sku"), SKU)
         self.assertEqual(Order.objects.filter(channel_ref=self.channel.ref).count(), 0)
         self.assertEqual(Session.objects.get(session_key="PRE-REJ").state, "open")

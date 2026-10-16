@@ -359,7 +359,7 @@ def apply(conversation, pending: dict) -> Outcome:
                 envelope={"version": 3, "order_ref": order.ref, "turn_fence": conversation.turn_fence},
             )
     except order_edit.EditRefused as exc:
-        if exc.code == "insufficient_stock":
+        if exc.code == "insufficient_supply":
             return _refused(order, entries, _STOCK_REASON.format(items=items_text(entries)))
         order.refresh_from_db()
         return _refused(order, entries, _reason_for(order, exc.code))

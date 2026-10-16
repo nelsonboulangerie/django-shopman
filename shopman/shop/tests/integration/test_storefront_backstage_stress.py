@@ -305,7 +305,7 @@ class InsufficientStockCommitTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             _commit("STRESS-GATE-SS-001", self.channel.ref, "STRESS-GATE-KEY-001")
 
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         # Transação inteira desfeita: nada de pedido órfão nem reserva vazada.
         self.assertEqual(Order.objects.filter(channel_ref=self.channel.ref).count(), 0)
         self.assertEqual(_active_holds(self.SKU).count(), 0)
@@ -414,10 +414,10 @@ class OversellRaceTests(TransactionTestCase):
         self.assertEqual(order_count, len(successes))
         self.assertEqual(order_count, 3)
 
-        # Perdedores falharam LIMPO (insufficient_stock) — nunca erro cru de DB.
+        # Perdedores falharam LIMPO (insufficient_supply) — nunca erro cru de DB.
         for _, _, exc in failures:
             self.assertIsInstance(exc, ValidationError)
-            self.assertEqual(exc.code, "insufficient_stock")
+            self.assertEqual(exc.code, "insufficient_supply")
 
         # Reservas ativas pertencem SÓ aos vencedores; nada preso dos perdedores.
         active = list(_active_holds(self.SKU))
@@ -483,7 +483,7 @@ class PositionExclusionTests(TestCase):
         _open_session(self.remote.ref, "STRESS-SCOPE-SS-002", self.SKU, qty=1)
         with self.assertRaises(ValidationError) as ctx:
             _commit("STRESS-SCOPE-SS-002", self.remote.ref, "STRESS-SCOPE-KEY-002")
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(Order.objects.count(), 0)
 
         # Balcão (sem exclusão) vende o mesmo saldo normalmente.
@@ -588,7 +588,7 @@ class PreorderPlannedStockTests(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             _commit("STRESS-PRE-SS-002", self.no_preorder.ref, "STRESS-PRE-KEY-002")
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(Order.objects.count(), 0)
         self.assertEqual(_active_holds(self.SKU).count(), 0)
 

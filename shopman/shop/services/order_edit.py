@@ -1348,10 +1348,12 @@ def _brl(value_q: int) -> str:
 
 
 def _stock_refusal(order, exc, items: list[dict]) -> str:
+    from shopman.stockman.protocols.sku import PromiseReasonCode
+
     from shopman.shop.services.order_helpers import get_commitment_date
 
     context = getattr(exc, "context", None) or {}
-    if exc.code == "insufficient_stock":
+    if exc.code == PromiseReasonCode.INSUFFICIENT_SUPPLY.value:
         sku = context.get("sku") or context.get("component_sku") or ""
         name = next((item.get("name") for item in items if item.get("sku") == sku), None) or sku
         day = get_commitment_date(order)

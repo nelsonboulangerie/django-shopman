@@ -66,7 +66,7 @@ SOLD_OUT_RESULT = {
     "is_paused": False,
     "is_planned": False,
     "breakdown": {"ready": Decimal("0"), "in_production": Decimal("0")},
-    "error_code": "insufficient_stock",
+    "error_code": "insufficient_supply",
     "is_bundle": False,
     "failed_sku": None,
 }
