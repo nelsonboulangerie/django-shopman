@@ -96,6 +96,7 @@ class ExternalMonitoringContractCheck:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             endpoints = payload["uptime"]
+            uptime_policy = payload["uptime_policy"]
             rate = payload["error_rate"]
             notification = payload["notification"]
             delivery = notification["delivery_assurance"]
@@ -104,13 +105,15 @@ class ExternalMonitoringContractCheck:
             trigger_types = notification["trigger_types"]
             detector_names = [item["name"] for item in endpoints] + [rate["name"]]
             valid = (
-                payload["schema_version"] == 2
+                payload["schema_version"] == 3
                 and bool(payload["organization"])
                 and bool(payload["project"])
                 and payload["environment"] == "production"
                 and isinstance(endpoints, list)
-                and len(endpoints) == 2
-                and len({item["url"] for item in endpoints}) == 2
+                and len(endpoints) == 1
+                and uptime_policy["maximum_active_monitors"] == 1
+                and not isinstance(uptime_policy["maximum_active_monitors"], bool)
+                and endpoints[0]["url"] == "https://status.boulangerie.com.br/api/watchman-readiness"
                 and all(
                     item["url"].startswith("https://")
                     and item["interval_seconds"] == 60
@@ -152,8 +155,8 @@ class ExternalMonitoringContractCheck:
                     "target_resolution": "sentry_members_api",
                 },
                 remediation=(
-                    "Declare both services, cadence, rate alert, opening/recovery triggers and the dedicated "
-                    "Sentry member route to ti@."
+                    "Declare the single composite readiness monitor, free-plan limit, cadence, rate alert, "
+                    "opening/recovery triggers and the dedicated Sentry member route to ti@."
                 ),
             )
         if not os.environ.get("SENTRY_AUTH_TOKEN", "").strip():
