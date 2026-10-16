@@ -297,13 +297,15 @@ class TestStockConformance:
             "approved": True,
             "sku": "PAIN-AU-CHOCOLAT",
             "requested_qty": Decimal("2"),
-            "available_qty": Decimal("999"),
+            "available_qty": None,
+            "orderable_ceiling": None,
+            "is_tracked": False,
             "reason_code": None,
             "is_paused": False,
             "is_planned": False,
             "target_date": None,
             "failed_sku": None,
-            "source": "stock.untracked",
+            "source": "stock.promise_decision",
         }
 
         with _patch_config(cfg):

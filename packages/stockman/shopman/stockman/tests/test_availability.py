@@ -498,6 +498,8 @@ class TestPromiseDecision:
         assert decision.approved is True
         assert decision.reason_code is None
         assert decision.available_qty == Decimal("10")
+        assert decision.orderable_ceiling == Decimal("10")
+        assert decision.is_tracked is True
         assert decision.available == Decimal("10")
         assert decision.expected == Decimal("10")
         assert decision.planned == Decimal("0")
@@ -518,6 +520,7 @@ class TestPromiseDecision:
         assert decision.approved is False
         assert decision.reason_code == "insufficient_supply"
         assert decision.available_qty == Decimal("2")
+        assert decision.orderable_ceiling == Decimal("2")
 
     @override_settings(
         STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.PausedSkuValidator"}
@@ -536,6 +539,8 @@ class TestPromiseDecision:
         assert decision.approved is False
         assert decision.reason_code == "paused"
         assert decision.available_qty == Decimal("0")
+        assert decision.orderable_ceiling == Decimal("0")
+        assert decision.is_tracked is True
 
     @override_settings(
         STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.OrderableSkuValidator"}
@@ -555,6 +560,7 @@ class TestPromiseDecision:
         assert decision.expected == Decimal("0")
         assert decision.planned == Decimal("8")
         assert decision.available_qty == Decimal("8")
+        assert decision.orderable_ceiling == Decimal("8")
 
     @override_settings(
         STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.OrderableSkuValidator"}
@@ -583,6 +589,7 @@ class TestPromiseDecision:
         assert decision.expected == Decimal("30")
         assert decision.planned == Decimal("20")
         assert decision.available_qty == Decimal("50")
+        assert decision.orderable_ceiling == Decimal("50")
 
     @override_settings(
         STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.StockOnlySkuValidator"}
@@ -598,6 +605,7 @@ class TestPromiseDecision:
         assert decision.availability_policy == "stock_only"
         assert decision.approved is False
         assert decision.available_qty == Decimal("0")
+        assert decision.orderable_ceiling == Decimal("0")
         assert decision.planned == Decimal("5")
 
     @override_settings(
@@ -607,7 +615,27 @@ class TestPromiseDecision:
         decision = promise_decision_for_sku(product.sku, Decimal("7"), target_date=today)
         assert decision.availability_policy == "demand_ok"
         assert decision.approved is True
-        assert decision.available_qty == Decimal("7")
+        assert decision.available_qty is None
+        assert decision.orderable_ceiling is None
+        assert decision.is_tracked is False
         assert decision.available == Decimal("0")
         assert decision.expected == Decimal("0")
         assert decision.planned == Decimal("0")
+
+    @override_settings(
+        STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.DemandOkSkuValidator"}
+    )
+    def test_demand_ok_keeps_tracked_zero_as_fact_not_ceiling(self, product, vitrine, today):
+        Quant.objects.create(
+            sku=product.sku,
+            position=vitrine,
+            target_date=today,
+            _quantity=Decimal("0"),
+        )
+
+        decision = promise_decision_for_sku(product.sku, Decimal("7"), target_date=today)
+
+        assert decision.approved is True
+        assert decision.available_qty == Decimal("0")
+        assert decision.orderable_ceiling is None
+        assert decision.is_tracked is True

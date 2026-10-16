@@ -933,7 +933,8 @@ def bundle_availability_from_components(
     Cada entrada e ``(qty_por_bundle, component_raw_avail)``.
 
     Regras (espelham ``basic_availability`` no nivel do componente):
-    - componente sem dado de estoque (``None``) ou ``demand_ok`` → nao limita;
+    - componente sem ledger (``None`` ou ``is_tracked=false``) ou
+      ``demand_ok`` → nao limita;
     - qualquer componente pausado → bundle pausado (nao ha como montar);
     - senao, o componente que rende menos bundles vira o gargalo, e seus flags
       (``is_planned``) definem se o zero-fisico e PLANNED_OK ou UNAVAILABLE.
@@ -951,6 +952,8 @@ def bundle_availability_from_components(
             continue
         if raw is None:
             continue  # componente sem tracking de estoque: nao e gargalo
+        if raw.get("is_tracked") is False:
+            continue  # ausência de ledger não significa saldo zero
         if raw.get("is_paused", False):
             return {
                 "is_paused": True,

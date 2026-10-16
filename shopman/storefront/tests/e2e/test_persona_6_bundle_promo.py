@@ -52,13 +52,26 @@ def test_bundle_availability_follows_scarcest_component(client):
     assert card["can_add_to_cart"] is True
 
 
-def test_bundle_unavailable_when_a_component_is_out_of_stock(client):
-    _seed(croissant_stock=None, mini_stock=20)  # croissant has no stock at all
+def test_bundle_with_untracked_component_uses_tracked_component_limit(client):
+    _seed(croissant_stock=None, mini_stock=20)
+    card = _card(client, COMBO)
+    assert card["available_qty"] == 20
+    assert card["can_add_to_cart"] is True
+
+    status, body = J.set_cart_qty(client, COMBO, 1)
+    assert status == 200, body
+
+
+def test_bundle_unavailable_when_tracked_component_is_sold_out(client):
+    from shopman.stockman import stock
+    from shopman.stockman.models import Quant
+
+    _seed(croissant_stock=1, mini_stock=20)
+    stock.adjust(Quant.objects.get(sku=CROISSANT), 0, reason="sold out")
     card = _card(client, COMBO)
     assert card["availability"] == "unavailable"
     assert card["can_add_to_cart"] is False
 
-    # And the cart refuses to add it.
     status, body = J.set_cart_qty(client, COMBO, 1)
     assert status == 409, body
 
