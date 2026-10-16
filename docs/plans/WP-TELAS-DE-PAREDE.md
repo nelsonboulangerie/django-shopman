@@ -242,8 +242,9 @@ Criar um domínio `Telas` reabriria exatamente o que a ADR-018 fechou — e prod
 terceira maquinaria para "o que esta superfície mostra e a que preço", que é o erro que
 a ADR-011 nomeou ao recusar `FormulaPlan`.
 
-**(b) Tela não tem pergunta canônica própria.** Pela constituição §8.3 ("isto é core do
-domínio? plugin do domínio? conveniência de framework?"), uma tela não responde nada que
+**(b) Tela não tem pergunta canônica própria.** Pela
+[Constituição C5](../constitution.md#c5-uma-decisão-tem-um-dono), uma pergunta canônica tem
+um dono. Uma tela não responde nada que
 já não seja de outro: o que está à venda e a que preço é do `offerman`; o que sai do
 forno e quando é do `craftsman`; de quem é o pedido que ficou pronto é do `orderman`;
 quanto está sendo cobrado agora é do `payman`. **Uma tela re-apresenta respostas; ela não
@@ -746,7 +747,8 @@ Por que isso não contradiz a §3, e por que não é domínio novo:
 - **O conteúdo continua sendo `Channel`.** `shows` aponta para o canal de exibição; a
   ADR-018 fica intacta. Nenhum segundo mecanismo de "o que esta superfície mostra".
 - **Ela responde uma pergunta que hoje ninguém responde:** *qual TV é esta, onde ela
-  está, e o que ela está mostrando agora.* Pela constituição §8.3, isso é **registro de
+  está, e o que ela está mostrando agora.* Pela
+  [Constituição C5](../constitution.md#c5-uma-decisão-tem-um-dono), isso é **registro de
   dispositivo**, não conceito de negócio — a mesma natureza do `Terminal` do `cashman`
   (*"o dispositivo onde a gaveta está"*), que já tem exatamente esta forma:
   `ref`/`label`/`channel_ref`/`location_ref`/`is_active`/`metadata`. **O precedente

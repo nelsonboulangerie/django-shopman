@@ -126,7 +126,8 @@ Cashman é o precedente explícito. Detalhe: [ADR-022](decisions/adr-022-cashman
 | Instância | Quais dados, configuração e marca parametrizam a aplicação? |
 
 O inventário físico e a topologia completa pertencem à documentação de arquitetura, não à
-Constituição.
+Constituição. O vocabulário curado de perguntas, verbos, estados, sinais e eventos de cada
+pacote vive no [mapa semântico](reference/semantic-map.md).
 
 ## 4. Cortes semânticos que não podem regredir
 

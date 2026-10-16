@@ -115,6 +115,7 @@ Documentação de consulta rápida gerada a partir do código.
 | [Comprovante de Entrega](reference/comprovante-de-entrega.md) | Avisos ao cliente: aceite × entrega, o que cada canal comprova, quais avisos são críticos e por quê |
 | [Sinais (Signals)](reference/signals.md) | Sinais emitidos e consumidos por cada app, payload e fluxos |
 | [Glossário](reference/glossary.md) | Termos de domínio: Quant, Hold, Move, Session, Order, Channel, etc. |
+| [Mapa semântico dos pacotes](reference/semantic-map.md) | Pergunta canônica, verbos, estados, sinais e eventos de cada diretório físico de `packages/` |
 | [Data Schemas](reference/data-schemas.md) | Inventário de chaves em Session.data, Order.data, Directive.payload |
 | [Headless Surface Contract](reference/headless-surface-contract.md) | Contrato canônico para Nuxt, Ionic, ManyChat, POS e futuras superfícies: Projection com Actions |
 | [Contrato da superfície Marketing](reference/marketing-surface-contract.md) | Ownership, rotas verificadas, plataformas, capabilities, flags, probes e estado de rollout |

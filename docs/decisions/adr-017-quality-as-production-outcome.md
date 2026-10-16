@@ -24,7 +24,9 @@
 > grep de `nonconformity`/`percent_for_lot`/`sells_nonconforming` retornava
 > nada). Consequência: o §4 "stockman não muda" caiu — a implementação criou as
 > duas colunas em `Batch` (stockman `0002`), porque o lote É o dono do fato e
-> escondê-lo em JSON violaria a constituição §2.5. Os consumidores da Onda 14
+> escondê-lo em JSON violaria a
+> [Constituição v1 §2.5 (histórica)](../_archive/constitution-v1.md#25-evento-é-diferente-de-estado).
+> Os consumidores da Onda 14
 > (preço por lote na venda, write-off no fechamento, gate `sells_nonconforming`)
 > seguem por construir — são a frente da aposentadoria do D-1.
 
@@ -49,7 +51,9 @@ visibilidade (`ChannelConfig.stock.sells_nonconforming`). Nada disso precisa mud
 guarda uma string de tres valores, sem coluna, sem historico, sobrescrita a cada finish. O
 proprio codigo se declara atalho (`backstage/services/production.py:151`, *"sem migracao"*), e
 o literal esta duplicado entre `broadcast.QUALITY_LEVELS` e `production.QUALITY_CHOICES`. A
-constituicao ja julgou esse padrao (§2.5): *"Se um pacote usa `JSONField` para esconder seu
+A Constituição v1 já julgou esse padrão
+([§2.5, histórica](../_archive/constitution-v1.md#25-evento-é-diferente-de-estado)):
+*"Se um pacote usa `JSONField` para esconder seu
 contrato real, ele ainda nao terminou sua semantica."*
 
 **Terceiro: `WorkOrder.finished` e um escalar onde o dominio tem uma particao.** Uma fornada de
@@ -64,7 +68,9 @@ de uma particao que o `finish()` ja sabe receber — `execution.py:197-220` acei
 
 ### 1. Nao existe pacote `quality`, nem contrib `quality`
 
-Aplicando a constituicao §8.3 ("isto e core do dominio? plugin do dominio? conveniencia de
+Aplicando a
+[Constituição v1 §8.3 (histórica)](../_archive/constitution-v1.md#83-toda-extensão-futura-deve-responder-três-perguntas)
+("isto e core do dominio? plugin do dominio? conveniencia de
 framework?"), a resposta e **os tres, em camadas diferentes** — e nenhuma delas e um dominio
 novo.
 
@@ -74,12 +80,15 @@ dono** para um fato que ja tem dois — exatamente o erro que a ADR-011 nomeou a
 `FormulaPlan`: *"introduziria um segundo source of truth para o mesmo fato operacional."*
 
 Um contrib `craftsman.contrib.quality` **com models** poria a escala de uma padaria dentro de
-um pacote core, contra a constituicao §2.6: *"Nenhum pacote core pode nascer semanticamente
+um pacote core, contra a
+[Constituição v1 §2.6 (histórica)](../_archive/constitution-v1.md#26-o-default-não-pode-poluir-a-ontologia):
+*"Nenhum pacote core pode nascer semanticamente
 dependente de uma instancia especifica."*
 
 Qualidade nao e uma pergunta canonica propria. E **metade da resposta a uma pergunta que o
-`craftsman` ja faz**: *"o que deve ser produzido... e com qual resultado real?"* (constituicao
-§4.3). O `craftsman` ja responde a quantidade do resultado. Falta responder a natureza dele.
+`craftsman` ja faz**: *"o que deve ser produzido... e com qual resultado real?"* (ver
+[mapa semântico do Craftsman](../reference/semantic-map.md#craftsman)). O `craftsman` ja
+responde a quantidade do resultado. Falta responder a natureza dele.
 
 ### 2. Craftsman core ganha tres colunas opacas em `WorkOrderItem`
 
@@ -219,8 +228,9 @@ No finish, o framework resolve `QualityGrade.markdown_percent` e **grava o numer
 em `Batch.nonconformity_percent`. A partir dai o lote carrega o proprio percentual. Mudar a
 tabela amanha nao reescreve os lotes de ontem.
 
-Nao ha constante em codigo (virou config) e o lote continua dono do numero (virou snapshot,
-constituicao §3.3). `percent_for_lot` nao muda em uma linha: continua arbitrando
+Nao ha constante em codigo (virou config) e o lote continua dono do numero (virou snapshot;
+ver [Constituição §5](../constitution.md#5-regras-de-modelagem)). `percent_for_lot` nao muda em
+uma linha: continua arbitrando
 `max(automatic, declared)`.
 
 ### 8. Os numeros nao vao para um B.I.
@@ -239,7 +249,9 @@ Um app de B.I. permanece frente separada.
 
 - Nenhum pacote novo, nenhum contrib novo, nenhum model no core.
 - Craftsman fica **mais** agnostico: passa a expressar particao de resultado, capacidade
-  generica de manufatura que faltava (constituicao §4.3 lista "falta uma linguagem oficial para
+  generica de manufatura que faltava (a
+  [Constituição v1 §4.3 (histórica)](../_archive/constitution-v1.md#43-craftsman) lista
+  "falta uma linguagem oficial para
   perdas, rendimento" como desalinhamento atual).
 - Some um source of truth (`meta["quality"]`) e some um literal duplicado (`QUALITY_LEVELS`).
 - O split de lote deixa de ser feature e vira consequencia de uma chamada.
@@ -342,7 +354,8 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
 fronteira. Terceiro dono de um fato que ja tem dois (ADR-011).
 
 **Contrib `craftsman.contrib.quality` com models.** Poe politica de instancia dentro de pacote
-core (constituicao §2.6). E as superficies nao podem importar `contrib.<x>` diretamente
+core ([Constituição §5](../constitution.md#5-regras-de-modelagem)). E as superficies nao
+podem importar `contrib.<x>` diretamente
 (`test_import_boundaries:152`), entao exigiria reexport de nivel de pacote so para escapar da
 propria fronteira — sinal de que a camada esta no lugar errado.
 
@@ -374,7 +387,8 @@ objetos. "Admissivel" ordena bem, mas e registro de engenharia para uma tela de 
 
 ## Referencias
 
-- [Constituicao Semantica](../constitution.md) — §2.1, §2.5, §2.6, §3.3, §8.3
+- [Constituição v1 (histórica)](../_archive/constitution-v1.md) — bases históricas citadas acima
+- [Constituição vigente §5](../constitution.md#5-regras-de-modelagem)
 - [ADR-001 - Protocol/Adapter e fronteiras de core](adr-001-protocol-adapter.md)
 - [ADR-004 - String refs para identificadores cross-domain](adr-004-string-refs.md)
 - [ADR-011 - Formula sem FormulaPlan](adr-011-formula-and-cashshift.md)

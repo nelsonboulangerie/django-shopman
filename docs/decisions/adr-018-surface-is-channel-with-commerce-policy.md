@@ -42,7 +42,9 @@ renderizadores usam `Product.base_price_q` direto — o XML de Google/Meta em
 diferente do `base_price_q` do produto.** Ou seja, o defeito e **latente**, nao ativo: as duas fontes
 coincidem porque ninguem ainda precificou por canal. Ele se torna real no primeiro dia em que alguem
 usar a capacidade que o `ListingItem` sempre teve — e nesse dia o feed do Google passa a anunciar um
-preco que a loja nao cobra, o que a constituicao §2.3 proibe (nenhum pacote mente sobre o mundo), o
+preco que a loja nao cobra, o que a
+[Constituição v1 §2.3 (histórica)](../_archive/constitution-v1.md#23-nenhum-pacote-pode-mentir-sobre-o-mundo)
+proibe (nenhum pacote mente sobre o mundo), o
 que reprova item em Merchant Center por divergencia com a landing page, e o que a ADR-014 ja nomeou
 como o sintoma preco-vitrine x preco-carrinho.
 
@@ -77,9 +79,12 @@ um nome e prova de que o nome esta errado.
 
 ### 1. Nao existe `Showcase`. Superficie e `Channel`
 
-Aplicando a constituicao §8.3 ("isto e core do dominio? plugin do dominio? conveniencia de
+Aplicando a
+[Constituição v1 §8.3 (histórica)](../_archive/constitution-v1.md#83-toda-extensão-futura-deve-responder-três-perguntas)
+("isto e core do dominio? plugin do dominio? conveniencia de
 framework?"): exibir catalogo com preco e responder a mesma pergunta que vender — *o que esta sendo
-ofertado, em que apresentacao, com qual preco e elegibilidade* (§4.1). O que difere entre um feed e
+ofertado, em que apresentacao, com qual preco e elegibilidade* (ver
+[mapa semântico do Offerman](../reference/semantic-map.md#offerman)). O que difere entre um feed e
 um canal nao e a **natureza** da superficie; e **ate onde a interacao comercial vai**.
 
 Duas entidades para uma pergunta produzem o que o codigo ja exibe: maquinaria duplicada em volta de
@@ -126,11 +131,14 @@ de passo de dados e nada muda de comportamento no dia do deploy.
 
 Existem superficies com compra parcial — catalogo de WhatsApp que produz intencao de compra por
 mensagem, checkout nativo de Instagram/Facebook que nao opera no Brasil. Nenhuma esta implementada,
-e a constituicao §8.3 e clara: se a resposta e "nao sei", ainda nao entra. Por isso o terceiro valor
+e a [Constituição v1 §8.3 (histórica)](../_archive/constitution-v1.md#83-toda-extensão-futura-deve-responder-três-perguntas)
+e clara: se a resposta e "nao sei", ainda nao entra. Por isso o terceiro valor
 **nao e criado**.
 
 O que muda e a **forma**: `TextChoices` em vez de `is_transactional: bool`. Um booleano mentiria no
-meio — intencao de compra nao e exibicao nem venda — e a constituicao §2.4 proibe estado que embute
+meio — intencao de compra nao e exibicao nem venda — e a
+[Constituição v1 §2.4 (histórica)](../_archive/constitution-v1.md#24-estados-canônicos-precisam-ser-poucos-e-inequívocos)
+proibe estado que embute
 multiplas preocupacoes. A escolha do enum e o que permite `intent` entrar depois como terceiro valor
 sem quebra semantica. A forma admite o futuro; os valores nao o inventam.
 
@@ -457,7 +465,9 @@ teria casa nesse esquema. `feed` e `menuboard` ja sao os termos precisos dos doi
 as rotas e a opcao de menor custo e maior verdade.
 
 **`is_transactional: bool`.** Mais barato e mais legivel hoje, mas mente no meio: catalogo de WhatsApp
-com intencao de compra nao e exibicao nem venda. A constituicao §2.4 proibe estado que embute varias
+com intencao de compra nao e exibicao nem venda. A
+[Constituição v1 §2.4 (histórica)](../_archive/constitution-v1.md#24-estados-canônicos-precisam-ser-poucos-e-inequívocos)
+proibe estado que embute varias
 preocupacoes, e trocar booleano por enum depois custa mais do que nascer enum.
 
 **`commercial_policy`.** Adjetivo onde o precedente do repo usa substantivo: `availability_policy`,
@@ -482,7 +492,8 @@ houver dois feeds Google.
 
 ## Referencias
 
-- [Constituicao Semantica](../constitution.md) — §2.1, §2.3, §2.4, §2.6, §3.1, §4.1, §8.3, §10
+- [Constituição v1 (histórica)](../_archive/constitution-v1.md) — bases históricas citadas acima
+- [Constituição vigente C3](../constitution.md#c3-identidade-cross-domain-usa-refs-textuais)
 - [ADR-001 - Protocol/Adapter e fronteiras de core](adr-001-protocol-adapter.md)
 - [ADR-004 - String refs para identificadores cross-domain](adr-004-string-refs.md)
 - [ADR-011 - Formula sem FormulaPlan](adr-011-formula-and-cashshift.md)
