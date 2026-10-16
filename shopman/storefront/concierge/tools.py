@@ -751,7 +751,7 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
             if isinstance(sub, dict):
                 substitutes.append({"sku": sub.get("sku", ""), "name": sub.get("name", sub.get("sku", ""))})
         return _error(
-            "insufficient_stock" if not exc.is_paused else "paused",
+            "insufficient_supply" if not exc.is_paused else "paused",
             (
                 f"{item.name}: só há {available_total} agora."
                 if available_total

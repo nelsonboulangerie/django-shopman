@@ -539,7 +539,7 @@ class TestStockExactAndShortfall:
         _open_cart(ch.ref, "SS-B", "EX-SKU", 1)
         with pytest.raises(ValidationError) as exc:
             _commit("SS-B", ch.ref, "K-B")
-        assert exc.value.code == "insufficient_stock"
+        assert exc.value.code == "insufficient_supply"
         assert Order.objects.filter(channel_ref=ch.ref).count() == 1
 
 
@@ -589,7 +589,7 @@ class TestNoStockNoProduction:
         _open_cart(ch.ref, "NO-SS", "SEM-SKU", 2)
         with pytest.raises(ValidationError) as exc:
             _commit("NO-SS", ch.ref, "NO-K")
-        assert exc.value.code == "insufficient_stock"
+        assert exc.value.code == "insufficient_supply"
         assert Order.objects.filter(channel_ref=ch.ref).count() == 0
 
 
@@ -670,7 +670,7 @@ class TestPerishableVsShelfStable:
 
         with pytest.raises(ValidationError) as exc:
             _commit("PER-SS", ch.ref, "PER-K")
-        assert exc.value.code == "insufficient_stock"
+        assert exc.value.code == "insufficient_supply"
         assert Order.objects.filter(channel_ref=ch.ref).count() == 0
 
     def test_shelf_stable_can_use_today_stock_for_future(self):

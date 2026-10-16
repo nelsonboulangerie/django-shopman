@@ -103,7 +103,7 @@ class CommitStockGateTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             _commit("GATE-SS-001", self.channel.ref, "GATE-KEY-001")
 
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(ctx.exception.context.get("sku"), self.SKU)
         # A transação inteira desfez: nenhum pedido órfão, sessão continua aberta.
         self.assertEqual(Order.objects.filter(channel_ref=self.channel.ref).count(), 0)
@@ -136,7 +136,7 @@ class CommitStockGateTests(TestCase):
                 _commit(f"GATE-SEQ-{i:03d}", self.channel.ref, f"GATE-SEQ-KEY-{i:03d}")
                 results.append(True)
             except ValidationError as exc:
-                self.assertEqual(exc.code, "insufficient_stock")
+                self.assertEqual(exc.code, "insufficient_supply")
                 results.append(False)
 
         self.assertEqual(results, [True, True, True, False, False])
@@ -235,7 +235,7 @@ class CommitStockGateTests(TestCase):
         with self.assertRaises(ValidationError) as caught:
             _commit("GATE-CH-PAUSED", self.channel.ref, "GATE-CH-PAUSED-KEY")
 
-        self.assertEqual(caught.exception.code, "insufficient_stock")
+        self.assertEqual(caught.exception.code, "insufficient_supply")
         self.assertEqual(caught.exception.context["error_code"], "SKU_PAUSED")
         self.assertFalse(Order.objects.filter(session_key="GATE-CH-PAUSED").exists())
         self.assertEqual(Session.objects.get(session_key="GATE-CH-PAUSED").state, "open")

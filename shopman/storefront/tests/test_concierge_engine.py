@@ -524,7 +524,7 @@ def test_set_item_reserves_stock_and_tells_the_real_balance(ctx, conversation):
 
     short = tools.set_item(ctx, SKU, 20)
     assert short["ok"] is False
-    assert short["error"] == "insufficient_stock"
+    assert short["error"] == "insufficient_supply"
     assert short["available_qty"] == 10
 
     removed = tools.set_item(ctx, SKU, 0)

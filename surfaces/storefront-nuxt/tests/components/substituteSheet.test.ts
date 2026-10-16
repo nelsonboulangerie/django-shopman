@@ -20,7 +20,7 @@ async function setIssue (issue: unknown) {
 }
 
 const OUT_OF_STOCK = {
-  title: 'Esgotou', detail: 'x', error_code: 'insufficient_stock',
+  title: 'Esgotou', detail: 'x', error_code: 'insufficient_supply',
   sku: 'CROISSANT', name: 'Croissant', requested_qty: 2, available_qty: 0,
   is_paused: false, is_planned: false, actions: [], items: [],
   substitutes: [{ sku: 'PAO', name: 'Pão', price_q: 400, price_display: 'R$ 4,00', image_url: null, available_qty: 5, can_order: true, target_qty: 2, reason: undefined }]

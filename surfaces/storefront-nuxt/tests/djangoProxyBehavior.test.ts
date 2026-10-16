@@ -147,7 +147,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
   })
 
   it('preserva o status upstream (409) e devolve o corpo cru (sem envelope de erro)', async () => {
-    ;($fetch.raw as any).mockResolvedValueOnce(upstream(409, { error_code: 'insufficient_stock' }))
+    ;($fetch.raw as any).mockResolvedValueOnce(upstream(409, { error_code: 'insufficient_supply' }))
     const { event, res } = makeEvent({
       method: 'PUT',
       path: '/api/v1/cart/skus/X/',
@@ -158,7 +158,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     const data = await proxyDjangoPath(event, '/api/v1/cart/skus/X')
 
     expect(res.statusCode).toBe(409)
-    expect(data).toEqual({ error_code: 'insufficient_stock' })
+    expect(data).toEqual({ error_code: 'insufficient_supply' })
   })
 
   it('não repassa HTML de debug do Django quando uma API JSON falha', async () => {

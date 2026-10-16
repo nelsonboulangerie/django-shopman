@@ -2315,7 +2315,7 @@ class TestAvailabilityBundles:
                 return {
                     "ok": False, "available_qty": Decimal("0"),
                     "is_paused": False, "is_planned": False,
-                    "breakdown": {}, "error_code": "insufficient_stock",
+                    "breakdown": {}, "error_code": "insufficient_supply",
                     "is_bundle": False, "failed_sku": None,
                 }
             return {
@@ -2331,7 +2331,7 @@ class TestAvailabilityBundles:
         assert result["ok"] is False
         assert result["is_bundle"] is True
         assert result["failed_sku"] == "FARINHA-001"
-        assert result["error_code"] == "insufficient_stock"
+        assert result["error_code"] == "insufficient_supply"
 
     def test_bundle_components_are_checked_as_components(self):
         """Componente é conferido com ``as_component=True``: fora da listagem
@@ -2475,7 +2475,7 @@ class TestAvailabilityReserveBundles:
         adapter = MagicMock()
         adapter.create_hold.side_effect = [
             {"success": True, "hold_id": "hold:1"},
-            {"success": False, "error_code": "insufficient_stock"},
+            {"success": False, "error_code": "insufficient_supply"},
         ]
         mock_get_adapter.return_value = adapter
         mock_substitutes.find.return_value = [{"sku": "ALT-001"}]
@@ -2487,7 +2487,7 @@ class TestAvailabilityReserveBundles:
         )
 
         assert result["ok"] is False
-        assert result["error_code"] == "insufficient_stock"
+        assert result["error_code"] == "insufficient_supply"
         # Rollback: released the hold already created
         adapter.release_holds.assert_called_once_with(["hold:1"])
 

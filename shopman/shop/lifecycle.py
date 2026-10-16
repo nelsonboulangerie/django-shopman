@@ -203,7 +203,7 @@ def secure_stock(order) -> None:
     reserva desfaz a transação inteira e o pedido nunca nasce. Isso é o que
     impede oversell sob concorrência — o ``select_for_update`` de Quant no
     Stockman serializa os commits do mesmo SKU, e o checkout que chega sem
-    estoque falha com ``ValidationError(insufficient_stock)`` em vez de criar
+    estoque falha com a recusa externa de falta de estoque em vez de criar
     um pedido impossível de separar (e de cobrar o cliente por ele).
 
     Escopo segue o mesmo critério de ``ensure_confirmable``:

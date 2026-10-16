@@ -136,7 +136,7 @@ def test_order_hold_never_cedes_and_the_real_gap_alerts():
 
 def test_web_checkout_after_the_cession_is_refused_as_sold_out():
     """A sacola que cedeu descobre no checkout: pré-checagem "esgotado" e o gate
-    de commit recusa (``insufficient_stock``), sem pedido nem reserva."""
+    de commit recusa (``insufficient_supply``), sem pedido nem reserva."""
     from shopman.shop.projections.checkout import cart_stock_shortfalls
 
     _world(stock_qty=2)
@@ -151,7 +151,7 @@ def test_web_checkout_after_the_cession_is_refused_as_sold_out():
     web = _order(2, ref="WEB-1", channel_ref="web", session_key="sacola-web")
     with pytest.raises(ValidationError) as exc:
         stock_service.hold(web, require_all=True)
-    assert exc.value.code == "insufficient_stock"
+    assert exc.value.code == "insufficient_supply"
 
 
 def test_checkout_that_loaded_the_cart_before_the_cession_does_not_adopt_a_dead_hold(monkeypatch):
@@ -173,7 +173,7 @@ def test_checkout_that_loaded_the_cart_before_the_cession_does_not_adopt_a_dead_
     web = _order(2, ref="WEB-2", channel_ref="web", session_key="sacola-web")
     with pytest.raises(ValidationError) as exc:
         stock_service.hold(web, require_all=True)
-    assert exc.value.code == "insufficient_stock"
+    assert exc.value.code == "insufficient_supply"
     assert _get(cart_hold).metadata["reference"] == "sacola-web"
     assert _get(cart_hold).metadata["ceded_to"] == "order:BALCAO-1"
 

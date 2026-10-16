@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from shopman.orderman.exceptions import InvalidTransition
 from shopman.orderman.models import Directive, Order
+from shopman.stockman.protocols.sku import PromiseReasonCode
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.lifecycle import dispatch, ensure_confirmable
@@ -425,7 +426,9 @@ class TestOnCommitAvailabilityCheck:
             payment_timing="external", payment_method="cash",
         )
         mock_availability.decide.return_value = {
-            "approved": False, "reason_code": "insufficient_stock", "available_qty": 0,
+            "approved": False,
+            "reason_code": PromiseReasonCode.INSUFFICIENT_SUPPLY,
+            "available_qty": 0,
         }
         order = _make_order(
             snapshot={"items": [{"sku": "PAO-001", "qty": 5}], "data": {}},

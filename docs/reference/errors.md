@@ -135,7 +135,7 @@ resto sem quebrar:
 ```json
 {
   "detail": "Atualize a quantidade: temos menos em estoque.",
-  "error_code": "insufficient_stock",
+  "error_code": "insufficient_supply",
   "title": "Revise este item",
   "actions": [ ... ],
   "retry_after_seconds": 60
@@ -144,7 +144,7 @@ resto sem quebrar:
 
 | Chave | Presença | Uso |
 |-------|----------|-----|
-| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_stock`, `order_not_cancellable`, `contact_already_taken`…). |
+| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_supply`, `order_not_cancellable`, `contact_already_taken`…). |
 | `title` | Alertas ricos (carrinho) | Título curto do alerta quando a tela não deriva o próprio (o 404 NÃO carrega `title` — a tela gera pelo status). |
 | `actions` / `retry_after_seconds` | Rate-limit e conflitos | Ações de 1 clique e cadência de retry (`Retry-After` também vai no header). |
 | `payment_status` | 409 `order_not_cancellable` | Enum **cru** do pagamento (`pending`/`authorized`/`captured`) que explica *por que* o cancelamento foi recusado. É o único ponto onde `payment_status` aparece — o payload de tracking usa `payment_status_label` (rótulo humano), sem colisão de nome. |
