@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "confirm_order" | "print_labels";
+  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "confirm_order" | "allocate_blind_codes" | "print_labels";
   label: string;
   priority: number;
   enabled: boolean;
@@ -489,6 +489,7 @@ export interface ProductionWeighingProjection {
   scale_precision_display: string;
   scale_rounding_note: string;
   tickets: ProductionWeighingTicketProjection[];
+  codes_ready: boolean;
   print_destination: ProductionPrintDestinationProjection | null;
   access: ProductionSurfaceAccess;
   actions: ProductionActionProjection[];

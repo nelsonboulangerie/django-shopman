@@ -37,6 +37,11 @@ PRESENTATION_ROOTS = (
     STOREFRONT_ROOT / "presentation",
     BACKSTAGE_ROOT / "presentation",
 )
+READ_SIDE_ROOTS = (
+    SHOP_ROOT / "projections",
+    BACKSTAGE_ROOT / "projections",
+    STOREFRONT_ROOT / "presentation",
+)
 
 HOST_PREFIXES = (
     "config",
@@ -44,6 +49,25 @@ HOST_PREFIXES = (
     "shopman.storefront",
     "shopman.backstage",
 )
+
+DOMAIN_KERNEL_PACKAGES = {
+    "buyman",
+    "cashman",
+    "craftsman",
+    "doorman",
+    "fiscalman",
+    "guestman",
+    "offerman",
+    "orderman",
+    "payman",
+    "stockman",
+}
+
+# Dívida já localizada para o WP-4 (doorman). O gate impede qualquer nova
+# aresta enquanto a integração de identidade sai do service de domínio.
+LEGACY_CROSS_KERNEL_DEBT = {
+    ("doorman", "shopman/doorman/services/verification.py", "guestman"),
+}
 
 PROTECTED_KERNEL_PACKAGES = (
     "refs",
@@ -110,6 +134,31 @@ def test_kernel_packages_do_not_import_host_layers():
             f"{_format_violations(violations)}\n\n"
             "Move host-specific behavior behind an optional integration resolved "
             "through Django's app registry, settings, or a protocol adapter."
+        )
+
+
+def test_domain_kernels_do_not_import_each_other_outside_bridges():
+    """Cross-kernel imports are opt-in bridges, never domain implementation."""
+    violations = []
+    for owner in sorted(DOMAIN_KERNEL_PACKAGES):
+        package_root = PACKAGES_ROOT / owner
+        for path in _py_files(package_root, skip_parts={"tests"}):
+            relative_parts = set(path.relative_to(package_root).parts)
+            if relative_parts & {"adapters", "contrib"}:
+                continue
+            for line, module in _imports(path):
+                parts = module.split(".")
+                if len(parts) < 2 or parts[0] != "shopman" or parts[1] not in DOMAIN_KERNEL_PACKAGES - {owner}:
+                    continue
+                relative = path.relative_to(package_root).as_posix()
+                if (owner, relative, parts[1]) not in LEGACY_CROSS_KERNEL_DEBT:
+                    violations.append((path, line, module))
+
+    if violations:
+        pytest.fail(
+            "Domain kernels imported another kernel outside adapters/contrib:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Move the integration to an optional adapter/contrib bridge or to the orchestrator."
         )
 
 
@@ -452,6 +501,40 @@ def test_presentation_reads_only_the_read_side():
             f"{_format_violations(violations)}\n\n"
             "Presentation consumes only shop.projections (Projection + Action). "
             "Route mutations through views/intents calling shop.services."
+        )
+
+
+def test_read_side_does_not_write():
+    """GET/projection code must be observational, including during SSR/polling."""
+    mutation_methods = {
+        "create",
+        "get_or_create",
+        "update_or_create",
+        "bulk_create",
+        "bulk_update",
+        "update",
+    }
+    violations: list[tuple[Path, int, str]] = []
+    for root in READ_SIDE_ROOTS:
+        if not root.exists():
+            continue
+        for path in _py_files(root, skip_parts={"tests"}):
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                chain = ast.unparse(node.func.value)
+                if node.func.attr in mutation_methods and ".objects" in chain:
+                    violations.append((path, node.lineno, f"{chain}.{node.func.attr}()"))
+                elif node.func.attr in {"save", "delete"}:
+                    violations.append((path, node.lineno, f"{chain}.{node.func.attr}()"))
+
+    if violations:
+        pytest.fail(
+            "Read-side code performed writes:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Move allocation/mutation to an explicit command service reached by POST; "
+            "GET and Projection builders only read."
         )
 
 

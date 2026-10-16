@@ -239,6 +239,7 @@ from .operations import (
     POSTabSaveView,
     POSTabUnfireView,
     POSView,
+    ProductionBlindCodeAllocationView,
     ProductionBlindMapView,
     ProductionBoardView,
     ProductionForecastView,
@@ -453,6 +454,11 @@ urlpatterns = [
         "production/weighing/",
         ProductionWeighingView.as_view(),
         name="api-backstage-production-weighing",
+    ),
+    path(
+        "production/weighing/blind-codes/",
+        ProductionBlindCodeAllocationView.as_view(),
+        name="api-backstage-production-weighing-blind-codes",
     ),
     path(
         "production/weighing/print-jobs/",

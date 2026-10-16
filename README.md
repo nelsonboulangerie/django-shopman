@@ -16,9 +16,9 @@ O Shopman é composto por **3 camadas**:
 
 | Camada | Onde vive | Descrição |
 |--------|-----------|-----------|
-| **Pacotes** | `packages/` | 13 pacotes pip independentes: 12 domínios e o Watchman operacional |
+| **Pacotes** | `packages/` | 13 pacotes pip independentes: 10 kernels de domínio, Utils/Refs compartilhados e Watchman operacional |
 | **Framework** | `shopman/` | Orquestrador (`shop`) + superfícies headless (`storefront`, `backstage`) que servem API JSON e projections |
-| **Superfícies** | `surfaces/` | 9 apps Nuxt 4 SSR + layer `operator-kit` |
+| **Superfícies** | `surfaces/` | 11 apps registrados: 9 de produto, Kitchensink interno e Status externo; mais layer e router |
 
 > **Tenant = config + dados + marca, zero código.** Não há pacote Python de instância.
 > "Nelson Boulangerie" é o `Shop` singleton + dados no DB (via `seed`) + marca + settings do deployment.
@@ -111,7 +111,7 @@ django-shopman/
 │   ├── storefront/             # Superfície customer HEADLESS: api/, presentation/, intents/
 │   └── backstage/              # Superfícies operador HEADLESS + Admin/Unfold
 │
-├── surfaces/                   # 9 apps Nuxt 4 (SSR) + 1 layer
+├── surfaces/                   # 11 apps registrados + operator-kit + operator-router
 │   ├── storefront-nuxt/        # loja do cliente (apex, :3000)
 │   ├── hub-nuxt/               # Central — a home do operador (:3001)
 │   ├── pos-nuxt/               # PDV (:3002)

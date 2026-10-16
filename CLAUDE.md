@@ -214,7 +214,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)
     └── tests/          POS, KDS, produção, fechamento, contratos de superfície, e2e
 
-surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro único em surfaces/registry.json
+surfaces/               11 apps registrados (9 produto + internal + external), 1 layer e 1 roteador — fonte: registry.json
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
 ├── hub-nuxt/          Central — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
@@ -244,7 +244,7 @@ pyproject.toml          Build + test config (repo root)
 ```
 
 > **Cutover headless:** os apps Django `storefront`/`backstage` NÃO renderizam mais
-> HTML — servem API JSON + projections. As superfícies são os 9 apps Nuxt em
+> HTML — servem API JSON + projections. As superfícies de produto são os 9 apps Nuxt em
 > `surfaces/`, que falam com o Django via BFF (cookie de sessão cross-subdomínio
 > `.boulangerie`). A seção "Frontend: HTMX ↔ Alpine" abaixo vale só para as telas
 > Admin/Unfold que ainda são Django-rendered.

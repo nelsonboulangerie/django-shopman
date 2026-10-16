@@ -70,6 +70,7 @@ from shopman.backstage.api._production_filters import (
     validated_query,
 )
 from shopman.backstage.api._production_mutations import (
+    ProductionBlindCodeAllocationSerializer,
     ProductionFinishMutationSerializer,
     ProductionMutationValidationError,
     ProductionOvenArmMutationSerializer,
@@ -136,6 +137,7 @@ from shopman.backstage.services import (
 from shopman.backstage.services import (
     production as production_service,
 )
+from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes
 from shopman.backstage.services.exceptions import (
     OrderConflict,
     OrderError,
@@ -1475,6 +1477,62 @@ class ProductionWeighingView(APIView):
                         weighing.selected_date,
                         f"user:{request.user.pk}",
                     ),
+                )
+            }
+        )
+
+
+class ProductionBlindCodeAllocationView(APIView):
+    """Comando idempotente que prepara os códigos exibidos pela projection."""
+
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_prep"
+
+    def post(self, request):
+        raw_date = request.data.get("selected_date") if hasattr(request.data, "get") else None
+        from django.utils.dateparse import parse_date
+
+        selected_date = parse_date(str(raw_date or ""))
+        if selected_date is None:
+            raise ProductionMutationValidationError({"selected_date": "Informe uma data válida."})
+        action_href = "/api/v1/backstage/production/weighing/blind-codes/"
+        body = validated_body(
+            request,
+            ProductionBlindCodeAllocationSerializer,
+            projection_kind="weighing",
+            action_kind="allocate_blind_codes",
+            action_href=action_href,
+            action_ref=lambda value: (
+                f"allocate_blind_codes:{value['selected_date'].isoformat()}:"
+                f"{value.get('position', '')}:{value.get('base_recipe', '')}"
+            ),
+            selected_date=selected_date,
+        )
+        access = _resolved_production_access(request, selected_date=selected_date)
+        current = build_production_weighing(
+            selected_date=selected_date,
+            position_ref=body.get("position", ""),
+            base_recipe=body.get("base_recipe", ""),
+            access=access,
+        )
+        allocate_blind_prep_codes(
+            recipe_refs=tuple(ticket.recipe_ref for ticket in current.tickets),
+            selected_date=selected_date,
+        )
+        weighing = build_production_weighing(
+            selected_date=selected_date,
+            position_ref=body.get("position", ""),
+            base_recipe=body.get("base_recipe", ""),
+            access=access,
+        )
+        from shopman.backstage.api.print_jobs import destination_projection
+
+        weighing = replace(weighing, print_destination=destination_projection(request=request))
+        return Response(
+            {
+                "weighing": projection_data(
+                    weighing,
+                    freshness_context=("weighing", weighing.selected_date, f"user:{request.user.pk}"),
                 )
             }
         )
