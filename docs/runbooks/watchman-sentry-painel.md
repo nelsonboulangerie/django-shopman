@@ -37,7 +37,8 @@ Organização: `nelson-boulangerie`. Projeto: `shopman`. Ambiente: `production`.
 
 Em **Alerts → Create Monitor → Uptime**:
 
-- nome: `Watchman — composite readiness`;
+- nome imutável atribuído pelo Sentry:
+  `Uptime check for api.boulangerie.com.br/health/ready`;
 - URL: `https://status.boulangerie.com.br/api/watchman-readiness`;
 - método: GET;
 - intervalo: 1 minuto;

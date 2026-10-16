@@ -705,7 +705,7 @@ envs:
   value: assist
   type: GENERAL
 - key: CONCIERGE_TRIAGE_CLASSIFIER
-  scope: RUN_AND_BUILD_TIME
+  scope: RUN_TIME
   value: jev
   type: GENERAL
 # Intenções no plural (OBS0310-Q/R): sem chave aqui de propósito. O padrão do código

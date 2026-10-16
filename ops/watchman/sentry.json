@@ -8,7 +8,7 @@
   },
   "uptime": [
     {
-      "name": "Watchman — composite readiness",
+      "name": "Uptime check for api.boulangerie.com.br/health/ready",
       "url": "https://status.boulangerie.com.br/api/watchman-readiness",
       "interval_seconds": 60,
       "timeout_ms": 10000,
