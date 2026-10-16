@@ -38,6 +38,7 @@ def test_external_monitoring_contract_checks_live_drift_when_credential_exists(r
 
 def test_deployment_drift_is_unknown_without_live_snapshot(monkeypatch):
     monkeypatch.delenv("WATCHMAN_LIVE_DO_SPEC", raising=False)
+    monkeypatch.delenv("WATCHMAN_DO_EVIDENCE_ERROR", raising=False)
 
     result = DeploymentDriftCheck().run(_context())
 
@@ -45,9 +46,24 @@ def test_deployment_drift_is_unknown_without_live_snapshot(monkeypatch):
     assert result.evidence["required_env"] == "WATCHMAN_LIVE_DO_SPEC"
 
 
+def test_deployment_drift_preserves_collection_failure(monkeypatch):
+    monkeypatch.delenv("WATCHMAN_LIVE_DO_SPEC", raising=False)
+    monkeypatch.setenv("WATCHMAN_DO_EVIDENCE_ERROR", "missing DIGITALOCEAN_READ_TOKEN")
+
+    result = DeploymentDriftCheck().run(_context())
+
+    assert result.status is Status.UNKNOWN
+    assert result.evidence == {
+        "required_env": "WATCHMAN_LIVE_DO_SPEC",
+        "collection_error": "missing DIGITALOCEAN_READ_TOKEN",
+    }
+    assert "DIGITALOCEAN_READ_TOKEN" in result.summary
+
+
 @patch("shopman.shop.watchman_infrastructure.subprocess.run")
 def test_deployment_drift_uses_existing_read_only_checker(run, monkeypatch, tmp_path):
     monkeypatch.setenv("WATCHMAN_LIVE_DO_SPEC", str(tmp_path / "live.yaml"))
+    monkeypatch.delenv("WATCHMAN_VERSIONED_DO_SPEC", raising=False)
     run.return_value = Mock(returncode=0, stdout="drift limpo", stderr="")
 
     result = DeploymentDriftCheck().run(_context())
@@ -55,4 +71,5 @@ def test_deployment_drift_uses_existing_read_only_checker(run, monkeypatch, tmp_
     assert result.status is Status.PASS
     command = run.call_args.args[0]
     assert "scripts/check_do_spec_drift.py" in command
+    assert command[command.index("--spec") + 1] == ".do/app.alpha-subdomains.yaml"
     assert "--live-spec" in command
