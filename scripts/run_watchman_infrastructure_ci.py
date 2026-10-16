@@ -196,12 +196,13 @@ def main() -> int:
         print(f"::warning title=Watchman pendente::{result['id']}: {result['summary']}")
     for result in warnings:
         print(f"::warning title=Watchman ação necessária::{result['id']}: {result['summary']}")
-    if not blocking and not warnings:
+    if not blocking:
+        captured = capture_sentry_event(warnings, blocking=False) if warnings else False
         print(json.dumps({
             "status": "pass",
             "pending": [item["id"] for item in pending],
-            "warnings": [],
-            "sentry_event_captured": False,
+            "warnings": [item["id"] for item in warnings],
+            "sentry_event_captured": captured,
         }))
         return 0
 

@@ -218,7 +218,7 @@ def test_skipped_check_is_blocking_even_though_it_is_a_valid_status():
     assert warnings == []
 
 
-def test_warning_makes_runner_actionable_and_non_success(monkeypatch, tmp_path, capsys):
+def test_warning_is_reported_but_keeps_daily_job_green(monkeypatch, tmp_path, capsys):
     from shopman.watchman import runner
 
     report = Mock()
@@ -228,11 +228,11 @@ def test_warning_makes_runner_actionable_and_non_success(monkeypatch, tmp_path, 
     output = tmp_path / "report.json"
     monkeypatch.setattr(sys, "argv", ["run_watchman_infrastructure_ci.py", "--output", str(output)])
 
-    assert main() == 1
+    assert main() == 0
     result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert result == {
-        "status": "fail",
-        "blocking": [],
+        "status": "pass",
+        "pending": [],
         "warnings": ["expiry_lifecycle"],
         "sentry_event_captured": False,
     }
@@ -272,6 +272,37 @@ def test_sentry_capture_only_reports_a_returned_event_id(monkeypatch, event_id, 
     monkeypatch.setitem(sys.modules, "sentry_sdk", sentry)
 
     assert capture_sentry_event([_result("deployment_drift", "fail")], blocking=True) is expected
+
+
+def test_warning_capture_uses_warning_level(monkeypatch):
+    observed = {}
+
+    class Scope:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def set_level(self, level):
+            observed["level"] = level
+
+        def set_tag(self, key, value):
+            pass
+
+        def set_context(self, key, value):
+            pass
+
+    sentry = SimpleNamespace(
+        push_scope=lambda: Scope(),
+        capture_message=lambda message: "event-id",
+        flush=lambda timeout: None,
+    )
+    monkeypatch.setenv("SENTRY_DSN", "https://public@example.invalid/1")
+    monkeypatch.setitem(sys.modules, "sentry_sdk", sentry)
+
+    assert capture_sentry_event([_result("expiry_lifecycle", "warn")], blocking=False) is True
+    assert observed["level"] == "warning"
 
 
 def test_daily_workflow_is_read_only_and_preserves_evidence():
