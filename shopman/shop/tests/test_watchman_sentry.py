@@ -155,6 +155,8 @@ def test_repository_contract_resolves_target_from_live_membership_instead_of_sto
     raw = json.loads((ROOT / "ops/watchman/sentry.json").read_text())
 
     assert _contract_errors(raw) == []
+    assert raw["uptime"][0]["name"] == "Uptime check for api.boulangerie.com.br/health/ready"
+    assert raw["error_rate"]["name"] == "Number of errors above 20 over past 5 minutes"
     assert "target_identifier" not in raw["notification"]["email_action"]
 
 
