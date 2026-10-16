@@ -118,7 +118,7 @@ def test_transcript_vazio_nao_quebra(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_casamento_de_caminho_e_exato_e_nao_por_basename():
+def test_casamento_de_caminho_e_exato_e_nao_por_basename(tmp_path, monkeypatch):
     """`~/.codex/worktrees/<nome>/django-shopman` não é o checkout principal.
 
     A primeira versão comparava o basename (ou usava `Path.resolve()`, que
@@ -127,14 +127,45 @@ def test_casamento_de_caminho_e_exato_e_nao_por_basename():
     pode ATÉ aparecer na lista — ele é um worktree legítimo —, mas não pode ser
     protegido por uma sessão que na verdade rodava no checkout principal.
     """
-    worktrees, main_checkout = prune.inspect(recent_hours=0)
-    assert main_checkout.name == "django-shopman"
+    main_checkout = tmp_path / "principal" / "django-shopman"
+    codex_worktree = tmp_path / "codex" / "django-shopman"
+    main_checkout.mkdir(parents=True)
+    codex_worktree.mkdir(parents=True)
+    session = prune.Session(
+        session_id="sessao-principal",
+        cwd=str(main_checkout),
+        last_activity=0.0,
+        live=True,
+    )
+
+    def fake_git(*args, cwd=None):
+        if args == ("worktree", "list", "--porcelain"):
+            return (
+                f"worktree {main_checkout}\nHEAD 1111111\nbranch refs/heads/main\n\n"
+                f"worktree {codex_worktree}\nHEAD 2222222\nbranch refs/heads/codex/algo\n"
+            )
+        if args == ("rev-parse", "--abbrev-ref", "HEAD") and cwd == codex_worktree:
+            return "codex/algo\n"
+        if args == ("status", "--porcelain") and cwd == codex_worktree:
+            return ""
+        raise AssertionError((args, cwd))
+
+    class _Merged:
+        returncode = 0
+
+    monkeypatch.setattr(prune, "_git", fake_git)
+    monkeypatch.setattr(prune, "known_sessions", lambda: [session])
+    monkeypatch.setattr(prune.subprocess, "run", lambda *a, **k: _Merged())
+
+    worktrees, detected_main = prune.inspect(recent_hours=0)
+    assert detected_main == main_checkout
     # A árvore principal fica de fora por identidade de caminho, não por nome.
     assert main_checkout not in [w.path for w in worktrees]
+    assert [w.path for w in worktrees] == [codex_worktree]
+    assert worktrees[0].sessions == []
+    assert worktrees[0].managed is False
+    assert worktrees[0].safe is False
 
-    sessoes_no_principal = {s.session_id for s in prune.known_sessions() if s.cwd == str(main_checkout)}
-    assert sessoes_no_principal, "fixture inutil: nenhuma sessao aponta para o checkout principal"
-    for worktree in worktrees:
-        ids = {s.session_id for s in worktree.sessions}
-        assert not (ids & sessoes_no_principal), f"sessao do checkout principal vazou para {worktree.path}"
-    assert worktrees  # a lista não veio vazia
+
+def test_worktree_de_outro_gerenciador_nunca_e_removida_automaticamente():
+    assert _worktree(managed=False).safe is False

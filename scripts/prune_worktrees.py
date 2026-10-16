@@ -9,7 +9,11 @@ ainda está de pé perde o diretório de trabalho debaixo dela, junto com tudo q
 removidas com o critério só-git e duas sessões Claude vivas ficaram sem chão.
 
 Esta ferramenta acrescenta a única checagem que faltava: **antes de remover,
-pergunta se alguma sessão viva está (ou esteve) trabalhando ali.**
+pergunta se alguma sessão viva está (ou esteve) trabalhando ali.** Ela só
+remove automaticamente worktrees sob ``<checkout principal>/.claude/worktrees``.
+Worktrees geridas por Codex, DeepSeek ou outra ferramenta ficam fora do escopo:
+sem conhecer o registro de sessões desses agentes, ausência de processo Claude
+não é prova de abandono.
 
 Como identifica sessão viva:
 
@@ -121,10 +125,11 @@ class Worktree:
     dirty: int
     merged: bool
     sessions: list[Session] = field(default_factory=list)
+    managed: bool = True
 
     @property
     def safe(self) -> bool:
-        return self.merged and self.dirty == 0 and not self.sessions
+        return self.managed and self.merged and self.dirty == 0 and not self.sessions
 
 
 def inspect(recent_hours: float) -> tuple[list[Worktree], Path]:
@@ -141,6 +146,7 @@ def inspect(recent_hours: float) -> tuple[list[Worktree], Path]:
     if not paths:
         return [], Path.cwd()
     main_checkout = paths[0]
+    managed_root = main_checkout / ".claude" / "worktrees"
 
     sessions = known_sessions()
     cutoff = time.time() - recent_hours * 3600 if recent_hours > 0 else None
@@ -171,7 +177,16 @@ def inspect(recent_hours: float) -> tuple[list[Worktree], Path]:
         related = [session for session in sessions if session.cwd == target]
         if cutoff is not None:
             related = [s for s in related if s.live or s.last_activity >= cutoff]
-        worktrees.append(Worktree(path=path, branch=branch, dirty=dirty, merged=merged, sessions=related))
+        worktrees.append(
+            Worktree(
+                path=path,
+                branch=branch,
+                dirty=dirty,
+                merged=merged,
+                sessions=related,
+                managed=path.is_relative_to(managed_root),
+            )
+        )
     return worktrees, main_checkout
 
 
@@ -200,12 +215,14 @@ def main(argv: list[str] | None = None) -> int:
     worktrees, main_checkout = inspect(args.recent_hours)
 
     protected = [w for w in worktrees if w.sessions]
-    dirty = [w for w in worktrees if w.dirty and not w.sessions]
-    unmerged = [w for w in worktrees if not w.merged and not w.dirty and not w.sessions]
+    foreign = [w for w in worktrees if not w.managed and not w.sessions]
+    dirty = [w for w in worktrees if w.managed and w.dirty and not w.sessions]
+    unmerged = [w for w in worktrees if w.managed and not w.merged and not w.dirty and not w.sessions]
     safe = [w for w in worktrees if w.safe]
 
     print(f"worktrees analisadas: {len(worktrees)}")
     print(f"  protegidas (tem sessao):  {len(protected)}")
+    print(f"  fora do escopo do Claude: {len(foreign)}")
     print(f"  sujas:                    {len(dirty)}")
     print(f"  branch fora do main:      {len(unmerged)}")
     print(f"  seguras para remover:     {len(safe)}")
@@ -218,6 +235,11 @@ def main(argv: list[str] | None = None) -> int:
                 for s in worktree.sessions
             )
             print(f"  {worktree.path.name}  [{worktree.branch}]  {marks}")
+
+    if safe:
+        print("\nSEGURAS PARA REMOVER (Claude, sem sessao, limpas e no main):")
+        for worktree in safe:
+            print(f"  {worktree.path.name}  [{worktree.branch}]")
 
     if not args.apply:
         print("\n(dry-run: nada foi removido. Use --apply para remover as seguras.)")
