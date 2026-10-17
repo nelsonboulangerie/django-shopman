@@ -135,7 +135,7 @@ const phoneHeaderActions = computed(() => [
               <div>
                 <div class="flex flex-wrap items-center gap-2">
                   <h2 class="font-semibold">{{ template.title }}</h2>
-                  <NuxtBadge color="neutral" variant="subtle">
+                  <NuxtBadge color="neutral">
                     {{ template.moment_label }}
                   </NuxtBadge>
                 </div>
@@ -187,7 +187,6 @@ const phoneHeaderActions = computed(() => [
                 </p>
                 <NuxtBadge
                   :color="run.status === 'completed' ? 'success' : 'neutral'"
-                  variant="subtle"
                 >
                   {{ run.status_label }}
                 </NuxtBadge>
@@ -198,7 +197,7 @@ const phoneHeaderActions = computed(() => [
                   v-for="task in run.tasks"
                   :key="task.id"
                   as="li"
-                  variant="subtle"
+                  variant="soft"
                   :data-checklist-task="task.ref"
                 >
                   <div class="grid gap-3">
@@ -223,7 +222,6 @@ const phoneHeaderActions = computed(() => [
                       </div>
                       <NuxtBadge
                         :color="task.status === 'done' ? 'success' : 'neutral'"
-                        variant="subtle"
                       >
                         {{ task.status_label }}
                       </NuxtBadge>
