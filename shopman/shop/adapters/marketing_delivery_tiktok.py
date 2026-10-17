@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 
+from shopman.shop.adapters._external import inert
 from shopman.shop.adapters.marketing_delivery_http import (
     HTTPFailure,
     TransportFailure,
@@ -38,7 +39,7 @@ _RETRYABLE_API_CODES = frozenset(
 def is_available() -> bool:
     config = _config()
     return bool(
-        _external_allowed()
+        not inert()
         and getattr(settings, "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED", False)
         and config["access_token"]
     )
@@ -272,10 +273,6 @@ def _config() -> dict:
         "access_token": str(raw.get("access_token") or ""),
         "timeout": max(1, int(raw.get("timeout") or 30)),
     }
-
-
-def _external_allowed() -> bool:
-    return not settings.DEBUG or bool(getattr(settings, "SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG", False))
 
 
 def _not_attempted(code: str) -> None:
