@@ -83,8 +83,9 @@ derivados de `packages/*`, `surfaces/registry.json` e `docs/architecture-map.jso
 ADR-037 e Constituição: PR #1843; governança/renumeração/índice/gate: PR #1844; mapa e
 enforcement de command/query: PR #1845. O WP-2 base foi mergeado no PR #1846. Sua
 canonicalização de `reason_code` está no PR #1848 e ainda falta remover o dual-read/write
-de `Order.data.hold_ids` em correção própria; ambos são bloqueantes antes do WP-3. WPs 3,
-4, 7, 11, 10, 6 e 12 permanecem futuros até seus próprios PRs e aceites.
+de `Order.data.hold_ids` em correção própria; ambos foram fechados antes do WP-3. O WP-3
+está no PR #1851. WPs 4, 7, 11, 10, 6 e 12 permanecem futuros até seus próprios PRs e
+aceites.
 
 ---
 

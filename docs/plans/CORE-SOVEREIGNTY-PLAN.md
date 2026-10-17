@@ -250,6 +250,8 @@ no próprio parecer.
 - **Aceite:** não existe segunda implementação da mesma decisão; toda cotação contextual
   preserva ajustes e explica o total.
 - **Apêndice A** descreve o motor genérico de condições e o critério para virar pacote.
+- **Estado:** implementado no PR #1851; a correção separada de repricing permanece
+  bloqueante antes do WP-4.
 
 ### WP-4 — Doorman: porto de identidade (CIAM)
 - Alargar o porto: `IdentityView` com `handles: [{kind, value, verified, primary}]` + `resolve(kind, value)`.
