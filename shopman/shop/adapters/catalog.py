@@ -27,13 +27,6 @@ def expand_bundle(sku: str, qty) -> list[dict]:
     return CatalogService.expand(sku, qty)
 
 
-def get_product_base_price(sku: str) -> int:
-    """Preço base do produto (sem tiers). Retorna centavos."""
-    from shopman.offerman.models import Product
-
-    return Product.objects.get(sku=sku).base_price_q
-
-
 def get_listing_item(sku: str, listing_ref: str) -> dict | None:
     """Retorna os flags canônicos do vínculo sku <-> listing, ou None se não houver vínculo estrutural."""
     from shopman.offerman.models import ListingItem
@@ -65,21 +58,6 @@ def get_listing_item(sku: str, listing_ref: str) -> dict | None:
     }
 
 
-def find_listing_tiers(sku: str, listing_ref: str) -> list[dict]:
-    """Tiers de preço vendáveis por quantidade. Retorna [{"min_qty", "price_q", "is_sellable"}] desc."""
-    from shopman.offerman.models import ListingItem
-
-    return list(
-        ListingItem.objects.filter(
-            listing__ref=listing_ref,
-            product__sku=sku,
-            is_sellable=True,
-        )
-        .order_by("-min_qty")
-        .values("min_qty", "price_q", "is_sellable")
-    )
-
-
 def listing_exists(listing_ref: str) -> bool:
     """Verifica se um Listing ativo existe para o listing_ref."""
     from shopman.offerman.models import Listing
@@ -107,25 +85,6 @@ def find_substitutes(sku: str, limit: int = 8) -> list:
     from shopman.offerman import find_substitutes as _find_substitutes
 
     return _find_substitutes(sku, limit=limit)
-
-
-def bulk_listing_price_map(skus: list[str], listing_ref: str) -> dict[str, int]:
-    """Mapa sku → price_q do listing para múltiplos SKUs (preço mais específico por qty)."""
-    from shopman.offerman.models import ListingItem
-
-    price_map: dict[str, int] = {}
-    for item in (
-        ListingItem.objects.filter(
-            listing__ref=listing_ref,
-            listing__is_active=True,
-            product__sku__in=skus,
-            is_sellable=True,
-        )
-        .select_related("product")
-        .order_by("-min_qty")
-    ):
-        price_map.setdefault(item.product.sku, item.price_q)
-    return price_map
 
 
 def bulk_bundle_skus(skus: list[str]) -> set[str]:
@@ -169,33 +128,3 @@ def bulk_listing_items(skus: list[str], listing_ref: str) -> dict[str, dict]:
             "is_sellable": item.is_sellable,
         })
     return result
-
-
-def bulk_listing_tiers(skus: list[str], listing_ref: str) -> dict[str, list[dict]]:
-    """``find_listing_tiers`` para vários SKUs numa consulta só (mesmo filtro, mesma ordem)."""
-    from shopman.offerman.models import ListingItem
-
-    result: dict[str, list[dict]] = {sku: [] for sku in skus}
-    if not skus:
-        return result
-    for row in (
-        ListingItem.objects.filter(
-            listing__ref=listing_ref,
-            product__sku__in=skus,
-            is_sellable=True,
-        )
-        .order_by("-min_qty")
-        .values("product__sku", "min_qty", "price_q", "is_sellable")
-    ):
-        sku = row.pop("product__sku")
-        result.setdefault(sku, []).append(row)
-    return result
-
-
-def bulk_product_base_prices(skus: list[str]) -> dict[str, int]:
-    """``get_product_base_price`` para vários SKUs; SKU inexistente fica de fora."""
-    from shopman.offerman.models import Product
-
-    if not skus:
-        return {}
-    return dict(Product.objects.filter(sku__in=skus).values_list("sku", "base_price_q"))

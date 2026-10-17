@@ -252,6 +252,30 @@ def test_a_cheaper_item_earns_the_price_reason(listing):
     assert "price:below_cart_average" in found[0].reasons
 
 
+def test_an_unpublished_price_tier_does_not_leak_into_a_suggestion(listing):
+    from decimal import Decimal
+
+    _product("PAO", "Pão", price_q=2000, listing=listing)
+    cafe = _product("CAFE", "Café", price_q=500, listing=listing)
+    visible = ListingItem.objects.get(listing=listing, product=cafe)
+    visible.min_qty = Decimal("0")
+    visible.save(update_fields=["min_qty"])
+    ListingItem.objects.create(
+        listing=listing,
+        product=cafe,
+        price_q=1,
+        min_qty=Decimal("1"),
+        is_published=False,
+        is_sellable=True,
+    )
+    _affinity("PAO", "CAFE", 4.0)
+    _rule({"affinity_weight": 3})
+
+    found = suggest(COMPLEMENT, cart_skus={"PAO"}, channel_ref=CHANNEL)
+
+    assert found[0].unit_price_q == 500
+
+
 # --- por superfície ---------------------------------------------------------
 
 

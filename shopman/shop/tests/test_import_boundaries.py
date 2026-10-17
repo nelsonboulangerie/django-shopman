@@ -207,6 +207,57 @@ def _get_handler_write_calls(path: Path) -> list[tuple[Path, int, str]]:
     return violations
 
 
+def test_offerman_is_the_only_list_tier_price_owner():
+    """Named orchestrator consumers cannot grow a second tier algorithm."""
+    guarded = (
+        SHOP_ROOT / "handlers" / "pricing.py",
+        SHOP_ROOT / "services" / "customer_orders.py",
+        SHOP_ROOT / "services" / "display_prices.py",
+        SHOP_ROOT / "services" / "substitutes.py",
+        SHOP_ROOT / "projections" / "suggestions.py",
+        BACKSTAGE_ROOT / "projections" / "pos.py",
+    )
+    forbidden = ('order_by("-min_qty")', "bulk_listing_tiers", "find_listing_tiers")
+    violations = [
+        f"{path.relative_to(REPO_ROOT)}: {token}"
+        for path in guarded
+        for token in forbidden
+        if token in path.read_text()
+    ]
+    assert not violations, "Duplicate list/tier price decisions:\n" + "\n".join(violations)
+
+
+def test_contextual_quote_has_no_flattened_surface_contract():
+    """The public catalog/PDP price is one typed quote, not parallel fields."""
+    assert not (SHOP_ROOT / "services" / "pricing.py").exists()
+    guarded = (
+        STOREFRONT_ROOT / "presentation" / "catalog.py",
+        STOREFRONT_ROOT / "presentation" / "product_detail.py",
+    )
+    forbidden = ("has_promotion", "promotion_label", "original_price_display")
+    violations = [
+        f"{path.relative_to(REPO_ROOT)}: {token}"
+        for path in guarded
+        for token in forbidden
+        if token in path.read_text()
+    ]
+    serializers = (STOREFRONT_ROOT / "api" / "serializers.py").read_text()
+    public_catalog = serializers.split("class ProductListItemSerializer", 1)[1].split("class CollectionSerializer", 1)[
+        0
+    ]
+    types = (REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "types" / "shopman.ts").read_text()
+    public_types = types.split("export interface CatalogItemProjection", 1)[1].split(
+        "export interface CatalogSectionProjection", 1
+    )[0]
+    public_forbidden = (*forbidden, "base_price_q", "price_display")
+    violations.extend(
+        f"public catalog contract: {token}"
+        for token in public_forbidden
+        if token in public_catalog or token in public_types
+    )
+    assert not violations, "Legacy flattened quote fields:\n" + "\n".join(violations)
+
+
 def test_kernel_packages_do_not_import_host_layers():
     """Kernel packages must remain standalone and never import host layers."""
     violations = []

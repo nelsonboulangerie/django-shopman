@@ -29,6 +29,10 @@ import inspect
 
 from rest_framework import serializers
 
+from shopman.shop.projections.pricing_quote import (
+    PriceAdjustmentProjection,
+    PriceQuoteProjection,
+)
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -53,6 +57,12 @@ from shopman.storefront.presentation.types import (
 # (serializer, dataclass, campos da dataclass conscientemente NÃO expostos)
 MIRROR_CONTRACTS = [
     (api_serializers.ActionSerializer, Action, set()),
+    (
+        api_serializers.PriceAdjustmentSerializer,
+        PriceAdjustmentProjection,
+        set(),
+    ),
+    (api_serializers.PriceQuoteSerializer, PriceQuoteProjection, set()),
     # Timeline do storefront mostra só label/hora; actor/detail servem a outras superfícies.
     (api_serializers.TimelineEventSerializer, TimelineEventProjection, {"actor", "detail"}),
     (api_serializers.OrderItemSerializer, OrderItemProjection, set()),

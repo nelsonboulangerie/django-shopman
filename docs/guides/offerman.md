@@ -243,8 +243,8 @@ class CatalogProjectionBackend(Protocol):
 
 - `ProductInfo(sku, name, description, category, unit, is_bundle, base_price_q, is_published, is_sellable, keywords)`
 - `PriceInfo(sku, unit_price_q, total_price_q, qty, listing)`
-- `PriceAdjustment(code, label, amount_q, metadata)`
-- `ContextualPrice(sku, qty, listing, list_unit_price_q, list_total_price_q, final_unit_price_q, final_total_price_q, adjustments, metadata)`
+- `PriceAdjustment(code, label, amount_q, metadata)` — `amount_q` é o efeito total na linha cotada, não por unidade
+- `ContextualPrice(sku, qty, listing, list_unit_price_q, list_line_total_q, final_unit_price_q, final_line_total_q, adjustments, metadata)`
 - `SkuValidation(valid, sku, name, is_published, is_sellable, error_code, message)`
 - `BundleComponent(sku, name, qty)`
 - `ProjectedItem(sku, name, description, unit, price_q, is_published, is_sellable, category, image_url, keywords, metadata)`
@@ -326,7 +326,7 @@ price = CatalogService.get_price(
     context={"customer_segment": "vip"},
 )
 
-assert price.list_total_price_q >= price.final_total_price_q
+assert price.list_line_total_q >= price.final_line_total_q
 ```
 
 ### Projetar catálogo por canal

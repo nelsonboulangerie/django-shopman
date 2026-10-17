@@ -218,17 +218,18 @@ def _line_for_sku(session, sku: str) -> dict | None:
 
 
 def _item_payload(item) -> dict:
+    adjustment = item.quote.adjustments[0] if item.quote.adjustments else None
     return {
         "sku": item.sku,
         "name": item.name,
-        "price": item.price_display,
-        "price_q": int(item.base_price_q),
+        "price": _money(item.quote.final_unit_price_q),
+        "price_q": int(item.quote.final_unit_price_q),
         "availability": str(item.availability),
         "availability_label": item.availability_label,
         "available_qty": item.available_qty,
         "can_order": bool(item.can_add_to_cart),
         "description": item.short_description or "",
-        "promotion": item.promotion_label or "",
+        "promotion": (str(adjustment.badge_label or adjustment.label) if adjustment else ""),
         "unit": item.unit_weight_label or "",
         "collection": item.category or "",
     }
@@ -625,7 +626,7 @@ def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
                 "available_count": len(available),
                 "total_count": len(members),
                 "examples": [
-                    {"sku": item.sku, "name": item.name, "price": item.price_display}
+                    {"sku": item.sku, "name": item.name, "price": _money(item.quote.final_unit_price_q)}
                     for item in (available or members)[:3]
                 ],
             }
@@ -723,7 +724,7 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
                 origin_channel=_transport_origin(ctx),
                 sku=sku,
                 qty=qty,
-                unit_price_q=int(item.base_price_q),
+                unit_price_q=int(item.quote.final_unit_price_q),
                 name=item.name,
             )
     except CartDateMismatchError as exc:

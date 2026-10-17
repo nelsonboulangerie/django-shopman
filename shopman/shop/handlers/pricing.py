@@ -6,123 +6,38 @@ Inline de shopman.pricing.modifiers.
 
 from __future__ import annotations
 
-import logging
 from decimal import Decimal
 from typing import Any
-
-from shopman.shop.adapters import get_adapter
-
-logger = logging.getLogger(__name__)
 
 
 class OffermanPricingBackend:
     """Resolve preço pela cascata: grupo do cliente → listing do canal → preço base."""
 
     def get_price(self, sku: str, channel: Any, customer=None, qty: int = 1) -> int | None:
-        catalog = get_adapter("catalog")
-
-        # 1. Preço do grupo do cliente (se identificado e o grupo aponta um listing)
-        if customer:
-            listing_ref = getattr(customer, "listing_ref", None)
-            if listing_ref:
-                item = self._get_listing_item(catalog, listing_ref, sku, qty=qty)
-                if item and item.get("is_sellable"):
-                    return item["price_q"]
-
-        # 2. Preço do canal (canal.ref == listing.ref por convenção)
-        channel_listing = getattr(channel, "ref", None) if channel else None
-        if channel_listing:
-            item = self._get_listing_item(catalog, channel_listing, sku, qty=qty)
-            if item and item.get("is_sellable"):
-                return item["price_q"]
-
-        # 3. Preço base do produto
-        try:
-            return catalog.get_product_base_price(sku)
-        except Exception:
-            logger.debug("pricing.get_price degraded; using fallback", exc_info=True)
-            return None
+        return self.get_line_prices([(sku, qty)], channel, customer=customer)[0]
 
     def get_prices(self, skus: list[str], channel: Any, qty: int = 1) -> dict[str, int | None]:
-        """``get_price`` sem cliente para vários SKUs, com a vitrine e o preço base lidos uma vez.
+        """Resolva vários SKUs sem cliente pela operação em lote do Offerman.
 
-        Mesma cascata de ``get_price`` (vitrine do canal → preço base), mesma
-        resposta SKU a SKU. Sem as leituras em lote no adapter, cai no
-        ``get_price`` de cada um.
+        A ordem da primeira ocorrência de cada SKU é preservada. A seleção da
+        faixa por quantidade e o fallback para preço base pertencem ao kernel.
         """
         unique = list(dict.fromkeys(skus))
-        catalog = get_adapter("catalog")
-        bulk_tiers = getattr(catalog, "bulk_listing_tiers", None)
-        bulk_base = getattr(catalog, "bulk_product_base_prices", None)
-        if bulk_tiers is None or bulk_base is None:
-            return {sku: self.get_price(sku, channel, qty=qty) for sku in unique}
-
-        prices: dict[str, int | None] = {}
-        channel_listing = getattr(channel, "ref", None) if channel else None
-        if channel_listing:
-            tiers_by_sku = bulk_tiers(unique, channel_listing)
-            for sku in unique:
-                item = next((t for t in tiers_by_sku.get(sku) or [] if t["min_qty"] <= qty), None)
-                if item and item.get("is_sellable"):
-                    prices[sku] = item["price_q"]
-        missing = [sku for sku in unique if sku not in prices]
-        if missing:
-            try:
-                base = bulk_base(missing)
-            except Exception:
-                logger.debug("pricing.get_prices degraded; using fallback", exc_info=True)
-                base = {}
-            for sku in missing:
-                prices[sku] = base.get(sku)
-        return prices
+        resolved = self.get_line_prices([(sku, qty) for sku in unique], channel)
+        return dict(zip(unique, resolved, strict=True))
 
     def get_line_prices(self, lines: list[tuple[str, Any]], channel: Any, customer=None) -> list[int | None]:
-        """``get_price`` de cada ``(sku, qty)``, com as vitrines e o preço base lidos uma vez.
+        """Resolva ``(sku, qty)`` em lote pela cascata declarada pelo orquestrador.
 
-        A mesma cascata, linha a linha (faixa do cliente → vitrine do canal → preço
-        base) e a mesma faixa por quantidade; só a leitura muda. O salvar da
-        comanda reprecifica todas as linhas a cada vez, e eram duas idas ao banco
-        por linha. Sem as leituras em lote no adapter, cai no ``get_price``.
+        O orquestrador fornece a precedência das vitrines; o Offerman decide a
+        faixa por quantidade e o preço base, preservando a ordem das linhas.
         """
-        catalog = get_adapter("catalog")
-        bulk_tiers = getattr(catalog, "bulk_listing_tiers", None)
-        bulk_base = getattr(catalog, "bulk_product_base_prices", None)
-        if bulk_tiers is None or bulk_base is None:
-            kwargs = {"customer": customer} if customer is not None else {}
-            return [self.get_price(sku, channel, qty=qty, **kwargs) for sku, qty in lines]
+        from shopman.offerman.service import CatalogService
 
-        skus = list(dict.fromkeys(sku for sku, _qty in lines))
-        customer_listing = None
-        if customer:
-            customer_listing = getattr(customer, "listing_ref", None) or None
-        channel_listing = (getattr(channel, "ref", None) if channel else None) or None
-        customer_tiers = bulk_tiers(skus, customer_listing) if customer_listing else {}
-        channel_tiers = bulk_tiers(skus, channel_listing) if channel_listing else {}
-        base: dict[str, int] | None = None
-
-        prices: list[int | None] = []
-        for sku, qty in lines:
-            price = None
-            for tiers in (customer_tiers, channel_tiers):
-                item = next((t for t in tiers.get(sku) or [] if t["min_qty"] <= qty), None)
-                if item and item.get("is_sellable"):
-                    price = item["price_q"]
-                    break
-            if price is None:
-                if base is None:
-                    try:
-                        base = bulk_base(skus)
-                    except Exception:
-                        logger.debug("pricing.get_line_prices degraded; using fallback", exc_info=True)
-                        base = {}
-                price = base.get(sku)
-            prices.append(price)
-        return prices
-
-    def _get_listing_item(self, catalog, listing_ref, sku, qty=1):
-        """Find the tier with highest min_qty <= qty."""
-        tiers = catalog.find_listing_tiers(sku, listing_ref)
-        return next((t for t in tiers if t["min_qty"] <= qty), None)
+        customer_listing = getattr(customer, "listing_ref", None) if customer else None
+        channel_listing = getattr(channel, "ref", None) if channel else None
+        listings = tuple(ref for ref in (customer_listing, channel_listing) if ref)
+        return CatalogService.unit_prices(lines, listings=listings)
 
 
 class ItemPricingModifier:
@@ -156,7 +71,7 @@ class ItemPricingModifier:
         line_prices = None
         if session.pricing_policy == "internal" and hasattr(self.backend, "get_line_prices"):
             line_prices = self.backend.get_line_prices(
-                [(item["sku"], max(Decimal("1"), Decimal(str(item.get("qty", 1) or 1)))) for item in items],
+                [(item["sku"], Decimal(str(item.get("qty", 1)))) for item in items],
                 channel,
                 customer=customer,
             )
@@ -172,11 +87,10 @@ class ItemPricingModifier:
             # lugar onde preço é política.
             if session.pricing_policy == "internal":
                 # Always re-resolve price from backend
-                # A faixa de preço por quantidade (``min_qty``) compara contra a
-                # quantidade REAL. ``int()`` zerava a linha pesada (0,312 kg → 0)
-                # e nenhuma faixa casava: o listing do canal era pulado e o
-                # queijo saía pelo preço base. Menos de uma unidade é a 1ª faixa.
-                qty_val = max(Decimal("1"), Decimal(str(item.get("qty", 1) or 1)))
+                # A quantidade segue intacta até o Offerman. A interpretação de
+                # ``min_qty`` pertence ao kernel; o orquestrador não arredonda,
+                # trunca nem escolhe uma faixa em nome dele.
+                qty_val = Decimal(str(item.get("qty", 1)))
                 if line_prices is not None:
                     price = line_prices[index]
                 else:

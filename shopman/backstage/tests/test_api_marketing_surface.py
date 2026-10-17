@@ -1238,9 +1238,9 @@ class TestMarketingOffers:
             qty=Decimal("1"),
             listing=None,
             list_unit_price_q=1000,
-            list_total_price_q=1000,
+            list_line_total_q=1000,
         )
-        assert priced.final_total_price_q == 850
+        assert priced.final_line_total_q == 850
         assert priced.adjustments[0].label == "Automática"
         coupon_promotion = promotion_service.get_coupon_promotion("SO-COM-CODIGO", timezone.now())
         assert coupon_promotion is not None

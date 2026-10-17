@@ -81,11 +81,9 @@ class TestBuildProductDetailShape:
         assert proj.sku == product.sku
         assert proj.slug == product.sku
         assert proj.name == "Pão Francês"
-        assert proj.base_price_q == 80
-        assert proj.price_display == "R$ 0,80"
-        assert proj.has_promotion is False
-        assert proj.original_price_display is None
-        assert proj.promotion_label is None
+        assert proj.quote.final_unit_price_q == 80
+        assert proj.quote.list_unit_price_q == 80
+        assert proj.quote.adjustments == ()
         assert proj.max_qty == 99
         assert proj.is_bundle is False
         assert proj.components == ()
@@ -121,8 +119,7 @@ class TestBuildProductDetailShape:
         # listing_item fixture seeds price_q=90
         proj = build_product_detail(sku=product.sku, channel_ref="web")
         assert proj is not None
-        assert proj.base_price_q == 90
-        assert proj.price_display == "R$ 0,90"
+        assert proj.quote.final_unit_price_q == 90
 
     def test_breadcrumb_category_is_first_collection(
         self, listing, collection, collection_item, product,
@@ -305,11 +302,10 @@ class TestPromotions:
         )
         proj = build_product_detail(sku=product.sku, channel_ref="web")
         assert proj is not None
-        assert proj.has_promotion is True
-        assert proj.original_price_display == "R$ 0,80"
-        assert proj.base_price_q == 64  # 80 - 20%
-        assert proj.price_display == "R$ 0,64"
-        assert proj.promotion_label
+        assert proj.quote.adjustments
+        assert proj.quote.list_unit_price_q == 80
+        assert proj.quote.final_unit_price_q == 64  # 80 - 20%
+        assert proj.quote.adjustments[0].badge_label
 
 
 # ──────────────────────────────────────────────────────────────────────

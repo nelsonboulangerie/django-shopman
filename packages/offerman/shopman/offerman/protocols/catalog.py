@@ -40,7 +40,11 @@ class PriceInfo:
 
 @dataclass(frozen=True)
 class PriceAdjustment:
-    """Contextual adjustment applied on top of the list price."""
+    """Contextual adjustment applied on top of the list price.
+
+    ``amount_q`` is the total monetary effect on the quoted line quantity,
+    never a per-unit discount.
+    """
 
     code: str
     label: str
@@ -56,9 +60,9 @@ class ContextualPrice:
     qty: Decimal
     listing: str | None
     list_unit_price_q: int
-    list_total_price_q: int
+    list_line_total_q: int
     final_unit_price_q: int
-    final_total_price_q: int
+    final_line_total_q: int
     adjustments: list[PriceAdjustment] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
@@ -129,7 +133,7 @@ class PricingBackend(Protocol):
         qty: Decimal,
         listing: str | None,
         list_unit_price_q: int,
-        list_total_price_q: int,
+        list_line_total_q: int,
         context: dict | None = None,
     ) -> ContextualPrice | None:
         """Return a contextual price, or None to accept the list price as-is."""

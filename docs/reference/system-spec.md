@@ -379,7 +379,7 @@ Sinal `order_changed` (de orderman) → `dispatch(order, phase)` → resolve `Ch
 
 ### 2.3 Services (todos funções puras)
 
-**Sync**: `stock.hold/fulfill/release/revert`, `availability.check/reserve/reconcile/decide/bump_session_hold_expiry/classify_planned_hold_for_session_sku/own_holds_by_sku`, `payment.initiate/capture/refund/get_payment_status`, `customer.ensure`, `fulfillment.create/update`, `pricing.resolve`, `checkout.process(session_key, channel_ref, data, idempotency_key, ctx)`, `kds.dispatch/on_all_tickets_done`, `production.reserve_materials/emit_goods/notify`.
+**Sync**: `stock.hold/fulfill/release/revert`, `availability.check/reserve/reconcile/decide/bump_session_hold_expiry/classify_planned_hold_for_session_sku/own_holds_by_sku`, `payment.initiate/capture/refund/get_payment_status`, `customer.ensure`, `fulfillment.create/update`, `checkout.process(session_key, channel_ref, data, idempotency_key, ctx)`, `kds.dispatch/on_all_tickets_done`, `production.reserve_materials/emit_goods/notify`.
 
 **Async** (emitem Directives): `notification.send`, `loyalty.earn/redeem`, `fiscal.emit/cancel`.
 

@@ -73,7 +73,7 @@ def _vitrine_price_q(sku: str) -> tuple[int, bool]:
     from shopman.storefront.presentation import build_catalog_items_for_skus
 
     item = build_catalog_items_for_skus([sku], channel_ref=STOREFRONT_CHANNEL_REF)[0]
-    return item.base_price_q, item.has_promotion
+    return item.quote.final_unit_price_q, bool(item.quote.adjustments)
 
 
 def _pdp_price_q(sku: str) -> tuple[int, bool]:
@@ -81,7 +81,7 @@ def _pdp_price_q(sku: str) -> tuple[int, bool]:
 
     pdp = build_product_detail(sku=sku, channel_ref=STOREFRONT_CHANNEL_REF)
     assert pdp is not None, "a PDP precisa existir, senão o teste não prova nada"
-    return pdp.base_price_q, pdp.has_promotion
+    return pdp.quote.final_unit_price_q, bool(pdp.quote.adjustments)
 
 
 def _cart_unit_price_q(client, sku: str) -> int:

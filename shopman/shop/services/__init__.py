@@ -22,7 +22,6 @@ SYNC services:
     sessions.create/modify/commit — Canonical surface-to-Orderman session writes
     fulfillment.create(order)    — Create fulfillment record
     fulfillment.update(f, s)     — Update fulfillment status
-    pricing.resolve(sku, qty)    — Resolve price
     cancellation.cancel(order)   — Cancel order; lifecycle releases stock
     kds.dispatch(order)          — Route items to KDS instances
     kds.on_all_tickets_done(order) — Transition to READY

@@ -1,5 +1,6 @@
 import { normalizeSearchText, formatCount } from '~/utils/display'
 import type { CatalogItemProjection, CatalogProjection, CatalogSection } from '~/types/shopman'
+import { quotePriceDisplay } from '~/presentation/priceQuote'
 
 // Transforms puros do cardápio: busca com scoring, filtros multi-select e
 // badges de disponibilidade. Nenhum estado de UI aqui — a página orquestra.
@@ -490,7 +491,7 @@ export function productSearchOptions (
       kind: 'product' as const,
       value: result.item.sku,
       label: result.item.name,
-      meta: result.item.price_display,
+      meta: quotePriceDisplay(result.item.quote),
       icon: 'lucide:utensils',
       imageUrl: result.item.image_url || undefined,
       item: result.item,
@@ -646,12 +647,13 @@ export function choiceGroupsByName (
 
 export function choiceGroupCard (name: string, options: CatalogItemProjection[]): ChoiceGroupCard {
   const orderable = options.filter(option => option.availability !== 'unavailable')
-  const priced = options.filter(option => option.price_display && option.base_price_q > 0)
+  const priced = options.filter(option => option.quote.final_unit_price_q > 0)
   let priceLabel = ''
   if (priced.length) {
-    const cheapest = priced.reduce((min, option) => option.base_price_q < min.base_price_q ? option : min)
-    const samePrice = priced.every(option => option.base_price_q === cheapest.base_price_q)
-    priceLabel = samePrice ? cheapest.price_display : `a partir de ${cheapest.price_display}`
+    const cheapest = priced.reduce((min, option) => option.quote.final_unit_price_q < min.quote.final_unit_price_q ? option : min)
+    const samePrice = priced.every(option => option.quote.final_unit_price_q === cheapest.quote.final_unit_price_q)
+    const display = quotePriceDisplay(cheapest.quote)
+    priceLabel = samePrice ? display : `a partir de ${display}`
   }
   const cover = orderable.find(option => option.image_url)
     || options.find(option => option.image_url)

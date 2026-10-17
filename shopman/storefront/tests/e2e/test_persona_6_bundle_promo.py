@@ -85,9 +85,9 @@ def test_automatic_promotion_strikes_eligible_item_price(client):
     J.seed_promotion(name="Semana Doce", kind="percent", value=30, skus=[MUFFIN])  # no coupon → automatic
 
     card = _card(client, MUFFIN)
-    assert card["has_promotion"] is True
-    assert card["base_price_q"] == 700  # 30% off R$10,00
-    assert card["original_price_display"]
+    assert card["quote"]["adjustments"]
+    assert card["quote"]["final_unit_price_q"] == 700  # 30% off R$10,00
+    assert card["quote"]["list_unit_price_q"] == 1000
 
 
 # ── full journey: bundle + promoted item ─────────────────────────────────────

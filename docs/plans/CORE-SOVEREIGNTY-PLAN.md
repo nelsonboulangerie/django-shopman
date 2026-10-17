@@ -246,7 +246,7 @@ no próprio parecer.
   `adjustments`.
 - `offerman` permanece dono de lista e faixas por vitrine; política entra pelo porto `OFFERMAN["PRICING_BACKEND"]`.
 - Caracterizar callers e comparar o wrapper antigo com
-  `CatalogService.get_price(...).final_total_price_q` antes do corte.
+  `CatalogService.get_price(...).final_line_total_q` antes do corte.
 - **Aceite:** não existe segunda implementação da mesma decisão; toda cotação contextual
   preserva ajustes e explica o total.
 - **Apêndice A** descreve o motor genérico de condições e o critério para virar pacote.

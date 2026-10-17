@@ -40,11 +40,7 @@ function item (overrides: Partial<CatalogItemProjection> = {}): CatalogItemProje
     category: 'Rústicos',
     tags: [],
     search_terms: [],
-    base_price_q: 150,
-    price_display: 'R$ 1,50',
-    has_promotion: false,
-    original_price_display: null,
-    promotion_label: null,
+    quote: { qty: '1', listing_ref: 'web', list_unit_price_q: 150, list_line_total_q: 150, final_unit_price_q: 150, final_line_total_q: 150, adjustments: [] },
     unit_weight_label: null,
     availability: 'available',
     availability_label: 'Disponível',
@@ -329,10 +325,10 @@ describe('menu presentation — search options', () => {
 
 describe('cartão de escolha (choice_group)', () => {
   const group = 'Chás da casa'
-  const camille = item({ sku: 'CHCAM', name: 'Chá Camille', base_price_q: 1400, price_display: 'R$ 14,00', choice_group: group, image_url: '/camille.jpg' })
-  const rouge = item({ sku: 'CHROU', name: 'Chá Rouge', base_price_q: 1400, price_display: 'R$ 14,00', choice_group: group })
-  const hibisco = item({ sku: 'CHHIB', name: 'Chá Hibisco', base_price_q: 1800, price_display: 'R$ 18,00', choice_group: group })
-  const espresso = item({ sku: 'SP', name: 'Espresso', base_price_q: 800, price_display: 'R$ 8,00' })
+  const camille = item({ sku: 'CHCAM', name: 'Chá Camille', quote: { ...item().quote, list_unit_price_q: 1400, list_line_total_q: 1400, final_unit_price_q: 1400, final_line_total_q: 1400 }, choice_group: group, image_url: '/camille.jpg' })
+  const rouge = item({ sku: 'CHROU', name: 'Chá Rouge', quote: camille.quote, choice_group: group })
+  const hibisco = item({ sku: 'CHHIB', name: 'Chá Hibisco', quote: { ...camille.quote, list_unit_price_q: 1800, list_line_total_q: 1800, final_unit_price_q: 1800, final_line_total_q: 1800 }, choice_group: group })
+  const espresso = item({ sku: 'SP', name: 'Espresso', quote: { ...camille.quote, list_unit_price_q: 800, list_line_total_q: 800, final_unit_price_q: 800, final_line_total_q: 800 } })
 
   it('junta os itens do mesmo grupo num cartão só, no lugar do primeiro', () => {
     const groups = choiceGroupsByName([espresso, camille, rouge, hibisco])
@@ -356,7 +352,7 @@ describe('cartão de escolha (choice_group)', () => {
     expect(choiceGroupCard(group, [camille, rouge]).priceLabel).toBe('R$ 14,00')
     expect(choiceGroupCard(group, [hibisco, camille]).priceLabel).toBe('a partir de R$ 14,00')
     // Quadro estrutural (sem preço ainda): nada de inventar número.
-    expect(choiceGroupCard(group, [item({ ...camille, price_display: '', base_price_q: 0 }), item({ ...rouge, price_display: '', base_price_q: 0 })]).priceLabel).toBe('')
+    expect(choiceGroupCard(group, [item({ ...camille, quote: { ...camille.quote, list_unit_price_q: 0, list_line_total_q: 0, final_unit_price_q: 0, final_line_total_q: 0 } }), item({ ...rouge, quote: { ...rouge.quote, list_unit_price_q: 0, list_line_total_q: 0, final_unit_price_q: 0, final_line_total_q: 0 } })]).priceLabel).toBe('')
   })
 
   it('só diz Indisponível quando nenhuma opção pode ser pedida', () => {

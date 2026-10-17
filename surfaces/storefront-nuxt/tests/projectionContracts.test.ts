@@ -36,6 +36,36 @@ const catalogContract: CatalogProjection =
 const productDetailContract: ProductDetailProjection =
   productDetailContractJson as unknown as ProductDetailProjection
 
+const LEGACY_PRICE_FIELDS = [
+  'base_price_q',
+  'price_display',
+  'has_promotion',
+  'original_price_display',
+  'promotion_label',
+] as const
+
+function expectCanonicalQuote (value: Record<string, unknown>) {
+  for (const field of LEGACY_PRICE_FIELDS) expect(value).not.toHaveProperty(field)
+
+  expect(value).toHaveProperty('quote')
+  const quote = value.quote as Record<string, unknown>
+  expect(Object.keys(quote).sort()).toEqual([
+    'adjustments',
+    'final_line_total_q',
+    'final_unit_price_q',
+    'list_line_total_q',
+    'list_unit_price_q',
+    'listing_ref',
+    'qty',
+  ])
+  expect(typeof quote.qty).toBe('string')
+  expect(typeof quote.list_unit_price_q).toBe('number')
+  expect(typeof quote.list_line_total_q).toBe('number')
+  expect(typeof quote.final_unit_price_q).toBe('number')
+  expect(typeof quote.final_line_total_q).toBe('number')
+  expect(Array.isArray(quote.adjustments)).toBe(true)
+}
+
 describe('contrato compartilhado: storefront_catalog', () => {
   it('cobre os estados de disponibilidade que a loja distingue', () => {
     const bySku = new Map(catalogContract.items.map((item) => [item.sku, item]))
@@ -49,6 +79,8 @@ describe('contrato compartilhado: storefront_catalog', () => {
   it('atravessa a presentation real sem fixture paralela', () => {
     const items = uniqueItemsBySku(catalogContract.items)
     expect(items.length).toBeGreaterThanOrEqual(4)
+
+    for (const item of items) expectCanonicalQuote(item as unknown as Record<string, unknown>)
 
     const sections = buildSectionsBySku(resolveCatalogSections(catalogContract))
     for (const item of items) {
@@ -85,6 +117,7 @@ describe('contrato compartilhado: seções por SKU (P5)', () => {
 
 describe('contrato compartilhado: storefront_product_detail', () => {
   it('carrega os campos que a PDP renderiza', () => {
+    expectCanonicalQuote(productDetailContract as unknown as Record<string, unknown>)
     expect(productDetailContract.sku).toBe('CROISSANT-CONTRATO')
     expect(productDetailContract.availability).toBe('low_stock')
     expect(productDetailContract.available_qty).toBe(2)

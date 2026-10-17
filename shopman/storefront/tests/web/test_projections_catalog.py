@@ -130,11 +130,9 @@ class TestCatalogItemProjection:
         assert item.sku == product.sku
         assert item.slug == product.sku
         assert item.name == "Pão Francês"
-        assert item.base_price_q == 80
-        assert item.price_display == "R$ 0,80"
-        assert item.has_promotion is False
-        assert item.original_price_display is None
-        assert item.promotion_label is None
+        assert item.quote.final_unit_price_q == 80
+        assert item.quote.list_unit_price_q == 80
+        assert item.quote.adjustments == ()
         assert item.unit_weight_label is None
         assert item.category == "paes"
         # Builder should return the item even when stock was never seeded.
@@ -219,8 +217,7 @@ class TestCatalogItemProjection:
         proj = build_catalog(channel_ref="web")
         item = _find_item(proj, product.sku)
         assert item is not None
-        assert item.base_price_q == 90
-        assert item.price_display == "R$ 0,90"
+        assert item.quote.final_unit_price_q == 90
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -336,11 +333,10 @@ class TestPromotions:
         proj = build_catalog(channel_ref="web")
         item = _find_item(proj, product.sku)
         assert item is not None
-        assert item.has_promotion is True
-        assert item.original_price_display == "R$ 0,80"
-        assert item.base_price_q == 64  # 80 - 20%
-        assert item.price_display == "R$ 0,64"
-        assert item.promotion_label  # label comes from modifier metadata
+        assert item.quote.adjustments
+        assert item.quote.list_unit_price_q == 80
+        assert item.quote.final_unit_price_q == 64  # 80 - 20%
+        assert item.quote.adjustments[0].badge_label
 
 
 class TestVitrineCartPriceParity:
@@ -383,9 +379,9 @@ class TestVitrineCartPriceParity:
         )[0]
 
         # 80 - 25% = 60, identical on both surfaces.
-        assert vitrine.has_promotion is True
-        assert vitrine.base_price_q == 60
-        assert cart_line.unit_price_q == vitrine.base_price_q
+        assert vitrine.quote.adjustments
+        assert vitrine.quote.final_unit_price_q == 60
+        assert cart_line.unit_price_q == vitrine.quote.final_unit_price_q
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -482,7 +478,7 @@ class TestMultipleItemsInCollection:
         assert second.sku in skus
         second_item = _find_item(proj, second.sku)
         assert second_item is not None
-        assert second_item.price_display == "R$ 3,50"
+        assert second_item.quote.final_unit_price_q == 350
 
 
 class TestAvailabilityNotifiability:

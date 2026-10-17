@@ -3,6 +3,7 @@ import { tileBadge } from '~/presentation/menu'
 import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { compactUnitWeightLabel, formatCount } from '~/utils/display'
+import { quoteOriginalPriceDisplay, quotePriceDisplay } from '~/presentation/priceQuote'
 
 const props = withDefaults(defineProps<{
   item: CatalogItemProjection
@@ -21,8 +22,8 @@ const { qtyForSku } = useCartState()
 const meta = computed<ProductMutationMeta>(() => ({
   sku: props.item.sku,
   name: props.item.name,
-  price_q: props.item.base_price_q,
-  price_display: props.item.price_display,
+  price_q: props.item.quote.final_unit_price_q,
+  price_display: quotePriceDisplay(props.item.quote),
   image_url: props.item.image_url
 }))
 const currentQty = computed(() => qtyForSku(props.item.sku))
@@ -51,8 +52,8 @@ const badge = computed(() => tileBadge(props.item))
         <UiSkeleton class="h-5 w-24" />
       </div>
       <p v-else class="mt-2 flex flex-wrap items-baseline gap-x-2">
-        <span v-if="item.original_price_display" class="shop-meta">antes <span class="line-through">{{ item.original_price_display }}</span></span>
-        <span class="shop-price">{{ item.price_display }}</span>
+        <span v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta">antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span></span>
+        <span class="shop-price">{{ quotePriceDisplay(item.quote) }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
         <span v-if="withOptions && currentQty" class="shop-meta" data-product-options-in-cart>{{ formatCount(currentQty, 'na sacola', 'na sacola') }}</span>
       </p>

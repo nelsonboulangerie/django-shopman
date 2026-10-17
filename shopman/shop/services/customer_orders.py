@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Q
@@ -617,7 +618,7 @@ def add_reorder_items(
             skipped.append(item.sku)
             continue
 
-        price_q = _price_q(product, channel_ref=channel_ref)
+        price_q = _price_q(product, channel_ref=channel_ref, qty=item.qty)
         try:
             # A escolha do pedido de antes (sabor, adicionais) volta como
             # ``[{group, ref}]`` e é conferida contra o cadastro de AGORA: opção
@@ -717,22 +718,14 @@ def customer_identity_filter(
     return query if query.children else None
 
 
-def _price_q(product, *, channel_ref: str) -> int:
-    from shopman.offerman.models import ListingItem
+def _price_q(product, *, channel_ref: str, qty=1) -> int:
+    from shopman.offerman.service import CatalogService
 
-    item = (
-        ListingItem.objects.filter(
-            listing__ref=channel_ref,
-            listing__is_active=True,
-            product=product,
-            is_published=True,
-        )
-        .order_by("-min_qty")
-        .first()
-    )
-    if item:
-        return item.price_q
-    return product.base_price_q or 0
+    return CatalogService.unit_prices(
+        [(product.sku, Decimal(str(qty or 1)))],
+        listings=(channel_ref,),
+        published_only=True,
+    )[0]
 
 
 __all__ = [

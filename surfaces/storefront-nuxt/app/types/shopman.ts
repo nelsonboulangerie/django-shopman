@@ -31,6 +31,23 @@ export interface ProductOptionSelection {
   ref: string
 }
 
+export interface PriceAdjustment {
+  code: string
+  label: string
+  amount_q: number
+  badge_label: string | null
+}
+
+export interface PriceQuote {
+  qty: string
+  listing_ref: string | null
+  list_unit_price_q: number
+  list_line_total_q: number
+  final_unit_price_q: number
+  final_line_total_q: number
+  adjustments: PriceAdjustment[]
+}
+
 export interface CatalogItemProjection {
   sku: string
   slug: string
@@ -40,11 +57,7 @@ export interface CatalogItemProjection {
   category: string | null
   tags: string[]
   search_terms: string[]
-  base_price_q: number
-  price_display: string
-  has_promotion: boolean
-  original_price_display: string | null
-  promotion_label: string | null
+  quote: PriceQuote
   unit_weight_label: string | null
   availability: 'available' | 'low_stock' | 'planned_ok' | 'unavailable'
   availability_label: string
@@ -168,11 +181,7 @@ export interface ProductDetailProjection {
   long_description: string
   image_url: string | null
   gallery: string[]
-  base_price_q: number
-  price_display: string
-  has_promotion: boolean
-  original_price_display: string | null
-  promotion_label: string | null
+  quote: PriceQuote
   availability: CatalogItemProjection['availability']
   availability_label: string
   can_add_to_cart: boolean

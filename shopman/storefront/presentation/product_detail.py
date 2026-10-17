@@ -23,6 +23,7 @@ from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.projections import catalog_context
+from shopman.shop.projections.pricing_quote import PriceQuoteProjection
 from shopman.shop.projections.storefront_context import session_pricing_hints
 from shopman.shop.projections.types import (
     Availability,
@@ -128,12 +129,7 @@ class ProductDetailProjection:
     image_url: str | None
     gallery: tuple[str, ...]
 
-    # Price (dual)
-    base_price_q: int
-    price_display: str
-    has_promotion: bool
-    original_price_display: str | None
-    promotion_label: str | None
+    quote: PriceQuoteProjection
 
     # Availability
     availability: Availability
@@ -256,7 +252,8 @@ def build_product_detail(
     config = ChannelConfig.for_channel(channel_ref)
     low_stock_threshold = Decimal(str(config.stock.low_stock_threshold))
 
-    base_q = catalog_context.listing_price_for_product(product, channel_ref) or product.base_price_q
+    listed_q = catalog_context.listing_price_for_product(product, channel_ref)
+    base_q = listed_q if listed_q is not None else product.base_price_q
 
     sku_collections = catalog_context.collection_refs_by_sku([product.sku]).get(product.sku, [])
 
@@ -275,18 +272,6 @@ def build_product_detail(
         },
         list_unit_price_q=base_q,
     )
-
-    has_promo = bool(
-        price.adjustments and price.final_unit_price_q < price.list_unit_price_q,
-    )
-    promotion_label: str | None = None
-    original_price_display: str | None = None
-    if has_promo:
-        adj = price.adjustments[0]
-        promotion_label = adj.metadata.get("badge_label") or adj.label
-        original_price_display = _money(price.list_unit_price_q)
-
-    effective_q = price.final_unit_price_q
 
     # Availability — read raw once, resolve to canonical enum.
     # Session-aware: add the session's own hold back to the promisable qty
@@ -383,11 +368,7 @@ def build_product_detail(
         long_description=product.long_description or "",
         image_url=product.image_url or None,
         gallery=gallery,
-        base_price_q=int(effective_q or 0),
-        price_display=_money(effective_q) if effective_q else "",
-        has_promotion=has_promo,
-        original_price_display=original_price_display,
-        promotion_label=promotion_label,
+        quote=price,
         availability=availability,
         availability_label=availability_label,
         can_add_to_cart=can_add_to_cart,
