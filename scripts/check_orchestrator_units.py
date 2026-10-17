@@ -1417,6 +1417,20 @@ def validate(
                 "inventory-responsibility-drift",
                 f"{item['path']}: declared={item['responsibilities']}, derived={sorted(expected)}",
             )
+        if item["path"].startswith("shopman/shop/policies/") and not item["path"].endswith(
+            "/__init__.py"
+        ):
+            if item["support_claims"] or item["responsibilities"] != ["decisão"]:
+                _fail(
+                    "policy-namespace",
+                    f"{item['path']}: policies/ only accepts manifested decision units",
+                )
+            non_policy_units = [unit_id for unit_id in item["unit_ids"] if not by_id[unit_id]["policy"]]
+            if non_policy_units:
+                _fail(
+                    "policy-namespace",
+                    f"{item['path']}: non-policy units in policies/: {non_policy_units}",
+                )
 
     raw_questions = [unit.get("question") for unit in units if isinstance(unit, dict)]
     raw_entrypoints = [

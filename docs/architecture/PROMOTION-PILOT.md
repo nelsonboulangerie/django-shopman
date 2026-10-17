@@ -1,6 +1,7 @@
 # Piloto de extração — pedido mínimo de promoção
 
-Estado no primeiro commit: **cenário e baseline congelados; nenhum código de produção movido**.
+Estado: **piloto executado e aceito**. O primeiro commit congelou cenário e baseline sem
+mover código de produção; a extração foi feita somente no commit seguinte.
 
 Este artefato executa a etapa 3 do WP-7 antes da extração. Ele separa a métrica de
 localidade de uma mudança futura da pegada transitória do PR que fará a extração.
@@ -59,7 +60,7 @@ Métrica composta do cenário único:
 - mediana: **3 arquivos**;
 - união: **3 arquivos**.
 
-## Desenho candidato, ainda não executado neste commit
+## Desenho executado
 
 Uma unidade `promotion.minimum-order-eligibility`, com um único verbo público puro:
 
@@ -67,14 +68,35 @@ Uma unidade `promotion.minimum-order-eligibility`, com um único verbo público 
 promotion_minimum_eligible(*, min_order_q: int, merchandise_subtotal_q: int) -> bool
 ```
 
-O verbo deve ser a única implementação da comparação e ter teste direto sem Django,
+O verbo é a única implementação da comparação e tem teste direto sem Django,
 banco ou `DJANGO_SETTINGS_MODULE`. Os três consumidores apenas reúnem os dois inteiros e
-delegam. O manifesto terá um entrypoint canônico, responsabilidade `decisão`,
+delegam. O manifesto tem um entrypoint canônico, responsabilidade `decisão`,
 `policy: true` e nenhum domínio, porto, evento, directive ou configuração.
 
-Meta depois: `shopman/shop/promotion_policy.py` mais seu teste puro, portanto soma,
+Meta depois: `shopman/shop/policies/promotion.py` mais seu teste puro, portanto soma,
 mediana e união de **2 arquivos**. A redução material esperada é **3 → 2 (33%)**; a
 produção deve cair de **2 → 1 arquivo**.
+
+## Depois
+
+A meta foi atingida:
+
+- produção: **1 arquivo**, `shopman/shop/policies/promotion.py`;
+- verdade do caso limítrofe: **1 arquivo**,
+  `scripts/tests/test_promotion_minimum_policy.py`;
+- soma: **2 arquivos**;
+- mediana: **2 arquivos**;
+- união: **2 arquivos**;
+- redução: **3 → 2 (33%)**, com a produção reduzida de **2 → 1**.
+
+Os testes de consumidores simulam a resposta do verbo e provam delegação sem duplicar a
+semântica do caso limítrofe. Uma busca pelos operadores de comparação junto a
+`min_order_q` nos antigos consumidores não retorna ocorrência.
+
+A pegada transitória do PR é deliberadamente maior que dois arquivos: inclui os três
+consumidores, o teste de delegação, o manifesto, o inventário, o gate de namespace, sua
+fixture negativa e este relatório. Esses arquivos não mudariam para executar S1 depois
+da extração, portanto não pertencem à métrica futura.
 
 ## Regra de aborto
 

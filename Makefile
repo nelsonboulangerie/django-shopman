@@ -478,7 +478,7 @@ adr-governance: ## Gate: número, status e índice canônicos das ADRs
 
 orchestrator-governance: ## Gate: inventário físico e unidades semânticas do orquestrador
 	$(PYTHON) scripts/check_orchestrator_units.py
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py -q
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py -q
 
 canonical-docs: adr-governance orchestrator-governance ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
 	@echo "── Canonical go-live documentation ──"

@@ -4160,6 +4160,39 @@
       "out_of_extraction": false
     },
     {
+      "id": "promotion.minimum-order-eligibility",
+      "question": "O subtotal de mercadorias atingiu o mínimo desta promoção?",
+      "owner": "promotion.minimum-order-eligibility",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.promotion:promotion_minimum_eligible",
+      "authoritative_symbols": [
+        "shopman.shop.policies.promotion:promotion_minimum_eligible"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/promotion.py",
+          "symbols": [
+            "promotion_minimum_eligible"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_promotion_minimum_policy.py::test_promotion_minimum_truth_table"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "purchasing.resale-markup-policy",
       "question": "Qual markup padrão ou por categoria deve preencher a sugestão de revenda?",
       "owner": "purchasing.resale-markup-policy",

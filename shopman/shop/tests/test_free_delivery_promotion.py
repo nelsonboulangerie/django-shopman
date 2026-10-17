@@ -123,10 +123,10 @@ def test_a_cap_above_the_fee_waives_everything(shop):
 
 
 def test_min_order_gates_the_waiver(shop):
-    """Renúncia com pedido mínimo: abaixo do mínimo, a taxa continua."""
+    """O consumidor delega o mínimo; a tabela limítrofe pertence à política pura."""
     _free_delivery("frete-acima-de-100", min_order_q=10_000)
     assert _fee_q(_delivery_cart(qty=1)) == FEE_Q  # R$ 20,00
-    assert _fee_q(_delivery_cart(qty=5)) == 0      # R$ 100,00
+    assert _fee_q(_delivery_cart(qty=6)) == 0      # R$ 120,00
 
 
 def test_a_coupon_can_carry_the_waiver(shop):

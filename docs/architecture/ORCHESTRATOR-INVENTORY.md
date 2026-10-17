@@ -1,6 +1,8 @@
 # Inventário do orquestrador
 
-Este é o artefato de entrada do WP-7; não é o piloto de extração.
+Este foi o artefato de entrada do WP-7. O piloto de extração executado, com cenário
+congelado, métrica antes/depois e regra de aborto, está em
+[`PROMOTION-PILOT.md`](PROMOTION-PILOT.md).
 
 Há dois eixos independentes:
 

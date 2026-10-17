@@ -7,6 +7,7 @@ from shopman.offerman.protocols import ContextualPrice, PriceAdjustment
 from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.shop.modifiers import DiscountModifier
+from shopman.shop.policies.promotion import promotion_minimum_eligible
 
 
 class PromotionPricingBackend:
@@ -76,7 +77,10 @@ class PromotionPricingBackend:
             # por-linha e o trata no nível do pedido.
             if promo.type != Promotion.PERCENT:
                 continue
-            if promo.min_order_q and session_total_q < promo.min_order_q:
+            if not promotion_minimum_eligible(
+                min_order_q=promo.min_order_q,
+                merchandise_subtotal_q=session_total_q,
+            ):
                 continue
             if not DiscountModifier._matches(promo, sku, match_ctx):
                 continue
