@@ -109,16 +109,16 @@ def test_edit_between_reprice_and_commit_is_rejected_by_revision(ctx, monkeypatc
     key = ctx.conversation.session_key
     line_id = Session.objects.get(session_key=key).items[0]["line_id"]
     boundary, release = Event(), Event()
-    from shopman.orderman.services.commit import CommitService
 
-    original = CommitService.validate_expected_total
+    original = checkout._prepare_checkout_atomic
 
-    def paused_total(*args, **kwargs):
-        original(*args, **kwargs)
+    def paused_prepare(*args, **kwargs):
+        prepared = original(*args, **kwargs)
         boundary.set()  # A transação de recotação já terminou; commit ainda não começou.
         assert release.wait(10)
+        return prepared
 
-    monkeypatch.setattr(CommitService, "validate_expected_total", staticmethod(paused_total))
+    monkeypatch.setattr(checkout, "_prepare_checkout_atomic", paused_prepare)
     reviewed_revision = Session.objects.get(session_key=key).rev
     commit = Worker(lambda: checkout.process_ops(session_key=key, channel_ref="whatsapp", ops=[],
         idempotency_key="commercial-race-checkout", expected_total_q=quote["total_q"],
