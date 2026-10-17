@@ -378,6 +378,9 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/catalog_bindings.py",
             ROOT / "shopman/backstage/projections/customers.py",
             ROOT / "shopman/backstage/projections/customer_groups.py",
+            # A execução diária dos checklists vive no Gestor; configuração e
+            # trilha permanecem nos ModelAdmins correspondentes.
+            ROOT / "shopman/backstage/projections/operation_checklists.py",
             ROOT / "shopman/backstage/projections/feeds.py",
             ROOT / "shopman/backstage/projections/channel_health.py",
             ROOT / "shopman/backstage/projections/channel_attention.py",
@@ -875,7 +878,7 @@ def scan_surface_registry(
     surfaces: tuple[Surface, ...] | None = None,
     enforce_global_contract: bool = True,
 ) -> list[Violation]:
-    """Ensure backstage UI growth is routed through registered Admin/Unfold surfaces."""
+    """Ensure backstage UI growth stays inside its registered product surface."""
     violations: list[Violation] = []
     surfaces_to_check = surfaces or CANONICAL_ADMIN_SURFACES
 

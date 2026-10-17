@@ -1,8 +1,7 @@
-"""Admin/Unfold navigation tuned for operational backoffice.
+"""Admin/Unfold navigation for governance, configuration and audit.
 
-The sidebar is intentionally split between live operation shortcuts and
-backoffice/audit tools. Operator cockpit links go to Backstage; CRUD/audit links
-stay in Admin.
+The sidebar links daily work to its dedicated product surface. Admin entries are
+reserved for configuration, exceptional management and audit trails.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ def get_sidebar_navigation(request):
 
     Pedidos/POS/KDS são apps Nuxt headless dedicados (sem rota Django): só
     aparecem quando a base URL do deployment está configurada (evita link morto).
-    O histórico/CRUD de pedidos segue no grupo "Pedidos".
+    O histórico de pedidos segue no grupo "Auditoria".
     """
     from shopman.backstage.admin_console.cash_receipt import CashReceiptVerifyView
     from shopman.backstage.admin_console.diagnostics import DiagnosticsView
@@ -105,7 +104,7 @@ def get_sidebar_navigation(request):
                 # "ao vivo" não é um segundo nome do app: é o que separa ESTE item
                 # (abre a superfície) do grupo "Produção" logo abaixo (fichas, ordens,
                 # insumos). Mesma razão pela qual o Gestor de pedidos não se chama só
-                # "Pedidos": o CRUD de pedidos tem grupo próprio com esse nome.
+                # "Pedidos": o histórico auditável tem destino próprio no Admin.
                 "Produção ao vivo",
                 "factory",
                 production_url,
@@ -185,7 +184,7 @@ def get_sidebar_navigation(request):
         ]),
         # Impressão é uma pequena estação operacional própria: trabalhos são
         # trilha auditável; agentes são credenciais de dispositivo. Deixá-los
-        # escondidos no CRUD tornaria impossível resolver uma fila ou
+        # escondidos na listagem tornaria impossível resolver uma fila ou
         # diagnosticar um relay sem conhecer a URL interna do Admin.
         _group("Impressão", "print", [
             _model_item("Trabalhos de impressão", "receipt_long", "backstage.PrintJob"),

@@ -60,4 +60,27 @@ describe("useMarketingOffers", () => {
     await first;
     expect(refresh).toHaveBeenCalledTimes(1);
   });
+
+  it("atualiza uma oferta existente pelo endpoint de detalhe", async () => {
+    const refresh = vi.fn();
+    const fetch = vi.fn().mockResolvedValue({ ok: true, offer: { ref: "semana" } });
+    Object.assign(globalThis, {
+      useFetch: vi.fn(() => ({
+        data: ref({ offers: [], options: undefined }),
+        refresh,
+        pending: ref(false),
+        error: ref(null),
+      })),
+      $fetch: fetch,
+    });
+
+    const offers = useMarketingOffers();
+    await offers.update("semana", { kind: "offer", name: "Semana nova" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/v1/backstage/marketing/offers/semana/",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
 });

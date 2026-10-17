@@ -1,9 +1,9 @@
-"""Unfold admin dashboard callback — landing de configuração e auditoria.
+"""Unfold admin dashboard callback — landing de governança e auditoria.
 
-O Admin é CRUD mínimo + configurações: a operação ao vivo mora nos apps Nuxt
-(Gestor/PDV/KDS/Produção). O dashboard reúne atalhos de configuração, trilhas
-de auditoria, saúde da copy omotenashi e os dados de atenção (alertas de
-estoque, alertas do operador).
+O Admin concentra configuração, gestão excepcional e auditoria: a operação
+diária mora nos apps Nuxt (Gestor/PDV/KDS/Produção). O dashboard reúne atalhos
+de configuração, trilhas de auditoria, saúde da copy omotenashi e os dados de
+atenção (alertas de estoque, alertas do operador).
 
 Data is built by ``shopman.backstage.projections.dashboard.build_dashboard()``.
 This module only handles admin-specific table formatting (``format_html``).
@@ -71,8 +71,9 @@ def _config_links(request) -> list[dict]:
     """Os começos de caminho mais frequentes — não um índice do Admin.
 
     O menu já lista tudo; repetir a lista inteira aqui não ajudaria ninguém. Estes
-    são os pontos de partida do dia a dia: o que a loja é, o que ela vende, quanto
-    cobra e o que diz — dos quais cada pessoa vê o que de fato alcança.
+    são os pontos de partida mais frequentes da retaguarda: o que a loja é, o
+    que ela vende, quanto cobra e o que diz — dos quais cada pessoa vê o que de
+    fato alcança.
     """
     from shopman.offerman.models import Product
 

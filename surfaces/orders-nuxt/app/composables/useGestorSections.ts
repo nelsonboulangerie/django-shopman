@@ -86,6 +86,15 @@ export function useGestorSections() {
       watch: [operatorId],
     },
   );
+  const { data: checklistsAccess } = useFetch<{ authorized?: boolean }>(
+    "/api/v1/backstage/operator/session/",
+    {
+      key: useOperatorResourceKey("operation-checklists-access"),
+      query: { perm: "backstage.perform_operation_task" },
+      server: true,
+      watch: [operatorId],
+    },
+  );
   const { expeditesOnly } = useGestorAccess();
   const rail = useGestorRail();
   // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
@@ -96,6 +105,7 @@ export function useGestorSections() {
     channelsAttention: attention.value?.label || "",
     canManageCustomers: customersAccess.value?.authorized === true,
     canManageWorkstations: workstationsAccess.value?.authorized === true,
+    canOperateChecklists: checklistsAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
     exitCount: rail.value.onBoard ? rail.value.exit : offBoard.value.exit,

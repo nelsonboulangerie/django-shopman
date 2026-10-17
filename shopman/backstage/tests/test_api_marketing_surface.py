@@ -47,6 +47,12 @@ RULES_URL = "/api/v1/backstage/marketing/rules/"
 TEMPLATES_URL = "/api/v1/backstage/marketing/templates/"
 OPTIONS_URL = "/api/v1/backstage/marketing/options/"
 OFFERS_URL = "/api/v1/backstage/marketing/offers/"
+
+
+def offer_url(ref: str) -> str:
+    return f"{OFFERS_URL}{ref}/"
+
+
 HISTORY_URL = "/api/v1/backstage/marketing/history/"
 PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
 
@@ -146,6 +152,7 @@ class TestGate:
     def test_anonymous_cannot_manage_offers(self, client):
         assert client.get(OFFERS_URL).status_code == 401
         assert client.post(OFFERS_URL, data={}, content_type="application/json").status_code == 401
+        assert client.patch(offer_url("oferta"), data={}, content_type="application/json").status_code == 401
 
     def test_staff_without_permission_is_rejected(self, client):
         User.objects.create_user(username="caixa", password="x", is_staff=True)
@@ -153,6 +160,7 @@ class TestGate:
         assert client.get(BOARD_URL).status_code == 403
         assert client.get(OFFERS_URL).status_code == 403
         assert client.post(OFFERS_URL, data={}, content_type="application/json").status_code == 403
+        assert client.patch(offer_url("oferta"), data={}, content_type="application/json").status_code == 403
 
     def test_manager_with_permission_gets_the_board(self, client, gestor):
         client.force_login(gestor)
@@ -1102,6 +1110,45 @@ class TestMarketingOffers:
         assert coupon.max_uses == 30
         assert coupon.promotion_id != automatic.pk
         assert response.json()["offer"]["coupons"][0]["code"] == "PRIMEIRA-10"
+
+    def test_updates_an_existing_offer_without_changing_its_ref(self, client, gestor):
+        client.force_login(gestor)
+        created = client.post(OFFERS_URL, data=self.payload(), content_type="application/json").json()["offer"]
+
+        response = client.patch(
+            offer_url(created["ref"]),
+            data=self.payload(name="Semana prorrogada", value=20, is_active=False),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["offer"]["ref"] == created["ref"]
+        promotion = Promotion.objects.get(ref=created["ref"])
+        assert promotion.name == "Semana prorrogada"
+        assert promotion.value == 20
+        assert promotion.is_active is False
+
+    def test_updates_coupon_without_resetting_usage(self, client, gestor):
+        client.force_login(gestor)
+        created = client.post(
+            OFFERS_URL,
+            data=self.payload(kind="coupon", coupon_code="OUTUBRO", max_uses=30),
+            content_type="application/json",
+        ).json()["offer"]
+        coupon = Coupon.objects.get(code="OUTUBRO")
+        coupon.uses_count = 7
+        coupon.save(update_fields=("uses_count",))
+
+        response = client.patch(
+            offer_url(created["ref"]),
+            data=self.payload(kind="coupon", coupon_code="OUTUBRO", max_uses=50),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        coupon.refresh_from_db()
+        assert coupon.max_uses == 50
+        assert coupon.uses_count == 7
 
     def test_rejects_invalid_period_without_writing(self, client, gestor):
         now = timezone.now()

@@ -23,6 +23,8 @@ export interface GestorSectionsInput {
   // `true` só quando a antessala confirmou `cashman.manage_operators`: Postos é o
   // cadastro de quem vincula dispositivos. Desconhecido esconde, como em Clientes.
   canManageWorkstations?: boolean;
+  // Execução das rotinas operacionais; a permissão é perguntada ao servidor.
+  canOperateChecklists?: boolean;
   // Quem só expede (SUITE-UX §15) entra no Gestor pela coluna Saída e não ganha o
   // resto: o rail fica só com a operação. Ausente conta como quem gerencia.
   expeditesOnly?: boolean;
@@ -44,6 +46,7 @@ export const SETTINGS_ROUTES = [
   "/feeds",
   "/channels",
   "/workstations",
+  "/checklists",
 ];
 
 function badge(count: number | undefined) {
@@ -103,8 +106,20 @@ export function gestorSettingsSections({
   channelsAttention,
   canManageCustomers,
   canManageWorkstations = false,
+  canOperateChecklists = false,
 }: GestorSectionsInput): GestorSettingsEntry[] {
   return [
+    ...(canOperateChecklists
+      ? [
+          {
+            key: "checklists",
+            label: "Rotinas",
+            icon: "lucide:clipboard-check",
+            to: "/checklists",
+            description: "Abertura, rotina e fechamento da loja",
+          },
+        ]
+      : []),
     // Os pedidos que já saíram do quadro: concluídos, cancelados e devolvidos.
     {
       key: "history",
