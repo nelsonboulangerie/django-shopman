@@ -568,14 +568,15 @@ class ManyChatWhatsAppAdapter:
         return HandoffOutcome("accepted")
 
     def identify(self, subject: str, profile: Mapping[str, Any]):
-        from shopman.guestman.adapters.auth import CustomerResolver
+        from shopman.shop.services.auth import identify_manychat_subject
 
-        info = CustomerResolver().upsert_manychat_subscriber({"id": subject})
+        info = identify_manychat_subject(subject)
         if info is None:
             return None
+        phone_handle = info.handle("whatsapp") or info.handle("phone")
         return IdentityResolution(
-            customer_uuid=info.uuid,
+            customer_uuid=info.subject_id,
             assurance="verified_customer",
-            phone=info.phone or "",
+            phone=phone_handle.value if phone_handle else "",
             name=info.name or "",
         )

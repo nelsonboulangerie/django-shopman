@@ -76,8 +76,8 @@ funcionar". Marcar ✅/❌ e anotar o pedido.
 |---|---|---|
 | **Pix** | ❗**MOCK**, não Efí sandbox (`SHOPMAN_PIX_ADAPTER = shopman.shop.adapters.payment_mock`, `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true`) | O QR **não** é de gateway nenhum. O fluxo roda inteiro, mas a captura é sempre "Simular pagamento". As credenciais Efí existem no spec e `EFI_SANDBOX=true` — só o adapter não aponta para lá. `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false` (o pagamento não se confirma sozinho) |
 | **Cartão** | ❗**MOCK** (`SHOPMAN_CARD_ADAPTER = shopman.shop.adapters.payment_mock`) — pergunta de §5 **respondida** | Não é Stripe test. A chave `pk_test_…` e `STRIPE_CAPTURE_METHOD=manual` estão no spec, mas o adapter não é o da Stripe |
-| **SMS / OTP** | ❗**Nada é enviado** (`DOORMAN_MESSAGE_SENDER_CLASS = shopman.doorman.senders.LogSender`) | O código de acesso só vai para o log. O login só funciona porque `SHOPMAN_EXPOSE_DEBUG_OTP=true` devolve o código na resposta. **A chave da Comtele e a rota 17 estão configuradas** — trocar o sender é uma linha de env; ⚠️ mas a Comtele estava em HTTP 500 em 10/08, então testar antes de prometer |
-| **WhatsApp (Meta)** | Credenciais **presentes** no spec (`META_PAGE_ACCESS_TOKEN`, `META_PAGE_ID`, `META_IG_USER_ID`, `MANYCHAT_API_TOKEN`) — validade/escopo **não testados** | O "⏳ credencial pendente" ficou desatualizado. Mas com `LogSender` ativo nada sai por canal nenhum, então o efeito prático hoje é o mesmo |
+| **SMS / OTP** | Entrega explícita pela cadeia configurada; OTP nunca aparece em log ou resposta HTTP | **A chave da Comtele e a rota 17 estão configuradas**; a saúde real do provedor ainda precisa ser testada antes de prometer o canal |
+| **WhatsApp (Meta)** | Credenciais **presentes** no spec (`META_PAGE_ACCESS_TOKEN`, `META_PAGE_ID`, `META_IG_USER_ID`, `MANYCHAT_API_TOKEN`) — validade/escopo **não testados** | O "⏳ credencial pendente" ficou desatualizado; a disponibilidade depende do teste real do canal configurado |
 | **NFC-e (Focus NFe)** | ⏳ pendente | Sem emissão/impressão fiscal (obrigação legal — bloqueia go-live, não o alpha) |
 | **iFood** | Direto ✅ staging; homologação prod pendente | Entrada de pedido iFood testável em staging |
 | **Estoque** | ⚠️ "fantasma" (autosserviço) | Por isso o aceite (disponibilidade) existe antes de cobrar — não confiar 100% no número |
@@ -102,13 +102,13 @@ funcionar". Marcar ✅/❌ e anotar o pedido.
       com um probe, para não confundir "sem warning" com "sem captura").
 - [x] **Cartão no staging — RESPONDIDO (11/08):** é **mock**, não Stripe test
       (`SHOPMAN_CARD_ADAPTER = payment_mock`). O mesmo vale para o Pix.
-- [ ] **Decisão de alpha: sair do mock?** Três envs resolvem, e as credenciais já
+- [ ] **Decisão de alpha: sair do mock?** As credenciais já
       estão no spec: `SHOPMAN_PIX_ADAPTER` → Efí (sandbox), `SHOPMAN_CARD_ADAPTER`
-      → Stripe (test), `DOORMAN_MESSAGE_SENDER_CLASS` → Comtele. Cada uma torna
+      → Stripe (test), e a cadeia OTP deve apontar para os canais aprovados. Cada uma torna
       uma dimensão do §2 real em vez de simulada. Custo: nenhum código.
-- [ ] **OTP de verdade**: hoje o código só vai para o log e é devolvido na
-      resposta (`SHOPMAN_EXPOSE_DEBUG_OTP=true`). Para testador real isso é
-      aceitável se combinado, mas é o item que mais parece "quebrado" sem aviso.
+- [ ] **OTP de verdade**: validar o canal configurado com o provedor. O código
+      nunca é devolvido por HTTP nem escrito em log; sem entrega real o login
+      deve falhar fechado.
 - [ ] **WhatsApp Meta**: credenciais já presentes no spec; falta **testar**
       validade/escopo — ver GO-LIVE-SMS-WHATSAPP-STATUS.
 - [ ] **NFC-e**: pré-requisito legal de go-live, não de alpha.
@@ -166,14 +166,12 @@ automação ManyChat (**F3**, `ACCESS-LINK-UNIFICATION-PLAN`) estar no ar — se
 estiver, a pessoa manda o código e **nada volta**.
 
 Mas o link **"Usar outro número"** revela um formulário de telefone que chama
-`request-code` com método **`sms`** (`entrar.vue:452`), e o alerta de
-`entrar.vue:510` **mostra o código na própria tela** enquanto
-`SHOPMAN_EXPOSE_DEBUG_OTP=true`. Confirmado no ar: o formulário aparece.
+`request-code` com método **`sms`** (`entrar.vue:452`). A interface não recebe
+nem mostra o código; ele existe somente no canal de entrega configurado.
 
-**Conclusão:** dá para chamar testadores hoje, orientando-os a usar "Usar outro
-número". Para tornar o login real basta trocar `DOORMAN_MESSAGE_SENDER_CLASS`
-para a Comtele (chave e rota 17 já no spec) — ⚠️ testar antes, a Comtele estava
-em HTTP 500 em 10/08.
+**Conclusão:** só dá para chamar testadores depois de provar a entrega no canal
+configurado (chave e rota 17 já no spec) — ⚠️ a Comtele estava em HTTP 500 em
+10/08, portanto o teste real continua bloqueante.
 
 ---
 

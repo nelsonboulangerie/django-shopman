@@ -74,7 +74,7 @@ def get_authenticated_customer(request):
 
     from shopman.guestman.services import customer as customer_service
 
-    return customer_service.get_by_uuid(customer_info.uuid)
+    return customer_service.get_by_uuid(customer_info.subject_id)
 
 
 def addresses(customer_ref: str):
@@ -208,12 +208,11 @@ PHONE_TAKEN_DETAIL = "Este número já está em uso em outra conta."
 
 # Os dois tipos de contato que respondem por "o telefone do cliente".
 #
-# Não é redundância: o login grava o número verificado como `WHATSAPP`
-# (`doorman.verification._link_verified_identifier`) e o cache do `Customer`
-# espelha o mesmo número como `PHONE` (`Customer._sync_contact_points`). Os dois
-# apontam para `Customer.phone` no caminho de volta (`_sync_to_customer`), e
-# `get_by_phone` procura nos DOIS. Trocar só um deixa o outro respondendo pelo
-# número velho — que é exatamente o buraco que esta troca existe para fechar.
+# Não é redundância: o IdentityResolver do Guestman reúne PHONE e WHATSAPP no
+# mesmo handle de login, e sua bridge registra o handle verificado sem trocar a
+# primazia existente. Ambos podem espelhar `Customer.phone`; a troca de número
+# precisa retirar os dois para que nenhum identificador antigo continue capaz
+# de resolver a identidade.
 PHONE_CONTACT_TYPES = ("phone", "whatsapp")
 
 
@@ -243,6 +242,7 @@ def _phone_belongs_to_someone_else(customer, phone: str) -> bool:
     )
 
 
+@transaction.atomic
 def _set_primary_phone(customer, phone: str) -> None:
     """Promove o número a contato principal do cliente — pelo Core, não à mão.
 
@@ -272,6 +272,7 @@ def _set_primary_phone(customer, phone: str) -> None:
     poucos meses. Guardar o histórico não vale entregar a chave junto.
     """
     from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services import identity as identity_service
 
     if _phone_belongs_to_someone_else(customer, phone):
         raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
@@ -285,17 +286,18 @@ def _set_primary_phone(customer, phone: str) -> None:
         .values_list("value_normalized", flat=True)
     )
 
-    for tipo in PHONE_CONTACT_TYPES:
-        contato, _created = ContactPoint.objects.get_or_create(
-            customer=customer,
-            type=tipo,
-            value_normalized=phone,
-            defaults={"value_display": phone},
-        )
-        if not contato.is_primary:
-            contato.set_as_primary()
-        if not contato.is_verified:
-            contato.mark_verified(ContactPoint.VerificationMethod.OTP_WHATSAPP)
+    try:
+        for tipo in PHONE_CONTACT_TYPES:
+            contato = identity_service.ensure_contact_point(
+                customer,
+                type=tipo,
+                value_normalized=phone,
+                is_primary=True,
+            )
+            if not contato.is_verified:
+                contato.mark_verified(ContactPoint.VerificationMethod.OTP_WHATSAPP)
+    except identity_service.ContactPointOwnershipConflict as exc:
+        raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone") from exc
 
     ContactPoint.objects.filter(
         customer=customer,
@@ -1345,7 +1347,6 @@ def anonymize_customer(customer, *, correlation_ref: str = "") -> tuple[str, str
     falhas: list[str] = []
     original_ref = customer.ref
     original_phone = customer.phone or ""
-    original_email = customer.email or ""
     phone_hash = hashlib.sha256(original_phone.encode()).hexdigest()[:12]
 
     # O pseudônimo do pedido vem do uuid do Customer, e NÃO do `phone_hash`
@@ -1406,7 +1407,7 @@ def anonymize_customer(customer, *, correlation_ref: str = "") -> tuple[str, str
     try:
         from shopman.doorman.services._user_bridge import forget_customer
 
-        forget_customer(customer.uuid, phone=original_phone, email=original_email)
+        forget_customer(customer.uuid)
     except Exception:
         falhas.append("esquecer o login")
         logger.warning("anonymize: forget_customer falhou correlation=%s", correlation_ref)

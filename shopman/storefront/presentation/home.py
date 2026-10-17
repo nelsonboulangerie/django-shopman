@@ -725,7 +725,7 @@ def _reorder_context(request: HttpRequest) -> tuple[str | None, tuple[LastOrderI
         from shopman.storefront.services import orders as order_service
 
         ref, items = order_service.last_reorder_context(
-            customer_uuid=customer_info.uuid,
+            customer_uuid=customer_info.subject_id,
             min_days=0,
         )
         projections = tuple(

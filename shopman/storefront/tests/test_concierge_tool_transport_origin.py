@@ -129,7 +129,7 @@ def test_access_link_uses_agnostic_source_and_causal_metadata(causal_conversatio
     monkeypatch.setattr(
         tools,
         "_auth_customer_info",
-        lambda context: SimpleNamespace(uuid=uuid4()),
+        lambda context: SimpleNamespace(subject_id=uuid4()),
     )
 
     def create_token(cls, customer, **kwargs):

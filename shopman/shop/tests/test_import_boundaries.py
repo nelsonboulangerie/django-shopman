@@ -100,12 +100,6 @@ DOMAIN_KERNEL_PACKAGES = {
     "stockman",
 }
 
-# Dívida já localizada para o WP-4 (doorman). O gate impede qualquer nova
-# aresta enquanto a integração de identidade sai do service de domínio.
-LEGACY_CROSS_KERNEL_DEBT = {
-    ("doorman", "shopman/doorman/services/verification.py", "guestman"),
-}
-
 # Read effects that predate WP-8. Counts make this a ratchet: an extra call in
 # the same file still fails, while later WPs may remove entries without first
 # changing the gate. BlindPrepCode is intentionally not on this list.
@@ -290,9 +284,7 @@ def test_domain_kernels_do_not_import_each_other_outside_bridges():
                 parts = module.split(".")
                 if len(parts) < 2 or parts[0] != "shopman" or parts[1] not in DOMAIN_KERNEL_PACKAGES - {owner}:
                     continue
-                relative = path.relative_to(package_root).as_posix()
-                if (owner, relative, parts[1]) not in LEGACY_CROSS_KERNEL_DEBT:
-                    violations.append((path, line, module))
+                violations.append((path, line, module))
 
     if violations:
         pytest.fail(
@@ -300,6 +292,60 @@ def test_domain_kernels_do_not_import_each_other_outside_bridges():
             f"{_format_violations(violations)}\n\n"
             "Move the integration to an optional adapter/contrib bridge or to the orchestrator."
         )
+
+
+def test_doorman_identity_port_has_no_legacy_contract_residue():
+    """The identity cut is atomic: old names cannot silently become a second API."""
+    roots = (
+        PACKAGES_ROOT / "doorman" / "shopman" / "doorman",
+        PACKAGES_ROOT / "guestman" / "shopman" / "guestman" / "adapters" / "auth.py",
+    )
+    forbidden = (
+        "AuthCustomerInfo",
+        "CustomerResolver",
+        "CUSTOMER_RESOLVER_CLASS",
+        "get_by_phone",
+        "get_by_email",
+        "get_by_identifier",
+        "target_kind",
+        "lock_active_by_uuid",
+        "resolve_customer_by_",
+        "normalize_login_target",
+        "LEGACY_CROSS_KERNEL_DEBT",
+        "backward compat",
+        "backward-compat",
+        "backward_compat",
+        "protocols.customer",
+    )
+    violations: list[str] = []
+    for root in roots:
+        paths = (root,) if root.is_file() else _py_files(root, skip_parts={"tests"})
+        for path in paths:
+            text = path.read_text()
+            violations.extend(
+                f"{path.relative_to(REPO_ROOT)}: {token}"
+                for token in forbidden
+                if token in text
+            )
+    assert not violations, "Legacy Doorman identity contract residue:\n" + "\n".join(violations)
+
+
+def test_concierge_identity_paths_import_only_host_composition():
+    """WP-4 identity paths in the storefront cannot import Guestman directly."""
+    guarded = (
+        STOREFRONT_ROOT / "concierge" / "tools.py",
+        STOREFRONT_ROOT / "concierge" / "transport.py",
+    )
+    violations = [
+        (path, line, module)
+        for path in guarded
+        for line, module in _imports(path)
+        if _matches_prefix(module, ("shopman.guestman",))
+    ]
+    assert not violations, (
+        "Concierge identity must cross the shop composition facade:\n"
+        + _format_violations(violations)
+    )
 
 
 def test_surfaces_do_not_import_each_other():

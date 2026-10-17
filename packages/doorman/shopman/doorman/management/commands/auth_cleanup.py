@@ -2,7 +2,6 @@
 
 Usage:
     python manage.py auth_cleanup
-    python manage.py auth_cleanup --days=7
     python manage.py auth_cleanup --dry-run
 """
 
@@ -25,26 +24,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--days",
-            type=int,
-            default=_RETENTION_DAYS,
-            help="Compatibilidade de CLI; a política fixa exige exatamente 7 dias.",
-        )
-        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Mostra somente contagens, sem alterar dados.",
         )
 
     def handle(self, *args, **options):
-        days = int(options["days"])
+        days = _RETENTION_DAYS
         dry_run = options["dry_run"]
-        if days != _RETENTION_DAYS:
-            raise CommandError(
-                f"R10 fixa a retenção em {_RETENTION_DAYS} dias após a expiração; "
-                "nenhum dado foi alterado."
-            )
-
         if dry_run:
             from datetime import timedelta
 

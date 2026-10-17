@@ -11,6 +11,7 @@ Tests for:
 """
 
 import json
+import logging
 from collections import Counter
 from datetime import timedelta
 from unittest.mock import patch
@@ -49,6 +50,13 @@ class TestOTPGeneration:
         digest = generate_code()
         assert len(digest) == 64  # SHA-256 hex digest
         assert not digest.isdigit()  # Not a raw 6-digit code
+
+    @pytest.mark.django_db
+    def test_verification_code_repr_redacts_target(self):
+        sentinel = "private-target@example.com"
+        code = VerificationCode.objects.create(target_value=sentinel)
+
+        assert sentinel not in str(code)
 
     def test_otp_codes_include_leading_zeros(self):
         """Codes starting with 0 must be properly zero-padded."""
@@ -315,6 +323,47 @@ class TestAccessLinkCreateAuth:
         assert data["handoff_expired"] is True
         link = AccessLink.get_by_token(data["token"])
         assert "cart_session_key" not in (link.metadata or {})
+
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
+    def test_invalid_access_code_log_redacts_raw_value(self, customer, caplog):
+        marker = "CUSTOMER-SECRET-MARKER"
+        logger = logging.getLogger("shopman.doorman.views.access_link")
+        logger.addHandler(caplog.handler)
+        try:
+            response = self._post_create(
+                {"customer_id": str(customer.uuid), "access_code": marker},
+                headers={"HTTP_X_API_KEY": TEST_API_KEY},
+            )
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert response.status_code == 200
+        assert caplog.text
+        assert marker not in caplog.text
+
+    def test_manychat_lookup_exception_log_redacts_subscriber(self, caplog):
+        marker = "SUBSCRIBER-SECRET-MARKER"
+
+        class Bridge:
+            def last_input_text(self, subscriber_id):
+                raise RuntimeError(f"provider URL contained {subscriber_id}")
+
+        logger = logging.getLogger("shopman.doorman.views.access_link")
+        logger.addHandler(caplog.handler)
+        try:
+            with patch(
+                "shopman.doorman.views.access_link.get_manychat_identity_bridge",
+                return_value=Bridge(),
+            ):
+                result = AccessLinkCreateView._last_input_text_from_manychat(
+                    {"source": "manychat", "subscriber_id": marker}
+                )
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert result == ""
+        assert caplog.text
+        assert marker not in caplog.text
 
     @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": TEST_API_KEY})
     def test_invalid_code_marks_handoff_expired(self, customer):
@@ -740,11 +789,14 @@ class TestGates:
 
     def test_g12_access_link_rate_limit_exceeded(self, customer):
         """G12 blocks after too many access link tokens for same email."""
+        import hashlib
+
         email = customer.email
+        target_digest = hashlib.sha256(email.encode("utf-8")).hexdigest()
         for _ in range(5):
             AccessLink.create_with_token(
                 customer_id=customer.uuid,
-                metadata={"method": "access_link", "email": email},
+                metadata={"method": "access_link", "target_digest": target_digest},
             )
         with pytest.raises(GateError, match="Rate limit"):
             Gates.access_link_rate_limit(email, max_requests=5, window_minutes=15)
@@ -771,7 +823,7 @@ class TestAccessLinkUtilities:
 
         found = AccessLinkService.get_customer_for_user(result.user)
         assert found is not None
-        assert found.uuid == customer.uuid
+        assert found.subject_id == customer.uuid
 
     def test_get_customer_for_user_without_link(self, django_user_model):
         """get_customer_for_user returns None when no CustomerUser."""
@@ -788,13 +840,19 @@ class TestAccessLinkUtilities:
         result = AccessLinkService.exchange(access_link._raw_token, request)
         assert result.success
 
-        user = AccessLinkService.get_user_for_customer(customer)
+        from shopman.guestman.adapters.auth import IdentityResolver
+
+        identity = IdentityResolver().get(customer.uuid, purpose="session")
+        user = AccessLinkService.get_user_for_customer(identity)
         assert user is not None
         assert user.id == result.user.id
 
     def test_get_user_for_customer_without_link(self, customer):
         """get_user_for_customer returns None when no CustomerUser."""
-        assert AccessLinkService.get_user_for_customer(customer) is None
+        from shopman.guestman.adapters.auth import IdentityResolver
+
+        identity = IdentityResolver().get(customer.uuid, purpose="session")
+        assert AccessLinkService.get_user_for_customer(identity) is None
 
     def test_cleanup_expired_tokens(self, db):
         """cleanup_expired_tokens deletes old expired tokens."""
@@ -833,6 +891,9 @@ class TestAccessLinkUtilities:
         CustomerUser.objects.create(user=existing_user, customer_id=customer.uuid)
 
         # Now try _get_or_create_user — should find existing link
-        user, created = AccessLinkService._get_or_create_user(customer)
+        from shopman.guestman.adapters.auth import IdentityResolver
+
+        identity = IdentityResolver().get(customer.uuid, purpose="session")
+        user, created = AccessLinkService._get_or_create_user(identity)
         assert not created
         assert user.id == existing_user.id

@@ -108,7 +108,7 @@ class CheckoutView(APIView):
         key = remote_mutations.idempotency_key_from_request(request, fallback="")
         if not key and not _cart_data(request).is_empty:
             return Response(status=204)
-        principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+        principal = str(getattr(getattr(request, "customer", None), "subject_id", "") or "")
         response = checkout_service.recover_checkout_response(browser_session=request.session.session_key or "", principal=principal, key=key)
         if response is None and key:
             recovered = checkout_service.recover_committed_checkout(
@@ -128,7 +128,10 @@ class CheckoutView(APIView):
         from shopman.storefront.api.surface import _session_scope
 
         customer = getattr(request, "customer", None)
-        if customer is None or not customer.is_active or not customer.phone:
+        phone_handle = None
+        if customer is not None and customer.is_active:
+            phone_handle = customer.handle("phone") or customer.handle("whatsapp")
+        if phone_handle is None:
             return Response(
                 {"detail": "Entre por telefone para continuar.", "error_code": "authentication_required"},
                 status=status.HTTP_403_FORBIDDEN,
@@ -139,13 +142,13 @@ class CheckoutView(APIView):
         checkout_input = request.data
         if isinstance(checkout_input, Mapping):
             checkout_input = checkout_input.copy()
-            checkout_input["phone"] = customer.phone
+            checkout_input["phone"] = phone_handle.value
         serializer = CheckoutSerializer(data=checkout_input)
         serializer.is_valid(raise_exception=True)
         payload = dict(serializer.validated_data)
         payload.pop("idempotency_key", None)
         payload.pop("address_label", None)
-        principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+        principal = str(customer.subject_id)
         def execute():
             response = self._post(request, key=key, validated_data=serializer.validated_data)
             return dict(response.data), response.status_code
@@ -504,7 +507,7 @@ class CheckoutView(APIView):
 
                 customer_info = getattr(request, "customer", None)
                 loyalty_balance_q = checkout_context.loyalty_balance(
-                    customer_info.uuid if customer_info else None
+                    customer_info.subject_id if customer_info else None
                 )
                 if loyalty_balance_q > 0:
                     checkout_data["loyalty"] = {"redeem_points_q": loyalty_balance_q}
@@ -625,7 +628,7 @@ def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:
         logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=no_identified_customer", order_ref)
         return
     try:
-        outcome = customer_tax_id.save_to_customer(customer.uuid, tax_id)
+        outcome = customer_tax_id.save_to_customer(customer.subject_id, tax_id)
     except Exception:
         logger.warning("storefront.checkout save_fiscal_tax_id failed order=%s", order_ref, exc_info=True)
         return

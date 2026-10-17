@@ -1,7 +1,7 @@
 """
 Django settings for Doorman tests.
 
-Minimal settings to run pytest with shopman.doorman + shopman.guestman (for CustomerResolver).
+Minimal settings to run pytest with shopman.doorman + shopman.guestman identity bridge.
 """
 
 SECRET_KEY = "test-secret-key-for-auth-tests"
@@ -12,7 +12,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "django.contrib.sessions",
-    # Guestman (dependency for CustomerResolver)
+    # Guestman (implementation of the opt-in identity bridge)
     "shopman.guestman",
     "shopman.guestman.contrib.identifiers",
     # Auth
@@ -54,5 +54,6 @@ DOORMAN = {
     "AUTO_CREATE_CUSTOMER": True,
     "USE_HTTPS": False,
     "DEFAULT_DOMAIN": "testserver",
-    "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+    "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
+    "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge",
 }

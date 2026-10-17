@@ -107,7 +107,6 @@ delas sem acusar. Todas estão `[OK]` em 10/10.
 | `SHOPMAN_LINK_ADAPTER` | ausente (cai no do cartão, Stripe) | O link do balcão usa o mesmo Checkout do cartão. | não muda |
 | `SHOPMAN_FISCAL_ADAPTER` | `shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend` | Sem ele nenhuma nota sai. | não muda |
 | `FOCUS_NFE_BASE_URL` | ausente | Se existir, vence o ambiente: apontada para homologação, a nota vai para lá mesmo com `producao`. | não muda |
-| `SHOPMAN_EXPOSE_DEBUG_OTP` | `false` | E010. | não muda |
 | `SHOPMAN_STAGING_AUTOPILOT` | `false` | E012: em produção avançaria pedido de cliente sozinho. | não muda |
 | `SHOPMAN_ENABLE_CONSOLE_NOTIFICATION_ADAPTER` | ausente | Notificação para o log, não para o cliente. | não muda |
 | `SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM` | ausente | Contrato de produção. | não muda |
@@ -144,8 +143,7 @@ delas sem acusar. Todas estão `[OK]` em 10/10.
   Focus ligado) **e** alguma porta de teste aberta: `DJANGO_DEBUG=true`,
   `SHOPMAN_ENVIRONMENT` diferente de `production`,
   `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`, `SHOPMAN_EXPOSE_MOCK_CAPTURE`,
-  `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`, `SHOPMAN_EXPOSE_DEBUG_OTP`,
-  `SHOPMAN_STAGING_AUTOPILOT` ou algum pagamento em `payment_mock` (no spec ou
+  `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`, `SHOPMAN_STAGING_AUTOPILOT` ou algum pagamento em `payment_mock` (no spec ou
   no `Shop.integrations`). A dica lista cada porta aberta e o que fazer com
   ela. O alpha de hoje (tudo de teste) e o ensaio do Pix (`EFI_SANDBOX=true`)
   não têm nada live e passam. Este script continua sendo a primeira trava

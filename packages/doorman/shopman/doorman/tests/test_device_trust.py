@@ -42,6 +42,16 @@ class TestTrustedDeviceModel:
         found = TrustedDevice.verify_token("invalid-token-value")
         assert found is None
 
+    def test_find_valid_token_does_not_touch_last_used_at(self):
+        cid = uuid.uuid4()
+        device, raw_token = TrustedDevice.create_for("customer", cid)
+
+        found = TrustedDevice.find_valid_token(raw_token)
+
+        assert found is not None
+        device.refresh_from_db()
+        assert device.last_used_at is None
+
     def test_verify_token_expired(self):
         """Expired device token should return None."""
         cid = uuid.uuid4()
@@ -211,7 +221,9 @@ class TestDeviceTrustService:
         request = self._make_request(cookies={"doorman_dt": raw_token})
         response = HttpResponse()
 
-        DeviceTrustService.revoke_device(request, response)
+        DeviceTrustService.revoke_device(
+            request, response, subject_type="customer", subject_id=cid,
+        )
 
         device.refresh_from_db()
         assert not device.is_active
@@ -227,7 +239,9 @@ class TestDeviceTrustService:
         response = HttpResponse()
 
         # Should not raise
-        DeviceTrustService.revoke_device(request, response)
+        DeviceTrustService.revoke_device(
+            request, response, subject_type="customer", subject_id=uuid.uuid4(),
+        )
         assert "doorman_dt" in response.cookies
 
     def test_revoke_all_returns_count(self):

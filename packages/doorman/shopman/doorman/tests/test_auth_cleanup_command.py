@@ -12,21 +12,6 @@ from django.utils import timezone
 from shopman.doorman.models import AccessLink, TrustedDevice, VerificationCode
 
 
-@pytest.mark.parametrize("days", (0, -1, 1, 6, 8, 30, 90, 91))
-def test_auth_cleanup_rejects_unsafe_retention_window_without_calling_services(days: int) -> None:
-    with (
-        patch("shopman.doorman.services.access_link.AccessLinkService.cleanup_expired_tokens") as links,
-        patch("shopman.doorman.services.verification.AuthService.cleanup_expired_codes") as codes,
-        patch("shopman.doorman.services.device_trust.DeviceTrustService.cleanup") as devices,
-        pytest.raises(CommandError, match="nenhum dado foi alterado"),
-    ):
-        call_command("auth_cleanup", days=days, stdout=StringIO())
-
-    links.assert_not_called()
-    codes.assert_not_called()
-    devices.assert_not_called()
-
-
 def test_auth_cleanup_dry_run_uses_the_exact_seven_day_boundary(db) -> None:
     fixed_now = timezone.now()
     for index, delta_seconds in enumerate((-1, 0, 1)):
@@ -92,7 +77,7 @@ def test_auth_cleanup_isolates_a_failure_and_finishes_the_other_steps(caplog) ->
         ) as devices,
         pytest.raises(CommandError) as caught,
     ):
-        call_command("auth_cleanup", days=7, stdout=output)
+        call_command("auth_cleanup", stdout=output)
 
     links.assert_called_once_with(days=7)
     codes.assert_called_once_with(days=7)

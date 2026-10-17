@@ -96,7 +96,7 @@ def _login_with_code(client: Client, monkeypatch, customer: Customer):
         auth_api.auth_service,
         "verify_for_login",
         lambda *, phone, code_input, request: SimpleNamespace(
-            success=True, customer=SimpleNamespace(uuid=customer.uuid)
+            success=True, customer=SimpleNamespace(subject_id=customer.uuid)
         ),
     )
     monkeypatch.setattr(auth_api.auth_service, "confirmed_customer_name", lambda auth_result: "Ana")
@@ -210,7 +210,7 @@ def test_access_link_exchange_stamps_the_declaration(settings):
         DOORMAN={
             "ACCESS_LINK_API_KEY": "test-access-key",
             "ACCESS_LINK_ENTRY_URL": "https://loja.test",
-            "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+            "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
         }
     ):
         create = Client().post(

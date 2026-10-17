@@ -401,14 +401,6 @@ envs:
   scope: RUN_TIME
   value: '300000'
   type: GENERAL
-- key: SHOPMAN_EXPOSE_DEBUG_OTP
-  scope: RUN_TIME
-  value: 'false'
-  type: GENERAL
-- key: DOORMAN_MESSAGE_SENDER_CLASS
-  scope: RUN_TIME
-  value: shopman.doorman.senders.LogSender
-  type: GENERAL
 - key: DJANGO_SECRET_KEY
   scope: RUN_TIME
   type: SECRET

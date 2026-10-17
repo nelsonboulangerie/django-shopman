@@ -210,25 +210,6 @@ def test_operator_surface_rejects_hosts_outside_cookie_domain():
     assert "SHOPMAN_POS_BASE_URL=pdv.evil.example" in errors[0].hint
 
 
-@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_DEBUG_OTP=True)
-def test_debug_otp_exposure_errors_outside_non_production():
-    messages = checks.check_debug_otp_exposure(None)
-
-    assert [message.id for message in messages] == ["SHOPMAN_E010"]
-
-
-@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="staging", SHOPMAN_EXPOSE_DEBUG_OTP=True)
-def test_debug_otp_exposure_warns_for_staging():
-    messages = checks.check_debug_otp_exposure(None)
-
-    assert [message.id for message in messages] == ["SHOPMAN_W007"]
-
-
-@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_DEBUG_OTP=False)
-def test_debug_otp_exposure_disabled_is_clean():
-    assert checks.check_debug_otp_exposure(None) == []
-
-
 @override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_MOCK_CAPTURE=True)
 def test_mock_capture_exposure_errors_in_production():
     messages = checks.check_mock_capture_exposure(None)

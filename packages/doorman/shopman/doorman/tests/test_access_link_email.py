@@ -3,12 +3,16 @@ Tests for access link email login via AccessLinkService.
 """
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import RequestFactory, override_settings
+from shopman.doorman.error_codes import ErrorCode
 from shopman.doorman.services.access_link import AccessLinkService
 from shopman.doorman.views.access_link_request import AccessLinkRequestView
+from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
+from shopman.guestman.models import ContactPoint, Customer
 
 
 @pytest.mark.django_db
@@ -28,6 +32,26 @@ class TestAccessLinkEmailService:
         result = AccessLinkService.send_access_link("unknown@example.com")
         assert not result.success
         mock_send.assert_not_called()
+
+    def test_send_access_link_identity_conflict_fails_closed(self, customer, other_customer):
+        email = "conflict@example.com"
+        CustomerIdentifier.objects.create(
+            customer=customer,
+            identifier_type=IdentifierType.EMAIL,
+            identifier_value=email,
+        )
+        ContactPoint.objects.create(
+            customer=other_customer,
+            type=ContactPoint.Type.EMAIL,
+            value_normalized=email,
+        )
+        customer_count = Customer.objects.count()
+
+        result = AccessLinkService.send_access_link(email)
+
+        assert result.success is False
+        assert result.error_code == ErrorCode.IDENTITY_CONFLICT
+        assert Customer.objects.count() == customer_count
 
     def test_send_access_link_invalid_email(self):
         """Invalid email should return error."""
@@ -49,14 +73,11 @@ class TestAccessLinkEmailService:
     @patch("shopman.doorman.services.access_link.AccessLinkService._send_access_link_email")
     def test_send_access_link_customer_inactive(self, mock_send, customer):
         """Inactive customer should return error."""
-        from shopman.doorman.protocols.customer import AuthCustomerInfo
+        from shopman.doorman.protocols.identity import IdentityView
 
-        inactive = AuthCustomerInfo(
-            uuid=customer.uuid, name="Inactive", phone=None,
-            email=customer.email, is_active=False,
-        )
+        inactive = IdentityView(customer.uuid, "Inactive", (), False)
         with patch("shopman.doorman.services.access_link.get_adapter") as mock_get:
-            mock_get.return_value.resolve_customer_by_email.return_value = inactive
+            mock_get.return_value.resolve_identity.return_value = inactive
             mock_get.return_value.should_auto_create_customer.return_value = True
             result = AccessLinkService.send_access_link(customer.email)
         assert not result.success
@@ -99,16 +120,24 @@ class TestAccessLinkEmailService:
         assert sent is True
         mock_msg.send.assert_called_once()
 
-    def test_send_access_link_email_failure_returns_false(self):
+    def test_send_access_link_email_failure_returns_false_without_pii_log(self, caplog):
         """_send_access_link_email should return False on exception."""
+        email = "private@example.com"
+        url = "https://example.com/a?t=secret-token"
+        logger = logging.getLogger("shopman.doorman.access_link")
+        logger.addHandler(caplog.handler)
         with patch(
             "django.template.loader.render_to_string",
-            side_effect=Exception("Template error"),
+            side_effect=Exception(f"Template rejected {email} at {url}"),
         ):
-            sent = AccessLinkService._send_access_link_email(
-                "test@example.com", "https://example.com", 15
-            )
+            try:
+                sent = AccessLinkService._send_access_link_email(email, url, 15)
+            finally:
+                logger.removeHandler(caplog.handler)
         assert sent is False
+        assert caplog.text
+        assert email not in caplog.text
+        assert url not in caplog.text
 
 
 @pytest.mark.django_db

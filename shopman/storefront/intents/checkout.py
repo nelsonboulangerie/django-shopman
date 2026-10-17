@@ -248,7 +248,7 @@ def interpret_checkout(request, channel_ref: str) -> IntentResult:
     if loyalty_redeem:
         customer_info = getattr(request, "customer", None)
         loyalty_balance_q = checkout_context.loyalty_balance(
-            customer_info.uuid if customer_info else None
+            customer_info.subject_id if customer_info else None
         )
         if loyalty_balance_q > 0:
             checkout_data["loyalty"] = {"redeem_points_q": loyalty_balance_q}
@@ -383,7 +383,7 @@ def _resolve_saved_address(request, saved_address_id_raw: str) -> str:
     if customer_info is None:
         return ""
     return checkout_context.saved_address_text(
-        customer_uuid=customer_info.uuid,
+        customer_uuid=customer_info.subject_id,
         address_id_raw=saved_address_id_raw,
     )
 

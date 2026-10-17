@@ -106,7 +106,7 @@ result = AuthService.verify_for_login(
     target_value="+5511999999999",
     code_input="123456",
 )
-# VerifyResult(success=True, customer=<AuthCustomerInfo>, created_customer=False)
+# VerifyResult(success=True, customer=<IdentityView>, created_customer=False)
 ```
 
 Pipeline do `request_code`:
@@ -119,7 +119,7 @@ Pipeline do `request_code`:
 Pipeline do `verify_for_login`:
 1. Busca código válido (status, expiração, tentativas)
 2. Compara via HMAC timing-safe
-3. Resolve/cria Customer via CustomerResolver
+3. Resolve/cria a identidade via `IdentityResolver.resolve(kind, value)`
 4. Marca como VERIFIED
 
 ### AccessLinkService
@@ -140,13 +140,13 @@ result = AccessLinkService.exchange(
     token_str="abc123...",
     request=http_request,
 )
-# AuthResult(success=True, user=<User>, customer=<AuthCustomerInfo>)
+# AuthResult(success=True, user=<User>, customer=<IdentityView>)
 ```
 
 Pipeline do `exchange`:
 1. Busca AccessLink
 2. Aplica G7 (validade, audience)
-3. Resolve Customer via CustomerResolver
+3. Resolve a identidade via `IdentityResolver`
 4. Get/create Django User + CustomerUser
 5. Preserva session keys (ex: carrinho)
 6. `django.contrib.auth.login()`
@@ -176,23 +176,37 @@ device = DeviceTrustService.trust_device(response, customer_id=uuid, request=req
 # → Seta cookie HttpOnly, Secure, SameSite=Lax
 
 # Revogar
-DeviceTrustService.revoke_device(request, response)
+DeviceTrustService.revoke_device(
+    request, response, subject_type="customer", subject_id=uuid,
+)
 DeviceTrustService.revoke_all(customer_id=uuid)
 ```
 
 ## Protocols
 
-### CustomerResolver
+### IdentityResolver
 
-Interface para resolver clientes (desacopla do Guestman).
+Porto do Doorman para resolver sujeitos e seus handles; a bridge Guestman é opt-in.
 
 ```python
-class CustomerResolver(Protocol):
-    def get_by_phone(self, phone: str) -> AuthCustomerInfo | None: ...
-    def get_by_email(self, email: str) -> AuthCustomerInfo | None: ...
-    def get_by_uuid(self, uuid: UUID) -> AuthCustomerInfo | None: ...
-    def create_for_phone(self, phone: str) -> AuthCustomerInfo: ...
+class IdentityResolver(Protocol):
+    def resolve(self, kind: str, value: str) -> IdentityView | None: ...
+    def get(self, subject_id: UUID, *, purpose: str) -> IdentityView | None: ...
+    def lock_active(self, subject_id: UUID, *, purpose: str) -> IdentityView | None: ...
+    def create(self, kind: str, value: str) -> IdentityView: ...
+    def bind_verified_handle(
+        self,
+        subject_id: UUID,
+        kind: str,
+        value: str,
+        *,
+        proof: str,
+    ) -> IdentityView: ...
 ```
+
+`proof` é o canal factual do `VerificationCode`: SMS persiste `OTP_SMS`,
+WhatsApp persiste `OTP_WHATSAPP` e e-mail persiste `OTP_EMAIL`. `EMAIL_LINK`
+continua reservado para links e nunca representa uma prova de OTP.
 
 ### MessageSenderProtocol
 
@@ -218,7 +232,8 @@ Chave Django settings: `DOORMAN`
 | `ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES` | 15 | Janela de rate limit |
 | `ACCESS_CODE_COOLDOWN_SECONDS` | 60 | Cooldown entre códigos |
 | `MESSAGE_SENDER_CLASS` | ConsoleSender | Classe de envio |
-| `CUSTOMER_RESOLVER_CLASS` | `shopman.doorman.resolvers.NoopCustomerResolver` | Resolver de clientes (configure um real; com Guestman use `shopman.guestman.adapters.auth.CustomerResolver`) |
+| `IDENTITY_RESOLVER_CLASS` | `shopman.doorman.resolvers.NoopIdentityResolver` | Porto de identidade (com Guestman: `shopman.guestman.adapters.auth.IdentityResolver`) |
+| `MANYCHAT_IDENTITY_BRIDGE_CLASS` | `""` | Bridge opcional e tipada para enriquecimento ManyChat |
 | `DEVICE_TRUST_ENABLED` | True | Habilitar confiança de dispositivo |
 | `DEVICE_TRUST_TTL_DAYS` | 30 | TTL do cookie |
 | `ACCESS_LINK_ENABLED` | True | Habilitar Access Link por email |
@@ -236,7 +251,7 @@ Chave Django settings: `DOORMAN`
 | Rate limiting | G9 (target), G10 (IP), G11 (cooldown), G12 (access link) |
 | Reuso de token | G7 rejeita token já usado |
 | Criação de access link | API key obrigatória fora de `DEBUG`; falha fechado se ausente |
-| Desacoplamento | CustomerResolver desacopla do Guestman |
+| Desacoplamento | IdentityResolver é declarado pelo Doorman e implementado pela bridge opt-in do Guestman |
 | Preservação de sessão | Session keys preservadas no login (carrinho) |
 
 ## Exemplos
@@ -260,7 +275,12 @@ verify = AuthService.verify_for_login(
 )
 if verify.success:
     # 3. Confiar dispositivo para próximos logins
-    DeviceTrustService.trust_device(response, verify.customer.uuid, request)
+    DeviceTrustService.trust(
+        response,
+        "customer",
+        verify.customer.subject_id,
+        request,
+    )
 ```
 
 ### Fluxo Manychat → Web

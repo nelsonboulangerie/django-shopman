@@ -36,7 +36,6 @@ ALPHA_LIVE_ONLY_APP_ENVS = {
     "CONCIERGE_OBSERVATION_NOTICE_VERSION",
     "CONCIERGE_OBSERVATION_PRIVACY_APPROVED",
     "CONCIERGE_OPERATION_MODE",
-    "DOORMAN_MESSAGE_SENDER_CLASS",
     "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED",
     "SHOPMAN_MARKETING_WHATSAPP_MODE",
 }
@@ -191,14 +190,6 @@ def test_deploy_templates_never_prearm_publication_canary():
             f"{path.name}: via pública de canário pré-armada: "
             + ", ".join(sorted(offenders))
         )
-
-
-def test_alpha_never_exposes_debug_otp():
-    spec = _load_spec(ALPHA_SPEC)
-    entry = next(item for item in spec["envs"] if item["key"] == "SHOPMAN_EXPOSE_DEBUG_OTP")
-    assert entry["scope"] == "RUN_TIME"
-    assert entry["type"] == "GENERAL"
-    assert str(entry.get("value", "")).strip().lower() == "false"
 
 
 def test_alpha_declares_live_only_envs_and_privacy_receipt_secrets():

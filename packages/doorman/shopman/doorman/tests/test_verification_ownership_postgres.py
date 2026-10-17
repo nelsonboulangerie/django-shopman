@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
-from threading import Event
+from threading import Barrier, Event
 from time import monotonic
 
 import pytest
@@ -18,11 +18,13 @@ from django.utils import timezone
 from shopman.doorman.error_codes import ErrorCode
 from shopman.doorman.models import VerificationCode
 from shopman.doorman.models.verification_code import generate_raw_code
+from shopman.doorman.protocols.identity import IdentityConflict
 from shopman.doorman.services.verification import AuthService
-from shopman.guestman.adapters.auth import CustomerResolver
+from shopman.guestman.adapters.auth import IdentityResolver
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
 from shopman.guestman.contrib.manychat.resolver import ManychatSubscriberResolver
 from shopman.guestman.models import ContactPoint, Customer
+from shopman.guestman.services import customer as customer_service
 
 if not apps.is_installed("shopman.shop"):
     pytest.skip(
@@ -96,6 +98,178 @@ def _change_phone_while_holding_customer(
         assert release.wait(10)
 
 
+@pytest.mark.parametrize(
+    ("first_kind", "second_kind"),
+    [("phone", "phone"), ("phone", "whatsapp")],
+)
+def test_concurrent_verified_bind_has_one_owner_and_one_typed_conflict(
+    customer,
+    other_customer,
+    monkeypatch,
+    first_kind,
+    second_kind,
+):
+    value = "+5543999990181"
+    both_resolved_absent = Barrier(2)
+    original_resolve = IdentityResolver.resolve
+
+    def synchronize_after_absent_resolve(resolver, kind, candidate, *, purpose="login"):
+        result = original_resolve(resolver, kind, candidate, purpose=purpose)
+        if candidate == value and result is None:
+            both_resolved_absent.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr(IdentityResolver, "resolve", synchronize_after_absent_resolve)
+
+    def bind(subject_id, kind):
+        try:
+            return IdentityResolver().bind_verified_handle(
+                subject_id,
+                kind,
+                value,
+                proof="whatsapp",
+            )
+        except IdentityConflict as exc:
+            return exc
+
+    first = Worker(lambda: bind(customer.uuid, first_kind))
+    second = Worker(lambda: bind(other_customer.uuid, second_kind))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(first), pool.submit(second)]
+        results = [future.result(20) for future in futures]
+
+    views = [result for result in results if not isinstance(result, IdentityConflict)]
+    conflicts = [result for result in results if isinstance(result, IdentityConflict)]
+    assert len(views) == 1
+    assert len(conflicts) == 1
+    assert ContactPoint.objects.filter(
+        type=ContactPoint.Type.PHONE,
+        value_normalized=value,
+    ).count() == 1
+    assert IdentityResolver().resolve("phone", value).subject_id == views[0].subject_id
+
+
+def test_concurrent_bridge_bind_and_shop_phone_writer_share_canonical_claim(
+    customer,
+    other_customer,
+    monkeypatch,
+):
+    from shopman.shop.services import account as account_service
+
+    value = "+5543999990183"
+    both_checked_absent = Barrier(2)
+    original_resolve = IdentityResolver.resolve
+    original_owned = account_service._phone_belongs_to_someone_else
+
+    def bridge_absent_then_wait(resolver, kind, candidate, *, purpose="login"):
+        result = original_resolve(resolver, kind, candidate, purpose=purpose)
+        if candidate == value and result is None:
+            both_checked_absent.wait(timeout=10)
+        return result
+
+    def shop_absent_then_wait(shop_customer, candidate):
+        result = original_owned(shop_customer, candidate)
+        if candidate == value and result is False:
+            both_checked_absent.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr(IdentityResolver, "resolve", bridge_absent_then_wait)
+    monkeypatch.setattr(
+        account_service,
+        "_phone_belongs_to_someone_else",
+        shop_absent_then_wait,
+    )
+
+    def bridge_write():
+        try:
+            return IdentityResolver().bind_verified_handle(
+                customer.uuid,
+                "phone",
+                value,
+                proof="sms",
+            )
+        except IdentityConflict as exc:
+            return exc
+
+    def shop_write():
+        try:
+            account_service._set_primary_phone(other_customer, value)
+            return other_customer.uuid
+        except account_service.ContactAlreadyTaken as exc:
+            return exc
+
+    workers = [Worker(bridge_write), Worker(shop_write)]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(worker) for worker in workers]
+        results = [future.result(20) for future in futures]
+
+    failures = [
+        result
+        for result in results
+        if isinstance(result, (IdentityConflict, account_service.ContactAlreadyTaken))
+    ]
+    assert len(failures) == 1
+    canonical = ContactPoint.objects.get(
+        type=ContactPoint.Type.PHONE,
+        value_normalized=value,
+    )
+    owners = set(
+        ContactPoint.objects.filter(
+            type__in=[ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP],
+            value_normalized=value,
+        ).values_list("customer_id", flat=True)
+    )
+    assert owners == {canonical.customer_id}
+    assert not ContactPoint.objects.filter(
+        value_normalized=value,
+    ).exclude(customer_id=canonical.customer_id).exists()
+
+
+@pytest.mark.parametrize("kind", ["phone", "whatsapp", "email"])
+def test_concurrent_identity_create_has_one_subject_and_one_typed_conflict(
+    monkeypatch,
+    kind,
+):
+    value = "claim@example.com" if kind == "email" else "+5543999990182"
+    both_creating = Barrier(2)
+    original_create = customer_service.create
+
+    def synchronized_create(*args, **kwargs):
+        both_creating.wait(timeout=10)
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setattr(customer_service, "create", synchronized_create)
+
+    def create():
+        try:
+            return IdentityResolver().create(kind, value)
+        except IdentityConflict as exc:
+            return exc
+
+    workers = [Worker(create), Worker(create)]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(worker) for worker in workers]
+        results = [future.result(20) for future in futures]
+
+    views = [result for result in results if not isinstance(result, IdentityConflict)]
+    conflicts = [result for result in results if isinstance(result, IdentityConflict)]
+    assert len(views) == 1
+    assert len(conflicts) == 1
+    if kind == "email":
+        assert Customer.objects.filter(email=value).count() == 1
+        contact_kind = ContactPoint.Type.EMAIL
+    elif kind == "phone":
+        assert Customer.objects.filter(phone=value).count() == 1
+        contact_kind = ContactPoint.Type.PHONE
+    else:
+        assert Customer.objects.filter(phone=value).count() == 1
+        contact_kind = ContactPoint.Type.WHATSAPP
+    assert ContactPoint.objects.filter(
+        type=contact_kind,
+        value_normalized=value,
+    ).count() == 1
+
+
 @pytest.mark.parametrize("operation", ("request", "verify"))
 def test_contact_change_wins_before_otp_customer_lock(
     customer,
@@ -119,13 +293,13 @@ def test_contact_change_wins_before_otp_customer_lock(
         )
 
     lock_attempted = Event()
-    original_lock = CustomerResolver.lock_active_by_uuid
+    original_lock = IdentityResolver.lock_active
 
-    def observe_lock_attempt(resolver, customer_uuid):
+    def observe_lock_attempt(resolver, customer_uuid, *, purpose):
         lock_attempted.set()
-        return original_lock(resolver, customer_uuid)
+        return original_lock(resolver, customer_uuid, purpose=purpose)
 
-    monkeypatch.setattr(CustomerResolver, "lock_active_by_uuid", observe_lock_attempt)
+    monkeypatch.setattr(IdentityResolver, "lock_active", observe_lock_attempt)
 
     changed, release = Event(), Event()
     change = Worker(
@@ -179,7 +353,7 @@ def test_contact_change_wins_before_otp_customer_lock(
 
 
 _MANYCHAT_OTP_DOORMAN = {
-    "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+    "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
     "DELIVERY_CHAIN": ["whatsapp"],
     "DELIVERY_SENDERS": {
         "whatsapp": "shopman.shop.adapters.otp_manychat.ManychatOTPSender",

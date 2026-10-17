@@ -348,10 +348,10 @@ def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, o
 
 
 def test_no_network_lookup_in_ack(url, intake, monkeypatch):
-    from shopman.guestman.adapters.auth import CustomerResolver
+    from shopman.guestman.adapters.auth import ManychatIdentityBridge
 
     network = Mock(side_effect=AssertionError("network in ACK"))
-    monkeypatch.setattr(CustomerResolver, "manychat_last_input_text", network)
+    monkeypatch.setattr(ManychatIdentityBridge, "last_input_text", network)
     assert post(url, event()).status_code == 200
     network.assert_not_called()
 

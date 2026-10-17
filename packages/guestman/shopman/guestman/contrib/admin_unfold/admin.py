@@ -20,6 +20,11 @@ from django.http import HttpResponse
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+from shopman.guestman.admin_forms import (
+    CanonicalContactPointAdminMixin,
+    ContactPointAdminForm,
+    ContactPointInlineFormSet,
+)
 from shopman.guestman.admin_privacy import (
     CustomerOwnedPrivacyFenceAdminMixin,
     CustomerPrivacyFenceAdminMixin,
@@ -227,9 +232,24 @@ class ContactPointInline(BaseTabularInline):
     """
 
     model = ContactPoint
+    form = ContactPointAdminForm
+    formset = ContactPointInlineFormSet
     extra = 0
-    fields = ["type", "value_display", "is_primary", "is_verified", "verified_at"]
-    readonly_fields = ["is_verified", "verified_at"]
+    fields = [
+        "type",
+        "value_normalized",
+        "value_display",
+        "is_primary",
+        "is_verified",
+        "verification_method",
+        "verified_at",
+    ]
+    readonly_fields = [
+        "is_primary",
+        "is_verified",
+        "verification_method",
+        "verified_at",
+    ]
     verbose_name = _("contato")
     verbose_name_plural = _("contatos")
 
@@ -692,7 +712,12 @@ class CustomerAddressAdmin(CustomerOwnedPrivacyFenceAdminMixin, BaseModelAdmin):
 
 
 @admin.register(ContactPoint)
-class ContactPointAdmin(CustomerOwnedPrivacyFenceAdminMixin, BaseModelAdmin):
+class ContactPointAdmin(
+    CanonicalContactPointAdminMixin,
+    CustomerOwnedPrivacyFenceAdminMixin,
+    BaseModelAdmin,
+):
+    form = ContactPointAdminForm
     list_display = [
         "value_masked",
         "type",
@@ -704,7 +729,16 @@ class ContactPointAdmin(CustomerOwnedPrivacyFenceAdminMixin, BaseModelAdmin):
     list_filter = ["type", "is_primary", "is_verified", "verification_method"]
     search_fields = ["value_normalized", "customer__ref", "customer__first_name"]
     raw_id_fields = ["customer"]
-    readonly_fields = ["id", "verified_at", "created_at", "updated_at"]
+    readonly_fields = [
+        "id",
+        "is_primary",
+        "is_verified",
+        "verification_method",
+        "verified_at",
+        "verification_ref",
+        "created_at",
+        "updated_at",
+    ]
 
     fieldsets = [
         (None, {"fields": ["id", "customer", "type", "value_normalized", "value_display"]}),

@@ -85,12 +85,13 @@ def _deliver_queued():
 
 
 def _authenticate(client, *, ref="CUS-AUTH-NOTIFY", phone=PHONE):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
     customer = Customer.objects.create(ref=ref, first_name="Ana", phone=phone)
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=None,
@@ -2021,13 +2022,14 @@ def test_resume_applies_only_to_future_occurrences(client):
 
 
 def test_logged_in_account_cannot_control_another_customers_alert(client):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+
+    from shopman.storefront.tests.identity_fakes import make_identity_view
 
     owner = Customer.objects.create(ref="CUS-ALERT-OWNER", first_name="Ana", phone=PHONE)
     stranger = Customer.objects.create(ref="CUS-ALERT-STRANGER", first_name="Bia", phone="+5543999990099")
     sub = stock_alerts.subscribe("SKU-ACCOUNT-IDOR", customer=owner, adult_declared=True)
-    info = AuthCustomerInfo(uuid=stranger.uuid, name=stranger.name, phone=stranger.phone, email=None, is_active=True)
+    info = make_identity_view(subject_id=stranger.uuid, name=stranger.name, phone=stranger.phone, email=None, is_active=True)
     user, _created = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
 

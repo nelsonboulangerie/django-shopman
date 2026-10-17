@@ -35,8 +35,9 @@ PUBLIC_IN_PLACE = ("/api/v1/storefront/site/", "/api/v1/storefront/legal/")
 
 def _customer_client() -> tuple[Client, Customer]:
     """Cliente logado com favorito e sacola: tudo o que a borda não pode espalhar."""
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+
+    from shopman.storefront.tests.identity_fakes import make_identity_view
 
     tier, _ = PriceTier.objects.get_or_create(
         ref="regular", defaults={"name": "Regular", "is_default": True, "priority": 0}
@@ -44,8 +45,8 @@ def _customer_client() -> tuple[Client, Customer]:
     customer = Customer.objects.create(
         ref="CUST-EDGE", first_name="Marisol", phone="+5543999990077", price_tiers=tier
     )
-    info = AuthCustomerInfo(
-        uuid=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True
+    info = make_identity_view(
+        subject_id=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True
     )
     user, _ = get_or_create_user_for_customer(info)
     client = Client()

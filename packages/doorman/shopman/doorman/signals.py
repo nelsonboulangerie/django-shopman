@@ -11,7 +11,7 @@ customer_authenticated = Signal()
 Dispatched when a Customer successfully authenticates via Auth.
 
 Kwargs:
-    customer (AuthCustomerInfo): The authenticated customer.
+    customer (IdentityView): The authenticated customer.
     user (django.contrib.auth.models.User): The Django User created/linked.
     method (str): Authentication method — "access_link" or "verification_code".
     request (HttpRequest): The Django request that triggered authentication.
@@ -26,7 +26,7 @@ Example::
 
     @receiver(customer_authenticated)
     def on_auth(sender, customer, user, method, request, **kwargs):
-        logger.info(f"Customer {customer.uuid} logged in via {method}")
+        logger.info(f"Customer {customer.subject_id} logged in via {method}")
 """
 
 access_link_created = Signal()
@@ -35,7 +35,7 @@ Dispatched when an AccessLink is created.
 
 Kwargs:
     token (AccessLink): The created token instance.
-    customer (AuthCustomerInfo): The target customer.
+    customer (IdentityView): The target customer.
     audience (str): Token audience (web_checkout, web_account, etc.).
     source (str): Token source (manychat, internal, api).
     url (str): The entry URL. Só existe aqui — o `token` guarda o HASH, então
@@ -54,7 +54,7 @@ Example::
 
     @receiver(access_link_created)
     def on_token(sender, token, customer, audience, source, **kwargs):
-        analytics.track("access_link_created", customer_id=str(customer.uuid))
+        analytics.track("access_link_created", customer_id=str(customer.subject_id))
 """
 
 verification_code_sent = Signal()
@@ -73,7 +73,8 @@ Example::
 
     @receiver(verification_code_sent)
     def on_code_sent(sender, code, target_value, delivery_method, **kwargs):
-        logger.info(f"Code sent to {target_value} via {delivery_method}")
+        handle_kind = "email" if "@" in target_value else "phone"
+        logger.info("Code sent", extra={"handle_kind": handle_kind, "delivery_method": delivery_method})
 """
 
 verification_code_verified = Signal()
@@ -82,7 +83,7 @@ Dispatched when a VerificationCode is successfully verified.
 
 Kwargs:
     code (VerificationCode): The verified VerificationCode instance.
-    customer (AuthCustomerInfo): The customer who verified.
+    customer (IdentityView): The customer who verified.
     purpose (str): Code purpose — "login" or "verify_contact".
 
 When emitted:
@@ -93,7 +94,7 @@ Example::
     @receiver(verification_code_verified)
     def on_verified(sender, code, customer, purpose, **kwargs):
         if purpose == "login":
-            logger.info(f"Customer {customer.uuid} verified via OTP")
+            logger.info(f"Customer {customer.subject_id} verified via OTP")
 """
 
 device_trusted = Signal()

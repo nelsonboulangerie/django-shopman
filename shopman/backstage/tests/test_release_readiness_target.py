@@ -39,7 +39,6 @@ _IN_PLACE = {
     "SHOPMAN_CARD_ADAPTER": "shopman.shop.adapters.payment_stripe",
     "SHOPMAN_FISCAL_ADAPTER": "shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
     "SHOPMAN_FISCAL_EMISSION_RESOLVER": "shopman.shop.fiscal_resolvers.on_request_or_tax_id",
-    "SHOPMAN_EXPOSE_DEBUG_OTP": "false",
     "DJANGO_ALLOWED_HOSTS": "api.boulangerie.com.br",
     "CSRF_TRUSTED_ORIGINS": "https://api.boulangerie.com.br",
     "DATABASE_URL": "${postgres.shopman-staging-pool.DATABASE_URL}",

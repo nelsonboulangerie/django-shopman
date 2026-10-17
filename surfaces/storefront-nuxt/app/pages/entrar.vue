@@ -12,8 +12,6 @@ interface RequestCodeResponse {
   dev_console_hint: boolean
   code_expires_at?: string
   resend_after_seconds?: number
-  debug_otp_code?: string
-  debug_otp_expires_at?: string
 }
 
 interface VerifyResponse extends AuthSessionResponse {
@@ -60,9 +58,6 @@ const error = ref<AuthErrorView | null>(null)
 // num dispositivo seu, e o switch continua ali para quem está num aparelho emprestado.
 const trustedDevice = ref(true)
 const devConsoleHint = ref(false)
-const debugOtpCode = ref('')
-const debugOtpExpiresAt = ref('')
-const showDebugOtp = ref(true)
 const verified = ref(false)
 // O gate de boas-vindas é SÓ o nome (`welcome_asks_name`). O convite de
 // novidades não é passo do login: sobe como sheet na página de destino
@@ -170,8 +165,6 @@ const phoneAutocomplete = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 
 const phoneInputMode = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'numeric')
 const regionToggleLabel = computed(() => phoneRegion.value === 'INTL' ? 'Usar número do Brasil' : 'Usar número internacional')
 const resendState = computed(() => resendCooldown(lastSentAtMs.value, nowMs.value, resendWindow.value))
-const debugOtpValidUntil = computed(() => otpValidUntilDisplay(debugOtpExpiresAt.value))
-const debugOtpDigits = computed(() => debugOtpCode.value.split(''))
 const codeValidUntil = computed(() => otpValidUntilDisplay(codeExpiresAt.value))
 const requestedPhoneDisplay = computed(() => phoneDisplay(requestedPhone.value))
 const canContinueWelcome = computed(() => !!welcomeNameValue(welcomeName.value) && !pending.value)
@@ -279,19 +272,9 @@ function applyCodeDelivery (response: RequestCodeResponse, method: AuthDeliveryM
   deliveryLabel.value = response.delivery_label
   devConsoleHint.value = !!response.dev_console_hint
   codeExpiresAt.value = response.code_expires_at || ''
-  debugOtpCode.value = response.debug_otp_code || ''
-  debugOtpExpiresAt.value = response.debug_otp_expires_at || ''
-  showDebugOtp.value = true
   lastDeliveryMethod.value = method
   resendWindow.value = resendWindowMs(response.resend_after_seconds)
   lastSentAtMs.value = Date.now()
-}
-
-// Preenche o campo com o código de teste; o watcher de `code` confirma sozinho.
-function useDebugOtp () {
-  if (debugOtpCode.value.length !== 6 || step.value !== 'code') return
-  error.value = null
-  codeDigits.value = debugOtpCode.value.split('').map(Number)
 }
 
 async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
@@ -352,8 +335,6 @@ async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Eve
   error.value = null
   codeDigits.value = []
   devConsoleHint.value = false
-  debugOtpCode.value = ''
-  debugOtpExpiresAt.value = ''
   try {
     const devicePayload = authPhonePayload(phone.value, phoneRegion.value, undefined, defaultDdd.value)
     const trusted = await $fetch<VerifyResponse & { trusted?: boolean }>(apiPath('/api/auth/device-check/'), {
@@ -437,8 +418,6 @@ async function verifyCode () {
       trustSaved.value = !!trustResponse?.trusted
     }
     devConsoleHint.value = false
-    debugOtpCode.value = ''
-    debugOtpExpiresAt.value = ''
     verified.value = true
     if (response.requires_welcome) {
       enterWelcomeGate(response)
@@ -485,8 +464,6 @@ function returnToPhoneStep () {
   error.value = null
   devConsoleHint.value = false
   codeExpiresAt.value = ''
-  debugOtpCode.value = ''
-  debugOtpExpiresAt.value = ''
 }
 
 useSeoMeta({
@@ -629,46 +606,7 @@ useSeoMeta({
             <span class="whitespace-nowrap font-semibold tabular-nums">{{ requestedPhoneDisplay }}</span>.
           </p>
 
-          <UiAlert v-if="debugOtpCode && showDebugOtp" variant="warning" data-testid="debug-otp-alert" class="relative text-center">
-            <UiButton
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              icon="lucide:x"
-              aria-label="Ocultar código de teste"
-              class="absolute right-2 top-2"
-              @click="showDebugOtp = false"
-            />
-            <UiAlertTitle class="flex flex-col items-center gap-2 text-center">
-              <UiBadge variant="secondary" class="text-xs uppercase tracking-wide">Ambiente de teste</UiBadge>
-              <span>Código para entrar</span>
-            </UiAlertTitle>
-            <!-- !flex sobrescreve o `grid justify-items-start` do AlertDescription
-                 (que encolhia caixa/botão ao conteúdo e grudava à esquerda). -->
-            <UiAlertDescription class="!flex w-full flex-col">
-              <div class="mt-2 flex w-full flex-col gap-3">
-                <div
-                  class="flex w-full justify-center gap-3 rounded-lg border border-current/20 bg-current/5 py-3 font-mono text-3xl font-semibold tabular-nums"
-                  data-testid="debug-otp-code"
-                >
-                  <span v-for="(digit, index) in debugOtpDigits" :key="index">{{ digit }}</span>
-                </div>
-                <UiButton
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  icon="lucide:wand-sparkles"
-                  class="w-full justify-center"
-                  @click="useDebugOtp"
-                >
-                  Usar código de teste
-                </UiButton>
-              </div>
-              <p v-if="debugOtpValidUntil" class="mt-2 w-full text-center text-xs opacity-80">Válido até {{ debugOtpValidUntil }}.</p>
-            </UiAlertDescription>
-          </UiAlert>
-
-          <UiAlert v-else-if="devConsoleHint && !debugOtpCode" variant="warning">
+          <UiAlert v-if="devConsoleHint" variant="warning">
             <UiAlertTitle>Código no terminal local</UiAlertTitle>
             <UiAlertDescription>Leia o código no terminal onde o projeto está rodando.</UiAlertDescription>
           </UiAlert>

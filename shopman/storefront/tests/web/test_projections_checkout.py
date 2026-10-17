@@ -7,8 +7,6 @@ degradation when services are unavailable.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from django.test import RequestFactory
 
@@ -16,6 +14,7 @@ from shopman.shop.projections.types import PickupSlotProjection
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.presentation.checkout import CheckoutProjection, build_checkout
 from shopman.storefront.presentation.types import PaymentMethodOptionProjection
+from shopman.storefront.tests.identity_fakes import make_identity_view
 
 pytestmark = pytest.mark.django_db
 
@@ -33,6 +32,15 @@ def _request_anonymous(client):
     request.session = client.session  # type: ignore[attr-defined]
     request.customer = None
     return request
+
+
+def _identity(customer):
+    return make_identity_view(
+        subject_id=customer.uuid,
+        name=customer.name,
+        phone=customer.phone,
+        email=customer.email or None,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -97,11 +105,7 @@ class TestCheckoutProjectionShape:
 
     def test_authenticated_cart_can_checkout(self, cart_session, customer):
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
-            name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -129,9 +133,7 @@ class TestCheckoutProjectionShape:
             customer=cust, label="home", formatted_address="Home", is_default=True,
         )
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=cust.uuid, phone=cust.phone, name=cust.name,
-        )
+        request.customer = _identity(cust)
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
         assert proj.preselected_address_id == default_addr.id
         # Structured fields are surfaced for the picker.
@@ -156,11 +158,7 @@ class TestCheckoutProjectionShape:
         monkeypatch.setattr(LoyaltyService, "get_balance", fail_balance)
         monkeypatch.setattr(customer_context.logger, "debug", record_debug)
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
-            name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -189,11 +187,7 @@ class TestCheckoutProjectionShape:
         monkeypatch.setattr(address_service, "addresses", fail_addresses)
         monkeypatch.setattr(customer_context.logger, "debug", record_debug)
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
-            name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -267,9 +261,7 @@ class TestPaymentMethods:
             },
         )
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid, phone=customer.phone, name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -291,9 +283,7 @@ class TestPaymentMethods:
             },
         )
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid, phone=customer.phone, name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 

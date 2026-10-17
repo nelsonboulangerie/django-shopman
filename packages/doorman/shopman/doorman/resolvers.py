@@ -1,13 +1,13 @@
 """
-Built-in customer resolvers for Doorman.
+Built-in identity resolvers for Doorman.
 
-The default resolver (NoopCustomerResolver) raises NotImplementedError, which
-forces the integrator to configure a real resolver via DOORMAN["CUSTOMER_RESOLVER_CLASS"].
+The default resolver (NoopIdentityResolver) raises NotImplementedError, which
+forces the integrator to configure a real resolver via DOORMAN["IDENTITY_RESOLVER_CLASS"].
 
 When using Guestman, set:
 
     DOORMAN = {
-        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+        "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
     }
 """
 
@@ -16,48 +16,43 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .protocols.customer import AuthCustomerInfo
+    from .protocols.identity import IdentityView
 
 
-class NoopCustomerResolver:
+class NoopIdentityResolver:
     """
     Default resolver — raises NotImplementedError on every call.
 
-    Replace via DOORMAN["CUSTOMER_RESOLVER_CLASS"] with a real implementation.
-    When using shopman-guestman, use "shopman.guestman.adapters.auth.CustomerResolver".
+    Replace via DOORMAN["IDENTITY_RESOLVER_CLASS"] with a real implementation.
+    When using shopman-guestman, use "shopman.guestman.adapters.auth.IdentityResolver".
     """
 
     _msg = (
-        "No CustomerResolver configured. "
-        "Set DOORMAN['CUSTOMER_RESOLVER_CLASS'] to a class implementing "
-        "shopman.doorman.protocols.customer.CustomerResolver. "
+        "No IdentityResolver configured. "
+        "Set DOORMAN['IDENTITY_RESOLVER_CLASS'] to a class implementing "
+        "shopman.doorman.protocols.identity.IdentityResolver. "
         "If you are using shopman-guestman, use "
-        "'shopman.guestman.adapters.auth.CustomerResolver'."
+        "'shopman.guestman.adapters.auth.IdentityResolver'."
     )
 
-    def get_by_phone(self, phone: str) -> AuthCustomerInfo | None:
+    def resolve(self, kind: str, value: str, *, purpose: str = "login") -> IdentityView | None:
         raise NotImplementedError(self._msg)
 
-    def get_by_email(self, email: str) -> AuthCustomerInfo | None:
+    def get(self, subject_id, *, purpose: str) -> IdentityView | None:
         raise NotImplementedError(self._msg)
 
-    def get_by_uuid(self, uuid) -> AuthCustomerInfo | None:
+    def lock_active(self, subject_id, *, purpose: str) -> IdentityView | None:
         raise NotImplementedError(self._msg)
 
-    def lock_active_by_uuid(self, uuid) -> AuthCustomerInfo | None:
+    def create(self, kind: str, value: str) -> IdentityView:
         raise NotImplementedError(self._msg)
 
-    def get_by_identifier(self, identifier_type: str, identifier_value: str) -> AuthCustomerInfo | None:
-        raise NotImplementedError(self._msg)
-
-    def upsert_access_link_customer(self, customer_id, payload: dict) -> AuthCustomerInfo | None:
-        raise NotImplementedError(self._msg)
-
-    def upsert_manychat_subscriber(self, subscriber_data: dict) -> AuthCustomerInfo | None:
-        raise NotImplementedError(self._msg)
-
-    def create_for_phone(self, phone: str) -> AuthCustomerInfo:
-        raise NotImplementedError(self._msg)
-
-    def create_for_email(self, email: str) -> AuthCustomerInfo:
+    def bind_verified_handle(
+        self,
+        subject_id,
+        kind: str,
+        value: str,
+        *,
+        proof: str,
+    ) -> IdentityView:
         raise NotImplementedError(self._msg)

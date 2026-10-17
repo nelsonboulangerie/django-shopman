@@ -39,6 +39,7 @@ class ContactPoint(models.Model):
         CHANNEL_ASSERTED = "channel_asserted", _("Verificado pelo canal")
         OTP_WHATSAPP = "otp_whatsapp", _("OTP via WhatsApp")
         OTP_SMS = "otp_sms", _("OTP via SMS")
+        OTP_EMAIL = "otp_email", _("OTP via email")
         EMAIL_LINK = "email_link", _("Link por email")
         MANUAL = "manual", _("Manual (equipe)")
 

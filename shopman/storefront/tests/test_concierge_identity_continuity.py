@@ -1,7 +1,6 @@
 """Continuidade entre transportes exige identidade verificada e ato explícito."""
 
 from dataclasses import FrozenInstanceError
-from types import SimpleNamespace
 
 import pytest
 from django.db import transaction
@@ -299,15 +298,17 @@ def test_manychat_adapter_translates_customer_resolver_to_typed_identity(
     monkeypatch,
 ):
     customer, _, _, _ = identity_context
-    from shopman.guestman.adapters.auth import CustomerResolver
+    from shopman.doorman.protocols.identity import IdentityHandle, IdentityView
+    from shopman.guestman.adapters.auth import ManychatIdentityBridge
 
     monkeypatch.setattr(
-        CustomerResolver,
-        "upsert_manychat_subscriber",
-        lambda _self, payload: SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
+        ManychatIdentityBridge,
+        "upsert_subscriber",
+        lambda _self, payload: IdentityView(
+            subject_id=customer.uuid,
             name=customer.name,
+            handles=(IdentityHandle("whatsapp", customer.phone, True, True),),
+            is_active=True,
         )
         if payload == {"id": "wa-subject"}
         else None,

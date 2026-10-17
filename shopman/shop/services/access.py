@@ -116,7 +116,7 @@ def resolve_origin(result) -> str:
 
         token = (
             AccessLink.objects.filter(
-                customer_id=result.customer.uuid,
+                customer_id=result.customer.subject_id,
             )
             .order_by("-created_at")
             .first()

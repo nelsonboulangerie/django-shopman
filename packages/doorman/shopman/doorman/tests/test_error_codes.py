@@ -136,7 +136,7 @@ def test_verify_code_invalid_error_code(customer, verification_code):
 @pytest.mark.django_db
 @override_settings(DOORMAN={
     "AUTO_CREATE_CUSTOMER": False,
-    "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+    "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
 })
 def test_verify_account_not_found_error_code():
     """Unknown phone with auto-create disabled returns ACCOUNT_NOT_FOUND."""
@@ -243,13 +243,10 @@ def test_send_access_link_unknown_email_error_code():
 @pytest.mark.django_db
 def test_send_access_link_inactive_error_code(customer):
     """Inactive customer returns ACCOUNT_INACTIVE."""
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.protocols.identity import IdentityView
 
-    inactive = AuthCustomerInfo(
-        uuid=customer.uuid, name="Test", phone=None,
-        email=customer.email, is_active=False,
-    )
-    with patch("shopman.doorman.adapter.DefaultAuthAdapter.resolve_customer_by_email", return_value=inactive):
+    inactive = IdentityView(customer.uuid, "Test", (), False)
+    with patch("shopman.doorman.adapter.DefaultAuthAdapter.resolve_identity", return_value=inactive):
         result = AccessLinkService.send_access_link(customer.email)
     assert not result.success
     assert result.error_code == ErrorCode.ACCOUNT_INACTIVE

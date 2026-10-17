@@ -2,7 +2,7 @@
 Tests for DefaultAuthAdapter and adapter customization (AUTH-2).
 
 Tests:
-- Default adapter delegates to CustomerResolver
+- Default adapter delegates to IdentityResolver
 - Default adapter delegates to MessageSender
 - Custom adapter overrides work
 - create_and_send works for email/whatsapp/api channels
@@ -10,6 +10,7 @@ Tests:
 - Adapter hooks are called
 """
 
+import logging
 import uuid
 from unittest.mock import patch
 
@@ -17,7 +18,7 @@ import pytest
 from django.test import override_settings
 from shopman.doorman.adapter import DefaultAuthAdapter
 from shopman.doorman.conf import get_adapter, reset_adapter
-from shopman.doorman.protocols.customer import AuthCustomerInfo
+from shopman.doorman.protocols.identity import IdentityHandle, IdentityView
 from shopman.doorman.services.access_link import AccessLinkService
 from shopman.guestman.models import ContactPoint, Customer
 
@@ -27,56 +28,65 @@ from shopman.guestman.models import ContactPoint, Customer
 
 
 @pytest.mark.django_db
+def _view(subject_id, *, name="Test", phone=None, email=None, active=True):
+    handles = []
+    if phone:
+        handles.append(IdentityHandle("phone", phone, True, True))
+    if email:
+        handles.append(IdentityHandle("email", email, True, True))
+    return IdentityView(subject_id, name, tuple(handles), active)
+
+
 def test_default_adapter_resolve_by_phone(customer):
     adapter = DefaultAuthAdapter()
-    info = adapter.resolve_customer_by_phone(f"+{customer.phone}")
+    info = adapter.resolve_identity("phone", f"+{customer.phone}")
 
     assert info is not None
-    assert info.uuid == customer.uuid
+    assert info.subject_id == customer.uuid
 
 
 @pytest.mark.django_db
 def test_default_adapter_resolve_by_email(customer):
     adapter = DefaultAuthAdapter()
-    info = adapter.resolve_customer_by_email(customer.email)
+    info = adapter.resolve_identity("email", customer.email)
 
     assert info is not None
-    assert info.uuid == customer.uuid
+    assert info.subject_id == customer.uuid
 
 
 @pytest.mark.django_db
 def test_default_adapter_resolve_by_uuid(customer):
     adapter = DefaultAuthAdapter()
-    info = adapter.resolve_customer_by_uuid(customer.uuid)
+    info = adapter.identity(customer.uuid)
 
     assert info is not None
-    assert info.uuid == customer.uuid
+    assert info.subject_id == customer.uuid
 
 
 @pytest.mark.django_db
 def test_default_adapter_resolve_unknown_phone():
     adapter = DefaultAuthAdapter()
-    assert adapter.resolve_customer_by_phone("+5500000000000") is None
+    assert adapter.resolve_identity("phone", "+5500000000000") is None
 
 
 @pytest.mark.django_db
 def test_default_adapter_create_customer():
     adapter = DefaultAuthAdapter()
-    info = adapter.create_customer_for_phone("+5541777777777")
+    info = adapter.create_identity(adapter.login_handle("+5541777777777"))
 
     assert info is not None
-    assert info.phone == "+5541777777777"
+    assert (info.handle("phone") or info.handle("whatsapp")).value == "+5541777777777"
 
 
 @pytest.mark.django_db
-def test_default_adapter_create_customer_creates_whatsapp_contact_point():
+def test_default_adapter_create_customer_creates_canonical_phone_contact_point():
     adapter = DefaultAuthAdapter()
-    info = adapter.create_customer_for_phone("+5541777777777")
+    info = adapter.create_identity(adapter.login_handle("+5541777777777"))
 
-    customer = Customer.objects.get(uuid=info.uuid)
+    customer = Customer.objects.get(uuid=info.subject_id)
     assert ContactPoint.objects.filter(
         customer=customer,
-        type=ContactPoint.Type.WHATSAPP,
+        type=ContactPoint.Type.PHONE,
         value_normalized="+5541777777777",
         is_primary=True,
     ).exists()
@@ -85,10 +95,10 @@ def test_default_adapter_create_customer_creates_whatsapp_contact_point():
 @pytest.mark.django_db
 def test_default_adapter_create_customer_for_email():
     adapter = DefaultAuthAdapter()
-    info = adapter.create_customer_for_email("person@example.com")
+    info = adapter.create_identity(adapter.login_handle("person@example.com"))
 
     assert info is not None
-    assert info.email == "person@example.com"
+    assert info.handle("email").value == "person@example.com"
 
 
 @pytest.mark.django_db
@@ -106,11 +116,11 @@ def test_default_adapter_resolve_phone_via_contact_point():
     )
 
     adapter = DefaultAuthAdapter()
-    info = adapter.resolve_customer_by_phone("+554188887777")
+    info = adapter.resolve_identity("phone", "+554188887777")
 
     assert info is not None
-    assert info.uuid == customer.uuid
-    assert info.phone == "+554188887777"
+    assert info.subject_id == customer.uuid
+    assert info.handle("whatsapp").value == "+554188887777"
 
 
 def test_default_adapter_send_code():
@@ -120,14 +130,40 @@ def test_default_adapter_send_code():
     assert result is True
 
 
-def test_default_adapter_normalize_phone():
+def test_delivery_chain_exception_does_not_log_handle_or_code(caplog):
+    target = "+5543999990197"
+    code = "918273"
+
+    class ExplodingSender:
+        def send_code(self, sent_target, sent_code, method):
+            raise RuntimeError(f"provider rejected {sent_target} with code {sent_code}")
+
     adapter = DefaultAuthAdapter()
-    assert adapter.normalize_phone("41999999999") == "+5541999999999"
+    logger = logging.getLogger("shopman.doorman.adapter")
+    logger.addHandler(caplog.handler)
+    try:
+        with (
+            patch.object(adapter, "get_delivery_chain", return_value=["sms"]),
+            patch.object(adapter, "_get_chain_sender", return_value=ExplodingSender()),
+        ):
+            result = adapter.send_code_with_fallback(target, code)
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert result == (False, "sms")
+    assert caplog.text
+    assert target not in caplog.text
+    assert code not in caplog.text
 
 
-def test_default_adapter_normalize_login_target_for_email():
+def test_default_adapter_builds_normalized_phone_login_handle():
     adapter = DefaultAuthAdapter()
-    assert adapter.normalize_login_target(" User@Example.COM ") == "user@example.com"
+    assert adapter.login_handle("41999999999").value == "+5541999999999"
+
+
+def test_default_adapter_normalizes_email_handle():
+    adapter = DefaultAuthAdapter()
+    assert adapter.login_handle(" User@Example.COM ").value == "user@example.com"
 
 
 def test_default_adapter_should_auto_create():
@@ -225,10 +261,7 @@ def test_get_adapter_default_is_default_adapter():
 
 def test_send_access_link_email_channel():
     adapter = DefaultAuthAdapter()
-    customer = AuthCustomerInfo(
-        uuid=uuid.uuid4(), name="Test", phone="+5541999999999",
-        email="test@example.com", is_active=True,
-    )
+    customer = _view(uuid.uuid4(), phone="+5541999999999", email="test@example.com")
     with patch.object(adapter, "_send_access_link_email", return_value=True) as mock:
         result = adapter.send_access_link("email", customer, "https://example.com/link")
 
@@ -236,12 +269,31 @@ def test_send_access_link_email_channel():
     mock.assert_called_once_with(customer, "https://example.com/link")
 
 
+def test_adapter_access_link_email_exception_redacts_pii(caplog):
+    email = "private@example.com"
+    url = "https://example.com/a?t=secret-token"
+    adapter = DefaultAuthAdapter()
+    customer = _view(uuid.uuid4(), email=email)
+    logger = logging.getLogger("shopman.doorman.adapter")
+    logger.addHandler(caplog.handler)
+    try:
+        with patch(
+            "django.template.loader.render_to_string",
+            side_effect=RuntimeError(f"template rejected {email} at {url}"),
+        ):
+            result = adapter._send_access_link_email(customer, url)
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert result is False
+    assert caplog.text
+    assert email not in caplog.text
+    assert url not in caplog.text
+
+
 def test_send_access_link_api_channel():
     adapter = DefaultAuthAdapter()
-    customer = AuthCustomerInfo(
-        uuid=uuid.uuid4(), name="Test", phone="+5541999999999",
-        email=None, is_active=True,
-    )
+    customer = _view(uuid.uuid4(), phone="+5541999999999")
     # API channel returns True without sending
     result = adapter.send_access_link("api", customer, "https://example.com/link")
     assert result is True
@@ -249,10 +301,7 @@ def test_send_access_link_api_channel():
 
 def test_send_access_link_whatsapp_channel():
     adapter = DefaultAuthAdapter()
-    customer = AuthCustomerInfo(
-        uuid=uuid.uuid4(), name="Test", phone="+5541999999999",
-        email=None, is_active=True,
-    )
+    customer = _view(uuid.uuid4(), phone="+5541999999999")
     # LogSender always returns True (from test settings)
     result = adapter.send_access_link("whatsapp", customer, "https://example.com/link")
     assert result is True
@@ -265,10 +314,7 @@ def test_send_access_link_whatsapp_channel():
 
 @pytest.mark.django_db
 def test_create_and_send_email(customer):
-    info = AuthCustomerInfo(
-        uuid=customer.uuid, name=customer.first_name, phone=f"+{customer.phone}",
-        email=customer.email, is_active=True,
-    )
+    info = _view(customer.uuid, name=customer.first_name, phone=f"+{customer.phone}", email=customer.email)
     with patch("shopman.doorman.adapter.DefaultAuthAdapter.send_access_link", return_value=True):
         with patch.object(AccessLinkService, "_build_url", return_value="https://test.local/link"):
             result = AccessLinkService.create_and_send(info, channel="email")
@@ -278,10 +324,7 @@ def test_create_and_send_email(customer):
 
 @pytest.mark.django_db
 def test_create_and_send_api(customer):
-    info = AuthCustomerInfo(
-        uuid=customer.uuid, name=customer.first_name, phone=f"+{customer.phone}",
-        email=None, is_active=True,
-    )
+    info = _view(customer.uuid, name=customer.first_name, phone=f"+{customer.phone}")
     with patch("shopman.doorman.adapter.DefaultAuthAdapter.send_access_link", return_value=True):
         with patch.object(AccessLinkService, "_build_url", return_value="https://test.local/link"):
             result = AccessLinkService.create_and_send(info, channel="api")
@@ -291,10 +334,7 @@ def test_create_and_send_api(customer):
 
 @pytest.mark.django_db
 def test_create_and_send_failure(customer):
-    info = AuthCustomerInfo(
-        uuid=customer.uuid, name=customer.first_name, phone=f"+{customer.phone}",
-        email=None, is_active=True,
-    )
+    info = _view(customer.uuid, name=customer.first_name, phone=f"+{customer.phone}")
     with patch("shopman.doorman.adapter.DefaultAuthAdapter.send_access_link", return_value=False):
         with patch.object(AccessLinkService, "_build_url", return_value="https://test.local/link"):
             result = AccessLinkService.create_and_send(info, channel="whatsapp")

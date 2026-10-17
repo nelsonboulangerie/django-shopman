@@ -12,7 +12,6 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E007  Database backend is SQLite in production
   SHOPMAN_E008  Doorman access-link API key is not configured
   SHOPMAN_E009  Real payment adapter is missing required credentials/files
-  SHOPMAN_E010  Debug OTP exposure enabled outside non-production
   SHOPMAN_E011  Machine courier adapter enabled without API credentials
   SHOPMAN_E012  Piloto automático de staging habilitado em produção
   SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
@@ -38,7 +37,6 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W004  Listing.ref has no matching Channel.ref
   SHOPMAN_W005  OFFERMAN pricing backend not configured
   SHOPMAN_W006  Mock payment adapter explicitly allowed outside DEBUG
-  SHOPMAN_W007  Debug OTP exposure explicitly allowed in staging
   SHOPMAN_W008  iFood webhook token is not configured (integration webhook unauthenticated)
   SHOPMAN_W009  Manychat webhook secret is not configured
   SHOPMAN_W010  Machine courier enabled without webhook token (status via polling only)
@@ -491,34 +489,6 @@ def check_operator_cookie_domain(app_configs, **kwargs):
             )
         )
     return errors
-
-
-@register(deploy=True)
-def check_debug_otp_exposure(app_configs, **kwargs):
-    messages = []
-    if not getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False):
-        return messages
-
-    if is_production():
-        messages.append(
-            Error(
-                "SHOPMAN_EXPOSE_DEBUG_OTP está habilitado fora de ambiente não produtivo.",
-                hint=(
-                    "Desabilite SHOPMAN_EXPOSE_DEBUG_OTP antes de produção. "
-                    "O código OTP debug só pode aparecer em desenvolvimento ou staging técnico."
-                ),
-                id="SHOPMAN_E010",
-            )
-        )
-    elif not settings.DEBUG:
-        messages.append(
-            Warning(
-                "OTP debug está exposto em ambiente não-DEBUG.",
-                hint=("Permitido apenas para staging técnico. Remova SHOPMAN_EXPOSE_DEBUG_OTP antes de go-live."),
-                id="SHOPMAN_W007",
-            )
-        )
-    return messages
 
 
 @register(deploy=True)
@@ -1494,7 +1464,6 @@ def _open_test_doors() -> list[str]:
         ("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", "simulador de pagamento permitido"),
         ("SHOPMAN_EXPOSE_MOCK_CAPTURE", 'botão "Simular pagamento" para o cliente'),
         ("SHOPMAN_MOCK_PIX_AUTO_CONFIRM", "Pix simulado se confirma sozinho"),
-        ("SHOPMAN_EXPOSE_DEBUG_OTP", "código de login devolvido na resposta"),
         ("SHOPMAN_STAGING_AUTOPILOT", "pedidos avançam sozinhos"),
     ):
         if getattr(settings, name, False):

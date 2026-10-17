@@ -37,10 +37,8 @@ def _make_request(customer_uuid=None, customer_name=None):
     req.session = {}
     if customer_uuid is not None:
         req.customer = SimpleNamespace(
-            uuid=customer_uuid,
+            subject_id=customer_uuid,
             name=customer_name or "Test Customer",
-            phone="+5543999990001",
-            email="",
         )
     else:
         req.customer = None

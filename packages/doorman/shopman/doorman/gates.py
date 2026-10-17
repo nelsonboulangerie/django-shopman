@@ -317,9 +317,12 @@ class Gates:
         """
         window_start = timezone.now() - timedelta(minutes=window_minutes)
 
+        import hashlib
+
+        target_digest = hashlib.sha256(email.encode("utf-8")).hexdigest()
         count = AccessLink.objects.filter(
             metadata__method="access_link",
-            metadata__email=email,
+            metadata__target_digest=target_digest,
             created_at__gte=window_start,
         ).count()
 

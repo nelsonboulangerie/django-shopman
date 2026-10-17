@@ -22,9 +22,9 @@ CUSTOMER_UUID = UUID("12345678-1234-5678-1234-567812345678")
 
 
 def _make_customer(uuid=CUSTOMER_UUID, name="Ana", phone="+5511999990001"):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.protocols.identity import IdentityHandle, IdentityView
 
-    return AuthCustomerInfo(uuid=uuid, name=name, phone=phone, email=None, is_active=True)
+    return IdentityView(uuid, name, (IdentityHandle("phone", phone, True, True),), True)
 
 
 class TestBuildAccessUrl:
@@ -161,9 +161,14 @@ class TestNotificationContextEnrichment:
 
         token_result = MagicMock()
         token_result.token = "tok_ctx"
-        with patch(
-            "shopman.doorman.services.access_link.AccessLinkService.create_token",
-            return_value=token_result,
+        adapter = MagicMock()
+        adapter.identity.return_value = _make_customer()
+        with (
+            patch("shopman.doorman.conf.get_adapter", return_value=adapter),
+            patch(
+                "shopman.doorman.services.access_link.AccessLinkService.create_token",
+                return_value=token_result,
+            ),
         ):
             ctx = _build_context(order, payload, "order_accepted")
 

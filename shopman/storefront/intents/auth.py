@@ -199,7 +199,7 @@ def interpret_welcome(request) -> AuthResult[WelcomeIntent]:
         intent=WelcomeIntent(
             name=name,
             next_url=next_url,
-            customer_uuid=str(customer_info.uuid),
+            customer_uuid=str(customer_info.subject_id),
         ),
         errors={},
         form_data=form_data,

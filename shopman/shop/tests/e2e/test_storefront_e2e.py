@@ -44,7 +44,9 @@ These tests require RUNNING servers. They are NOT collected by `make test`
 from __future__ import annotations
 
 import json
+import os
 import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
@@ -450,26 +452,29 @@ def _is_checkout_url(url: str) -> bool:
     return urlparse(url).path == storefront_links.path_checkout()
 
 
-def _authenticate_via_debug_otp(page) -> None:
-    """Entra pela UI de /entrar usando o código OTP de teste.
-
-    Em DEBUG o backend devolve ``debug_otp_code`` no request-code e a tela
-    renderiza o alerta "Ambiente de teste" com o botão "Usar código de teste"
-    (que preenche os 6 dígitos; o watcher confirma sozinho). É o MESMO caminho
-    que um cliente real percorre — só a leitura do SMS é substituída pelo
-    código exposto na própria tela.
-    """
+def _authenticate_via_otp(page) -> None:
+    """Entra pela UI usando um OTP recebido fora do contrato HTTP."""
+    otp_file_value = os.environ.get("SHOPMAN_E2E_OTP_FILE", "").strip()
+    assert otp_file_value, "Defina SHOPMAN_E2E_OTP_FILE para o canal do harness E2E."
+    otp_file = Path(otp_file_value)
     expect(page.get_by_role("button", name="Prefere receber um código por SMS?")).to_be_visible()
     page.get_by_role("button", name="Prefere receber um código por SMS?").click()
     page.locator("#login-phone").fill(LIVE_ORDER_PHONE)
     page.locator("form:has(#login-phone) button[type='submit']").click()
 
-    debug_alert = page.locator("[data-testid='debug-otp-alert']")
-    expect(debug_alert, (
-        "O alerta do OTP de teste não apareceu — o gate exige DJANGO_DEBUG=true "
-        "(o request-code só devolve debug_otp_code com o debug OTP exposto)."
-    )).to_be_visible(timeout=15_000)
-    page.get_by_role("button", name="Usar código de teste").click()
+    inputs = page.locator("form input[inputmode='numeric']")
+    expect(inputs.first).to_be_visible(timeout=15_000)
+    code = ""
+    for _ in range(50):
+        if otp_file.exists():
+            code = otp_file.read_text(encoding="utf-8").strip()
+            if len(code) == 6 and code.isdigit():
+                otp_file.unlink()
+                break
+        page.wait_for_timeout(100)
+    assert len(code) == 6 and code.isdigit(), "O canal do harness E2E não entregou um OTP válido."
+    for index, digit in enumerate(code):
+        inputs.nth(index).fill(digit)
 
     # Cliente novo cai no passo de boas-vindas (nome); recorrente vai direto.
     # O momento de celebração leva ~1,4s antes do redirect para o `next`.
@@ -582,7 +587,7 @@ class TestLiveOrderCrossing:
         # ── Identificação: o auth-gate do checkout é a PORTA, não o fim ──
         page.goto(f"{store_base_url}{storefront_links.path_checkout()}")
         page.wait_for_url(re.compile(re.escape(storefront_links.path_login())), timeout=15_000)
-        _authenticate_via_debug_otp(page)
+        _authenticate_via_otp(page)
 
         # ── Checkout: retirada → quando → pagamento → revisão ────────
         expect(page.locator("[data-checkout-step='fulfillment']")).to_be_visible(

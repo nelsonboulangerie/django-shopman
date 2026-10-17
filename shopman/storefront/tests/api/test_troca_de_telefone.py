@@ -23,17 +23,20 @@ NUMERO_ANTIGO = "+5543999990001"
 NUMERO_NOVO = "+5543999990002"
 
 
-DEBUG_OTP_TOKEN = "segredo-da-suite"
-
-
 @pytest.fixture(autouse=True)
 def _disable_request_rate_limits(settings, monkeypatch):
     settings.RATELIMIT_ENABLE = False
-    # O código só volta na resposta pelo portão real do OTP de depuração — o
-    # mesmo do login, com segredo conferido no cabeçalho. A suíte passa pela
-    # porta em vez de contorná-la.
-    settings.SHOPMAN_EXPOSE_DEBUG_OTP = True
-    settings.SHOPMAN_DEBUG_OTP_TOKEN = DEBUG_OTP_TOKEN
+    settings.DOORMAN = {
+        **settings.DOORMAN,
+        "DELIVERY_CHAIN": [],
+        "MESSAGE_SENDER_CLASS": "shopman.storefront.tests.identity_fakes.CapturingSender",
+    }
+    from shopman.doorman.conf import reset_adapter
+
+    from shopman.storefront.tests.identity_fakes import CapturingSender
+
+    CapturingSender.last_code = ""
+    reset_adapter()
 
     # A portaria de intervalo entre envios (G11) é por NÚMERO e não olha a
     # finalidade: quem acabou de confirmar o número novo espera o intervalo
@@ -50,11 +53,12 @@ def _make_customer(ref: str = "CUS-TEL-01", phone: str = NUMERO_ANTIGO) -> Custo
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=getattr(customer, "email", None) or None,
@@ -75,7 +79,6 @@ def _pedir_codigo(client: Client, phone: str = NUMERO_NOVO):
         "/api/v1/account/phone/request/",
         data={"phone": phone},
         content_type="application/json",
-        HTTP_X_SHOPMAN_DEBUG_OTP=DEBUG_OTP_TOKEN,
         **_csrf_headers(client),
     )
 
@@ -89,12 +92,18 @@ def _confirmar(client: Client, code: str, phone: str = NUMERO_NOVO):
     )
 
 
+def _last_code() -> str:
+    from shopman.storefront.tests.identity_fakes import CapturingSender
+
+    assert CapturingSender.last_code
+    return CapturingSender.last_code
+
+
 def _trocar_numero(client: Client, phone: str = NUMERO_NOVO):
     """Faz a troca inteira e devolve a resposta da confirmação."""
     resposta = _pedir_codigo(client, phone)
     assert resposta.status_code == 200, resposta.content
-    codigo = resposta.json()["debug_otp_code"]
-    return _confirmar(client, codigo, phone)
+    return _confirmar(client, _last_code(), phone)
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +237,8 @@ def test_codigo_errado_e_recusado_e_o_numero_nao_muda(client: Client):
     customer = _make_customer()
     _login_as_customer(client, customer)
 
-    correto = _pedir_codigo(client).json()["debug_otp_code"]
+    _pedir_codigo(client)
+    correto = _last_code()
     errado = "000000" if correto != "000000" else "111111"
 
     resposta = _confirmar(client, errado)
@@ -258,7 +268,7 @@ def test_codigo_de_login_nao_serve_para_trocar_de_numero(client: Client):
     )
     assert login_result.success
 
-    resposta = _confirmar(client, login_result.debug_code)
+    resposta = _confirmar(client, _last_code())
 
     assert resposta.status_code == 400
     customer.refresh_from_db()
@@ -325,7 +335,8 @@ def test_numero_de_outro_cadastro_recusado_tambem_na_confirmacao(client: Client)
     customer = _make_customer()
     _login_as_customer(client, customer)
 
-    codigo = _pedir_codigo(client).json()["debug_otp_code"]
+    _pedir_codigo(client)
+    codigo = _last_code()
     _dono_do_numero()
 
     resposta = _confirmar(client, codigo)
@@ -394,10 +405,9 @@ def test_o_cliente_entra_com_o_numero_novo(client: Client):
         "/api/v1/auth/request-code/",
         data={"phone": NUMERO_NOVO},
         content_type="application/json",
-        HTTP_X_SHOPMAN_DEBUG_OTP=DEBUG_OTP_TOKEN,
     )
     assert pedido.status_code == 200, pedido.content
-    codigo = pedido.json()["debug_otp_code"]
+    codigo = _last_code()
 
     entrada = client.post(
         "/api/v1/auth/verify-code/",
@@ -425,10 +435,9 @@ def test_entrar_pelo_numero_antigo_nao_abre_a_conta_de_quem_o_deixou(client: Cli
         "/api/v1/auth/request-code/",
         data={"phone": NUMERO_ANTIGO},
         content_type="application/json",
-        HTTP_X_SHOPMAN_DEBUG_OTP=DEBUG_OTP_TOKEN,
     )
     assert pedido.status_code == 200
-    codigo = pedido.json()["debug_otp_code"]
+    codigo = _last_code()
 
     entrada = client.post(
         "/api/v1/auth/verify-code/",
@@ -474,7 +483,8 @@ def test_o_codigo_nao_serve_duas_vezes(client: Client):
     customer = _make_customer()
     _login_as_customer(client, customer)
 
-    codigo = _pedir_codigo(client).json()["debug_otp_code"]
+    _pedir_codigo(client)
+    codigo = _last_code()
     assert _confirmar(client, codigo).status_code == 200
 
     terceiro = Customer.objects.create(ref="CUS-TEL-TERCEIRO", first_name="Dario")

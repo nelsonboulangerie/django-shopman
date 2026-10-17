@@ -113,7 +113,7 @@ Após o owner inserir credenciais no console seguro, verificar:
   - `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`;
   - `SHOPMAN_EXPOSE_MOCK_CAPTURE`;
   - `SHOPMAN_MOCK_PIX_AUTO_CONFIRM`;
-  - `SHOPMAN_EXPOSE_DEBUG_OTP`;
+  - confirmar que OTP não aparece em resposta HTTP nem log;
   - `SHOPMAN_STAGING_AUTOPILOT`;
 - Efi em produção;
 - Stripe live;
