@@ -1178,7 +1178,7 @@ DOORMAN["DELIVERY_CHAIN"] = _csv_env_list(
     "SHOPMAN_OTP_DELIVERY_CHAIN",
     "sms,console" if DEBUG else "sms,email",
 )
-if DEBUG:
+if DEBUG and not os.environ.get("DOORMAN_MESSAGE_SENDER_CLASS", "").strip():
     DOORMAN["MESSAGE_SENDER_CLASS"] = "shopman.doorman.senders.LogSender"
 
 LANGUAGE_CODE = "pt-br"

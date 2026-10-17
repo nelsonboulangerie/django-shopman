@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
@@ -453,10 +454,9 @@ def _is_checkout_url(url: str) -> bool:
 
 def _authenticate_via_otp(page) -> None:
     """Entra pela UI usando um OTP recebido fora do contrato HTTP."""
-    code = os.environ.get("SHOPMAN_E2E_OTP_CODE", "").strip()
-    assert len(code) == 6 and code.isdigit(), (
-        "Defina SHOPMAN_E2E_OTP_CODE com o código recebido pelo canal configurado."
-    )
+    otp_file_value = os.environ.get("SHOPMAN_E2E_OTP_FILE", "").strip()
+    assert otp_file_value, "Defina SHOPMAN_E2E_OTP_FILE para o canal do harness E2E."
+    otp_file = Path(otp_file_value)
     expect(page.get_by_role("button", name="Prefere receber um código por SMS?")).to_be_visible()
     page.get_by_role("button", name="Prefere receber um código por SMS?").click()
     page.locator("#login-phone").fill(LIVE_ORDER_PHONE)
@@ -464,6 +464,15 @@ def _authenticate_via_otp(page) -> None:
 
     inputs = page.locator("form input[inputmode='numeric']")
     expect(inputs.first).to_be_visible(timeout=15_000)
+    code = ""
+    for _ in range(50):
+        if otp_file.exists():
+            code = otp_file.read_text(encoding="utf-8").strip()
+            if len(code) == 6 and code.isdigit():
+                otp_file.unlink()
+                break
+        page.wait_for_timeout(100)
+    assert len(code) == 6 and code.isdigit(), "O canal do harness E2E não entregou um OTP válido."
     for index, digit in enumerate(code):
         inputs.nth(index).fill(digit)
 

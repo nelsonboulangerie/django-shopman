@@ -39,6 +39,8 @@ def _load_settings(monkeypatch, **env):
         "DJANGO_DEBUG",
         "DJANGO_SECRET_KEY",
         "SENTRY_DSN",
+        "DOORMAN_MESSAGE_SENDER_CLASS",
+        "SHOPMAN_OTP_DELIVERY_CHAIN",
     ):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
@@ -80,6 +82,26 @@ def test_ausencia_da_env_em_debug_vira_development(monkeypatch):
     settings = _load_settings(monkeypatch, DJANGO_DEBUG="true")
 
     assert settings.SHOPMAN_ENVIRONMENT == "development"
+
+
+def test_debug_respeita_sender_explicito_com_cadeia_vazia(monkeypatch):
+    settings = _load_settings(
+        monkeypatch,
+        DJANGO_DEBUG="true",
+        DOORMAN_MESSAGE_SENDER_CLASS=(
+            "shopman.shop.tests.e2e.otp_sender.E2EFileSender"
+        ),
+        SHOPMAN_OTP_DELIVERY_CHAIN="",
+    )
+
+    assert settings.DOORMAN["DELIVERY_CHAIN"] == []
+    assert settings.DOORMAN["MESSAGE_SENDER_CLASS"].endswith(".E2EFileSender")
+
+
+def test_debug_sem_sender_explicito_continua_fechado_no_log_sender(monkeypatch):
+    settings = _load_settings(monkeypatch, DJANGO_DEBUG="true")
+
+    assert settings.DOORMAN["MESSAGE_SENDER_CLASS"] == "shopman.doorman.senders.LogSender"
 
 
 def test_staging_so_existe_quando_a_env_diz_staging(monkeypatch):

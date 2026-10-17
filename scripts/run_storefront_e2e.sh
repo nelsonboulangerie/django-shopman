@@ -24,6 +24,15 @@ STOREFRONT_BASE_URL="http://127.0.0.1:${NUXT_PORT}"
 
 DJANGO_LOG="${SHOPMAN_E2E_SERVER_LOG:-/tmp/shopman-storefront-e2e-django.log}"
 NUXT_LOG="${SHOPMAN_E2E_NUXT_LOG:-/tmp/shopman-storefront-e2e-nuxt.log}"
+OTP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/shopman-storefront-e2e-otp.XXXXXX")"
+OTP_FILE="${OTP_DIR}/code"
+
+# O teste recebe o OTP por um canal fora do contrato HTTP, como um cliente real.
+# O sender é explicitamente inseguro (reveals_code=True), portanto a trava do
+# Doorman o aceita apenas neste harness DEBUG e o recusaria em produção.
+export SHOPMAN_E2E_OTP_FILE="${OTP_FILE}"
+export DOORMAN_MESSAGE_SENDER_CLASS="shopman.shop.tests.e2e.otp_sender.E2EFileSender"
+export SHOPMAN_OTP_DELIVERY_CHAIN=""
 
 # Customer links Django generates (PDP, checkout, tracking, payment) must resolve
 # to the Nuxt store; operator links stay relative to Django. This single knob makes
@@ -39,6 +48,8 @@ cleanup() {
       wait "${pid}" >/dev/null 2>&1 || true
     fi
   done
+  rm -f "${OTP_FILE}"
+  rmdir "${OTP_DIR}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
