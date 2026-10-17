@@ -103,6 +103,9 @@ MATRIX_REF_RE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
 DYNAMIC_SURFACE_MATRIX_RE = re.compile(
     r"matrix:\s*\$\{\{\s*fromJSON\(needs\.surface-contract\.outputs\.(quality|pwa|audit)\)\s*\}\}"
 )
+INTERNAL_PREVIEW_QUALITY_NAME = (
+    "${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}"
+)
 
 
 @dataclass
@@ -403,6 +406,11 @@ def _job_check_names(job_id: str, block: list[str]) -> set[str]:
             or (kind == "pwa" and surface.get("capabilities", {}).get("pwa"))
             or (kind == "audit" and surface.get("capabilities", {}).get("npmAudit"))
         ]
+        if kind == "quality" and name == INTERNAL_PREVIEW_QUALITY_NAME:
+            return {
+                f"Preview interno — {surface['dir']}" if surface["kind"] == "internal" else surface["dir"]
+                for _, surface in selected
+            }
         referenced = MATRIX_REF_RE.findall(name)
         if not referenced:
             raise ValueError(f"job {job_id}: dynamic surface matrix must reference matrix.id or matrix.dir")
