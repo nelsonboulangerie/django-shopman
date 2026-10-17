@@ -44,6 +44,17 @@ def test_canonical_inventory_is_valid():
     assert counts["instance_debt"]["pending"] > 0
 
 
+def test_policy_namespace_rejects_a_non_policy_unit():
+    inventory, manifests = _canonical()
+    unit = _unit(manifests, "promotion.minimum-order-eligibility")
+    unit["policy"] = False
+
+    with pytest.raises(gate.GateError) as caught:
+        gate.validate(inventory, manifests, root=ROOT)
+
+    assert caught.value.code == "policy-namespace"
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [("stale", "instance-debt-stale"), ("untriaged", "instance-debt-untriaged")],

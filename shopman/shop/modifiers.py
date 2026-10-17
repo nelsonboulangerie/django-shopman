@@ -39,6 +39,8 @@ from typing import Any
 from django.utils import timezone
 from shopman.utils.monetary import monetary_div, monetary_mult
 
+from shopman.shop.policies.promotion import promotion_minimum_eligible
+
 logger = logging.getLogger(__name__)
 
 # ── Configurable defaults ──────────────────────────────────────────
@@ -956,7 +958,10 @@ class DiscountModifier:
             for promo in promotions:
                 if promo.type != "percent":
                     continue
-                if promo.min_order_q and session_total < promo.min_order_q:
+                if not promotion_minimum_eligible(
+                    min_order_q=promo.min_order_q,
+                    merchandise_subtotal_q=session_total,
+                ):
                     continue
                 if not self._matches(promo, sku, ctx):
                     continue
@@ -974,7 +979,10 @@ class DiscountModifier:
 
             # Evaluate coupon
             if coupon_promo and coupon_promo.type == "percent":
-                if not (coupon_promo.min_order_q and session_total < coupon_promo.min_order_q):
+                if promotion_minimum_eligible(
+                    min_order_q=coupon_promo.min_order_q,
+                    merchandise_subtotal_q=session_total,
+                ):
                     if self._matches(coupon_promo, sku, ctx):
                         coupon_discount_q = self._calc_discount(coupon_promo, price_q)
                         if coupon_discount_q >= best_discount_q:
@@ -1271,7 +1279,10 @@ class DiscountModifier:
         for promo in promotions:
             if promo.type != "fixed":
                 continue
-            if promo.min_order_q and session_total < promo.min_order_q:
+            if not promotion_minimum_eligible(
+                min_order_q=promo.min_order_q,
+                merchandise_subtotal_q=session_total,
+            ):
                 continue
             value = max(0, int(promo.value or 0))
             if value > 0 and (best is None or value > best[0]):
@@ -1280,7 +1291,10 @@ class DiscountModifier:
                     group_ref, kind, _step = group_meta(promo)
                 best = (value, ("promotion", promo.name, kind, group_ref), promo)
         if coupon_promo is not None and coupon_promo.type == "fixed":
-            if not (coupon_promo.min_order_q and session_total < coupon_promo.min_order_q):
+            if promotion_minimum_eligible(
+                min_order_q=coupon_promo.min_order_q,
+                merchandise_subtotal_q=session_total,
+            ):
                 value = max(0, int(coupon_promo.value or 0))
                 if value > 0 and (best is None or value >= best[0]):
                     best = (value, ("coupon", coupon_code or "", None, ""), coupon_promo)
@@ -1707,7 +1721,10 @@ def _free_delivery_covers_order(promo, *, customer_ref: str, merchandise_q: int)
     """
     from shopman.shop.services.cart import customer_eligible_for_promotion
 
-    if int(promo.min_order_q or 0) > merchandise_q:
+    if not promotion_minimum_eligible(
+        min_order_q=promo.min_order_q,
+        merchandise_subtotal_q=merchandise_q,
+    ):
         return False
 
     types = [str(t).strip() for t in (promo.fulfillment_types or []) if str(t).strip()]
