@@ -776,8 +776,8 @@ def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
 
 def list_fulfillment_slots(ctx: ToolContext, delivery_date: str = "", fulfillment_type: str = "pickup") -> dict:
     """Dias e horários em que a casa consegue entregar/servir esta sacola."""
-    from shopman.shop.projections.channel_policy import resolve_channel_policy
     from shopman.shop.services.business_calendar import available_dates
+    from shopman.shop.services.channel_policy import resolve_channel_policy
     from shopman.shop.services.fulfillment_window import delivery_windows_for
     from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
 
@@ -868,7 +868,7 @@ def set_fulfillment(
     fulfillment_type = str(fulfillment_type or "").strip().lower()
     if fulfillment_type not in FULFILLMENT_TYPES:
         return _error("invalid_fulfillment", "Escolha retirada (pickup) ou entrega (delivery).")
-    from shopman.shop.projections.channel_policy import resolve_channel_policy
+    from shopman.shop.services.channel_policy import resolve_channel_policy
 
     if fulfillment_type not in resolve_channel_policy(ctx.channel_ref).fulfillment_types:
         label = "entrega" if fulfillment_type == "delivery" else "retirada"

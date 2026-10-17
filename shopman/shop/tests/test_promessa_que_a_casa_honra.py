@@ -73,10 +73,10 @@ def test_a_derivacao_afirma_lactose_e_nunca_gluten():
     """A baguete: farinha, água, sal e levain. Contém glúten, não contém lactose."""
     from shopman.craftsman.dietary import DIET_VEGAN, IngredientDietary
 
-    from shopman.shop.services.dietary_from_recipe import _derive_dietary_info
+    from shopman.shop.services.dietary_from_recipe import derive_recipe_dietary_claims
 
     baguete = [IngredientDietary(diet=DIET_VEGAN, allergens=["glúten"])]
-    info = _derive_dietary_info(baguete, ["glúten"])
+    info = derive_recipe_dietary_claims(baguete, ["glúten"])
 
     assert "sem lactose" in info, "a fórmula prova a ausência de leite; a casa afirma"
     assert "100% vegetal" in info
@@ -86,10 +86,10 @@ def test_a_derivacao_afirma_lactose_e_nunca_gluten():
 def test_com_leite_na_ficha_nao_ha_afirmacao_de_lactose():
     from shopman.craftsman.dietary import DIET_VEGETARIAN, IngredientDietary
 
-    from shopman.shop.services.dietary_from_recipe import _derive_dietary_info
+    from shopman.shop.services.dietary_from_recipe import derive_recipe_dietary_claims
 
     brioche = [IngredientDietary(diet=DIET_VEGETARIAN, allergens=["glúten", "leite"])]
-    info = _derive_dietary_info(brioche, ["glúten", "leite"])
+    info = derive_recipe_dietary_claims(brioche, ["glúten", "leite"])
 
     assert "sem lactose" not in info
     assert "vegetariano" in info, "sem abate, e é o único termo que sabe dizer isso"

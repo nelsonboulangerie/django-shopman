@@ -49,64 +49,6 @@ def identify_manychat_subject(subject: str):
     return ManychatIdentityBridge().upsert_subscriber({"id": subject})
 
 
-def set_missing_first_name(*, phone: str, name: str) -> None:
-    from django.db import transaction
-
-    from shopman.shop.services import account as account_service
-
-    hint = customer_by_phone(phone)
-    if hint is None:
-        return
-    with transaction.atomic():
-        try:
-            customer = account_service.lock_active_customer(customer_uuid=hint.uuid)
-        except account_service.AccountUnavailable:
-            return
-        # A leitura por telefone ocorreu antes da espera na trava. Revalidar a
-        # identidade atual impede que uma troca concorrente faça o nome entrar
-        # no cadastro antigo por um alvo reciclado.
-        current = customer_by_phone(phone)
-        if current is None or current.pk != customer.pk:
-            return
-        if not customer.first_name:
-            customer.first_name = name
-            customer.save(update_fields=["first_name", "updated_at"])
-
-
-def update_customer_name(customer_ref: str, *, first_name: str, last_name: str):
-    from shopman.guestman.services import customer as customer_service
-
-    return customer_service.update(customer_ref, first_name=first_name, last_name=last_name)
-
-
-def trusted_device_prefill(request) -> tuple[str, str]:
-    """Return (phone, first_name) from a trusted device cookie when valid."""
-    try:
-        from shopman.doorman import TrustedDevice
-        from shopman.doorman.conf import doorman_settings
-
-        raw_token = request.COOKIES.get(doorman_settings.DEVICE_TRUST_COOKIE_NAME)
-        if not raw_token:
-            return "", ""
-        device = TrustedDevice.verify_token(raw_token)
-        if not device:
-            return "", ""
-        customer = customer_by_uuid(device.customer_id)
-        if not customer:
-            return "", ""
-        return customer.phone or "", customer.first_name or ""
-    except Exception:
-        logger.debug("auth.trusted_device_prefill degraded; using fallback", exc_info=True)
-        return "", ""
-
-
-# Os BFFs Nuxt (loja e apps de operador) se identificam por este cabeçalho
-# (segredo compartilhado com o Nitro: `SHOPMAN_BFF_PROXY_SECRET` aqui,
-# `NUXT_DJANGO_PROXY_SECRET` lá). Sem ele, ninguém consegue pedir ao Django que
-# leia um salto a mais do X-Forwarded-For.
-BFF_PROXY_SECRET_HEADER = "X-Shopman-Proxy-Secret"
-
-
 def _is_trusted_bff(request) -> bool:
     import hmac
 
@@ -360,19 +302,6 @@ def request_code_error_message(auth_result) -> str:
         auth_result.error_code,
         "Não foi possível enviar o código. Verifique o número e tente novamente.",
     )
-
-
-def request_code_partial_error_message(auth_result) -> str:
-    translations = {
-        "Too many attempts. Please wait a few minutes.": "Muitas tentativas. Aguarde alguns minutos.",
-        "Please wait before requesting a new code.": "Aguarde antes de solicitar um novo código.",
-        "Too many attempts from this location.": "Muitas tentativas deste local.",
-        "Too many incorrect codes for this target.": "Muitos códigos incorretos para este número.",
-        "Failed to send code.": "Falha ao enviar código.",
-        "Error sending code.": "Erro ao enviar código.",
-    }
-    raw = auth_result.error or ""
-    return translations.get(raw, raw) or "Erro ao enviar código."
 
 
 def verify_for_login(*, phone: str, code_input: str, request):

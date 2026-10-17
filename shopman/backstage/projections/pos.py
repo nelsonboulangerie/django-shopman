@@ -31,13 +31,13 @@ from shopman.shop import product_options
 from shopman.shop.projections.catalog_context import choice_group as product_choice_group
 from shopman.shop.projections.catalog_context import choice_group_label as product_choice_group_label
 from shopman.shop.projections.catalog_context import option_groups as product_option_groups
-from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.types import (
     Action,
     AddressAutocompleteProjection,
     SavedAddressProjection,
 )
 from shopman.shop.services import weighed_sale
+from shopman.shop.services.channel_policy import resolve_channel_policy
 from shopman.shop.services.pos_intent import (
     POS_SALE_INTENT_PAYLOAD_KEYS,
     POS_SALE_INTENT_RECEIPT_CHANNELS,

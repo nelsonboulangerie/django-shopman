@@ -1040,7 +1040,7 @@ def review_sale(
             "message": "Os pagamentos informados não cobrem o total da venda.",
         })
 
-    pix_warning = _pix_payment_policy_warning(
+    pix_warning = pix_payment_policy_warning(
         payload,
         total_q=total_q,
         payment_method=payment_method,
@@ -3520,7 +3520,7 @@ def _enforce_pix_payment_policy(payload: dict) -> None:
     )
 
 
-def _pix_payment_policy_warning(
+def pix_payment_policy_warning(
     payload: dict,
     *,
     total_q: int,
@@ -5647,7 +5647,7 @@ def _conflict_row(customer, sources: list[str]) -> dict:
         # ⚠️ Dono SEM ROSTO — o cadastro que só tem o dado, sem nome de gente.
         # Ele nasce sozinho toda vez que alguém pede a nota no balcão (o
         # `_receipt_registration` cria sem nome nenhum) ou recebe o rótulo de
-        # espera "Cliente 0011". Quem decide isso é `_should_refresh_name`, a
+        # espera "Cliente 0011". Quem decide isso é `should_refresh_name`, a
         # MESMA régua que o resolve usa para saber se pode escrever um nome por
         # cima — duas definições de "sem nome" divergiriam no primeiro
         # "Cliente Doc 4477", que tem nome no campo e nenhum rosto atrás.
@@ -5655,7 +5655,7 @@ def _conflict_row(customer, sources: list[str]) -> dict:
         # A tela precisa saber porque a pergunta muda de natureza: "qual dos
         # dois você está atendendo?" não existe quando um dos dois não é
         # ninguém. Ali só há um cliente e um dado solto para entregar a ele.
-        "owner_unnamed": _should_refresh_name(customer),
+        "owner_unnamed": should_refresh_name(customer),
     }
 
 
@@ -5801,7 +5801,7 @@ def _merge_pos_customer_fields(
     first_name, last_name = split_full_name(name)
     updates: list[str] = []
 
-    if first_name and (correct_name or _should_refresh_name(customer)):
+    if first_name and (correct_name or should_refresh_name(customer)):
         customer.first_name = first_name
         updates.append("first_name")
         if correct_name or last_name:
@@ -6311,7 +6311,7 @@ def _fallback_customer_name(*, phone: str, tax_id: str, email: str) -> tuple[str
     return "Cliente", "POS"
 
 
-def _should_refresh_name(customer) -> bool:
+def should_refresh_name(customer) -> bool:
     current = f"{customer.first_name} {customer.last_name}".strip().lower()
     return not current or current.startswith("cliente ") or current == "cliente"
 

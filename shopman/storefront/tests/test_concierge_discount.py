@@ -22,6 +22,7 @@ from shopman.orderman.models import Order
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel, Coupon, Promotion
 from shopman.shop.services import cart as cart_service
+from shopman.shop.services import promotions
 from shopman.storefront.concierge import agent as agent_module
 from shopman.storefront.concierge import discount, service, tools
 from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401  (fixtures)
@@ -130,6 +131,26 @@ def test_within_the_cap_the_concierge_grants_a_site_coupon(priced, ctx):  # noqa
     assert [c.ref for c in coupon.promotion.channels.all()] == [CHANNEL]
     assert coupon.promotion.min_order_q == 4800
     assert tools.view_cart(ctx)["total"] == "R$ 50,00"
+
+
+def test_concierge_coupon_service_issues_one_use_coupon_and_can_withdraw_it(surface):  # noqa: F811
+    code = promotions.issue_concierge_coupon(
+        value_q=120,
+        min_order_q=4800,
+        channel_ref=CHANNEL,
+        conversation_id=42,
+        valid_for=timedelta(minutes=30),
+    )
+
+    coupon = Coupon.objects.select_related("promotion").get(code=code)
+    assert promotions.is_concierge_coupon(code) is True
+    assert coupon.max_uses == 1
+    assert coupon.promotion.value == 120
+    assert list(coupon.promotion.channels.values_list("ref", flat=True)) == [CHANNEL]
+
+    promotions.withdraw_coupon(code)
+    coupon.refresh_from_db()
+    assert coupon.is_active is False
 
 
 def test_above_the_cap_she_grants_the_cap_and_the_rest_is_the_team(priced, ctx):  # noqa: F811

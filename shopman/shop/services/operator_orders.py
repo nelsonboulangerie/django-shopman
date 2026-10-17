@@ -607,7 +607,7 @@ def advance_order(
                 amount_q=-change_out,
                 order_ref=order.ref,
                 payload={
-                    "change_for_q": _change_for_q(order),
+                    "change_for_q": change_for_q(order),
                     "suggested_q": change_out_suggested_q(order),
                     "dispatched_by": actor,
                 },
@@ -955,7 +955,7 @@ def equipment_out(*, channel_ref: str | None = None) -> list[tuple[str, Order]]:
     return out
 
 
-def _change_for_q(order: Order) -> int:
+def change_for_q(order: Order) -> int:
     payment = (order.data or {}).get("payment") or {}
     try:
         return max(0, int(payment.get("change_for_q") or 0))
@@ -1019,7 +1019,7 @@ def change_out_suggested_q(order: Order) -> int:
     cash_due = cash_due_on_delivery_q(order)
     if cash_due <= 0:
         return 0
-    return max(0, _change_for_q(order) - cash_due)
+    return max(0, change_for_q(order) - cash_due)
 
 
 def partner_custody_asks(order: Order) -> dict:
@@ -1198,7 +1198,7 @@ def record_partner_custody(
             amount_q=-change_out,
             order_ref=order.ref,
             payload={
-                "change_for_q": _change_for_q(order),
+                "change_for_q": change_for_q(order),
                 "suggested_q": suggested_q,
                 "dispatched_by": actor,
                 "collector": "courier_partner",

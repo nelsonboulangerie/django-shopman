@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "findings": [
+    {
+      "source": "shopman/shop/adapters/_sms.py",
+      "symbol": "DEFAULT_CODE_MESSAGE",
+      "evidence": "Nelson Boulangerie",
+      "risk": "Mensagem padrão acopla toda instância ao nome da operação piloto.",
+      "target": "WP-6 descriptor/configuration",
+      "status": "pending"
+    },
+    {
+      "source": "shopman/shop/adapters/courier_machine.py",
+      "symbol": "USER_AGENT",
+      "evidence": "nelsonboulangerie.com.br",
+      "risk": "Identidade HTTP da integração contém domínio da instância.",
+      "target": "WP-6 descriptor/configuration",
+      "status": "pending"
+    },
+    {
+      "source": "shopman/shop/brand_tokens.py",
+      "symbol": "<module>",
+      "evidence": "instance-brand-palette",
+      "risk": "Paleta da instância está declarada como código do produto.",
+      "target": "WP-11 brand surface",
+      "status": "pending"
+    },
+    {
+      "source": "shopman/shop/checks.py",
+      "symbol": "check_operator_cookie_domain",
+      "evidence": "boulangerie",
+      "risk": "Referência nominal da instância permanece no código compartilhado e requer decisão explícita de configuração ou remoção.",
+      "target": "WP-6 descriptor/configuration",
+      "status": "pending"
+    },
+    {
+      "source": "shopman/shop/management/commands/setup_commercial_groups.py",
+      "symbol": "GROUPS",
+      "evidence": "Aliança Francesa",
+      "risk": "Seed comercial instala parceria de uma instância em qualquer implantação.",
+      "target": "WP-6 instance bootstrap",
+      "status": "pending"
+    },
+    {
+      "source": "shopman/shop/rules/suggestion.py",
+      "symbol": "DEFAULT_COMPLEMENT_PARAMS",
+      "evidence": "DEFAULT_COMPLEMENT_PARAMS",
+      "risk": "Defaults de sugestão da casa permanecem embutidos na política do produto.",
+      "target": "WP-6 descriptor/configuration",
+      "status": "pending"
+    },
+    {
+      "source": "shopman/shop/rules/suggestion.py",
+      "symbol": "DEFAULT_SUBSTITUTE_PARAMS",
+      "evidence": "DEFAULT_SUBSTITUTE_PARAMS",
+      "risk": "Defaults de substituição da casa permanecem embutidos na política do produto.",
+      "target": "WP-6 descriptor/configuration",
+      "status": "pending"
+    },
+    {
+      "source": "shopman/shop/watchman_infrastructure.py",
+      "symbol": "ExternalMonitoringContractCheck",
+      "evidence": "boulangerie",
+      "risk": "Referência nominal da instância permanece no código compartilhado e requer decisão explícita de configuração ou remoção.",
+      "target": "WP-6 descriptor/configuration",
+      "status": "pending"
+    }
+  ]
+}

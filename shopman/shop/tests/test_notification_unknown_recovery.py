@@ -127,6 +127,10 @@ def test_unknown_blocks_new_resend_and_explains_payment_link(context):
     with pytest.raises(notification.NotificationResendRefused) as refusal:
         notification.resend(context, notification.PAYMENT_LINK_TEMPLATE, min_interval_seconds=0)
     assert refusal.value.code == "notification_acceptance_unknown"
+    assert notification.delivery_uncertainty_refusal(
+        context,
+        notification.PAYMENT_LINK_TEMPLATE,
+    ).code == refusal.value.code
     assert notification.payment_link_resend_refusal(context).code == refusal.value.code
     assert "não confirmado" in payment_link_notice(context)
     assert Directive.objects.filter(pk=task.pk).count() == 1

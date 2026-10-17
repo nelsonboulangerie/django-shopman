@@ -17,6 +17,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import RequestFactory
 from django.utils import timezone
 
 from shopman.shop.models import Announcement, AnnouncementStatus, UserNotification
@@ -227,6 +228,63 @@ def test_device_step_up_options_need_a_registered_device(client, customer_base):
     assert options["userVerification"] == "required"
     assert options["allowCredentials"][0]["id"] == "AAAA"
     assert client.session["operator_passkey_assertion"]["confirmation_ref"] == challenge["ref"]
+
+
+def test_operator_passkey_service_registers_and_consumes_a_bound_assertion(client, monkeypatch):
+    from types import SimpleNamespace
+
+    import webauthn
+
+    from shopman.shop.models import OperatorPasskey
+    from shopman.shop.services import operator_passkey
+
+    operator = _actor("seal-service", "publish_marketing_announcements")
+    request = RequestFactory().post("/device", HTTP_ORIGIN="http://testserver")
+    request.session = client.session
+
+    registration = operator_passkey.registration_options(request, user=operator)
+    assert registration["challenge"]
+    monkeypatch.setattr(
+        webauthn,
+        "verify_registration_response",
+        lambda **_kwargs: SimpleNamespace(
+            credential_id=b"credential-1",
+            credential_public_key=b"public-key-1",
+            sign_count=1,
+        ),
+    )
+    credential_id = operator_passkey._b64(b"credential-1")
+    passkey = operator_passkey.verify_registration(
+        request,
+        user=operator,
+        credential={"id": credential_id, "response": {"transports": ["internal"]}},
+        label="Este dispositivo",
+    )
+    assert OperatorPasskey.objects.get() == passkey
+    assert passkey.label == "Este dispositivo"
+
+    assertion = operator_passkey.assertion_options(
+        request,
+        user=operator,
+        confirmation_ref="confirmation-123",
+    )
+    assert assertion["challenge"]
+    monkeypatch.setattr(
+        webauthn,
+        "verify_authentication_response",
+        lambda **_kwargs: SimpleNamespace(new_sign_count=2),
+    )
+    result = operator_passkey.verify_assertion(
+        request,
+        user=operator,
+        credential={"id": credential_id, "response": {}},
+    )
+    assert result == operator_passkey.AssertionResult(
+        credential_id=credential_id,
+        confirmation_ref="confirmation-123",
+    )
+    passkey.refresh_from_db()
+    assert passkey.sign_count == 2
 
 
 # ── A foto do lote ───────────────────────────────────────────────────────────

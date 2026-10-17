@@ -86,3 +86,25 @@ def test_void_of_the_only_batch_releases_what_lost_its_backing(
     assert _status(order) == HoldStatus.RELEASED
     order.refresh_from_db()
     assert order.metadata.get("release_reason") == "Produção cancelada"
+
+
+def test_void_receiver_directly_releases_only_the_hold_left_without_backing(
+    recipe, croissant, position_loja, tomorrow,
+):
+    from shopman.shop.handlers import _stock_receivers
+
+    work_order = craft.plan(recipe, quantity=Decimal("10"), date=tomorrow)
+    order = _hold(croissant, "4", reference="order:ENC-DIRECT", target_date=tomorrow, confirm=True)
+    cart = _hold(croissant, "3", reference="sessao-direct", target_date=tomorrow)
+    stock.adjust(order.quant, Decimal("4"), reason="Fornada cancelada no teste direto")
+
+    _stock_receivers.on_production_voided(
+        sender=type(work_order),
+        product_ref=croissant.sku,
+        date=tomorrow,
+        action="voided",
+        work_order=work_order,
+    )
+
+    assert _status(cart) == HoldStatus.RELEASED
+    assert _status(order) == HoldStatus.CONFIRMED

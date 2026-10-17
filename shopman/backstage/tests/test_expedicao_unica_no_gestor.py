@@ -148,6 +148,15 @@ def test_expeditor_cannot_accept_mark_ready_or_cancel(client, expeditor):
     new = _order("EXP-NEW", status=Order.Status.NEW)
     preparing = _order("EXP-PREP", status=Order.Status.PREPARING)
 
+    assert operator_orders.expedites_only(expeditor) is True
+    assert (
+        operator_orders.expedite_refusal(
+            preparing,
+            target_status=Order.Status.READY,
+        )
+        == operator_orders.EXPEDITE_SCOPE_REASON
+    )
+
     assert _action(_card(client, new.ref), "confirm")["enabled"] is False
     mark_ready = _action(_card(client, preparing.ref), "advance")
     assert mark_ready["enabled"] is False
@@ -196,6 +205,21 @@ def test_expeditor_dispatches_a_delivery_without_custody_questions(client, exped
     assert response.status_code == 200, response.json()
     order.refresh_from_db()
     assert order.data["pending_handoff"]["to_status"] == "dispatched"
+
+
+def test_operational_contract_exposes_the_same_server_owned_confirmation(client, gestor):
+    order = _order("EXP-CONTRACT", status=Order.Status.NEW)
+
+    actions = operator_orders.operational_actions(order, user=gestor)
+
+    confirm = next(action for action in actions if action.ref == "confirm")
+    reason = operator_orders.confirmation_block_reason(order)
+    assert confirm.enabled is (not reason)
+    assert confirm.reason == reason
+    assert confirm.payload_schema == {
+        "expected_actor_id": gestor.pk,
+        "base_revision": operator_orders.operational_revision(order),
+    }
 
 
 # ── A antessala do Gestor aceita as duas portas ─────────────────────────────

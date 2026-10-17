@@ -21,7 +21,7 @@ from shopman.utils.monetary import format_money
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections import checkout as checkout_projection
 from shopman.shop.projections import customer_context
-from shopman.shop.projections.channel_policy import ChannelPolicyResolution, resolve_channel_policy
+from shopman.shop.projections.channel_state import ChannelCapabilities, channel_capabilities
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.delivery_fiscal import FROM_DOCUMENT
 from shopman.shop.projections.interaction_context import InteractionContext
@@ -235,7 +235,7 @@ def build_checkout(
         surface_ref="django_penguin",
         target_kind="checkout",
     )
-    policy = resolve_channel_policy(interaction.channel_ref)
+    policy = channel_capabilities(interaction.channel_ref)
     payment_methods = _payment_methods(channel_ref)
     requested_date = _delivery_date_from_context(request, delivery_date)
     pickup_slots, earliest_slot_ref = _pickup_slots(cart, delivery_date=requested_date)
@@ -481,7 +481,7 @@ def _payment_constraints() -> dict:
 
 
 def _checkout_actions(
-    policy: ChannelPolicyResolution,
+    policy: ChannelCapabilities,
     *,
     cart: CartProjection,
     is_authenticated: bool,

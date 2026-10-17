@@ -27,6 +27,7 @@ from shopman.stockman import Position, stock
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.projections.production import build_production_mise_en_place
 from shopman.shop.directives import PRODUCTION_LATE_CHECK
+from shopman.shop.services import production as production_service
 from shopman.shop.services.production import set_planned_quantity, suggest_for
 
 pytestmark = pytest.mark.django_db
@@ -193,7 +194,7 @@ class TestProductionChainE2E:
         # VOID desfaz o vínculo e cancela o planejado no estoque.
         wo = WorkOrder.objects.get(ref=wo_ref)
         with django_capture_on_commit_callbacks(execute=True):
-            craft.void(order=wo, reason="e2e", actor="e2e")
+            production_service.void_work_order(wo.pk, reason="e2e", actor="e2e")
 
         order.refresh_from_db()
         assert "awaiting_wo_refs" not in (order.data or {})

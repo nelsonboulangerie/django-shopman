@@ -51,7 +51,6 @@ def _save(order, records):
 
 
 ALERT_TYPE = "ifood_negotiation_open"
-_ACTION_LABELS = {"CANCELLATION": "cancelamento", "PARTIAL_CANCELLATION": "cancelamento parcial"}
 _TIMEOUT_LABELS = {
     "ACCEPT_CANCELLATION": "o iFood cancela",
     "REJECT_CANCELLATION": "o pedido segue",

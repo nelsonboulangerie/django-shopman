@@ -175,6 +175,17 @@ def test_customer_cancel_gate_preserves_payment_specific_refusal(order_with_paym
     assert payment_status.can_cancel(order_with_payment) is False
 
 
+def test_customer_rating_eligibility_requires_a_terminal_unrated_order(order_with_payment):
+    assert customer_orders.can_rate(order_with_payment) is False
+
+    type(order_with_payment).objects.filter(pk=order_with_payment.pk).update(status="completed")
+    order_with_payment.refresh_from_db()
+    assert customer_orders.can_rate(order_with_payment) is True
+
+    customer_orders.save_customer_rating(order_with_payment, rating=5, comment="Ótimo")
+    assert customer_orders.can_rate(order_with_payment) is False
+
+
 @override_settings(
     SHOPMAN_PAYMENT_ADAPTERS={
         "pix": "shopman.shop.adapters.payment_mock",

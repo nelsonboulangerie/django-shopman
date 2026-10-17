@@ -492,7 +492,7 @@ export interface ServerConflictCandidate {
    * O dono não é uma pessoa: é um cadastro só com o dado, sem nome.
    *
    * Vem do servidor pela mesma régua com que ele decide se pode escrever um
-   * nome por cima (`_should_refresh_name`). Cobre o cadastro sem nome nenhum e
+   * nome por cima (`should_refresh_name`). Cobre o cadastro sem nome nenhum e
    * o rótulo de espera "Cliente 0011" — que engana quem olhar só o `name`.
    */
   owner_unnamed?: boolean;

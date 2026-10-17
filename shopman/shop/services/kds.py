@@ -361,65 +361,6 @@ def fired_line_ids(session_key: str) -> set:
     return kds_adapter.fired_line_ids_for_session(session_key)
 
 
-def preview_order_for_instance(order, instance) -> list[dict]:
-    """Route an order for a read-only future KDS preview, without firing it.
-
-    Future preorders must be inspectable from the KDS date picker, but creating a
-    ``KDSTicket`` would turn a preview into live kitchen work and emit the very
-    alert we are trying to defer. This uses the same bundle expansion and station
-    precedence as ``fire_lines`` and returns only the items owned by ``instance``.
-    """
-    from shopman.shop.adapters import get_adapter
-    from shopman.shop.adapters import kds as kds_adapter
-
-    lines = _order_to_lines(order)
-    if not lines:
-        return []
-
-    instances = kds_adapter.get_active_prep_instances()
-    if not instances or not any(candidate.pk == instance.pk for candidate in instances):
-        return []
-
-    catalog = get_adapter("catalog")
-    routable_items = _build_routable_items(lines)
-    skus = list({item["sku"] for item in routable_items})
-    sku_to_collection = catalog.bulk_sku_to_collection_id(skus)
-    production = get_adapter("production")
-    prep_skus = production.get_prep_skus(skus) if production else set()
-
-    type_col_map = defaultdict(list)
-    catchall_map = defaultdict(list)
-    for candidate in instances:
-        collection_ids = {collection.pk for collection in candidate.collections.all()}  # usa o prefetch
-        if collection_ids:
-            for collection_id in collection_ids:
-                type_col_map[(candidate.type, collection_id)].append(candidate)
-        else:
-            catchall_map[candidate.type].append(candidate)
-
-    preview: list[dict] = []
-    for item in routable_items:
-        item_type = "prep" if item["sku"] in prep_skus else "picking"
-        matched = _match_instances(
-            item_type=item_type,
-            collection_id=sku_to_collection.get(item["sku"]),
-            type_col_map=type_col_map,
-            catchall_map=catchall_map,
-        )
-        if not any(candidate.pk == instance.pk for candidate in matched):
-            continue
-        preview.append(
-            {
-                "sku": item["sku"],
-                "name": item["name"],
-                "qty": item["qty"],
-                "notes": item["notes"],
-                "line_id": item["line_id"],
-            }
-        )
-    return preview
-
-
 def unfire_lines(*, session_key: str, line_ids: list[str], fractions: dict | None = None) -> dict:
     """Cancel the kitchen fire for specific lines, freeing them to re-fire.
 

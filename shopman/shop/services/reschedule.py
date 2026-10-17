@@ -302,10 +302,10 @@ def _move_holds(order, day: date_type) -> None:
     try:
         stock.hold(order, require_all=True)
     except ValidationError as exc:
-        raise RescheduleRefused(_stock_refusal(order, exc, day), code=exc.code, field="date") from None
+        raise RescheduleRefused(stock_refusal(order, exc, day), code=exc.code, field="date") from None
 
 
-def _stock_refusal(order, exc, day: date_type) -> str:
+def stock_refusal(order, exc, day: date_type) -> str:
     from shopman.stockman.protocols.sku import PromiseReasonCode
 
     context = getattr(exc, "context", None) or {}

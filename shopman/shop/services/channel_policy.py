@@ -1,9 +1,4 @@
-"""Resolved channel policy for projection builders.
-
-This module resolves ``ChannelConfig`` plus optional surface policy hints into
-an internal object used by projection builders. It does not define lifecycle,
-pricing, stock, or payment rules, and it is not a public surface contract.
-"""
+"""Canonical channel capabilities resolved from channel and shop configuration."""
 
 from __future__ import annotations
 
@@ -11,11 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from shopman.shop.config import (
-    ChannelConfig,
-    deep_merge,
-    quality_grade_refs_for_channel,
-)
+from shopman.shop.config import ChannelConfig, deep_merge, quality_grade_refs_for_channel
 
 _DIGITAL_PAYMENT_METHODS = {"pix", "card"}
 _DEFAULT_FULFILLMENT_TYPES = ("pickup", "delivery")
@@ -25,8 +16,6 @@ _DEFAULT_TRACK_ACTION = "track"
 
 @dataclass(frozen=True)
 class ChannelPolicyResolution:
-    """Internal policy resolution for a single channel."""
-
     channel_ref: str
     payment_methods: tuple[str, ...]
     payment_timing: str
@@ -45,16 +34,10 @@ class ChannelPolicyResolution:
 
 
 def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
-    """Return projection-builder policy derived from canonical channel config.
-
-    ``ChannelConfig`` remains the source of truth. The optional
-    ``surface_policy`` JSON key in Shop.defaults/Channel.config is a policy hint
-    for fields that are not first-class ChannelConfig aspects yet.
-    """
+    """Resolve the capabilities that every surface and command must honor."""
 
     channel_ref, overrides = _resolve_channel_ref_and_overrides(channel_or_ref)
     config = ChannelConfig.for_channel(channel_or_ref)
-
     payment_methods = tuple(str(method) for method in config.payment.available_methods)
     fulfillment_types = _fulfillment_types(overrides)
     requires_payment_gate = config.payment.timing != "external" and any(
@@ -70,11 +53,7 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
         "can_checkout",
         config.editing.policy == "open" and config.payment.timing != "external",
     )
-    can_cancel = _bool_override(
-        overrides,
-        "can_cancel",
-        config.fulfillment.timing != "external",
-    )
+    can_cancel = _bool_override(overrides, "can_cancel", config.fulfillment.timing != "external")
     can_rate = _bool_override(
         overrides,
         "can_rate",
@@ -84,7 +63,6 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
         channel_ref,
         sells_nonconforming=config.stock.sells_nonconforming,
     )
-
     return ChannelPolicyResolution(
         channel_ref=channel_ref,
         payment_methods=payment_methods,
@@ -137,7 +115,6 @@ def _resolve_channel_ref_and_overrides(channel_or_ref: Any) -> tuple[str, dict[s
     else:
         channel = channel_or_ref
         channel_ref = str(getattr(channel, "ref", "") or "")
-
     overrides: dict[str, Any] = {}
     shop = getattr(channel, "shop", None) if channel is not None else None
     if shop is None:
@@ -161,7 +138,6 @@ def _fulfillment_types(overrides: Mapping[str, Any]) -> tuple[str, ...]:
         raw_values = raw
     else:
         return _DEFAULT_FULFILLMENT_TYPES
-
     values = tuple(str(value) for value in raw_values if str(value) in _VALID_FULFILLMENT_TYPES)
     return values or _DEFAULT_FULFILLMENT_TYPES
 
@@ -172,10 +148,7 @@ def _bool_override(overrides: Mapping[str, Any], key: str, default: bool) -> boo
 
 
 def _default_supports_access_link(channel_ref: str, config: ChannelConfig) -> bool:
-    notification_backends = {
-        config.notifications.backend,
-        *config.notifications.fallback_chain,
-    }
+    notification_backends = {config.notifications.backend, *config.notifications.fallback_chain}
     return channel_ref in {"whatsapp", "manychat"} or "manychat" in notification_backends
 
 
@@ -193,7 +166,6 @@ def _action_refs(
         actions = tuple(str(action) for action in raw if str(action))
         if actions:
             return actions
-
     actions: list[str] = []
     if can_checkout:
         actions.append("checkout")

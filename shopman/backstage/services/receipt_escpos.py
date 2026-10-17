@@ -818,7 +818,7 @@ def _charge_at_the_door_lines(order, payment: dict) -> bytes:
 
     from shopman.backstage.presentation.status import payment_method_label
     from shopman.shop.services import order_composition
-    from shopman.shop.services.operator_orders import _change_for_q, change_out_suggested_q
+    from shopman.shop.services.operator_orders import change_for_q, change_out_suggested_q
 
     out = bytearray()
     out += _centered("COBRAR NA ENTREGA")
@@ -835,14 +835,14 @@ def _charge_at_the_door_lines(order, payment: dict) -> bytes:
             payment_method_label(str(tender.get("method") or "")),
             f"R$ {format_money(int(tender.get('amount_q') or 0))}",
         )
-    change_for_q = _change_for_q(order)
+    requested_change_q = change_for_q(order)
     # Quem decide se há troco é a LINHA em espécie, não o método do topo. No
     # pedido do marketplace o método do topo é `external` (o iFood é que
     # precifica e concilia) e a parcela em dinheiro só aparece na linha —
     # perguntar ao topo deixava a comanda do iFood sem "Troco para".
     if any(str(tender.get("method") or "").lower() in {"cash", "mixed"} for tender in a_receber):
-        if change_for_q:
-            out += _pair("Troco para", f"R$ {format_money(change_for_q)}")
+        if requested_change_q:
+            out += _pair("Troco para", f"R$ {format_money(requested_change_q)}")
             out += _pair("Levar de troco", f"R$ {format_money(change_out_suggested_q(order))}")
         else:
             out += _line("Troco: não informado; confirmar com cliente")

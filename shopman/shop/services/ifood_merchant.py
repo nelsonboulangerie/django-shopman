@@ -108,7 +108,9 @@ def merchant_id() -> str:
 def enabled() -> bool:
     """Chave ligada E integração direta configurada (client_id + merchant_id)."""
     cfg = _cfg()
-    return bool(cfg.get("merchant_sync_enabled")) and bool(str(cfg.get("client_id") or "").strip()) and bool(merchant_id())
+    return (
+        bool(cfg.get("merchant_sync_enabled")) and bool(str(cfg.get("client_id") or "").strip()) and bool(merchant_id())
+    )
 
 
 def governs(shop=None) -> bool:
@@ -302,11 +304,13 @@ def desired_shifts(shop=None) -> list[dict]:
         duration = (closes_at.hour * 60 + closes_at.minute) - (opens_at.hour * 60 + opens_at.minute)
         if duration <= 0:
             continue
-        shifts.append({
-            "dayOfWeek": _IFOOD_DAYS[day],
-            "start": opens_at.strftime("%H:%M:%S"),
-            "duration": duration,
-        })
+        shifts.append(
+            {
+                "dayOfWeek": _IFOOD_DAYS[day],
+                "start": opens_at.strftime("%H:%M:%S"),
+                "duration": duration,
+            }
+        )
     return shifts
 
 
@@ -372,7 +376,11 @@ def desired_calendar_closures(*, now: datetime | None = None, shop=None) -> list
         if ends_at <= now:
             continue
         label = next((lbl for _, lbl in run if lbl), "")
-        closures.append(CalendarClosure(key=f"{first.isoformat()}..{last.isoformat()}", starts_at=starts_at, ends_at=ends_at, label=label))
+        closures.append(
+            CalendarClosure(
+                key=f"{first.isoformat()}..{last.isoformat()}", starts_at=starts_at, ends_at=ends_at, label=label
+            )
+        )
     return closures
 
 
@@ -401,12 +409,14 @@ def channel_off_closures(*, now: datetime | None = None, shop=None) -> list[Cale
             if end is None and block_start > now and block_start - now > CHANNEL_OFF_RENEW_AHEAD:
                 break
             if block_end > now:
-                closures.append(CalendarClosure(
-                    key=f"off:{_key_stamp(block_start, tz)}-{_key_stamp(block_end, tz)}",
-                    starts_at=block_start,
-                    ends_at=block_end,
-                    label="",
-                ))
+                closures.append(
+                    CalendarClosure(
+                        key=f"off:{_key_stamp(block_start, tz)}-{_key_stamp(block_end, tz)}",
+                        starts_at=block_start,
+                        ends_at=block_end,
+                        label="",
+                    )
+                )
             if end is None and block_end - now > CHANNEL_OFF_RENEW_AHEAD:
                 break
             block_start = block_end
@@ -438,7 +448,9 @@ def _subtract(closure: CalendarClosure, cuts: list[CalendarClosure], tz) -> list
     if pieces == [(closure.starts_at, closure.ends_at)]:
         return [closure]
     return [
-        CalendarClosure(key=f"c:{_key_stamp(start, tz)}-{_key_stamp(end, tz)}", starts_at=start, ends_at=end, label=closure.label)
+        CalendarClosure(
+            key=f"c:{_key_stamp(start, tz)}-{_key_stamp(end, tz)}", starts_at=start, ends_at=end, label=closure.label
+        )
         for start, end in pieces
     ]
 
@@ -622,7 +634,7 @@ def _create_remote(record, *, remote: list[dict], now: datetime, tz, result: Syn
         if exc.retryable:
             raise
         record.state = S.FAILED
-        record.last_error = _refusal_copy(exc)
+        record.last_error = _format_api_error_copy(exc)
         record.save(update_fields=["state", "last_error", "updated_at"])
         if result is not None:
             result.failed += 1
@@ -636,7 +648,7 @@ def _create_remote(record, *, remote: list[dict], now: datetime, tz, result: Syn
         result.created += 1
 
 
-def _refusal_copy(exc: MerchantAPIError) -> str:
+def _format_api_error_copy(exc: MerchantAPIError) -> str:
     if isinstance(exc, InterruptionOverlap):
         return "O iFood recusou: já existe outra pausa no mesmo horário (criada no Portal do Parceiro?)."
     return f"O iFood recusou o pedido (HTTP {exc.status})."
@@ -652,7 +664,7 @@ def _alert_sync_failed(record, exc: MerchantAPIError) -> None:
         severity="error",
         message=(
             f"{record.get_kind_display()}: a pausa de {local_start:%d/%m %H:%M} a {local_end:%d/%m %H:%M} "
-            f"não foi gravada no iFood. {_refusal_copy(exc)}"
+            f"não foi gravada no iFood. {_format_api_error_copy(exc)}"
         ),
         dedupe_key=f"{ALERT_SYNC_FAILED}:{record.pk}",
         debounce_minutes=DIVERGENCE_ALERT_WINDOW_MINUTES,
@@ -804,14 +816,16 @@ def check_store(*, now: datetime | None = None) -> StoreCheck | None:
 
     available, worst, problems = summarize_status(operations)
     expected, why_closed = expected_available(now=now)
-    row = _status_row(update={
-        "checked_at": now,
-        "available": available,
-        "state": worst,
-        "problems": problems,
-        "expected_available": expected,
-        "last_error": "",
-    })
+    row = _status_row(
+        update={
+            "checked_at": now,
+            "available": available,
+            "state": worst,
+            "problems": problems,
+            "expected_available": expected,
+            "last_error": "",
+        }
+    )
 
     alerted = ""
     if available == expected:
@@ -841,7 +855,11 @@ def problem_copy(problems: list[dict]) -> list[str]:
         lines.append("Há uma pausa em vigor no iFood (se não foi o gestor, foi feita no Portal do Parceiro).")
     if "opening-hours" in codes:
         lines.append("O horário gravado no iFood não cobre este instante.")
-    others = [p.get("title") or p.get("code") for p in problems if p.get("code") not in {"is-connected", "unavailabilities", "opening-hours"}]
+    others = [
+        p.get("title") or p.get("code")
+        for p in problems
+        if p.get("code") not in {"is-connected", "unavailabilities", "opening-hours"}
+    ]
     if others:
         lines.append("O iFood também aponta: " + "; ".join(str(o) for o in others) + ".")
     return lines

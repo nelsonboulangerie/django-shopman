@@ -42,7 +42,6 @@ from shopman.utils.monetary import monetary_div, monetary_mult
 logger = logging.getLogger(__name__)
 
 # ── Configurable defaults ──────────────────────────────────────────
-DEFAULT_AVAILABILITY_DISCOUNT_PERCENT = 50
 DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT = 25
 DEFAULT_TIME_WINDOW_START = "17:30"
 DEFAULT_TIME_WINDOW_END = "18:00"
