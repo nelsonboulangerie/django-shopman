@@ -262,7 +262,7 @@ no próprio parecer.
   em logs.
 - **Aceite:** teste de contrato com resolver fake multi-handle, provando login por handle
   secundário, primazia explícita, conflito fail-closed e revogação vinculada ao sujeito.
-- **Estado:** implementado; PR pendente. O dono aprovou o expand-contract mínimo
+- **Estado:** implementado no PR #1853. O dono aprovou o expand-contract mínimo
   `OTP_EMAIL`; `EMAIL_LINK` permanece exclusivo de links e não é usado como
   substituto semântico.
 
