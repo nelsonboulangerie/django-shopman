@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from django.db import transaction
 from shopman.orderman.exceptions import ValidationError as OrderingValidationError
-from shopman.orderman.services.commit import CommitService
+from shopman.orderman.services.commit import CommitAuthority, CommitSeal, CommitService
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
@@ -95,7 +95,6 @@ def process_ops(
         return _checkout_result(completed)
 
     ctx = dict(ctx or {})
-    ctx["expected_total_q"] = int(expected_total_q)
     ctx["checkout_finalize"] = True
     channel = Channel.objects.get(ref=channel_ref)
     resolved_config = ChannelConfig.for_channel(channel).to_dict()
@@ -114,13 +113,16 @@ def process_ops(
         raise prepared.refusal
     repriced = prepared.session
 
-    ctx["expected_revision"] = repriced.rev
     commit = sessions.commit_session(
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idempotency_key,
+        seal=CommitSeal(
+            expected_revision=repriced.rev,
+            expected_total_q=expected_total_q,
+            authority=CommitAuthority.REVIEWED,
+        ),
         ctx=ctx,
-        channel_config=resolved_config,
     )
 
     logger.info("checkout.process: order %s committed for channel %s", commit.order_ref, channel_ref)

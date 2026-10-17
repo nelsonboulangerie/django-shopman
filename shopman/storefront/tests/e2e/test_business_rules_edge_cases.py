@@ -31,6 +31,7 @@ from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
+from shopman.orderman.tests.commit_support import seal_for
 
 pytestmark = pytest.mark.django_db
 
@@ -518,7 +519,9 @@ def _commit(session_key, channel_ref, idem):
     from shopman.orderman.services.commit import CommitService
 
     return CommitService.commit(
-        session_key=session_key, channel_ref=channel_ref, idempotency_key=idem
+        session_key=session_key, channel_ref=channel_ref, idempotency_key=idem,
+                                                          seal=seal_for(session_key, channel_ref),
+                                                          channel_config={},
     )
 
 

@@ -35,6 +35,7 @@ from django.test import TestCase, TransactionTestCase
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Directive, Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.lifecycle import dispatch
 from shopman.shop.models import Channel
@@ -137,6 +138,8 @@ def _commit(session, channel):
         session_key=session.session_key,
         channel_ref=channel.ref,
         idempotency_key=generate_idempotency_key(),
+        seal=seal_for(session.session_key, channel.ref),
+        channel_config={},
     )
 
 

@@ -12,6 +12,7 @@ from django.utils import timezone
 from shopman.orderman.exceptions import CommitError, SessionError
 from shopman.orderman.models import IdempotencyKey, Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 
 class CommitIdempotencyTests(TestCase):
@@ -44,6 +45,8 @@ class CommitIdempotencyTests(TestCase):
                 session_key=self.session.session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key="in-progress-key",
+                seal=seal_for(self.session.session_key, self.channel.ref),
+                channel_config={},
             )
 
         self.assertEqual(ctx.exception.code, "in_progress")
@@ -67,6 +70,8 @@ class CommitIdempotencyTests(TestCase):
             session_key=self.session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key="done-key",
+            seal=seal_for(self.session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         from shopman.orderman.services.commit import CommitResult
@@ -90,6 +95,8 @@ class CommitSessionNotFoundTests(TestCase):
                 session_key="NONEXISTENT",
                 channel_ref=self.channel.ref,
                 idempotency_key="key-001",
+                seal=seal_for("NONEXISTENT", self.channel.ref),
+                channel_config={},
             )
 
         self.assertEqual(ctx.exception.code, "not_found")
@@ -118,6 +125,8 @@ class CommitAbandonedSessionTests(TestCase):
                 session_key=self.session.session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key="key-abandoned",
+                seal=seal_for(self.session.session_key, self.channel.ref),
+                channel_config={},
             )
 
         self.assertEqual(ctx.exception.code, "abandoned")
@@ -153,6 +162,8 @@ class CommitAlreadyCommittedTests(TestCase):
             session_key=self.session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key="key-already",
+            seal=seal_for(self.session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         self.assertEqual(result.order_ref, "ORD-ALREADY-001")
@@ -167,6 +178,8 @@ class CommitAlreadyCommittedTests(TestCase):
                 session_key=self.session.session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key="key-no-order",
+                seal=seal_for(self.session.session_key, self.channel.ref),
+                channel_config={},
             )
 
         self.assertEqual(ctx.exception.code, "already_committed")
@@ -211,6 +224,7 @@ class CommitHoldExpiryTests(TestCase):
                 session_key=session.session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key="key-expired-hold",
+                seal=seal_for(session.session_key, self.channel.ref),
                 channel_config={"rules": {"checks": ["stock"]}},
             )
 
@@ -244,6 +258,7 @@ class CommitHoldExpiryTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key="key-no-expiry",
+            seal=seal_for(session.session_key, self.channel.ref),
             channel_config={"rules": {"checks": ["stock"]}},
         )
 
@@ -277,6 +292,7 @@ class CommitHoldExpiryTests(TestCase):
                 session_key=session.session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key="key-expired-result",
+                seal=seal_for(session.session_key, self.channel.ref),
                 channel_config={"rules": {"checks": ["stock"]}},
             )
 

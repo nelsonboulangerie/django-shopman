@@ -110,21 +110,23 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         # O link só existe no modo Encomendas (`link_requires_order_mode`): é o
         # pedido remoto anotado, com cliente identificado e data combinada.
         customer, _ = Customer.objects.get_or_create(ref="MARIA", defaults={"first_name": "Maria"})
+        payload = {
+            "items": [{"sku": SKU, "name": "Pão Francês", "qty": SOLD_QTY, "unit_price_q": 100}],
+            "sales_mode": "order",
+            "customer_ref": customer.ref,
+            "delivery_date": timezone.localdate().isoformat(),
+            "fulfillment_type": "pickup",
+            "customer_name": "Maria",
+            "customer_phone": "43999990000",
+            "payment_tenders": [{"method": "link", "amount_q": 100 * SOLD_QTY, "collection": "terminal"}],
+            "cash_shift_id": self.shift.pk,
+            "client_request_id": request_id,
+        }
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
         result = pos_service.close_sale(
             channel_ref="pdv",
-            payload={
-                "items": [{"sku": SKU, "name": "Pão Francês", "qty": SOLD_QTY, "unit_price_q": 100}],
-                "sales_mode": "order",
-                "customer_ref": customer.ref,
-                "delivery_date": timezone.localdate().isoformat(),
-                "fulfillment_type": "pickup",
-                "customer_name": "Maria",
-                # O contato é obrigatório no link: a URL existe para ser enviada.
-                "customer_phone": "43999990000",
-                "payment_tenders": [{"method": "link", "amount_q": 100 * SOLD_QTY, "collection": "terminal"}],
-                "cash_shift_id": self.shift.pk,
-                "client_request_id": request_id,
-            },
+            payload=payload,
             actor="pos:alice",
             operator_username="alice",
         )

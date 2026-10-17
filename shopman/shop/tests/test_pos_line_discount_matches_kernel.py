@@ -123,6 +123,18 @@ class TestOGateMedeOMesmoDinheiroQueAReview:
     def test_o_gate_recebe_o_payload_ja_carimbado(self, monkeypatch) -> None:
         session_key = self._tab_com_etiqueta()
         visto: dict = {}
+        payload = {
+            "tab_session_key": session_key,
+            # O navegador NÃO mandou a etiqueta (ou mandaria a errada):
+            # quem manda é a sessão.
+            "items": [{
+                "sku": "BATARD", "name": "Batard", "qty": 1, "unit_price_q": 1105,
+                "discount": {"type": "percent", "value": 10, "reason": "cortesia"},
+            }],
+            "payment_method": "cash",
+        }
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
 
         class _Parou(Exception):
             """Interrompe o close logo depois do gate: aqui só o gate importa."""
@@ -137,16 +149,7 @@ class TestOGateMedeOMesmoDinheiroQueAReview:
         with pytest.raises(_Parou):
             pos_service.close_sale(
                 channel_ref="pdv",
-                payload={
-                    "tab_session_key": session_key,
-                    # O navegador NÃO mandou a etiqueta (ou mandaria a errada):
-                    # quem manda é a sessão.
-                    "items": [{
-                        "sku": "BATARD", "name": "Batard", "qty": 1, "unit_price_q": 1105,
-                        "discount": {"type": "percent", "value": 10, "reason": "cortesia"},
-                    }],
-                    "payment_method": "cash",
-                },
+                payload=payload,
                 actor="pos:alice", operator_username="alice",
             )
 

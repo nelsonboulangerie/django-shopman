@@ -457,6 +457,10 @@ class _Counter:
             "cash_shift_id": self.shift.pk,
         }
         payload.update(overrides)
+        review = pos_service.review_sale(
+            channel_ref="pdv", payload=payload, operator_username=self.operator.username,
+        )
+        payload["expected_total_q"] = review.total_q
         return pos_service.close_sale(
             channel_ref="pdv",
             payload=payload,

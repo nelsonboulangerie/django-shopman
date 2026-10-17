@@ -82,8 +82,11 @@ def _payload(counter, *, ref: str, qty: int = 1, **over) -> dict:
 
 
 def _close(counter, **kw):
+    payload = _payload(counter, **kw)
+    review = shop_pos.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+    payload["expected_total_q"] = review.total_q
     return shop_pos.close_sale(
-        channel_ref="pdv", payload=_payload(counter, **kw), actor="pos:marina", operator_username="marina",
+        channel_ref="pdv", payload=payload, actor="pos:marina", operator_username="marina",
     )
 
 

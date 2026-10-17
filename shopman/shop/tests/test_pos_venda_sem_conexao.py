@@ -138,7 +138,10 @@ def test_venda_com_conexao_no_happy_hour_segue_com_o_desconto(balcao):
     # Controle: o relógio da precificação só muda para a venda sem conexão.
     _happy_hour()
 
-    result = _send(balcao, at=_at(17, 30), client_request_id="pos:hh-online")
+    result = _send(
+        balcao, at=_at(17, 30), client_request_id="pos:hh-online",
+        expected_total_q=720,
+    )
 
     assert Order.objects.get(ref=result.order_ref).total_q == 720
 

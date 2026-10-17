@@ -21,6 +21,7 @@ from shopman.orderman.ids import generate_idempotency_key
 from shopman.orderman.models import Session
 from shopman.orderman.services import CommitService
 from shopman.orderman.signals import order_changed
+from shopman.orderman.tests.commit_support import seal_for
 
 CHANNEL_REF = "qc-budget"
 ITEMS_PER_SESSION = 3
@@ -62,6 +63,8 @@ class CommitQueryBudgetTests(TestCase):
                     session_key=session.session_key,
                     channel_ref=CHANNEL_REF,
                     idempotency_key=generate_idempotency_key(),
+                    seal=seal_for(session.session_key, CHANNEL_REF),
+                    channel_config={},
                 )
         return len(ctx), [q["sql"] for q in ctx.captured_queries]
 

@@ -16,6 +16,7 @@ lugar onde esse defeito aparecia.
 from __future__ import annotations
 
 import pytest
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.config import ChannelConfig
 
@@ -79,6 +80,7 @@ def test_pedido_da_loja_online_nasce_com_a_marca_no_ref():
         session_key="NB-PREFIX-E2E",
         channel_ref="web",
         idempotency_key="nb-prefix-e2e",
+        seal=seal_for("NB-PREFIX-E2E", "web"),
         channel_config=ChannelConfig.for_channel("web").to_dict(),
     )
 

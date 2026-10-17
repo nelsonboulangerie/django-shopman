@@ -11,12 +11,17 @@ from django.db import models, transaction
 from shopman.orderman.exceptions import SessionError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Session
-from shopman.orderman.services.commit import CommitResult, CommitService
+from shopman.orderman.services.commit import CommitAuthority as _CommitAuthority
+from shopman.orderman.services.commit import CommitResult, CommitSeal, CommitService
 from shopman.orderman.services.modify import ModifyService
 from shopman.utils.phone import normalize_phone
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
+
+# Public facade name for surfaces that must construct the canonical seal
+# without importing an Orderman write module directly.
+CommitAuthority = _CommitAuthority
 
 
 def new_session_key() -> str:
@@ -97,8 +102,8 @@ def commit_session(
     session_key: str,
     channel_ref: str,
     idempotency_key: str,
+    seal: CommitSeal,
     ctx: dict | None = None,
-    channel_config: dict | None = None,
 ) -> CommitResult:
     """Commit a session through the canonical Orderman service.
 
@@ -108,10 +113,13 @@ def commit_session(
     from shopman.shop.services.channel_switch import ensure_accepting_orders
 
     ensure_accepting_orders(channel_ref)
+    channel = Channel.objects.get(ref=channel_ref)
+    channel_config = ChannelConfig.for_channel(channel).to_dict()
     return CommitService.commit(
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idempotency_key,
+        seal=seal,
         ctx=ctx,
         channel_config=channel_config,
     )

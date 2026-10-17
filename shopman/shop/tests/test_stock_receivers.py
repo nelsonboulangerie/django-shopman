@@ -9,7 +9,7 @@ from django.test import override_settings
 from django.utils import timezone
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
-from shopman.orderman.models import Session
+from shopman.orderman.models import Order, Session
 from shopman.stockman import HoldStatus
 from shopman.stockman.models import Hold
 
@@ -46,7 +46,10 @@ def test_holds_materialized_notifies_customer_with_deadline_and_cart_url():
         metadata={"reference": session.session_key, "planned": True},
     )
 
-    with patch("shopman.shop.notifications.notify") as notify:
+    with (
+        patch("shopman.shop.notifications.notify") as notify,
+        patch("shopman.orderman.services.commit.CommitService.commit") as commit,
+    ):
         on_holds_materialized(
             sender=None,
             hold_ids=[hold.hold_id],
@@ -55,6 +58,8 @@ def test_holds_materialized_notifies_customer_with_deadline_and_cart_url():
         )
 
     notify.assert_called_once()
+    commit.assert_not_called()
+    assert not Order.objects.filter(session_key=session.session_key).exists()
     kwargs = notify.call_args.kwargs
     assert kwargs["event"] == "stock_arrived"
     assert kwargs["recipient"] == customer.phone

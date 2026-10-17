@@ -28,6 +28,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.orderman.models import Order, Session
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.services import checkout as checkout_service
 from shopman.shop.services import sessions as session_service
@@ -120,8 +121,8 @@ def test_commit_idempotency_key_returns_cached_order(channel, product):
 
     session = _open_session_with_item(product.sku, product.name, 1, 500)
     key = "IDEM-SEC-001"
-    r1 = CommitService.commit(session_key=session.session_key, channel_ref="web", idempotency_key=key)
-    r2 = CommitService.commit(session_key=session.session_key, channel_ref="web", idempotency_key=key)
+    r1 = CommitService.commit(session_key=session.session_key, channel_ref="web", idempotency_key=key, seal=seal_for(session.session_key, "web"), channel_config={})
+    r2 = CommitService.commit(session_key=session.session_key, channel_ref="web", idempotency_key=key, seal=seal_for(session.session_key, "web"), channel_config={})
     assert r1.order_ref == r2.order_ref
     assert Order.objects.filter(session_key=session.session_key).count() == 1
 

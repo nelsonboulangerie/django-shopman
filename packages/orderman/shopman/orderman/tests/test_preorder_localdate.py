@@ -17,6 +17,7 @@ from django.test import TestCase
 from shopman.orderman.ids import generate_idempotency_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 # 01:00 UTC de 12/07 = 22:00 BRT de 11/07 — o dia local ainda é 11/07.
 FROZEN_UTC = datetime(2026, 7, 12, 1, 0, tzinfo=UTC)
@@ -48,6 +49,8 @@ class PreorderLocaldateBoundaryTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
         return Order.objects.get(ref=result.order_ref)
 

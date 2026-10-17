@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 from shopman.offerman.models import Product
 from shopman.orderman.models import Order
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel, DeliveryZone, Shop
 from shopman.shop.projections.cart import build_cart
@@ -72,6 +73,7 @@ def test_delivery_fee_becomes_order_line_and_enters_total(channel):
         session_key=session.session_key,
         channel_ref=channel.ref,
         idempotency_key=sessions.new_idempotency_key(),
+        seal=seal_for(session.session_key, channel.ref),
     )
     order = Order.objects.get(ref=result.order_ref)
 
@@ -178,6 +180,7 @@ def test_delivery_without_verified_zone_cannot_commit(channel):
             session_key=session.session_key,
             channel_ref=channel.ref,
             idempotency_key=sessions.new_idempotency_key(),
+            seal=seal_for(session.session_key, channel.ref),
         )
     assert exc_info.value.code == "delivery_zone_unverified"
 

@@ -18,6 +18,7 @@ from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services.commit import CommitService
 from shopman.orderman.services.modify import ModifyService
+from shopman.orderman.tests.commit_support import seal_for
 from shopman.payman import PaymentService
 
 from shopman.shop.models import Channel
@@ -62,6 +63,8 @@ def _commit_card_order(channel_ref: str = "web") -> Order:
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=generate_idempotency_key(),
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
         ctx={"actor": "test"},
     )
     return Order.objects.get(ref=result.order_ref)

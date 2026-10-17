@@ -83,17 +83,20 @@ class CounterHandoffIntegrationTests(TestCase):
         # O lifecycle dispara via transaction.on_commit — dentro de TestCase a
         # transação nunca commita, então capturamos e executamos os callbacks,
         # que é exatamente o que produção faz no fim do request.
+        payload = {
+            "items": [{"sku": "PAO-FR", "name": "Pão Francês", "qty": 2, "unit_price_q": 100}],
+            "fulfillment_type": "pickup",
+            "payment_method": payment_method,
+            "payment_collection": "terminal",
+            "cash_shift_id": self.shift.pk,
+            "client_request_id": request_id,
+        }
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
         with self.captureOnCommitCallbacks(execute=True):
             result = pos_service.close_sale(
                 channel_ref="pdv",
-                payload={
-                    "items": [{"sku": "PAO-FR", "name": "Pão Francês", "qty": 2, "unit_price_q": 100}],
-                    "fulfillment_type": "pickup",
-                    "payment_method": payment_method,
-                    "payment_collection": "terminal",
-                    "cash_shift_id": self.shift.pk,
-                    "client_request_id": request_id,
-                },
+                payload=payload,
                 actor="pos:alice",
                 operator_username="alice",
             )

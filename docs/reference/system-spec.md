@@ -219,14 +219,16 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `IdempotencyKey(scope, key, status, response_body)`.
 
 **Serviços**
-- `CommitService.commit(session_key, channel_ref, idempotency_key, ctx, channel_config) → dict`
-  1. Lock idempotency (fora da tx) → retorna cached se `done`.
-  2. Lock session (`select_for_update`); validar `open`.
+- `CommitService.commit(session_key, channel_ref, idempotency_key, *, seal, channel_config, ctx) → CommitResult`
+  1. Na mesma transação atômica do commit, lock da idempotência → retorna cached se `done`.
+  2. Lock session (`select_for_update`); validar `open`, `seal.expected_revision` e
+     `seal.expected_total_q`. `seal.authority` é auditoria e nunca reduz os fences.
   3. Validar `required_checks` frescos (rev match + holds não expirados).
   4. Validar `issues` sem blocking.
   5. Rodar validators `stage="commit"`.
   6. Copiar chaves específicas de `session.data → order.data` (lista explícita: customer, fulfillment_type, delivery_address, delivery_address_structured, delivery_date, delivery_time_slot, order_notes, origin_channel, payment, delivery_fee_q, is_preorder).
-  7. Criar Order + OrderItems; `snapshot` = estado da sessão; `commitment` = evidência de checks/issues.
+  7. Criar Order + OrderItems; `snapshot` = estado da sessão; `snapshot.commit` sela
+     autoridade/revisão/total e `commitment` sela a evidência de checks/issues.
   8. `snapshot.lifecycle` = transitions/terminais do `channel_config` (cartão em pedra — congelado).
   9. Emit `OrderEvent("created")` + signal `order_changed`.
   10. Mark session `committed`.

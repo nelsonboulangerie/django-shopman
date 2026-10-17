@@ -40,6 +40,7 @@ from decimal import Decimal
 import pytest
 from django.conf import settings
 from django.test import TestCase, TransactionTestCase
+from shopman.orderman.tests.commit_support import seal_for
 
 requires_postgres = pytest.mark.skipif(
     "sqlite" in settings.DATABASES["default"]["ENGINE"],
@@ -141,6 +142,8 @@ def _commit(session_key: str, channel_ref: str, idem_key: str):
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idem_key,
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
     )
 
 

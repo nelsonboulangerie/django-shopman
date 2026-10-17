@@ -15,6 +15,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.test import TestCase
+from shopman.orderman.tests.commit_support import seal_for
 
 
 def _make_shop():
@@ -81,6 +82,8 @@ def _commit(session_key: str, channel_ref: str, idem_key: str):
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idem_key,
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
     )
 
 

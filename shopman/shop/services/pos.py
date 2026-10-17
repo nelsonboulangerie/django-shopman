@@ -330,14 +330,10 @@ def close_sale(
     payload: dict,
     actor: str,
     operator_username: str,
-    require_expected_total: bool = False,
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload.
 
-    ``require_expected_total`` é o que a fronteira HTTP passa: a tela TEM de dizer
-    o total que mostrou (``expected_total_q``). Quem chama em Python (serviço,
-    teste) pode omitir, como já pode omitir ``intent_version``; mandando, vale a
-    mesma recusa. Ver ``_ensure_expected_total``.
+    Toda entrada, HTTP ou Python, precisa declarar o total revisado.
     """
     from shopman.shop.services import pos_edit_session
 
@@ -385,7 +381,7 @@ def close_sale(
     if open_tab is None and offline_at is None and not _payload_has_tab_identity(payload):
         _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     _ensure_resolved_prices(payload)
-    _ensure_expected_total(payload, channel_ref=channel.ref, required=require_expected_total)
+    _ensure_expected_total(payload, channel_ref=channel.ref)
     # Guardado, não descartado: é este nome — o VERIFICADO — que assina a linha do
     # desconto lá embaixo. Ver `build_session_ops`.
     approver = validate_manager_approval(payload, operator_username=operator_username)
@@ -544,7 +540,7 @@ def close_sale(
         raise _as_error(result.order_ref, exc) from exc
 
 
-def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -> None:
+def _ensure_expected_total(payload: dict, *, channel_ref: str) -> None:
     """O total que a tela mostrou é o total que se cobra (D42, 02/10/2026).
 
     A tela manda ``expected_total_q`` (o total da revisão que o operador viu) e o
@@ -556,10 +552,8 @@ def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -
     do checkout da loja (``CommitService.validate_expected_total``), mesmo
     código e mesmo contexto ``old_total_q``/``new_total_q``.
 
-    Ausente na fronteira HTTP (``required``) é recusa, não "confie": antes do
-    go-live não há cliente antigo a preservar, e o único cliente do endpoint é o
-    PDV, que sempre manda. Ausente numa chamada Python é "sem total de tela":
-    segue a conta do servidor, como antes.
+    Ausente em qualquer fronteira é recusa, não "confie": antes do go-live não
+    há cliente antigo a preservar, e todo chamador confirma o mesmo total.
 
     A retentativa da MESMA venda (``client_request_id`` que já virou pedido) não
     passa por aqui: o pedido existe, e quem responde é ele. Um preço que mudou
@@ -570,8 +564,6 @@ def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -
         return
     expected = payload.get("expected_total_q")
     if expected is None:
-        if not required:
-            return
         raise PosIntentError(
             code="expected_total_required",
             message="A venda chegou sem o total que a tela mostrou. Atualize o PDV e finalize de novo.",
@@ -863,20 +855,25 @@ def _commit_sale_session(
                 session.session_key, charged_q, server_q,
             )
 
+    from shopman.orderman.services.commit import CommitAuthority, CommitSeal
+
     commit_ctx: dict = {"actor": actor}
-    if priced_at is None and payload.get("expected_total_q") is not None:
-        # O total que a tela mostrou é conferido contra as linhas que o MOTOR
-        # precificou, dentro do commit: divergiu, nada nasce e o operador vê o
-        # total novo (``total_changed``). Nunca mais o pagamento reescrito calado
-        # pelo ``_reconcile_order_payment_to_total`` (P0-1). A venda sem conexão
-        # fica de fora: nela vale o cobrado.
-        commit_ctx["expected_total_q"] = int(payload["expected_total_q"])
+    offline_charge = priced_at is not None
+    sealed_total_q = (
+        pos_offline_sale.charged_total_q(payload)
+        if offline_charge
+        else int(payload["expected_total_q"])
+    )
     result = session_service.commit_session(
         session_key=session.session_key,
         channel_ref=channel.ref,
         idempotency_key=_payload_client_request_id(payload) or session_service.new_idempotency_key(),
+        seal=CommitSeal(
+            expected_revision=session.rev,
+            expected_total_q=sealed_total_q,
+            authority=(CommitAuthority.OFFLINE_CHARGE if offline_charge else CommitAuthority.OPERATOR_REVIEWED),
+        ),
         ctx=commit_ctx,
-        channel_config=config.to_dict(),
     )
     # ⚠️ O carimbo da comanda e o marcador de trilha saíram daqui de propósito —
     # ver `close_sale`, que os chama DEPOIS de fechar a transação. Escrevê-los

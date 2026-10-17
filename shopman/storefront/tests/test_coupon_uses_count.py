@@ -13,6 +13,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 from shopman.offerman.models import Product
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel, Coupon, Promotion, Shop
 from shopman.shop.services import sessions
@@ -52,6 +53,7 @@ def _commit(coupon_code: str | None, django_capture_on_commit_callbacks):
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key=sessions.new_idempotency_key(),
+            seal=seal_for(session.session_key, "web"),
         )
 
 
