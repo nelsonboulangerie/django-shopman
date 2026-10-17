@@ -1425,6 +1425,11 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         )
     except remote_mutations.RemoteMutationConflict:
         return _error("intent_conflict", "Esta confirmação já tem outras escolhas. Consulte o pedido registrado.")
+    except remote_mutations.RemoteMutationInProgress:
+        return _error(
+            "in_progress",
+            "Sua confirmação está em processamento. Consulte o resultado sem fazer outro pedido.",
+        )
     except Exception as exc:
         logger.exception("concierge.place_order refused conversation=%s", conversation.pk)
         try:

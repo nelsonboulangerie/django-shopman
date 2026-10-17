@@ -271,7 +271,8 @@ def test_c04_two_postgres_confirmation_workers_create_one_order_and_receipt(ctx,
     barrier = Barrier(2)
     original = remote_mutations.run_idempotent_mutation
     def synchronized(**kwargs):
-        barrier.wait(timeout=10)
+        if kwargs["scope"].startswith("concierge.purchase:"):
+            barrier.wait(timeout=10)
         return original(**kwargs)
     monkeypatch.setattr(remote_mutations, "run_idempotent_mutation", synchronized)
     monkeypatch.setattr("shopman.shop.services.payment.initiate", lambda order: None)
