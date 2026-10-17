@@ -260,6 +260,7 @@ no próprio parecer.
 - **Estado:** implementado no PR #1851. O conteúdo da correção de repricing do PR
   #1852 já está em `main`, no merge commit `75eca4000`; o objeto do PR foi fechado
   por dessincronização do GitHub e não representa pendência técnica. O follow-up B3/B4
+  está publicado no PR #1856 e
   tornou explícita a cadeia causal: a repricing correta expôs uma corrida entre revisão
   e commit; por isso o kernel, autoridade da transição Session→Order, passa a exigir um
   `CommitSeal` tipado (revisão + total + autoridade auditável) e valida ambos sob o lock.
