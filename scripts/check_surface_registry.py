@@ -46,6 +46,9 @@ KINDS = {"customer", "operator", "internal"}
 FIELDS = {"dir", "kind", "uses_operator_kit", "dev_port", "service", "subdomain", "base_url_env", "hub_tile"}
 OPTIONAL_FIELDS = {"ready_path", "deployment"}
 DEPLOY_SPECS = (Path(".do/app.subdomains.yaml"), Path(".do/app.alpha-subdomains.yaml"))
+INTERNAL_PREVIEW_JOB_NAME = (
+    "${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}"
+)
 
 
 @dataclass(frozen=True)
@@ -210,6 +213,15 @@ def check_surfaces_gate(reg: Registry) -> list[str]:
         pwa,
     )
     workflow = reg.read(where)
+    app_quality_match = re.search(
+        r"(?ms)^  app-quality:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+        workflow,
+    )
+    app_quality = app_quality_match.group("body") if app_quality_match else ""
+    if f"    name: {INTERNAL_PREVIEW_JOB_NAME}\n" not in app_quality:
+        errors.append(
+            f"{where} (app-quality): o nome precisa distinguir preview internal com {INTERNAL_PREVIEW_JOB_NAME}"
+        )
     for job, output in (("app-quality", "quality"), ("pwa-quality", "pwa")):
         marker = f"fromJSON(needs.surface-contract.outputs.{output})"
         if marker not in workflow:
