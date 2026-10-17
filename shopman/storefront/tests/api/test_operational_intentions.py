@@ -150,7 +150,7 @@ def test_stock_notice_checks_global_optout():
 
 def test_edit_between_price_check_and_commit_cannot_change_confirmed_total(client):
     authenticate_checkout(client)
-    from shopman.shop.services import checkout
+    from shopman.orderman.services.commit import CommitService
 
     _seed_surface()
     assert client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 1}, content_type="application/json").status_code == 200
@@ -166,17 +166,17 @@ def test_edit_between_price_check_and_commit_cannot_change_confirmed_total(clien
             "idempotency_key": "race-total",
         },
     )
-    original = checkout._ensure_total_matches
+    original = CommitService.validate_expected_total
 
-    def concurrent_edit(session_key, channel_ref, expected):
-        original(session_key, channel_ref, expected)
+    def concurrent_edit(session, expected):
+        original(session, expected)
         changed = client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 2}, content_type="application/json")
         assert changed.status_code == 200, changed.content
 
-    with patch.object(checkout, "_ensure_total_matches", side_effect=concurrent_edit):
+    with patch.object(CommitService, "validate_expected_total", side_effect=concurrent_edit):
         result = client.post("/api/v1/checkout/", payload, content_type="application/json")
-    assert result.status_code == 400, result.content
-    assert result.json()["error_code"] == "total_changed"
+    assert result.status_code == 409, result.content
+    assert result.json()["error_code"] == "revision_changed"
     assert Order.objects.count() == 0
 
 
@@ -272,18 +272,15 @@ def test_malformed_context_is_refused_without_writing(client, route, payload):
 def test_atomic_mutation_receipt_failure_rolls_back_effect():
     from shopman.orderman.models import IdempotencyKey
 
-    original = IdempotencyKey.save
-
-    def crash_after_effect(row, *args, **kwargs):
-        if row.status == "done":
-            raise RuntimeError("fault: receipt write")
-        return original(row, *args, **kwargs)
-
     def effect():
         Order.objects.create(ref="ATOMIC-EFFECT", channel_ref="web")
         return {"ok": True}, 200
 
-    with patch.object(IdempotencyKey, "save", crash_after_effect), pytest.raises(RuntimeError):
+    with patch.object(
+        remote_mutations,
+        "_finish_claim",
+        side_effect=RuntimeError("fault: receipt write"),
+    ), pytest.raises(RuntimeError):
         remote_mutations.run_idempotent_mutation(
             scope="test-local", key="one", execute=effect, local_atomic=True, payload={"qty": 1}
         )

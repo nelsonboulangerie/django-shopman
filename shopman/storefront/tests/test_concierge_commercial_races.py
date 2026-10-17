@@ -104,21 +104,25 @@ def worker_tool_context(source):
     )
 
 
-def test_modify_waits_for_checkout_commit_and_cannot_change_sealed_order(ctx, monkeypatch):
+def test_edit_between_reprice_and_commit_is_rejected_by_revision(ctx, monkeypatch):
     quote = _pickup_ready(ctx)
     key = ctx.conversation.session_key
     line_id = Session.objects.get(session_key=key).items[0]["line_id"]
     boundary, release = Event(), Event()
-    original = checkout._ensure_total_matches
 
-    def paused_total(*args, **kwargs):
-        original(*args, **kwargs)
-        boundary.set()  # process_ops possui o lock da Session e validou o total.
+    original = checkout._prepare_checkout_atomic
+
+    def paused_prepare(*args, **kwargs):
+        prepared = original(*args, **kwargs)
+        boundary.set()  # A transação de recotação já terminou; commit ainda não começou.
         assert release.wait(10)
+        return prepared
 
-    monkeypatch.setattr(checkout, "_ensure_total_matches", paused_total)
+    monkeypatch.setattr(checkout, "_prepare_checkout_atomic", paused_prepare)
+    reviewed_revision = Session.objects.get(session_key=key).rev
     commit = Worker(lambda: checkout.process_ops(session_key=key, channel_ref="whatsapp", ops=[],
-        idempotency_key="commercial-race-checkout", expected_total_q=quote["total_q"]))
+        idempotency_key="commercial-race-checkout", expected_total_q=quote["total_q"],
+        expected_revision=reviewed_revision))
     modify = Worker(lambda: sessions.modify_session(session_key=key, channel_ref="whatsapp",
         ops=[{"op": "set_qty", "line_id": line_id, "qty": 3}]))
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -126,18 +130,16 @@ def test_modify_waits_for_checkout_commit_and_cannot_change_sealed_order(ctx, mo
         try:
             assert boundary.wait(10)
             modified = pool.submit(modify)
-            assert_database_wait(modify)
+            changed = modified.result(20)
         finally:
             release.set()
-        result, refusal = committed.result(20), modified.result(20)
-    assert hasattr(result, "order_ref"), result
-    assert refusal["code"] == "already_committed", refusal
-    order = Order.objects.get()
-    assert order.ref == result.order_ref and order.total_q == 180
-    assert order.items.get(sku=SKU).qty == Decimal(2)
-    assert Session.objects.get(session_key=key).state == "committed"
-    assert IdempotencyKey.objects.filter(scope__startswith="commit:", status="done").count() == 1
-    assert total_reserved() == Decimal(2)
+        refusal = committed.result(20)
+    assert changed.rev == reviewed_revision + 2  # checkout recota; edição incrementa novamente
+    assert refusal["code"] == "revision_changed", refusal
+    assert not Order.objects.exists()
+    current = Session.objects.get(session_key=key)
+    assert current.state == "open" and current.items[0]["qty"] == 3
+    assert not IdempotencyKey.objects.filter(scope__startswith="commit:", status="done").exists()
 
 
 def test_confirmation_waits_for_cart_edit_and_records_conflict_without_order(ctx):
@@ -179,7 +181,7 @@ def test_confirmation_waits_for_cart_edit_and_records_conflict_without_order(ctx
     assert session.state == "open" and Decimal(session.items[0]["qty"]) == Decimal(3)
     assert own_reserved(key) == total_reserved() == Decimal(3)
     receipt = IdempotencyKey.objects.get(scope__startswith="concierge.purchase:")
-    assert receipt.status == "done" and receipt.response_body["result"]["code"] == "revision_conflict"
+    assert receipt.status == "failed" and receipt.response_body["code"] == "revision_conflict"
     replay = tools.place_order(ctx, quote["quote_token"], "pix")
     assert replay["code"] == "revision_conflict" and not Order.objects.exists()
 

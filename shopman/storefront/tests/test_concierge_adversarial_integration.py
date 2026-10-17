@@ -133,20 +133,20 @@ def test_replay_of_rejected_intent_preserves_original_error(conversation):
     binding = authorize_commercial(conversation)
     claimed, _, _ = service._claim(conversation.pk, binding.pk)
     original = tools._error("revision_conflict", "A sacola mudou. Confira novamente.")
-    fingerprint = remote_mutations.mutation_fingerprint(
-        {
-            "customer_ref": "",
-            "channel_ref": "web",
-            "phone": claimed.phone,
-            "revision": "quote-old",
-            "payment_method": "pix",
-            "notes": "",
-        }
-    )
+    payload = {
+        "customer_ref": "",
+        "channel_ref": "web",
+        "phone": claimed.phone,
+        "revision": "quote-old",
+        "payment_method": "pix",
+        "notes": "",
+    }
     remote_mutations.run_idempotent_mutation(
         scope="concierge.purchase:" + hashlib.sha256(f"{claimed.pk}:web".encode()).hexdigest()[:40],
         key="quote-old",
-        fingerprint=fingerprint,
+        payload=payload,
+        local_atomic=False,
+        in_progress_ttl=timedelta(seconds=30),
         execute=lambda: (original, 409),
     )
     result = tools.place_order(tools.ToolContext(claimed, "web"), "quote-old", "pix")

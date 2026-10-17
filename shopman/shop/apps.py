@@ -309,6 +309,10 @@ class ShopmanConfig(AppConfig):
                 # (nenhuma linha órfã). O resto do lifecycle continua adiado
                 # para depois do COMMIT.
                 secure_stock(order)
+                if (kwargs.get("commit_context") or {}).get("checkout_finalize"):
+                    from shopman.shop.services.checkout import queue_post_commit_effects
+
+                    queue_post_commit_effects(order)
                 phase = "on_commit"
             elif event_type == "status_changed":
                 phase = f"on_{order.status}"

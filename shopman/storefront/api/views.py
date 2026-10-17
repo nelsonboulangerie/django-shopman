@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -109,6 +110,14 @@ class CheckoutView(APIView):
             return Response(status=204)
         principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
         response = checkout_service.recover_checkout_response(browser_session=request.session.session_key or "", principal=principal, key=key)
+        if response is None and key:
+            recovered = checkout_service.recover_committed_checkout(
+                session_key=str(request.session.get("cart_session_key") or ""),
+                channel_ref=CHANNEL_REF,
+                idempotency_key=key,
+            )
+            if recovered is not None:
+                response = self._success_data(recovered)
         if response is None:
             return Response(status=204)
         order_service.grant_order_access(request, response["order_ref"])
@@ -143,8 +152,10 @@ class CheckoutView(APIView):
         try:
             receipt = remote_mutations.run_idempotent_mutation(
                 scope=checkout_service.checkout_receipt_scope(browser_session=_session_scope(request), principal=principal, cart_session=request.session.get("cart_session_key") or "", key=key),
-                key=key, payload=payload, execute=execute, local_atomic=True,
+                key=key, payload=payload, execute=execute, local_atomic=False,
+                in_progress_ttl=timedelta(seconds=30),
                 cache_response=lambda body, code: code == 201,
+                allow_changed_payload_after_rejection=True,
             )
         except remote_mutations.RemoteMutationInProgress:
             return Response({"detail": "A confirmação ainda está em consulta. Mantenha esta tentativa.", "error_code": "mutation_in_progress"}, status=409)
@@ -157,6 +168,14 @@ class CheckoutView(APIView):
 
     def _post(self, request, *, key, validated_data):
         from shopman.shop.projections import checkout_context
+
+        recovered = checkout_service.recover_committed_checkout(
+            session_key=str(request.session.get("cart_session_key") or ""),
+            channel_ref=CHANNEL_REF,
+            idempotency_key=key,
+        )
+        if recovered is not None:
+            return Response(self._success_data(recovered), status=status.HTTP_201_CREATED)
 
         if validated_data["payment_method"] not in checkout_context.payment_methods(CHANNEL_REF):
             return Response(
@@ -504,8 +523,8 @@ class CheckoutView(APIView):
                 channel_ref=CHANNEL_REF,
                 data=checkout_data,
                 idempotency_key=idempotency_key,
-                expected_total_q=validated_data.get("expected_total_q"),
-                expected_revision=validated_data.get("expected_revision"),
+                expected_total_q=validated_data["expected_total_q"],
+                expected_revision=validated_data["expected_revision"],
             )
         except Exception as exc:
             logger.debug("views.post degraded; using fallback", exc_info=True)
@@ -547,17 +566,18 @@ class CheckoutView(APIView):
         # navegação ela dá 404 — e o `finalizar.vue` faz `navigateTo(next_url)`
         # com fallback que nunca dispara, porque este campo vem sempre preenchido.
         # Resultado observado no staging: pedido criado e cliente na tela de 404.
-        next_url = f"/pedido/{result.order_ref}"
+        return Response(self._success_data(result), status=status.HTTP_201_CREATED)
 
-        data = CheckoutResponseSerializer(
+    @staticmethod
+    def _success_data(result) -> dict:
+        return CheckoutResponseSerializer(
             {
                 "order_ref": result.order_ref,
                 "status": result.status,
-                "next_url": next_url,
+                "next_url": f"/pedido/{result.order_ref}",
                 "convenience_pending": list(result.convenience_pending),
             }
         ).data
-        return Response(data, status=status.HTTP_201_CREATED)
 
     @staticmethod
     def _rate_limited(request, *, increment: bool) -> bool:

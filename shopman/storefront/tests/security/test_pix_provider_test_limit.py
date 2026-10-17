@@ -37,6 +37,7 @@ def test_direct_checkout_bypass_is_blocked_before_order_and_retry_can_change_met
     session_key = cart_session.session["cart_session_key"]
     ListingItem.objects.filter(listing__ref="web", product=product).update(price_q=1001)
     cart = Session.objects.get(session_key=session_key, channel_ref="web")
+    initial_revision = cart.rev
     authoritative_total_q = sum(int(item["qty"]) * 1001 for item in cart.items)
     key = "pix-sandbox-blocked-then-cash"
     common = {
@@ -53,6 +54,7 @@ def test_direct_checkout_bypass_is_blocked_before_order_and_retry_can_change_met
             data={**common, "payment": {"method": "pix"}},
             idempotency_key=key,
             expected_total_q=authoritative_total_q,
+            expected_revision=initial_revision,
         )
 
     assert caught.value.code == "pix_test_amount_limit"
@@ -69,6 +71,7 @@ def test_direct_checkout_bypass_is_blocked_before_order_and_retry_can_change_met
         data={**common, "payment": {"method": "cash"}},
         idempotency_key=key,
         expected_total_q=authoritative_total_q,
+        expected_revision=cart.rev,
     )
     assert result.total_q == authoritative_total_q
     assert Order.objects.filter(session_key=session_key).count() == 1
@@ -134,7 +137,7 @@ def test_checkout_boundary_uses_composed_discounted_total_plus_delivery(
         "neighborhood": "Centro",
         "postal_code": "86000-000",
     }
-    sessions.modify_session(
+    session = sessions.modify_session(
         session_key=session_key,
         channel_ref="web",
         ops=[
@@ -155,6 +158,8 @@ def test_checkout_boundary_uses_composed_discounted_total_plus_delivery(
                 channel_ref="web",
                 ops=[],
                 idempotency_key=f"pix-composed-{effective_total_q}",
+                expected_total_q=effective_total_q,
+                expected_revision=session.rev,
             )
         assert caught.value.code == "pix_test_amount_limit"
         assert caught.value.context["current_amount_q"] == effective_total_q
@@ -165,5 +170,7 @@ def test_checkout_boundary_uses_composed_discounted_total_plus_delivery(
             channel_ref="web",
             ops=[],
             idempotency_key=f"pix-composed-{effective_total_q}",
+            expected_total_q=effective_total_q,
+            expected_revision=session.rev,
         )
         assert result.total_q == effective_total_q

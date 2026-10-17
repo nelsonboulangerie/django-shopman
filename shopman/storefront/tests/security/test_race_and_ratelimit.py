@@ -27,7 +27,7 @@ from django.core.cache import cache
 from django.test import Client, override_settings
 from django.utils import timezone
 from shopman.offerman.models import Product
-from shopman.orderman.models import Order
+from shopman.orderman.models import Order, Session
 
 from shopman.shop.services import checkout as checkout_service
 from shopman.shop.services import sessions as session_service
@@ -53,7 +53,7 @@ def _seed_stock(sku: str, qty: int) -> None:
 
 def _open_session_with_item(sku: str, name: str, qty: int, price_q: int):
     session = session_service.create_session("web")
-    session_service.modify_session(
+    session = session_service.modify_session(
         session_key=session.session_key,
         channel_ref="web",
         ops=[
@@ -69,19 +69,46 @@ def _open_session_with_item(sku: str, name: str, qty: int, price_q: int):
 
 
 def test_double_submit_never_duplicates_order(channel, product):
-    """A committed session cannot be committed again: a replayed checkout either
-    returns the same order or is rejected, but NEVER creates a second order
-    (double-submit / retry safety)."""
+    """A replay returns the same order without touching a later open cart."""
     session = _open_session_with_item(product.sku, product.name, 1, 500)
+    reviewed_total_q = sum(int(item["line_total_q"]) for item in session.items)
     key = session_service.new_idempotency_key()
     data = {"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"}
 
-    r1 = checkout_service.process(session_key=session.session_key, channel_ref="web", data=data, idempotency_key=key)
-    try:
-        r2 = checkout_service.process(session_key=session.session_key, channel_ref="web", data=data, idempotency_key=key)
-        assert r2.order_ref == r1.order_ref  # cached replay is fine
-    except Exception:
-        pass  # rejecting the second submit is also acceptable — the guarantee is no dup
+    r1 = checkout_service.process(
+        session_key=session.session_key,
+        channel_ref="web",
+        data=data,
+        idempotency_key=key,
+        expected_total_q=reviewed_total_q,
+        expected_revision=session.rev,
+    )
+
+    # O pedido selado carrega a identidade e o cleanup pós-commit a copia para
+    # a sessão já fechada. Replay só lê o recibo e não toca a sacola nova.
+    committed = Session.objects.get(pk=session.pk)
+    assert (committed.handle_type, committed.handle_ref) == (
+        "phone",
+        data["customer"]["phone"],
+    )
+    newer = session_service.create_session("web")
+    session_service.assign_phone_handle(
+        session_key=newer.session_key,
+        channel_ref="web",
+        phone=data["customer"]["phone"],
+        abandon_existing=False,
+    )
+    r2 = checkout_service.process(
+        session_key=session.session_key,
+        channel_ref="web",
+        data=data,
+        idempotency_key=key,
+        expected_total_q=reviewed_total_q,
+        expected_revision=session.rev,
+    )
+    assert r2.order_ref == r1.order_ref
+    newer.refresh_from_db()
+    assert newer.state == "open"
 
     assert Order.objects.filter(session_key=session.session_key).count() == 1
 
@@ -126,7 +153,7 @@ def test_single_use_coupon_second_order_gets_no_discount(channel, django_capture
 
     def _commit(session_key_suffix: str) -> Order:
         session = session_service.create_session("web")
-        session_service.modify_session(
+        session = session_service.modify_session(
             session_key=session.session_key,
             channel_ref="web",
             ops=[
@@ -142,6 +169,8 @@ def test_single_use_coupon_second_order_gets_no_discount(channel, django_capture
                 channel_ref="web",
                 data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
                 idempotency_key=session_service.new_idempotency_key(),
+                expected_total_q=2000 if session_key_suffix == "a" else 2500,
+                expected_revision=session.rev,
             )
         return Order.objects.get(ref=res.order_ref)
 
@@ -214,7 +243,7 @@ def test_single_use_coupon_no_concurrent_over_redemption(channel):
         try:
             barrier.wait()
             session = session_service.create_session("web")
-            session_service.modify_session(
+            session = session_service.modify_session(
                 session_key=session.session_key,
                 channel_ref="web",
                 ops=[
@@ -229,6 +258,8 @@ def test_single_use_coupon_no_concurrent_over_redemption(channel):
                 channel_ref="web",
                 data={"customer": customer, "fulfillment_type": "pickup"},
                 idempotency_key=session_service.new_idempotency_key(),
+                expected_total_q=2000,
+                expected_revision=session.rev,
             )
             order = Order.objects.get(ref=res.order_ref)
             with lock:

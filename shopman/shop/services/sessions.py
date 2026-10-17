@@ -59,6 +59,7 @@ def modify_session(
     ops: list[dict],
     ctx: dict | None = None,
     channel_config: dict | None = None,
+    expected_revision: int | None = None,
 ) -> Session:
     """Apply canonical session operations through Orderman."""
     return ModifyService.modify_session(
@@ -67,6 +68,7 @@ def modify_session(
         ops=ops,
         ctx=ctx,
         channel_config=channel_config,
+        expected_revision=expected_revision,
     )
 
 
@@ -123,10 +125,10 @@ def assign_phone_handle(
     phone: str,
     abandon_existing: bool = True,
 ) -> None:
-    """Attach an open session to a phone handle.
+    """Attach the target session to a phone handle.
 
-    When ``abandon_existing`` is true, older open sessions for the same phone
-    and channel are abandoned so the phone has a single active cart/session.
+    When ``abandon_existing`` is true, older open sessions for the same owner
+    and channel are abandoned so the phone has a single active cart.
     """
     if not phone:
         return
@@ -155,12 +157,19 @@ def assign_phone_handle(
                 message="A identidade do titular mudou; confirme novamente.",
             )
 
+    same_owner = models.Q(handle_type="phone", handle_ref=phone)
+    if customer_hint is not None:
+        # Uma tentativa recusada não recebe handle, mas a recotação preserva a
+        # identidade canônica no draft. Só um checkout posteriormente selado
+        # pode abandonar esse carrinho antigo e devolver seus holds.
+        same_owner |= models.Q(data__customer__ref=customer_hint.ref)
+
     sessions = list(
         Session.objects.select_for_update()
-        .filter(channel_ref=channel_ref, state="open")
+        .filter(channel_ref=channel_ref)
         .filter(
             models.Q(session_key=session_key)
-            | models.Q(handle_type="phone", handle_ref=phone)
+            | models.Q(state="open") & same_owner
         )
         .order_by("pk")
     )
@@ -172,14 +181,16 @@ def assign_phone_handle(
             code="session_anonymized",
             message="Uma sessão anonimizada não pode recuperar sua identidade.",
         )
+    older = [
+        candidate
+        for candidate in sessions
+        if candidate.pk != session.pk and candidate.state == "open"
+    ]
+    if not abandon_existing and older:
+        # Preflight: conserva a titularidade e os holds anteriores até todas as
+        # guardas comerciais passarem; a chamada final abaixo fará a troca.
+        return
     if abandon_existing:
-        older = [
-            candidate
-            for candidate in sessions
-            if candidate.pk != session.pk
-            and candidate.handle_type == "phone"
-            and candidate.handle_ref == phone
-        ]
         older_keys = [candidate.session_key for candidate in older]
         if older:
             Session.objects.filter(pk__in=[candidate.pk for candidate in older]).update(
@@ -195,6 +206,86 @@ def assign_phone_handle(
     session.handle_type = "phone"
     session.handle_ref = phone
     session.save(update_fields=["handle_type", "handle_ref"])
+
+
+@transaction.atomic
+def finalize_phone_handle(
+    *,
+    session_key: str,
+    channel_ref: str,
+    phone: str,
+    superseded_session_keys: tuple[str, ...],
+    expected_customer_ref: str = "",
+) -> None:
+    """Finalize only the exact cart predecessors sealed with an Order."""
+    if not phone:
+        return
+    phone = normalize_phone(phone) or phone
+
+    from shopman.guestman.services import customer as customer_service
+
+    from shopman.shop.services import account as account_service
+
+    customer_hint = customer_service.get_by_phone(phone)
+    if customer_hint is not None:
+        if expected_customer_ref and customer_hint.ref != expected_customer_ref:
+            raise SessionError(
+                code="customer_identity_changed",
+                message="A identidade do titular mudou; confirme novamente.",
+            )
+        try:
+            locked_customer = account_service.lock_active_customer(customer_uuid=customer_hint.uuid)
+        except account_service.AccountUnavailable as exc:
+            raise SessionError(
+                code="customer_inactive",
+                message="O titular desta sessão não está mais ativo.",
+            ) from exc
+        current = customer_service.get_by_phone(phone)
+        if current is None or current.pk != locked_customer.pk:
+            raise SessionError(
+                code="customer_identity_changed",
+                message="A identidade do titular mudou; confirme novamente.",
+            )
+
+    exact_keys = tuple(dict.fromkeys(str(key) for key in superseded_session_keys if key))
+    locked = list(
+        Session.objects.select_for_update()
+        .filter(channel_ref=channel_ref)
+        .filter(models.Q(session_key=session_key) | models.Q(session_key__in=exact_keys))
+        .order_by("pk")
+    )
+    target = next((candidate for candidate in locked if candidate.session_key == session_key), None)
+    if target is None:
+        raise SessionError(code="not_found", message="Sessão do pedido não encontrada.")
+    if target.is_anonymized:
+        raise SessionError(
+            code="session_anonymized",
+            message="Uma sessão anonimizada não pode recuperar sua identidade.",
+        )
+
+    abandoned_keys = []
+    for candidate in locked:
+        if candidate.pk == target.pk or candidate.state != "open" or candidate.session_key not in exact_keys:
+            continue
+        candidate_customer = (candidate.data or {}).get("customer") or {}
+        same_phone = candidate.handle_type == "phone" and candidate.handle_ref == phone
+        same_customer = bool(
+            expected_customer_ref
+            and isinstance(candidate_customer, dict)
+            and candidate_customer.get("ref") == expected_customer_ref
+        )
+        if same_phone or same_customer:
+            candidate.state = "abandoned"
+            candidate.save(update_fields=["state"])
+            abandoned_keys.append(candidate.session_key)
+
+    from shopman.shop.services.availability import release_session_holds
+
+    for key in abandoned_keys:
+        release_session_holds(key)
+    target.handle_type = "phone"
+    target.handle_ref = phone
+    target.save(update_fields=["handle_type", "handle_ref"])
 
 
 @transaction.atomic

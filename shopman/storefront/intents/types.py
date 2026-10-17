@@ -68,13 +68,11 @@ class IntentResult:
     On success: ``intent`` is set, ``errors`` is empty.
     On failure: ``intent`` is None, ``errors`` has user-facing messages.
     ``form_data`` always carries raw POST values for form re-population.
-    ``repricing_warnings`` is always populated (may be empty list).
     """
 
     intent: CheckoutIntent | None
     errors: dict[str, str]
     form_data: dict
-    repricing_warnings: list
 
 
 # ── Account intents ───────────────────────────────────────────────────────────

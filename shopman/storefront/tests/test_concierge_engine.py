@@ -565,6 +565,8 @@ def test_place_order_creates_the_order_and_sends_the_pix_apart(ctx, conversation
     assert order.data["fulfillment_type"] == "pickup"
     assert order.data["delivery_time_slot"] == "slot-12"
     assert order.data["customer"]["phone"] == PHONE
+    assert order.handle_type == "phone" and order.handle_ref == PHONE
+    assert order.snapshot["data"]["customer"]["phone"] == PHONE
     assert order.data["payment"]["method"] == "pix"
     # O Pix nasce no commit (timing at_commit) e vai numa mensagem separada.
     # TestCase contém um outer atomic: callback só executa após o retorno da tool.

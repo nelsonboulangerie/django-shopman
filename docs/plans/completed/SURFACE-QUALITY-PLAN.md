@@ -103,7 +103,6 @@ class IntentResult:
     intent: CheckoutIntent | None
     errors: dict[str, str]       # field → message
     form_data: dict              # para re-render em caso de erro
-    repricing_warnings: list     # não-bloqueante
 ```
 
 3. **`storefront/intents/checkout.py`** — `interpret_checkout(request, channel_ref) → IntentResult`
@@ -169,7 +168,7 @@ def post(self, request: HttpRequest) -> HttpResponse:
     result = interpret_checkout(request, channel_ref=CHANNEL_REF)
     if result.errors:
         return self._render_with_errors(request, cart, result.errors,
-            result.form_data, result.repricing_warnings)
+            result.form_data)
 
     # ── Process ──
     intent = result.intent

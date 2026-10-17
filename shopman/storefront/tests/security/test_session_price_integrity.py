@@ -42,31 +42,269 @@ def _relist(product, price_q: int, *, listing_ref: str = "web") -> None:
 # ── Category 3: price at commit is the current catalog price ────────────────
 
 
-def test_commit_uses_current_catalog_price_not_add_time_price(cart_session, product):
-    """Item entered the cart at R$0,90; the catalog price is then raised to
-    R$1,50. The committed order must charge R$1,50 x2 = R$3,00, not the stale
-    R$0,90 x2 = R$1,80."""
+def test_reprice_persists_listing_total_and_revision_before_second_confirmation(
+    cart_session,
+    product,
+):
+    """A stale confirmation persists the exact channel quote, then closes."""
+    from shopman.orderman.exceptions import ValidationError as OrderingValidationError
+
     client = cart_session
     session_key = client.session["cart_session_key"]
 
     # Sanity: cart captured the add-time price (90 x2 = 180).
     session = Session.objects.get(session_key=session_key, channel_ref="web")
     assert sum(i["line_total_q"] for i in session.items) == 180
+    original_revision = session.rev
+    older = Session.objects.create(
+        session_key=session_service.new_session_key(),
+        channel_ref="web",
+        state="open",
+        handle_type="phone",
+        handle_ref="+5543999990001",
+    )
 
-    # Catalog price changes AFTER add-to-cart.
+    # Listing do canal é a verdade. O base deliberadamente diverge para provar
+    # que o checkout não ressuscita o antigo atalho Product.base_price_q.
+    product.base_price_q = 999
+    product.save(update_fields=["base_price_q"])
     _relist(product, price_q=150)
+    key = session_service.new_idempotency_key()
+    data = {
+        "customer": {"name": "Ana", "phone": "+5543999990001"},
+        "fulfillment_type": "pickup",
+    }
 
+    with pytest.raises(OrderingValidationError) as caught:
+        checkout_service.process(
+            session_key=session_key,
+            channel_ref="web",
+            data=data,
+            idempotency_key=key,
+            expected_total_q=180,
+            expected_revision=original_revision,
+        )
+
+    assert caught.value.code == "total_changed"
+    assert caught.value.context == {"old_total_q": 180, "new_total_q": 300}
+    assert not Order.objects.filter(session_key=session_key).exists()
+
+    repriced = Session.objects.get(session_key=session_key, channel_ref="web")
+    assert repriced.rev == original_revision + 1
+    assert not repriced.handle_ref
+    assert [item["unit_price_q"] for item in repriced.items] == [150]
+    assert sum(item["line_total_q"] for item in repriced.items) == 300
+    older.refresh_from_db()
+    assert older.state == "open"
+    assert older.handle_ref == "+5543999990001"
+
+    # A mesma tentativa pode ser confirmada com o draft que o servidor acabou
+    # de persistir. Pedido nasce só nesta segunda confirmação.
     result = checkout_service.process(
         session_key=session_key,
         channel_ref="web",
-        data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
-        idempotency_key=session_service.new_idempotency_key(),
+        data=data,
+        idempotency_key=key,
+        expected_total_q=300,
+        expected_revision=repriced.rev,
     )
     order = Order.objects.get(ref=result.order_ref)
-    assert order.total_q == 300, (
-        f"price integrity: committed at {order.total_q}, expected 300 (current catalog "
-        "price). A stale 180 means the cart's add-time price was charged."
+    assert order.total_q == 300
+    assert (order.handle_type, order.handle_ref) == ("phone", "+5543999990001")
+    older.refresh_from_db()
+    assert older.state == "abandoned"
+
+
+def test_stale_revision_does_not_abandon_existing_phone_cart_or_hold(cart_session, product):
+    """The identity phase rolls back completely when the reviewed rev is stale."""
+    from decimal import Decimal
+
+    from shopman.orderman.exceptions import ValidationError as OrderingValidationError
+    from shopman.stockman.models import Hold, HoldStatus
+
+    phone = "+5543999990001"
+    old = Session.objects.create(
+        session_key=session_service.new_session_key(),
+        channel_ref="web",
+        state="open",
+        handle_type="phone",
+        handle_ref=phone,
+        items=[],
+        data={},
     )
+    hold = Hold.objects.create(
+        sku=product.sku,
+        quantity=Decimal("1"),
+        target_date=timezone.localdate(),
+        status=HoldStatus.PENDING,
+        metadata={"session_key": old.session_key},
+    )
+    current = Session.objects.get(
+        session_key=cart_session.session["cart_session_key"],
+        channel_ref="web",
+    )
+
+    with pytest.raises(OrderingValidationError) as caught:
+        checkout_service.process(
+            session_key=current.session_key,
+            channel_ref="web",
+            data={"customer": {"phone": phone}},
+            idempotency_key=session_service.new_idempotency_key(),
+            expected_total_q=sum(item["line_total_q"] for item in current.items),
+            expected_revision=current.rev - 1,
+        )
+
+    assert caught.value.code == "revision_changed"
+    old.refresh_from_db()
+    hold.refresh_from_db()
+    current.refresh_from_db()
+    assert old.state == "open"
+    assert hold.status == HoldStatus.PENDING
+    assert not current.handle_ref
+
+
+def test_seal_failure_does_not_abandon_existing_phone_cart_or_hold(cart_session, product):
+    """Takeover is post-Order durable; failure at the seal leaves ownership intact."""
+    from decimal import Decimal
+    from unittest.mock import patch
+
+    from shopman.stockman.models import Hold, HoldStatus
+
+    phone = "+5543999990001"
+    old = Session.objects.create(
+        session_key=session_service.new_session_key(),
+        channel_ref="web",
+        state="open",
+        handle_type="phone",
+        handle_ref=phone,
+    )
+    hold = Hold.objects.create(
+        sku=product.sku,
+        quantity=Decimal("1"),
+        target_date=timezone.localdate(),
+        status=HoldStatus.PENDING,
+        metadata={"session_key": old.session_key},
+    )
+    current = Session.objects.get(
+        session_key=cart_session.session["cart_session_key"],
+        channel_ref="web",
+    )
+
+    with patch.object(session_service, "commit_session", side_effect=RuntimeError("seal unavailable")):
+        with pytest.raises(RuntimeError, match="seal unavailable"):
+            checkout_service.process(
+                session_key=current.session_key,
+                channel_ref="web",
+                data={
+                    "customer": {"name": "Ana", "phone": phone},
+                    "fulfillment_type": "delivery",
+                    "delivery_address": "Rua Selada, 10",
+                    "address_label": {"key": "home", "custom": ""},
+                    "payment": {"method": "cash"},
+                    "save_as_default": True,
+                },
+                idempotency_key=session_service.new_idempotency_key(),
+                expected_total_q=sum(item["line_total_q"] for item in current.items),
+                expected_revision=current.rev,
+            )
+
+    old.refresh_from_db()
+    hold.refresh_from_db()
+    current.refresh_from_db()
+    assert old.state == "open"
+    assert old.handle_ref == phone
+    assert hold.status == HoldStatus.PENDING
+    assert not current.handle_ref
+    assert not Order.objects.filter(session_key=current.session_key).exists()
+
+
+def test_delayed_takeover_only_abandons_sessions_sealed_with_the_order(cart_session):
+    """A worker tardio nunca varre uma sacola criada depois do pedido."""
+    from unittest.mock import patch
+
+    from shopman.orderman.models import Directive
+
+    from shopman.shop import directives
+
+    phone = "+5543999990001"
+    old = Session.objects.create(
+        session_key=session_service.new_session_key(),
+        channel_ref="web",
+        state="open",
+        handle_type="phone",
+        handle_ref=phone,
+    )
+    current = Session.objects.get(
+        session_key=cart_session.session["cart_session_key"],
+        channel_ref="web",
+    )
+    current.data = {**(current.data or {}), "delivery_fee_q": 0}
+    current.save(update_fields=["data"])
+    with patch.object(
+        checkout_service,
+        "_apply_post_commit_side_effects",
+        side_effect=RuntimeError("process died after seal"),
+    ):
+        with pytest.raises(RuntimeError, match="process died after seal"):
+            checkout_service.process(
+                session_key=current.session_key,
+                channel_ref="web",
+                data={
+                    "customer": {"name": "Ana", "phone": phone},
+                    "fulfillment_type": "delivery",
+                    "delivery_address": "Rua Selada, 10",
+                    "address_label": {"key": "home", "custom": ""},
+                    "payment": {"method": "cash"},
+                    "save_as_default": True,
+                },
+                idempotency_key=session_service.new_idempotency_key(),
+                expected_total_q=sum(item["line_total_q"] for item in current.items),
+                expected_revision=current.rev,
+            )
+
+    order = Order.objects.get(session_key=current.session_key)
+    takeover = Directive.objects.get(
+        topic=directives.CHECKOUT_CONVENIENCE,
+        payload__order_ref=order.ref,
+        payload__effect="session_takeover",
+    )
+    assert takeover.payload["superseded_session_keys"] == [old.session_key]
+    assert Directive.objects.filter(
+        topic=directives.CHECKOUT_CONVENIENCE,
+        payload__order_ref=order.ref,
+    ).count() == 4
+
+    newer = Session.objects.create(
+        session_key=session_service.new_session_key(),
+        channel_ref="web",
+        state="open",
+        data={"customer": {"phone": phone}},
+    )
+    checkout_service.recover_convenience_effect(takeover)
+
+    old.refresh_from_db()
+    newer.refresh_from_db()
+    current.refresh_from_db()
+    assert old.state == "abandoned"
+    assert newer.state == "open"
+    assert not newer.handle_ref
+    assert (current.handle_type, current.handle_ref) == ("phone", phone)
+
+    for effect in ("customer", "address", "defaults"):
+        checkout_service.recover_convenience_effect(
+            Directive.objects.get(
+                topic=directives.CHECKOUT_CONVENIENCE,
+                payload__order_ref=order.ref,
+                payload__effect=effect,
+            )
+        )
+    from shopman.guestman.services import address, customer
+
+    recovered_customer = customer.get_by_phone(phone)
+    assert recovered_customer is not None
+    saved = list(address.addresses(recovered_customer.ref))
+    assert len(saved) == 1
+    assert saved[0].label == "home"
 
 
 def test_expected_total_guard_blocks_stale_undercharge(cart_session, product):
@@ -79,6 +317,7 @@ def test_expected_total_guard_blocks_stale_undercharge(cart_session, product):
     client = cart_session
     session_key = client.session["cart_session_key"]
     _relist(product, price_q=150)
+    current_revision = Session.objects.get(session_key=session_key, channel_ref="web").rev
 
     with pytest.raises(OrderingValidationError) as exc:
         checkout_service.process(
@@ -87,6 +326,7 @@ def test_expected_total_guard_blocks_stale_undercharge(cart_session, product):
             data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
             idempotency_key=session_service.new_idempotency_key(),
             expected_total_q=180,  # what the client saw — now stale
+            expected_revision=current_revision,
         )
     assert exc.value.code == "total_changed"
     # No order was created.
@@ -100,7 +340,7 @@ def test_fixed_discount_cannot_exceed_merchandise_value(channel, product):
 
     # Cheap cart: 1 unit @ R$0,80.
     session = session_service.create_session("web")
-    session_service.modify_session(
+    session = session_service.modify_session(
         session_key=session.session_key,
         channel_ref="web",
         ops=[
@@ -120,7 +360,7 @@ def test_fixed_discount_cannot_exceed_merchandise_value(channel, product):
     )
     Coupon.objects.create(code="GIGANTE", promotion=promo, max_uses=0)
 
-    session_service.modify_session(
+    session = session_service.modify_session(
         session_key=session.session_key,
         channel_ref="web",
         ops=[{"op": "set_data", "path": "coupon_code", "value": "GIGANTE"}],
@@ -130,6 +370,8 @@ def test_fixed_discount_cannot_exceed_merchandise_value(channel, product):
         channel_ref="web",
         data={"customer": {"name": "Ana", "phone": "+5543999990001"}, "fulfillment_type": "pickup"},
         idempotency_key=session_service.new_idempotency_key(),
+        expected_total_q=0,
+        expected_revision=session.rev,
     )
     order = Order.objects.get(ref=result.order_ref)
     assert order.total_q >= 0, f"negative order total: {order.total_q}"

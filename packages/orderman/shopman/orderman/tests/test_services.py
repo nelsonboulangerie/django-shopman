@@ -89,6 +89,19 @@ class TestModifyService(TestCase):
                 ops=[{"op": "add_line", "sku": "A", "qty": 1}],
             )
 
+    def test_modify_refuses_a_stale_reviewed_revision_before_writing(self):
+        with pytest.raises(ValidationError) as caught:
+            ModifyService.modify_session(
+                session_key="S-1",
+                channel_ref="pos",
+                ops=[{"op": "set_data", "path": "customer.name", "value": "Stale"}],
+                expected_revision=99,
+            )
+
+        assert caught.value.code == "revision_changed"
+        self.session.refresh_from_db()
+        assert self.session.rev == 0 and self.session.data == {}
+
     def test_modify_locked_session_raises(self):
         self.session.edit_policy = "locked"
         self.session.save()
@@ -148,6 +161,38 @@ class TestCommitService(TestCase):
         order = Order.objects.get(ref=result.order_ref)
         assert order.total_q == 2000
         assert order.items.count() == 1
+
+    def test_expected_total_uses_the_same_fallback_as_order_sealing(self):
+        session = Session.objects.create(
+            session_key="S-TOTAL-OWNER",
+            channel_ref=self.channel.ref,
+            items=[{"sku": "CROISSANT", "qty": 2, "unit_price_q": 1000}],
+        )
+
+        CommitService.validate_expected_total(session, 2000)
+        with pytest.raises(ValidationError) as caught:
+            CommitService.validate_expected_total(session, 0)
+
+        assert caught.value.context == {"old_total_q": 0, "new_total_q": 2000}
+
+    def test_commit_refuses_a_revision_changed_after_repricing(self):
+        session = Session.objects.create(
+            session_key="S-REV-FENCE",
+            channel_ref=self.channel.ref,
+            rev=2,
+            items=[{"sku": "A", "qty": 1, "unit_price_q": 500}],
+        )
+
+        with pytest.raises(ValidationError) as caught:
+            CommitService.commit(
+                session_key=session.session_key,
+                channel_ref=self.channel.ref,
+                idempotency_key="IDEM-REV-FENCE",
+                ctx={"expected_revision": 1},
+            )
+
+        assert caught.value.code == "revision_changed"
+        assert not Order.objects.filter(session_key=session.session_key).exists()
 
     def test_commit_marks_session_committed(self):
         Session.objects.create(

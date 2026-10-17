@@ -32,6 +32,7 @@ import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from datetime import date as date_type
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
@@ -1267,12 +1268,17 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         return _error("invalid_input", "A observação deve ter até 300 caracteres.")
     notes = " ".join(order_notes.split()) or str(((current.quote or {}).get("snapshot") or {}).get("order_notes") or "")
     scope = "concierge.purchase:" + hashlib.sha256(f"{conversation.pk}:{ctx.channel_ref}".encode()).hexdigest()[:40]
-    fingerprint = remote_mutations.mutation_fingerprint({
+    payload = {
         "customer_ref": conversation.customer_ref, "phone": conversation.phone,
         "channel_ref": ctx.channel_ref, "revision": quote_token, "payment_method": payment_method, "notes": notes,
-    })
+    }
     try:
-        receipt = remote_mutations.lookup_local_mutation(scope=scope, key=quote_token, fingerprint=fingerprint)
+        receipt = remote_mutations.lookup_idempotent_mutation(
+            scope=scope,
+            key=quote_token,
+            payload=payload,
+            allow_changed_payload_after_rejection=True,
+        )
         if receipt:
             body = dict(receipt.response_body)
             if not body.get("ok"):
@@ -1297,69 +1303,146 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
         return _error("identity_required", "Sua identificação mudou. Confira uma nova revisão.")
     session = _open_session(ctx)
     if session is None or not session.items:
-        recovered = remote_mutations.lookup_local_mutation(scope=scope, key=quote_token, fingerprint=fingerprint)
-        if recovered:
-            if not recovered.response_body.get("ok"):
-                return recovered.response_body
-            return _placed_result(ctx, recovered.response_body["order_ref"], payment_method, replayed=True)
-        return _error("no_cart", "Não há sacola aberta. Consulte seus pedidos para recuperar um pedido já registrado.")
-    # O conteúdo completo que os defaults e o endereço recebem é o da Session.
-    data = {key: value for key, value in (session.data or {}).items() if key in {
-        "fulfillment_type", "delivery_address", "delivery_address_structured", "delivery_date",
-        "delivery_time_slot", "saved_address_id", "order_notes", "is_gift", "recipient", "gift_message", "gift_hide_values",
-        "fiscal",
-    }}
-    data.update(customer={k: v for k, v in {"name": current.customer_name, "phone": current.phone, "ref": current.customer_ref}.items() if v}, payment={"method": payment_method})
-    if notes:
-        # Uma observação nova pode mudar produção/entrega; deve constar no resumo.
-        if notes != str((session.data or {}).get("order_notes") or ""):
-            return _error("revision_conflict", "Inclua a observação na sacola e confira o novo resumo antes de confirmar.")
-        data["order_notes"] = notes
+        # O commit do Orderman pode ter vencido e o processo morrido antes de
+        # gravar o recibo do orquestrador. A chave canônica recupera esse único
+        # pedido mesmo depois de a Session deixar de ser uma sacola aberta.
+        session_key = str(quote.get("session_key") or "")
+        order_key = hashlib.sha256(f"concierge:{conversation.pk}:{quote_token}".encode()).hexdigest()
+        completed = checkout_service.recover_committed_checkout(
+            session_key=session_key,
+            channel_ref=ctx.channel_ref,
+            idempotency_key=order_key,
+        )
+        if completed is None:
+            return _error("no_cart", "Não há sacola aberta. Consulte seus pedidos para recuperar um pedido já registrado.")
+
+        def recover_committed():
+            Conversation.objects.filter(pk=conversation.pk).update(
+                session_key="",
+                last_order_ref=completed.order_ref,
+            )
+            return {
+                "ok": True,
+                "code": "order_registered",
+                "outcome": "applied",
+                "order_ref": completed.order_ref,
+                "intent_ref": quote_token,
+                "revision": quote_token,
+                "confirmation_message_id": confirmation.pk,
+            }, 200
+
+        try:
+            receipt = remote_mutations.run_idempotent_mutation(
+                scope=scope,
+                key=quote_token,
+                payload=payload,
+                execute=recover_committed,
+                local_atomic=False,
+                in_progress_ttl=timedelta(seconds=30),
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return _error("in_progress", "Sua confirmação está em processamento. Consulte o resultado sem fazer outro pedido.")
+        return _placed_result(ctx, receipt.response_body["order_ref"], payment_method, replayed=True)
 
     def commit_local():
-        latest = Conversation.objects.select_for_update().get(pk=conversation.pk)
-        if (latest.quote or {}).get("token") != quote_token:
-            return _error("revision_conflict", "A revisão mudou. Confira o resumo atual."), 409
-        locked = Session.objects.select_for_update().get(pk=session.pk)
-        _assert_authority(ctx)
-        if locked.state != "open" or quote_token != _quote_token(locked):
-            return _error("revision_conflict", "A sacola mudou. Suas escolhas estão preservadas; confira o novo resumo."), 409
-        fresh = _cart_payload(ctx, locked)
-        if fresh["total_q"] != quote["total_q"]:
-            return _error("revision_conflict", "O total mudou; confira a diferença antes de confirmar.", previous_total_q=quote["total_q"], current_total_q=fresh["total_q"]), 409
-        from shopman.storefront.intents.checkout import _validate_preorder
-        errors = _validate_preorder(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
-            channel_ref=ctx.channel_ref, session_key=locked.session_key)
-        if locked.data.get("fulfillment_type") == "pickup":
-            from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
-            slot_error = validate_pickup_slot_selection(locked.data.get("delivery_time_slot", ""),
-                delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items],
-                now=timezone.localtime().time().replace(second=0, microsecond=0))
-            if slot_error:
-                errors["delivery_time_slot"] = slot_error
-        elif locked.data.get("fulfillment_type") == "delivery" and locked.data.get("delivery_time_slot"):
-            from shopman.shop.services.fulfillment_window import delivery_window_error
-            locked_day = _parse_date(locked.data.get("delivery_date", ""))
-            if locked_day is None or delivery_window_error(locked_day, locked.data["delivery_time_slot"]):
-                errors["delivery_time_slot"] = "O horário não está mais disponível para entrega."
-        if errors:
-            return _error("revision_conflict", "A data mudou de disponibilidade. Escolha um horário válido.", errors=errors), 409
-        result = checkout_service.process(
-            locked.session_key, ctx.channel_ref, data,
-            idempotency_key=hashlib.sha256(f"concierge:{conversation.pk}:{quote_token}".encode()).hexdigest(),
-            ctx={"actor": "concierge", "conversation_id": conversation.pk},
-            expected_total_q=int(quote["lines_total_q"]), expected_grand_total_q=int(quote["total_q"]),
-        )
+        with transaction.atomic():
+            latest = Conversation.objects.select_for_update().get(pk=conversation.pk)
+            if (latest.quote or {}).get("token") != quote_token:
+                return _error("revision_conflict", "A revisão mudou. Confira o resumo atual."), 409
+            locked = Session.objects.select_for_update().get(pk=session.pk)
+            _assert_authority(ctx)
+            if locked.state != "open" or quote_token != _quote_token(locked):
+                return _error("revision_conflict", "A sacola mudou. Suas escolhas estão preservadas; confira o novo resumo."), 409
+            fresh = _cart_payload(ctx, locked)
+            if fresh["total_q"] != quote["total_q"]:
+                return _error("revision_conflict", "O total mudou; confira a diferença antes de confirmar.", previous_total_q=quote["total_q"], current_total_q=fresh["total_q"]), 409
+            from shopman.storefront.intents.checkout import _validate_preorder
+            errors = _validate_preorder(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
+                channel_ref=ctx.channel_ref, session_key=locked.session_key)
+            if locked.data.get("fulfillment_type") == "pickup":
+                from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
+                slot_error = validate_pickup_slot_selection(locked.data.get("delivery_time_slot", ""),
+                    delivery_date=locked.data.get("delivery_date", ""), cart_skus=[str(i.get("sku")) for i in locked.items],
+                    now=timezone.localtime().time().replace(second=0, microsecond=0))
+                if slot_error:
+                    errors["delivery_time_slot"] = slot_error
+            elif locked.data.get("fulfillment_type") == "delivery" and locked.data.get("delivery_time_slot"):
+                from shopman.shop.services.fulfillment_window import delivery_window_error
+                locked_day = _parse_date(locked.data.get("delivery_date", ""))
+                if locked_day is None or delivery_window_error(locked_day, locked.data["delivery_time_slot"]):
+                    errors["delivery_time_slot"] = "O horário não está mais disponível para entrega."
+            if errors:
+                return _error("revision_conflict", "A data mudou de disponibilidade. Escolha um horário válido.", errors=errors), 409
+
+            locked_data = dict(locked.data or {})
+            data = {key: value for key, value in locked_data.items() if key in {
+                "fulfillment_type", "delivery_address", "delivery_address_structured", "delivery_date",
+                "delivery_time_slot", "saved_address_id", "order_notes", "is_gift", "recipient",
+                "gift_message", "gift_hide_values", "fiscal",
+            }}
+            data.update(customer={k: v for k, v in {
+                "name": latest.customer_name,
+                "phone": latest.phone,
+                "ref": latest.customer_ref,
+            }.items() if v}, payment={"method": payment_method})
+            if notes:
+                if notes != str(locked_data.get("order_notes") or ""):
+                    return _error("revision_conflict", "Inclua a observação na sacola e confira o novo resumo antes de confirmar."), 409
+                data["order_notes"] = notes
+            session_key = locked.session_key
+            expected_revision = locked.rev
+
+        try:
+            result = checkout_service.process(
+                session_key, ctx.channel_ref, data,
+                idempotency_key=hashlib.sha256(f"concierge:{conversation.pk}:{quote_token}".encode()).hexdigest(),
+                ctx={"actor": "concierge", "conversation_id": conversation.pk},
+                expected_total_q=int(quote["lines_total_q"]), expected_revision=expected_revision,
+                expected_grand_total_q=int(quote["total_q"]),
+            )
+        except Exception as exc:
+            logger.debug("concierge checkout refused before seal", exc_info=True)
+            if getattr(exc, "code", "") == "total_changed":
+                return _error(
+                    "revision_conflict",
+                    "O total mudou. Confira a diferença antes de confirmar.",
+                    facts=getattr(exc, "context", {}),
+                ), 409
+            raise
         Conversation.objects.filter(pk=conversation.pk).update(session_key="", last_order_ref=result.order_ref)
         return {"ok": True, "code": "order_registered", "outcome": "applied", "order_ref": result.order_ref,
             "intent_ref": quote_token, "revision": quote_token, "confirmation_message_id": confirmation.pk}, 200
     try:
-        receipt = remote_mutations.run_idempotent_mutation(scope=scope, key=quote_token, fingerprint=fingerprint, execute=commit_local)
+        receipt = remote_mutations.run_idempotent_mutation(
+            scope=scope,
+            key=quote_token,
+            payload=payload,
+            execute=commit_local,
+            local_atomic=False,
+            in_progress_ttl=timedelta(seconds=30),
+            cache_response=lambda body, code: bool(body.get("ok")) and code < 500,
+            allow_changed_payload_after_rejection=True,
+        )
     except remote_mutations.RemoteMutationConflict:
         return _error("intent_conflict", "Esta confirmação já tem outras escolhas. Consulte o pedido registrado.")
+    except remote_mutations.RemoteMutationInProgress:
+        return _error(
+            "in_progress",
+            "Sua confirmação está em processamento. Consulte o resultado sem fazer outro pedido.",
+        )
     except Exception as exc:
         logger.exception("concierge.place_order refused conversation=%s", conversation.pk)
-        recovered = remote_mutations.lookup_local_mutation(scope=scope, key=quote_token, fingerprint=fingerprint)
+        try:
+            recovered = remote_mutations.lookup_idempotent_mutation(
+                scope=scope,
+                key=quote_token,
+                payload=payload,
+            )
+        except (
+            remote_mutations.RemoteMutationConflict,
+            remote_mutations.RemoteMutationInProgress,
+        ):
+            recovered = None
         if recovered and recovered.response_body.get("order_ref"):
             return _placed_result(ctx, recovered.response_body["order_ref"], payment_method, replayed=True)
         from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES

@@ -255,18 +255,15 @@ def test_commit_adopts_planned_holds_after_otp_login(client):
 def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(client):
     """Round 1 tenta o checkout e falha; round 2 (mesmo telefone) faz o pedido.
 
-    O cenário real do QA staging: o round de 17:29 (``SESS-P8V2TWA4RAHW``)
-    chegou ao checkout — ``assign_phone_handle`` colou o telefone na sessão —
-    e falhou; os holds planejados dele (eternos, ``expires_at=None``) ficaram
-    ativos. No round seguinte, ``assign_phone_handle(abandon_existing=True)``
-    abandona a Session antiga e tem que LIBERAR os holds dela — senão o
-    cliente compete com o próprio fantasma pela fornada do dia.
+    O cenário real do QA staging: um round falhou após reservar a fornada e
+    manteve seus holds planejados ativos. O pedido do round seguinte sela um
+    corte exato das sessões anteriores do mesmo cliente; a diretiva durável de
+    takeover abandona apenas esse corte e libera seus holds.
     """
     _seed_planned_bakery(planned_qty=4)
     customer = _customer()
 
-    # Round 1: sacola com holds planejados; o checkout falha DEPOIS do
-    # assign_phone_handle (guarda de total: o total exibido "mudou").
+    # Round 1: sacola com holds planejados; a guarda de total recusa o checkout.
     round1 = Client()
     _login_via_access_link(round1, customer)
     round1_key = _add_to_cart(round1, qty=2)
@@ -317,8 +314,7 @@ def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(cl
         status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
     ).count()
     assert still_active == 0, (
-        "sessão abandonada por assign_phone_handle deixou holds planejados "
-        "eternos segurando a fornada do dia"
+        "takeover pós-pedido deixou holds planejados eternos segurando a fornada do dia"
     )
 
 

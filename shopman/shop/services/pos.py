@@ -553,8 +553,8 @@ def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -
     para cima OU para baixo, a venda é recusada antes de qualquer escrita: cobrar
     um número que o operador não conferiu com o cliente é cobrança surpresa, e
     cobrar a menos é dinheiro que a casa não vê sair. Molde: o ``total_changed``
-    do checkout da loja (``checkout._ensure_total_matches``), mesmo código e
-    mesmo contexto ``old_total_q``/``new_total_q``.
+    do checkout da loja (``CommitService.validate_expected_total``), mesmo
+    código e mesmo contexto ``old_total_q``/``new_total_q``.
 
     Ausente na fronteira HTTP (``required``) é recusa, não "confie": antes do
     go-live não há cliente antigo a preservar, e o único cliente do endpoint é o

@@ -197,16 +197,19 @@ def test_commit_rejects_when_total_drifted_from_display(channel):
             ops=[],
             idempotency_key=sessions.new_idempotency_key(),
             expected_total_q=shown_total_q - 500,  # cliente viu outro valor
+            expected_revision=session.rev,
         )
     assert exc_info.value.code == "total_changed"
 
     # Com o total certo, o commit passa.
+    session.refresh_from_db()
     result = checkout_service.process_ops(
         session_key=session.session_key,
         channel_ref=channel.ref,
         ops=[],
         idempotency_key=sessions.new_idempotency_key(),
         expected_total_q=shown_total_q,
+        expected_revision=session.rev,
     )
     assert result.total_q == shown_total_q
 

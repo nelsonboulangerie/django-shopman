@@ -664,28 +664,6 @@ def _shop_config() -> tuple[int, list, str]:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def present_repricing_warnings(changes) -> list[dict]:
-    """Render repricing-change data as the warning dicts the checkout shows."""
-    if not changes:
-        return []
-    copy = build_copy("CHECKOUT")
-    warnings = []
-    for ch in changes:
-        current_display = f"R$ {format_money(ch.current_price_q)}"
-        message = copy.message(
-            "CHECKOUT_REPRICING_MESSAGE",
-            "O preço de {name} mudou para {price}. Deseja continuar?",
-        ).format(name=ch.name, price=current_display)
-        warnings.append({
-            "sku": ch.sku,
-            "name": ch.name,
-            "cart_price_display": f"R$ {format_money(ch.cart_price_q)}",
-            "current_price_display": current_display,
-            "message": message,
-        })
-    return warnings
-
-
 def present_stock_errors(shortfalls) -> list[dict]:
     """Render stock-shortfall data as the error dicts the checkout shows."""
     if not shortfalls:
@@ -721,6 +699,5 @@ def _stock_unit_label(qty: int) -> str:
 __all__ = [
     "CheckoutProjection",
     "build_checkout",
-    "present_repricing_warnings",
     "present_stock_errors",
 ]
