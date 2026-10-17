@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Trava da tabela da suíte (WP-FASE2-UX-OPERADOR, K1).
 //
@@ -51,7 +51,7 @@ describe("tabela da suíte: OperatorTable", () => {
 
   it("nenhuma tela escreve :ui na OperatorTable", () => {
     const offenders: string[] = [];
-    for (const app of [...OPERATOR_SURFACES, "operator-kit"]) {
+    for (const app of [...OPERATOR_KIT_SURFACES, "operator-kit"]) {
       for (const file of vueFiles(join(surfacesDir, app, "app"))) {
         const source = readFileSync(file, "utf8");
         for (const match of source.matchAll(/<OperatorTable\b([^>]*)>/g)) {

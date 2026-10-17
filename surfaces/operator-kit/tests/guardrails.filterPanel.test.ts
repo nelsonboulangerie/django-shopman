@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Trava do painel de filtros único (WP-FASE2-UX-OPERADOR, K4).
 //
@@ -63,7 +63,7 @@ describe("painel de filtros único", () => {
 
   it("toda tela que guarda favorito está no registro do servidor", () => {
     const used = new Set<string>();
-    for (const app of [...OPERATOR_SURFACES, "operator-kit"]) {
+    for (const app of [...OPERATOR_KIT_SURFACES, "operator-kit"]) {
       for (const file of vueAndTs(join(surfacesDir, app, "app"))) {
         const source = readFileSync(file, "utf8");
         for (const match of source.matchAll(/<(?:OperatorFilterPanel|OperatorQuickFilters)\b[\s\S]*?\/>/g)) {
@@ -82,7 +82,7 @@ describe("painel de filtros único", () => {
 
   it("filtro rápido no painel só ao lado da faixa de filtros rápidos", () => {
     const offenders: string[] = [];
-    for (const app of OPERATOR_SURFACES) {
+    for (const app of OPERATOR_KIT_SURFACES) {
       for (const file of vueAndTs(join(surfacesDir, app, "app"))) {
         if (!file.endsWith(".vue")) continue;
         const source = readFileSync(file, "utf8");

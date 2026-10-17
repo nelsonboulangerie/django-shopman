@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de COPY SEM TRAVESSÃO nas superfícies de operador (CLAUDE.md, "Copy sem
 // travessão"): nenhum texto visível usa o travessão longo. A frase se reescreve com
@@ -35,7 +35,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const ROOTS = [...OPERATOR_SURFACES, "operator-kit", "operator-router"];
+const ROOTS = [...OPERATOR_KIT_SURFACES, "operator-kit", "operator-router"];
 
 const SOURCE_EXT = [".vue", ".ts", ".mjs", ".js", ".json"];
 

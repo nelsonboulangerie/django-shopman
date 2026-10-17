@@ -95,9 +95,9 @@
     },
     "kitchensink": {
       "dir": "kitchensink-nuxt",
-      "kind": "operator",
+      "kind": "internal",
       "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" }
+      "capabilities": { "visual": "test:visual" }
     },
     "status": {
       "dir": "status-nuxt",

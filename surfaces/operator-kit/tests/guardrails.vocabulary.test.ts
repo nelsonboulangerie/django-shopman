@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de VOCABULÁRIO: a palavra da casa para o objeto que o operador segura é
 // **dispositivo**; a do cartão é **maquininha**. "Aparelho" não é nenhuma das duas. É o
@@ -175,7 +175,7 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
 // O registro canônico decide o escopo. Superfícies de cliente têm voz própria;
 // enumerar uma exceção por nome faria cada nova superfície pública quebrar uma
 // regra que nunca se aplicou a ela.
-const OPERATOR_SCOPE = new Set([...OPERATOR_SURFACES, "operator-kit", "operator-router"]);
+const OPERATOR_SCOPE = new Set([...OPERATOR_KIT_SURFACES, "operator-kit", "operator-router"]);
 
 const SOURCES = sourceFiles(surfacesDir).filter((file) => {
   const path = relative(surfacesDir, file);
@@ -231,7 +231,7 @@ describe("a palavra da casa é dispositivo — e a do cartão é maquininha", ()
     expect(SOURCES.length).toBeGreaterThan(400);
 
     const apps = new Set(SOURCES.map((file) => relative(surfacesDir, file).split("/")[0]));
-    expect([...apps].sort()).toEqual([...OPERATOR_SURFACES, "operator-kit", "operator-router"].sort());
+    expect([...apps].sort()).toEqual([...OPERATOR_KIT_SURFACES, "operator-kit", "operator-router"].sort());
   });
 });
 

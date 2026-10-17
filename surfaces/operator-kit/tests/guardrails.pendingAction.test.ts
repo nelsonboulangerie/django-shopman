@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Clique nunca inerte: trava estática da layer e dos apps de operador.
 //
@@ -173,7 +173,7 @@ const KNOWN_INERT: Record<string, string[]> = {
 describe("clique nunca inerte (layer + apps de operador)", () => {
   it("botão com ação async declara o pendente; a lista do que falta só encolhe", () => {
     const found: Record<string, string[]> = {};
-    for (const dir of ["operator-kit", ...OPERATOR_SURFACES]) {
+    for (const dir of ["operator-kit", ...OPERATOR_KIT_SURFACES]) {
       for (const file of vueFiles(join(surfacesDir, dir, "app"))) {
         const inert = inertAsyncClicks(readFileSync(file, "utf8"));
         if (inert.length) found[relative(surfacesDir, file)] = inert;

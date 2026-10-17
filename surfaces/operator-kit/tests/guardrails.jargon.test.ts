@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de JARGÃO: a tela do operador fala a língua da padaria, não a de quem
 // construiu o sistema. É o defeito D7a de `docs/reference/omotenashi-copy.md`
@@ -86,7 +86,7 @@ const SKIP_DIRS = new Set([
   "public",
 ]);
 
-const APPS = [...OPERATOR_SURFACES, "operator-kit"].filter((app) => app !== "kitchensink-nuxt");
+const APPS = [...OPERATOR_KIT_SURFACES, "operator-kit"].filter((app) => app !== "kitchensink-nuxt");
 
 /** O catálogo do Kitchen Sink mora também dentro do kit; o leitor dele é quem desenha. */
 const isKitchenSink = (path: string) => /kitchen-?sink/i.test(path);

@@ -89,7 +89,7 @@ function matrix(kind) {
       id,
       dir: surface.dir,
       kind: surface.kind,
-      install_layer: surface.kind === "operator",
+      install_layer: id === "operator-kit" || Boolean(registry.surfaces[id]?.uses_operator_kit),
       runner: surface.runner ?? "ubuntu-latest",
       component: Boolean(surface.commands?.component),
       python_mock: Boolean(surface.pythonMock),

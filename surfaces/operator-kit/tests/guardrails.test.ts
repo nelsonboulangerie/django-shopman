@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // Guardrails de CONSISTÊNCIA do design system canônico do backstage (Lente 7).
 // Fonte: docs/engineering/backstage-design-system.md. Estes testes travam a DRIFT

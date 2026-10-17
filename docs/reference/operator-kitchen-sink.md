@@ -375,9 +375,11 @@ cd ../kitchensink-nuxt && npm ci && npm run dev
 # http://127.0.0.1:3009
 ```
 
-A surface é `deployment: preview`: participa de CI, Dependabot, PWA e imagem
-standalone, mas não entra em `operator-office`, no ingress ou na Central. Isso
-impede que o catálogo afete a saúde das apps operacionais. O preview usa a
+A surface é interna (`kind: internal`, `uses_operator_kit: true`) e
+`deployment: preview`: participa de qualidade, lint, typecheck, build, teste visual,
+Dependabot e guardrails do kit, mas não da matriz PWA operacional, de `operator-office`,
+do ingress ou da Central. Seu perfil PWA técnico continua disponível para ensaio explícito,
+sem promovê-lo a produto. Isso impede que o catálogo afete a saúde das apps operacionais. O preview usa a
 permissão exclusiva `backstage.view_operator_kitchen_sink`, sem concessão a
 grupos; apenas superusuário entra até uma concessão explícita.
 

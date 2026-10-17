@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // Guardrail de PROPRIEDADE: o que o kit já possui não volta a nascer copiado no app.
 //

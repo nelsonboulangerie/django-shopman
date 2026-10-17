@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Trava da AÇÃO NA BASE (WP-FASE2-UX-OPERADOR, D8): a ação do momento no celular é o
 // `OperatorActionBar`, em fluxo entre o conteúdo e a barra inferior, nunca uma barra
@@ -18,7 +18,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 // ficam listadas com motivo.
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const ROOTS = [...OPERATOR_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
+const ROOTS = [...OPERATOR_KIT_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
 const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 
 /** Um texto entre aspas com `sticky`/`fixed` e `bottom-*`: uma barra grudada na base. */

@@ -3,7 +3,7 @@
   "$comment": "Cobertura canônica do WP-UX-8. Uma rota pode conter várias telas operacionais; elas aparecem em variants até virarem rotas próprias.",
   "version": 2,
   "scope": {
-    "kind": "operator",
+    "uses_operator_kit": true,
     "excluded": [
       "storefront-nuxt",
       "Admin/Unfold"

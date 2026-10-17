@@ -635,6 +635,7 @@ def create(
     entry = {
         "dir": f"{name}-nuxt",
         "kind": "operator",
+        "uses_operator_kit": True,
         "dev_port": port,
         "service": group,
         "subdomain": subdomain,

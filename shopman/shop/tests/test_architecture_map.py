@@ -26,14 +26,22 @@ def test_architecture_map_matches_kernel_directories():
 def test_architecture_map_matches_surface_registry_and_support_directories():
     architecture = _load(REPO_ROOT / "docs" / "architecture-map.json")
     registry = _load(REPO_ROOT / architecture["surfaces"]["registry"])
-    declared_apps = {
-        *architecture["surfaces"]["product"],
-        *architecture["surfaces"]["internal"],
-        *architecture["surfaces"]["external"],
+    registry_surfaces = registry["surfaces"]
+    expected_by_role = {
+        "product": {
+            app
+            for app, surface in registry_surfaces.items()
+            if surface["kind"] in {"customer", "operator"} and surface.get("deployment") != "external"
+        },
+        "internal": {app for app, surface in registry_surfaces.items() if surface["kind"] == "internal"},
+        "external": {app for app, surface in registry_surfaces.items() if surface.get("deployment") == "external"},
     }
 
-    assert declared_apps == set(registry["surfaces"])
+    for role, expected in expected_by_role.items():
+        assert set(architecture["surfaces"][role]) == expected
     assert len(architecture["surfaces"]["product"]) == 9
+    assert registry_surfaces["kitchensink"]["kind"] == "internal"
+    assert registry_surfaces["kitchensink"]["uses_operator_kit"] is True
     assert registry["surfaces"]["kitchensink"]["deployment"] == "preview"
     assert registry["surfaces"]["status"]["deployment"] == "external"
     for support in (

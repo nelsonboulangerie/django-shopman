@@ -156,7 +156,7 @@ Logo: **Shopman** = ecossistema (kernel + orquestrador + read-side + superfície
 | V2 | Vocabulário de negação fragmentado, sem enum | stockman `insufficient_supply` (l. 334); orquestrador `insufficient_stock` (l. 505, 878, 938, 1296, 1327), `not_in_listing`, `paused` | Fechar `ReasonCode` no stockman; orquestrador só compõe |
 | V3 | "Disponibilidade ilusória": sentinela `999999` e três representações de *untracked* | `shopman/shop/services/availability.py` l. 486–493; `shopman/storefront/presentation/catalog.py` (`None = untracked`); `shopman/shop/services/stock.py` (`untracked: True`) | Separar `available_qty` factual de `orderable_ceiling` político, ambos opcionais, mais `is_tracked`; `demand_ok` não falsifica o fato observado |
 | V4 | Dois caminhos de preço; um morto | `shopman/shop/services/pricing.py` `resolve` (l. 16) → `CatalogService.price` (lista) vs `shopman/shop/projections/catalog_context.py` `contextual_price` → `CatalogService.get_price` (com promoção) | Um verbo, um caminho |
-| V5 | Constituição reivindica "pricing core" para offerman; ADR-019 decidiu o contrário | `docs/constitution.md` l. 193, 195, 1063 vs ADR-019 §1 | Atualizar §4.1 |
+| V5 | Constituição reivindica "pricing core" para offerman; ADR-019 decidiu o contrário | [Constituição v1 §4.1 (histórica)](../_archive/constitution-v1.md#41-offerman), antigas linhas 193, 195 e 1063, vs ADR-019 §1 | Atualizar §4.1 |
 | V6 | Doorman importa guestman direto e engole a falha | `packages/doorman/.../services/verification.py` l. 553–556 + `except Exception` | Porto de identidade; sem import direto |
 | V7 | Porto de identidade pobre (perde handle/primazia/verificação) | `packages/doorman/.../protocols/customer.py` `AuthCustomerInfo` (l. 9); resolução binária `target_kind` (l. 108) | Alargar o porto (CIAM) |
 | V8 | Governança: ADR-019 está `Proposto` mas implementado | `docs/decisions/adr-019-*.md` `Status:` (l. 3) | Marcar Aceito |
@@ -210,7 +210,10 @@ no próprio parecer.
 ### WP-1 — Consolidar a lei e a verdade documental
 - Publicar **ADR-037 — Titularidade das Decisões** (a lei da §1), preservando as
   bridges opt-in da ADR-001.
-- Marcar ADR-019 como **Aceito**; atualizar `docs/constitution.md` §4.1 (pricing), §4.2 (promessa) e §4.7 (filosofia do doorman).
+- Marcar ADR-019 como **Aceito**; atualizar a Constituição vigente em
+  [§4.1 (preço)](../constitution.md#41-preço),
+  [§4.2 (promessa)](../constitution.md#42-promessa) e
+  [§4.3 (identidade e acesso)](../constitution.md#43-identidade-e-acesso) (filosofia do doorman).
 - Corrigir drift com contagem derivada e qualificada, sem tratar toda distribuição pip como
   kernel de domínio.
 - **Aceite:** nenhuma reivindicação da Constituição contradiz ADR aceita; mapa e fontes

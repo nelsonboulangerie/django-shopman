@@ -95,6 +95,7 @@ def test_a_new_registry_entry_lists_every_place_that_still_lacks_it(repo: Path):
     registry["surfaces"]["loyalty"] = {
         "dir": "loyalty-nuxt",
         "kind": "operator",
+        "uses_operator_kit": True,
         "dev_port": 3011,
         "service": "operator-office",
         "subdomain": "fidelidade",
@@ -152,6 +153,41 @@ def test_registry_rejects_unknown_fields_and_duplicated_ports(repo: Path):
     errors = guard.run(repo)
     assert "surfaces/registry.json: bi com campo desconhecido ['port']" in errors
     assert "surfaces/registry.json: dev_port 3006 repetido" in errors
+
+
+def test_registry_requires_the_operator_kit_dependency_as_a_boolean(repo: Path):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    registry["surfaces"]["kitchensink"]["uses_operator_kit"] = "yes"
+    (repo / "surfaces/registry.json").write_text(json.dumps(registry))
+
+    assert "surfaces/registry.json: kitchensink precisa declarar uses_operator_kit como booleano" in guard.run(repo)
+
+
+@pytest.mark.parametrize("deployment", [None, "external"])
+def test_internal_surface_requires_preview_deployment(repo: Path, deployment: str | None):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    if deployment is None:
+        registry["surfaces"]["kitchensink"].pop("deployment")
+    else:
+        registry["surfaces"]["kitchensink"]["deployment"] = deployment
+    (repo / "surfaces/registry.json").write_text(json.dumps(registry))
+
+    assert "surfaces/registry.json: kitchensink é internal e exige deployment 'preview'" in guard.run(repo)
+
+
+def test_internal_surface_keeps_technical_gates_without_becoming_operational(repo: Path):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    kitchensink = registry["surfaces"]["kitchensink"]
+    assert kitchensink["kind"] == "internal"
+    assert kitchensink["uses_operator_kit"] is True
+
+    contracts = json.loads((repo / "surfaces/contracts.json").read_text())
+    contract = contracts["surfaces"]["kitchensink"]
+    assert contract["kind"] == "internal"
+    assert set(contract["commands"]) == {"unit", "lint", "typecheck", "build"}
+    assert contract["capabilities"].get("visual") == "test:visual"
+    assert "pwa" not in contract["capabilities"]
+    assert guard.run(repo) == []
 
 
 def test_main_exits_nonzero_and_prints_the_file(repo: Path, capsys):

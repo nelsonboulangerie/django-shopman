@@ -20,9 +20,29 @@ PACKAGE_ENTRY_RE = re.compile(
     r"^\*\*Diretório físico:\*\* `packages/([a-z][a-z0-9_]*)/`\s*$", re.MULTILINE
 )
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
-STALE_CITATION_RE = re.compile(r"constituicao.{0,80}(?:§|secao)\s*\d", re.DOTALL)
+REFERENCE_DEFINITION_RE = re.compile(r"^\s*\[([^\]]+)\]:\s*(\S+)", re.MULTILINE)
+REFERENCE_LINK_RE = re.compile(r"\[([^\]]+)\]\[([^\]]*)\]")
+SHORTCUT_REFERENCE_RE = re.compile(r"(?<![!\[])\[([^\]]+)\](?![\[(])")
+SECTION_SUFFIX_RE = re.compile(
+    r"^\s*(?:[-—:,]\s*)?(?:(?:vigente|atual|canonica|canonical)\s*)?"
+    r"(?:§\s*`?\d|c\s*`?\d|(?:secao|section|clausula|clause|item)\s*`?c?\s*\d)"
+)
+BARE_CONSTITUTION_SECTION_RE = re.compile(
+    r"(?:"
+    r"(?:\bconstituicao|\bconstitution)(?:\s+v\d+)?\b"
+    r"(?:\s+(?:vigente|atual|canonica|canonical))?"
+    r"\s*`?\s*(?:[-—:,]\s*)?"
+    r"(?:§\s*`?\d|c\s*`?\d|(?:secao|section|clausula|clause|item)\s*`?c?\s*\d)|"
+    r"(?:docs/)?constitution(?:-v\d+)?\.md`?"
+    r"(?:\s+(?:vigente|atual|canonica|canonical))?"
+    r"\s*(?:[-—:,]\s*)?"
+    r"(?:§\s*`?\d|c\s*`?\d|(?:secao|section|clausula|clause|item)\s*`?c?\s*\d)"
+    r")",
+)
 UNFRAGMENTED_SECTION_RE = re.compile(
-    r"\]\([^)]*(?:constitution|constituicao)[^)]*\.md\)\s*(?:[-—:]\s*)*§\s*\d",
+    r"\]\([^)]*(?:constitution|constituicao)[^)]*\.md\)"
+    r"\s*(?:[-—:,]\s*)?(?:(?:vigente|atual|canonica|canonical)\s*)?"
+    r"(?:§\s*`?\d|c\s*`?\d|(?:secao|section|clausula|clause|item)\s*`?c?\s*\d)",
     re.IGNORECASE,
 )
 REQUIRED_FIELDS = ("Pergunta canônica", "Verbos", "Estados e sinais", "Eventos")
@@ -99,25 +119,32 @@ def check_constitution_references(root: Path = ROOT) -> list[str]:
     for source in _iter_markdown(root):
         text = source.read_text(encoding="utf-8")
         relative_source = source.relative_to(root)
-        for label, raw_target in MARKDOWN_LINK_RE.findall(text):
+
+        def check_target(
+            label: str,
+            raw_target: str,
+            *,
+            source: Path = source,
+            relative_source: Path = relative_source,
+        ) -> None:
             target = raw_target.strip().strip("<>")
             path_part, separator, fragment = target.partition("#")
             resolved = (source.parent / unquote(path_part)).resolve()
             try:
                 relative_target = resolved.relative_to(root)
             except ValueError:
-                continue
+                return
             if relative_target not in CONSTITUTIONS:
-                continue
+                return
             if relative_target == Path("docs/_archive/constitution-v1.md") and "histor" not in _plain(label):
                 errors.append(
                     f"{relative_source}: archived Constitution link must say historical: {label!r}"
                 )
             if not separator:
-                continue
+                return
             if not resolved.is_file():
                 errors.append(f"{relative_source}: Constitution link target is missing: {raw_target}")
-                continue
+                return
             anchors = anchor_cache.setdefault(resolved, markdown_anchors(resolved))
             decoded = unquote(fragment).lower()
             if decoded not in anchors:
@@ -125,13 +152,58 @@ def check_constitution_references(root: Path = ROOT) -> list[str]:
                     f"{relative_source}: nonexistent Constitution anchor #{fragment} in {relative_target}"
                 )
 
+        definitions = {
+            reference.strip().lower(): raw_target
+            for reference, raw_target in REFERENCE_DEFINITION_RE.findall(text)
+        }
+        reference_uses = [
+            (match.group(1), (match.group(2) or match.group(1)).strip().lower(), match.end())
+            for match in REFERENCE_LINK_RE.finditer(text)
+        ]
+        without_definitions = REFERENCE_DEFINITION_RE.sub("", text)
+        reference_uses.extend(
+            (match.group(1), match.group(1).strip().lower(), None)
+            for match in SHORTCUT_REFERENCE_RE.finditer(without_definitions)
+            if match.group(1).strip().lower() in definitions
+        )
+        for label, reference, end in reference_uses:
+            raw_target = definitions.get(reference)
+            if raw_target:
+                path_part, separator, _fragment = raw_target.strip().strip("<>").partition("#")
+                resolved = (source.parent / unquote(path_part)).resolve()
+                try:
+                    relative_target = resolved.relative_to(root)
+                except ValueError:
+                    relative_target = None
+                trailing_section = end is not None and SECTION_SUFFIX_RE.match(_plain(text[end:]))
+                if (
+                    relative_target in CONSTITUTIONS
+                    and not separator
+                    and (
+                        BARE_CONSTITUTION_SECTION_RE.search(_plain(label))
+                        or trailing_section
+                    )
+                ):
+                    errors.append(
+                        f"{relative_source}: Constitution section follows a link without an anchor"
+                    )
+                check_target(label, raw_target)
+
+        for label, raw_target in MARKDOWN_LINK_RE.findall(text):
+            check_target(label, raw_target)
+
         without_links = MARKDOWN_LINK_RE.sub("", text)
+        without_links = REFERENCE_LINK_RE.sub("", without_links)
+        without_links = REFERENCE_DEFINITION_RE.sub("", without_links)
+        for label, reference, end in reference_uses:
+            if end is None and reference in definitions:
+                without_links = without_links.replace(f"[{label}]", "")
         normalized = _plain(without_links)
-        if STALE_CITATION_RE.search(normalized):
+        if BARE_CONSTITUTION_SECTION_RE.search(normalized):
             errors.append(
                 f"{relative_source}: bare Constitution section citation; use a verified Markdown anchor"
             )
-        if UNFRAGMENTED_SECTION_RE.search(text):
+        if UNFRAGMENTED_SECTION_RE.search(_plain(text)):
             errors.append(
                 f"{relative_source}: Constitution section follows a link without an anchor"
             )

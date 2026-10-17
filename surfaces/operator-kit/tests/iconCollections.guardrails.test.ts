@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   DEPLOYED_OPERATOR_SURFACES,
-  OPERATOR_SURFACES,
+  OPERATOR_KIT_SURFACES,
 } from "./support/surfaceRegistry";
 
 // Todo ícone dos apps de operador sai do BUNDLE do cliente, nunca da rede no meio do
@@ -105,7 +105,7 @@ describe("coleções de ícones dos apps de operador", () => {
         .get("line-md")
         ?.some((icon) => icon.startsWith("line-md:loading-loop")),
     ).toBe(true);
-    expect(OPERATOR_SURFACES.length).toBeGreaterThanOrEqual(8);
+    expect(OPERATOR_KIT_SURFACES.length).toBeGreaterThanOrEqual(8);
     for (const app of DEPLOYED_OPERATOR_SURFACES) {
       expect(
         iconNames(join(surfacesDir, app), ["app"]).get("lucide")?.length,
@@ -118,7 +118,7 @@ describe("coleções de ícones dos apps de operador", () => {
     expect(missing(kitIcons, kitInstalled)).toEqual([]);
   });
 
-  it.each(OPERATOR_SURFACES)(
+  it.each(OPERATOR_KIT_SURFACES)(
     "%s: todo prefixo usado tem a coleção instalada no app ou na layer",
     (app) => {
       const appDir = join(surfacesDir, app);

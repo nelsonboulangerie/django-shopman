@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { alertActions } from "../app/utils/alertActions";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // A ação dentro de um aviso acompanha a cor do aviso (dono, 09/10/2026): a principal é
 // `solid` na cor do aviso, a secundária `outline` na mesma cor. Nunca um `primary` ou
@@ -147,7 +147,7 @@ describe("ação dentro de aviso acompanha a cor do aviso", () => {
   });
 
   it("o kit e os apps de operador seguem a regra", () => {
-    const dirs = ["operator-kit", ...OPERATOR_SURFACES];
+    const dirs = ["operator-kit", ...OPERATOR_KIT_SURFACES];
     const found: Record<string, string[]> = {};
     for (const dir of dirs) {
       for (const path of vueFiles(join(surfacesDir, dir, "app"))) {

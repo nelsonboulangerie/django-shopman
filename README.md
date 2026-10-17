@@ -121,7 +121,7 @@ django-shopman/
 │   ├── marketing-nuxt/         # marketing do gestor — campanhas e anúncios (:3006)
 │   ├── bi-nuxt/                # B.I. do gestor (:3007)
 │   ├── purchase-nuxt/          # compras e recebimento (:3008)
-│   ├── kitchensink-nuxt/       # Catálogo do operador (:3009)
+│   ├── kitchensink-nuxt/       # Catálogo interno do operator-kit (:3009)
 │   ├── status-nuxt/            # status público independente (:3010)
 │   └── operator-kit/           # Nuxt layer compartilhada dos apps de operador
 │

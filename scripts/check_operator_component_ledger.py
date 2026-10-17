@@ -137,10 +137,12 @@ def check(
     notices: list[str] = []
     ledger = load_json(LEDGER)
     registry = load_json(REGISTRY)
+    if (ledger.get("scope") or {}).get("uses_operator_kit") is not True:
+        errors.append("ledger: scope precisa declarar uses_operator_kit=true")
     registered = {
         key: value["dir"]
         for key, value in registry["surfaces"].items()
-        if value["kind"] == "operator"
+        if value["uses_operator_kit"]
     }
     apps = ledger.get("apps") or []
     by_id = {app.get("id"): app for app in apps}

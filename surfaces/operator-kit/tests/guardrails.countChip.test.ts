@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Trava do CHIP DE CONTAGEM da suíte (dono, 09/10/2026). Toda contagem mora no
 // `OperatorCountChip` (no fluxo: botão, aba, recorte, barra lateral aberta) ou no
@@ -112,7 +112,7 @@ describe("chip de contagem: nenhum contador em retângulo arredondado", () => {
     expect(component).toContain("countChipText");
   });
 
-  for (const dir of [...OPERATOR_SURFACES, "operator-kit"]) {
+  for (const dir of [...OPERATOR_KIT_SURFACES, "operator-kit"]) {
     it(`${dir} conta só com o chip de contagem`, () => {
       const offenders: string[] = [];
       for (const file of vueFiles(join(surfacesDir, dir, "app"))) {

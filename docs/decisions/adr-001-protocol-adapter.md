@@ -216,5 +216,5 @@ SHOPMAN_PAYMENT_BACKEND = "shopman.shop.adapters.payment_efi.EfiPixBackend"
 ## Referências
 
 - ADR-005: por que o framework é intencionalmente um ponto de coordenação
-- `docs/constitution.md` §3.4: definições canônicas de core/plugin/adapter/framework
+- [Constituição v1 §3.4 (histórica)](../_archive/constitution-v1.md#34-core-plugin-adapter-e-framework): definições de core/plugin/adapter/framework vigentes à época da decisão
 - `docs/reference/protocols.md`: inventário atualizado de Protocols e Adapters

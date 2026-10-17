@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Trava do CONJUNTO MÍNIMO da suíte (dono, 08/10/2026, PR #1539; laudo em
 // docs/plans/WP-BI-CANON-LAUDO.md, seção F). O tema do kit fixa o default de cada
@@ -193,7 +193,7 @@ function count(dir: string): Record<Rule, number> {
 }
 
 describe("conjunto mínimo da suíte: nenhum uso novo fora do conjunto", () => {
-  for (const dir of [...OPERATOR_SURFACES, "operator-kit"]) {
+  for (const dir of [...OPERATOR_KIT_SURFACES, "operator-kit"]) {
     it(`${dir} não passa do teto de nenhuma regra`, () => {
       const current = count(dir);
       const ceiling = CEILING[dir] ?? {};
