@@ -181,10 +181,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CHECKOUT_CONFIRM_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar pedido")},
     },
-    # ``{name}`` / ``{price}`` interpolated by the checkout presentation.
-    "CHECKOUT_REPRICING_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="O preço de {name} mudou para {price}. Deseja continuar?")},
-    },
     # ``{name}``, ``{qty}`` and ``{unit}`` interpolated; ``{qty}`` is the available count.
     "CHECKOUT_STOCK_LIMITED": {
         WILDCARD: {WILDCARD: CopyEntry(message="{name}: temos {qty} {unit} agora.")},

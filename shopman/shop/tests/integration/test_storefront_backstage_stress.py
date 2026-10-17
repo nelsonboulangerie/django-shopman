@@ -854,10 +854,12 @@ class RepricingAndCouponTests(TestCase):
         _receive(5, self.SKU, _make_position("stress-vitrine"))
 
     def test_commit_seals_cart_price_even_if_catalog_repriced(self) -> None:
-        """Comportamento documentado: o commit NÃO reprecifica — vende pelo preço
-        selado na sessão. Drift >5% entre carrinho e catálogo é responsabilidade
-        do aviso não-bloqueante do storefront (``projections.checkout.
-        repricing_changes``), nunca de um recálculo silencioso no commit."""
+        """O kernel sela a sessão recebida; recotar é papel do orquestrador.
+
+        O checkout composto sempre executa os modifiers antes do commit. Esta
+        chamada direta prova apenas a fronteira do Orderman: ele não consulta o
+        catálogo nem reimplementa a decisão canônica do Offerman.
+        """
         from shopman.orderman.models import Order
 
         _open_session(

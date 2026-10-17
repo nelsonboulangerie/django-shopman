@@ -161,6 +161,8 @@ class GiftPropagationContractTests(TestCase):
                 "gift_hide_values": True,
             },
             idempotency_key="gift-test-1",
+            expected_total_q=5000,
+            expected_revision=Session.objects.get(session_key=session_key).rev,
         )
         order = Order.objects.get(ref=result.order_ref)
         self.assertEqual(order.data["is_gift"], True)
@@ -180,6 +182,8 @@ class GiftPropagationContractTests(TestCase):
                 "fulfillment_type": "pickup",
             },
             idempotency_key="gift-test-2",
+            expected_total_q=5000,
+            expected_revision=Session.objects.get(session_key=session_key).rev,
         )
         order = Order.objects.get(ref=result.order_ref)
         self.assertNotIn("is_gift", order.data)

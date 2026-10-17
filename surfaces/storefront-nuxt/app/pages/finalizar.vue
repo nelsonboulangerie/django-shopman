@@ -7,7 +7,7 @@ import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentat
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
-import { buildCheckoutPayload, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
+import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
 import {
   addressSummary as buildAddressSummary,
@@ -1212,6 +1212,12 @@ async function submitCheckout () {
   // A idempotência do servidor é a última defesa; esta guarda evita o request
   // concorrente antes dele sair do navegador.
   if (submitting.value || !checkout.value || !validate()) return
+  const baseline = checkoutBaseline(cart.value)
+  if (!baseline) {
+    serverError.value = 'Sua sacola precisa ser atualizada antes da confirmação. Confira o resumo e tente novamente.'
+    await refresh()
+    return
+  }
   submitting.value = true
   confirmationUnknown.value = false
   serverError.value = ''
@@ -1226,7 +1232,13 @@ async function submitCheckout () {
         'Idempotency-Key': idempotencyKey
       },
       credentials: 'include',
-      body: buildCheckoutPayload(state, idempotencyKey, useLoyalty.value, cart.value?.grand_total_q ?? null, cart.value?.revision)
+      body: buildCheckoutPayload(
+        state,
+        idempotencyKey,
+        useLoyalty.value,
+        baseline.expectedTotalQ,
+        baseline.expectedRevision
+      )
     })
     if (response.convenience_pending?.length && import.meta.client) useSonner.info('Pedido confirmado. Estamos tentando salvar suas escolhas para a próxima vez.')
     // "Guardar no seu cadastro?" não tem resposta na tela, de propósito: dizer

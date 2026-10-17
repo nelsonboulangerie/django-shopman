@@ -86,6 +86,23 @@ def test_commit_without_a_baseline_is_refused(client):
     assert "expected_total_q" in body["errors"], body
 
 
+def test_commit_without_a_reviewed_revision_is_refused(client):
+    authenticate_checkout(client)
+    _seed_surface()
+    _add_item(client)
+
+    resp = client.post(
+        "/api/v1/checkout/",
+        data=json.dumps(_payload(expected_total_q=displayed_total_q(client))),
+        content_type="application/json",
+    )
+
+    assert resp.status_code == 400, resp.content
+    body = resp.json()
+    assert body["field"] == "expected_revision", body
+    assert "expected_revision" in body["errors"], body
+
+
 def test_commit_with_a_stale_baseline_is_refused(client):
     """Baseline que não bate com o preço atual → recusa explícita, não cobrança."""
     authenticate_checkout(client)
@@ -93,6 +110,7 @@ def test_commit_with_a_stale_baseline_is_refused(client):
     _add_item(client)
 
     current = displayed_total_q(client)
+    before = client.get("/api/v1/storefront/cart/").json()["cart"]
     resp = _post(client, _payload(expected_total_q=current - 1))
 
     assert resp.status_code == 400, resp.content
@@ -100,6 +118,8 @@ def test_commit_with_a_stale_baseline_is_refused(client):
     assert body.get("error_code") == "total_changed", body
     # O servidor diz o número certo, para a pessoa reconfirmar sobre ele.
     assert body["context"]["new_total_q"] == current, body
+    after = client.get("/api/v1/storefront/cart/").json()["cart"]
+    assert after["revision"] == before["revision"] + 1
 
 
 def test_commit_with_the_displayed_baseline_goes_through(client):
@@ -138,3 +158,51 @@ def test_a_low_baseline_cannot_dictate_the_price(client):
     from shopman.orderman.models import Order
 
     assert not Order.objects.exists(), "nenhum pedido pode nascer de uma baseline forjada"
+
+
+def test_inner_commit_receipt_recovers_identical_get_and_post_response(client):
+    """A queda após o seal não transforma pedido confirmado em sacola vazia."""
+    from django.core.cache import cache
+    from shopman.orderman.models import IdempotencyKey, Order
+
+    cache.clear()
+    authenticate_checkout(client)
+    _seed_surface()
+    _add_item(client)
+    cart_session_key = client.session["cart_session_key"]
+    mutation_key = "checkout-crash-after-seal"
+    payload = _payload(expected_total_q=displayed_total_q(client))
+    payload["expected_revision"] = client.get("/api/v1/storefront/cart/").json()["cart"]["revision"]
+
+    first = client.post(
+        "/api/v1/checkout/",
+        data=json.dumps(payload),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=mutation_key,
+    )
+    assert first.status_code == 201, first.content
+    expected = first.json()
+    assert Order.objects.count() == 1
+
+    # Simula a queda entre o receipt canônico do Orderman e o receipt HTTP.
+    IdempotencyKey.objects.filter(key=mutation_key).exclude(scope__startswith="commit:").delete()
+    browser = client.session
+    browser["cart_session_key"] = cart_session_key
+    browser.save()
+
+    recovered_get = client.get(
+        "/api/v1/checkout/",
+        HTTP_IDEMPOTENCY_KEY=mutation_key,
+    )
+    assert recovered_get.status_code == 200
+    assert recovered_get.json() == expected
+
+    recovered_post = client.post(
+        "/api/v1/checkout/",
+        data=json.dumps(payload),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=mutation_key,
+    )
+    assert recovered_post.status_code == 201, recovered_post.content
+    assert recovered_post.json() == expected
+    assert Order.objects.count() == 1

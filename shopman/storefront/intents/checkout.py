@@ -139,18 +139,10 @@ def interpret_checkout(request, channel_ref: str) -> IntentResult:
     )
     errors.update(address_errors)
 
-    # ── Step 8: Check repricing (non-blocking) ────────────────────────────
-    from shopman.shop.projections.checkout import repricing_changes
-    from shopman.storefront.presentation.checkout import (
-        present_repricing_warnings,
-        present_stock_errors,
-    )
-
-    repricing_warnings = present_repricing_warnings(repricing_changes(cart.lines))
-
-    # ── Step 9: Check stock ───────────────────────────────────────────────
+    # ── Step 8: Check stock ───────────────────────────────────────────────
     from shopman.shop.projections.checkout import cart_stock_shortfalls
     from shopman.shop.services.order_helpers import parse_commitment_date
+    from shopman.storefront.presentation.checkout import present_stock_errors
 
     commitment_date = parse_commitment_date(delivery_date)
     shortfalls, stock_check_unavailable = cart_stock_shortfalls(
@@ -181,7 +173,6 @@ def interpret_checkout(request, channel_ref: str) -> IntentResult:
             intent=None,
             errors=errors,
             form_data=form_data,
-            repricing_warnings=repricing_warnings,
         )
 
     # ── Step 10: Validate preorder ────────────────────────────────────────
@@ -209,7 +200,6 @@ def interpret_checkout(request, channel_ref: str) -> IntentResult:
             intent=None,
             errors=errors,
             form_data=form_data,
-            repricing_warnings=repricing_warnings,
         )
 
     # ── Step 12: Build checkout_data ──────────────────────────────────────
@@ -295,7 +285,6 @@ def interpret_checkout(request, channel_ref: str) -> IntentResult:
         intent=intent,
         errors={},
         form_data=form_data,
-        repricing_warnings=repricing_warnings,
     )
 
 

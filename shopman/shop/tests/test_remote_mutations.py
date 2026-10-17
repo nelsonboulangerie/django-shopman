@@ -50,7 +50,7 @@ def test_idempotency_key_from_request_prefers_header_then_body_then_fallback():
     assert remote_mutations.idempotency_key_from_request(fallback_request, fallback="fallback") == "fallback"
 
 
-def test_run_idempotent_mutation_can_skip_caching_precondition_failures():
+def test_run_idempotent_mutation_replays_deterministic_precondition_failure():
     calls = 0
 
     def execute():
@@ -72,9 +72,140 @@ def test_run_idempotent_mutation_can_skip_caching_precondition_failures():
     )
 
     assert first.response_body == {"ok": False, "calls": 1}
-    assert second.response_body == {"ok": False, "calls": 2}
+    assert second.response_body == {"ok": False, "calls": 1}
+    assert second.replayed is True
+    assert calls == 1
+
+
+def test_failed_remote_attempt_accepts_corrected_payload_with_same_gesture_key():
+    calls = 0
+
+    def reject():
+        nonlocal calls
+        calls += 1
+        return {"ok": False, "calls": calls}, 409
+
+    first = remote_mutations.run_idempotent_mutation(
+        scope="remote-corrected",
+        key="same-confirmation",
+        payload={"notes": "wrong"},
+        execute=reject,
+        cache_response=lambda body, _code: bool(body.get("ok")),
+        in_progress_ttl=timedelta(seconds=30),
+        allow_changed_payload_after_rejection=True,
+    )
+    replay = remote_mutations.run_idempotent_mutation(
+        scope="remote-corrected",
+        key="same-confirmation",
+        payload={"notes": "wrong"},
+        execute=reject,
+        cache_response=lambda body, _code: bool(body.get("ok")),
+        in_progress_ttl=timedelta(seconds=30),
+        allow_changed_payload_after_rejection=True,
+    )
+    second = remote_mutations.run_idempotent_mutation(
+        scope="remote-corrected",
+        key="same-confirmation",
+        payload={"notes": "reviewed"},
+        execute=lambda: ({"ok": True}, 200),
+        cache_response=lambda body, _code: bool(body.get("ok")),
+        in_progress_ttl=timedelta(seconds=30),
+        allow_changed_payload_after_rejection=True,
+    )
+
+    assert first.response_body == {"ok": False, "calls": 1}
+    assert replay.response_body == first.response_body
+    assert replay.replayed is True
+    assert calls == 1
+    assert second.response_body == {"ok": True}
     assert second.replayed is False
-    assert calls == 2
+
+
+def test_ambiguous_remote_failure_preserves_payload_ownership():
+    from shopman.orderman.models import IdempotencyKey
+
+    def ambiguous_provider_call():
+        raise TimeoutError("provider may already have accepted the charge")
+
+    with pytest.raises(TimeoutError):
+        remote_mutations.run_idempotent_mutation(
+            scope="remote-ambiguous",
+            key="payment-attempt",
+            payload={"amount": 3600},
+            execute=ambiguous_provider_call,
+            in_progress_ttl=timedelta(seconds=30),
+            allow_changed_payload_after_rejection=True,
+        )
+
+    with pytest.raises(remote_mutations.RemoteMutationConflict):
+        remote_mutations.run_idempotent_mutation(
+            scope="remote-ambiguous",
+            key="payment-attempt",
+            payload={"amount": 7200},
+            execute=lambda: ({"ok": True}, 200),
+            in_progress_ttl=timedelta(seconds=30),
+            allow_changed_payload_after_rejection=True,
+        )
+
+    receipt = IdempotencyKey.objects.get(scope="remote-ambiguous", key="payment-attempt")
+    assert receipt.status == "failed"
+    assert receipt.response_code is None
+    assert receipt.request_fingerprint == remote_mutations.fingerprint({"amount": 3600})
+
+
+def test_stale_remote_worker_cannot_overwrite_reclaimed_lease():
+    from django.utils import timezone
+    from shopman.orderman.models import IdempotencyKey
+
+    replacement_expiry = timezone.now() + timedelta(minutes=10)
+
+    def finish_after_reclaim():
+        IdempotencyKey.objects.filter(scope="remote-lease", key="attempt").update(
+            expires_at=replacement_expiry,
+        )
+        return {"ok": True}, 200
+
+    with pytest.raises(remote_mutations.RemoteMutationInProgress, match="lease was reclaimed"):
+        remote_mutations.run_idempotent_mutation(
+            scope="remote-lease",
+            key="attempt",
+            payload={"amount": 3600},
+            execute=finish_after_reclaim,
+            in_progress_ttl=timedelta(seconds=30),
+        )
+
+    receipt = IdempotencyKey.objects.get(scope="remote-lease", key="attempt")
+    assert receipt.status == "in_progress"
+    assert receipt.expires_at == replacement_expiry
+    assert receipt.response_body is None
+
+
+def test_stale_remote_exception_preserves_reclaimed_lease_and_original_error():
+    from django.utils import timezone
+    from shopman.orderman.models import IdempotencyKey
+
+    replacement_expiry = timezone.now() + timedelta(minutes=10)
+
+    def fail_after_reclaim():
+        IdempotencyKey.objects.filter(scope="remote-stale-error", key="attempt").update(
+            expires_at=replacement_expiry,
+        )
+        raise TimeoutError("original provider timeout")
+
+    with pytest.raises(TimeoutError, match="original provider timeout"):
+        remote_mutations.run_idempotent_mutation(
+            scope="remote-stale-error",
+            key="attempt",
+            payload={"amount": 3600},
+            execute=fail_after_reclaim,
+            in_progress_ttl=timedelta(seconds=30),
+        )
+
+    receipt = IdempotencyKey.objects.get(scope="remote-stale-error", key="attempt")
+    assert receipt.status == "in_progress"
+    assert receipt.expires_at == replacement_expiry
+    assert receipt.response_code is None
+    assert receipt.response_body is None
 
 
 def test_expired_remote_claim_with_fingerprint_can_resume_after_process_death():
@@ -99,6 +230,48 @@ def test_expired_remote_claim_with_fingerprint_can_resume_after_process_death():
 
     assert result.response_body == {"ok": True}
     assert IdempotencyKey.objects.get(scope="remote-expired", key="crashed-attempt").status == "done"
+
+
+@pytest.mark.parametrize("status", ["failed", "in_progress"])
+def test_lookup_allows_failed_or_expired_non_atomic_claim_to_resume(status):
+    from django.utils import timezone
+    from shopman.orderman.models import IdempotencyKey
+
+    payload = {"amount": 3600}
+    IdempotencyKey.objects.create(
+        scope="checkout-recovery",
+        key=status,
+        status=status,
+        request_fingerprint=remote_mutations.fingerprint(payload),
+        expires_at=timezone.now() - timedelta(seconds=1),
+    )
+
+    assert remote_mutations.lookup_idempotent_mutation(
+        scope="checkout-recovery",
+        key=status,
+        payload=payload,
+    ) is None
+
+
+def test_lookup_keeps_a_live_non_atomic_claim_in_progress():
+    from django.utils import timezone
+    from shopman.orderman.models import IdempotencyKey
+
+    payload = {"amount": 3600}
+    IdempotencyKey.objects.create(
+        scope="checkout-recovery",
+        key="live",
+        status="in_progress",
+        request_fingerprint=remote_mutations.fingerprint(payload),
+        expires_at=timezone.now() + timedelta(minutes=1),
+    )
+
+    with pytest.raises(remote_mutations.RemoteMutationInProgress):
+        remote_mutations.lookup_idempotent_mutation(
+            scope="checkout-recovery",
+            key="live",
+            payload=payload,
+        )
 
 
 def test_idempotency_key_from_request_hashes_overlong_values():

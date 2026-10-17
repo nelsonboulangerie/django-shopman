@@ -88,7 +88,7 @@ def test_j01_j07_real_core_keeps_one_order_after_lost_confirmation_response(conv
     notification_templates = list(Directive.objects.filter(topic="notification.send", payload__order_ref=order.ref).values_list("payload__template", flat=True))
     assert len(notification_templates) == len(set(notification_templates))
     receipts = list(IdempotencyKey.objects.filter(scope__startswith="concierge").values("scope", "status", "response_body"))
-    assert receipts and any(row["response_body"].get("result", {}).get("order_ref") == order.ref for row in receipts)
+    assert receipts and any(row["response_body"].get("order_ref") == order.ref for row in receipts)
     print("VERTICAL_RESULT " + json.dumps({"order_count": 1, "payment_intents": 1, "payment_status": "pending", "notification_templates": notification_templates, "unknown_outputs": conversation.messages.filter(transport_state="unknown").count(), "duplicate_event_same_message": True}, sort_keys=True))
 
 

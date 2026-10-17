@@ -55,6 +55,61 @@ class CommitService:
     """
 
     @staticmethod
+    def _idempotency_scope(session_key: str, channel_ref: str) -> str:
+        scope = f"commit:{channel_ref}:{session_key}"
+        scope_limit = IdempotencyKey._meta.get_field("scope").max_length
+        if len(scope) > scope_limit:
+            return "commit:" + hashlib.sha256(scope.encode()).hexdigest()[: scope_limit - 7]
+        return scope
+
+    @staticmethod
+    def completed_response(
+        session_key: str,
+        channel_ref: str,
+        idempotency_key: str,
+    ) -> CommitResult | None:
+        """Return a completed commit receipt without locking or mutating state."""
+        response = (
+            IdempotencyKey.objects.filter(
+                scope=CommitService._idempotency_scope(session_key, channel_ref),
+                key=idempotency_key,
+                status="done",
+            )
+            .values_list("response_body", flat=True)
+            .first()
+        )
+        return CommitResult(**response) if response else None
+
+    @staticmethod
+    def validate_expected_revision(session: Session, expected_revision: int) -> None:
+        """Fence a commit or mutation to the exact draft revision reviewed."""
+        if session.rev == int(expected_revision):
+            return
+        raise ValidationError(
+            code="revision_changed",
+            message="Sua sacola mudou. Confira os itens e confirme novamente.",
+            context={"revision": session.rev},
+        )
+
+    @staticmethod
+    def validate_expected_total(session: Session, expected_total_q: int) -> None:
+        """Refuse a total other than the one currently sealed in the draft.
+
+        This is the canonical Orderman decision for the customer-confirmed line
+        total.  Orchestrators may call it before ``commit`` when they need to
+        persist a freshly repriced draft and ask for a second confirmation;
+        ``_do_commit`` calls the same decision again at the seal boundary.
+        """
+        actual_total_q = CommitService._calculate_total(session.items)
+        if actual_total_q == int(expected_total_q):
+            return
+        raise ValidationError(
+            code="total_changed",
+            message="O total mudou. Confira e confirme novamente.",
+            context={"new_total_q": actual_total_q, "old_total_q": int(expected_total_q)},
+        )
+
+    @staticmethod
     def commit(
         session_key: str,
         channel_ref: str,
@@ -69,7 +124,9 @@ class CommitService:
             # in-progress claim between receipt acquisition and the local seal.
             # Never overwrite another request's live or completed receipt.
             IdempotencyKey.objects.get_or_create(
-                scope=f"commit:{channel_ref}:{session_key}", key=idempotency_key, defaults={"status": "failed"}
+                scope=CommitService._idempotency_scope(session_key, channel_ref),
+                key=idempotency_key,
+                defaults={"status": "failed"},
             )
             raise
 
@@ -104,10 +161,7 @@ class CommitService:
         ctx = ctx or {}
         # Escopo inclui a sessão: chave fornecida pelo cliente não pode
         # colidir/vazar o CommitResult de OUTRA sessão do mesmo canal.
-        idem_scope = f"commit:{channel_ref}:{session_key}"
-        scope_limit = IdempotencyKey._meta.get_field("scope").max_length
-        if len(idem_scope) > scope_limit:
-            idem_scope = "commit:" + hashlib.sha256(idem_scope.encode()).hexdigest()[: scope_limit - 7]
+        idem_scope = CommitService._idempotency_scope(session_key, channel_ref)
 
         # Receipt acquisition, seal and response share this outer transaction.
         try:
@@ -277,6 +331,10 @@ class CommitService:
         if session.state == "abandoned":
             raise CommitError(code="abandoned", message="Sessão foi abandonada")
 
+        expected_revision = ctx.get("expected_revision")
+        if expected_revision is not None:
+            CommitService.validate_expected_revision(session, int(expected_revision))
+
         # Check required checks are fresh
         # channel_config must always be supplied by the framework caller (cascade resolvido).
         # Kernel não lê channel.config — o framework passa o config resolvido como parâmetro.
@@ -353,13 +411,8 @@ class CommitService:
             )
 
         expected_total = ctx.get("expected_total_q")
-        actual_total = sum(int(item.get("line_total_q") or 0) for item in session.items)
-        if expected_total is not None and actual_total != expected_total:
-            raise ValidationError(
-                code="total_changed",
-                message="O total mudou. Confira e confirme novamente.",
-                context={"new_total_q": actual_total, "old_total_q": expected_total},
-            )
+        if expected_total is not None:
+            CommitService.validate_expected_total(session, int(expected_total))
 
         # Build order.data from session.data (key fields for handlers)
         order_data = {}
@@ -411,11 +464,19 @@ class CommitService:
                 pass
 
         # Create Order + OrderItems. Ref aleatório → savepoint + retry na corrida de índice.
+        order_handle_type = session.handle_type
+        order_handle_ref = session.handle_ref
+        if not order_handle_ref:
+            customer_ref, customer_phone = CommitService._session_customer_identity(session)
+            if customer_phone:
+                order_handle_type, order_handle_ref = "phone", customer_phone
+            elif customer_ref:
+                order_handle_type, order_handle_ref = "customer", customer_ref
         order_fields = {
             "channel_ref": channel_ref,
             "session_key": session_key,
-            "handle_type": session.handle_type,
-            "handle_ref": session.handle_ref,
+            "handle_type": order_handle_type,
+            "handle_ref": order_handle_ref,
             "status": Order.Status.NEW,
             # Deep copy: o snapshot é o registro SELADO e imutável do pedido, e o
             # sealed check compara `self.snapshot` contra um baseline deep-copiado.
@@ -497,6 +558,7 @@ class CommitService:
             order=order,
             event_type="created",
             actor=ctx.get("actor", "system"),
+            commit_context=dict(ctx),
         )
 
         # Mark session as committed

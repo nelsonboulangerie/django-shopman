@@ -47,6 +47,7 @@ class ModifyService:
         ops: list[dict],
         ctx: dict | None = None,
         channel_config: dict | None = None,
+        expected_revision: int | None = None,
     ) -> Session:
         ctx = ctx or {}
 
@@ -82,6 +83,13 @@ class ModifyService:
                 code="not_found",
                 message=f"Sessão não encontrada: {channel_ref}:{session_key}",
             ) from exc
+
+        if expected_revision is not None and session.rev != int(expected_revision):
+            raise ValidationError(
+                code="revision_changed",
+                message="Sua sacola mudou. Confira os itens e confirme novamente.",
+                context={"revision": session.rev},
+            )
 
         if locked_customer is not None and not type(locked_customer).objects.filter(
             pk=locked_customer.pk,

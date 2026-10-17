@@ -81,9 +81,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_GROUP_SAVINGS": (
         ("shopman/shop/modifiers.py", "Loja", "Preços e promoções"),
     ),
-    "CHECKOUT_REPRICING_MESSAGE": (
-        ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
-    ),
     "CHECKOUT_STOCK_LIMITED": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),

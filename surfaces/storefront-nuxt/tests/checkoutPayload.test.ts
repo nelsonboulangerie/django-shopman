@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCheckoutPayload, type CheckoutFormState } from '../app/utils/checkoutPayload'
+import { buildCheckoutPayload, checkoutBaseline, type CheckoutFormState } from '../app/utils/checkoutPayload'
 
 const deliveryState: CheckoutFormState = {
   name: '  Maria Silva ',
@@ -38,8 +38,17 @@ const deliveryState: CheckoutFormState = {
 }
 
 describe('checkout payload contract', () => {
+  it('refuses submission baselines without an exact reviewed revision', () => {
+    expect(checkoutBaseline(undefined)).toBeNull()
+    expect(checkoutBaseline({ grand_total_q: 4321 })).toBeNull()
+    expect(checkoutBaseline({ grand_total_q: 4321, revision: 7 })).toEqual({
+      expectedTotalQ: 4321,
+      expectedRevision: 7
+    })
+  })
+
   it('serializes canonical checkout fields with stable idempotency key', () => {
-    const payload = buildCheckoutPayload(deliveryState, 'checkout-fixed', true)
+    const payload = buildCheckoutPayload(deliveryState, 'checkout-fixed', true, 4321, 7)
 
     expect(payload).toMatchObject({
       idempotency_key: 'checkout-fixed',
@@ -55,7 +64,9 @@ describe('checkout payload contract', () => {
       payment_method: 'pix',
       notes: 'Sem talher',
       save_as_default: true,
-      use_loyalty: true
+      use_loyalty: true,
+      expected_total_q: 4321,
+      expected_revision: 7
     })
     expect(payload.delivery_address_structured.place_id).toBe('place-123')
   })
@@ -64,7 +75,9 @@ describe('checkout payload contract', () => {
     const payload = buildCheckoutPayload(
       { ...deliveryState, save_as_default: false },
       'checkout-optout',
-      false
+      false,
+      4321,
+      7
     )
 
     expect(payload.save_as_default).toBe(false)
@@ -74,7 +87,9 @@ describe('checkout payload contract', () => {
     const payload = buildCheckoutPayload(
       { ...deliveryState, fulfillment_type: 'pickup' },
       'checkout-pickup',
-      false
+      false,
+      4321,
+      7
     )
 
     expect(payload.saved_address_id).toBeNull()
@@ -85,21 +100,21 @@ describe('checkout payload contract', () => {
   })
 
   it('sends the delivery tax id as digits; on pickup only when asked for', () => {
-    const delivery = buildCheckoutPayload(deliveryState, 'k', false)
+    const delivery = buildCheckoutPayload(deliveryState, 'k', false, 4321, 7)
     expect(delivery.fiscal_tax_id).toBe('52998224725')
 
-    const pickup = buildCheckoutPayload({ ...deliveryState, fulfillment_type: 'pickup' }, 'k', false)
+    const pickup = buildCheckoutPayload({ ...deliveryState, fulfillment_type: 'pickup' }, 'k', false, 4321, 7)
     expect(pickup.fiscal_tax_id).toBe('')
 
-    const pickupAsked = buildCheckoutPayload({ ...deliveryState, fulfillment_type: 'pickup', fiscal_tax_id_on_pickup: true }, 'k', false)
+    const pickupAsked = buildCheckoutPayload({ ...deliveryState, fulfillment_type: 'pickup', fiscal_tax_id_on_pickup: true }, 'k', false, 4321, 7)
     expect(pickupAsked.fiscal_tax_id).toBe('52998224725')
     expect(pickupAsked).not.toHaveProperty('fiscal_tax_id_on_pickup')
   })
 
   it('asks to save only with a yes and a tax id going to the note', () => {
-    expect(buildCheckoutPayload(deliveryState, 'k', false).save_fiscal_tax_id).toBe(false)
-    expect(buildCheckoutPayload({ ...deliveryState, save_fiscal_tax_id: true }, 'k', false).save_fiscal_tax_id).toBe(true)
-    expect(buildCheckoutPayload({ ...deliveryState, fiscal_tax_id: '', save_fiscal_tax_id: true }, 'k', false).save_fiscal_tax_id).toBe(false)
-    expect(buildCheckoutPayload({ ...deliveryState, fulfillment_type: 'pickup', save_fiscal_tax_id: true }, 'k', false).save_fiscal_tax_id).toBe(false)
+    expect(buildCheckoutPayload(deliveryState, 'k', false, 4321, 7).save_fiscal_tax_id).toBe(false)
+    expect(buildCheckoutPayload({ ...deliveryState, save_fiscal_tax_id: true }, 'k', false, 4321, 7).save_fiscal_tax_id).toBe(true)
+    expect(buildCheckoutPayload({ ...deliveryState, fiscal_tax_id: '', save_fiscal_tax_id: true }, 'k', false, 4321, 7).save_fiscal_tax_id).toBe(false)
+    expect(buildCheckoutPayload({ ...deliveryState, fulfillment_type: 'pickup', save_fiscal_tax_id: true }, 'k', false, 4321, 7).save_fiscal_tax_id).toBe(false)
   })
 })

@@ -91,11 +91,18 @@ def run_idempotent_mutation(
     payload: Any = None,
     local_atomic: bool = False,
     in_progress_ttl: timedelta | None = None,
+    allow_changed_payload_after_rejection: bool = False,
 ) -> RemoteMutationResult:
     """Run ``execute`` once for ``scope``/``key`` and replay cached responses."""
 
     if fingerprint is not None:
-        if cache_response is not None or payload is not None or local_atomic or in_progress_ttl is not None:
+        if (
+            cache_response is not None
+            or payload is not None
+            or local_atomic
+            or in_progress_ttl is not None
+            or allow_changed_payload_after_rejection
+        ):
             raise ValueError("Local mutations always retain their result")
         try:
             result = _run_local_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
@@ -110,40 +117,69 @@ def run_idempotent_mutation(
         _observe_local_result(result, key=key, event="operator.command.local_result")
         return result
 
+    digest = _payload_fingerprint(payload) if payload is not None else ""
     # Opt-in only: callers with remote effects retain provider reconciliation semantics.
     with transaction.atomic() if local_atomic else nullcontext():
-        idem = _acquire(scope=scope, key=key, in_progress_ttl=in_progress_ttl)
-        digest = _payload_fingerprint(payload) if payload is not None else ""
-        if digest and idem.request_fingerprint != digest:
-            if idem.request_fingerprint or idem.status == "done":
-                raise RemoteMutationConflict(
-                    "Esta tentativa pertence a outra escolha ou a um recibo legado. Confira antes de continuar."
-                )
-            idem.request_fingerprint = digest
-            idem.save(update_fields=["request_fingerprint"])
+        idem = _acquire(
+            scope=scope,
+            key=key,
+            in_progress_ttl=in_progress_ttl,
+            allow_changed_payload_after_rejection=allow_changed_payload_after_rejection,
+            request_fingerprint=digest,
+        )
         if idem.status == "done" and idem.response_body is not None:
             return RemoteMutationResult(
                 response_body=idem.response_body,
                 response_code=idem.response_code or 200,
                 replayed=True,
             )
+        if (
+            idem.status == "failed"
+            and idem.response_body is not None
+            and idem.response_code is not None
+            and 400 <= idem.response_code < 500
+        ):
+            return RemoteMutationResult(
+                response_body=idem.response_body,
+                response_code=idem.response_code,
+                replayed=True,
+            )
+        claim_expires_at = idem.expires_at
 
         try:
             response_body, response_code = execute()
         except Exception:
-            idem.status = "failed"
-            idem.save(update_fields=["status"])
+            logger.exception("remote mutation execution failed scope=%s", scope)
+            _finish_claim(
+                idem,
+                claim_expires_at=claim_expires_at,
+                status="failed",
+                response_code=None,
+                response_body=None,
+                stale_raises=False,
+            )
             raise
 
         should_cache = cache_response(response_body, response_code) if cache_response else response_code < 500
         if should_cache:
-            idem.status = "done"
-            idem.response_body = response_body
-            idem.response_code = response_code
-            idem.save(update_fields=["status", "response_body", "response_code"])
+            _finish_claim(
+                idem,
+                claim_expires_at=claim_expires_at,
+                status="done",
+                response_code=response_code,
+                response_body=response_body,
+            )
         else:
-            idem.status = "failed"
-            idem.save(update_fields=["status"])
+            # A deterministic refusal is itself a receipt. Replaying the same
+            # intention must return it byte-for-byte; only an explicitly opted
+            # in, corrected payload may replace it. 5xx remains indeterminate.
+            _finish_claim(
+                idem,
+                claim_expires_at=claim_expires_at,
+                status="failed",
+                response_code=response_code,
+                response_body=response_body if 400 <= response_code < 500 else None,
+            )
         return RemoteMutationResult(
             response_body=response_body,
             response_code=response_code,
@@ -151,17 +187,83 @@ def run_idempotent_mutation(
         )
 
 
-def _acquire(*, scope: str, key: str, in_progress_ttl: timedelta | None = None) -> IdempotencyKey:
+def lookup_idempotent_mutation(
+    *,
+    scope: str,
+    key: str,
+    payload: Any,
+    allow_changed_payload_after_rejection: bool = False,
+) -> RemoteMutationResult | None:
+    """Read a completed non-atomic orchestration receipt without acquiring it."""
+    idem = IdempotencyKey.objects.filter(scope=scope, key=key).first()
+    if idem is None:
+        return None
+    digest = _payload_fingerprint(payload)
+    if idem.request_fingerprint != digest:
+        rejected = idem.status == "failed" and idem.response_code is not None and 400 <= idem.response_code < 500
+        if rejected and allow_changed_payload_after_rejection:
+            return None
+        raise RemoteMutationConflict("Esta tentativa pertence a outras escolhas.")
+    if idem.status == "done" and idem.response_body is not None:
+        return RemoteMutationResult(
+            response_body=idem.response_body,
+            response_code=idem.response_code or 200,
+            replayed=True,
+        )
+    if (
+        idem.status == "failed"
+        and idem.response_body is not None
+        and idem.response_code is not None
+        and 400 <= idem.response_code < 500
+    ):
+        return RemoteMutationResult(
+            response_body=idem.response_body,
+            response_code=idem.response_code,
+            replayed=True,
+        )
+    if idem.status == "in_progress" and (
+        idem.expires_at is None or idem.expires_at > timezone.now()
+    ):
+        raise RemoteMutationInProgress("Mutation has no committed result")
+    # Expired claims are retriable through ``_acquire`` with the same payload.
+    return None
+
+
+def _acquire(
+    *,
+    scope: str,
+    key: str,
+    in_progress_ttl: timedelta | None = None,
+    allow_changed_payload_after_rejection: bool = False,
+    request_fingerprint: str = "",
+) -> IdempotencyKey:
     expires_at = timezone.now() + (in_progress_ttl or timedelta(hours=24))
     with transaction.atomic():
         idem, created = IdempotencyKey.objects.select_for_update().get_or_create(
             scope=scope,
             key=key,
-            defaults={"status": "in_progress", "expires_at": expires_at},
+            defaults={
+                "status": "in_progress",
+                "expires_at": expires_at,
+                "request_fingerprint": request_fingerprint,
+            },
         )
         if created:
             return idem
+        rejected = idem.status == "failed" and idem.response_code is not None and 400 <= idem.response_code < 500
+        fingerprint_changed = bool(request_fingerprint) and idem.request_fingerprint != request_fingerprint
+        may_replace_fingerprint = rejected and allow_changed_payload_after_rejection and fingerprint_changed
+        if (
+            request_fingerprint
+            and idem.request_fingerprint != request_fingerprint
+            and not may_replace_fingerprint
+        ):
+            raise RemoteMutationConflict(
+                "Esta tentativa pertence a outra escolha ou a um recibo anterior. Confira antes de continuar."
+            )
         if idem.status == "done" and idem.response_body is not None:
+            return idem
+        if rejected and idem.response_body is not None and not fingerprint_changed:
             return idem
         # Intenções locais rodam numa transação só e conservam a trava
         # histórica pelo fingerprint. Orquestrações remotas passam TTL explícito:
@@ -171,9 +273,20 @@ def _acquire(*, scope: str, key: str, in_progress_ttl: timedelta | None = None) 
             fingerprint_blocks_recovery or idem.expires_at is None or idem.expires_at > timezone.now()
         ):
             raise RemoteMutationInProgress(f"Mutation already in progress for {scope}:{key}")
+        update_fields = ["status", "expires_at"]
+        if may_replace_fingerprint:
+            # A deterministic refusal applied nothing. The same gesture may be
+            # retried with corrected choices without inheriting its fingerprint.
+            idem.request_fingerprint = request_fingerprint
+            idem.response_code = None
+            idem.response_body = None
+            update_fields.extend(["request_fingerprint", "response_code", "response_body"])
+        elif request_fingerprint and not idem.request_fingerprint:
+            idem.request_fingerprint = request_fingerprint
+            update_fields.append("request_fingerprint")
         idem.status = "in_progress"
         idem.expires_at = expires_at
-        idem.save(update_fields=["status", "expires_at"])
+        idem.save(update_fields=update_fields)
         return idem
 
 
@@ -183,6 +296,29 @@ def _normalize_key(value: str) -> str:
         return key
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
+
+
+def _finish_claim(
+    idem: IdempotencyKey,
+    *,
+    claim_expires_at,
+    status: str,
+    response_code: int | None,
+    response_body: dict[str, Any] | None,
+    stale_raises: bool = True,
+) -> None:
+    """Publish a result only while this worker still owns the acquired lease."""
+    updated = IdempotencyKey.objects.filter(
+        pk=idem.pk,
+        status="in_progress",
+        expires_at=claim_expires_at,
+    ).update(
+        status=status,
+        response_code=response_code,
+        response_body=response_body,
+    )
+    if not updated and stale_raises:
+        raise RemoteMutationInProgress("Mutation lease was reclaimed before its result was published")
 
 
 _LOCAL_CONTRACT = "local-mutation-v1"

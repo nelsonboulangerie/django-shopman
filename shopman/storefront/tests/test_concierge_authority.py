@@ -81,6 +81,29 @@ def test_d05_receipt_precedes_cart_and_rejects_payload_change(ctx):
     assert conflict["error"] == "intent_conflict"
 
 
+def test_d05_order_receipt_recovers_crash_before_concierge_receipt(ctx):
+    from shopman.orderman.models import IdempotencyKey
+
+    from shopman.shop.models import Conversation
+
+    quote = _pickup_ready(ctx)
+    session_key = ctx.conversation.session_key
+    accept_review(ctx, quote)
+    first = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert first["ok"], first
+
+    # Estado observável de um processo morto depois do commit do Orderman e
+    # antes de confirmar o recibo/ponteiro do orquestrador.
+    IdempotencyKey.objects.filter(scope__startswith="concierge.purchase:").delete()
+    Conversation.objects.filter(pk=ctx.conversation.pk).update(session_key=session_key)
+    ctx.conversation.session_key = session_key
+
+    recovered = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert recovered["order_ref"] == first["order_ref"]
+    assert recovered["outcome"] == "already_applied"
+    assert Order.objects.count() == 1
+
+
 @pytest.mark.parametrize("qty", [-1, True, False, 1.3, "NaN", float("inf"), 100, {}, None])
 def test_d07_invalid_qty_never_changes_cart(ctx, qty):
     assert tools.set_item(ctx, SKU, 2)["ok"]
@@ -190,11 +213,17 @@ def test_h03_review_channel_price_and_concurrent_catalog_change_never_buy(ctx):
     ListingItem.objects.filter(listing__ref="web", product__sku=SKU).update(price_q=900)
     quote = _pickup_ready(ctx)
     assert quote["total_q"] == 180
+    reviewed_revision = Session.objects.get(session_key=ctx.conversation.session_key).rev
     accept_review(ctx, quote)
     ListingItem.objects.filter(listing__ref="whatsapp", product__sku=SKU).update(price_q=110)
     placed = tools.place_order(ctx, quote["quote_token"], "pix")
     assert not placed["ok"] and not Order.objects.exists()
-    assert Session.objects.get(session_key=ctx.conversation.session_key).state == "open"
+    repriced = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert repriced.state == "open"
+    assert repriced.rev == reviewed_revision + 1
+    assert repriced.items[0]["unit_price_q"] == 110
+    replay = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert replay == placed
 
 
 def test_h11_checkout_passes_session_fulfillment_to_default_writer(ctx, monkeypatch):
@@ -209,7 +238,7 @@ def test_h11_checkout_passes_session_fulfillment_to_default_writer(ctx, monkeypa
 
 
 @pytest.mark.django_db(transaction=True)
-def test_c04_provider_callback_runs_after_local_receipt_and_outside_transaction(ctx, monkeypatch):
+def test_c04_provider_callback_runs_outside_orchestrator_transaction(ctx, monkeypatch):
     from django.db import connection
     from shopman.orderman.models import IdempotencyKey
     seen = []
@@ -222,7 +251,7 @@ def test_c04_provider_callback_runs_after_local_receipt_and_outside_transaction(
     accept_review(ctx, quote)
     placed = tools.place_order(ctx, quote["quote_token"], "pix")
     assert placed["ok"], placed
-    assert seen == [(False, 1, 1)]
+    assert seen == [(False, 0, 1)]
 
 
 @requires_postgres
@@ -270,8 +299,9 @@ def test_c04_two_postgres_confirmation_workers_create_one_order_and_receipt(ctx,
             close_old_connections()
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: run(), range(2)))
-    assert all(result["ok"] for result in results), results
-    assert len({result["order_ref"] for result in results}) == 1
+    applied = [result for result in results if result.get("ok")]
+    assert len(applied) == 1, results
+    assert {result.get("error") for result in results if not result.get("ok")} == {"in_progress"}
     assert Order.objects.count() == 1
     assert IdempotencyKey.objects.filter(scope__startswith="concierge.purchase:").count() == 1
 

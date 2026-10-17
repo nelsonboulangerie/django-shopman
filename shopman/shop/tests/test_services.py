@@ -2058,13 +2058,12 @@ class TestKDSService:
 
 class TestCheckoutService:
 
-    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
     @pytest.mark.django_db
     def test_process_applies_data_and_commits(
-        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+        self, mock_sessions, mock_cfg, mock_channel
     ):
         from shopman.orderman.services.commit import CommitResult
 
@@ -2072,25 +2071,28 @@ class TestCheckoutService:
         from shopman.shop.services.checkout import process
         mock_cfg.for_channel.return_value = ChannelConfig()
         mock_sessions.commit_session.return_value = CommitResult(order_ref="ORD-001", status="committed", total_q=1000, items_count=1)
+        mock_sessions.modify_session.return_value.items = [{"line_total_q": 1000}]
+        mock_sessions.modify_session.return_value.rev = 1
 
         result = process(
             session_key="sess-123",
             channel_ref="web",
             data={"fulfillment_type": "delivery", "customer": {"name": "João"}},
             idempotency_key="idem-123",
+            expected_total_q=1000,
+            expected_revision=0,
         )
 
         mock_sessions.modify_session.assert_called_once()
         mock_sessions.commit_session.assert_called_once()
         assert result.order_ref == "ORD-001"
 
-    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
     @pytest.mark.django_db
-    def test_process_skips_modify_with_no_data(
-        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+    def test_process_reprices_even_with_no_data(
+        self, mock_sessions, mock_cfg, mock_channel
     ):
         from shopman.orderman.services.commit import CommitResult
 
@@ -2098,15 +2100,19 @@ class TestCheckoutService:
         from shopman.shop.services.checkout import process
         mock_cfg.for_channel.return_value = ChannelConfig()
         mock_sessions.commit_session.return_value = CommitResult(order_ref="ORD-002", status="committed", total_q=500, items_count=1)
+        mock_sessions.modify_session.return_value.items = [{"line_total_q": 500}]
+        mock_sessions.modify_session.return_value.rev = 1
 
         process(
             session_key="sess-456",
             channel_ref="web",
             data={},
             idempotency_key="idem-456",
+            expected_total_q=500,
+            expected_revision=0,
         )
 
-        mock_sessions.modify_session.assert_not_called()
+        mock_sessions.modify_session.assert_called_once()
         mock_sessions.commit_session.assert_called_once()
 
 

@@ -422,6 +422,7 @@ class DiscountStackingAuditTests(TestCase):
                 ops=[{"op": "set_data", "path": "note", "value": "x"}],
                 idempotency_key="audit-h3",
                 expected_total_q=1000,
+                expected_revision=Session.objects.get(session_key=key).rev,
             )
         self.assertEqual(caught.exception.code, "total_changed")
         self.assertEqual(caught.exception.context.get("new_total_q"), 500)
