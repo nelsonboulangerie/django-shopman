@@ -14,6 +14,7 @@ from rest_framework.test import APIClient
 from shopman.orderman.ids import generate_idempotency_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 
 def _create_committed_session(channel_ref: str = "pos") -> tuple[Session, Order]:
@@ -35,6 +36,8 @@ def _create_committed_session(channel_ref: str = "pos") -> tuple[Session, Order]
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=generate_idempotency_key(),
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
         ctx={"actor": "test"},
     )
     order = Order.objects.get(ref=result.order_ref)

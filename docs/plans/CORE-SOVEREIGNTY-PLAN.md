@@ -247,15 +247,32 @@ no próprio parecer.
 - Cotação contextual preserva `ContextualPrice.adjustments[]` como contrato de efeitos
   aplicados. Condições/regras de elegibilidade são insumo de decisão, não um rename de
   `adjustments`.
-- `offerman` permanece dono de lista e faixas por vitrine; política entra pelo porto `OFFERMAN["PRICING_BACKEND"]`.
-- Caracterizar callers e comparar o wrapper antigo com
-  `CatalogService.get_price(...).final_line_total_q` antes do corte.
+- `offerman` permanece dono de lista e faixas por vitrine. Promoção, cupom, segmento e
+  janela são política contextual do orquestrador, aplicada pelo porto
+  `OFFERMAN["PRICING_BACKEND"]`.
+- O wrapper antigo tinha zero callers e era equivalente ao caminho de lista/faixa de
+  `CatalogService.price`, não a `CatalogService.get_price(...).final_line_total_q`.
+  O corte removeu somente essa duplicata; o caminho contextual e
+  `ContextualPrice.adjustments[]` foram preservados sem perda semântica.
 - **Aceite:** não existe segunda implementação da mesma decisão; toda cotação contextual
   preserva ajustes e explica o total.
 - **Apêndice A** descreve o motor genérico de condições e o critério para virar pacote.
 - **Estado:** implementado no PR #1851. O conteúdo da correção de repricing do PR
   #1852 já está em `main`, no merge commit `75eca4000`; o objeto do PR foi fechado
-  por dessincronização do GitHub e não representa pendência técnica.
+  por dessincronização do GitHub e não representa pendência técnica. O follow-up B3/B4
+  está publicado no PR #1856 e
+  tornou explícita a cadeia causal: a repricing correta expôs uma corrida entre revisão
+  e commit; por isso o kernel, autoridade da transição Session→Order, passa a exigir um
+  `CommitSeal` tipado (revisão + total + autoridade auditável) e valida ambos sob o lock.
+  O status determinístico do concierge pertence ao mesmo conserto: ele representa o
+  resultado concorrente sem iniciar uma segunda tentativa de pedido.
+  Em `packages/orderman/shopman/orderman/tests/test_services.py`, os testes
+  `test_commit_refuses_a_revision_changed_after_repricing`,
+  `test_every_authority_obeys_revision_and_total_fences` e
+  `test_commit_seals_commitment_evidence_in_snapshot` cobrem revisão stale, total stale,
+  todas as autoridades e preservação do selo no snapshot. Bundle futuro que não puder
+  compartilhar a mesma revisão e total deve ser separado antes do commit; nunca relaxa
+  o selo da sessão.
 
 ### WP-4 — Doorman: porto de identidade (CIAM)
 - Alargar o porto: `IdentityView` com `handles: [{kind, value, verified, primary}]` + `resolve(kind, value)`.

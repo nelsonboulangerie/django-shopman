@@ -80,6 +80,10 @@ def _payload(shift, *, client_request_id: str, sku: str = "CR", **overrides) -> 
 
 
 def _close(operator, payload):
+    review = pos_service.review_sale(
+        channel_ref="pdv", payload=payload, operator_username=operator.username,
+    )
+    payload["expected_total_q"] = review.total_q
     return pos_service.close_sale(
         channel_ref="pdv",
         payload=payload,

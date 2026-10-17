@@ -60,6 +60,10 @@ def _delivery_payload(shift, *, client_request_id: str, **overrides) -> dict:
 
 
 def _close(operator, payload):
+    review = pos_service.review_sale(
+        channel_ref="pdv", payload=payload, operator_username=operator.username,
+    )
+    payload["expected_total_q"] = review.total_q
     return pos_service.close_sale(
         channel_ref="pdv",
         payload=payload,

@@ -130,9 +130,12 @@ class _Counter:
         return payload
 
     def close(self, *items, client_request_id: str = "c1", **overrides):
+        payload = self.payload(*items, client_request_id=client_request_id, **overrides)
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+        payload["expected_total_q"] = review.total_q
         return pos_service.close_sale(
             channel_ref="pdv",
-            payload=self.payload(*items, client_request_id=client_request_id, **overrides),
+            payload=payload,
             actor="pos:marina",
             operator_username="marina",
         )

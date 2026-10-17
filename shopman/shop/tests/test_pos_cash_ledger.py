@@ -95,6 +95,13 @@ class _Counter:
         }
         payload.update(overrides)
         operator = operator or self.operator
+        if "expected_total_q" not in payload:
+            review = pos_service.review_sale(
+                channel_ref="pdv",
+                payload=payload,
+                operator_username=operator.username,
+            )
+            payload["expected_total_q"] = review.total_q
         return pos_service.close_sale(
             channel_ref="pdv",
             payload=payload,
@@ -229,6 +236,7 @@ def test_pos_pix_boundary_uses_composed_discount_and_delivery_total(
         payload=payload,
         operator_username=counter.operator.username,
     )
+    payload["expected_total_q"] = review.total_q
 
     assert review.subtotal_q == 1200
     assert review.discount_q == 300

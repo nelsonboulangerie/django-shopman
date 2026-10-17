@@ -27,6 +27,7 @@ from django.test import TestCase, TransactionTestCase
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Directive, Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel
 
@@ -139,6 +140,8 @@ def _commit(session, channel):
         session_key=session.session_key,
         channel_ref=channel.ref,
         idempotency_key=generate_idempotency_key(),
+        seal=seal_for(session.session_key, channel.ref),
+        channel_config={},
     )
 
 
@@ -376,11 +379,15 @@ class TestE2E6DuplicateCommit(TestCase):
             session_key=session_key,
             channel_ref=self.channel.ref,
             idempotency_key=idem_key,
+            seal=seal_for(session_key, self.channel.ref),
+            channel_config={},
         )
         result2 = CommitService.commit(
             session_key=session_key,
             channel_ref=self.channel.ref,
             idempotency_key=idem_key,
+            seal=seal_for(session_key, self.channel.ref),
+            channel_config={},
         )
 
         # Same order_ref returned
@@ -425,6 +432,8 @@ class TestE2E7ConcurrentCommits(TransactionTestCase):
                     session_key=session_key,
                     channel_ref=self.channel.ref,
                     idempotency_key=idem_key,
+                    seal=seal_for(session_key, self.channel.ref),
+                    channel_config={},
                 )
                 results.append(r)
             except Exception as exc:
@@ -611,6 +620,8 @@ class TestE2E10WhatsappChannel(TransactionTestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
         order = Order.objects.get(ref=result.order_ref)
 

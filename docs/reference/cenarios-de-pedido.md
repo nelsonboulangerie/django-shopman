@@ -146,8 +146,9 @@ juntar para o contador (`fiscal.open_return_note`; §8, P1-12, resolvido #1774).
 Preço: modificadores em ordem `LotDiscount` 15 (D1/Xepa de lote) → `Discount` 20 (promoção e
 cupom, o maior vence) → `Employee` 60 → `HappyHour` 65 → `DeliveryFee` 70 → `LoyaltyRedeem` 80
 → `ManualDiscount` 85 (`shopman/shop/modifiers.py`). O total que o cliente viu é travado no
-commit por `expected_total_q` (`packages/orderman/.../services/commit.py:355-362`), **exceto no
-balcão sem comanda** (§8, P0-1: resolvido em #1722, o fechamento agora recusa com `total_changed`).
+commit pelo `CommitSeal` (`expected_revision` + `expected_total_q`) sob o lock da sessão.
+Não há exceção por origem: no balcão online vale o total revisado; sem conexão vale o total
+já cobrado, mas ambos atravessam exatamente os mesmos fences do kernel.
 
 Taxa de entrega: zona `exclude` → zona `override` → faixa de distância → padrão; frete grátis
 por limiar ou promoção (`modifiers.resolve_delivery_fee_waiver`, a mesma função na loja e no

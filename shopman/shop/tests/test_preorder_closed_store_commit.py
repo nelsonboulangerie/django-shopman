@@ -31,6 +31,7 @@ from decimal import Decimal
 
 from django.test import TestCase
 from django.utils import timezone
+from shopman.orderman.tests.commit_support import seal_for
 
 SKU = "PREORDER-MINI-BAGUETE"
 
@@ -108,6 +109,8 @@ def _commit(session_key: str, channel_ref: str, idem_key: str):
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idem_key,
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
     )
 
 

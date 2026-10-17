@@ -10,6 +10,7 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 
 from django.apps import apps
 from django.db import IntegrityError, transaction
@@ -36,6 +37,31 @@ class CommitResult:
     status: str  # "committed" | "already_committed"
     total_q: int
     items_count: int
+
+
+class CommitAuthority(StrEnum):
+    """Auditable origin of the decision to seal a reviewed session."""
+
+    REVIEWED = "reviewed"
+    OPERATOR_REVIEWED = "operator_reviewed"
+    OFFLINE_CHARGE = "offline_charge"
+    SYNTHETIC_DIAGNOSTIC = "synthetic_diagnostic"
+
+
+@dataclass(frozen=True)
+class CommitSeal:
+    """Exact revision and line total authorized for sealing.
+
+    ``authority`` is audit-only. Every authority obeys the same fences.
+    """
+
+    expected_revision: int
+    expected_total_q: int
+    authority: CommitAuthority
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.authority, CommitAuthority):
+            raise TypeError("CommitSeal.authority must be a CommitAuthority")
 
 
 class CommitService:
@@ -114,11 +140,16 @@ class CommitService:
         session_key: str,
         channel_ref: str,
         idempotency_key: str,
+        *,
+        seal: CommitSeal,
+        channel_config: dict,
         ctx: dict | None = None,
-        channel_config: dict | None = None,
     ) -> CommitResult:
         try:
-            return CommitService._commit_atomic(session_key, channel_ref, idempotency_key, ctx, channel_config)
+            return CommitService._commit_atomic(
+                session_key, channel_ref, idempotency_key,
+                seal=seal, channel_config=channel_config, ctx=ctx,
+            )
         except Exception:
             # Preserve the failed-attempt contract without leaving a committed
             # in-progress claim between receipt acquisition and the local seal.
@@ -136,8 +167,10 @@ class CommitService:
         session_key: str,
         channel_ref: str,
         idempotency_key: str,
+        *,
+        seal: CommitSeal,
+        channel_config: dict,
         ctx: dict | None = None,
-        channel_config: dict | None = None,
     ) -> CommitResult:
         """
         Fecha uma sessão e cria um Order.
@@ -146,10 +179,10 @@ class CommitService:
             session_key: Chave da sessão
             channel_ref: Código do canal
             idempotency_key: Chave de idempotência
-            ctx: Contexto adicional
+            seal: Revisão, total e autoridade que compõem o selo obrigatório
+            ctx: Contexto adicional sem fences de integridade
             channel_config: Config resolvido com cascade (canal←loja←defaults).
-                Obrigatório em produção — fornecido pelo framework via ChannelConfig.for_channel().
-                Testes podem omitir para usar comportamento padrão.
+                Obrigatório — fornecido pelo framework via ChannelConfig.for_channel().
 
         Returns:
             CommitResult com order_ref e dados do pedido
@@ -175,6 +208,7 @@ class CommitService:
                 session_key=session_key,
                 channel_ref=channel_ref,
                 idempotency_key=idempotency_key,
+                seal=seal,
                 ctx=ctx,
                 channel_config=channel_config,
             )
@@ -268,8 +302,9 @@ class CommitService:
         session_key: str,
         channel_ref: str,
         idempotency_key: str,
+        seal: CommitSeal,
         ctx: dict,
-        channel_config: dict | None = None,
+        channel_config: dict,
     ) -> CommitResult:
         """
         Execute the actual commit logic in an atomic transaction.
@@ -331,14 +366,12 @@ class CommitService:
         if session.state == "abandoned":
             raise CommitError(code="abandoned", message="Sessão foi abandonada")
 
-        expected_revision = ctx.get("expected_revision")
-        if expected_revision is not None:
-            CommitService.validate_expected_revision(session, int(expected_revision))
+        CommitService.validate_expected_revision(session, seal.expected_revision)
 
         # Check required checks are fresh
         # channel_config must always be supplied by the framework caller (cascade resolvido).
         # Kernel não lê channel.config — o framework passa o config resolvido como parâmetro.
-        effective_config = channel_config or {}
+        effective_config = channel_config
         required_checks = effective_config.get("rules", {}).get("checks", [])
         checks = session.data.get("checks", {})
         now = timezone.now()
@@ -410,9 +443,7 @@ class CommitService:
                 context={"session_key": session_key},
             )
 
-        expected_total = ctx.get("expected_total_q")
-        if expected_total is not None:
-            CommitService.validate_expected_total(session, int(expected_total))
+        CommitService.validate_expected_total(session, seal.expected_total_q)
 
         # Build order.data from session.data (key fields for handlers)
         order_data = {}
@@ -491,6 +522,11 @@ class CommitService:
                     "data": session.data,
                     "pricing": session.pricing,
                     "rev": session.rev,
+                    "commit": {
+                        "authority": seal.authority.value,
+                        "expected_revision": seal.expected_revision,
+                        "expected_total_q": seal.expected_total_q,
+                    },
                     "commitment": commitment_snapshot,
                     "lifecycle": effective_config.get("lifecycle", {}),
                 }
@@ -547,7 +583,12 @@ class CommitService:
         order.emit_event(
             event_type="created",
             actor=ctx.get("actor", "system"),
-            payload={"from_session": session_key},
+            payload={
+                "from_session": session_key,
+                "commit_authority": seal.authority.value,
+                "expected_revision": seal.expected_revision,
+                "expected_total_q": seal.expected_total_q,
+            },
         )
 
         # Emit signal

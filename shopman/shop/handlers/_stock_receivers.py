@@ -1,12 +1,8 @@
-"""
-Stock signal receivers — auto-commit sessions after hold materialization,
-and production voided → release holds + notify sessions with planned holds.
-"""
+"""Stock receivers: materialization notifications and production-void cleanup."""
 
 from __future__ import annotations
 
 import logging
-import uuid
 
 from shopman.shop.handlers._resilient import resilient_receiver
 
@@ -121,15 +117,14 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
 def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
     """React when planned holds are materialized (stock became physical).
 
-    Two responsibilities:
-    1. Fire an **active notification** to the shopper (AVAILABILITY-PLAN §8):
+    One responsibility: fire an **active notification** to the shopper
+    (AVAILABILITY-PLAN §8):
        "seu produto chegou, você tem até HH:MM pra confirmar". Honours
        ``feedback_transparent_timeouts`` — the shopper left the site, the
        storefront toast would never reach them. Uses the existing notification
        registry to route through WhatsApp / SMS / email based on
-       customer preferences.
-    2. Auto-commit the session when every planned hold has materialized
-       (existing behaviour — ADR-007).
+       customer preferences. The Session remains open until a surface reviews
+       revision and total and submits an explicit CommitSeal.
     """
     if not hold_ids:
         return
@@ -180,13 +175,8 @@ def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
     )
 
     for session in sessions:
-        check_result = (
-            (session.data or {}).get("checks", {}).get("stock", {}).get("result", {})
-        )
-
-        # (1) Active notification — fire for every materialization event,
-        # independent of auto-commit. The shopper needs to know their
-        # reserved item arrived.
+        # Materialization only announces availability. Creating an Order
+        # requires a fresh, explicit review and CommitSeal from a real surface.
         try:
             _notify_stock_arrived(
                 session,
@@ -200,19 +190,6 @@ def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
                 session.session_key, sku, exc_info=True,
             )
 
-        if not check_result.get("has_planned_holds"):
-            continue
-
-        if not _all_holds_materialized(check_result):
-            continue
-
-        try:
-            _auto_commit_session(session)
-        except Exception:
-            logger.warning(
-                "Failed to auto-commit session %s:%s",
-                session.channel_ref, session.session_key, exc_info=True,
-            )
 
 
 def _complete_activated_preorder(order_ref: str) -> None:
@@ -446,43 +423,3 @@ def _cart_url() -> str:
     from shopman.shop.services.storefront_links import cart_url
 
     return cart_url()
-
-
-def _all_holds_materialized(check_result: dict) -> bool:
-    from shopman.stockman.models import Hold
-
-    planned_holds = [h for h in check_result.get("holds", []) if h.get("is_planned")]
-    if not planned_holds:
-        return True
-
-    for hold_data in planned_holds:
-        hold_id = hold_data.get("hold_id")
-        if not hold_id:
-            continue
-        try:
-            pk = int(hold_id.split(":")[1])
-            hold = Hold.objects.get(pk=pk)
-            if hold.quant is None or hold.quant.target_date is not None:
-                return False
-        except (Hold.DoesNotExist, IndexError, ValueError):
-            return False
-
-    return True
-
-
-def _auto_commit_session(session):
-    from shopman.orderman.services.commit import CommitService
-
-    idempotency_key = f"auto-commit-{session.session_key}-{uuid.uuid4().hex[:8]}"
-
-    result = CommitService.commit(
-        session_key=session.session_key,
-        channel_ref=session.channel_ref,
-        idempotency_key=idempotency_key,
-        ctx={"actor": "stock_materialized"},
-    )
-
-    logger.info(
-        "Auto-commit successful: session=%s:%s order=%s",
-        session.channel_ref, session.session_key, result.order_ref,
-    )

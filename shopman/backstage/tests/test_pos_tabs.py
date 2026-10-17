@@ -301,9 +301,12 @@ class POSTabSessionTests(TestCase):
             actor="pos:alice",
             operator_username="alice",
         ))
+        payload = {**_payload(qty=2, tab_session_key=opened["tab_session_key"]), "cash_shift_id": self.shift.pk}
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
         result = pos_service.close_sale(
             channel_ref="pdv",
-            payload={**_payload(qty=2, tab_session_key=opened["tab_session_key"]), "cash_shift_id": self.shift.pk},
+            payload=payload,
             actor="pos:alice",
             operator_username="alice",
         )
@@ -337,6 +340,8 @@ class POSTabSessionTests(TestCase):
                 "choice": "receipt_only", "client_request_id": "checkout-fields-receipt",
             }],
         })
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
 
         result = pos_service.close_sale(
             channel_ref="pdv",
@@ -374,6 +379,8 @@ class POSTabSessionTests(TestCase):
             "payment_method": "cash",
             "payment_collection": "on_delivery",
         })
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
 
         result = pos_service.close_sale(
             channel_ref="pdv",

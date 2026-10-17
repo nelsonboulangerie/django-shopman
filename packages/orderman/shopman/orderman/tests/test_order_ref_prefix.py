@@ -10,6 +10,7 @@ from __future__ import annotations
 from django.test import TestCase
 from shopman.orderman.models import Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 
 class OrderRefPrefixTests(TestCase):
@@ -28,6 +29,7 @@ class OrderRefPrefixTests(TestCase):
             session_key="PREFIX-SESS-001",
             channel_ref="web",
             idempotency_key="prefix-key-1",
+            seal=seal_for("PREFIX-SESS-001", "web"),
             channel_config={"order_ref_prefix": "NB"},
         )
         assert result.order_ref.startswith("NB-"), result.order_ref
@@ -38,6 +40,7 @@ class OrderRefPrefixTests(TestCase):
             session_key="PREFIX-SESS-002",
             channel_ref="web",
             idempotency_key="prefix-key-2",
+            seal=seal_for("PREFIX-SESS-002", "web"),
             channel_config={},
         )
         assert result.order_ref.startswith("WEB-"), result.order_ref

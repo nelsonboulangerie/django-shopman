@@ -17,7 +17,6 @@ Configuração de Throttling:
             'anon': '100/hour',
             'user': '1000/hour',
             'orderman_modify': '300/minute',  # Rate limit para modificações
-            'orderman_commit': '60/minute',   # Rate limit para commits
         }
     }
 """
@@ -25,7 +24,6 @@ Configuração de Throttling:
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
 
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -35,17 +33,16 @@ from rest_framework.pagination import CursorPagination
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from shopman.orderman.conf import get_orderman_setting
-from shopman.orderman.exceptions import CommitError, IssueResolveError, SessionError, ValidationError
-from shopman.orderman.ids import generate_idempotency_key, generate_session_key
+from shopman.orderman.exceptions import IssueResolveError, SessionError, ValidationError
+from shopman.orderman.ids import generate_session_key
 from shopman.orderman.integrations import get_shop_channel_model
 from shopman.orderman.models import Directive, Order, Session
-from shopman.orderman.services import CommitService, ModifyService, ResolveService
+from shopman.orderman.services import ModifyService, ResolveService
 
 from .serializers import (
     ChannelSerializer,
     DirectiveSerializer,
     OrderSerializer,
-    SessionCommitSerializer,
     SessionCreateSerializer,
     SessionModifySerializer,
     SessionResolveSerializer,
@@ -83,17 +80,6 @@ def _get_actor(request) -> str:
     """Extrai username do request ou retorna 'api' como fallback."""
     user = getattr(request, "user", None)
     return getattr(user, "username", None) or "api"
-
-
-class CommitRateThrottle(UserRateThrottle):
-    """
-    Throttle específico para operações de commit.
-
-    Limita a taxa de commits para prevenir abuso.
-    Configure via 'orderman_commit' em DEFAULT_THROTTLE_RATES.
-    """
-
-    scope = "orderman_commit"
 
 
 class ModifyRateThrottle(UserRateThrottle):
@@ -141,15 +127,10 @@ class SessionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
         GET  /api/sessions/{key}?channel_ref=X - Detalhes da sessão
         POST /api/sessions/{key}/modify - Modifica sessão (add/remove items)
         POST /api/sessions/{key}/resolve - Resolve issue
-        POST /api/sessions/{key}/commit - Finaliza sessão, cria pedido
 
     Notas:
         - Session é única por (channel, session_key)
         - Para rotas detail, channel_ref pode ser query param ou body
-        - Commit é idempotente via idempotency_key
-
-    Throttling:
-        - Operações de commit têm rate limit específico (CommitRateThrottle)
     """
 
     queryset = Session.objects.all()
@@ -295,72 +276,6 @@ class SessionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
             ) from exc
 
         return Response(SessionSerializer(updated).data, status=status.HTTP_200_OK)
-
-    @action(detail=True, methods=["post"], url_path="commit", throttle_classes=[CommitRateThrottle])
-    def commit(self, request, *args, **kwargs):
-        """
-        Finaliza uma sessão e cria um pedido.
-
-        Este endpoint é idempotente quando fornecido idempotency_key.
-        Se não fornecido, um será gerado automaticamente.
-
-        Args:
-            channel_ref: Código do canal
-            idempotency_key: Chave para garantir idempotência (opcional)
-
-        Returns:
-            201: Pedido criado com sucesso
-            200: Pedido já existia (idempotência)
-            400: Erro de validação ou commit
-        """
-        s = SessionCommitSerializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        channel_ref: str = s.validated_data["channel_ref"]
-        idempotency_key = s.validated_data.get("idempotency_key") or generate_idempotency_key()
-
-        session_key = self.kwargs[self.lookup_url_kwarg or self.lookup_field]
-
-        logger.info(
-            "Commit requested",
-            extra={
-                "session_key": session_key,
-                "channel_ref": channel_ref,
-                "idempotency_key": idempotency_key,
-                "actor": _get_actor(request),
-            },
-        )
-
-        try:
-            result = CommitService.commit(
-                session_key=session_key,
-                channel_ref=channel_ref,
-                idempotency_key=idempotency_key,
-                ctx={"actor": _get_actor(request)},
-            )
-        except (CommitError, SessionError) as e:
-            logger.warning(
-                "Commit failed",
-                extra={
-                    "session_key": session_key,
-                    "channel_ref": channel_ref,
-                    "error_code": e.code,
-                    "error_message": e.message,
-                },
-            )
-            raise DRFValidationError({"code": e.code, "message": e.message, "context": e.context}) from e
-
-        logger.info(
-            "Commit successful",
-            extra={
-                "session_key": session_key,
-                "channel_ref": channel_ref,
-                "order_ref": result.order_ref,
-            },
-        )
-
-        http_status = status.HTTP_201_CREATED if result.status == "committed" else status.HTTP_200_OK
-        return Response(asdict(result), status=http_status)
-
 
 class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     """

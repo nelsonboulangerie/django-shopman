@@ -28,6 +28,7 @@ from shopman.orderman.exceptions import CommitError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel
 from shopman.shop.services.account import anonymize_customer
@@ -87,6 +88,8 @@ def _order_for(customer, *, channel_ref="web", origin="whatsapp"):
         session_key=session.session_key,
         channel_ref=channel_ref,
         idempotency_key=generate_idempotency_key(),
+        seal=seal_for(session.session_key, channel_ref),
+        channel_config={},
     )
     order = Order.objects.get(ref=result.order_ref)
     if not order.handle_ref:
@@ -445,6 +448,8 @@ def test_commit_recusa_sessao_antiga_de_customer_inativo() -> None:
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, "web"),
+            channel_config={},
         )
 
     assert caught.value.code == "customer_inactive"
@@ -481,6 +486,8 @@ def test_commit_recusa_ref_e_telefone_de_clientes_diferentes() -> None:
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, "web"),
+            channel_config={},
         )
 
     assert caught.value.code == "customer_identity_mismatch"

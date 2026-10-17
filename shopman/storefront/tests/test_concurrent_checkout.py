@@ -19,6 +19,7 @@ from decimal import Decimal
 import pytest
 from django.conf import settings
 from django.test import TestCase, TransactionTestCase
+from shopman.orderman.tests.commit_support import seal_for
 
 requires_postgres = pytest.mark.skipif(
     "sqlite" in settings.DATABASES["default"]["ENGINE"],
@@ -73,6 +74,8 @@ class DoubleSubmitIdempotencyTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key="IDEM-KEY-UNIQUE-001",
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         # Second commit with SAME idempotency key → cache hit
@@ -80,6 +83,8 @@ class DoubleSubmitIdempotencyTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key="IDEM-KEY-UNIQUE-001",
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         self.assertEqual(result1.order_ref, result2.order_ref)
@@ -99,6 +104,8 @@ class DoubleSubmitIdempotencyTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key="IDEM-KEY-UNIQUE-002A",
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         # Second commit with different key → session already committed, returns existing order
@@ -106,6 +113,8 @@ class DoubleSubmitIdempotencyTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key="IDEM-KEY-UNIQUE-002B",
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         self.assertEqual(result1.order_ref, result2.order_ref)
@@ -123,6 +132,8 @@ class DoubleSubmitIdempotencyTests(TestCase):
                 session_key=session.session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key=f"MULTI-KEY-{i:03d}",
+                seal=seal_for(session.session_key, self.channel.ref),
+                channel_config={},
             )
 
         order_count = Order.objects.filter(
@@ -148,6 +159,8 @@ class DoubleSubmitIdempotencyTests(TestCase):
                 session_key=session.session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key="IDEM-KEY-IN-PROGRESS",
+                seal=seal_for(session.session_key, self.channel.ref),
+                channel_config={},
             )
         self.assertEqual(ctx.exception.code, "in_progress")
 
@@ -208,6 +221,8 @@ class ConcurrentOversellTests(TransactionTestCase):
                 session_key=session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key=idem_key,
+                seal=seal_for(session_key, self.channel.ref),
+                channel_config={},
             )
             return (True, result.order_ref, None)
         except Exception as exc:

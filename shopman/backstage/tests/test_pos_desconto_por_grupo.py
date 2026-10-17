@@ -218,17 +218,20 @@ def test_comanda_com_o_aluno_mostra_o_desconto_no_eco_do_salvar(balcao):
 def test_o_pedido_registra_o_desconto_do_grupo(balcao):
     _group_discount()
 
+    payload = {
+        "items": _items(),
+        "customer_ref": "ALUNO",
+        "customer_phone": "43999990010",
+        "customer_name": "Louise",
+        "payment_method": "cash",
+        "client_request_id": "grupo-fechar",
+        "cash_shift_id": balcao["shift"].pk,
+    }
+    review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+    payload["expected_total_q"] = review.total_q
     result = pos_service.close_sale(
         channel_ref="pdv",
-        payload={
-            "items": _items(),
-            "customer_ref": "ALUNO",
-            "customer_phone": "43999990010",
-            "customer_name": "Louise",
-            "payment_method": "cash",
-            "client_request_id": "grupo-fechar",
-            "cash_shift_id": balcao["shift"].pk,
-        },
+        payload=payload,
         actor="pos:marina",
         operator_username="marina",
     )

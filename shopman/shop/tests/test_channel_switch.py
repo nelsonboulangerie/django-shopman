@@ -21,6 +21,7 @@ from django.contrib.admin.models import LogEntry
 from django.contrib.auth import get_user_model
 from shopman.offerman.models import Collection, CollectionItem, Product
 from shopman.orderman.exceptions import ValidationError
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import channel_switch, sessions
@@ -226,7 +227,10 @@ def test_canal_de_venda_desligado_recusa_o_commit(web):
     channel_switch.request_switch("web", False, period="open", reason="Loja cheia", actor=None)
 
     with pytest.raises(ValidationError) as refused:
-        sessions.commit_session(session_key="qualquer", channel_ref="web", idempotency_key="k-1")
+        sessions.commit_session(
+            session_key="qualquer", channel_ref="web", idempotency_key="k-1",
+            seal=seal_for("qualquer", "web"),
+        )
 
     assert refused.value.code == "channel_off"
     assert refused.value.message == "Loja online não está recebendo pedidos agora."
@@ -237,7 +241,10 @@ def test_canal_de_venda_ligado_segue_para_o_commit(web):
 
     # Sem sessão, quem recusa é o Core — a trava do canal deixou passar.
     with pytest.raises(SessionError):
-        sessions.commit_session(session_key="inexistente", channel_ref="web", idempotency_key="k-2")
+        sessions.commit_session(
+            session_key="inexistente", channel_ref="web", idempotency_key="k-2",
+            seal=seal_for("inexistente", "web"),
+        )
 
 
 @pytest.fixture
@@ -364,4 +371,7 @@ def test_pdv_nao_tem_toggle_e_nunca_recusa_venda_por_estado_de_canal(shop):
         channel_switch.request_switch("pdv", False, period="open", reason="Férias", actor=None)
     channel_switch.ensure_accepting_orders("pdv")  # não levanta
     with pytest.raises(SessionError):
-        sessions.commit_session(session_key="inexistente", channel_ref="pdv", idempotency_key="k-pdv")
+        sessions.commit_session(
+            session_key="inexistente", channel_ref="pdv", idempotency_key="k-pdv",
+            seal=seal_for("inexistente", "pdv"),
+        )

@@ -158,7 +158,8 @@ Receiver `on_holds_materialized` em [shopman/shop/handlers/_stock_receivers.py](
 2. Resolve Customer pela Session.
 3. Resolve canal preferido via consentimentos ativos de notificação (Guestman).
 4. Chama `notify(event="stock.arrived", recipient=<canal resolvido>, context={sku, product_name, deadline_at, cart_url}, backend=<consentimento ativo ou default>)`.
-5. Continua com o auto-commit já implementado ([ADR-007](../../_archive/decisions/adr-007-crafting-ordering-integration.md)).
+5. Não cria pedido: a materialização notifica e mantém a sessão aberta; uma superfície
+   real precisa reapresentar revisão e total e então emitir `CommitSeal`.
 
 A notificação viaja por WhatsApp (ManyChat), SMS, email, ou canal de origem da sessão — conforme preferência. Nunca apenas toast no storefront.
 

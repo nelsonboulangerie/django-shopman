@@ -269,17 +269,25 @@ session = ModifyService.modify_session(
 
 ## 08:16 — Operador confirma o pedido
 
-O operador ve a sessao no admin e confirma (via `SessionAdmin` action).
+A superfície de atendimento reapresenta revisão e total ao operador. Ao confirmar, o
+orquestrador monta o selo e usa sua façade; não existe action genérica no Admin nem rota
+REST direta do Orderman.
 
-**Codigo:** `packages/orderman/shopman/orderman/services/commit.py`
+**Pseudocódigo da integração:** `shopman/shop/services/sessions.py`
 
 ```python
-from shopman.orderman.services.commit import CommitService
+from shopman.orderman.services.commit import CommitAuthority, CommitSeal
+from shopman.shop.services import sessions
 
-result = CommitService.commit(
+result = sessions.commit_session(
     session_key="WA-a1b2c3d4",
     channel_ref="remote",
     idempotency_key="commit-WA-a1b2c3d4-rev5",
+    seal=CommitSeal(
+        expected_revision=5,
+        expected_total_q=3250,
+        authority=CommitAuthority.OPERATOR_REVIEWED,
+    ),
     ctx={"actor": "operador"},
 )
 # -> {

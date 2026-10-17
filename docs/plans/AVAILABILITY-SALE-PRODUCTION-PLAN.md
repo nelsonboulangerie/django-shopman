@@ -305,5 +305,6 @@ encomenda?" é `get_commitment_date(order) > localdate()` (a mesma de
   (`secure_stock`), `shopman/shop/services/availability.py` (reserve/reconcile/classify),
   `shopman/storefront/api/auth.py` (exchange/adoção de sacola),
   `packages/stockman` (holds/planning/realize), AVAILABILITY-PLAN §5/§8 (concluído),
-  ADR-007 (auto-commit pós-materialização).
+  A materialização apenas notifica a sessão; confirmação explícita em superfície real
+  cria o `CommitSeal` e o pedido.
 - Memórias: `feedback_availability_is_about_when`, `project_storefront_preorder_when_flow`.

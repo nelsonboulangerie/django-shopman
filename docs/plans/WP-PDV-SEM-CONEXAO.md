@@ -20,7 +20,7 @@ fila (ver §8).
 | Abrir comanda | `POST pos/tabs/<ref>/open/` (cria `Session`) | **Não abre no servidor.** A comanda livre abre só na tela (§3.4). |
 | Salvar comanda (autosave) | `POST pos/tabs/save/` com `expected_revision` (`@tab_command`) | Falha; a tela marca "não salvo". O fechamento leva os itens inteiros (§3.3). |
 | Total da venda | `POST pos/sale/review/`; com comanda, `tabs/save/?review=1` (#1627) | Total montado na tela pela última leitura (§4). |
-| Fechar | `POST pos/sale/close/` (`close_sale`, `require_expected_total=True`) | Vai para a fila local (§3). |
+| Fechar | `POST pos/sale/close/` (`close_sale`; total revisado sempre obrigatório) | Vai para a fila local (§3). |
 | Enviar à cozinha | `POST pos/tabs/fire/` (ledger por `line_id`) | Não envia. Cozinha avisada de voz. |
 | Pagamento | `settle_terminal_tenders` (dinheiro, crédito/débito atestados, `external`); `initiate` para Pix/link/cartão online | Dinheiro e maquininha seguem. **Pix, link e cartão online param.** |
 | NFC-e | `fiscal.emit_on_payment` → Directive `FISCAL_EMIT_NFCE` → Focus NFe (nuvem) | Não emite. Ver §5. |

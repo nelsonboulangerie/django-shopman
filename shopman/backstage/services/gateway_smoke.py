@@ -453,7 +453,7 @@ def _create_order_with_payment(*, payment_method: str) -> Order:
         handle_ref=f"gateway-smoke-{payment_method}",
         data={"origin_channel": "web"},
     )
-    session_service.modify_session(
+    session = session_service.modify_session(
         session_key=session.session_key,
         channel_ref="web",
         ops=[
@@ -470,6 +470,11 @@ def _create_order_with_payment(*, payment_method: str) -> Order:
         session_key=session.session_key,
         channel_ref="web",
         idempotency_key=session_service.new_idempotency_key(),
+        seal=session_service.CommitSeal(
+            expected_revision=session.rev,
+            expected_total_q=sum(int(item["line_total_q"]) for item in session.items),
+            authority=session_service.CommitAuthority.SYNTHETIC_DIAGNOSTIC,
+        ),
         ctx={"actor": "gateway-smoke"},
     )
     return Order.objects.get(ref=result.order_ref)

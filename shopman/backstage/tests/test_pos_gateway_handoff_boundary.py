@@ -79,6 +79,8 @@ def close_counter(settings):
             for field, value in [("tax_id", payload.get("fiscal_tax_id")), ("email", payload.get("receipt_email"))]
             if value
         ]
+        review = pos.review_sale(channel_ref="pdv", payload=payload, operator_username="counter")
+        payload["expected_total_q"] = review.total_q
         result = pos.close_sale(channel_ref="pdv", actor="pos:counter", operator_username="counter", payload=payload)
         return Order.objects.get(ref=result.order_ref), result
 

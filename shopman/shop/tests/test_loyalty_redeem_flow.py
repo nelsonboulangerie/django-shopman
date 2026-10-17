@@ -14,6 +14,7 @@ from shopman.guestman.contrib.loyalty.service import LoyaltyService
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
 from shopman.orderman.models import Directive, Order
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.handlers.loyalty import LoyaltyRedeemHandler
 from shopman.shop.models import Channel, Shop
@@ -61,6 +62,7 @@ def _commit_with_loyalty(channel, *, redeem_q: int, django_capture_on_commit_cal
             session_key=session.session_key,
             channel_ref=channel.ref,
             idempotency_key=sessions.new_idempotency_key(),
+            seal=seal_for(session.session_key, channel.ref),
         )
     return Order.objects.get(ref=result.order_ref)
 

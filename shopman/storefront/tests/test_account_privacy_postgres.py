@@ -24,6 +24,7 @@ from shopman.guestman.contrib.consent.models import CommunicationConsent
 from shopman.guestman.models import Customer, CustomerAddress
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services.commit import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import (
     DeliveryAttempt,
@@ -203,6 +204,8 @@ def test_deletion_wins_against_checkout_without_leaving_a_personal_order(monkeyp
             session_key="privacy-race-checkout",
             channel_ref="web",
             idempotency_key="privacy-race-checkout-idempotency",
+            seal=seal_for("privacy-race-checkout", "web"),
+            channel_config={},
         )
     )
 
@@ -269,6 +272,8 @@ def test_checkout_rejects_phone_changed_after_customer_lock(monkeypatch):
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key="privacy-race-checkout-phone-change-idempotency",
+            seal=seal_for(session.session_key, "web"),
+            channel_config={},
         )
     )
 

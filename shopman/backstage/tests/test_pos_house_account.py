@@ -45,15 +45,18 @@ def counter():
 
 
 def _sell_on_account(counter, *, customer_ref: str, ref: str, qty: int = 1):
+    payload = {
+        "items": [{"sku": "PAO", "name": "Pão", "qty": qty, "unit_price_q": 1200}],
+        "customer_ref": customer_ref,
+        "payment_method": "account",
+        "client_request_id": ref,
+        "cash_shift_id": counter["shift"].pk,
+    }
+    review = shop_pos.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+    payload["expected_total_q"] = review.total_q
     return shop_pos.close_sale(
         channel_ref="pdv",
-        payload={
-            "items": [{"sku": "PAO", "name": "Pão", "qty": qty, "unit_price_q": 1200}],
-            "customer_ref": customer_ref,
-            "payment_method": "account",
-            "client_request_id": ref,
-            "cash_shift_id": counter["shift"].pk,
-        },
+        payload=payload,
         actor="pos:marina",
         operator_username="marina",
     )

@@ -6267,8 +6267,6 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
                 payload=_pos_payload_with_runtime(request, body),
                 actor=_actor_pos(request),
                 operator_username=_username(request),
-                # A tela diz o total que mostrou; sem ele a venda não fecha (D42).
-                require_expected_total=True,
             )
         except PosIntentError as exc:
             body = {"detail": exc.message, "error": exc.as_dict()}

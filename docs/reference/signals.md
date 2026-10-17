@@ -15,7 +15,7 @@ O projeto define **17 sinais custom** do Django. Destes, **5 estão ativamente c
 | [`production_changed`](#production_changed) | craftsman | **Ativo** | craftsman→stockman, channels→stock (voided) |
 | [`customer_created`](#customer_created) | guestman | Disponível | — |
 | [`customer_updated`](#customer_updated) | guestman | Disponível | — |
-| [`holds_materialized`](#holds_materialized) | stockman | **Ativo** | channels→auto-commit |
+| [`holds_materialized`](#holds_materialized) | stockman | **Ativo** | shop→notificação de disponibilidade |
 | [`order_changed`](#order_changed) | orderman | **Ativo** | channels→lifecycle pipeline |
 | [`customer_authenticated`](#customer_authenticated) | doorman | Disponível | — |
 | [`access_link_created`](#access_link_created) | doorman | Disponível | — |
@@ -35,7 +35,7 @@ Além dos sinais custom, o projeto usa **2 sinais built-in** do Django (`post_sa
 | Signal | Conectado em | Receiver | Efeito |
 |--------|-------------|----------|--------|
 | `order_changed` | `ShopmanConfig.ready()` | `hooks.on_order_lifecycle` | Lê pipeline do canal, cria directives |
-| `holds_materialized` | `setup._register_stock_signals()` | `_stock_receivers.on_holds_materialized` | Auto-commit de sessões aguardando produção |
+| `holds_materialized` | `setup._register_stock_signals()` | `_stock_receivers.on_holds_materialized` | Notifica sessões afetadas; nunca cria Order |
 | `production_changed` | `setup._register_stock_signals()` | `_stock_receivers.on_production_voided` | Libera demand holds quando produção é anulada |
 | `production_changed` | `CraftingStockingConfig.ready()` | `craftsman.contrib.stockman.handlers` | Gerencia quants planejados/realizados |
 | `post_save(Directive)` | `OrderingConfig.ready()` | `ordering.dispatch` | Auto-despacha directive para handler |
@@ -119,7 +119,8 @@ Emitido quando holds planejados são materializados (produção concluída, esto
 **Receiver:** `on_holds_materialized()` em `shopman/shop/handlers/_stock_receivers.py`
 Registrado por: `ShopmanConfig.ready()` via `setup.register_all()` → `_register_stock_signals()`
 
-**Efeito:** Auto-commit de sessões que estavam aguardando produção. Quando todos os holds de uma sessão são materializados, executa `CommitService.commit()` automaticamente.
+**Efeito:** notifica as sessões afetadas de que o item chegou. A sessão permanece aberta:
+criar `Order` exige nova revisão explícita e `CommitSeal` de uma superfície real.
 
 **Guia:** [stockman.md](../guides/stockman.md), [lifecycle.md](../guides/lifecycle.md)
 
@@ -343,5 +344,5 @@ Produção concluída
             └→ StockPlanning.realize()
                  └→ holds_materialized
                       └→ _on_holds_materialized()
-                           └→ CommitService.commit() (auto-commit)
+                           └→ notify(stock.arrived); Session continua aberta
 ```
