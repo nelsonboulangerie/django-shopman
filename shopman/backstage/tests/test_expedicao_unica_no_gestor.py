@@ -28,7 +28,7 @@ from shopman.shop.services import operator_orders
 
 pytestmark = pytest.mark.django_db
 
-GESTOR_PERM = "shop.manage_orders|backstage.operate_kds"
+GESTOR_PERM = "shop.manage_orders|backstage.operate_kds|shop.manage_catalog"
 
 
 def _perm(app_label: str, codename: str) -> Permission:

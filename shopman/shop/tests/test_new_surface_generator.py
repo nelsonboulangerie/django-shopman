@@ -62,6 +62,7 @@ MOLD = (
 ARGS = {
     "name": "loyalty",
     "label": "Fidelidade",
+    "role": "loyalty-management",
     "subdomain": "fidelidade",
     "group": "operator-office",
     "perm": "backstage.view_loyalty",
@@ -106,6 +107,8 @@ def test_the_generated_app_extends_the_kit_and_locks_on_its_permission(repo: Pat
     assert package["name"] == "loyalty-nuxt"
     registry = json.loads((repo / "surfaces/registry.json").read_text())
     assert registry["surfaces"]["loyalty"]["uses_operator_kit"] is True
+    assert registry["surfaces"]["loyalty"]["role"] == "loyalty-management"
+    assert registry["surfaces"]["loyalty"]["deployment"] == "digitalocean"
     assert package["scripts"]["dev"] == f"nuxt dev --host 127.0.0.1 --port {registry['surfaces']['loyalty']['dev_port']}"
     contract = json.loads((repo / "surfaces/contracts.json").read_text())
     assert contract["surfaces"]["loyalty"] == {
@@ -184,6 +187,7 @@ def test_dry_run_touches_nothing(repo: Path):
     [
         ({"name": "pos"}, "pos já existe"),
         ({"name": "Loyalty"}, "minúsculas"),
+        ({"role": "Loyalty Manager"}, "kebab-case"),
         ({"subdomain": "pdv"}, "já usado"),
         ({"group": "operator-everything"}, "use um de"),
         ({"perm": "view_loyalty"}, "<app_label>.<codename>"),

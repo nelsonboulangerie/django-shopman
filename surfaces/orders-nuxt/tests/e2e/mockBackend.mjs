@@ -8,7 +8,15 @@ const port = Number(process.env.MOCK_PORT || 8796);
 // Sessão autenticada e destravada → o shell passa dos gates e mostra o board.
 // Uma identidade: `locked` é literalmente "não há operador", então um mock com
 // `operator: null, locked: false` descreve um estado que o servidor não produz.
-const SESSION = { station: "balcao", operator: { id: 1, username: "admin", name: "Admin" }, locked: false, pin_must_change: false, authorized: true };
+const SESSION = {
+  station: "balcao",
+  operator: { id: 1, username: "admin", name: "Admin" },
+  locked: false,
+  pin_must_change: false,
+  authorized: true,
+  surface_role: "orders",
+  landing_path: "/",
+};
 
 const CARD = {
   ref: "WEB-20260625-0007",

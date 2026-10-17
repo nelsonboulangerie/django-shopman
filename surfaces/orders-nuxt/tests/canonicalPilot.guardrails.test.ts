@@ -527,7 +527,8 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(app).toContain("<OperatorAppRoot>");
     expect(app).toContain("<OperatorSuiteShell");
     expect(app).toContain("operatorSurfaceGate({");
-    expect(app).toContain('v-if="surface.showPage"');
+    expect(app).toContain('v-if="surface.showPage && !redirectingToRoleLanding"');
+    expect(app).toContain('navigateTo("/catalog", { replace: true })');
     expect(app).toContain('v-else-if="surface.showForbidden"');
     expect(app).toContain('v-else-if="surface.showChecking"');
     expect(app).toContain('v-if="surface.showUnavailable"');

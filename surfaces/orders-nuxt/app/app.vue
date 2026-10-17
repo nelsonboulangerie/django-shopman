@@ -10,7 +10,7 @@ import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteC
 // coluna Saída daqui). A trava do Gestor é a primeira (`shop.manage_orders`). É a
 // mesma de `GESTOR_SURFACE_PERM` (useGestorAccess), escrita por extenso porque o
 // teste do tile da Central (`test_hub_projection_identity`) lê esta linha.
-const OPERATOR_PERM = "shop.manage_orders|backstage.operate_kds";
+const OPERATOR_PERM = "shop.manage_orders|backstage.operate_kds|shop.manage_catalog";
 const { hasDirty: cashDraftDirty } = useOrderCashDrafts();
 const { hasPending: intentionPending } = useOrderIntention();
 function protectSessionExit(event: BeforeUnloadEvent) {
@@ -46,6 +46,23 @@ const surface = computed(() =>
     mustChange: mustChange.value,
     harness: false,
   }),
+);
+const route = useRoute();
+const { landingPath } = useGestorAccess();
+const redirectingToRoleLanding = computed(
+  () =>
+    surface.value.showPage &&
+    route.path === "/" &&
+    landingPath.value === "/catalog",
+);
+watch(
+  [() => surface.value.showPage, () => route.path, landingPath],
+  ([showPage, path, landing]) => {
+    if (showPage && path === "/" && landing === "/catalog") {
+      void navigateTo("/catalog", { replace: true });
+    }
+  },
+  { immediate: true },
 );
 // Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
@@ -98,7 +115,7 @@ useOperatorWindowTitle();
       <!-- Aviso calmo de conexão (kit) — global, só aparece offline (paridade c/ POS/KDS/hub). -->
       <OfflineBanner />
       <OperatorSuiteShell
-        v-if="surface.showPage"
+        v-if="surface.showPage && !redirectingToRoleLanding"
         storage-key="gestor"
         :sections="sections"
         :current="current"

@@ -434,10 +434,10 @@ operator-visual: ## Matriz incremental: make operator-visual app=x route=/x scen
 
 # Cria um app de operador em surfaces/ a partir do molde e o registra em todos os
 # lugares que a trava acima confere. O subdomínio é argumento: hostname é do dono.
-new-surface: ## Novo app de operador: make new-surface name=x label="X" subdomain=x group=operator-office perm=app.codename color=#RRGGBB symbol=lucide:nome
-	@test -n "$(name)" -a -n "$(label)" -a -n "$(subdomain)" -a -n "$(group)" -a -n "$(perm)" -a -n "$(color)" -a -n "$(symbol)" || \
-		(echo 'uso: make new-surface name=<id> label="<Rótulo>" subdomain=<rótulo do host> group=<operator-floor|operator-office> perm=<app.codename> color=<#RRGGBB> symbol=<lucide:nome> [article=o|a|as] [dry=1]' >&2; exit 2)
-	$(PYTHON) scripts/new_surface.py --name "$(name)" --label "$(label)" --subdomain "$(subdomain)" \
+new-surface: ## Novo app de operador: make new-surface name=x label="X" role=x-management subdomain=x group=operator-office perm=app.codename color=#RRGGBB symbol=lucide:nome
+	@test -n "$(name)" -a -n "$(label)" -a -n "$(role)" -a -n "$(subdomain)" -a -n "$(group)" -a -n "$(perm)" -a -n "$(color)" -a -n "$(symbol)" || \
+		(echo 'uso: make new-surface name=<id> label="<Rótulo>" role=<trabalho-persona> subdomain=<rótulo do host> group=<operator-floor|operator-office> perm=<app.codename> color=<#RRGGBB> symbol=<lucide:nome> [article=o|a|as] [dry=1]' >&2; exit 2)
+	$(PYTHON) scripts/new_surface.py --name "$(name)" --label "$(label)" --role "$(role)" --subdomain "$(subdomain)" \
 		--group "$(group)" --perm "$(perm)" --color "$(color)" --symbol "$(symbol)" \
 		$(if $(article),--article "$(article)") $(if $(dry),--dry-run)
 

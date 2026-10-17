@@ -112,6 +112,18 @@ def test_hub_filters_by_permission(client, db):
 
 
 @pytest.mark.django_db
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_catalog_operator_sees_gestor_tile_without_receiving_order_or_customer_grants(client, db):
+    operator = User.objects.create_user("hub-catalogo", password="pw", is_staff=True)
+    operator.user_permissions.add(_perm("shop", "manage_catalog"))
+    client.force_login(User.objects.get(pk=operator.pk))
+    refs = [tile["ref"] for tile in client.get(reverse("api-backstage-hub")).json()["hub"]["tiles"]]
+    assert refs == ["gestor"]
+    assert operator.has_perm("shop.manage_orders") is False
+    assert operator.has_perm("shop.manage_customers") is False
+
+
+@pytest.mark.django_db
 @override_settings(
     SHOPMAN_SURFACE_URLS={k: v for k, v in SURFACE_URLS.items() if k != "marketing"}
 )

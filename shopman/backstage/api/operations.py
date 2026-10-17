@@ -727,6 +727,9 @@ _OPERATOR_UNLOCK_PERMS = {
     "backstage.operate_production",
     "backstage.operate_purchase",
     "shop.manage_orders",
+    # Catálogo diário mora no Gestor. Este grant abre só a persona de catálogo;
+    # os endpoints de pedidos/clientes continuam com seus próprios gates.
+    "shop.manage_catalog",
     # Campanha (surfaces/marketing-nuxt): sem esta entrada a tela de destravar
     # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
     "shop.view_marketing",
@@ -790,7 +793,12 @@ class OperatorSessionView(APIView):
         required_perm, valid_perm = _validated_unlock_perm(request.query_params.get("perm"))
         if not valid_perm:
             return Response({"detail": "Permissão desconhecida."}, status=400)
-        from shopman.backstage.permissions import has_surface_perm
+        from shopman.backstage.permissions import (
+            GESTOR_SURFACE_PERMISSIONS,
+            gestor_surface_role,
+            has_surface_perm,
+            surface_perm_codes,
+        )
         from shopman.backstage.services import operator_session
 
         operador = request.user if getattr(request.user, "is_authenticated", False) else None
@@ -803,6 +811,8 @@ class OperatorSessionView(APIView):
                 and operator_session.is_capability_locked(request, lock_key)
             )
         )
+        is_gestor = surface_perm_codes(required_perm) == GESTOR_SURFACE_PERMISSIONS
+        surface_role = gestor_surface_role(operador) if is_gestor and operador and not locked else None
         return Response({
             # `station` substituiu `device_user`: o que a tela precisa saber é de
             # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
@@ -821,6 +831,9 @@ class OperatorSessionView(APIView):
                 and not locked
                 and has_surface_perm(operador, required_perm)
             ),
+            # O shell usa isto só para landing/navegação; role não é grant.
+            "surface_role": surface_role,
+            "landing_path": "/catalog" if surface_role == "catalog" else "/",
         })
 
 

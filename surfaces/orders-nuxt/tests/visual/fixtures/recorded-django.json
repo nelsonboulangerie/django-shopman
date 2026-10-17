@@ -23,7 +23,7 @@
   "pin_must_change": false,
   "authorized": true
  },
- "/api/v1/backstage/operator/session/?perm=shop.manage_orders|backstage.operate_kds": {
+ "/api/v1/backstage/operator/session/?perm=shop.manage_orders|backstage.operate_kds|shop.manage_catalog": {
   "station": "",
   "workstation": null,
   "operator": {
@@ -33,7 +33,9 @@
   },
   "locked": false,
   "pin_must_change": false,
-  "authorized": true
+  "authorized": true,
+  "surface_role": "orders",
+  "landing_path": "/"
  },
  "/api/v1/backstage/channels/attention/": {
   "attention": {

@@ -2,7 +2,7 @@
   "$comment": [
     "REGISTRO ÚNICO DAS SUPERFÍCIES NUXT. Superfície nova entra AQUI primeiro, e todo outro lugar do repositório que enumera superfícies tem de concordar com esta tabela.",
     "A chave é o id do app: prefixo das envs do grupo (`POS__NUXT_...`), chave do `OPERATOR_HOSTS`, chave de `operator-kit/app-identity.json` e do `operator-router/groups.json`.",
-    "dir: diretório em surfaces/. kind: papel arquitetural (`customer`, `operator` ou `internal`). uses_operator_kit: dependência técnica da layer `../operator-kit`, independente do papel. dev_port: porta do `npm run dev`.",
+    "dir: diretório em surfaces/. kind: papel arquitetural (`customer`, `operator` ou `internal`). role: trabalho/persona servido pela superfície. deployment: destino (`digitalocean`, `preview` ou `external`). uses_operator_kit: dependência técnica da layer `../operator-kit`, independente do papel. dev_port: porta do `npm run dev`.",
     "service: componente do spec da DigitalOcean que serve o app — o próprio para a loja, o GRUPO para os apps de operador (ADR-030). ready_path: só quando o app tem readiness própria além do /health/live.",
     "subdomain: rótulo do hostname em STORE_DOMAIN (`pdv` → pdv.boulangerie.com.br). A loja não tem: é a rota catch-all do ingress. Hostname é DNS e decisão do dono — o registro ANOTA o que existe, não escolhe.",
     "base_url_env: env do Django com a URL pública do app (links do Admin e tiles da Central). A própria Central não tem: ela não se lista.",
@@ -12,6 +12,8 @@
     "storefront": {
       "dir": "storefront-nuxt",
       "kind": "customer",
+      "role": "customer-storefront",
+      "deployment": "digitalocean",
       "uses_operator_kit": false,
       "dev_port": 3000,
       "service": "storefront-nuxt",
@@ -22,6 +24,8 @@
     "hub": {
       "dir": "hub-nuxt",
       "kind": "operator",
+      "role": "operator-launcher",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3001,
       "service": "operator-floor",
@@ -32,6 +36,8 @@
     "pos": {
       "dir": "pos-nuxt",
       "kind": "operator",
+      "role": "counter-sales",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3002,
       "service": "operator-floor",
@@ -42,6 +48,8 @@
     "kds": {
       "dir": "kds-nuxt",
       "kind": "operator",
+      "role": "kitchen-fulfillment",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3003,
       "service": "operator-floor",
@@ -52,6 +60,8 @@
     "orders": {
       "dir": "orders-nuxt",
       "kind": "operator",
+      "role": "operations-management",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3004,
       "service": "operator-floor",
@@ -62,6 +72,8 @@
     "production": {
       "dir": "production-nuxt",
       "kind": "operator",
+      "role": "production-floor",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3005,
       "service": "operator-floor",
@@ -72,6 +84,8 @@
     "marketing": {
       "dir": "marketing-nuxt",
       "kind": "operator",
+      "role": "marketing-management",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3006,
       "service": "operator-office",
@@ -83,6 +97,8 @@
     "bi": {
       "dir": "bi-nuxt",
       "kind": "operator",
+      "role": "business-intelligence",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3007,
       "service": "operator-office",
@@ -93,6 +109,8 @@
     "purchase": {
       "dir": "purchase-nuxt",
       "kind": "operator",
+      "role": "procurement",
+      "deployment": "digitalocean",
       "uses_operator_kit": true,
       "dev_port": 3008,
       "service": "operator-office",
@@ -103,6 +121,7 @@
     "kitchensink": {
       "dir": "kitchensink-nuxt",
       "kind": "internal",
+      "role": "developer-preview",
       "uses_operator_kit": true,
       "dev_port": 3009,
       "service": null,
@@ -114,6 +133,7 @@
     "status": {
       "dir": "status-nuxt",
       "kind": "customer",
+      "role": "public-status",
       "uses_operator_kit": false,
       "dev_port": 3010,
       "service": null,

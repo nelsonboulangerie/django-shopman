@@ -85,6 +85,27 @@ def test_kitchen_sink_accepts_superuser_without_granting_the_permission_to_other
 
 
 @pytest.mark.django_db
+def test_catalog_operator_enters_common_gestor_session_at_catalog_without_order_access(client, balcao):
+    catalog = User.objects.create_user("catalogo", password="x", is_staff=True)
+    PinCredential.set_for(catalog, "4321")
+    catalog = _grant(catalog, "manage_catalog", app="shop")
+    permission = "shop.manage_orders|backstage.operate_kds|shop.manage_catalog"
+    unlocked = client.post(
+        reverse("api-backstage-operator-unlock"),
+        {"operator_id": catalog.pk, "pin": "4321", "perm": permission},
+        content_type="application/json",
+    )
+    assert unlocked.status_code == 200
+    session = client.get(reverse("api-backstage-operator-session"), {"perm": permission})
+    assert session.status_code == 200
+    assert session.json()["authorized"] is True
+    assert session.json()["surface_role"] == "catalog"
+    assert session.json()["landing_path"] == "/catalog"
+    assert catalog.has_perm("shop.manage_orders") is False
+    assert catalog.has_perm("shop.manage_customers") is False
+
+
+@pytest.mark.django_db
 def test_session_reports_locked_then_operator(client, balcao, baker):
     session_url = reverse("api-backstage-operator-session")
     body = client.get(session_url, {"perm": "backstage.operate_production"}).json()

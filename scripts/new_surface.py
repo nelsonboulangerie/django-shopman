@@ -40,7 +40,7 @@ superfície já nascer inteira, e termina rodando a própria trava.
 
 ## Uso
 
-    make new-surface name=loyalty label="Fidelidade" subdomain=fidelidade \\
+    make new-surface name=loyalty label="Fidelidade" role=loyalty-management subdomain=fidelidade \\
         group=operator-office perm=backstage.view_loyalty \\
         color="#5B6B2E" symbol=lucide:heart-handshake
 
@@ -598,6 +598,7 @@ def create(
     *,
     name: str,
     label: str,
+    role: str,
     subdomain: str,
     group: str,
     perm: str,
@@ -615,6 +616,8 @@ def create(
         raise SurfaceError(f"name={name!r}: use minúsculas e dígitos, começando por letra (vira o prefixo das envs)")
     if name in surfaces or (root / f"surfaces/{name}-nuxt").exists():
         raise SurfaceError(f"{name} já existe")
+    if not re.match(r"^[a-z][a-z0-9-]*$", role):
+        raise SurfaceError(f"role={role!r}: use kebab-case para o trabalho/persona")
     if group not in registry["operator_groups"]:
         raise SurfaceError(f"group={group!r}: use um de {sorted(registry['operator_groups'])}")
     if not re.match(r"^[a-z][a-z0-9-]*$", subdomain) or any(s.get("subdomain") == subdomain for s in surfaces.values()):
@@ -635,6 +638,8 @@ def create(
     entry = {
         "dir": f"{name}-nuxt",
         "kind": "operator",
+        "role": role,
+        "deployment": "digitalocean",
         "uses_operator_kit": True,
         "dev_port": port,
         "service": group,
@@ -717,6 +722,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--name", required=True, help="id do app (prefixo das envs): loyalty")
     parser.add_argument("--label", required=True, help='rótulo do app: "Fidelidade"')
+    parser.add_argument("--role", required=True, help="trabalho/persona da superfície: loyalty-management")
     parser.add_argument("--subdomain", required=True, help="rótulo do hostname (DNS é do dono): fidelidade")
     parser.add_argument("--group", required=True, help="operator-floor ou operator-office")
     parser.add_argument("--perm", required=True, help="permissão Django que abre o app: backstage.view_loyalty")
@@ -735,6 +741,7 @@ def main(argv: list[str] | None = None) -> int:
             root,
             name=args.name,
             label=args.label,
+            role=args.role,
             subdomain=args.subdomain,
             group=args.group,
             perm=args.perm,

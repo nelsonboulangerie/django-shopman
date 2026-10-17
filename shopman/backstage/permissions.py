@@ -29,6 +29,11 @@ def can_manage_orders(user) -> bool:
     return is_superuser(user) or user.has_perm("shop.manage_orders")
 
 
+def can_manage_catalog(user) -> bool:
+    """Opera o catálogo diário no Gestor, sem herdar pedidos ou clientes."""
+    return is_superuser(user) or user.has_perm("shop.manage_catalog")
+
+
 #: Quem EXPEDE (SUITE-UX §15/§16: uma Saída só, no Gestor). A Saída morava na
 #: Cozinha e era operada com ``backstage.operate_kds``; ao mudar para a coluna
 #: Saída do Gestor, quem a operava continua operando, e só ela: avançar a saída
@@ -41,6 +46,10 @@ EXPEDITE_PERMISSION = "backstage.operate_kds"
 #: As duas portas do quadro do Gestor: quem gerencia pedidos e quem só expede.
 ORDER_BOARD_PERMISSIONS = ("shop.manage_orders", EXPEDITE_PERMISSION)
 
+# As três personas que entram no mesmo app Gestor. A ordem é também a prioridade
+# da landing: gestão de pedidos, posto de saída e, por fim, catálogo diário.
+GESTOR_SURFACE_PERMISSIONS = (*ORDER_BOARD_PERMISSIONS, "shop.manage_catalog")
+
 
 def can_expedite(user) -> bool:
     """Opera a coluna Saída do Gestor (gerencia pedidos ou expede)."""
@@ -50,6 +59,23 @@ def can_expedite(user) -> bool:
 def expedites_only(user) -> bool:
     """Opera só a Saída: expede, mas não gerencia pedidos."""
     return bool(user) and not can_manage_orders(user) and user.has_perm(EXPEDITE_PERMISSION)
+
+
+def gestor_surface_role(user) -> str | None:
+    """Persona efetiva no Gestor sem conceder capabilities de outra persona."""
+    if not user:
+        return None
+    if can_manage_orders(user):
+        return "orders"
+    if user.has_perm(EXPEDITE_PERMISSION):
+        return "expedition"
+    if can_manage_catalog(user):
+        return "catalog"
+    return None
+
+
+def can_access_gestor(user) -> bool:
+    return gestor_surface_role(user) is not None
 
 
 #: Separador da permissão de SUPERFÍCIE com alternativas (``a|b``): a primeira é a
