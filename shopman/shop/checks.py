@@ -62,6 +62,7 @@ import json
 import logging
 import os
 from collections.abc import Mapping
+from pathlib import Path
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -427,17 +428,24 @@ def check_operator_cookie_domain(app_configs, **kwargs):
     if settings.DEBUG:
         return errors
 
-    operator_base_urls = {
-        "SHOPMAN_POS_BASE_URL": getattr(settings, "SHOPMAN_POS_BASE_URL", ""),
-        "SHOPMAN_KDS_BASE_URL": getattr(settings, "SHOPMAN_KDS_BASE_URL", ""),
-        "SHOPMAN_ORDERS_BASE_URL": getattr(settings, "SHOPMAN_ORDERS_BASE_URL", ""),
-        "SHOPMAN_PRODUCTION_BASE_URL": getattr(settings, "SHOPMAN_PRODUCTION_BASE_URL", ""),
-        "SHOPMAN_MARKETING_BASE_URL": getattr(settings, "SHOPMAN_MARKETING_BASE_URL", ""),
-        "SHOPMAN_BI_BASE_URL": getattr(settings, "SHOPMAN_BI_BASE_URL", ""),
-    }
-    configured_urls = {key: value for key, value in operator_base_urls.items() if value}
     api_host = str(getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip().lower()
     cookie_domain = str(getattr(settings, "SHOPMAN_OPERATOR_COOKIE_DOMAIN", "") or "").strip().lower()
+    registry = json.loads(
+        (Path(__file__).resolve().parents[2] / "surfaces" / "registry.json").read_text(encoding="utf-8")
+    )
+    bare_domain = cookie_domain.lstrip(".")
+    operator_base_urls: dict[str, str] = {}
+    for surface_id, surface in registry["surfaces"].items():
+        if surface.get("kind") != "operator" or surface.get("deployment") != "digitalocean":
+            continue
+        env = surface.get("base_url_env")
+        value = str(getattr(settings, env, "") or "") if env else ""
+        # A Central não tem base_url_env porque não lista a si mesma. Seu host
+        # ainda pertence à sessão comum e é derivado da topologia declarada.
+        if not value and surface.get("subdomain") and bare_domain:
+            value = f"https://{surface['subdomain']}.{bare_domain}"
+        operator_base_urls[surface_id] = value
+    configured_urls = {key: value for key, value in operator_base_urls.items() if value}
 
     if not configured_urls and not api_host and not cookie_domain:
         return errors
@@ -467,7 +475,6 @@ def check_operator_cookie_domain(app_configs, **kwargs):
         )
         return errors
 
-    bare_domain = cookie_domain.lstrip(".")
     invalid_hosts = []
     for key, value in configured_urls.items():
         host = (urlparse(str(value)).hostname or "").lower()

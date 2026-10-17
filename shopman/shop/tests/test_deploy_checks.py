@@ -194,6 +194,42 @@ def test_operator_surface_accepts_shared_subdomain_cookie_zone():
 
 @override_settings(
     DEBUG=False,
+    SHOPMAN_POS_BASE_URL="",
+    SHOPMAN_KDS_BASE_URL="",
+    SHOPMAN_ORDERS_BASE_URL="",
+    SHOPMAN_PRODUCTION_BASE_URL="",
+    SHOPMAN_MARKETING_BASE_URL="",
+    SHOPMAN_BI_BASE_URL="",
+    SHOPMAN_PURCHASE_BASE_URL="",
+    SHOPMAN_OPERATOR_API_HOST="",
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
+)
+def test_operator_session_gate_includes_central_without_a_tile_url():
+    errors = checks.check_operator_cookie_domain(None)
+    assert [error.id for error in errors] == ["SHOPMAN_E014"]
+    assert "SHOPMAN_OPERATOR_API_HOST" in errors[0].msg
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_POS_BASE_URL="",
+    SHOPMAN_KDS_BASE_URL="",
+    SHOPMAN_ORDERS_BASE_URL="",
+    SHOPMAN_PRODUCTION_BASE_URL="",
+    SHOPMAN_MARKETING_BASE_URL="",
+    SHOPMAN_BI_BASE_URL="",
+    SHOPMAN_PURCHASE_BASE_URL="https://compras.evil.example",
+    SHOPMAN_OPERATOR_API_HOST="api.boulangerie.com.br",
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
+)
+def test_operator_session_gate_includes_purchase_from_the_registry():
+    errors = checks.check_operator_cookie_domain(None)
+    assert [error.id for error in errors] == ["SHOPMAN_E014"]
+    assert "purchase=compras.evil.example" in errors[0].hint
+
+
+@override_settings(
+    DEBUG=False,
     SHOPMAN_POS_BASE_URL="https://pdv.evil.example",
     SHOPMAN_KDS_BASE_URL="",
     SHOPMAN_ORDERS_BASE_URL="",
@@ -207,7 +243,7 @@ def test_operator_surface_rejects_hosts_outside_cookie_domain():
     errors = checks.check_operator_cookie_domain(None)
 
     assert [error.id for error in errors] == ["SHOPMAN_E014"]
-    assert "SHOPMAN_POS_BASE_URL=pdv.evil.example" in errors[0].hint
+    assert "pos=pdv.evil.example" in errors[0].hint
 
 
 @override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_MOCK_CAPTURE=True)

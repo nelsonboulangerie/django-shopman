@@ -24,6 +24,10 @@ export interface OperatorSession {
   // Resposta somente para a capability solicitada pela superfície. Evita montar
   // o app para um operador identificado, porém sem acesso.
   authorized: boolean;
+  // Perfil da superfície composta, quando ela possui mais de uma persona. Não
+  // substitui as permissões dos endpoints; serve apenas à landing/navegação.
+  surface_role?: string | null;
+  landing_path?: string;
 }
 
 export type OperatorSessionResponse = OperatorSession;

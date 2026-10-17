@@ -46,6 +46,17 @@ describe("gestorSections (rail)", () => {
     expect(keys).toEqual(["orders", "exit"]);
   });
 
+  it("quem cuida só do catálogo recebe Catálogo e Canais, sem Pedidos ou Clientes", () => {
+    const keys = gestorSections({
+      channelsAttention: "",
+      canManageCustomers: false,
+      catalogOnly: true,
+    }).map((s) => s.key);
+    expect(keys).toEqual(["catalog", "feeds"]);
+    expect(keys).not.toContain("orders");
+    expect(keys).not.toContain("customers");
+  });
+
   it("a atenção de Canais acende o ponto em Ajustes só quando há o que dizer", () => {
     const quiet = gestorSections({
       channelsAttention: "",

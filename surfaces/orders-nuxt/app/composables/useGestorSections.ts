@@ -95,7 +95,7 @@ export function useGestorSections() {
       watch: [operatorId],
     },
   );
-  const { expeditesOnly } = useGestorAccess();
+  const { expeditesOnly, catalogOnly } = useGestorAccess();
   const rail = useGestorRail();
   // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
   // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do quadro.
@@ -107,6 +107,7 @@ export function useGestorSections() {
     canManageWorkstations: workstationsAccess.value?.authorized === true,
     canOperateChecklists: checklistsAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
+    catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
     exitCount: rail.value.onBoard ? rail.value.exit : offBoard.value.exit,
   }));
@@ -114,8 +115,13 @@ export function useGestorSections() {
   const settings = computed(() => gestorSettingsSections(input.value));
   // No quadro, quem diz se a tela é "Pedidos" ou "Saída" é a arrumação do posto.
   const route = useRoute();
-  const current = computed(() =>
-    route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined,
-  );
+  const current = computed(() => {
+    if (catalogOnly.value) {
+      return route.path.startsWith("/feeds") || route.path.startsWith("/channels")
+        ? "feeds"
+        : "catalog";
+    }
+    return route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined;
+  });
   return { sections, settings, current };
 }

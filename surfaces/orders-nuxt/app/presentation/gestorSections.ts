@@ -28,6 +28,9 @@ export interface GestorSectionsInput {
   // Quem só expede (SUITE-UX §15) entra no Gestor pela coluna Saída e não ganha o
   // resto: o rail fica só com a operação. Ausente conta como quem gerencia.
   expeditesOnly?: boolean;
+  // Persona que cuida do catálogo: entra no mesmo app, mas não recebe Pedidos,
+  // Saída, Histórico ou Clientes.
+  catalogOnly?: boolean;
   // Contagens do quadro para os selos do rail (vazias fora do quadro).
   intakeCount?: number;
   exitCount?: number;
@@ -56,9 +59,32 @@ function badge(count: number | undefined) {
 export function gestorSections({
   channelsAttention,
   expeditesOnly = false,
+  catalogOnly = false,
   intakeCount,
   exitCount,
 }: GestorSectionsInput): OperatorSection[] {
+  if (catalogOnly) {
+    return [
+      {
+        key: "catalog",
+        label: "Catálogo",
+        icon: "lucide:book-open",
+        to: "/catalog",
+        group: "Cadastro",
+        quick: true,
+      },
+      {
+        key: "feeds",
+        label: "Canais",
+        icon: "lucide:monitor-play",
+        to: "/feeds",
+        match: ["/channels"],
+        attention: channelsAttention || undefined,
+        group: "Cadastro",
+        quick: true,
+      },
+    ];
+  }
   const operation: OperatorSection[] = [
     {
       key: "orders",
@@ -107,7 +133,28 @@ export function gestorSettingsSections({
   canManageCustomers,
   canManageWorkstations = false,
   canOperateChecklists = false,
+  catalogOnly = false,
 }: GestorSectionsInput): GestorSettingsEntry[] {
+  if (catalogOnly) {
+    return [
+      {
+        key: "catalog",
+        label: "Catálogo",
+        icon: "lucide:book-open",
+        to: "/catalog",
+        description: "Produtos, preços, coleções e disponibilidade",
+      },
+      {
+        key: "feeds",
+        label: "Canais",
+        icon: "lucide:monitor-play",
+        to: "/feeds",
+        match: ["/channels"],
+        attention: channelsAttention || undefined,
+        description: "Loja online, iFood, WhatsApp e o catálogo de cada canal",
+      },
+    ];
+  }
   return [
     ...(canOperateChecklists
       ? [

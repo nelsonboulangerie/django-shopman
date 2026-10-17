@@ -43,8 +43,12 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = Path("surfaces/registry.json")
 KINDS = {"customer", "operator", "internal"}
-FIELDS = {"dir", "kind", "uses_operator_kit", "dev_port", "service", "subdomain", "base_url_env", "hub_tile"}
-OPTIONAL_FIELDS = {"ready_path", "deployment"}
+DEPLOYMENTS = {"digitalocean", "preview", "external"}
+FIELDS = {
+    "dir", "kind", "role", "deployment", "uses_operator_kit", "dev_port",
+    "service", "subdomain", "base_url_env", "hub_tile",
+}
+OPTIONAL_FIELDS = {"ready_path"}
 DEPLOY_SPECS = (Path(".do/app.subdomains.yaml"), Path(".do/app.alpha-subdomains.yaml"))
 INTERNAL_PREVIEW_JOB_NAME = (
     "${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}"
@@ -56,6 +60,8 @@ class Surface:
     id: str
     dir: str
     kind: str
+    role: str
+    deployment: str
     uses_operator_kit: bool
     dev_port: int
     service: str | None
@@ -63,7 +69,6 @@ class Surface:
     base_url_env: str | None
     hub_tile: str | None
     ready_path: str | None = None
-    deployment: str | None = None
 
     @property
     def is_operator(self) -> bool:
@@ -79,7 +84,7 @@ class Surface:
 
     @property
     def is_digitalocean_deployed(self) -> bool:
-        return self.deployment is None
+        return self.deployment == "digitalocean"
 
 
 class Registry:
@@ -140,14 +145,18 @@ def check_registry_shape(reg: Registry) -> list[str]:
         if extra:
             errors.append(f"{where}: {key} com campo desconhecido {sorted(extra)}")
     for s in reg.surfaces:
-        if s.deployment not in {None, "preview", "external"}:
-            errors.append(f"{where}: {s.id} com deployment {s.deployment!r} (use preview, external ou omita)")
+        if s.deployment not in DEPLOYMENTS:
+            errors.append(f"{where}: {s.id} com deployment {s.deployment!r} (use {sorted(DEPLOYMENTS)})")
         if s.kind not in KINDS:
             errors.append(f"{where}: {s.id} com kind {s.kind!r} (use {sorted(KINDS)})")
+        if not isinstance(s.role, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", s.role):
+            errors.append(f"{where}: {s.id} precisa declarar role em kebab-case")
         if not isinstance(s.uses_operator_kit, bool):
             errors.append(f"{where}: {s.id} precisa declarar uses_operator_kit como booleano")
         if s.kind == "internal" and s.deployment != "preview":
             errors.append(f"{where}: {s.id} é internal e exige deployment 'preview'")
+        if s.deployment == "preview" and s.kind != "internal":
+            errors.append(f"{where}: {s.id} é preview e exige kind 'internal'")
         if s.dir != f"{s.id}-nuxt":
             errors.append(f"{where}: {s.id} mora em {s.dir}; o diretório é sempre <id>-nuxt")
         if s.is_operator and s.is_deployed and s.service not in reg.groups:
@@ -160,6 +169,8 @@ def check_registry_shape(reg: Registry) -> list[str]:
             errors.append(
                 f"{where}: {s.id} é externo e exige subdomain, sem service, base_url_env ou hub_tile"
             )
+        if s.deployment == "digitalocean" and not s.service:
+            errors.append(f"{where}: {s.id} usa DigitalOcean e exige service")
     for field in ("dev_port", "subdomain", "base_url_env", "hub_tile"):
         values = [getattr(s, field) for s in reg.surfaces if getattr(s, field) is not None]
         for value in sorted({v for v in values if values.count(v) > 1}, key=str):
