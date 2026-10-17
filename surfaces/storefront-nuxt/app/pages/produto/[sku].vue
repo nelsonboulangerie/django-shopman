@@ -13,6 +13,7 @@ import {
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
 import { hasOptionGroups } from '~/presentation/productOptions'
 import { compactUnitWeightLabel, formatCount } from '~/utils/display'
+import { adjustmentLabel, quoteOriginalPriceDisplay, quotePriceDisplay } from '~/presentation/priceQuote'
 
 const route = useRoute()
 const apiPath = useShopmanApiPath()
@@ -67,8 +68,8 @@ const meta = computed<ProductMutationMeta | null>(() => product.value
   ? {
       sku: product.value.sku,
       name: product.value.name,
-      price_q: product.value.base_price_q,
-      price_display: product.value.price_display,
+      price_q: product.value.quote.final_unit_price_q,
+      price_display: quotePriceDisplay(product.value.quote),
       image_url: product.value.image_url
     }
   : null)
@@ -139,7 +140,7 @@ useHead({
   link: [{ rel: 'canonical', href: () => canonicalUrl.value }],
   meta: [
     { property: 'og:type', content: 'product' },
-    { property: 'product:price:amount', content: () => priceFromQ(product.value?.base_price_q) },
+    { property: 'product:price:amount', content: () => priceFromQ(product.value?.quote.final_unit_price_q) },
     { property: 'product:price:currency', content: 'BRL' }
   ],
   script: () => product.value
@@ -304,9 +305,9 @@ useHead({
 
           <div class="min-w-0 p-4 sm:p-6">
 
-            <div v-if="(badge && product.availability !== 'unavailable') || product.promotion_label" class="mb-2 flex flex-wrap gap-2">
+            <div v-if="(badge && product.availability !== 'unavailable') || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2">
               <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal">{{ badge.label }}</UiBadge>
-              <UiBadge v-if="product.promotion_label" variant="default" class="font-normal">{{ product.promotion_label }}</UiBadge>
+              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="font-normal">{{ adjustmentLabel(adjustment) }}</UiBadge>
             </div>
 
             <div class="flex items-start justify-between gap-3">
@@ -332,11 +333,11 @@ useHead({
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <!-- O risco mudo não dizia que o desconto já está no valor grande. -->
-                <p v-if="product.original_price_display" class="shop-meta">
-                  antes <span class="line-through">{{ product.original_price_display }}</span>
+                <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta">
+                  antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
                 </p>
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <p class="shop-price-strong">{{ product.price_display }}</p>
+                  <p class="shop-price-strong">{{ quotePriceDisplay(product.quote) }}</p>
                   <p v-if="product.unit_weight_label" class="shop-meta">
                     {{ product.unit_weight_label }}
                   </p>
@@ -439,7 +440,7 @@ useHead({
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
               <p class="truncate shop-body">{{ product.name }}</p>
-              <p class="shop-price-strong text-ink-foreground">{{ product.price_display }}</p>
+              <p class="shop-price-strong text-ink-foreground">{{ quotePriceDisplay(product.quote) }}</p>
               <p v-if="product.unit_weight_label" class="text-xs text-ink-foreground/70">
                 {{ compactUnitWeightLabel(product.unit_weight_label) }}
               </p>

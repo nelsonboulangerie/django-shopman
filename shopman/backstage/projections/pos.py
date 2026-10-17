@@ -1212,15 +1212,15 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
 
     try:
         from shopman.offerman.models import ListingItem
+        from shopman.offerman.service import CatalogService
 
-        items = (
+        items = list(
             ListingItem.objects.filter(
                 listing__ref=POS_CHANNEL_REF,
-                listing__is_active=True,
                 is_published=True,
                 is_sellable=True,
             )
-            .select_related("product")
+            .select_related("listing", "product")
             .prefetch_related(
                 Prefetch(
                     "product__collection_items",
@@ -1230,26 +1230,22 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
             )
             .order_by("product__name")
         )
-        for li in items:
-            p = li.product
-            price_q = li.price_q if li.price_q else p.base_price_q
-            entries.append((p, price_q))
+        if items and not items[0].listing.is_valid():
+            return []
+        products_by_sku = {item.product.sku: item.product for item in items}
+
+        products = sorted(products_by_sku.values(), key=lambda product: product.name)
+        prices = CatalogService.unit_prices(
+            [(product.sku, Decimal("1")) for product in products],
+            listings=(POS_CHANNEL_REF,),
+            published_only=True,
+        )
+        entries.extend(
+            (product, price_q) for product, price_q in zip(products, prices, strict=True) if price_q is not None
+        )
     except Exception:
         logger.exception("pos_load_products_listing_failed")
-
-    if not entries:
-        entries = [
-            (p, p.base_price_q)
-            for p in Product.objects.filter(is_published=True, is_sellable=True)
-            .prefetch_related(
-                Prefetch(
-                    "collection_items",
-                    queryset=primary_items,
-                    to_attr="primary_collection_items",
-                )
-            )
-            .order_by("name")
-        ]
+        return []
 
     skus = [p.sku for p, _ in entries]
     sold_out = _sold_out_skus(skus)

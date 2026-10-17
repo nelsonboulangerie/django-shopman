@@ -16,7 +16,8 @@ LISTING / CHANNEL (per-channel availability):
     CatalogService.get_sellable_products(listing_ref) - Products strategically sellable in listing
 """
 
-from decimal import ROUND_HALF_UP, Decimal
+from collections.abc import Sequence
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -28,6 +29,7 @@ from shopman.offerman.conf import (
 )
 from shopman.offerman.exceptions import CatalogError
 from shopman.offerman.protocols import ContextualPrice, ProjectedItem, ProjectionResult
+from shopman.utils.monetary import monetary_mult
 
 if TYPE_CHECKING:
     from shopman.offerman.models import Product
@@ -94,20 +96,105 @@ class CatalogService:
         Uses min_qty cascading: finds the ListingItem with the highest
         min_qty that is <= qty. Falls back to base_price_q.
         """
-        if qty <= 0:
-            raise CatalogError("INVALID_QUANTITY", sku=sku, qty=str(qty))
-
-        product = cls.get(sku)
-        if not product:
+        listing_ref = listing or channel
+        prices = cls.unit_prices(
+            [(sku, qty)],
+            listings=(listing_ref,) if listing_ref else (),
+        )
+        if not prices or prices[0] is None:
             raise CatalogError("SKU_NOT_FOUND", sku=sku)
+        return prices[0]
 
-        effective_listing = listing or channel
-        if effective_listing:
-            tier_price = cls._get_price_from_listing(product, effective_listing, qty)
-            if tier_price is not None:
-                return tier_price
+    @classmethod
+    def unit_prices(
+        cls,
+        lines: Sequence[tuple[str, Decimal]],
+        *,
+        listings: Sequence[str] = (),
+        sellable_only: bool = True,
+        published_only: bool = False,
+        require_listing_match: bool = False,
+    ) -> list[int | None]:
+        """Resolve list/tier unit prices in bulk, preserving input order.
 
-        return product.base_price_q
+        ``listings`` is an ordered precedence supplied by the orchestrator
+        (for example customer listing, then channel listing). Offerman alone
+        selects the eligible tier inside each listing. Unknown SKUs return
+        ``None`` so batch callers can preserve their partial-result contract.
+
+        By default, a known product that has no eligible item in ``listings``
+        falls back to its base price. With ``require_listing_match=True``, that
+        product returns ``None`` instead. A product that is listed but whose
+        first tier is above the requested quantity still falls back to base.
+        This preserves the distinction between "not in this catalog" and
+        "listed, with no applicable tier" without moving tier selection to a
+        consumer.
+        """
+        if not lines:
+            return []
+        normalized: list[tuple[str, Decimal]] = []
+        for sku, raw_qty in lines:
+            try:
+                qty = Decimal(str(raw_qty))
+            except (InvalidOperation, TypeError, ValueError):
+                raise CatalogError("INVALID_QUANTITY", sku=sku, qty=str(raw_qty)) from None
+            if not qty.is_finite() or qty <= 0:
+                raise CatalogError("INVALID_QUANTITY", sku=sku, qty=str(raw_qty))
+            normalized.append((sku, qty))
+
+        from shopman.offerman.models import ListingItem, Product
+
+        skus = list(dict.fromkeys(sku for sku, _qty in normalized))
+        products = {
+            product.sku: product for product in Product.objects.filter(sku__in=skus).only("sku", "base_price_q")
+        }
+        listing_refs = tuple(dict.fromkeys(ref for ref in listings if ref))
+        tiers: dict[tuple[str, str], list[tuple[Decimal, int]]] = {}
+        listed_skus: set[str] = set()
+        if listing_refs:
+            items = ListingItem.objects.filter(
+                listing__ref__in=listing_refs,
+                listing__is_active=True,
+                product__sku__in=skus,
+            ).filter(cls._listing_validity_q(prefix="listing__"))
+            if sellable_only:
+                items = items.filter(is_sellable=True)
+            if published_only:
+                items = items.filter(is_published=True)
+            for listing_ref, sku, min_qty, price_q in items.order_by("-min_qty").values_list(
+                "listing__ref", "product__sku", "min_qty", "price_q"
+            ):
+                listed_skus.add(sku)
+                tiers.setdefault((listing_ref, sku), []).append((min_qty, price_q))
+
+        result: list[int | None] = []
+        for sku, qty in normalized:
+            product = products.get(sku)
+            if product is None:
+                result.append(None)
+                continue
+            if require_listing_match and sku not in listed_skus:
+                result.append(None)
+                continue
+            # A listing precifica a unidade comercial (por exemplo, o quilo),
+            # enquanto a quantidade da linha pode ser uma fração dessa unidade.
+            # Toda quantidade positiva abaixo de 1 usa portanto o primeiro tier;
+            # thresholds acima de 1 continuam comparando contra a quantidade real.
+            effective_tier_qty = max(qty, Decimal("1"))
+            price_q = None
+            for listing_ref in listing_refs:
+                price_q = next(
+                    (
+                        tier_price_q
+                        for min_qty, tier_price_q in tiers.get((listing_ref, sku), ())
+                        if min_qty <= effective_tier_qty
+                    ),
+                    None,
+                )
+                if price_q is not None:
+                    break
+            result.append(price_q if price_q is not None else product.base_price_q)
+        return result
 
     @classmethod
     def price(
@@ -118,7 +205,7 @@ class CatalogService:
         listing: str | None = None,
     ) -> int:
         up = cls.unit_price(sku, qty=qty, channel=channel, listing=listing)
-        return int(Decimal(str(up * qty)).to_integral_value(rounding=ROUND_HALF_UP))
+        return monetary_mult(qty, up)
 
     @classmethod
     def get_price(
@@ -141,9 +228,7 @@ class CatalogService:
         effective_listing = listing or channel
         if list_unit_price_q is None:
             list_unit_price_q = cls.unit_price(sku, qty=qty, channel=channel, listing=listing)
-        list_total_price_q = int(
-            Decimal(str(list_unit_price_q * qty)).to_integral_value(rounding=ROUND_HALF_UP)
-        )
+        list_line_total_q = monetary_mult(qty, list_unit_price_q)
 
         pricing_backend = get_pricing_backend()
         if pricing_backend is None:
@@ -152,9 +237,9 @@ class CatalogService:
                 qty=qty,
                 listing=effective_listing,
                 list_unit_price_q=list_unit_price_q,
-                list_total_price_q=list_total_price_q,
+                list_line_total_q=list_line_total_q,
                 final_unit_price_q=list_unit_price_q,
-                final_total_price_q=list_total_price_q,
+                final_line_total_q=list_line_total_q,
                 adjustments=[],
                 metadata={"source": "list_price", "context": context or {}},
             )
@@ -164,7 +249,7 @@ class CatalogService:
             qty=qty,
             listing=effective_listing,
             list_unit_price_q=list_unit_price_q,
-            list_total_price_q=list_total_price_q,
+            list_line_total_q=list_line_total_q,
             context=context,
         )
         if price is None:
@@ -173,43 +258,13 @@ class CatalogService:
                 qty=qty,
                 listing=effective_listing,
                 list_unit_price_q=list_unit_price_q,
-                list_total_price_q=list_total_price_q,
+                list_line_total_q=list_line_total_q,
                 final_unit_price_q=list_unit_price_q,
-                final_total_price_q=list_total_price_q,
+                final_line_total_q=list_line_total_q,
                 adjustments=[],
                 metadata={"source": "list_price", "context": context or {}},
             )
         return price
-
-    @classmethod
-    def _get_price_from_listing(
-        cls,
-        product: "Product",
-        listing_ref: str,
-        qty: Decimal,
-    ) -> int | None:
-        try:
-            from shopman.offerman.models import Listing, ListingItem
-
-            listing = Listing.objects.filter(ref=listing_ref).first()
-            if not listing or not listing.is_valid():
-                return None
-
-            item = (
-                ListingItem.objects.filter(
-                    listing=listing,
-                    product=product,
-                    min_qty__lte=qty,
-                    is_sellable=True,
-                )
-                .order_by("-min_qty")
-                .first()
-            )
-
-            return item.price_q if item else None
-
-        except (ImportError, LookupError, ValueError):
-            return None
 
     @classmethod
     def expand(cls, sku: str, qty: Decimal = Decimal("1")) -> list[dict]:

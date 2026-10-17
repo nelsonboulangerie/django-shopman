@@ -14,6 +14,7 @@ from shopman.offerman.exceptions import CatalogError
 from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 from shopman.offerman.protocols import ContextualPrice, PriceAdjustment, ProjectionResult
 from shopman.offerman.service import CatalogService
+from shopman.utils.monetary import monetary_mult
 
 pytestmark = pytest.mark.django_db
 
@@ -40,23 +41,24 @@ class FakePricingBackend:
         qty,
         listing: str | None,
         list_unit_price_q: int,
-        list_total_price_q: int,
+        list_line_total_q: int,
         context: dict | None = None,
     ) -> ContextualPrice:
         discount_q = 100
+        total_discount_q = monetary_mult(qty, discount_q)
         return ContextualPrice(
             sku=sku,
             qty=qty,
             listing=listing,
             list_unit_price_q=list_unit_price_q,
-            list_total_price_q=list_total_price_q,
+            list_line_total_q=list_line_total_q,
             final_unit_price_q=max(list_unit_price_q - discount_q, 0),
-            final_total_price_q=max(list_total_price_q - int(discount_q * qty), 0),
+            final_line_total_q=max(list_line_total_q - total_discount_q, 0),
             adjustments=[
                 PriceAdjustment(
                     code="vip_discount",
                     label="VIP",
-                    amount_q=int(discount_q * qty),
+                    amount_q=total_discount_q,
                     metadata={"context": context or {}},
                 )
             ],
@@ -148,9 +150,9 @@ class TestCatalogPrice:
         price = CatalogService.get_price("BAGUETE", qty=Decimal("2"))
 
         assert price.list_unit_price_q == 500
-        assert price.list_total_price_q == 1000
+        assert price.list_line_total_q == 1000
         assert price.final_unit_price_q == 500
-        assert price.final_total_price_q == 1000
+        assert price.final_line_total_q == 1000
         assert "source" in price.metadata
 
     @override_settings(
@@ -167,9 +169,9 @@ class TestCatalogPrice:
             context={"customer_segment": "vip"},
         )
 
-        assert price.list_total_price_q == 1000
+        assert price.list_line_total_q == 1000
         assert price.final_unit_price_q == 400
-        assert price.final_total_price_q == 800
+        assert price.final_line_total_q == 800
         assert price.adjustments[0].code == "vip_discount"
         assert price.metadata["source"] == "contextual_pricing"
 
@@ -741,6 +743,150 @@ class TestCatalogUnitPriceCascade:
         """Without channel, unit_price always returns base_price_q regardless of qty."""
         Product.objects.create(sku="UP-7", name="Product", base_price_q=500)
         assert CatalogService.unit_price("UP-7", qty=Decimal("100")) == 500
+
+    def test_unit_prices_matches_single_resolution_and_preserves_order(self, db):
+        first = Product.objects.create(sku="UP-B1", name="First", base_price_q=600)
+        Product.objects.create(sku="UP-B2", name="Second", base_price_q=700)
+        customer = Listing.objects.create(ref="customer", name="Customer")
+        channel = Listing.objects.create(ref="web", name="Web")
+        ListingItem.objects.create(listing=customer, product=first, price_q=420, min_qty=Decimal("3"))
+        ListingItem.objects.create(listing=channel, product=first, price_q=500, min_qty=Decimal("1"))
+
+        lines = [("UP-B2", Decimal("1")), ("UP-B1", Decimal("2")), ("UP-B1", Decimal("3")), ("MISSING", Decimal("1"))]
+        prices = CatalogService.unit_prices(lines, listings=("customer", "web"))
+
+        assert prices == [700, 500, 420, None]
+        assert prices[:3] == [
+            CatalogService.unit_price(sku, qty=qty, listing="customer")
+            if sku == "UP-B2" or qty >= 3
+            else CatalogService.unit_price(sku, qty=qty, listing="web")
+            for sku, qty in lines[:3]
+        ]
+
+    def test_unit_prices_preserves_zero_fractional_and_sellability(self, db):
+        zero = Product.objects.create(sku="UP-ZERO", name="Zero", base_price_q=900)
+        weighted = Product.objects.create(sku="UP-WEIGHT", name="Weight", base_price_q=1200)
+        listing = Listing.objects.create(ref="matrix", name="Matrix")
+        ListingItem.objects.create(listing=listing, product=zero, price_q=0, min_qty=Decimal("1"))
+        ListingItem.objects.create(
+            listing=listing,
+            product=weighted,
+            price_q=800,
+            min_qty=Decimal("0.250"),
+            is_sellable=False,
+        )
+
+        assert CatalogService.unit_prices(
+            [("UP-ZERO", Decimal("1")), ("UP-WEIGHT", Decimal("0.312"))],
+            listings=("matrix",),
+        ) == [0, 1200]
+        assert CatalogService.unit_prices(
+            [("UP-WEIGHT", Decimal("0.312"))],
+            listings=("matrix",),
+            sellable_only=False,
+        ) == [800]
+
+        ListingItem.objects.create(
+            listing=listing,
+            product=zero,
+            price_q=100,
+            min_qty=Decimal("2"),
+            is_published=False,
+        )
+        assert CatalogService.unit_prices(
+            [("UP-ZERO", Decimal("2"))],
+            listings=("matrix",),
+            published_only=True,
+        ) == [0]
+
+    def test_fractional_quantity_uses_first_tier_without_crossing_higher_thresholds(self, db):
+        weighted = Product.objects.create(sku="UP-KG", name="By weight", base_price_q=1200)
+        listing = Listing.objects.create(ref="weighted", name="Weighted")
+        ListingItem.objects.create(
+            listing=listing,
+            product=weighted,
+            price_q=800,
+            min_qty=Decimal("1"),
+        )
+        ListingItem.objects.create(
+            listing=listing,
+            product=weighted,
+            price_q=700,
+            min_qty=Decimal("2"),
+        )
+
+        assert CatalogService.unit_prices(
+            [(weighted.sku, Decimal("0.312")), (weighted.sku, Decimal("1.5")), (weighted.sku, Decimal("2"))],
+            listings=(listing.ref,),
+        ) == [800, 800, 700]
+
+    @pytest.mark.parametrize(
+        "qty",
+        (
+            Decimal("-0.1"),
+            Decimal("0"),
+            Decimal("NaN"),
+            Decimal("Infinity"),
+            Decimal("-Infinity"),
+            "not-a-number",
+            None,
+        ),
+    )
+    def test_unit_prices_rejects_invalid_quantity(self, db, qty):
+        Product.objects.create(sku="UP-INVALID", name="Invalid", base_price_q=500)
+        with pytest.raises(CatalogError) as exc:
+            CatalogService.unit_prices([("UP-INVALID", qty)])
+        assert exc.value.code == "INVALID_QUANTITY"
+
+    def test_unit_prices_ignores_expired_listing(self, db):
+        from datetime import date, timedelta
+
+        product = Product.objects.create(sku="UP-OLD", name="Old", base_price_q=500)
+        listing = Listing.objects.create(ref="expired", name="Expired", valid_until=date.today() - timedelta(days=1))
+        ListingItem.objects.create(listing=listing, product=product, price_q=100)
+
+        assert CatalogService.unit_prices([(product.sku, Decimal("1"))], listings=(listing.ref,)) == [500]
+        assert CatalogService.unit_prices(
+            [(product.sku, Decimal("1"))],
+            listings=(listing.ref,),
+            require_listing_match=True,
+        ) == [None]
+
+    def test_unit_prices_can_require_listing_match_without_losing_listed_base_fallback(self, db):
+        listed = Product.objects.create(sku="UP-LISTED", name="Listed", base_price_q=600)
+        Product.objects.create(sku="UP-UNLISTED", name="Unlisted", base_price_q=700)
+        listing = Listing.objects.create(ref="membership", name="Membership")
+        ListingItem.objects.create(
+            listing=listing,
+            product=listed,
+            price_q=400,
+            min_qty=Decimal("5"),
+        )
+        lines = [("UP-LISTED", Decimal("1")), ("UP-UNLISTED", Decimal("1"))]
+
+        assert CatalogService.unit_prices(lines, listings=(listing.ref,)) == [600, 700]
+        assert CatalogService.unit_prices(
+            lines,
+            listings=(listing.ref,),
+            require_listing_match=True,
+        ) == [600, None]
+
+    def test_unit_prices_query_count_is_constant(self, db, django_assert_num_queries):
+        listing = Listing.objects.create(ref="constant", name="Constant")
+        lines = []
+        for index in range(12):
+            product = Product.objects.create(sku=f"UP-Q{index}", name=f"Query {index}", base_price_q=500)
+            ListingItem.objects.create(listing=listing, product=product, price_q=400)
+            lines.append((product.sku, Decimal("1")))
+
+        with django_assert_num_queries(2):
+            assert CatalogService.unit_prices(lines, listings=("constant",)) == [400] * 12
+        with django_assert_num_queries(2):
+            assert CatalogService.unit_prices(
+                lines,
+                listings=("constant",),
+                require_listing_match=True,
+            ) == [400] * 12
 
 
 # ═══════════════════════════════════════════════════════════════════

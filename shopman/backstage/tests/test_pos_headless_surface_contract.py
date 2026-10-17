@@ -173,6 +173,54 @@ class POSHeadlessSurfaceContractTests(TestCase):
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertTrue(payload["pos"]["products"][0]["sold_out"])
 
+    def test_products_exclude_a_listing_outside_its_canonical_validity(self) -> None:
+        """Listing desligado, futuro ou expirado não chega à decisão de preço."""
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        from django.utils import timezone
+
+        listing = Listing.objects.get(ref="pdv")
+        today = timezone.localdate()
+        invalid_states = (
+            {"is_active": False, "valid_from": None, "valid_until": None},
+            {"is_active": True, "valid_from": today + timedelta(days=1), "valid_until": None},
+            {"is_active": True, "valid_from": None, "valid_until": today - timedelta(days=1)},
+        )
+
+        for state in invalid_states:
+            with self.subTest(state=state):
+                for field, value in state.items():
+                    setattr(listing, field, value)
+                listing.save(update_fields=[*state])
+
+                with patch("shopman.offerman.service.CatalogService.unit_prices") as unit_prices:
+                    payload = self.client.get("/api/v1/backstage/pos/").json()
+
+                unit_prices.assert_not_called()
+                self.assertEqual(payload["pos"]["products"], [])
+
+    def test_products_do_not_use_an_unpublished_price_tier(self) -> None:
+        from decimal import Decimal
+
+        listing = Listing.objects.get(ref="pdv")
+        product = Product.objects.get(sku="POS-HEADLESS-ITEM")
+        visible = ListingItem.objects.get(listing=listing, product=product)
+        visible.min_qty = Decimal("0")
+        visible.save(update_fields=["min_qty"])
+        ListingItem.objects.create(
+            listing=listing,
+            product=product,
+            price_q=1,
+            min_qty=Decimal("1"),
+            is_published=False,
+            is_sellable=True,
+        )
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+
+        self.assertEqual(payload["pos"]["products"][0]["price_q"], 1300)
+
     def test_kit_without_its_box_is_inert_with_the_reason(self) -> None:
         """Caixa presente sem a caixa física em estoque: tile inerte, "Sem caixa".
 

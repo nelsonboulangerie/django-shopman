@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from django.http import Http404
+from shopman.utils.monetary import format_money
 
 from shopman.shop.projections import catalog_context
 
@@ -67,14 +68,16 @@ def search_index(catalog) -> list[dict]:
             if item is None or sku in seen:
                 continue
             seen.add(item.sku)
-            records.append({
-                "sku": item.sku,
-                "name": item.name,
-                "price": item.price_display,
-                "image": item.image_url or "",
-                "section": section.label,
-                "keywords": keywords_by_sku.get(item.sku, []),
-                "terms": item.search_terms,
-            })
+            records.append(
+                {
+                    "sku": item.sku,
+                    "name": item.name,
+                    "price": f"R$ {format_money(item.quote.final_unit_price_q)}",
+                    "image": item.image_url or "",
+                    "section": section.label,
+                    "keywords": keywords_by_sku.get(item.sku, []),
+                    "terms": item.search_terms,
+                }
+            )
     return records
 

@@ -92,6 +92,22 @@ def test_absence_of_data_is_not_divergence(loja):
     assert "SEM" in _find("MAD")
 
 
+def test_a_pricing_failure_does_not_leak_the_product_base_price(loja, monkeypatch):
+    """Falha técnica de preço fecha a oferta em vez de inventar preço-base."""
+    from shopman.offerman.service import CatalogService
+
+    reference = _product("MAD", "Madeleine", listing=loja)
+    substitute = _product("FIN", "Financier", listing=loja)
+    _in("doces", reference, substitute)
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("offerman indisponível")
+
+    monkeypatch.setattr(CatalogService, "unit_prices", fail)
+
+    assert substitutes.find("MAD", qty=Decimal("1"), channel=CHANNEL) == []
+
+
 def test_a_reference_without_the_attribute_filters_nothing(loja):
     sem_sabor = _product("REF", "Referencia sem sabor", listing=loja)
     salgado = _product("QQ", "Queijo quente", listing=loja, sabor="salgado")

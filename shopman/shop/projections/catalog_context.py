@@ -435,26 +435,24 @@ def listing_price_map(
     only_published: bool = True,
     only_sellable: bool = True,
 ) -> dict[str, int]:
-    from shopman.offerman.models import ListingItem
+    from shopman.offerman.service import CatalogService
 
-    filters: dict[str, Any] = {
-        "listing__ref": listing_ref,
-        "listing__is_active": True,
-        "product__sku__in": skus,
-    }
-    if only_published:
-        filters["is_published"] = True
-    if only_sellable:
-        filters["is_sellable"] = True
+    if not skus or not listing_ref:
+        return {}
 
-    price_map: dict[str, int] = {}
-    for sku, price_q in (
-        ListingItem.objects.filter(**filters)
-        .order_by("-min_qty")
-        .values_list("product__sku", "price_q")
-    ):
-        price_map.setdefault(sku, price_q)
-    return price_map
+    # Offerman resolves membership, temporal validity, item eligibility and the
+    # qualifying tier in the same canonical batch. ``None`` means the SKU does
+    # not belong to this listing under the requested publication/sellability
+    # filters; a listed SKU with no applicable tier keeps its base fallback.
+    lines = [(sku, Decimal("1")) for sku in skus]
+    prices = CatalogService.unit_prices(
+        lines,
+        listings=(listing_ref,),
+        sellable_only=only_sellable,
+        published_only=only_published,
+        require_listing_match=True,
+    )
+    return {sku: price_q for (sku, _qty), price_q in zip(lines, prices, strict=True) if price_q is not None}
 
 
 def listing_price_for_product(product, listing_ref: str) -> int | None:
@@ -588,12 +586,16 @@ def contextual_price(
 ):
     from shopman.offerman.service import CatalogService
 
-    return CatalogService.get_price(
-        sku,
-        qty=Decimal(str(qty)),
-        listing=listing_ref,
-        context=context,
-        list_unit_price_q=list_unit_price_q,
+    from shopman.shop.projections.pricing_quote import project_price_quote
+
+    return project_price_quote(
+        CatalogService.get_price(
+            sku,
+            qty=Decimal(str(qty)),
+            listing=listing_ref,
+            context=context,
+            list_unit_price_q=list_unit_price_q,
+        )
     )
 
 

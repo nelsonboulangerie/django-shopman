@@ -246,10 +246,12 @@ no próprio parecer.
   `adjustments`.
 - `offerman` permanece dono de lista e faixas por vitrine; política entra pelo porto `OFFERMAN["PRICING_BACKEND"]`.
 - Caracterizar callers e comparar o wrapper antigo com
-  `CatalogService.get_price(...).final_total_price_q` antes do corte.
+  `CatalogService.get_price(...).final_line_total_q` antes do corte.
 - **Aceite:** não existe segunda implementação da mesma decisão; toda cotação contextual
   preserva ajustes e explica o total.
 - **Apêndice A** descreve o motor genérico de condições e o critério para virar pacote.
+- **Estado:** implementado no PR #1851; a correção separada de repricing permanece
+  bloqueante antes do WP-4.
 
 ### WP-4 — Doorman: porto de identidade (CIAM)
 - Alargar o porto: `IdentityView` com `handles: [{kind, value, verified, primary}]` + `resolve(kind, value)`.

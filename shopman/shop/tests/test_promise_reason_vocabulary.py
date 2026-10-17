@@ -37,8 +37,13 @@ def test_retired_spelling_does_not_survive_in_active_ui_or_reference_docs():
     offenders: list[str] = []
 
     for path in (repository / "surfaces").rglob("*"):
-        if path.suffix in {".js", ".mjs", ".ts", ".vue"} and forbidden in path.read_text(
-            encoding="utf-8"
+        if (
+            path.is_file()
+            and "node_modules" not in path.parts
+            and path.suffix in {".js", ".mjs", ".ts", ".vue"}
+            and forbidden in path.read_text(
+                encoding="utf-8"
+            )
         ):
             offenders.append(str(path.relative_to(repository)))
     for path in (repository / "docs/reference").rglob("*.md"):

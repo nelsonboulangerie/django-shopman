@@ -83,9 +83,16 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         listing_ref = channel_obj.ref if channel_obj else None
         if listing_ref:
             skus = [p.sku for p in candidates]
-            price_map = catalog.bulk_listing_price_map(skus, listing_ref)
+            from shopman.offerman.service import CatalogService
+
+            resolved = CatalogService.unit_prices(
+                [(sku, Decimal(str(qty or 1))) for sku in skus],
+                listings=(listing_ref,),
+            )
+            price_map = {sku: price_q for sku, price_q in zip(skus, resolved, strict=True) if price_q is not None}
     except Exception as e:
         logger.warning("substitutes_price_map_failed: %s", e, exc_info=True)
+        return []
 
     result = []
     for product in candidates:
@@ -99,7 +106,7 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         if HAS_STOCKMAN and raw_avail is not None and not can_order:
             continue
 
-        price_q = price_map.get(product.sku) or product.base_price_q
+        price_q = price_map[product.sku] if product.sku in price_map else product.base_price_q
         price_display = f"R$ {format_money(price_q)}" if price_q else None
 
         target_qty = _target_qty(qty, available_qty)

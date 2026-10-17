@@ -262,7 +262,7 @@ def test_menu_shows_group_promo_price_for_member(segmented_auto_promo):
         [SKU], channel_ref=STOREFRONT_CHANNEL_REF, request=_FakeRequest()
     )
 
-    assert member_items[0].base_price_q == 675  # desconto do grupo aplicado
-    assert member_items[0].has_promotion is True
-    assert anon_items[0].base_price_q == 750     # preço cheio
-    assert anon_items[0].has_promotion is False
+    assert member_items[0].quote.final_unit_price_q == 675  # desconto do grupo aplicado
+    assert member_items[0].quote.adjustments
+    assert anon_items[0].quote.final_unit_price_q == 750     # preço cheio
+    assert not anon_items[0].quote.adjustments

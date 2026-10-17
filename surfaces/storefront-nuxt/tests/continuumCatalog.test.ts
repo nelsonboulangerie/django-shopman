@@ -87,13 +87,13 @@ describe('Continuum estrutural do cardápio', () => {
     expect(sections[0]?.items[0]).toMatchObject({
       sku: 'PAO',
       name: 'Pão',
-      price_display: '',
+      quote: { final_unit_price_q: 0 },
       can_add_to_cart: false,
       is_favorite: false,
       dietary_warnings: []
     })
     expect(catalog.items[0]).not.toHaveProperty('session')
-    expect(sections[0]?.items[0]?.base_price_q).toBe(0)
+    expect(sections[0]?.items[0]?.quote.final_unit_price_q).toBe(0)
   })
 
   it('rejeita equivocation e não deixa uma sequência antiga regredir a tela', () => {

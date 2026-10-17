@@ -98,7 +98,7 @@ export function productJsonLd (params: {
   )]
   const offer: Record<string, unknown> = {
     '@type': 'Offer',
-    price: priceFromQ(product.base_price_q),
+    price: priceFromQ(product.quote.final_unit_price_q),
     priceCurrency: CURRENCY,
     availability: availabilitySchemaUrl(product.availability),
     url

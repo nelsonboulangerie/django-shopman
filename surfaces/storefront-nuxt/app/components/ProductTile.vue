@@ -3,6 +3,7 @@ import { tileBadge } from '~/presentation/menu'
 import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { compactUnitWeightLabel, formatCount } from '~/utils/display'
+import { adjustmentLabel, quoteOriginalPriceDisplay, quotePriceDisplay } from '~/presentation/priceQuote'
 
 const props = defineProps<{
   item: CatalogItemProjection
@@ -15,8 +16,8 @@ const { qtyForSku } = useCartState()
 const meta = computed<ProductMutationMeta>(() => ({
   sku: props.item.sku,
   name: props.item.name,
-  price_q: props.item.base_price_q,
-  price_display: props.item.price_display,
+  price_q: props.item.quote.final_unit_price_q,
+  price_display: quotePriceDisplay(props.item.quote),
   image_url: props.item.image_url
 }))
 const currentQty = computed(() => qtyForSku(props.item.sku))
@@ -88,7 +89,7 @@ function productRoute (sku: string) {
         </div>
 
         <div class="hidden flex-wrap gap-1 sm:flex">
-          <UiBadge v-if="item.promotion_label" variant="default" class="font-normal">{{ item.promotion_label }}</UiBadge>
+          <UiBadge v-for="adjustment in item.quote.adjustments" :key="adjustment.code" variant="default" class="font-normal">{{ adjustmentLabel(adjustment) }}</UiBadge>
           <UiBadge v-if="item.is_new" variant="secondary" class="font-normal">Novo</UiBadge>
           <UiBadge v-if="item.is_featured" variant="secondary" class="font-normal">Destaque</UiBadge>
           <!-- tags secundárias (dieta): mesma cor/peso/tamanho da descrição -->
@@ -97,10 +98,10 @@ function productRoute (sku: string) {
 
         <div class="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
           <div class="min-w-0 flex-1">
-            <p v-if="item.original_price_display" class="shop-meta">
-              antes <span class="line-through">{{ item.original_price_display }}</span>
+            <p v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta">
+              antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span>
             </p>
-            <p class="shop-price">{{ item.price_display }}</p>
+            <p class="shop-price">{{ quotePriceDisplay(item.quote) }}</p>
             <p v-if="item.unit_weight_label" class="shop-meta">
               {{ compactUnitWeightLabel(item.unit_weight_label) }}
             </p>

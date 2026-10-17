@@ -78,6 +78,18 @@ def test_customer_order_history_uses_same_identity_contract_for_ref_and_phone(cu
 
 
 def test_reorder_service_uses_listing_price(order_items, listing_item):
+    from decimal import Decimal
+
+    from shopman.offerman.models import ListingItem
+
+    ListingItem.objects.create(
+        listing=listing_item.listing,
+        product=listing_item.product,
+        price_q=1,
+        min_qty=Decimal("10"),
+        is_published=False,
+        is_sellable=True,
+    )
     request = RequestFactory().post("/")
     StubCartService.calls = []
 

@@ -24,6 +24,7 @@ from shopman.shop.config import ChannelConfig
 from shopman.shop.observability import catalog_stage
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
+from shopman.shop.projections.pricing_quote import PriceQuoteProjection
 from shopman.shop.projections.storefront_context import (
     popular_skus,
     session_pricing_hints,
@@ -74,12 +75,7 @@ class CatalogItemProjection:
     tags: tuple[str, ...]
     search_terms: tuple[str, ...]
 
-    # Price (dual: raw + display)
-    base_price_q: int
-    price_display: str
-    has_promotion: bool
-    original_price_display: str | None
-    promotion_label: str | None
+    quote: PriceQuoteProjection
     unit_weight_label: str | None
 
     # Availability (canonical enum + pt-BR label)
@@ -528,7 +524,7 @@ def _build_items(
 
     result: list[CatalogItemProjection] = []
     for p in products:
-        base_q = price_map.get(p.sku) or p.base_price_q
+        base_q = price_map[p.sku] if p.sku in price_map else p.base_price_q
 
         cols = sku_collections.get(p.sku, [])
         price = catalog_context.contextual_price(
@@ -545,18 +541,6 @@ def _build_items(
             },
             list_unit_price_q=base_q,
         )
-
-        has_promo = bool(
-            price.adjustments and price.final_unit_price_q < price.list_unit_price_q,
-        )
-        promotion_label: str | None = None
-        original_price_display: str | None = None
-        if has_promo:
-            adj = price.adjustments[0]
-            promotion_label = adj.metadata.get("badge_label") or adj.label
-            original_price_display = _money(price.list_unit_price_q)
-
-        effective_q = price.final_unit_price_q
 
         state = states[p.sku]
         raw_avail = state.raw
@@ -595,11 +579,7 @@ def _build_items(
                     allergens=allergens,
                     dietary=tuple(str(d) for d in dietary),
                 ),
-                base_price_q=int(effective_q or 0),
-                price_display=_money(effective_q) if effective_q else "",
-                has_promotion=has_promo,
-                original_price_display=original_price_display,
-                promotion_label=promotion_label,
+                quote=price,
                 unit_weight_label=_unit_weight_label(p),
                 availability=availability,
                 availability_label=avail_label,

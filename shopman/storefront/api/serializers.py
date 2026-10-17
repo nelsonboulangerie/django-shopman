@@ -110,6 +110,23 @@ class DetailSerializer(serializers.Serializer):
 # ── Catalog ──────────────────────────────────────────────────────────
 
 
+class PriceAdjustmentSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    label = serializers.CharField()
+    amount_q = serializers.IntegerField()
+    badge_label = serializers.CharField(allow_null=True)
+
+
+class PriceQuoteSerializer(serializers.Serializer):
+    qty = serializers.DecimalField(max_digits=12, decimal_places=3, coerce_to_string=True)
+    listing_ref = serializers.CharField(allow_null=True)
+    list_unit_price_q = serializers.IntegerField()
+    list_line_total_q = serializers.IntegerField()
+    final_unit_price_q = serializers.IntegerField()
+    final_line_total_q = serializers.IntegerField()
+    adjustments = PriceAdjustmentSerializer(many=True)
+
+
 class ProductListItemSerializer(serializers.Serializer):
     """Public product card — serializes a ``CatalogItemProjection`` directly.
 
@@ -122,11 +139,7 @@ class ProductListItemSerializer(serializers.Serializer):
     name = serializers.CharField()
     short_description = serializers.CharField(allow_blank=True)
     image_url = serializers.CharField(allow_null=True, required=False)
-    price_q = serializers.IntegerField(source="base_price_q", allow_null=True)
-    price_display = serializers.CharField(allow_blank=True)
-    has_promotion = serializers.BooleanField()
-    original_price_display = serializers.CharField(allow_null=True, required=False)
-    promotion_label = serializers.CharField(allow_null=True, required=False)
+    quote = PriceQuoteSerializer()
     unit_weight_label = serializers.CharField(allow_null=True, required=False)
     availability = serializers.CharField(source="availability.value")
     availability_label = serializers.CharField()

@@ -32,8 +32,7 @@ function product (overrides: Partial<ProductDetailProjection> = {}): ProductDeta
     seo_description: 'Croissant artesanal francês, folhado em camadas, assado fresco todo dia.',
     seo_keywords: ['croissant', 'padaria francesa', 'café da manhã'],
     image_url: '/media/produtos/croissant.jpg',
-    base_price_q: 1290,
-    price_display: 'R$ 12,90',
+    quote: { qty: '1', listing_ref: 'web', list_unit_price_q: 1290, list_line_total_q: 1290, final_unit_price_q: 1290, final_line_total_q: 1290, adjustments: [] },
     availability: 'available',
     availability_label: 'Disponível',
     ...overrides
