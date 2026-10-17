@@ -35,6 +35,38 @@ estar estaticamente pulada na função, classe ou no módulo. A relação do tes
 import/binding qualificado e uso da unidade; coincidências lexicais como `send`,
 `connect` e `sync` não contam.
 
+`out_of_extraction` também não é uma dispensa discricionária. O gate exige que ele
+seja verdadeiro se, e somente se, a responsabilidade for exclusivamente `leitura`,
+tanto na fonte física quanto na unidade semântica. Unidades de decisão, composição,
+contrato, configuração ou infraestrutura não podem usar o campo para escapar do
+programa. Por isso, um teto percentual ou um prazo por WP mediria a quantidade de
+read models legítimos, não dívida: a proteção relevante é a equivalência semântica
+já executável, combinada com a proibição absoluta de lacunas de teste.
+
+## Snapshot auditável após o piloto de promoção
+
+O snapshot posterior ao piloto do WP-7, integrado pela PR #1860, contém:
+
+- 442 unidades semânticas; 14 com `out_of_extraction`, todas e somente de `leitura`;
+- zero `test_gap_reason` não nulo e 442 unidades com evidência direta em `tests`;
+- 487 fontes físicas; 32 com `out_of_extraction`, todas e somente de `leitura`.
+
+Em cada execução, o gate publica `unit_owner_prefixes`: a distribuição pelo primeiro
+segmento do capability owner (o trecho anterior ao primeiro ponto). Isso permite
+acompanhar a concentração do inventário sem transformar leitura legítima em dívida.
+Neste snapshot, a distribuição completa é:
+
+```text
+account=10, accounting=1, auth=2, availability=5, calendar=10, cart=6,
+catalog=28, channel=9, checkout=5, delivery=15, deployment=1, directive=3,
+external-egress=1, fiscal=27, fulfillment=12, identity=12, ifood=25,
+loyalty=7, marketing=53, menuboard=1, notification=14, offer=2,
+operations=7, operator-notification=1, operator-passkey=2, order=50,
+payment=26, pos=22, preorder=2, pricing=11, production=33, promotion=11,
+purchasing=4, receiving=1, remote-mutation=1, returns=2, runtime=1,
+shop=1, staging=2, stock=4, suggestion=2, surface=1, waitlist=9
+```
+
 Na recuração foi encontrada e removida uma violação de titularidade: Meta, Google e
 TikTok repetiam `_external_allowed`, enquanto a decisão canônica de segurança de
 egress é `shopman.shop.adapters._external:inert`. O PR #1857 eliminou as três cópias

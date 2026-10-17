@@ -42,6 +42,21 @@ def test_canonical_inventory_is_valid():
     assert counts["physical_responsibilities"] == expected_responsibilities
     assert counts["coverage"]["sources"] == len(inventory["sources"])
     assert counts["instance_debt"]["pending"] > 0
+    assert counts["owner_prefixes"] == Counter(
+        unit["owner"].partition(".")[0] for unit in manifests["units"]
+    )
+
+
+def test_canonical_gate_publishes_owner_prefix_distribution(capsys):
+    _inventory, manifests = _canonical()
+    expected = dict(
+        sorted(Counter(unit["owner"].partition(".")[0] for unit in manifests["units"]).items())
+    )
+
+    assert gate.main([]) == 0
+
+    output = capsys.readouterr().out
+    assert f"unit_owner_prefixes={expected}" in output
 
 
 def test_policy_namespace_rejects_a_non_policy_unit():

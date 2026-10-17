@@ -1453,6 +1453,7 @@ def validate(
                 support_references.add(f"{facts_by_path[item['path']].module}:{symbol}")
     responsibilities: Counter[str] = Counter()
     touchpoints: Counter[str] = Counter()
+    owner_prefixes: Counter[str] = Counter()
     test_gaps: Counter[str] = Counter()
 
     for unit in units:
@@ -1622,6 +1623,7 @@ def validate(
             entrypoints.append(public_entrypoint)
         responsibilities[unit["responsibility"]] += 1
         touchpoints.update(unit["touchpoints"])
+        owner_prefixes[unit["owner"].partition(".")[0]] += 1
 
     uncovered_symbols = sorted(
         (path, symbol)
@@ -1669,6 +1671,7 @@ def validate(
     return {
         "responsibilities": responsibilities,
         "touchpoints": touchpoints,
+        "owner_prefixes": owner_prefixes,
         "physical_responsibilities": physical_responsibilities,
         "physical_touchpoints": physical_touchpoints,
         "test_gaps": test_gaps,
@@ -1702,6 +1705,7 @@ def main(argv: list[str] | None = None) -> int:
         f"source_touchpoints={dict(sorted(counts['physical_touchpoints'].items()))} "
         f"unit_responsibilities={dict(sorted(counts['responsibilities'].items()))} "
         f"unit_touchpoints={dict(sorted(counts['touchpoints'].items()))} "
+        f"unit_owner_prefixes={dict(sorted(counts['owner_prefixes'].items()))} "
         f"test_gaps={dict(sorted(counts['test_gaps'].items()))} "
         f"instance_debt={counts['instance_debt']['pending']}"
     )
