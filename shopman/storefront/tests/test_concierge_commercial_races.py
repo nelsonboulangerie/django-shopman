@@ -181,7 +181,7 @@ def test_confirmation_waits_for_cart_edit_and_records_conflict_without_order(ctx
     assert session.state == "open" and Decimal(session.items[0]["qty"]) == Decimal(3)
     assert own_reserved(key) == total_reserved() == Decimal(3)
     receipt = IdempotencyKey.objects.get(scope__startswith="concierge.purchase:")
-    assert receipt.status == "done" and receipt.response_body["code"] == "revision_conflict"
+    assert receipt.status == "failed" and receipt.response_body["code"] == "revision_conflict"
     replay = tools.place_order(ctx, quote["quote_token"], "pix")
     assert replay["code"] == "revision_conflict" and not Order.objects.exists()
 
