@@ -332,7 +332,7 @@ dependência circular, se o teste isolado precisar de DB/Django, ou se o manifes
 conseguir descrever imports e entrypoint sem exceção ad hoc. Abortar o piloto aborta o WP;
 o inventário e a evidência permanecem, mas não legitimam uma reorganização cosmética.
 
-**Estado:** abortado em 2026-10-17. A baseline causal (`2, 2, 8, 5`; soma 17,
+**Estado:** abortado em 2026-10-17 no PR #1854. A baseline causal (`2, 2, 8, 5`; soma 17,
 mediana 3,5 e união 14) e o replay enumerado (`2, 2, 10, 5`; soma 19, mediana 3,5 e
 união 15) demonstraram que a extração prevista pioraria, em vez de reduzir materialmente,
 os arquivos a mudar. Nenhum código foi movido e nenhum artefato incompleto de governança

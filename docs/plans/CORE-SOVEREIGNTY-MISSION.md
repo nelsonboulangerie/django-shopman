@@ -84,7 +84,7 @@ ADR-037 e Constituição: PR #1843; governança/renumeração/índice/gate: PR #
 enforcement de command/query: PR #1845. O WP-2 base foi mergeado no PR #1846. Sua
 canonicalização de `reason_code` está no PR #1848 e ainda falta remover o dual-read/write
 de `Order.data.hold_ids` em correção própria; ambos foram fechados antes do WP-3. O WP-3
-está no PR #1851. O WP-4 foi mergeado no PR #1853. O WP-7 foi abortado pelo próprio
+está no PR #1851. O WP-4 foi mergeado no PR #1853. O WP-7 foi abortado no PR #1854 pelo próprio
 critério de ganho material, com inventário e evidência preservados em
 [`CORE-SOVEREIGNTY-WP7-EVIDENCE.md`](../reports/CORE-SOVEREIGNTY-WP7-EVIDENCE.md).
 WPs 11, 10, 6 e 12 permanecem futuros até seus próprios PRs e aceites.
