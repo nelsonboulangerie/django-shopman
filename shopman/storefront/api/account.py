@@ -47,7 +47,7 @@ from .actions import action_payload
 # reescrito. Ele falha fechado em três camadas (DEBUG, flag, segredo conferido
 # por `compare_digest`), e uma segunda cópia da regra é uma segunda chance de
 # alguma delas ficar para trás.
-from .auth import _debug_otp_response, _normalize_payload_phone
+from .auth import _normalize_payload_phone
 from .projections import projection_data
 from .serializers import (
     AddressSerializer,
@@ -1080,7 +1080,7 @@ class AccountDeviceListView(ServerTimingMixin, APIView):
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
         devices = device_service.list_devices(
-            customer_id=customer_info.uuid,
+            customer_id=customer_info.subject_id,
             raw_token=request.COOKIES.get(device_service.cookie_name()),
         )
         return Response({
@@ -1093,7 +1093,7 @@ class AccountDeviceListView(ServerTimingMixin, APIView):
         customer_info = getattr(request, "customer", None)
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
-        revoked = device_service.revoke_all(customer_id=customer_info.uuid)
+        revoked = device_service.revoke_all(customer_id=customer_info.subject_id)
         response = Response({"revoked": revoked})
         response.delete_cookie(device_service.cookie_name())
         return response
@@ -1110,11 +1110,11 @@ class AccountDeviceDetailView(APIView):
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
         devices = device_service.list_devices(
-            customer_id=customer_info.uuid,
+            customer_id=customer_info.subject_id,
             raw_token=request.COOKIES.get(device_service.cookie_name()),
         )
         current_ids = {str(device.get("id")) for device in devices if device.get("is_current")}
-        error = device_service.revoke_device(customer_id=customer_info.uuid, device_id=device_id)
+        error = device_service.revoke_device(customer_id=customer_info.subject_id, device_id=device_id)
         if error:
             return Response({"detail": error}, status=400)
         response = Response({"revoked": True, "id": str(device_id)})
@@ -1363,11 +1363,6 @@ class PhoneChangeRequestView(APIView):
                 "ok": True,
                 "phone": phone,
                 "code_expires_at": getattr(resultado, "expires_at", None) or "",
-                # O código só sai daqui pelo mesmo portão do login — que falha
-                # fechado fora de DEBUG e exige o segredo no cabeçalho. Repetir
-                # a regra à mão aqui seria abrir uma segunda porta para o mesmo
-                # cofre, e é assim que uma delas fica destrancada.
-                **_debug_otp_response(resultado, request),
             }
         )
 

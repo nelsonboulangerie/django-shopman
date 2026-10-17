@@ -4,8 +4,8 @@ DefaultAuthAdapter — single point of customization for auth behavior.
 Inspired by django-allauth's DefaultAccountAdapter. Provides hooks for
 customer resolution, code delivery, login events, and redirects.
 
-The default implementation delegates to the existing CustomerResolver
-and MessageSender protocols for backward compatibility.
+The default implementation delegates to the IdentityResolver and
+MessageSender ports.
 
 Usage::
 
@@ -19,7 +19,7 @@ Usage::
 
     class MyAuthAdapter(DefaultAuthAdapter):
         def on_customer_authenticated(self, request, customer, user, method):
-            analytics.track("login", customer_id=str(customer.uuid))
+            analytics.track("login", customer_id=str(customer.subject_id))
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from .conf import doorman_settings, get_customer_resolver
-from .protocols.customer import AuthCustomerInfo
+from .conf import doorman_settings, get_identity_resolver
+from .protocols.identity import IdentityHandle, IdentityView
 from .utils import normalize_phone
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ class DefaultAuthAdapter:
     """
     Default auth adapter.
 
-    Delegates to CustomerResolver and MessageSender from settings.
+    Delegates to IdentityResolver and MessageSender from settings.
     Override methods in a subclass for custom behavior.
     """
 
@@ -58,72 +58,60 @@ class DefaultAuthAdapter:
     @property
     def resolver(self):
         if self._resolver is None:
-            self._resolver = get_customer_resolver()
+            self._resolver = get_identity_resolver()
         return self._resolver
 
-    def resolve_customer_by_phone(self, phone: str) -> AuthCustomerInfo | None:
-        """Resolve customer by phone number."""
-        return self.resolver.get_by_phone(phone)
+    def resolve_identity(self, kind: str, value: str, *, purpose: str = "login") -> IdentityView | None:
+        return self.resolver.resolve(kind, value, purpose=purpose)
 
-    def resolve_customer_by_email(self, email: str) -> AuthCustomerInfo | None:
-        """Resolve customer by email address."""
-        return self.resolver.get_by_email(email)
+    def identity(self, subject_id, *, purpose: str = "session") -> IdentityView | None:
+        return self.resolver.get(subject_id, purpose=purpose)
 
-    def resolve_customer_by_uuid(self, uuid) -> AuthCustomerInfo | None:
-        """Resolve customer by UUID."""
-        return self.resolver.get_by_uuid(uuid)
-
-    def lock_active_customer_by_uuid(self, uuid) -> AuthCustomerInfo | None:
-        """Acquire the host's canonical customer lock before auth writes."""
-        return self.resolver.lock_active_by_uuid(uuid)
+    def lock_active_identity(self, subject_id, *, purpose: str = "login") -> IdentityView | None:
+        return self.resolver.lock_active(subject_id, purpose=purpose)
 
     def login_target_belongs_to_customer(
         self,
-        customer: AuthCustomerInfo,
-        target: str,
+        customer: IdentityView,
+        handle: IdentityHandle,
     ) -> bool:
         """Revalidate a login handle after acquiring the canonical customer lock.
 
-        ``resolve_customer`` is deliberately called again here.  Production
+        ``resolve_identity`` is deliberately called again here.  Production
         resolvers consult Guestman's current ContactPoint source of truth and
         its current Customer cache; comparing the UUID prevents a phone/email
         that moved or was removed while we waited for the row lock from being
         used to issue or accept an OTP for the stale owner.
         """
-        current_owner = self.resolve_customer(target)
+        current_owner = self.resolve_identity(handle.kind, handle.value, purpose="login")
         return bool(
             current_owner
             and current_owner.is_active
-            and str(current_owner.uuid) == str(customer.uuid)
+            and str(current_owner.subject_id) == str(customer.subject_id)
         )
 
-    def create_customer_for_phone(self, phone: str) -> AuthCustomerInfo:
-        """Create a new customer for the given phone number."""
-        return self.resolver.create_for_phone(phone)
+    def login_handle(self, raw: str) -> IdentityHandle:
+        """Parse and normalize the sole login handle supplied by the ingress."""
+        kind = "email" if "@" in (raw or "") else "phone"
+        value = str(raw or "").strip().lower() if kind == "email" else normalize_phone(raw)
+        return IdentityHandle(kind=kind, value=value, verified=False, primary=False)
 
-    def create_customer_for_email(self, email: str) -> AuthCustomerInfo:
-        """Create a new customer for the given email address."""
-        return self.resolver.create_for_email(email)
+    def create_identity(self, handle: IdentityHandle) -> IdentityView:
+        return self.resolver.create(handle.kind, handle.value)
 
-    def target_kind(self, target: str) -> str:
-        """Classify a normalized login target."""
-        return "email" if "@" in (target or "") else "phone"
-
-    def normalize_login_target(self, raw: str) -> str:
-        """Normalize a login target (phone or email)."""
-        return normalize_phone(raw)
-
-    def resolve_customer(self, target: str) -> AuthCustomerInfo | None:
-        """Resolve customer by normalized login target."""
-        if self.target_kind(target) == "email":
-            return self.resolve_customer_by_email(target)
-        return self.resolve_customer_by_phone(target)
-
-    def create_customer(self, target: str) -> AuthCustomerInfo:
-        """Create a customer from a normalized login target."""
-        if self.target_kind(target) == "email":
-            return self.create_customer_for_email(target)
-        return self.create_customer_for_phone(target)
+    def bind_verified_handle(
+        self,
+        identity: IdentityView,
+        handle: IdentityHandle,
+        *,
+        proof: str,
+    ) -> IdentityView:
+        return self.resolver.bind_verified_handle(
+            identity.subject_id,
+            handle.kind,
+            handle.value,
+            proof=proof,
+        )
 
     # ===========================================
     # Code delivery
@@ -189,24 +177,24 @@ class DefaultAuthAdapter:
                 if success:
                     logger.info(
                         "Code sent via %s", method,
-                        extra={"target": target, "method": method},
+                        extra={"handle_kind": self.login_handle(target).kind, "method": method},
                     )
                     return True, method
                 logger.warning(
                     "Sender %s returned False, trying next", method,
-                    extra={"target": target},
+                    extra={"handle_kind": self.login_handle(target).kind},
                 )
             except Exception:
-                logger.exception(
+                logger.warning(
                     "Sender %s failed with exception, trying next", method,
-                    extra={"target": target},
+                    extra={"handle_kind": self.login_handle(target).kind},
                 )
 
         # Chain exhausted
         last_method = chain[-1] if chain else "unknown"
         logger.error(
             "Delivery chain exhausted, all senders failed",
-            extra={"target": target, "chain": chain},
+            extra={"handle_kind": self.login_handle(target).kind, "chain": chain},
         )
         return False, last_method
 
@@ -225,7 +213,7 @@ class DefaultAuthAdapter:
             setattr(self, cache_attr, cls())
         return getattr(self, cache_attr)
 
-    def send_access_link(self, channel: str, customer: AuthCustomerInfo, url: str) -> bool:
+    def send_access_link(self, channel: str, customer: IdentityView, url: str) -> bool:
         """
         Send an access link via the specified channel.
 
@@ -244,18 +232,20 @@ class DefaultAuthAdapter:
             return True
         else:
             # For whatsapp/sms: send the URL as a code/message
-            target = customer.phone or ""
+            handle = customer.handle("phone") or customer.handle("whatsapp")
+            target = handle.value if handle else ""
             return self.sender.send_code(target, url, channel)
 
-    def _send_access_link_email(self, customer: AuthCustomerInfo, url: str) -> bool:
+    def _send_access_link_email(self, customer: IdentityView, url: str) -> bool:
         """Send access link via email."""
         from django.core.mail import EmailMultiAlternatives
         from django.template.loader import render_to_string
         from django.utils.translation import gettext as _
 
-        email = customer.email
+        handle = customer.handle("email")
+        email = handle.value if handle else ""
         if not email:
-            logger.warning("No email for customer %s", customer.uuid)
+            logger.warning("No email for subject", extra={"subject_id": str(customer.subject_id)})
             return False
 
         ttl = doorman_settings.ACCESS_LINK_TTL_MINUTES
@@ -279,21 +269,24 @@ class DefaultAuthAdapter:
             msg.attach_alternative(html_body, "text/html")
             msg.send(fail_silently=False)
 
-            logger.info("Access link email sent", extra={"email": email})
+            logger.info("Access link email sent", extra={"subject_id": str(customer.subject_id)})
             return True
         except Exception:
-            logger.exception("Access link email send failed", extra={"email": email})
+            logger.error(
+                "Access link email send failed",
+                extra={"subject_id": str(customer.subject_id)},
+            )
             return False
 
     def get_delivery_chain(self, target: str) -> list[str]:
         """
         Get the delivery chain for a target.
 
-        Returns DELIVERY_CHAIN from settings, or empty list if not configured
-        (which triggers backward-compat single-sender mode).
+        Returns the canonical DELIVERY_CHAIN configured for the installation.
+        An empty chain delegates delivery to MESSAGE_SENDER_CLASS.
         """
         chain = list(doorman_settings.DELIVERY_CHAIN)
-        if self.target_kind(target) == "phone":
+        if self.login_handle(target).kind == "phone":
             return [method for method in chain if method != "email"]
         return [method for method in chain if method not in {"whatsapp", "sms"}]
 
@@ -304,7 +297,7 @@ class DefaultAuthAdapter:
     def on_customer_authenticated(
         self,
         request: HttpRequest,
-        customer: AuthCustomerInfo,
+        customer: IdentityView,
         user,
         method: str,
     ) -> None:
@@ -325,7 +318,7 @@ class DefaultAuthAdapter:
     def on_device_trusted(
         self,
         request: HttpRequest,
-        customer: AuthCustomerInfo,
+        customer: IdentityView,
         device: TrustedDevice,
     ) -> None:
         """Called after a device is marked as trusted."""
@@ -348,10 +341,6 @@ class DefaultAuthAdapter:
         """Whether to auto-create customers on first login."""
         return doorman_settings.AUTO_CREATE_CUSTOMER
 
-    def normalize_phone(self, raw: str) -> str:
-        """Backward-compatible alias for target normalization."""
-        return self.normalize_login_target(raw)
-
     def is_login_allowed(self, target: str, method: str) -> bool:
         """
         Whether login is allowed for this target/method.
@@ -364,7 +353,7 @@ class DefaultAuthAdapter:
     # Redirects
     # ===========================================
 
-    def get_login_redirect_url(self, request: HttpRequest, customer: AuthCustomerInfo) -> str:
+    def get_login_redirect_url(self, request: HttpRequest, customer: IdentityView) -> str:
         """Get the URL to redirect to after login."""
         return doorman_settings.LOGIN_REDIRECT_URL
 

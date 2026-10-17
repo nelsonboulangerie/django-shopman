@@ -234,8 +234,8 @@ se autoconfirmar de graça. **Recomendação:** default `false` no template de p
 ## Áreas verificadas como SÓLIDAS (não assumidas — lidas e/ou testadas)
 
 - **Auth/OTP:** código HMAC-SHA256, `compare_digest`, cap 5/código, 5 códigos/15
-  min, cooldown 60s, cap por IP, invalida anteriores. `SHOPMAN_EXPOSE_DEBUG_OTP`
-  com tripla guarda (default off, exclui prod em runtime, `E010` no boot).
+  min, cooldown 60s, cap por IP, invalida anteriores. OTP nunca é devolvido por
+  HTTP nem escrito em log; desenvolvimento exige sender explícito.
 - **IDOR:** todo endpoint de pedido/conta passa por `get_accessible_order`/escopo
   por `customer.ref`, com 404 uniforme (sem oráculo de existência). Ref de pedido
   tem entropia baixa (~2.400/canal/dia) mas **não é o controle** — segredo do ref

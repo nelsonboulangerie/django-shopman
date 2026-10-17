@@ -336,7 +336,7 @@ plano anterior não conseguia dar.
 | Peça | Estado | Onde |
 |---|---|---|
 | WhatsApp via ManyChat: envio de texto, campos personalizados, `getInfo`, inerte em dev | no ar | `shopman/shop/adapters/notification_manychat.py`, [ADR-009](../decisions/adr-009-whatsapp-via-manychat.md) |
-| Identidade do assinante → `Customer` (telefone pelo `whatsapp_phone`) | no ar | `shopman.guestman.adapters.auth.CustomerResolver.upsert_manychat_subscriber` |
+| Identidade do assinante → contrato mínimo do Doorman | no ar | `shopman.guestman.adapters.auth.ManychatIdentityBridge.upsert_subscriber` via composição do host |
 | Sessão de pedido por canal, holds de estoque, quote, commit idempotente | no ar | Orderman + `shop.services.availability`, `shop.services.checkout.process` |
 | Pagamento: Pix copia-e-cola e URL de checkout do cartão | no ar | `shop.services.payment.initiate` |
 | Slots de retirada e regras de prazo | no ar | `shopman/storefront/services/pickup_slots.py`, `shop.services.fulfillment_window` |

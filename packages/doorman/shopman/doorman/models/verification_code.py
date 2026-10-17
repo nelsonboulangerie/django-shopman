@@ -174,7 +174,7 @@ class VerificationCode(models.Model):
         ]
 
     def __str__(self):
-        return f"Code {self.code_hash[:12]}… for {self.target_value} ({self.status})"
+        return f"VerificationCode {self.pk} ({self.status})"
 
     @property
     def is_expired(self) -> bool:

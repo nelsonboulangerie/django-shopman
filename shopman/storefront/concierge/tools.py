@@ -1563,12 +1563,11 @@ def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
 
 def last_order(ctx: ToolContext) -> dict:
     """O último pedido do cliente, para o "o de sempre"."""
-    from shopman.guestman.services import customer as customer_service
-
+    from shopman.shop.services.auth import customer_by_ref
     from shopman.shop.services.customer_orders import last_reorder_context
 
     ref = ctx.conversation.customer_ref
-    customer = customer_service.get(ref) if ref else None
+    customer = customer_by_ref(ref) if ref else None
     if customer is None:
         return {"ok": True, "order_ref": "", "items": [], "message": "Sem histórico para este cliente."}
     order_ref, items = last_reorder_context(customer_uuid=customer.uuid, min_days=0)
@@ -1656,20 +1655,9 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
 
 
 def _auth_customer_info(ctx: ToolContext):
-    ref = ctx.conversation.customer_ref
-    if not ref:
-        return None
-    try:
-        from shopman.guestman.adapters.auth import CustomerResolver
-        from shopman.guestman.services import customer as customer_service
+    from shopman.shop.services.auth import identity_by_customer_ref
 
-        customer = customer_service.get(ref)
-        if customer is None:
-            return None
-        return CustomerResolver().get_by_uuid(customer.uuid)
-    except Exception:
-        logger.debug("concierge.auth_customer_info degraded", exc_info=True)
-        return None
+    return identity_by_customer_ref(ctx.conversation.customer_ref)
 
 
 def _copy_cart_to_web(ctx: ToolContext) -> str:
@@ -1766,8 +1754,9 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
             "disclosure": {"sku": item.sku, "text": text, "version": version, "token": token}}
     if not ctx.conversation.phone:
         return _error("identity_required", "Confirme seu contato no site para receber o aviso.")
-    from shopman.guestman.services import customer as customer_service
-    customer = customer_service.get(ctx.conversation.customer_ref) if ctx.conversation.customer_ref else None
+    from shopman.shop.services.auth import customer_by_ref
+
+    customer = customer_by_ref(ctx.conversation.customer_ref) if ctx.conversation.customer_ref else None
     with transaction.atomic():
         Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
         _assert_authority(ctx)

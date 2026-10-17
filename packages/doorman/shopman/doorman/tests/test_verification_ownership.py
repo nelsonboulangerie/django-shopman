@@ -13,7 +13,7 @@ from shopman.doorman.error_codes import ErrorCode
 from shopman.doorman.models import VerificationCode
 from shopman.doorman.models.verification_code import generate_raw_code
 from shopman.doorman.services.verification import AuthService
-from shopman.guestman.adapters.auth import CustomerResolver
+from shopman.guestman.adapters.auth import IdentityResolver
 from shopman.guestman.models import ContactPoint, Customer
 
 
@@ -41,16 +41,16 @@ def _move_target_when_auth_locks(
 ) -> None:
     """Deterministically model a contact change winning before auth's lock."""
 
-    def move_then_return_current(resolver, customer_uuid):
+    def move_then_return_current(resolver, customer_uuid, *, purpose):
         customer = Customer.objects.select_for_update().get(
             uuid=customer_uuid,
             is_active=True,
         )
         _replace_login_target(customer, kind, replacement)
         customer.refresh_from_db()
-        return resolver._to_info(customer)
+        return resolver._to_view(customer, purpose=purpose)
 
-    monkeypatch.setattr(CustomerResolver, "lock_active_by_uuid", move_then_return_current)
+    monkeypatch.setattr(IdentityResolver, "lock_active", move_then_return_current)
 
 
 @pytest.mark.django_db

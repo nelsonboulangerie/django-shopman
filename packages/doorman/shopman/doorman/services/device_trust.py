@@ -76,12 +76,14 @@ class DeviceTrustService:
         if not raw_token:
             return False
 
-        device = TrustedDevice.verify_token(raw_token)
+        device = TrustedDevice.find_valid_token(raw_token)
         if device is None:
             return False
 
         if device.subject_type != subject_type or device.subject_id != str(subject_id):
             return False
+
+        device.touch()
 
         logger.info(
             "Device trust verified",
@@ -157,13 +159,24 @@ class DeviceTrustService:
         return device
 
     @classmethod
-    def revoke_device(cls, request: HttpRequest, response: HttpResponse) -> None:
-        """Revoke the trusted device from the current request and clear cookie."""
-        cookie_name = doorman_settings.DEVICE_TRUST_COOKIE_NAME
+    def revoke_device(
+        cls,
+        request: HttpRequest,
+        response: HttpResponse,
+        *,
+        subject_type: str,
+        subject_id,
+    ) -> None:
+        """Revoke only the request token belonging to the named subject."""
+        cookie_name = cls.cookie_name_for(subject_type, subject_id)
         raw_token = request.COOKIES.get(cookie_name)
         if raw_token:
-            device = TrustedDevice.verify_token(raw_token)
-            if device:
+            device = TrustedDevice.find_valid_token(raw_token)
+            if (
+                device
+                and device.subject_type == subject_type
+                and device.subject_id == str(subject_id)
+            ):
                 device.revoke()
                 logger.info(
                     "Device trust revoked",

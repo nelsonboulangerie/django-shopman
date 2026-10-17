@@ -29,7 +29,7 @@ def get_authenticated_customer(request):
     if customer_info is None:
         setattr(request, cache_attr, None)
         return None
-    customer = auth_service.customer_by_uuid(customer_info.uuid)
+    customer = auth_service.customer_by_uuid(customer_info.subject_id)
     setattr(request, cache_attr, customer)
     return customer
 
@@ -108,7 +108,7 @@ def checkout_draft_context(request, session_key: str | None) -> str:
     from django.utils.crypto import salted_hmac
     if not session_key:
         return ""
-    principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+    principal = str(getattr(getattr(request, "customer", None), "subject_id", "") or "")
     owner = f"customer:{principal}" if principal else f"browser:{request.session.session_key}"
     strength = request.session.get(IDENTITY_SESSION_KEY, "")
     return salted_hmac("storefront.checkout-draft.v2", f"{owner}:{strength}:{session_key}").hexdigest()

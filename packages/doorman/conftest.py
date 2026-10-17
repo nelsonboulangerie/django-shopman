@@ -1,9 +1,9 @@
 """Root conftest for Auth tests."""
 
 import pytest
-from shopman.doorman.conf import reset_adapter, reset_customer_resolver
+from shopman.doorman.conf import reset_adapter, reset_identity_resolver
 
-_GUESTMAN_RESOLVER = "shopman.guestman.adapters.auth.CustomerResolver"
+_GUESTMAN_RESOLVER = "shopman.guestman.adapters.auth.IdentityResolver"
 
 
 def _enrich_doorman(*, setting, value, enter, **kwargs):
@@ -16,9 +16,9 @@ def _enrich_doorman(*, setting, value, enter, **kwargs):
     """
     if setting != "DOORMAN" or not isinstance(value, dict):
         return
-    if "CUSTOMER_RESOLVER_CLASS" not in value:
-        value["CUSTOMER_RESOLVER_CLASS"] = _GUESTMAN_RESOLVER
-    reset_customer_resolver()
+    if "IDENTITY_RESOLVER_CLASS" not in value:
+        value["IDENTITY_RESOLVER_CLASS"] = _GUESTMAN_RESOLVER
+    reset_identity_resolver()
     reset_adapter()
 
 
@@ -28,9 +28,9 @@ def _reset_resolver():
     from django.test.signals import setting_changed
 
     setting_changed.connect(_enrich_doorman)
-    reset_customer_resolver()
+    reset_identity_resolver()
     reset_adapter()
     yield
-    reset_customer_resolver()
+    reset_identity_resolver()
     reset_adapter()
     setting_changed.disconnect(_enrich_doorman)

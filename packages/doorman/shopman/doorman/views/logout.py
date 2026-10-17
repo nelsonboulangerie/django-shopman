@@ -31,7 +31,14 @@ class LogoutView(View):
         response = HttpResponseRedirect(redirect_url)
 
         # Clear device trust cookie
-        DeviceTrustService.revoke_device(request, response)
+        customer = getattr(request, "customer", None)
+        if customer is not None:
+            DeviceTrustService.revoke_device(
+                request,
+                response,
+                subject_type="customer",
+                subject_id=customer.subject_id,
+            )
 
         # Preserve session keys across logout (logout flushes session)
         preserved = {}

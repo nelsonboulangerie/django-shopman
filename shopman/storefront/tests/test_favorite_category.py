@@ -181,9 +181,13 @@ class TestCatalogProjectionFavorite:
 
         # Build a mock request carrying the customer
         request = MagicMock()
-        request.customer = MagicMock()
-        request.customer.uuid = customer.uuid
-        request.customer.name = customer.name
+        from shopman.storefront.tests.identity_fakes import make_identity_view
+
+        request.customer = make_identity_view(
+            subject_id=customer.uuid,
+            name=customer.name,
+            phone=customer.phone,
+        )
         request.session = {}
 
         catalog = build_catalog(channel_ref="nelson", request=request)

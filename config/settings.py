@@ -102,21 +102,6 @@ SHOPMAN_ENVIRONMENT = (
     .lower()
 )
 
-# Nasce DESLIGADO, sem herdar de DEBUG nem de ambiente: expor OTP na resposta
-# é decisão explícita do spec de deploy (o alpha declara `true`; produção,
-# `false`). O dev local não depende deste default — `_debug_otp_allowed`
-# devolve True em DEBUG antes de ler a flag.
-SHOPMAN_EXPOSE_DEBUG_OTP = _env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", False)
-
-# O SEGREDO que separa "testável" de "exposto".
-#
-# Fora de DEBUG, o código do OTP só volta na resposta para quem apresentar este
-# valor no cabeçalho `X-Shopman-Debug-Otp`. A suíte E2E tem o segredo; o público
-# não. **Vazio = o código nunca volta**, por mais que `SHOPMAN_EXPOSE_DEBUG_OTP`
-# esteja ligado — falhar fechado, porque o que está em jogo é o login de outra
-# pessoa. Ver `storefront/api/auth.py::_debug_otp_allowed`.
-SHOPMAN_DEBUG_OTP_TOKEN = os.environ.get("SHOPMAN_DEBUG_OTP_TOKEN", "").strip()
-
 # Expand/canary flags. Approval may persist a transactional outbox, but neither
 # boundary hands work to a provider until its independent switch is explicit.
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = _env_bool(
@@ -577,10 +562,11 @@ DOORMAN = {
         "DOORMAN_MESSAGE_SENDER_CLASS",
         "shopman.doorman.senders.ConsoleSender",
     ),
-    "CUSTOMER_RESOLVER_CLASS": os.environ.get(
-        "DOORMAN_CUSTOMER_RESOLVER_CLASS",
-        "shopman.guestman.adapters.auth.CustomerResolver",
+    "IDENTITY_RESOLVER_CLASS": os.environ.get(
+        "DOORMAN_IDENTITY_RESOLVER_CLASS",
+        "shopman.guestman.adapters.auth.IdentityResolver",
     ),
+    "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge",
     # OTP delivery: WhatsApp (via ManyChat) → SMS → email
     # Configured dynamically below after MANYCHAT_API_TOKEN is read
 }
@@ -1186,18 +1172,8 @@ DOORMAN["DELIVERY_SENDERS"] = {
     "whatsapp": "shopman.shop.adapters.otp_manychat.ManychatOTPSender",
     "console": "shopman.doorman.senders.ConsoleSender",
 }
-# ⚠️ A ENTREGA deixou de depender do debug do OTP, e essa separação é a metade
-# que faltava.
-#
-# Era: `EXPOSE_DEBUG_OTP and ENVIRONMENT == "staging"` ⇒ `DELIVERY_CHAIN = []`.
-# Duas decisões amarradas numa condição só, e o resultado era um ambiente onde
-# **ninguém recebia OTP nenhum**: o único jeito de entrar era lendo o código na
-# resposta HTTP. Foi isso que tornou o vazamento tão grave (a vítima não recebia
-# mensagem para desconfiar) e é isso que torna "só desligar o debug" impossível
-# — desligar sem religar a entrega deixaria TODO cliente sem conseguir entrar.
-#
-# Agora são duas chaves independentes: quem vê o código (segredo no cabeçalho,
-# ver `storefront/api/auth.py`) e por onde ele é entregue (esta cadeia).
+# A cadeia escolhe apenas o transporte. OTP nunca integra resposta HTTP; testes
+# e E2E capturam o código por sender explícito fora da superfície pública.
 DOORMAN["DELIVERY_CHAIN"] = _csv_env_list(
     "SHOPMAN_OTP_DELIVERY_CHAIN",
     "sms,console" if DEBUG else "sms,email",

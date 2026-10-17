@@ -63,10 +63,11 @@ def _make_customer(phone="+5543999990001") -> Customer:
 
 
 def _login(client, customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(uuid=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True)
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(subject_id=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True)
     user, _ = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
 

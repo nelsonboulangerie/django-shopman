@@ -53,7 +53,8 @@ class CustomerUser(models.Model):
 
     def get_customer(self):
         """Fetch customer info via resolver."""
-        from ..conf import get_customer_resolver
+        from ..conf import get_identity_resolver
 
-        resolver = get_customer_resolver()
-        return resolver.get_by_uuid(self.customer_id)
+        resolver = get_identity_resolver()
+        customer = resolver.get(self.customer_id, purpose="session")
+        return customer if customer is not None and customer.is_active else None

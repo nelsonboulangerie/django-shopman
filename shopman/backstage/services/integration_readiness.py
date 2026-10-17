@@ -196,8 +196,8 @@ def otp_delivery_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadin
 
     ⚠️ Isto não existia. A tela cobria Focus, Efí, Stripe e NF-e de compras, e
     ficava verde com a cadeia de OTP vazia — que foi exatamente o estado do
-    alpha: ninguém recebia código, e o único jeito de entrar era ler o código na
-    resposta HTTP (ver `SHOPMAN_DEBUG_OTP_TOKEN`).
+    alpha: ninguém recebia código. Códigos legíveis só existem em senders de
+    desenvolvimento, nunca no contrato HTTP.
     """
     doorman = dict(getattr(settings, "DOORMAN", {}) or {})
     chain = [str(c).strip() for c in (doorman.get("DELIVERY_CHAIN") or []) if str(c).strip()]

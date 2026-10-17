@@ -43,11 +43,12 @@ def login_as_customer(client: Client, customer_obj):
     Mirrors the helper used across the web security tests so ownership checks
     that key on ``request.user`` / ``request.customer`` behave as in production.
     """
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(
-        uuid=customer_obj.uuid,
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(
+        subject_id=customer_obj.uuid,
         name=customer_obj.name,
         phone=customer_obj.phone,
         email=getattr(customer_obj, "email", None) or None,

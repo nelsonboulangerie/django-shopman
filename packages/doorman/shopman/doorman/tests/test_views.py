@@ -10,6 +10,7 @@ JSON responses don't redirect, so they test the full flow without mocks.
 """
 
 import json
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -86,22 +87,34 @@ class TestVerificationCodeRequestViewForm:
         response = VerificationCodeRequestView.as_view()(request)
         assert response.status_code == 200
 
-    def test_post_empty_phone_returns_error(self):
+    def test_post_empty_target_returns_error(self):
         request = _make_request(
             "post",
-            data="phone=",
+            data="target=",
             content_type="application/x-www-form-urlencoded",
         )
         response = VerificationCodeRequestView.as_view()(request)
         assert response.status_code == 200  # re-renders form
 
+    def test_post_phone_alias_is_not_accepted(self):
+        request = _make_request(
+            "post",
+            data="phone=41999999999",
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        response = VerificationCodeRequestView.as_view()(request)
+
+        assert response.status_code == 200
+        assert request.session.get("auth_target") is None
+
     @patch("shopman.doorman.views.verification_code.redirect", side_effect=_fake_redirect)
-    def test_post_valid_phone_redirects(self, mock_redirect):
+    def test_post_valid_target_redirects(self, mock_redirect):
         sender = FakeSender()
 
         request = _make_request(
             "post",
-            data="phone=41999999999",
+            data="target=41999999999",
             content_type="application/x-www-form-urlencoded",
         )
         with patch(
@@ -113,7 +126,7 @@ class TestVerificationCodeRequestViewForm:
         assert response.status_code == 302
         assert sender.last_code is not None
         assert len(sender.last_code) == 6
-        # Phone stored in session
+        # Canonical target stored in session
         assert request.session.get("auth_target") == "+5541999999999"
 
 
@@ -121,10 +134,18 @@ class TestVerificationCodeRequestViewForm:
 class TestVerificationCodeRequestViewJSON:
     """Test code request view with JSON POST."""
 
-    def test_json_empty_phone_returns_400(self):
-        body = json.dumps({"phone": ""})
+    def test_json_empty_target_returns_400(self):
+        body = json.dumps({"target": ""})
         request = _make_request("post", data=body, content_type="application/json")
         response = VerificationCodeRequestView.as_view()(request)
+        assert response.status_code == 400
+
+    def test_json_phone_alias_is_not_accepted(self):
+        body = json.dumps({"phone": "41999999999"})
+        request = _make_request("post", data=body, content_type="application/json")
+
+        response = VerificationCodeRequestView.as_view()(request)
+
         assert response.status_code == 400
 
     def test_json_invalid_json_returns_400(self):
@@ -132,10 +153,10 @@ class TestVerificationCodeRequestViewJSON:
         response = VerificationCodeRequestView.as_view()(request)
         assert response.status_code == 400
 
-    def test_json_valid_phone_returns_success(self):
+    def test_json_valid_target_returns_success(self):
         sender = FakeSender()
 
-        body = json.dumps({"phone": "41999999999"})
+        body = json.dumps({"target": "41999999999"})
         request = _make_request("post", data=body, content_type="application/json")
         with patch(
             "shopman.doorman.adapter.DefaultAuthAdapter.send_code_with_fallback",
@@ -146,7 +167,8 @@ class TestVerificationCodeRequestViewJSON:
         assert response.status_code == 200
         data = json.loads(response.content)
         assert data["success"] is True
-        assert data["phone"] == "+5541999999999"
+        assert data["target"] == "+5541999999999"
+        assert "phone" not in data
         # O dublê precisa ter sido o caminho de entrega: sem esta asserção ele
         # podia voltar a ser decorativo — instalado num gancho que o adapter
         # não percorre — e ninguém notaria.
@@ -164,12 +186,12 @@ class TestVerificationCodeVerifyViewForm:
     """Test code verify view with form POST."""
 
     @patch("shopman.doorman.views.verification_code.redirect", side_effect=_fake_redirect)
-    def test_get_without_session_phone_redirects(self, mock_redirect):
+    def test_get_without_session_target_redirects(self, mock_redirect):
         request = _make_request("get")
         response = VerificationCodeVerifyView.as_view()(request)
         assert response.status_code == 302  # redirect to code-request
 
-    def test_get_with_session_phone_renders(self):
+    def test_get_with_session_target_renders(self):
         session = SessionStore()
         session["auth_target"] = "+5541999999999"
         session.save()
@@ -180,7 +202,7 @@ class TestVerificationCodeVerifyViewForm:
     def test_post_missing_code_returns_error(self):
         request = _make_request(
             "post",
-            data="phone=%2B5541999999999&code=",
+            data="target=%2B5541999999999&code=",
             content_type="application/x-www-form-urlencoded",
         )
         response = VerificationCodeVerifyView.as_view()(request)
@@ -196,7 +218,7 @@ class TestVerificationCodeVerifyViewForm:
         )
         request = _make_request(
             "post",
-            data="phone=%2B5541999999999&code=000000",
+            data="target=%2B5541999999999&code=000000",
             content_type="application/x-www-form-urlencoded",
         )
         response = VerificationCodeVerifyView.as_view()(request)
@@ -208,9 +230,17 @@ class TestVerificationCodeVerifyViewJSON:
     """Test code verify view with JSON POST."""
 
     def test_json_missing_fields_returns_400(self):
-        body = json.dumps({"phone": "", "code": ""})
+        body = json.dumps({"target": "", "code": ""})
         request = _make_request("post", data=body, content_type="application/json")
         response = VerificationCodeVerifyView.as_view()(request)
+        assert response.status_code == 400
+
+    def test_json_phone_alias_is_not_accepted(self):
+        body = json.dumps({"phone": "+5541999999999", "code": "000000"})
+        request = _make_request("post", data=body, content_type="application/json")
+
+        response = VerificationCodeVerifyView.as_view()(request)
+
         assert response.status_code == 400
 
     def test_json_wrong_code_returns_400(self):
@@ -221,7 +251,7 @@ class TestVerificationCodeVerifyViewJSON:
             purpose=VerificationCode.Purpose.LOGIN,
             status=VerificationCode.Status.SENT,
         )
-        body = json.dumps({"phone": "+5541999999999", "code": "000000"})
+        body = json.dumps({"target": "+5541999999999", "code": "000000"})
         request = _make_request("post", data=body, content_type="application/json")
         response = VerificationCodeVerifyView.as_view()(request)
 
@@ -248,7 +278,7 @@ class TestVerificationCodeVerifyViewJSON:
             purpose=VerificationCode.Purpose.LOGIN,
             status=VerificationCode.Status.SENT,
         )
-        body = json.dumps({"phone": "+5541999999999", "code": raw_code})
+        body = json.dumps({"target": "+5541999999999", "code": raw_code})
         request = _make_request("post", data=body, content_type="application/json")
         response = VerificationCodeVerifyView.as_view()(request)
 
@@ -309,7 +339,7 @@ class TestFullJourney:
         sender = FakeSender()
 
         # Step 1: Request code
-        body = json.dumps({"phone": "41888888888"})
+        body = json.dumps({"target": "41888888888"})
         request1 = _make_request("post", data=body, content_type="application/json")
         with patch(
             "shopman.doorman.adapter.DefaultAuthAdapter.send_code_with_fallback",
@@ -322,7 +352,7 @@ class TestFullJourney:
         assert raw_code is not None
 
         # Step 2: Verify code
-        body2 = json.dumps({"phone": "+5541888888888", "code": raw_code})
+        body2 = json.dumps({"target": "+5541888888888", "code": raw_code})
         request2 = _make_request("post", data=body2, content_type="application/json")
         response2 = VerificationCodeVerifyView.as_view()(request2)
 
@@ -362,7 +392,7 @@ class TestAccessLinkCreateViewEdges:
         ):
             return view(request)
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_invalid_json(self):
         """Invalid JSON should return 400."""
         factory = RequestFactory()
@@ -374,13 +404,13 @@ class TestAccessLinkCreateViewEdges:
         response = AccessLinkCreateView.as_view()(request)
         assert response.status_code == 400
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_missing_customer_id(self):
         """Missing customer_id should return 400."""
         response = self._post_create({})
         assert response.status_code == 400
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_customer_not_found(self):
         """Non-existent customer_id should return 404."""
         import uuid
@@ -388,7 +418,31 @@ class TestAccessLinkCreateViewEdges:
         response = self._post_create({"customer_id": str(uuid.uuid4())})
         assert response.status_code == 404
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
+    def test_create_identity_conflict_returns_generic_409(self, customer, other_customer):
+        from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
+        from shopman.guestman.models import ContactPoint
+
+        email = "access-conflict@example.com"
+        CustomerIdentifier.objects.create(
+            customer=customer,
+            identifier_type=IdentifierType.EMAIL,
+            identifier_value=email,
+        )
+        ContactPoint.objects.create(
+            customer=other_customer,
+            type=ContactPoint.Type.EMAIL,
+            value_normalized=email,
+        )
+
+        response = self._post_create({"email": email, "source": "internal"})
+
+        assert response.status_code == 409
+        data = json.loads(response.content)
+        assert data["error_code"] == "identity_conflict"
+        assert email not in response.content.decode()
+
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_returns_single_access_url(self, customer):
         """API callers receive exactly the URL that should be sent to the customer."""
         response = self._post_create({
@@ -430,17 +484,19 @@ class TestAccessLinkCreateViewEdges:
         link = AccessLink.get_by_token(data["token"])
         assert link.metadata.get("next") == "/pedido/ORD-123/"
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_accepts_manychat_payload_with_next(self, customer):
         """ManyChat callers identify customers by subscriber data, not internal UUID."""
         captured = {}
 
-        class Resolver:
-            def upsert_manychat_subscriber(self, subscriber):
+        class Bridge:
+            def upsert_subscriber(self, subscriber):
                 captured.update(subscriber)
-                return customer
+                from shopman.guestman.adapters.auth import IdentityResolver
 
-        with patch("shopman.doorman.views.access_link.get_customer_resolver", return_value=Resolver()):
+                return IdentityResolver().get(customer.uuid, purpose="access_link")
+
+        with patch("shopman.doorman.views.access_link.get_manychat_identity_bridge", return_value=Bridge()):
             response = self._post_create({
                 "whatsapp_id": "43981234567",
                 "first_name": "Pablo",
@@ -466,7 +522,7 @@ class TestAccessLinkCreateViewEdges:
         assert data["access_url"] == "https://test.local/auth/access-link/?t=mock"
         assert "next=" not in data["access_url"]
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_with_customer_id_persists_manychat_contact_payload(self):
         """Known access-link customers are enriched before the checkout session starts."""
         from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
@@ -503,7 +559,7 @@ class TestAccessLinkCreateViewEdges:
             identifier_value="4605528796186498",
         ).exists()
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_with_manychat_customer_id_rejects_missing_whatsapp_id(self):
         """WhatsApp access links must not authenticate without whatsapp_id."""
         from shopman.doorman.models import AccessLink
@@ -527,7 +583,7 @@ class TestAccessLinkCreateViewEdges:
         assert response.status_code == 422
         assert AccessLink.objects.count() == 0
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_with_manychat_customer_id_rejects_phone_alias(self):
         """ManyChat WhatsApp access links only accept the canonical whatsapp_id field."""
         from shopman.doorman.models import AccessLink
@@ -551,7 +607,7 @@ class TestAccessLinkCreateViewEdges:
         assert response.status_code == 422
         assert AccessLink.objects.count() == 0
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_with_instagram_manychat_customer_allows_missing_phone(self):
         """Instagram-origin links may authenticate before phone capture."""
         from shopman.guestman.models import Customer
@@ -574,7 +630,7 @@ class TestAccessLinkCreateViewEdges:
 
         assert response.status_code == 200
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_with_customer_id_rejects_phone_linked_to_other_customer(self):
         """Access-link enrichment must not silently steal another customer's phone."""
         from shopman.doorman.models import AccessLink
@@ -600,18 +656,47 @@ class TestAccessLinkCreateViewEdges:
         assert target.phone == ""
         assert AccessLink.objects.count() == 0
 
-    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
+    def test_customer_enrichment_conflict_redacts_exception(self, customer, caplog):
+        marker = "private@example.com"
+
+        class Bridge:
+            def upsert_access_link_subject(self, subject_id, payload):
+                raise ValueError(f"conflict for {marker}")
+
+        logger = logging.getLogger("shopman.doorman.views.access_link")
+        logger.addHandler(caplog.handler)
+        try:
+            with patch(
+                "shopman.doorman.views.access_link.get_manychat_identity_bridge",
+                return_value=Bridge(),
+            ):
+                response = self._post_create(
+                    {
+                        "customer_id": str(customer.uuid),
+                        "whatsapp_id": "43981234567",
+                        "source": "manychat",
+                    }
+                )
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert response.status_code == 409
+        assert marker not in response.content.decode()
+        assert marker not in caplog.text
+
+    @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": "", "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver", "MANYCHAT_IDENTITY_BRIDGE_CLASS": "shopman.guestman.adapters.auth.ManychatIdentityBridge"})
     def test_create_customer_inactive(self, customer):
         """Inactive customer should return 400."""
-        from shopman.doorman.protocols.customer import AuthCustomerInfo
+        from shopman.doorman.protocols.identity import IdentityView
 
-        inactive = AuthCustomerInfo(
-            uuid=customer.uuid, name="Inactive", phone=customer.phone,
-            email=customer.email, is_active=False,
-        )
-        with patch("shopman.doorman.views.access_link.get_customer_resolver") as mock_resolver:
-            mock_resolver.return_value.get_by_uuid.return_value = inactive
-            response = self._post_create({"customer_id": str(customer.uuid)})
+        inactive = IdentityView(customer.uuid, "Inactive", (), False)
+        with patch("shopman.doorman.views.access_link.get_identity_resolver") as mock_resolver:
+            mock_resolver.return_value.get.return_value = inactive
+            response = self._post_create({
+                "customer_id": str(customer.uuid),
+                "source": "internal",
+            })
         assert response.status_code == 400
 
 

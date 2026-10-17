@@ -21,8 +21,8 @@ make omotenashi-qa strict=1
   ou `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true`. No alpha o caminho e o MANUAL (botao
   "Simular pagamento"); as duas envs juntas se contradizem — o botao vence e o
   auto-confirm nao e injetado (`SHOPMAN_W018`).
-- `SHOPMAN_EXPOSE_DEBUG_OTP=true`, `SHOPMAN_STAGING_AUTOPILOT=true` e o botao
-  "Simular pagamento" sao warnings de alpha, nao criterio de go-live.
+- `SHOPMAN_STAGING_AUTOPILOT=true` e o botao "Simular pagamento" sao warnings
+  de alpha, nao criterio de go-live. OTP usa canal real; nunca volta no HTTP.
 - Focus NFe homologacao e iFood OAuth continuam bloqueios externos se faltarem,
   porque sao as integracoes que precisam ser exercitadas antes da virada.
 - Evidencia manual pendente e warning durante a janela de alpha; antes de
@@ -43,7 +43,7 @@ SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true
 SHOPMAN_EXPOSE_MOCK_CAPTURE=true
 SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false
 
-SHOPMAN_EXPOSE_DEBUG_OTP=true
+SHOPMAN_OTP_DELIVERY_CHAIN=sms,email
 SHOPMAN_STAGING_AUTOPILOT=true
 ```
 

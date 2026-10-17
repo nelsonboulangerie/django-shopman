@@ -55,7 +55,7 @@ Todos os caminhos abaixo são relativos à raiz da base auditada. Números de li
 | Etapa / entrada | Código percorrido e fronteira relevante | Dono e reutilização obrigatória |
 |---|---|---|
 | Roteamento e ingresso | `config/urls.py`, `storefront/concierge/urls.py`, `webhook.py:116`, `service.py:150` | ingressos de conversa e de sync de assinante são distintos; conservar autenticação específica de cada integração |
-| Identificação | `service.identify`, `guestman.adapters.auth.CustomerResolver`, `packages/guestman/.../contrib/manychat/{resolver,service,views}.py` | Guestman guarda cliente; Doorman determina força de identidade. Contato ManyChat não é credencial universal |
+| Identificação | `service.identify`, composição do host e `guestman.adapters.auth.ManychatIdentityBridge` | Guestman guarda cliente; Doorman determina força de identidade. Contato ManyChat não é credencial universal |
 | Persistência e fila | `shop/models/concierge.py`, `service._enqueue_turn`, `handler.py`, `shop/directives.py`, dispatcher Orderman | Conversation/Message guardam contexto de interação; Directive é a fila; IdempotencyKey é recibo técnico |
 | IA e ferramentas | `agent.py`, `prompt.py`, `tools.py:353–1323` | IA interpreta linguagem; servidores validam identidade, inputs, revisão, autorização e efeito |
 | Catálogo e sacola | `shop/projections/catalog_context`, `tools._catalog_channel_ref`, `shop/services/{cart,sessions,availability}`, `packages/orderman/.../services/modify.py` | Offerman/Shopman resolvem preço e disponibilidade; Session é a sacola; Stockman detém reservas |

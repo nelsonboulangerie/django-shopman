@@ -49,9 +49,8 @@ Nuxt, API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
 - pagamentos em staging técnico via `payment_mock` para Pix e cartão, com
   `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true` e auto-confirmação de Pix, até
   existirem credenciais sandbox reais de EFI/Stripe;
-- OTP debug exposto somente em staging técnico via
-  `SHOPMAN_ENVIRONMENT=staging` e `SHOPMAN_EXPOSE_DEBUG_OTP=true`, para permitir
-  login web enquanto envio real por WhatsApp/SMS ainda não está operacional;
+- OTP de staging exige um canal de entrega funcional; o contrato HTTP nunca
+  devolve o código;
 - instância Nelson ativa via `SHOPMAN_INSTANCE_APPS`, `SHOPMAN_CUSTOMER_STRATEGY_MODULES`
   e `SHOPMAN_INSTANCE_MODIFIERS`;
 - health check da plataforma sempre barato: Django em `/health/live/` (sem banco) e
@@ -105,13 +104,9 @@ login de todo cliente no log de produção. Sem a env, o default é o
 `ConsoleSender`, que a trava de boot recusa fora de DEBUG: a mesma edição agora
 derruba o processo em vez de vazar em silêncio. Quem quiser staging sem envio
 declara a cadeia (`SHOPMAN_OTP_DELIVERY_CHAIN=console`) com `DJANGO_DEBUG=true`.
-O código é exposto na UI somente porque `SHOPMAN_EXPOSE_DEBUG_OTP=true` e
-`SHOPMAN_ENVIRONMENT=staging`.
-Se a spec ativa ainda não tiver essas variáveis, `config.settings` infere
-`staging` quando os domínios do ambiente contêm `staging`, mantendo produção
-fechada por padrão.
-Para piloto público, `MANYCHAT_API_TOKEN` é obrigatório e esse modo debug deve
-ser removido: o token ManyChat é diferente de `MANYCHAT_WEBHOOK_SECRET` e de
+O código nunca é exposto na UI. Senders `ConsoleSender` e `LogSender` são
+somente de desenvolvimento e a trava de boot os recusa fora de DEBUG.
+Para piloto público, `MANYCHAT_API_TOKEN` é obrigatório: o token ManyChat é diferente de `MANYCHAT_WEBHOOK_SECRET` e de
 `DOORMAN_ACCESS_LINK_API_KEY`. O primeiro autentica chamadas outbound Shopman ->
 ManyChat; o segundo valida webhooks HMAC inbound; o terceiro autentica a criação
 servidor-servidor de AccessLinks.
@@ -208,16 +203,9 @@ gateway real, troque os adapters para `payment_efi`/`payment_stripe` somente
 depois de preencher as credenciais listadas acima; se faltar certificado EFI,
 segredo Stripe ou webhook secret, o release falha com `SHOPMAN_E009`.
 
-Enquanto o envio real de OTP não estiver funcional, staging técnico pode expor o
-código OTP no login da superfície web:
-
-```env
-SHOPMAN_ENVIRONMENT=staging
-SHOPMAN_EXPOSE_DEBUG_OTP=true
-```
-
-Esse modo emite `SHOPMAN_W007` em `check --deploy`. Em produção,
-`SHOPMAN_EXPOSE_DEBUG_OTP=true` falha com `SHOPMAN_E010`.
+Staging técnico precisa configurar WhatsApp, SMS ou e-mail para exercitar o
+login. O código raw só pode aparecer no sender explícito de desenvolvimento,
+nunca na resposta HTTP.
 
 ### ManyChat inbound e AccessLink
 
@@ -457,8 +445,8 @@ no deploy (não crie CNAME manual, causaria conflito). É exatamente o caso de
 3. **Knob único:** `SHOPMAN_STOREFRONT_BASE_URL=https://seudominio.com` (apex) vira **todos**
    os links de cliente (notificações, magic link, "ver site"). `NUXT_DJANGO_BASE_URL` das
    superfícies → `https://api.seudominio.com`; `NUXT_APP_BASE_URL=/` em cada host.
-4. **Produção:** trocar os adapters de pagamento mock pelos reais + secrets, desligar
-   `SHOPMAN_EXPOSE_DEBUG_OTP`, `SHOPMAN_ENVIRONMENT=production`.
+4. **Produção:** trocar os adapters de pagamento mock pelos reais + secrets e usar
+   `SHOPMAN_ENVIRONMENT=production`.
 
 **Verificação end-to-end (gate do plano):**
 - Loja: `https://seudominio.com/menu` carrega, add→carrinho→checkout→pagamento→tracking.

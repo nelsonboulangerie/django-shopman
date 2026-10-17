@@ -13,13 +13,13 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 
 from ..models import CustomerUser
-from ..protocols.customer import AuthCustomerInfo
+from ..protocols.identity import IdentityView
 
 logger = logging.getLogger("shopman.doorman.user_bridge")
 User = get_user_model()
 
 
-def get_or_create_user_for_customer(customer: AuthCustomerInfo) -> tuple:
+def get_or_create_user_for_customer(customer: IdentityView) -> tuple:
     """
     Get or create a Django User for a Customer.
 
@@ -34,14 +34,14 @@ def get_or_create_user_for_customer(customer: AuthCustomerInfo) -> tuple:
     # Check existing link
     try:
         link = CustomerUser.objects.select_related("user").get(
-            customer_id=customer.uuid,
+            customer_id=customer.subject_id,
         )
         return link.user, False
     except CustomerUser.DoesNotExist:  # silêncio-deliberado: ausência esperada segue para criação idempotente
         pass
 
     # Create User
-    username = f"customer_{str(customer.uuid).replace('-', '')[:12]}"
+    username = f"customer_{str(customer.subject_id).replace('-', '')[:12]}"
     user = User.objects.create_user(username=username)
 
     # Set name from customer
@@ -52,36 +52,31 @@ def get_or_create_user_for_customer(customer: AuthCustomerInfo) -> tuple:
             user.last_name = parts[1]
         user.save(update_fields=["first_name", "last_name"])
 
-    # Create link — retry on concurrent creation.
-    # O telefone vai no `metadata` (JSONField que já existe — sem migração) para
-    # que o vínculo seja RELIGÁVEL: ele guarda o uuid do Customer, e quando os
-    # clientes são recriados (reseed, reset de base, migração) os uuids mudam e o
-    # login fica apontando para o vazio. Sem telefone não há como reencontrar o
-    # cliente atual, e o vínculo só pode ser descartado. Ver
-    # `manage.py cleanup_orphan_customer_links`.
+    # Create the opaque subject link and retry on concurrent creation. Mutable
+    # handles never live in metadata and cannot be used to relink an orphan.
     try:
         CustomerUser.objects.create(
             user=user,
-            customer_id=customer.uuid,
-            metadata={"phone": customer.phone or ""},
+            customer_id=customer.subject_id,
+            metadata={},
         )
     except IntegrityError:
         # Another request already created the link; use that one
         user.delete()
         link = CustomerUser.objects.select_related("user").get(
-            customer_id=customer.uuid,
+            customer_id=customer.subject_id,
         )
         return link.user, False
 
     logger.info(
         "User created for customer",
-        extra={"customer_id": str(customer.uuid), "user_id": user.id},
+        extra={"customer_id": str(customer.subject_id), "user_id": user.id},
     )
 
     return user, True
 
 
-def forget_customer(customer_uuid, phone: str = "", email: str = "") -> None:
+def forget_customer(customer_uuid) -> None:
     """Anonimiza o User Django vinculado e revoga os dispositivos confiáveis (LGPD).
 
     O bridge copia first_name/last_name do cliente para o User no login; a
@@ -91,11 +86,9 @@ def forget_customer(customer_uuid, phone: str = "", email: str = "") -> None:
 
     Códigos são apagados somente pelo ``customer_id`` canônico. Telefone/e-mail
     atuais não provam autoria de códigos ownerless históricos e podem ter sido
-    reciclados; os argumentos permanecem apenas por compatibilidade.
+    reciclados.
     """
     from ..models import AccessLink, Passkey, PinCredential, TrustedDevice, VerificationCode
-
-    del phone, email
 
     failures: list[str] = []
     user_id = None

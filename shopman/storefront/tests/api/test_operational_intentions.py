@@ -443,13 +443,13 @@ def test_draft_context_isolates_identity_strength_and_cart_but_preserves_renewal
         session_key = "browser-A"
 
     session = BrowserSession(identity_strength="device")
-    request = SimpleNamespace(session=session, customer=SimpleNamespace(uuid="customer-A"))
+    request = SimpleNamespace(session=session, customer=SimpleNamespace(subject_id="customer-A"))
     first = checkout_draft_context(request, "cart-A")
     session.session_key = "renewed-browser"
     assert checkout_draft_context(request, "cart-A") == first
-    request.customer.uuid = "customer-B"
+    request.customer.subject_id = "customer-B"
     assert checkout_draft_context(request, "cart-A") != first
-    request.customer.uuid = "customer-A"
+    request.customer.subject_id = "customer-A"
     session["identity_strength"] = "number"
     assert checkout_draft_context(request, "cart-A") != first
     session["identity_strength"] = "device"

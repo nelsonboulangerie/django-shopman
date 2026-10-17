@@ -72,7 +72,6 @@ _COMMON = [
     _env("SHOPMAN_CARD_ADAPTER", "shopman.shop.adapters.payment_stripe"),
     _env("SHOPMAN_FISCAL_ADAPTER", "shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend"),
     _env("SHOPMAN_FISCAL_EMISSION_RESOLVER", "shopman.shop.fiscal_resolvers.on_request_or_tax_id"),
-    _env("SHOPMAN_EXPOSE_DEBUG_OTP", "false"),
     _env("SHOPMAN_STAGING_AUTOPILOT", "false"),
     _env("DJANGO_ALLOWED_HOSTS", "api.boulangerie.com.br,admin.boulangerie.com.br"),
     _env("CSRF_TRUSTED_ORIGINS", "https://api.boulangerie.com.br"),

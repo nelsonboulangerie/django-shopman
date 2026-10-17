@@ -206,7 +206,8 @@ def build_checkout(
     loyalty_value_display: str | None = None
 
     if customer_info:
-        customer_phone = customer_info.phone or ""
+        phone_handle = customer_info.handle("phone") or customer_info.handle("whatsapp")
+        customer_phone = phone_handle.value if phone_handle else ""
         customer_name = customer_info.name or ""
         (
             saved_addresses,
@@ -406,7 +407,7 @@ def _load_customer_context(
     ``reduced=True`` esconde a rua dos endereços salvos — ver ``_reduced_address``.
     """
     try:
-        context = customer_context.checkout_customer_context(customer_info.uuid)
+        context = customer_context.checkout_customer_context(customer_info.subject_id)
     except Exception:
         logger.debug("checkout_projection_customer_context_failed", exc_info=True)
         return (), None, 0, None
@@ -466,7 +467,7 @@ def _delivery_tax_id_prefill(*, customer_info, reduced: bool):
     if customer_info is None or reduced:
         return DeliveryTaxIdPrefill()
     try:
-        return delivery_tax_id_prefill(customer_info.uuid)
+        return delivery_tax_id_prefill(customer_info.subject_id)
     except Exception:
         logger.warning("checkout_projection_delivery_tax_id_prefill_failed", exc_info=True)
         return DeliveryTaxIdPrefill()

@@ -199,6 +199,16 @@ class TrustedDevice(models.Model):
         Returns the TrustedDevice if valid, None otherwise.
         Uses HMAC comparison for timing-safety.
         """
+        device = cls.find_valid_token(raw_token)
+        if device is None:
+            return None
+
+        device.touch()
+        return device
+
+    @classmethod
+    def find_valid_token(cls, raw_token: str) -> "TrustedDevice | None":
+        """Return a valid token without recording it as used."""
         token_hash = _hash_token(raw_token)
         try:
             device = cls.objects.get(token_hash=token_hash)
@@ -207,8 +217,6 @@ class TrustedDevice(models.Model):
 
         if not device.is_valid:
             return None
-
-        device.touch()
         return device
 
     @classmethod

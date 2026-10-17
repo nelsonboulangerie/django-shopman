@@ -3,7 +3,7 @@ Auth middleware — resolves request.customer from request.user.
 
 After Django's AuthenticationMiddleware sets request.user, this middleware
 resolves the linked Customer via CustomerUser and the adapter, setting
-request.customer = AuthCustomerInfo | None.
+request.customer = IdentityView | None.
 
 The result is cached on the user instance to avoid repeated queries.
 """
@@ -48,7 +48,7 @@ class AuthCustomerMiddleware(MiddlewareMixin):
         # Check cache on user instance (1 query per request)
         cached = getattr(user, _CACHE_ATTR, None)
         if cached is not None:
-            return cached
+            return cached if cached.is_active else None
 
         try:
             from .models import CustomerUser
@@ -67,7 +67,9 @@ class AuthCustomerMiddleware(MiddlewareMixin):
             from .conf import get_adapter
 
             adapter = get_adapter()
-            customer_info = adapter.resolve_customer_by_uuid(link.customer_id)
+            customer_info = adapter.identity(link.customer_id, purpose="session")
+            if customer_info is not None and not customer_info.is_active:
+                customer_info = None
             setattr(user, _CACHE_ATTR, customer_info)
             return customer_info
         except Exception:

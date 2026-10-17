@@ -38,17 +38,17 @@ SKU = "PAO-FIEL"
 PRICE_Q = 750  # R$ 7,50 → 10% = R$ 0,75
 
 
-class _CustomerInfo:
+class _IdentityView:
     """Minimal stand-in for what AuthCustomerMiddleware sets on request.customer."""
 
-    def __init__(self, uuid):
-        self.uuid = uuid
+    def __init__(self, subject_id):
+        self.subject_id = subject_id
 
 
 class _FakeRequest:
     def __init__(self, *, session_key: str | None = None, customer_uuid=None):
         self.session = {"cart_session_key": session_key} if session_key else {}
-        self.customer = _CustomerInfo(customer_uuid) if customer_uuid else None
+        self.customer = _IdentityView(customer_uuid) if customer_uuid else None
 
 
 def _seed_stock(sku: str) -> None:

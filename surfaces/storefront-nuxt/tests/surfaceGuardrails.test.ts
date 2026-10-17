@@ -692,9 +692,8 @@ describe('surface UX guardrails', () => {
     expect(login).not.toContain('max-w-xl')
     expect(login).not.toContain('class="rounded-md border p-3"')
     expect(login).toContain('response.dev_console_hint')
-    expect(login).toContain('response.debug_otp_code')
-    expect(login).toContain('data-testid="debug-otp-alert"')
-    expect(login).toContain('debugOtpCode = ref')
+    expect(login).not.toContain('debug_otp_code')
+    expect(login).not.toContain('data-testid="debug-otp-alert"')
     expect(login).toContain('Código no terminal local')
     // Login editorial: passos direto no background (sem card), h1 semântico,
     // máquina de passos/erros em presentation/auth.ts.

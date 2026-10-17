@@ -198,11 +198,7 @@ def _customer_signals(
     fav_cat = None
     try:
         from shopman.guestman.models import Customer
-        customer = Customer.objects.filter(uuid=info.uuid).first()
-        # Phone fallback: UUID may not match in dev environments where the
-        # customer was created before the Doorman CustomerUser record existed.
-        if customer is None and info.phone:
-            customer = Customer.objects.filter(phone=info.phone).first()
+        customer = Customer.objects.filter(uuid=info.subject_id).first()
         if customer:
             is_birthday = _is_birthday(customer.birthday, today)
             days_since, fav_cat = _history_signals(customer)

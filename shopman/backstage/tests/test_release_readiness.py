@@ -93,7 +93,6 @@ def test_manual_qa_pending_is_warning_for_alpha(tmp_path):
     SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=True,
     SHOPMAN_EXPOSE_MOCK_CAPTURE=True,
     SHOPMAN_MOCK_PIX_AUTO_CONFIRM=False,
-    SHOPMAN_EXPOSE_DEBUG_OTP=True,
     SHOPMAN_STAGING_AUTOPILOT=True,
 )
 def test_alpha_profile_allows_explicit_mock_payment_with_warning():
@@ -136,7 +135,6 @@ def test_alpha_profile_fails_mock_pix_without_any_capture_path():
     SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=True,
     SHOPMAN_EXPOSE_MOCK_CAPTURE=True,
     SHOPMAN_MOCK_PIX_AUTO_CONFIRM=True,
-    SHOPMAN_EXPOSE_DEBUG_OTP=True,
     SHOPMAN_STAGING_AUTOPILOT=True,
 )
 def test_production_profile_blocks_alpha_switches():
@@ -153,7 +151,6 @@ def test_production_profile_blocks_alpha_switches():
         "card": "shopman.shop.adapters.payment_mock",
     },
     SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=True,
-    SHOPMAN_EXPOSE_DEBUG_OTP=True,
     DOORMAN={"MESSAGE_SENDER_CLASS": "shopman.doorman.senders.LogSender"},
 )
 def test_alpha_gateway_waivers_cover_only_declared_simulations():

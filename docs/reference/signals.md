@@ -195,7 +195,7 @@ Emitido após autenticação bem-sucedida via Doorman.
 | Campo | Valor |
 |-------|-------|
 | **Sender** | *(contexto Doorman)* |
-| **Payload** | `customer` (AuthCustomerInfo), `user` (User), `method` (str), `request` (HttpRequest) |
+| **Payload** | `customer` (IdentityView), `user` (User), `method` (str), `request` (HttpRequest) |
 | **Methods** | `"access_link"`, `"verification_code"` |
 | **Receivers** | Nenhum conectado |
 
@@ -206,7 +206,7 @@ Emitido após criação de access link via `AccessLinkService.create_token()`.
 | Campo | Valor |
 |-------|-------|
 | **Sender** | *(contexto Doorman)* |
-| **Payload** | `token` (AccessLink), `customer` (AuthCustomerInfo), `audience` (str), `source` (str) |
+| **Payload** | `token` (AccessLink), `customer` (IdentityView), `audience` (str), `source` (str) |
 | **Audiences** | `"web_checkout"`, `"web_account"`, etc. |
 | **Sources** | `"manychat"`, `"internal"`, `"api"` |
 | **Receivers** | Nenhum conectado |
@@ -231,7 +231,7 @@ Emitido após verificação bem-sucedida via `AuthService.verify_for_login()`.
 | Campo | Valor |
 |-------|-------|
 | **Sender** | *(contexto Doorman)* |
-| **Payload** | `code` (VerificationCode), `customer` (AuthCustomerInfo), `purpose` (str) |
+| **Payload** | `code` (VerificationCode), `customer` (IdentityView), `purpose` (str) |
 | **Purposes** | `"login"`, `"verify_contact"` |
 | **Receivers** | Nenhum conectado |
 

@@ -26,7 +26,7 @@ WA_SETTINGS = {"number": "554333231997", "ttl_seconds": 600}
 ACCESS_SETTINGS = {
     "ACCESS_LINK_API_KEY": "test-access-key",
     "ACCESS_LINK_ENTRY_URL": "https://loja.test",
-    "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+    "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
 }
 
 

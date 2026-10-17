@@ -171,8 +171,8 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 ## 5. Auth & cross-cutting
 
 - **OTP:** request-code (HMAC, nunca plaintext; TTL ~10min; entrega WhatsApp via ManyChat → SMS → email)
-  → verify-code → sessão Django (bridge doorman→Guestman). Debug OTP exposto só em dev/staging
-  (`SHOPMAN_EXPOSE_DEBUG_OTP`).
+  → verify-code → sessão Django (bridge doorman→Guestman). O código raw só é
+  visível em sender explícito de desenvolvimento, nunca no contrato HTTP.
 - **Device trust:** cookie HttpOnly (HMAC), 30d; `device-check` pula OTP.
 - **Magic link:** link da LOJA `…/a?t=<token>` (sem `next` na query — destino derivado da metadata
   server-side → zero open-redirect); `POST /api/auth/access/` troca token→sessão (cookie host-only via

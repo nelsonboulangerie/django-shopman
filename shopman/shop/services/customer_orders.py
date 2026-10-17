@@ -664,7 +664,7 @@ def _customer_identity_from_info(customer_info) -> tuple[str | None, str | None]
     try:
         from shopman.shop.projections.customer_context import customer_ref_by_uuid
 
-        customer_ref = customer_ref_by_uuid(customer_info.uuid)
+        customer_ref = customer_ref_by_uuid(customer_info.subject_id)
     except Exception:
         logger.warning(
             "customer_order_access_customer_ref_lookup_failed customer_uuid=%s",

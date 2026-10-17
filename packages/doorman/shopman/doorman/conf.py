@@ -45,7 +45,7 @@ class DoormanSettings:
     MESSAGE_SENDER_CLASS: str = "shopman.doorman.senders.ConsoleSender"
 
     # Delivery fallback chain: ordered list of methods to try when sending codes.
-    # Empty = use MESSAGE_SENDER_CLASS as single sender (backward compat).
+    # Empty = use MESSAGE_SENDER_CLASS as the single configured sender.
     DELIVERY_CHAIN: list[str] = field(default_factory=list)
 
     # Map of method → sender class for the delivery chain.
@@ -94,8 +94,9 @@ class DoormanSettings:
 
     # Customer resolver (Protocol-based decoupling from Guestman)
     # Default raises NotImplementedError — configure a real resolver in settings.
-    # With shopman-guestman: "shopman.guestman.adapters.auth.CustomerResolver"
-    CUSTOMER_RESOLVER_CLASS: str = "shopman.doorman.resolvers.NoopCustomerResolver"
+    # With shopman-guestman: "shopman.guestman.adapters.auth.IdentityResolver"
+    IDENTITY_RESOLVER_CLASS: str = "shopman.doorman.resolvers.NoopIdentityResolver"
+    MANYCHAT_IDENTITY_BRIDGE_CLASS: str = ""
 
     # Adapter (single point of customization, like allauth's DefaultAccountAdapter)
     AUTH_ADAPTER: str = "shopman.doorman.adapter.DefaultAuthAdapter"
@@ -204,28 +205,43 @@ doorman_settings = _LazySettings()
 
 
 # Customer resolver (singleton, thread-safe)
-_customer_resolver = None
-_customer_resolver_lock = threading.Lock()
+_identity_resolver = None
+_identity_resolver_lock = threading.Lock()
+_manychat_identity_bridge = None
 
 
-def get_customer_resolver():
-    """Get the configured customer resolver (singleton)."""
-    global _customer_resolver
-    if _customer_resolver is None:
-        with _customer_resolver_lock:
-            if _customer_resolver is None:
+def get_identity_resolver():
+    """Get the configured identity resolver (singleton)."""
+    global _identity_resolver
+    if _identity_resolver is None:
+        with _identity_resolver_lock:
+            if _identity_resolver is None:
                 from django.utils.module_loading import import_string
 
                 s = get_doorman_settings()
-                cls = import_string(s.CUSTOMER_RESOLVER_CLASS)
-                _customer_resolver = cls()
-    return _customer_resolver
+                cls = import_string(s.IDENTITY_RESOLVER_CLASS)
+                _identity_resolver = cls()
+    return _identity_resolver
 
 
-def reset_customer_resolver():
+def get_manychat_identity_bridge():
+    """Return the explicitly configured optional ManyChat bridge."""
+    global _manychat_identity_bridge
+    dotted_path = get_doorman_settings().MANYCHAT_IDENTITY_BRIDGE_CLASS
+    if not dotted_path:
+        return None
+    if _manychat_identity_bridge is None:
+        from django.utils.module_loading import import_string
+
+        _manychat_identity_bridge = import_string(dotted_path)()
+    return _manychat_identity_bridge
+
+
+def reset_identity_resolver():
     """Reset cached resolver. For testing."""
-    global _customer_resolver
-    _customer_resolver = None
+    global _identity_resolver, _manychat_identity_bridge
+    _identity_resolver = None
+    _manychat_identity_bridge = None
 
 
 # Auth adapter (singleton, thread-safe)

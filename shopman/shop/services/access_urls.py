@@ -35,7 +35,7 @@ def build_access_url(
     """Create an AccessLink token and return the full store entry URL.
 
     Args:
-        customer: AuthCustomerInfo with a ``uuid`` field. Returns None if falsy.
+        customer: IdentityView with a ``subject_id`` field. Returns None if falsy.
         source: Token source tag (e.g. "manychat", "internal").
         metadata: Metadata stored on the AccessLink. The backend derives the
             post-login destination from ``order_ref``/``action``.
@@ -43,7 +43,9 @@ def build_access_url(
     Returns:
         Absolute store entry URL, or None if token creation fails.
     """
-    if not customer or not getattr(customer, "uuid", None):
+    from shopman.doorman.protocols.identity import IdentityView
+
+    if not isinstance(customer, IdentityView) or not customer.subject_id:
         return None
 
     try:

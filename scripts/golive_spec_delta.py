@@ -159,7 +159,6 @@ DELTA: tuple[Row, ...] = (
     Row("SHOPMAN_LINK_ADAPTER", Rule("equals_or_absent", _STRIPE), grupo="money"),
     Row("SHOPMAN_FISCAL_ADAPTER", Rule("equals", _FOCUS), grupo="money"),
     Row("FOCUS_NFE_BASE_URL", Rule("absent"), grupo="money"),
-    Row("SHOPMAN_EXPOSE_DEBUG_OTP", Rule("off"), Rule("off"), grupo="profile"),
     Row("SHOPMAN_STAGING_AUTOPILOT", Rule("off"), Rule("off"), grupo="profile"),
     Row("SHOPMAN_ENABLE_CONSOLE_NOTIFICATION_ADAPTER", Rule("off"), grupo="profile"),
     Row("SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM", Rule("off"), grupo="profile"),

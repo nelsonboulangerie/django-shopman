@@ -26,7 +26,6 @@ _DOOR_FLAGS = (
     "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS",
     "SHOPMAN_EXPOSE_MOCK_CAPTURE",
     "SHOPMAN_MOCK_PIX_AUTO_CONFIRM",
-    "SHOPMAN_EXPOSE_DEBUG_OTP",
     "SHOPMAN_STAGING_AUTOPILOT",
 )
 
@@ -116,7 +115,6 @@ def test_half_turn_staging_with_live_stripe_lists_every_open_door(closed):
     closed.SHOPMAN_ENVIRONMENT = "staging"
     closed.SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = True
     closed.SHOPMAN_EXPOSE_MOCK_CAPTURE = True
-    closed.SHOPMAN_EXPOSE_DEBUG_OTP = True
     closed.SHOPMAN_PAYMENT_ADAPTERS = {"pix": _MOCK, "card": _STRIPE, "link": _STRIPE}
     closed.SHOPMAN_STRIPE = {"secret_key": "sk_live_segredo", "publishable_key": "pk_live_publica"}
 
@@ -128,7 +126,6 @@ def test_half_turn_staging_with_live_stripe_lists_every_open_door(closed):
         "SHOPMAN_ENVIRONMENT=staging",
         "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true",
         "SHOPMAN_EXPOSE_MOCK_CAPTURE=true",
-        "SHOPMAN_EXPOSE_DEBUG_OTP=true",
         "SHOPMAN_PIX_ADAPTER=payment_mock",
     ):
         assert door in hint
@@ -141,7 +138,6 @@ def test_alpha_today_passes(closed):
     closed.SHOPMAN_ENVIRONMENT = "staging"
     closed.SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = True
     closed.SHOPMAN_EXPOSE_MOCK_CAPTURE = True
-    closed.SHOPMAN_EXPOSE_DEBUG_OTP = True
     closed.SHOPMAN_PAYMENT_ADAPTERS = {"pix": _MOCK, "card": _STRIPE, "link": _STRIPE}
     assert check_live_provider_without_test_doors(None) == []
 

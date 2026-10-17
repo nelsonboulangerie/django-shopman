@@ -1107,7 +1107,7 @@ class CheckoutLoyaltyView(APIView):
             customer_info = getattr(request, "customer", None)
             if customer_info is not None:
                 try:
-                    redeem_q = checkout_context.loyalty_balance(customer_info.uuid)
+                    redeem_q = checkout_context.loyalty_balance(customer_info.subject_id)
                 except Exception:
                     logger.debug("loyalty balance lookup degraded", exc_info=True)
                     redeem_q = 0

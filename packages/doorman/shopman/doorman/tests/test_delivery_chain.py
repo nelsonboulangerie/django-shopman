@@ -166,7 +166,7 @@ class TestRequestCodeWithFallback:
         reset_adapter()
 
     @override_settings(DOORMAN={
-        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+        "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
     })
     def test_successful_delivery_is_verifiable_once_end_to_end(self):
         """The public service path persists SENT before allowing one verification."""
@@ -183,23 +183,23 @@ class TestRequestCodeWithFallback:
         )
 
         assert requested.success is True
-        assert requested.debug_code is not None
         assert len(sender.calls) == 1
+        raw_code = sender.calls[0][1]
         code = VerificationCode.objects.get(pk=requested.code_id)
         assert code.status == VerificationCode.Status.SENT
 
-        verified = AuthService.verify_for_login(phone, requested.debug_code)
+        verified = AuthService.verify_for_login(phone, raw_code)
 
         assert verified.success is True
         code.refresh_from_db()
         assert code.status == VerificationCode.Status.VERIFIED
 
-        replay = AuthService.verify_for_login(phone, requested.debug_code)
+        replay = AuthService.verify_for_login(phone, raw_code)
         assert replay.success is False
         assert replay.error_code == ErrorCode.CODE_EXPIRED
 
     @override_settings(DOORMAN={
-        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+        "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
     })
     def test_request_code_records_actual_delivery_method(self):
         """request_code() records the actual delivery method used by fallback."""
@@ -220,7 +220,7 @@ class TestRequestCodeWithFallback:
         assert code.status == "sent"
 
     @override_settings(DOORMAN={
-        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+        "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
         "DELIVERY_CHAIN": ["whatsapp", "sms"],
         "DELIVERY_SENDERS": {
             "whatsapp": "shopman.doorman.senders.ConsoleSender",

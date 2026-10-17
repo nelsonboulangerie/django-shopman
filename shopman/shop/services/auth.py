@@ -7,6 +7,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def customer_by_ref(customer_ref: str):
+    from shopman.guestman.services import customer as customer_service
+
+    return customer_service.get(customer_ref)
+
+
 def customer_by_uuid(customer_uuid):
     from shopman.guestman.services import customer as customer_service
 
@@ -17,6 +23,30 @@ def customer_by_phone(phone: str):
     from shopman.guestman.services import customer as customer_service
 
     return customer_service.get_by_phone(phone)
+
+
+def identity_by_customer_ref(customer_ref: str):
+    """Hydrate a session-safe Doorman identity through host composition."""
+    if not customer_ref:
+        return None
+    try:
+        from shopman.guestman.adapters.auth import IdentityResolver
+
+        customer = customer_by_ref(customer_ref)
+        if customer is None:
+            return None
+        identity = IdentityResolver().get(customer.uuid, purpose="session")
+        return identity if identity is not None and identity.is_active else None
+    except Exception:
+        logger.debug("auth.identity_by_customer_ref degraded")
+        return None
+
+
+def identify_manychat_subject(subject: str):
+    """Resolve/upsert a ManyChat subject through the opt-in Guestman bridge."""
+    from shopman.guestman.adapters.auth import ManychatIdentityBridge
+
+    return ManychatIdentityBridge().upsert_subscriber({"id": subject})
 
 
 def set_missing_first_name(*, phone: str, name: str) -> None:
@@ -195,7 +225,7 @@ def request_contact_verification_code(
     grave: pedir o código para o número novo nasceria um cadastro-fantasma nele,
     e o número que o cliente quer adotar já apareceria como sendo de outra conta.
 
-    A finalidade `verify_contact` do Core não passa por `resolve_customer`: o
+    A finalidade `verify_contact` do Core não passa por `resolve_identity`: o
     `request_code` do doorman só normaliza, checa as portarias de rate limit e
     manda o código. Nenhum `Customer` é tocado. Foi medido.
     """
@@ -232,7 +262,7 @@ def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> Contac
     ⚠️ Não existe `AuthService.verify_contact()` no doorman, e isso NÃO é uma
     lacuna a preencher no Core. O único verify de serviço é o
     `verify_for_login`, que carrega justamente o que aqui faria estrago:
-    `resolve_customer` + auto-create. O que ele tem de reaproveitável — achar o
+    `resolve_identity` + auto-create. O que ele tem de reaproveitável — achar o
     código válido, conferir o HMAC, contar a tentativa, carimbar — já é API
     pública do MODELO (`VerificationCode.verify()` se descreve como "the
     canonical entry point for code verification"). Compor sobre ela é usar o
@@ -246,9 +276,10 @@ def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> Contac
     from shopman.doorman.conf import get_adapter
     from shopman.doorman.models import VerificationCode
 
-    target = get_adapter().normalize_login_target(phone)
-    if not target:
+    handle = get_adapter().login_handle(phone)
+    if handle.kind != "phone" or not handle.value:
         return ContactVerifyResult(success=False, error_code="invalid_target")
+    target = handle.value
 
     with transaction.atomic():
         code = (
@@ -375,7 +406,7 @@ def verify_error_message(auth_result) -> str:
 
 def confirmed_customer_name(auth_result) -> str:
     try:
-        customer = customer_by_uuid(auth_result.customer.uuid)
+        customer = customer_by_uuid(auth_result.customer.subject_id)
         return customer.first_name if customer else ""
     except Exception:
         logger.debug("auth.confirmed_customer_name degraded; using fallback", exc_info=True)
@@ -406,7 +437,7 @@ def trusted_device_login(request, *, phone: str):
 
     from django.contrib.auth import login
     from django.db import transaction
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
+    from shopman.doorman.conf import get_adapter
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
     from shopman.doorman.services.device_trust import DeviceTrustService
 
@@ -424,13 +455,9 @@ def trusted_device_login(request, *, phone: str):
         if not DeviceTrustService.check(request, "customer", customer.uuid):
             return None
 
-        customer_info = AuthCustomerInfo(
-            uuid=customer.uuid,
-            name=customer.name,
-            phone=customer.phone,
-            email=getattr(customer, "email", None) or None,
-            is_active=True,
-        )
+        customer_info = get_adapter().identity(customer.uuid, purpose="session")
+        if customer_info is None:
+            return None
         user, _ = get_or_create_user_for_customer(customer_info)
         # login() dá flush na sessão quando OUTRO usuário estava logado — a sacola
         # anônima tem que sobreviver à troca, como nos fluxos do Doorman.
@@ -511,8 +538,8 @@ def passkey_login(request, *, credential: dict):
     """
     from django.contrib.auth import login
     from django.db import transaction
+    from shopman.doorman.conf import get_adapter
     from shopman.doorman.models import Passkey
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services import passkey as passkey_service
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
@@ -546,13 +573,11 @@ def passkey_login(request, *, credential: dict):
 
             raise PasskeyError("Não reconhecemos esta chave. Entre pelo WhatsApp.")
 
-        customer_info = AuthCustomerInfo(
-            uuid=customer.uuid,
-            name=customer.name,
-            phone=customer.phone,
-            email=getattr(customer, "email", None) or None,
-            is_active=True,
-        )
+        customer_info = get_adapter().identity(customer.uuid, purpose="session")
+        if customer_info is None:
+            from shopman.doorman.services.passkey import PasskeyError
+
+            raise PasskeyError("Não reconhecemos esta identidade. Entre pelo WhatsApp.")
         user, _ = get_or_create_user_for_customer(customer_info)
         # A sacola anônima sobrevive à troca de sessão, como em todo login daqui.
         preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
@@ -610,4 +635,11 @@ def trust_device(*, response, customer_id, request) -> None:
 def revoke_current_device(*, request, response) -> None:
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    DeviceTrustService.revoke_device(request, response)
+    subject_id = getattr(getattr(request, "customer", None), "subject_id", None)
+    if subject_id is not None:
+        DeviceTrustService.revoke_device(
+            request,
+            response,
+            subject_type="customer",
+            subject_id=subject_id,
+        )

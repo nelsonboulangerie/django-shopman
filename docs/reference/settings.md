@@ -206,7 +206,8 @@ de compra todo dia, em silêncio.
 
 | Setting | Tipo | Default | Descrição |
 |---------|------|---------|-----------|
-| `CUSTOMER_RESOLVER_CLASS` | str | `"...CustomersResolver"` | Resolver de customer para login |
+| `IDENTITY_RESOLVER_CLASS` | str | `"...NoopIdentityResolver"` | Resolver `resolve(kind, value)` para autenticação |
+| `MANYCHAT_IDENTITY_BRIDGE_CLASS` | str | `""` | Bridge opcional de enriquecimento ManyChat |
 | `AUTH_ADAPTER` | str | `"...DefaultAuthAdapter"` | Adapter (ponto de customização) |
 | `AUTO_CREATE_CUSTOMER` | bool | `True` | Criar customer automaticamente no primeiro login |
 | `PRESERVE_SESSION_KEYS` | list \| None | `None` | Keys da sessão a preservar no login (ex: `["cart_session_key"]`) |

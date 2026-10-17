@@ -250,8 +250,9 @@ no próprio parecer.
 - **Aceite:** não existe segunda implementação da mesma decisão; toda cotação contextual
   preserva ajustes e explica o total.
 - **Apêndice A** descreve o motor genérico de condições e o critério para virar pacote.
-- **Estado:** implementado no PR #1851; a correção separada de repricing permanece
-  bloqueante antes do WP-4.
+- **Estado:** implementado no PR #1851. O conteúdo da correção de repricing do PR
+  #1852 já está em `main`, no merge commit `75eca4000`; o objeto do PR foi fechado
+  por dessincronização do GitHub e não representa pendência técnica.
 
 ### WP-4 — Doorman: porto de identidade (CIAM)
 - Alargar o porto: `IdentityView` com `handles: [{kind, value, verified, primary}]` + `resolve(kind, value)`.
@@ -261,6 +262,9 @@ no próprio parecer.
   em logs.
 - **Aceite:** teste de contrato com resolver fake multi-handle, provando login por handle
   secundário, primazia explícita, conflito fail-closed e revogação vinculada ao sujeito.
+- **Estado:** implementado; PR pendente. O dono aprovou o expand-contract mínimo
+  `OTP_EMAIL`; `EMAIL_LINK` permanece exclusivo de links e não é usado como
+  substituto semântico.
 
 ### WP-5 — Políticas cross-domain: organização explícita
 - Ver WP-7 (absorvido; deixa de ser item solto).
@@ -431,7 +435,6 @@ fronteira de entrega; preço contextual preserva `adjustments[]`; disponibilidad
 fato (`available_qty`) de política (`orderable_ceiling`).
 
 - P2: o `Quote` nasce em `utils` (contrato transversal) ou no pacote que o emite?
-- P3: `IdentityView` é contrato no doorman ou no guestman? Quem declara o porto?
 - P5: qual o teto de tamanho do orquestrador antes de virar god-module — e como medir?
 - P7: o read-side ganha a mesma taxonomia? (frente separada; ADR-012/014 já governa)
 **Decisões registradas:**
@@ -440,6 +443,10 @@ fato (`available_qty`) de política (`orderable_ceiling`).
   (a) o motor não tiver vocabulário de outro domínio, (b) houver 2+ consumidores reais
   independentes e (c) o ruleset não couber mais em código. O contrato vigente continua
   `ContextualPrice.adjustments[]`.
+- **P3 — quem declara o porto de identidade?** **Doorman**, porque é o consumidor da
+  decisão de autenticação e deve declarar o contrato mínimo que necessita. Guestman
+  implementa esse porto na bridge opt-in `shopman/guestman/adapters/auth.py`; nenhum dos
+  dois kernels importa internals do outro.
 - **P4 — a Instância é arquivo ou DB?** **DB é a verdade de runtime**; um descritor versionado (YAML/JSON) serve para bootstrap e diff (`instance-apply` / `instance-dump`). Nunca duas verdades.
 - **P6 — unidades de composição viram pacotes?** **Não**. Elas vivem no orquestrador (ADR-005 §3). Pacote só para domínio com invariante/ledger próprio (ADR-022).
 

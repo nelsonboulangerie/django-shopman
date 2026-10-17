@@ -47,7 +47,7 @@
 #
 # ⚠️ PAGAMENTOS: este blueprint herda os adapters MOCK (verificação). Para PRODUÇÃO,
 #    troque SHOPMAN_PIX_ADAPTER/SHOPMAN_CARD_ADAPTER pelos reais e desligue os mocks
-#    + SHOPMAN_EXPOSE_DEBUG_OTP. Recomendado: validar o modelo cross-domain em staging
+#    e valide o modelo cross-domain em staging
 #    (subdomínios) ANTES de virar a produção.
 name: shopman-headless
 region: nyc
@@ -468,11 +468,6 @@ envs:
     type: GENERAL
   - key: CONCIERGE_ALLOWED_SUBSCRIBERS
     value: ""
-    scope: RUN_TIME
-    type: GENERAL
-  # false em produção: nunca expor OTP no corpo da resposta em produção (E010).
-  - key: SHOPMAN_EXPOSE_DEBUG_OTP
-    value: "false"
     scope: RUN_TIME
     type: GENERAL
   # Rate-limit por IP atrás da DO App Platform: o rightmost do X-Forwarded-For é

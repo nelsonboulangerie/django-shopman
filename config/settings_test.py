@@ -45,7 +45,6 @@ from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 
 # ── Flags de comportamento (runtime) ─────────────────────────────────────────
 SHOPMAN_ENVIRONMENT = "development"
-SHOPMAN_EXPOSE_DEBUG_OTP = True
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
 SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
 SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED = False
@@ -268,7 +267,8 @@ DOORMAN.update(  # noqa: F405
     USE_HTTPS=False,
     ACCESS_LINK_API_KEY="",
     MESSAGE_SENDER_CLASS="shopman.doorman.senders.ConsoleSender",
-    CUSTOMER_RESOLVER_CLASS="shopman.guestman.adapters.auth.CustomerResolver",
+    IDENTITY_RESOLVER_CLASS="shopman.guestman.adapters.auth.IdentityResolver",
+    MANYCHAT_IDENTITY_BRIDGE_CLASS="shopman.guestman.adapters.auth.ManychatIdentityBridge",
     DELIVERY_CHAIN=["sms", "console"],  # DEBUG=true, ambiente development
     ACCESS_LINK_ENTRY_URL="",
 )
