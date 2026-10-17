@@ -1,0 +1,280 @@
+{
+  "$schema_version": 1,
+  "$comment": [
+    "Contrato canônico da fronteira Admin/Unfold × superfícies de operador.",
+    "Admin concentra configuração rara, segurança, integrações, segredos, permissões e auditoria.",
+    "Fluxos continuous, per_shift ou daily precisam de superfície de operador, página, API e teste reais.",
+    "Os grupos admin_models cobrem exatamente uma vez todo ModelAdmin registrado em django.contrib.admin.site."
+  ],
+  "dimensions": {
+    "frequency": ["continuous", "per_shift", "daily", "on_event", "weekly", "rare"],
+    "audience": ["cashier", "floor_operator", "production_lead", "purchasing", "manager", "auditor", "security_admin", "system_admin"],
+    "risk": ["low", "medium", "high", "critical"],
+    "admin_fit": ["advanced_configuration", "destructive", "integration", "secret", "permission", "audit"],
+    "routine_frequencies": ["continuous", "per_shift", "daily"]
+  },
+  "admin_model_groups": [
+    {
+      "id": "identity-and-device-security",
+      "frequency": "rare",
+      "audience": "security_admin",
+      "risk": "critical",
+      "admin_fit": "permission",
+      "purpose": "Provisionar contas, permissões, credenciais e dispositivos; nunca operar o turno.",
+      "models": [
+        "auth.group", "auth.user", "backstage.deliverydevice", "backstage.kdsinstance",
+        "backstage.printagentcredential", "cashman.terminal", "doorman.pincredential", "doorman.trusteddevice"
+      ]
+    },
+    {
+      "id": "audit-ledgers",
+      "frequency": "on_event",
+      "audience": "auditor",
+      "risk": "low",
+      "admin_fit": "audit",
+      "purpose": "Consultar evidência imutável, histórico ou diagnóstico depois do fato.",
+      "models": [
+        "backstage.aliasbenchmarkreport", "backstage.bialertevent", "backstage.biscenarioreport",
+        "backstage.dailysalesfact", "backstage.dayclosing", "backstage.historicalsale",
+        "backstage.importbatch", "backstage.operationchecklistrun", "backstage.operationepisode",
+        "backstage.operatoralert", "backstage.printjob", "backstage.recipeversionrating",
+        "backstage.signinevent", "customer_merge.mergeaudit", "orderman.directive", "orderman.order",
+        "orderman.session", "payman.paymentintent", "shop.audiencesnapshot", "shop.contactrelease",
+        "shop.marketingauditevent", "shop.marketingcommandreceipt", "shop.marketingplatformauditevent",
+        "shop.marketingsecurityevent", "storefront.intentpilotreport", "storefront.stockalertdelivery",
+        "storefront.stockalertoccurrence"
+      ]
+    },
+    {
+      "id": "business-policy-configuration",
+      "frequency": "rare",
+      "audience": "manager",
+      "risk": "high",
+      "admin_fit": "advanced_configuration",
+      "purpose": "Alterar regra, política, taxonomia ou parâmetro de negócio com alcance amplo.",
+      "models": [
+        "backstage.bialertrule", "backstage.consumptionrole", "backstage.operationchecklisttemplate",
+        "backstage.operationepisodekind", "backstage.operationtasktemplate", "backstage.productconsumptiontag",
+        "backstage.reciperatingcriterion", "backstage.seatingspot", "backstage.timertag", "guestman.pricetier",
+        "refs.ref", "shop.attributedefinition", "shop.channel", "shop.coupon", "shop.deliverydistanceband",
+        "shop.deliveryzone", "shop.faqentry", "shop.notificationtemplate", "shop.omotenashicopy",
+        "shop.promotion", "shop.qualitydefect", "shop.qualitygrade", "shop.ruleconfig",
+        "storefront.intentcategory", "storefront.messageintentsample"
+      ]
+    },
+    {
+      "id": "shop-and-integration-settings",
+      "frequency": "rare",
+      "audience": "system_admin",
+      "risk": "critical",
+      "admin_fit": "integration",
+      "purpose": "Configurar loja, integrações, aparência e capacidades globais.",
+      "models": [
+        "shop.pushsubscription", "shop.shop", "shop.shopappearance", "shop.shopintegrations",
+        "shop.shoployalty", "shop.shopmenu", "shop.shopoperation", "shop.shopordering",
+        "shop.shoppos", "shop.shopproduction", "shop.shoppurchase", "shop.shopsearch"
+      ]
+    },
+    {
+      "id": "bi-curation",
+      "frequency": "weekly",
+      "audience": "manager",
+      "risk": "medium",
+      "admin_fit": "audit",
+      "purpose": "Curar dados importados e de-paras fora do fluxo vivo.",
+      "models": ["backstage.categoryalias", "backstage.paymentmethodalias", "backstage.productalias"]
+    },
+    {
+      "id": "catalog-oversight",
+      "frequency": "weekly",
+      "audience": "manager",
+      "risk": "medium",
+      "admin_fit": "advanced_configuration",
+      "purpose": "Inspeção avançada; o CRUD diário está no Gestor.",
+      "models": ["offerman.collection", "offerman.listing", "offerman.product", "shop.announcement"]
+    },
+    {
+      "id": "customer-oversight",
+      "frequency": "on_event",
+      "audience": "manager",
+      "risk": "high",
+      "admin_fit": "destructive",
+      "purpose": "Inspeção e reparo excepcional; o CRUD diário está no Gestor.",
+      "models": [
+        "customer_loyalty.loyaltyaccount", "guestman.customer", "shop.conversation",
+        "storefront.stockalertsubscription"
+      ]
+    },
+    {
+      "id": "production-oversight",
+      "frequency": "on_event",
+      "audience": "production_lead",
+      "risk": "medium",
+      "admin_fit": "destructive",
+      "purpose": "Inspeção e correção excepcional; receitas e execução diárias estão em Produção.",
+      "models": ["craftsman.recipe", "craftsman.workorder"]
+    },
+    {
+      "id": "purchasing-oversight",
+      "frequency": "on_event",
+      "audience": "purchasing",
+      "risk": "medium",
+      "admin_fit": "advanced_configuration",
+      "purpose": "Inspeção e correção excepcional; cadastros diários estão em Compras.",
+      "models": ["buyman.material", "buyman.supplier"]
+    },
+    {
+      "id": "stock-and-cash-audit",
+      "frequency": "on_event",
+      "audience": "auditor",
+      "risk": "high",
+      "admin_fit": "audit",
+      "purpose": "Conferir livros de estoque, caixa e comandas sem substituir o fluxo operacional.",
+      "models": [
+        "backstage.postab", "cashman.shift", "stockman.batch", "stockman.hold", "stockman.move",
+        "stockman.position", "stockman.quant", "stockman.stockalert"
+      ]
+    }
+  ],
+  "custom_admin_pages": [
+    {"id": "admin-dashboard", "frequency": "on_event", "audience": "manager", "risk": "low", "admin_fit": "audit", "controller": "shopman/backstage/admin/dashboard.py"},
+    {"id": "admin-console-settings-hub", "frequency": "rare", "audience": "system_admin", "risk": "critical", "admin_fit": "integration", "controller": "shopman/backstage/admin_console/settings_hub.py"},
+    {"id": "admin-console-copy-catalog", "frequency": "rare", "audience": "manager", "risk": "high", "admin_fit": "advanced_configuration", "controller": "shopman/backstage/admin_console/copy_catalog.py"},
+    {"id": "admin-console-pos-counter-agent", "frequency": "rare", "audience": "system_admin", "risk": "critical", "admin_fit": "integration", "controller": "shopman/backstage/admin_console/pos_counter_agent.py"},
+    {"id": "admin-console-cash-receipt", "frequency": "on_event", "audience": "auditor", "risk": "low", "admin_fit": "audit", "controller": "shopman/backstage/admin_console/cash_receipt.py"},
+    {"id": "admin-console-diagnostics", "frequency": "on_event", "audience": "system_admin", "risk": "medium", "admin_fit": "audit", "controller": "shopman/backstage/admin_console/diagnostics.py"},
+    {"id": "admin-console-operator-badge", "frequency": "rare", "audience": "security_admin", "risk": "critical", "admin_fit": "permission", "controller": "shopman/backstage/admin_console/operator_badge.py"}
+  ],
+  "admin_auth_interstitials": [
+    {
+      "id": "admin-2fa-verify", "frequency": "on_event", "audience": "security_admin", "risk": "critical", "admin_fit": "secret",
+      "route": "admin_2fa_verify", "route_source": "config/urls.py", "controller": "shopman/backstage/views/two_factor.py",
+      "template": "shopman/backstage/templates/two_factor/verify.html", "test": "shopman/backstage/tests/test_admin_2fa.py",
+      "reason": "Interstitial de autenticação obrigatório antes do Admin; não é página operacional nem custom page Unfold."
+    },
+    {
+      "id": "admin-2fa-enroll", "frequency": "rare", "audience": "security_admin", "risk": "critical", "admin_fit": "secret",
+      "route": "admin_2fa_enroll", "route_source": "config/urls.py", "controller": "shopman/backstage/views/two_factor.py",
+      "template": "shopman/backstage/templates/two_factor/verify.html", "test": "shopman/backstage/tests/test_admin_2fa_enrollment.py",
+      "reason": "Cerimônia pessoal de inscrição de fator; não é página operacional nem custom page Unfold."
+    }
+  ],
+  "workflows": [
+    {
+      "id": "pos-sales", "frequency": "continuous", "audience": "cashier", "risk": "high",
+      "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/index.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-pos"}],
+      "tests": ["surfaces/pos-nuxt/tests/orderPayment.test.ts"],
+      "locks": ["pos"]
+    },
+    {
+      "id": "terminal-operation", "frequency": "per_shift", "audience": "cashier", "risk": "high",
+      "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/session/index.vue", "surfaces/pos-nuxt/app/pages/settings/terminal.vue"],
+      "api": [{"path": "shopman/backstage/api/operations.py", "contains": "POSTerminal"}],
+      "tests": ["surfaces/pos-nuxt/tests/composables/usePosTerminal.test.ts"],
+      "locks": ["terminal", "shift-opening"]
+    },
+    {
+      "id": "day-closing", "frequency": "daily", "audience": "manager", "risk": "high",
+      "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/session/closing.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-closing"}],
+      "tests": ["surfaces/pos-nuxt/tests/pages/sessionClosing.corridor.test.ts"],
+      "locks": ["closing"]
+    },
+    {
+      "id": "house-accounts", "frequency": "continuous", "audience": "cashier", "risk": "high",
+      "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/index.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-pos-accounts"}],
+      "tests": ["surfaces/pos-nuxt/tests/presentation.test.ts"],
+      "locks": ["house-accounts"]
+    },
+    {
+      "id": "order-management", "frequency": "continuous", "audience": "floor_operator", "risk": "high",
+      "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/index.vue", "surfaces/orders-nuxt/app/pages/[ref].vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-orders"}],
+      "tests": ["surfaces/orders-nuxt/tests/board.test.ts"],
+      "locks": ["orders"]
+    },
+    {
+      "id": "catalog-crud", "frequency": "daily", "audience": "manager", "risk": "medium",
+      "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/catalog.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-catalog-product"}],
+      "tests": ["surfaces/orders-nuxt/tests/catalog.test.ts"],
+      "locks": ["products"]
+    },
+    {
+      "id": "catalog-structure-administration", "frequency": "rare", "audience": "manager", "risk": "high",
+      "admin_only": true, "admin_fit": "advanced_configuration",
+      "reason": "Coleções e vitrines estruturam o catálogo inteiro; não são CRUD rotineiro do operador.",
+      "locks": ["collections", "listings"]
+    },
+    {
+      "id": "customer-crud", "frequency": "daily", "audience": "manager", "risk": "high",
+      "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/customers/index.vue", "surfaces/orders-nuxt/app/pages/customers/[ref].vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-customers"}],
+      "tests": ["surfaces/orders-nuxt/tests/customers.test.ts"],
+      "locks": ["customers"]
+    },
+    {
+      "id": "recipe-crud", "frequency": "daily", "audience": "production_lead", "risk": "medium",
+      "surface": "production", "pages": ["surfaces/production-nuxt/app/pages/recipes/index.vue", "surfaces/production-nuxt/app/pages/recipes/new.vue", "surfaces/production-nuxt/app/pages/recipes/[ref]/edit.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-recipes"}],
+      "tests": ["surfaces/production-nuxt/tests/e2e/recipeCrud.spec.ts"],
+      "locks": ["recipes"]
+    },
+    {
+      "id": "production-execution", "frequency": "continuous", "audience": "production_lead", "risk": "high",
+      "surface": "production", "pages": ["surfaces/production-nuxt/app/pages/index.vue", "surfaces/production-nuxt/app/pages/plan.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-wo-start"}],
+      "tests": ["surfaces/production-nuxt/tests/presentation/productionSections.test.ts"],
+      "locks": ["work-orders"]
+    },
+    {
+      "id": "material-crud", "frequency": "daily", "audience": "purchasing", "risk": "medium",
+      "surface": "purchase", "pages": ["surfaces/purchase-nuxt/app/pages/base/materials/index.vue", "surfaces/purchase-nuxt/app/pages/base/materials/[sku].vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-purchase-materials"}],
+      "tests": ["surfaces/purchase-nuxt/tests/materialFilters.test.ts"],
+      "locks": ["materials"]
+    },
+    {
+      "id": "supplier-crud", "frequency": "daily", "audience": "purchasing", "risk": "medium",
+      "surface": "purchase", "pages": ["surfaces/purchase-nuxt/app/pages/base/suppliers/index.vue", "surfaces/purchase-nuxt/app/pages/base/suppliers/[ref].vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-purchase-suppliers"}],
+      "tests": ["surfaces/purchase-nuxt/tests/supplierFilters.test.ts"],
+      "locks": ["suppliers"]
+    },
+    {
+      "id": "marketing-offer-crud", "frequency": "daily", "audience": "manager", "risk": "high",
+      "surface": "marketing", "pages": ["surfaces/marketing-nuxt/app/pages/settings/offers.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-marketing-offer"}],
+      "tests": ["shopman/backstage/tests/test_api_marketing_surface.py", "surfaces/marketing-nuxt/tests/useMarketingOffers.test.ts"],
+      "locks": ["promotions", "coupons"]
+    },
+    {
+      "id": "operational-checklists", "frequency": "daily", "audience": "floor_operator", "risk": "high",
+      "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/checklists.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-operation-checklists"}],
+      "tests": ["shopman/backstage/tests/test_api_operation_checklists.py", "surfaces/orders-nuxt/tests/composables/useOperationChecklists.test.ts"],
+      "locks": ["operational-checklists"]
+    },
+    {
+      "id": "operator-credential-self-service", "frequency": "daily", "audience": "floor_operator", "risk": "high",
+      "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/index.vue", "surfaces/operator-kit/app/components/OperatorLock.vue"],
+      "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-operator-pin-change"}, {"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-operator-badge-lost"}],
+      "tests": ["surfaces/operator-kit/tests/useOperatorLock.test.ts"],
+      "locks": ["operator-pin", "lost-badge"]
+    },
+    {
+      "id": "staff-account-administration", "frequency": "rare", "audience": "security_admin", "risk": "critical",
+      "admin_only": true,
+      "admin_fit": "permission",
+      "reason": "Criar, suspender ou privilegiar contas staff é segurança e segregação de funções, não trabalho rotineiro do operador.",
+      "locks": ["staff-accounts"]
+    }
+  ],
+  "required_locks": [
+    "pos", "terminal", "shift-opening", "closing", "staff-accounts", "house-accounts",
+    "operator-pin", "lost-badge", "orders", "products", "collections", "listings", "customers", "recipes", "work-orders",
+    "materials", "suppliers", "promotions", "coupons", "operational-checklists"
+  ]
+}

@@ -741,6 +741,9 @@ _OPERATOR_UNLOCK_PERMS = {
     # Postos do Gestor: mesma lógica de Clientes. A barra pergunta para mostrar a aba
     # só a quem gere operadores (quem vincula dispositivos e cadastra postos).
     "cashman.manage_operators",
+    # Rotinas do Gestor: a entrada em Ajustes só aparece para quem pode executar
+    # tarefas operacionais; supervisão continua conferida na mutation própria.
+    "backstage.perform_operation_task",
 }
 
 

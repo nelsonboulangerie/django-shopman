@@ -781,11 +781,12 @@ surfaces-lint: ## ESLint de todas as superfícies + do layer operator-kit
 	@echo "✓ Lint das superfícies"
 
 admin: ## Admin: valida tudo de Admin/Unfold
+	$(PYTHON) scripts/check_admin_surface_boundary.py
 	$(PYTHON) scripts/check_unfold_canonical.py --maturity $(ADMIN_SCOPE_ARGS)
 ifneq ($(ADMIN_URL),)
 	@echo "✓ Admin canônico ($(ADMIN_URL))"
 else
-	$(PYTHON) -m pytest shopman/backstage/tests/test_unfold_canonical_templates.py shopman/backstage/tests/test_admin_operational_integration.py shopman/backstage/tests/test_admin_smoke.py -q
+	$(PYTHON) -m pytest shopman/backstage/tests/test_admin_surface_boundary.py shopman/backstage/tests/test_unfold_canonical_templates.py shopman/backstage/tests/test_admin_operational_integration.py shopman/backstage/tests/test_admin_smoke.py -q
 	@echo "✓ Admin canônico"
 endif
 

@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { computed, ref } from "vue";
 import { beforeAll, describe, expect, it } from "vitest";
 import MarketingOfferForm from "~/components/MarketingOfferForm.vue";
-import type { MarketingOfferOptions } from "~/types/campaign";
+import type { MarketingOffer, MarketingOfferOptions } from "~/types/campaign";
 
 beforeAll(() => Object.assign(globalThis, { computed, ref }));
 
@@ -22,9 +22,9 @@ const options: MarketingOfferOptions = {
   shop_timezone: "America/Sao_Paulo",
 };
 
-function form(kind: "offer" | "coupon" = "offer") {
+function form(kind: "offer" | "coupon" = "offer", initial?: MarketingOffer) {
   return mount(MarketingOfferForm, {
-    props: { kind, options },
+    props: { kind, options, initial },
     global: {
       stubs: { Icon: true },
     },
@@ -131,6 +131,44 @@ describe("MarketingOfferForm", () => {
     expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({
       valid_from: "2026-10-10T08:30",
       valid_until: "2026-10-18T19:15",
+    });
+  });
+
+  it("abre uma oferta existente preenchida e salva a edição", async () => {
+    const wrapper = form("offer", {
+      ref: "semana",
+      name: "Semana do pão",
+      type: "percent",
+      type_label: "Percentual",
+      value: 15,
+      valid_from: "2026-10-17T12:00:00Z",
+      valid_until: "2026-10-24T12:00:00Z",
+      skus: ["CRO-1"],
+      collections: ["cafe"],
+      min_order_q: 2500,
+      fulfillment_types: ["pickup"],
+      customer_segments: ["champion"],
+      birthday_only: true,
+      channels: ["web"],
+      is_active: true,
+      status: "live",
+      available_for_campaign: true,
+      coupons: [],
+    });
+
+    expect((wrapper.get("#marketing-offer-name").element as HTMLInputElement).value).toBe(
+      "Semana do pão",
+    );
+    expect(wrapper.get('button[type="submit"]').text()).toContain("Salvar alterações");
+    await wrapper.get("#marketing-offer-name").setValue("Semana prorrogada");
+    await wrapper.get("form").trigger("submit");
+
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({
+      kind: "offer",
+      name: "Semana prorrogada",
+      value: 15,
+      min_order_q: 2500,
+      is_active: true,
     });
   });
 });

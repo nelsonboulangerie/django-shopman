@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from django.contrib import admin, messages
-from django.http import HttpResponseRedirect
-from django.urls import reverse
+from django.contrib import admin
 from shopman.utils import unfold_badge, unfold_badge_numeric
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
@@ -18,7 +16,6 @@ from shopman.backstage.models import (
     OperationTaskStatus,
     OperationTaskTemplate,
 )
-from shopman.backstage.services.operations import OperationChecklistError, complete_checklist_run
 
 
 class OperationChecklistTemplateTaskInline(TabularInline):
@@ -112,6 +109,8 @@ class OperationTaskRunInline(TabularInline):
 
 @admin.register(OperationChecklistRun)
 class OperationChecklistRunAdmin(ModelAdmin):
+    """Audit trail only; execution and completion belong to the operator surface."""
+
     list_display = (
         "business_date",
         "template",
@@ -125,13 +124,32 @@ class OperationChecklistRunAdmin(ModelAdmin):
     )
     list_filter = ("status", "template__moment", "business_date")
     search_fields = ("template__ref", "template__title", "shift_ref", "notes")
-    readonly_fields = ("started_at", "completed_at", "progress_display")
-    autocomplete_fields = ("template", "started_by", "completed_by")
+    readonly_fields = (
+        "template",
+        "business_date",
+        "shift_ref",
+        "status",
+        "started_by",
+        "started_at",
+        "completed_by",
+        "completed_at",
+        "notes",
+        "context",
+        "progress_display",
+    )
     inlines = [OperationTaskRunInline]
-    actions = ["complete_selected"]
     ordering = ("-business_date", "template__sort_order", "-started_at")
     list_fullwidth = True
     compressed_fields = True
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     @display(description="status")
     def status_badge(self, obj):
@@ -145,26 +163,6 @@ class OperationChecklistRunAdmin(ModelAdmin):
     @display(description="progresso")
     def progress_display(self, obj):
         return unfold_badge_numeric(f"{obj.done_tasks}/{obj.total_tasks} ({obj.progress_percent}%)", "base")
-
-    # ⚠️ `permissions=["change"]` não é zelo: ação sem `permissions=` NÃO é
-    # filtrada pelo Django, aparece no seletor e roda para quem só tem `view`.
-    # A Gerente tem `_ver("backstage")` e não tem `change_operationchecklistrun`
-    # — sem isto ela carimbava `completed_by`/`completed_at`, que é assinatura
-    # de conformidade, sem ter o direito de escrever no modelo.
-    @admin.action(description="Concluir checklists selecionados", permissions=["change"])
-    def complete_selected(self, request, queryset):
-        completed = 0
-        for run in queryset:
-            try:
-                complete_checklist_run(run, user=request.user)
-            except OperationChecklistError as exc:
-                messages.error(request, f"{run}: {exc}")
-            else:
-                completed += 1
-        if completed:
-            messages.success(request, f"{completed} checklist(s) concluído(s).")
-        return HttpResponseRedirect(reverse("admin:backstage_operationchecklistrun_changelist"))
-
 
 @admin.register(OperationTaskRun)
 class OperationTaskRunAdmin(ModelAdmin):

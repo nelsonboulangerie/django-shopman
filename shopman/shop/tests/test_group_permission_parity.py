@@ -44,6 +44,7 @@ GATE_FILES = [
     "shopman/backstage/admin_console/cash_receipt.py",
     "shopman/backstage/admin/navigation.py",
     "shopman/backstage/api/operations.py",
+    "shopman/backstage/api/operation_checklists.py",
     "shopman/backstage/api/ifood_store.py",
     "shopman/backstage/projections/production.py",
 ]
@@ -73,6 +74,10 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("backstage.operate_production", {"Cozinha", "Gerente"}),
     # permissions.can_operate_purchase (dedicated purchase/receipt app gate)
     ("backstage.operate_purchase", {"Gerente"}),
+    # Abertura/rotina/fechamento operacional acontece no Gestor; a gerente pode
+    # executar e fazer a segunda conferência sem entrar no Admin.
+    ("backstage.perform_operation_task", {"Caixa", "Cozinha", "Gerente"}),
+    ("backstage.supervise_operation_task", {"Gerente"}),
     # api/purchase.py::PURCHASE_COUNT_PERMISSIONS (stock count = audit, same
     # ruler as cashman.audit_shift: it belongs to Dono, never to Gerente)
     ("backstage.audit_stock", {"Dono"}),

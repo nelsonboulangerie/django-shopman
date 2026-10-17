@@ -17,15 +17,18 @@ Ele tem estas partes:
 
 ## Ordem de Decisao
 
-1. Use uma tela/changelist/changeform nativa do Admin quando o fluxo couber em `ModelAdmin`.
-2. Use recursos Unfold de `ModelAdmin` antes de pagina custom: filtros, `list_filter_submit`, actions, row actions, dialog actions, `BaseDialogForm`, tabs, sections/expandable rows, datasets, inlines, display decorators e templates de changeform.
-3. Para pagina custom, siga a documentacao oficial de custom pages: `UnfoldModelAdminViewMixin`, `TemplateView`, `title`, `permission_required` e `.as_view(model_admin=...)`. A template de entrada deve estender `admin/base.html`, como no demo oficial atual.
-4. Toda pagina Admin custom precisa declarar uma projection registrada em `shopman/backstage/projections/`; contexto ad-hoc direto na view e drift.
-5. Para qualquer campo visual, crie um `forms.Form`/`ModelForm` com `UnfoldAdmin*Widget` e renderize via `unfold/helpers/field.html`.
-6. Para blocos visuais, consulte o inventario local e use componentes/helpers Unfold. Nao limite a lista mental a `card/table/button`; o pacote instalado expõe muitos helpers.
-7. Use componentes via `{% component "unfold/components/..." %}`. Nao inclua componentes com `{% include %}`.
-8. Para modal, use `actions/dialog` + `BaseDialogForm`. O wrapper aprovado de modal custom saiu com o console de producao (WP-ADM-7d); overlay novo exige waiver autorizado no gate.
-9. So depois disso considere HTML custom. Custom exige autorizacao explicita e continua obrigado a usar tokens/classes existentes no CSS compilado do Unfold.
+1. Classifique primeiro o fluxo por frequência, audiência e risco no contrato `docs/reference/admin-surface-boundary.json`. Se pertencer ao Admin, declare também o encaixe objetivo: configuração avançada, ação destrutiva, integração, segredo, permissão ou auditoria.
+2. Trabalho contínuo, por turno ou diário pertence a uma superfície de operador registrada. Admin não pode ser a única porta desse trabalho.
+3. Use Admin para configuração rara, segurança, integrações, segredos, permissões, auditoria e reparo excepcional.
+4. Quando o fluxo for Admin, use uma tela/changelist/changeform nativa quando ele couber em `ModelAdmin`.
+5. Use recursos Unfold de `ModelAdmin` antes de pagina custom: filtros, `list_filter_submit`, actions, row actions, dialog actions, `BaseDialogForm`, tabs, sections/expandable rows, datasets, inlines, display decorators e templates de changeform.
+6. Para pagina custom, siga a documentacao oficial de custom pages: `UnfoldModelAdminViewMixin`, `TemplateView`, `title`, `permission_required` e `.as_view(model_admin=...)`. A template de entrada deve estender `admin/base.html`, como no demo oficial atual.
+7. Toda pagina Admin custom precisa declarar uma projection registrada em `shopman/backstage/projections/`; contexto ad-hoc direto na view e drift.
+8. Para qualquer campo visual, crie um `forms.Form`/`ModelForm` com `UnfoldAdmin*Widget` e renderize via `unfold/helpers/field.html`.
+9. Para blocos visuais, consulte o inventario local e use componentes/helpers Unfold. Nao limite a lista mental a `card/table/button`; o pacote instalado expõe muitos helpers.
+10. Use componentes via `{% component "unfold/components/..." %}`. Nao inclua componentes com `{% include %}`.
+11. Para modal, use `actions/dialog` + `BaseDialogForm`. O wrapper aprovado de modal custom saiu com o console de producao (WP-ADM-7d); overlay novo exige waiver autorizado no gate.
+12. So depois disso considere HTML custom. Custom exige autorizacao explicita e continua obrigado a usar tokens/classes existentes no CSS compilado do Unfold.
 
 ## Contrato De Superficies
 
@@ -35,7 +38,9 @@ O gate conhece as superficies operacionais atuais:
 - Runtime registrado: POS e KDS de producao. Essas superficies existem por razao operacional explicita e nao podem crescer silenciosamente.
 - Excecao explicita fora do Admin: Storefront.
 
-Ao criar uma nova tela backstage, o caminho padrao e Admin/Unfold. Se a tela tentar nascer em `shopman/backstage/templates/gestor`, `pos`, `kds` ou outro shell custom sem registro explicito, `make admin` falha como `unregistered-backstage-surface`.
+Ao criar uma nova tela backstage, a frequência decide a superfície antes da tecnologia. Fluxo rotineiro nasce no app de operador registrado; configuração, segurança e auditoria nascem no Admin/Unfold. Se uma tela tentar nascer em `shopman/backstage/templates/gestor`, `pos`, `kds` ou outro shell custom sem registro explicito, `make admin` falha como `unregistered-backstage-surface`.
+
+O gate `scripts/check_admin_surface_boundary.py`, executado por `make admin`, confere o inventário runtime dos `ModelAdmin` e das páginas custom e exige página, API e teste para todo fluxo rotineiro. As decisões nomeadas de POS, terminal, fechamento, contas staff, PIN/crachá do operador, contas da casa, checklists e CRUDs diários ficam travadas no mesmo contrato. Verificação e inscrição 2FA são intersticiais de autenticação documentados separadamente: protegem o Admin, mas não são página operacional nem custom page Unfold.
 
 Ao criar uma nova projection backstage, registre a superficie correspondente ou o gate falha como `unregistered-backstage-projection`.
 

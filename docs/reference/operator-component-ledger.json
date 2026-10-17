@@ -1429,6 +1429,32 @@
           "runner": {
             "config": "playwright.visual.config.ts"
           }
+        },
+        {
+          "id": "operation-checklists",
+          "source_files": [
+            "app/pages/checklists.vue"
+          ],
+          "routes": [
+            "/checklists"
+          ],
+          "variants": [
+            "not-started",
+            "in-progress",
+            "supervision",
+            "completed"
+          ],
+          "families": [
+            "action",
+            "field",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         }
       ]
     },

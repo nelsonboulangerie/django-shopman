@@ -10,6 +10,8 @@ legada só mantém leitura/edição/preview durante a migração.
     GET    campaign/decisions/          → a fila de decisões, por prazo (a casa do app)
     GET    campaign/history/            → tudo que já saiu
     GET    campaign/options/            → vocabulário do formulário de regra
+    GET    campaign/offers/             → listar ofertas/cupom  POST → criar
+    PATCH  campaign/offers/<ref>/       → editar/ativar/desativar oferta ou cupom
     GET    campaign/platforms/          → estado de entrega de cada plataforma
     POST   campaign/preview/            → como a mensagem vai ficar (mesmo resolvedor do envio)
     GET    campaign/announcements/<pk>/         → um announcement
@@ -558,6 +560,63 @@ class MarketingOfferListView(_CampaignBase):
             },
             status=201,
         )
+
+
+class MarketingOfferDetailView(_CampaignBase):
+    """Edit an existing offer or coupon from the Marketing cockpit."""
+
+    permission_map = {"PATCH": "shop.edit_marketing_campaigns"}
+
+    def patch(self, request, ref: str):
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            with transaction.atomic():
+                promotion = Promotion.objects.select_for_update().prefetch_related("channels", "coupons").filter(
+                    ref=ref
+                ).first()
+                if promotion is None:
+                    return Response({"detail": "Esta oferta não existe."}, status=404)
+                try:
+                    fields, coupon_fields, error = _marketing_offer_fields(payload, existing=promotion)
+                except DRFValidationError as exc:
+                    return Response(_offer_parser_error(exc), status=422)
+                if error:
+                    return Response(error, status=422)
+
+                channels = fields.pop("channels")
+                fields.pop("ref", None)
+                for field, value in fields.items():
+                    setattr(promotion, field, value)
+                promotion.full_clean()
+                promotion.save()
+                promotion.channels.set(channels)
+
+                coupon = promotion.coupons.first()
+                if coupon_fields is not None:
+                    if coupon is None:
+                        coupon = Coupon(promotion=promotion)
+                    for field, value in coupon_fields.items():
+                        setattr(coupon, field, value)
+                    coupon.full_clean()
+                    coupon.save()
+        except DjangoValidationError as exc:
+            return Response(_model_validation_error(exc), status=422)
+        except IntegrityError:
+            return Response(
+                {
+                    "code": "offer_conflict",
+                    "detail": "Outra alteração desta oferta aconteceu ao mesmo tempo. Atualize e tente novamente.",
+                },
+                status=409,
+            )
+
+        logger.info(
+            "marketing.offer_updated actor=%s promotion=%s request_id=%s",
+            request.user.pk,
+            promotion.ref,
+            str(request.headers.get("X-Request-ID") or ""),
+        )
+        return Response({"ok": True, "offer": _marketing_offer_projection(promotion)})
 
 
 # ── Posts ────────────────────────────────────────────────────────────
@@ -1363,7 +1422,11 @@ def _marketing_offer_options() -> dict:
     }
 
 
-def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]:
+def _marketing_offer_fields(
+    data: dict,
+    *,
+    existing: Promotion | None = None,
+) -> tuple[dict, dict | None, dict | None]:
     from django.utils.dateparse import parse_datetime
     from shopman.offerman.models import Collection, Product
 
@@ -1397,6 +1460,10 @@ def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]
         return {}, None, _offer_error("kind", "Escolha Oferta ou Cupom.")
 
     coupon_code = str(data.get("coupon_code") or "").strip().upper()
+    existing_coupon = existing.coupons.first() if existing is not None else None
+    expected_kind = "coupon" if existing_coupon is not None else "offer"
+    if existing is not None and kind != expected_kind:
+        return {}, None, _offer_error("kind", "O tipo de um cadastro existente não pode ser trocado.")
     if kind == "coupon":
         if not coupon_code:
             return {}, None, _offer_error("coupon_code", "Informe o código do cupom.")
@@ -1409,7 +1476,10 @@ def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]
                     "Use até 50 letras, números, hífen ou sublinhado, sem espaços.",
                 ),
             )
-        if Coupon.objects.filter(code=coupon_code).exists():
+        duplicate_coupon = Coupon.objects.filter(code=coupon_code)
+        if existing_coupon is not None:
+            duplicate_coupon = duplicate_coupon.exclude(pk=existing_coupon.pk)
+        if duplicate_coupon.exists():
             return {}, None, _offer_error("coupon_code", "Já existe um cupom com este código.")
 
     name = str(data.get("name") or "").strip()
@@ -1499,11 +1569,14 @@ def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]
     if min_order_q < 0:
         return {}, None, _offer_error("min_order_q", "O pedido mínimo não pode ser negativo.")
 
-    requested_ref = str(data.get("ref") or "").strip()
-    base_ref = slugify(requested_ref or (coupon_code if kind == "coupon" else name))[:64]
-    if not base_ref:
-        return {}, None, _offer_error("name", "O nome precisa formar uma referência válida.")
-    ref = _unique_promotion_ref(base_ref)
+    if existing is not None:
+        ref = existing.ref
+    else:
+        requested_ref = str(data.get("ref") or "").strip()
+        base_ref = slugify(requested_ref or (coupon_code if kind == "coupon" else name))[:64]
+        if not base_ref:
+            return {}, None, _offer_error("name", "O nome precisa formar uma referência válida.")
+        ref = _unique_promotion_ref(base_ref)
 
     fields = {
         "ref": ref,

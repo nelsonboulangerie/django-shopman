@@ -112,6 +112,7 @@ from .marketing import (
     MarketingDecisionQueueView,
     MarketingDualControlView,
     MarketingFreezeView,
+    MarketingOfferDetailView,
     MarketingOfferListView,
     MarketingStepUpView,
     MarketingUnfreezeView,
@@ -137,6 +138,13 @@ from .notifications import (
     NotificationPushSubscriptionView,
     NotificationReadView,
     NotificationSeenBatchView,
+)
+from .operation_checklists import (
+    OperationChecklistBoardView,
+    OperationChecklistCompleteView,
+    OperationChecklistStartView,
+    OperationTaskCompleteView,
+    OperationTaskSuperviseView,
 )
 from .operations import (
     CourierTicketEscposView,
@@ -351,6 +359,33 @@ urlpatterns = [
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # Busca da suíte: o campo do cabeçalho dos oito apps e a barra da Central
     path("search/", SuiteSearchView.as_view(), name="api-backstage-search"),
+    # Rotina diária: configurar e auditar continua no Admin; executar e conferir
+    # acontece na superfície do Gestor.
+    path(
+        "operation-checklists/",
+        OperationChecklistBoardView.as_view(),
+        name="api-backstage-operation-checklists",
+    ),
+    path(
+        "operation-checklists/start/",
+        OperationChecklistStartView.as_view(),
+        name="api-backstage-operation-checklists-start",
+    ),
+    path(
+        "operation-checklists/<int:run_id>/complete/",
+        OperationChecklistCompleteView.as_view(),
+        name="api-backstage-operation-checklists-complete",
+    ),
+    path(
+        "operation-checklists/<int:run_id>/tasks/<int:task_id>/complete/",
+        OperationTaskCompleteView.as_view(),
+        name="api-backstage-operation-task-complete",
+    ),
+    path(
+        "operation-checklists/<int:run_id>/tasks/<int:task_id>/supervise/",
+        OperationTaskSuperviseView.as_view(),
+        name="api-backstage-operation-task-supervise",
+    ),
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
@@ -930,6 +965,11 @@ urlpatterns = [
     path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),
     path("marketing/options/", CampaignOptionsView.as_view(), name="api-backstage-marketing-options"),
     path("marketing/offers/", MarketingOfferListView.as_view(), name="api-backstage-marketing-offers"),
+    path(
+        "marketing/offers/<slug:ref>/",
+        MarketingOfferDetailView.as_view(),
+        name="api-backstage-marketing-offer",
+    ),
     path("marketing/security/step-up/", MarketingStepUpView.as_view(), name="api-backstage-marketing-step-up"),
     path(
         "marketing/security/dual-control/",

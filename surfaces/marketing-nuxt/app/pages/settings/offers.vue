@@ -11,11 +11,13 @@ const {
   problem,
   refresh,
   create,
+  update,
   clearProblem,
 } = useMarketingOffers();
 const { refresh: refreshCampaigns } = useCampaigns();
 
 const dialog = ref<"offer" | "coupon" | null>(null);
+const editing = ref<(typeof offers.value)[number] | null>(null);
 const createdRef = ref("");
 
 watch(dialog, (current, previous) => {
@@ -23,15 +25,23 @@ watch(dialog, (current, previous) => {
 });
 
 async function onCreate(payload: Record<string, unknown>) {
-  const created = await create(payload);
+  const created = editing.value
+    ? await update(editing.value.ref, payload)
+    : await create(payload);
   if (!created) return;
   createdRef.value = created.ref;
   dialog.value = null;
+  editing.value = null;
   await refreshCampaigns();
   await nextTick();
   document
     .querySelector<HTMLElement>(`[data-marketing-offer="${created.ref}"]`)
     ?.focus();
+}
+
+function editOffer(offer: (typeof offers.value)[number]) {
+  editing.value = offer;
+  dialog.value = offer.coupons.length ? "coupon" : "offer";
 }
 
 function money(cents: number): string {
@@ -222,6 +232,15 @@ useHead({ title: "Ofertas e cupons" });
                     label="Criar campanha com esta oferta"
                     class="mt-4"
                   />
+                  <NuxtButton
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-pencil"
+                    label="Editar"
+                    class="mt-2"
+                    :data-offer-edit="offer.ref"
+                    @click="editOffer(offer)"
+                  />
                 </div>
               </div>
             </NuxtCard>
@@ -255,7 +274,7 @@ useHead({ title: "Ofertas e cupons" });
 
     <MarketingWorkspaceDialog
       :open="dialog !== null"
-      :title="dialog === 'coupon' ? 'Novo cupom' : 'Nova oferta'"
+      :title="editing ? 'Editar oferta' : dialog === 'coupon' ? 'Novo cupom' : 'Nova oferta'"
       :description="
         dialog === 'coupon'
           ? 'O código e a regra de desconto num passo só, sem mexer em oferta automática que já existe.'
@@ -263,19 +282,21 @@ useHead({ title: "Ofertas e cupons" });
       "
       @update:open="
         (value) => {
-          if (!value) dialog = null;
+          if (!value) { dialog = null; editing = null; }
         }
       "
     >
       <MarketingOfferForm
         v-if="dialog"
+        :key="editing?.ref ?? dialog"
         :kind="dialog"
+        :initial="editing ?? undefined"
         :options="offerOptions"
         :busy="saving"
         :global-error="problem?.detail"
         :field-errors="problem?.fieldErrors"
         @submit="onCreate"
-        @cancel="dialog = null"
+        @cancel="dialog = null; editing = null"
       />
     </MarketingWorkspaceDialog>
   </main>

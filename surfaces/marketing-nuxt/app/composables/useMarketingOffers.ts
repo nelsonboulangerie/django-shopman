@@ -74,6 +74,33 @@ export function useMarketingOffers() {
     }
   }
 
+  async function update(
+    ref: string,
+    payload: Record<string, unknown>,
+  ): Promise<MarketingOffer | null> {
+    if (saving.value) return null;
+    saving.value = true;
+    problem.value = null;
+    try {
+      const response = await $fetch<{ ok: boolean; offer: MarketingOffer }>(
+        `/api/v1/backstage/marketing/offers/${encodeURIComponent(ref)}/`,
+        { method: "PATCH", body: payload },
+      );
+      await refresh();
+      useSonner.success(
+        payload.kind === "coupon" ? "Cupom atualizado." : "Oferta atualizada.",
+      );
+      return response.offer;
+    } catch (err) {
+      flagMarketingSessionError(err);
+      problem.value = marketingOfferProblem(err);
+      useSonner.error(httpErrorMessage(err, "Não foi possível atualizar."));
+      return null;
+    } finally {
+      saving.value = false;
+    }
+  }
+
   return {
     offers: computed(() => data.value?.offers ?? []),
     options: computed(() => data.value?.options),
@@ -83,6 +110,7 @@ export function useMarketingOffers() {
     problem,
     refresh,
     create,
+    update,
     clearProblem: () => {
       problem.value = null;
     },

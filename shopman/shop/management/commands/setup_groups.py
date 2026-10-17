@@ -109,6 +109,7 @@ class Command(BaseCommand):
             "Caixa": [
                 shop_cash("operate_pos"),
                 shop_shop("manage_orders"),
+                _perm("backstage", "operationtasktemplate", "perform_operation_task"),
                 # Quem está no balcão abre a Cozinha: vê o que está saindo e dá o
                 # Pronto quando o prato passa por ele (decisão do dono, 13/10/2026).
                 shop_kdst("operate_kds"),
@@ -129,12 +130,13 @@ class Command(BaseCommand):
                 shop_shop("edit_production_started"),
                 shop_shop("view_production_finished"),
                 shop_shop("edit_production_finished"),
+                _perm("backstage", "operationtasktemplate", "perform_operation_task"),
             ],
             "Gerente": [
                 # ── O que ela alcança no Admin ──────────────────────────────
-                # A persona do Admin é ela. Ler tudo o que é operação e
-                # configuração; escrever no que é do dia a dia (catálogo,
-                # cliente, promoção, texto).
+                # Ela consulta auditoria e faz configuração/reparo excepcional.
+                # O trabalho diário de catálogo, clientes e promoções acontece
+                # nas superfícies; estas permissões não tornam o Admin seu cockpit.
                 #
                 # ⚠️ Dinheiro fica de fora, e não é esquecimento: `payman`
                 # (cobranças) e a apuração do turno são do Dono. É a mesma régua
@@ -183,6 +185,10 @@ class Command(BaseCommand):
                 shop_dclo("perform_closing"),
                 shop_dclo("operate_production"),
                 shop_dclo("operate_purchase"),
+                # A rotina diária é executada no Gestor. O Admin conserva apenas
+                # configuração e auditoria dos modelos e das execuções.
+                _perm("backstage", "operationtasktemplate", "perform_operation_task"),
+                _perm("backstage", "operationtasktemplate", "supervise_operation_task"),
                 # ⚠️ Os relatórios de produção estavam FORA do alcance dela, e o teste
                 # de paridade dizia o contrário: a isenção afirmava que
                 # `shop.manage_production` cobria "Cozinha/Gerente", mas essa permissão

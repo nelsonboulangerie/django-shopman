@@ -4,6 +4,18 @@ This project treats Django Unfold as the design system for Admin/backstage custo
 Operational Admin templates must prefer official Unfold primitives before custom HTML or Tailwind classes.
 Copying the same classes is not enough. The canonical widget/helper/component entrypoint wins because it carries markup, JavaScript assumptions, accessibility, spacing, overflow behavior, and future Unfold upgrades.
 
+## Admin × Surface Boundary
+
+Unfold is canonical for work that belongs in Admin; it does not make Admin the default home of every backstage task. The executable contract is `docs/reference/admin-surface-boundary.json`:
+
+- continuous, per-shift and daily work belongs to a registered operator surface and must carry page, API and test evidence;
+- Admin owns rare configuration, security, integrations, secrets, permissions, audit and exceptional repair;
+- a routine workflow may remain inspectable in a `ModelAdmin`, but Admin cannot be its only operational entrypoint;
+- every live `ModelAdmin` and every custom Admin page is classified by frequency, audience, risk and an explicit Admin fit exactly once;
+- 2FA verification and enrollment are security interstitials, evidenced separately from custom Unfold pages.
+
+`scripts/check_admin_surface_boundary.py` enforces that contract from the live Django Admin registry. It also locks the explicit WP11 decisions for POS, terminal, closing, staff accounts, house accounts and the principal daily CRUD families.
+
 ## Canonical Sources
 
 - Creation playbook: `docs/engineering/unfold_admin_page_playbook.md`
@@ -33,7 +45,7 @@ The default gate does not only scan `admin_console`. It scans every registered c
 - `packages/*/shopman/*/templates/admin/`
 - `packages/*/shopman/*/templates/*/admin/`
 
-It also enforces the backstage surface registry. New backstage templates must land in a canonical Admin/Unfold surface or an explicit registered runtime surface with a product reason. Storefront remains outside the Admin shell.
+It also enforces the backstage surface registry. New backstage templates must land in the surface selected by the Admin × Surface boundary: a canonical Admin/Unfold surface or an explicit registered operator surface with a product reason. Storefront remains outside the Admin shell.
 
 Templates and form/widget definitions in those canonical scopes must not hand-roll visual controls:
 
@@ -99,6 +111,7 @@ make admin
 ```
 
 That single command runs the strict canonical gate and the Admin/Unfold integration tests.
+It first runs the Admin × Surface boundary gate, so a new `ModelAdmin` cannot appear unclassified and routine work cannot become Admin-only.
 During local iteration, the same command can be scoped to a registered relative Admin URL:
 
 ```bash
