@@ -11,6 +11,7 @@ from urllib.error import HTTPError
 import pytest
 from django.test import override_settings
 
+from shopman.shop.adapters import _external
 from shopman.shop.adapters import marketing_delivery_google as google
 from shopman.shop.adapters import marketing_delivery_http as http
 from shopman.shop.adapters import marketing_delivery_meta as meta
@@ -51,6 +52,74 @@ TIKTOK = {
     "access_token": "secret-tiktok-token",
     "timeout": 9,
 }
+
+PUBLICATION_AVAILABILITY_CASES = (
+    (
+        "instagram",
+        meta.instagram_available,
+        "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED",
+        "SHOPMAN_MARKETING_META",
+        META,
+    ),
+    (
+        "facebook",
+        meta.facebook_available,
+        "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED",
+        "SHOPMAN_MARKETING_META",
+        META,
+    ),
+    (
+        "google",
+        google.is_available,
+        "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED",
+        "SHOPMAN_MARKETING_GOOGLE",
+        GOOGLE,
+    ),
+    (
+        "tiktok",
+        tiktok.is_available,
+        "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED",
+        "SHOPMAN_MARKETING_TIKTOK",
+        TIKTOK,
+    ),
+)
+
+
+def _configure_publication_lane(settings, switch, config_setting, config):
+    setattr(settings, switch, True)
+    setattr(settings, config_setting, config)
+
+
+@pytest.mark.parametrize(
+    ("_lane", "is_available", "switch", "config_setting", "config"),
+    PUBLICATION_AVAILABILITY_CASES,
+    ids=[case[0] for case in PUBLICATION_AVAILABILITY_CASES],
+)
+def test_publication_lane_obeys_the_canonical_external_gate(
+    settings,
+    monkeypatch,
+    _lane,
+    is_available,
+    switch,
+    config_setting,
+    config,
+):
+    monkeypatch.setattr(_external, "_suppressed_reason", None)
+    settings.DEBUG = True
+    settings.SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG = False
+    _configure_publication_lane(settings, switch, config_setting, config)
+    assert is_available() is False
+
+    settings.SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG = True
+    assert is_available() is True
+
+    _external.suppress("seed")
+    assert is_available() is False
+
+    monkeypatch.setattr(_external, "_suppressed_reason", None)
+    settings.DEBUG = False
+    settings.SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG = False
+    assert is_available() is True
 
 
 def artifact(platform: str, publication_format: str, *, image=True):
@@ -342,6 +411,108 @@ def google_artifact(*, link="https://loja.example.test/produto/mad", **fields):
             sorted({"publication_format": "standard", **fields}.items())
         ),
     )
+
+
+def tiktok_artifact():
+    return ResolvedDispatchArtifact(
+        platform="tiktok",
+        delivery_kind="publication",
+        format="photo",
+        body="Lá vem a primavera...",
+        hashtags=("primavera",),
+        image_url="https://cdn.example.test/hibisco.jpg",
+        provider_fields=(
+            ("title", "Primavera"),
+            ("privacy_level", "PUBLIC_TO_EVERYONE"),
+            ("disable_comment", False),
+            ("auto_add_music", False),
+            ("commercial_content", True),
+            ("brand_organic_toggle", True),
+            ("brand_content_toggle", False),
+            ("consent_confirmed", True),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "send",
+        "provider_module",
+        "artifact_value",
+        "switch",
+        "config_setting",
+        "config",
+        "disabled_code",
+    ),
+    (
+        (
+            meta.send_instagram,
+            meta,
+            artifact("instagram", "story"),
+            "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED",
+            "SHOPMAN_MARKETING_META",
+            META,
+            "instagram_publication_disabled",
+        ),
+        (
+            meta.send_facebook,
+            meta,
+            artifact("facebook", "feed"),
+            "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED",
+            "SHOPMAN_MARKETING_META",
+            META,
+            "facebook_publication_disabled",
+        ),
+        (
+            google.send,
+            google,
+            google_artifact(),
+            "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED",
+            "SHOPMAN_MARKETING_GOOGLE",
+            GOOGLE,
+            "google_publication_disabled",
+        ),
+        (
+            tiktok.send,
+            tiktok,
+            tiktok_artifact(),
+            "SHOPMAN_MARKETING_TIKTOK_PUBLICATION_ENABLED",
+            "SHOPMAN_MARKETING_TIKTOK",
+            TIKTOK,
+            "tiktok_publication_disabled",
+        ),
+    ),
+    ids=("instagram", "facebook", "google", "tiktok"),
+)
+def test_seed_suppression_stops_public_send_before_provider_io(
+    settings,
+    monkeypatch,
+    send,
+    provider_module,
+    artifact_value,
+    switch,
+    config_setting,
+    config,
+    disabled_code,
+):
+    monkeypatch.setattr(_external, "_suppressed_reason", None)
+    _external.suppress("seed")
+    settings.DEBUG = True
+    settings.SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG = True
+    _configure_publication_lane(settings, switch, config_setting, config)
+    request = Mock()
+    monkeypatch.setattr(provider_module, "request_json", request)
+
+    with pytest.raises(ProviderCallFailure) as caught:
+        send(
+            artifact=artifact_value,
+            target_key="public",
+            idempotency_token="idem",
+        )
+
+    assert caught.value.kind == ProviderOutcomeKind.NOT_ATTEMPTED
+    assert caught.value.code == disabled_code
+    request.assert_not_called()
 
 
 def _google_send(monkeypatch, artifact_value, *, lookup_state="LIVE"):

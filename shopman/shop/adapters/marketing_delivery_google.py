@@ -15,6 +15,7 @@ from urllib.parse import quote, urlsplit
 
 from django.conf import settings
 
+from shopman.shop.adapters._external import inert
 from shopman.shop.adapters.marketing_delivery_http import (
     HTTPFailure,
     TransportFailure,
@@ -42,7 +43,7 @@ _TOKEN_EXPIRY_MARGIN_SECONDS = 60
 def is_available() -> bool:
     config = _config()
     return bool(
-        _external_allowed()
+        not inert()
         and getattr(settings, "SHOPMAN_MARKETING_GOOGLE_PUBLICATION_ENABLED", False)
         and _has_credentials(config)
         and config["account_id"]
@@ -355,12 +356,6 @@ def _receipt_id(value: str) -> str:
     text = str(value or "")
     post_id = text[4:] if text.startswith("gbp:") else ""
     return post_id if _POST_ID.fullmatch(post_id) else ""
-
-
-def _external_allowed() -> bool:
-    return not settings.DEBUG or bool(
-        getattr(settings, "SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG", False)
-    )
 
 
 def _not_attempted(code: str) -> None:
