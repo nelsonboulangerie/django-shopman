@@ -252,6 +252,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/history/`
 - `/api/v1/backstage/marketing/options/`
 - `/api/v1/backstage/marketing/offers/`
+- `/api/v1/backstage/marketing/offers/:ref/`
 - `/api/v1/backstage/marketing/platforms/`
 - `/api/v1/backstage/marketing/preview/`
 - `/api/v1/backstage/marketing/rules/`
@@ -284,6 +285,10 @@ opções server-owned de produtos, coleções, canais, fulfillment, segmentos e 
 loja. `POST /marketing/offers/` exige `shop.edit_marketing_campaigns`, aceita somente
 os campos documentados pela própria tela e cria a regra inteira em uma transação.
 Erro de validação não deixa `Promotion` nem `Coupon` parcial.
+
+`PATCH /marketing/offers/:ref/` usa a mesma permissão e validação para editar,
+ativar ou desativar uma oferta existente sem trocar sua referência nem zerar o
+contador de usos de um cupom.
 
 Cupom sempre recebe uma `Promotion` própria. Essa separação preserva o motor canônico:
 uma promoção que possui cupom é excluída das promoções automáticas e só é resolvida

@@ -16,6 +16,11 @@ CONTRACT_PATH = ROOT / "docs/reference/admin-surface-boundary.json"
 SURFACE_REGISTRY_PATH = ROOT / "surfaces/registry.json"
 ROUTINE_FREQUENCIES = frozenset({"continuous", "per_shift", "daily"})
 
+# `python scripts/check_admin_surface_boundary.py` puts only `scripts/` on
+# `sys.path`; CI intentionally invokes the gate that way through `make admin`.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
