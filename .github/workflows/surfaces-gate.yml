@@ -140,7 +140,7 @@ jobs:
         run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
 
   app-quality:
-    name: ${{ matrix.dir }}
+    name: ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}
     needs: surface-contract
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45

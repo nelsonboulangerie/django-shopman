@@ -190,6 +190,20 @@ def test_internal_surface_keeps_technical_gates_without_becoming_operational(rep
     assert guard.run(repo) == []
 
 
+def test_internal_preview_has_an_explicit_quality_job_name(repo: Path):
+    edit(
+        repo,
+        ".github/workflows/surfaces-gate.yml",
+        "    name: ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}\n",
+        "    name: ${{ matrix.dir }}\n",
+    )
+
+    assert guard.run(repo) == [
+        ".github/workflows/surfaces-gate.yml (app-quality): o nome precisa distinguir preview internal "
+        "com ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}",
+    ]
+
+
 def test_main_exits_nonzero_and_prints_the_file(repo: Path, capsys):
     edit(repo, "Makefile", " bi-nuxt", "")
     assert guard.main(["--root", str(repo)]) == 1
