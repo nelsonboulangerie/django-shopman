@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from shopman.shop.projections import order_tracking
-from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import Action
+from shopman.shop.services.channel_policy import resolve_channel_policy
 
 # Ações em que a bola é do cliente pagar. Depois da fusão (PAYMENT-TRACKING-MERGE)
 # elas vivem na PRÓPRIA promessa do acompanhamento — não há mais projeção de

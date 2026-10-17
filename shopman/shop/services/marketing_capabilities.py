@@ -183,13 +183,6 @@ def format_capability(
     return destination.format(format_ref) if destination is not None else None
 
 
-def default_format_capability(platform: str) -> MarketingFormatCapability | None:
-    destination = DESTINATIONS_BY_PLATFORM.get(str(platform or "").strip())
-    if destination is None:
-        return None
-    return destination.format(destination.default_format)
-
-
 def resolve_identity(
     platform: str,
     *,

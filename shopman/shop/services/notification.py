@@ -134,7 +134,7 @@ def send(order, template: str, *, occurrence: str = "", **extra) -> None:
         "order_ref": order.ref,
         "channel_ref": order.channel_ref or "",
         "template": template,
-        "requires_active_notification": _requires_active_notification(template),
+        "requires_active_notification": requires_active_notification(template),
     }
     payload.update(extra)
 
@@ -264,7 +264,7 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
         "order_ref": order.ref,
         "channel_ref": order.channel_ref or "",
         "template": template,
-        "requires_active_notification": _requires_active_notification(template),
+        "requires_active_notification": requires_active_notification(template),
     }
     origin = (order.data or {}).get("origin_channel")
     if origin in _ORIGIN_CHANNELS:
@@ -484,7 +484,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
     template = _canonical_template(template)
     critical = is_critical_notification(template)
     backend_chain = _resolve_backend_chain(order)
-    requires_active = _requires_active_notification(template, payload=payload)
+    requires_active = requires_active_notification(template, payload=payload)
     routing: dict[str, str] = {}
     backend_chain = _filter_backend_chain(
         order,
@@ -732,7 +732,7 @@ def _filter_backend_chain(
     if identity_state == _IDENTITY_UNAVAILABLE:
         routing["identity_lookup_failed"] = "true"
         routing["error"] = "notification customer identity unavailable"
-        if _dev_console_allowed(backend_chain):
+        if dev_console_allowed(backend_chain):
             return [backend for backend in backend_chain if backend == "console"]
         return []
     if identity_state == _IDENTITY_ABSENT:
@@ -763,7 +763,7 @@ def _filter_backend_chain(
         channel for channel in available_channels if channel not in revoked_channels
     }
 
-    if not allowed_channels and _dev_console_allowed(backend_chain):
+    if not allowed_channels and dev_console_allowed(backend_chain):
         return [backend for backend in backend_chain if backend == "console"]
 
     if not allowed_channels:
@@ -1378,7 +1378,7 @@ def _canonical_template(template: str) -> str:
     return str(template or "").strip()
 
 
-def _requires_active_notification(template: str, *, payload: dict | None = None) -> bool:
+def requires_active_notification(template: str, *, payload: dict | None = None) -> bool:
     if payload and payload.get("requires_active_notification") is True:
         return True
     return _canonical_template(template) in _ACTIVE_NOTIFICATION_TEMPLATES
@@ -1512,7 +1512,7 @@ def subscription_notification_allowed(*, customer_ref: str, phone: str) -> bool:
         return False
 
 
-def _dev_console_allowed(backend_chain: list[str]) -> bool:
+def dev_console_allowed(backend_chain: list[str]) -> bool:
     return bool(getattr(settings, "DEBUG", False) and "console" in backend_chain)
 
 

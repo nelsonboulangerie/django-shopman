@@ -37,7 +37,6 @@ from django.utils import timezone
 from shopman.shop.services import marketing_time
 
 PREFERRED_HOURS = "preferred_hours"
-IMMEDIATE = "immediate"
 #: Tipos que DISPARAM sozinhos: o relógio é o evento, não há fornada por trás.
 ONCE = "once"
 RECURRING = "recurring"

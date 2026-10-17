@@ -147,14 +147,6 @@ def update_address(customer_ref: str, pk: int, intent) -> None:
         address_service.update_address(customer_ref, pk, **fields)
 
 
-def update_address_label(customer_ref: str, pk: int, *, label: str, label_custom: str) -> None:
-    from shopman.guestman.services import address as address_service
-
-    with transaction.atomic():
-        lock_active_customer(customer_ref=customer_ref)
-        address_service.update_address(customer_ref, pk, label=label, label_custom=label_custom)
-
-
 def delete_address(customer_ref: str, pk: int) -> None:
     from shopman.guestman.services import address as address_service
 

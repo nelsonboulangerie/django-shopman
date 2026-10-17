@@ -650,36 +650,6 @@ def recover_checkout_response(*, browser_session: str, principal: str, key: str 
     return None
 
 
-def order_has_payment_error(order_ref: str) -> bool:
-    from shopman.orderman.models import Order
-
-    order = Order.objects.get(ref=order_ref)
-    return bool((order.data or {}).get("payment", {}).get("error"))
-
-
-def get_open_cart_session(*, session_key: str, channel_ref: str):
-    from shopman.orderman.models import Session
-
-    return Session.objects.get(
-        session_key=session_key,
-        channel_ref=channel_ref,
-        state="open",
-    )
-
-
-def simulate_ifood_order(cart_session):
-    from shopman.shop.services import ifood_ingest
-    from shopman.shop.services.ifood_simulation import session_to_ifood_payload
-
-    payload = session_to_ifood_payload(cart_session)
-    return ifood_ingest.ingest(payload)
-
-
-def close_cart_session(cart_session) -> None:
-    cart_session.state = "closed"
-    cart_session.save(update_fields=["state", "updated_at"])
-
-
 def _build_ops_from_data(data: dict) -> list[dict]:
     """Convert checkout data dict into Orderman session operations."""
     ops = []

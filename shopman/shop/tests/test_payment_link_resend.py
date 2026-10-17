@@ -123,6 +123,16 @@ def test_reenvio_sem_envio_original_e_a_primeira_tentativa(db):
     assert created.dedupe_key.endswith(":resend:1")
 
 
+def test_primeiro_aviso_de_cobranca_usa_a_autoridade_do_gesto(db):
+    order = _order("PDV-SEND-1")
+
+    created = notification_svc.send_or_resend_payment_notice(order, action="send")
+
+    assert created.status == "queued"
+    assert created.payload["template"] == "payment_link_sent"
+    assert created.payload["order_ref"] == order.ref
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 2. Cadência
 # ══════════════════════════════════════════════════════════════════════

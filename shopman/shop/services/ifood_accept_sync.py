@@ -44,8 +44,6 @@ EVENT_FAILED = "ifood_accept_failed"
 EVENT_SENT = "ifood_accept_sent"
 EVENT_RETRIED = "ifood_accept_retried"
 EVENT_CONFIRMED = "ifood_accept_confirmed"
-EVENTS = (EVENT_FAILED, EVENT_SENT, EVENT_RETRIED, EVENT_CONFIRMED)
-
 _REMOTE_MARKERS = ("remote_confirmed", "remote_dispatched", "remote_concluded")
 
 
@@ -154,10 +152,6 @@ def deadline(order):
     except (TypeError, ValueError):
         return None
     return value if value is not None and timezone.is_aware(value) else None
-
-
-def notice_title() -> str:
-    return "O iFood ainda não recebeu o aceite"
 
 
 def notice_text(order) -> str:
@@ -297,7 +291,6 @@ __all__ = [
     "deadline",
     "latest_directives",
     "notice_text",
-    "notice_title",
     "on_attempt_failed",
     "on_remote_confirmed",
     "on_sent",

@@ -144,7 +144,7 @@ def door_charge(order) -> dict:
     if payment.get("cod_settled_at"):
         return {"cash_q": 0, "change_for_q": 0, "card_q": 0}
     cash_q = operator_orders.cash_due_on_delivery_q(order)
-    change_for_q = operator_orders._change_for_q(order) if cash_q > 0 else 0
+    change_for_q = operator_orders.change_for_q(order) if cash_q > 0 else 0
     return {
         "cash_q": cash_q,
         "change_for_q": change_for_q if change_for_q > cash_q else 0,

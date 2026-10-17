@@ -284,6 +284,15 @@ def lock_customer_order(order_ref: str):
     return Order.objects.select_for_update().get(ref=order_ref)
 
 
+def can_rate(order) -> bool:
+    """Return whether the customer may submit the order's first rating."""
+    if order.status not in {"delivered", "completed"}:
+        return False
+    data = order.data if isinstance(order.data, dict) else {}
+    rating = data.get("customer_rating")
+    return not (isinstance(rating, dict) and rating.get("rating"))
+
+
 def save_customer_rating(order, *, rating: int, comment: str) -> None:
     from django.db import transaction
     from shopman.orderman.models import Order
@@ -735,6 +744,7 @@ __all__ = [
     "active_order_count_for_phone",
     "add_reorder_items",
     "can_cancel",
+    "can_rate",
     "cancel",
     "customer_can_access_order",
     "customer_identity_filter",

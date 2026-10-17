@@ -15,15 +15,12 @@ from typing import Literal
 from django.conf import settings
 from django.utils import timezone
 
-from shopman.shop.services.marketing_capabilities import DESTINATIONS, platform_kind
+from shopman.shop.services.marketing_capabilities import platform_kind
 
 PUBLICATION = "publication"
 DIRECT_MESSAGE = "direct_message"
 logger = logging.getLogger(__name__)
 
-PLATFORM_KIND: dict[str, str] = {
-    destination.platform: destination.delivery_kind for destination in DESTINATIONS
-}
 ReadinessState = Literal["ready", "degraded", "blocked", "unknown"]
 
 

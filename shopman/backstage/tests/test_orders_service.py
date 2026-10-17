@@ -5,9 +5,11 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 import pytest
+from shopman.orderman.models import Order
 
 from shopman.backstage.services import orders
 from shopman.backstage.services.exceptions import OrderError
+from shopman.shop.services import operator_orders
 
 
 def test_find_order_delegates(monkeypatch):
@@ -16,6 +18,14 @@ def test_find_order_delegates(monkeypatch):
 
     assert orders.find_order("ABC") == "order"
     core.assert_called_once_with("ABC")
+
+
+@pytest.mark.django_db
+def test_operator_order_query_finds_the_public_reference_and_nothing_else():
+    order = Order.objects.create(ref="ORDER-QUERY-1", channel_ref="web", status="accepted", total_q=0)
+
+    assert operator_orders.find_order(order.ref) == order
+    assert operator_orders.find_order("ORDER-QUERY-MISSING") is None
 
 
 def test_confirm_order_delegates(monkeypatch):

@@ -371,7 +371,7 @@ def _piece_value_q(order, line: dict) -> int:
     return int(monetary_mult(Decimal(str(line.get("qty") or 0)), int(line.get("unit_price_q") or 0)))
 
 
-def _schedule_refusal(payload: dict) -> str:
+def schedule_refusal(payload: dict) -> str:
     """A frase com que a régua da venda (``pos._validate_schedule``) recusa a data — ou ""."""
     from shopman.shop.services import pos as pos_service
 
@@ -395,17 +395,17 @@ def _fit_schedule(payload: dict) -> str:
     from shopman.shop.services import preorder_dates
     from shopman.shop.services.pos_intent import PosIntentError
 
-    reason = _schedule_refusal(payload)
+    reason = schedule_refusal(payload)
     if not reason:
         return ""
     if payload.get("delivery_time_slot") and payload.get("delivery_date"):
-        if not _schedule_refusal({**payload, "delivery_time_slot": ""}):
+        if not schedule_refusal({**payload, "delivery_time_slot": ""}):
             payload["delivery_time_slot"] = ""
             return f"{reason} A comanda veio sem horário: confirme a janela com o cliente (F8)."
     today = timezone.localdate()
     for offset in range(preorder_dates.max_preorder_days() + 1):
         day = today + timedelta(days=offset)
-        if _schedule_refusal({**payload, "delivery_date": day.isoformat(), "delivery_time_slot": ""}):
+        if schedule_refusal({**payload, "delivery_date": day.isoformat(), "delivery_time_slot": ""}):
             continue
         payload["delivery_date"] = day.isoformat()
         payload["delivery_time_slot"] = ""

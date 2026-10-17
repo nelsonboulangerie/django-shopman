@@ -62,6 +62,19 @@ def promotion():
     )
 
 
+@pytest.mark.parametrize(
+    ("variables", "expected"),
+    [
+        (("price",), True),
+        (("product_name",), True),
+        (("link",), False),
+        ((), False),
+    ],
+)
+def test_product_requirement_follows_the_canonical_fact_variables(variables, expected):
+    assert marketing_facts.requires_product(variables) is expected
+
+
 def test_facts_replace_stale_event_values_with_canonical_owner_reads(product, monkeypatch):
     from shopman.shop.projections import catalog_context
 

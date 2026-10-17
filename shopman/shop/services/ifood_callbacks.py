@@ -215,10 +215,6 @@ def start_preparation(order_id: str) -> None:
     send_action(order_id, "startPreparation")
 
 
-def ready_to_pickup(order_id: str) -> None:
-    send_action(order_id, "readyToPickup")
-
-
 def dispatch(order_id: str) -> None:
     send_action(order_id, "dispatch")
 
@@ -309,7 +305,6 @@ def send_for_status(
 __all__ = [
     "confirm",
     "start_preparation",
-    "ready_to_pickup",
     "dispatch",
     "request_cancellation",
     "fetch_cancellation_reasons",

@@ -135,6 +135,10 @@ def test_dois_pedidos_na_mesma_saida_compartilham_uma_maquininha(client, operato
     assert card["equipment_label"] == "Saiu com a maquininha Azul"
     assert card["trip_with"] == ["DLV-0415"]
     assert card["courier_return_orders"] == ["DLV-0415", "DLV-0418"]
+    assert [member.ref for member in operator_orders.trip_members(second)] == ["DLV-0415", "DLV-0418"]
+    assert operator_orders.trip_revision(second) == operator_orders.trip_revision(
+        Order.objects.get(ref="DLV-0415")
+    )
 
 
 def test_entregador_voltou_fecha_a_saida_inteira_e_diz_o_que_confere(client, operator, machines):

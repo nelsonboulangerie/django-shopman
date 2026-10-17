@@ -1030,7 +1030,7 @@ def _process_conclusion(event_id: str, order_id: str) -> str:
                 return "deduped"
 
             _record_remote(order, "remote_concluded", event_id)
-            if not _conclusion_allowed(order):
+            if not conclusion_allowed(order):
                 # O iFood já encerrou, mas aqui o pedido ainda não chegou à entrega
                 # (entrega própria parada em preparo, retirada ainda não pronta).
                 # A regra de NÃO pular a custódia do entregador continua de pé; o
@@ -1080,7 +1080,7 @@ def _record_remote(order, marker: str, event_id: str) -> None:
     order.save(update_fields=["data", "updated_at"])
 
 
-def _conclusion_allowed(order) -> bool:
+def conclusion_allowed(order) -> bool:
     """Onde o CON pode fechar o pedido: depois da entrega, ou na retirada pronta."""
     from shopman.orderman.models import Order
 
@@ -1109,7 +1109,7 @@ def _reconcile_locked(order) -> None:
         if order.status in Order.TERMINAL_STATUSES:
             return
         facts = (order.data or {}).get("ifood") or {}
-        if facts.get("remote_concluded") and _conclusion_allowed(order):
+        if facts.get("remote_concluded") and conclusion_allowed(order):
             if ifood_cancellation.is_pending(order):
                 # CON confirma a entrega, não o cancelamento. Guarda o pedido
                 # original para auditoria e aposenta a trava operacional dele na
@@ -1179,7 +1179,7 @@ def run_once() -> dict:
     return process_events(poll())
 
 
-__all__ = ["poll", "acknowledge", "process_events", "run_once"]
+__all__ = ["acknowledge", "conclusion_allowed", "poll", "process_events", "run_once"]
 
 
 def _process_handshake(event: dict, *, settlement: bool) -> str:

@@ -226,6 +226,49 @@ def test_revogar_um_canal_nao_derruba_os_outros(settings):
     assert used == ["sms"]
 
 
+@pytest.mark.parametrize(
+    ("consent_state", "expected"),
+    [
+        ("allowed", True),
+        ("revoked", False),
+        ("lookup_failed", False),
+    ],
+)
+def test_subscription_notification_consent_obeys_revocation_and_fails_closed(
+    consent_state,
+    expected,
+):
+    """A inscrição usa diretamente a mesma autoridade de consentimento."""
+    from shopman.shop.services import account as account_svc
+    from shopman.shop.services import notification as notification_svc
+
+    customer = _customer()
+    if consent_state == "allowed":
+        ConsentService.grant_consent(customer.ref, "whatsapp")
+    elif consent_state == "revoked":
+        ConsentService.revoke_consent(customer.ref, "whatsapp")
+
+    failure = (
+        patch.object(
+            ConsentService,
+            "get_consents",
+            side_effect=RuntimeError("consent store unavailable"),
+        )
+        if consent_state == "lookup_failed"
+        else patch.object(ConsentService, "get_consents", wraps=ConsentService.get_consents)
+    )
+    with failure:
+        allowed = notification_svc.subscription_notification_allowed(
+            customer_ref=customer.ref,
+            phone=customer.phone,
+        )
+
+    assert allowed is expected
+    if consent_state != "lookup_failed":
+        enabled_channels = account_svc.enabled_notification_channels(customer.ref)
+        assert ("whatsapp" in enabled_channels) is expected
+
+
 def test_a_tela_de_preferencias_grava_o_desligado(settings):
     """Mexer numa chave grava as quatro — "desligado" vira opt-out de verdade.
 

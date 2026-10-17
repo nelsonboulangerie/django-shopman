@@ -91,7 +91,9 @@ jobs:
       # without creating another workflow/context that could race the R5 gates.
       - name: Canonical go-live docs have no drift
         run: |
-          python scripts/check_adr_governance.py
+          .venv/bin/python scripts/check_adr_governance.py
+          .venv/bin/python scripts/check_orchestrator_units.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py -q
           python scripts/check_canonical_docs.py
 
       # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode

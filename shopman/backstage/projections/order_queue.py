@@ -2276,7 +2276,7 @@ def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | No
         out_q, back_q = change.out_q, change.back_q
     else:
         out_q, back_q = by_order.get(order.ref, (0, None))
-    change_for_q = operator_orders._change_for_q(order)
+    change_for_q = operator_orders.change_for_q(order)
     suggested_q = operator_orders.change_out_suggested_q(order)
     pending = out_q > 0 and back_q is None
     return {

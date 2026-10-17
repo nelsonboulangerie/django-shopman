@@ -654,11 +654,9 @@ class OrderRateView(APIView):
 
         def execute_rate() -> tuple[dict, int]:
             nonlocal order
-            from shopman.shop.services.customer_orders import lock_customer_order
+            from shopman.shop.services.customer_orders import can_rate, lock_customer_order
             order = lock_customer_order(order.ref)
-            current_projection = build_order_tracking(order)
-            can_rate = any(action.ref == "rate_order" and action.enabled for action in current_projection.actions)
-            if not can_rate:
+            if not can_rate(order):
                 return (
                     {
                         "detail": "Este pedido ainda não pode ser avaliado.",

@@ -371,7 +371,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
         data_updates["payment"] = payment_after
 
     if receiving["type"] == "delivery" and (receiving["changed"] or items_changed):
-        _require_delivery_identity(order, data_updates, total_q=total_q)
+        require_delivery_identity(order, data_updates, total_q=total_q)
 
     result = EditPlan(
         changed=items_changed or notes_changed or receiving["changed"] or schedule_changed,
@@ -463,7 +463,7 @@ def edit(
                     require_stock=True,
                 )
             except ValidationError as exc:
-                raise EditRefused(_stock_refusal(locked, exc, result.items), code=exc.code, field="items") from None
+                raise EditRefused(stock_refusal(locked, exc, result.items), code=exc.code, field="items") from None
             revision = outcome["revision"]
             stock_summary = outcome.get("stock")
 
@@ -781,7 +781,7 @@ def _address_key(structured) -> tuple:
     return tuple(str(structured.get(key) or "").strip().casefold() for key in _ADDRESS_IDENTITY)
 
 
-def _require_delivery_identity(order, data_updates: dict, *, total_q: int) -> None:
+def require_delivery_identity(order, data_updates: dict, *, total_q: int) -> None:
     """Entrega com nota exige endereço completo e CPF/CNPJ válido quando informado — a régua da venda (13/10)."""
     from shopman.shop.services import delivery_fiscal_identity as identity
 
@@ -1347,7 +1347,7 @@ def _brl(value_q: int) -> str:
     return f"R$ {format_money(int(value_q))}"
 
 
-def _stock_refusal(order, exc, items: list[dict]) -> str:
+def stock_refusal(order, exc, items: list[dict]) -> str:
     from shopman.stockman.protocols.sku import PromiseReasonCode
 
     from shopman.shop.services.order_helpers import get_commitment_date
@@ -1420,5 +1420,7 @@ __all__ = [
     "fiscal_authorized",
     "plan",
     "refund_route",
+    "require_delivery_identity",
     "state_refusal",
+    "stock_refusal",
 ]

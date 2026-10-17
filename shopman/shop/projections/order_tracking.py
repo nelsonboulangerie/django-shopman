@@ -29,8 +29,8 @@ from shopman.orderman.models import Directive
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import Action
+from shopman.shop.services import customer_orders, payment_status
 from shopman.shop.services import payment as payment_service
-from shopman.shop.services import payment_status
 
 #: Formas DIGITAIS do acompanhamento: o cliente paga por conta própria, e o
 #: pedido espera por isso. Pix (QR na tela) mais as sessões hospedadas
@@ -55,6 +55,7 @@ CARRIER_TRACKING_URLS: dict[str, str] = {
 }
 
 TERMINAL_STATUSES = frozenset({"completed", "cancelled", "returned"})
+
 
 # Cadência do polling do acompanhamento (segundos). 30s espelha a referência de
 # mercado (iFood) e reduz o "esperei e nada" após o operador mudar o status.
@@ -287,7 +288,6 @@ class TrackingStatusData:
 # ──────────────────────────────────────────────────────────────────────
 
 
-
 def _slot_label(slot_ref: str | None) -> str | None:
     """As DUAS grades: canônico da encomenda e meia hora do PDV — um resolvedor só."""
     if not slot_ref:
@@ -295,6 +295,7 @@ def _slot_label(slot_ref: str | None) -> str | None:
     from shopman.shop.services.fulfillment_window import window_label
 
     return window_label(slot_ref) or None
+
 
 def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     """Build the full tracking data projection for an order."""
@@ -360,12 +361,12 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     )
 
     can_cancel = payment_status.can_cancel(order)
-    can_mock_confirm_payment = _can_mock_confirm_payment(order)
+    can_mock_confirm_payment = _mock_confirmation_projection_value(order)
     actions = _build_order_actions(
         order,
         can_cancel=can_cancel,
         cancellation_requested=cancellation_request is not None,
-        can_rate=_can_rate(order),
+        can_rate=customer_orders.can_rate(order),
         can_mock_confirm_payment=can_mock_confirm_payment,
     )
 
@@ -479,9 +480,18 @@ def _display_status_key(order) -> str:
         if payment_captured or live_payment_status == "authorized" or not has_intent:
             return "waiting_store_confirmation"
         return "payment_pending"
-    if method in payment_service.HOSTED_CHECKOUT_METHODS and live_payment_status == "authorized" and order.status in {"new", "accepted"}:
+    if (
+        method in payment_service.HOSTED_CHECKOUT_METHODS
+        and live_payment_status == "authorized"
+        and order.status in {"new", "accepted"}
+    ):
         return "card_authorized"
-    if order.status == "accepted" and method in _DIGITAL_PAYMENT_METHODS and not payment_captured and live_payment_status != "authorized":
+    if (
+        order.status == "accepted"
+        and method in _DIGITAL_PAYMENT_METHODS
+        and not payment_captured
+        and live_payment_status != "authorized"
+    ):
         return "payment_pending"
     if order.status == "new":
         return "waiting_store_confirmation"
@@ -559,7 +569,8 @@ def _cancellation_request(order) -> TrackingCancellationRequestData | None:
         requested_at=request.requested_at.isoformat(),
     )
 
-def _can_mock_confirm_payment(order) -> bool:
+
+def _mock_confirmation_projection_value(order) -> bool:
     """Este pedido pode receber uma captura simulada AGORA?
 
     Pergunta o ambiente ao dono dela (``payment_service.mock_capture_allowed``),
@@ -580,18 +591,6 @@ def _can_mock_confirm_payment(order) -> bool:
         return False
     status = (payment_status.get_payment_status(order) or "").lower()
     return status not in {"", "unknown", "captured", "paid", "refunded", "cancelled", "failed"}
-
-
-def _rating_data(order) -> dict:
-    data = order.data if isinstance(order.data, dict) else {}
-    rating = data.get("customer_rating")
-    return rating if isinstance(rating, dict) else {}
-
-
-def _can_rate(order) -> bool:
-    if order.status not in {"delivered", "completed"}:
-        return False
-    return not bool(_rating_data(order).get("rating"))
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -675,113 +674,121 @@ def _build_order_actions(
 ) -> tuple[Action, ...]:
     actions: list[Action] = []
     if can_cancel:
-        actions.append(_action(
-            ref="cancel_order",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_CANCEL_ORDER", "Cancelar pedido"),
-            priority="danger",
-            href=f"/api/v1/orders/{order.ref}/cancel/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "required": ["idempotency_key"],
-                "properties": {
-                    "idempotency_key": {"type": "string"},
+        actions.append(
+            _action(
+                ref="cancel_order",
+                kind="mutation",
+                label=_copy_title("TRACKING_ACTION_CANCEL_ORDER", "Cancelar pedido"),
+                priority="danger",
+                href=f"/api/v1/orders/{order.ref}/cancel/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["idempotency_key"],
+                    "properties": {
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="required",
-            confirmation={
-                "title": _copy_title("TRACKING_CANCEL_CONFIRM_TITLE", "Cancelar pedido"),
-                "warning_title": _copy_title(
-                    "TRACKING_CANCEL_WARNING_TITLE",
-                    "Essa ação altera o pedido em andamento",
-                ),
-                "warning_message": _copy_message(
-                    "TRACKING_CANCEL_WARNING_MESSAGE",
-                    "O cancelamento só é permitido enquanto o pagamento não foi capturado e a loja ainda permite reversão.",
-                ),
-                "message": _copy_message(
-                    "TRACKING_CANCEL_CONFIRM_MESSAGE",
-                    "Confirme apenas se não quiser mais seguir com este pedido.",
-                ),
-                "ack_label": _copy_title(
-                    "TRACKING_CANCEL_ACK_LABEL",
-                    "Entendo que o pedido será cancelado e deixará de ser preparado.",
-                ),
-                "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
-                "confirm_label": _copy_title("TRACKING_CANCEL_CONFIRM_CTA", "Confirmar cancelamento"),
-                "severity": "danger",
-            },
-        ))
+                idempotency="required",
+                confirmation={
+                    "title": _copy_title("TRACKING_CANCEL_CONFIRM_TITLE", "Cancelar pedido"),
+                    "warning_title": _copy_title(
+                        "TRACKING_CANCEL_WARNING_TITLE",
+                        "Essa ação altera o pedido em andamento",
+                    ),
+                    "warning_message": _copy_message(
+                        "TRACKING_CANCEL_WARNING_MESSAGE",
+                        "O cancelamento só é permitido enquanto o pagamento não foi capturado e a loja ainda permite reversão.",
+                    ),
+                    "message": _copy_message(
+                        "TRACKING_CANCEL_CONFIRM_MESSAGE",
+                        "Confirme apenas se não quiser mais seguir com este pedido.",
+                    ),
+                    "ack_label": _copy_title(
+                        "TRACKING_CANCEL_ACK_LABEL",
+                        "Entendo que o pedido será cancelado e deixará de ser preparado.",
+                    ),
+                    "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
+                    "confirm_label": _copy_title("TRACKING_CANCEL_CONFIRM_CTA", "Confirmar cancelamento"),
+                    "severity": "danger",
+                },
+            )
+        )
     elif order.status not in {"cancelled", "returned"} and not cancellation_requested:
-        actions.append(_action(
-            ref="request_cancellation",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_REQUEST_CANCELLATION", "Solicitar cancelamento"),
-            priority="danger",
-            href=f"/api/v1/orders/{order.ref}/cancellation-request/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "required": ["idempotency_key"],
-                "properties": {
-                    "reason": {"type": "string", "maxLength": 500},
-                    "idempotency_key": {"type": "string"},
+        actions.append(
+            _action(
+                ref="request_cancellation",
+                kind="mutation",
+                label=_copy_title("TRACKING_ACTION_REQUEST_CANCELLATION", "Solicitar cancelamento"),
+                priority="danger",
+                href=f"/api/v1/orders/{order.ref}/cancellation-request/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["idempotency_key"],
+                    "properties": {
+                        "reason": {"type": "string", "maxLength": 500},
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="required",
-            confirmation={
-                "title": _copy_title(
-                    "TRACKING_REQUEST_CANCELLATION_TITLE",
-                    "Solicitar cancelamento",
-                ),
-                "message": _copy_message(
-                    "TRACKING_REQUEST_CANCELLATION_MESSAGE",
-                    "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.",
-                ),
-                "confirm_label": _copy_title(
-                    "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
-                    "Enviar solicitação",
-                ),
-                "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
-                "severity": "danger",
-            },
-        ))
+                idempotency="required",
+                confirmation={
+                    "title": _copy_title(
+                        "TRACKING_REQUEST_CANCELLATION_TITLE",
+                        "Solicitar cancelamento",
+                    ),
+                    "message": _copy_message(
+                        "TRACKING_REQUEST_CANCELLATION_MESSAGE",
+                        "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.",
+                    ),
+                    "confirm_label": _copy_title(
+                        "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
+                        "Enviar solicitação",
+                    ),
+                    "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
+                    "severity": "danger",
+                },
+            )
+        )
     if can_rate:
-        actions.append(_action(
-            ref="rate_order",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_RATE_ORDER", "Avaliar pedido"),
-            priority="secondary",
-            href=f"/api/v1/orders/{order.ref}/rate/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "required": ["rating", "idempotency_key"],
-                "properties": {
-                    "rating": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "comment": {"type": "string", "maxLength": 500},
-                    "idempotency_key": {"type": "string"},
+        actions.append(
+            _action(
+                ref="rate_order",
+                kind="mutation",
+                label=_copy_title("TRACKING_ACTION_RATE_ORDER", "Avaliar pedido"),
+                priority="secondary",
+                href=f"/api/v1/orders/{order.ref}/rate/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["rating", "idempotency_key"],
+                    "properties": {
+                        "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "comment": {"type": "string", "maxLength": 500},
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="required",
-        ))
+                idempotency="required",
+            )
+        )
     if can_mock_confirm_payment:
-        actions.append(_action(
-            ref="mock_confirm_payment",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_MOCK_CONFIRM_PAYMENT", "Capturar pagamento teste"),
-            priority="quiet",
-            href=f"/api/v1/payment/{order.ref}/mock-confirm/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "properties": {
-                    "idempotency_key": {"type": "string"},
+        actions.append(
+            _action(
+                ref="mock_confirm_payment",
+                kind="mutation",
+                label=_copy_title("TRACKING_ACTION_MOCK_CONFIRM_PAYMENT", "Capturar pagamento teste"),
+                priority="quiet",
+                href=f"/api/v1/payment/{order.ref}/mock-confirm/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "properties": {
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="recommended",
-        ))
+                idempotency="recommended",
+            )
+        )
     if order.status in TERMINAL_STATUSES:
         actions.append(_reorder_action(order))
     return tuple(actions)
@@ -854,12 +861,7 @@ def _pix_payload(payment: dict) -> tuple[str | None, str | None]:
     discordam.
     """
     qr_code = _qr_image_src(payment.get("qr_code") or payment.get("pix_qr_code") or None)
-    copy_paste = (
-        payment.get("copy_paste")
-        or payment.get("pix_copy_paste")
-        or payment.get("pix_code")
-        or None
-    )
+    copy_paste = payment.get("copy_paste") or payment.get("pix_copy_paste") or payment.get("pix_code") or None
     return qr_code, copy_paste
 
 
@@ -889,7 +891,7 @@ def _hold_pk(hold_id: object) -> int | None:
 
 def _pending_planned_hold_date(order) -> date | None:
     """Earliest active planned/demand hold still waiting for materialization."""
-    hold_entries = ((order.data or {}).get("hold_ids") or [])
+    hold_entries = (order.data or {}).get("hold_ids") or []
     hold_pks = [
         pk
         for pk in (_hold_pk(entry.get("hold_id")) for entry in hold_entries if isinstance(entry, dict))
@@ -905,18 +907,15 @@ def _pending_planned_hold_date(order) -> date | None:
 
     from shopman.shop.services import waitlist
 
-    holds = (
-        Hold.objects.filter(
-            pk__in=hold_pks,
-            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-            expires_at__isnull=True,
-            # Fila espera LOTE, e lote tem quant. Sem esta cláusula um hold de
-            # demanda (café) carimbado antes da separação de 29/08 devolve a
-            # data de hoje e o acompanhamento abre a narrativa de fornada.
-            **waitlist.WAITLIST_HOLD_FILTER,
-        )
-        .only("target_date")
-    )
+    holds = Hold.objects.filter(
+        pk__in=hold_pks,
+        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        expires_at__isnull=True,
+        # Fila espera LOTE, e lote tem quant. Sem esta cláusula um hold de
+        # demanda (café) carimbado antes da separação de 29/08 devolve a
+        # data de hoje e o acompanhamento abre a narrativa de fornada.
+        **waitlist.WAITLIST_HOLD_FILTER,
+    ).only("target_date")
     planned_dates = [hold.target_date for hold in holds if hold.target_date]
     return min(planned_dates) if planned_dates else None
 
@@ -1064,9 +1063,7 @@ def _build_promise(
                 deadline_at=payment_expires_at,
                 deadline_kind="payment" if has_deadline else None,
                 deadline_action="cancel_order_on_timeout" if has_deadline else "none",
-                payment_deadline_phrase=(
-                    format_deadline(parse_datetime(payment_expires_at)) if has_deadline else ""
-                ),
+                payment_deadline_phrase=(format_deadline(parse_datetime(payment_expires_at)) if has_deadline else ""),
                 requires_active_notification=True,
                 notification_topic="payment_requested" if order.status == "accepted" else None,
                 actions=(
@@ -1285,7 +1282,7 @@ def _build_progress_steps(
     if payment_confirmed is None:
         payment_confirmed = _payment_info(order)[1]
 
-    include_payment = _should_show_payment_step(order)
+    include_payment = _payment_step_projection_value(order)
     cancelled = order.status == "cancelled"
     active_key = _active_progress_key(
         order,
@@ -1302,22 +1299,28 @@ def _build_progress_steps(
         specs.append(("payment", _payment_confirmed_timestamp(order)))
     specs.append(("preparing", _progress_timestamp(order, "preparing")))
     if is_delivery:
-        specs.extend([
-            ("ready_delivery", _progress_timestamp(order, "ready")),
-            ("dispatched", _progress_timestamp(order, "dispatched")),
-            ("delivered", _progress_timestamp(order, "delivered")),
-            ("completed", _progress_timestamp(order, "completed")),
-        ])
+        specs.extend(
+            [
+                ("ready_delivery", _progress_timestamp(order, "ready")),
+                ("dispatched", _progress_timestamp(order, "dispatched")),
+                ("delivered", _progress_timestamp(order, "delivered")),
+                ("completed", _progress_timestamp(order, "completed")),
+            ]
+        )
     elif is_pickup:
-        specs.extend([
-            ("ready", _progress_timestamp(order, "ready")),
-            ("completed", _progress_timestamp(order, "completed")),
-        ])
+        specs.extend(
+            [
+                ("ready", _progress_timestamp(order, "ready")),
+                ("completed", _progress_timestamp(order, "completed")),
+            ]
+        )
     else:
-        specs.extend([
-            ("ready", _progress_timestamp(order, "ready")),
-            ("completed", _progress_timestamp(order, "completed")),
-        ])
+        specs.extend(
+            [
+                ("ready", _progress_timestamp(order, "ready")),
+                ("completed", _progress_timestamp(order, "completed")),
+            ]
+        )
     if cancelled:
         specs[-1] = ("cancelled", _progress_timestamp(order, "cancelled"))
 
@@ -1335,10 +1338,10 @@ def _build_progress_steps(
         else:
             state = "pending"
         steps.append(TrackingProgressStepData(key=key, state=state, at=timestamp))
-    return tuple(step for step in steps if _should_render_progress_step(step))
+    return tuple(step for step in steps if _progress_step_projection_value(step))
 
 
-def _should_render_progress_step(step: TrackingProgressStepData) -> bool:
+def _progress_step_projection_value(step: TrackingProgressStepData) -> bool:
     if step.state == "pending":
         return False
     if step.key == "received":
@@ -1376,7 +1379,7 @@ def _active_progress_key(
     return "received"
 
 
-def _should_show_payment_step(order) -> bool:
+def _payment_step_projection_value(order) -> bool:
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
     if method in _DIGITAL_PAYMENT_METHODS or method == "external":
@@ -1429,11 +1432,7 @@ def _progress_timestamp(order, status: str) -> str | None:
 
 
 def _event_for_status(order, status: str):
-    return (
-        order.events.filter(type="status_changed", payload__new_status=status)
-        .order_by("created_at", "seq")
-        .first()
-    )
+    return order.events.filter(type="status_changed", payload__new_status=status).order_by("created_at", "seq").first()
 
 
 def _payment_confirmed_timestamp(order) -> str | None:
@@ -1862,4 +1861,9 @@ def convenience_pending(order_ref: str) -> tuple[str, ...]:
     from shopman.orderman.models import Directive
 
     from shopman.shop.directives import CHECKOUT_CONVENIENCE
-    return tuple(Directive.objects.filter(topic=CHECKOUT_CONVENIENCE, payload__order_ref=order_ref).exclude(status="done").values_list("payload__effect", flat=True))
+
+    return tuple(
+        Directive.objects.filter(topic=CHECKOUT_CONVENIENCE, payload__order_ref=order_ref)
+        .exclude(status="done")
+        .values_list("payload__effect", flat=True)
+    )

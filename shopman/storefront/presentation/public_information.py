@@ -5,7 +5,7 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass
 
-from shopman.shop.projections.channel_policy import resolve_channel_policy
+from shopman.shop.projections.channel_state import channel_capabilities
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
 
 
@@ -36,7 +36,7 @@ def _operational_faq(
     status: dict | None = None,
     opening_hours: tuple | list | None = None,
 ) -> list[FAQItemProjection]:
-    policy = resolve_channel_policy(channel_ref)
+    policy = channel_capabilities(channel_ref)
     status = status if status is not None else _shop_status()
     hours = opening_hours if opening_hours is not None else _format_opening_hours()
     items: list[FAQItemProjection] = []

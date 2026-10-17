@@ -35,6 +35,22 @@ def _claim_status():
     ).status
 
 
+@pytest.mark.parametrize(
+    ("status", "fulfillment_type", "expected"),
+    [
+        (Order.Status.READY, "delivery", False),
+        (Order.Status.DISPATCHED, "delivery", True),
+        (Order.Status.DELIVERED, "delivery", True),
+        (Order.Status.PREPARING, "pickup", False),
+        (Order.Status.READY, "pickup", True),
+    ],
+)
+def test_remote_conclusion_eligibility_respects_handoff(status, fulfillment_type, expected):
+    order = _order(status, fulfillment_type)
+
+    assert ifood_events.conclusion_allowed(order) is expected
+
+
 @pytest.mark.parametrize("code", ["CON", "CONCLUDED"])
 @pytest.mark.parametrize("status,fulfillment_type", [
     (Order.Status.DISPATCHED, "delivery"),
