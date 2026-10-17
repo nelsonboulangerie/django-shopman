@@ -61,8 +61,6 @@ _FAUBOURG = {
     "600": "169 141 119", "700": "110 90 72",     # 700 = muted-foreground
     "800": "82 66 51", "900": "54 43 33", "950": "36 28 21",
 }
-# Yellow foi FUNDIDO em Brass — alias mantido só para compatibilidade de import antigo.
-_YELLOW = _BRASS
 _CREAM = "247 239 224"   # creme de leitura sobre superfícies escuras de marca
 _WHITE = "255 255 255"
 

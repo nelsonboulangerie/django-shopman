@@ -35,7 +35,7 @@ tag existir, a ADR-015 passa a exigir expand-contract.
 |---|---|---|
 | **1. Lei e governança** | ADR-037 (titularidade) · Constituição (pétreas) · governança de ADRs · WP-8 (mapa de camadas) | Fase 0 aceita |
 | **2. Soberania do kernel** | WP-2 stockman · WP-3 preço · WP-4 doorman | Fase 1 |
-| **3. Orquestrador** | WP-7 unidades de composição (inventário → manifestos → piloto `promotion` → enforcement) | Fase 1 |
+| **3. Orquestrador** | WP-7 abortado pelo gate de ganho material; evidência preservada | Fase 1 |
 | **4. Superfícies e Admin** | WP-11 fronteira Admin×Superfícies · WP-10 topologia (shell, lacunas, kitchensink interno) | Fase 1 |
 | **5. Instância e contratos** | WP-6 Instância · Seed · Testes de contrato | Fase 3 |
 | **6. Renascimento** | WP-12 reorganização final do repo, docs e ADRs | Fases 1–5 |
@@ -84,8 +84,10 @@ ADR-037 e Constituição: PR #1843; governança/renumeração/índice/gate: PR #
 enforcement de command/query: PR #1845. O WP-2 base foi mergeado no PR #1846. Sua
 canonicalização de `reason_code` está no PR #1848 e ainda falta remover o dual-read/write
 de `Order.data.hold_ids` em correção própria; ambos foram fechados antes do WP-3. O WP-3
-está no PR #1851. WPs 4, 7, 11, 10, 6 e 12 permanecem futuros até seus próprios PRs e
-aceites.
+está no PR #1851. O WP-4 foi mergeado no PR #1853. O WP-7 foi abortado pelo próprio
+critério de ganho material, com inventário e evidência preservados em
+[`CORE-SOVEREIGNTY-WP7-EVIDENCE.md`](../reports/CORE-SOVEREIGNTY-WP7-EVIDENCE.md).
+WPs 11, 10, 6 e 12 permanecem futuros até seus próprios PRs e aceites.
 
 ---
 
@@ -96,7 +98,10 @@ Detalhe e aceite de cada WP estão em `CORE-SOVEREIGNTY-PLAN.md` §5. Resumo dos
 - **WP-2 stockman:** a decisão de promessa volta para o stockman; a cópia do orquestrador é deletada; `reason_code` vira enum; `untracked` não devolve `999999`. O contrato separa `available_qty` factual de `orderable_ceiling` político, ambos opcionais, com `is_tracked`. Pré-go-live há um único formato canônico, sem dual-read/write, alias ou serializer legado. O PR #1846 entregou o núcleo; #1848 e a correção de `hold_ids` fecham os resíduos antes do WP-3.
 - **WP-3 preço:** um entrypoint canônico por decisão; `resolve` morto; preço contextual preserva `ContextualPrice.adjustments[]`. Elegibilidade não é renomeada para ajuste e total de cesta não é confundido com cotação unitária.
 - **WP-4 doorman:** porto `IdentityView` com handles; resolução `identifier`-first; sem import direto de guestman em service de domínio; PII minimizada e redigida em logs.
-- **WP-7 orquestrador:** inventário em dois eixos (**responsabilidade semântica + mecanismo/touchpoint**) sem mover código; schema e gate dos manifestos antes do piloto; cenários e baseline de arquivos congelados; piloto `promotion`; enforcement. Se a métrica composta não melhorar, se só surgir uma façade ou se o teste isolado depender de Django/DB, o piloto e o WP são **abortados**.
+- **WP-7 orquestrador:** abortado conforme o próprio gate. A baseline causal e o replay
+  enumerado mostraram soma 17→19, mediana 3,5→3,5 e união 14→15; nenhum código foi
+  movido. Evidência em
+  [`CORE-SOVEREIGNTY-WP7-EVIDENCE.md`](../reports/CORE-SOVEREIGNTY-WP7-EVIDENCE.md).
 - **WP-10 superfícies:** taxonomia por persona; decidir shell × apps em ADR sem presumir monólito (baseline atual: apps federados + Central launcher + `operator-kit`); **kitchensink é recurso interno de Dev, não superfície de operador**; validar lacunas reais antes de criá-las.
 - **WP-11 Admin:** fronteira por frequência/público/risco; nenhuma tarefa diária só no Admin.
 - **WP-6 Instância:** DB é a verdade de runtime; descritor declarativo, versionado e sem secrets para bootstrap/diff; apply transacional; testes de soberania, composição e evolução.
