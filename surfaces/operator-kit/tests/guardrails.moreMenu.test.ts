@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Trava do ⋯ ÚNICO (WP-FASE2-UX-OPERADOR, D9): "Mais ações" se escreve com o
 // `OperatorMoreMenu`, nunca com um botão de reticências montado na tela.
@@ -17,7 +17,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 // quando a onda de cada um trocar o menu pela peça.
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const ROOTS = [...OPERATOR_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
+const ROOTS = [...OPERATOR_KIT_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
 const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 
 const ELLIPSIS = /i-lucide-ellipsis(?:-vertical)?\b/g;

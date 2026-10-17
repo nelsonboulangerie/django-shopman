@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Guardrail de CÓPIA QUE NÃO SE CORTA — a metade estática da queixa do dono de
 // 28/09/2026 ("tem copy estourando o espaço disponível… muito deselegante"). O
@@ -21,7 +21,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 // (PDV: `surfaces/pos-nuxt/tests/e2e-live/`). Esta aqui roda em todo CI.
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const ROOTS = [...OPERATOR_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
+const ROOTS = [...OPERATOR_KIT_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
 const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 
 /** Classe que CORTA texto (em qualquer variante responsiva). */

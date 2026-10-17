@@ -32,11 +32,19 @@ tem só o resumo.
 Esta suite tem lei escrita, e ela venceu discussões neste próprio trabalho — inclusive
 derrubou uma recomendação minha. Leia:
 
-1. `docs/constitution.md` — canônica. §2.1 (o core deve ser pequeno), §2.2 e §5.2 (nomes de
-   compromisso, não de implementação), §2.5 (estado × evento × snapshot × metadata; *"se um
-   pacote usa JSONField para esconder seu contrato real, ele ainda não terminou sua
-   semântica"*), §2.6 (default de instância não contamina o core), §3.3, §8.3 (as três
-   perguntas que toda extensão precisa responder).
+1. [Constituição v1 §2.1 (histórica)](../../_archive/constitution-v1.md#21-o-core-deve-ser-pequeno)
+   (o core deve ser pequeno),
+   [Constituição v1 §2.2 (histórica)](../../_archive/constitution-v1.md#22-a-suite-deve-falar-em-compromissos-não-em-tabelas)
+   e [Constituição v1 §5.2 (histórica)](../../_archive/constitution-v1.md#52-termos-a-evitar-ou-degradar) (nomes de
+   compromisso, não de implementação),
+   [Constituição v1 §2.5 (histórica)](../../_archive/constitution-v1.md#25-evento-é-diferente-de-estado) (estado × evento ×
+   snapshot × metadata; *"se um pacote usa JSONField para esconder seu contrato real, ele ainda
+   não terminou sua semântica"*),
+   [Constituição v1 §2.6 (histórica)](../../_archive/constitution-v1.md#26-o-default-não-pode-poluir-a-ontologia) (default de
+   instância não contamina o core),
+   [Constituição v1 §3.3 (histórica)](../../_archive/constitution-v1.md#33-snapshot-data-e-metadata) e
+   [Constituição v1 §8.3 (histórica)](../../_archive/constitution-v1.md#83-toda-extensão-futura-deve-responder-três-perguntas)
+   (as três perguntas que toda extensão precisa responder).
 2. `docs/decisions/` — ADRs obrigatórias aqui: **001** (fronteiras de package; signal ×
    protocol; quando nasce contrib), **004** (ponteiro cross-domain é `CharField` indexado,
    **nunca** FK nem `GenericForeignKey`), **006 arquivada** (quando um fato merece tabela em

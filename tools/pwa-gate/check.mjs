@@ -77,8 +77,8 @@ const profiles = {
   marketing: operatorProfile('marketing'),
   purchase: operatorProfile('purchase'),
   bi: operatorProfile('bi'),
-  // O catálogo tem uma única rota canônica. Inventar atalhos para âncoras ou cenários
-  // tornaria estados de teste em navegação de produto.
+  // Perfil técnico disponível para ensaio explícito. O catálogo interno não declara
+  // a capability `pwa` em contracts.json e, portanto, não entra na matriz operacional.
   kitchensink: operatorProfile('kitchensink', { shortcuts: false }),
   status: {
     surface: 'status-nuxt',

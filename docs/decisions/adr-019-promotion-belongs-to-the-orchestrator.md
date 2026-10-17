@@ -206,7 +206,8 @@ e **consumido por ninguem** em `shopman/`; `metadata` ate documenta
 `{"discount_percent": 10}` como exemplo (`:38-41`). Este ADR **nao** liga essa costura e **nao** a
 apaga: promocao por segmento ja e resolvida por `customer_segments` (`promotions.py:46`), que tem
 consumidor real. Ligar `listing_ref` criaria um terceiro caminho de preco por publico sem pedido que o
-justifique (§8.3).
+justifique
+([Constituição v1 §8.3 (histórica)](../_archive/constitution-v1.md#83-toda-extensão-futura-deve-responder-três-perguntas)).
 
 ---
 

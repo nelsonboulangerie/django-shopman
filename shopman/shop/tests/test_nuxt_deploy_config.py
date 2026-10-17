@@ -201,6 +201,21 @@ def test_preview_surfaces_are_isolated_from_operator_deployment():
             assert surface["dir"] not in spec.read_text()
 
 
+def test_internal_surfaces_have_no_operational_deploy_identity():
+    groups = OPERATOR_GROUPS_FILE.read_text()
+    dockerfile = (ROOT / "surfaces" / "Dockerfile.operator-group").read_text()
+    for app_id, surface in REGISTRY.items():
+        if surface["kind"] != "internal":
+            continue
+        assert app_id not in groups
+        assert f" AS {app_id}" not in dockerfile
+        assert surface["dir"] not in dockerfile
+        for spec in DEPLOY_SPECS:
+            source = spec.read_text()
+            assert app_id not in source
+            assert surface["dir"] not in source
+
+
 def test_operator_group_env_prefixes_name_apps_of_that_group():
     """`<APP>__CHAVE` só com APP do próprio grupo — o launcher recusa o resto no boot.
 

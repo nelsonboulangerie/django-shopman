@@ -224,7 +224,7 @@ surfaces/               11 apps registrados (9 produto + internal + external), 1
 ├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
 ├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
-├── kitchensink-nuxt/ Catálogo do operador (:3009)        → api./backstage
+├── kitchensink-nuxt/ Catálogo interno do operator-kit (:3009) → api./backstage
 ├── status-nuxt/      status público independente (:3010) → liveness pública
 ├── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
 │                      retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,

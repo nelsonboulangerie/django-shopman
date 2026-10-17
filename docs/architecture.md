@@ -110,9 +110,9 @@ versionado são mecanismos de bootstrap/diff, não uma segunda verdade.
 4. Superfície não importa kernel; comunica-se somente pela fronteira HTTP/SSE.
 5. Command ingress delega a mutação; não contém uma segunda implementação.
 
-O gate bloqueia arestas novas já neste WP. A dependência histórica
-`doorman/services/verification.py -> guestman` fica explicitamente isolada na
-baseline até o WP-4 retirar essa última exceção.
+O gate bloqueia arestas novas já neste WP. O WP-4 removeu a dependência histórica
+`doorman/services/verification.py -> guestman`; ela não integra a baseline nem possui
+exceção residual.
 
 O mesmo ratchet registra sete efeitos de leitura anteriores ao WP-8:
 reconciliação de notificações (2), estado de impressão (1), coleção ativa (1)

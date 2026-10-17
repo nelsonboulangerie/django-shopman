@@ -22,7 +22,7 @@ def operator_directories() -> list[str]:
     return [
         surface["dir"]
         for surface in registry["surfaces"].values()
-        if surface["kind"] == "operator"
+        if surface["uses_operator_kit"]
     ]
 
 

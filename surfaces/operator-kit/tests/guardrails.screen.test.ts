@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { belowQuery } from "../app/presentation/screen";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // A régua de tela é UMA, a do kit (`useScreen`), e segura para o SSR.
 //
@@ -78,7 +78,7 @@ describe("régua de tela única (useScreen)", () => {
 
   it("nos apps de operador, nenhuma régua própria além do teto (Gestor e Cozinha já são zero)", () => {
     const over: string[] = [];
-    for (const app of OPERATOR_SURFACES) {
+    for (const app of OPERATOR_KIT_SURFACES) {
       if (app === "operator-kit") continue;
       const calls = mediaQueryCalls(join(surfacesDir, app));
       const total = [...calls.values()].reduce((sum, n) => sum + n, 0);

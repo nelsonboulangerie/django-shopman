@@ -42,8 +42,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = Path("surfaces/registry.json")
-KINDS = {"customer", "operator"}
-FIELDS = {"dir", "kind", "dev_port", "service", "subdomain", "base_url_env", "hub_tile"}
+KINDS = {"customer", "operator", "internal"}
+FIELDS = {"dir", "kind", "uses_operator_kit", "dev_port", "service", "subdomain", "base_url_env", "hub_tile"}
 OPTIONAL_FIELDS = {"ready_path", "deployment"}
 DEPLOY_SPECS = (Path(".do/app.subdomains.yaml"), Path(".do/app.alpha-subdomains.yaml"))
 
@@ -53,6 +53,7 @@ class Surface:
     id: str
     dir: str
     kind: str
+    uses_operator_kit: bool
     dev_port: int
     service: str | None
     subdomain: str | None
@@ -64,6 +65,10 @@ class Surface:
     @property
     def is_operator(self) -> bool:
         return self.kind == "operator"
+
+    @property
+    def is_operator_kit_consumer(self) -> bool:
+        return self.uses_operator_kit
 
     @property
     def is_deployed(self) -> bool:
@@ -136,6 +141,10 @@ def check_registry_shape(reg: Registry) -> list[str]:
             errors.append(f"{where}: {s.id} com deployment {s.deployment!r} (use preview, external ou omita)")
         if s.kind not in KINDS:
             errors.append(f"{where}: {s.id} com kind {s.kind!r} (use {sorted(KINDS)})")
+        if not isinstance(s.uses_operator_kit, bool):
+            errors.append(f"{where}: {s.id} precisa declarar uses_operator_kit como booleano")
+        if s.kind == "internal" and s.deployment != "preview":
+            errors.append(f"{where}: {s.id} é internal e exige deployment 'preview'")
         if s.dir != f"{s.id}-nuxt":
             errors.append(f"{where}: {s.id} mora em {s.dir}; o diretório é sempre <id>-nuxt")
         if s.is_operator and s.is_deployed and s.service not in reg.groups:
@@ -197,7 +206,7 @@ def check_surfaces_gate(reg: Registry) -> list[str]:
     errors += _diff(
         f"{contract_where} (pwa)",
         "a entrada",
-        {(s.id, s.dir) for s in reg.surfaces},
+        {(s.id, s.dir) for s in reg.surfaces if s.kind != "internal"},
         pwa,
     )
     workflow = reg.read(where)
@@ -235,10 +244,10 @@ def check_layer(reg: Registry) -> list[str]:
         if not path.is_file():
             continue
         extends = '"../operator-kit"' in path.read_text(encoding="utf-8")
-        if s.is_operator and not extends:
-            errors.append(f"{where}: app de operador que não estende ../operator-kit")
-        if not s.is_operator and extends:
-            errors.append(f"{where}: superfície de cliente estendendo ../operator-kit")
+        if s.is_operator_kit_consumer and not extends:
+            errors.append(f"{where}: uses_operator_kit=true, mas não estende ../operator-kit")
+        if not s.is_operator_kit_consumer and extends:
+            errors.append(f"{where}: uses_operator_kit=false, mas estende ../operator-kit")
     return errors
 
 
@@ -386,7 +395,7 @@ def check_hub_projection(reg: Registry) -> list[str]:
 def check_app_identity(reg: Registry) -> list[str]:
     where = "surfaces/operator-kit/app-identity.json"
     apps = set(json.loads(reg.read(where)).get("apps") or {})
-    return _diff(where, "a identidade do app", {s.id for s in reg.operators}, apps)
+    return _diff(where, "a identidade do app", {s.id for s in reg.surfaces if s.is_operator_kit_consumer}, apps)
 
 
 def check_pwa_gate(reg: Registry) -> list[str]:

@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { FAVICON_VERSION, OPERATOR_HEAD_LINKS, resolveOperatorPwa } from "../pwa.config";
 import { OPERATOR_ASSET_VERSION, operatorAppIdentity } from "../appIdentity";
-import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // Varredura da FORMA dos ícones instalados das oito superfícies de operador
 // (PWA_ICONS.md, "Forma: quem arredonda o canto"). Windows/macOS/Linux desktop mostram

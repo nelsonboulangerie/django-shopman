@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 // VARREDURA: todo link de um app de operador para OUTRO app tem que passar pela regra
 // do kit (`crossAppLinkAttrs`). Um `<a :href="hubUrl">` sem `:target` navega a própria

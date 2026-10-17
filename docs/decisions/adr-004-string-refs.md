@@ -23,7 +23,8 @@ por query e cria inconsistência (API usa string, modelo usa par `(ct, id)`).
 ### 1. Identificadores textuais são strings planas indexadas
 
 Cada core guarda o identificador como `CharField` indexado. O nome do campo
-segue a taxonomia canônica (ver `docs/constitution.md` §3.1):
+segue a taxonomia então canônica (ver
+[Constituição v1 §3.1 (histórica)](../_archive/constitution-v1.md#31-identificadores)):
 
 - **`sku`** — identificador estável de produto vendável/estocável. Usado em
   `offerman.Product.sku`, `stockman.Quant.sku`, `stockman.Hold.sku`,
@@ -141,4 +142,4 @@ Consequências práticas:
 ## Referências
 
 - ADR-001: independência dos cores
-- `docs/constitution.md` §3.1: taxonomia de identificadores (uuid/ref/sku/handle)
+- [Constituição v1 §3.1 (histórica)](../_archive/constitution-v1.md#31-identificadores): taxonomia de identificadores (uuid/ref/sku/handle)
