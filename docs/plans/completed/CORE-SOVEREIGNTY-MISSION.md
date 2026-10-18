@@ -3,8 +3,8 @@
 > **Base:** `main` (confirmar commit no início).
 > **Plano canônico:** [CORE-SOVEREIGNTY-PLAN.md](CORE-SOVEREIGNTY-PLAN.md).
 > **Natureza:** missão de **fronteira**, não de feature.
-> **Estado:** Fase 0 concluída e aceita em 2026-10-16; execução autorizada conforme o
-> [parecer](CORE-SOVEREIGNTY-REVIEW.md).
+> **Estado:** missão concluída em 2026-10-18; Fase 0 aceita e todas as frentes
+> executadas conforme o [parecer](CORE-SOVEREIGNTY-REVIEW.md).
 > **Regra de ouro preservada:** a revisão adversarial foi bloqueante; nenhum código de
 > produção foi editado antes do parecer e do aceite.
 
@@ -21,7 +21,7 @@ Leitura obrigatória: `docs/constitution.md`, ADR-001/-005/-019/-021/-022, `CORE
 ## 1. Fase 0 — revisão adversarial (concluída)
 
 O plano foi atacado nos dez pontos obrigatórios e em quatro adicionais. O parecer em
-`docs/plans/CORE-SOVEREIGNTY-REVIEW.md` registrou veredito por item, riscos, remoções e
+`docs/plans/completed/CORE-SOVEREIGNTY-REVIEW.md` registrou veredito por item, riscos, remoções e
 sequência; o dono aceitou os reparos em 2026-10-16. Fases seguintes continuam obrigadas a
 revalidar evidência e a tag `go-live-v1` antes de cada corte. Enquanto a tag não existir,
 o regime é pré-go-live: corte único, contrato único e zero compatibilidade runtime. Se a

@@ -32,5 +32,5 @@
 6. **Migração** + **teste** da projection (campos presentes no payload) + **verificação visual** (preview Nuxt).
 
 ## Referências
-- [project_status_bar_cta_omotenashi](memória) — intenção registrada.
+- `project_status_bar_cta_omotenashi` (memória de projeto) — intenção registrada.
 - Padrão de copy configurável: `OmotenashiCopy` + `OMOTENASHI_DEFAULTS`.

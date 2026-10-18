@@ -91,4 +91,4 @@ pedido**. Reusar:
 
 - [ADR-009 — WhatsApp via ManyChat](../decisions/adr-009-whatsapp-via-manychat.md)
 - [manychat-conversation-projection.md](../reference/manychat-conversation-projection.md)
-- [REMOTE-MULTISURFACE-PLAN](REMOTE-MULTISURFACE-PLAN.md) · [GO-LIVE-READINESS-PLAN](GO-LIVE-READINESS-PLAN.md)
+- [REMOTE-MULTISURFACE-PLAN](completed/REMOTE-MULTISURFACE-PLAN.md) · [GO-LIVE-READINESS-PLAN](GO-LIVE-READINESS-PLAN.md)

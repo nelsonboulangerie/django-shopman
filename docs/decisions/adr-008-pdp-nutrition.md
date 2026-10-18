@@ -158,7 +158,7 @@ o PDP seguia mostrando o número velho com cara de atual.
 - [`do../plans/completed/PDP-DATA-FIELDS-PLAN.md`](../plans/completed/PDP-DATA-FIELDS-PLAN.md)
 - [`packages/offerman/shopman/offerman/nutrition.py`](../../packages/offerman/shopman/offerman/nutrition.py) — dataclass `NutritionFacts`
 - [`shopman/shop/services/nutrition_from_recipe.py`](../../shopman/shop/services/nutrition_from_recipe.py) — derivação
-- [`shopman/shop/projections/product_detail.py`](../../shopman/shop/projections/product_detail.py) — leitura
+- [`shopman/storefront/presentation/product_detail.py`](../../shopman/storefront/presentation/product_detail.py) — leitura
 - **Nota de atualização (2026-09-10):** a RDC 360/2003 foi substituída. O
   schema desta ADR continua sendo uma projeção legada de PDP, não um contrato
   completo de rótulo comercial. A norma vigente de informação nutricional é a

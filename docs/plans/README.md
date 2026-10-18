@@ -1,10 +1,14 @@
 # Planos Ativos
 
-> Atualizado em 2026-09-29.
+> Atualizado em 2026-10-18.
 
 Este diretório deve conter apenas plano vivo, spec ativa ou backlog explícito.
 Planos concluídos ficam em [`completed/`](completed/). Material histórico incerto
 fica em [`_quarantine/`](_quarantine/).
+
+O [inventário mecânico completo](INDEX.md) cobre todo arquivo que permanece na
+árvore viva. A presença no inventário não atribui estado nem presume conclusão;
+as tabelas abaixo são a classificação semântica explícita.
 
 > `copy-wiring-backlog.txt` é **artefato de gate** (lido por
 > `shopman/shop/tests/test_omotenashi_copy_keys.py::test_copy_wiring_backlog`):
@@ -35,7 +39,6 @@ fica em [`_quarantine/`](_quarantine/).
 | [`IFOOD-DIRECT-INTEGRATION-PLAN.md`](IFOOD-DIRECT-INTEGRATION-PLAN.md) | Integração direta (polling) em staging; homologação de produção pendente. |
 | [`DELIVERY-EXTERNAL-LOGISTICS-PLAN.md`](DELIVERY-EXTERNAL-LOGISTICS-PLAN.md) | Machine (courier) construída (PR #43); faltam credenciais centrais + homologação de webhook. |
 | [`DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md`](DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md) | Cascata de geocoding entregue; pendente robustez multi-provedor + feedback omotenashi. |
-| [`VALIDITY-SHELFLIFE-REVIEW.md`](completed/VALIDITY-SHELFLIFE-REVIEW.md) | Arquivado (retrato de 2026-06): P0 ligado (WP-B5); o caminho de validade virou o modelo de lote (ADR-017, C1–C6). |
 | [`OPERATION-DOMAIN-PLAN.md`](OPERATION-DOMAIN-PLAN.md) | Baseline de modelos/Admin implementado; próxima camada (superfície de execução, BI) aberta. |
 | [`RECIPE-INVENTORY-PLAN.md`](RECIPE-INVENTORY-PLAN.md) | Inventário de receitas com versão, padrão da casa (1000 g de farinha) e lente de padaria ([ADR-027](../decisions/adr-027-recipe-book-authoring-vs-execution.md)). Entregue e no ar (PR #488); pendências: saldo de massa velha, cofre, Admin. |
 | [`OPERATION-RUNBOOKS-PLAN.md`](OPERATION-RUNBOOKS-PLAN.md) | Baseline de runbooks/diagnose concluído; snapshot/smoke real de gateway bloqueado por credenciais. |
@@ -87,5 +90,7 @@ Arquivados em [`completed/`](completed/) nesta reorganização:
 | `completed/OPERATOR-PIN-SELFSERVICE-PLAN.md` | PIN autoatendimento + reset por gerente (PR #32). |
 | `completed/COPY-CONSOLIDATION-PLAN.md` + `completed/COPY-BACKLOG-UNBUILT.md` | Burndown omotenashi fechado, backlog de copy zerado (PRs #49–#53). |
 | `completed/STOCK-SUBSTITUTE-1CLICK-PLAN.md` | Substituto acionável em 1 toque entregue; duplicata em `plans/` removida. |
+| `completed/VALIDITY-SHELFLIFE-REVIEW.md` | Retrato de 2026-06 arquivado: P0 ligado (WP-B5); o caminho de validade virou o modelo de lote (ADR-017, C1–C6). |
+| `completed/CORE-SOVEREIGNTY-PLAN.md` + `MISSION` + `REVIEW` | Missão F1–F6 e WP7/WP10/WP11/WP12 concluída; trio arquivado junto após os gates finais. |
 
 Histórico anterior (auditoria 2026-06-28, 28 planos) e demais planos concluídos: ver [`completed/`](completed/).

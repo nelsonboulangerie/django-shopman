@@ -228,6 +228,6 @@ maiores, pós-go-live.
    da ADR-023, não como decisão aberta deste plano.
 
 ## Referências
-- [MATERIAL-MASTER-PLAN](MATERIAL-MASTER-PLAN.md) (origem) · [VALIDITY-SHELFLIFE-REVIEW](completed/VALIDITY-SHELFLIFE-REVIEW.md)
+- [MATERIAL-MASTER-PLAN](completed/MATERIAL-MASTER-PLAN.md) (origem) · [VALIDITY-SHELFLIFE-REVIEW](completed/VALIDITY-SHELFLIFE-REVIEW.md)
 - CLAUDE.md (Offerman=vendáveis; regra de dependência) · offerman/conf.py (CostBackend)
 - protocols/sku.py (SkuValidator) · craftsman/adapters/catalog.py (CatalogBackend) · Batch.supplier

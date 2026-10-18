@@ -119,7 +119,7 @@ Quando este WP for disparado, você provavelmente estará em modo pré-deploy co
 ## Referências
 
 - CLAUDE.md atual — regras vigentes que este WP substituirá parcialmente.
-- Memória [feedback_zero_residuals.md](.claude/memory) — política atual.
+- Memória de projeto `feedback_zero_residuals.md` — política atual.
 - Django migrations docs: `docs.djangoproject.com/en/5.2/topics/migrations/`.
 - Livro "Database Reliability Engineering" — padrões de schema change.
 - [docs/reference/system-spec.md §5.5](../reference/system-spec.md) — onboarding / adoção.
