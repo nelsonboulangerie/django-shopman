@@ -46,7 +46,10 @@
 
 O [índice canônico de ADRs](decisions/README.md) é a única lista de decisões,
 com numeração, título, status, dono, data e tema. Ele é validado por
-`make adr-governance`; este índice geral não mantém uma cópia parcial.
+`make adr-governance`; este índice geral não mantém uma cópia parcial. O contrato
+transversal das superfícies nasce na
+[ADR-012](decisions/adr-012-headless-surface-contract.md) e é detalhado na
+[referência headless](reference/headless-surface-contract.md).
 
 ---
 
