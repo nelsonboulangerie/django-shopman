@@ -485,6 +485,7 @@ test-instance-descriptors: ## Gate: schema, ownership e descritores de Instânci
 	@echo "── Descritores de Instância ──"
 	$(PYTHON) scripts/check_instance_descriptors.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django scripts/tests/test_check_instance_descriptors.py -q
+	$(PYTHON) -m pytest config/tests/test_instance_descriptors.py -q
 
 canonical-docs: adr-governance orchestrator-governance test-instance-descriptors ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
 	@echo "── Canonical go-live documentation ──"
