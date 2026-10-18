@@ -12,6 +12,54 @@ _install_postgres_lock_rule()
 
 
 @pytest.fixture(autouse=True)
+def _legacy_unit_channel_config(monkeypatch, request):
+    """Keep synthetic unit objects isolated from the runtime materialization contract.
+
+    Hundreds of narrow tests build ``SimpleNamespace`` orders without a database
+    channel because channel composition is outside their subject. Production has
+    no fallback: the original resolver raises. Tests explicitly marked
+    ``instance_runtime_strict`` exercise that exact contract; the remaining unit
+    tests retain their local schema defaults without manufacturing DB rows that
+    would contaminate count/absence assertions.
+    """
+    if request.node.get_closest_marker("instance_runtime_strict"):
+        return
+
+    from shopman.shop.config import (
+        ChannelConfig,
+        InstanceConfigurationError,
+        deep_merge,
+    )
+
+    original = ChannelConfig.for_channel.__func__
+
+    def schema_defaults(cls):
+        config = cls.from_dict(cls.defaults())
+        config.validate()
+        return config
+
+    def resolve_for_unit_test(cls, channel_or_ref):
+        try:
+            return original(cls, channel_or_ref)
+        except InstanceConfigurationError:
+            from shopman.shop.models import Shop
+
+            base = cls.defaults()
+            shop = Shop.load()
+            if shop and shop.defaults:
+                base = deep_merge(base, shop.defaults)
+            config = cls.from_dict(base)
+            config.validate()
+            return config
+        except RuntimeError as exc:
+            if "Database access not allowed" not in str(exc):
+                raise
+            return schema_defaults(cls)
+
+    monkeypatch.setattr(ChannelConfig, "for_channel", classmethod(resolve_for_unit_test))
+
+
+@pytest.fixture(autouse=True)
 def _isolate_rules_state():
     """Keep process-level singletons deterministic across tests, regardless of order.
 

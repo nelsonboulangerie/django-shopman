@@ -47,13 +47,9 @@ def config(channel_ref: str | None = None):
     from shopman.shop.config import ChannelConfig
     from shopman.shop.request_memo import channel_config
 
-    try:
-        if channel_ref:
-            return dataclasses.replace(channel_config(channel_ref).waitlist)
-        return ChannelConfig().waitlist
-    except Exception:
-        logger.debug("waitlist.config degraded; using hardcoded defaults", exc_info=True)
-        return ChannelConfig().waitlist
+    if channel_ref:
+        return dataclasses.replace(channel_config(channel_ref).waitlist)
+    return ChannelConfig().waitlist
 
 
 def is_enabled(channel_ref: str | None = None) -> bool:

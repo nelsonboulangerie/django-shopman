@@ -32,6 +32,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def web():
     Shop.load() or Shop.objects.create(name="Nelson")
+    Channel.objects.create(ref="pdv", name="PDV")
     return Channel.objects.create(
         ref="web",
         name="Loja online",

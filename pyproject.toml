@@ -96,6 +96,7 @@ testpaths = ["shopman/shop/tests"]
 addopts = "-m 'not browser'"
 markers = [
     "browser: Playwright browser E2E — requires running Nuxt store + Django API",
+    "instance_runtime_strict: exercise the production contract that channel config must exist in the DB",
 ]
 
 [tool.coverage.run]

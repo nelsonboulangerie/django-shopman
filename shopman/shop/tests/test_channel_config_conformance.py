@@ -589,6 +589,13 @@ class TestCascadeConformance:
 
 @pytest.mark.django_db
 class TestResolvedConfigValidation:
+    @pytest.mark.instance_runtime_strict
+    def test_for_channel_ref_requires_a_materialized_database_row(self):
+        from shopman.shop.config import InstanceConfigurationError
+
+        with pytest.raises(InstanceConfigurationError, match="not materialized in the database"):
+            ChannelConfig.for_channel("missing")
+
     def test_for_channel_rejects_invalid_channel_config(self):
         """Runtime config resolution fails early instead of silently no-oping."""
         from shopman.shop.models import Channel

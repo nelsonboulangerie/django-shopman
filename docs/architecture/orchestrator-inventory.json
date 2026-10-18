@@ -2478,6 +2478,7 @@
           "responsibility": "contrato",
           "symbols": [
             "ChannelConfig",
+            "InstanceConfigurationError",
             "QUALITY_OK_GRADE_REFS",
             "STAGE_GOAL_DEFAULTS",
             "_safe_init",
@@ -12475,7 +12476,6 @@
             "_adopt_holds_for_qty",
             "_alert_hold_gap",
             "_alert_unknown_sku",
-            "_alert_unreadable_channel_stock_config",
             "_channel_allows_preorder",
             "_channel_allows_untracked",
             "_component_quantities",

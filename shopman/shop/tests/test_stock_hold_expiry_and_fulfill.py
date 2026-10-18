@@ -61,6 +61,7 @@ def _make_session_hold(qty: int, *, expired: bool = False) -> str:
 def _make_order(items_qty: int) -> SimpleNamespace:
     return SimpleNamespace(
         ref=ORDER_REF,
+        channel_ref="web",
         session_key=SESSION_KEY,
         snapshot={"items": [{"sku": SKU, "qty": items_qty}]},
         data={},
@@ -197,6 +198,7 @@ def _order_without_session(items_qty: int, ref: str = "ORD-FRESH-1") -> SimpleNa
     """Pedido sem sacola (PDV, iFood, sacola vencida): a reserva nasce no commit."""
     return SimpleNamespace(
         ref=ref,
+        channel_ref="web",
         session_key=None,
         snapshot={"items": [{"sku": SKU, "qty": items_qty}]},
         data={},

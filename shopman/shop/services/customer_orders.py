@@ -553,13 +553,9 @@ def ensure_payment_intent(order) -> bool:
 def _payment_can_start(order) -> bool:
     if order.status != "new":
         return True
-    try:
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        cfg = ChannelConfig.for_channel(order.channel_ref)
-    except Exception:
-        logger.warning("payment_start_config_lookup_failed order=%s", order.ref, exc_info=True)
-        return False
+    cfg = ChannelConfig.for_channel(order.channel_ref)
     return cfg.payment.timing != "post_commit"
 
 

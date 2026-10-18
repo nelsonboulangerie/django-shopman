@@ -112,29 +112,20 @@ def _break_channel_config(monkeypatch):
     monkeypatch.setattr(ChannelConfig, "for_channel", classmethod(boom))
 
 
-@pytest.mark.django_db
-def test_unreadable_config_refuses_untracked_sku_and_alerts(monkeypatch):
-    from shopman.backstage.models import OperatorAlert
+def test_unreadable_config_aborts_untracked_policy_resolution(monkeypatch):
     from shopman.shop.services.stock import _channel_allows_untracked
 
     _break_channel_config(monkeypatch)
-    # Antes: devolvia o default permissivo (True), calado: SKU fora do catálogo
-    # virava pedido sem reserva justamente quando a config não respondia.
-    assert _channel_allows_untracked(_order()) is False
-    alert = OperatorAlert.objects.get(type="integration_config_drift")
-    assert "web" in alert.message and "FB-1" in alert.message
+    with pytest.raises(ValueError, match="config ilegível"):
+        _channel_allows_untracked(_order())
 
 
-@pytest.mark.django_db
-def test_unreadable_config_keeps_preorder_but_alerts(monkeypatch):
-    from shopman.backstage.models import OperatorAlert
+def test_unreadable_config_aborts_preorder_policy_resolution(monkeypatch):
     from shopman.shop.services.stock import _channel_allows_preorder
 
     _break_channel_config(monkeypatch)
-    # A venda não é recusada por um JSON quebrado (decisão registrada no
-    # código), mas agora o operador fica sabendo.
-    assert _channel_allows_preorder(_order()) is True
-    assert OperatorAlert.objects.filter(type="integration_config_drift").count() == 1
+    with pytest.raises(ValueError, match="config ilegível"):
+        _channel_allows_preorder(_order())
 
 
 # ── 12: Shop.integrations ilegível grita ─────────────────────────────

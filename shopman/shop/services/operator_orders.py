@@ -659,12 +659,8 @@ def equipment_options(channel_ref: str, *, channel_config=None) -> list[str]:
     """As maquininhas que o canal permite levar no despacho (``fulfillment.equipment``)."""
     from shopman.shop.config import ChannelConfig
 
-    try:
-        config = channel_config if channel_config is not None else ChannelConfig.for_channel(channel_ref)
-        return [str(ref) for ref in (config.fulfillment.equipment or [])]
-    except Exception:
-        logger.debug("operator_orders.equipment_options: config indisponível channel=%s", channel_ref, exc_info=True)
-        return []
+    config = channel_config if channel_config is not None else ChannelConfig.for_channel(channel_ref)
+    return [str(ref) for ref in (config.fulfillment.equipment or [])]
 
 
 def _clean_equipment(order: Order, equipment) -> list[str]:

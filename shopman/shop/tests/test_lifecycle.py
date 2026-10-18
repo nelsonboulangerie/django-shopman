@@ -109,7 +109,7 @@ class TestConfirmability:
         order = _make_order(data={})
 
         with pytest.raises(InvalidTransition, match="disponibilidade"):
-            ensure_confirmable(order)
+            ensure_confirmable(order, channel_config=_config())
 
     def test_ensure_confirmable_accepts_positive_availability_decision(self):
         order = _make_order(
@@ -144,41 +144,34 @@ class TestPaymentGuard:
     def test_accepts_cash_on_delivery(self):
         from shopman.shop.lifecycle import ensure_payment_captured
         order = _make_order(data={"payment": {"method": "cash", "status": "pending"}})
-        ensure_payment_captured(order)
+        ensure_payment_captured(order, channel_config=_config())
 
     def test_accepts_canonical_offline_methods(self):
         from shopman.shop.lifecycle import ensure_payment_captured
         for method in ("cash", "credit", "debit"):
             order = _make_order(data={"payment": {"method": method, "status": "pending"}})
-            ensure_payment_captured(order)
+            ensure_payment_captured(order, channel_config=_config())
 
     def test_accepts_empty_payment(self):
         from shopman.shop.lifecycle import ensure_payment_captured
         order = _make_order(data={})
-        ensure_payment_captured(order)
+        ensure_payment_captured(order, channel_config=_config())
 
-    def test_config_failure_fails_closed_for_uncaptured_digital(self):
-        """Config corrompida NÃO pode abrir a porta: pix não capturado deve bloquear."""
+    @pytest.mark.parametrize(
+        "payment",
+        [
+            {"method": "pix", "status": "pending"},
+            {"method": "cash", "status": "pending"},
+            {"method": "pix", "status": "captured"},
+        ],
+    )
+    def test_config_failure_aborts_confirmation_without_runtime_policy_fallback(self, payment):
+        """Config ilegível não vira uma política construída no código."""
         from shopman.shop.lifecycle import ensure_payment_captured
-        order = _make_order(data={"payment": {"method": "pix", "status": "pending"}})
-        with patch("shopman.shop.lifecycle.ChannelConfig.for_channel", side_effect=RuntimeError("corrupt")):
-            with patch("shopman.shop.lifecycle._payment_is_captured", return_value=False):
-                with pytest.raises(InvalidTransition, match="Pagamento"):
-                    ensure_payment_captured(order)
 
-    def test_config_failure_still_allows_offline_method(self):
-        """Fail-closed não pune método offline (cash/POS): segue passando."""
-        from shopman.shop.lifecycle import ensure_payment_captured
-        order = _make_order(data={"payment": {"method": "cash", "status": "pending"}})
+        order = _make_order(data={"payment": payment})
         with patch("shopman.shop.lifecycle.ChannelConfig.for_channel", side_effect=RuntimeError("corrupt")):
-            ensure_payment_captured(order)
-
-    def test_config_failure_allows_captured(self):
-        """Com pagamento já capturado, config quebrada não bloqueia."""
-        from shopman.shop.lifecycle import ensure_payment_captured
-        order = _make_order(data={"payment": {"method": "pix", "status": "captured"}})
-        with patch("shopman.shop.lifecycle.ChannelConfig.for_channel", side_effect=RuntimeError("corrupt")):
-            with patch("shopman.shop.lifecycle._payment_is_captured", return_value=True):
+            with pytest.raises(RuntimeError, match="corrupt"):
                 ensure_payment_captured(order)
 
 

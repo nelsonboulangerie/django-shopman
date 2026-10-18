@@ -73,12 +73,7 @@ def max_percent(channel_ref: str) -> Decimal:
     """O teto do canal, em % do subtotal (0 = desligado)."""
     from shopman.shop.config import ChannelConfig
 
-    try:
-        value = ChannelConfig.for_channel(channel_ref).pricing.concierge_discount_max_percent
-    except Exception:
-        # Config inválida no Admin: o desconto fica desligado, nunca acima do teto.
-        logger.warning("concierge.discount: config unavailable channel=%s", channel_ref, exc_info=True)
-        return Decimal(0)
+    value = ChannelConfig.for_channel(channel_ref).pricing.concierge_discount_max_percent
     return max(Decimal(0), Decimal(str(value)))
 
 

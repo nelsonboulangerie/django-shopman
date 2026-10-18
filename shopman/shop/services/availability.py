@@ -850,18 +850,10 @@ def _channel_hold_ttl_minutes(channel_ref: str | None) -> int:
     """TTL de hold de carrinho do canal (config) — default seguro de 30 min."""
     if not channel_ref:
         return 30
-    try:
-        from shopman.shop.config import ChannelConfig
-        from shopman.shop.models import Channel
+    from shopman.shop.config import ChannelConfig
 
-        channel = Channel.objects.filter(ref=channel_ref).first()
-        if channel is None:
-            return 30
-        configured = ChannelConfig.for_channel(channel).stock.hold_ttl_minutes
-        return int(configured) if configured else 30
-    except Exception:
-        logger.debug("availability.hold_ttl_lookup_failed channel=%s", channel_ref, exc_info=True)
-        return 30
+    configured = ChannelConfig.for_channel(channel_ref).stock.hold_ttl_minutes
+    return int(configured) if configured else 30
 
 
 def reserve(

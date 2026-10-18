@@ -1078,37 +1078,19 @@ def _sale_consummated_outside(order) -> bool:
     """O pedido é venda já consumada fora (``payment.timing == "external"``)?
 
     O mesmo critério do ``lifecycle.secure_stock`` para não recusar a venda:
-    balcão (o pão saiu pela porta) e marketplace (pago lá). Config ilegível
-    responde ``False``: sem certeza, nenhuma sacola alheia é tocada.
+    balcão (o pão saiu pela porta) e marketplace (pago lá). Config ausente ou
+    ilegível é erro de contrato de runtime; não vira uma segunda política aqui.
     """
     from shopman.shop.config import ChannelConfig
 
-    try:
-        return ChannelConfig.for_channel(order.channel_ref).payment.timing == "external"
-    except Exception:
-        logger.warning(
-            "stock._sale_consummated_outside: config lookup failed channel=%s",
-            getattr(order, "channel_ref", None),
-        )
-        return False
+    return ChannelConfig.for_channel(order.channel_ref).payment.timing == "external"
 
 
 def _channel_allows_preorder(order) -> bool:
     """True quando o canal do pedido aceita encomenda (ChannelConfig.stock.preorder)."""
     from shopman.shop.config import ChannelConfig
 
-    try:
-        return bool(ChannelConfig.for_channel(order.channel_ref).stock.preorder)
-    except Exception:
-        logger.error("stock.channel_config_unreadable knob=preorder channel=%s order=%s",
-                     getattr(order, "channel_ref", None), getattr(order, "ref", ""), exc_info=True)
-        # Config ilegível NÃO recusa encomenda, e é de propósito: recusar aqui
-        # derruba a venda de um pão que existe por causa de um JSON quebrado no
-        # Admin, e o gate de estoque do Stockman continua valendo (produto
-        # pausado segue recusado). O que não pode é ser calado: aceitar a
-        # encomenda que o canal talvez proíba vira alerta na tela do operador.
-        _alert_unreadable_channel_stock_config(order, knob="preorder")
-        return True
+    return bool(ChannelConfig.for_channel(order.channel_ref).stock.preorder)
 
 
 def _channel_allows_untracked(order) -> bool:
@@ -1116,44 +1098,7 @@ def _channel_allows_untracked(order) -> bool:
     (``ChannelConfig.stock.allow_untracked``)."""
     from shopman.shop.config import ChannelConfig
 
-    try:
-        return bool(ChannelConfig.for_channel(order.channel_ref).stock.allow_untracked)
-    except Exception:
-        logger.error("stock.channel_config_unreadable knob=allow_untracked channel=%s order=%s",
-                     getattr(order, "channel_ref", None), getattr(order, "ref", ""), exc_info=True)
-        # Aqui o lado seguro é o RESTRITIVO, diferente da encomenda: o portão só
-        # alcança SKU que o CATÁLOGO não conhece (``_sku_known_to_catalog``),
-        # então nenhum produto de verdade deixa de ser vendido. O que ele barra
-        # é o typo de SKU virar pedido sem reserva, que é justamente o que um
-        # canal de cliente declara ``allow_untracked: false`` para impedir.
-        _alert_unreadable_channel_stock_config(order, knob="allow_untracked")
-        return False
-
-
-def _alert_unreadable_channel_stock_config(order, *, knob: str) -> None:
-    """Leva à tela do operador a leitura de config de estoque que falhou."""
-    from django.db import transaction
-
-    from shopman.shop.services.observability import create_operator_alert
-
-    channel_ref = getattr(order, "channel_ref", None) or ""
-    try:
-        # Savepoint: o alerta não pode envenenar a transação do commit.
-        with transaction.atomic():
-            create_operator_alert(
-                type="integration_config_drift",
-                severity="warning",
-                message=(
-                    f"A configuração de estoque do canal {channel_ref or '(sem canal)'} não pôde ser lida. "
-                    f"O pedido {getattr(order, 'ref', '')} seguiu com "
-                    f"{'encomenda permitida' if knob == 'preorder' else 'SKU fora do catálogo recusado'}. "
-                    "Corrija o canal no Admin."
-                ),
-                order_ref=getattr(order, "ref", "") or "",
-                dedupe_key=f"stock_channel_config_unreadable:{channel_ref}:{knob}",
-            )
-    except Exception:
-        logger.exception("stock.channel_config_unreadable_alert_failed channel=%s", channel_ref)
+    return bool(ChannelConfig.for_channel(order.channel_ref).stock.allow_untracked)
 
 
 def _is_untracked(sku: str, prior_decisions: dict[str, dict], adapter) -> bool:

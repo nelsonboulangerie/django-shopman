@@ -67,11 +67,7 @@ class UndoRefused(ValueError):
 def _fulfillment_config(order):
     from shopman.shop.config import ChannelConfig
 
-    try:
-        return ChannelConfig.for_channel(order.channel_ref).fulfillment
-    except Exception:
-        logger.debug("order_undo: config indisponível channel=%s", order.channel_ref, exc_info=True)
-        return ChannelConfig.Fulfillment()
+    return ChannelConfig.for_channel(order.channel_ref).fulfillment
 
 
 def auto_ready_enabled(order) -> bool:

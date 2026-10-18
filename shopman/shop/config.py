@@ -12,6 +12,10 @@ from dataclasses import asdict, dataclass, field
 
 QUALITY_OK_GRADE_REFS = ("excellent", "standard")
 
+
+class InstanceConfigurationError(RuntimeError):
+    """Runtime configuration was not materialized in the database."""
+
 #: Meta de tempo de cada etapa do pedido no Gestor, em minutos (decisão do dono,
 #: 04/10/2026). O canal pode mudar qualquer uma em
 #: ``fulfillment.stage_goal_minutes`` (``Channel.config`` ou ``Shop.defaults``); a
@@ -482,7 +486,7 @@ class ChannelConfig:
           2. Shop.defaults (nível loja, Admin-configurável)
           3. Channel.config (nível canal, Admin-configurável)
         """
-        from shopman.shop.models import Shop
+        from shopman.shop.models import Channel, Shop
         from shopman.shop.request_memo import channel_by_ref
 
         base = cls.defaults()
@@ -502,7 +506,15 @@ class ChannelConfig:
         else:
             channel = channel_or_ref
 
-        if channel and channel.config:
+        if channel is None:
+            raise InstanceConfigurationError(
+                f"channel {channel_or_ref!r} is not materialized in the database; "
+                "apply the Instance descriptor before serving runtime traffic"
+            )
+        if not isinstance(channel, Channel):
+            raise TypeError("channel_or_ref must be a Channel or channel ref")
+
+        if channel.config:
             base = deep_merge(base, copy.deepcopy(channel.config))
 
         config = cls.from_dict(base)
