@@ -21,14 +21,11 @@ Cinco coisas, cada uma com o seu teste:
 
 from __future__ import annotations
 
-import ast
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.test import override_settings
@@ -36,7 +33,8 @@ from django.utils import timezone
 from shopman.cashman import services as cash
 from shopman.orderman.models import Directive, Order
 
-from config.management.commands.seed import NOTIFICATION_TEMPLATES
+from config.instance_descriptors import load_descriptor
+from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR, NOTIFICATION_TEMPLATES
 from shopman.shop.adapters import notification_email, notification_manychat, notification_sms
 from shopman.shop.adapters._notification_templates import derive_context, render_message, render_template
 from shopman.shop.config import ChannelConfig
@@ -54,19 +52,11 @@ def _local(*args) -> datetime:
     return timezone.make_aware(datetime(*args))
 
 
-def _seed_source() -> ast.Module:
-    source = Path(settings.BASE_DIR) / "config" / "management" / "commands" / "seed.py"
-    return ast.parse(source.read_text(encoding="utf-8"))
-
-
-def _seed_assignment(name: str):
-    """Um dicionário literal do seed, lido por AST — sem rodar o seed."""
-    for node in ast.walk(_seed_source()):
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == name for t in node.targets
-        ):
-            return ast.literal_eval(node.value)
-    raise AssertionError(f"`{name}` não encontrado em config/management/commands/seed.py")
+def _declared_channel_config(ref: str) -> dict:
+    """Configuração do canal na fonte versionada da Instância, sem tocar no DB."""
+    descriptor = load_descriptor(NELSON_INSTANCE_DESCRIPTOR)
+    channel = next(item for item in descriptor["bootstrap"]["channels"] if item["ref"] == ref)
+    return channel["config"]["overrides"]
 
 
 def _order(*, phone: str | None = "+5543999990001", email: str | None = None, expires_at: str | None = None):
@@ -328,13 +318,18 @@ class TestSeedDoTemplate:
 
 def _seeded_pos_channel() -> Channel:
     cache.clear()
-    return Channel.objects.create(ref="pdv", name="PDV", is_active=True, config=_seed_assignment("_pos_config"))
+    return Channel.objects.create(
+        ref="pdv",
+        name="PDV",
+        is_active=True,
+        config=_declared_channel_config("pdv"),
+    )
 
 
 class TestCadeiaDoPdv:
     def test_a_config_semeada_declara_whatsapp_email_sms(self):
         """`ChannelConfig` descarta chave não declarada em silêncio — provar pela dataclass."""
-        notifications = ChannelConfig.from_dict(_seed_assignment("_pos_config")).notifications
+        notifications = ChannelConfig.from_dict(_declared_channel_config("pdv")).notifications
         assert notifications.backend == "manychat"
         assert notifications.fallback_chain == ["email", "sms"]
 
