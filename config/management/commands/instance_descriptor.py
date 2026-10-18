@@ -9,6 +9,8 @@ from django.core.management.base import BaseCommand, CommandError
 
 from config.instance_descriptors import (
     UnsafeDescriptor,
+    UnsupportedInstanceSection,
+    apply_to_database,
     assert_export_safe,
     descriptor_diff,
     load_descriptor,
@@ -17,19 +19,36 @@ from config.instance_descriptors import (
 
 
 class Command(BaseCommand):
-    help = "Read-only dump/diff of the database-backed Instance descriptor"
+    help = "Dump, diff, or atomically apply a database-backed Instance descriptor"
 
     def add_arguments(self, parser):
-        parser.add_argument("action", choices=("dump", "diff"))
+        parser.add_argument("action", choices=("dump", "diff", "apply"))
         parser.add_argument("--descriptor", type=Path, required=True)
+        parser.add_argument("--confirm-instance")
 
     def handle(self, *args, **options):
         path: Path = options["descriptor"]
         try:
             declared = load_descriptor(path)
             assert_export_safe(declared["bootstrap"])
+            if options["action"] == "apply":
+                expected_ref = declared["instance"]["ref"]
+                if options["confirm_instance"] != expected_ref:
+                    raise ValueError(
+                        f"apply requires --confirm-instance {expected_ref}"
+                    )
+                result = apply_to_database(declared)
+                self.stdout.write(json.dumps(result, ensure_ascii=False, sort_keys=True))
+                return
             projected = project_from_database(declared)
-        except (OSError, ValueError, KeyError, json.JSONDecodeError, UnsafeDescriptor) as exc:
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+            UnsafeDescriptor,
+            UnsupportedInstanceSection,
+        ) as exc:
             raise CommandError(str(exc)) from exc
 
         if options["action"] == "dump":

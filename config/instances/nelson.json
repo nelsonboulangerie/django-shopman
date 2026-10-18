@@ -17,7 +17,7 @@
       {"ref": "manager", "permissions": ["shop.manage_orders"]},
       {"ref": "counter-operator", "permissions": ["cashman.operate_pos"]}
     ],
-    "units": [{"ref": "each", "symbol": "un"}, {"ref": "kilogram", "symbol": "kg"}],
+    "units": [],
     "fiscal_profiles": []
   }
 }
