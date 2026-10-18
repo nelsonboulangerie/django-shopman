@@ -28,4 +28,13 @@ arquivo ou banco.
 A projeção cobre somente modelos comprovados: identidade da `Shop`, canais,
 `RuleConfig`, grupos/permissões e templates operacionais. Seções sem modelo DB
 canônico permanecem vazias; o dump não inventa que unidades ou perfis fiscais
-são editáveis. Apply pertence ao passo seguinte do WP-6.
+são editáveis.
+
+## Apply
+
+`python manage.py instance_descriptor apply --descriptor <arquivo>
+--confirm-instance <ref>` faz upsert apenas dos modelos comprovados, dentro de
+uma única transação. A confirmação precisa coincidir exatamente com
+`instance.ref`. Falha tardia reverte todas as mudanças; segunda execução com
+o mesmo descritor não altera o estado. O apply não remove registros ausentes do
+arquivo e recusa seção sem dono DB comprovado.

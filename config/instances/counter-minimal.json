@@ -14,7 +14,7 @@
     "pricing_policies": [],
     "templates": [],
     "rbac_personas": [{"ref": "counter-operator", "permissions": ["cashman.operate_pos"]}],
-    "units": [{"ref": "each", "symbol": "un"}],
+    "units": [],
     "fiscal_profiles": []
   }
 }
