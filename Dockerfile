@@ -72,6 +72,10 @@ RUN python -m pip install --upgrade pip \
 COPY config ./config
 COPY packages ./packages
 COPY shopman ./shopman
+# Os checks de deploy validam a zona de cookie das superfícies operacionais a
+# partir do registry canônico. Ele precisa existir também na imagem de runtime,
+# não apenas no checkout usado pela CI.
+COPY surfaces/registry.json ./surfaces/registry.json
 # O agente do balcão é BAIXADO pelo Admin (o dono já está lá colando a config do
 # terminal). Sem esta linha o download quebra só em produção, que é o pior lugar
 # para descobrir. Ver shopman/backstage/admin_console/pos_counter_agent.py.
