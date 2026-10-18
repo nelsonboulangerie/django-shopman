@@ -38,3 +38,9 @@ uma única transação. A confirmação precisa coincidir exatamente com
 `instance.ref`. Falha tardia reverte todas as mudanças; segunda execução com
 o mesmo descritor não altera o estado. O apply não remove registros ausentes do
 arquivo e recusa seção sem dono DB comprovado.
+
+O `seed` da Nelson materializa `nelson.json` antes dos dados de demonstração.
+Canais, regras, personas RBAC e templates operacionais não têm uma segunda
+lista no comando: o seed apenas cria fatos operacionais sobre a configuração já
+aplicada. Outra Instância usa `instance_descriptor apply`; o catálogo e o
+histórico sintético do comando `seed` continuam deliberadamente Nelson.

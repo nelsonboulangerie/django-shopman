@@ -24,15 +24,12 @@ régua do Stripe (30 min a 24 h − 1 min). Aqui se prova:
 
 from __future__ import annotations
 
-import ast
 from datetime import datetime, timedelta
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
-from django.conf import settings as django_settings
 from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
@@ -234,12 +231,13 @@ class TestServiceCutoff:
 
 
 def _seed_pos_config() -> dict:
-    """O ``_pos_config`` do seed, lido por AST — sem rodar o seed."""
-    source = Path(django_settings.BASE_DIR) / "config" / "management" / "commands" / "seed.py"
-    for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_pos_config" for t in node.targets):
-            return ast.literal_eval(node.value)
-    raise AssertionError("`_pos_config` não encontrado em config/management/commands/seed.py")
+    """Configuração do PDV na fonte versionada da Instância, sem tocar no DB."""
+    from config.instance_descriptors import load_descriptor
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR
+
+    descriptor = load_descriptor(NELSON_INSTANCE_DESCRIPTOR)
+    channel = next(item for item in descriptor["bootstrap"]["channels"] if item["ref"] == "pdv")
+    return channel["config"]["overrides"]
 
 
 class TestChannelWindow:

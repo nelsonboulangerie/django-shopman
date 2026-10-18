@@ -29,6 +29,7 @@ from shopman.shop.models import Channel, RuleConfig, Shop
 
 ROOT = Path(__file__).resolve().parents[2]
 DECLARED = ROOT / "config/instances/counter-minimal.json"
+NELSON = ROOT / "config/instances/nelson.json"
 
 
 @pytest.mark.django_db
@@ -60,7 +61,11 @@ def test_projection_is_deterministic_and_read_only():
     assert first["instance"]["display_name"] == "Counter lab"
     assert first["bootstrap"]["channels"][0]["ref"] == "counter"
     assert first["bootstrap"]["rule_configs"][0]["config"]["channels"] == ["counter"]
-    assert first["bootstrap"]["rbac_personas"][0]["permissions"] == ["cashman.operate_pos"]
+    assert first["bootstrap"]["rbac_personas"][0] == {
+        "ref": "counter-operator",
+        "name": "Counter operator",
+        "permissions": ["cashman.operate_pos"],
+    }
     statements = [query["sql"].lstrip().upper() for query in queries.captured_queries]
     assert not any(statement.startswith(("INSERT", "UPDATE", "DELETE")) for statement in statements)
 
@@ -199,6 +204,35 @@ def test_apply_round_trips_operational_templates():
     assert OperationChecklistTemplate.objects.count() == 1
     assert OperationTaskTemplate.objects.get().sort_order == 5
     assert OperationChecklistTemplateTask.objects.get().sort_order == 20
+
+
+@pytest.mark.django_db
+def test_nelson_descriptor_materializes_all_database_owned_configuration():
+    descriptor = load_descriptor(NELSON)
+
+    apply_to_database(descriptor)
+
+    assert project_from_database(descriptor) == descriptor
+
+
+@pytest.mark.django_db
+def test_nelson_descriptor_rbac_matches_the_release_group_contract():
+    descriptor = load_descriptor(NELSON)
+    call_command("setup_groups", verbosity=0)
+
+    projected = project_from_database(descriptor)
+
+    assert projected["bootstrap"]["rbac_personas"] == descriptor["bootstrap"]["rbac_personas"]
+
+
+@pytest.mark.django_db
+def test_nelson_seed_refuses_a_different_instance_descriptor():
+    from config.management.commands.seed import Command
+
+    command = Command(stdout=StringIO())
+    with pytest.raises(CommandError, match="exige instance.ref='nelson'"):
+        command._materialize_instance(DECLARED)
+    assert Shop.objects.count() == 0
 
 
 @pytest.mark.django_db

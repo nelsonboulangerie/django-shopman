@@ -64,3 +64,10 @@ def test_rejects_missing_database_owned_section():
     descriptor["ownership"]["instance_db"].remove("templates")
     with pytest.raises(gate.DescriptorError, match="instance_db precisa possuir"):
         gate.validate_descriptor(descriptor)
+
+
+def test_rejects_persona_ref_that_does_not_match_its_name():
+    descriptor = _nelson()
+    descriptor["bootstrap"]["rbac_personas"][0]["ref"] = "wrong-name"
+    with pytest.raises(gate.DescriptorError, match="não corresponde ao nome"):
+        gate.validate_descriptor(descriptor)

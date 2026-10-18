@@ -130,6 +130,7 @@ def project_from_database(template: dict) -> dict:
     descriptor["bootstrap"]["rbac_personas"] = [
         {
             "ref": slugify(group.name),
+            "name": group.name,
             "permissions": sorted(
                 f"{app_label}.{codename}"
                 for app_label, codename in group.permissions.values_list(
@@ -270,7 +271,11 @@ def _apply_rules(items: list[dict]) -> int:
 def _apply_personas(items: list[dict]) -> int:
     changed = 0
     for item in items:
-        group, created = Group.objects.get_or_create(name=item["ref"])
+        if slugify(item["name"]) != item["ref"]:
+            raise ValueError(
+                f"persona ref {item['ref']} does not match name {item['name']!r}"
+            )
+        group, created = Group.objects.get_or_create(name=item["name"])
         permissions = [_permission(ref) for ref in item["permissions"]]
         current_permission_ids = set(group.permissions.values_list("pk", flat=True))
         desired_permission_ids = {permission.pk for permission in permissions}

@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +38,12 @@ class DescriptorError(ValueError):
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise DescriptorError(message)
+
+
+def _slugify(value: str) -> str:
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    value = re.sub(r"[^\w\s-]", "", value.lower())
+    return re.sub(r"[-\s]+", "-", value).strip("-_")
 
 
 def _walk_mapping(value, path: str = "bootstrap"):
@@ -96,7 +103,15 @@ def validate_descriptor(data: dict, *, filename: str = "<memory>") -> None:
             _require(isinstance(item_ref, str) and REF_RE.fullmatch(item_ref), f"{filename}: ref inválida em {section}")
             refs.append(item_ref)
             if section == "rbac_personas":
-                _require(set(item) == {"ref", "permissions"}, f"{filename}: persona tem campos inválidos")
+                _require(set(item) == {"ref", "name", "permissions"}, f"{filename}: persona tem campos inválidos")
+                _require(
+                    isinstance(item["name"], str) and item["name"].strip(),
+                    f"{filename}: nome de persona vazio em {item_ref}",
+                )
+                _require(
+                    _slugify(item["name"]) == item_ref,
+                    f"{filename}: ref de persona não corresponde ao nome em {item_ref}",
+                )
                 permissions = item["permissions"]
                 _require(isinstance(permissions, list) and len(permissions) == len(set(permissions)) and all(isinstance(p, str) and PERMISSION_RE.fullmatch(p) for p in permissions), f"{filename}: permissions inválidas em {item_ref}")
             elif section == "units":

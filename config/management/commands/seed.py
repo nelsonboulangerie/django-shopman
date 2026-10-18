@@ -20,12 +20,14 @@ import random
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, Decimal
+from pathlib import Path
 from unittest import mock
 
 from django.conf import settings
 
 # Ref do canal da loja online — espelha a env do deploy (ver config/settings.py).
 STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+NELSON_INSTANCE_DESCRIPTOR = Path(__file__).resolve().parents[2] / "instances/nelson.json"
 
 # Unidades que os canais remotos (loja online, WhatsApp, iFood) deixam de fora
 # da vitrine e da reserva, por SKU. Espelhada em ``shop.0064``.
@@ -70,6 +72,7 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
+from config.instance_descriptors import apply_to_database, load_descriptor
 from config.management.commands.apply_fiscal_ncm import CROQUE_FISCAL_NOTE, house_cest_for
 from config.management.commands.apply_grocery_catalog import apply_grocery
 from config.management.commands.apply_product_brands import apply_brands
@@ -82,12 +85,10 @@ from shopman.backstage.models import (
     DayClosing,
     DayContext,
     KDSInstance,
-    OperationArea,
     OperationChecklistRun,
     OperationChecklistTemplate,
     OperationChecklistTemplateTask,
     OperationEvidence,
-    OperationMoment,
     OperationTaskRun,
     OperationTaskTemplate,
     OperatorAlert,
@@ -115,10 +116,6 @@ from shopman.shop.models import (
     Shop,
 )
 from shopman.shop.notification_copy import CUSTOMER_COPY
-from shopman.shop.rules.suggestion import (
-    DEFAULT_COMPLEMENT_PARAMS,
-    DEFAULT_SUBSTITUTE_PARAMS,
-)
 from shopman.shop.services import attributes
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
@@ -1082,6 +1079,12 @@ class Command(BaseCommand):
                 "idêntica nos dois. Ver docs/reference/qa-seed-scenarios.md."
             ),
         )
+        parser.add_argument(
+            "--descriptor",
+            type=Path,
+            default=NELSON_INSTANCE_DESCRIPTOR,
+            help="Descritor versionado da Instância Nelson a materializar.",
+        )
 
     def handle(self, *args, **options):
         from django.core.management.base import CommandError
@@ -1128,6 +1131,7 @@ class Command(BaseCommand):
         if options["flush"]:
             self._flush()
 
+        self._materialize_instance(options["descriptor"])
         self.stdout.write(self.style.MIGRATE_HEADING("\n🥐 Populando Nelson Boulangerie...\n"))
 
         # PRIMEIRO de tudo: o registro de atributos precisa existir antes do
@@ -1160,8 +1164,7 @@ class Command(BaseCommand):
         self._assert_catalog_remote_purchase_data()
         customers = self._seed_customers()
         self._seed_addresses(customers)
-        channels = self._seed_channels()
-        self._seed_display_channels()
+        channels = self._instance_channels()
         self._assert_storefront_products_orderable()
         self._seed_kds()
         self._seed_timer_tags()
@@ -1189,6 +1192,38 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("\n✅ Seed Nelson completo!\n"))
 
+    def _materialize_instance(self, path: Path) -> None:
+        try:
+            descriptor = load_descriptor(path)
+            instance_ref = descriptor["instance"]["ref"]
+            if instance_ref != "nelson":
+                raise ValueError(
+                    "o seed de demonstração Nelson exige instance.ref='nelson'; "
+                    "use `instance_descriptor apply` para outra Instância"
+                )
+            result = apply_to_database(descriptor)
+        except (OSError, ValueError, KeyError) as exc:
+            raise CommandError(f"descritor de Instância inválido: {exc}") from exc
+        self.instance_descriptor = descriptor
+        self.stdout.write(
+            "  ✅ Instância materializada pelo descritor "
+            f"{path} ({sum(value for key, value in result.items() if key.endswith('_created'))} novos)"
+        )
+
+    def _instance_channels(self) -> dict[str, Channel]:
+        expected = {"pdv", STOREFRONT_REF, "ifood", "whatsapp"}
+        channels = {
+            channel.ref: channel
+            for channel in Channel.objects.filter(ref__in=expected)
+        }
+        missing = sorted(expected - channels.keys())
+        if missing:
+            raise CommandError(
+                "descritor Nelson não materializou os canais transacionais: "
+                f"{', '.join(missing)}"
+            )
+        return channels
+
     def _seed_demo_dynamic(self, products, customers, channels, positions):
         """Perfil demo: histórico realista/aleatório de 35 dias + board vivo.
 
@@ -1215,11 +1250,10 @@ class Command(BaseCommand):
         self._seed_customer_insights()
         self._seed_campaigns()
         self._seed_notification_templates()
-        self._seed_rule_configs()
         self._seed_omotenashi_copy()
         self._seed_day_closing()
         self._seed_cash_register()
-        self._seed_operation_checklists()
+        self._seed_operation_checklist_runs()
 
         # B.I.: sem movimento de prateleira o painel de abastecimento nasce vazio.
         self._seed_bi_history(products, positions)
@@ -1238,11 +1272,10 @@ class Command(BaseCommand):
         self._seed_promotions()
         self._seed_campaigns()
         self._seed_notification_templates()
-        self._seed_rule_configs()
         self._seed_omotenashi_copy()
         self._seed_qa_marketing_audience(customers)
         self._seed_loyalty(customers)
-        self._seed_operation_checklists()
+        self._seed_operation_checklist_runs()
 
         # Cenários nomeados determinísticos (Fase 2 do SEED-DATA-QUALITY-PLAN).
         self._seed_qa_orders(products, customers, channels)
@@ -1478,7 +1511,6 @@ class Command(BaseCommand):
         _, created = Shop.objects.update_or_create(
             pk=1,
             defaults={
-                "name": "Nelson Boulangerie",
                 "legal_name": "N.H.K. Panificadora Ltda.",
                 # CNPJ emitente da NFC-e: o adapter fiscal (Focus NFe) lê de Shop.document
                 # como default (sem precisar de FOCUS_NFE_CNPJ_EMITENTE no ambiente).
@@ -1743,7 +1775,7 @@ class Command(BaseCommand):
         também serve para consertar acesso no staging **sem** rodar este seed —
         que recriaria o catálogo e milhares de pedidos falsos.
         """
-        call_command("setup_operators", "--yes", verbosity=0)
+        call_command("setup_operators", "--yes", "--groups-ready", verbosity=0)
         nomes = ", ".join(u for u, *_ in setup_operators.CAST)
         self.stdout.write(f"  ✅ Operadores em grupos, PIN {setup_operators.DEV_PIN}: {nomes}")
 
@@ -1983,12 +2015,9 @@ class Command(BaseCommand):
         # já foram removidas acima; o seed o recria inteiro logo no início.
         QualityDefect.objects.all().delete()
         QualityGrade.objects.all().delete()
-        # Regras são config como qualquer outra (Shop, Channel, Promotion, Coupon): o
-        # `--flush` apaga e o `_seed_rule_configs` recria o conjunto canônico. Sem
-        # apagar, uma regra que saiu do RULE_CONFIGS sobrevive a todo re-seed — foi o
-        # que aconteceu com `d1_discount`, cuja classe morreu no C6 (PR #152) e cuja
-        # linha ficou no staging gritando "Could not import" a cada boot. A M2M
-        # `channels` já foi levada junto com os Channels apagados acima.
+        # Regras são configuração de Instância: o ``--flush`` apaga e o descritor
+        # versionado materializa novamente o conjunto exato. A M2M ``channels`` já
+        # foi removida junto com os canais acima.
         RuleConfig.objects.all().delete()
         Shop.objects.all().delete()
 
@@ -6343,307 +6372,6 @@ class Command(BaseCommand):
     # Canais (Orderman)
     # ────────────────────────────────────────────────────────────────
 
-    def _seed_channels(self):
-        self.stdout.write("  📡 Canais...")
-
-        channels = {}
-        _pos_config = {
-            "confirmation": {"mode": "immediate"},
-            # `link_timeout_minutes`: quanto o LINK de pagamento do pedido remoto
-            # vale, contado da venda — e é só o teto, porque o link vence antes
-            # se o compromisso do pedido chegar antes (início da janela
-            # combinada, ou o fechamento da loja no dia). Duas horas: o pão é
-            # para hoje ou para amanhã, e a encomenda remota só é liberada
-            # contra o pagamento.
-            "payment": {"method": "cash", "timing": "external", "link_timeout_minutes": 120},
-            # No balcão o item já saiu fisicamente da vitrine: a venda NUNCA é
-            # auto-rejeitada por estoque (o kernel reserva o que der, best-effort,
-            # e o estoque reconcilia). A review avisa; não bloqueia. Mesma semântica
-            # do marketplace (check_on_commit=False).
-            # allow_untracked=False: canal de CLIENTE — typo de SKU não pode
-            # virar pedido sem reserva (SKU fora do catálogo é recusado/alertado).
-            # sells_nonconforming=True: no balcão o lote com desconto de
-            # qualidade É vendido — a etiqueta explica (C2 do D1-RETIREMENT).
-            # safety_margin=0: o balcão NUNCA guarda unidade de ninguém — a
-            # margem existe para proteger ELE dos canais remotos. Explícito para
-            # que uma mudança de default na loja não chegue ao caixa em silêncio.
-            "stock": {
-                "check_on_commit": False,
-                "allow_untracked": False,
-                "sells_nonconforming": True,
-                "safety_margin": 0,
-            },
-            "handle_label": "Comanda",
-            "handle_placeholder": "Ex: 42",
-            # Por onde o aviso do pedido de balcão SAI da casa. Sem esta chave o
-            # canal herdava o `console` da loja — que sempre "dá certo" e
-            # curto-circuita a cadeia: nenhum aviso de PDV alcançava o cliente,
-            # inclusive o link de pagamento do pedido remoto. WhatsApp e e-mail
-            # entregam a URL clicável e de graça; o SMS custa e trunca, então é
-            # a última rede. Cliente só com e-mail cai no e-mail sozinho: o
-            # backend sem destinatário é pulado pelo mecanismo.
-            "notifications": {"backend": "manychat", "fallback_chain": ["email", "sms"]},
-            # Entrega da casa (pedido por telefone no PDV): o entregador pode sair
-            # com a maquininha; o despacho pergunta e a custódia fica no pedido.
-            "fulfillment": {"equipment": ["card_machine"]},
-            # Venda de balcão presencial é um evento já ocorrido, não uma esteira:
-            # o pão saiu pela porta antes do commit. A transição extra
-            # ACCEPTED→COMPLETED autoriza o lifecycle a fechar na hora a venda
-            # sem trabalho de cozinha (system:counter_handoff). Encomenda
-            # agendada, entrega e lanche com receita seguem a esteira normal —
-            # o gate está no lifecycle, aqui é só a permissão da máquina de
-            # estados (assada no snapshot de cada pedido).
-            "lifecycle": {
-                "transitions": {
-                    "new": ["accepted", "cancelled"],
-                    "accepted": ["preparing", "ready", "completed", "cancelled"],
-                    "preparing": ["ready", "cancelled"],
-                    # `cancelled` aqui não é exceção: sem ele a régua não
-                    # fechava. Dava para cancelar ANTES (na fila, na cozinha) e
-                    # DEPOIS (venda fechada, o desfazer da janela), mas não no
-                    # meio — justamente quando o pão está pronto no balcão e o
-                    # cliente liga desistindo. Quem pode é outra pergunta, e
-                    # quem responde é `OrderCancelView` com
-                    # `shop.cancel_advanced_order`. `dispatched`/`delivered`
-                    # seguem fora: depois que o motoboy saiu o fato é DEVOLUÇÃO
-                    # (`returned`), e misturar os dois estraga a leitura do B.I.
-                    "ready": ["preparing", "dispatched", "completed", "cancelled"],
-                    "dispatched": ["delivered", "returned"],
-                    "delivered": ["completed", "returned"],
-                    "completed": ["returned", "cancelled"],
-                    "cancelled": [],
-                    "returned": [],
-                },
-            },
-        }
-        _remote_stock = {
-            "hold_ttl_minutes": 30,
-            # Margem de segurança (decisão do dono, 22/09: "Margem padrão fica em
-            # 2 unidades, configurável, claro"). Por SKU, dentro do escopo de
-            # posições do canal: o canal remoto não mostra nem reserva as últimas
-            # N unidades — elas ficam para o balcão, que é quem tem o cliente na
-            # frente. Vale na LEITURA (cardápio, checkout) e na reserva da
-            # sacola; NÃO vale no hold de commit (pedido já colocado pode
-            # consumi-la — ``services/stock.py``). Ajuste por canal no Admin
-            # (Canal → Estoque → ``safety_margin``). Bancos já existentes
-            # recebem o mesmo valor pela migração ``shop.0064``.
-            "safety_margin": REMOTE_SAFETY_MARGIN,
-            # Canais de CLIENTE não aceitam SKU fora do catálogo como pedido
-            # sem reserva — typo de SKU falha limpo no gate de commit.
-            "allow_untracked": False,
-            # C2 (D1-RETIREMENT): o LOTE decide o que o canal remoto oferece.
-            # Não conforme não sai no remoto (default explícito aqui por
-            # legibilidade). O runtime não permite afrouxar esse limite por
-            # override: somente o PDV local pode vender grau com markdown.
-            "sells_nonconforming": False,
-        }
-        # Fila de fornada (fermata): o cliente pode reservar a produção futura
-        # conhecida por até dois dias. O relógio de 15 min só começa quando o
-        # Stockman materializa a unidade; até lá a intenção não expira nem cobra.
-        #
-        # Isto precisa ser explícito no seed. Herdar o default desligado fazia o
-        # catálogo demonstrar uma fornada planejada que nenhum cliente conseguia
-        # reservar — e obrigava qualquer QA da notificação a fabricar Hold à mão,
-        # pulando justamente os invariantes que o ensaio deveria provar.
-        _remote_waitlist = {
-            "enabled": True,
-            "horizon_days": 2,
-            "confirmation_minutes": 15,
-            "release_policy": "serve_next",
-            "charge_at": "confirmation",
-            "price_frozen": True,
-        }
-        _remote_notifications = {
-            "backend": "manychat",
-            "fallback_chain": ["sms", "email"],
-        }
-        _remote_config = {
-            # Pedido remoto só é aceito quando uma pessoa confere disponibilidade.
-            # Cobrança e copy não podem transformar silêncio operacional em garantia.
-            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 10},
-            "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
-            "stock": _remote_stock,
-            "waitlist": _remote_waitlist,
-            # Canal remoto nunca herda ``console``: console aceita qualquer
-            # mensagem localmente e interrompe a cadeia antes de alcançar a
-            # pessoa. WhatsApp é o primário; SMS e e-mail são redes reais.
-            "notifications": _remote_notifications,
-        }
-        _marketplace_config = {
-            # O iFood cancela o pedido que ninguém confirma em 8 minutos (SLA da
-            # doc; medido a 8min10s em 19/09/2026, seis pedidos seguidos). O card
-            # conta esse prazo a partir do `createdAt` deles, e o alerta de pedido
-            # esquecido tem de tocar ANTES: com 20 ele tocava doze minutos depois
-            # de o pedido já ter sido recolhido, sobre algo que não dava mais para
-            # salvar. Cinco deixa três minutos para o operador agir.
-            "confirmation": {
-                "mode": "manual",
-                "stale_new_alert_minutes": 5,
-                "external_sla_minutes": 8,
-            },
-            "payment": {"method": "external", "timing": "external"},
-            # Marketplace: o pedido já foi comitado e PAGO no iFood. Não rejeitar
-            # localmente por estoque/listing — aceitar e deixar o operador tratar
-            # eventual falta (reserva o que der, best-effort). Rejeitar aqui
-            # cancelaria um pedido de marketplace já pago.
-            "stock": {**_remote_stock, "check_on_commit": False},
-        }
-        _whatsapp_config = {
-            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 10},
-            # O link de Pix/cartão aparece no chat logo depois do pedido, como o
-            # link de pagamento do PDV. `at_commit` também faz a confirmação
-            # esperar a captura (`lifecycle._requires_captured_payment_before_confirmation`):
-            # o concierge não promete fornada a pedido que ainda não pagou.
-            "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
-            "notifications": _remote_notifications,
-            "stock": _remote_stock,
-            "waitlist": _remote_waitlist,
-            # A vitrine do WhatsApp É a da loja online: mesmo cliente remoto, só
-            # que conversando. O ponteiro mantém as duas iguais sempre
-            # (`shop/services/listing_mirror.py`, P1-14); no Catálogo o WhatsApp
-            # não tem edição própria.
-            "pricing": {"listing_from": STOREFRONT_REF},
-        }
-        channels_data = [
-            # (ref, name, display_order, is_active, config_overrides)
-            # Canal = ORIGEM do pedido (por onde entra). Entrega/retirada é fulfillment
-            # (ortogonal, por pedido) — não um canal. Por isso não há "Delivery Próprio":
-            # um pedido para nossa entrega origina de PDV (telefone), WhatsApp ou Loja online.
-            # display_order = ordem canônica das colunas no Gestor: PDV · Loja online · iFood · WhatsApp.
-            # `short_name` (ChannelConfig) = rótulo da coluna estreita no Catálogo; só
-            # quando o nome completo não cabe — "PDV"/"iFood" já são curtos.
-            ("pdv", "PDV", 1, True, _pos_config),
-            # Loja online: cliente acompanha de longe, então o preparo NÃO começa
-            # sozinho ao pagar — o operador dá "Iniciar preparo" no gestor (a tela
-            # do cliente só diz "Em preparo" quando alguém de fato encosta). PDV e
-            # iFood ficam no default "auto" (operador presente / marketplace).
-            (STOREFRONT_REF, "Loja online", 2, True, {
-                **_remote_config,
-                # Loja online PAGA AO PEDIR, como no WhatsApp (decisão do dono,
-                # 14/10/2026, L1=1): o Pix/cartão nasce no pedido, sem "pagar na
-                # entrega" no site (L2=1). A loja tem 30 min de loja aberta para
-                # aceitar (aviso no Gestor aos 10); recusou ou venceu, o pedido é
-                # cancelado e o dinheiro volta sozinho. Nota do dono: "se os
-                # estornos ficarem constantes, reavaliar". Banco vivo: shop.0094.
-                "confirmation": {"mode": "auto_cancel", "timeout_minutes": 30, "stale_new_alert_minutes": 10},
-                "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
-                "short_name": "Site",
-                "order_ref_prefix": "NB",
-                "fulfillment": {"prep_start": "operator", "equipment": ["card_machine"]},
-            }),
-            ("ifood", "iFood", 3, True, {
-                **_marketplace_config,
-                "pricing": {"policy": "external"},
-                "editing": {"policy": "locked"},
-                # O telefone que chega no pedido do iFood é da CENTRAL dele: um
-                # 0800 mais um localizador que quem liga digita para cair no
-                # cliente. Serve para o operador ligar; não é contato do cliente
-                # e não é nosso para usar em aviso automático. Por pedido o
-                # sinal é o `phone_localizer`; esta linha é o que sustenta o
-                # pedido em que o iFood omitir o localizador.
-                "notifications": {"customer_phone": "relay"},
-                # Via do entregador ANÔNIMA: o iFood determina que documento
-                # destinado a parceiro de entrega não traga CPF nem endereço, e
-                # o entregador dele já tem tudo na tela do app. O canal próprio
-                # fica no default ("identified") — a transportadora contratada
-                # pela casa não tem app, e o endereço só existe no papel.
-                "fulfillment": {"courier_ticket": "anonymous"},
-            }),
-            # WhatsApp: os pedidos entram pelo concierge (conversa por IA no ManyChat,
-            # `shopman/storefront/concierge/`). Canal ATIVO porque existe implementação;
-            # desligar é `is_active=False` aqui ou no Admin, e ele some da matriz do
-            # Catálogo. A chave da IA em si é `SHOPMAN_CONCIERGE["enabled"]`.
-            ("whatsapp", "WhatsApp", 4, True, _whatsapp_config)
-        ]
-
-        for ref, name, display_order, is_active, config_data in channels_data:
-            ch, _ = Channel.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "name": name,
-                    "is_active": is_active,
-                    "display_order": display_order,
-                    "config": config_data,
-                },
-            )
-            channels[ref] = ch
-
-        self.stdout.write(f"  ✅ {len(channels)} canais")
-        return channels
-
-    def _seed_display_channels(self):
-        """Canais de EXIBIÇÃO: mostram o catálogo sem transacionar.
-
-        📺 Menuboards (TVs no salão) + 🛰 feeds (Google/Meta). Cada um compõe coleções
-        reais (viram as seções/segmentos). Acoplamento frouxo por ref de coleção — não
-        exige coleção-guarda-chuva. A pausa global do produto cascateia sobre eles, e o
-        operador pode pausar um item em UM canal (`display.paused_skus`).
-
-        Eram um model próprio (`Showcase`) até a ADR-018: superfície é canal, e o que
-        distinguia as duas coisas era só *poder vender*. Isso virou
-        `commerce_policy`, e o resto do que o Showcase guardava virou o aspecto
-        `display` do `ChannelConfig`.
-
-        **`prices_from` é o ponto todo.** Canal de exibição não vende, logo não tem
-        preço próprio — mas mostra preço, e mostrar o errado vincula o fornecedor. Então
-        ele aponta para quem transaciona:
-
-        · TV do balcão → **PDV**. Está fisicamente na loja; tem de concordar com o caixa.
-        · Google/Meta → **loja online**. É lá que quem clicou vai comprar.
-
-        Enquanto todos os canais cobram igual, isto não muda um centavo na tela. É de
-        propósito: a mudança é de FONTE, e existe para o dia em que o PDV tiver preço
-        próprio — aí a TV acompanha o caixa em vez de anunciar tabela.
-        """
-        self.stdout.write("  📺 Canais de exibição...")
-
-        pos_ref = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
-        web_ref = STOREFRONT_REF
-
-        # `short_name` = rótulo da coluna estreita na matriz do Catálogo. O nome
-        # completo continua valendo no Admin, onde ele diz QUAL TV é ("TV do Café" vs
-        # "TV do Salão") — informação que "TV1"/"TV2" perdem.
-        #
-        # `format` vazio = menuboard: ele é uma ROTA nossa, não um dialeto de terceiro.
-        # Google e Meta têm dialeto (nome do campo, separador de label), e é isso que o
-        # formato nomeia.
-        channels_data = [
-            # (ref, name, short_name, format, prices_from, [collection_refs])
-            ("tv-1", "TV do Café", "TV1", "", pos_ref,
-             ["bebidas-quentes", "bebidas-geladas", "doces"]),
-            ("tv-2", "TV do Salão", "TV2", "", pos_ref,
-             ["rusticos", "macios", "folhados", "salgados"]),
-            ("google-shopping", "Google Shopping", "Google", "google_merchant", web_ref,
-             ["rusticos", "macios", "folhados", "salgados", "doces"]),
-            ("meta-catalog", "Catálogo Meta", "Meta", "meta_catalog", web_ref,
-             ["rusticos", "macios", "folhados", "salgados", "doces"])
-        ]
-
-        for ref, name, short_name, fmt, prices_from, collections in channels_data:
-            Channel.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "name": name,
-                    "commerce_policy": Channel.CommercePolicy.DISPLAY,
-                    "is_active": True,
-                    "config": {
-                        "short_name": short_name,
-                        "display": {
-                            "format": fmt,
-                            "collections": collections,
-                            "prices_from": prices_from,
-                            "paused_skus": [],
-                        },
-                    },
-                },
-            )
-
-        self.stdout.write(f"  ✅ {len(channels_data)} canais de exibição")
-
-    # ────────────────────────────────────────────────────────────────
-    # Pedidos (Orderman)
-    # ────────────────────────────────────────────────────────────────
-
     def _seed_orders(self, products, customers, channels):
         self.stdout.write("  🛒 Pedidos...")
 
@@ -8741,78 +8469,6 @@ class Command(BaseCommand):
 
         self.stdout.write(f"  ✅ {len(NOTIFICATION_TEMPLATES)} templates de notificação ({count} novos)")
 
-    def _seed_rule_configs(self):
-        self.stdout.write("  ⚙️  Rule configs...")
-
-        RULE_CONFIGS = [
-            {
-                "ref": "happy_hour",
-                "rule_path": "shopman.shop.rules.pricing.HappyHourRule",
-                "label": "Hora da Xepa",
-                "params": {"discount_percent": 25, "start": "17:30", "end": "18:00"},
-                "priority": 65,
-            },
-            {
-                "ref": "business_hours",
-                "rule_path": "shopman.shop.rules.validation.BusinessHoursRule",
-                "label": "Horário de Funcionamento",
-                "params": {},
-                "priority": 10,
-            },
-            # Mínimo de entrega, mínimo geral e frete grátis são políticas da loja
-            # em Shop.defaults["rules"] (ver _seed_shop), fonte única consumida
-            # pelo aviso ao vivo e pelos validators de commit.
-            #
-            # Sugestão: os defaults do dono também entram aqui, e não só na
-            # migração 0030, porque `_flush` apaga TODA RuleConfig — sem estas
-            # duas linhas, um `seed --flush` deixaria a casa sem regra de
-            # adicional e sem ninguém perceber (o motor cairia só em
-            # co-ocorrência, que num banco recém-flushado é nada).
-            {
-                "ref": "suggestion.complement",
-                "rule_path": "shopman.shop.rules.suggestion.ComplementRule",
-                "label": "Sugestão de adicional",
-                "params": DEFAULT_COMPLEMENT_PARAMS,
-                "priority": 100,
-            },
-            {
-                "ref": "suggestion.substitute",
-                "rule_path": "shopman.shop.rules.suggestion.SubstituteRule",
-                "label": "Sugestão de substituto",
-                "params": DEFAULT_SUBSTITUTE_PARAMS,
-                "priority": 101,
-            }
-        ]
-
-        count = 0
-        rules_by_ref = {}
-        for rc in RULE_CONFIGS:
-            obj, created = RuleConfig.objects.update_or_create(
-                ref=rc["ref"],
-                defaults={
-                    "rule_path": rc["rule_path"],
-                    "label": rc["label"],
-                    "params": rc["params"],
-                    "priority": rc["priority"],
-                    # Regra pode nascer desligada (a de substituto nasce): o
-                    # default continua ligado para todas as outras.
-                    "enabled": rc.get("enabled", True),
-                },
-            )
-            rules_by_ref[rc["ref"]] = obj
-            if created:
-                count += 1
-
-        # A Hora da Xepa é liquidação de fim de dia de quem está na loja: vale SÓ
-        # no balcão (decisão do dono, 14/10/2026). Nem site, nem WhatsApp, nem
-        # iFood. A regra exige canal listado (``HappyHourRule.channels_required``):
-        # sem o PDV aqui, ela não valeria em lugar nenhum.
-        happy_hour = rules_by_ref.get("happy_hour")
-        if happy_hour is not None:
-            happy_hour.channels.set(Channel.objects.filter(ref="pdv"))
-
-        self.stdout.write(f"  ✅ {len(RULE_CONFIGS)} rule configs ({count} novos)")
-
     def _seed_omotenashi_copy(self):
         """Brand overrides for generic interface copy.
 
@@ -9222,186 +8878,25 @@ class Command(BaseCommand):
     # Operation checklists (abertura, rotina, fechamento)
     # ────────────────────────────────────────────────────────────────
 
-    def _seed_operation_checklists(self):
-        self.stdout.write("  ✅ Checklists operacionais...")
+    def _seed_operation_checklist_runs(self):
+        self.stdout.write("  ✅ Execuções de checklists operacionais...")
 
         admin = User.objects.filter(is_superuser=True).first()
         if not admin:
-            self.stdout.write("  ⏭️  Sem superuser, pulando checklists operacionais")
+            self.stdout.write("  ⏭️  Sem superuser, pulando execuções de checklists")
             return
 
-        task_specs = [
-            {
-                "ref": "nelson-opening-cash-count",
-                "title": "Caixa aberto e conferido",
-                "description": "Registrar fundo de troco antes de iniciar atendimento.",
-                "moment": OperationMoment.OPENING,
-                "area": OperationArea.CASH,
-                "evidence_required": OperationEvidence.NUMBER,
-                "expected_role": "caixa",
-                "sort_order": 10,
-            },
-            {
-                "ref": "nelson-opening-showcase-ready",
-                "title": "Vitrine preparada",
-                "description": "Conferir exposição, etiquetas e itens críticos antes da abertura.",
-                "moment": OperationMoment.OPENING,
-                "area": OperationArea.ROOM,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "atendimento",
-                "sort_order": 20,
-            },
-            {
-                "ref": "nelson-opening-equipment-safe",
-                "title": "Equipamentos ligados e seguros",
-                "description": "Forno, geladeiras, iluminação e PDV em condição segura.",
-                "moment": OperationMoment.OPENING,
-                "area": OperationArea.PRODUCTION,
-                "evidence_required": OperationEvidence.DOUBLE_CHECK,
-                "expected_role": "produção",
-                "sort_order": 30,
-            },
-            {
-                "ref": "nelson-routine-tables-clean",
-                "title": "Mesas limpas",
-                "description": "Conferência periódica do salão.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.CLEANING,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "salão",
-                "sort_order": 10,
-            },
-            {
-                "ref": "nelson-routine-bathroom-clean",
-                "title": "Banheiro limpo",
-                "description": "Checagem de limpeza, papel, sabonete e lixeira.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.CLEANING,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "salão",
-                "sort_order": 20,
-            },
-            {
-                "ref": "nelson-routine-showcase-restock",
-                "title": "Reposição de vitrine",
-                "description": "Registrar rupturas, reposições e itens de atenção.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.ROOM,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "atendimento",
-                "sort_order": 30,
-            },
-            {
-                "ref": "nelson-routine-critical-stock",
-                "title": "Ruptura ou item crítico conferido",
-                "description": "Checar itens com alerta ou alta demanda no dia.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.STOCK,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "gestão",
-                "sort_order": 40,
-            },
-            {
-                "ref": "nelson-closing-cash-closed",
-                "title": "Caixa fechado",
-                "description": "Conferir valor informado, esperado e diferença.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.CASH,
-                "evidence_required": OperationEvidence.DOUBLE_CHECK,
-                "expected_role": "caixa",
-                "sort_order": 10,
-            },
-            {
-                "ref": "nelson-closing-unsold-blind",
-                "title": "Não vendidos informados às cegas",
-                "description": "Registrar quantidade apurada sem revelar saldo esperado.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.STOCK,
-                "evidence_required": OperationEvidence.NUMBER,
-                "expected_role": "fechamento",
-                "sort_order": 20,
-            },
-            {
-                "ref": "nelson-closing-showcase-clean",
-                "title": "Vitrine limpa",
-                "description": "Limpeza final e retirada de itens sem condição de venda.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.CLEANING,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "salão",
-                "sort_order": 30,
-            },
-            {
-                "ref": "nelson-closing-equipment-safe",
-                "title": "Equipamentos desligados ou seguros",
-                "description": "Conferir equipamentos, refrigeração e segurança para a noite.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.PRODUCTION,
-                "evidence_required": OperationEvidence.DOUBLE_CHECK,
-                "expected_role": "produção",
-                "sort_order": 40,
-            }
-        ]
-
-        tasks: dict[str, OperationTaskTemplate] = {}
-        for spec in task_specs:
-            ref = spec.pop("ref")
-            task, _ = OperationTaskTemplate.objects.update_or_create(
-                ref=ref,
-                defaults={**spec, "is_required": True, "is_active": True, "is_system": True, "config": {"seed": "nelson"}},
+        expected = {"nelson-opening", "nelson-routine", "nelson-closing"}
+        checklists = {
+            template.ref: template
+            for template in OperationChecklistTemplate.objects.filter(ref__in=expected)
+        }
+        missing = sorted(expected - checklists.keys())
+        if missing:
+            raise CommandError(
+                "descritor Nelson não materializou os templates operacionais: "
+                f"{', '.join(missing)}"
             )
-            tasks[ref] = task
-
-        checklist_specs = [
-            (
-                "nelson-opening",
-                "Abertura da casa",
-                OperationMoment.OPENING,
-                [
-                    "nelson-opening-cash-count",
-                    "nelson-opening-showcase-ready",
-                    "nelson-opening-equipment-safe"],
-            ),
-            (
-                "nelson-routine",
-                "Rotina do dia",
-                OperationMoment.ROUTINE,
-                [
-                    "nelson-routine-tables-clean",
-                    "nelson-routine-bathroom-clean",
-                    "nelson-routine-showcase-restock",
-                    "nelson-routine-critical-stock"],
-            ),
-            (
-                "nelson-closing",
-                "Fechamento da casa",
-                OperationMoment.CLOSING,
-                [
-                    "nelson-closing-cash-closed",
-                    "nelson-closing-unsold-blind",
-                    "nelson-closing-showcase-clean",
-                    "nelson-closing-equipment-safe"],
-            )
-        ]
-        checklists: dict[str, OperationChecklistTemplate] = {}
-        for index, (ref, title, moment, task_refs) in enumerate(checklist_specs, start=1):
-            checklist, _ = OperationChecklistTemplate.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "title": title,
-                    "description": "Checklist canônico Nelson para operação diária.",
-                    "moment": moment,
-                    "is_active": True,
-                    "sort_order": index * 10,
-                },
-            )
-            checklists[ref] = checklist
-            for sort_order, task_ref in enumerate(task_refs, start=1):
-                OperationChecklistTemplateTask.objects.update_or_create(
-                    checklist_template=checklist,
-                    task_template=tasks[task_ref],
-                    defaults={"sort_order": sort_order * 10, "is_required_override": None},
-                )
 
         today = timezone.localdate()
         yesterday = today - timedelta(days=1)
@@ -9451,7 +8946,7 @@ class Command(BaseCommand):
                 complete_task_run(task, user=admin, evidence_text="Conferido no fechamento.")
         complete_checklist_run(closing_run, user=admin)
 
-        self.stdout.write("  ✅ 3 templates e 3 execuções de checklist operacional")
+        self.stdout.write("  ✅ 3 execuções de checklist operacional")
 
     # ── B.I.: a série que dá o que ver ──────────────────────────────────────
     #

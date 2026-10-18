@@ -22,6 +22,13 @@ from shopman.shop.services import campaign_schedule as sched
 pytestmark = pytest.mark.django_db
 
 
+def _materialize_instance(command):
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR
+
+    command._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
+    return command._instance_channels()
+
+
 @pytest.fixture
 def seeded():
     from config.management.commands.seed import Command
@@ -65,7 +72,7 @@ def test_seeded_owned_remote_channels_exercise_the_real_waitlist_and_delivery_ch
 
     command = Command()
     command.stdout = StringIO()
-    channels = command._seed_channels()
+    channels = _materialize_instance(command)
 
     for ref in ("web", "whatsapp"):
         config = ChannelConfig.for_channel(channels[ref])
@@ -221,10 +228,10 @@ def test_the_seeded_history_is_attributable_to_customers(db):
 
     command = Command()
     command.stdout = StringIO()
+    channels = _materialize_instance(command)
     command._seed_shop()
     products = command._seed_catalog()
     customers = command._seed_customers()
-    channels = command._seed_channels()
     command._seed_orders(products, customers, channels)
 
     total = Order.objects.count()
@@ -251,10 +258,11 @@ def test_the_seeded_history_produces_favorites(db):
 
     command = Command()
     command.stdout = StringIO()
+    channels = _materialize_instance(command)
     command._seed_shop()
     products = command._seed_catalog()
     customers = command._seed_customers()
-    command._seed_orders(products, customers, command._seed_channels())
+    command._seed_orders(products, customers, channels)
     InsightService.recalculate_all()
 
     with_history = [i for i in CustomerInsight.objects.all() if i.total_orders]

@@ -33,6 +33,12 @@ def _seeder():
     return command
 
 
+def _materialize(seeder) -> None:
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR
+
+    seeder._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
+
+
 def _make_orphan() -> RuleConfig:
     """Regra cuja classe não existe — o `d1_discount` de depois do C6.
 
@@ -54,14 +60,14 @@ def _make_orphan() -> RuleConfig:
 def test_flush_rebuilds_exactly_the_canonical_rule_configs():
     seeder = _seeder()
 
-    seeder._seed_rule_configs()
+    _materialize(seeder)
     canonical = set(RuleConfig.objects.values_list("ref", flat=True))
     assert canonical, "o seed precisa plantar alguma regra para este teste dizer algo"
 
     _make_orphan()
 
     seeder._flush()
-    seeder._seed_rule_configs()
+    _materialize(seeder)
 
     assert set(RuleConfig.objects.values_list("ref", flat=True)) == canonical
 
@@ -73,7 +79,7 @@ def test_flush_leaves_the_audit_table_empty():
     terminava com uma history de deleções — o oposto do que o comentário prometia.
     """
     seeder = _seeder()
-    seeder._seed_rule_configs()
+    _materialize(seeder)
     assert RuleConfig.history.model.objects.exists()
 
     seeder._flush()
@@ -104,6 +110,12 @@ def test_full_seed_flush_drops_an_orphan_rule_and_its_channel_links(monkeypatch)
     # Toda regra sobrevivente importa: é isto que o boot do engine cobra.
     for rule in RuleConfig.objects.all():
         rule.full_clean()
+
+    from config.instance_descriptors import descriptor_diff, load_descriptor, project_from_database
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR
+
+    descriptor = load_descriptor(NELSON_INSTANCE_DESCRIPTOR)
+    assert descriptor_diff(descriptor, project_from_database(descriptor)) == []
 
 
 def test_migracao_0096_apaga_a_regra_aposentada():
