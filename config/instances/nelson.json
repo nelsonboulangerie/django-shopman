@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "instance": {"ref": "nelson", "display_name": "Nelson Boulangerie"},
+  "ownership": {
+    "instance_db": ["channels", "fiscal_profiles", "pipelines", "pricing_policies", "rbac_personas", "rule_configs", "templates", "units"],
+    "deploy": ["ALLOWED_HOSTS", "SHOPMAN_DOMAIN", "SHOPMAN_INSTANCE_DESCRIPTOR"],
+    "secret": ["DATABASE_URL", "SECRET_KEY"],
+    "structural": ["INSTALLED_APPS", "MIDDLEWARE", "ROOT_URLCONF"]
+  },
+  "bootstrap": {
+    "channels": [{"ref": "storefront", "enabled": true}, {"ref": "counter", "enabled": true}],
+    "pipelines": [],
+    "rule_configs": [],
+    "pricing_policies": [],
+    "templates": [],
+    "rbac_personas": [
+      {"ref": "manager", "permissions": ["shop.manage_orders"]},
+      {"ref": "counter-operator", "permissions": ["cashman.operate_pos"]}
+    ],
+    "units": [{"ref": "each", "symbol": "un"}, {"ref": "kilogram", "symbol": "kg"}],
+    "fiscal_profiles": []
+  }
+}
