@@ -22,7 +22,7 @@ from django.apps import apps
 from django.core.cache import cache
 from django.utils import timezone
 
-from shopman.shop.models import Channel, RuleConfig, Shop
+from shopman.shop.models import Channel, RuleConfig
 
 pytestmark = pytest.mark.django_db
 
@@ -91,13 +91,11 @@ def test_outras_regras_sem_canal_continuam_valendo_em_todos(canais):
 
 
 def test_seed_lista_a_xepa_so_no_pdv():
-    from config.management.commands.seed import Command
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR, Command
 
-    Shop.objects.create(name="Seed Test Shop")
     command = Command()
     command.stdout = StringIO()
-    command._seed_channels()
-    command._seed_rule_configs()
+    command._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
 
     rule = RuleConfig.objects.get(ref="happy_hour")
     assert sorted(rule.channels.values_list("ref", flat=True)) == ["pdv"]

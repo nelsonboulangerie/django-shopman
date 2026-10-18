@@ -14,13 +14,13 @@ pytestmark = pytest.mark.django_db
 
 
 def test_seeded_owned_remote_channels_require_human_confirmation():
-    from config.management.commands.seed import Command
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR, Command
     from shopman.shop.config import ChannelConfig
 
-    Shop.objects.create(name="Seed Test Shop")
     command = Command()
     command.stdout = StringIO()
-    channels = command._seed_channels()
+    command._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
+    channels = command._instance_channels()
 
     # A loja online paga ao pedir e tem prazo de aceite (ADR-036): quem não aceita
     # a tempo CANCELA e devolve, nunca aceita sozinho.

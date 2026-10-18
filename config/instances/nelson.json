@@ -1,21 +1,2378 @@
 {
   "schema_version": 1,
-  "instance": {"ref": "nelson", "display_name": "Nelson Boulangerie"},
+  "instance": {
+    "ref": "nelson",
+    "display_name": "Nelson Boulangerie"
+  },
   "ownership": {
-    "instance_db": ["channels", "fiscal_profiles", "pipelines", "pricing_policies", "rbac_personas", "rule_configs", "templates", "units"],
-    "deploy": ["ALLOWED_HOSTS", "SHOPMAN_DOMAIN", "SHOPMAN_INSTANCE_DESCRIPTOR"],
-    "secret": ["DATABASE_URL", "SECRET_KEY"],
-    "structural": ["INSTALLED_APPS", "MIDDLEWARE", "ROOT_URLCONF"]
+    "instance_db": [
+      "channels",
+      "fiscal_profiles",
+      "pipelines",
+      "pricing_policies",
+      "rbac_personas",
+      "rule_configs",
+      "templates",
+      "units"
+    ],
+    "deploy": [
+      "ALLOWED_HOSTS",
+      "SHOPMAN_DOMAIN",
+      "SHOPMAN_INSTANCE_DESCRIPTOR"
+    ],
+    "secret": [
+      "DATABASE_URL",
+      "SECRET_KEY"
+    ],
+    "structural": [
+      "INSTALLED_APPS",
+      "MIDDLEWARE",
+      "ROOT_URLCONF"
+    ]
   },
   "bootstrap": {
-    "channels": [{"ref": "storefront", "enabled": true}, {"ref": "counter", "enabled": true}],
+    "channels": [
+      {
+        "ref": "google-shopping",
+        "enabled": true,
+        "config": {
+          "name": "Google Shopping",
+          "commerce_policy": "display",
+          "display_order": 0,
+          "overrides": {
+            "short_name": "Google",
+            "display": {
+              "format": "google_merchant",
+              "collections": [
+                "rusticos",
+                "macios",
+                "folhados",
+                "salgados",
+                "doces"
+              ],
+              "prices_from": "web",
+              "paused_skus": []
+            }
+          }
+        }
+      },
+      {
+        "ref": "ifood",
+        "enabled": true,
+        "config": {
+          "name": "iFood",
+          "commerce_policy": "order",
+          "display_order": 3,
+          "overrides": {
+            "confirmation": {
+              "mode": "manual",
+              "stale_new_alert_minutes": 5,
+              "external_sla_minutes": 8
+            },
+            "payment": {
+              "method": "external",
+              "timing": "external"
+            },
+            "stock": {
+              "hold_ttl_minutes": 30,
+              "safety_margin": 2,
+              "allow_untracked": false,
+              "sells_nonconforming": false,
+              "check_on_commit": false
+            },
+            "pricing": {
+              "policy": "external"
+            },
+            "editing": {
+              "policy": "locked"
+            },
+            "notifications": {
+              "customer_phone": "relay"
+            },
+            "fulfillment": {
+              "courier_ticket": "anonymous"
+            }
+          }
+        }
+      },
+      {
+        "ref": "meta-catalog",
+        "enabled": true,
+        "config": {
+          "name": "Catálogo Meta",
+          "commerce_policy": "display",
+          "display_order": 0,
+          "overrides": {
+            "short_name": "Meta",
+            "display": {
+              "format": "meta_catalog",
+              "collections": [
+                "rusticos",
+                "macios",
+                "folhados",
+                "salgados",
+                "doces"
+              ],
+              "prices_from": "web",
+              "paused_skus": []
+            }
+          }
+        }
+      },
+      {
+        "ref": "pdv",
+        "enabled": true,
+        "config": {
+          "name": "PDV",
+          "commerce_policy": "order",
+          "display_order": 1,
+          "overrides": {
+            "confirmation": {
+              "mode": "immediate"
+            },
+            "payment": {
+              "method": "cash",
+              "timing": "external",
+              "link_timeout_minutes": 120
+            },
+            "stock": {
+              "check_on_commit": false,
+              "allow_untracked": false,
+              "sells_nonconforming": true,
+              "safety_margin": 0
+            },
+            "handle_label": "Comanda",
+            "handle_placeholder": "Ex: 42",
+            "notifications": {
+              "backend": "manychat",
+              "fallback_chain": [
+                "email",
+                "sms"
+              ]
+            },
+            "fulfillment": {
+              "equipment": [
+                "card_machine"
+              ]
+            },
+            "lifecycle": {
+              "transitions": {
+                "new": [
+                  "accepted",
+                  "cancelled"
+                ],
+                "accepted": [
+                  "preparing",
+                  "ready",
+                  "completed",
+                  "cancelled"
+                ],
+                "preparing": [
+                  "ready",
+                  "cancelled"
+                ],
+                "ready": [
+                  "preparing",
+                  "dispatched",
+                  "completed",
+                  "cancelled"
+                ],
+                "dispatched": [
+                  "delivered",
+                  "returned"
+                ],
+                "delivered": [
+                  "completed",
+                  "returned"
+                ],
+                "completed": [
+                  "returned",
+                  "cancelled"
+                ],
+                "cancelled": [],
+                "returned": []
+              }
+            }
+          }
+        }
+      },
+      {
+        "ref": "tv-1",
+        "enabled": true,
+        "config": {
+          "name": "TV do Café",
+          "commerce_policy": "display",
+          "display_order": 0,
+          "overrides": {
+            "short_name": "TV1",
+            "display": {
+              "format": "",
+              "collections": [
+                "bebidas-quentes",
+                "bebidas-geladas",
+                "doces"
+              ],
+              "prices_from": "pdv",
+              "paused_skus": []
+            }
+          }
+        }
+      },
+      {
+        "ref": "tv-2",
+        "enabled": true,
+        "config": {
+          "name": "TV do Salão",
+          "commerce_policy": "display",
+          "display_order": 0,
+          "overrides": {
+            "short_name": "TV2",
+            "display": {
+              "format": "",
+              "collections": [
+                "rusticos",
+                "macios",
+                "folhados",
+                "salgados"
+              ],
+              "prices_from": "pdv",
+              "paused_skus": []
+            }
+          }
+        }
+      },
+      {
+        "ref": "web",
+        "enabled": true,
+        "config": {
+          "name": "Loja online",
+          "commerce_policy": "order",
+          "display_order": 2,
+          "overrides": {
+            "confirmation": {
+              "mode": "auto_cancel",
+              "timeout_minutes": 30,
+              "stale_new_alert_minutes": 10
+            },
+            "payment": {
+              "method": [
+                "pix",
+                "card"
+              ],
+              "timing": "at_commit",
+              "timeout_minutes": 10
+            },
+            "stock": {
+              "hold_ttl_minutes": 30,
+              "safety_margin": 2,
+              "allow_untracked": false,
+              "sells_nonconforming": false
+            },
+            "waitlist": {
+              "enabled": true,
+              "horizon_days": 2,
+              "confirmation_minutes": 15,
+              "release_policy": "serve_next",
+              "charge_at": "confirmation",
+              "price_frozen": true
+            },
+            "notifications": {
+              "backend": "manychat",
+              "fallback_chain": [
+                "sms",
+                "email"
+              ]
+            },
+            "short_name": "Site",
+            "order_ref_prefix": "NB",
+            "fulfillment": {
+              "prep_start": "operator",
+              "equipment": [
+                "card_machine"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ref": "whatsapp",
+        "enabled": true,
+        "config": {
+          "name": "WhatsApp",
+          "commerce_policy": "order",
+          "display_order": 4,
+          "overrides": {
+            "confirmation": {
+              "mode": "manual",
+              "stale_new_alert_minutes": 10
+            },
+            "payment": {
+              "method": [
+                "pix",
+                "card"
+              ],
+              "timing": "at_commit",
+              "timeout_minutes": 10
+            },
+            "notifications": {
+              "backend": "manychat",
+              "fallback_chain": [
+                "sms",
+                "email"
+              ]
+            },
+            "stock": {
+              "hold_ttl_minutes": 30,
+              "safety_margin": 2,
+              "allow_untracked": false,
+              "sells_nonconforming": false
+            },
+            "waitlist": {
+              "enabled": true,
+              "horizon_days": 2,
+              "confirmation_minutes": 15,
+              "release_policy": "serve_next",
+              "charge_at": "confirmation",
+              "price_frozen": true
+            },
+            "pricing": {
+              "listing_from": "web"
+            }
+          }
+        }
+      }
+    ],
     "pipelines": [],
-    "rule_configs": [],
+    "rule_configs": [
+      {
+        "ref": "business_hours",
+        "enabled": true,
+        "config": {
+          "rule_path": "shopman.shop.rules.validation.BusinessHoursRule",
+          "label": "Horário de Funcionamento",
+          "params": {},
+          "channels": [],
+          "priority": 10
+        }
+      },
+      {
+        "ref": "happy_hour",
+        "enabled": true,
+        "config": {
+          "rule_path": "shopman.shop.rules.pricing.HappyHourRule",
+          "label": "Hora da Xepa",
+          "params": {
+            "discount_percent": 25,
+            "start": "17:30",
+            "end": "18:00"
+          },
+          "channels": [
+            "pdv"
+          ],
+          "priority": 65
+        }
+      },
+      {
+        "ref": "suggestion.complement",
+        "enabled": true,
+        "config": {
+          "rule_path": "shopman.shop.rules.suggestion.ComplementRule",
+          "label": "Sugestão de adicional",
+          "params": {
+            "pairings": [
+              {
+                "when": {
+                  "attr": "natureza",
+                  "value": "comida"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": {
+                  "attr": "natureza",
+                  "value": "bebida"
+                },
+                "weight": 3
+              },
+              {
+                "when": {
+                  "attr": "sabor",
+                  "value": "salgado"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  },
+                  {
+                    "attr": "temperatura",
+                    "value": "gelado"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "attr": "sabor",
+                  "value": "doce"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  },
+                  {
+                    "attr": "temperatura",
+                    "value": "quente"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "attr": "temperatura",
+                  "value": "ambiente"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  },
+                  {
+                    "attr": "temperatura",
+                    "value": "quente"
+                  }
+                ],
+                "weight": 1
+              },
+              {
+                "when": {
+                  "attr": "natureza",
+                  "value": "bebida"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  }
+                ],
+                "suggest": {
+                  "attr": "natureza",
+                  "value": "comida"
+                },
+                "weight": 3
+              },
+              {
+                "when": {
+                  "attr": "temperatura",
+                  "value": "quente"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  }
+                ],
+                "suggest": {
+                  "attr": "sabor",
+                  "value": "doce"
+                },
+                "weight": 2
+              },
+              {
+                "when": {
+                  "attr": "temperatura",
+                  "value": "gelado"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  }
+                ],
+                "suggest": {
+                  "attr": "sabor",
+                  "value": "salgado"
+                },
+                "weight": 2
+              },
+              {
+                "when": [
+                  {
+                    "attr": "sabor",
+                    "value": "salgado"
+                  },
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": {
+                  "attr": "sabor",
+                  "value": "doce"
+                },
+                "weight": 3
+              },
+              {
+                "when": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": {
+                  "attr": "sabor",
+                  "value": "doce"
+                },
+                "weight": 3
+              },
+              {
+                "when": [
+                  {
+                    "attr": "sabor",
+                    "value": "doce"
+                  },
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "when_absent": [
+                  {
+                    "attr": "sabor",
+                    "value": "salgado"
+                  }
+                ],
+                "suggest": {
+                  "attr": "sabor",
+                  "value": "salgado"
+                },
+                "weight": 3
+              },
+              {
+                "when": [
+                  {
+                    "attr": "sabor",
+                    "value": "doce"
+                  },
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "when_absent": [
+                  {
+                    "attr": "sabor",
+                    "value": "salgado"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "sabor",
+                    "value": "salgado"
+                  },
+                  {
+                    "attr": "temperatura",
+                    "value": "ambiente"
+                  }
+                ],
+                "weight": 1
+              },
+              {
+                "when": [
+                  {
+                    "attr": "sabor",
+                    "value": "doce"
+                  },
+                  {
+                    "attr": "temperatura",
+                    "value": "gelado"
+                  }
+                ],
+                "when_absent": [
+                  {
+                    "attr": "sabor",
+                    "value": "salgado"
+                  }
+                ],
+                "suggest": {
+                  "attr": "sabor",
+                  "value": "salgado"
+                },
+                "weight": 2
+              },
+              {
+                "when": [
+                  {
+                    "attr": "sabor",
+                    "value": "doce"
+                  },
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "when_absent": [
+                  {
+                    "attr": "sabor",
+                    "value": "salgado"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "sabor",
+                    "value": "neutro"
+                  },
+                  {
+                    "tag": "pao"
+                  }
+                ],
+                "weight": 1
+              },
+              {
+                "when": {
+                  "attr": "sabor",
+                  "value": "neutro"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  },
+                  {
+                    "attr": "sabor",
+                    "value": "doce"
+                  },
+                  {
+                    "attr": "sabor",
+                    "value": "salgado"
+                  }
+                ],
+                "suggest": {
+                  "attr": "natureza",
+                  "value": "acompanhamento"
+                },
+                "weight": 3
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "collection": "rusticos"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "queijo"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "collection": "rusticos"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "pate"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "collection": "rusticos"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "tapenade"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "collection": "rusticos"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "picles"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "collection": "rusticos"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "manteiga"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "focaccia"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "tapenade"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "focaccia"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "azeite"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "italiano"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "tapenade"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "italiano"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "azeite"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "campagne"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "camembert"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "croissant"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "geleia"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "croissant"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "mel"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "croissant"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "manteiga"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "brioche"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "geleia"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "brioche"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "doce-de-leite"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "brioche"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "mel"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "rabanada"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "mel"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "tag": "rabanada"
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "doce-de-leite"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "shokupan"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "manteiga"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "shokupan"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "geleia"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "kuropan"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "manteiga"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "kuropan"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "geleia"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "hotdog"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "mostarda"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "hamburger"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "mostarda"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "hamburger"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "picles"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "hamburger"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "queijo"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "sabor",
+                      "value": "neutro"
+                    },
+                    {
+                      "tag": "hamburger"
+                    }
+                  ]
+                },
+                "when_absent": [
+                  {
+                    "attr": "natureza",
+                    "value": "bebida"
+                  }
+                ],
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "acompanhamento"
+                  },
+                  {
+                    "tag": "bacon"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "queijo"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "collection": "rusticos"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "pate"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "collection": "rusticos"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "tapenade"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "focaccia"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "tapenade"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "italiano"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "geleia"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "croissant"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "geleia"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "brioche"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "geleia"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "shokupan"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "geleia"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "kuropan"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "manteiga"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "shokupan"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "manteiga"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "kuropan"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "manteiga"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "collection": "rusticos"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "mostarda"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "hotdog"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "mostarda"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "hamburger"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "all": [
+                    {
+                      "attr": "natureza",
+                      "value": "acompanhamento"
+                    },
+                    {
+                      "tag": "picles"
+                    }
+                  ]
+                },
+                "suggest": [
+                  {
+                    "attr": "natureza",
+                    "value": "comida"
+                  },
+                  {
+                    "tag": "hamburger"
+                  }
+                ],
+                "weight": 2
+              },
+              {
+                "when": {
+                  "attr": "sabor",
+                  "value": "salgado"
+                },
+                "suggest": {
+                  "attr": "sabor",
+                  "value": "doce"
+                },
+                "weight": 1
+              }
+            ],
+            "affinity_weight": 3,
+            "distinct_from_cart": [
+              "natureza",
+              "sabor"
+            ],
+            "one_per_cart": [
+              {
+                "attr": "natureza",
+                "value": "bebida"
+              }
+            ],
+            "price": "below_cart_average",
+            "per_surface": {
+              "web": 1,
+              "concierge": 1
+            }
+          },
+          "channels": [],
+          "priority": 100
+        }
+      },
+      {
+        "ref": "suggestion.substitute",
+        "enabled": true,
+        "config": {
+          "rule_path": "shopman.shop.rules.suggestion.SubstituteRule",
+          "label": "Sugestão de substituto",
+          "params": {
+            "must_match": [
+              "sabor"
+            ],
+            "prefer": [
+              "collection"
+            ],
+            "approximate": [
+              "peso_unidade_g"
+            ],
+            "price_band": 0.3,
+            "cross_collection_when_empty": true
+          },
+          "channels": [],
+          "priority": 101
+        }
+      }
+    ],
     "pricing_policies": [],
-    "templates": [],
+    "templates": [
+      {
+        "ref": "nelson-closing",
+        "enabled": true,
+        "config": {
+          "title": "Fechamento da casa",
+          "description": "Checklist canônico Nelson para operação diária.",
+          "moment": "closing",
+          "sort_order": 30,
+          "tasks": [
+            {
+              "ref": "nelson-closing-cash-closed",
+              "title": "Caixa fechado",
+              "description": "Conferir valor informado, esperado e diferença.",
+              "moment": "closing",
+              "area": "cash",
+              "evidence_required": "double_check",
+              "expected_role": "caixa",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 10,
+              "sort_order": 10,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-closing-unsold-blind",
+              "title": "Não vendidos informados às cegas",
+              "description": "Registrar quantidade apurada sem revelar saldo esperado.",
+              "moment": "closing",
+              "area": "stock",
+              "evidence_required": "number",
+              "expected_role": "fechamento",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 20,
+              "sort_order": 20,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-closing-showcase-clean",
+              "title": "Vitrine limpa",
+              "description": "Limpeza final e retirada de itens sem condição de venda.",
+              "moment": "closing",
+              "area": "cleaning",
+              "evidence_required": "text",
+              "expected_role": "salão",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 30,
+              "sort_order": 30,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-closing-equipment-safe",
+              "title": "Equipamentos desligados ou seguros",
+              "description": "Conferir equipamentos, refrigeração e segurança para a noite.",
+              "moment": "closing",
+              "area": "production",
+              "evidence_required": "double_check",
+              "expected_role": "produção",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 40,
+              "sort_order": 40,
+              "config": {
+                "seed": "nelson"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "ref": "nelson-opening",
+        "enabled": true,
+        "config": {
+          "title": "Abertura da casa",
+          "description": "Checklist canônico Nelson para operação diária.",
+          "moment": "opening",
+          "sort_order": 10,
+          "tasks": [
+            {
+              "ref": "nelson-opening-cash-count",
+              "title": "Caixa aberto e conferido",
+              "description": "Registrar fundo de troco antes de iniciar atendimento.",
+              "moment": "opening",
+              "area": "cash",
+              "evidence_required": "number",
+              "expected_role": "caixa",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 10,
+              "sort_order": 10,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-opening-showcase-ready",
+              "title": "Vitrine preparada",
+              "description": "Conferir exposição, etiquetas e itens críticos antes da abertura.",
+              "moment": "opening",
+              "area": "room",
+              "evidence_required": "text",
+              "expected_role": "atendimento",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 20,
+              "sort_order": 20,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-opening-equipment-safe",
+              "title": "Equipamentos ligados e seguros",
+              "description": "Forno, geladeiras, iluminação e PDV em condição segura.",
+              "moment": "opening",
+              "area": "production",
+              "evidence_required": "double_check",
+              "expected_role": "produção",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 30,
+              "sort_order": 30,
+              "config": {
+                "seed": "nelson"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "ref": "nelson-routine",
+        "enabled": true,
+        "config": {
+          "title": "Rotina do dia",
+          "description": "Checklist canônico Nelson para operação diária.",
+          "moment": "routine",
+          "sort_order": 20,
+          "tasks": [
+            {
+              "ref": "nelson-routine-tables-clean",
+              "title": "Mesas limpas",
+              "description": "Conferência periódica do salão.",
+              "moment": "routine",
+              "area": "cleaning",
+              "evidence_required": "text",
+              "expected_role": "salão",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 10,
+              "sort_order": 10,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-routine-bathroom-clean",
+              "title": "Banheiro limpo",
+              "description": "Checagem de limpeza, papel, sabonete e lixeira.",
+              "moment": "routine",
+              "area": "cleaning",
+              "evidence_required": "text",
+              "expected_role": "salão",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 20,
+              "sort_order": 20,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-routine-showcase-restock",
+              "title": "Reposição de vitrine",
+              "description": "Registrar rupturas, reposições e itens de atenção.",
+              "moment": "routine",
+              "area": "room",
+              "evidence_required": "text",
+              "expected_role": "atendimento",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 30,
+              "sort_order": 30,
+              "config": {
+                "seed": "nelson"
+              }
+            },
+            {
+              "ref": "nelson-routine-critical-stock",
+              "title": "Ruptura ou item crítico conferido",
+              "description": "Checar itens com alerta ou alta demanda no dia.",
+              "moment": "routine",
+              "area": "stock",
+              "evidence_required": "text",
+              "expected_role": "gestão",
+              "required": true,
+              "enabled": true,
+              "system": true,
+              "task_sort_order": 40,
+              "sort_order": 40,
+              "config": {
+                "seed": "nelson"
+              }
+            }
+          ]
+        }
+      }
+    ],
     "rbac_personas": [
-      {"ref": "manager", "permissions": ["shop.manage_orders"]},
-      {"ref": "counter-operator", "permissions": ["cashman.operate_pos"]}
+      {
+        "ref": "admin-de-catalogo",
+        "name": "Admin de Catálogo",
+        "permissions": [
+          "offerman.add_collection",
+          "offerman.add_listing",
+          "offerman.add_product",
+          "offerman.change_collection",
+          "offerman.change_listing",
+          "offerman.change_product",
+          "offerman.view_collection",
+          "offerman.view_collectionitem",
+          "offerman.view_historicallistingitem",
+          "offerman.view_historicalproduct",
+          "offerman.view_listing",
+          "offerman.view_listingitem",
+          "offerman.view_product",
+          "offerman.view_productcomponent",
+          "shop.manage_catalog",
+          "shop.manage_rules",
+          "shop.view_coupon",
+          "shop.view_promotion",
+          "shop.view_ruleconfig"
+        ]
+      },
+      {
+        "ref": "caixa",
+        "name": "Caixa",
+        "permissions": [
+          "backstage.operate_kds",
+          "backstage.perform_operation_task",
+          "cashman.operate_pos",
+          "shop.manage_orders"
+        ]
+      },
+      {
+        "ref": "cozinha",
+        "name": "Cozinha",
+        "permissions": [
+          "backstage.operate_kds",
+          "backstage.operate_production",
+          "backstage.perform_operation_task",
+          "buyman.view_material",
+          "buyman.view_materialconversion",
+          "buyman.view_supplier",
+          "buyman.view_suppliercontact",
+          "buyman.view_suppliermaterialcost",
+          "craftsman.view_recipe",
+          "craftsman.view_recipeentry",
+          "craftsman.view_recipeitem",
+          "craftsman.view_recipeversion",
+          "craftsman.view_refsequence",
+          "craftsman.view_workorder",
+          "craftsman.view_workorderevent",
+          "craftsman.view_workorderitem",
+          "shop.edit_production_finished",
+          "shop.edit_production_planned",
+          "shop.edit_production_started",
+          "shop.manage_production",
+          "shop.view_production_finished",
+          "shop.view_production_planned",
+          "shop.view_production_started",
+          "stockman.view_batch",
+          "stockman.view_hold",
+          "stockman.view_move",
+          "stockman.view_position",
+          "stockman.view_quant",
+          "stockman.view_stockalert"
+        ]
+      },
+      {
+        "ref": "dono",
+        "name": "Dono",
+        "permissions": [
+          "backstage.audit_stock",
+          "cashman.audit_shift",
+          "payman.view_paymentintent",
+          "payman.view_paymenttransaction"
+        ]
+      },
+      {
+        "ref": "gerente",
+        "name": "Gerente",
+        "permissions": [
+          "backstage.add_bialertrule",
+          "backstage.add_categoryalias",
+          "backstage.add_kdsinstance",
+          "backstage.add_paymentmethodalias",
+          "backstage.add_productalias",
+          "backstage.change_bialertrule",
+          "backstage.change_categoryalias",
+          "backstage.change_kdsinstance",
+          "backstage.change_paymentmethodalias",
+          "backstage.change_productalias",
+          "backstage.correct_production_qc",
+          "backstage.operate_kds",
+          "backstage.operate_production",
+          "backstage.operate_purchase",
+          "backstage.perform_closing",
+          "backstage.perform_operation_task",
+          "backstage.supervise_operation_task",
+          "backstage.view_admintwofactorenrollment",
+          "backstage.view_aliasbenchmarkreport",
+          "backstage.view_bi",
+          "backstage.view_bialertevent",
+          "backstage.view_bialertrule",
+          "backstage.view_biscenarioreport",
+          "backstage.view_blindprepcode",
+          "backstage.view_categoryalias",
+          "backstage.view_consumptionrole",
+          "backstage.view_dailysalesfact",
+          "backstage.view_dayclosing",
+          "backstage.view_daycontext",
+          "backstage.view_deliverydevice",
+          "backstage.view_historicalsale",
+          "backstage.view_historicalsaleitem",
+          "backstage.view_importbatch",
+          "backstage.view_kdsinstance",
+          "backstage.view_kdsticket",
+          "backstage.view_operationchecklistrun",
+          "backstage.view_operationchecklisttemplate",
+          "backstage.view_operationchecklisttemplatetask",
+          "backstage.view_operationepisode",
+          "backstage.view_operationepisodekind",
+          "backstage.view_operationtaskrun",
+          "backstage.view_operationtasktemplate",
+          "backstage.view_operatoralert",
+          "backstage.view_operatorrecipefavorite",
+          "backstage.view_ovenrun",
+          "backstage.view_paymentmethodalias",
+          "backstage.view_plancarrynote",
+          "backstage.view_postab",
+          "backstage.view_printagentcredential",
+          "backstage.view_printattempt",
+          "backstage.view_printjob",
+          "backstage.view_productalias",
+          "backstage.view_productconsumptiontag",
+          "backstage.view_production_reports",
+          "backstage.view_reciperatingcriterion",
+          "backstage.view_recipeversionrating",
+          "backstage.view_recipeversionratingscore",
+          "backstage.view_savedview",
+          "backstage.view_seatingfixture",
+          "backstage.view_seatingspot",
+          "backstage.view_shelfoutage",
+          "backstage.view_signinevent",
+          "backstage.view_timertag",
+          "backstage.view_workstation",
+          "buyman.view_material",
+          "buyman.view_materialconversion",
+          "buyman.view_supplier",
+          "buyman.view_suppliercontact",
+          "buyman.view_suppliermaterialcost",
+          "cashman.add_terminal",
+          "cashman.adjust_shift",
+          "cashman.change_terminal",
+          "cashman.manage_operators",
+          "cashman.operate_pos",
+          "cashman.view_terminal",
+          "craftsman.view_recipe",
+          "craftsman.view_recipeentry",
+          "craftsman.view_recipeitem",
+          "craftsman.view_recipeversion",
+          "craftsman.view_refsequence",
+          "craftsman.view_workorder",
+          "craftsman.view_workorderevent",
+          "craftsman.view_workorderitem",
+          "customer_loyalty.view_loyaltyaccount",
+          "customer_loyalty.view_loyaltytransaction",
+          "customer_merge.view_mergeaudit",
+          "guestman.add_customer",
+          "guestman.change_customer",
+          "guestman.view_contactpoint",
+          "guestman.view_customer",
+          "guestman.view_customeraddress",
+          "guestman.view_customertag",
+          "guestman.view_externalidentity",
+          "guestman.view_pricetier",
+          "guestman.view_pricetieradvantage",
+          "guestman.view_processedevent",
+          "guestman.view_providererasuretombstone",
+          "guestman.view_taggedcustomer",
+          "offerman.add_collection",
+          "offerman.add_listing",
+          "offerman.add_product",
+          "offerman.change_collection",
+          "offerman.change_listing",
+          "offerman.change_product",
+          "offerman.view_collection",
+          "offerman.view_collectionitem",
+          "offerman.view_historicallistingitem",
+          "offerman.view_historicalproduct",
+          "offerman.view_listing",
+          "offerman.view_listingitem",
+          "offerman.view_product",
+          "offerman.view_productcomponent",
+          "orderman.view_directive",
+          "orderman.view_fulfillment",
+          "orderman.view_fulfillmentitem",
+          "orderman.view_idempotencykey",
+          "orderman.view_order",
+          "orderman.view_orderevent",
+          "orderman.view_orderitem",
+          "orderman.view_session",
+          "orderman.view_sessionevent",
+          "orderman.view_sessionitem",
+          "shop.add_coupon",
+          "shop.add_faqentry",
+          "shop.add_omotenashicopy",
+          "shop.add_promotion",
+          "shop.cancel_advanced_order",
+          "shop.change_coupon",
+          "shop.change_faqentry",
+          "shop.change_omotenashicopy",
+          "shop.change_promotion",
+          "shop.edit_marketing_campaigns",
+          "shop.edit_marketing_templates",
+          "shop.edit_production_finished",
+          "shop.edit_production_planned",
+          "shop.edit_production_started",
+          "shop.edit_production_suggested",
+          "shop.edit_production_unsold",
+          "shop.manage_catalog",
+          "shop.manage_customers",
+          "shop.manage_orders",
+          "shop.preview_marketing_audience",
+          "shop.view_announcement",
+          "shop.view_announcementtemplate",
+          "shop.view_attributedefinition",
+          "shop.view_audiencesnapshot",
+          "shop.view_audiencesnapshotmember",
+          "shop.view_campaign",
+          "shop.view_catalogbinding",
+          "shop.view_catalogsnapshot",
+          "shop.view_catalogsyncstate",
+          "shop.view_channel",
+          "shop.view_contactrelease",
+          "shop.view_conversation",
+          "shop.view_conversationbinding",
+          "shop.view_conversationmessage",
+          "shop.view_coupon",
+          "shop.view_deliveryattempt",
+          "shop.view_deliverydistanceband",
+          "shop.view_deliveryreconciliation",
+          "shop.view_deliverytarget",
+          "shop.view_deliveryzone",
+          "shop.view_faqentry",
+          "shop.view_historicalfaqentry",
+          "shop.view_historicalomotenashicopy",
+          "shop.view_historicalruleconfig",
+          "shop.view_ifoodinterruption",
+          "shop.view_ifoodstorestatus",
+          "shop.view_marketing",
+          "shop.view_marketingaisuggestion",
+          "shop.view_marketingaisuggestionevent",
+          "shop.view_marketingauditevent",
+          "shop.view_marketingcommandreceipt",
+          "shop.view_marketingconfirmation",
+          "shop.view_marketingcontentartifact",
+          "shop.view_marketingoutbox",
+          "shop.view_marketingplatformauditevent",
+          "shop.view_marketingquotausage",
+          "shop.view_marketingsafetystate",
+          "shop.view_marketingsecurityevent",
+          "shop.view_marketingtestreceipt",
+          "shop.view_notificationtemplate",
+          "shop.view_omotenashicopy",
+          "shop.view_operatorpasskey",
+          "shop.view_outboundattempt",
+          "shop.view_privacyrequestreceipt",
+          "shop.view_productaffinity",
+          "shop.view_production_finished",
+          "shop.view_production_planned",
+          "shop.view_production_started",
+          "shop.view_production_suggested",
+          "shop.view_production_unsold",
+          "shop.view_promotion",
+          "shop.view_pushsubscription",
+          "shop.view_qualitydefect",
+          "shop.view_qualitygrade",
+          "shop.view_reports",
+          "shop.view_retiredproduct",
+          "shop.view_ruleconfig",
+          "shop.view_shop",
+          "shop.view_shopappearance",
+          "shop.view_shopintegrations",
+          "shop.view_shoployalty",
+          "shop.view_shopmenu",
+          "shop.view_shopoperation",
+          "shop.view_shopordering",
+          "shop.view_shoppos",
+          "shop.view_shopproduction",
+          "shop.view_shoppurchase",
+          "shop.view_shopsearch",
+          "shop.view_usernotification",
+          "shop.view_usernotificationevent",
+          "stockman.view_batch",
+          "stockman.view_hold",
+          "stockman.view_move",
+          "stockman.view_position",
+          "stockman.view_quant",
+          "stockman.view_stockalert",
+          "storefront.view_catalogstructurehead",
+          "storefront.view_customerfavorite",
+          "storefront.view_intentcategory",
+          "storefront.view_intentpilotreport",
+          "storefront.view_messageintentsample",
+          "storefront.view_stockalertdelivery",
+          "storefront.view_stockalertoccurrence",
+          "storefront.view_stockalertsubscription"
+        ]
+      },
+      {
+        "ref": "marketing-aprovador",
+        "name": "Marketing — Aprovador",
+        "permissions": [
+          "shop.approve_marketing_announcements",
+          "shop.preview_marketing_audience",
+          "shop.view_marketing"
+        ]
+      },
+      {
+        "ref": "marketing-auditordpo",
+        "name": "Marketing — Auditor/DPO",
+        "permissions": [
+          "shop.audit_marketing",
+          "shop.view_marketing"
+        ]
+      },
+      {
+        "ref": "marketing-editor",
+        "name": "Marketing — Editor",
+        "permissions": [
+          "shop.edit_marketing_campaigns",
+          "shop.edit_marketing_templates",
+          "shop.preview_marketing_audience",
+          "shop.send_marketing_test",
+          "shop.view_marketing"
+        ]
+      },
+      {
+        "ref": "marketing-observador",
+        "name": "Marketing — Observador",
+        "permissions": [
+          "shop.view_marketing"
+        ]
+      },
+      {
+        "ref": "marketing-platform-owner",
+        "name": "Marketing — Platform Owner",
+        "permissions": [
+          "shop.configure_marketing_platforms",
+          "shop.reconcile_unknown_marketing",
+          "shop.send_marketing_test",
+          "shop.view_marketing"
+        ]
+      },
+      {
+        "ref": "marketing-publisher",
+        "name": "Marketing — Publisher",
+        "permissions": [
+          "shop.approve_marketing_announcements",
+          "shop.fire_marketing_campaigns",
+          "shop.preview_marketing_audience",
+          "shop.publish_marketing_announcements",
+          "shop.retry_failed_marketing",
+          "shop.view_marketing"
+        ]
+      },
+      {
+        "ref": "marketing-segurancaops",
+        "name": "Marketing — Segurança/Ops",
+        "permissions": [
+          "shop.freeze_marketing",
+          "shop.view_marketing"
+        ]
+      },
+      {
+        "ref": "rules-managers",
+        "name": "Rules Managers",
+        "permissions": [
+          "shop.manage_rules",
+          "shop.view_ruleconfig"
+        ]
+      }
     ],
     "units": [],
     "fiscal_profiles": []

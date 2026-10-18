@@ -13,7 +13,7 @@
     "rule_configs": [],
     "pricing_policies": [],
     "templates": [],
-    "rbac_personas": [{"ref": "counter-operator", "permissions": ["cashman.operate_pos"]}],
+    "rbac_personas": [{"ref": "counter-operator", "name": "Counter operator", "permissions": ["cashman.operate_pos"]}],
     "units": [],
     "fiscal_profiles": []
   }

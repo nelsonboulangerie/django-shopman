@@ -48,13 +48,13 @@ WEB_PAYS_AT_ORDER = {
 
 @pytest.mark.django_db
 def test_seed_a_loja_online_cobra_no_pedido_com_prazo_de_aceite():
-    from config.management.commands.seed import Command
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR, Command
     from shopman.shop.config import ChannelConfig
 
-    Shop.objects.create(name="Seed Test Shop")
     command = Command()
     command.stdout = StringIO()
-    channels = command._seed_channels()
+    command._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
+    channels = command._instance_channels()
 
     web = ChannelConfig.for_channel(channels["web"])
     assert web.payment.timing == "at_commit"

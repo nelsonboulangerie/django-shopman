@@ -62,9 +62,10 @@
     "persona": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "permissions"],
+      "required": ["ref", "name", "permissions"],
       "properties": {
         "ref": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
+        "name": {"type": "string", "minLength": 1},
         "permissions": {
           "type": "array",
           "uniqueItems": true,
