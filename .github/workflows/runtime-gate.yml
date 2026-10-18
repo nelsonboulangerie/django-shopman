@@ -566,20 +566,25 @@ jobs:
           --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
           .
 
-      # `docker build` prova que o COPY não falha, NÃO que o arquivo caiu onde o
-      # código procura. O Admin serve o agente do balcão a partir de
-      # `BASE_DIR/tools/pos-counter-agent/` (projections/pos_agent.py); se o
-      # caminho divergir, o build passa verde e o defeito só aparece quando
-      # alguém clica em "baixar" no balcão. Aqui o BASE_DIR é derivado do mesmo
-      # jeito que o config/settings.py deriva: o pai do pacote `config`.
-      - name: O agente do balcão veio na imagem
+      # `docker build` prova que o COPY não falha, NÃO que os artefatos caíram
+      # onde o runtime procura. Além do agente baixado pelo Admin, o check de
+      # deploy da sessão operacional lê `surfaces/registry.json` pelo caminho
+      # derivado de `shopman/shop/checks.py`. A ausência deste segundo arquivo
+      # já causou rollback do alpha depois de todos os gates do PR passarem.
+      - name: Os artefatos de runtime vieram na imagem
         run: |
           docker run --rm django-shopman:ci python -c "
+          import json
           import pathlib, config
           base = pathlib.Path(config.__file__).resolve().parent.parent
-          alvo = base / 'tools' / 'pos-counter-agent' / 'counter_agent.py'
-          assert alvo.is_file(), f'agente do balcão ausente da imagem: {alvo}'
-          print('ok:', alvo)
+          agente = base / 'tools' / 'pos-counter-agent' / 'counter_agent.py'
+          registry = base / 'surfaces' / 'registry.json'
+          assert agente.is_file(), f'agente do balcão ausente da imagem: {agente}'
+          assert registry.is_file(), f'registry de superfícies ausente da imagem: {registry}'
+          payload = json.loads(registry.read_text(encoding='utf-8'))
+          assert payload.get('surfaces'), f'registry de superfícies inválido: {registry}'
+          print('ok:', agente)
+          print('ok:', registry)
           "
 
   runtime-security-reliability:
