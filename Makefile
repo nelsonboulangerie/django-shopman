@@ -480,8 +480,16 @@ orchestrator-governance: ## Gate: inventário físico e unidades semânticas do 
 	$(PYTHON) scripts/check_orchestrator_units.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py -q
 
-.PHONY: test-instance-descriptors
-test-instance-descriptors: ## Gate: schema, ownership e descritores de Instância
+.PHONY: test-instance-descriptors test-instance-contracts
+test-instance-contracts: ## Gate: soberania, composição e evolução de Instância
+	@echo "── Contratos de Instância ──"
+	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" \
+		$(READINESS_PYTHON) -m pytest \
+			config/tests/test_instance_sovereignty.py \
+			config/tests/test_instance_composition.py \
+			config/tests/test_instance_evolution.py -q
+
+test-instance-descriptors: test-instance-contracts ## Gate: schema, ownership e descritores de Instância
 	@echo "── Descritores de Instância ──"
 	$(PYTHON) scripts/check_instance_descriptors.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django scripts/tests/test_check_instance_descriptors.py -q
