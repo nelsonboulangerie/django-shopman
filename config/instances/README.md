@@ -16,7 +16,21 @@ saldo, ledger, sessões, auditoria e outros estados operacionais são proibidos.
 O checker também recusa chaves e padrões de valores que pareçam credenciais.
 
 `counter-minimal.json` prova que uma segunda instalação pode ser descrita sem
-alterar pacote ou código.
+alterar pacote ou código. Ela declara também `SHOPMAN_POS_CHANNEL_REF` como
+configuração de deploy: o descritor materializa o canal `counter`, e o ambiente
+seleciona essa mesma ref para o POS sem esconder uma dependência da Nelson.
+
+## Contratos de fechamento
+
+`make test-instance-contracts` mantém três provas separadas:
+
+- **soberania:** stockman, offerman e doorman constroem wheels próprios, são
+  instalados sem dependências num venv vazio e importam sem o orquestrador;
+- **composição:** a Instância mínima materializa somente seu canal e persona,
+  e o runtime lê do DB exatamente a política declarada;
+- **evolução:** uma nova versão declarativa atualiza a configuração possuída
+  sem apagar canal, usuário ou vínculo criados pelo tenant; conflito tardio
+  reverte a transação inteira.
 
 ## Leitura e drift
 

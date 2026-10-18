@@ -3,12 +3,30 @@
   "instance": {"ref": "counter-minimal", "display_name": "Counter minimal"},
   "ownership": {
     "instance_db": ["channels", "fiscal_profiles", "pipelines", "pricing_policies", "rbac_personas", "rule_configs", "templates", "units"],
-    "deploy": ["ALLOWED_HOSTS", "SHOPMAN_INSTANCE_DESCRIPTOR"],
+    "deploy": ["ALLOWED_HOSTS", "SHOPMAN_INSTANCE_DESCRIPTOR", "SHOPMAN_POS_CHANNEL_REF"],
     "secret": ["DATABASE_URL", "SECRET_KEY"],
     "structural": ["INSTALLED_APPS", "MIDDLEWARE", "ROOT_URLCONF"]
   },
   "bootstrap": {
-    "channels": [{"ref": "counter", "enabled": true}],
+    "channels": [{
+      "ref": "counter",
+      "enabled": true,
+      "config": {
+        "name": "Counter",
+        "commerce_policy": "order",
+        "display_order": 1,
+        "overrides": {
+          "confirmation": {"mode": "immediate"},
+          "payment": {"method": "cash", "timing": "external"},
+          "stock": {
+            "check_on_commit": false,
+            "allow_untracked": false,
+            "sells_nonconforming": true,
+            "safety_margin": 0
+          }
+        }
+      }
+    }],
     "pipelines": [],
     "rule_configs": [],
     "pricing_policies": [],
