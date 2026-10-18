@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shopman.invalid/schemas/instance-descriptor-v1.json",
+  "title": "Shopman Instance Descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "instance", "ownership", "bootstrap"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "display_name"],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "display_name": {"type": "string", "minLength": 1}
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instance_db", "deploy", "secret", "structural"],
+      "properties": {
+        "instance_db": {"$ref": "#/$defs/names"},
+        "deploy": {"$ref": "#/$defs/names"},
+        "secret": {"$ref": "#/$defs/names"},
+        "structural": {"$ref": "#/$defs/names"}
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channels", "pipelines", "rule_configs", "pricing_policies", "templates", "rbac_personas", "units", "fiscal_profiles"],
+      "properties": {
+        "channels": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
+        "pipelines": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
+        "rule_configs": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
+        "pricing_policies": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
+        "templates": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
+        "rbac_personas": {"type": "array", "items": {"$ref": "#/$defs/persona"}},
+        "units": {"type": "array", "items": {"$ref": "#/$defs/unit"}},
+        "fiscal_profiles": {"type": "array", "items": {"$ref": "#/$defs/configItem"}}
+      }
+    }
+  },
+  "$defs": {
+    "names": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"}
+    },
+    "configItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref"],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
+        "enabled": {"type": "boolean"},
+        "config": {"type": "object"}
+      }
+    },
+    "persona": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "permissions"],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
+        "permissions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "symbol"],
+      "properties": {
+        "ref": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
+        "symbol": {"type": "string", "minLength": 1, "maxLength": 12}
+      }
+    }
+  }
+}

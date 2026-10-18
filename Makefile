@@ -480,7 +480,13 @@ orchestrator-governance: ## Gate: inventário físico e unidades semânticas do 
 	$(PYTHON) scripts/check_orchestrator_units.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py -q
 
-canonical-docs: adr-governance orchestrator-governance ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
+.PHONY: test-instance-descriptors
+test-instance-descriptors: ## Gate: schema, ownership e descritores de Instância
+	@echo "── Descritores de Instância ──"
+	$(PYTHON) scripts/check_instance_descriptors.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django scripts/tests/test_check_instance_descriptors.py -q
+
+canonical-docs: adr-governance orchestrator-governance test-instance-descriptors ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
 	@echo "── Canonical go-live documentation ──"
 	$(PYTHON) scripts/check_canonical_docs.py
 
