@@ -1618,19 +1618,16 @@ def _confirmation_info(
         return False, None
     if business_state is not None and business_state.is_closed:
         return False, None
-    try:
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        cfg = ChannelConfig.for_channel(order.channel_ref).confirmation
-        if cfg.mode == "auto_confirm":
-            expires_at = _confirmation_deadline(order)
-            if not expires_at:
-                return False, None
-            if expires_at <= timezone.now():
-                return False, None
-            return True, expires_at.isoformat()
-    except Exception:
-        logger.warning("order_tracking_confirmation_failed order=%s", order.ref, exc_info=True)
+    cfg = ChannelConfig.for_channel(order.channel_ref).confirmation
+    if cfg.mode == "auto_confirm":
+        expires_at = _confirmation_deadline(order)
+        if not expires_at:
+            return False, None
+        if expires_at <= timezone.now():
+            return False, None
+        return True, expires_at.isoformat()
     return False, None
 
 

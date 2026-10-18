@@ -1942,11 +1942,7 @@ def _channel_configs_for(orders):
 
     configs = {}
     for ref in {order.channel_ref for order in orders}:
-        try:
-            configs[ref] = ChannelConfig.for_channel(ref)
-        except Exception:
-            logger.warning("orders.channel_config_read_failed channel=%s", ref, exc_info=True)
-            # Preserve existing fail-closed guards when resolution is unavailable.
+        configs[ref] = ChannelConfig.for_channel(ref)
     return configs
 
 

@@ -90,13 +90,9 @@ def ensure_confirmable(order, *, channel_config=None) -> None:
     if has_availability_approval(order):
         return
 
-    try:
-        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
-        if config.payment.timing == "external":
-            return
-    except Exception:
-        # Config lookup failed — fall through to strict path (require approval).
-        logger.warning("ensure_confirmable: config lookup failed for channel=%s", order.channel_ref)
+    config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
+    if config.payment.timing == "external":
+        return
 
     raise InvalidTransition(
         code="availability_not_approved",
@@ -138,22 +134,12 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
 
     # External timing channels (iFood, POS) manage payment outside Shopman;
     # the guard doesn't apply.
-    config_failed = False
-    try:
-        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
-        if config.payment.timing == "external":
-            return
-    except Exception:
-        logger.warning("ensure_payment_captured: config lookup failed for channel=%s", order.channel_ref)
-        # Config lookup falhou. NÃO confiar no default permissivo (post_commit →
-        # "não requer captura"), senão o guard abre a porta para CONFIRMED sem
-        # captura com um Shop.defaults corrompido. Fail-closed: seguir para a
-        # checagem de captura de verdade.
-        config = ChannelConfig()
-        config_failed = True
+    config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
+    if config.payment.timing == "external":
+        return
 
     requires_upfront_payment = _requires_captured_payment_before_confirmation(order, config)
-    if not requires_upfront_payment and not config_failed:
+    if not requires_upfront_payment:
         return
 
     method = _payment_method(order, config)
@@ -164,7 +150,7 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
     if (_payment_is_captured(order) if payment_reads is None else
             payment_gate.payment_is_captured(order, payment_reads=payment_reads)):
         return
-    if method == "card" and not config_failed and _card_authorization_is_held(order, payment_reads=payment_reads):
+    if method == "card" and _card_authorization_is_held(order, payment_reads=payment_reads):
         # Cartão autorizado no pedido (captura manual): o dinheiro está reservado
         # e o aceite é que cobra (``_on_accepted`` → ``payment.capture``). Exigir
         # captura ANTES do aceite travava o pedido: ninguém conseguia aceitar.
@@ -222,12 +208,7 @@ def secure_stock(order) -> None:
     transação do pedido, um crash entre o COMMIT e o dispatch nunca deixa
     pedido sem reserva (o sweeper re-despacha o resto).
     """
-    try:
-        config = ChannelConfig.for_channel(order.channel_ref)
-    except Exception:
-        # Fail-closed: sem config legível, os defaults exigem reserva.
-        logger.warning("secure_stock: config lookup failed for channel=%s", order.channel_ref)
-        config = ChannelConfig()
+    config = ChannelConfig.for_channel(order.channel_ref)
 
     if config.payment.timing == "external":
         return
@@ -877,11 +858,7 @@ def start_acceptance_deadline(order) -> None:
     """
     if order.status != Order.Status.NEW:
         return
-    try:
-        config = ChannelConfig.for_channel(order.channel_ref)
-    except Exception:
-        logger.warning("lifecycle.acceptance_deadline_config_failed order=%s", order.ref, exc_info=True)
-        return
+    config = ChannelConfig.for_channel(order.channel_ref)
     if config.confirmation.mode != "auto_cancel":
         return
     _schedule_confirmation_timeout(order, config, action="cancel", source="card_authorized")

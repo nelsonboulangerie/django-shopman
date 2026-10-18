@@ -85,6 +85,7 @@ def _make_order(items_qty: int) -> SimpleNamespace:
     """Build a fake order object with the bare attrs services.stock.hold needs."""
     return SimpleNamespace(
         ref=ORDER_REF,
+        channel_ref=CHANNEL_REF,
         session_key=SESSION_KEY,
         snapshot={"items": [{"sku": SKU, "qty": items_qty}]},
         data={},

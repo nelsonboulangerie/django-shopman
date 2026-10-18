@@ -432,19 +432,9 @@ def _load_customer_context(
 
 def _payment_methods(channel_ref: str) -> tuple[PaymentMethodOptionProjection, ...]:
     """Resolve channel payment methods from ChannelConfig."""
-    try:
-        from shopman.shop.config import ChannelConfig
-        from shopman.shop.models import Channel
+    from shopman.shop.config import ChannelConfig
 
-        channel = Channel.objects.get(ref=channel_ref)
-        methods = ChannelConfig.for_channel(channel).payment.available_methods
-    except Exception:
-        logger.debug(
-            "checkout_projection_payment_methods_failed channel=%s",
-            channel_ref,
-            exc_info=True,
-        )
-        methods = ["cash"]
+    methods = ChannelConfig.for_channel(channel_ref).payment.available_methods
 
     return tuple(
         PaymentMethodOptionProjection(

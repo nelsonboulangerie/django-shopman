@@ -2792,13 +2792,9 @@ def _schedule_payment_timeout(order, intent: PaymentIntent) -> None:
 
 
 def _adapter_config(order, *, method: str) -> dict:
-    try:
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        cfg = ChannelConfig.for_channel(order.channel_ref)
-    except Exception:
-        logger.debug("payment.adapter_config_failed order=%s", order.ref, exc_info=True)
-        return {}
+    cfg = ChannelConfig.for_channel(order.channel_ref)
 
     config: dict = {}
     if method == "pix":

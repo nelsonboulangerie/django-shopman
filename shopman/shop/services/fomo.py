@@ -227,11 +227,7 @@ def _collections_for_sku(sku: str) -> list[str]:
 def _channel_config(channel_ref: str):
     from shopman.shop.config import ChannelConfig
 
-    try:
-        return ChannelConfig.for_channel(channel_ref)
-    except Exception:
-        logger.debug("fomo.channel_config_failed channel=%s", channel_ref, exc_info=True)
-        return ChannelConfig()
+    return ChannelConfig.for_channel(channel_ref)
 
 
 def _stock_config(config) -> dict:

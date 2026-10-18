@@ -222,14 +222,10 @@ def _payment_deadline(order) -> datetime | None:
     if method not in {"pix", "card"}:
         return None
 
-    try:
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        config = ChannelConfig.for_channel(order.channel_ref)
-        timeout_minutes = getattr(config.payment, "timeout_minutes", 0)
-    except Exception:
-        logger.warning("confirmation.payment_deadline_lookup_failed order=%s", order.ref, exc_info=True)
-        return None
+    config = ChannelConfig.for_channel(order.channel_ref)
+    timeout_minutes = getattr(config.payment, "timeout_minutes", 0)
 
     if timeout_minutes <= 0:
         return None

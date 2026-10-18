@@ -101,12 +101,6 @@ def _product_lead_time_hours(sku: str) -> int | None:
 
 
 def _channel_default_lead_time_hours(channel_ref: str | None) -> int:
-    try:
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        return int(ChannelConfig.for_channel(channel_ref).stock.default_lead_time_hours)
-    except Exception:
-        logger.debug(
-            "lead_time: channel config lookup degraded channel=%s", channel_ref, exc_info=True
-        )
-        return 0
+    return int(ChannelConfig.for_channel(channel_ref).stock.default_lead_time_hours)

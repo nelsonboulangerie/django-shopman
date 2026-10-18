@@ -252,11 +252,7 @@ def _external_confirm_deadline(channel_ref: str, created_at) -> str:
 
     from shopman.shop.config import ChannelConfig
 
-    try:
-        minutes = int(ChannelConfig.for_channel(channel_ref).confirmation.external_sla_minutes or 0)
-    except Exception:  # canal ausente ou config inválida não impede ingerir o pedido
-        logger.warning("ifood_ingest: SLA externo indisponível para %s — card fica sem contagem", channel_ref)
-        return ""
+    minutes = int(ChannelConfig.for_channel(channel_ref).confirmation.external_sla_minutes or 0)
     if minutes <= 0 or not created_at:
         return ""
     placed = parse_datetime(str(created_at))

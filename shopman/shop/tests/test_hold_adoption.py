@@ -55,6 +55,7 @@ def _shortage_status(available=0):
 def _make_order(ref="ORD-001", items=None, session_key="sess-1"):
     order = MagicMock()
     order.ref = ref
+    order.channel_ref = "web"
     order.session_key = session_key
     order.data = {}
     order.snapshot = {"items": items or [], "data": {}}
