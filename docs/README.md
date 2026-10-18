@@ -15,10 +15,14 @@
 | [`docs/guides/deploy.md`](guides/deploy.md) | Deploy sem Docker manual — imagem app, release step e wrappers `make deploy-*` |
 | [`docs/runbooks/README.md`](runbooks/README.md) | Incidentes operacionais P1/P2 e comandos `make diagnose-*` |
 | [`docs/ROADMAP.md`](ROADMAP.md) | Roadmap ativo de correções e próximos passos |
-| [`docs/plans/README.md`](plans/README.md) | Índice de planos vivos, backlog planejado e planos concluídos recentemente |
+| [`docs/decisions/README.md`](decisions/README.md) | Índice canônico e completo das ADRs |
+| [`docs/plans/README.md`](plans/README.md) | Classificação semântica dos planos vivos e backlog explícito |
+| [`docs/plans/INDEX.md`](plans/INDEX.md) | Inventário mecânico completo da árvore viva de planos |
 | [`docs/plans/OPERATION-RUNBOOKS-PLAN.md`](plans/OPERATION-RUNBOOKS-PLAN.md) | Runbooks, comandos de diagnóstico, healthcheck profundo e reconciliação diária |
 | [`docs/plans/WP-GAP-07-pre-prod-migration-playbook.md`](plans/WP-GAP-07-pre-prod-migration-playbook.md) | Playbook ativo de migração/pré-prod |
-| [`docs/plans/completed/`](plans/completed/) | Arquivo de planos de execução concluídos |
+| [`docs/plans/completed/`](plans/completed/) | Planos concluídos; histórico preservado, não fonte de estado atual |
+| [`docs/reports/`](reports/) | Relatórios e evidências históricas |
+| [`docs/governance/`](governance/) | Baselines versionadas dos gates documentais |
 
 ---
 
@@ -40,24 +44,12 @@
 
 ### Decisões Arquiteturais (ADRs)
 
-| ADR | Título |
-|-----|--------|
-| [ADR-001](decisions/adr-001-protocol-adapter.md) | Protocol/Adapter — contratos entre módulos |
-| [ADR-002](decisions/adr-002-centavos.md) | Centavos — valores monetários como inteiros |
-| [ADR-003](decisions/adr-003-directives-sem-celery.md) | Directives sem Celery — fila assíncrona simples |
-| [ADR-004](decisions/adr-004-string-refs.md) | String Refs — referências como strings |
-| [ADR-005](decisions/adr-005-orchestrator-as-coordination-center.md) | Orquestrador centralizado como decisão consciente de design |
-| [ADR-006](decisions/adr-006-order-status-semantics.md) | Semântica canônica do ciclo de vida de Order |
-| [ADR-007](decisions/adr-007-lifecycle-dispatch-functional.md) | Lifecycle dispatch funcional e config-driven |
-| [ADR-008](decisions/adr-008-pdp-nutrition.md) | Ingredientes e informação nutricional no PDP |
-| [ADR-009](decisions/adr-009-whatsapp-via-manychat.md) | WhatsApp via ManyChat |
-| [ADR-010](decisions/adr-010-handler-contract-and-autodiscovery.md) | Contrato handler↔dispatch e roadmap de autodiscovery |
-| [ADR-011](decisions/adr-011-formula-and-cashshift.md) | Formula sem FormulaPlan e caixa como CashShift |
-| [ADR-012](decisions/adr-012-headless-surface-contract.md) | Contrato headless de superfície — Projection com Actions |
-| [ADR-013](decisions/adr-013-pos-offline-policy-and-surface-ownership.md) | Política offline do POS e ownership de superfícies |
-| [ADR-014](decisions/adr-014-surface-data-presentation-cut.md) | Corte dado (Projection) × apresentação (Presentation) nas superfícies |
-| [ADR-015](decisions/adr-015-backward-compat-policy-post-prod.md) | Política de backward-compat pós-produção (expand-contract) |
-| [ADR-016](decisions/adr-016-sse-first-realtime.md) | SSE-first para tempo real cross-surface |
+O [índice canônico de ADRs](decisions/README.md) é a única lista de decisões,
+com numeração, título, status, dono, data e tema. Ele é validado por
+`make adr-governance`; este índice geral não mantém uma cópia parcial. O contrato
+transversal das superfícies nasce na
+[ADR-012](decisions/adr-012-headless-surface-contract.md) e é detalhado na
+[referência headless](reference/headless-surface-contract.md).
 
 ---
 
@@ -132,19 +124,19 @@ Documentação de consulta rápida gerada a partir do código.
 
 ```
 packages/                            shopman/
-├── utils        (utilitários)       ├── shop/              (orquestrador)
-├── refs         (refs tipadas)      │   ├── handlers/      (directive handlers)
-├── offerman     (catálogo)          │   ├── adapters/      (integrações swappable)
-├── stockman     (estoque)           │   ├── config.py      (ChannelConfig)
-├── craftsman    (produção)          │   ├── services/      (orquestração)
-├── orderman     (pedidos)           │   ├── lifecycle.py   (dispatcher config-driven)
-├── guestman     (clientes)          │   ├── rules/         (RuleConfig engine)
-├── doorman      (autenticação)      │   └── views/         (health/readiness)
-├── payman       (pagamentos)        ├── storefront/       (API headless do cliente)
-├── buyman       (compras)           └── backstage/        (API headless operador + Admin)
-└── fiscalman    (fiscal NFC-e)
-                                     surfaces/  11 apps registrados + layer + router
-                                     config/    settings, urls, seed do deployment
+├── refs         (refs tipadas)      ├── shop/              (orquestrador)
+├── utils        (utilitários)       │   ├── handlers/      (directive handlers)
+├── watchman     (auditoria)         │   ├── adapters/      (integrações swappable)
+├── offerman     (catálogo)          │   ├── config.py      (ChannelConfig)
+├── stockman     (estoque)           │   ├── services/      (orquestração)
+├── craftsman    (produção)          │   ├── lifecycle.py   (dispatcher config-driven)
+├── orderman     (pedidos)           │   ├── rules/         (RuleConfig engine)
+├── guestman     (clientes)          │   └── views/         (health/readiness)
+├── doorman      (autenticação)      ├── storefront/       (API headless do cliente)
+├── payman       (pagamentos)        └── backstage/        (API headless operador + Admin)
+├── buyman       (compras)
+├── fiscalman    (fiscal NFC-e)      surfaces/  11 apps Nuxt registrados + layer + router
+└── cashman      (caixa e livro)     config/    settings, urls e descritores de instância
 ```
 
 ---

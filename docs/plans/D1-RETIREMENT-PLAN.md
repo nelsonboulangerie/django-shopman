@@ -134,5 +134,5 @@ permite apagar em vez de depreciar (ADR-015 ainda não vigora).
 
 - [ADR-017](../decisions/adr-017-quality-as-production-outcome.md) — a fundação (§1–8 no main)
 - [QC-FORNADA](QC-FORNADA.md) — desenho de produto do fechamento de fornada
-- [VALIDITY-SHELFLIFE-REVIEW](VALIDITY-SHELFLIFE-REVIEW.md) — gaps A2 (FEFO) e B2 (near-expiry)
+- [VALIDITY-SHELFLIFE-REVIEW](completed/VALIDITY-SHELFLIFE-REVIEW.md) — gaps A2 (FEFO) e B2 (near-expiry)
 - [ADR-004](../decisions/adr-004-string-refs.md) — por que `Quant.batch` é string

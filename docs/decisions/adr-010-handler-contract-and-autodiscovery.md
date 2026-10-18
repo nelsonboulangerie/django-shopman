@@ -101,4 +101,4 @@ class NFCeEmitHandler:
 - [ADR-003 — Directives sem Celery](adr-003-directives-sem-celery.md) — contexto sobre o modelo de fila
 - [packages/orderman/shopman/orderman/dispatch.py](../../packages/orderman/shopman/orderman/dispatch.py) — dispatch layer (CC-3)
 - [packages/orderman/shopman/orderman/exceptions.py](../../packages/orderman/shopman/orderman/exceptions.py) — DirectiveTerminalError, DirectiveTransientError
-- [docs/plans/CONTRACT-CONSOLIDATION-PLAN.md](../plans/CONTRACT-CONSOLIDATION-PLAN.md) — plano que originou esta ADR (CC-5)
+- [docs/plans/completed/CONTRACT-CONSOLIDATION-PLAN.md](../plans/completed/CONTRACT-CONSOLIDATION-PLAN.md) — plano que originou esta ADR (CC-5)

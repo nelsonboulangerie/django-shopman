@@ -162,7 +162,7 @@ A origem do valor foi ligada — as três pontas:
 1. **`POSTerminal.metadata["hardware"]["printer"].roll_width_mm`** — a loja declara
    o que ela sabe: o rolo que compra. Lido por `printer_geometry()` em
    `shopman/backstage/services/pos_terminal.py`. Sem migração: o `metadata` já era
-   o seam. Schema em [data-schemas.md](../reference/data-schemas.md#posterminalmetadata).
+   o seam. Schema em [data-schemas.md](../reference/data-schemas.md#cashmanterminalmetadata).
 2. **A projection expõe** `terminal_roll_width_mm` e `terminal_roll_margin_mm`
    (`shopman/backstage/projections/pos.py`). Zero = terminal calado.
 3. **A superfície escreve as vars no `<html>`** — `presentation/printGeometry.ts`

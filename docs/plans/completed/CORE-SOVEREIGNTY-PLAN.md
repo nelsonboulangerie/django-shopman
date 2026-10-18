@@ -1,6 +1,7 @@
 # CORE-SOVEREIGNTY-PLAN — Titularidade e Soberania
 
-> **Status:** Fase 0 **concluída e aceita**; plano reparado e execução autorizada.
+> **Status:** missão **concluída** em 2026-10-18; F1–F6 e WP7/WP10/WP11/WP12
+> executados, validados e arquivados em conjunto com a missão e o parecer.
 > **Base original:** `main @ 35d95104d`. Evidências históricas continuam identificadas por
 > símbolo; cada WP revalida paths e linhas contra sua própria base.
 > **Rebaseline:** `main @ 1d0bc7d76`, após ADR-037, governança de 39 ADRs, mapa de camadas e
@@ -91,7 +92,7 @@ Instância = DB + config de deploy + marca      parametriza tudo acima
 ```
 
 O inventário físico verificável vive em
-[`docs/architecture-map.json`](../architecture-map.json): 13 distribuições pip, sendo dez
+[`docs/architecture-map.json`](../../architecture-map.json): 13 distribuições pip, sendo dez
 kernels de domínio, duas primitivas compartilhadas e uma capacidade operacional; onze apps
 Nuxt registrados, sendo nove superfícies de produto, uma preview interna e uma superfície
 externa de status. `operator-kit` é layer compartilhada e `operator-router` é infraestrutura
@@ -132,7 +133,7 @@ Confirmações explícitas:
 **Resíduo medido:** o princípio é honrado, mas há vazamento a zerar — p.ex. `DEFAULT_EMPLOYEE_DISCOUNT_PERCENT`, `DEFAULT_TIME_WINDOW_START` e afins em `shopman/shop/modifiers.py` (política como constante de código). Nomes da instância em docstrings/comentários são prosa, não vazamento.
 
 **Aceite (entra no WP-7):** nenhuma constante/prefijo/domínio específico de instância no código; tudo via settings, `Shop.defaults`, `RuleConfig` ou `ChannelConfig`, conforme a
-[Constituição §5](../constitution.md#5-regras-de-modelagem).
+[Constituição §5](../../constitution.md#5-regras-de-modelagem).
 
 ### 2.4 O que é "Shopman", tecnicamente
 
@@ -156,7 +157,7 @@ Logo: **Shopman** = ecossistema (kernel + orquestrador + read-side + superfície
 | V2 | Vocabulário de negação fragmentado, sem enum | stockman `insufficient_supply` (l. 334); orquestrador `insufficient_stock` (l. 505, 878, 938, 1296, 1327), `not_in_listing`, `paused` | Fechar `ReasonCode` no stockman; orquestrador só compõe |
 | V3 | "Disponibilidade ilusória": sentinela `999999` e três representações de *untracked* | `shopman/shop/services/availability.py` l. 486–493; `shopman/storefront/presentation/catalog.py` (`None = untracked`); `shopman/shop/services/stock.py` (`untracked: True`) | Separar `available_qty` factual de `orderable_ceiling` político, ambos opcionais, mais `is_tracked`; `demand_ok` não falsifica o fato observado |
 | V4 | Dois caminhos de preço; um morto | `shopman/shop/services/pricing.py` `resolve` (l. 16) → `CatalogService.price` (lista) vs `shopman/shop/projections/catalog_context.py` `contextual_price` → `CatalogService.get_price` (com promoção) | Um verbo, um caminho |
-| V5 | Constituição reivindica "pricing core" para offerman; ADR-019 decidiu o contrário | [Constituição v1 §4.1 (histórica)](../_archive/constitution-v1.md#41-offerman), antigas linhas 193, 195 e 1063, vs ADR-019 §1 | Atualizar §4.1 |
+| V5 | Constituição reivindica "pricing core" para offerman; ADR-019 decidiu o contrário | [Constituição v1 §4.1 (histórica)](../../_archive/constitution-v1.md#41-offerman), antigas linhas 193, 195 e 1063, vs ADR-019 §1 | Atualizar §4.1 |
 | V6 | Doorman importa guestman direto e engole a falha | `packages/doorman/.../services/verification.py` l. 553–556 + `except Exception` | Porto de identidade; sem import direto |
 | V7 | Porto de identidade pobre (perde handle/primazia/verificação) | `packages/doorman/.../protocols/customer.py` `AuthCustomerInfo` (l. 9); resolução binária `target_kind` (l. 108) | Alargar o porto (CIAM) |
 | V8 | Governança: ADR-019 está `Proposto` mas implementado | `docs/decisions/adr-019-*.md` `Status:` (l. 3) | Marcar Aceito |
@@ -187,7 +188,7 @@ Ataques obrigatórios:
 9. **A taxonomia do WP-7 têm categorias mutuamente exclusivas?** Ache um arquivo que caiba em duas.
 10. **O manifesto de política é verificável por máquina ou vira documentação que apodrece?**
 
-Saída entregue: `docs/plans/CORE-SOVEREIGNTY-REVIEW.md`, com decisão do dono registrada
+Saída entregue: `docs/plans/completed/CORE-SOVEREIGNTY-REVIEW.md`, com decisão do dono registrada
 no próprio parecer.
 
 ### 4.1 Autoauditoria do WP-7 (ataque de mim mesmo)
@@ -211,9 +212,9 @@ no próprio parecer.
 - Publicar **ADR-037 — Titularidade das Decisões** (a lei da §1), preservando as
   bridges opt-in da ADR-001.
 - Marcar ADR-019 como **Aceito**; atualizar a Constituição vigente em
-  [§4.1 (preço)](../constitution.md#41-preço),
-  [§4.2 (promessa)](../constitution.md#42-promessa) e
-  [§4.3 (identidade e acesso)](../constitution.md#43-identidade-e-acesso) (filosofia do doorman).
+  [§4.1 (preço)](../../constitution.md#41-preço),
+  [§4.2 (promessa)](../../constitution.md#42-promessa) e
+  [§4.3 (identidade e acesso)](../../constitution.md#43-identidade-e-acesso) (filosofia do doorman).
 - Corrigir drift com contagem derivada e qualificada, sem tratar toda distribuição pip como
   kernel de domínio.
 - **Aceite:** nenhuma reivindicação da Constituição contradiz ADR aceita; mapa e fontes
@@ -403,6 +404,8 @@ o inventário e a evidência permanecem, mas não legitimam uma reorganização 
 - **Aceite:** nenhuma tarefa diária mora exclusivamente no Admin.
 
 ### WP-12 — Renascimento: reorganização do repo, ADRs e docs
+- **Estado:** concluído em 2026-10-18. O gate versionado mantém dívida viva em zero,
+  congela o teto histórico, exige inventário completo e impede plano arquivado na tabela ativa.
 - Depois de WP-1..WP-11, uma passada única de reorganização: congelar a Constituição, marcar as pétreas, arquivar planos concluídos e reconstruir o índice de docs.
 - **Aceite:** zero link vivo quebrado; baseline histórica de links não cresce; zero plano
   ativo arquivado; índice completo; zero contradição detectada pelo gate. Não há

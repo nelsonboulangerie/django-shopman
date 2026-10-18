@@ -64,6 +64,6 @@ Permissão: `shop.add_dayclosing`.
 
 ## Leitura relacionada
 
-- [Stocking](stocking.md) — posições, quants, movimentos.
+- [Stockman](stockman.md) — posições, quants, movimentos.
 - [Lifecycle](lifecycle.md) — orquestração de pedidos (independente do fechamento físico).
 - `docs/reference/data-schemas.md` — chaves em `Order.data` / sessão quando necessário cruzar com vendas.

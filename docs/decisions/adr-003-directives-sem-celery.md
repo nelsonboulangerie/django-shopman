@@ -127,5 +127,5 @@ Estes mitigadores não eliminam as limitações mas as tornam visíveis — prec
 
 - [packages/orderman/shopman/orderman/dispatch.py](../../packages/orderman/shopman/orderman/dispatch.py) — implementação atual.
 - [packages/orderman/shopman/orderman/models/directive.py](../../packages/orderman/shopman/orderman/models/directive.py) — modelo `Directive`.
-- [shopman/shop/admin/dashboard.py](../../shopman/shop/admin/dashboard.py) — widget atual (base para KPIs).
+- [shopman/backstage/admin/dashboard.py](../../shopman/backstage/admin/dashboard.py) — widget atual (base para KPIs).
 - [docs/reference/system-spec.md §1.5](../reference/system-spec.md) — Orderman directive dispatch.

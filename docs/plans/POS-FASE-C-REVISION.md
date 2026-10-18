@@ -111,5 +111,5 @@ ser executado autonomamente. As decisões de produto acima continuam com o dono.
 
 ## Referências
 
-- [PRODUCT-V1-SCOPE-BACKLOG](PRODUCT-V1-SCOPE-BACKLOG.md) · [POS-FIRST-CLASS-PLAN](POS-FIRST-CLASS-PLAN.md) · [POS-UITHING-REDESIGN-PLAN](POS-UITHING-REDESIGN-PLAN.md)
+- [PRODUCT-V1-SCOPE-BACKLOG](PRODUCT-V1-SCOPE-BACKLOG.md) · [POS-FIRST-CLASS-PLAN](POS-FIRST-CLASS-PLAN.md) · [POS-UITHING-REDESIGN-PLAN](completed/POS-UITHING-REDESIGN-PLAN.md)
 - `surfaces/pos-nuxt/` · `shopman/shop/services/pos.py` · `shopman/backstage/projections/pos.py`

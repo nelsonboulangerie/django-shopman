@@ -18,7 +18,7 @@ PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift adr-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -476,6 +476,11 @@ adr-governance: ## Gate: número, status e índice canônicos das ADRs
 	@echo "── ADR governance ──"
 	$(PYTHON) scripts/check_adr_governance.py
 
+docs-governance: ## Gate: links vivos, teto histórico e índice completo de planos
+	@echo "── Documentation governance ──"
+	$(PYTHON) scripts/check_docs_governance.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django scripts/tests/test_check_docs_governance.py -q
+
 orchestrator-governance: ## Gate: inventário físico e unidades semânticas do orquestrador
 	$(PYTHON) scripts/check_orchestrator_units.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py -q
@@ -496,7 +501,7 @@ test-instance-descriptors: test-instance-contracts ## Gate: schema, ownership e 
 	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" \
 		$(READINESS_PYTHON) -m pytest config/tests/test_instance_descriptors.py -q
 
-canonical-docs: adr-governance orchestrator-governance test-instance-descriptors ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
+canonical-docs: adr-governance docs-governance orchestrator-governance test-instance-descriptors ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
 	@echo "── Canonical go-live documentation ──"
 	$(PYTHON) scripts/check_canonical_docs.py
 

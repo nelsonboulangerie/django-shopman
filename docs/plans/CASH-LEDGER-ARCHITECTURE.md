@@ -72,7 +72,8 @@ pedido) e nenhuma delas é o livro. Isto viola **P1** na raiz.
 1. `CashShift.close()` — algoritmo de atribuição (tag durável decide; sem tag,
    janela temporal; COD conta para quem coletou; tender sem tag pertence a quem
    criou; **e adota a venda órfã reescrevendo `Order.data` no meio do
-   fechamento** — [`cash_register.py:142-254`](../../shopman/backstage/models/cash_register.py)).
+   fechamento** — antigo `shopman/backstage/models/cash_register.py:142-254`,
+   removido quando o livro-caixa passou a pertencer ao Cashman).
 2. `cash_session.py` — a leitura X/Z, cujo docstring diz literalmente *"espelha
    `CashShift.close()` (read-only, sem adoção de órfãs)"*. Um espelho é a
    confissão de que a pergunta tem dois donos.
