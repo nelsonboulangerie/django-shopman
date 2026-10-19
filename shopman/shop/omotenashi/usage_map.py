@@ -75,16 +75,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_CONFIRM_CTA": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
-    "CHECKOUT_LOYALTY_SAVINGS_PREFIX": (
-        ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
-    ),
     "CHECKOUT_GROUP_SAVINGS": (
         ("shopman/shop/modifiers.py", "Loja", "Preços e promoções"),
     ),
-    "CHECKOUT_STOCK_LIMITED": (
-        ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
-    ),
-    "CHECKOUT_STOCK_SOLD_OUT": (
+    "CHECKOUT_LOYALTY_SAVINGS_PREFIX": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
     "CHECKOUT_SWITCH_ACCOUNT_CONFIRM_CTA": (

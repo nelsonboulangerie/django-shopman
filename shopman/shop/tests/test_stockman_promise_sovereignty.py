@@ -3,9 +3,9 @@
 Os testes comparam COMPORTAMENTO, não texto. Para cada cenário da matriz
 (rastreado com e sem saldo, sem ledger, ``demand_ok``, pausado, peso, reserva
 da própria sessão), a decisão do Stockman (``decision_from_availability`` sobre
-a leitura dele), a do orquestrador (``availability.check``) e a do ingresso do
-checkout da loja (``cart_stock_shortfalls``) têm que dar a MESMA resposta.
-Uma segunda implementação da regra em qualquer uma das três portas diverge em
+a leitura dele), a do orquestrador (``availability.check``) e a da sacola
+(``projections.cart``) têm que dar a MESMA resposta.
+Uma segunda implementação da regra em qualquer uma das portas diverge em
 algum cenário e quebra aqui, em qualquer arquivo e com qualquer grafia.
 """
 
@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from types import SimpleNamespace
 
 import pytest
 from django.utils import timezone
@@ -24,7 +23,6 @@ from shopman.stockman.services.availability import availability_for_sku, decisio
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.models import Channel, Shop
-from shopman.shop.projections.checkout import cart_stock_shortfalls
 from shopman.shop.services import availability
 
 pytestmark = pytest.mark.django_db
@@ -106,21 +104,11 @@ def test_every_door_gives_stockmans_answer(scenario: Scenario):
     check = availability.check(sku, qty - own, channel_ref="web", target_date=timezone.localdate())
     readings, own_holds = cart._availability([sku], SESSION, "web")
     cart_line = cart._line_availability(sku, qty, readings[sku], own_holds)
-    line = SimpleNamespace(line_id="L1", sku=sku, name=scenario.name, qty=qty)
-    shortfalls, unavailable = cart_stock_shortfalls(
-        session_key=SESSION, cart_lines=[line], channel_ref="web", target_date=timezone.localdate(),
-    )
 
     reason = stockman.reason_code.value if stockman.reason_code else None
     assert (stockman.approved, reason) == (scenario.approved, scenario.reason)
     assert (check["ok"], availability._reason_value(check["error_code"])) == (scenario.approved, scenario.reason)
     assert cart_line == (scenario.approved, scenario.ceiling)
-    assert unavailable is False
-    if scenario.approved:
-        assert shortfalls == ()
-    else:
-        [shortfall] = shortfalls
-        assert shortfall.available_qty == scenario.ceiling
 
 
 def test_untracked_hold_marker_has_one_canonical_shape():

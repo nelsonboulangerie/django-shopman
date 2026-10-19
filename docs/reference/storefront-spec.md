@@ -123,7 +123,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 
 ## 4. Regras de negócio (o que o sistema enforça)
 
-- **Commit do checkout:** `intents/checkout.py` → `shop/services/checkout.py:process()` → `CommitService`
+- **Commit do checkout:** `api/views.py` (`CheckoutView`) → `shop/services/checkout.py:process()` → `CommitService`
   (idempotente). Propaga chaves explícitas de `session.data`→`order.data` (customer, fulfillment_type,
   delivery_address[_structured], saved_address_id, delivery_date/time_slot, payment, loyalty, gift…).
   Pedido nasce `status=new`.

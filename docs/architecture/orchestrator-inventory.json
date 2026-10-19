@@ -6681,10 +6681,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "StockShortfallProjection",
-            "_qty",
             "availability_dates",
-            "cart_stock_shortfalls",
             "customer_checkout_defaults",
             "logger"
           ]
@@ -6705,12 +6702,10 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "customer_name_by_phone",
             "logger",
             "loyalty_balance",
             "payment_methods",
             "preorder_config",
-            "saved_address_text",
             "session_held_qty"
           ]
         }
