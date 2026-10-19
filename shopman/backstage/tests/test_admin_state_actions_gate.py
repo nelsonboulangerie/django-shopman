@@ -95,7 +95,7 @@ def _directive_em_fila() -> Directive:
 @pytest.mark.parametrize(
     ("nome", "url", "permissao"),
     [
-        ("refund", "/admin/payman/paymentintent/{pk}/refund/", "payman.view_paymentintent"),
+        ("refund", "/admin/payman/paymentintent/{pk}/refund/", "payman.refund_paymentintent"),
         ("release_hold", "/admin/stockman/hold/{pk}/release-hold/", "stockman.view_hold"),
     ],
 )
@@ -116,7 +116,7 @@ def test_staff_sem_a_permissao_do_modelo_nao_alcanca_a_URL(client, nome, url, pe
 def test_GET_nao_estorna_mais_e_so_desenha_o_dialogo(client):
     """O link clicado no WhatsApp: cookie Lax vai junto, e antes o dinheiro voltava."""
     intent = _intent_capturado(10000)
-    client.force_login(_staff("dono-ish", "payman.view_paymentintent"))
+    client.force_login(_staff("dono-ish", "payman.view_paymentintent", "payman.refund_paymentintent"))
 
     resposta = client.get(f"/admin/payman/paymentintent/{intent.pk}/refund/")
 
@@ -129,10 +129,11 @@ def test_GET_nao_estorna_mais_e_so_desenha_o_dialogo(client):
 def test_POST_confirmado_estorna(client):
     """E o caminho legítimo continua funcionando — senão o conserto seria uma trava."""
     intent = _intent_capturado(10000)
-    client.force_login(_staff("dono-ish2", "payman.view_paymentintent"))
+    client.force_login(_staff("dono-ish2", "payman.view_paymentintent", "payman.refund_paymentintent"))
 
     resposta = client.post(
-        f"/admin/payman/paymentintent/{intent.pk}/refund/", {"_form_submitted": "true"}
+        f"/admin/payman/paymentintent/{intent.pk}/refund/",
+        {"_form_submitted": "true", "confirm": "on"},
     )
 
     assert resposta.status_code in (200, 302)

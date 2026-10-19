@@ -2061,6 +2061,7 @@
         "permissions": [
           "backstage.audit_stock",
           "cashman.audit_shift",
+          "payman.refund_paymentintent",
           "payman.view_paymentintent",
           "payman.view_paymenttransaction"
         ]

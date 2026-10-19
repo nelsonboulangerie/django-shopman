@@ -46,6 +46,15 @@ Aceite:
 - Refund sem motivo/step-up nao passa.
 - Row action direta deixa de existir.
 
+Estado (19/10/2026, frente 11):
+
+- [x] Permissao dedicada `payman.refund_paymentintent` (`PaymentIntent.Meta.permissions`, migracao `payman.0007_permissao_de_estorno`), exigida nas duas acoes pela forma pontuada. Concedida ao grupo **Dono** no descritor (`config/instances/nelson.json`), nunca ao Gerente: dinheiro e do Dono (`docs/guides/rbac-personas.md`). Paridade em `test_group_permission_parity.py`.
+- [x] Usuario view-only nao executa refund: 403 nas duas URLs (`test_payman_admin_refund.py`, `test_admin_state_actions_gate.py`).
+- [x] Segunda confirmacao: as duas acoes (`refund` total e `refund-amount`) sao dialog actions oficiais do Unfold com `BaseDialogForm` e marca obrigatoria "Confirmo o estorno, que nao tem desfazer". A pagina propria `payment_refund.html` saiu; o valor e o disponivel vivem no dialogo.
+- [x] Estorno em lote (`refund_selected`) removido: acao de lote do Django roda sem dialogo (laudo 01/09, 06-admin P0-1, opcao b).
+- [ ] Motivo, step-up 2FA e dossie: nao feitos.
+- [ ] A acao do Admin so grava o estorno no livro (`PaymentService.refund`), sem chamar o gateway (verify-02-06 §6). A copy do dialogo agora diz isso; ligar ao gateway ou restringir a estorno sem gateway e decisao pendente.
+
 ### P1 - Gate nao cobre claramente fallback `packages/*/admin.py`
 
 Ha HTML/estilo cru em fallbacks vanilla, enquanto escopo de produto considera Admin canonico.
