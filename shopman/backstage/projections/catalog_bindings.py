@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
-from shopman.offerman.models import Product
+from django.conf import settings
+from shopman.offerman.models import Collection, Product
 
 from shopman.backstage.services import catalog_bindings as service
 from shopman.shop.models import CatalogBinding, CatalogSnapshot
 from shopman.shop.projections.types import Action
+from shopman.shop.services import ifood_catalog_categories
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,23 @@ class CatalogCurrentBinding:
     confirmed_at: str
     revision: int
     snapshot_id: int
+
+
+@dataclass(frozen=True)
+class CatalogRemoteCategory:
+    ref: str
+    name: str
+    status: str
+    index: int
+    mapped_collections: int
+
+
+@dataclass(frozen=True)
+class CatalogCollectionCategory:
+    ref: str
+    name: str
+    category_ref: str
+    category_name: str
 
 
 @dataclass(frozen=True)
@@ -76,6 +95,11 @@ class CatalogBindingReviewProjection:
     expected_actor_id: int | None
     notice: str
     import_action: Action
+    catalog_ref: str
+    categories: tuple[CatalogRemoteCategory, ...]
+    collections: tuple[CatalogCollectionCategory, ...]
+    categories_error: str
+    category_action: Action
 
 
 def _summary(snapshot):
@@ -101,7 +125,41 @@ def _price(value):
     return str(value)
 
 
-def build_catalog_binding_review(*, channel_ref, snapshot_id=None, user=None):
+def _category_rows(value):
+    if isinstance(value, dict):
+        value = value.get("categories", [])
+    if not isinstance(value, list):
+        return []
+    rows = []
+    for position, category in enumerate(value):
+        if not isinstance(category, dict):
+            continue
+        ref = category.get("id")
+        if not isinstance(ref, str) or not ref:
+            continue
+        index = category.get("index", position)
+        if isinstance(index, bool) or not isinstance(index, int):
+            index = position
+        rows.append({
+            "ref": ref,
+            "name": _text(category.get("name")) or "Categoria sem nome",
+            "status": _text(category.get("status")) or "UNKNOWN",
+            "index": index,
+        })
+    return rows
+
+
+def _snapshot_categories(snapshot):
+    if snapshot is None:
+        return []
+    try:
+        parsed, _ = service.parse_snapshot(snapshot.raw_json)
+    except service.CatalogBindingError:
+        return []
+    return _category_rows(parsed.get("categories"))
+
+
+def build_catalog_binding_review(*, channel_ref, snapshot_id=None, user=None, category_reader=None):
     channel = service._channel(channel_ref)
     authorized = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
     actor_id = getattr(user, "pk", None)
@@ -112,6 +170,7 @@ def build_catalog_binding_review(*, channel_ref, snapshot_id=None, user=None):
     if snapshot_id is not None and snapshot is None:
         raise service.CatalogBindingError("Snapshot não pertence ao canal selecionado.")
     products = list(Product.objects.only("pk", "sku", "name").order_by("sku"))
+    collections = list(Collection.objects.only("ref", "name").filter(is_active=True).order_by("sort_order", "name"))
     options = {product.sku: CatalogProductOption(sku=product.sku, name=product.name) for product in products}
     items = []
     if snapshot:
@@ -146,6 +205,25 @@ def build_catalog_binding_review(*, channel_ref, snapshot_id=None, user=None):
                     enabled=not blocked, reason=blocked, href=base_path + "bindings/", method="POST", idempotency="required",
                     payload_schema={"expected_actor_id": actor_id, "snapshot_id": snapshot.pk,
                                     "item_id": identity["item_id"], "base_revision": revision})))
+    category_rows = _snapshot_categories(snapshot)
+    categories_error = ""
+    if snapshot and category_reader is not None:
+        configured_account = (getattr(settings, "SHOPMAN_IFOOD", {}) or {}).get("merchant_id")
+        if not configured_account or configured_account != snapshot.account_ref:
+            categories_error = "A captura não corresponde à loja iFood configurada. Exibindo apenas a evidência guardada."
+        else:
+            try:
+                category_rows = _category_rows(category_reader(channel_ref=channel.ref, catalog_ref=snapshot.catalog_ref))
+            except Exception:
+                categories_error = "Não foi possível confirmar as categorias agora. Exibindo a última captura disponível."
+    mapping, _default = ifood_catalog_categories.category_mapping(
+        channel.ref, getattr(settings, "SHOPMAN_IFOOD", {}) or {}, channel=channel,
+    )
+    names = {row["ref"]: row["name"] for row in category_rows}
+    mapped_counts = {row["ref"]: 0 for row in category_rows}
+    for category_ref in mapping.values():
+        if category_ref in mapped_counts:
+            mapped_counts[category_ref] += 1
     return CatalogBindingReviewProjection(channel_ref=channel.ref, channel_name=channel.name or channel.ref,
         provider="ifood", snapshots=tuple(_summary(row) for row in snapshots), selected_snapshot=_summary(snapshot) if snapshot else None,
         products=tuple(options.values()), items=tuple(items), expected_actor_id=actor_id,
@@ -153,4 +231,16 @@ def build_catalog_binding_review(*, channel_ref, snapshot_id=None, user=None):
         import_action=Action(ref="catalog.snapshot.import", kind="mutation", label="Importar evidência",
             enabled=authorized, reason="" if authorized else "Identifique uma pessoa com permissão para editar o catálogo.",
             href=base_path + "snapshots/", method="POST", idempotency="required", payload_schema={"expected_actor_id": actor_id,
-                "base_revision": service.import_revision(channel, user) if user else ""}))
+                "base_revision": service.import_revision(channel, user) if user else ""}),
+        catalog_ref=snapshot.catalog_ref if snapshot else "",
+        categories=tuple(CatalogRemoteCategory(**row, mapped_collections=mapped_counts.get(row["ref"], 0)) for row in category_rows),
+        collections=tuple(CatalogCollectionCategory(ref=row.ref, name=row.name,
+            category_ref=mapping.get(row.ref, ""), category_name=names.get(mapping.get(row.ref, ""), "")) for row in collections),
+        categories_error=categories_error,
+        category_action=Action(ref="catalog.category.change", kind="mutation", label="Aplicar alteração de categoria",
+            enabled=authorized and snapshot is not None,
+            reason="" if authorized and snapshot is not None else "Carregue uma captura e identifique uma pessoa autorizada.",
+            href=base_path + "categories/", method="POST", idempotency="required",
+            payload_schema={"expected_actor_id": actor_id,
+                "snapshot_id": snapshot.pk if snapshot else None,
+                "catalog_ref": snapshot.catalog_ref if snapshot else ""}))

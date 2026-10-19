@@ -5,7 +5,7 @@ import hashlib
 import json
 import uuid
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.admin.models import LogEntry
@@ -13,7 +13,7 @@ from django.contrib.auth.models import Permission, User
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models.deletion import ProtectedError
-from shopman.offerman.models import Listing, ListingItem, Product
+from shopman.offerman.models import Collection, Listing, ListingItem, Product
 from shopman.orderman.models import Directive, IdempotencyKey
 
 from shopman.backstage.projections.catalog_bindings import build_catalog_binding_review
@@ -110,6 +110,131 @@ def test_review_keeps_remote_details_and_never_selects_candidate(channel, operat
     assert projection.import_action.payload_schema['expected_actor_id'] == operator.pk
     assert len(projection.import_action.payload_schema['base_revision']) == 64
     assert not CatalogBinding.objects.exists()
+
+
+def test_review_uses_one_projection_for_remote_categories_and_local_mapping(
+    channel, operator, products, snapshot, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+    collection = Collection.objects.create(ref="paes", name="Pães")
+    channel.config = {"ifood_catalog": {"category_map": {"paes": "category-A"}}}
+    channel.save(update_fields=["config"])
+    reader = MagicMock(return_value=[{
+        "id": "category-A", "name": "Padaria", "status": "AVAILABLE", "index": 2,
+    }])
+
+    projection = build_catalog_binding_review(
+        channel_ref=channel.ref,
+        snapshot_id=snapshot.pk,
+        user=operator,
+        category_reader=reader,
+    )
+
+    assert projection.categories[0].name == "Padaria"
+    assert projection.categories[0].mapped_collections == 1
+    assert projection.collections[0].ref == collection.ref
+    assert projection.collections[0].category_name == "Padaria"
+    assert projection.categories_error == ""
+    reader.assert_called_once_with(channel_ref=channel.ref, catalog_ref="catalog-A")
+
+
+def test_review_exposes_timing_and_keeps_query_count_bounded(
+    client, channel, operator, products, snapshot, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+    client.force_login(operator)
+    with patch(
+        "shopman.backstage.api.catalog_bindings.category_service.list_categories",
+        return_value=[{"id": "category-A", "name": "Padaria", "index": 0, "status": "AVAILABLE"}],
+    ):
+        response = client.get(url(channel, "review"), {"snapshot_id": snapshot.pk})
+
+    assert response.status_code == 200
+    assert "projection;dur=" in response["Server-Timing"]
+    assert "db;dur=" in response["Server-Timing"]
+    assert response._watchman_query_count <= 10
+
+
+@pytest.mark.parametrize(
+    ("action", "specific", "expected"),
+    [
+        ("rename", {"name": "Padaria"}, {"name": "Padaria"}),
+        ("reorder", {"index": 3}, {"index": 3}),
+    ],
+)
+def test_category_edits_are_confirmed_by_the_same_remote_read(
+    client, channel, operator, snapshot, action, specific, expected, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+    client.force_login(operator)
+    remote = {"id": "category-A", "name": "Padaria", "index": 3, "status": "AVAILABLE"}
+    body = {
+        "action": action,
+        "snapshot_id": snapshot.pk,
+        "catalog_ref": snapshot.catalog_ref,
+        "category_ref": "category-A",
+        "expected_actor_id": operator.pk,
+        **specific,
+    }
+    target = f"shopman.backstage.api.catalog_bindings.category_service.{action}_category"
+    with patch(target) as mutate, patch(
+        "shopman.backstage.api.catalog_bindings.category_service.list_categories",
+        return_value=[remote],
+    ) as read:
+        response = post(client, channel, "categories", body)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["category"] == remote
+    assert {key: mutate.call_args.kwargs[key] for key in expected} == expected
+    read.assert_called_once_with(channel_ref=channel.ref, catalog_ref=snapshot.catalog_ref)
+
+
+def test_collection_mapping_requires_a_remotely_confirmed_category(
+    client, channel, operator, snapshot, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+    collection = Collection.objects.create(ref="paes", name="Pães")
+    client.force_login(operator)
+    body = {
+        "action": "map",
+        "snapshot_id": snapshot.pk,
+        "catalog_ref": snapshot.catalog_ref,
+        "category_ref": "category-A",
+        "collection_ref": collection.ref,
+        "expected_actor_id": operator.pk,
+    }
+    with patch(
+        "shopman.backstage.api.catalog_bindings.category_service.list_categories",
+        return_value=[{"id": "category-A", "name": "Padaria"}],
+    ):
+        response = post(client, channel, "categories", body)
+
+    assert response.status_code == 200, response.content
+    channel.refresh_from_db()
+    assert channel.config["ifood_catalog"]["category_map"] == {"paes": "category-A"}
+
+
+def test_category_change_rejects_a_snapshot_from_another_configured_store(
+    client, channel, operator, snapshot, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "another-merchant"}
+    client.force_login(operator)
+    body = {
+        "action": "rename",
+        "snapshot_id": snapshot.pk,
+        "catalog_ref": snapshot.catalog_ref,
+        "category_ref": "category-A",
+        "name": "Padaria",
+        "expected_actor_id": operator.pk,
+    }
+    with patch(
+        "shopman.backstage.api.catalog_bindings.category_service.rename_category",
+    ) as rename:
+        response = post(client, channel, "categories", body)
+
+    assert response.status_code == 409
+    assert "não corresponde" in response.json()["detail"]
+    rename.assert_not_called()
 
 
 def test_binding_and_rebinding_only_change_local_binding(client, channel, operator, products, snapshot):
