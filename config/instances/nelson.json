@@ -2236,6 +2236,7 @@
           "shop.view_historicalruleconfig",
           "shop.view_ifoodinterruption",
           "shop.view_ifoodstorestatus",
+          "shop.view_instanceapplyrecord",
           "shop.view_marketing",
           "shop.view_marketingaisuggestion",
           "shop.view_marketingaisuggestionevent",
