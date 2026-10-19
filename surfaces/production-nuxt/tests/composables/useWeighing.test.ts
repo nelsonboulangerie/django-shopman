@@ -24,6 +24,37 @@ describe("useWeighing", () => {
     expect(dateDisplay.value).toBe("");
   });
 
+  it("a massa velha é escolha por preparo e troca as linhas pela mistura final no teto", () => {
+    const ticket = {
+      ticket_ref: "prep-a",
+      recipe_ref: "massa",
+      output_sku: "MASSA",
+      ingredients: [
+        { sku: "FARINHA", name: "Farinha", target_display: "1000 g", quantity_display: "1000 g", annotation: "" },
+      ],
+      old_dough: {
+        cap_pct: "20",
+        cap_display: "20%",
+        old_dough_display: "344 g",
+        old_dough_g: "344",
+        lines: [{ sku: "FARINHA", target_display: "800 g", target_g: "800" }],
+      },
+    };
+    env.fetchData.value = { weighing: { selected_date_display: "segunda", tickets: [ticket] } };
+    const weighing = useWeighing(ref("2026-07-06"));
+
+    expect(weighing.usesOldDough("prep-a")).toBe(false);
+    expect(weighing.rowsFor(ticket as never, "prep-a").map((row) => row.target)).toEqual(["1000 g"]);
+
+    weighing.setOldDough("prep-a", true);
+    expect(weighing.usesOldDough("prep-a")).toBe(true);
+    expect(weighing.usesOldDough("prep-b")).toBe(false);
+    expect(weighing.rowsFor(ticket as never, "prep-a").map((row) => row.target)).toEqual(["344 g", "800 g"]);
+
+    weighing.setOldDough("prep-a", false);
+    expect(weighing.rowsFor(ticket as never, "prep-a").map((row) => row.target)).toEqual(["1000 g"]);
+  });
+
   it("allocates a cold revision once through its projected POST action", async () => {
     const cold = {
       selected_date: "2026-07-06",
