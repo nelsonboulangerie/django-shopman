@@ -249,10 +249,13 @@ class MarketingFreezeView(_CampaignBase):
     }
 
     def get(self, request):
-        from shopman.shop.services.marketing_security import safety_state
+        # Leitura sem gravar: antes do primeiro comando a linha ainda não existe, e
+        # o que se mostra é o estado de nascença (não congelado, versão e geração 1).
+        # A linha nasce no primeiro comando, por ``safety_state(for_update=True)``.
+        from shopman.shop.models import MarketingSafetyState
 
-        state = safety_state()
-        return Response(_safety_payload(state))
+        state = MarketingSafetyState.objects.filter(scope="default").first()
+        return Response(_safety_payload(state or MarketingSafetyState(scope="default")))
 
     def post(self, request):
         from shopman.shop.services.marketing_security import activate_freeze
@@ -2652,6 +2655,25 @@ def _authorization_error_response(
         actor=request.user,
         reason_code=exc.code,
         action="command_denied",
+    )
+    response = Response(exc.as_payload(), status=exc.status_code)
+    if exc.retry_after is not None:
+        response["Retry-After"] = str(exc.retry_after)
+    return response
+
+
+def _authorization_read_error_response(exc: MarketingAuthorizationError, request) -> Response:
+    """A recusa de uma LEITURA: mesma resposta do comando, sem gravar.
+
+    GET não produz efeito, então a recusa não vira ``MarketingSecurityEvent``
+    aqui; ela fica no log. A recusa por falta de capacidade continua auditada
+    na permissão da view, antes do handler.
+    """
+    logger.warning(
+        "marketing.read_denied code=%s actor=%s path=%s",
+        exc.code,
+        getattr(request.user, "pk", None),
+        request.path,
     )
     response = Response(exc.as_payload(), status=exc.status_code)
     if exc.retry_after is not None:

@@ -106,11 +106,7 @@ DOMAIN_KERNEL_PACKAGES = {
 # catraca nos dois sentidos: escrita NOVA reprova, e linha que ficou velha
 # (escrita resolvida, linha esquecida) também. Cada grupo é uma frente própria.
 # Chave: (arquivo, chamada no GET) -> quantas vezes.
-GET_WRITE_FOUND_BY_TRANSITIVE_GATE = {
-    # Marketing: o estado de segurança nasce na primeira leitura; a negação é auditada no GET.
-    ("shopman/backstage/api/marketing.py", "safety_state"): 1,
-    ("shopman/backstage/api/marketing_seal.py", "_authorization_error_response"): 1,
-}
+GET_WRITE_FOUND_BY_TRANSITIVE_GATE: dict[tuple[str, str], int] = {}
 KNOWN_NON_MUTATING_GET_CALLS = {"response.add_post_render_callback"}
 
 PROTECTED_KERNEL_PACKAGES = (

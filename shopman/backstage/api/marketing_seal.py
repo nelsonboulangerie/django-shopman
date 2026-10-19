@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from shopman.backstage.api.marketing import (
     _DANGEROUS_THROTTLES,
     _authorization_error_response,
+    _authorization_read_error_response,
     _CampaignBase,
     _unknown_command_fields,
 )
@@ -204,14 +205,13 @@ class MarketingSecondControlView(_CampaignBase):
     def get(self, request, ref: str):
         from shopman.shop.services.marketing_security import (
             MarketingAuthorizationError,
-            MarketingAuthorizationRequired,
             second_control_summary,
         )
 
         try:
             return Response({"second_control": second_control_summary(ref, actor=request.user)})
-        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
-            return _authorization_error_response(exc, request)
+        except MarketingAuthorizationError as exc:
+            return _authorization_read_error_response(exc, request)
 
     def post(self, request, ref: str):
         from shopman.shop.services.marketing_security import (

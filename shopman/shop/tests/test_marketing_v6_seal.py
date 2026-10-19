@@ -201,6 +201,50 @@ def test_bystander_cannot_read_the_second_control_summary(customer_base):
         second_control_summary(challenge["ref"], actor=bystander)
 
 
+def test_reading_the_second_control_summary_by_get_never_writes(client, customer_base):
+    """GET do resumo: a recusa sai igual (403 com o código), e nada é gravado."""
+    from shopman.shop.models import MarketingSecurityEvent
+
+    publisher = _actor("seal-get-req", "publish_marketing_announcements")
+    nosy = _actor("seal-get-nosy", "view_marketing")
+    second = _actor("seal-get-second", "approve_marketing_announcements", "view_marketing")
+    challenge = _open(publisher, _context(600))
+    url = f"/api/v1/backstage/marketing/security/second-control/{challenge['ref']}/"
+    events_before = MarketingSecurityEvent.objects.count()
+
+    client.force_login(nosy)
+    refused = client.get(url, HTTP_ORIGIN="http://testserver")
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "dual_control_capability_revoked"
+    missing = client.get(
+        "/api/v1/backstage/marketing/security/second-control/00000000-0000-0000-0000-000000000000/",
+        HTTP_ORIGIN="http://testserver",
+    )
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "dual_control_unavailable"
+    assert MarketingSecurityEvent.objects.count() == events_before
+
+    client.force_login(second)
+    read = client.get(url, HTTP_ORIGIN="http://testserver")
+    assert read.status_code == 200
+    assert read.json()["second_control"]["state"] == "open"
+
+
+def test_reading_the_freeze_state_by_get_does_not_create_it(client):
+    """O estado de segurança nasce no primeiro comando, não na primeira leitura."""
+    from shopman.shop.models import MarketingSafetyState
+
+    MarketingSafetyState.objects.all().delete()
+    viewer = _actor("seal-freeze-viewer", "view_marketing")
+    client.force_login(viewer)
+
+    response = client.get("/api/v1/backstage/marketing/security/freeze/", HTTP_ORIGIN="http://testserver")
+
+    assert response.status_code == 200
+    assert response.json() == {"frozen": False, "version": 1, "generation": 1, "reason": "", "frozen_at": ""}
+    assert not MarketingSafetyState.objects.exists()
+
+
 def test_device_step_up_options_need_a_registered_device(client, customer_base):
     publisher = _actor("seal-api", "publish_marketing_announcements", "view_marketing")
     client.force_login(publisher)
