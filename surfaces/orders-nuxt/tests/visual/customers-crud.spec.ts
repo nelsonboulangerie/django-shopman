@@ -25,6 +25,10 @@ const row = {
   orders_label: "18 pedidos",
   last_order_display: "ontem",
   duplicate_hint: "",
+  groups: [
+    { ref: "ATACADO", name: "Atacado", is_primary: true },
+    { ref: "PADRAO", name: "Padrão", is_primary: false },
+  ],
 };
 
 const detail = {
@@ -77,7 +81,7 @@ async function mockCustomers(page: Page) {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/backstage/customers/") {
       await route.fulfill({ json: { list: {
-        query: "", filter: "all", filters: [
+        query: "", filter: "all", group: "", filters: [
           { ref: "all", label: "Todos", active: true },
           { ref: "possible_duplicates", label: "Possíveis duplicados", active: false },
           { ref: "ifood", label: "Vindos do iFood", active: false },
@@ -158,6 +162,16 @@ for (const viewport of selectedOperatorViewports()) {
       app: "orders", surface: "customers-bulk", route: "/customers", scenario: "selection",
       state: "normal", theme: "light", viewport,
     }, { fullPage: false, scan: false });
+    // Mudar grupo em lote: o grupo vem de fora da tela, então é diálogo.
+    await page.locator('[data-operator-bulk-action="Mudar grupo…"]').filter({ visible: true }).click();
+    await expect(page.getByRole("heading", { name: "Mudar grupo", exact: true })).toBeVisible();
+    await expectOperatorLabelsFit(page, `mudar grupo em lote ${viewport.id}`);
+    await captureOperatorEvidence(page, testInfo, {
+      app: "orders", surface: "customers-bulk-group", route: "/customers", scenario: "form",
+      state: "normal", theme: "light", viewport,
+    }, { fullPage: false, scan: false });
+    await page.keyboard.press("Escape");
+
     await page.locator('[data-operator-bulk-action="Etiquetar…"]').filter({ visible: true }).click();
     await expect(page.getByRole("heading", { name: "Etiquetas em lote", exact: true })).toBeVisible();
     await expectOperatorLabelsFit(page, `etiquetas em lote ${viewport.id}`);

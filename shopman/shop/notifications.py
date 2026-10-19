@@ -16,6 +16,8 @@ import logging
 from types import ModuleType
 from typing import Any
 
+from django.conf import settings
+
 logger = logging.getLogger(__name__)
 
 from shopman.shop.protocols import NotificationResult
@@ -31,9 +33,22 @@ def register_backend(name: str, adapter: ModuleType) -> None:
 
 
 def get_backend(name: str | None = None) -> ModuleType | None:
-    """Resolve adapter module by name. Falls back to 'console' when name is None."""
+    """Resolve o adapter pelo nome.
+
+    Sem nome, só o dev local (``DEBUG``) cai no console. Fora dele não existe
+    "backend padrão": o console devolve sucesso para tudo, e um chamador que
+    esqueceu de nomear o canal transformava cada aviso em sucesso falso (ou, sem
+    o console registrado, num ``warning`` que ninguém lia). Agora é ``None`` com
+    ``logger.error``: o envio falha, e falha alto (fallbacks perigosos, item 14).
+    """
     if name is None:
-        name = "console"
+        if getattr(settings, "DEBUG", False):
+            return _adapters.get("console")
+        logger.error(
+            "notifications.get_backend: envio sem backend nomeado fora de DEBUG; nada será entregue",
+            stack_info=True,
+        )
+        return None
     return _adapters.get(name)
 
 
@@ -58,7 +73,9 @@ def notify(
     adapter = get_backend(backend)
 
     if not adapter:
-        backend_name = backend or "default"
+        if backend is None:
+            return NotificationResult(success=False, error="Backend not named")
+        backend_name = backend
         logger.warning("Notification backend not found: %s", backend_name)
         return NotificationResult(success=False, error=f"Backend not found: {backend_name}")
 

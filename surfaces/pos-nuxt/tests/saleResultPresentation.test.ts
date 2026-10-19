@@ -14,6 +14,7 @@ import {
   nextActionLabel,
   orderReadback,
   orderTicketLabel,
+  pendingPixBadge,
   pixAwaiting,
   resolveFiscalState,
   saleResultTitle,
@@ -286,5 +287,23 @@ describe("P2-31: a próxima ação da tela de resultado", () => {
   it("o papel da encomenda tem o verbo inteiro, como no detalhe", () => {
     expect(orderTicketLabel(false)).toBe("Imprimir Via Pedido");
     expect(orderTicketLabel(true)).toBe("Imprimindo…");
+  });
+});
+
+describe("selo dos Pix abertos fora da tela", () => {
+  it("nenhum Pix aberto: nenhum selo", () => {
+    expect(pendingPixBadge([])).toBeNull();
+  });
+  it("um Pix: diz o pedido", () => {
+    expect(pendingPixBadge(["PED-1"])).toEqual({
+      label: "Pix aguardando · PED-1",
+      title: "Pix do pedido PED-1 aguardando confirmação",
+    });
+  });
+  it("vários: um selo só, com a contagem, e os pedidos inteiros no title", () => {
+    expect(pendingPixBadge(["PED-1", "PED-2"])).toEqual({
+      label: "2 Pix aguardando",
+      title: "Pix aguardando confirmação nos pedidos PED-1, PED-2",
+    });
   });
 });

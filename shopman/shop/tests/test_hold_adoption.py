@@ -544,6 +544,8 @@ class TestCartReconcileIntegration:
         self._setup_cart()
         request = self._request_with_session("sess-test-1")
 
+        # Sacola sem data: a reserva segue a regra de sempre.
+        mock_availability.session_hold_dates.return_value = set()
         mock_availability.reconcile.return_value = {
             "ok": True,
             "hold_ids": [],
@@ -574,6 +576,8 @@ class TestCartReconcileIntegration:
         self._setup_cart()
         request = self._request_with_session("sess-test-1")
 
+        # Sacola sem data: a reserva segue a regra de sempre.
+        mock_availability.session_hold_dates.return_value = set()
         mock_availability.reconcile.return_value = {
             "ok": False,
             "hold_ids": [],
@@ -604,6 +608,8 @@ class TestCartReconcileIntegration:
         self._setup_cart()
         request = self._request_with_session("sess-test-1")
 
+        # Sacola sem data: a reserva segue a regra de sempre.
+        mock_availability.session_hold_dates.return_value = set()
         mock_availability.reconcile.return_value = {
             "ok": True,
             "hold_ids": [],
@@ -631,6 +637,8 @@ class TestCartReconcileIntegration:
         from shopman.shop.services import cart as cart_mutations
 
         _channel, session = self._setup_cart()
+        # Sacola sem data: a reserva segue a regra de sempre.
+        mock_availability.session_hold_dates.return_value = set()
         mock_availability.reserve.return_value = {
             "ok": True,
             "hold_id": "hold:new",

@@ -131,15 +131,20 @@ def test_best_group_promotion_is_the_best_discount():
     assert promo.value == 30
 
 
-def test_best_typed_advantage_by_priority():
+def test_best_typed_advantage_free_shipping_is_the_lowest_minimum():
+    """Frete grátis: vale o MELHOR para o cliente (menor mínimo), não a maior prioridade.
+
+    A Equipe tem prioridade 5 e mínimo de R$ 50; a Aliança, prioridade 0 e mínimo
+    zero. O cliente dos dois grupos tem frete grátis sempre: o da Aliança.
+    """
     _seed()
     best = promotions.best_group_advantage(
         ["equipe", "alianca-francesa"], "free_shipping"
     )
 
     assert best is not None
-    assert best.tier_ref == "equipe"  # prioridade 5 > 0
-    assert best.value.config["min_order_q"] == 5000
+    assert best.tier_ref == "alianca-francesa"
+    assert best.value.config["min_order_q"] == 0
 
 
 def test_best_price_list_uses_the_priority_order():
@@ -211,12 +216,12 @@ def test_different_types_coexist_without_summing():
 
 def test_same_typed_advantage_does_not_accumulate():
     _seed()
-    # Dois grupos com frete grátis: vale a MAIOR prioridade (Equipe, 5), não as duas.
+    # Dois grupos com frete grátis: vale UM, o de menor mínimo (Aliança), não os dois.
     best = promotions.best_group_advantage(["equipe", "alianca-francesa"], "free_shipping")
 
     assert best is not None
-    assert best.tier_ref == "equipe"
-    assert best.value.config["min_order_q"] == 5000
+    assert best.tier_ref == "alianca-francesa"
+    assert best.value.config["min_order_q"] == 0
     assert PriceTierAdvantage.objects.filter(
         tier__ref__in=["equipe", "alianca-francesa"], kind="free_shipping", is_active=True
     ).count() == 2  # as duas existem; só uma é a vencedora

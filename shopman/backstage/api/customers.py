@@ -79,6 +79,7 @@ class CustomerListView(_CustomersBase):
         listing = build_customer_list(
             query=request.query_params.get("q") or "",
             filter_ref=request.query_params.get("filter") or "all",
+            group_ref=request.query_params.get("group") or "",
             page=as_int(request.query_params.dict(), "page", default=1, min_value=1),
             sort=sort,
         )

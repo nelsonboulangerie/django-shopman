@@ -21,7 +21,7 @@ import pytest
 from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.stockman import stock
-from shopman.stockman.models import Hold, Position, PositionKind
+from shopman.stockman.models import Batch, Hold, Position, PositionKind
 
 from shopman.storefront.tests.web.conftest import _ensure_listing_item
 
@@ -69,6 +69,13 @@ def _ready(product, qty: str):
         quantity=Decimal(qty), sku=product.sku, position=_position(),
         target_date=None, reason="pronta-entrega (teste de uma data por pedido)",
     )
+    # Produto com validade ganha lote; a loja só vende lote classificado.
+    Batch.objects.filter(sku=product.sku, quality_grade_ref="").update(quality_grade_ref="standard")
+
+
+def _bread_of_the_day(product):
+    product.shelf_life_days = 0
+    product.save(update_fields=["shelf_life_days"])
 
 
 def _set_qty(client, sku, qty):
@@ -134,6 +141,8 @@ class TestTheCartRefusesASecondDate:
     def test_ready_item_does_not_join_a_cart_waiting_for_tomorrows_batch(
         self, client, shop_window, product, croissant,
     ):
+        # Pão do dia: o pronto de hoje não vale amanhã (é a validade que diz).
+        _bread_of_the_day(product)
         _plan(croissant, "4", _tomorrow())
         _ready(product, "5")
         assert _set_qty(client, croissant.sku, 2).status_code == 200
@@ -196,3 +205,120 @@ class TestTheSameDateStillFits:
             _ready(item, "5")
         assert _set_qty(client, product.sku, 1).status_code == 200
         assert _set_qty(client, croissant.sku, 1).status_code == 200
+
+
+# ── A sacola reserva NA data dela (WP-DATA-E-PROMESSA, L2/P3/P4) ─────────────
+
+
+def _cart_for(channel, day: date) -> str:
+    """Sacola com a data que o cliente escolheu (``delivery_date`` na sessão)."""
+    from shopman.shop.services import cart as cart_service
+
+    session, key = cart_service.get_or_create_session(
+        session_key=None, channel_ref=channel.ref, origin_channel="web",
+    )
+    session.data = {**(session.data or {}), "delivery_date": day.isoformat()}
+    session.save(update_fields=["data"])
+    return key
+
+
+def _add(channel, key: str, product, qty: int):
+    from shopman.shop.services import cart as cart_service
+
+    return cart_service.add_item(
+        session_key=key, channel_ref=channel.ref, origin_channel="web",
+        sku=product.sku, qty=qty, unit_price_q=900,
+    )
+
+
+def _sell_out_today(channel, product, qty: str):
+    """O pronto de hoje existe, mas outra sacola já levou tudo."""
+    from shopman.shop.services import availability
+
+    _ready(product, qty)
+    taken = availability.reserve(
+        product.sku, Decimal(qty), session_key="outra-sacola", channel_ref=channel.ref,
+        target_date=_today(),
+    )
+    assert taken["ok"], taken
+
+
+class TestTheCartReservesOnItsDate:
+    def test_todays_sold_out_does_not_stop_an_order_for_tomorrows_batch(
+        self, shop_window, croissant,
+    ):
+        _bread_of_the_day(croissant)
+        _sell_out_today(shop_window, croissant, "2")
+        _plan(croissant, "4", _tomorrow())
+        key = _cart_for(shop_window, _tomorrow())
+
+        _add(shop_window, key, croissant, 3)
+
+        mine = [h for h in _active_holds(croissant.sku) if (h.metadata or {}).get("reference") == key]
+        assert sum(h.quantity for h in mine) == Decimal("3")
+        assert {h.target_date for h in mine} == {_tomorrow()}
+        assert {h.quant.target_date for h in mine} == {_tomorrow()}, "sai da fornada de amanhã"
+
+    def test_todays_ready_stock_does_not_serve_tomorrow_without_a_batch(
+        self, shop_window, croissant,
+    ):
+        """O inverso: amanhã sem fornada, o pronto de hoje (pão do dia) não serve."""
+        from shopman.shop.services.cart import CartDateMismatchError
+
+        _bread_of_the_day(croissant)
+        _ready(croissant, "5")
+        key = _cart_for(shop_window, _tomorrow())
+
+        with pytest.raises(CartDateMismatchError) as refused:
+            _add(shop_window, key, croissant, 1)
+
+        assert refused.value.cart_date == _tomorrow()
+        assert refused.value.item_date == _today()
+        assert _active_holds(croissant.sku) == [], "a recusa não reserva antes de recusar"
+
+    def test_tomorrows_batch_does_not_serve_a_cart_for_today(self, shop_window, croissant):
+        """Sacola de hoje: a fornada de amanhã é outro pedido, sem reserva."""
+        from shopman.shop.services.cart import CartDateMismatchError
+
+        _plan(croissant, "4", _tomorrow())
+        key = _cart_for(shop_window, _today())
+
+        with pytest.raises(CartDateMismatchError) as refused:
+            _add(shop_window, key, croissant, 1)
+
+        assert refused.value.cart_date == _today()
+        assert refused.value.item_date == _tomorrow()
+        assert _active_holds(croissant.sku) == []
+
+    def test_cart_for_tomorrow_takes_tomorrows_batch_even_with_ready_stock_today(
+        self, client, shop_window, croissant, baguette,
+    ):
+        """D18(c): o item existe nas duas datas e a sacola está em amanhã; entra em amanhã."""
+        _bread_of_the_day(baguette)
+        _plan(croissant, "4", _tomorrow())
+        _ready(baguette, "5")
+        _plan(baguette, "4", _tomorrow())
+        assert _set_qty(client, croissant.sku, 1).status_code == 200
+
+        added = _set_qty(client, baguette.sku, 2)
+
+        assert added.status_code == 200, added.content[:400]
+        assert {h.target_date for h in _active_holds(baguette.sku)} == {_tomorrow()}
+        assert {h.quant.target_date for h in _active_holds(baguette.sku)} == {_tomorrow()}
+
+    def test_partial_today_is_offered_instead_of_another_order(
+        self, client, shop_window, product, croissant,
+    ):
+        """P4: sacola de hoje, o pronto cobre só parte; a recusa oferece o que há hoje."""
+        _ready(product, "5")
+        _ready(croissant, "2")
+        _plan(croissant, "4", _tomorrow())
+        assert _set_qty(client, product.sku, 1).status_code == 200
+
+        refused = _set_qty(client, croissant.sku, 3)
+
+        assert refused.status_code == 409, refused.content[:400]
+        body = refused.json()
+        assert body["error_code"] != "cart_date_mismatch", body
+        assert body["available_qty"] == 2
+        assert _active_holds(croissant.sku) == []

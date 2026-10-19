@@ -34,6 +34,7 @@ TEXT_MIGRATIONS = [
     import_module("shopman.shop.migrations.0079_confirmado_com_todo_carinho"),
     import_module("shopman.shop.migrations.0082_access_link_button_copy"),
     import_module("shopman.shop.migrations.0092_avisos_de_estorno_e_devolucao"),
+    import_module("shopman.shop.migrations.0101_confirmado_diz_a_data_da_encomenda"),
 ]
 DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
 REVISED = import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes")

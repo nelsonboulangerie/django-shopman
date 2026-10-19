@@ -314,6 +314,37 @@ def session_hold_dates_around(session_key: str, first_new_hold_id: str | None) -
     return before, new
 
 
+def session_hold_dates(session_key: str) -> set[date]:
+    """Datas que as reservas vivas da sessão já prometem (a data da sacola).
+
+    As mesmas reservas que :func:`session_hold_dates_around` conta (ancoradas
+    num quant, com data), sem separar antes e depois. Vazio = a sacola ainda
+    não fixou data.
+    """
+    if not session_key:
+        return set()
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("availability.session_hold_dates degraded; returning empty", exc_info=True)
+        return set()
+
+    return set(
+        Hold.objects.filter(
+            metadata__reference=session_key,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            quant__isnull=False,
+            target_date__isnull=False,
+        )
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .order_by()
+        .values_list("target_date", flat=True)
+        .distinct()
+    )
+
+
 def stock_on_dates(
     skus: list[str],
     dates: list[date],

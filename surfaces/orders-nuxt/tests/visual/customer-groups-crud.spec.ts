@@ -77,10 +77,33 @@ const group = {
   revision: "2026-10-14T22:00:00Z",
 };
 
+function customerRow(ref: string, name: string, groups: { ref: string; name: string }[]) {
+  return {
+    ref, name, phone_display: "(43) 99999-0101", email: "", document_display: "",
+    source_label: "", is_ifood: false, orders_label: "3 pedidos", last_order_display: "",
+    duplicate_hint: "",
+    groups: groups.map((item, index) => ({ ...item, is_primary: index === 0 })),
+  };
+}
+
 async function mockGroups(page: Page) {
   await page.route("**/api/v1/backstage/customers/groups/**", async (route) => {
     await route.fulfill({ json: { groups: {
       items: [group], total: 1, total_label: "1 grupo", form,
+    } } });
+  });
+  // A busca do "Adicionar clientes" usa a mesma lista de clientes.
+  await page.route((url) => url.pathname === "/api/v1/backstage/customers/", async (route) => {
+    const varejo = { ref: "varejo", name: "Varejo" };
+    await route.fulfill({ json: { list: {
+      query: "", filter: "all", group: "", filters: [],
+      items: [
+        customerRow("CLI-ANA", "Ana Beatriz Lima", [varejo]),
+        customerRow("CLI-BRUNO", "Bruno Carvalho", [{ ref: "alianca-francesa", name: "Aliança Francesa" }, varejo]),
+        customerRow("CLI-CARLA", "Carla Nogueira", [varejo]),
+      ],
+      page: 1, page_size: 30, total: 3, has_next: false, total_label: "3 clientes", sort: "recent",
+      form: { customer_types: [], price_tiers: [] },
     } } });
   });
 }
@@ -126,6 +149,18 @@ for (const viewport of selectedOperatorViewports()) {
     await expectOperatorLabelsFit(page, `criar grupo ${viewport.id}`);
     await captureOperatorEvidence(page, testInfo, {
       app: "orders", surface: "customer-groups-create", route: "/customers/groups",
+      scenario: "form", state: "normal", theme: "light", viewport,
+    }, { fullPage: false, scan: false });
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Adicionar clientes ao grupo Aliança Francesa", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Adicionar clientes ao grupo Aliança Francesa", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("Já está no grupo", { exact: true })).toBeVisible();
+    await expectOperatorLabelsFit(page, `adicionar clientes ao grupo ${viewport.id}`);
+    await captureOperatorEvidence(page, testInfo, {
+      app: "orders", surface: "customer-groups-add-members", route: "/customers/groups",
       scenario: "form", state: "normal", theme: "light", viewport,
     }, { fullPage: false, scan: false });
     await page.keyboard.press("Escape");
