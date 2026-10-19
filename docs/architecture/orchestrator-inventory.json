@@ -5817,6 +5817,25 @@
       ]
     },
     {
+      "path": "shopman/shop/models/instance_apply.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "InstanceApplyRecord"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/models/omotenashi_copy.py",
       "touchpoints": [
         "model"
