@@ -15,6 +15,7 @@ from django.db import transaction
 from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 
+from shopman.shop.policies.promotion import PromotionContext, Shopper, promotion_matches
 from shopman.shop.services import availability, lot_pricing
 from shopman.shop.services import sessions as session_service
 
@@ -444,49 +445,44 @@ class CouponRejected(Exception):
         self.code = code
 
 
-def customer_eligible_for_promotion(customer, promotion) -> bool:
-    """``customer`` satisfaz o alvo POR CLIENTE da promoção?
+def promotion_shopper(customer) -> Shopper:
+    """Os eixos de ``customer`` que uma promoção pode exigir: grupo, RFM e aniversário.
 
-    Só valida o que depende de QUEM é o cliente — ``customer_segments`` (grupo/RFM) e
-    ``birthday_only`` —, porque se não batem o desconto seria sempre 0. Restrição por
-    item ou contexto (``skus``, ``collections``, ``fulfillment_types``) NÃO entra: ela
-    decide QUAIS itens recebem desconto, não se o cliente pode usar o cupom. Espelha
-    ``DiscountModifier._matches`` nesses dois eixos.
-
-    ``customer`` é o cliente já resolvido (ou ``None`` para visitante anônimo).
+    O aniversário é o de HOJE no fuso da loja. Sem insight calculado (OneToOne
+    ausente) o cliente só casa por grupo; o segmento RFM fica vazio.
     """
     from django.core.exceptions import ObjectDoesNotExist
     from django.utils import timezone as tz
 
-    segments = list(getattr(promotion, "customer_segments", None) or [])
-    birthday_only = bool(getattr(promotion, "birthday_only", False))
-    if not segments and not birthday_only:
-        return True  # cupom aberto a todos
+    try:
+        rfm_segment = customer.insight.rfm_segment or ""
+    except ObjectDoesNotExist:  # silêncio-deliberado: cliente novo ainda sem Insight (RFM roda em lote); casa pelo grupo
+        logger.debug("coupon_eligibility_insight_missing")
+        rfm_segment = ""
+    return Shopper(
+        segment=rfm_segment,
+        tier_refs=frozenset(tier.ref for tier in customer.price_tiers.all()),
+        is_birthday=Shopper.birthday_on(getattr(customer, "birthday", None), tz.localdate()),
+    )
 
+
+def customer_eligible_for_promotion(customer, promotion) -> bool:
+    """``customer`` satisfaz o alvo POR CLIENTE da promoção?
+
+    Só pergunta o que depende de QUEM é o cliente (grupo/RFM e aniversário), porque
+    se não bate o desconto seria sempre 0. Restrição por item ou contexto (``skus``,
+    ``collections``, ``fulfillment_types``) fica fora da pergunta: ela decide QUAIS
+    itens recebem desconto, não se o cliente pode usar o cupom. Quem decide é
+    ``promotion_matches``, a mesma regra do carrinho, do PDV e da vitrine.
+
+    ``customer`` é o cliente já resolvido (ou ``None`` para visitante anônimo). O
+    banco só é lido quando a promoção tem alvo por cliente.
+    """
+    if promotion_matches(promotion, PromotionContext()):
+        return True  # cupom aberto a todos
     if customer is None:
         return False  # alvo exige identidade; visitante anônimo não qualifica
-
-    if segments:
-        tier_refs = {tier.ref for tier in customer.price_tiers.all()}
-        try:
-            rfm_segment = customer.insight.rfm_segment or ""
-        except ObjectDoesNotExist:
-            # Sem insight calculado (OneToOne ausente) o cliente só casa por grupo;
-            # segmento RFM fica vazio. Degrada sem bloquear o cupom.
-            logger.debug("coupon_eligibility_insight_missing")
-            rfm_segment = ""
-        if not tier_refs.intersection(segments) and rfm_segment not in segments:
-            return False
-
-    if birthday_only:
-        birthday = getattr(customer, "birthday", None)
-        if not birthday:
-            return False
-        today = tz.localdate()
-        if not (birthday.month == today.month and birthday.day == today.day):
-            return False
-
-    return True
+    return promotion_matches(promotion, PromotionContext(shopper=promotion_shopper(customer)))
 
 
 def validate_and_apply_coupon(

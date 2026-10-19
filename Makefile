@@ -483,7 +483,7 @@ docs-governance: ## Gate: links vivos, teto histórico e índice completo de pla
 
 orchestrator-governance: ## Gate: inventário físico e unidades semânticas do orquestrador
 	$(PYTHON) scripts/check_orchestrator_units.py
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py -q
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py scripts/tests/test_promotion_eligibility_policy.py -q
 
 .PHONY: test-instance-descriptors test-instance-contracts
 test-instance-contracts: ## Gate: soberania, composição e evolução de Instância
