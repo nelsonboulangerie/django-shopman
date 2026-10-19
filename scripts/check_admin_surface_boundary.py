@@ -194,6 +194,47 @@ def validate_contract(
                 errors.append(f"{location}: API evidence lacks marker {marker!r}")
         locks.extend(workflow.get("locks", []))
 
+    # Cruzamento Admin × workflow (laudo A11-1). A frequência de um grupo Admin
+    # mede o uso do Admin; a rotina do mesmo model mora no workflow que o declara.
+    # Sem o cruzamento, as duas classificações podiam dizer coisas opostas e
+    # nenhuma das duas era conferida contra a outra.
+    group_of_model = {
+        model: group for group in groups for model in group.get("models") or []
+    }
+    claimed: list[str] = []
+    routine_claimed: set[str] = set()
+    for workflow in workflows:
+        location = f"workflow {workflow.get('id')!r}"
+        admin_models = workflow.get("admin_models")
+        if not isinstance(admin_models, list):
+            errors.append(f"{location}: admin_models must be a list (empty when no ModelAdmin backs it)")
+            continue
+        claimed.extend(admin_models)
+        is_routine = workflow.get("frequency") in routine_frequencies
+        for model in admin_models:
+            group = group_of_model.get(model)
+            if group is None:
+                errors.append(f"{location}: admin_models names an unclassified ModelAdmin {model!r}")
+                continue
+            if is_routine:
+                routine_claimed.add(model)
+                if group.get("frequency") in routine_frequencies:
+                    errors.append(
+                        f"{location}: {model} is routine on the surface and also routine in "
+                        f"Admin group {group.get('id')!r}; the Admin cannot be a second place for the routine"
+                    )
+    for duplicate in sorted(_duplicates(claimed)):
+        errors.append(f"ModelAdmin claimed by more than one workflow: {duplicate}")
+    for group in groups:
+        if group.get("frequency") not in routine_frequencies:
+            continue
+        for model in group.get("models") or []:
+            if model not in routine_claimed:
+                errors.append(
+                    f"admin_model_group {group.get('id')!r}: {model} is routine in the Admin "
+                    "without a routine operator workflow that declares it"
+                )
+
     for duplicate in sorted(_duplicates(locks)):
         errors.append(f"boundary lock assigned more than once: {duplicate}")
     required_locks = contract.get("required_locks", [])
