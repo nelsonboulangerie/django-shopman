@@ -258,7 +258,7 @@ class TestReconcileSimple:
         mock_alts.find.return_value = [{"sku": "ALT-1"}]
         adapter = MagicMock()
         adapter.create_hold.return_value = {
-            "success": False, "error_code": "INSUFFICIENT_AVAILABLE",
+            "success": False, "error_code": "insufficient_supply",
         }
         mock_get_adapter.return_value = adapter
 
@@ -641,7 +641,7 @@ class TestCartReconcileIntegration:
         mock_availability.session_hold_dates.return_value = set()
         mock_availability.reserve.return_value = {
             "ok": True,
-            "hold_id": "hold:new",
+            "hold_ids": ["hold:new"],
             "available_qty": Decimal("10"),
             "is_paused": False,
             "error_code": None,

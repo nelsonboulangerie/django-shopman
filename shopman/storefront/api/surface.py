@@ -26,6 +26,7 @@ from shopman.shop.observability import (
     log_catalog_observation,
 )
 from shopman.shop.omotenashi import resolve_copy
+from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH, CartDateMismatchError
@@ -205,8 +206,9 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
     # "Me avise quando disponível": escassez genuína (não pausa/encomenda, que têm
     # enquadramento próprio) ganha o caminho de reposição — mesmo fluxo do sino da
     # PDP. Sem estoque agora (available_qty 0) não há clamp, então esta é a única
-    # ação de avanço além de continuar comprando.
-    is_notifiable = not exc.is_paused and not exc.is_planned
+    # ação de avanço além de continuar comprando. Só a FALTA avisa: pausado, fora
+    # da vitrine do canal ou de outra data não voltam com reposição.
+    is_notifiable = exc.error_code == ReserveRefusal.INSUFFICIENT_SUPPLY and not exc.is_planned
     if is_notifiable:
         actions.append(action_payload(
             ref="notify_when_available",

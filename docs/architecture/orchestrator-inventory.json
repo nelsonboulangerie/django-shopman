@@ -1602,7 +1602,8 @@
             "reserve_ceding_cart_holds",
             "retag_hold_reference",
             "return_fulfilled_hold",
-            "return_hold_remainder"
+            "return_hold_remainder",
+            "stock_error_code"
           ]
         }
       ]
@@ -7154,7 +7155,8 @@
         {
           "responsibility": "contrato",
           "symbols": [
-            "NotificationResult"
+            "NotificationResult",
+            "ReserveRefusal"
           ]
         }
       ]
@@ -7781,7 +7783,6 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "_cart_hold_metadata",
-            "_reason_value",
             "logger"
           ]
         },

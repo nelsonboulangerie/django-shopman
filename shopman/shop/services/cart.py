@@ -217,14 +217,16 @@ def add_item(
         ),
         None,
     )
-    hold_id = _reserve_or_raise(
+    hold_ids, lot_hold_id = _reserve_or_raise(
         sku=sku,
         qty=qty,
         session_key=resolved_key,
         channel_ref=channel_ref,
         cart_date=_cart_date(session),
     )
-    _refuse_a_second_date(session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_id)
+    _refuse_a_second_date(
+        session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_ids[0] if hold_ids else None,
+    )
     availability.bump_session_hold_expiry(resolved_key)
 
     if existing:
@@ -252,7 +254,7 @@ def add_item(
     # O lote que a reserva ancorou vira flag durável de linha (``meta``, único
     # lugar que sobrevive ao ``_normalize_items``). É daqui que o
     # LotDiscountModifier lê o desconto congelado no lote — ADR-017 §7.
-    batch_ref = lot_pricing.batch_ref_for_hold(hold_id)
+    batch_ref = lot_pricing.batch_ref_for_hold(lot_hold_id)
     if batch_ref:
         meta["batch_ref"] = batch_ref
     if meta:
@@ -771,10 +773,15 @@ def _date_that_serves(*, sku: str, qty: int, channel_ref: str) -> date | None:
 
 
 def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str, cart_date: date | None = None):
-    """Reserva e devolve o ``hold_id`` — o elo até o LOTE (ADR-017/D1-RETIREMENT).
+    """Reserva e devolve ``(reservas criadas, reserva que ancora o LOTE da linha)``.
 
-    O hold ancora em um Quant, e o Quant carrega a ``Batch.ref``; é por aqui que
-    a linha descobre de qual lote saiu, e portanto qual desconto de lote vale.
+    A primeira reserva criada é a fronteira que ``session_hold_dates_around``
+    usa para separar o que a mutação criou do que a sacola já tinha.
+
+    O lote vira flag da linha (ADR-017/D1-RETIREMENT: o hold ancora num Quant, e
+    o Quant carrega a ``Batch.ref``) só quando UMA reserva cobre a linha inteira.
+    Reserva fatiada entre quants pode cair em lotes diferentes, e combo reserva
+    componentes, que não são o SKU da linha: nos dois casos não há lote da linha.
 
     Sacola com data (``cart_date``) reserva NESSA data: a encomenda de amanhã
     sai da fornada de amanhã mesmo com o pronto de hoje esgotado, e o pronto de
@@ -800,7 +807,9 @@ def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str,
         if item_date is not None and item_date != cart_date:
             raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=cart_date, item_date=item_date)
     if result["ok"]:
-        return result.get("hold_id")
+        hold_ids = result["hold_ids"]
+        lot_hold_id = hold_ids[0] if len(hold_ids) == 1 and not result.get("is_bundle") else None
+        return hold_ids, lot_hold_id
     # No ``add`` o número é o livre; na linha nova (o caso da loja) ele é o
     # teto, porque nada é dela ainda. Inteiro quando é inteiro: o ``Decimal``
     # cru saía como "3.000" no JSON, e a folha da loja, que só aceita número,

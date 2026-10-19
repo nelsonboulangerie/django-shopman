@@ -193,7 +193,7 @@ class HappyPathWebLifecycleTests(TestCase):
             channel_ref=self.channel.ref,
         )
         self.assertTrue(reserved["ok"])
-        cart_hold_id = reserved["hold_id"]
+        [cart_hold_id] = reserved["hold_ids"]
         self.assertEqual(_available(self.SKU), Decimal("3"))
 
         _open_session(self.channel.ref, "STRESS-WEB-SS-001", self.SKU, qty=2)
@@ -342,7 +342,7 @@ class InsufficientStockCommitTests(TestCase):
         with self.assertRaises(ValidationError):
             _commit("STRESS-GATE-SS-002", self.channel.ref, "STRESS-GATE-KEY-002")
 
-        hold = Hold.objects.get(pk=int(reserved["hold_id"].split(":")[1]))
+        hold = Hold.objects.get(pk=int(reserved["hold_ids"][0].split(":")[1]))
         self.assertEqual(hold.metadata.get("reference"), "STRESS-GATE-SS-002")
         self.assertEqual(hold.quantity, Decimal("1"))
         self.assertEqual(_active_holds(self.SKU).count(), 1)
@@ -474,7 +474,7 @@ class PositionExclusionTests(TestCase):
             channel_ref=self.remote.ref,
         )
         self.assertFalse(result["ok"])
-        self.assertIsNone(result["hold_id"])
+        self.assertEqual(result["hold_ids"], [])
         self.assertEqual(_active_holds(self.SKU).count(), 0)
 
     def test_remote_commit_cannot_consume_excluded_but_balcao_can(self) -> None:
