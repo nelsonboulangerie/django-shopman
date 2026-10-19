@@ -1,7 +1,7 @@
 """Preço por LOTE — o desconto sai do lote reservado, não da posição.
 
 Este módulo é o primeiro consumidor do modelo de lote/validade (ADR-017) e o que
-começa a aposentar o D-1 (ver `docs/plans/D1-RETIREMENT-PLAN.md`): o desconto de
+começa a aposentar o D-1 (ver `docs/plans/completed/D1-RETIREMENT-PLAN.md`): o desconto de
 uma linha passa a vir do ``Batch`` que ela reservou — percentual resolvido na
 inspeção da fornada e **congelado** no lote — em vez de um percentual linear
 amarrado à posição ``"ontem"``.

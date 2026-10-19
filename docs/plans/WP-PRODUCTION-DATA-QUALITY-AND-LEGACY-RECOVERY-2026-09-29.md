@@ -332,7 +332,7 @@ O histórico segue em `H1/H2` em paralelo, com recursos separados. Se não termi
 
 ### 11.1 Yooga — trilha histórica paralela
 
-Reusar [`ingest_yooga`](../../shopman/backstage/management/commands/ingest_yooga.py) e o parser em [`backstage/bi/ingest/yooga.py`](../../shopman/backstage/bi/ingest/yooga.py), que já entregam `Decimal`, timezone, validação de fronteira, transação, lote/hash, idempotência e preenchimento sem sobrescrever. Alinhar a execução com o [BI Data Foundation Plan](BI-DATA-FOUNDATION-PLAN.md). A execução fica fora do caminho crítico: termina apenas em `HistoricalSale*`/B.I.
+Reusar [`ingest_yooga`](../../shopman/backstage/management/commands/ingest_yooga.py) e o parser em [`backstage/bi/ingest/yooga.py`](../../shopman/backstage/bi/ingest/yooga.py), que já entregam `Decimal`, timezone, validação de fronteira, transação, lote/hash, idempotência e preenchimento sem sobrescrever. Alinhar a execução com o [BI Data Foundation Plan](completed/BI-DATA-FOUNDATION-PLAN.md). A execução fica fora do caminho crítico: termina apenas em `HistoricalSale*`/B.I.
 
 Antes do apply:
 
@@ -732,7 +732,7 @@ Localização/período de XMLs e do export Yooga não entram neste pacote decis�
 
 ## 20. Referências versionadas
 
-- [Fundação de dados do BI](BI-DATA-FOUNDATION-PLAN.md)
+- [Fundação de dados do BI](completed/BI-DATA-FOUNDATION-PLAN.md)
 - [Mapa real de SKU](sku-real-mapa.csv)
 - [Backup e restore do cofre](../guides/backup-and-restore.md)
 - [Backup/PITR do PostgreSQL](../runbooks/backup-e-restore.md)

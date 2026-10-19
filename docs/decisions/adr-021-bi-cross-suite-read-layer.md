@@ -175,6 +175,6 @@ nos relatórios operacionais do production-nuxt.
 - [Constituição v1 (histórica)](../_archive/constitution-v1.md) — bases históricas citadas acima
 - [Constituição vigente C5](../constitution.md#c5-uma-decisão-tem-um-dono)
 - [Constituição vigente §5](../constitution.md#5-regras-de-modelagem)
-- [docs/plans/BI-PLAN.md](../plans/BI-PLAN.md) — plano de execução
-- [docs/plans/QC-FORNADA.md §7](../plans/QC-FORNADA.md) · HARDENING-PLAN §9 (doutrina revertida)
+- [docs/plans/BI-PLAN.md](../plans/completed/BI-PLAN.md) — plano de execução
+- [docs/plans/QC-FORNADA.md §7](../plans/completed/QC-FORNADA.md) · HARDENING-PLAN §9 (doutrina revertida)
 - [Contrato da superfície Marketing](../reference/marketing-surface-contract.md) — precedente Nuxt operacional realizado

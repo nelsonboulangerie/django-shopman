@@ -4,7 +4,7 @@
 **Decisão:** direção aceita pelo dono em 2026-08-19. Os XMLs de NF-e de entrada calibram os defaults, não mudam a decisão.
 **Data:** 2026-08-19
 **Escopo:** `packages/buyman` (unidade-base do `Material`, tabela de conversões, unidade de compra no custo); `packages/craftsman` (a ficha fala na base; anotação de preparo derivada); `packages/stockman` (o ledger conta na base); `shopman/backstage` (a anotação na tela de mise-en-place/picking); `config/management/commands/seed.py`
-**Execução:** [UNIT-CONVERSION-PLAN.md](../plans/UNIT-CONVERSION-PLAN.md) — em fases, **nada implementado ainda**
+**Execução:** [UNIT-CONVERSION-PLAN.md](../plans/completed/UNIT-CONVERSION-PLAN.md) — em fases, **nada implementado ainda**
 **Depende de:** [ADR-023](adr-023-cost-live-and-frozen.md) (Aceita, 19/08 — o custo congela); esta ADR decide **em que unidade** ele congela
 **Origem:** auditoria do Buyman (2026-08-18), achado B2
 
@@ -27,7 +27,7 @@
 > guardado continua por unidade de COMPRA (`cost_q` do saco, do pacote), a conta segue
 > em `Decimal` (`cost_per_base_unit`), e a exibição de insumo pesado fala em **R$/kg**.
 > O SKU que a casa **revende por peso** fica em kg: compra e venda do mesmo SKU falam a
-> mesma unidade (`units_agree`). Execução: [WP-UNIDADE-BASE-GRAMA](../plans/WP-UNIDADE-BASE-GRAMA.md).
+> mesma unidade (`units_agree`). Execução: [WP-UNIDADE-BASE-GRAMA](../plans/completed/WP-UNIDADE-BASE-GRAMA.md).
 > Onde o texto abaixo diz "se é pesado, `kg`", leia `g`.
 
 ---
@@ -204,7 +204,7 @@ unidade fina:
 > ⚠️ **Calibração posterior (03/09/2026):** a linha da `AGUA-FILTRADA` (e as de `LEITE`,
 > `AZEITE` e `CREME-DE-LEITE`) supunha base `l`. A casa **pesa** esses líquidos, então
 > pela própria R1 a base deles é `kg`, e o cadastro foi corrigido — ver
-> [WP-BASE-UNIT-LIQUIDS-KG](../plans/WP-BASE-UNIT-LIQUIDS-KG.md). A aritmética de
+> [WP-BASE-UNIT-LIQUIDS-KG](../plans/completed/WP-BASE-UNIT-LIQUIDS-KG.md). A aritmética de
 > precisão desta tabela não muda com isso; o que muda é em qual eixo o litro aparece,
 > que passa a ser o da COMPRA, pela conversão declarada da R2.
 
@@ -307,6 +307,6 @@ material-fornecedor).
 - [ADR-023](adr-023-cost-live-and-frozen.md) — o custo congela; esta ADR diz em que unidade
 - [ADR-002](adr-002-centavos.md) — dinheiro é inteiro em centavos
 - [ADR-021](adr-021-bi-cross-suite-read-layer.md) — o fato tem dono; agregação é leitura
-- [UNIT-CONVERSION-PLAN.md](../plans/UNIT-CONVERSION-PLAN.md) — execução em fases
-- [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) — Fases 2–4 do Buyman
+- [UNIT-CONVERSION-PLAN.md](../plans/completed/UNIT-CONVERSION-PLAN.md) — execução em fases
+- [BUYMAN-PROCUREMENT-PLAN](../plans/completed/BUYMAN-PROCUREMENT-PLAN.md) — Fases 2–4 do Buyman
 - `packages/craftsman/shopman/craftsman/models/recipe.py` (`RecipeItem.clean`), `packages/buyman/shopman/buyman/models/cost.py`, `shopman/backstage/projections/production.py`

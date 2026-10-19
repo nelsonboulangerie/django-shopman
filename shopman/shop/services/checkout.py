@@ -449,8 +449,8 @@ def save_defaults(intent, *, order_ref: str, enabled: bool) -> None:
 def _post_commit_intent(data: dict, channel_ref: str) -> SimpleNamespace:
     """Lightweight intent built from checkout data for the post-commit side effects.
 
-    Shop never imports the storefront ``CheckoutIntent`` (dependency rule); the side
-    effects only read attributes, so a namespace from ``data`` is enough.
+    The side effects only read attributes, so a namespace from ``data`` is
+    enough: Shop never imports a storefront type (dependency rule).
     """
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}

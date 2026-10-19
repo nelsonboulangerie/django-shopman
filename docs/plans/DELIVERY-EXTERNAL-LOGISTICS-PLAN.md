@@ -130,7 +130,7 @@ corrida) cabe; `courier_poll_seconds` abaixo de 20 estoura.
 
 ## 3. Teleporte — fallback manual (slice clipboard)
 
-WP-11 slice 3 do [STOREFRONT-GAPS-ACTION-PLAN](STOREFRONT-GAPS-ACTION-PLAN.md). Decisão travada
+WP-11 slice 3 do [STOREFRONT-GAPS-ACTION-PLAN](completed/STOREFRONT-GAPS-ACTION-PLAN.md). Decisão travada
 (Pablo, 2026-06-17): **utilitário LOCAL Python**, roda na máquina do operador (desacoplado do
 deploy), **clipboard como fallback**, DOM-fill quando houver URL/campos.
 
@@ -165,7 +165,7 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
 4. Falha de despacho: alerta + re-despacho manual (sem retry automático de corrida).
 
 ## Referências
-- [STOREFRONT-GAPS-ACTION-PLAN](STOREFRONT-GAPS-ACTION-PLAN.md) — WP-11 (entrega), slice 3 (teleporte)
+- [STOREFRONT-GAPS-ACTION-PLAN](completed/STOREFRONT-GAPS-ACTION-PLAN.md) — WP-11 (entrega), slice 3 (teleporte)
 - [GO-LIVE-CREDENTIALS-MATRIX](GO-LIVE-CREDENTIALS-MATRIX.md) — §5 logística externa
 - [data-schemas](../reference/data-schemas.md) — chaves de entrega em `Order.data`
 - [ADR-001](../decisions/adr-001-protocol-adapter.md) · [ADR-003](../decisions/adr-003-directives-sem-celery.md)

@@ -205,7 +205,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 │
 └── backstage/          Superfícies operador HEADLESS + Admin/Unfold (app Django, label="backstage")
     ├── api/            endpoints JSON dos apps operador Nuxt (pos, kds, production, orders, closing, operator)
-    ├── bi/             fundação de dados do B.I. (ingest/ por fonte + ImportBatch; mapping.py sugere de-paras; canônica e adaptadores — BI-DATA-FOUNDATION-PLAN)
+    ├── bi/             fundação de dados do B.I. (ingest/ por fonte + ImportBatch; mapping.py sugere de-paras; canônica e adaptadores — docs/plans/completed/BI-DATA-FOUNDATION-PLAN.md)
     ├── projections/    kds, order_queue, pos, closing, production, dashboard, bi_* (camada de leitura do B.I.)
     ├── services/       operator, closing, production, cash
     ├── models/         KDSInstance, KDSTicket, DayClosing, OperatorAlert, POSTab
@@ -521,8 +521,8 @@ Antes de alterar qualquer coisa no Core, **compreenda como ele já resolve o pro
 - [docs/reference/data-schemas.md](docs/reference/data-schemas.md) — **Obrigatório**: inventário de chaves em Session.data, Order.data, Directive.payload
 - [docs/guides/lifecycle.md](docs/guides/lifecycle.md) — Guia da arquitetura: Lifecycle, Services, Adapters, Rules
 - [docs/ROADMAP.md](docs/ROADMAP.md) — Visão geral de próximos passos e ideias futuras
-- [docs/plans/WP-GAP-07-pre-prod-migration-playbook.md](docs/plans/WP-GAP-07-pre-prod-migration-playbook.md) — Playbook ativo de migração/pré-prod
-- [docs/plans/PROJECTION-UI-PLAN.md](docs/plans/PROJECTION-UI-PLAN.md) — Plano ativo de projections/UI
+- [docs/guides/production-upgrades.md](docs/guides/production-upgrades.md) — Migração e upgrade em produção (sucede o playbook WP-GAP-07, arquivado em [docs/plans/completed/WP-GAP-07-pre-prod-migration-playbook.md](docs/plans/completed/WP-GAP-07-pre-prod-migration-playbook.md))
+- [docs/reference/projection-contracts.md](docs/reference/projection-contracts.md) — Contratos de projection (o PROJECTION-UI-PLAN foi arquivado em [docs/plans/completed/PROJECTION-UI-PLAN.md](docs/plans/completed/PROJECTION-UI-PLAN.md))
 - [docs/](docs/README.md) — Documentação completa (guias, ADRs, referência técnica)
 - [docs/reference/glossary.md](docs/reference/glossary.md) — Glossário de termos de domínio
 

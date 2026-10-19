@@ -1,7 +1,7 @@
 # WHATSAPP-CONCIERGE-PLAN — Concierge de WhatsApp: pedido por conversa, com um modelo de linguagem
 
 > Estado: **proposto (2026-09-03), código da F1 escrito, aguarda palavra do dono.**
-> Supera o mecanismo do [MANYCHAT-CONVERSACIONAL-PLAN](MANYCHAT-CONVERSACIONAL-PLAN.md)
+> Supera o mecanismo do [MANYCHAT-CONVERSACIONAL-PLAN](completed/MANYCHAT-CONVERSACIONAL-PLAN.md)
 > (um flow e um endpoint por intenção): as invariantes são as mesmas (WhatsApp só via
 > ManyChat, um número, o pedido nasce numa `Session` do canal `whatsapp` e passa pelo
 > commit de sempre), o que muda é quem conduz a conversa. Decisão de arquitetura na
@@ -544,5 +544,5 @@ MANYCHAT_API_TOKEN=<token da API ManyChat>  # para a resposta voltar
 
 - [ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md), [ADR-009](../decisions/adr-009-whatsapp-via-manychat.md), [ADR-003](../decisions/adr-003-directives-sem-celery.md)
 - [Guia do operador](../guides/whatsapp-concierge.md)
-- [MANYCHAT-CONVERSACIONAL-PLAN](MANYCHAT-CONVERSACIONAL-PLAN.md) (superado), [manychat-conversation-projection](../reference/manychat-conversation-projection.md)
+- [MANYCHAT-CONVERSACIONAL-PLAN](completed/MANYCHAT-CONVERSACIONAL-PLAN.md) (superado), [manychat-conversation-projection](../reference/manychat-conversation-projection.md)
 - `docs/_archive/redesign/06-spec-agentic.md:28`

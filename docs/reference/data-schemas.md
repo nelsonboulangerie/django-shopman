@@ -2037,7 +2037,7 @@ se apaga como qualquer registro (D11, dono, 01/10/2026: "o padeiro pode fazer o 
 
 ## RecipeVersion.formula / .origin / .source
 
-Schema completo em [RECIPE-INVENTORY-PLAN §3](../plans/RECIPE-INVENTORY-PLAN.md). Resumo:
+Schema completo em [RECIPE-INVENTORY-PLAN §3](../plans/completed/RECIPE-INVENTORY-PLAN.md). Resumo:
 `formula = {anchor: {kind: flour|total|ingredient, sku?}, basis_g, standardized, items: [{sku, name,
 role, quantity, unit, note?, grams_per_unit?, density_g_per_ml?}], parts: [{sku, entry_ref, kind:
 preferment|autolyse|soaker|old_dough, flour_pct?, quantity?, unit?, cap_pct?}]}`. `origin` é a
@@ -2608,7 +2608,7 @@ não carimba nada, porque não houve ponte, e uma chave com `null` fingiria que
 houve. As três subchaves viajam **num objeto só** de propósito — rótulo sem fator
 não deixa refazer a conta, e fator sem o `approximate` não diz se a conta era
 exata. É o carimbo da Fase 5 do
-[UNIT-CONVERSION-PLAN](../plans/UNIT-CONVERSION-PLAN.md), e existe para uma
+[UNIT-CONVERSION-PLAN](../plans/completed/UNIT-CONVERSION-PLAN.md), e existe para uma
 pergunta poder ser feita depois: *este saldo foi medido ou foi convertido?*
 (ADR-024, R3). `projections/purchase.py::_approximate_stock_skus` lê
 `converted_via.approximate` para pôr o `≈` no saldo.
@@ -2648,7 +2648,7 @@ nos componentes de operador, acesso feito pelos apps Nuxt grava o IP de saída d
 Nitro.
 
 Chaves ausentes quando vazias — a ausência diz "não havia", e uma chave com `""`
-fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/SIGN-IN-AUDIT-PLAN.md).
+fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/completed/SIGN-IN-AUDIT-PLAN.md).
 
 ### `shop.UserNotification.action_data` — o payload da ação
 
@@ -2691,7 +2691,7 @@ e onde o valor mora.
 ⚠️ As três chaves com ponteiro são as **legadas**: elas já existiam e continuam
 sendo escritas pelo `ProductAdminForm` do Offerman (o editor de rótulo) e pelo
 `dietary_from_recipe`. Nada se moveu na F1 — mover exige tocar o Core, e isso é
-o [WP-ATRIBUTOS-RENAME](../plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
+o [WP-ATRIBUTOS-RENAME](../plans/completed/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
 
 ⚠️ `metadata["dietary_auto_filled"]` **continua** sendo a palavra final do
 `dietary_from_recipe`, e o service de atributos não o toca. Duas fontes

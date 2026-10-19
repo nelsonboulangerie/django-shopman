@@ -4,7 +4,7 @@
 // ⚠️ Esta tela existe porque o estado das plataformas não tinha casa. O seletor do template
 // aprovado do WhatsApp e o teste de envio moravam DENTRO de um painel de configuração
 // DENTRO da tela de revisão, e o botão que os abria vivia no cabeçalho do painel — remendo
-// que o dono apontou. Ver `docs/plans/MARKETING-UX-PLAN.md`.
+// que o dono apontou. Ver `docs/plans/completed/MARKETING-UX-PLAN.md`.
 //
 // Plataforma ≠ canal: canal é por onde se VENDE, plataforma é por onde o anúncio SAI.
 import { platformIcon } from "~/presentation/campaign";

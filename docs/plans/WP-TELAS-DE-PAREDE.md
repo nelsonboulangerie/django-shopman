@@ -1101,6 +1101,6 @@ pareada **sem recarregar**, e o transporte é o mesmo.
 - [Omotenashi Copy](../reference/omotenashi-copy.md) — D7 (colisão de vocabulário)
 - [`surfaces/operator-kit/README.md`](../../surfaces/operator-kit/README.md) — como um app consome
 - [`SURFACE-OFFER-CAMPAIGN-PLAN.md`](SURFACE-OFFER-CAMPAIGN-PLAN.md) — §10 ("rotas nomeiam o artefato"), decisões 8 e 10 do dono
-- [`CATALOG-FEEDS-GOOGLE-META.md`](CATALOG-FEEDS-GOOGLE-META.md) — o feed público
+- [`CATALOG-FEEDS-GOOGLE-META.md`](completed/CATALOG-FEEDS-GOOGLE-META.md) — o feed público
 - `shopman/shop/menuboard_access.py` — a razão jurídica da trava
 - `shopman/backstage/tests/test_vocabulario_de_tela.py` — o modelo de trava de vocabulário

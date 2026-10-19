@@ -1843,7 +1843,7 @@ class PlatformsView(_CampaignBase):
 
     A tela que faltava, e cuja ausência explicava os remendos: o estado das plataformas
     vazava para o painel de revisão, primeiro como ação dentro de um alerta, depois como
-    botão no cabeçalho. Ver `docs/plans/MARKETING-UX-PLAN.md`.
+    botão no cabeçalho. Ver `docs/plans/completed/MARKETING-UX-PLAN.md`.
 
     Devolve TODA plataforma, pronta ou não — esconder as saudáveis obrigaria o gestor a
     deduzir ausência de aviso como boa notícia.

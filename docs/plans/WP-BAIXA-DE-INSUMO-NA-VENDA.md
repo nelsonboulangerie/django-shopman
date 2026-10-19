@@ -8,7 +8,7 @@
 
 "Fase 2 do Buyman" quer dizer **duas coisas diferentes** no repositório:
 
-1. No [`BUYMAN-PROCUREMENT-PLAN`](BUYMAN-PROCUREMENT-PLAN.md), Fase 2 é o
+1. No [`BUYMAN-PROCUREMENT-PLAN`](completed/BUYMAN-PROCUREMENT-PLAN.md), Fase 2 é o
    **Pedido de Compra** (`PurchaseOrder`). Boa parte dela **já foi entregue por
    outro caminho**: o Compras do Gestor (`surfaces/purchase-nuxt` +
    `shopman/backstage/services/purchase.py`) já recebe mercadoria e escreve
@@ -55,7 +55,7 @@ usou.
 - **O `INVENTORY_BACKEND` (guardrail de disponibilidade de insumo) não protege
   esses itens**: ele valida contra um saldo que não reflete consumo.
 - **O B.I. não sabe a margem** desses itens — é a pergunta P6 do
-  [`BI-QUESTION-CATALOG`](BI-QUESTION-CATALOG.md), marcada 🔴 e apontando
+  [`BI-QUESTION-CATALOG`](completed/BI-QUESTION-CATALOG.md), marcada 🔴 e apontando
   justamente para cá.
 
 ## O que já está pronto e não se refaz
@@ -98,6 +98,9 @@ baixa na venda descer até a folha, desconta o que a produção já descontou.
 
 - **F1 — o gatilho, decidido e escrito.** Uma linha no ADR, não um palpite no
   código. Depende da resposta 1.
+  Proposta em [ADR-040](../decisions/adr-040-baixa-de-insumo-na-venda-do-feito-na-hora.md)
+  (19/10/2026, status Proposto): directive na venda, um nível de ficha, marca
+  explícita `made_to_order`; espera a palavra do dono.
 - **F2 — o consumo por signal, escritor único.** `issue(kind=MAKE)` a partir dos
   itens da ficha inativa, com a mesma política greedy/present-stock-first que a
   produção usa; shortfall **não fatal**, mas **registrado** (foi o silêncio que

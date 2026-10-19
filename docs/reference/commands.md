@@ -630,7 +630,7 @@ receitas, o snapshot do `DayClosing` e os `params` de regra. História não se r
 ⚠️ **Depois de rodar, re-exporte o cofre** (`export_backup`): uma planilha anterior
 reimportada escreve a unidade antiga por cima, e como ela reverte cadastro e ficha juntos,
 os dois voltam a concordar e nada grita — só o saldo fica errado. Ver
-[WP-BASE-UNIT-LIQUIDS-KG](../plans/WP-BASE-UNIT-LIQUIDS-KG.md).
+[WP-BASE-UNIT-LIQUIDS-KG](../plans/completed/WP-BASE-UNIT-LIQUIDS-KG.md).
 
 ### rewrite_recipe_per_unit
 
@@ -1588,7 +1588,7 @@ cobre o Concierge.
 
 ### run_intent_pilot
 
-**Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/INTENT-PILOT-PLAN.md)),
+**Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/completed/INTENT-PILOT-PLAN.md)),
 e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
 por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
 `AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
