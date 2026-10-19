@@ -50,6 +50,7 @@ from .ifood_merchant import (
     IFoodInterruptionState,
     IFoodStoreStatus,
 )
+from .instance_apply import InstanceApplyRecord
 from .omotenashi_copy import OmotenashiCopy
 from .operator_passkey import OperatorPasskey
 from .privacy import (
@@ -115,6 +116,7 @@ __all__ = [
     "IFoodInterruptionKind",
     "IFoodInterruptionState",
     "IFoodStoreStatus",
+    "InstanceApplyRecord",
     "CatalogBinding",
     "RetiredProduct",
     "CatalogSnapshot",

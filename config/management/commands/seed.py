@@ -72,7 +72,13 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
-from config.instance_descriptors import apply_to_database, load_descriptor
+from config.instance_descriptors import (
+    InstanceDriftConflict,
+    ShopSingletonViolation,
+    apply_to_database,
+    load_descriptor,
+    the_shop,
+)
 from config.management.commands.apply_fiscal_ncm import CROQUE_FISCAL_NOTE, house_cest_for
 from config.management.commands.apply_grocery_catalog import apply_grocery
 from config.management.commands.apply_product_brands import apply_brands
@@ -1201,14 +1207,31 @@ class Command(BaseCommand):
                     "o seed de demonstração Nelson exige instance.ref='nelson'; "
                     "use `instance_descriptor apply` para outra Instância"
                 )
-            result = apply_to_database(descriptor)
+            # O seed preserva o que o banco tem diferente da última versão
+            # aplicada (``keep``): num banco recém-limpo não há divergência, e num
+            # banco em uso quem decide sobrescrever é `instance_descriptor apply`.
+            result = apply_to_database(descriptor, actor="seed", on_drift="keep")
+        except (ShopSingletonViolation, InstanceDriftConflict) as exc:
+            raise CommandError(str(exc)) from exc
         except (OSError, ValueError, KeyError) as exc:
             raise CommandError(f"descritor de Instância inválido: {exc}") from exc
         self.instance_descriptor = descriptor
+        summary = ", ".join(f"{key} {value}" for key, value in result["summary"].items())
         self.stdout.write(
             "  ✅ Instância materializada pelo descritor "
-            f"{path} ({sum(value for key, value in result.items() if key.endswith('_created'))} novos)"
+            f"{path} ({summary or 'sem mudanças'})"
         )
+        kept = [change["path"] for change in result["changes"] if change["action"] == "kept"]
+        if kept:
+            self.stdout.write(self.style.WARNING(
+                f"  ⚠️ {len(kept)} valor(es) mudados no banco foram preservados: {', '.join(kept[:10])}"
+            ))
+
+    def _the_shop(self) -> Shop:
+        try:
+            return the_shop()
+        except ShopSingletonViolation as exc:
+            raise CommandError(str(exc)) from exc
 
     def _instance_channels(self) -> dict[str, Channel]:
         expected = {"pdv", STOREFRONT_REF, "ifood", "whatsapp"}
@@ -1508,157 +1531,161 @@ class Command(BaseCommand):
                 "  🤖 Piloto automático de staging: loja aberta 24/7, sem feriados."
             )
 
-        _, created = Shop.objects.update_or_create(
-            pk=1,
-            defaults={
-                "legal_name": "N.H.K. Panificadora Ltda.",
-                # CNPJ emitente da NFC-e: o adapter fiscal (Focus NFe) lê de Shop.document
-                # como default (sem precisar de FOCUS_NFE_CNPJ_EMITENTE no ambiente).
-                "document": "02119381000158",
-                "brand_name": "Nelson Boulangerie",
-                "short_name": "Nelson",
-                "tagline": "Padaria Artesanal",
-                "description": "Segue rigorosamente as normas da panificação artesanal francesa.",
-                # A voz que a IA usa ao escrever para a Nelson — catálogo E anúncio, uma
-                # fonte só. Antes vivia como literal no código do backstage, invisível
-                # para quem opera, e a campanha não tinha voz nenhuma.
-                "brand_voice": (
-                    "Você escreve para a Nelson Boulangerie, uma padaria artesanal "
-                    "brasileira que segue as normas da panificação francesa. Escreva em "
-                    "português do Brasil, na primeira pessoa do plural (\"nós\", "
-                    "\"conosco\"), nunca \"a gente\". Tom acolhedor e concreto, sem "
-                    "superlativo vazio, sem emoji e sem travessão (—). Responda APENAS "
-                    "com o texto pedido, sem aspas, sem rótulo e sem comentário."
-                ),
-                # ⚠️ O GLÚTEN vem primeiro e é dito no POSITIVO, não como
-                # ressalva. A casa é uma padaria: trabalha com farinha de trigo
-                # todos os dias, não tem linha segregada e não pretende ter
-                # (decisão do dono, 08/09/2026). Por isso nenhum produto afirma
-                # "sem glúten" — e o cliente celíaco precisa ler isso na primeira
-                # linha, não deduzir do silêncio.
-                #
-                # O resto é contaminação cruzada de cozinha compartilhada, no
-                # formato que a RDC 727/2022 pede ("pode conter"). Ver
-                # `shop/legal_parameters.py`.
-                "food_safety_notice": (
-                    "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. "
-                    "Todos os nossos produtos contêm ou podem conter glúten, e não temos "
-                    "como assegurar a ausência dele em nenhum item. "
-                    "Produzido em cozinha compartilhada, pode conter ainda traços de leite, "
-                    "ovos, castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
-                ),
-                "heading_font": "Instrument Sans",
-                "body_font": "Instrument Sans",
-                "border_radius": "soft",
-                "primary_color": "#7C3A40",
-                "secondary_color": "#2C1810",
-                "accent_color": "#8B4513",
-                "neutral_color": "#FCF7EE",
-                "neutral_dark_color": "#1A0F0A",
-                "formatted_address": "Av. Madre Leônia Milito, 446 - Bela Suíça, Londrina - PR, 86050-270",
-                "route": "Av. Madre Leônia Milito",
-                "street_number": "446",
-                "neighborhood": "Bela Suíça",
-                "city": "Londrina",
-                "state_code": "PR",
-                "postal_code": "86050-270",
-                "country": "Brasil",
-                "country_code": "BR",
-                # As coordenadas da ficha no Google Maps (o link "como chegar" da
-                # landing antiga). As de antes caíam 3,4 km ao norte, numa distribuidora
-                # do Centro: mapa, coleta do motoboy e frete por distância partiam de lá.
-                "latitude": -23.3348384,
-                "longitude": -51.1673157,
-                "phone": "554333231997",
-                "email": "nelson@boulangerie.com.br",
-                "default_ddd": "43",
-                # Só o que é VERDADE. As três linhas de `example` que moravam
-                # aqui não eram inertes: `build_shop_projection` as entrega ao
-                # `ShopHeader.vue`, que as renderiza como ícones clicáveis no
-                # rodapé, e `presentation/seo.ts` as declara em `sameAs` do
-                # JSON-LD — ou seja, a loja dizia ao Google que `example.com` é
-                # o perfil oficial da Nelson. Link errado é pior que link
-                # nenhum: com a lista vazia o rodapé não desenha a seção
-                # (`v-if="socialLinks.length"`) e o `sameAs` some.
-                # Os perfis reais (os que a landing antiga declarava) e os textos
-                # de busca vêm da MESMA fonte que leva a presença de busca a um
-                # banco já semeado, sem reseed: `apply_search_presence`.
-                "social_links": [
-                    "https://wa.me/554333231997",
-                    *BRAND_PROFILES
+        # A loja é a que o descritor materializou (``_materialize_instance``),
+        # nunca uma pk fixa: depois de um ``--flush`` a sequência não volta a 1, e
+        # um ``update_or_create(pk=1)`` criava uma segunda loja (laudo A6-1).
+        shop = self._the_shop()
+        shop_fields = {
+            "legal_name": "N.H.K. Panificadora Ltda.",
+            # CNPJ emitente da NFC-e: o adapter fiscal (Focus NFe) lê de Shop.document
+            # como default (sem precisar de FOCUS_NFE_CNPJ_EMITENTE no ambiente).
+            "document": "02119381000158",
+            "brand_name": "Nelson Boulangerie",
+            "short_name": "Nelson",
+            "tagline": "Padaria Artesanal",
+            "description": "Segue rigorosamente as normas da panificação artesanal francesa.",
+            # A voz que a IA usa ao escrever para a Nelson — catálogo E anúncio, uma
+            # fonte só. Antes vivia como literal no código do backstage, invisível
+            # para quem opera, e a campanha não tinha voz nenhuma.
+            "brand_voice": (
+                "Você escreve para a Nelson Boulangerie, uma padaria artesanal "
+                "brasileira que segue as normas da panificação francesa. Escreva em "
+                "português do Brasil, na primeira pessoa do plural (\"nós\", "
+                "\"conosco\"), nunca \"a gente\". Tom acolhedor e concreto, sem "
+                "superlativo vazio, sem emoji e sem travessão (—). Responda APENAS "
+                "com o texto pedido, sem aspas, sem rótulo e sem comentário."
+            ),
+            # ⚠️ O GLÚTEN vem primeiro e é dito no POSITIVO, não como
+            # ressalva. A casa é uma padaria: trabalha com farinha de trigo
+            # todos os dias, não tem linha segregada e não pretende ter
+            # (decisão do dono, 08/09/2026). Por isso nenhum produto afirma
+            # "sem glúten" — e o cliente celíaco precisa ler isso na primeira
+            # linha, não deduzir do silêncio.
+            #
+            # O resto é contaminação cruzada de cozinha compartilhada, no
+            # formato que a RDC 727/2022 pede ("pode conter"). Ver
+            # `shop/legal_parameters.py`.
+            "food_safety_notice": (
+                "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. "
+                "Todos os nossos produtos contêm ou podem conter glúten, e não temos "
+                "como assegurar a ausência dele em nenhum item. "
+                "Produzido em cozinha compartilhada, pode conter ainda traços de leite, "
+                "ovos, castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
+            ),
+            "heading_font": "Instrument Sans",
+            "body_font": "Instrument Sans",
+            "border_radius": "soft",
+            "primary_color": "#7C3A40",
+            "secondary_color": "#2C1810",
+            "accent_color": "#8B4513",
+            "neutral_color": "#FCF7EE",
+            "neutral_dark_color": "#1A0F0A",
+            "formatted_address": "Av. Madre Leônia Milito, 446 - Bela Suíça, Londrina - PR, 86050-270",
+            "route": "Av. Madre Leônia Milito",
+            "street_number": "446",
+            "neighborhood": "Bela Suíça",
+            "city": "Londrina",
+            "state_code": "PR",
+            "postal_code": "86050-270",
+            "country": "Brasil",
+            "country_code": "BR",
+            # As coordenadas da ficha no Google Maps (o link "como chegar" da
+            # landing antiga). As de antes caíam 3,4 km ao norte, numa distribuidora
+            # do Centro: mapa, coleta do motoboy e frete por distância partiam de lá.
+            "latitude": -23.3348384,
+            "longitude": -51.1673157,
+            "phone": "554333231997",
+            "email": "nelson@boulangerie.com.br",
+            "default_ddd": "43",
+            # Só o que é VERDADE. As três linhas de `example` que moravam
+            # aqui não eram inertes: `build_shop_projection` as entrega ao
+            # `ShopHeader.vue`, que as renderiza como ícones clicáveis no
+            # rodapé, e `presentation/seo.ts` as declara em `sameAs` do
+            # JSON-LD — ou seja, a loja dizia ao Google que `example.com` é
+            # o perfil oficial da Nelson. Link errado é pior que link
+            # nenhum: com a lista vazia o rodapé não desenha a seção
+            # (`v-if="socialLinks.length"`) e o `sameAs` some.
+            # Os perfis reais (os que a landing antiga declarava) e os textos
+            # de busca vêm da MESMA fonte que leva a presença de busca a um
+            # banco já semeado, sem reseed: `apply_search_presence`.
+            "social_links": [
+                "https://wa.me/554333231997",
+                *BRAND_PROFILES
+            ],
+            **SEARCH_FIELDS,
+            # A lista aprovada pelo dono (01/10/2026). A mesma lista leva um
+            # banco já semeado ao estado novo sem reseed:
+            # shop/migrations/0085_motivos_de_recusa_aprovados.py.
+            "cancellation_presets": CANCELLATION_PRESETS,
+            "kitchen_note_tags": [
+                "Bem assado",
+                "Pouco assado",
+                "Sem cebola",
+                "Embalar para presente",
+                "Cortar ao meio"],
+            "opening_hours": opening_hours,
+            "defaults": {
+                "menu": {
+                    "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],
+                },
+                "notifications": {"backend": "console"},
+                "rules": {
+                    # Políticas de pedido/entrega em centavos. 0 = desligada.
+                    "minimum_order_q": 0,        # sem mínimo geral (ticket baixo)
+                    "delivery_minimum_q": 2500,  # R$ 25,00 mínimo só p/ entrega
+                    "free_delivery_above_q": 0,  # frete grátis desligado
+                    # Taxa de entrega quando a distância não pôde ser calculada (endereço
+                    # sem geocode / loja sem coordenada): fallback em vez de bloquear.
+                    "default_delivery_fee_q": 800,  # R$ 8,00 (faixa do meio)
+                },
+                "pos": {
+                    # Nelson oferece NFC-e no balcão. O toggle 'Nota fiscal' aparece no
+                    # PDV quando isto está on E o adapter fiscal está configurado.
+                    "fiscal_toggle": True,
+                },
+                "pickup_slots": [
+                    {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
+                    {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
+                    {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"}
                 ],
-                **SEARCH_FIELDS,
-                # A lista aprovada pelo dono (01/10/2026). A mesma lista leva um
-                # banco já semeado ao estado novo sem reseed:
-                # shop/migrations/0085_motivos_de_recusa_aprovados.py.
-                "cancellation_presets": CANCELLATION_PRESETS,
-                "kitchen_note_tags": [
-                    "Bem assado",
-                    "Pouco assado",
-                    "Sem cebola",
-                    "Embalar para presente",
-                    "Cortar ao meio"],
-                "opening_hours": opening_hours,
-                "defaults": {
-                    "menu": {
-                        "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],
-                    },
-                    "notifications": {"backend": "console"},
-                    "rules": {
-                        # Políticas de pedido/entrega em centavos. 0 = desligada.
-                        "minimum_order_q": 0,        # sem mínimo geral (ticket baixo)
-                        "delivery_minimum_q": 2500,  # R$ 25,00 mínimo só p/ entrega
-                        "free_delivery_above_q": 0,  # frete grátis desligado
-                        # Taxa de entrega quando a distância não pôde ser calculada (endereço
-                        # sem geocode / loja sem coordenada): fallback em vez de bloquear.
-                        "default_delivery_fee_q": 800,  # R$ 8,00 (faixa do meio)
-                    },
-                    "pos": {
-                        # Nelson oferece NFC-e no balcão. O toggle 'Nota fiscal' aparece no
-                        # PDV quando isto está on E o adapter fiscal está configurado.
-                        "fiscal_toggle": True,
-                    },
-                    "pickup_slots": [
-                        {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
-                        {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-                        {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"}
-                    ],
-                    "pickup_slot_config": {
-                        "rounding_minutes": 30,
-                        "history_days": 30,
-                        "fallback_slot": "slot-09",
-                    },
-                    "max_preorder_days": 30,
-                    "closed_dates": closed_dates,
-                    "production": {
-                        "suggestion": {
-                            "seasons": {
-                                "hot":  [10, 11, 12, 1, 2, 3],
-                                "mild": [4, 5, 9],
-                                "cold": [6, 7, 8],
-                            },
-                            "high_demand_multiplier": "1.2",
-                            "safety_stock_percent": "0.20",
+                "pickup_slot_config": {
+                    "rounding_minutes": 30,
+                    "history_days": 30,
+                    "fallback_slot": "slot-09",
+                },
+                "max_preorder_days": 30,
+                "closed_dates": closed_dates,
+                "production": {
+                    "suggestion": {
+                        "seasons": {
+                            "hot":  [10, 11, 12, 1, 2, 3],
+                            "mild": [4, 5, 9],
+                            "cold": [6, 7, 8],
                         },
-                    },
-                    "stock_alerts": {
-                        "cooldown_minutes": 60,  # mín. entre re-avisos do mesmo alerta
-                    },
-                    "loyalty": {
-                        "points_per_real": 1,    # 1 ponto por R$ 1,00
-                        "stamps_target": 10,     # cartela de 10 carimbos
-                        "tiers": [
-                            {"name": "bronze", "threshold": 0},
-                            {"name": "silver", "threshold": 500},
-                            {"name": "gold", "threshold": 2000},
-                            {"name": "platinum", "threshold": 5000}
-                        ],
+                        "high_demand_multiplier": "1.2",
+                        "safety_stock_percent": "0.20",
                     },
                 },
+                "stock_alerts": {
+                    "cooldown_minutes": 60,  # mín. entre re-avisos do mesmo alerta
+                },
+                "loyalty": {
+                    "points_per_real": 1,    # 1 ponto por R$ 1,00
+                    "stamps_target": 10,     # cartela de 10 carimbos
+                    "tiers": [
+                        {"name": "bronze", "threshold": 0},
+                        {"name": "silver", "threshold": 500},
+                        {"name": "gold", "threshold": 2000},
+                        {"name": "platinum", "threshold": 5000}
+                    ],
+                },
             },
-        )
-        self.stdout.write("  ✅ Shop criado" if created else "  ✅ Shop atualizado")
-        apply_search_presence(Shop.objects.get(pk=1), overwrite=True)
+        }
+        for field_name, value in shop_fields.items():
+            setattr(shop, field_name, value)
+        shop.save()
+        self.stdout.write("  ✅ Shop atualizado")
+        apply_search_presence(shop, overwrite=True)
         self.stdout.write("  ✅ Perguntas frequentes iniciais")
 
     # ────────────────────────────────────────────────────────────────
@@ -1669,7 +1696,7 @@ class Command(BaseCommand):
         """Motor de precificação: taxa por faixa de distância (loja→endereço)."""
         from shopman.shop.models import DeliveryDistanceBand
 
-        shop = Shop.objects.get(pk=1)
+        shop = self._the_shop()
         bands = [
             {"max_distance_km": "3.00", "fee_q": 500, "sort_order": 10},    # até 3 km → R$ 5,00
             {"max_distance_km": "6.00", "fee_q": 800, "sort_order": 20},    # até 6 km → R$ 8,00
@@ -1693,7 +1720,7 @@ class Command(BaseCommand):
         """Exceções à distância: override (taxa fixa) e exclude (não entregar)."""
         from shopman.shop.models import DeliveryZone
 
-        shop = Shop.objects.get(pk=1)
+        shop = self._the_shop()
         # A taxa primária vem das faixas de distância; estas zonas são exceções.
         zones = [
             {
