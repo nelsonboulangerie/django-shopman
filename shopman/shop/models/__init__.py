@@ -33,7 +33,7 @@ from .campaign import (
     Trigger,
 )
 from .catalog_binding import CatalogBinding, CatalogSnapshot
-from .catalog_sync import CatalogSyncState, SyncStatus
+from .catalog_sync import CatalogImageUpload, CatalogSyncState, SyncStatus
 from .channel import Channel
 from .concierge import (
     Conversation,
@@ -121,6 +121,7 @@ __all__ = [
     "RetiredProduct",
     "CatalogSnapshot",
     "CatalogSyncState",
+    "CatalogImageUpload",
     "SyncStatus",
     "NotificationTemplate",
     "QualityDefect",
