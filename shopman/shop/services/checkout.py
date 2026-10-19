@@ -585,6 +585,10 @@ def queue_post_commit_effects(order) -> None:
         session_key=order.session_key,
     ).values("handle_ref").first()
     effects: list[tuple[str, dict]] = []
+    # A troca de dono só existe quando há sacola anterior a encerrar. Sem
+    # nenhuma, o efeito só carimbaria o telefone numa sessão já fechada, que
+    # ninguém lê por telefone (os leitores filtram ``state="open"``): era uma
+    # Directive, dupla idempotência e quatro SAVEPOINTs por checkout para nada.
     if target is not None and not target["handle_ref"]:
         same_owner = models.Q(handle_type="phone", handle_ref=intent.customer_phone)
         if customer_ref:
@@ -596,15 +600,16 @@ def queue_post_commit_effects(order) -> None:
             .order_by("pk")
             .values_list("session_key", flat=True)
         )
-        effects.append(
-            (
-                "session_takeover",
-                {
-                    "superseded_session_keys": superseded,
-                    "expected_customer_ref": customer_ref,
-                },
+        if superseded:
+            effects.append(
+                (
+                    "session_takeover",
+                    {
+                        "superseded_session_keys": superseded,
+                        "expected_customer_ref": customer_ref,
+                    },
+                )
             )
-        )
     effects.extend((effect, {}) for effect in ("customer", "address", "defaults"))
     for effect, extra_payload in effects:
         directives.create_persistently_deduped(
