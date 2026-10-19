@@ -21,7 +21,7 @@ def filter_by_collection(qs, collection_ref: str):
 
     Rota pública e anônima: coleção exclusiva de grupo é vazia, como a inexistente.
     """
-    from shopman.shop.services.exclusive_collections import access_for_tiers
+    from shopman.shop.projections.exclusive_collections import access_for_tiers
 
     if access_for_tiers(()).is_hidden(collection_ref):
         return qs.none()
@@ -58,7 +58,7 @@ def get_sellable_published_product(sku: str):
 
 def active_collections_with_counts() -> list[dict]:
     """As coleções do catálogo público, sem as exclusivas de grupo (rota anônima)."""
-    from shopman.shop.services.exclusive_collections import access_for_tiers
+    from shopman.shop.projections.exclusive_collections import access_for_tiers
 
     hidden = access_for_tiers(()).hidden
     return [row for row in catalog_context.active_collections_with_counts() if row["ref"] not in hidden]
@@ -66,7 +66,7 @@ def active_collections_with_counts() -> list[dict]:
 
 def without_exclusive_only_products(qs):
     """Tira do queryset público o produto que só existe em coleção exclusiva de grupo."""
-    from shopman.shop.services.exclusive_collections import access_for_tiers, exclusive_only_product_ids
+    from shopman.shop.projections.exclusive_collections import access_for_tiers, exclusive_only_product_ids
 
     access = access_for_tiers(())
     if not access.hidden:

@@ -391,7 +391,7 @@ def viewer_collection_access(request: HttpRequest | None) -> CollectionAccess:
     abrir a coleção do grupo para todo mundo. Guardado no request: a página da
     coleção pergunta duas vezes (o 404 e o cardápio) e paga uma.
     """
-    from shopman.shop.services.exclusive_collections import access_for_customer
+    from shopman.shop.projections.exclusive_collections import access_for_customer
     from shopman.storefront.identity import get_authenticated_customer
 
     if request is None:

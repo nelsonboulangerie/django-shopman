@@ -11,7 +11,7 @@ coleções não disputam nada.
 
 Sem Django, sem banco: recebe as linhas ``(grupo, config)`` das vantagens ativas e os
 grupos do cliente, e devolve o acesso. Quem lê o banco é
-``shop/services/exclusive_collections.py``, numa consulta.
+``shop/projections/exclusive_collections.py``, numa consulta.
 """
 
 from __future__ import annotations

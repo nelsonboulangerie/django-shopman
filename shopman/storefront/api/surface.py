@@ -457,7 +457,7 @@ def _gone_products() -> dict:
     """
     from shopman.shop.models import RetiredProduct
     from shopman.shop.projections import catalog_context
-    from shopman.shop.services.exclusive_collections import access_for_tiers
+    from shopman.shop.projections.exclusive_collections import access_for_tiers
 
     # Rota pública: a lápide não aponta para coleção exclusiva de grupo (é 404 ao anônimo).
     escondidas = access_for_tiers(()).hidden
