@@ -335,7 +335,7 @@ class TestAvailabilityListingMembership:
         )
 
         assert result["ok"] is True
-        assert result["hold_id"] == "hold:cart-fast"
+        assert result["hold_ids"] == ["hold:cart-fast"]
         mock_check.assert_not_called()
         stock_adapter.create_hold.assert_called_once()
 

@@ -14,6 +14,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 from django.utils import timezone
 
+from shopman.shop.protocols import ReserveRefusal
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,8 +103,13 @@ def create_hold(
     recusando.
 
     Returns:
-        {"success": bool, "hold_id": str | None, "error_code": str | None,
+        {"success": bool, "hold_id": str | None,
+         "error_code": ReserveRefusal | None,
          "message": str | None, "expires_at": datetime | None, "is_planned": bool}
+
+    A recusa sai SEMPRE do vocabulário fechado ``ReserveRefusal``. Erro que não
+    é recusa (banco, bug, código do Stockman que a reserva não conhece) sobe:
+    engolido aqui, ele virava "faltou estoque" na tela do cliente.
     """
     from shopman.stockman.exceptions import StockError
     from shopman.stockman.service import Stock as stock
@@ -113,7 +120,7 @@ def create_hold(
         return {
             "success": False,
             "hold_id": None,
-            "error_code": "product_not_found",
+            "error_code": ReserveRefusal.PRODUCT_NOT_FOUND,
             "message": f"Produto não encontrado: {sku}",
             "expires_at": None,
             "is_planned": False,
@@ -196,21 +203,29 @@ def create_hold(
         return {
             "success": False,
             "hold_id": None,
-            "error_code": e.code if hasattr(e, "code") else "hold_failed",
+            "error_code": stock_error_code(e),
             "message": str(e),
             "expires_at": None,
             "is_planned": False,
         }
-    except Exception as e:
-        logger.warning("create_hold failed for SKU %s: %s", sku, e, exc_info=True)
-        return {
-            "success": False,
-            "hold_id": None,
-            "error_code": "hold_failed",
-            "message": str(e),
-            "expires_at": None,
-            "is_planned": False,
-        }
+
+
+def stock_error_code(error) -> ReserveRefusal:
+    """A recusa do ``Stock.hold`` no vocabulário do orquestrador.
+
+    O Stockman recusa a reserva com dois códigos: ``INVALID_QUANTITY`` e
+    ``INSUFFICIENT_AVAILABLE``, este carregando o ``reason_code`` da promessa
+    (pausado ou falta). Qualquer outro código não é recusa de reserva, é
+    defeito, e sobe com o erro original.
+    """
+    if error.code == "INVALID_QUANTITY":
+        return ReserveRefusal.INVALID_QUANTITY
+    if error.code == "INSUFFICIENT_AVAILABLE":
+        reason = error.data.get("reason_code")
+        if reason == ReserveRefusal.PAUSED:
+            return ReserveRefusal.PAUSED
+        return ReserveRefusal.INSUFFICIENT_SUPPLY
+    raise error
 
 
 def create_holds_up_to(

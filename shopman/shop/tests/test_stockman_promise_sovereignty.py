@@ -107,7 +107,7 @@ def test_every_door_gives_stockmans_answer(scenario: Scenario):
 
     reason = stockman.reason_code.value if stockman.reason_code else None
     assert (stockman.approved, reason) == (scenario.approved, scenario.reason)
-    assert (check["ok"], availability._reason_value(check["error_code"])) == (scenario.approved, scenario.reason)
+    assert (check["ok"], (check["error_code"].value if check["error_code"] else None)) == (scenario.approved, scenario.reason)
     assert cart_line == (scenario.approved, scenario.ceiling)
 
 
