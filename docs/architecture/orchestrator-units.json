@@ -5143,6 +5143,7 @@
         "service"
       ],
       "domains": [
+        "doorman",
         "guestman"
       ],
       "ports": [
@@ -5152,7 +5153,8 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_customer_lookup_delegates_to_guestman"
+        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_customer_lookup_delegates_to_guestman",
+        "shopman/shop/tests/test_identity_by_customer_ref.py::test_uses_the_configured_resolver"
       ],
       "test_gap_reason": null,
       "policy": false,
