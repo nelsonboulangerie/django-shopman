@@ -41,10 +41,12 @@ def test_valor_fixo_tem_teto_na_mercadoria():
 
 def test_gatilho_do_gerente_nao_soma_a_taxa():
     # Teto da loja em R$ 10,00: 10% de R$ 100,00 de mercadoria fica no teto.
+    # O gatilho lê o desconto que o motor APLICOU (``ManualDiscountModifier``, que
+    # rateia só sobre mercadoria), carimbado como no fechamento.
+    payload = _payload({"type": "percent", "value": 10})
+    payload[pos._ENGINE_DISCOUNTS_KEY] = {"line_q": 0, "order_q": 1000}
     with patch.object(pos, "discount_approval_threshold_q", return_value=1000):
-        approver = pos.validate_manager_approval(
-            _payload({"type": "percent", "value": 10}), operator_username="caixa",
-        )
+        approver = pos.validate_manager_approval(payload, operator_username="caixa")
 
     assert approver is None
 

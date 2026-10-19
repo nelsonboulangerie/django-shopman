@@ -21,7 +21,7 @@ from shopman.cashman.models import Shift
 from shopman.guestman.models import Customer
 
 from shopman.backstage.projections.pos import build_pos_customer_lookup
-from shopman.shop.models import Channel, Promotion, Shop
+from shopman.shop.models import Channel, Coupon, Promotion, Shop
 
 
 class POSCustomerProfileTests(TestCase):
@@ -125,3 +125,29 @@ class POSCustomerProfileTests(TestCase):
 
         self.assertTrue(lookup.is_birthday_today)
         self.assertEqual(lookup.birthday_promo_label, "")
+
+    def test_birthday_label_only_promises_what_the_counter_reprice_gives(self) -> None:
+        """A3-2: o rótulo usa o filtro do motor (canal e cupom), não um filtro à parte.
+
+        A promoção de aniversário só da loja online e a que exige cupom não são
+        aplicadas pelo reprice do balcão, então o PDV não pode anunciá-las.
+        """
+        today = timezone.localdate()
+        self.customer.birthday = date(1990, today.month, today.day)
+        self.customer.save(update_fields=["birthday"])
+        web = Channel.objects.create(ref="web", name="Loja", is_active=True, config={})
+        window = {
+            "is_active": True, "birthday_only": True, "type": "percent", "value": 10,
+            "valid_from": timezone.now() - timezone.timedelta(days=1),
+            "valid_until": timezone.now() + timezone.timedelta(days=30),
+        }
+        so_na_web = Promotion.objects.create(ref="aniver-web", name="A Aniversário da loja", **window)
+        so_na_web.channels.set([web])
+        de_cupom = Promotion.objects.create(ref="aniver-cupom", name="B Aniversário com cupom", **window)
+        Coupon.objects.create(code="NIVER", promotion=de_cupom, max_uses=0, is_active=True)
+
+        self.assertEqual(build_pos_customer_lookup("43999990010").birthday_promo_label, "")
+
+        Promotion.objects.create(ref="aniver-balcao", name="C Mimo do balcão", **window)
+
+        self.assertEqual(build_pos_customer_lookup("43999990010").birthday_promo_label, "C Mimo do balcão")

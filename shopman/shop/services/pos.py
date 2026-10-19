@@ -381,6 +381,12 @@ def close_sale(
     if open_tab is None and offline_at is None and not _payload_has_tab_identity(payload):
         _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
     _ensure_resolved_prices(payload)
+    # O desconto manual é o do MOTOR (A3-1): a conferência do total da tela, o
+    # portão do gerente e a taxa de entrega leem o mesmo número que o selo do
+    # fechamento confere.
+    _stamp_engine_manual_discounts(
+        payload, channel=channel, config=config, operator_username=operator_username, session=open_tab,
+    )
     _ensure_expected_total(payload, channel_ref=channel.ref)
     # Guardado, não descartado: é este nome — o VERIFICADO — que assina a linha do
     # desconto lá embaixo. Ver `build_session_ops`.
@@ -906,13 +912,18 @@ def review_sale(
         raise ValueError("Abra um POS tab antes de finalizar.")
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
     _stamp_list_prices_from_session(payload, session)
-    priced_lines: tuple[dict, ...] = ()
+    priced: dict[int, dict] = {}
     if session is None:
         # Sem comanda, o kernel ainda não precificou nada: a revisão pergunta ao
         # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
         priced = _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
-        priced_lines = _review_priced_lines(payload, priced)
     _ensure_resolved_prices(payload)
+    # O desconto manual também é o do motor (A3-1): o total da revisão é o que o
+    # selo do fechamento confere, sem conta paralela do PDV.
+    with_manual = _stamp_engine_manual_discounts(
+        payload, channel=channel, config=config, operator_username=operator_username, session=session,
+    )
+    priced_lines = _review_priced_lines(payload, priced, with_manual) if session is None else ()
 
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
@@ -1136,14 +1147,17 @@ def review_sale(
     )
 
 
-def _review_priced_lines(payload: dict, priced: dict[int, dict]) -> tuple[dict, ...]:
+def _review_priced_lines(
+    payload: dict, priced: dict[int, dict], with_manual: dict[int, dict],
+) -> tuple[dict, ...]:
     """As linhas da venda sem comanda como o motor as cobra, no formato da comanda.
 
-    O desconto MANUAL de linha fica fora da sonda (ver ``_stamp_engine_prices``),
-    então ele entra aqui pela mesma régua do kernel: um desconto por item, o maior
-    ganha, medido contra a etiqueta. Quando o manual vence, o automático sai da
-    linha (o selo é o do manual, que a tela já conhece); quando perde, a linha
-    cobra o automático e mostra o rótulo dele.
+    ``priced`` é a linha do motor sem os descontos manuais; ``with_manual``, com
+    eles (vazio quando a venda não tem desconto manual). Nenhuma das duas é conta
+    do PDV: quando o desconto manual vence a linha, o motor carimba ``_disc`` do
+    tipo ``manual`` com o valor por unidade, e é esse o preço que a linha cobra;
+    quando perde, a linha cobra o automático e mostra o rótulo dele. O desconto
+    de PEDIDO não entra no preço da linha: a tela o mostra à parte.
     """
     lines: list[dict] = []
     for index, item in enumerate(payload.get("items") or []):
@@ -1157,16 +1171,12 @@ def _review_priced_lines(payload: dict, priced: dict[int, dict]) -> tuple[dict, 
         charged_q = _int_q(engine_line.get("unit_price_q"))
         list_q = _int_q(meta.get("_list_q")) or charged_q
         disc = dict(meta.get("_disc") or {})
-        manual = _normalize_line_discount(item.get("discount"))
-        if manual:
-            # A MESMA conta de ``_payload_line_discounts_q`` / ``DiscountModifier._calc_manual``.
-            if manual["type"] == "fixed":
-                manual_q = min(int(round(manual["value"] * 100)), list_q)
-            else:
-                manual_q = min(int(round(list_q * manual["value"] / 100)), list_q)
-            if manual_q > list_q - charged_q:
-                charged_q = list_q - manual_q
-                disc = {}
+        manual_meta = (with_manual.get(index) or {}).get("meta") or {}
+        manual_disc = manual_meta.get("_disc") or {}
+        if manual_disc.get("type") == "manual":
+            list_q = _int_q(manual_meta.get("_list_q")) or list_q
+            charged_q = list_q - _int_q(manual_disc.get("amount_q"))
+            disc = {}
         lines.append({
             "line_id": line_id,
             "unit_price_q": charged_q,
@@ -1820,6 +1830,7 @@ def save_pos_tab(
     fulfillment_type = _payload_fulfillment_type(payload)
     if payload.get("sales_mode") == "order" and not payload.get("items") and not payload.get("fulfillment_type"):
         fulfillment_type = ""
+    _stamp_discounts_left_to_the_save(payload)
     ops = _replace_session_ops(session, payload, operator_username)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
@@ -1860,6 +1871,7 @@ def _save_edit_session(session, payload, *, channel, config, actor: str, operato
     """
     from shopman.shop.services import pos_edit_session
 
+    _stamp_discounts_left_to_the_save(payload)
     ops = _replace_session_ops(session, payload, operator_username)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
@@ -3626,29 +3638,13 @@ def _ensure_resolved_prices(payload: dict) -> None:
 
 
 def _payload_discount_q(payload: dict) -> int:
-    order_discount_q = _payload_applied_order_discount_q(payload)
-    return order_discount_q + _payload_line_discounts_q(payload)
-
+    discounts = _engine_manual_discounts(payload)
+    return discounts["order_q"] + discounts["line_q"]
 
 
 def _payload_applied_order_discount_q(payload: dict) -> int:
-    """Preview the kernel's representable unit-price discount, keeping its ceiling."""
-    from shopman.shop.modifiers import _is_non_merchandise_line, _spread_order_discount
-
-    requested_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
-    if requested_q <= 0:
-        return 0
-    lines = []
-    for item in payload.get("items", []):
-        if _is_non_merchandise_line(item):
-            continue
-        qty = max(0, _line_qty(item))
-        if not qty:
-            continue
-        line_gain_q = _payload_line_discounts_q({"items": [item]})
-        unit_q = max(0, int(item.get("unit_price_q", 0)) - int(Decimal(line_gain_q) / Decimal(qty)))
-        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": monetary_mult(Decimal(qty), unit_q)})
-    return sum(amount for _line, _unit, amount in _spread_order_discount(lines, requested_q, at_least=False))
+    """O desconto de PEDIDO que o motor (``ManualDiscountModifier``) aplicou."""
+    return _engine_manual_discounts(payload)["order_q"]
 
 
 def _normalize_line_discount(raw) -> dict:
@@ -3697,10 +3693,9 @@ def _stamp_engine_prices(
     ``modify_session`` numa sessão descartável (savepoint desfeito), com os
     mesmos ops do fechamento, e cada linha volta com o preço pós-desconto
     automático (``unit_price_q``) e a etiqueta (``list_price_q``), exatamente o
-    que a linha de uma comanda carrega. Os descontos MANUAIS ficam fora da
-    sonda de propósito: a conta deles continua com a revisão
-    (``_payload_line_discounts_q``/``_payload_applied_order_discount_q``), que os
-    mede contra estes preços, como faz com a comanda.
+    que a linha de uma comanda carrega. Os descontos MANUAIS ficam fora desta
+    sonda de propósito: ela carimba o preço ANTES deles (o subtotal da revisão),
+    e quem os aplica é ``_stamp_engine_manual_discounts``, com o mesmo motor.
 
     Recusa do Orderman na sonda não vira recusa aqui: o fechamento passa pelo
     mesmo caminho e recusa com a frase da regra; a revisão segue com o que tem.
@@ -3708,38 +3703,21 @@ def _stamp_engine_prices(
     Devolve a linha do motor por ÍNDICE do payload (vazio quando a sonda não
     precificou), para a revisão dizer à tela o que cada linha cobra e por quê.
     """
-    from shopman.orderman.exceptions import SessionError
-
     items = payload.get("items") or []
     stamped: dict[int, dict] = {}
     if not any(isinstance(item, dict) and not _is_delivery_fee_item(item) for item in items):
         return stamped
     probe = copy.deepcopy(payload)
     probe.pop("manual_discount", None)
+    _stamp_discounts_left_to_the_save(probe)
     for index, item in enumerate(probe.get("items") or []):
         if isinstance(item, dict):
             item.pop("discount", None)
             item["line_id"] = f"{_PRICING_PROBE_LINE}{index}"
-    priced: dict[str, dict] = {}
-    try:
-        with transaction.atomic():
-            session = _create_direct_checkout_session(
-                channel_ref=channel.ref, payload=probe, operator_username=operator_username,
-            )
-            session = session_service.modify_session(
-                session_key=session.session_key,
-                channel_ref=channel.ref,
-                ops=build_session_ops(probe, operator_username),
-                ctx={"actor": f"pos:{operator_username}"},
-                channel_config=config.to_dict(),
-            )
-            priced = {str(line.get("line_id") or ""): copy.deepcopy(line) for line in (session.items or [])}
-            raise _DiscardPricingProbe
-    except _DiscardPricingProbe:  # silêncio-deliberado: é o desfazer da sonda, não um erro
-        pass
-    except (OrderValidationError, OrderCommitError, SessionError):
-        logger.info("pos_pricing_probe_refused channel=%s", channel.ref, exc_info=True)
+    probed = _run_pricing_probe(probe, channel=channel, config=config, operator_username=operator_username)
+    if probed is None:
         return stamped
+    priced = {str(line.get("line_id") or ""): line for line in probed[0]}
     for index, item in enumerate(items):
         if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
@@ -3753,6 +3731,46 @@ def _stamp_engine_prices(
         item["list_price_q"] = _int_q((line.get("meta") or {}).get("_list_q")) or price_q
         stamped[index] = line
     return stamped
+
+
+def _run_pricing_probe(
+    probe: dict, *, channel: Channel, config: ChannelConfig, operator_username: str, pricing_policy: str = "",
+) -> tuple[list[dict], dict] | None:
+    """Passa ``probe`` pelo motor numa sessão descartável e devolve (linhas, pricing).
+
+    As mesmas operações do fechamento (``build_session_ops``), num savepoint que é
+    desfeito no fim. ``pricing_policy`` repete a da comanda quando ela não é a
+    padrão (a comanda da edição de encomenda cobra o vendido).
+
+    Recusa do Orderman na sonda não vira recusa aqui (``None``): o fechamento
+    passa pelo mesmo caminho e recusa com a frase da regra.
+    """
+    from shopman.orderman.exceptions import SessionError
+
+    probed: tuple[list[dict], dict] | None = None
+    try:
+        with transaction.atomic():
+            session = _create_direct_checkout_session(
+                channel_ref=channel.ref, payload=probe, operator_username=operator_username,
+            )
+            if pricing_policy and pricing_policy != session.pricing_policy:
+                Session.objects.filter(pk=session.pk).update(pricing_policy=pricing_policy)
+                session.pricing_policy = pricing_policy
+            session = session_service.modify_session(
+                session_key=session.session_key,
+                channel_ref=channel.ref,
+                ops=build_session_ops(probe, operator_username),
+                ctx={"actor": f"pos:{operator_username}"},
+                channel_config=config.to_dict(),
+            )
+            probed = (copy.deepcopy(session.items or []), copy.deepcopy(session.pricing or {}))
+            raise _DiscardPricingProbe
+    except _DiscardPricingProbe:  # silêncio-deliberado: é o desfazer da sonda, não um erro
+        pass
+    except (OrderValidationError, OrderCommitError, SessionError):
+        logger.info("pos_pricing_probe_refused channel=%s", channel.ref, exc_info=True)
+        return None
+    return probed
 
 
 def _stamp_list_prices_from_session(payload: dict, session) -> None:
@@ -3792,59 +3810,185 @@ def _stamp_list_prices_from_session(payload: dict, session) -> None:
 
 
 def _payload_line_discounts_q(payload: dict) -> int:
-    """Quanto os descontos manuais de LINHA tiram do subtotal — pela regra do kernel.
+    """Quanto os descontos manuais de LINHA tiram do subtotal, segundo o MOTOR.
 
-    A política é "maior desconto ganha, um por item" (``DiscountModifier``): o
-    manual da linha é medido contra o preço de ETIQUETA e só vale se for MAIOR
-    que o desconto automático que já venceu aquela linha; vencendo, ele
-    SUBSTITUI o automático, não se soma a ele.
-
-    Esta função media o mesmo número duas vezes errado. Contava o percentual
-    sobre o preço JÁ descontado (não sobre a etiqueta) e contava SEMPRE, mesmo
-    quando o kernel ia descartar o manual. O efeito na tela: uma cortesia de 10%
-    numa Tabatière que já levava "Semana do Pão −15%" prometia R$ 1,02 de
-    desconto que a venda não dava. Provado numa venda real (PDV-260826-V03): o
-    checkout exibiu total R$ 44,78 e TROCO R$ 25,22, o pedido selou R$ 45,80 e
-    registrou troco R$ 24,20 — o operador devolveria R$ 1,02 a mais do que a
-    gaveta contava, em toda venda com desconto de linha perdedor.
-
-    O subtotal da review é a soma dos ``unit_price_q`` (já pós-automático), então
-    o que este desconto ainda tira é só a DIFERENÇA entre o manual e o automático
-    que ele substitui — zero quando perde.
+    Não há conta aqui, e é de propósito (A3-1, laudo CORE-SOVEREIGNTY de
+    18/10/2026). Esta função já foi uma segunda implementação do "maior desconto
+    ganha" (``DiscountModifier``), e cada vez que as duas divergiam a venda
+    pagava: primeiro foi R$ 1,02 de troco a mais (PDV-260826-V03), depois o
+    arredondamento. O ``round`` do Python arredonda meio centavo para o PAR e o
+    motor arredonda para CIMA, então um item de R$ 12,05 com 10% de cortesia
+    revisava R$ 10,85, o motor cobrava R$ 10,84, e o selo do fechamento recusava
+    a venda em toda tentativa (2.375 de 25.000 combinações divergiam). Quem
+    decide o desconto é o motor, e esta leitura só devolve o que ele decidiu
+    (``_stamp_engine_manual_discounts``).
     """
-    total = 0
-    for item in payload.get("items", []):
-        line_discount = _normalize_line_discount(item.get("discount"))
-        if not line_discount:
+    return _engine_manual_discounts(payload)["line_q"]
+
+
+#: Os descontos MANUAIS da venda como o motor os aplicou: ``line_q`` (o que os
+#: descontos de linha tiraram do subtotal) e ``order_q`` (o desconto de pedido).
+#: Carimbado no payload por ``_stamp_engine_manual_discounts``, como a taxa de
+#: entrega e o canal, porque o payload é lido muitas vezes por request.
+_ENGINE_DISCOUNTS_KEY = "_engine_manual_discounts"
+
+_NO_MANUAL_DISCOUNT = {"line_q": 0, "order_q": 0}
+
+
+def _engine_manual_discounts(payload: dict) -> dict:
+    stamped = payload.get(_ENGINE_DISCOUNTS_KEY)
+    if isinstance(stamped, dict):
+        return stamped
+    if not _payload_has_manual_discount(payload):
+        return _NO_MANUAL_DISCOUNT
+    # Falha gritando: somar o desconto sem o motor é a conta paralela que o A3-1
+    # apagou, e devolver zero cobraria a mais em silêncio.
+    raise RuntimeError(
+        "Desconto manual sem o preço do motor: chame _stamp_engine_manual_discounts antes de somar a venda."
+    )
+
+
+def _payload_has_manual_discount(payload: dict) -> bool:
+    if _payload_manual_discount(payload):
+        return True
+    return any(
+        isinstance(item, dict) and not _is_delivery_fee_item(item) and _normalize_line_discount(item.get("discount"))
+        for item in payload.get("items") or []
+    )
+
+
+def _stamp_discounts_left_to_the_save(payload: dict) -> None:
+    """Gravar a comanda não pergunta o desconto ao motor: a própria gravação é o motor.
+
+    O ``modify_session`` da gravação (e o da sonda de preço) aplica os descontos
+    manuais nas linhas. O que o ``build_session_ops`` deriva do total
+    (pagamento, troco, taxa de entrega) é provisório ali e é refeito no
+    fechamento, que carimba o desconto do motor antes
+    (``_stamp_engine_manual_discounts``).
+    """
+    payload[_ENGINE_DISCOUNTS_KEY] = dict(_NO_MANUAL_DISCOUNT)
+
+
+def _stamp_engine_manual_discounts(
+    payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str, session=None,
+) -> dict[int, dict]:
+    """Carimba no payload os descontos manuais como o MOTOR os aplica (A3-1).
+
+    A revisão e o fechamento mostram e conferem o total do motor, não uma conta
+    do PDV. Sem desconto manual nada muda e nada é consultado. Com desconto:
+
+    - **Comanda que já é este carrinho** (``_session_prices_payload``): a última
+      gravação passou pelo motor com exatamente estas linhas e estes descontos, e
+      a resposta está na própria sessão. Nenhuma consulta a mais, e é o caso do
+      ``tabs/save/?review=1`` e do fechamento de comanda.
+    - **Fora disso** (venda sem comanda, carrinho diferente do gravado): a
+      mesma sonda descartável de ``_stamp_engine_prices``, agora com os
+      descontos manuais dentro.
+
+    A mercadoria que o motor cobra é a soma das linhas dele; o desconto de pedido
+    é o que o ``ManualDiscountModifier`` registrou; o de linha é o que sobra
+    entre o subtotal do payload e o que o motor cobra. Por construção,
+    ``subtotal - desconto + taxa`` é o total que o selo do fechamento confere.
+
+    Devolve a linha do motor por ÍNDICE do payload, para a revisão dizer à tela
+    o que cada linha cobra.
+    """
+    payload[_ENGINE_DISCOUNTS_KEY] = dict(_NO_MANUAL_DISCOUNT)
+    if not _payload_has_manual_discount(payload):
+        return {}
+    items = payload.get("items") or []
+    engine_by_index: dict[int, dict] = {}
+    if session is not None and _session_prices_payload(session, payload):
+        by_line_id = {str(line.get("line_id") or ""): line for line in (session.items or [])}
+        for index, item in enumerate(items):
+            if isinstance(item, dict) and not _is_delivery_fee_item(item):
+                line = by_line_id.get(str(item.get("line_id") or ""))
+                if line is not None:
+                    engine_by_index[index] = copy.deepcopy(line)
+        engine_items = session.items or []
+        engine_pricing = session.pricing or {}
+    else:
+        probe = copy.deepcopy(payload)
+        for index, item in enumerate(probe.get("items") or []):
+            if isinstance(item, dict):
+                item["line_id"] = f"{_PRICING_PROBE_LINE}{index}"
+        probed = _run_pricing_probe(
+            probe, channel=channel, config=config, operator_username=operator_username,
+            pricing_policy=getattr(session, "pricing_policy", "") or "",
+        )
+        if probed is None:
+            return {}
+        engine_items, engine_pricing = probed
+        by_line_id = {str(line.get("line_id") or ""): line for line in engine_items}
+        for index, item in enumerate(items):
+            line = by_line_id.get(f"{_PRICING_PROBE_LINE}{index}")
+            if isinstance(item, dict) and line is not None:
+                engine_by_index[index] = line
+    goods = [item for item in items if isinstance(item, dict) and not _is_delivery_fee_item(item)]
+    merchandise_q = sum(
+        _int_q(line.get("line_total_q"))
+        for line in engine_items
+        if isinstance(line, dict) and not _is_delivery_fee_item(line)
+    )
+    order_q = _int_q((engine_pricing.get("manual_discount") or {}).get("total_discount_q"))
+    line_q = _payload_subtotal_q({"items": goods}) - merchandise_q - order_q
+    payload[_ENGINE_DISCOUNTS_KEY] = {"line_q": line_q, "order_q": order_q}
+    # A taxa de entrega resolvida antes do carimbo mediu a mercadoria sem o
+    # desconto do motor (o frete grátis é por valor de compra): resolve de novo.
+    payload.pop(_DELIVERY_FEE_RESOLUTION_KEY, None)
+    return engine_by_index
+
+
+def _session_prices_payload(session, payload: dict) -> bool:
+    """A comanda gravada É este carrinho, nos campos que mudam o preço?
+
+    Mesmas linhas (identidade, produto, quantidade e desconto manual), o mesmo
+    desconto de pedido, o mesmo recebimento e o mesmo cliente. Qualquer
+    diferença manda a pergunta para a sonda: comparar a menos custaria uma
+    revisão errada; comparar a mais só custa uma sonda.
+    """
+
+    def _discount_key(raw) -> tuple | None:
+        discount = _normalize_line_discount(raw)
+        return (discount["type"], float(discount["value"])) if discount else None
+
+    session_lines = {}
+    for line in session.items or []:
+        if not isinstance(line, dict) or _is_delivery_fee_item(line):
             continue
-        try:
-            unit_price_q = int(item.get("unit_price_q", 0))
-        except (TypeError, ValueError):
+        meta = line.get("meta") or {}
+        session_lines[str(line.get("line_id") or "")] = (
+            str(line.get("sku") or ""),
+            Decimal(str(line.get("qty") or 0)),
+            _discount_key(meta.get("manual_discount")),
+        )
+    payload_lines = {}
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
-        qty = _line_qty(item)
-        # Sem etiqueta declarada, a linha não tem desconto automático a bater:
-        # etiqueta e preço cobrado são o mesmo número.
-        list_price_q = _int_q(item.get("list_price_q")) or unit_price_q
-        auto_per_unit = max(0, list_price_q - unit_price_q)
-        # ⚠️ A MESMA CONTA do kernel (``DiscountModifier._calc_manual``), e é por
-        # isso que ela é feita POR UNIDADE também no ``fixed``. Um centavo de
-        # diferença entre esta função e o kernel é troco a mais na mão do
-        # cliente com a gaveta contando outro número — foi o defeito do
-        # PDV-260826-V03 descrito acima.
-        if line_discount["type"] == "fixed":
-            manual_per_unit = min(int(round(line_discount["value"] * 100)), list_price_q)
-        else:
-            manual_per_unit = min(
-                int(round(list_price_q * line_discount["value"] / 100)),
-                list_price_q,
-            )
-        gain_per_unit = min(max(0, manual_per_unit - auto_per_unit), unit_price_q)
-        # Por unidade, e o total da linha pela conta do kernel: com quantidade
-        # fracionária (kg) o desconto é a diferença entre os dois totais
-        # arredondados, não ``ganho × qty`` — que dá fração de centavo.
-        line_qty = Decimal(max(0, qty))
-        total += monetary_mult(line_qty, unit_price_q) - monetary_mult(line_qty, unit_price_q - gain_per_unit)
-    return total
+        payload_lines[str(item.get("line_id") or "")] = (
+            str(item.get("sku") or ""),
+            Decimal(str(_line_qty(item))),
+            _discount_key(item.get("discount")),
+        )
+    if "" in payload_lines or payload_lines != session_lines:
+        return False
+    data = session.data or {}
+    session_order_q = _int_q((data.get("manual_discount") or {}).get("discount_q"))
+    if session_order_q != _int_q(_payload_manual_discount(payload).get("discount_q")):
+        return False
+    if str(data.get("fulfillment_type") or "") != _payload_fulfillment_type(payload):
+        return False
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    phone = str(payload.get("customer_phone") or "").strip()
+    ref = str(payload.get("customer_ref") or "").strip()
+    if phone and phone != str(customer.get("phone") or ""):
+        return False
+    if ref and ref != str(data.get("customer_ref") or ""):
+        return False
+    if not phone and not ref and data.get("customer_ref"):
+        return False
+    return True
 
 
 def _payload_manual_discount(payload: dict) -> dict:

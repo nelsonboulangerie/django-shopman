@@ -1027,22 +1027,23 @@ def _birthday_projection(customer) -> dict:
     is_today = (birthday.day, birthday.month) == (today.day, today.month)
     promo_label = ""
     if is_today:
-        # Só promete o que EXISTE configurado: promoção de aniversariante ativa
-        # no Core (aplicada sozinha no reprice). Sem promoção, o aviso é só o
-        # parabéns — nunca inventar desconto.
+        # Só promete o que o reprice vai APLICAR: a promoção de aniversariante
+        # pelo mesmo filtro do motor (``get_active_promotions``, o que o
+        # ``DiscountModifier`` lê): ativa, no canal do PDV e sem cupom. Filtrar à
+        # parte prometia a promoção da loja online e a de cupom, que o balcão não
+        # dá (A3-2). Sem promoção, o aviso é só o parabéns, nunca desconto.
         try:
-            from shopman.shop.models import Promotion
+            from shopman.shop.services.promotions import get_active_promotions
 
-            now = timezone.now()
-            promo = (
-                Promotion.objects.filter(
-                    is_active=True, birthday_only=True,
-                    valid_from__lte=now, valid_until__gte=now,
-                )
-                .order_by("name")
-                .first()
+            birthday_promotions = sorted(
+                (
+                    promotion
+                    for promotion in get_active_promotions(timezone.now(), channel_ref=POS_CHANNEL_REF)
+                    if promotion.birthday_only
+                ),
+                key=lambda promotion: promotion.name,
             )
-            promo_label = promo.name if promo else ""
+            promo_label = birthday_promotions[0].name if birthday_promotions else ""
         # ⚠️ O marcador fica NA LINHA do `except`, e o log logo abaixo dele: o
         # gate da meia-correção procura o marcador na linha/no corpo, e o
         # `test_exception_hygiene` do backstage exige o `logger.` dentro de
