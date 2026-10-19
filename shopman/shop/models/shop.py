@@ -292,6 +292,15 @@ class Shop(models.Model):
         "arredondamento", max_length=20, default="default", choices=RADIUS_CHOICES,
         help_text="Define o arredondamento dos cantos de botões, cards e inputs",
     )
+    # A paleta da marca do storefront, em canais sRGB 'R G B' por papel semântico:
+    # ``{"light": {"primary": "124 58 64", ...}, "dark": {...}}``. É dado da loja
+    # (o seed a grava; ``brand_tokens`` só a monta), nunca paleta escrita no produto.
+    brand_palette = models.JSONField(
+        "paleta da marca",
+        default=dict,
+        blank=True,
+        help_text="Cores do storefront por papel (canais 'R G B'), nos modos claro e escuro.",
+    )
 
     # ── Redes sociais ──
     social_links = models.JSONField(
@@ -693,6 +702,7 @@ class Shop(models.Model):
         from shopman.shop.brand_tokens import build_storefront_design_tokens
 
         return build_storefront_design_tokens(
+            palette=self.brand_palette,
             heading_font=self.heading_font or "Inter",
             body_font=self.body_font or "Inter",
             color_mode=self.color_mode or "light",

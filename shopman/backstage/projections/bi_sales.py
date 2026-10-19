@@ -341,13 +341,13 @@ def _kind_from_channel(channel) -> str:
     from django.conf import settings
 
     ref = channel.ref
-    if ref == getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv"):
+    if ref == settings.SHOPMAN_POS_CHANNEL_REF:
         return "counter"
     if ref == "ifood":
         return "marketplace"
     if ref == "whatsapp":
         return "whatsapp"
-    if ref == getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web"):
+    if ref == settings.SHOPMAN_STOREFRONT_CHANNEL_REF:
         return "web"
     return "other"
 

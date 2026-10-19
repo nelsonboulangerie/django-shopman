@@ -145,7 +145,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "DEFAULT_CODE_MESSAGE",
+            "CODE_MESSAGE_TEMPLATE",
+            "CODE_MESSAGE_WITHOUT_BRAND",
+            "_brand",
             "render_message",
             "to_digits",
             "ttl_minutes"
@@ -400,7 +402,7 @@
             "READ_VIAS",
             "RIDE_STATUSES",
             "TERMINAL_STATUSES",
-            "USER_AGENT",
+            "USER_AGENT_PRODUCT",
             "_ESTIMATE_ADDRESS_FIELDS",
             "_LABEL_TO_STATUS",
             "_READ_VIA_CACHE_KEY",
@@ -430,7 +432,8 @@
             "register_webhook",
             "snapshot_from_details",
             "snapshot_from_listing",
-            "tracking_links"
+            "tracking_links",
+            "user_agent"
           ]
         }
       ]
@@ -2322,18 +2325,6 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "_BRAND_DARK",
-            "_BRAND_DARK_ALIASES",
-            "_BRAND_LIGHT",
-            "_BRAND_LIGHT_ALIASES",
-            "_BRASS",
-            "_BURGUNDY",
-            "_CREAM",
-            "_FAUBOURG",
-            "_MOSS",
-            "_STATUS",
-            "_WHITE",
-            "_YELLOW",
             "_rgb_channels_to_hex",
             "build_storefront_design_tokens"
           ]
@@ -2452,7 +2443,6 @@
             "_oklab_to_oklch",
             "_oklch_to_oklab",
             "_srgb_to_linear",
-            "generate_design_tokens",
             "generate_neutral_scale",
             "generate_scale",
             "hex_to_oklch",
@@ -5097,27 +5087,6 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/management/commands/setup_commercial_groups.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command",
-            "GROUPS",
-            "ensure_commercial_groups"
           ]
         }
       ]
@@ -7787,6 +7756,7 @@
           "symbols": [
             "_client_ip_behind_bff",
             "_is_trusted_bff",
+            "_store_brand",
             "logger"
           ]
         }
@@ -13094,8 +13064,10 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "DeploymentDriftCheck",
+            "EMAIL_RE",
             "ExternalMonitoringContractCheck",
             "ProductionContractCheck",
+            "READINESS_PATH",
             "ROOT",
             "_run"
           ]

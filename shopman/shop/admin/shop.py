@@ -3232,8 +3232,8 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         from shopman.shop.models import Channel
 
         pairs = (
-            ("Loja online", getattr(dj_settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")),
-            ("PDV", getattr(dj_settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")),
+            ("Loja online", dj_settings.SHOPMAN_STOREFRONT_CHANNEL_REF),
+            ("PDV", dj_settings.SHOPMAN_POS_CHANNEL_REF),
         )
         rows = []
         for label, ref in pairs:

@@ -30,7 +30,7 @@
     "bootstrap": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["channels", "pipelines", "rule_configs", "pricing_policies", "templates", "rbac_personas", "units", "fiscal_profiles"],
+      "required": ["channels", "pipelines", "rule_configs", "pricing_policies", "templates", "rbac_personas", "units", "fiscal_profiles", "customer_groups"],
       "properties": {
         "channels": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
         "pipelines": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
@@ -39,7 +39,8 @@
         "templates": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
         "rbac_personas": {"type": "array", "items": {"$ref": "#/$defs/persona"}},
         "units": {"type": "array", "items": {"$ref": "#/$defs/unit"}},
-        "fiscal_profiles": {"type": "array", "items": {"$ref": "#/$defs/configItem"}}
+        "fiscal_profiles": {"type": "array", "items": {"$ref": "#/$defs/configItem"}},
+        "customer_groups": {"type": "array", "items": {"$ref": "#/$defs/configItem"}}
       }
     }
   },

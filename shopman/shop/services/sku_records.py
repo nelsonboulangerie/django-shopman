@@ -164,7 +164,7 @@ def remote_listing_refs() -> tuple[str, ...]:
     """Canais onde o cliente compra de longe — só com foto (regra do #1056)."""
     from django.conf import settings
 
-    return (getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web"), "whatsapp", "ifood")
+    return (settings.SHOPMAN_STOREFRONT_CHANNEL_REF, "whatsapp", "ifood")
 
 
 def sells_remotely(product) -> bool:

@@ -10,6 +10,15 @@ from django.test import override_settings
 
 from shopman.shop.adapters import otp_sms_comtele as comtele
 
+
+@pytest.fixture(autouse=True)
+def _marca_da_loja(monkeypatch):
+    """A marca do SMS vem da ``Shop``; aqui, sem banco, ela é fixada."""
+    from shopman.shop.adapters import _sms
+
+    monkeypatch.setattr(_sms, "_brand", lambda: "Loja Teste")
+
+
 _CFG = {
     "api_key": "chave-ficticia-de-teste-comtele",
     "route": "17",
@@ -87,6 +96,7 @@ def test_sends_with_x_api_key_header_and_json_body():
     assert body["route"] == "17"
     assert body["tag"] == "shopman-otp"
     assert "482913" in body["message"]
+    assert body["message"].startswith("Loja Teste: 482913 e o seu codigo de acesso.")
 
 
 @override_settings(SHOPMAN_SMS=_CFG)
@@ -213,3 +223,16 @@ def test_slow_accept_is_a_warning(caplog):
     record = next(r for r in caplog.records if getattr(r, "event", "") == "otp.sms.accepted")
     assert record.slow is True
     assert record.levelno == logging.WARNING
+
+
+@pytest.mark.django_db
+def test_a_marca_do_sms_e_a_da_loja_e_sem_loja_nao_ha_prefixo(monkeypatch):
+    """A marca não mora no código: é ``Shop.brand_name`` (ou o nome da loja)."""
+    from shopman.shop.adapters import _sms
+    from shopman.shop.models import Shop
+
+    monkeypatch.undo()
+    assert _sms.render_message({}, "123456").startswith("123456 e o seu codigo")
+
+    Shop.objects.create(name="Padaria do Bairro", brand_name="Bairro")
+    assert _sms.render_message({}, "123456").startswith("Bairro: 123456 e o seu codigo")

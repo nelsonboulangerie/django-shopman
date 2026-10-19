@@ -29,10 +29,10 @@ def test_setup_commercial_groups_installs_the_promised_defaults(db):
     assert alliance_discount.fulfillment_types == []
 
 
-def test_setup_commercial_groups_repairs_legacy_row_without_losing_metadata(db):
+def test_setup_commercial_groups_repairs_row_without_discount_and_keeps_metadata(db):
     PriceTier.objects.create(
         ref="staff",
-        name="Funcionarios",
+        name="Equipe",
         metadata={"custom": "keep", "discount_kind": "time"},
     )
 
@@ -44,6 +44,20 @@ def test_setup_commercial_groups_repairs_legacy_row_without_losing_metadata(db):
     assert tier.metadata["discount_kind"] == "time"
     assert tier.metadata["rounding"] == 50
     assert Promotion.objects.filter(ref="grupo-staff", value=30, is_active=True).exists()
+
+
+def test_instancia_sem_grupos_declarados_nao_ganha_os_da_nelson(db, settings):
+    """Os grupos são dado da Instância (descritor), não do produto (A7-1)."""
+    from pathlib import Path
+
+    settings.SHOPMAN_INSTANCE_DESCRIPTOR = str(
+        Path(__file__).resolve().parents[1] / "instances/counter-minimal.json"
+    )
+
+    call_command("setup_commercial_groups", verbosity=0)
+
+    assert not PriceTier.objects.exists()
+    assert not Promotion.objects.filter(ref__startswith="grupo-").exists()
 
 
 def test_setup_commercial_groups_never_reverts_operator_edits(db):

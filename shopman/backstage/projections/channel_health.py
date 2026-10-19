@@ -425,7 +425,7 @@ def build_channel_health(*, now: datetime | None = None) -> ChannelHealthBoardPr
     from shopman.shop.models import Channel
 
     now = now or timezone.now()
-    storefront_ref = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    storefront_ref = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
     channels: list[ChannelHealthProjection] = []
     for channel in Channel.objects.order_by("name", "ref"):
         if channel.commerce_policy == Channel.CommercePolicy.DISPLAY:

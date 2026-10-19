@@ -668,7 +668,7 @@ def _store_status(user, base: str, label: str, now: datetime, out: _Collected) -
     from shopman.shop.projections.channel_state import accepting_orders
     from shopman.shop.services.business_calendar import current_business_state, format_next_opening
 
-    channel_ref = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    channel_ref = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
     state = current_business_state(now=now)
     local_now = timezone.localtime(now)
     day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)

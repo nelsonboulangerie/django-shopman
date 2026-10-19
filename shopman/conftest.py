@@ -12,6 +12,29 @@ _install_postgres_lock_rule()
 
 
 @pytest.fixture(autouse=True)
+def _migration_graph_back_to_the_top(request):
+    """Teste de migração devolve o banco ao topo do grafo ao terminar.
+
+    Vários testes migram o banco para um ponto antigo e terminam lá (o "antes"
+    da migração que testam). O próximo teste do mesmo processo herdava um esquema
+    de antes de toda migração posterior, e quebrava com ``no such column`` no
+    primeiro campo novo. Só vale para módulos que usam o ``MigrationExecutor``.
+    """
+    yield
+    if "MigrationExecutor" not in vars(request.module):
+        return
+    if request.node.get_closest_marker("django_db") is None:
+        return
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    executor = MigrationExecutor(connection)
+    targets = executor.loader.graph.leaf_nodes()
+    if executor.migration_plan(targets):
+        executor.migrate(targets)
+
+
+@pytest.fixture(autouse=True)
 def _materialized_channels(request):
     """Materializa os canais que o teste declara com ``@pytest.mark.channels("web", ...)``.
 

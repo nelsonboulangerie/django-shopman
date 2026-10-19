@@ -25,8 +25,10 @@ from unittest import mock
 
 from django.conf import settings
 
+from config.brand_palette_nelson import NELSON_BRAND_PALETTE
+
 # Ref do canal da loja online — espelha a env do deploy (ver config/settings.py).
-STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+STOREFRONT_REF = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 NELSON_INSTANCE_DESCRIPTOR = Path(__file__).resolve().parents[2] / "instances/nelson.json"
 
 # Unidades que os canais remotos (loja online, WhatsApp, iFood) deixam de fora
@@ -1575,6 +1577,8 @@ class Command(BaseCommand):
             "heading_font": "Instrument Sans",
             "body_font": "Instrument Sans",
             "border_radius": "soft",
+            # A paleta da marca é dado da loja (``Shop.brand_palette``).
+            "brand_palette": NELSON_BRAND_PALETTE,
             "primary_color": "#7C3A40",
             "secondary_color": "#2C1810",
             "accent_color": "#8B4513",

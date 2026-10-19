@@ -128,7 +128,11 @@ def test_otp_sms_opt_in_sends_in_debug():
         calls.append(request.full_url)
         return _FakeResponse(json.dumps({"hasError": False}).encode("utf-8"))
 
-    with patch("shopman.shop.adapters.otp_sms_comtele.urlopen", side_effect=fake_urlopen):
+    with (
+        patch("shopman.shop.adapters.otp_sms_comtele.urlopen", side_effect=fake_urlopen),
+        # A marca do SMS vem da Shop; este teste não tem banco.
+        patch("shopman.shop.adapters._sms._brand", return_value="Loja Teste"),
+    ):
         sender = otp_sms_comtele.ComteleSMSSender()
         assert sender.send_code("+5543999990001", "123456", "sms") is True
     assert len(calls) == 1

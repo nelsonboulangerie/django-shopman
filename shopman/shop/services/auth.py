@@ -476,7 +476,16 @@ def passkey_registration_options(request, *, customer) -> dict:
         # O `user_name` aparece no seletor do sistema operacional ("Passkey para …"), então
         # telefone é melhor que ref interna: é o que a pessoa reconhece como sendo ela.
         user_name=(getattr(customer, "phone", "") or getattr(customer, "ref", "")),
+        rp_name=_store_brand(),
     )
+
+
+def _store_brand() -> str:
+    """A marca da loja, que o sistema mostra na passkey ("Passkey para …")."""
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    return ((shop.brand_name or shop.name) if shop else "").strip()
 
 
 def passkey_register(request, *, customer, credential: dict, label: str = ""):
