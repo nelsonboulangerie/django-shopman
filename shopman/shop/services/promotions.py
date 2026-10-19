@@ -102,7 +102,57 @@ def best_group_advantage(
         return _best_group_discount(refs, channel_ref=channel_ref, now=now)
     if kind == "price_list":
         return _best_group_listing(refs)
+    if kind == "free_shipping":
+        return _best_group_free_shipping(refs)
     return _best_typed_advantage(refs, kind)
+
+
+def customer_price_tier_refs(customer_ref: str) -> list[str]:
+    """Os grupos do cliente, por ref: UMA consulta, sem carregar o cliente."""
+    ref = str(customer_ref or "").strip()
+    if not ref:
+        return []
+    from shopman.guestman.models import PriceTier
+
+    return list(
+        PriceTier.objects.filter(customers__ref=ref).order_by("-priority", "name").values_list("ref", flat=True)
+    )
+
+
+def free_shipping_min_order_q(advantage: Any) -> int:
+    """O pedido mínimo do frete grátis do grupo, em centavos. ``0`` = sempre."""
+    config = getattr(advantage, "config", None) or {}
+    try:
+        return max(0, int(config.get("min_order_q") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _best_group_free_shipping(refs: list[str]) -> GroupAdvantage | None:
+    """O frete grátis que MAIS favorece o cliente: o de menor pedido mínimo.
+
+    Dois grupos com frete grátis não somam nada (a taxa só zera uma vez); o que
+    importa ao cliente é a partir de quanto ele já ganha. Empate no mínimo: a
+    prioridade da vantagem e depois a do grupo dizem qual grupo dá o nome.
+    """
+    from shopman.guestman.models import PriceTierAdvantage
+
+    advantages = list(
+        PriceTierAdvantage.objects.filter(
+            tier__ref__in=refs, kind=PriceTierAdvantage.Kind.FREE_SHIPPING, is_active=True
+        )
+        .select_related("tier")
+        .order_by("-priority", "-tier__priority", "id")
+    )
+    if not advantages:
+        return None
+    advantage = min(advantages, key=free_shipping_min_order_q)  # min é estável: a ordem desempata
+    return GroupAdvantage(
+        kind="free_shipping",
+        tier_ref=advantage.tier.ref,
+        label=advantage.tier.name or "",
+        value=advantage,
+    )
 
 
 def _best_group_discount(refs: list[str], *, channel_ref: str, now) -> GroupAdvantage | None:

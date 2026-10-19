@@ -964,8 +964,10 @@ export interface POSScheduleResponse {
  *  `promotion_name`; `threshold`: compras a partir de `threshold_q`.
  *  `base_fee_q` é a taxa sem a renúncia. */
 export interface POSDeliveryFeeWaiverProjection {
-  reason: "promotion" | "threshold";
+  reason: "promotion" | "threshold" | "group";
   promotion_name: string;
+  /** O grupo do cliente que dá o frete grátis (reason "group"). */
+  group_name?: string;
   threshold_q: number;
   base_fee_q: number;
   threshold_display?: string;
