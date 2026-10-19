@@ -573,7 +573,7 @@ def test_a_rota_entrega_os_bytes_e_carimba_a_propria_segunda_via(client, shop, g
     client.force_login(gestor)
     url = reverse("api-backstage-order-courier-ticket-escpos", args=[order.ref])
 
-    primeira = client.get(url)
+    primeira = client.post(url)
     assert primeira.status_code == 200
     assert primeira.json()["reprint"] is False
     assert primeira.json()["title"] == f"via-do-entregador:{order.ref}"
@@ -589,7 +589,7 @@ def test_a_rota_entrega_os_bytes_e_carimba_a_propria_segunda_via(client, shop, g
     assert order.data["courier_ticket_printed_at"]
     assert "ticket_printed_at" not in order.data
 
-    segunda = client.get(url)
+    segunda = client.post(url)
     assert segunda.json()["reprint"] is True
     assert "2a VIA" in base64.b64decode(segunda.json()["payload_b64"]).decode(ENCODING, "replace")
 
@@ -598,7 +598,7 @@ def test_a_rota_recusa_quem_nao_cuida_da_fila(client, shop, db):
     order = _pedido_da_casa("ORD-SEM-PERMISSAO")
     client.force_login(User.objects.create_user("balconista", password="x"))
 
-    resposta = client.get(reverse("api-backstage-order-courier-ticket-escpos", args=[order.ref]))
+    resposta = client.post(reverse("api-backstage-order-courier-ticket-escpos", args=[order.ref]))
 
     assert resposta.status_code in {403, 404}
 

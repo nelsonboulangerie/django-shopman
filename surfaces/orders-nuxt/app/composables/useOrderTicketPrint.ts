@@ -52,8 +52,10 @@ export function createOrderTicketPrinter(
     try {
       let job: OrderTicketResponse;
       try {
+        // POST: compor é emitir a via, e o servidor carimba a primeira.
         job = await $fetch<OrderTicketResponse>(
           `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/ticket-escpos/`,
+          { method: "POST" },
         );
       } catch (error) {
         useSonner.error(

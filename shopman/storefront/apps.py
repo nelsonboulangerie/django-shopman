@@ -29,6 +29,9 @@ class StorefrontConfig(AppConfig):
         registry.register_directive_handler(StockAlertDeliveryHandler())
         # "Medir agora" do placar das intenções (Admin): a medição roda no worker.
         registry.register_directive_handler(IntentPilotMeasureHandler())
+        from shopman.storefront.continuum import CatalogStructureRefreshHandler
+
+        registry.register_directive_handler(CatalogStructureRefreshHandler())
 
         # Stock-back alerts: react to Stockman Move arrivals to notify waiters.
         from django.db.models.signals import post_save
@@ -43,9 +46,10 @@ class StorefrontConfig(AppConfig):
             weak=False,
         )
 
-        # Continuum 0.2: só marca a read model pública como suja. A reconstrução
-        # continua usando ``build_catalog`` e acontece no próximo shadow/snapshot;
-        # falha do cache nunca muda a resposta canônica do menu.
+        # Continuum 0.2: a escrita no catálogo marca a read model pública como
+        # suja e põe a reconstrução na fila do worker (``build_catalog`` dentro
+        # do ``CatalogStructureRefreshHandler``). O GET do snapshot e o shadow do
+        # menu só leem; falha do cache nunca muda a resposta canônica do menu.
         from django.db.models.signals import m2m_changed, post_delete
         from shopman.offerman.models import (
             Collection,

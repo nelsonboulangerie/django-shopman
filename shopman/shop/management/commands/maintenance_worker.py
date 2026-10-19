@@ -7,6 +7,7 @@ manutenção num loop (default: a cada 5 minutos):
   cleanup_stale_sessions    — sessões abandonadas antigas (liberando os holds delas)
   sweep_orphan_holds        — holds indefinidos órfãos (sem sessão viva/data passada)
   cleanup_stale_planning    — quants planejados órfãos
+  refresh_catalog_structure — a cabeça do snapshot público do cardápio sara (Continuum)
   expire_stale_announcements    — announcement pendente sem aprovação a tempo caduca
   process_marketing_outbox   — recupera leases e publica intents já commitadas
   process_marketing_delivery — entrega os destinos aprovados ao provedor (lote por ciclo)
@@ -101,6 +102,9 @@ MAINTENANCE_COMMANDS = (
     # confirmados e guarda o resultado no Admin. Semanal e com gabarito mínimo —
     # quem segura a cadência é o próprio comando; ciclo vazio não custa nada.
     "run_alias_benchmark",
+    # A read model pública do cardápio (Continuum) se reconcilia com o catálogo:
+    # o GET do snapshot só lê, então a cabeça que ficou para trás sara aqui.
+    "refresh_catalog_structure",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
     # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é

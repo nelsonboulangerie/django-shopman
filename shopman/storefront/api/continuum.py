@@ -16,9 +16,10 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import (
     candidate_enabled,
     continuum_settings,
-    current_or_build_head,
     head_age_ms,
+    head_is_publishable,
     limits,
+    read_head,
     rendered_message,
     validate_message_limits,
 )
@@ -92,7 +93,17 @@ class CatalogStructureSnapshotView(View):
 
         with capture_catalog_timing() as timing:
             with catalog_stage("projection"):
-                head, head_status = current_or_build_head(channel_ref=STOREFRONT_CHANNEL_REF)
+                # GET só lê: quem monta a cabeça é o worker (directive na escrita
+                # do catálogo + reconciliação periódica). Cabeça suja continua
+                # publicável enquanto a reconstrução não chega; o Age diz a idade.
+                head = read_head(channel_ref=STOREFRONT_CHANNEL_REF)
+                if not head_is_publishable(head):
+                    response = _problem(503, "Snapshot em preparo. Tente de novo em instantes.")
+                    response["Retry-After"] = "5"
+                    response["Server-Timing"] = timing.server_timing()
+                    response._watchman_query_count = timing.query_count
+                    return response
+                head_status = "dirty" if head.dirty else "head"
                 body, cache_status = rendered_message(head)
                 try:
                     validate_message_limits(head.message, body)
