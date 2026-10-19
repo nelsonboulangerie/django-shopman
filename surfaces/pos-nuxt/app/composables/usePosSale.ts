@@ -285,6 +285,10 @@ export function usePosSale(deps: PosSaleDeps) {
   const cancelSaleReason = ref("");
   const cancelSaleDialogOpen = ref(false);
   const cancelSaleError = ref("");
+  // A tentativa de cancelamento em curso: o MESMO pedido com o MESMO motivo
+  // reusa o `client_request_id`, e o servidor devolve a resposta da primeira
+  // vez em vez de cancelar (ou reabrir) de novo quando a resposta se perdeu.
+  let cancelSaleAttempt: { orderRef: string; reason: string; id: string } | null = null;
   const lookupBusy = ref(false);
   const serverError = ref("");
   // Errors surface as a dismissible floating toast (UI Thing Sonner), not an
@@ -3856,16 +3860,21 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       const orderRef = result.value.orderRef;
       const reason = cancelSaleReason.value.trim();
+      if (!cancelSaleAttempt || cancelSaleAttempt.orderRef !== orderRef || cancelSaleAttempt.reason !== reason) {
+        cancelSaleAttempt = { orderRef, reason, id: newClientRequestId() };
+      }
       const response = await action.call<{ card_machine_refund?: { amount_display: string; method_label: string } | null }>(
         actionHref(actions.value, "cancel_recent_sale", "/api/v1/backstage/pos/sale/recent/cancel/"),
         {
           body: {
             order_ref: orderRef,
             manager_approval: aprovacao,
+            client_request_id: cancelSaleAttempt.id,
             ...(reason ? { reason } : {}),
           },
         },
       );
+      cancelSaleAttempt = null;
       result.value = null;
       cancelSaleReason.value = "";
       cancelSaleDialogOpen.value = false;

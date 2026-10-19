@@ -396,6 +396,7 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
       order_ref: "PED-7",
       reason: "cliente desistiu",
       manager_approval: { username: "gerente", pin: "4321" },
+      client_request_id: expect.stringMatching(/^pos:/),
     });
     // O banner fixo morreu: a confirmação é um toast padrão de sucesso.
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Venda cancelada", expect.anything());
@@ -427,6 +428,34 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     expect(h.sale.cancelSaleError.value).toBe("Revise o gerente e o PIN.");
     expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     expect(h.sale.result.value?.orderRef).toBe("PED-8"); // venda continua de pé
+    h.handles.dispose();
+  });
+
+  it("cancelRecentSale repetido depois de falha reusa o client_request_id da tentativa", async () => {
+    // A resposta perdida no 4G e o toque de novo: a MESMA tentativa (mesmo
+    // pedido, mesmo motivo) leva a MESMA chave, e o servidor devolve a resposta
+    // da primeira vez em vez de cancelar de novo. Motivo diferente é outra tentativa.
+    const calls: Array<Record<string, unknown>> = [];
+    const flakyCall = vi.fn().mockImplementation(async (path: string, opts?: { body?: Record<string, unknown> }) => {
+      if (String(path).includes("/recent/cancel/")) {
+        calls.push(opts!.body!);
+        if (calls.length < 3) throw { status: 0, data: null };
+      }
+      return {};
+    });
+    const h = makeSale({ projection: freeCartProjection(), actionCall: flakyCall });
+    h.sale.result.value = { orderRef: "PED-10", nextUrl: "", payment: null, receipt: {} as never, fiscalExpected: false, changeQ: 0 };
+    h.sale.cancelSaleDialogOpen.value = true;
+    h.sale.cancelSaleReason.value = "erro de lançamento";
+
+    await h.sale.cancelRecentSale("gerente", "4321");
+    await h.sale.cancelRecentSale("gerente", "4321");
+    h.sale.cancelSaleReason.value = "cliente desistiu";
+    await h.sale.cancelRecentSale("gerente", "4321");
+
+    expect(calls).toHaveLength(3);
+    expect(calls[1]!.client_request_id).toBe(calls[0]!.client_request_id);
+    expect(calls[2]!.client_request_id).not.toBe(calls[0]!.client_request_id);
     h.handles.dispose();
   });
 

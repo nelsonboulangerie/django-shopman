@@ -1629,6 +1629,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         cancelled = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-1",
                 "order_ref": order_ref,
                 "reason": "Erro de lançamento",
                 "manager_approval": {"username": "pos-manager", "pin": "4321"},
@@ -1654,6 +1655,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         cancelled = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-2",
                 "order_ref": order_ref,
                 "manager_approval": {"username": "pos-manager", "pin": "4321"},
             }),
@@ -1663,6 +1665,63 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(Order.objects.get(ref=order_ref).status, Order.Status.CANCELLED)
 
+    def test_api_cancel_recent_sale_replays_the_first_answer(self) -> None:
+        # Fallbacks perigosos, item 18: o toque repetido depois de uma resposta
+        # perdida devolve a resposta da primeira vez, em vez de executar de novo
+        # (a correção com motivo reabriria a venda duas vezes).
+        from unittest.mock import patch
+
+        self._create_manager()
+        order_ref = self._close_sale("pos-headless-cancel-replay")
+        body = json.dumps({
+            "client_request_id": "pos:cancel-replay",
+            "order_ref": order_ref,
+            "reason": "Erro de lançamento",
+            "manager_approval": {"username": "pos-manager", "pin": "4321"},
+        })
+        url = "/api/v1/backstage/pos/sale/recent/cancel/"
+
+        first = self.client.post(url, data=body, content_type="application/json")
+        with patch("shopman.shop.services.pos.reopen_recent_order_for_correction") as reopen:
+            second = self.client.post(url, data=body, content_type="application/json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json(), first.json())
+        reopen.assert_not_called()
+
+    def test_api_cancel_recent_sale_requires_client_request_id(self) -> None:
+        self._create_manager()
+        order_ref = self._close_sale("pos-headless-cancel-no-key")
+        response = self.client.post(
+            "/api/v1/backstage/pos/sale/recent/cancel/",
+            json.dumps({
+                "order_ref": order_ref,
+                "manager_approval": {"username": "pos-manager", "pin": "4321"},
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "client_request_id_required")
+        self.assertNotEqual(Order.objects.get(ref=order_ref).status, Order.Status.CANCELLED)
+
+    def test_api_cancel_recent_sale_rejection_does_not_burn_the_key(self) -> None:
+        # PIN errado não queima a tentativa: o mesmo id com o PIN certo executa.
+        self._create_manager(pin="4321")
+        order_ref = self._close_sale("pos-headless-cancel-retry")
+        url = "/api/v1/backstage/pos/sale/recent/cancel/"
+
+        def _post(pin):
+            return self.client.post(url, data=json.dumps({
+                "client_request_id": "pos:cancel-retry",
+                "order_ref": order_ref,
+                "manager_approval": {"username": "pos-manager", "pin": pin},
+            }), content_type="application/json")
+
+        self.assertEqual(_post("0000").status_code, 422)
+        self.assertEqual(_post("4321").status_code, 200)
+        self.assertEqual(Order.objects.get(ref=order_ref).status, Order.Status.CANCELLED)
+
     def test_api_cancel_recent_sale_requires_manager_approval(self) -> None:
         # Cancelar venda fechada é exceção auditada: sem o desafio gerencial o
         # endpoint recusa ANTES de qualquer efeito, no dialeto de erro do POS.
@@ -1670,7 +1729,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         response = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
-            data=json.dumps({"order_ref": order_ref}),
+            data=json.dumps({
+                "client_request_id": "pos:cancel-3", "order_ref": order_ref}),
             content_type="application/json",
         )
 
@@ -1685,6 +1745,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         response = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-4",
                 "order_ref": order_ref,
                 "manager_approval": {"username": "pos-manager", "pin": "0000"},
             }),
@@ -1740,6 +1801,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         response = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-5",
                 "order_ref": "NOPE-404",
                 "manager_approval": {"username": "pos-manager", "pin": "4321"},
             }),

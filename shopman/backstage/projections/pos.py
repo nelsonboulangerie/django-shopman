@@ -1429,11 +1429,11 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/sale/recent/cancel/",
             payload_schema={
-                "required": ["order_ref", "manager_approval"],
+                "required": ["order_ref", "manager_approval", "client_request_id"],
                 "optional": ["reason"],
             },
             confirmation={"style": "destructive"},
-            idempotency="none",
+            idempotency="client_request_id",
         ),
         Action(
             ref="emit_fiscal",

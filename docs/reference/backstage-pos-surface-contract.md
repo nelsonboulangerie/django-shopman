@@ -136,7 +136,7 @@ Expected action refs:
 | `clear_tab` | mutation | none | destructive | Orderman session service |
 | `review_sale` | mutation | none | no | POS intent/service |
 | `close_sale` | mutation | required | submit confirmation by UX | POS service + Orderman |
-| `cancel_recent_sale` | mutation | none | destructive | cancellation service |
+| `cancel_recent_sale` | mutation | client_request_id | destructive | cancellation service |
 | `open_cash_shift` | mutation | none | no | `cashman.services.open_shift` |
 | `close_cash_shift` | mutation | none | destructive | `cashman.services.close_shift` |
 | `cash_movement` | mutation | none | no | `cashman.services.record` (`cash_out`/`cash_in`) |
