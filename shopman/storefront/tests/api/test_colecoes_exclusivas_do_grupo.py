@@ -15,7 +15,7 @@ from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from shopman.guestman.models import Customer, PriceTier, PriceTierAdvantage
-from shopman.offerman.models import Collection, CollectionItem, ListingItem, Listing, Product
+from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 
 from shopman.storefront.tests.api.test_account_summary import _login_as_customer
 from shopman.storefront.tests.web.test_catalog_nplus1_measure import _seed_catalog
