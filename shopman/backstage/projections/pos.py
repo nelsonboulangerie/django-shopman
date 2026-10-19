@@ -1027,19 +1027,23 @@ def _birthday_projection(customer) -> dict:
     is_today = (birthday.day, birthday.month) == (today.day, today.month)
     promo_label = ""
     if is_today:
-        # Só promete o que o reprice vai APLICAR: a promoção de aniversariante
-        # pelo mesmo filtro do motor (``get_active_promotions``, o que o
-        # ``DiscountModifier`` lê): ativa, no canal do PDV e sem cupom. Filtrar à
-        # parte prometia a promoção da loja online e a de cupom, que o balcão não
-        # dá (A3-2). Sem promoção, o aviso é só o parabéns, nunca desconto.
+        # Só promete o que o reprice vai APLICAR, perguntado a quem decide (A3-2):
+        # as promoções que o motor lê (``get_active_promotions``: ativas, no canal
+        # do PDV, sem cupom) e, delas, a que o ANIVERSÁRIO destrava pela política
+        # (``promotion_matches``: vale para o aniversariante e não vale para quem
+        # não faz anos). Filtrar à parte prometia a promoção da loja online e a de
+        # cupom, que o balcão não dá. Sem promoção, o aviso é só o parabéns.
         try:
+            from shopman.shop.policies.promotion import PromotionContext, Shopper, promotion_matches
             from shopman.shop.services.promotions import get_active_promotions
 
+            aniversariante = PromotionContext(shopper=Shopper(is_birthday=True))
+            qualquer_um = PromotionContext()
             birthday_promotions = sorted(
                 (
                     promotion
                     for promotion in get_active_promotions(timezone.now(), channel_ref=POS_CHANNEL_REF)
-                    if promotion.birthday_only
+                    if promotion_matches(promotion, aniversariante) and not promotion_matches(promotion, qualquer_um)
                 ),
                 key=lambda promotion: promotion.name,
             )
