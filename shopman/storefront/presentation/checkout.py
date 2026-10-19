@@ -22,7 +22,6 @@ from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections import checkout as checkout_projection
 from shopman.shop.projections import customer_context
 from shopman.shop.projections.channel_state import ChannelCapabilities, channel_capabilities
-from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.delivery_fiscal import FROM_DOCUMENT
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import (
@@ -649,46 +648,7 @@ def _shop_config() -> tuple[int, list, str]:
     return 30, [], ""
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Validation message builders — render the checkout DATA projections
-# (shop.projections.checkout) as the dicts the form/JS consume.
-# ──────────────────────────────────────────────────────────────────────
-
-
-def present_stock_errors(shortfalls) -> list[dict]:
-    """Render stock-shortfall data as the error dicts the checkout shows."""
-    if not shortfalls:
-        return []
-    copy = build_copy("CHECKOUT")
-    errors = []
-    for sf in shortfalls:
-        if sf.available_qty > 0:
-            unit = _stock_unit_label(int(sf.available_qty))
-            message = copy.message(
-                "CHECKOUT_STOCK_LIMITED",
-                "{name}: temos {qty} {unit} agora.",
-            ).format(name=sf.name, qty=sf.available_qty, unit=unit)
-        else:
-            message = copy.message(
-                "CHECKOUT_STOCK_SOLD_OUT",
-                "{name} está esgotado no momento.",
-            ).format(name=sf.name)
-        errors.append({
-            "line_id": sf.line_id,
-            "sku": sf.sku,
-            "requested_qty": sf.requested_qty,
-            "available_qty": sf.available_qty,
-            "message": message,
-        })
-    return errors
-
-
-def _stock_unit_label(qty: int) -> str:
-    return "unidade disponível" if qty == 1 else "unidades disponíveis"
-
-
 __all__ = [
     "CheckoutProjection",
     "build_checkout",
-    "present_stock_errors",
 ]

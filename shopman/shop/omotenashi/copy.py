@@ -181,13 +181,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CHECKOUT_CONFIRM_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar pedido")},
     },
-    # ``{name}``, ``{qty}`` and ``{unit}`` interpolated; ``{qty}`` is the available count.
-    "CHECKOUT_STOCK_LIMITED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="{name}: temos {qty} {unit} agora.")},
-    },
-    "CHECKOUT_STOCK_SOLD_OUT": {
-        WILDCARD: {WILDCARD: CopyEntry(message="{name} está esgotado no momento.")},
-    },
 
     # ── Cart microcopy ────────────────────────────────────────────
     # Discount-line labels for the rule-driven pricing modifiers. Generic by

@@ -1,14 +1,13 @@
 """Checkout context — read-side facades for the checkout flow.
 
-Clean read facades (policy/data, no presentation): customer name lookup,
-saved-address resolution, channel payment methods, preorder config, session
-held qty and loyalty balance. The stock decision is not here: it is
+Clean read facades (policy/data, no presentation): channel payment methods,
+preorder config, session held qty and loyalty balance. The stock decision is not here: it is
 Stockman's, read through ``catalog_context.session_line_promise``. Lives in the
 orchestrator read-side (``shop/projections/``).
 
-The repricing and stock-shortfall read-models (which embedded ``format_money``
-and copy) drained to ``shop/projections/checkout.py`` (data) +
-``storefront/presentation/checkout.py`` (display).
+The checkout read-models (dates, remembered defaults) live in
+``shop/projections/checkout.py`` (data) + ``storefront/presentation/checkout.py``
+(display).
 """
 
 from __future__ import annotations
@@ -18,35 +17,6 @@ from datetime import date
 from decimal import Decimal
 
 logger = logging.getLogger(__name__)
-
-
-def customer_name_by_phone(phone: str) -> str:
-    from shopman.guestman.services import customer as customer_service
-
-    customer = customer_service.get_by_phone(phone)
-    if customer and customer.first_name:
-        return customer.name
-    return ""
-
-
-def saved_address_text(*, customer_uuid, address_id_raw: str) -> str:
-    """Resolve a customer saved address to the flat checkout address string."""
-    try:
-        from shopman.guestman.services import address as address_service
-        from shopman.guestman.services import customer as customer_service
-
-        customer_obj = customer_service.get_by_uuid(customer_uuid)
-        if not customer_obj:
-            return ""
-        addr = address_service.get_address(customer_obj.ref, int(address_id_raw))
-        if not addr:
-            return ""
-        parts = [addr.formatted_address]
-        if addr.complement:
-            parts.append(f"- {addr.complement}")
-        return " ".join(parts)
-    except (ValueError, Exception):
-        return ""
 
 
 def payment_methods(channel_ref: str) -> list[str]:
