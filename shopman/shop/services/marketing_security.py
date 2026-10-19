@@ -719,6 +719,17 @@ def require_external_effects_enabled() -> None:
         )
 
 
+def read_safety_state() -> MarketingSafetyState:
+    """O estado de segurança como está, sem gravar: a leitura (GET) usa esta.
+
+    Antes do primeiro comando a linha ainda não existe; o que se devolve então é
+    o estado de nascença (não congelado, versão e geração 1), sem salvar. A linha
+    nasce no primeiro comando, que passa por ``safety_state(for_update=True)``.
+    """
+    state = MarketingSafetyState.objects.filter(scope="default").first()
+    return state if state is not None else MarketingSafetyState(scope="default")
+
+
 def safety_state(*, for_update: bool = False) -> MarketingSafetyState:
     query = MarketingSafetyState.objects
     if for_update:
