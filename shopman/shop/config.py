@@ -52,12 +52,7 @@ def quality_grade_refs_for_channel(
     """
     from django.conf import settings
 
-    local_counter_refs = {
-        "pdv",
-        "pos",
-        str(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv") or "pdv"),
-    }
-    if sells_nonconforming and channel_ref in local_counter_refs:
+    if sells_nonconforming and channel_ref == str(settings.SHOPMAN_POS_CHANNEL_REF):
         return None
     return QUALITY_OK_GRADE_REFS
 

@@ -56,7 +56,7 @@ DigitalOcean ou do Sentry.
 | [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | config | Operação | Cria/ativa o canal de venda `whatsapp` do concierge no banco vivo, sem reseed, e liga o espelho da vitrine na loja online |
 | [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
 | [`migration_safety`](#migration_safety) | shop | Release | Recusa o deploy com migração destrutiva pendente e nenhum ponto de restauração declarado (roda antes do `migrate` no release) |
-| [`setup_commercial_groups`](#setup_commercial_groups) | shop | Release | Instala os grupos comerciais Equipe e Aliança Francesa que ainda faltarem no banco vivo, sem sobrescrever edições do gestor |
+| [`setup_commercial_groups`](#setup_commercial_groups) | config | Release | Instala os grupos comerciais que o descritor da Instância declara e ainda faltam no banco vivo, sem sobrescrever edições do gestor |
 | [`issue_menuboard_player_credential`](#issue_menuboard_player_credential) | shop | Operação | Emite credenciais escopadas e o JSON do player Raspberry Pi dos menuboards |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
@@ -121,10 +121,12 @@ DigitalOcean ou do Sentry.
 
 ### setup_commercial_groups
 
-Cria, somente quando ainda faltarem no banco vivo, os grupos Equipe (30% na
-retirada) e Aliança Francesa (15%). O `setup_groups` chama este comando no hook
-de release já existente. Depois da primeira criação, edições e pausas feitas no
-Gestor são preservadas nos deploys seguintes.
+Cria, somente quando ainda faltarem no banco vivo, os grupos comerciais que o
+descritor da Instância declara em `bootstrap.customer_groups` (na Nelson: Equipe,
+30% na retirada, e Aliança Francesa, 15%). Instância que não declara grupo não
+ganha grupo. O `setup_groups` chama este comando no hook de release já existente.
+Depois da primeira criação, edições e pausas feitas no Gestor são preservadas nos
+deploys seguintes.
 
 ```bash
 python manage.py setup_commercial_groups

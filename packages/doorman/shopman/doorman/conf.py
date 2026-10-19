@@ -104,12 +104,14 @@ class DoormanSettings:
     # Passkey (WebAuthn)
     # `PASSKEY_RP_ID` é o DOMÍNIO que a credencial reconhece, e é o que torna passkey imune a
     # phishing: o sistema operacional só assina para ele. Deixe vazio em dev (o host da
-    # requisição vale); em produção, aponte para o domínio da loja (`nelsonboulangerie.com.br`
-    # — sem esquema, sem porta). Subdomínio herda: uma credencial de `nelsonboulangerie.com.br`
-    # vale em `www.nelsonboulangerie.com.br`, mas não o contrário.
+    # requisição vale); em produção, aponte para o domínio da loja (`loja.com.br`, sem
+    # esquema, sem porta). Subdomínio herda: uma credencial de `loja.com.br` vale em
+    # `www.loja.com.br`, mas não o contrário.
     PASSKEY_ENABLED: bool = True
     PASSKEY_RP_ID: str = ""
-    PASSKEY_RP_NAME: str = "Nelson Boulangerie"
+    #: O nome que o sistema mostra na passkey. O kernel não conhece loja nenhuma: quem
+    #: chama ``registration_options`` informa a marca; vazio cai no domínio.
+    PASSKEY_RP_NAME: str = ""
     #: Minutos que o desafio vale. Curto de propósito: é um handshake, não uma sessão.
     PASSKEY_CHALLENGE_TTL_MINUTES: int = 5
 

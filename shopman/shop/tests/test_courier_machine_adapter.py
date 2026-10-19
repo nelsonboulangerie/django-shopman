@@ -67,7 +67,7 @@ def test_estimate_returns_centavos_and_metrics():
     assert est.km == 4.05
     kwargs = mock_request.call_args.kwargs
     assert kwargs["auth"] == ("user-1", "pass-1")
-    assert kwargs["headers"] == {"api-key": "key-1", "User-Agent": courier_machine.USER_AGENT}
+    assert kwargs["headers"] == {"api-key": "key-1", "User-Agent": courier_machine.user_agent()}
     assert kwargs["params"]["lat_partida"] == "-23.30"
     assert kwargs["params"]["lng_desejado"] == "-51.17"
 
@@ -377,14 +377,21 @@ def test_each_call_hits_the_documented_v1_path(call, args, kwargs, method, url, 
     assert (called_method, called_url) == (method, f"{PRODUCTION_BASE}{url}")
     assert sent["params"] == query
     assert sent["json"] == body
-    assert sent["headers"] == {"api-key": "k", "User-Agent": courier_machine.USER_AGENT}
+    assert sent["headers"] == {"api-key": "k", "User-Agent": courier_machine.user_agent()}
     assert sent["auth"] == ("u", "p")
 
 
 def test_user_agent_is_never_the_requests_default():
     """A borda da Machine devolve 403 em HTML para `python-requests/x.y` (01/10/2026)."""
-    assert not courier_machine.USER_AGENT.lower().startswith("python-requests")
-    assert courier_machine.USER_AGENT.strip()
+    assert not courier_machine.user_agent().lower().startswith("python-requests")
+    assert courier_machine.user_agent().strip()
+
+
+def test_user_agent_points_to_this_store_not_to_a_written_domain(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example"
+    assert courier_machine.user_agent() == "Shopman/1.0 (+https://loja.example)"
+    settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+    assert courier_machine.user_agent() == "Shopman/1.0"
 
 
 # ── leitura da corrida (read_ride) ──────────────────────────────────

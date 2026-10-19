@@ -207,14 +207,47 @@ def test_replay_with_original_cookie_and_read_recovery(client):
     assert first.status_code == 201, first.content
     browser = Client()
     browser.cookies["sessionid"] = original_cookie
-    read = browser.get("/api/v1/checkout/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
+    read = browser.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
     assert read.json()["order_ref"] == first.json()["order_ref"]
     repeated = browser.post("/api/v1/checkout/", payload, content_type="application/json")
     assert repeated.status_code == 201
     assert repeated.json()["order_ref"] == first.json()["order_ref"]
     stranger = Client()
-    assert stranger.get("/api/v1/checkout/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 204
+    assert stranger.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 204
     assert Order.objects.count() == 1
+
+
+def test_checkout_recovery_is_a_command_and_get_has_no_effect(client):
+    """Recuperar grava (acesso ao pedido na sessão): só por POST; o GET antigo morreu."""
+    from shopman.shop.services.customer_orders import ORDER_ACCESS_SESSION_KEY
+
+    payload = _checkout_payload(client)
+    first = client.post("/api/v1/checkout/", payload, content_type="application/json")
+    assert first.status_code == 201, first.content
+    order_ref = first.json()["order_ref"]
+    session = client.session
+    session[ORDER_ACCESS_SESSION_KEY] = []
+    session.save()
+
+    assert client.get("/api/v1/checkout/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 405
+    assert client.get("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 405
+    assert client.session.get(ORDER_ACCESS_SESSION_KEY) == []
+
+    recovered = client.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
+    assert recovered.status_code == 200
+    assert recovered.json()["order_ref"] == order_ref
+    assert recovered.json()["next_url"] == f"/pedido/{order_ref}"
+    assert client.session.get(ORDER_ACCESS_SESSION_KEY) == [order_ref]
+    assert Order.objects.count() == 1
+
+
+def test_checkout_recovery_requires_csrf_for_signed_in_customer():
+    from django.test import Client
+
+    browser = Client(enforce_csrf_checks=True)
+    authenticate_checkout(browser)
+    refused = browser.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY="any-attempt")
+    assert refused.status_code == 403
 
 
 def test_reused_key_with_different_payload_is_conflict(client):

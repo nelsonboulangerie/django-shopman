@@ -136,7 +136,6 @@ def test_temporal_offer_parses_and_evaluates_an_overnight_window(monkeypatch):
     monkeypatch.setattr(modifiers.timezone, "localtime", lambda value: value)
     now = datetime(2026, 10, 17, 23, 30, tzinfo=UTC)
 
-    assert modifiers._parse_time("invalid", "17:30") == time(17, 30)
     assert modifiers.in_time_window(time(23), time(1), time(23, 30)) is True
     assert modifiers.in_time_window(time(23), time(1), time(12)) is False
 
@@ -149,6 +148,30 @@ def test_temporal_offer_parses_and_evaluates_an_overnight_window(monkeypatch):
     assert offer.discount_percent == 20
     assert offer.label == "Happy Hour"
     assert offer.seen_at == now
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"start": "17:30", "end": "18:00"},
+        {"discount_percent": 25, "start": "invalid", "end": "18:00"},
+    ],
+)
+def test_temporal_offer_without_complete_params_fails_closed(monkeypatch, params):
+    """Sem janela e percentual no ``RuleConfig.params`` não há desconto a inventar (A7-2)."""
+    from unittest.mock import MagicMock
+
+    from shopman.shop import modifiers
+    from shopman.shop.rules import engine
+
+    monkeypatch.setattr(engine, "get_channel_rule_params", lambda rule, channel: params)
+    logger = MagicMock()
+    monkeypatch.setattr(modifiers, "logger", logger)
+
+    assert modifiers.time_window_offer("pdv") is None
+    logger.error.assert_called_once()
+    assert "happy_hour" in logger.error.call_args.args[0]
 
 
 @pytest.mark.parametrize(

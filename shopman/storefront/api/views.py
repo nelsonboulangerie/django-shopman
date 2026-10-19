@@ -103,26 +103,6 @@ class CheckoutView(APIView):
             429: DetailSerializer,
         },
     )
-    def get(self, request):
-        from shopman.shop.services import remote_mutations
-        key = remote_mutations.idempotency_key_from_request(request, fallback="")
-        if not key and not _cart_data(request).is_empty:
-            return Response(status=204)
-        principal = str(getattr(getattr(request, "customer", None), "subject_id", "") or "")
-        response = checkout_service.recover_checkout_response(browser_session=request.session.session_key or "", principal=principal, key=key)
-        if response is None and key:
-            recovered = checkout_service.recover_committed_checkout(
-                session_key=str(request.session.get("cart_session_key") or ""),
-                channel_ref=CHANNEL_REF,
-                idempotency_key=key,
-            )
-            if recovered is not None:
-                response = self._success_data(recovered)
-        if response is None:
-            return Response(status=204)
-        order_service.grant_order_access(request, response["order_ref"])
-        return Response(response)
-
     def post(self, request):
         from shopman.shop.services import remote_mutations
         from shopman.storefront.api.surface import _session_scope
@@ -604,6 +584,49 @@ class CheckoutView(APIView):
             status=status.HTTP_429_TOO_MANY_REQUESTS,
             headers={"Retry-After": str(CHECKOUT_RATE_LIMIT_RETRY_SECONDS)},
         )
+
+
+class CheckoutRecoverView(APIView):
+    """
+    POST /api/v1/checkout/recover/
+
+    Devolve o pedido que esta tentativa já confirmou (resposta perdida, aba
+    recarregada). É POST porque recuperar grava: dá ao navegador o acesso ao
+    pedido e refaz os efeitos pós-commit que ficaram para trás. Sem pedido
+    confirmado, 204.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(
+        tags=["checkout"],
+        summary="Recover an order this checkout attempt already committed",
+        request=None,
+        responses={200: CheckoutResponseSerializer, 204: None},
+    )
+    def post(self, request):
+        from shopman.shop.services import remote_mutations
+
+        key = remote_mutations.idempotency_key_from_request(request, fallback="")
+        if not key and not _cart_data(request).is_empty:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        principal = str(getattr(getattr(request, "customer", None), "subject_id", "") or "")
+        response = checkout_service.recover_checkout_response(
+            browser_session=request.session.session_key or "", principal=principal, key=key
+        )
+        if response is None and key:
+            recovered = checkout_service.recover_committed_checkout(
+                session_key=str(request.session.get("cart_session_key") or ""),
+                channel_ref=CHANNEL_REF,
+                idempotency_key=key,
+            )
+            if recovered is not None:
+                response = CheckoutView._success_data(recovered)
+        if response is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        order_service.grant_order_access(request, response["order_ref"])
+        return Response(response)
 
 
 def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:

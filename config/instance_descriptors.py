@@ -220,6 +220,33 @@ def _project_templates() -> list[dict]:
     return projected
 
 
+def _project_customer_groups() -> list[dict]:
+    """Grupos comerciais com a promoção ``grupo-<ref>`` que lhes dá o desconto."""
+    from shopman.guestman.models import PriceTier
+
+    from shopman.shop.models import Promotion
+
+    promotions = {
+        promotion.ref: promotion
+        for promotion in Promotion.objects.filter(ref__startswith="grupo-")
+    }
+    projected = []
+    for tier in PriceTier.objects.order_by("ref"):
+        promotion = promotions.get(f"grupo-{tier.ref}")
+        if promotion is None:
+            continue
+        metadata = tier.metadata or {}
+        projected.append(_config_item(tier.ref, config={
+            "name": tier.name,
+            "discount_kind": metadata.get("discount_kind"),
+            "rounding": metadata.get("rounding"),
+            "savings_message": metadata.get("savings_message"),
+            "discount_percent": promotion.value,
+            "fulfillment_types": promotion.fulfillment_types,
+        }))
+    return projected
+
+
 def _project_raw(template: dict) -> dict:
     """O banco no formato do descritor, sem filtro. Uso interno do apply."""
     from shopman.shop.models import Channel, RuleConfig
@@ -261,6 +288,7 @@ def _project_raw(template: dict) -> dict:
         )
         for rule in RuleConfig.objects.prefetch_related("channels").order_by("ref")
     ]
+    descriptor["bootstrap"]["customer_groups"] = _project_customer_groups()
     descriptor["bootstrap"]["rbac_personas"] = [
         {
             "ref": slugify(group.name),
@@ -598,6 +626,20 @@ def _last_applied(instance_ref: str):
     ).first()
 
 
+def _plan_customer_groups(items: list[dict], planner) -> None:
+    from config.management.commands.setup_commercial_groups import promotion_ref
+    from shopman.shop.models import Promotion
+
+    existing = set(
+        Promotion.objects.filter(ref__in=[promotion_ref(item["ref"]) for item in items]).values_list(
+            "ref", flat=True
+        )
+    )
+    for item in items:
+        if promotion_ref(item["ref"]) not in existing:
+            planner._record("create", ["bootstrap", "customer_groups", item["ref"]], declared=item)
+
+
 def plan_apply(descriptor: dict, *, on_drift: str = "refuse") -> dict:
     """O que o apply faria: alvo efetivo + lista de mudanças. Não escreve nada."""
     if on_drift not in DRIFT_POLICIES:
@@ -638,6 +680,10 @@ def plan_apply(descriptor: dict, *, on_drift: str = "refuse") -> dict:
             target_bootstrap[section] = _unkeyed_templates(merged)
         else:
             target_bootstrap[section] = [{"ref": ref, **item} for ref, item in merged.items()]
+
+    # Grupo comercial é seção de criar-se-faltar: o apply nunca o compara nem o
+    # reescreve (depois de criado, o cadastro é do gestor); só relata o que cria.
+    _plan_customer_groups(descriptor["bootstrap"].get("customer_groups", []), planner)
 
     target = {**descriptor, "instance": target_instance, "bootstrap": target_bootstrap}
     return {
@@ -829,6 +875,13 @@ def _summary(changes: list[dict]) -> dict:
 WRITING_ACTIONS = frozenset({"create", "add", "update", "remove", "overwritten"})
 
 
+def _apply_customer_groups(items: list[dict]) -> None:
+    """Cria só o grupo ausente: depois de criado, o cadastro é do gestor."""
+    from config.management.commands.setup_commercial_groups import ensure_commercial_groups
+
+    ensure_commercial_groups(items)
+
+
 @transaction.atomic
 def apply_to_database(
     descriptor: dict,
@@ -895,6 +948,7 @@ def apply_to_database(
     _apply_rules(target["bootstrap"]["rule_configs"])
     _apply_personas(target["bootstrap"]["rbac_personas"])
     _apply_templates(target["bootstrap"]["templates"])
+    _apply_customer_groups(target["bootstrap"]["customer_groups"])
 
     wrote = any(change["action"] in WRITING_ACTIONS for change in changes)
     if wrote or plan["base_sha256"] != sha:

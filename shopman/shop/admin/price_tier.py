@@ -59,7 +59,7 @@ DISCOUNT_TYPE_CHOICES = [
 
 
 def _pos_channel_ref() -> str:
-    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+    return settings.SHOPMAN_POS_CHANNEL_REF
 
 
 def _group_promotion(tier_ref: str) -> Promotion | None:

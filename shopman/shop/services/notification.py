@@ -981,7 +981,7 @@ FISCAL_NOTE_MESSAGE_KEY = "fiscal_note_message"
 
 
 def _is_storefront_order(order) -> bool:
-    storefront_channel = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    storefront_channel = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
     return (order.channel_ref or "") == storefront_channel
 
 

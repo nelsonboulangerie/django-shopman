@@ -160,7 +160,7 @@ def test_a_low_baseline_cannot_dictate_the_price(client):
     assert not Order.objects.exists(), "nenhum pedido pode nascer de uma baseline forjada"
 
 
-def test_inner_commit_receipt_recovers_identical_get_and_post_response(client):
+def test_inner_commit_receipt_recovers_identical_recover_and_post_response(client):
     """A queda após o seal não transforma pedido confirmado em sacola vazia."""
     from django.core.cache import cache
     from shopman.orderman.models import IdempotencyKey, Order
@@ -190,12 +190,12 @@ def test_inner_commit_receipt_recovers_identical_get_and_post_response(client):
     browser["cart_session_key"] = cart_session_key
     browser.save()
 
-    recovered_get = client.get(
-        "/api/v1/checkout/",
+    recovered_by_command = client.post(
+        "/api/v1/checkout/recover/",
         HTTP_IDEMPOTENCY_KEY=mutation_key,
     )
-    assert recovered_get.status_code == 200
-    assert recovered_get.json() == expected
+    assert recovered_by_command.status_code == 200
+    assert recovered_by_command.json() == expected
 
     recovered_post = client.post(
         "/api/v1/checkout/",

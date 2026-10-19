@@ -110,9 +110,6 @@ GET_WRITE_FOUND_BY_TRANSITIVE_GATE = {
     # Continuum: a leitura materializa a cabeça do snapshot do catálogo.
     ("shopman/storefront/api/continuum.py", "current_or_build_head"): 1,
     ("shopman/storefront/api/surface.py", "compare_shadow"): 1,
-    # Recuperação do checkout por GET: concede acesso na sessão e refaz efeitos pós-commit.
-    ("shopman/storefront/api/views.py", "order_service.grant_order_access"): 1,
-    ("shopman/storefront/api/views.py", "checkout_service.recover_committed_checkout"): 1,
     # Gestor/PDV: o detalhe do pedido pergunta ao gateway do cartão (e carimba a pergunta).
     ("shopman/backstage/api/operations.py", "_reconcile_payment_if_due"): 2,
     # ESC/POS: compor o papel carimba a "primeira via" no pedido.
