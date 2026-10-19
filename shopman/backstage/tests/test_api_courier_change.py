@@ -21,7 +21,7 @@ from shopman.backstage.tests._order_intent import advance_payload, context_paylo
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import operational_revision
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture(autouse=True)
@@ -174,10 +174,7 @@ def test_a_maquininha_sai_no_despacho_e_volta_no_acerto_ou_no_botao(client, oper
     device = DeliveryDevice.objects.create(label="Maquininha", identification="LAB-01")
     device_ref = f"card_machine:{device.ref}"
 
-    Channel.objects.create(
-        ref="web", name="Loja", is_active=True,
-        config={"fulfillment": {"equipment": ["card_machine"]}, "payment": {"method": "cash", "timing": "external"}},
-    )
+    Channel.objects.update_or_create(ref='web', defaults={'name': 'Loja', 'is_active': True, 'config': {'fulfillment': {'equipment': ['card_machine']}, 'payment': {'method': 'cash', 'timing': 'external'}}})[0]
     client.force_login(operator)
     cash.open_shift(operator=operator, float_q=10000)
     _delivery_cash_order("DLV-M1", change_for_q=5000)

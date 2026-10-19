@@ -32,7 +32,7 @@ from shopman.shop.services import notification as notification_svc
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.pix_confirmation import confirm_pix
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web", "ifood")]
 
 STRIPE_SETTINGS = {
     "secret_key": "sk_test_fake",

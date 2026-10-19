@@ -11,10 +11,12 @@ from shopman.orderman.models import Order
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.projections import order_queue
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 @pytest.mark.django_db
 def test_queue_resolves_each_label_once_per_read_without_retaining_old_copy(monkeypatch):
-    Order.objects.bulk_create([Order(ref=f"LABEL-{i}", status="accepted", data={"payment": {"method": "cash"}}) for i in range(20)])
+    Order.objects.bulk_create([Order(channel_ref="web", ref=f"LABEL-{i}", status="accepted", data={"payment": {"method": "cash"}}) for i in range(20)])
     status = Mock(return_value="Nome configurado")
     method = Mock(return_value="Meio configurado")
     monkeypatch.setattr(order_queue, "order_status_label", status)
@@ -56,7 +58,7 @@ def test_batch_card_preserves_item_and_revision_contract_after_fresh_edit(status
     from shopman.shop.services.operator_orders import operational_revision
 
     user = django_user_model.objects.create_superuser(username=f"queue-{status}", password="lab-only")
-    order = Order.objects.create(ref=f"RICH-{status}", status=status)
+    order = Order.objects.create(channel_ref="web", ref=f"RICH-{status}", status=status)
     for index in range(5):
         OrderItem.objects.create(order=order, line_id=str(index), sku=f"SKU-{index}", name=f"Item {index}",
                                  qty=Decimal("0.500"), unit_price_q=1000, line_total_q=500)

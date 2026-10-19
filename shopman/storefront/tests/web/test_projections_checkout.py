@@ -16,7 +16,7 @@ from shopman.storefront.presentation.checkout import CheckoutProjection, build_c
 from shopman.storefront.presentation.types import PaymentMethodOptionProjection
 from shopman.storefront.tests.identity_fakes import make_identity_view
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _request_with_cart_session(client):
@@ -216,11 +216,13 @@ class TestPaymentMethods:
         assert proj.payment_methods[0].is_default is True
         assert proj.default_payment_method == proj.payment_methods[0].ref
 
-    def test_no_channel_falls_back_to_cash(self, cart_session):
+    def test_unmaterialized_channel_fails_closed(self, cart_session):
+        """Sem canal no banco não há meio de pagamento a inventar: falha fechado (#1868)."""
+        from shopman.shop.config import InstanceConfigurationError
+
         request = _request_with_cart_session(cart_session)
-        proj = build_checkout(request=request, channel_ref="nonexistent-channel")
-        assert len(proj.payment_methods) == 1
-        assert proj.payment_methods[0].ref == "cash"
+        with pytest.raises(InstanceConfigurationError):
+            build_checkout(request=request, channel_ref="nonexistent-channel")
 
     def test_pix_method_has_portuguese_label(self, cart_session, channel):
         channel.config = channel.config or {}

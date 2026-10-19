@@ -589,7 +589,6 @@ class TestCascadeConformance:
 
 @pytest.mark.django_db
 class TestResolvedConfigValidation:
-    @pytest.mark.instance_runtime_strict
     def test_for_channel_ref_requires_a_materialized_database_row(self):
         from shopman.shop.config import InstanceConfigurationError
 

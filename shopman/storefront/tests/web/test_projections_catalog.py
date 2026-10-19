@@ -24,7 +24,7 @@ from shopman.storefront.presentation.catalog import (
     CatalogProjection,
 )
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 # Low-stock threshold lives on ChannelConfig.Stock. Tests assume the default

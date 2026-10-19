@@ -53,7 +53,7 @@ DigitalOcean ou do Sentry.
 | [`import_recipe_versions`](#import_recipe_versions) | backstage | Dados | Importa de um JSON gerado na hora (nunca versionado) uma versão nova por receita do inventário; sem `--apply` só mostra, `--publish` publica a parte antes da massa |
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
-| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` do concierge no banco vivo, sem reseed, e liga o espelho da vitrine na loja online |
+| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | config | Operação | Cria/ativa o canal de venda `whatsapp` do concierge no banco vivo, sem reseed, e liga o espelho da vitrine na loja online |
 | [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
 | [`migration_safety`](#migration_safety) | shop | Release | Recusa o deploy com migração destrutiva pendente e nenhum ponto de restauração declarado (roda antes do `migrate` no release) |
 | [`setup_commercial_groups`](#setup_commercial_groups) | shop | Release | Instala os grupos comerciais Equipe e Aliança Francesa que ainda faltarem no banco vivo, sem sobrescrever edições do gestor |
@@ -748,16 +748,18 @@ python manage.py process_directives --watch --interval 5 --limit 100 --max-attem
 
 ### bootstrap_whatsapp_channel
 
-**App:** `shopman.shop`
-**Arquivo:** `shopman/shop/management/commands/bootstrap_whatsapp_channel.py`
+**App:** `config`
+**Arquivo:** `config/management/commands/bootstrap_whatsapp_channel.py`
 
 Põe de pé, no banco vivo, o canal de venda dos pedidos do [concierge de WhatsApp](../guides/whatsapp-concierge.md):
-`Channel` ref `whatsapp` (pagamento `["pix","card"]` a `at_commit`, aceite `manual`) e a vitrine `whatsapp`
+`Channel` ref `whatsapp`, com a definição que o descritor da Instância declara (`SHOPMAN_INSTANCE_DESCRIPTOR`,
+item `whatsapp` de `bootstrap.channels`; sem config própria no comando), e a vitrine `whatsapp`
 **espelhando** a da loja online pelo ponteiro `pricing.listing_from` (`shop/services/listing_mirror.py`).
 Idempotente: cria o que falta, ativa o que está inativo, só preenche chave de config que falta. Alinha a
 vitrine uma vez (item que só o WhatsApp tinha sai, preço diferente vira o do site); dali em diante cada
 mudança no site chega ao WhatsApp sozinha, sem rodar nada. `pricing.listing_from = ""` gravado no canal
-mantém vitrine própria (chave presente não é tocada). Roda no release do alpha. `--dry-run` mostra o plano.
+mantém vitrine própria (chave presente não é tocada). Instância que não declara o canal: nada a fazer.
+Roda no release do alpha. `--dry-run` mostra o plano.
 
 ```bash
 python manage.py bootstrap_whatsapp_channel

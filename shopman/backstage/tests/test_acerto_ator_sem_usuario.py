@@ -18,7 +18,7 @@ from shopman.orderman.models import Order, OrderItem
 from shopman.shop.models import Shop
 from shopman.shop.services import operator_orders
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _order(ref: str) -> Order:

@@ -18,7 +18,7 @@ from shopman.payman import PaymentService
 
 from shopman.backstage.projections import preorders
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _order(ref: str, *, status: str = "accepted", channel_ref: str = "web", total_q: int = 3600,

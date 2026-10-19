@@ -162,6 +162,7 @@ class TestFavoriteCategoryFromOrders:
 # ── CatalogProjection integration ────────────────────────────────────────────
 
 
+@pytest.mark.channels("nelson", "nelson2")
 class TestCatalogProjectionFavorite:
     def test_favorite_category_ref_present_on_projection(self, product_a1, customer):
         """build_catalog sets favorite_category_ref when request has a customer."""

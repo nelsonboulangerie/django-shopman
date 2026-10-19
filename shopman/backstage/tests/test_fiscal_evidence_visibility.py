@@ -8,13 +8,13 @@ from shopman.backstage.projections import order_queue
 from shopman.shop.directives import FISCAL_EMIT_NFCE
 from shopman.shop.models import Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.mark.parametrize("worker_state,visible_state", [("failed", "failed"), ("queued", "pending"), ("running", "pending"), ("done", "pending")])
 def test_existing_fiscal_attempt_survives_missing_backend(worker_state, visible_state):
     Shop.objects.create(name="Synthetic fiscal evidence lab")
-    order = Order.objects.create(ref="LAB-FISCAL-EVIDENCE", status="ready", total_q=1000,
+    order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-EVIDENCE", status="ready", total_q=1000,
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
     Directive.objects.create(topic=FISCAL_EMIT_NFCE, status=worker_state, payload={"order_ref": order.ref})
     with patch("shopman.shop.services.fiscal.fiscal_pool.get_backend", return_value=None):
@@ -30,7 +30,7 @@ def test_fiscal_evidence_is_batched_for_the_whole_board():
 
     Shop.objects.create(name="Synthetic fiscal batch lab")
     for index in range(20):
-        order = Order.objects.create(ref=f"LAB-FISCAL-{index}", status="ready", total_q=1000,
+        order = Order.objects.create(channel_ref="web", ref=f"LAB-FISCAL-{index}", status="ready", total_q=1000,
             data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
         Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref})
     with patch("shopman.shop.services.fiscal.fiscal_pool.get_backend", return_value=None), CaptureQueriesContext(connection) as captured:
@@ -76,7 +76,7 @@ def test_the_pill_copy_follows_the_fiscal_state(_backend_present, settings, paym
     settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = ALWAYS
     Shop.objects.create(name="Synthetic fiscal copy lab")
     data = {"payment": payment, "fulfillment_type": "pickup", **extra}
-    order = Order.objects.create(ref="LAB-FISCAL-COPY", status="accepted", total_q=1000, data=data)
+    order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-COPY", status="accepted", total_q=1000, data=data)
 
     status, label, state, _ = order_queue._fiscal_status(order)
 
@@ -87,7 +87,7 @@ def test_the_pill_copy_follows_the_fiscal_state(_backend_present, settings, paym
 def test_a_failed_emission_reads_as_failed_in_both_vocabularies(_backend_present, settings):
     settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = ALWAYS
     Shop.objects.create(name="Synthetic fiscal copy lab")
-    order = Order.objects.create(ref="LAB-FISCAL-FAIL", status="accepted", total_q=1000,
+    order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-FAIL", status="accepted", total_q=1000,
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
     Directive.objects.create(topic=FISCAL_EMIT_NFCE, status="failed", payload={"order_ref": order.ref})
 
@@ -97,7 +97,7 @@ def test_a_failed_emission_reads_as_failed_in_both_vocabularies(_backend_present
 def test_not_requested_stays_not_requested(_backend_present, settings):
     settings.SHOPMAN_FISCAL_EMISSION_RESOLVER = "shopman.shop.fiscal_resolvers.on_request_or_tax_id"
     Shop.objects.create(name="Synthetic fiscal copy lab")
-    order = Order.objects.create(ref="LAB-FISCAL-NOT", status="accepted", total_q=1000,
+    order = Order.objects.create(channel_ref="web", ref="LAB-FISCAL-NOT", status="accepted", total_q=1000,
         data={"payment": {"method": "cash"}, "fulfillment_type": "pickup"})
 
     assert order_queue._fiscal_status(order)[:3] == ("not_requested", "Emissão não estabelecida", "not_expected")

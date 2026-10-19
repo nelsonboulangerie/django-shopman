@@ -13,6 +13,8 @@ from django.utils import timezone
 
 from shopman.backstage.projections.order_queue import _customer_contact
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 def _ifood(localizer="89338721", expires=None):
     customer = {"name": "Cliente", "phone": "0800 705 3040", "phone_localizer": localizer}
