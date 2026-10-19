@@ -592,9 +592,104 @@ function recipeDetail(card) {
   };
 }
 
+function weighingIngredient(sku, name, grams, annotation = "", isSubrecipe = false) {
+  const display = `${grams} g`;
+  return {
+    sku,
+    name,
+    quantity_display: display,
+    target_display: display,
+    annotation,
+    is_subrecipe: isSubrecipe,
+    theoretical_g: String(grams),
+    target_g: String(grams),
+    rounding_delta_g: "0",
+    accepted_min_g: String(grams),
+    accepted_max_g: String(grams),
+  };
+}
+
+function weighingTicket(ref, name, sku, blindCode, ingredients, oldDough = null) {
+  const total = ingredients.reduce((sum, ing) => sum + Number(ing.target_g), 0);
+  return {
+    ticket_ref: `prep-${ref}`,
+    recipe_ref: ref,
+    output_sku: sku,
+    name,
+    output_quantity_display: `${total} g`,
+    dough_weight_display: "",
+    total_weight_display: `${total} g`,
+    theoretical_total_g: String(total),
+    target_total_g: String(total),
+    rounding_delta_total_g: "0",
+    sources_display: "40 un. BAGUETE",
+    ingredients,
+    table: { contract_version: 1, headers: ["Insumo", "Quantidade"], rows: [] },
+    blind_code: blindCode,
+    made_display: "06/07",
+    expiry_display: "07/07",
+    validity_configured: true,
+    validity_source: "recipe",
+    old_dough: oldDough,
+  };
+}
+
+// Massa com teto de massa velha (20%) e massa sem teto: a mistura final no teto
+// encolhe cada linha por 0,8 e a massa velha cobre o resto, com o mesmo total.
+const WEIGHING_POPULATED = {
+  weighing: {
+    selected_date: "2026-07-06",
+    selected_date_display: "segunda, 06/07",
+    selected_position_ref: "",
+    selected_base_recipe: "",
+    codes_ready: true,
+    tickets: [
+      weighingTicket(
+        "massa-tradicao",
+        "Massa Tradição",
+        "MASSA-TRADICAO",
+        "D8",
+        [
+          weighingIngredient("FARINHA-T55", "Farinha T55", 4000),
+          weighingIngredient("AGUA-FILTRADA", "Água filtrada", 2800),
+          weighingIngredient("SAL-REFINADO", "Sal refinado", 80),
+          weighingIngredient("LEVAIN", "Levain", 800, "", true),
+        ],
+        {
+          cap_pct: "20",
+          cap_display: "20%",
+          old_dough_display: "1536 g",
+          old_dough_g: "1536",
+          lines: [
+            { sku: "FARINHA-T55", target_display: "3200 g", target_g: "3200" },
+            { sku: "AGUA-FILTRADA", target_display: "2240 g", target_g: "2240" },
+            { sku: "SAL-REFINADO", target_display: "64 g", target_g: "64" },
+            { sku: "LEVAIN", target_display: "640 g", target_g: "640" },
+          ],
+        },
+      ),
+      weighingTicket("massa-brioche", "Massa Brioche", "MASSA-BRIOCHE", "S5", [
+        weighingIngredient("FARINHA-T55", "Farinha T55", 2000),
+        weighingIngredient("OVO", "Ovo", 700, "≈ 14 ovos"),
+        weighingIngredient("MANTEIGA", "Manteiga", 1000),
+      ]),
+    ],
+    actions: [],
+    access: {},
+    generated_at: "2026-07-06T09:00:00Z",
+    source_revision: "weighing:populated",
+    fresh_until: "2099-07-06T09:05:00Z",
+    contract_version: 1,
+    scale_precision_g: "2",
+    scale_precision_display: "2 g",
+    scale_rounding_note: "Alvos arredondados para cima · balança 2 g",
+  },
+};
+
 /** A resposta do cenário povoado para esta URL, ou `null` para seguir o mock de base. */
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
+  if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
   const card = detail && RECIPE_CARDS.find((entry) => entry.ref === detail[1]);
   if (card) return recipeDetail(card);

@@ -2005,7 +2005,7 @@ apontando a etapa ("Etapa 2: ...").
 | `nutrition` | `dict` | idem | `shop.services.nutrition_from_recipe` | Tabela nutricional por 100 g do insumo. Idem: preservado ao publicar. |
 | `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
 | `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
-| `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+| `cap_pct` | `int` | `publish_version` | projections do inventário, pesagem da Preparação (`build_production_weighing` → `ticket.old_dough`), WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
 | `note` | `string` | `publish_version` (de `formula.items[].note`, via `percentages._bom_items`) | Ninguém ainda | Anotação prática do ingrediente escrita na fórmula ("a farinha do bairro pede 2% mais água"). Diferente de alérgenos e nutrição, **não** é preservada da ficha anterior: a versão publicada decide se ela existe. Duas linhas do mesmo insumo somadas numa só levam as duas notas, separadas por `; `. Ausente quando a fórmula não tem nota. |
 
 ## RecipeEntry.meta
