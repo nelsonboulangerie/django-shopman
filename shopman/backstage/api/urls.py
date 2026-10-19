@@ -324,12 +324,14 @@ from .recipe_book import (
     RecipeExecutionView,
     RecipeFavoriteView,
     RecipeReferenceView,
+    RecipeReviewQueueView,
     RecipeSheetDuplicateView,
     RecipeSheetListView,
     RecipeSheetView,
     RecipeVersionCreateView,
     RecipeVersionPublishView,
     RecipeVersionRatingView,
+    RecipeVersionReviewView,
     RecipeVersionView,
 )
 from .saved_views import SavedViewDetailView, SavedViewListView
@@ -559,6 +561,8 @@ urlpatterns = [
     path("recipes/ingredients/", IngredientOptionsView.as_view(), name="api-backstage-recipes-ingredients"),
     path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
     path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
+    # A fila de conferência: rota fixa ANTES de recipes/<slug:ref>/ ("review" também é slug).
+    path("recipes/review/", RecipeReviewQueueView.as_view(), name="api-backstage-recipes-review"),
     # Ficha de execução: rotas fixas ANTES de recipes/<slug:ref>/ ("sheets" também é slug).
     path("recipes/sheets/", RecipeSheetListView.as_view(), name="api-backstage-recipe-sheets"),
     path("recipes/sheets/<slug:ref>/", RecipeSheetView.as_view(), name="api-backstage-recipe-sheet"),
@@ -573,6 +577,11 @@ urlpatterns = [
     path("recipes/<slug:ref>/favorite/", RecipeFavoriteView.as_view(), name="api-backstage-recipe-favorite"),
     path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
     path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
+    path(
+        "recipes/<slug:ref>/versions/<int:number>/review/",
+        RecipeVersionReviewView.as_view(),
+        name="api-backstage-recipe-version-review",
+    ),
     path(
         "recipes/<slug:ref>/versions/<int:number>/rating/",
         RecipeVersionRatingView.as_view(),
