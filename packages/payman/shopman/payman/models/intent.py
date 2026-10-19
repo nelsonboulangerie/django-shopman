@@ -150,6 +150,9 @@ class PaymentIntent(models.Model):
         ordering = ["-created_at"]
         verbose_name = _("cobrança")
         verbose_name_plural = _("cobranças")
+        # Estornar não é editar (a cobrança não se edita à mão) nem ver: é dar
+        # dinheiro de volta. Permissão própria, concedida pelo descritor da Instância.
+        permissions = [("refund_paymentintent", _("Pode estornar cobrança"))]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(amount_q__gt=0),
