@@ -22,6 +22,7 @@ const {
   query,
   materialFilters,
   materials,
+  materialList,
   suppliers,
   enrichedMaterials,
   filteredMaterials,
@@ -59,6 +60,14 @@ function openMaterial(material: EnrichedMaterial) {
 }
 
 const sorting = ref<{ id: string; desc: boolean }[]>([]);
+watch(sorting, (value) => {
+  const sort = value[0];
+  const order = sort?.id === "name" ? (sort.desc ? "-name" : "name") : "name";
+  void navigateTo({ query: { ...route.query, order, page: "1" } }, { replace: true });
+}, { deep: true });
+function goToPage(page: number) {
+  void navigateTo({ query: { ...route.query, page: String(page) } }, { replace: true });
+}
 const SORT_VALUE: Record<string, (material: EnrichedMaterial) => number | string> = {
   name: (material) => material.name,
   stock: (material) => material.stockOnHand,
@@ -71,27 +80,15 @@ const SORT_VALUE: Record<string, (material: EnrichedMaterial) => number | string
 const yieldsToDetail = computed(() => (openSku.value ? { th: "max-2xl:hidden", td: "max-2xl:hidden" } : undefined));
 const columns = computed(() => [
   { id: "name", header: "Insumo", accessorFn: SORT_VALUE.name, enableSorting: true, enableHiding: false },
-  { id: "stock", header: "Estoque", accessorFn: SORT_VALUE.stock, enableSorting: true },
-  { id: "coverage", header: "Cobertura", accessorFn: SORT_VALUE.coverage, enableSorting: true, meta: { supporting: true, class: yieldsToDetail.value } },
+  { id: "stock", header: "Estoque", accessorFn: SORT_VALUE.stock },
+  { id: "coverage", header: "Cobertura", accessorFn: SORT_VALUE.coverage, meta: { supporting: true, class: yieldsToDetail.value } },
   { id: "minimum", header: "Mínimo", enableHiding: false },
-  { id: "cost", header: "Custo-base", accessorFn: SORT_VALUE.cost, enableSorting: true, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "tone", header: "Situação", accessorFn: SORT_VALUE.tone, enableSorting: true, meta: { supporting: true } },
+  { id: "cost", header: "Custo-base", accessorFn: SORT_VALUE.cost, meta: { supporting: true, class: yieldsToDetail.value } },
+  { id: "tone", header: "Situação", accessorFn: SORT_VALUE.tone, meta: { supporting: true } },
 ]);
 
 // A ordem que a tabela mostra: é a trilha do "‹ 3 de 18 ›" do insumo aberto.
-const displayed = computed(() => {
-  const list = [...filteredMaterials.value];
-  const sort = sorting.value[0];
-  if (!sort) return list;
-  const value = SORT_VALUE[sort.id];
-  if (!value) return list;
-  return list.sort((a, b) => {
-    const left = value(a);
-    const right = value(b);
-    const order = typeof left === "string" ? left.localeCompare(String(right), "pt-BR") : left - (right as number);
-    return sort.desc ? -order : order;
-  });
-});
+const displayed = computed(() => filteredMaterials.value);
 const { remember } = useRecordTrail(MATERIALS_TRAIL);
 watch(
   displayed,
@@ -256,7 +253,7 @@ const saveLabel = computed(() =>
         <OperatorTableView table-key="purchase-materials" />
       </template>
       <template #filters-end>
-        <span class="text-xs text-muted tabular-nums">{{ plural(displayed.length, "insumo", "insumos") }}</span>
+        <span class="text-xs text-muted tabular-nums">{{ plural(materialList.total, "insumo", "insumos") }}</span>
       </template>
     </OperatorPageHeader>
 
@@ -277,6 +274,15 @@ const saveLabel = computed(() =>
             :empty-title="!materials.length ? 'Nenhum insumo cadastrado na Base.' : query.trim() ? `Nenhum insumo com “${query.trim()}”.` : 'Nenhum insumo neste recorte.'"
             data-base-table
           >
+            <template v-if="materialList.page > 1 || materialList.has_next" #footer>
+              <NuxtPagination
+                :page="materialList.page"
+                :total="materialList.total"
+                :items-per-page="materialList.page_size"
+                aria-label="Páginas de insumos"
+                @update:page="goToPage"
+              />
+            </template>
             <template #name-cell="{ row }">
               <span class="block min-w-24 font-semibold sm:min-w-36">{{ row.original.name }}</span>
               <span class="mt-0.5 flex flex-wrap items-center gap-1" data-base-role-tags>

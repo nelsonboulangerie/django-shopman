@@ -14,6 +14,7 @@ import type {
   PurchaseRequestStatus,
   PurchaseActionResponse,
   PurchaseProjection,
+  PurchaseList,
   PurchaseResponse,
   ConversionKind,
   CountItem,
@@ -28,7 +29,6 @@ import type {
   SupplierMaterialCost,
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
-import { matchesMaterialFilters } from "~/presentation/purchaseUi";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import {
   costBatchLineErrors as buildCostBatchLineErrors,
@@ -98,6 +98,7 @@ function newMutationKey(): string {
 }
 
 export function usePurchaseDesk() {
+  const route = useRoute();
   const view = useState<PurchaseView>("purchase-view", () => "panel");
   const baseView = useState<PurchaseBaseView>("purchase-base-view", () => "materials");
   const query = useState("purchase-query", () => "");
@@ -144,6 +145,12 @@ export function usePurchaseDesk() {
   // primeiro número nunca fora real. Dado inventado não é estado de partida.
   const materials = useState<Material[]>("purchase-materials", () => []);
   const suppliers = useState<Supplier[]>("purchase-suppliers", () => []);
+  const materialList = useState<PurchaseList<Material>>("purchase-material-list", () => ({
+    items: [], total: 0, has_next: false, page: 1, page_size: 30, query: "", order: "name",
+  }));
+  const supplierList = useState<PurchaseList<Supplier>>("purchase-supplier-list", () => ({
+    items: [], total: 0, has_next: false, page: 1, page_size: 30, query: "", order: "name",
+  }));
   const conversions = useState<MaterialConversion[]>("purchase-conversions", () => []);
   const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => []);
   // Contagem: a posição vem CRUA do ledger (endpoint próprio, restrito ao
@@ -174,9 +181,20 @@ export function usePurchaseDesk() {
   const actionPending = ref(false);
   const actionError = ref("");
   const { flagIfStationLocked } = useStationLock();
+  const projectionQuery = computed(() => ({
+    q: query.value.trim() || undefined,
+    page: Number(route.query.page) > 0 ? Number(route.query.page) : 1,
+    page_size: 30,
+    order: typeof route.query.order === "string" ? route.query.order : "name",
+    category: materialFilters.value.category,
+    tone: materialFilters.value.tone,
+    status: supplierFilters.value.status,
+    contact: supplierFilters.value.contact,
+  }));
   const { data, pending, error, refresh } = useFetch<PurchaseResponse>(PURCHASE_API_ENDPOINTS.projection, {
     key: "purchase-projection",
     server: false,
+    query: projectionQuery,
     onResponseError: operatorSessionOnError,
   });
   const backendReady = computed(() => Boolean(data.value?.purchase));
@@ -197,26 +215,13 @@ export function usePurchaseDesk() {
     return "Insumos, fornecedores e custos não carregaram.";
   });
 
+  // A ordem já vem da consulta paginada. Reordenar esta página no navegador
+  // faria a mesma coluna significar coisas diferentes entre páginas.
   const enrichedMaterials = computed(() =>
-    materials.value
-      .map((material) => enrichMaterial(material, costs.value, conversions.value))
-      .sort((a, b) => {
-        const toneOrder = { urgent: 0, watch: 1, ok: 2 };
-        return toneOrder[a.tone] - toneOrder[b.tone] || a.sku.localeCompare(b.sku);
-      }),
+    materials.value.map((material) => enrichMaterial(material, costs.value, conversions.value)),
   );
 
-  const filteredMaterials = computed(() => {
-    const term = query.value.trim().toLowerCase();
-    return enrichedMaterials.value.filter((material) => {
-      const matches =
-        !term ||
-        material.sku.toLowerCase().includes(term) ||
-        material.name.toLowerCase().includes(term) ||
-        material.category.toLowerCase().includes(term);
-      return matches && matchesMaterialFilters(material, materialFilters.value);
-    });
-  });
+  const filteredMaterials = computed(() => enrichedMaterials.value);
 
   const selectedMaterial = computed(() =>
     enrichedMaterials.value.find((material) => material.sku === selectedMaterialSku.value) ??
@@ -689,8 +694,16 @@ export function usePurchaseDesk() {
   // recusar) podem sobrescrevê-lo — senão qualquer refresh apaga as linhas
   // que o operador acabou de receber ou digitar.
   function applyProjection(next: PurchaseProjection, options: { receipt?: boolean } = {}) {
-    materials.value = copy(next.materials);
-    suppliers.value = copy(next.suppliers);
+    const nextMaterials = Array.isArray(next.materials)
+      ? { items: next.materials, total: next.materials.length, has_next: false, page: 1, page_size: next.materials.length || 30, query: "", order: "name" }
+      : next.materials;
+    const nextSuppliers = Array.isArray(next.suppliers)
+      ? { items: next.suppliers, total: next.suppliers.length, has_next: false, page: 1, page_size: next.suppliers.length || 30, query: "", order: "name" }
+      : next.suppliers;
+    materialList.value = { ...nextMaterials, items: copy(nextMaterials.items) };
+    supplierList.value = { ...nextSuppliers, items: copy(nextSuppliers.items) };
+    materials.value = copy(nextMaterials.items);
+    suppliers.value = copy(nextSuppliers.items);
     conversions.value = copy(next.conversions);
     costs.value = copy(next.costs);
     purchaseRequestStatuses.value = { ...next.purchaseRequestStatuses };
@@ -1405,6 +1418,8 @@ export function usePurchaseDesk() {
     noteCostInput,
     materials,
     suppliers,
+    materialList,
+    supplierList,
     conversions,
     costs,
     enrichedMaterials,

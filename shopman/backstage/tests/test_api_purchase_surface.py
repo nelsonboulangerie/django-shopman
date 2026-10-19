@@ -135,10 +135,13 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
     assert "projection;dur=" in response["Server-Timing"]
     assert response._watchman_query_count > 0
     purchase = response.json()["purchase"]
-    assert purchase["materials"][0]["sku"] == "FARINHA-NOVARA-T55"
-    assert purchase["materials"][0]["stockOnHand"] == 12.0
-    assert purchase["materials"][0]["recipes"] == ["Baguete"]
-    assert purchase["suppliers"][0]["ref"] == "moinho-sp"
+    assert purchase["materials"]["items"][0]["sku"] == "FARINHA-NOVARA-T55"
+    assert purchase["materials"]["items"][0]["stockOnHand"] == 12.0
+    assert purchase["materials"]["items"][0]["recipes"] == ["Baguete"]
+    assert purchase["materials"]["total"] == 1
+    assert purchase["materials"]["page"] == 1
+    assert purchase["materials"]["has_next"] is False
+    assert purchase["suppliers"]["items"][0]["ref"] == "moinho-sp"
     assert purchase["conversions"][0]["label"] == "saco 25 kg"
     assert purchase["costs"][0]["costQ"] == 18000
 
@@ -1074,7 +1077,7 @@ def test_stock_that_crossed_an_approximate_bridge_carries_the_tilde(
     }
 
     board = client.get(reverse("api-backstage-purchase"))
-    rows = {row["sku"]: row for row in board.json()["purchase"]["materials"]}
+    rows = {row["sku"]: row for row in board.json()["purchase"]["materials"]["items"]}
     assert rows["OVOS"]["stockIsApproximate"] is True
     # O insumo que entrou na propria base nao ganha enfeite: numero exato e exato.
     assert rows["FARINHA-NOVARA-T55"]["stockIsApproximate"] is False
@@ -1243,7 +1246,7 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
 
     # Sem mínimo e sem consumo, não há o que pedir.
     board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
-    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM-FRESCO")
+    alecrim = next(row for row in board["materials"]["items"] if row["sku"] == "ALECRIM-FRESCO")
     assert alecrim["suggestedQty"] == 0
 
     assert (
@@ -1268,7 +1271,7 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
     )
 
     board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
-    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM-FRESCO")
+    alecrim = next(row for row in board["materials"]["items"] if row["sku"] == "ALECRIM-FRESCO")
     assert alecrim["suggestedQty"] == 500
 
     # E agora a solicitação sai, em vez de "Defina o custo padrão e o
