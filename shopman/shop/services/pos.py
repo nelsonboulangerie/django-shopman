@@ -5513,15 +5513,15 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 },
             )
         else:
-            if correct_phone:
-                # ⚠️ ORDEM IMPORTA. `Customer.save()` espelha o `phone` num
-                # ContactPoint `is_primary=True`, e o cadastro já tem um — dois
-                # principais do mesmo tipo violam `unique_primary_per_type`. Por
-                # isso o principal antigo é demovido ANTES; ele segue existindo,
-                # como histórico, e o novo nasce sozinho no posto.
-                _release_primary_contact(ContactPoint, customer, ContactPoint.Type.PHONE, phone)
-            if correct_email:
-                _release_primary_contact(ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email)
+            # Corrigir o contato no balcão é TROCAR (decisão da coordenação,
+            # A4-1): o valor antigo deixa de abrir a conta. A troca vai ANTES
+            # do merge dos campos, pelo Guestman, e o merge encontra o cache já
+            # no valor novo. Os pedidos antigos guardam o contato de cada um;
+            # o cadastro não precisa reter a chave para lembrar.
+            if correct_phone and phone and phone != customer.phone:
+                _replace_pos_contact(customer, "phone", phone)
+            if correct_email and fill_email and fill_email != customer.email:
+                _replace_pos_contact(customer, "email", fill_email)
             _merge_pos_customer_fields(
                 customer,
                 name=name,
@@ -6004,17 +6004,27 @@ def _merge_pos_customer_fields(
             ) from exc
 
 
-def _release_primary_contact(ContactPoint, customer, contact_type: str, value: str) -> None:
-    """Libera o posto de principal para o contato NOVO, na correção.
+def _replace_pos_contact(customer, field: str, value: str) -> None:
+    """Troca o telefone ou o e-mail principal na correção do balcão.
 
-    Só mexe quando há valor novo e ele é diferente do principal de hoje: sem
-    isso a função demoveria o próprio contato que está sendo confirmado.
+    O antigo SAI: o ``ContactPoint`` é apagado e a chave de login do mesmo valor
+    vai junto (``replace_primary_contact`` do Guestman). Deixá-lo como
+    secundário, "no histórico", mantinha o número que a operadora recicla
+    abrindo a conta por OTP. Se o valor novo já for de outro cadastro, a
+    recusa é a mesma recusa rica dos contatos, com o dono nomeado.
     """
-    if not value:
-        return
-    ContactPoint.objects.filter(
-        customer=customer, type=contact_type, is_primary=True,
-    ).exclude(value_normalized=value).update(is_primary=False)
+    from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services import identity as identity_service
+
+    contact_type = ContactPoint.Type.PHONE if field == "phone" else ContactPoint.Type.EMAIL
+    try:
+        with transaction.atomic():
+            identity_service.replace_primary_contact(customer, field=field, new_value=value)
+    except (identity_service.ContactPointOwnershipConflict, IntegrityError) as exc:
+        raise _pos_owner_conflict(
+            customer, _contact_owner(contact_type, value), _CONTACT_CONFLICT_SOURCE[contact_type],
+        ) from exc
+    setattr(customer, field, value)
 
 
 def _ensure_contact_point(
@@ -6023,9 +6033,9 @@ def _ensure_contact_point(
     """Garante o contato do cliente — e, na CORREÇÃO, promove-o a principal.
 
     ``promote`` só chega ligado quando o operador confirmou a troca na tela: o
-    novo número passa a ser o principal (o antigo fica no histórico, demovido
-    pelo ``set_as_primary``) e o cache do ``Customer`` acompanha. Sem isso o
-    cadastro teria dois telefones e continuaria mandando WhatsApp para o errado.
+    novo número passa a ser o principal e o cache do ``Customer`` acompanha. O
+    antigo já saiu antes, por ``_replace_pos_contact``: corrigir é trocar, e o
+    número velho não pode seguir abrindo a conta.
     """
     try:
         contact, created = ContactPoint.objects.get_or_create(
