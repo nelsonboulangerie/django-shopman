@@ -38,6 +38,7 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 | §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
 | WATCHMAN | Saúde, autocura e desempenho (Codex, outro agente) | EM_PR | `codex/watchman-*` / #1809, #1813 | 2026-10-15 11:5x |
 | §7.2-kit | Importação e exportação CSV genéricas no operator-kit | EM_PR | `codex/kit-import-export` / #1895 | 2026-10-19 17:25 UTC |
+| IFOOD-D | Categorias do iFood na página do canal | EM_PR | `codex/ifood-categorias-tela` / #1931 draft, base #1927 | 2026-10-19 22:57 UTC |
 
 **SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
 
