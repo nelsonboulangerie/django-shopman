@@ -61,6 +61,7 @@ DigitalOcean ou do Sentry.
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`prune_unbacked_login_identifiers`](#prune_unbacked_login_identifiers) | guestman (identifiers) | Segurança | Lista (padrão) ou, com `--apply`, apaga identificador de telefone/WhatsApp/e-mail sem contato que o sustente (A4-1); manual |
 | [`purge_consent_ip`](#purge_consent_ip) | guestman | Privacidade | Conta (padrão) ou, com `--apply`, apaga o IP bruto vencido das provas de consentimento — manual, fora do worker |
 | [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
@@ -858,6 +859,18 @@ python manage.py cleanup_idempotency_keys --days 3 --include-in-progress
 **Recomendação:** Executar via cron diariamente.
 
 ---
+
+### prune_unbacked_login_identifiers
+
+**App:** `shopman.guestman.contrib.identifiers` (app label: `customer_identifiers`)
+**Arquivo:** `packages/guestman/shopman/guestman/contrib/identifiers/management/commands/prune_unbacked_login_identifiers.py`
+
+Acha o `CustomerIdentifier` de telefone, WhatsApp ou e-mail cujo cadastro não tem mais nenhum `ContactPoint` da mesma família com o mesmo valor. Até o A4-1, a troca de número ou de e-mail deixava essa sobra, e o porto de identidade a lê: o valor antigo abria a conta por OTP. Desde a correção, o `post_delete` do contato apaga o identificador no mesmo ato; este comando limpa o que já existia. Sem flag só lista (cadastro, tipo, valor mascarado); `--apply` apaga. Num ambiente com dado real, o `--apply` é decisão de quem responde por ele.
+
+```bash
+python manage.py prune_unbacked_login_identifiers          # lista
+python manage.py prune_unbacked_login_identifiers --apply  # apaga
+```
 
 ### customers_cleanup
 
