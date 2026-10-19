@@ -174,13 +174,6 @@
     "channel.toggle-eligibility": [
       "shopman/shop/services/channel_switch.py:is_switchable"
     ],
-    "channel.whatsapp-bootstrap-requirements": [
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:CHANNEL_CONFIG",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:Command",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:REQUIRED_KEYS",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:_required_keys",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:_storefront_ref"
-    ],
     "delivery.courier-charge-staleness": [
       "shopman/shop/services/courier.py:charge_outdated"
     ],
