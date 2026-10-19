@@ -11,7 +11,6 @@ vNext: string refs (output_sku, input_sku) replace GenericForeignKey.
 
 from decimal import Decimal
 
-from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -397,17 +396,9 @@ def normalize_recipe_item_unit(value: str | None) -> str:
 
 
 def _catalog_unit_for_sku(sku: str) -> str:
+    """A unidade do SKU no catálogo, pelo ``CATALOG_BACKEND``; "" quando não há."""
     info = _catalog_product_info(sku)
-    if info is not None:
-        return getattr(info, "unit", "") or ""
-    try:
-        Product = apps.get_model("offerman", "Product")
-    except LookupError:
-        return ""
-    try:
-        return Product.objects.only("unit").get(sku=sku).unit or ""
-    except Product.DoesNotExist:
-        return ""
+    return (getattr(info, "unit", "") or "") if info is not None else ""
 
 
 def _validate_output_sku_for_recipe(sku: str) -> None:

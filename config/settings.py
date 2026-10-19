@@ -1810,9 +1810,13 @@ GUESTMAN_LOYALTY = {}
 
 # ── Orderman ─────────────────────────────────────────────────────────
 
-# Available keys: DEFAULT_PERMISSION_CLASSES, ADMIN_PERMISSION_CLASSES
+# Available keys: DEFAULT_PERMISSION_CLASSES, ADMIN_PERMISSION_CLASSES,
+# CUSTOMER_FENCE (porto da cerca do titular), CHANNEL_MODEL (o Channel do host).
 # See packages/orderman/shopman/orderman/conf.py for defaults.
-ORDERMAN = {}
+ORDERMAN = {
+    "CUSTOMER_FENCE": "shopman.guestman.adapters.orderman.GuestmanCustomerFence",
+    "CHANNEL_MODEL": "shop.Channel",
+}
 
 # ── Shopman Instance Hooks (optional) ────────────────────────────────
 

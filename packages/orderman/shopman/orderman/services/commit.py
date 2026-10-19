@@ -12,14 +12,14 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 
-from django.apps import apps
 from django.db import IntegrityError, transaction
-from django.db.models import Q
 from django.utils import timezone
 from shopman.orderman import registry
+from shopman.orderman.conf import get_customer_fence
 from shopman.orderman.exceptions import CommitError, IdempotencyCacheHit, SessionError, ValidationError
 from shopman.orderman.ids import generate_order_ref
 from shopman.orderman.models import Directive, IdempotencyKey, Order, OrderItem, Session
+from shopman.orderman.protocols import CustomerIdentityConflict
 from shopman.utils.phone import normalize_phone
 
 # Ref de pedido é aleatório (1 letra + 2 dígitos). generate_order_ref já sorteia de novo
@@ -690,43 +690,21 @@ class CommitService:
         customer_ref, phone = CommitService._session_customer_identity(identity_snapshot)
         if not customer_ref and not phone:
             return None
+        fence = get_customer_fence()
+        if fence is None:
+            # Orderman continua um kernel instalável sem cadastro de titular;
+            # a cerca só existe quando o deployment liga o porto.
+            return None
         try:
-            Customer = apps.get_model("guestman", "Customer")
-        except LookupError:
-            # Orderman continua um kernel instalável sem Guestman; a cerca só
-            # existe quando o deployment integra o cadastro canônico.
-            return None
-        phone_query = Q(phone=phone) | Q(
-            contact_points__value_normalized=phone,
-            contact_points__type__in=("phone", "whatsapp"),
-        )
-        if customer_ref and phone:
-            query = Q(ref=customer_ref) & phone_query
-        elif customer_ref:
-            query = Q(ref=customer_ref)
-        else:
-            query = phone_query
-        matches = list(
-            Customer.objects.filter(query).values_list("pk", flat=True).distinct()[:2]
-        )
-        if len(matches) > 1:
+            customer = fence.lock_by_identity(customer_ref=customer_ref, phone=phone)
+        except CustomerIdentityConflict as exc:
             raise CommitError(
-                code="customer_identity_ambiguous",
+                code=exc.code,
                 message="A identidade do cliente precisa ser confirmada novamente.",
-            )
-        if not matches:
-            if customer_ref and phone and Customer.objects.filter(
-                Q(ref=customer_ref) | phone_query
-            ).exists():
-                raise CommitError(
-                    code="customer_identity_mismatch",
-                    message="A identidade do cliente precisa ser confirmada novamente.",
-                )
-            # Integrações legadas podem selar um ref externo sem Customer local.
-            # Exclusão não remove a linha canônica: ela a mantém inativa, então
-            # apenas uma linha encontrada e inativa comprova a corrida perdida.
+            ) from exc
+        if customer is None:
+            # Integrações podem selar um ref externo sem titular local.
             return None
-        customer = Customer.objects.select_for_update().get(pk=matches[0])
         if not customer.is_active:
             raise CommitError(
                 code="customer_inactive",
@@ -757,13 +735,9 @@ class CommitService:
             )
 
         ref_matches = not current_ref or current_ref == locked_customer.ref
-        customer_phone = normalize_phone(locked_customer.phone) or locked_customer.phone
-        phone_matches = not current_phone or current_phone == customer_phone
+        phone_matches = not current_phone or current_phone == locked_customer.phone
         if current_phone and not phone_matches:
-            phone_matches = locked_customer.contact_points.filter(
-                value_normalized=current_phone,
-                type__in=("phone", "whatsapp"),
-            ).exists()
+            phone_matches = get_customer_fence().owns_phone(locked_customer, current_phone)
         if not ref_matches or not phone_matches:
             raise CommitError(
                 code="customer_identity_changed",
