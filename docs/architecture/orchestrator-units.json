@@ -1202,6 +1202,7 @@
         "ANNOUNCEMENT_NOTIFY"
       ],
       "config_surface": [
+        "DEBUG",
         "SHOPMAN_ENVIRONMENT"
       ],
       "tests": [
@@ -3817,7 +3818,9 @@
       "ports": [],
       "events": [],
       "directives": [],
-      "config_surface": [],
+      "config_surface": [
+        "DEBUG"
+      ],
       "tests": [
         "shopman/shop/tests/test_manychat_flow_isolation.py::test_notify_turns_busy_into_a_retryable_result_never_unknown",
         "shopman/shop/tests/test_manychat_marketing_safety.py::test_notification_boundary_never_fabricates_receipt_or_logs_recipient",
@@ -6369,6 +6372,7 @@
       "events": [],
       "directives": [],
       "config_surface": [
+        "DEBUG",
         "MANYCHAT_API_TOKEN",
         "SECRET_KEY",
         "SHOPMAN_MANYCHAT",
@@ -11448,6 +11452,7 @@
       "events": [],
       "directives": [],
       "config_surface": [
+        "DEBUG",
         "SHOPMAN_FOCUS_NFE",
         "SHOPMAN_STOREFRONT_BASE_URL"
       ],
