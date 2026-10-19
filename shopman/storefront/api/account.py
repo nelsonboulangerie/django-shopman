@@ -1175,12 +1175,17 @@ class AccountAccessDetailView(APIView):
 
 
 class AccountExportView(APIView):
-    """GET /api/v1/account/export/ — customer data export JSON."""
+    """POST /api/v1/account/export/ — gera o arquivo com os dados do cliente.
+
+    É POST porque cada pedido abre e fecha um recibo de privacidade (LGPD): o
+    efeito é do comando, e GET não produz efeito. A sessão autentica e o CSRF
+    vale, como no ``AccountDeleteView``.
+    """
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    authentication_classes = [SessionAuthentication]
 
-    def get(self, request):
+    def post(self, request):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)

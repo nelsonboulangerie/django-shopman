@@ -209,6 +209,9 @@ MAINTENANCE_COMMANDS = (
     # A Via Cozinha do posto sem tela: sem papel o lanche não é feito, e o
     # posto não tem tela para descobrir. O alerta vai para quem tem.
     "sweep_kitchen_print_jobs",
+    # O pulso da gaveta que o agente do Balcão nunca respondeu: o tablet só lê
+    # o estado; o veredito e a nota no livro do turno são gravados aqui.
+    "sweep_drawer_pulse_jobs",
     # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
     # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
     # congelado no dia da última visita, porque não comprar não dispara nada.
