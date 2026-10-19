@@ -139,6 +139,8 @@ export interface OrderDetailResponse extends ReadMetadata {
   order: OperatorOrderProjection;
   /** A impressora desta estação (a Via Pedido sai por ela). */
   device_agent?: StationDeviceAgent;
+  /** O pedido deve cartão: a tela pede `orders/<ref>/payment/check/` (POST). */
+  payment_check_due?: boolean;
 }
 
 export interface AlertProjection {

@@ -45,6 +45,7 @@ class FakeStripe:
 
     def __init__(self, *, amount_q: int = 1000, capture_raises: bool = False):
         self.captured = False
+        self.intent_reads = 0
         self.capture_raises = capture_raises
         self.amount_q = amount_q
         outer = self
@@ -81,6 +82,7 @@ class FakeStripe:
             def retrieve(pid, **kwargs):
                 # `expand=["latest_charge"]` é o que o adapter pede para ler o
                 # funding (crédito/débito); o dublê aceita e ignora.
+                outer.intent_reads += 1
                 return _pi("succeeded" if outer.captured else "requires_capture")
 
             @staticmethod
@@ -149,7 +151,13 @@ class CardStuckAfterTheStoreAcceptedTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(operator_orders.advance_block(order), operator_orders.AdvanceBlock.NONE)
 
-    def test_opening_the_order_in_the_gestor_asks_the_gateway(self) -> None:
+    def test_the_gestor_settles_it_by_the_check_command_not_by_the_read(self) -> None:
+        """Abrir o pedido no Gestor ainda destrava o cartão, mas pelo comando.
+
+        O GET do detalhe só lê (A8-1): diz ``payment_check_due`` e não pergunta
+        nada ao gateway. Quem pergunta e liquida é o ``POST payment/check/``,
+        que a tela pede ao abrir o pedido enquanto ele deve cartão.
+        """
         from django.contrib.auth import get_user_model
         from rest_framework.test import APIClient
 
@@ -163,11 +171,25 @@ class CardStuckAfterTheStoreAcceptedTests(TestCase):
         with patch.object(payment_stripe, "_get_stripe", return_value=self.stripe):
             order = self._order_paid_at_stripe_without_webhook()
             self.assertIsNot(payment_service.has_sufficient_captured_payment(order), True)
+            data_before = order.data
+            reads_before = self.stripe.intent_reads
 
             with self.captureOnCommitCallbacks(execute=True):
-                response = client.get(f"/api/v1/backstage/orders/{order.ref}/")
+                read = client.get(f"/api/v1/backstage/orders/{order.ref}/")
 
-        self.assertEqual(response.status_code, 200)
+            self.assertEqual(read.status_code, 200)
+            self.assertIs(read.json()["payment_check_due"], True)
+            self.assertEqual(self.stripe.intent_reads, reads_before)
+            order.refresh_from_db()
+            self.assertEqual(order.data, data_before)
+            self.assertIsNot(payment_service.has_sufficient_captured_payment(order), True)
+
+            with self.captureOnCommitCallbacks(execute=True):
+                check = client.post(f"/api/v1/backstage/orders/{order.ref}/payment/check/")
+
+        self.assertEqual(check.status_code, 200)
+        self.assertIs(check.json()["changed"], True)
+        self.assertGreater(self.stripe.intent_reads, reads_before)
         order.refresh_from_db()
         self.assertIs(payment_service.has_sufficient_captured_payment(order), True)
 
