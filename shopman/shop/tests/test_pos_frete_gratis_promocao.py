@@ -89,6 +89,7 @@ def test_promocao_da_loja_zera_o_frete_no_balcao_e_diz_qual(balcao):
     assert review.delivery_fee_source == "zone"
     assert review.delivery_fee_waiver == {
         "reason": "promotion", "promotion_name": "Frete de verão", "threshold_q": 0, "base_fee_q": FEE_Q,
+        "group_name": "",
     }
 
 
@@ -172,6 +173,7 @@ def test_limiar_da_loja_tambem_diz_que_e_o_limiar(balcao):
     assert review.delivery_fee_q == 0
     assert review.delivery_fee_waiver == {
         "reason": "threshold", "promotion_name": "", "threshold_q": 1000, "base_fee_q": FEE_Q,
+        "group_name": "",
     }
 
 
@@ -196,5 +198,5 @@ def test_a_revisao_da_api_leva_a_promocao_com_os_valores_escritos(balcao):
 
     assert body["delivery_fee_waiver"] == {
         "reason": "promotion", "promotion_name": "Frete de verão", "threshold_q": 0, "base_fee_q": FEE_Q,
-        "threshold_display": "R$ 0,00", "base_fee_display": "R$ 8,00",
+        "group_name": "", "threshold_display": "R$ 0,00", "base_fee_display": "R$ 8,00",
     }

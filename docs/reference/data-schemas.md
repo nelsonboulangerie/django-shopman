@@ -1738,7 +1738,7 @@ grupos do MESMO cliente. Cliente em mais de um grupo: vale a melhor por tipo, se
 
 | `kind` | Chaves de `config` | Lido por | Descrição |
 |--------|--------------------|----------|-----------|
-| `free_shipping` | `min_order_q` (`int`, centavos) | follow-up (frete) | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. |
+| `free_shipping` | `min_order_q` (`int`, centavos) | `shop/modifiers.resolve_delivery_fee_waiver` (loja e PDV, terceira política do frete grátis, `reason: "group"`) e `shop/projections/cart.build_free_delivery_progress` (barra "faltam R$ X") | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. Cliente em dois grupos com frete grátis: vale o de MENOR mínimo. A base é a mesma do limiar da loja (mercadoria, sem o cupom). |
 | `exclusive_collections` | `collection_refs` (`list[str]`) | follow-up (catálogo) | Coleções do Offerman que só o membro enxerga/comprar. |
 | `exclusive_notifications` | `campaign_refs` (`list[str]`) | follow-up (marketing) | Avisos/campanhas exclusivos do grupo. |
 
