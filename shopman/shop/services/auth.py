@@ -32,19 +32,25 @@ class TrustedDeviceIdentityConflict(Exception):
 
 
 def identity_by_customer_ref(customer_ref: str):
-    """Hydrate a session-safe Doorman identity through host composition."""
+    """Hydrate a session-safe Doorman identity through the configured resolver.
+
+    O resolver é o da setting (``DOORMAN["IDENTITY_RESOLVER_CLASS"]``), o mesmo
+    que o login usa: instanciar a classe do Guestman aqui ignorava a troca e
+    abria uma segunda porta de identidade. Falha de leitura fecha (``None``,
+    sem identidade) e grita no log, nunca em silêncio.
+    """
     if not customer_ref:
         return None
     try:
-        from shopman.guestman.adapters.auth import IdentityResolver
+        from shopman.doorman.conf import get_identity_resolver
 
         customer = customer_by_ref(customer_ref)
         if customer is None:
             return None
-        identity = IdentityResolver().get(customer.uuid, purpose="session")
+        identity = get_identity_resolver().get(customer.uuid, purpose="session")
         return identity if identity is not None and identity.is_active else None
     except Exception:
-        logger.debug("auth.identity_by_customer_ref degraded")
+        logger.warning("auth.identity_by_customer_ref failed customer=%s", customer_ref, exc_info=True)
         return None
 
 
