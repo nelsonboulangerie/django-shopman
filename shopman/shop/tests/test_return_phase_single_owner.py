@@ -9,11 +9,11 @@ from shopman.stockman.models import Move
 from shopman.shop import lifecycle
 from shopman.shop.handlers.returns import ReturnHandler, ReturnService
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def test_total_return_has_one_stock_receipt_across_phase_and_handler():
-    order = Order.objects.create(ref="RETURN-OWNER", status="completed", total_q=1000)
+    order = Order.objects.create(channel_ref="web", ref="RETURN-OWNER", status="completed", total_q=1000)
     OrderItem.objects.create(order=order, line_id="RETURN-LINE", sku="LAB-RETURN", name="Lab", qty=Decimal("1"), unit_price_q=1000, line_total_q=1000)
     result = ReturnService.initiate_return(order, [{"line_id": "RETURN-LINE", "qty": "1"}], "Devolução sintética", "lab")
     order.refresh_from_db()
@@ -29,7 +29,7 @@ def test_refund_failure_keeps_stock_receipt_and_retry_receives_nothing_again():
     from shopman.orderman.exceptions import DirectiveTransientError
     from shopman.orderman.models import Directive
 
-    order = Order.objects.create(ref="RETURN-RETRY", status="completed", total_q=1000)
+    order = Order.objects.create(channel_ref="web", ref="RETURN-RETRY", status="completed", total_q=1000)
     OrderItem.objects.create(order=order, line_id="RETRY-LINE", sku="LAB-RETRY", name="Lab", qty=Decimal("1"), unit_price_q=1000, line_total_q=1000)
     result = ReturnService.initiate_return(order, [{"line_id": "RETRY-LINE", "qty": "1"}], "Devolução sintética", "lab")
     task = Directive.objects.get(pk=result.directive_id)

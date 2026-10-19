@@ -7,7 +7,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.shop.directives import COURIER_DISPATCH
 from shopman.shop.models import Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def context(client, django_user_model, settings):
     user = django_user_model.objects.create_user(username="dispatch-lab", is_staff=True)
     user.user_permissions.add(Permission.objects.get(codename="manage_orders", content_type__app_label="shop"))
     client.force_login(user)
-    order = Order.objects.create(ref="DISPATCH-LAB", status="ready", data={"fulfillment_type": "delivery"})
+    order = Order.objects.create(channel_ref="web", ref="DISPATCH-LAB", status="ready", data={"fulfillment_type": "delivery"})
     return user, order
 
 

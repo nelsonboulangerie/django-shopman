@@ -14,7 +14,7 @@ import pytest
 
 from shopman.storefront.presentation.home import _environment_notice
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 class TestOAmbienteDitaAFrase:

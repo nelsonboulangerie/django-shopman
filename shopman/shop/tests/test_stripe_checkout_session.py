@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
@@ -338,6 +339,7 @@ class StripeCheckoutSessionWebhookTests(TestCase):
     SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
     DEBUG=False,
 )
+@pytest.mark.channels("web")
 class StripeGatewayReadbackTests(TestCase):
     """`check_gateway_status`: o verbo de LEITURA que a Efí tinha e o Stripe não."""
 
@@ -442,6 +444,7 @@ class StripeGatewayReadbackTests(TestCase):
     SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
     DEBUG=False,
 )
+@pytest.mark.channels("web")
 class StripeReturnWithoutWebhookTests(TestCase):
     """O cliente volta do Stripe e a tela tem que contar a verdade."""
 
@@ -545,6 +548,7 @@ class StripeReturnWithoutWebhookTests(TestCase):
     SHOPMAN_PAYMENT_ADAPTERS={"pix": "shopman.shop.adapters.payment_mock"},
     DEBUG=False,
 )
+@pytest.mark.channels("web")
 class PixIsNotAskedOnEveryReadTests(TestCase):
     """O PIX fica de fora da pergunta preguiçosa — e isso é decisão, não esquecimento.
 

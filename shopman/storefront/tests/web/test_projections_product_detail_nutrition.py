@@ -16,7 +16,7 @@ from shopman.storefront.presentation.product_detail import (
     build_product_detail,
 )
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture

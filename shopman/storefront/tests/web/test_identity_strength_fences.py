@@ -34,7 +34,7 @@ from shopman.orderman.models import Order
 from shopman.storefront.identity import IDENTITY_NUMBER, IDENTITY_SESSION_KEY
 from shopman.storefront.tests._checkout_baseline import displayed_total_q
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture

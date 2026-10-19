@@ -34,7 +34,7 @@ from shopman.shop.services.order_helpers import (
     house_owns_the_delivery,
 )
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 # ── Cenário ───────────────────────────────────────────────────────────────
