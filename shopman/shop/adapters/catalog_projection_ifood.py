@@ -27,6 +27,10 @@ Structure: **Merchant → Catálogos → Categorias → Itens**.
   → ``200``. Body is a single object ``{"itemId": <item uuid>, "status":
   "AVAILABLE"|"UNAVAILABLE"}``.
 
+- **Change price** — ``PATCH /catalog/v2.0/merchants/{mid}/items/price`` with
+  only ``itemId`` and ``price``. Both PATCH paths are confirmed by reading
+  ``GET /items/{itemId}/flat`` before the projection is reported as synced.
+
 Authentication is OAuth 2.0 ``client_credentials`` via
 :mod:`shopman.shop.services.ifood_auth` (Bearer + the mandatory own User-Agent —
 iFood's WAF answers ``403`` to a generic UA). Config lives in the
@@ -68,6 +72,10 @@ class IFoodRateLimitError(Exception):
 
 class IFoodCategoryError(Exception):
     """Raised when an item has no resolvable iFood category."""
+
+
+class IFoodConfirmationError(Exception):
+    """O PATCH não pôde ser confirmado por uma leitura remota equivalente."""
 
 
 def _get_config(channel: str = "ifood") -> dict:
@@ -220,7 +228,24 @@ def _upsert_item(item: ProjectedItem, cfg: dict, headers: dict, *, in_stock: boo
     resp.raise_for_status()
 
 
-def _set_item_status(sku: str, status: str, cfg: dict, headers: dict) -> None:
+def _patch_item_price(sku: str, price_q: int, cfg: dict, headers: dict) -> tuple[str, float]:
+    ensure_catalog_write_allowed(cfg)
+    merchant_id = cfg["merchant_id"]
+    item_id = _item_uuid(merchant_id, sku)
+    value = round(price_q / 100, 2)
+    url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/price"
+    resp = requests.patch(
+        url,
+        json={"itemId": item_id, "price": {"value": value}},
+        headers=headers,
+        timeout=int(cfg.get("timeout") or 30),
+    )
+    _check_rate_limit(resp)
+    resp.raise_for_status()
+    return item_id, value
+
+
+def _set_item_status(sku: str, status: str, cfg: dict, headers: dict) -> str:
     ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/status"
@@ -232,6 +257,41 @@ def _set_item_status(sku: str, status: str, cfg: dict, headers: dict) -> None:
     )
     _check_rate_limit(resp)
     resp.raise_for_status()
+    return _item_uuid(merchant_id, sku)
+
+
+def _read_item(item_id: str, cfg: dict, headers: dict) -> dict:
+    ensure_catalog_write_allowed(cfg)
+    merchant_id = cfg["merchant_id"]
+    url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/{item_id}/flat"
+    resp = requests.get(
+        url,
+        headers=headers,
+        timeout=int(cfg.get("timeout") or 30),
+    )
+    _check_rate_limit(resp)
+    resp.raise_for_status()
+    body = resp.json()
+    if not isinstance(body, dict):
+        raise IFoodConfirmationError("iFood returned an invalid item confirmation")
+    item = body.get("item", body)
+    if not isinstance(item, dict):
+        raise IFoodConfirmationError("iFood returned an invalid item confirmation")
+    return item
+
+
+def _confirm_item_price(item_id: str, value: float, cfg: dict, headers: dict) -> None:
+    remote = _read_item(item_id, cfg, headers)
+    price = remote.get("price")
+    remote_value = price.get("value") if isinstance(price, dict) else None
+    if remote_value != value:
+        raise IFoodConfirmationError("iFood did not confirm the requested item price")
+
+
+def _confirm_item_status(item_id: str, status: str, cfg: dict, headers: dict) -> None:
+    remote = _read_item(item_id, cfg, headers)
+    if remote.get("status") != status:
+        raise IFoodConfirmationError("iFood did not confirm the requested item status")
 
 
 class IFoodCatalogProjection:
@@ -284,6 +344,62 @@ class IFoodCatalogProjection:
             channel=channel,
         )
 
+    def update_price(self, item: ProjectedItem, *, channel: str) -> ProjectionResult:
+        """Atualiza só preço e confirma o estado remoto pela leitura canônica."""
+        cfg = _get_config(channel)
+        try:
+            ensure_catalog_write_allowed(cfg)
+        except IFoodCatalogWriteBlocked as exc:
+            return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
+        headers, reason = _headers(cfg)
+        if not headers:
+            return ProjectionResult(
+                success=False, errors=[ifood_auth.failure_message(reason)], channel=channel,
+            )
+        try:
+            item_id, value = _patch_item_price(item.sku, item.price_q, cfg, headers)
+            _confirm_item_price(item_id, value, cfg, headers)
+        except IFoodRateLimitError:
+            raise
+        except Exception as exc:
+            logger.debug("catalog_projection_ifood.update_price degraded", exc_info=True)
+            return ProjectionResult(success=False, errors=[f"{item.sku}: {exc}"], channel=channel)
+        return ProjectionResult(success=True, projected=1, channel=channel)
+
+    def set_availability(self, item: ProjectedItem, *, channel: str) -> ProjectionResult:
+        """Atualiza só status, considerando pausa e estoque, e confirma a leitura."""
+        cfg = _get_config(channel)
+        try:
+            ensure_catalog_write_allowed(cfg)
+        except IFoodCatalogWriteBlocked as exc:
+            return ProjectionResult(success=False, errors=[str(exc)], channel=channel)
+        headers, reason = _headers(cfg)
+        if not headers:
+            return ProjectionResult(
+                success=False, errors=[ifood_auth.failure_message(reason)], channel=channel,
+            )
+        from shopman.shop.services import external_availability
+
+        in_stock = (
+            external_availability.in_stock(item.sku, channel_ref=channel)
+            if item.is_published and item.is_sellable
+            else True
+        )
+        status = (
+            "AVAILABLE"
+            if item.is_published and item.is_sellable and in_stock
+            else "UNAVAILABLE"
+        )
+        try:
+            item_id = _set_item_status(item.sku, status, cfg, headers)
+            _confirm_item_status(item_id, status, cfg, headers)
+        except IFoodRateLimitError:
+            raise
+        except Exception as exc:
+            logger.debug("catalog_projection_ifood.set_availability degraded", exc_info=True)
+            return ProjectionResult(success=False, errors=[f"{item.sku}: {exc}"], channel=channel)
+        return ProjectionResult(success=True, projected=1, channel=channel)
+
     def retract(self, skus: list[str], *, channel: str) -> ProjectionResult:
         cfg = _get_config(channel)
         try:
@@ -302,7 +418,8 @@ class IFoodCatalogProjection:
         retracted = 0
         for sku in skus:
             try:
-                _set_item_status(sku, "UNAVAILABLE", cfg, headers)
+                item_id = _set_item_status(sku, "UNAVAILABLE", cfg, headers)
+                _confirm_item_status(item_id, "UNAVAILABLE", cfg, headers)
                 retracted += 1
             except IFoodRateLimitError:
                 raise
