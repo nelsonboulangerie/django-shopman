@@ -13095,6 +13095,7 @@
           "symbols": [
             "settle_from_gateway",
             "reconcile_with_gateway_if_due",
+            "gateway_check_applies",
             "_GATEWAY_METHODS",
             "HOSTED_CHECKOUT_METHODS",
             "_PAYMENT_GATEWAY_ADAPTER_PATHS",

@@ -192,6 +192,8 @@ export interface PreorderEquipmentOption {
 /** `GET /api/v1/backstage/pos/preorders/<ref>/` — o envelope de leitura do Gestor. */
 export interface PreorderDetailResponse {
   order: PreorderDetail;
+  /** A encomenda deve cartão: a tela pede `pos/preorders/<ref>/payment/check/` (POST). */
+  payment_check_due?: boolean;
   generated_at: string;
   contract_version: number;
 }

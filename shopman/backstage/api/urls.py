@@ -180,6 +180,7 @@ from .operations import (
     OrderIFoodEvidenceView,
     OrderIFoodHandshakeView,
     OrderNotesView,
+    OrderPaymentCheckView,
     OrderQueueView,
     OrderRailCountsView,
     OrderRejectView,
@@ -229,6 +230,7 @@ from .operations import (
     POSPreorderEditSessionView,
     POSPreorderHandOverView,
     POSPreorderListView,
+    POSPreorderPaymentCheckView,
     POSPreorderRedoTabView,
     POSPreorderSearchView,
     POSRecentSalesView,
@@ -823,6 +825,11 @@ urlpatterns = [
     path("orders/volume-check/", OrderVolumeCheckView.as_view(), name="api-backstage-order-volume-check"),
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path(
+        "orders/<str:ref>/payment/check/",
+        OrderPaymentCheckView.as_view(),
+        name="api-backstage-order-payment-check",
+    ),
+    path(
         "orders/<str:ref>/ticket-escpos/",
         OrderTicketEscposView.as_view(),
         name="api-backstage-order-ticket-escpos",
@@ -1188,6 +1195,11 @@ urlpatterns = [
     # ⚠️ ANTES de `pos/preorders/<str:ref>/`: `search` casaria com o ref.
     path("pos/preorders/search/", POSPreorderSearchView.as_view(), name="api-backstage-pos-preorder-search"),
     path("pos/preorders/<str:ref>/", POSPreorderDetailView.as_view(), name="api-backstage-pos-preorder-detail"),
+    path(
+        "pos/preorders/<str:ref>/payment/check/",
+        POSPreorderPaymentCheckView.as_view(),
+        name="api-backstage-pos-preorder-payment-check",
+    ),
     path(
         "pos/preorders/<str:ref>/hand-over/",
         POSPreorderHandOverView.as_view(),

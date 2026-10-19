@@ -34,6 +34,34 @@ export function useOrderDetail(orderRef: string) {
 
   const refresh = coalesceRefresh(() => fetchOrder());
 
+  // ── Conferência do cartão com o gateway ────────────────────────────────────
+  //
+  // A leitura do detalhe não pergunta ao gateway (A8-1): o servidor diz
+  // `payment_check_due` quando o pedido deve cartão, e a tela pede o comando ao
+  // abrir o pedido e quando ele volta a dever. O intervalo mínimo entre
+  // perguntas é do servidor. Pagou (o webhook se perdeu): relê o pedido.
+  async function checkPayment() {
+    try {
+      const result = await $fetch<{ changed: boolean }>(
+        `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/payment/check/`,
+        { method: "POST" },
+      );
+      if (result.changed) await refresh();
+    } catch {
+      // Melhor esforço, como era no GET: o `reconcile_payments` do worker é a
+      // rede, e a tela segue com o que leu.
+    }
+  }
+  if (!import.meta.server) {
+    watch(
+      () => data.value?.payment_check_due === true,
+      (due) => {
+        if (due) void checkPayment();
+      },
+      { immediate: true },
+    );
+  }
+
   watch(
     error,
     (value) => {

@@ -88,11 +88,19 @@ registerEndpoint("/api/v1/backstage/pos/preorders/search/", (event) => {
   searched(event.path);
   return found;
 });
+let paymentCheckDue = false;
+const paymentChecked = vi.fn();
 registerEndpoint("/api/v1/backstage/pos/preorders/NB-7/", () => ({
   order: detail,
+  payment_check_due: paymentCheckDue,
   generated_at: "2026-09-26T12:00:00Z",
   contract_version: 1,
 }));
+// A conferência do cartão é comando (A8-1): o detalhe só lê.
+registerEndpoint("/api/v1/backstage/pos/preorders/NB-7/payment/check/", (event) => {
+  paymentChecked(event.method);
+  return { ok: true, changed: false, payment_check_due: true };
+});
 // A DANFE da encomenda entregue: o servidor compõe a bobina (P2-27).
 registerEndpoint("/api/v1/backstage/pos/orders/NB-7/danfe-escpos/", () => {
   danfeFetched();
@@ -178,6 +186,8 @@ beforeEach(() => {
   kick.mockClear();
   agentPrint.mockClear();
   danfeFetched.mockClear();
+  paymentChecked.mockClear();
+  paymentCheckDue = false;
   navigate.mockClear();
   route.query = {};
 });
@@ -196,6 +206,19 @@ describe("Detalhe — só lê e imprime a Via Pedido", () => {
     expect(wrapper.find("[data-order-items]").text()).toContain("Pão");
     expect(text).toContain("Sem açúcar");
     expect(wrapper.find("[data-kitchen-note]").text()).toContain("Separar antes das 9h");
+  });
+
+  it("A8-1: a encomenda que deve cartão pede a conferência por POST ao abrir", async () => {
+    paymentCheckDue = true;
+    await mount(DetailPage);
+    await vi.waitFor(() => expect(paymentChecked).toHaveBeenCalledTimes(1));
+    expect(paymentChecked).toHaveBeenCalledWith("POST");
+  });
+
+  it("A8-1: sem cartão a conferir, abrir o detalhe não pede nada ao servidor além da leitura", async () => {
+    await mount(DetailPage);
+    await flushPromises();
+    expect(paymentChecked).not.toHaveBeenCalled();
   });
 
   it("imprime a Via Pedido pela impressão individual que já existe", async () => {

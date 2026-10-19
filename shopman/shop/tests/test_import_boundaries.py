@@ -120,8 +120,6 @@ GET_WRITE_FOUND_BY_TRANSITIVE_GATE = {
     # Marketing: o estado de segurança nasce na primeira leitura; a negação é auditada no GET.
     ("shopman/backstage/api/marketing.py", "safety_state"): 1,
     ("shopman/backstage/api/marketing_seal.py", "_authorization_error_response"): 1,
-    # Gestor/PDV: o detalhe do pedido pergunta ao gateway do cartão (e carimba a pergunta).
-    ("shopman/backstage/api/operations.py", "_reconcile_payment_if_due"): 2,
     # ESC/POS: compor o papel carimba a "primeira via" no pedido.
     ("shopman/backstage/api/operations.py", "_stamp_first_print"): 5,
     # Pulso da gaveta: a leitura grava o veredito do relógio e fecha o livro-caixa.
