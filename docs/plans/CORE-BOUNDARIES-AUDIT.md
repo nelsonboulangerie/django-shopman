@@ -1,7 +1,7 @@
 # Auditoria de fronteiras do Core: que outros domínios estão sem casa?
 
 > Análise arquitetural, 2026-08-18. Pergunta: além do caixa (já diagnosticado em
-> [CASH-LEDGER-ARCHITECTURE.md](CASH-LEDGER-ARCHITECTURE.md), caso de referência,
+> [CASH-LEDGER-ARCHITECTURE.md](completed/CASH-LEDGER-ARCHITECTURE.md), caso de referência,
 > não reanalisado aqui), existe outro domínio hoje contornado ou mal alojado que
 > mereça um pacote do Core, ou que seja política do orquestrador vivendo numa
 > superfície? Leitura só; nenhum código foi alterado. Fatos citados como `path:linha`.

@@ -1,6 +1,6 @@
 """Editar a encomenda no próprio pedido: itens, observação, recebimento e data.
 
-Decisões do dono (26–28/09/2026, ``docs/plans/ENCOMENDAS-PDV-PLAN.md``, WP-E6):
+Decisões do dono (26–28/09/2026, ``docs/plans/completed/ENCOMENDAS-PDV-PLAN.md``, WP-E6):
 
 - a edição acontece NO PRÓPRIO PEDIDO — mesmo ref, mesmo pagamento, mesmo
   acompanhamento. Só a NFC-e autorizada fecha a porta: aí o caminho é cancelar e

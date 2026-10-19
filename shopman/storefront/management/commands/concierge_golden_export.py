@@ -1,6 +1,6 @@
 """Exporta mensagens reais de clientes como casos do conjunto de avaliação.
 
-Fatia 1 do estudo ``docs/plans/CONCIERGE-ARQUITETURA-ALVO.md`` (seção 6.3). Cada
+Fatia 1 do estudo ``docs/plans/completed/CONCIERGE-ARQUITETURA-ALVO.md`` (seção 6.3). Cada
 mensagem de entrada com texto vira um caso em JSON Lines: o texto REDIGIDO
 (``redact_observation_text``: documento, telefone, e-mail, endereço, link,
 número longo, dado financeiro e de saúde), até 2 falas anteriores da mesma

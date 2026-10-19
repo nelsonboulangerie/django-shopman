@@ -5,7 +5,7 @@ o próximo webhook dele chega com nome e telefone, não encontra ninguém (o
 identificador acabou de ser apagado) e **cria um cadastro novo** com os dados
 que o titular acabou de mandar apagar. Era por causa desse caminho que a
 exclusão preferia recusar a mentir — ver
-`docs/plans/PRIVACY-CANONICAL-FENCE-MATRIX-2026-09-16.md`.
+`docs/plans/completed/PRIVACY-CANONICAL-FENCE-MATRIX-2026-09-16.md`.
 
 A lápide fecha esse caminho sem guardar o dado: grava só um HMAC do
 identificador do assinante, o bastante para reconhecer quem volta e recusar.

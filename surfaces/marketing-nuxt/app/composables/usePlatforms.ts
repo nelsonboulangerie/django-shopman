@@ -2,7 +2,7 @@
 //
 // Existe porque o estado das plataformas não tinha casa: vazava para o painel de revisão,
 // primeiro como ação dentro de um alerta, depois como botão no cabeçalho. Ver
-// `docs/plans/MARKETING-UX-PLAN.md`.
+// `docs/plans/completed/MARKETING-UX-PLAN.md`.
 //
 // ⚠️ Plataforma ≠ canal. Canal é por onde se VENDE (web, PDV, iFood); plataforma é por onde
 // o anúncio SAI (Instagram, Facebook, WhatsApp). A ADR-020 §10 fixou essa distinção.

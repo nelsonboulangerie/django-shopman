@@ -19,7 +19,7 @@
 | [`docs/plans/README.md`](plans/README.md) | Classificação semântica dos planos vivos e backlog explícito |
 | [`docs/plans/INDEX.md`](plans/INDEX.md) | Inventário mecânico completo da árvore viva de planos |
 | [`docs/plans/OPERATION-RUNBOOKS-PLAN.md`](plans/OPERATION-RUNBOOKS-PLAN.md) | Runbooks, comandos de diagnóstico, healthcheck profundo e reconciliação diária |
-| [`docs/plans/WP-GAP-07-pre-prod-migration-playbook.md`](plans/WP-GAP-07-pre-prod-migration-playbook.md) | Playbook ativo de migração/pré-prod |
+| [`docs/guides/production-upgrades.md`](guides/production-upgrades.md) | Migração e upgrade em produção (sucede o playbook WP-GAP-07, arquivado em `plans/completed/`) |
 | [`docs/plans/completed/`](plans/completed/) | Planos concluídos; histórico preservado, não fonte de estado atual |
 | [`docs/reports/`](reports/) | Relatórios e evidências históricas |
 | [`docs/governance/`](governance/) | Baselines versionadas dos gates documentais |

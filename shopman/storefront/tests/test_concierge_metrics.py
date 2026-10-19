@@ -1,6 +1,6 @@
 """A régua da Concierge (OBS0310-K): custo e tempo por resposta, e o golden set.
 
-Fatia 1 do ``docs/plans/CONCIERGE-ARQUITETURA-ALVO.md``. O cliente não vê nada
+Fatia 1 do ``docs/plans/completed/CONCIERGE-ARQUITETURA-ALVO.md``. O cliente não vê nada
 mudar; o turno grava em ``ConversationMessage.usage`` do primeiro bloco da
 resposta quem respondeu, os tokens por (etapa, modelo) com a escrita de cache, o
 custo estimado e o tempo de ponta a ponta e por etapa.

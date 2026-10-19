@@ -5,7 +5,7 @@
 > (Pablo / Nelson Boulangerie). Na data, nada estava implementado.
 >
 > ⚠️ **Estado em 24/09/2026: a maior parte foi entregue** pelo inventário de receitas
-> (#488, [`RECIPE-INVENTORY-PLAN`](RECIPE-INVENTORY-PLAN.md),
+> (#488, [`RECIPE-INVENTORY-PLAN`](completed/RECIPE-INVENTORY-PLAN.md),
 > [ADR-027](../decisions/adr-027-recipe-book-authoring-vs-execution.md)). Leia a seção
 > **0** antes do resto: ela diz o que ficou superado e o que continua aberto. O corpo
 > abaixo é o registro da entrevista e fica como está.

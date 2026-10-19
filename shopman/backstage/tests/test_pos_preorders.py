@@ -1,6 +1,6 @@
 """Encomendas do PDV — o corte, o saldo, a situação, a busca e a rota.
 
-A seção Encomendas (``docs/plans/ENCOMENDAS-PDV-PLAN.md``) lê o que a casa
+A seção Encomendas (``docs/plans/completed/ENCOMENDAS-PDV-PLAN.md``) lê o que a casa
 prometeu: todo pedido com recebimento, de qualquer canal, hoje ou depois, pela
 data combinada. Estes testes prendem o que a tela não pode errar — quem entra,
 quanto falta receber, e que o detalhe não vira porta para qualquer pedido.

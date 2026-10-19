@@ -394,5 +394,5 @@ objetos. "Admissivel" ordena bem, mas e registro de engenharia para uma tela de 
 - [ADR-011 - Formula sem FormulaPlan](adr-011-formula-and-cashshift.md)
 - [ADR-012 - Contrato headless de superficie](adr-012-headless-surface-contract.md)
 - [ADR-015 - Backward-compat pos-producao](adr-015-backward-compat-policy-post-prod.md)
-- [QC da fornada - desenho de produto](../plans/QC-FORNADA.md)
+- [QC da fornada - desenho de produto](../plans/completed/QC-FORNADA.md)
 - [Regras de negocio - a fornada nao conforme](../business-rules.md)

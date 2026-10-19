@@ -1,6 +1,6 @@
 """Placar da Concierge contra o conjunto de mensagens reais (golden set).
 
-Fatia 1 do estudo ``docs/plans/CONCIERGE-ARQUITETURA-ALVO.md`` (seção 6.3). Roda o
+Fatia 1 do estudo ``docs/plans/completed/CONCIERGE-ARQUITETURA-ALVO.md`` (seção 6.3). Roda o
 caminho de HOJE (``service.run_turn``: triagem, mídia, cortesia, agente) sobre
 cada caso de ``golden_set.json`` até o ponto em que ele decide quem responde, e
 compara com o rótulo conferido:

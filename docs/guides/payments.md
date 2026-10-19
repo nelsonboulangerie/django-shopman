@@ -73,7 +73,7 @@ vencia no Stripe e a padaria nunca recebia.
 Dinheiro **fora do terminal** não tem intent até o acerto: pedido da loja online
 em dinheiro (retirada ou entrega) e COD do PDV (`collection == "on_delivery"`)
 ficam sem `intent_ref`; o intent nasce quando o dinheiro troca de mãos (WP-3 do
-[CASHMAN-PLAN](../plans/CASHMAN-PLAN.md)). Marketplace (`external` sem coleta no
+[CASHMAN-PLAN](../plans/completed/CASHMAN-PLAN.md)). Marketplace (`external` sem coleta no
 terminal) também segue sem intent aqui.
 
 O caixa físico (turno, gaveta, sangria, troco) não é pergunta do Payman: é do

@@ -2,10 +2,10 @@
 
 > ⛔ **SUPERADO. Não execute por este documento.** O `cashman` absorveu o log de
 > eventos como livro-caixa imutável, e a trava da gaveta virou o
-> [WP-8 do CASHMAN-PLAN](../CASHMAN-PLAN.md), com as mesmas regras (iniciar, sem
+> [WP-8 do CASHMAN-PLAN](CASHMAN-PLAN.md), com as mesmas regras (iniciar, sem
 > carência, só quando sabe, um destrave uma venda). O PR #198 fechou sem merge.
 > Guardado aqui porque a lição P3 da
-> [CASH-LEDGER-ARCHITECTURE](../CASH-LEDGER-ARCHITECTURE.md) cita a seção
+> [CASH-LEDGER-ARCHITECTURE](CASH-LEDGER-ARCHITECTURE.md) cita a seção
 > "Por que o log existe" como fonte.
 
 > Prompt de handoff para sessão limpa. Contém o contexto suficiente e nada além.
