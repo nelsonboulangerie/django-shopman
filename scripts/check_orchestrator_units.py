@@ -1154,12 +1154,343 @@ def _test_references_unit(reference: str, unit: dict[str, Any], root: Path) -> b
     return bool(_test_reached_authorities(reference, unit, root))
 
 
+# ── Regras (a) e (c) como estrutura, não como nome ─────────────────────────────
+#
+# O manifesto prova que cada unidade tem UMA pergunta e UM entrypoint, mas isso é
+# unicidade de string: uma segunda implementação da mesma decisão, escrita dentro
+# de uma unidade que já existe, passava (laudo CORE-SOVEREIGNTY, A7-3). As três
+# travas abaixo olham o CÓDIGO:
+#
+# 1. Campo possuído por política só é TESTADO (comparação, condição, operando
+#    booleano) dentro do módulo da política. Uma comparação de ``min_order_q`` em
+#    ``modifiers.py`` ou em ``services/cart.py`` é segunda implementação, tenha o
+#    nome que tiver. Vale para ``shopman/shop``, ``storefront`` e ``backstage``.
+# 2. Unidade de política nova nasce em ``shopman/shop/policies/``. As que já
+#    viviam fora estão congeladas, símbolo a símbolo, em
+#    ``policy-namespace-baseline.json``: a lista só encolhe.
+# 3. Arquivo que acumulou unidades demais tem teto de linhas e de classes.
+
+POLICY_SCAN_ROOTS = ("shopman/shop", "shopman/storefront", "shopman/backstage")
+POLICY_NAMESPACE = "shopman/shop/policies/"
+POLICY_NAMESPACE_BASELINE_PATH = ROOT / "docs" / "architecture" / "policy-namespace-baseline.json"
+
+
+@dataclass(frozen=True)
+class OwnedFields:
+    """Campos cuja leitura em teste é decisão da política ``unit``.
+
+    ``distinctive``: o nome só existe na entidade da política; qualquer receptor
+    conta. ``generic``: o nome se repete em outras entidades (``skus``,
+    ``fulfillment_types`` do canal); conta só quando o receptor se chama como a
+    entidade (``receiver``).
+    """
+
+    unit: str
+    module_path: str
+    distinctive: frozenset[str]
+    generic: frozenset[str]
+    receiver: re.Pattern[str]
+
+
+POLICY_OWNED_FIELDS = (
+    OwnedFields(
+        unit="promotion.eligibility",
+        module_path="shopman/shop/policies/promotion.py",
+        distinctive=frozenset({"min_order_q", "birthday_only", "customer_segments"}),
+        generic=frozenset({"skus", "collections", "fulfillment_types"}),
+        receiver=re.compile(r"promo|coupon", re.I),
+    ),
+)
+
+# Leituras desses campos que NÃO decidem se a promoção vale, cada uma com o motivo.
+# (path, símbolo de topo, campo). Entrada que deixa de casar reprova (lista só encolhe).
+POLICY_FIELD_EXEMPTIONS: dict[tuple[str, str, str], str] = {
+    ("shopman/shop/services/promotions.py", "_best_group_discount", "birthday_only"): (
+        "escolhe QUAL promoção é a vantagem declarada do grupo, não se ela vale para a compra"
+    ),
+    ("shopman/shop/services/promotions.py", "_best_group_discount", "customer_segments"): (
+        "escolhe QUAL promoção é a vantagem declarada do grupo, não se ela vale para a compra"
+    ),
+    ("shopman/shop/services/offers.py", "offer_skus", "skus"): (
+        "lista os SKUs que a oferta nomeia para montar a sacola do anúncio; não decide se vale"
+    ),
+    ("shopman/shop/services/offers.py", "offer_skus", "collections"): (
+        "lista os SKUs que a oferta nomeia para montar a sacola do anúncio; não decide se vale"
+    ),
+    ("shopman/shop/admin/price_tier.py", "PriceTierGroupDiscountForm", "fulfillment_types"): (
+        "o editor do grupo mostra se a promoção do grupo foi salva como só-retirada"
+    ),
+    ("shopman/backstage/projections/customer_groups.py", "_project", "fulfillment_types"): (
+        "a tela de grupos mostra se a promoção do grupo foi salva como só-retirada"
+    ),
+}
+
+# Teto de tamanho: o arquivo não volta a crescer por acúmulo (A7-5). Baixar o teto
+# quando o arquivo encolher; subir pede extrair uma unidade em vez disso.
+SOURCE_BUDGETS: dict[str, dict[str, int]] = {
+    "shopman/shop/modifiers.py": {"max_lines": 1880, "max_classes": 9},
+}
+
+
+def _receiver_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Call):
+        return _receiver_name(node.func)
+    return ""
+
+
+def _delegation_walk(expression: ast.AST, delegates: frozenset[str]):
+    """``ast.walk`` que não entra nos argumentos de uma chamada À política.
+
+    Passar o campo para ``promotion_matches``/``promotion_minimum_eligible`` é
+    delegar a decisão, não reimplementá-la.
+    """
+    pending = [expression]
+    while pending:
+        node = pending.pop()
+        yield node
+        if isinstance(node, ast.Call) and _receiver_name(node.func) in delegates:
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+
+
+def _is_empty_default(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return not node.value
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return not node.elts
+    if isinstance(node, ast.Dict):
+        return not node.keys
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"list", "tuple", "set", "dict", "frozenset"}
+        and not node.args
+        and not node.keywords
+    )
+
+
+def _policy_public_names(root: Path, owned: OwnedFields) -> frozenset[str]:
+    path = root / owned.module_path
+    if not path.exists():
+        return frozenset()
+    tree = ast.parse(path.read_text(), filename=owned.module_path)
+    return frozenset(name for name in _defined_names(tree) if not name.startswith("_"))
+
+
+def _owned_field_reads(
+    expression: ast.AST,
+    owned: OwnedFields,
+    delegates: frozenset[str] = frozenset(),
+    tainted: dict[str, set[str]] | None = None,
+) -> set[str]:
+    """Campos possuídos lidos dentro de uma expressão de teste.
+
+    ``tainted`` mapeia variáveis locais que guardam um campo possuído
+    (``segments = list(promo.customer_segments or [])``) para esse campo: testar a
+    variável é testar o campo.
+    """
+    found: set[str] = set()
+    for node in _delegation_walk(expression, delegates):
+        if tainted and isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in tainted:
+            found.update(tainted[node.id])
+            continue
+        field_name = ""
+        receiver: ast.AST | None = None
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            field_name, receiver = node.attr, node.value
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            field_name, receiver = node.args[1].value, node.args[0]
+        if not field_name or receiver is None:
+            continue
+        if field_name in owned.distinctive:
+            found.add(field_name)
+        elif field_name in owned.generic and owned.receiver.search(_receiver_name(receiver)):
+            found.add(field_name)
+    return found
+
+
+def _test_expressions(tree: ast.AST):
+    """Toda expressão que DECIDE: condição, comparação ou operando booleano."""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.If, ast.While, ast.IfExp, ast.Assert)):
+            yield node.test
+        elif isinstance(node, ast.comprehension):
+            yield from node.ifs
+        elif isinstance(node, ast.Compare):
+            yield node
+        elif isinstance(node, ast.BoolOp):
+            # ``promo.skus or []`` normaliza o vazio; não decide nada.
+            if not (isinstance(node.op, ast.Or) and _is_empty_default(node.values[-1])):
+                yield node
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            yield node.operand
+
+
+def _tainted_locals(top: ast.AST, owned: OwnedFields, delegates: frozenset[str]) -> dict[str, set[str]]:
+    """Variáveis atribuídas a partir de um campo possuído (duas passadas: cadeias curtas)."""
+    tainted: dict[str, set[str]] = {}
+    assignments = [node for node in ast.walk(top) if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr))]
+    for _ in range(2):
+        for node in assignments:
+            if node.value is None:
+                continue
+            fields = _owned_field_reads(node.value, owned, delegates, tainted)
+            if not fields:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for name in ast.walk(target):
+                    if isinstance(name, ast.Name):
+                        tainted.setdefault(name.id, set()).update(fields)
+    return tainted
+
+
+def policy_field_scan_sources(root: Path = ROOT) -> list[Path]:
+    result: list[Path] = []
+    for scan_root in POLICY_SCAN_ROOTS:
+        base = root / scan_root
+        if not base.exists():
+            continue
+        result.extend(
+            path
+            for path in base.rglob("*.py")
+            if "tests" not in path.parts and "migrations" not in path.parts and "__pycache__" not in path.parts
+        )
+    return sorted(result)
+
+
+def policy_field_decisions(root: Path = ROOT) -> dict[str, set[tuple[str, str, str]]]:
+    """Por política, os pontos (path, símbolo de topo, campo) que testam seus campos."""
+    result: dict[str, set[tuple[str, str, str]]] = {owned.unit: set() for owned in POLICY_OWNED_FIELDS}
+    delegates = {owned.unit: _policy_public_names(root, owned) for owned in POLICY_OWNED_FIELDS}
+    for path in policy_field_scan_sources(root):
+        rel = path.relative_to(root).as_posix()
+        tree = ast.parse(path.read_text(), filename=rel)
+        for top in tree.body:
+            symbol = getattr(top, "name", "<module>")
+            for owned in POLICY_OWNED_FIELDS:
+                tainted = _tainted_locals(top, owned, delegates[owned.unit])
+                for expression in _test_expressions(top):
+                    for field_name in _owned_field_reads(expression, owned, delegates[owned.unit], tainted):
+                        result[owned.unit].add((rel, symbol, field_name))
+    return result
+
+
+def check_policy_owned_fields(
+    root: Path = ROOT,
+    exemptions: dict[tuple[str, str, str], str] | None = None,
+) -> dict[str, int]:
+    """Reprova decisão de política reimplementada fora do módulo dela.
+
+    Devolve, por política, quantos arquivos de produção implementam a decisão: a
+    métrica de localidade do piloto (PROMOTION-PILOT.md), calculada e não declarada.
+    """
+    if exemptions is None:
+        exemptions = POLICY_FIELD_EXEMPTIONS
+    decisions = policy_field_decisions(root)
+    used_exemptions: set[tuple[str, str, str]] = set()
+    files_by_unit: dict[str, int] = {}
+    for owned in POLICY_OWNED_FIELDS:
+        violations = []
+        files = set()
+        for point in sorted(decisions[owned.unit]):
+            if point[0] == owned.module_path:
+                files.add(point[0])
+            elif point in exemptions:
+                used_exemptions.add(point)
+            else:
+                violations.append(point)
+        if violations:
+            _fail(
+                "policy-reimplemented",
+                f"{owned.unit}: campos da política testados fora de {owned.module_path} "
+                f"(pergunte a ela em vez de comparar): {violations}",
+            )
+        files_by_unit[owned.unit] = len(files)
+    stale = sorted(set(exemptions) - used_exemptions)
+    if stale:
+        _fail("policy-exemption-stale", f"exceções que não casam mais nada (apague-as): {stale}")
+    return files_by_unit
+
+
+def policy_units_outside_namespace(units: list[dict[str, Any]]) -> dict[str, list[str]]:
+    outside: dict[str, list[str]] = {}
+    for unit in units:
+        if not unit.get("policy"):
+            continue
+        claims = sorted(
+            f"{claim['path']}:{symbol}"
+            for claim in unit["sources"]
+            if not claim["path"].startswith(POLICY_NAMESPACE)
+            for symbol in claim["symbols"]
+        )
+        if claims:
+            outside[unit["id"]] = claims
+    return outside
+
+
+def check_policy_namespace(units: list[dict[str, Any]], baseline: dict[str, Any]) -> None:
+    """Política nova nasce em ``policies/``; as antigas de fora não ganham símbolo."""
+    if (
+        not isinstance(baseline, dict)
+        or baseline.get("schema_version") != 1
+        or not isinstance(baseline.get("units"), dict)
+    ):
+        _fail("policy-baseline-schema", "baseline must contain schema_version=1 and units")
+    frozen: dict[str, list[str]] = baseline["units"]
+    outside = policy_units_outside_namespace(units)
+    for uid, claims in sorted(outside.items()):
+        if uid not in frozen:
+            _fail(
+                "policy-outside-namespace",
+                f"{uid}: unidade de política nova nasce em {POLICY_NAMESPACE}: {claims}",
+            )
+        grown = sorted(set(claims) - set(frozen[uid]))
+        if grown:
+            _fail(
+                "policy-outside-namespace",
+                f"{uid}: política congelada fora de {POLICY_NAMESPACE} ganhou símbolos: {grown}",
+            )
+    stale = sorted(uid for uid, claims in frozen.items() if set(claims) != set(outside.get(uid, [])))
+    if stale:
+        _fail("policy-baseline-stale", f"baseline desatualizado (só encolhe; regrave-o): {stale}")
+
+
+def check_source_budgets(root: Path = ROOT) -> None:
+    for rel, budget in SOURCE_BUDGETS.items():
+        path = root / rel
+        if not path.exists():
+            continue
+        text = path.read_text()
+        lines = text.count("\n")
+        classes = sum(isinstance(node, ast.ClassDef) for node in ast.parse(text).body)
+        if lines > budget["max_lines"] or classes > budget["max_classes"]:
+            _fail(
+                "source-budget",
+                f"{rel}: {lines} linhas/{classes} classes, teto {budget['max_lines']}/{budget['max_classes']}; "
+                "extraia uma unidade em vez de crescer o arquivo",
+            )
+
+
 def validate(
     inventory: dict[str, Any],
     manifests: dict[str, Any],
     *,
     root: Path = ROOT,
     instance_debt: dict[str, Any] | None = None,
+    policy_namespace_baseline: dict[str, Any] | None = None,
+    policy_field_exemptions: dict[tuple[str, str, str], str] | None = None,
 ) -> dict[str, Counter[str]]:
     if not isinstance(inventory, dict) or not isinstance(manifests, dict):
         _fail("schema", "inventory and manifests must be objects")
@@ -1668,7 +1999,15 @@ def validate(
         )
         if sorted(item.get("unit_ids", [])) != expected:
             _fail("inventory-drift", f"{item['path']}: unit_ids do not match manifests")
+    if policy_namespace_baseline is None:
+        policy_namespace_baseline = _load_json(
+            root / POLICY_NAMESPACE_BASELINE_PATH.relative_to(ROOT), "policy-baseline-unreadable"
+        )
+    check_policy_namespace(units, policy_namespace_baseline)
+    policy_decision_files = check_policy_owned_fields(root, policy_field_exemptions)
+    check_source_budgets(root)
     return {
+        "policy_decision_files": Counter(policy_decision_files),
         "responsibilities": responsibilities,
         "touchpoints": touchpoints,
         "owner_prefixes": owner_prefixes,
@@ -1707,7 +2046,8 @@ def main(argv: list[str] | None = None) -> int:
         f"unit_touchpoints={dict(sorted(counts['touchpoints'].items()))} "
         f"unit_owner_prefixes={dict(sorted(counts['owner_prefixes'].items()))} "
         f"test_gaps={dict(sorted(counts['test_gaps'].items()))} "
-        f"instance_debt={counts['instance_debt']['pending']}"
+        f"instance_debt={counts['instance_debt']['pending']} "
+        f"policy_decision_files={dict(sorted(counts['policy_decision_files'].items()))}"
     )
     return 0
 

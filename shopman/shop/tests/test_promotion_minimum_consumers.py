@@ -1,4 +1,4 @@
-"""Pricing consumers delegate the promotion minimum to its canonical policy."""
+"""Pricing consumers delegate the promotion decision to its canonical policy."""
 
 from __future__ import annotations
 
@@ -23,8 +23,7 @@ def _promotion(*, kind: str, value: int = 10):
 
 
 def test_catalog_pricing_delegates_the_minimum(monkeypatch):
-    monkeypatch.setattr(pricing, "promotion_minimum_eligible", lambda **_kwargs: False)
-    monkeypatch.setattr(modifiers.DiscountModifier, "_matches", lambda *_args: True)
+    monkeypatch.setattr(pricing, "promotion_matches", lambda *_args: False)
 
     result = pricing.PromotionPricingBackend().get_price(
         sku="PAO",
@@ -53,7 +52,7 @@ def test_order_discount_delegates_the_minimum(monkeypatch):
 
 
 def test_free_delivery_delegates_the_minimum(monkeypatch):
-    monkeypatch.setattr(modifiers, "promotion_minimum_eligible", lambda **_kwargs: False)
+    monkeypatch.setattr(modifiers, "promotion_matches", lambda *_args: False)
 
     assert not modifiers._free_delivery_covers_order(
         _promotion(kind="free_delivery"),
