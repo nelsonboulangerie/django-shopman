@@ -505,6 +505,15 @@ if (ADDRESS) {
     map_confirmation_enabled: MAPS,
   };
 }
+/** A linha como a comanda reaberta a mostra, com a "Semana do Café" já vencendo. */
+function withAutoPromo(item) {
+  const auto = autoOffQ(item, item.price_q);
+  if (!auto) return item;
+  return {
+    ...item, list_price_q: item.price_q, charged_price_q: item.price_q - auto,
+    pricing_discount: { type: "promotion", label: AUTO_PROMO.label, amount_q: auto, percent: 0 },
+  };
+}
 function tabPayload(ref) {
   const inUse = ref === "12";
   const full = ref === "13";
@@ -516,7 +525,7 @@ function tabPayload(ref) {
     transferred_from: TRANSFERRED_FROM.has(ref)
       ? { tab_display: TRANSFERRED_FROM.get(ref), label: `Transf. da #${TRANSFERRED_FROM.get(ref)}`, title: `Transferida da comanda #${TRANSFERRED_FROM.get(ref)}` }
       : null,
-    items: saved ?? (inUse ? SALE_ITEMS : full ? FULL_ITEMS : COLUMN_STATES && ref === "16" ? KITCHEN_ITEMS : COLUMN_STATES && ref === "17" ? AUTO_ITEMS : []), customer_phone: "",
+    items: saved ?? (inUse ? (LINE_DISCOUNT ? SALE_ITEMS.map(withAutoPromo) : SALE_ITEMS) : full ? FULL_ITEMS : COLUMN_STATES && ref === "16" ? KITCHEN_ITEMS : COLUMN_STATES && ref === "17" ? AUTO_ITEMS : []), customer_phone: "",
     // Cliente com cadastro (`customer_ref`): nome sem ref é RASCUNHO de cliente, e a
     // tela segura o salvamento ("Não salvo") até alguém concluir o cadastro.
     customer_name: inUse ? "Ana Souza" : full ? "Roberto Albuquerque" : "",
@@ -575,15 +584,49 @@ function groupLinePrices(body) {
   }
   return prices;
 }
+// `MOCK_LINE_DISCOUNT=1`: o desconto de linha como o MOTOR decide (o PDV não faz a
+// conta). O Café coado leva a "Semana do Café" (−15%), e o manual disputa com ela pela
+// regra "maior desconto ganha, um por item", com o arredondamento do motor (meio
+// centavo para cima). A revisão e o eco do salvar devolvem o preço de cada linha com
+// desconto manual e dizem quando ele foi descartado. `MOCK_REVIEW_DELAY_MS` segura a
+// resposta, para ver o "calculando". Sem a variável, nada muda.
+const LINE_DISCOUNT = SALE && process.env.MOCK_LINE_DISCOUNT === "1";
+const REVIEW_DELAY_MS = Math.max(0, Number(process.env.MOCK_REVIEW_DELAY_MS || 0));
+const AUTO_PROMO = { CAFE_SKU: "CAFE-COADO", label: "Semana do Café", percent: 15 };
+const autoOffQ = (item, list) => (item.sku === AUTO_PROMO.CAFE_SKU ? Math.floor((list * AUTO_PROMO.percent + 50) / 100) : 0);
+function engineLinePrices(body) {
+  const prices = {};
+  for (const item of Array.isArray(body?.items) ? body.items : []) {
+    const list = Number(item.list_price_q || item.unit_price_q || 0);
+    const auto = autoOffQ(item, list);
+    const discount = item.discount;
+    const value = Number(discount?.value || 0);
+    const manual = value > 0
+      ? Math.min(list, discount.type === "fixed" ? Math.round(value * 100) : Math.floor((list * value + 50) / 100))
+      : 0;
+    if (!manual && !auto) continue;
+    const manualWins = manual > auto;
+    prices[item.line_id] = {
+      charged_price_q: list - Math.max(manual, auto),
+      list_price_q: list,
+      pricing_discount: !manualWins && auto
+        ? { type: "promotion", label: AUTO_PROMO.label, amount_q: auto, percent: (auto * 100) % list === 0 ? (auto * 100) / list : 0 }
+        : null,
+      manual_discount_discarded: value > 0 && !manualWins,
+    };
+  }
+  return prices;
+}
+const later = (fn) => (REVIEW_DELAY_MS ? setTimeout(fn, REVIEW_DELAY_MS) : fn());
 function review(body) {
   const items = Array.isArray(body?.items) ? body.items : [];
-  const linePrices = GROUP ? groupLinePrices(body) : {};
+  const linePrices = GROUP ? groupLinePrices(body) : LINE_DISCOUNT ? engineLinePrices(body) : {};
   const subtotal = items.reduce(
     (sum, item) => sum + Number(linePrices[item.line_id]?.charged_price_q ?? item.unit_price_q ?? 0) * Number(item.qty || 0),
     0,
   );
   return {
-    ...(GROUP ? { line_prices: linePrices } : {}),
+    ...(GROUP || LINE_DISCOUNT ? { line_prices: linePrices } : {}),
     intent_version: "1", tab_ref: body?.tab_ref || "", subtotal_q: subtotal, subtotal_display: brl(subtotal),
     discount_q: 0, discount_display: brl(0), line_discount_q: 0, line_discount_display: brl(0),
     order_discount_q: 0, order_discount_display: brl(0), delivery_fee_q: 0, delivery_fee_display: brl(0),
@@ -920,7 +963,8 @@ createServer((req, res) => {
         }));
         SAVED_ITEMS.set(ref, items);
         // O eco do salvar diz o que cada linha cobra (o desconto do grupo, como o servidor).
-        send(res, 200, withPreorder({ ...tabPayload(ref), items, ...(GROUP ? { line_prices: groupLinePrices(body) } : {}) }));
+        const echo = GROUP ? groupLinePrices(body) : LINE_DISCOUNT ? engineLinePrices(body) : null;
+        later(() => send(res, 200, withPreorder({ ...tabPayload(ref), items, ...(echo ? { line_prices: echo } : {}) })));
       });
       return;
     }
@@ -995,7 +1039,7 @@ createServer((req, res) => {
       return;
     }
     if (path === "/api/v1/backstage/pos/sale/review/") {
-      void readBody(req).then((body) => send(res, 200, { ok: true, review: review(body) }));
+      void readBody(req).then((body) => later(() => send(res, 200, { ok: true, review: review(body) })));
       return;
     }
     // Pagar fecha a venda: o pedido nasce. Com `MOCK_CLOSE=uncertain` a resposta não

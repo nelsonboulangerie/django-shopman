@@ -554,6 +554,9 @@ describe("PosCartPanel — acordeão", () => {
             fired: true,
             kitchen_status: "done",
             discount: { value: 10, reason: "cortesia" },
+            // O preço que o servidor deu à linha: o selo mede o desconto nele.
+            list_price_q: 500,
+            charged_price_q: 450,
             authorship: { updated_by: "ana" },
           }),
         ],

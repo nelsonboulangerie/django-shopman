@@ -200,6 +200,8 @@ const {
   restoreItem,
   setLineNotes,
   setLineDiscount,
+  discountPreview,
+  previewLineDiscount,
   requestTabAssociation,
   openTab,
   openTabFromDialog,
@@ -1606,6 +1608,7 @@ onBeforeUnmount(() => {
               :unfire-action="unfireAction"
               :firing="firing"
               :discount-reasons="checkoutContract?.discount_reasons || []"
+              :discount-preview="discountPreview"
               :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
               :primary-label="editing ? 'Salvar alterações' : undefined"
               :primary-icon="editing ? 'lucide:save' : undefined"
@@ -1617,6 +1620,7 @@ onBeforeUnmount(() => {
               @set-qty="(lineId, qty) => setQty(lineId, qty)"
               @set-notes="setLineNotes"
               @set-discount="setLineDiscount"
+              @preview-discount="previewLineDiscount"
               @prepare="editing ? saveOrderEdit() : prepareCheckout()"
               @move="openMoveWith"
               @add-like="(lineId, qty, done) => done(addLineLike(lineId, qty))"

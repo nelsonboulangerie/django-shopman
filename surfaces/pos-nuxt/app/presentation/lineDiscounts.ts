@@ -40,44 +40,6 @@ export function manualDiscountLabel(
   return `${label} −${amount}`;
 }
 
-/** Quanto o desconto MANUAL desta linha tira por unidade, em centavos.
- *
- *  A mesma conta do kernel (`DiscountModifier._calc_manual`) e da review
- *  (`_payload_line_discounts_q`): percentual sobre a ETIQUETA, ou o valor em
- *  reais direto — e nunca mais do que a etiqueta inteira.
- */
-export function manualDiscountPerUnitQ(item: POSCartItem): number {
-  const value = item.discount?.value || 0;
-  if (value <= 0) return 0;
-  const listQ = typeof item.list_price_q === "number" ? item.list_price_q : unitChargedQ(item);
-  const asked = item.discount?.type === "fixed"
-    ? Math.round(value * 100)
-    : Math.round((listQ * value) / 100);
-  return Math.min(asked, listQ);
-}
-
-/** O desconto manual desta linha foi DESCARTADO pelo servidor?
- *
- *  A política é "maior desconto ganha, um por item": uma cortesia de 10% numa
- *  linha que já levou "Semana do Pão −15%" não vale.
- *
- *  ⚠️ Isto era um CHUTE — "tem automático carimbado e o operador pediu manual,
- *  logo o manual perdeu". A heurística acertava por acidente enquanto o manual
- *  só existia em percentuais pequenos, e passou a errar assim que ele aceitou
- *  reais: R$ 2,50 numa Tabatière que levava "Semana do Pão −15%" (R$ 0,90)
- *  GANHA, e o operador ouvia que o desconto dele não valeu. Agora os dois lados
- *  são medidos, com a régua do kernel.
- *
- *  Isto NÃO vira selo na linha: a linha mostra só o vencedor. Vira o aviso do
- *  MOMENTO em que o operador pede o desconto — feedback onde a ação acontece,
- *  em vez de um selo riscado morando ali para sempre.
- */
-export function manualDiscountWasOverridden(item: POSCartItem): boolean {
-  const autoPerUnitQ = item.pricing_discount?.label ? lineListUnitQ(item) - unitChargedQ(item) : 0;
-  if (autoPerUnitQ <= 0) return false;
-  return manualDiscountPerUnitQ(item) <= autoPerUnitQ;
-}
-
 /** A etiqueta por UNIDADE. Cai no cobrado quando o servidor não disse. */
 export function lineListUnitQ(item: POSCartItem): number {
   return typeof item.list_price_q === "number" ? item.list_price_q : unitChargedQ(item);
@@ -138,35 +100,26 @@ export function lineSavingsQ(item: POSCartItem): number {
   return Math.max(0, lineListTotalQ(item) - lineTotalQ(item));
 }
 
-/** O que a linha cobra por unidade, segundo o servidor, no eco de cada gravação. */
-export type POSLinePrice = Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount">;
+/** O que a linha cobra por unidade, segundo o servidor, no eco de cada gravação
+ *  e na revisão. `manual_discount_discarded`: o motor descartou o desconto que o
+ *  operador deu nesta linha, porque o automático dela é maior ("maior desconto
+ *  ganha, um por item"). Quem decide é o motor; a tela só repete. */
+export type POSLinePrice = Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount"> & {
+  manual_discount_discarded?: boolean;
+};
 
-/** O preço por unidade que a linha passa a cobrar com o desconto manual que ela
- *  tem AGORA, pela régua do kernel: etiqueta menos o MAIOR entre o manual e o
- *  automático conhecido (um desconto por item, o maior ganha).
+/** Aplica o preço que o servidor diz que cada linha cobra (eco do salvar ou da
+ *  revisão) e tira da linha o "calculando". Só escreve o que mudou: cada escrita
+ *  na linha reagenda a gravação.
  *
- *  É a resposta instantânea do toque em Aplicar. Sem ela, o total da linha
- *  esperava o servidor, e o servidor só o devolvia ao reabrir a comanda: o dono
- *  deu R$ 1,00 numa linha e o total só mudou quando recarregou a página
- *  (13/10/2026). O eco da gravação (`applyLinePrices`) confirma logo depois.
- *
- *  O automático conhecido é o que venceu a linha (`pricing_discount`). Um
- *  automático que o manual anterior tinha batido não aparece aqui; nesse caso
- *  raro o eco corrige o número em seguida.
- */
-export function manualDiscountChargedQ(item: POSCartItem): number {
-  const listQ = lineListUnitQ(item);
-  const autoQ = Math.max(0, item.pricing_discount?.amount_q || 0);
-  return Math.max(0, listQ - Math.max(manualDiscountPerUnitQ(item), autoQ));
-}
-
-/** Aplica o preço que o servidor diz que cada linha cobra (eco do salvar).
- *  Só escreve o que mudou: cada escrita na linha reagenda a gravação. */
+ *  Devolve as linhas em que o motor DESCARTOU o desconto manual, para quem pediu
+ *  o desconto dizer isso ao operador no momento do pedido. */
 export function applyLinePrices(
   items: POSCartItem[],
   linePrices: Record<string, POSLinePrice> | undefined | null,
-): void {
-  if (!linePrices) return;
+): string[] {
+  const discarded: string[] = [];
+  if (!linePrices) return discarded;
   for (const item of items) {
     const price = linePrices[item.line_id];
     if (!price) continue;
@@ -180,19 +133,25 @@ export function applyLinePrices(
     if (JSON.stringify(item.pricing_discount ?? null) !== JSON.stringify(next)) {
       item.pricing_discount = next;
     }
+    if (item.price_pending) item.price_pending = false;
+    if (price.manual_discount_discarded) discarded.push(item.line_id);
   }
+  return discarded;
 }
 
 /** As linhas SEM o eco de preço do servidor, para a chave que decide rever o total.
  *
- *  A revisão da venda sem comanda devolve o que cada linha cobra (o desconto do
- *  grupo do cliente, a Xepa) e a tela grava isso na linha. Se esses campos
- *  entrassem na chave, gravar o eco pediria outra revisão, e a tela voltaria a
- *  dizer "Calculando…" depois de cada resposta. Eles não mudam o total: é o
- *  servidor que os calcula a partir do resto da linha.
+ *  A revisão devolve o que cada linha cobra (o desconto do grupo do cliente, a
+ *  Xepa, o desconto manual decidido pelo motor) e a tela grava isso na linha. Se
+ *  esses campos entrassem na chave, gravar o eco pediria outra revisão, e a tela
+ *  voltaria a dizer "Calculando…" depois de cada resposta. Eles não mudam o
+ *  total: é o servidor que os calcula a partir do resto da linha. O
+ *  `price_pending` é o estado de espera desse eco, e fica fora pelo mesmo motivo.
  */
 export function linesWithoutServerPrices(items: readonly POSCartItem[]): Array<Partial<POSCartItem>> {
-  return items.map(({ charged_price_q: _charged, list_price_q: _list, pricing_discount: _auto, ...rest }) => rest);
+  return items.map(({
+    charged_price_q: _charged, list_price_q: _list, pricing_discount: _auto, price_pending: _pending, ...rest
+  }) => rest);
 }
 
 /** O alcance de um desconto de linha: quanto ele tira por unidade e na linha. */
@@ -237,14 +196,15 @@ function lineReachQ(listQ: number, perUnitQ: number, item: Pick<POSCartItem, "qt
 
 /** O alcance do desconto que VENCEU a linha, medido no que o servidor cobra.
  *  O mesmo vencedor do selo (`lineDiscountBadge`): o automático, se houver, senão o
- *  manual. `null` quando a linha não tem desconto. */
+ *  manual. `null` quando a linha não tem desconto, ou quando o servidor ainda não
+ *  disse o preço da linha (`price_pending`): a tela não faz a conta do motor. */
 export function lineDiscountReach(item: POSCartItem): DiscountReach | null {
   const auto = pricingDiscountBadge(item) ? item.pricing_discount! : null;
-  const manualQ = manualDiscountPerUnitQ(item);
-  if (!auto && manualQ <= 0) return null;
+  const manual = (item.discount?.value || 0) > 0;
+  if ((!auto && !manual) || item.price_pending) return null;
   const listQ = lineListUnitQ(item);
   const measuredQ = typeof item.list_price_q === "number" ? listQ - unitChargedQ(item) : 0;
-  const perUnitQ = measuredQ > 0 ? measuredQ : auto ? Math.max(0, auto.amount_q) : manualQ;
+  const perUnitQ = measuredQ > 0 ? measuredQ : auto ? Math.max(0, auto.amount_q) : 0;
   if (perUnitQ <= 0) return null;
   const percent = auto
     ? auto.percent > 0 ? auto.percent : null
@@ -274,22 +234,45 @@ export function lineDiscountDetail(item: POSCartItem, reasons: readonly Discount
   return `${label} ${fact}`;
 }
 
-/** O alcance do desconto que o operador está DIGITANDO, antes do Aplicar: a mesma
- *  conta do kernel sobre a etiqueta da linha. `null` sem valor. */
-export function draftDiscountReach(
+/** A pergunta da prévia ao servidor e a resposta dela: o desconto que o operador
+ *  está digitando nesta linha, e o preço que a revisão deu à linha com ele. */
+export type DiscountPreview = {
+  lineId: string;
+  kind: "percent" | "fixed";
+  value: number;
+  status: "pending" | "ready" | "failed";
+  price?: POSLinePrice;
+};
+
+/** O que a prévia do editor de desconto mostra antes do Aplicar. */
+export type DraftDiscountOutcome =
+  | { kind: "reach"; reach: DiscountReach }
+  /** O motor descartaria o desconto digitado: o automático da linha é maior. */
+  | { kind: "discarded"; winner: string };
+
+/** O alcance do desconto que o operador está DIGITANDO, segundo a REVISÃO do
+ *  servidor com esse desconto na linha (o motor decide, a tela não conta).
+ *  `price` é o preço da linha que a revisão devolveu. `null` sem valor. */
+export function draftDiscountOutcome(
   item: POSCartItem,
   kind: "percent" | "fixed",
   value: number,
-): DiscountReach | null {
+  price: POSLinePrice,
+): DraftDiscountOutcome | null {
   if (!(value > 0)) return null;
-  const listQ = lineListUnitQ(item);
-  const askedQ = kind === "fixed" ? Math.round(value * 100) : Math.round((listQ * value) / 100);
-  const perUnitQ = Math.min(askedQ, listQ);
+  if (price.manual_discount_discarded) {
+    return { kind: "discarded", winner: price.pricing_discount?.label || "Outro desconto" };
+  }
+  if (typeof price.list_price_q !== "number" || typeof price.charged_price_q !== "number") return null;
+  const perUnitQ = price.list_price_q - price.charged_price_q;
   if (perUnitQ <= 0) return null;
   return {
-    perUnitQ,
-    lineQ: lineReachQ(listQ, perUnitQ, item),
-    percent: kind === "percent" ? value : null,
-    multiUnit: !isWeighedLine(item) && item.qty > 1,
+    kind: "reach",
+    reach: {
+      perUnitQ,
+      lineQ: lineReachQ(price.list_price_q, perUnitQ, item),
+      percent: kind === "percent" ? value : null,
+      multiUnit: !isWeighedLine(item) && item.qty > 1,
+    },
   };
 }

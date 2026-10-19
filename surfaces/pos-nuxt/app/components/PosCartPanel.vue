@@ -22,13 +22,15 @@ import {
 } from "~/presentation/selection";
 import {
   discountReachText,
-  draftDiscountReach,
+  draftDiscountOutcome,
   lineDiscountBadge,
   lineDiscountDetail,
   lineDiscountFact,
   lineListTotalDisplay,
   lineTotalQ,
+  manualDiscountLabel,
   unitChargedQ,
+  type DiscountPreview,
 } from "~/presentation/lineDiscounts";
 import { saleTotalText, type SaleTotalView } from "~/presentation/saleTotal";
 import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
@@ -49,6 +51,8 @@ import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGr
 
 const props = defineProps<{
   items: POSCartItem[];
+  /** A prévia do desconto digitado, respondida pela revisão do servidor. */
+  discountPreview?: DiscountPreview | null;
   /** O total da revisão do servidor, ou o estado sem número (`saleTotalView`). */
   total: SaleTotalView;
   requiresTab: boolean;
@@ -134,6 +138,9 @@ const emit = defineEmits<{
   setNotes: [string, string];
   /** line_id, valor (% ou reais, conforme o formato), motivo, formato. */
   setDiscount: [string, number, string, "percent" | "fixed"];
+  /** O desconto que o operador está digitando (antes do Aplicar), para a prévia
+   *  perguntar ao servidor o que ele faz na linha. Valor 0 limpa a prévia. */
+  previewDiscount: [lineId: string, kind: "percent" | "fixed", value: number];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   prepare: [];
   /** Transferir: com linhas marcadas (ou "Transferir esta linha") o diálogo nasce com
@@ -380,6 +387,11 @@ const totalShown = computed(() => props.total.status !== "hidden");
 /** O selo do desconto que venceu a linha. Usa `reasonOptions`, que normaliza a
  *  lista do servidor e cai nos motivos padrão: o selo diz "Cortesia", não o ref. */
 function discountBadge(item: POSCartItem) {
+  // Com o preço da linha ainda a caminho, o selo diz o desconto PEDIDO: o
+  // vencedor anterior (e a etiqueta riscada) são da linha de antes do toque.
+  if (item.price_pending) {
+    return manualDiscountLabel(item, reasonOptions.value) || lineDiscountBadge(item, reasonOptions.value);
+  }
   return (
     lineDiscountBadge(item, reasonOptions.value) ||
     (lineListTotalDisplay(item) ? "Desconto aplicado" : "")
@@ -717,17 +729,39 @@ function cancelDiscount() {
   setMode("qty");
 }
 // Na célula estreita o desconto vigente diz só o valor ("10%"), com o ícone.
-/** O alcance do que está sendo digitado, na linha aberta: "R$ 1,00 por unidade ·
- *  R$ 3,00 na linha" (só com mais de uma unidade) ou "10% · R$ 2,07 na linha".
- *  No lote (várias marcadas) cada linha tem a sua conta, e o painel não soma. */
-const discountDraftReach = computed(() => {
+/** O valor que o teclado tem agora, no formato do modo. */
+const draftDiscountValue = computed(() =>
+  discountKind.value === "fixed" ? moneyEntryToReais(numpadBuffer.value) : clampPercent(numpadBuffer.value),
+);
+// A prévia pergunta ao SERVIDOR (a revisão, com o desconto digitado na linha):
+// a tela não faz a conta do motor. Só na linha aberta; no lote cada linha tem a
+// sua conta, e o painel não soma.
+watch(
+  () => [discountOpen.value, selectMode.value, activeLineId.value, discountKind.value, draftDiscountValue.value] as const,
+  ([open, batch, lineId, kind, value]) => {
+    if (!open || batch || !lineId) return;
+    emit("previewDiscount", lineId, kind, value);
+  },
+);
+/** O alcance do que está sendo digitado, na linha aberta, dito pelo servidor:
+ *  "R$ 1,00 por unidade · R$ 3,00 na linha" (só com mais de uma unidade) ou
+ *  "10% · R$ 2,07 na linha". Se o automático da linha é maior, diz que não vale.
+ *  Enquanto a revisão corre, "Calculando…", no mesmo lugar e na mesma linha. */
+const discountDraftReach = computed<{ text: string; tone: "value" | "pending" | "warning" } | null>(() => {
   const item = activeItem.value;
-  if (selectMode.value || !item || !discountOpen.value) return "";
-  const value =
-    discountKind.value === "fixed" ? moneyEntryToReais(numpadBuffer.value) : clampPercent(numpadBuffer.value);
-  const reach = draftDiscountReach(item, discountKind.value, value);
-  if (!reach || (reach.percent === null && !reach.multiUnit)) return "";
-  return discountReachText(reach);
+  if (selectMode.value || !item || !discountOpen.value) return null;
+  const value = draftDiscountValue.value;
+  if (!(value > 0)) return null;
+  const preview = props.discountPreview;
+  const answered = preview && preview.lineId === item.line_id && preview.kind === discountKind.value && preview.value === value;
+  if (!answered || preview.status === "pending") return { text: "Calculando…", tone: "pending" };
+  if (preview.status !== "ready" || !preview.price) return null;
+  const outcome = draftDiscountOutcome(item, discountKind.value, value, preview.price);
+  if (!outcome) return null;
+  if (outcome.kind === "discarded") return { text: `Não vale: "${outcome.winner}" é maior`, tone: "warning" };
+  const reach = outcome.reach;
+  if (reach.percent === null && !reach.multiUnit) return null;
+  return { text: discountReachText(reach), tone: "value" };
 });
 const discountShortLabel = computed(() => {
   const discount = activeItem.value?.discount;
@@ -1776,7 +1810,18 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         <!-- Com o valor digitado, o rótulo vira o alcance: "R$ 1,00 por unidade ·
              R$ 3,00 na linha" (o R$ é por unidade, regra do kernel) ou "10% · R$ 2,07
              na linha". -->
-        <span v-if="discountDraftReach" class="font-semibold text-foreground tnum" data-pos-discount-reach>{{ discountDraftReach }}</span>
+        <span
+          v-if="discountDraftReach"
+          class="tnum"
+          :class="{
+            'font-semibold text-foreground': discountDraftReach.tone === 'value',
+            'text-muted-foreground': discountDraftReach.tone === 'pending',
+            'font-semibold text-warning': discountDraftReach.tone === 'warning',
+          }"
+          :aria-busy="discountDraftReach.tone === 'pending' || undefined"
+          data-pos-discount-reach
+          >{{ discountDraftReach.text }}</span
+        >
         <span v-else>{{
           selectMode
             ? `Desconto em ${selection.units} ${selection.units === 1 ? "item" : "itens"}`
@@ -2061,9 +2106,18 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                   >
                 </span>
               </span>
-              <strong class="op-title tnum">{{
-                formatBRL(lineTotalQ(item))
-              }}</strong>
+              <!-- Desconto recém-aplicado: o total da linha espera o servidor
+                   ("calculando"), no lugar e na largura do número de antes. -->
+              <strong class="relative op-title tnum" :aria-busy="item.price_pending || undefined">
+                <span :class="{ invisible: item.price_pending }">{{ formatBRL(lineTotalQ(item)) }}</span>
+                <span
+                  v-if="item.price_pending"
+                  class="absolute inset-0 flex items-center justify-end text-muted-foreground"
+                  title="Calculando"
+                  data-pos-line-total-pending
+                  ><Icon name="lucide:loader-circle" class="size-4 animate-spin" aria-hidden="true" /><span class="sr-only">Calculando</span></span
+                >
+              </strong>
             </NuxtButton>
             <div
               v-if="expandedLineId === item.line_id"
@@ -2075,7 +2129,8 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
               <p v-if="discountBadge(item)" class="mt-1">
                 {{ discountDetail(item) }}
               </p>
-              <p v-if="lineListTotalDisplay(item)" class="text-muted-foreground">
+              <p v-if="item.price_pending" class="text-muted-foreground">Calculando o desconto…</p>
+              <p v-else-if="lineListTotalDisplay(item)" class="text-muted-foreground">
                 De
                 <span class="line-through" :title="discountDetail(item)">{{
                   lineListTotalDisplay(item)
