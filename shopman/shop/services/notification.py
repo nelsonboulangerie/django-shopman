@@ -923,6 +923,9 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # caber no template aprovado do WhatsApp, que não aceita variável vazia
     # (revisão do dono, 25/09/2026; texto em `shopman/shop/notification_copy.py`).
     context["status_note"] = _status_note(order, template, reason, note=payload.get("status_note"))
+    # A data da ENCOMENDA no aviso de confirmado ("confirmado para retirada amanhã,
+    # a partir das 9h"). Auto-suprimível: pedido de hoje fica sem nada.
+    context["commitment_suffix"] = _commitment_suffix(order)
 
     # A NFC-e autorizada (aviso ``fiscal_note_ready``): o link da DANFE que o
     # provedor hospeda, ou a consulta da SEFAZ do QR. Não é link pessoal (não
@@ -1235,6 +1238,35 @@ def _commitment_phrase(order) -> str:
     if window:
         phrase = f"{phrase}, {window[:1].lower()}{window[1:]}"
     return phrase
+
+
+def _commitment_suffix(order) -> str:
+    """" para retirada amanhã, a partir das 9h" quando o pedido é ENCOMENDA; senão "".
+
+    Entra logo depois de "está confirmado", sem ponto final (o ponto é do texto).
+    Encomenda é ``is_preorder`` gravado no commit (data futura) ou data ainda à
+    frente de hoje. Dia da semana leva o artigo ("no sábado", "na sexta-feira");
+    "hoje" e "amanhã" vão sem. O recebimento diz o que acontece na data:
+    retirada ou entrega.
+    """
+    from datetime import date as _date
+
+    data = order.data or {}
+    try:
+        day = _date.fromisoformat(str(data.get("delivery_date") or "").strip())
+    except ValueError:
+        return ""
+    if not (data.get("is_preorder") or day > timezone.localdate()):
+        return ""
+    phrase = _commitment_phrase(order)
+    if not phrase:
+        return ""
+    # O nome do dia vem com maiúscula do formatador; no meio da frase, minúscula.
+    phrase = f"{phrase[:1].lower()}{phrase[1:]}"
+    if not phrase.startswith(("hoje", "amanhã")):
+        phrase = f"{'no' if phrase.startswith(('sábado', 'domingo')) else 'na'} {phrase}"
+    receipt = "entrega" if data.get("fulfillment_type") == "delivery" else "retirada"
+    return f" para {receipt} {phrase}"
 
 
 def _eta_clock(order) -> str:

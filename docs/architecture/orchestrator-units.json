@@ -11431,6 +11431,7 @@
             "refund_arrival_note",
             "_returned_money_note",
             "_commitment_phrase",
+            "_commitment_suffix",
             "_eta_clock",
             "_qualify_template"
           ]
