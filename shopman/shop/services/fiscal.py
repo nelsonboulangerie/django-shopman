@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def _default_emission_decision(order) -> bool:
-    """Fallback quando não há resolver configurado (ou ele quebrou): emite quando
+    """Fallback quando não há resolver configurado (ou um quebrou): emite quando
     a venda PEDIU a nota — CPF na nota, papel ou e-mail (``on_request_or_tax_id``).
     Um resolver quebrado não pode ser a razão de a promessa do balcão morrer."""
     from shopman.shop.fiscal_resolvers import on_request_or_tax_id
@@ -64,7 +64,9 @@ def emission_resolver(order) -> bool:
     Delega a resolver(es) Python plugáveis (``settings.SHOPMAN_FISCAL_EMISSION_RESOLVER``,
     caminho pontilhado para ``callable(order) -> bool``). Centraliza a regra de negócio
     (acima de X, certos canais, com CPF na nota, forma de pagamento, ambiente…) sem tocar
-    no fluxo. AUSENTE (ou com erro) → fallback padrão (opt-in do operador).
+    no fluxo. AUSENTE → fallback padrão (opt-in do operador). Resolver com ERRO →
+    os outros votam, o pedido explícito de nota vale, e o erro grita (log de erro +
+    alerta crítico); o ``SHOPMAN_E028`` reprova o caminho que não importa já no boot.
 
     **Vários resolvers**: separe por vírgula → combinados por OR (emite se QUALQUER um
     disser sim), ex.: ``"...on_request_or_tax_id,...card_payment"``. Para AND/NOT ou
@@ -90,15 +92,56 @@ def emission_resolver(order) -> bool:
     paths = [p.strip() for p in str(raw).split(",") if p.strip()]
     if not paths:
         return _default_emission_decision(order)
-    try:
-        from django.utils.module_loading import import_string
 
-        resolvers = [import_string(p) for p in paths]
-        return any(bool(r(order)) for r in resolvers)  # múltiplos = OR
-    except Exception:
-        # Resolver quebrado NÃO deve travar o pedido — cai no fallback e registra.
-        logger.warning("fiscal.emission_resolver: %s falhou; usando fallback", raw, exc_info=True)
-        return _default_emission_decision(order)
+    from django.utils.module_loading import import_string
+
+    # Cada resolver vota sozinho (múltiplos = OR). Um caminho quebrado não pode
+    # calar os outros: com o quinto resolver (``intermediated_sale``) acrescentado
+    # no Dia D a um deploy que ainda não o tem, os quatro da casa continuam valendo.
+    # E o quebrado GRITA (erro no log + alerta crítico): até 19/10 ele era um
+    # ``warning`` e a NFC-e parava de sair, venda após venda, sem nada em tela.
+    emits = False
+    broken: list[str] = []
+    for path in paths:
+        try:
+            if bool(import_string(path)(order)):
+                emits = True
+        except Exception:
+            broken.append(path)
+            logger.error(
+                "fiscal.emission_resolver: %s falhou no pedido %s; a política fiscal está quebrada",
+                path,
+                getattr(order, "ref", "?"),
+                exc_info=True,
+            )
+    if broken:
+        _alert_emission_resolver_broken(order, broken)
+        # Resolver quebrado NÃO trava o pedido: o que funciona vota, e o pedido
+        # explícito de nota (CPF, papel, e-mail) segue valendo.
+        return emits or _default_emission_decision(order)
+    return emits
+
+
+def _alert_emission_resolver_broken(order, broken: list[str]) -> None:
+    """A política de QUANDO emitir NFC-e quebrou: alerta crítico para a TI.
+
+    Um alerta por caminho quebrado (dedupe pelo caminho, não pelo pedido): o
+    defeito é de configuração e vale para toda venda até alguém corrigir.
+    """
+    from shopman.shop.services.observability import create_operator_alert
+
+    for path in broken:
+        create_operator_alert(
+            type="integration_config_drift",
+            severity="critical",
+            message=(
+                f"A regra de emissão de NFC-e '{path}' falhou (pedido "
+                f"{getattr(order, 'ref', '?')}). Enquanto ela estiver quebrada, a nota "
+                "só sai pelas outras regras ou quando o cliente pede. Corrija "
+                "SHOPMAN_FISCAL_EMISSION_RESOLVER e confira as vendas sem nota."
+            ),
+            dedupe_key=f"fiscal_emission_resolver_broken:{path}",
+        )
 
 
 # ── Emissão avulsa (a regra da casa disse não; o gerente disse sim) ──────

@@ -699,10 +699,10 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
 
     Silêncio é o pior modo de falha deste domínio. Quem decide SE a nota sai é o
     resolver (``shop/services/fiscal.emission_resolver``); com o resolver vazio,
-    ou apontando para um caminho que não importa, o motor cai no fallback
-    (opt-in do operador, ``order.data['fiscal']['issue_document']``) e registra
-    um warning no log — e o sistema simplesmente não emite, venda após venda,
-    sem nada na tela de ninguém.
+    o motor cai no fallback (opt-in do operador,
+    ``order.data['fiscal']['issue_document']``) e o sistema simplesmente não
+    emite, venda após venda, sem nada na tela de ninguém. Caminho que não importa
+    é o ``SHOPMAN_E028``, que vale fora do ``--deploy`` também.
 
     Erro de deploy, não warning: com emissão obrigatória valendo, cada venda que
     passa sem nota é passivo fiscal, e o log de um worker não é onde isso se
@@ -744,6 +744,28 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
         )
         return errors
 
+    # Caminho que não importa ou não é chamável: ``SHOPMAN_E028``, que roda em
+    # TODO ``check`` (boot do runserver e o ``migrate`` do PRE_DEPLOY), não só no
+    # ``--deploy``.
+    return errors
+
+
+@register()
+def check_fiscal_emission_resolver_importable(app_configs, **kwargs):
+    """Todo caminho de ``SHOPMAN_FISCAL_EMISSION_RESOLVER`` importa e é chamável.
+
+    Par de boot do ``SHOPMAN_E013`` (fallbacks perigosos, item 16). Um typo no
+    caminho, ou um resolver que o código deployado ainda não tem (o
+    ``intermediated_sale`` do delta do Dia D num build velho), fazia o motor cair
+    no fallback com um ``warning`` e a NFC-e parar de sair sem ninguém ver. O
+    motor agora grita em runtime (log de erro + alerta crítico); este check
+    impede que o deploy suba assim. Sem consulta ao banco e sem depender de
+    ``DEBUG``: caminho quebrado é defeito em qualquer ambiente.
+    """
+    errors = []
+    raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
+    paths = [p.strip() for p in str(raw).split(",") if p.strip()]
+
     from django.utils.module_loading import import_string
 
     for path in paths:
@@ -754,11 +776,11 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
                 Error(
                     f"SHOPMAN_FISCAL_EMISSION_RESOLVER aponta para '{path}', que não importa: {exc}.",
                     hint=(
-                        "O motor engole o erro e cai no fallback (opt-in do operador): "
-                        "a emissão fica silenciosamente desligada. Corrija o caminho ou "
-                        "remova-o da lista."
+                        "O motor ignora esse caminho (com alerta crítico) e a nota só sai "
+                        "pelas outras regras ou quando o cliente pede. Corrija o caminho "
+                        "ou remova-o da lista."
                     ),
-                    id="SHOPMAN_E013",
+                    id="SHOPMAN_E028",
                 )
             )
             continue
@@ -770,7 +792,7 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
                         "Um resolver é callable(order) -> bool. Fábricas como "
                         "`channels('pdv')` precisam de um wrapper importável já aplicado."
                     ),
-                    id="SHOPMAN_E013",
+                    id="SHOPMAN_E028",
                 )
             )
     return errors
