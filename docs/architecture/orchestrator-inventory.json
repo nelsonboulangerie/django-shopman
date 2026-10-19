@@ -6432,6 +6432,7 @@
           "responsibility": "contrato",
           "symbols": [
             "ProductionConfig",
+            "_TOP_LEVEL_KEYS",
             "_decimal_or_none",
             "_is_int",
             "_require_decimal_or_none",
