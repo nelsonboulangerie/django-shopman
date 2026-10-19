@@ -833,6 +833,11 @@ GEOIP_CITY_MAX_AGE_DAYS = _env_int("GEOIP_CITY_MAX_AGE_DAYS", 90)
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 GOOGLE_MAPS_BROWSER_API_KEY = os.environ.get("GOOGLE_MAPS_BROWSER_API_KEY", "")
 GOOGLE_MAPS_SERVER_API_KEY = os.environ.get("GOOGLE_MAPS_SERVER_API_KEY", "")
+# Teto diário GLOBAL de chamadas pagas ao Google no geocoding reverso ("usar minha
+# localização" e o pin do WhatsApp). O limite por IP do endpoint não segura custo;
+# este sim. Atingido, o reverso recusa até a virada do dia (falha fechada), e o
+# cliente digita o endereço. 300/dia fica dentro da faixa gratuita do Geocoding.
+SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT = _env_int("SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT", 300)
 
 # ── Stripe ────────────────────────────────────────────────────────────
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")

@@ -14,7 +14,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.shop.services.geocoding import GeocodingError, reverse_geocode
+from shopman.shop.services.geocoding import GeocodingDailyLimitReached, GeocodingError, reverse_geocode
 
 from .serializers import (
     DetailSerializer,
@@ -73,6 +73,13 @@ class ReverseGeocodeView(APIView):
 
         try:
             result = reverse_geocode(lat, lng)
+        except GeocodingDailyLimitReached as exc:
+            # Teto diário GLOBAL de custo (não é o limite por IP acima): falha
+            # fechada, com a saída que o cliente tem, digitar o endereço.
+            return Response(
+                {"detail": str(exc), "error": {"code": "geocode_daily_limit_reached"}},
+                status=429,
+            )
         except GeocodingError as exc:
             return Response({"detail": str(exc)}, status=502)
 

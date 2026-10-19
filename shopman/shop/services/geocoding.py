@@ -51,6 +51,58 @@ class GeocodingError(Exception):
     """Raised when reverse geocoding cannot produce a canonical result."""
 
 
+class GeocodingDailyLimitReached(GeocodingError):
+    """O teto diário de chamadas pagas ao Google no reverso foi atingido."""
+
+
+#: Teto padrão de chamadas ao Google por dia no geocoding reverso, somadas em
+#: todos os processos (cache compartilhado). 300/dia ≈ 9 mil/mês, dentro da faixa
+#: gratuita do Geocoding. Ajuste em ``SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT``.
+REVERSE_DAILY_LIMIT_DEFAULT = 300
+REVERSE_DAILY_LIMIT_MESSAGE = (
+    "A localização automática chegou ao limite de hoje. Digite o endereço, por favor."
+)
+
+
+def _reverse_daily_limit() -> int:
+    from django.conf import settings
+
+    try:
+        return int(getattr(settings, "SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT", REVERSE_DAILY_LIMIT_DEFAULT))
+    except (TypeError, ValueError):
+        return REVERSE_DAILY_LIMIT_DEFAULT
+
+
+def _spend_reverse_daily_budget() -> None:
+    """Gasta uma chamada do teto diário GLOBAL, ou recusa (falha fechada).
+
+    O limite por IP do endpoint (30/min) não segura custo: mil IPs fazem mil
+    chamadas pagas por minuto. Este teto é do Google inteiro, por dia de operação
+    da loja. Só a chamada que vai ao Google gasta (acerto de cache é de graça).
+    Contador ilegível (cache fora) também recusa: sem saber quanto já se gastou,
+    não se gasta mais. Ao cruzar o teto, um alerta para a TI.
+    """
+    from django.utils import timezone
+
+    limit = _reverse_daily_limit()
+    key = f"geocode:rev:budget:{timezone.localdate().isoformat()}"
+    try:
+        cache.add(key, 0, timeout=60 * 60 * 48)
+        used = cache.incr(key)
+    except Exception as exc:  # noqa: BLE001 — sem contador, falha fechada
+        logger.error("reverse_geocode_budget_unreadable", exc_info=True)
+        _record_failure("reverse_geocode", "contador do teto diário ilegível; geocoding reverso recusado", exc=exc)
+        raise GeocodingDailyLimitReached(REVERSE_DAILY_LIMIT_MESSAGE) from exc
+    if used > limit:
+        if used == limit + 1:
+            _record_failure(
+                "reverse_geocode",
+                f"teto diário de {limit} chamadas atingido; geocoding reverso recusado até amanhã "
+                "(SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT)",
+            )
+        raise GeocodingDailyLimitReached(REVERSE_DAILY_LIMIT_MESSAGE)
+
+
 @dataclass(frozen=True)
 class ReverseGeocodeResult:
     """Canonical address payload returned to the client.
@@ -123,6 +175,9 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
     """Reverse-geocode (lat, lng) via Google. Raises GeocodingError on failure.
 
     Cached for 24h per (lat, lng) rounded to ~11m precision (6 decimals).
+    Cache miss spends one call of the global daily cap
+    (``SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT``); past it, raises
+    ``GeocodingDailyLimitReached``.
     """
     api_key = server_api_key()
     if not api_key:
@@ -132,6 +187,8 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
     cached = cache.get(key)
     if cached is not None:
         return ReverseGeocodeResult(**cached)
+
+    _spend_reverse_daily_budget()
 
     params = {
         "latlng": f"{lat},{lng}",
