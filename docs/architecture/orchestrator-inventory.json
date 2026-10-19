@@ -8544,7 +8544,6 @@
           "symbols": [
             "ACTIVE_STATUSES",
             "DEFAULT_CHANNEL_REF",
-            "JUST_PLACED_SESSION_KEY",
             "MAX_SESSION_ORDER_ACCESS_REFS",
             "ORDER_ACCESS_SESSION_KEY",
             "_customer_identity_from_info",
@@ -8564,7 +8563,6 @@
             "add_reorder_items",
             "cancel",
             "confirm_received",
-            "consume_just_placed",
             "customer_can_access_order",
             "customer_identity_filter",
             "ensure_payment_intent",
@@ -8577,7 +8575,6 @@
             "last_reorder_context",
             "lock_customer_order",
             "logger",
-            "mark_just_placed",
             "mock_confirm_payment",
             "order_count_for_customer",
             "order_matches_customer_identity",

@@ -118,16 +118,14 @@ def payment_is_due(order) -> bool:
     return customer_orders.payment_is_due(order)
 
 
-def mark_just_placed(request, order_ref: str) -> None:
-    customer_orders.mark_just_placed(request, order_ref)
-
-
-def consume_just_placed(request, order_ref: str) -> bool:
-    return customer_orders.consume_just_placed(request, order_ref)
-
-
 def ensure_payment_intent(order) -> bool:
     return customer_orders.ensure_payment_intent(order)
+
+
+def check_payment(order) -> None:
+    """Comando do acompanhamento: conferir com o gateway e preparar a cobrança que falta."""
+    reconcile_payment_with_gateway_if_due(order)
+    ensure_payment_intent(order)
 
 
 def mock_confirm_payment(order) -> bool:

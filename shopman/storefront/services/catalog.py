@@ -21,7 +21,8 @@ def filter_by_collection(qs, collection_ref: str):
     return catalog_context.filter_by_collection(qs, collection_ref)
 
 
-def ensure_active_collection(collection_ref: str):
+def get_active_collection_or_404(collection_ref: str):
+    """A coleção ativa, ou 404. Só lê."""
     collection = catalog_context.get_active_collection(collection_ref)
     if collection is None:
         raise Http404

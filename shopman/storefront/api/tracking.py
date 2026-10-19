@@ -128,6 +128,20 @@ def _tracking_payload(order) -> dict:
         }
         for f in fulfillments
     ]
+    # Momento yoin: o pedido GARANTIDO, não a primeira visita. Quem acabou de
+    # fechar o pedido é a tela que sabe (o checkout marca no navegador); aqui
+    # sai só se já dá para comemorar. Enquanto falta pagar, não: seria festejar
+    # um pedido que ainda pode expirar, e a comemoração tem de sobrar para a
+    # volta do cliente depois de pagar. Pedido morto também não: confete sobre
+    # tela de cancelamento.
+    payment_due = order_service.payment_is_due(order)
+    # A tela pede a conferência do pagamento (POST ``payment/check/``) só
+    # enquanto este for verdadeiro.
+    data["payment_due"] = payment_due
+    data["placement_secured"] = not (order.status in {"cancelled", "returned"} or payment_due)
+    # Compartilhar não depende do momento: é mais útil com o pedido pronto
+    # do que trinta segundos depois do checkout.
+    data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Compartilhar")
     return data
 
 
@@ -176,40 +190,70 @@ class OrderTrackingView(ServerTimingMixin, APIView):
                 status=404,
             )
 
-        order_service.resolve_timeouts_if_due(order)
-        # ⚠️ A VOLTA DO CARTÃO PASSA POR AQUI, e por muito tempo não passava.
-        # O `success_url` do Stripe devolve o cliente para esta tela, e ela lia
-        # só o Payman — que só sabe o que o webhook contou. Webhook atrasado é
-        # corrida (o cliente chega antes); webhook quebrado é dano permanente.
-        # Nos dois casos o cliente pagava e continuava lendo "Pagar com cartão".
-        # Agora a própria leitura pergunta ao gateway (throttled) e liquida.
-        order_service.reconcile_payment_with_gateway_if_due(order)
-        # Fusão PAYMENT-TRACKING-MERGE: o acompanhamento é onde o cliente paga,
-        # então é aqui que o intent de pagamento nasce (recovery/idempotente, o
-        # mesmo que a antiga tela de pagamento fazia). Sem isto, o Pix de
-        # `timing=post_commit` nunca ganharia código para mostrar inline.
-        order_service.ensure_payment_intent(order)
+        # Leitura não produz efeito (A8-1). O que esta tela já fez no GET mora
+        # agora no dono de cada efeito: o prazo vencido é a directive do worker
+        # (segundos); a cobrança nasce no aceite (lifecycle); a volta do cartão e
+        # o Pix que não ganhou código são o POST ``payment/check/`` que a tela
+        # chama quando o pedido deve pagamento, e o ``reconcile_payments`` do
+        # worker é a rede por baixo dos dois.
         data = _tracking_payload(order)
-        # Momento yoin: comemorar não precisa ocupar layout. `just_placed` é
-        # consumido UMA vez, no primeiro acesso depois do checkout, e a tela
-        # celebra com confete — sem cartaz fixo competindo com o acompanhamento.
-        # O yoin marca o pedido GARANTIDO, não a primeira visita. Enquanto falta
-        # pagar, a flag NÃO é consumida: comemorar ali seria festejar um pedido
-        # que ainda pode expirar — e, como o consumo é de uso único, a
-        # comemoração se perderia justamente no momento em que ela faz sentido
-        # (a volta do cliente depois de pagar).
-        # Também não se comemora pedido morto: se ele foi cancelado antes da
-        # primeira visita (prazo do Pix vencido, recusa da loja), o cliente
-        # chegaria numa tela de cancelamento com confete caindo.
-        pedido_morto = order.status in {"cancelled", "returned"}
-        if order_service.payment_is_due(order) or pedido_morto:
-            data["just_placed"] = False
-        else:
-            data["just_placed"] = order_service.consume_just_placed(request, ref)
-        # Compartilhar não depende do momento: é mais útil com o pedido pronto
-        # do que trinta segundos depois do checkout.
-        data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Compartilhar")
         serializer = OrderTrackingSerializer(data)
+        return Response(serializer.data)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Check the order payment with the gateway and prepare what is missing",
+        responses={200: OrderTrackingSerializer, 404: DetailSerializer},
+    ),
+)
+class OrderPaymentCheckView(APIView):
+    """POST /api/v1/orders/{ref}/payment/check/ — conferir o pagamento agora.
+
+    O comando que a tela do acompanhamento dá quando o pedido deve pagamento
+    (ao abrir, ao voltar para a aba, e no "Tentar novamente"):
+
+    * **cartão/link**: pergunta ao gateway se pagou (com o intervalo mínimo de
+      ``GATEWAY_RECHECK_SECONDS``). A volta do Stripe cai aqui: o webhook pode
+      chegar depois do cliente, ou não chegar;
+    * **Pix/cartão sem cobrança pronta**: refaz a cobrança que o aceite não
+      conseguiu fechar (a Efí aceitou o PUT e falhou ao buscar o QR, ou o
+      provedor recusou na hora). ``payment.initiate`` é idempotente.
+
+    Era o GET que fazia isto, e leitura com efeito cobrava até de quem só
+    abria o link (prévia de mensagem, robô). O ``reconcile_payments`` do worker
+    continua sendo a rede para quem não está com a tela aberta.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-payment-check",
+            rate="30/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order = order_service.get_accessible_order(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        order_service.check_payment(order)
+        serializer = OrderTrackingSerializer(_tracking_payload(order))
         return Response(serializer.data)
 
 
