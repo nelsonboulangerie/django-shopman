@@ -470,7 +470,8 @@ const { printOne: printOrderTicket, printingRef: printingOrderRef } = usePosOrde
 async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos") {
   return await $fetch<{ payload_b64: string; title: string }>(
     apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/${endpoint}/`),
-    { credentials: "include" },
+    // POST: compor é emitir a via, e o servidor carimba a primeira.
+    { method: "POST", credentials: "include" },
   );
 }
 
