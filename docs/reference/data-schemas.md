@@ -1253,6 +1253,21 @@ de novo).
 |-------|------|-------------|----------|
 | `requested_by` | `string` | `storefront/concierge/intent_pilot.enqueue_measurement` (username de quem clicou) | `IntentPilotMeasureHandler` (log) |
 
+#### `continuum.catalog_structure.refresh`
+
+Reconstrução da cabeça do snapshot público do cardápio (Continuum 0.2). A escrita no
+catálogo marca a cabeça como suja e enfileira esta directive no `on_commit`
+(`storefront/continuum.mark_catalog_structure_dirty`); o GET do snapshot e o shadow do
+menu só leem. Uma viva por canal (`dedupe_key` = `continuum.catalog_structure.refresh:<canal>`),
+nascendo 1 s à frente para a rajada de escritas cair no dedupe e a reconstrução rodar no
+worker, não inline. Com o Continuum desligado (`catalog_snapshot_enabled` e
+`catalog_shadow_enabled` falsos), não nasce. A rede é o `refresh_catalog_structure` do
+`maintenance_worker`.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `channel_ref` | `string` | `storefront/continuum.request_refresh` | `CatalogStructureRefreshHandler` |
+
 ---
 
 ## Channel.config
