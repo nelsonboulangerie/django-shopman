@@ -6786,6 +6786,8 @@
           "path": "shopman/shop/services/cart.py",
           "symbols": [
             "add_item",
+            "_cart_date",
+            "_date_that_serves",
             "_catalog_product",
             "_other_lines_qty",
             "update_qty",
@@ -6801,7 +6803,8 @@
         "service"
       ],
       "domains": [
-        "offerman"
+        "offerman",
+        "stockman"
       ],
       "ports": [],
       "events": [],

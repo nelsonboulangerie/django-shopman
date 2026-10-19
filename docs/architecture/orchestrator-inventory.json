@@ -7800,6 +7800,7 @@
             "classify_planned_hold_for_session_sku",
             "classify_planned_holds_for_session",
             "own_holds_by_sku",
+            "session_hold_dates",
             "session_hold_dates_around",
             "session_line_held_qty",
             "stock_on_dates"
