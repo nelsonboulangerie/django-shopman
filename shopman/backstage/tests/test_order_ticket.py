@@ -23,7 +23,7 @@ from shopman.backstage.services import order_ticket as tickets
 from shopman.backstage.services.receipt_escpos import COLUMNS, ENCODING, order_ticket
 from shopman.shop.models import Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 # ── Cenário ───────────────────────────────────────────────────────────────

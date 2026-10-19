@@ -19,7 +19,7 @@ from shopman.backstage.services.exceptions import POSError
 from shopman.backstage.services.pos_hardware import CashDrawerConfig, DeviceAgentConfig
 from shopman.backstage.services.pos_terminal import runtime_profile
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
 
 AGENT_CONFIG = {
     "adapter": "agent",

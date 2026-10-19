@@ -1,44 +1,36 @@
-"""Instala os grupos comerciais canônicos que precisam existir no banco vivo.
+"""Instala os grupos comerciais que o descritor da Instância declara.
 
 O ``seed`` só descreve bancos descartáveis. Produção não é resemeada a cada
 deploy, portanto dados operacionais obrigatórios precisam de uma porta
 idempotente no release. Este comando cria o que ainda não existe e, depois
 disso, respeita toda edição feita pelo gestor.
+
+Quais grupos, com que desconto e que mensagem é dado da Instância: a seção
+``bootstrap.customer_groups`` do descritor (``SHOPMAN_INSTANCE_DESCRIPTOR``).
+Uma Instância que não declara grupo nenhum não ganha grupo nenhum.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-GROUPS = (
-    {
-        "ref": "staff",
-        "name": "Equipe",
-        "legacy_names": {"Funcionarios", "Funcionários", "Staff"},
-        "discount_kind": "equipe",
-        "savings_message": "Hoje você economizou {amount} por ser da Equipe",
-        "discount_percent": 30,
-        "fulfillment_types": ["pickup"],
-    },
-    {
-        "ref": "alianca-francesa",
-        "name": "Aliança Francesa",
-        "legacy_names": set(),
-        "discount_kind": "parceiro",
-        "savings_message": "Hoje você economizou {amount} por ser da Aliança Francesa",
-        "discount_percent": 15,
-        "fulfillment_types": [],
-    },
-)
+#: As chaves de ``config`` de cada item de ``bootstrap.customer_groups``.
+CUSTOMER_GROUP_FIELDS = frozenset({
+    "name", "discount_kind", "rounding", "savings_message", "discount_percent", "fulfillment_types",
+})
+
+
+def promotion_ref(group_ref: str) -> str:
+    return f"grupo-{group_ref}"
 
 
 @transaction.atomic
-def ensure_commercial_groups() -> list[tuple[str, str]]:
-    """Cria os defaults ausentes sem transformar deploy em dono da tela.
+def ensure_commercial_groups(items: list[dict]) -> list[tuple[str, str]]:
+    """Cria os grupos declarados ausentes sem transformar deploy em dono da tela.
 
     A presença de ``grupo-<ref>`` é a fronteira: depois que a promoção existe,
     inclusive pausada, o operador já assumiu o cadastro e nenhum deploy volta a
@@ -52,16 +44,18 @@ def ensure_commercial_groups() -> list[tuple[str, str]]:
     open_end = timezone.make_aware(datetime(2099, 12, 31, 23, 59, 59))
     outcomes: list[tuple[str, str]] = []
 
-    for definition in GROUPS:
-        ref = definition["ref"]
-        promotion_ref = f"grupo-{ref}"
+    for item in items:
+        ref = item["ref"]
+        definition = item.get("config", {})
+        if set(definition) != CUSTOMER_GROUP_FIELDS:
+            raise ValueError(f"customer group {ref} requires {sorted(CUSTOMER_GROUP_FIELDS)}")
         tier, tier_created = PriceTier.objects.get_or_create(
             ref=ref,
             defaults={
                 "name": definition["name"],
                 "metadata": {
                     "discount_kind": definition["discount_kind"],
-                    "rounding": 50,
+                    "rounding": definition["rounding"],
                     "savings_message": definition["savings_message"],
                 },
             },
@@ -70,40 +64,26 @@ def ensure_commercial_groups() -> list[tuple[str, str]]:
         # Promoção presente significa que o cadastro já passou às mãos do
         # gestor. Até promoção pausada é decisão explícita e deve sobreviver ao
         # deploy seguinte.
-        if Promotion.objects.filter(ref=promotion_ref).exists():
+        if Promotion.objects.filter(ref=promotion_ref(ref)).exists():
             outcomes.append((ref, "preservado"))
             continue
 
-        # O ref é conhecido, mas o nome pode revelar um cadastro próprio que
+        # O ref é conhecido, mas outro nome revela um cadastro próprio que
         # antecede este bootstrap. Conceder desconto a ele por inferência seria
-        # uma mudança financeira silenciosa. Só reparamos o nome canônico ou as
-        # grafias legadas que esta implantação já usou.
-        known_names = {definition["name"], *definition["legacy_names"]}
-        if not tier_created and tier.name not in known_names:
+        # uma mudança financeira silenciosa.
+        if not tier_created and tier.name != definition["name"]:
             outcomes.append((ref, "preservado-sem-desconto"))
             continue
 
-        changed_fields: list[str] = []
         metadata = dict(tier.metadata or {})
-        for key, value in (
-            ("discount_kind", definition["discount_kind"]),
-            ("rounding", 50),
-            ("savings_message", definition["savings_message"]),
-        ):
-            if key not in metadata:
-                metadata[key] = value
-                if "metadata" not in changed_fields:
-                    changed_fields.append("metadata")
-        if tier.name in definition["legacy_names"]:
-            tier.name = definition["name"]
-            changed_fields.append("name")
+        for key in ("discount_kind", "rounding", "savings_message"):
+            metadata.setdefault(key, definition[key])
         if metadata != (tier.metadata or {}):
             tier.metadata = metadata
-        if changed_fields:
-            tier.save(update_fields=[*changed_fields, "updated_at"])
+            tier.save(update_fields=["metadata", "updated_at"])
 
         Promotion.objects.create(
-            ref=promotion_ref,
+            ref=promotion_ref(ref),
             name=definition["name"],
             type=Promotion.PERCENT,
             value=definition["discount_percent"],
@@ -119,9 +99,16 @@ def ensure_commercial_groups() -> list[tuple[str, str]]:
 
 
 class Command(BaseCommand):
-    help = "Cria os grupos comerciais canônicos ausentes sem sobrescrever edições do gestor."
+    help = "Cria os grupos comerciais que o descritor da Instância declara, sem sobrescrever edições do gestor."
 
     def handle(self, *args, **options):
-        for ref, outcome in ensure_commercial_groups():
+        from config.instance_descriptors import UnsafeDescriptor, configured_descriptor
+
+        try:
+            items = configured_descriptor()["bootstrap"]["customer_groups"]
+            outcomes = ensure_commercial_groups(items)
+        except (OSError, KeyError, ValueError, UnsafeDescriptor) as exc:
+            raise CommandError(f"setup_commercial_groups: {exc}") from exc
+        for ref, outcome in outcomes:
             self.stdout.write(f"  Grupo comercial {ref}: {outcome}")
         self.stdout.write(self.style.SUCCESS("setup_commercial_groups: OK"))

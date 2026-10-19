@@ -4,9 +4,19 @@ import base64
 from unittest import mock
 from urllib.parse import parse_qs
 
+import pytest
 from django.test import override_settings
 
 from shopman.shop.adapters import otp_sms_twilio as sms
+
+
+@pytest.fixture(autouse=True)
+def _marca_da_loja(monkeypatch):
+    """A marca do SMS vem da ``Shop``; aqui, sem banco, ela é fixada."""
+    from shopman.shop.adapters import _sms
+
+    monkeypatch.setattr(_sms, "_brand", lambda: "Loja Teste")
+
 
 _CFG = {
     "account_sid": "ACxxxx",

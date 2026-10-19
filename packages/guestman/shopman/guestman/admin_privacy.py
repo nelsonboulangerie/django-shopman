@@ -32,12 +32,52 @@ class CustomerPrivacyFenceAdminMixin:
             ) from exc
 
     def save_model(self, request, obj, form, change):
+        replacements: dict[str, str] = {}
         if change:
-            self._lock_active_customer(obj.pk)
+            persisted = self._lock_active_customer(obj.pk)
+            replacements = self._hold_contact_cache(obj, persisted)
         super().save_model(request, obj, form, change)
         if not change:
             self._lock_active_customer(obj.pk)
+        self._replace_contacts(obj, replacements)
         setattr(request, self._privacy_fence_request_attr, obj.pk)
+
+    @staticmethod
+    def _hold_contact_cache(obj, persisted) -> dict[str, str]:
+        """Editar ``phone``/``email`` no Admin é TROCAR, não adicionar (A4-1).
+
+        O cache volta ao valor gravado antes do ``save()``: escrito direto, o
+        ``_sync_contact_points`` criaria o novo como segundo principal (e o
+        banco recusa) ou deixaria o antigo como contato que ainda abre a conta.
+        A troca de verdade sai depois, por ``replace_primary_contact``.
+        """
+        from shopman.guestman.utils import normalize_phone
+
+        replacements: dict[str, str] = {}
+        for field in ("phone", "email"):
+            raw = getattr(obj, field, "") or ""
+            new_value = normalize_phone(raw) if field == "phone" and raw else raw.strip().lower()
+            old_value = getattr(persisted, field, "") or ""
+            if new_value != old_value:
+                replacements[field] = new_value
+                setattr(obj, field, old_value)
+        return replacements
+
+    @staticmethod
+    def _replace_contacts(obj, replacements: dict[str, str]) -> None:
+        from shopman.guestman.services.identity import (
+            ContactPointOwnershipConflict,
+            replace_primary_contact,
+        )
+
+        for field, new_value in replacements.items():
+            try:
+                replace_primary_contact(obj, field=field, new_value=new_value)
+            except ContactPointOwnershipConflict as exc:
+                raise PermissionDenied(
+                    "Este contato já é de outro cadastro. Unifique os cadastros ou libere o contato."
+                ) from exc
+            setattr(obj, field, new_value)
 
     def save_formset(self, request, form, formset, change):
         customer = form.instance

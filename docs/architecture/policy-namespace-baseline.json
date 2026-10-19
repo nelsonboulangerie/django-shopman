@@ -174,13 +174,6 @@
     "channel.toggle-eligibility": [
       "shopman/shop/services/channel_switch.py:is_switchable"
     ],
-    "channel.whatsapp-bootstrap-requirements": [
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:CHANNEL_CONFIG",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:Command",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:REQUIRED_KEYS",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:_required_keys",
-      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:_storefront_ref"
-    ],
     "delivery.courier-charge-staleness": [
       "shopman/shop/services/courier.py:charge_outdated"
     ],
@@ -759,13 +752,9 @@
       "shopman/shop/services/lot_pricing.py:percent_for_lot"
     ],
     "pricing.temporal-offer": [
-      "shopman/shop/modifiers.py:DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT",
-      "shopman/shop/modifiers.py:DEFAULT_TIME_WINDOW_END",
-      "shopman/shop/modifiers.py:DEFAULT_TIME_WINDOW_START",
       "shopman/shop/modifiers.py:PRICED_AT_CTX_KEY",
       "shopman/shop/modifiers.py:TimeWindowDiscountModifier",
       "shopman/shop/modifiers.py:TimeWindowOffer",
-      "shopman/shop/modifiers.py:_parse_time",
       "shopman/shop/modifiers.py:in_time_window",
       "shopman/shop/modifiers.py:pricing_now",
       "shopman/shop/modifiers.py:time_window_offer"
@@ -921,22 +910,14 @@
     "shop.rules-suggestion-complement-decision": [
       "shopman/shop/rules/suggestion.py:COMPLEMENT_REF",
       "shopman/shop/rules/suggestion.py:ComplementRule",
-      "shopman/shop/rules/suggestion.py:DEFAULT_COMPLEMENT_PARAMS",
       "shopman/shop/rules/suggestion.py:PRICE_POLICIES",
-      "shopman/shop/rules/suggestion.py:_ACCOMPANIMENT",
-      "shopman/shop/rules/suggestion.py:_BREAD",
-      "shopman/shop/rules/suggestion.py:_NO_DRINK",
-      "shopman/shop/rules/suggestion.py:_NO_FOOD",
       "shopman/shop/rules/suggestion.py:_check_attribute",
       "shopman/shop/rules/suggestion.py:_check_conditions",
       "shopman/shop/rules/suggestion.py:_check_side",
       "shopman/shop/rules/suggestion.py:_check_weight",
-      "shopman/shop/rules/suggestion.py:_comes_with",
-      "shopman/shop/rules/suggestion.py:_goes_with",
       "shopman/shop/rules/suggestion.py:_known_attributes"
     ],
     "shop.rules-suggestion-substitute-decision": [
-      "shopman/shop/rules/suggestion.py:DEFAULT_SUBSTITUTE_PARAMS",
       "shopman/shop/rules/suggestion.py:NON_ATTRIBUTE_SIGNALS",
       "shopman/shop/rules/suggestion.py:SUBSTITUTE_REF",
       "shopman/shop/rules/suggestion.py:SubstituteRule"

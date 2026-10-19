@@ -23,7 +23,7 @@ from shopman.storefront.presentation.product_detail import (
     ProductDetailProjection,
 )
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 DEFAULT_LOW_STOCK_THRESHOLD = Decimal("5")

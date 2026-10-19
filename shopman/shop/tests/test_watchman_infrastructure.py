@@ -47,12 +47,14 @@ def test_external_monitoring_contract_rejects_paid_or_non_composite_uptime(monke
     wrong_target["uptime"][0]["url"] = "https://api.boulangerie.com.br/health/ready/"
     invalid_limit = deepcopy(original)
     invalid_limit["uptime_policy"]["maximum_active_monitors"] = True
+    no_route = deepcopy(original)
+    no_route["notification"]["delivery_assurance"]["intended_address"] = "ti"
     contract_path = tmp_path / "ops/watchman/sentry.json"
     contract_path.parent.mkdir(parents=True)
     monkeypatch.setattr(infrastructure, "ROOT", tmp_path)
     monkeypatch.delenv("SENTRY_AUTH_TOKEN", raising=False)
 
-    for payload in (paid, wrong_target, invalid_limit):
+    for payload in (paid, wrong_target, invalid_limit, no_route):
         contract_path.write_text(json.dumps(payload), encoding="utf-8")
         result = ExternalMonitoringContractCheck().run(_context())
         assert result.status is Status.FAIL

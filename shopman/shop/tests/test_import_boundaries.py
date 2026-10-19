@@ -107,16 +107,9 @@ DOMAIN_KERNEL_PACKAGES = {
 # (escrita resolvida, linha esquecida) também. Cada grupo é uma frente própria.
 # Chave: (arquivo, chamada no GET) -> quantas vezes.
 GET_WRITE_FOUND_BY_TRANSITIVE_GATE = {
-    # Exportação da conta: o download (GET) abre e fecha o recibo LGPD.
-    ("shopman/storefront/api/account.py", "account_privacy.begin_export"): 1,
-    ("shopman/storefront/api/account.py", "account_export.prepare_account_export"): 1,
-    ("shopman/storefront/api/account.py", "account_privacy.fail_export"): 1,
     # Continuum: a leitura materializa a cabeça do snapshot do catálogo.
     ("shopman/storefront/api/continuum.py", "current_or_build_head"): 1,
     ("shopman/storefront/api/surface.py", "compare_shadow"): 1,
-    # Recuperação do checkout por GET: concede acesso na sessão e refaz efeitos pós-commit.
-    ("shopman/storefront/api/views.py", "order_service.grant_order_access"): 1,
-    ("shopman/storefront/api/views.py", "checkout_service.recover_committed_checkout"): 1,
     # Marketing: o estado de segurança nasce na primeira leitura; a negação é auditada no GET.
     ("shopman/backstage/api/marketing.py", "safety_state"): 1,
     ("shopman/backstage/api/marketing_seal.py", "_authorization_error_response"): 1,

@@ -22,13 +22,13 @@ from shopman.backstage.projections.order_queue import build_two_zone_queue
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import kds as kds_core
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("ifood")]
 
 
 @pytest.fixture
 def shop(db):
     Shop.objects.create(name="Loja")
-    Channel.objects.create(ref="web", name="Loja online", config={})
+    Channel.objects.update_or_create(ref='web', defaults={'name': 'Loja online', 'config': {}})[0]
     return None
 
 
@@ -179,7 +179,7 @@ def test_system_did_ignores_what_a_person_did_and_old_events(operator):
 
 def test_menu_lists_open_outages_one_per_product(operator):
     Product.objects.create(sku="BICHON", name="Bichon au Citron", base_price_q=1200)
-    Channel.objects.create(ref="ifood", name="iFood", config={})
+    Channel.objects.update_or_create(ref='ifood', defaults={'name': 'iFood', 'config': {}})[0]
     now = timezone.now()
     ShelfOutage.objects.create(sku="BICHON", channel_ref="web", reason=OutageReason.SOLD_OUT, started_at=now - timedelta(minutes=5))
     ShelfOutage.objects.create(sku="BICHON", channel_ref="ifood", reason=OutageReason.SOLD_OUT, started_at=now - timedelta(minutes=4))
@@ -207,7 +207,7 @@ def test_product_detail_says_where_it_can_be_bought_now(shop):
     from shopman.backstage.services.catalog import get_product_detail
 
     Product.objects.create(sku="CROISSANT", name="Croissant Manteiga", base_price_q=1300)
-    Channel.objects.create(ref="ifood", name="iFood", config={})
+    Channel.objects.update_or_create(ref='ifood', defaults={'name': 'iFood', 'config': {}})[0]
     ShelfOutage.objects.create(sku="CROISSANT", channel_ref="ifood", reason=OutageReason.SOLD_OUT, started_at=timezone.now())
 
     rows = {row["ref"]: row for row in get_product_detail("CROISSANT")["channel_availability"]}

@@ -3758,7 +3758,6 @@
       "responsibility": "decisão",
       "public_entrypoint": "shopman.shop.modifiers:time_window_offer",
       "authoritative_symbols": [
-        "shopman.shop.modifiers:_parse_time",
         "shopman.shop.modifiers:in_time_window",
         "shopman.shop.modifiers:time_window_offer"
       ],
@@ -3768,14 +3767,10 @@
           "path": "shopman/shop/modifiers.py",
           "symbols": [
             "pricing_now",
-            "_parse_time",
             "in_time_window",
             "TimeWindowOffer",
             "time_window_offer",
             "TimeWindowDiscountModifier",
-            "DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT",
-            "DEFAULT_TIME_WINDOW_START",
-            "DEFAULT_TIME_WINDOW_END",
             "PRICED_AT_CTX_KEY"
           ]
         }
@@ -4389,18 +4384,11 @@
             "ComplementRule",
             "COMPLEMENT_REF",
             "PRICE_POLICIES",
-            "_NO_FOOD",
-            "DEFAULT_COMPLEMENT_PARAMS",
-            "_goes_with",
-            "_comes_with",
             "_known_attributes",
             "_check_attribute",
             "_check_conditions",
             "_check_side",
-            "_check_weight",
-            "_NO_DRINK",
-            "_ACCOMPANIMENT",
-            "_BREAD"
+            "_check_weight"
           ]
         }
       ],
@@ -4438,8 +4426,7 @@
           "symbols": [
             "SubstituteRule",
             "SUBSTITUTE_REF",
-            "NON_ATTRIBUTE_SIGNALS",
-            "DEFAULT_SUBSTITUTE_PARAMS"
+            "NON_ATTRIBUTE_SIGNALS"
           ]
         }
       ],
@@ -17956,47 +17943,6 @@
       ],
       "tests": [
         "shopman/shop/tests/test_orchestrator_policy_gaps.py::test_allowed_hosts_safety_is_fail_closed_only_outside_debug"
-      ],
-      "test_gap_reason": null,
-      "policy": true,
-      "out_of_extraction": false
-    },
-    {
-      "id": "channel.whatsapp-bootstrap-requirements",
-      "question": "Quais capacidades ausentes o bootstrap do WhatsApp deve completar sem sobrescrever a configuração do Admin?",
-      "owner": "channel.whatsapp-bootstrap",
-      "responsibility": "decisão",
-      "public_entrypoint": "shopman.shop.management.commands.bootstrap_whatsapp_channel:Command.handle",
-      "authoritative_symbols": [
-        "shopman.shop.management.commands.bootstrap_whatsapp_channel:_required_keys"
-      ],
-      "entrypoint_kind": "symbol",
-      "sources": [
-        {
-          "path": "shopman/shop/management/commands/bootstrap_whatsapp_channel.py",
-          "symbols": [
-            "CHANNEL_CONFIG",
-            "Command",
-            "REQUIRED_KEYS",
-            "_required_keys",
-            "_storefront_ref"
-          ]
-        }
-      ],
-      "touchpoints": [
-        "outro"
-      ],
-      "domains": [
-        "offerman"
-      ],
-      "ports": [],
-      "events": [],
-      "directives": [],
-      "config_surface": [
-        "SHOPMAN_STOREFRONT_CHANNEL_REF"
-      ],
-      "tests": [
-        "shopman/shop/tests/test_orchestrator_policy_gaps.py::test_whatsapp_bootstrap_requirements_include_the_runtime_storefront"
       ],
       "test_gap_reason": null,
       "policy": true,

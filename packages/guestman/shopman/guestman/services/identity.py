@@ -174,3 +174,57 @@ def ensure_external_identity(
         identity.provider_meta = metadata
         identity.save(update_fields=["provider_meta"])
     return identity
+
+
+#: Campo de cache do Customer → (tipo do principal, família que ele espelha).
+#: Telefone e WhatsApp dividem o número.
+_CACHE_FAMILIES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "phone": (ContactPoint.Type.PHONE, (ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP)),
+    "email": (ContactPoint.Type.EMAIL, (ContactPoint.Type.EMAIL,)),
+}
+
+
+@transaction.atomic
+def replace_primary_contact(customer: Customer, *, field: str, new_value: str) -> None:
+    """TROCA o telefone ou o e-mail principal: o novo entra, o antigo SAI.
+
+    É o gesto de editar o campo ``phone``/``email`` do cadastro (decisão da
+    coordenação, A4-1). O principal de hoje, e o valor que o cache guardava,
+    deixam de ser contato do cadastro: o ``ContactPoint`` é apagado, e o
+    ``post_delete`` do contrib de identificadores leva junto a chave de login
+    do mesmo valor. Sem isso o número antigo, que a operadora recicla, seguiria
+    abrindo a conta por OTP.
+
+    Contatos secundários adicionados de propósito ficam: adicionar é outro
+    gesto. ``new_value`` vazio só retira o principal. ``new_value`` chega
+    normalizado.
+    """
+    primary_type, family = _CACHE_FAMILIES[field]
+    customer = Customer.objects.select_for_update().get(pk=customer.pk, is_active=True)
+
+    old_values = set(
+        ContactPoint.objects.filter(
+            customer=customer,
+            type__in=family,
+            is_primary=True,
+        ).values_list("value_normalized", flat=True)
+    )
+    cached = getattr(customer, field, "") or ""
+    if cached:
+        old_values.add(cached)
+    old_values.discard(new_value)
+
+    if new_value:
+        ensure_contact_point(
+            customer,
+            type=primary_type,
+            value_normalized=new_value,
+            is_primary=True,
+        )
+
+    ContactPoint.objects.filter(
+        customer=customer,
+        type__in=family,
+        value_normalized__in=old_values,
+    ).delete()
+    Customer.objects.filter(pk=customer.pk).update(**{field: new_value})

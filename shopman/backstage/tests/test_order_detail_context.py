@@ -20,7 +20,7 @@ from shopman.orderman.models import Order, OrderItem
 
 from shopman.backstage.projections.order_queue import DETAIL_CONTEXTS, build_operator_order
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 #: As seções que as duas telas leem — o conteúdo comum do detalhe.
 COMMON_SECTIONS = (

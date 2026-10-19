@@ -456,7 +456,7 @@ def check_operator_cookie_domain(app_configs, **kwargs):
                 "Superfícies operacionais publicadas sem SHOPMAN_OPERATOR_API_HOST.",
                 hint=(
                     "Defina SHOPMAN_OPERATOR_API_HOST para o host de API que os apps Nuxt "
-                    "de operador usam como upstream, ex.: api.boulangerie.com.br."
+                    "de operador usam como upstream, ex.: api.<domínio-da-loja>."
                 ),
                 id="SHOPMAN_E014",
             )
@@ -467,7 +467,7 @@ def check_operator_cookie_domain(app_configs, **kwargs):
                 "Zona operacional publicada sem SHOPMAN_OPERATOR_COOKIE_DOMAIN.",
                 hint=(
                     "Defina SHOPMAN_OPERATOR_COOKIE_DOMAIN com o domínio-pai dos apps "
-                    "operacionais, ex.: .boulangerie.com.br. Sem isso, login/CSRF ficam "
+                    "operacionais, ex.: .<domínio-da-loja>. Sem isso, login/CSRF ficam "
                     "host-only e quebram ao alternar entre gestor, KDS, PDV e produção."
                 ),
                 id="SHOPMAN_E014",
@@ -882,7 +882,7 @@ def POS_CHANNEL_REF() -> str:
     """Ref do canal de balcão — cujo preço NÃO é público (ADR-018 §5.1)."""
     from django.conf import settings
 
-    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+    return settings.SHOPMAN_POS_CHANNEL_REF
 
 
 @register(deploy=True)

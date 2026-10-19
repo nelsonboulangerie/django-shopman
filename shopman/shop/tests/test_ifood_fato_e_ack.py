@@ -20,7 +20,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.shop.handlers.ifood_status import on_order_status_changed
 from shopman.shop.services import ifood_events
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("ifood")]
 
 
 @pytest.fixture(autouse=True)

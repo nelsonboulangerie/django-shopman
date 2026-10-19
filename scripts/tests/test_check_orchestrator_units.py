@@ -41,7 +41,9 @@ def test_canonical_inventory_is_valid():
     )
     assert counts["physical_responsibilities"] == expected_responsibilities
     assert counts["coverage"]["sources"] == len(inventory["sources"])
-    assert counts["instance_debt"]["pending"] > 0
+    # A dívida de instância do orquestrador foi zerada (CORE-SOVEREIGNTY A7-1):
+    # o registro canônico não declara nada, e não pode voltar a declarar.
+    assert counts["instance_debt"]["pending"] == 0
     assert counts["owner_prefixes"] == Counter(
         unit["owner"].partition(".")[0] for unit in manifests["units"]
     )
@@ -70,22 +72,49 @@ def test_policy_namespace_rejects_a_non_policy_unit():
     assert caught.value.code == "policy-namespace"
 
 
-@pytest.mark.parametrize(
-    ("mutation", "expected"),
-    [("stale", "instance-debt-stale"), ("untriaged", "instance-debt-untriaged")],
-)
-def test_instance_debt_negative_cases(mutation, expected):
+def test_the_canonical_instance_debt_registry_is_empty():
+    assert _instance_debt()["findings"] == []
+
+
+def test_a_finding_whose_evidence_is_gone_is_stale():
     inventory, manifests = _canonical()
-    debt = _instance_debt()
-    if mutation == "stale":
-        debt["findings"][0]["evidence"] = "evidence-that-does-not-exist"
-    else:
-        debt["findings"] = [
-            finding for finding in debt["findings"] if finding["source"] != "shopman/shop/adapters/_sms.py"
-        ]
+    debt = {
+        "schema_version": 1,
+        "findings": [{
+            "source": "shopman/shop/modifiers.py",
+            "symbol": "<module>",
+            "evidence": "evidence-that-does-not-exist",
+            "risk": "x",
+            "target": "x",
+            "status": "pending",
+        }],
+    }
     with pytest.raises(gate.GateError) as caught:
         gate.validate(inventory, manifests, root=ROOT, instance_debt=debt)
-    assert caught.value.code == expected
+    assert caught.value.code == "instance-debt-stale"
+
+
+@pytest.mark.parametrize(
+    "leak",
+    [
+        # O Happy Hour do Nelson como constante (A7-2): a hora não tem nome próprio.
+        'DEFAULT_TIME_WINDOW_START = "17:30"\n',
+        # Params de regra da casa escritos como código.
+        'DEFAULT_COMPLEMENT_PARAMS = {"weight": 3}\n',
+        # Param de RuleConfig completado em silêncio pelo código.
+        "DEFAULT_PERCENT = 25\n\ndef percent(params):\n    return params.get(\"discount_percent\", DEFAULT_PERCENT)\n",
+        # Paleta de marca escrita no produto.
+        'BRAND = {"a": "1 2 3", "b": "4 5 6", "c": "7 8 9", "d": "10 11 12", "e": "13 14 15"}\n',
+        # Nome próprio da instância numa string que executa.
+        'BRAND_NAME = "Nelson Boulangerie"\n',
+    ],
+)
+def test_an_instance_leak_without_a_proper_name_is_caught(tmp_path, leak):
+    body = "def decide():\n    return True\n\n" + leak
+    inventory, manifests = _hermetic_gate_case(tmp_path, source_body=body)
+    with pytest.raises(gate.GateError) as caught:
+        _validate_hermetic(tmp_path, inventory, manifests)
+    assert caught.value.code == "instance-debt-untriaged"
 
 
 def _qualified_test_fixture(tmp_path, test_body):

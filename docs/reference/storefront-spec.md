@@ -49,7 +49,7 @@ projeções do Django via BFF).
 | `/account/enderecos` | CRUD de endereços (criar/editar via AddressPicker, default, excluir) | `GET/POST /api/v1/account/addresses/`, `PATCH/DELETE/POST /api/v1/account/addresses/<id>/` |
 | `/account/perfil` | Nome/sobrenome/email/aniversário (telefone read-only) | `GET/PATCH /api/v1/account/profile/` |
 | `/account/preferencias` | Preferências alimentares + canais de notificação (toggles) | `POST /api/v1/account/preferences/{food,notifications}/` |
-| `/account/seguranca` | Dispositivos confiáveis (revogar 1/todos), exportar dados, excluir conta | `GET/DELETE /api/v1/account/devices/…`, `GET /api/v1/account/export/`, `POST /api/v1/account/delete/` |
+| `/account/seguranca` | Dispositivos confiáveis (revogar 1/todos), exportar dados, excluir conta | `GET/DELETE /api/v1/account/devices/…`, `POST /api/v1/account/export/`, `POST /api/v1/account/delete/` |
 | `/login` | Auth sem senha: telefone → OTP (WhatsApp/SMS) → (nome, se novo); device-trust 30d | `POST /api/auth/{device-check,request-code,verify-code,trust-device}/` |
 | `/a` | Bridge de magic link: lê `?t=`, troca por sessão, navega ao destino derivado | `POST /api/auth/access/` |
 

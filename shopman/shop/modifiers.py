@@ -48,12 +48,6 @@ from shopman.shop.policies.promotion import (
 
 logger = logging.getLogger(__name__)
 
-# ── Configurable defaults ──────────────────────────────────────────
-DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT = 25
-DEFAULT_TIME_WINDOW_START = "17:30"
-DEFAULT_TIME_WINDOW_END = "18:00"
-
-
 #: A chave do ``ctx`` dos modifiers que diz QUANDO a sessão está sendo precificada.
 #: Ausente, é agora. A venda que o PDV fez sem conexão chega depois com a hora da
 #: cobrança (``order.data.pos.offline.captured_at``) e é precificada naquela hora:
@@ -91,17 +85,6 @@ def _discount_label(copy_key: str, fallback: str) -> str:
 
     entry = resolve_copy(copy_key, moment=WILDCARD, audience=WILDCARD)
     return entry.title or entry.message or fallback
-
-
-def _parse_time(raw: str | None, fallback: str) -> time:
-    """Parse a ``"HH:MM"`` string into a ``time``, falling back on bad input."""
-    value = raw or fallback
-    try:
-        h, m = map(int, value.split(":"))
-        return time(h, m)
-    except (ValueError, AttributeError):
-        h, m = map(int, fallback.split(":"))
-        return time(h, m)
 
 
 def in_time_window(start: time, end: time, now: time) -> bool:
@@ -157,12 +140,19 @@ def time_window_offer(channel_ref: str | None, *, now: datetime | None = None) -
     params = get_channel_rule_params("happy_hour", channel_ref)
     if params is None:
         return None
-    start = _parse_time(params.get("start"), DEFAULT_TIME_WINDOW_START)
-    end = _parse_time(params.get("end"), DEFAULT_TIME_WINDOW_END)
+    from shopman.shop.rules.pricing import HappyHourRule
+
+    try:
+        discount_percent, start, end = HappyHourRule.parse_params(params)
+    except ValueError:
+        # A janela e o percentual moram só no ``RuleConfig.params``; sem eles não
+        # há desconto a inventar. Falha fechada (preço de etiqueta) e gritando.
+        logger.error("happy_hour ligado com params incompletos ou inválidos: %r", params, exc_info=True)
+        return None
     local_now = timezone.localtime(now or timezone.now())
     return TimeWindowOffer(
         active=in_time_window(start, end, local_now.time()),
-        discount_percent=params.get("discount_percent", DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT),
+        discount_percent=discount_percent,
         label=_discount_label("CART_DISCOUNT_LABEL_TIME_WINDOW", "Happy Hour"),
         start=start,
         end=end,

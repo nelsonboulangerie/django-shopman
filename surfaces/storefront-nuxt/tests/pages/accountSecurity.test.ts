@@ -71,6 +71,7 @@ let stepUpReply: Reply
 let exportReply: Reply | null = null
 let deleteCalls = 0
 let exportCalls = 0
+let exportCsrf: string[] = []
 let requestCodeCalls = 0
 let assignedUrl = ''
 // A chave de idempotência de cada POST de exclusão, na ordem. Ela existe para a retomada
@@ -128,11 +129,16 @@ registerEndpoint('/api/v1/account/delete/', {
     return reply(event, deleteReply)
   }
 })
-registerEndpoint('/api/v1/account/export/', (event) => {
-  exportCalls += 1
-  if (exportReply) return reply(event, exportReply)
-  setResponseHeader(event, 'content-disposition', 'attachment; filename="shopman-dados-cliente.json"')
-  return { customer: { name: 'Ana' } }
+// Só POST: a exportação abre um recibo de privacidade, e GET não produz efeito.
+registerEndpoint('/api/v1/account/export/', {
+  method: 'POST',
+  handler: (event) => {
+    exportCalls += 1
+    exportCsrf.push(header(event, 'x-csrftoken'))
+    if (exportReply) return reply(event, exportReply)
+    setResponseHeader(event, 'content-disposition', 'attachment; filename="shopman-dados-cliente.json"')
+    return { customer: { name: 'Ana' } }
+  }
 })
 
 const mounted: Array<{ unmount: () => void }> = []
@@ -210,6 +216,7 @@ beforeEach(async () => {
   navigateToMock.mockReset()
   deleteCalls = 0
   exportCalls = 0
+  exportCsrf = []
   requestCodeCalls = 0
   assignedUrl = ''
   deleteKeys = []
@@ -435,6 +442,7 @@ describe('conta/seguranca — dados e privacidade', () => {
     await settle()
 
     expect(exportCalls).toBe(1)
+    expect(exportCsrf).toEqual(['testtoken'])
     // O arquivo é entregue pela própria tela, e não por uma navegação que a substitui.
     expect(savedFiles).toHaveLength(1)
     expect(await savedFiles[0]!.text()).toContain('Ana')

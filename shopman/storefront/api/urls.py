@@ -153,6 +153,7 @@ urlpatterns = [
     path("cart/coupon/", CartCouponView.as_view(), name="api-cart-coupon"),
     # Checkout
     path("checkout/", views.CheckoutView.as_view(), name="api-checkout"),
+    path("checkout/recover/", views.CheckoutRecoverView.as_view(), name="api-checkout-recover"),
     path("checkout/draft/", CheckoutDraftView.as_view(), name="api-checkout-draft"),
     path("checkout/loyalty/", CheckoutLoyaltyView.as_view(), name="api-checkout-loyalty"),
     # Availability

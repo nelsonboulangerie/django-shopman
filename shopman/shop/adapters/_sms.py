@@ -16,8 +16,21 @@ from __future__ import annotations
 #: SMS cobra por segmento de 160 caracteres (e 70 se houver acento fora do
 #: GSM-7), então cada palavra a mais pode dobrar o custo de cada envio.
 #:
-#: A casa pode reescrever por `SHOPMAN_SMS_CODE_MESSAGE` sem tocar em código.
-DEFAULT_CODE_MESSAGE = "Nelson Boulangerie: {code} e o seu codigo de acesso. Vale {ttl} min. Nao compartilhe."
+#: A marca é a da loja (``Shop.brand_name``, ou o nome), nunca um nome escrito
+#: aqui. A casa pode reescrever o texto inteiro por `SHOPMAN_SMS_CODE_MESSAGE`
+#: sem tocar em código (``{brand}``, ``{code}`` e ``{ttl}`` são preenchidos).
+CODE_MESSAGE_TEMPLATE = "{brand}: {code} e o seu codigo de acesso. Vale {ttl} min. Nao compartilhe."
+#: Sem loja cadastrada não há marca a pôr na frente.
+CODE_MESSAGE_WITHOUT_BRAND = "{code} e o seu codigo de acesso. Vale {ttl} min. Nao compartilhe."
+
+
+def _brand() -> str:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    if shop is None:
+        return ""
+    return (shop.brand_name or shop.name or "").strip()
 
 
 def ttl_minutes() -> int:
@@ -31,9 +44,11 @@ def ttl_minutes() -> int:
 
 
 def render_message(cfg: dict, code: str) -> str:
-    """Build the OTP message text from config (or the default), filling code + ttl."""
-    template = str(cfg.get("code_message") or DEFAULT_CODE_MESSAGE)
-    return template.format(code=code, ttl=ttl_minutes())
+    """Build the OTP message text from config (or the default), filling brand + code + ttl."""
+    brand = _brand()
+    default = CODE_MESSAGE_TEMPLATE if brand else CODE_MESSAGE_WITHOUT_BRAND
+    template = str(cfg.get("code_message") or default)
+    return template.format(brand=brand, code=code, ttl=ttl_minutes())
 
 
 def to_digits(target: str) -> str:

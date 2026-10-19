@@ -13,7 +13,8 @@ from django.utils.translation import gettext_lazy as _
 
 
 def _default_channel_ref() -> str:
-    return str(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv"))
+    """O canal de balcão que o deployment declara; o kernel não presume nome nenhum."""
+    return str(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "") or "")
 
 
 class Terminal(models.Model):

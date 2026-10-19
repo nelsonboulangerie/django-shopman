@@ -22,7 +22,7 @@ from shopman.stockman.services.holds import (
 
 from shopman.shop.services import waitlist
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 SKU = "PAO-DE-FILA"
 TOMORROW = timedelta(days=1)

@@ -8,7 +8,7 @@ from shopman.backstage.projections.order_queue import build_operator_order, buil
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import operational_revision
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def actor(allowed=True):

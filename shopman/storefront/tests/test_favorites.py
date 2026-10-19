@@ -11,7 +11,7 @@ from shopman.guestman.models import Customer, PriceTier
 from shopman.storefront.models import CustomerFavorite
 from shopman.storefront.services import favorites
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 REF = "CUST-FAV-1"
 

@@ -82,7 +82,7 @@ def test_export_requires_step_up(client: Client):
     customer = Customer.objects.create(ref="CUS-SU-EXP", first_name="Bia", phone="+5543999990011")
     _login_as_customer(client, customer)
 
-    response = client.get("/api/v1/account/export/")
+    response = client.post("/api/v1/account/export/")
 
     assert response.status_code == 403
     assert response.json()["code"] == "step_up_required"
@@ -173,7 +173,7 @@ def test_fresh_step_up_flag_lets_export_through(client: Client):
     }
     session.save()
 
-    response = client.get("/api/v1/account/export/")
+    response = client.post("/api/v1/account/export/")
 
     assert response.status_code == 200
     assert response["Content-Type"].startswith("application/json")
@@ -183,6 +183,39 @@ def test_fresh_step_up_flag_lets_export_through(client: Client):
     assert response["X-Privacy-Request-Ref"] == str(receipt.ref)
     assert receipt.authorized_at == accepted_at
     assert b'"schema_version":"account_export.v1"' in b"".join(response.streaming_content)
+
+
+def test_export_by_get_has_no_effect(client: Client):
+    """GET não abre recibo: a exportação é comando (POST), mesmo com identidade fresca."""
+    customer = Customer.objects.create(ref="CUS-SU-GET", first_name="Gil", phone="+5543999990017")
+    _login_as_customer(client, customer)
+    _authorize_step_up(client, customer, "export")
+
+    response = client.get("/api/v1/account/export/")
+
+    assert response.status_code == 405
+    assert not PrivacyRequestReceipt.objects.filter(operation=PrivacyRequestOperation.EXPORT).exists()
+
+
+def test_export_post_requires_csrf_token():
+    """Sem o token de CSRF, a página de outro site não consegue abrir o recibo em nome do cliente."""
+    from django.middleware.csrf import get_token
+    from django.test import RequestFactory
+
+    client = Client(enforce_csrf_checks=True)
+    customer = Customer.objects.create(ref="CUS-SU-CSRF", first_name="Hel", phone="+5543999990018")
+    _login_as_customer(client, customer)
+    _authorize_step_up(client, customer, "export")
+
+    refused = client.post("/api/v1/account/export/")
+    assert refused.status_code == 403
+    assert not PrivacyRequestReceipt.objects.filter(operation=PrivacyRequestOperation.EXPORT).exists()
+
+    token = get_token(RequestFactory().get("/"))
+    client.cookies["csrftoken"] = token
+    accepted = client.post("/api/v1/account/export/", HTTP_X_CSRFTOKEN=token)
+    assert accepted.status_code == 200
+    assert PrivacyRequestReceipt.objects.filter(operation=PrivacyRequestOperation.EXPORT).count() == 1
 
 
 def test_step_up_is_bound_to_customer_and_purpose(client: Client):
@@ -247,7 +280,7 @@ def test_export_failure_keeps_safe_failed_receipt(client: Client):
         "shopman.storefront.services.account_export.prepare_account_export",
         side_effect=RuntimeError("private database detail"),
     ):
-        response = client.get("/api/v1/account/export/")
+        response = client.post("/api/v1/account/export/")
 
     assert response.status_code == 503
     receipt = PrivacyRequestReceipt.objects.get(operation=PrivacyRequestOperation.EXPORT)
@@ -273,7 +306,7 @@ def test_export_with_unavailable_receipt_key_fails_closed_without_artifact(
         override_settings(SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY=invalid_key),
         patch("shopman.storefront.services.account_export.prepare_account_export") as build_export,
     ):
-        response = client.get("/api/v1/account/export/")
+        response = client.post("/api/v1/account/export/")
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "privacy_receipt_unavailable"

@@ -13,7 +13,7 @@ from shopman.shop.models import Channel
 from shopman.shop.services import availability, fomo, waitlist
 from shopman.storefront.presentation import checkout
 
-pytestmark = [pytest.mark.django_db, pytest.mark.instance_runtime_strict]
+pytestmark = pytest.mark.django_db
 
 
 def test_materialized_channel_is_resolved_without_reading_the_descriptor(monkeypatch):

@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from shopman.shop.config import ChannelConfig
@@ -362,7 +363,7 @@ class TestStockConformance:
             {"stock": {"sells_nonconforming": True, "expiry_margin_days": 2}},
         )
         with _patch.object(ChannelConfig, "for_channel", return_value=cfg):
-            scope = stock_adapter.get_channel_scope("pos")
+            scope = stock_adapter.get_channel_scope(settings.SHOPMAN_POS_CHANNEL_REF)
 
         assert scope["sells_nonconforming"] is True
         assert scope["allowed_quality_grade_refs"] is None
@@ -589,7 +590,6 @@ class TestCascadeConformance:
 
 @pytest.mark.django_db
 class TestResolvedConfigValidation:
-    @pytest.mark.instance_runtime_strict
     def test_for_channel_ref_requires_a_materialized_database_row(self):
         from shopman.shop.config import InstanceConfigurationError
 

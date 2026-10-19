@@ -26,7 +26,7 @@ from shopman.shop.models import NotificationLifecycle, Shop, UserNotification
 from shopman.shop.services import kds as kds_core
 from shopman.shop.services import kds_alerts
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _perm(model, codename: str) -> Permission:

@@ -145,7 +145,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "DEFAULT_CODE_MESSAGE",
+            "CODE_MESSAGE_TEMPLATE",
+            "CODE_MESSAGE_WITHOUT_BRAND",
+            "_brand",
             "render_message",
             "to_digits",
             "ttl_minutes"
@@ -400,7 +402,7 @@
             "READ_VIAS",
             "RIDE_STATUSES",
             "TERMINAL_STATUSES",
-            "USER_AGENT",
+            "USER_AGENT_PRODUCT",
             "_ESTIMATE_ADDRESS_FIELDS",
             "_LABEL_TO_STATUS",
             "_READ_VIA_CACHE_KEY",
@@ -430,7 +432,8 @@
             "register_webhook",
             "snapshot_from_details",
             "snapshot_from_listing",
-            "tracking_links"
+            "tracking_links",
+            "user_agent"
           ]
         }
       ]
@@ -2322,18 +2325,6 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "_BRAND_DARK",
-            "_BRAND_DARK_ALIASES",
-            "_BRAND_LIGHT",
-            "_BRAND_LIGHT_ALIASES",
-            "_BRASS",
-            "_BURGUNDY",
-            "_CREAM",
-            "_FAUBOURG",
-            "_MOSS",
-            "_STATUS",
-            "_WHITE",
-            "_YELLOW",
             "_rgb_channels_to_hex",
             "build_storefront_design_tokens"
           ]
@@ -2452,7 +2443,6 @@
             "_oklab_to_oklch",
             "_oklch_to_oklab",
             "_srgb_to_linear",
-            "generate_design_tokens",
             "generate_neutral_scale",
             "generate_scale",
             "hex_to_oklch",
@@ -3989,29 +3979,6 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/bootstrap_whatsapp_channel.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "channel.whatsapp-bootstrap-requirements"
-      ],
-      "responsibilities": [
-        "decisão",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "CHANNEL_REF",
-            "LISTING_REF"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/management/commands/capture_ifood_catalog.py",
       "touchpoints": [
         "outro"
@@ -5107,46 +5074,6 @@
     },
     {
       "path": "shopman/shop/management/commands/send_test_announcement.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/management/commands/setup_commercial_groups.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command",
-            "GROUPS",
-            "ensure_commercial_groups"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/management/commands/setup_groups.py",
       "touchpoints": [
         "outro"
       ],
@@ -7829,6 +7756,7 @@
           "symbols": [
             "_client_ip_behind_bff",
             "_is_trusted_bff",
+            "_store_brand",
             "logger"
           ]
         }
@@ -11750,8 +11678,8 @@
             "_refuse_pending_charge_on_fired_preorder",
             "_refuse_priceless_items",
             "_refuse_unpaid_preorder_fire",
-            "_release_primary_contact",
             "_remember_fiscal_prefs",
+            "_replace_pos_contact",
             "_replace_session_ops",
             "_reprice_as_charged",
             "_resolve_payload_options",
@@ -13136,8 +13064,10 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "DeploymentDriftCheck",
+            "EMAIL_RE",
             "ExternalMonitoringContractCheck",
             "ProductionContractCheck",
+            "READINESS_PATH",
             "ROOT",
             "_run"
           ]

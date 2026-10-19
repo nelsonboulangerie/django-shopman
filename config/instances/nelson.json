@@ -7,6 +7,7 @@
   "ownership": {
     "instance_db": [
       "channels",
+      "customer_groups",
       "fiscal_profiles",
       "pipelines",
       "pricing_policies",
@@ -2372,6 +2373,32 @@
       }
     ],
     "units": [],
-    "fiscal_profiles": []
+    "fiscal_profiles": [],
+    "customer_groups": [
+      {
+        "ref": "alianca-francesa",
+        "config": {
+          "name": "Aliança Francesa",
+          "discount_kind": "parceiro",
+          "rounding": 50,
+          "savings_message": "Hoje você economizou {amount} por ser da Aliança Francesa",
+          "discount_percent": 15,
+          "fulfillment_types": []
+        }
+      },
+      {
+        "ref": "staff",
+        "config": {
+          "name": "Equipe",
+          "discount_kind": "equipe",
+          "rounding": 50,
+          "savings_message": "Hoje você economizou {amount} por ser da Equipe",
+          "discount_percent": 30,
+          "fulfillment_types": [
+            "pickup"
+          ]
+        }
+      }
+    ]
   }
 }
