@@ -15,7 +15,7 @@ sistema já é dono da interface, WebUSB está fora (brigar pela interface quebr
 a impressão do recibo). Sobra entregar os cinco bytes ao **spooler**, pela mesma
 fila por onde o recibo já sai.
 
-Desenho e alternativas descartadas: [POS-CASH-DRAWER-PLAN](../../docs/plans/POS-CASH-DRAWER-PLAN.md).
+Desenho e alternativas descartadas: [POS-CASH-DRAWER-PLAN](../../docs/plans/completed/POS-CASH-DRAWER-PLAN.md).
 
 ## Instalar (Linux oficial; Windows e macOS também)
 

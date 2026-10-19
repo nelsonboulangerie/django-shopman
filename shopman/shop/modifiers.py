@@ -31,7 +31,7 @@ Discount policy — "maior desconto ganha":
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -39,7 +39,12 @@ from typing import Any
 from django.utils import timezone
 from shopman.utils.monetary import monetary_div, monetary_mult
 
-from shopman.shop.policies.promotion import promotion_minimum_eligible
+from shopman.shop.policies.promotion import (
+    PromotionContext,
+    Shopper,
+    promotion_matches,
+    promotion_minimum_eligible,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -795,6 +800,35 @@ class TimeWindowDiscountModifier:
         )
 
 
+def promotion_context(
+    ctx: dict,
+    *,
+    sku: str,
+    merchandise_subtotal_q: int | None = None,
+) -> PromotionContext:
+    """Os fatos que o contexto de preço já reuniu, no formato da política de promoção.
+
+    O contexto de preço é o dicionário que os modifiers e o preço contextual do
+    catálogo compartilham (``customer_segment``, ``price_tier``/``price_tiers``,
+    ``is_birthday``, ``fulfillment_type``, ``sku_collections``). Quem decide é
+    ``promotion_matches``; aqui só se traduz o dicionário.
+    """
+    tier_refs = {str(ref) for ref in (ctx.get("price_tiers") or []) if ref}
+    if ctx.get("price_tier"):
+        tier_refs.add(str(ctx["price_tier"]))
+    return PromotionContext(
+        shopper=Shopper(
+            segment=str(ctx.get("customer_segment") or ""),
+            tier_refs=frozenset(tier_refs),
+            is_birthday=bool(ctx.get("is_birthday")),
+        ),
+        sku=sku,
+        sku_collections=tuple((ctx.get("sku_collections") or {}).get(sku, []) or ()),
+        fulfillment_type=str(ctx.get("fulfillment_type") or ""),
+        merchandise_subtotal_q=merchandise_subtotal_q,
+    )
+
+
 class DiscountModifier:
     """
     Desconto unificado — promoções automáticas + cupom.
@@ -946,6 +980,7 @@ class DiscountModifier:
 
             manual = (item.get("meta") or {}).get("manual_discount") or {}
             manual_allowed = bool(manual.get("value"))
+            line_ctx = promotion_context(ctx, sku=sku, merchandise_subtotal_q=session_total)
 
             # Find best discount candidate
             best_discount_q = 0
@@ -958,12 +993,7 @@ class DiscountModifier:
             for promo in promotions:
                 if promo.type != "percent":
                     continue
-                if not promotion_minimum_eligible(
-                    min_order_q=promo.min_order_q,
-                    merchandise_subtotal_q=session_total,
-                ):
-                    continue
-                if not self._matches(promo, sku, ctx):
+                if not promotion_matches(promo, line_ctx):
                     continue
                 discount_q = self._calc_discount(promo, price_q)
                 promo_kind = None
@@ -979,15 +1009,11 @@ class DiscountModifier:
 
             # Evaluate coupon
             if coupon_promo and coupon_promo.type == "percent":
-                if promotion_minimum_eligible(
-                    min_order_q=coupon_promo.min_order_q,
-                    merchandise_subtotal_q=session_total,
-                ):
-                    if self._matches(coupon_promo, sku, ctx):
-                        coupon_discount_q = self._calc_discount(coupon_promo, price_q)
-                        if coupon_discount_q >= best_discount_q:
-                            best_discount_q = coupon_discount_q
-                            best_source = ("coupon", coupon_code, coupon_promo, None, "")
+                if promotion_matches(coupon_promo, line_ctx):
+                    coupon_discount_q = self._calc_discount(coupon_promo, price_q)
+                    if coupon_discount_q >= best_discount_q:
+                        best_discount_q = coupon_discount_q
+                        best_source = ("coupon", coupon_code, coupon_promo, None, "")
 
             # Evaluate operator manual per-line discount (percent), best wins.
             if manual_allowed:
@@ -1060,7 +1086,7 @@ class DiscountModifier:
                 # de pedido não empilha sobre promo/cupom/manual já aplicados.
                 and not (item.get("meta") or {}).get("_disc")
                 and int(item.get("line_total_q", 0)) > 0
-                and self._matches(fixed_promo, item.get("sku", ""), ctx)
+                and promotion_matches(fixed_promo, promotion_context(ctx, sku=item.get("sku", "")))
             ]
             eligible_subtotal = sum(int(item.get("line_total_q", 0)) for item in eligible)
             target_q = min(fixed_value, eligible_subtotal)
@@ -1208,43 +1234,9 @@ class DiscountModifier:
         if needs_birthday and customer.birthday:
             # O aniversário é o do DIA DA VENDA: a venda das 23h50 enviada depois
             # da meia-noite ainda é do dia do aniversário (e a do dia seguinte não).
-            today = timezone.localdate(pricing_now(ctx))
-            ctx["is_birthday"] = (
-                customer.birthday.month == today.month
-                and customer.birthday.day == today.day
+            ctx["is_birthday"] = Shopper.birthday_on(
+                customer.birthday, timezone.localdate(pricing_now(ctx))
             )
-
-    @staticmethod
-    def _matches(promo: Any, sku: str, ctx: dict) -> bool:
-        if promo.fulfillment_types:
-            fulfillment_type = (ctx.get("fulfillment_type") or "").strip()
-            if fulfillment_type:
-                if fulfillment_type not in promo.fulfillment_types:
-                    return False
-            elif "pickup" not in promo.fulfillment_types:
-                # Sem o tipo escolhido, a promoção que NÃO vale na retirada (só
-                # entrega) não pré-aplica: o desconto apareceria e sumiria ao
-                # trocar para retirada. A restrita à RETIRADA vale, porque retirada
-                # é o padrão da casa até alguém escolher entrega — é assim que o
-                # benefício da Equipe sempre apareceu.
-                return False
-        if promo.skus and sku not in promo.skus:
-            return False
-        if promo.collections:
-            item_collections = ctx.get("sku_collections", {}).get(sku, [])
-            if not any(c in promo.collections for c in item_collections):
-                return False
-        if promo.customer_segments:
-            customer_segment = ctx.get("customer_segment", "")
-            tier_refs = set(ctx.get("price_tiers") or [])
-            if ctx.get("price_tier"):
-                tier_refs.add(ctx["price_tier"])
-            if customer_segment not in promo.customer_segments and not tier_refs.intersection(promo.customer_segments):
-                return False
-        if getattr(promo, "birthday_only", False):
-            if not ctx.get("is_birthday"):
-                return False
-        return True
 
     @staticmethod
     def _calc_discount(promo: Any, price_q: int) -> int:
@@ -1715,30 +1707,25 @@ def _best_free_delivery_promotion(
 def _free_delivery_covers_order(promo, *, customer_ref: str, merchandise_q: int) -> bool:
     """Os eixos de elegibilidade que fazem sentido para uma renúncia de frete.
 
-    `skus`/`collections` NÃO entram: renúncia de frete é do pedido, não do item.
-    "Frete grátis se levar croissant" seria outra feature, e inventá-la aqui é
-    inventar pedido que não houve.
+    `skus`/`collections` NÃO entram (a pergunta não traz item): renúncia de frete é
+    do pedido, não do item. "Frete grátis se levar croissant" seria outra feature, e
+    inventá-la aqui é inventar pedido que não houve. O cliente só é buscado quando a
+    promoção tem alvo por cliente (o visitante anônimo não a satisfaz).
     """
-    from shopman.shop.services.cart import customer_eligible_for_promotion
+    from shopman.shop.services.cart import promotion_shopper
 
-    if not promotion_minimum_eligible(
-        min_order_q=promo.min_order_q,
-        merchandise_subtotal_q=merchandise_q,
-    ):
+    order_ctx = PromotionContext(fulfillment_type="delivery", merchandise_subtotal_q=merchandise_q)
+    if promotion_matches(promo, order_ctx):
+        return True
+    if not customer_ref or promotion_matches(promo, PromotionContext()):
+        return False  # falhou por mínimo/atendimento, ou exige um cliente que não há
+
+    from shopman.guestman.models import Customer
+
+    customer = Customer.objects.filter(ref=customer_ref).first()
+    if customer is None:
         return False
-
-    types = [str(t).strip() for t in (promo.fulfillment_types or []) if str(t).strip()]
-    if types and "delivery" not in types:
-        return False
-
-    if promo.customer_segments or promo.birthday_only:
-        from shopman.guestman.models import Customer
-
-        customer = Customer.objects.filter(ref=customer_ref).first() if customer_ref else None
-        if not customer_eligible_for_promotion(customer, promo):
-            return False
-
-    return True
+    return promotion_matches(promo, replace(order_ctx, shopper=promotion_shopper(customer)))
 
 
 class LoyaltyRedeemModifier:

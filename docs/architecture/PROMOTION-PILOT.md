@@ -98,6 +98,41 @@ consumidores, o teste de delegação, o manifesto, o inventário, o gate de name
 fixture negativa e este relatório. Esses arquivos não mudariam para executar S1 depois
 da extração, portanto não pertencem à métrica futura.
 
+## Elegibilidade inteira (laudo CORE-SOVEREIGNTY, A7-4)
+
+O piloto extraiu só o mínimo; a elegibilidade continuava com três implementações
+(`DiscountModifier._matches`, `services/cart.customer_eligible_for_promotion` e
+`services/fomo._promotions_for_sku`), mais uma quarta, parcial, no anúncio do Marketing
+(`services/marketing_facts._promotion`). Agora há uma só:
+
+```python
+promotion_matches(promo, PromotionContext(...)) -> bool
+```
+
+em `shopman/shop/policies/promotion.py`. O contexto diz quais eixos fazem parte da
+pergunta (cliente sempre; item, atendimento e mínimo quando presentes; promessa a
+qualquer visitante no selo da vitrine). Consumidores: carrinho da loja e do PDV
+(`DiscountModifier`), preço contextual do catálogo (`PromotionPricingBackend`), frete
+grátis (`_free_delivery_covers_order`), cupom do site e da concierge
+(`customer_eligible_for_promotion`, via `validate_and_apply_coupon`), selo FOMO e
+anúncio do Marketing.
+
+### Métrica calculada, não declarada (A7-6)
+
+`scripts/check_orchestrator_units.py` conta os arquivos de produção (em `shopman/shop`,
+`storefront` e `backstage`) que TESTAM um campo de alvo da promoção (`skus`,
+`collections`, `fulfillment_types`, `customer_segments`, `birthday_only`,
+`min_order_q`) e imprime `policy_decision_files`. O gate reprova qualquer arquivo além do
+módulo da política (salvo as leituras de exibição listadas com motivo em
+`POLICY_FIELD_EXEMPTIONS`), e o teste
+`test_canonical_promotion_decision_lives_in_one_file` fixa o número em **1**.
+
+O mesmo detector, rodado sobre `origin/main@355a713c2` (antes desta extração), conta
+**5** arquivos: a política, `modifiers.py`, `services/cart.py`, `services/fomo.py` e
+`services/marketing_facts.py`. Os mutantes do laudo (segunda comparação de
+`min_order_q` no `DiscountModifier`; `coupon_minimum_eligible` em `services/cart.py`,
+com ou sem declaração no manifesto) viraram testes que precisam reprovar.
+
 ## Regra de aborto
 
 Abortar e reverter a extração, preservando este artefato como evidência, se ocorrer

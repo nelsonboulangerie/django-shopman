@@ -22,7 +22,7 @@ def _replace_login_target(customer: Customer, kind: str, value: str) -> None:
     if kind == "phone":
         from shopman.shop.services.account import _set_primary_phone
 
-        _set_primary_phone(customer, value)
+        _set_primary_phone(customer, value, proof="sms")
         return
 
     ContactPoint.objects.filter(

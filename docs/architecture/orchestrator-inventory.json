@@ -7214,6 +7214,7 @@
       ],
       "out_of_extraction": false,
       "unit_ids": [
+        "promotion.eligibility",
         "promotion.minimum-order-eligibility"
       ],
       "responsibilities": [

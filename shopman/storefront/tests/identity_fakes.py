@@ -14,6 +14,13 @@ class CapturingSender:
         return True
 
 
+class FailingSender:
+    """Canal que recusa todo envio: força a cadeia a cair para o seguinte."""
+
+    def send_code(self, target: str, code: str, method: str) -> bool:
+        return False
+
+
 def make_identity_view(
     *,
     subject_id,
