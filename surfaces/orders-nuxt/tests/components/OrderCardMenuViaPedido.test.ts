@@ -36,7 +36,7 @@ describe("OrderCardMenu: a Via Pedido no ⋯ do pedido", () => {
     expect(item.attributes("aria-label")).toBe("Imprimir Via Pedido");
     await item.trigger("click");
     await vi.waitFor(() =>
-      expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/orders/WEB-6/ticket-escpos/"),
+      expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/orders/WEB-6/ticket-escpos/", { method: "POST" }),
     );
   });
 

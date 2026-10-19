@@ -102,7 +102,7 @@ async function printDanfe(sale: RecentSale) {
   try {
     const response = await $fetch<{ payload_b64: string; title: string }>(
       apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/danfe-escpos/`),
-      { credentials: "include" },
+      { method: "POST", credentials: "include" },
     );
     const outcome = await agent.print(response.payload_b64, response.title);
     if (outcome.status === "printed") toast.success(`DANFE de ${sale.order_ref} na impressora.`);
@@ -140,7 +140,7 @@ async function printReceipt(sale: RecentSale) {
   try {
     const response = await $fetch<{ payload_b64: string; title: string }>(
       apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/receipt-escpos/`),
-      { credentials: "include" },
+      { method: "POST", credentials: "include" },
     );
     const outcome = await agent.print(response.payload_b64, response.title);
     if (outcome.status === "printed") {

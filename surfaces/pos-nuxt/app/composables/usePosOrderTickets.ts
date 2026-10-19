@@ -43,10 +43,12 @@ export function usePosOrderTickets(pos: ComputedRef<POSProjection | null>) {
     );
   }
 
-  async function fetchPrintable(path: string, params?: Record<string, string>) {
+  // POST: pedir os bytes é emitir a via, e o servidor carimba a primeira.
+  async function fetchPrintable(path: string, body?: Record<string, string>) {
     return await $fetch<TicketPrintResponse>(apiPath(path), {
+      method: "POST",
       credentials: "include",
-      query: params,
+      body,
     });
   }
 
