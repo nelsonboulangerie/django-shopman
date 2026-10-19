@@ -1,0 +1,1308 @@
+{
+  "schema_version": 1,
+  "description": "Unidades de política que nasceram fora de shopman/shop/policies/ antes da trava (laudo CORE-SOVEREIGNTY A7-3). Congeladas símbolo a símbolo: a lista só encolhe. Política nova nasce em policies/; mover uma daqui para lá apaga a entrada.",
+  "units": {
+    "account.active-subject": [
+      "shopman/shop/services/account.py:AccountUnavailable",
+      "shopman/shop/services/account.py:get_authenticated_customer",
+      "shopman/shop/services/account.py:lock_active_customer",
+      "shopman/shop/services/account.py:lock_customer_for_privacy"
+    ],
+    "account.notification-consent": [
+      "shopman/shop/services/account.py:NOTIFICATION_CONSENT_CHANNELS",
+      "shopman/shop/services/account.py:_complete_notification_preferences",
+      "shopman/shop/services/account.py:enabled_notification_channels",
+      "shopman/shop/services/account.py:set_notification_consent",
+      "shopman/shop/services/account.py:toggle_notification_consent",
+      "shopman/shop/services/communication_consent.py:customer_is_opted_in",
+      "shopman/shop/services/communication_consent.py:customer_is_opted_out"
+    ],
+    "account.order-erasure-eligibility": [
+      "shopman/shop/services/account.py:privacy_order_deletion_blocker"
+    ],
+    "account.otp-erasure-eligibility": [
+      "shopman/shop/services/account.py:privacy_otp_deletion_blocker"
+    ],
+    "auth.redirect-safety": [
+      "shopman/shop/services/auth.py:safe_redirect_url"
+    ],
+    "auth.whatsapp-return-safety": [
+      "shopman/shop/services/whatsapp_verify.py:WhatsAppVerifyUnavailable",
+      "shopman/shop/services/whatsapp_verify.py:_is_checkout_next",
+      "shopman/shop/services/whatsapp_verify.py:_safe_next",
+      "shopman/shop/services/whatsapp_verify.py:start_access_link"
+    ],
+    "availability.stock-promise-decision": [
+      "shopman/shop/services/availability.py:_availability_kwargs",
+      "shopman/shop/services/availability.py:_check_bundle",
+      "shopman/shop/services/availability.py:_expand_if_bundle",
+      "shopman/shop/services/availability.py:_listing_gate_decision",
+      "shopman/shop/services/availability.py:_listing_items_for_skus",
+      "shopman/shop/services/availability.py:_sku_in_channel_listing",
+      "shopman/shop/services/availability.py:_stock_decision",
+      "shopman/shop/services/availability.py:decide",
+      "shopman/shop/services/availability.py:decide_many"
+    ],
+    "calendar.closure-exception": [
+      "shopman/shop/services/business_calendar.py:_closed_dates",
+      "shopman/shop/services/business_calendar.py:calendar_closure_on",
+      "shopman/shop/services/business_calendar.py:closed_date_for"
+    ],
+    "calendar.operating-day": [
+      "shopman/shop/services/business_calendar.py:is_open_on"
+    ],
+    "calendar.operational-state": [
+      "shopman/shop/services/business_calendar.py:BusinessCalendarState",
+      "shopman/shop/services/business_calendar.py:_next_open_at",
+      "shopman/shop/services/business_calendar.py:current_business_state"
+    ],
+    "calendar.operator-deadline": [
+      "shopman/shop/services/business_calendar.py:next_operational_deadline"
+    ],
+    "calendar.schedule-governance": [
+      "shopman/shop/services/business_calendar.py:_has_regular_hours",
+      "shopman/shop/services/business_calendar.py:has_regular_hours"
+    ],
+    "calendar.selling-window": [
+      "shopman/shop/services/business_calendar.py:_day_window",
+      "shopman/shop/services/business_calendar.py:_weekday_window",
+      "shopman/shop/services/business_calendar.py:selling_hours_for"
+    ],
+    "calendar.special-hours": [
+      "shopman/shop/services/business_calendar.py:_calendar_time",
+      "shopman/shop/services/business_calendar.py:special_hours_for"
+    ],
+    "catalog.dietary-profile-precedence": [
+      "shopman/shop/services/dietary_from_recipe.py:dietary_profiles_for_items"
+    ],
+    "catalog.display-price-source": [
+      "shopman/shop/services/display_prices.py:PriceSourceError",
+      "shopman/shop/services/display_prices.py:price_source_ref",
+      "shopman/shop/services/display_prices.py:resolve_prices"
+    ],
+    "catalog.dynamic-collection-resolution": [
+      "shopman/shop/dynamic_collections.py:FEATURED_RANKING_CACHE_KEY",
+      "shopman/shop/dynamic_collections.py:FEATURED_RANKING_TTL_SECONDS",
+      "shopman/shop/dynamic_collections.py:FeaturedResolver",
+      "shopman/shop/dynamic_collections.py:FreshFromOvenResolver",
+      "shopman/shop/dynamic_collections.py:NewArrivalsResolver",
+      "shopman/shop/dynamic_collections.py:invalidate_featured_ranking",
+      "shopman/shop/dynamic_collections.py:resolve"
+    ],
+    "catalog.enrichment-acceptance": [
+      "shopman/shop/services/material_enrichment.py:accept_fields",
+      "shopman/shop/services/material_enrichment.py:needs_replace",
+      "shopman/shop/services/product_enrichment.py:AcceptResult",
+      "shopman/shop/services/product_enrichment.py:accept_fields",
+      "shopman/shop/services/product_enrichment.py:needs_replace"
+    ],
+    "catalog.external-stock-availability": [
+      "shopman/shop/services/external_availability.py:in_stock",
+      "shopman/shop/services/external_availability.py:in_stock_map",
+      "shopman/shop/services/external_availability.py:stock_channel_ref"
+    ],
+    "catalog.external-write-authorization": [
+      "shopman/shop/adapters/catalog_projection_ifood.py:ensure_catalog_write_allowed"
+    ],
+    "catalog.inactive-collection-visibility": [
+      "shopman/shop/services/catalog_visibility.py:HiddenProduct",
+      "shopman/shop/services/catalog_visibility.py:hidden_by_inactive_collection",
+      "shopman/shop/services/catalog_visibility.py:hidden_by_inactive_collection_queryset",
+      "shopman/shop/services/catalog_visibility.py:hidden_by_inactive_collection_skus",
+      "shopman/shop/services/catalog_visibility.py:menu_visible_queryset"
+    ],
+    "catalog.product-option-definition": [
+      "shopman/shop/product_options.py:OPTION_GROUPS_KEY",
+      "shopman/shop/product_options.py:OptionDefinitionError",
+      "shopman/shop/product_options.py:_REF_RE",
+      "shopman/shop/product_options.py:validate_definition"
+    ],
+    "catalog.recipe-dietary-claims": [
+      "shopman/shop/services/dietary_from_recipe.py:LACTOSE_TOKENS",
+      "shopman/shop/services/dietary_from_recipe.py:derive_recipe_dietary_claims"
+    ],
+    "catalog.recipe-dietary-overwrite": [
+      "shopman/shop/services/dietary_from_recipe.py:recipe_may_overwrite_dietary_attributes"
+    ],
+    "catalog.social-auto-publication": [
+      "shopman/shop/services/social_publish_rules.py:should_auto_publish_new"
+    ],
+    "catalog.social-projection-gate": [
+      "shopman/shop/services/social_publish_rules.py:_DEFAULTS",
+      "shopman/shop/services/social_publish_rules.py:_has_promisable_stock",
+      "shopman/shop/services/social_publish_rules.py:projection_gate",
+      "shopman/shop/services/social_publish_rules.py:rules_for"
+    ],
+    "catalog.unit-weight-promise": [
+      "shopman/shop/services/unit_weight_from_recipe.py:BAKE_LOSS_ESTIMATED",
+      "shopman/shop/services/unit_weight_from_recipe.py:BAKE_LOSS_HOUSE_DEFAULT",
+      "shopman/shop/services/unit_weight_from_recipe.py:BAKE_LOSS_WEIGHED",
+      "shopman/shop/services/unit_weight_from_recipe.py:UNIT_OUTPUTS",
+      "shopman/shop/services/unit_weight_from_recipe.py:UnitWeightDerivation",
+      "shopman/shop/services/unit_weight_from_recipe.py:_bake_loss",
+      "shopman/shop/services/unit_weight_from_recipe.py:_percent",
+      "shopman/shop/services/unit_weight_from_recipe.py:_slack",
+      "shopman/shop/services/unit_weight_from_recipe.py:bake_loss_basis",
+      "shopman/shop/services/unit_weight_from_recipe.py:derive_unit_weight",
+      "shopman/shop/services/unit_weight_from_recipe.py:raw_unit_grams"
+    ],
+    "catalog.unit-weight-write-authority": [
+      "shopman/shop/services/unit_weight_from_recipe.py:weight_is_writable"
+    ],
+    "channel.calendar-closure": [
+      "shopman/shop/services/channel_switch.py:closed_by_shop",
+      "shopman/shop/services/channel_switch.py:governed_by_calendar"
+    ],
+    "channel.order-acceptance": [
+      "shopman/shop/services/channel_switch.py:ensure_accepting_orders",
+      "shopman/shop/services/channel_switch.py:pos_channel_ref"
+    ],
+    "channel.surface-policy": [
+      "shopman/shop/services/channel_policy.py:ChannelPolicyResolution",
+      "shopman/shop/services/channel_policy.py:_DEFAULT_FULFILLMENT_TYPES",
+      "shopman/shop/services/channel_policy.py:_DEFAULT_TRACK_ACTION",
+      "shopman/shop/services/channel_policy.py:_DIGITAL_PAYMENT_METHODS",
+      "shopman/shop/services/channel_policy.py:_VALID_FULFILLMENT_TYPES",
+      "shopman/shop/services/channel_policy.py:_action_refs",
+      "shopman/shop/services/channel_policy.py:_bool_override",
+      "shopman/shop/services/channel_policy.py:_default_supports_access_link",
+      "shopman/shop/services/channel_policy.py:_fulfillment_types",
+      "shopman/shop/services/channel_policy.py:_mapping",
+      "shopman/shop/services/channel_policy.py:_resolve_channel_ref_and_overrides",
+      "shopman/shop/services/channel_policy.py:resolve_channel_policy"
+    ],
+    "channel.toggle-eligibility": [
+      "shopman/shop/services/channel_switch.py:is_switchable"
+    ],
+    "channel.whatsapp-bootstrap-requirements": [
+      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:CHANNEL_CONFIG",
+      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:Command",
+      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:REQUIRED_KEYS",
+      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:_required_keys",
+      "shopman/shop/management/commands/bootstrap_whatsapp_channel.py:_storefront_ref"
+    ],
+    "delivery.courier-charge-staleness": [
+      "shopman/shop/services/courier.py:charge_outdated"
+    ],
+    "delivery.courier-dispatch-eligibility": [
+      "shopman/shop/services/courier.py:FIRST_SYNC_SECONDS",
+      "shopman/shop/services/courier.py:RIDE_ORDER_STATUSES",
+      "shopman/shop/services/courier.py:_CANCELLED_ORDER_ALERT_TYPE",
+      "shopman/shop/services/courier.py:_SYNC_ALERT_TYPE",
+      "shopman/shop/services/courier.py:dispatch_revision",
+      "shopman/shop/services/courier.py:ensure_dispatch_resolved",
+      "shopman/shop/services/courier.py:has_active_ride",
+      "shopman/shop/services/courier.py:house_dispatches",
+      "shopman/shop/services/courier.py:is_enabled_for",
+      "shopman/shop/services/courier.py:not_house_dispatch_message",
+      "shopman/shop/services/courier.py:redispatch",
+      "shopman/shop/services/courier.py:release_unresolved_dispatch",
+      "shopman/shop/services/courier.py:request_dispatch",
+      "shopman/shop/services/courier.py:unresolved_dispatch"
+    ],
+    "delivery.courier-handoff-charge": [
+      "shopman/shop/services/courier.py:_charge_part",
+      "shopman/shop/services/courier.py:door_charge",
+      "shopman/shop/services/courier.py:door_charge_note",
+      "shopman/shop/services/courier.py:ride_note"
+    ],
+    "delivery.courier-quote": [
+      "shopman/shop/services/courier.py:ESTIMATE_CACHE_SECONDS",
+      "shopman/shop/services/courier.py:build_machine_payload",
+      "shopman/shop/services/courier.py:can_quote",
+      "shopman/shop/services/courier.py:estimate_for_order",
+      "shopman/shop/services/courier.py:store_estimate"
+    ],
+    "delivery.fee-resolution": [
+      "shopman/shop/services/pos.py:DeliveryFeeResolution",
+      "shopman/shop/services/pos.py:_PRICING_CHANNEL_KEY",
+      "shopman/shop/services/pos.py:_compute_delivery_fee",
+      "shopman/shop/services/pos.py:_compute_engine_delivery_fee",
+      "shopman/shop/services/pos.py:_delivery_address_text",
+      "shopman/shop/services/pos.py:_delivery_fee_waiver",
+      "shopman/shop/services/pos.py:_payload_delivery_fee_q",
+      "shopman/shop/services/pos.py:_payload_pricing_customer_ref",
+      "shopman/shop/services/pos.py:_resolve_delivery_fee",
+      "shopman/shop/services/pos.py:delivery_out_of_area_message",
+      "shopman/shop/services/pos.py:resolve_delivery_fee"
+    ],
+    "delivery.slot-offer": [
+      "shopman/shop/services/business_calendar.py:DELIVERY_SLOT_LEAD_MINUTES",
+      "shopman/shop/services/business_calendar.py:DELIVERY_SLOT_MINUTES",
+      "shopman/shop/services/business_calendar.py:_fmt_hhmm",
+      "shopman/shop/services/business_calendar.py:delivery_slots_for"
+    ],
+    "deployment.allowed-hosts-safety": [
+      "shopman/shop/checks.py:check_allowed_hosts"
+    ],
+    "external-egress.runtime-safety": [
+      "shopman/shop/adapters/_external.py:_suppressed_reason",
+      "shopman/shop/adapters/_external.py:inert",
+      "shopman/shop/adapters/_external.py:suppress",
+      "shopman/shop/adapters/_external.py:suppressed_reason"
+    ],
+    "fiscal.authorized-note-cancellation-path": [
+      "shopman/shop/services/fiscal.py:CANCELLATION_PATH_UNKNOWN",
+      "shopman/shop/services/fiscal.py:CANCEL_AND_REISSUE",
+      "shopman/shop/services/fiscal.py:GOODS_NOT_DISPATCHED",
+      "shopman/shop/services/fiscal.py:RETURN_NOTE",
+      "shopman/shop/services/fiscal.py:cancellation_path",
+      "shopman/shop/services/fiscal.py:cancellation_window_minutes",
+      "shopman/shop/services/fiscal.py:goods_left_the_house",
+      "shopman/shop/services/fiscal.py:issue_override",
+      "shopman/shop/services/fiscal.py:issue_override_refusal",
+      "shopman/shop/services/fiscal.py:nfce_authorized_at"
+    ],
+    "fiscal.delivery-recipient-eligibility": [
+      "shopman/shop/services/delivery_fiscal_identity.py:ADDRESS_FIELD",
+      "shopman/shop/services/delivery_fiscal_identity.py:REFUSAL_CODES",
+      "shopman/shop/services/delivery_fiscal_identity.py:RecipientGap",
+      "shopman/shop/services/delivery_fiscal_identity.py:TAX_ID_FIELD",
+      "shopman/shop/services/delivery_fiscal_identity.py:TAX_ID_INVALID_MESSAGE",
+      "shopman/shop/services/delivery_fiscal_identity.py:_ADDRESS_WORDS",
+      "shopman/shop/services/delivery_fiscal_identity.py:_VALID_STATES",
+      "shopman/shop/services/delivery_fiscal_identity.py:address_gap_message",
+      "shopman/shop/services/delivery_fiscal_identity.py:address_gap_words",
+      "shopman/shop/services/delivery_fiscal_identity.py:delivery_fiscal_gaps",
+      "shopman/shop/services/delivery_fiscal_identity.py:join_words",
+      "shopman/shop/services/delivery_fiscal_identity.py:order_view",
+      "shopman/shop/services/delivery_fiscal_identity.py:recipient_gaps",
+      "shopman/shop/services/delivery_fiscal_identity.py:refusal",
+      "shopman/shop/services/delivery_fiscal_identity.py:requires_delivery_fiscal_identity"
+    ],
+    "fiscal.emission-eligibility": [
+      "shopman/shop/services/fiscal.py:ISSUE_OVERRIDE_KEY",
+      "shopman/shop/services/fiscal.py:LATE_EMISSION_DAYS_KEY",
+      "shopman/shop/services/fiscal.py:_default_emission_decision",
+      "shopman/shop/services/fiscal.py:_fiscal_backend_is_homologation",
+      "shopman/shop/services/fiscal.py:emission_resolver",
+      "shopman/shop/services/fiscal.py:late_emission_days",
+      "shopman/shop/services/fiscal.py:late_emission_rule_text",
+      "shopman/shop/services/fiscal.py:simulated_payment_blocks_emission"
+    ],
+    "fiscal.order-state": [
+      "shopman/shop/services/fiscal.py:EMIT_FAILED_ALERT_TYPE",
+      "shopman/shop/services/fiscal.py:FISCAL_STATES",
+      "shopman/shop/services/fiscal.py:FISCAL_STATE_AUTHORIZED",
+      "shopman/shop/services/fiscal.py:FISCAL_STATE_AWAITING_DELIVERY",
+      "shopman/shop/services/fiscal.py:FISCAL_STATE_AWAITING_PAYMENT",
+      "shopman/shop/services/fiscal.py:FISCAL_STATE_AWAITING_PICKUP",
+      "shopman/shop/services/fiscal.py:FISCAL_STATE_FAILED",
+      "shopman/shop/services/fiscal.py:FISCAL_STATE_NOT_EXPECTED",
+      "shopman/shop/services/fiscal.py:FISCAL_STATE_QUEUED",
+      "shopman/shop/services/fiscal.py:HANDOFF_WITHOUT_NFCE_ALERT_TYPE",
+      "shopman/shop/services/fiscal.py:_DIRECTIVE_ATTEMPTED",
+      "shopman/shop/services/fiscal.py:_HANDOFF_STATUSES",
+      "shopman/shop/services/fiscal.py:_RECEIPT_REQUEST_RESOLVERS",
+      "shopman/shop/services/fiscal.py:alert_handoff_without_nfce",
+      "shopman/shop/services/fiscal.py:emission_expected",
+      "shopman/shop/services/fiscal.py:emit_failed_alert_open",
+      "shopman/shop/services/fiscal.py:fiscal_state",
+      "shopman/shop/services/fiscal.py:latest_emit_directive_status",
+      "shopman/shop/services/fiscal.py:receipt_request_emits"
+    ],
+    "fulfillment.available-dates": [
+      "shopman/shop/services/business_calendar.py:available_dates"
+    ],
+    "fulfillment.delivery-window-options": [
+      "shopman/shop/services/fulfillment_window.py:DELIVERY_WINDOW_PASSED",
+      "shopman/shop/services/fulfillment_window.py:DELIVERY_WINDOW_UNKNOWN",
+      "shopman/shop/services/fulfillment_window.py:delivery_window_error",
+      "shopman/shop/services/fulfillment_window.py:delivery_windows_for"
+    ],
+    "fulfillment.window-promise": [
+      "shopman/shop/services/fulfillment_window.py:promised_at"
+    ],
+    "fulfillment.window-readiness": [
+      "shopman/shop/services/fulfillment_window.py:UNKNOWN_READINESS",
+      "shopman/shop/services/fulfillment_window.py:readiness_for"
+    ],
+    "ifood.cancellation-dispatch-eligibility": [
+      "shopman/shop/services/ifood_cancellation.py:should_send"
+    ],
+    "ifood.cancellation-refusal-explanation": [
+      "shopman/shop/services/ifood_cancellation.py:refusal_reason"
+    ],
+    "ifood.channel-off-closures": [
+      "shopman/shop/services/ifood_merchant.py:CHANNEL_OFF_DESCRIPTION",
+      "shopman/shop/services/ifood_merchant.py:_effective_start",
+      "shopman/shop/services/ifood_merchant.py:_find_remote",
+      "shopman/shop/services/ifood_merchant.py:_ifood_datetime",
+      "shopman/shop/services/ifood_merchant.py:_key_stamp",
+      "shopman/shop/services/ifood_merchant.py:_parse_remote_datetime",
+      "shopman/shop/services/ifood_merchant.py:_subtract",
+      "shopman/shop/services/ifood_merchant.py:channel_off_closures"
+    ],
+    "ifood.merchant-channel-governance": [
+      "shopman/shop/services/ifood_merchant.py:_ifood_channel",
+      "shopman/shop/services/ifood_merchant.py:channel_off",
+      "shopman/shop/services/ifood_merchant.py:governs"
+    ],
+    "ifood.opening-hours-equivalence": [
+      "shopman/shop/services/ifood_merchant.py:_shift_key",
+      "shopman/shop/services/ifood_merchant.py:_shifts_from_body",
+      "shopman/shop/services/ifood_merchant.py:shifts_match"
+    ],
+    "ifood.remote-cancellation-requirement": [
+      "shopman/shop/services/ifood_cancellation.py:requires_remote_decision"
+    ],
+    "ifood.remote-conclusion-eligibility": [
+      "shopman/shop/services/ifood_events.py:conclusion_allowed"
+    ],
+    "marketing.approval-ceremony-threshold": [
+      "shopman/shop/services/marketing_ceremony.py:ceremony_threshold"
+    ],
+    "marketing.audience-integer-rule-validity": [
+      "shopman/shop/services/audience.py:_require_integer_rules",
+      "shopman/shop/services/audience.py:invalid_integer_rules"
+    ],
+    "marketing.campaign-occurrence": [
+      "shopman/shop/services/campaign_schedule.py:ALL_WEEKDAYS",
+      "shopman/shop/services/campaign_schedule.py:FIRING_TYPES",
+      "shopman/shop/services/campaign_schedule.py:MAX_LOOKAHEAD_DAYS",
+      "shopman/shop/services/campaign_schedule.py:MAX_RECURRING_LOOKAHEAD_DAYS",
+      "shopman/shop/services/campaign_schedule.py:ONCE",
+      "shopman/shop/services/campaign_schedule.py:RECURRING",
+      "shopman/shop/services/campaign_schedule.py:fires_on_its_own",
+      "shopman/shop/services/campaign_schedule.py:next_occurrence"
+    ],
+    "marketing.command-authorization": [
+      "shopman/shop/services/marketing_security.py:ACTION_APPROVE",
+      "shopman/shop/services/marketing_security.py:ACTION_CANCEL",
+      "shopman/shop/services/marketing_security.py:ACTION_CONFIGURE_PLATFORM",
+      "shopman/shop/services/marketing_security.py:ACTION_FIRE",
+      "shopman/shop/services/marketing_security.py:ACTION_RECONCILE",
+      "shopman/shop/services/marketing_security.py:ACTION_RESCHEDULE",
+      "shopman/shop/services/marketing_security.py:ACTION_RETRY",
+      "shopman/shop/services/marketing_security.py:ACTION_UNFREEZE",
+      "shopman/shop/services/marketing_security.py:AuthorizationContext",
+      "shopman/shop/services/marketing_security.py:AuthorizationRequirement",
+      "shopman/shop/services/marketing_security.py:CONFIRMATION_TTL",
+      "shopman/shop/services/marketing_security.py:LARGE_BLAST_SCHEDULE_THRESHOLD",
+      "shopman/shop/services/marketing_security.py:MAX_BLAST",
+      "shopman/shop/services/marketing_security.py:MAX_EXTERNAL_TARGETS_PER_DAY",
+      "shopman/shop/services/marketing_security.py:MIN_LARGE_SCHEDULE_DELAY",
+      "shopman/shop/services/marketing_security.py:MarketingAuthorizationError",
+      "shopman/shop/services/marketing_security.py:MarketingAuthorizationRequired",
+      "shopman/shop/services/marketing_security.py:SECURITY_RETENTION",
+      "shopman/shop/services/marketing_security.py:STEP_UP_LEVELS",
+      "shopman/shop/services/marketing_security.py:STEP_UP_TTL",
+      "shopman/shop/services/marketing_security.py:StepUpEvidence",
+      "shopman/shop/services/marketing_security.py:_HASH_RE",
+      "shopman/shop/services/marketing_security.py:_SAFE_ACTION_RE",
+      "shopman/shop/services/marketing_security.py:_SAFE_CAPABILITY_RE",
+      "shopman/shop/services/marketing_security.py:_SAFE_CONSEQUENCE_RE",
+      "shopman/shop/services/marketing_security.py:_SAFE_RESOURCE_RE",
+      "shopman/shop/services/marketing_security.py:_audience_bucket",
+      "shopman/shop/services/marketing_security.py:_aware_now",
+      "shopman/shop/services/marketing_security.py:_capability",
+      "shopman/shop/services/marketing_security.py:_ceremony_reason",
+      "shopman/shop/services/marketing_security.py:_ceremony_threshold_for_challenge",
+      "shopman/shop/services/marketing_security.py:_context_from_confirmation",
+      "shopman/shop/services/marketing_security.py:_context_hash",
+      "shopman/shop/services/marketing_security.py:_denied",
+      "shopman/shop/services/marketing_security.py:_dual_control_threshold",
+      "shopman/shop/services/marketing_security.py:_event",
+      "shopman/shop/services/marketing_security.py:_fresh_actor",
+      "shopman/shop/services/marketing_security.py:_has_device",
+      "shopman/shop/services/marketing_security.py:_keyed_hash",
+      "shopman/shop/services/marketing_security.py:_plain_hash",
+      "shopman/shop/services/marketing_security.py:_require_any_capability",
+      "shopman/shop/services/marketing_security.py:_require_capability",
+      "shopman/shop/services/marketing_security.py:_require_second_actor",
+      "shopman/shop/services/marketing_security.py:_require_step_up",
+      "shopman/shop/services/marketing_security.py:_required_reason",
+      "shopman/shop/services/marketing_security.py:_reserve_external_quota",
+      "shopman/shop/services/marketing_security.py:_second_actor_capabilities",
+      "shopman/shop/services/marketing_security.py:_token_hash",
+      "shopman/shop/services/marketing_security.py:approve_second_actor",
+      "shopman/shop/services/marketing_security.py:authorization_context",
+      "shopman/shop/services/marketing_security.py:authorize_command",
+      "shopman/shop/services/marketing_security.py:direct_message_recipient_count",
+      "shopman/shop/services/marketing_security.py:external_destination_count",
+      "shopman/shop/services/marketing_security.py:issue_confirmation",
+      "shopman/shop/services/marketing_security.py:public_post_count",
+      "shopman/shop/services/marketing_security.py:record_security_denial",
+      "shopman/shop/services/marketing_security.py:requirement_for"
+    ],
+    "marketing.command-cancellation": [
+      "shopman/shop/services/marketing_transitions.py:cancel_command"
+    ],
+    "marketing.command-expiry": [
+      "shopman/shop/services/marketing_transitions.py:SYSTEM_EXPIRY_ACTOR",
+      "shopman/shop/services/marketing_transitions.py:expire_due"
+    ],
+    "marketing.command-rescheduling": [
+      "shopman/shop/services/marketing_transitions.py:reschedule_command"
+    ],
+    "marketing.destination-identity": [
+      "shopman/shop/services/marketing_capabilities.py:CAPABILITY_IDENTITY_SCHEMA_VERSION",
+      "shopman/shop/services/marketing_capabilities.py:persisted_identity",
+      "shopman/shop/services/marketing_capabilities.py:resolve_identity"
+    ],
+    "marketing.direct-message-window": [
+      "shopman/shop/services/marketing_time.py:DeliveryWindow",
+      "shopman/shop/services/marketing_time.py:QUIET_HOURS_END",
+      "shopman/shop/services/marketing_time.py:QUIET_HOURS_START",
+      "shopman/shop/services/marketing_time.py:delivery_window",
+      "shopman/shop/services/marketing_time.py:quiet_hours_suspended_for_local_simulation"
+    ],
+    "marketing.external-effects-freeze": [
+      "shopman/shop/services/marketing_security.py:_suppress_reversible_work",
+      "shopman/shop/services/marketing_security.py:activate_freeze",
+      "shopman/shop/services/marketing_security.py:deactivate_freeze",
+      "shopman/shop/services/marketing_security.py:require_external_effects_enabled",
+      "shopman/shop/services/marketing_security.py:safety_state"
+    ],
+    "marketing.format-capabilities": [
+      "shopman/shop/services/marketing_capabilities.py:MarketingFormatCapability",
+      "shopman/shop/services/marketing_capabilities.py:default_format",
+      "shopman/shop/services/marketing_capabilities.py:format_capability",
+      "shopman/shop/services/marketing_capabilities.py:format_refs"
+    ],
+    "marketing.media-url-safety": [
+      "shopman/shop/services/marketing_url_policy.py:_MEDIA_PATH",
+      "shopman/shop/services/marketing_url_policy.py:_MEDIA_QUERY_KEYS",
+      "shopman/shop/services/marketing_url_policy.py:safe_browser_media_url",
+      "shopman/shop/services/marketing_url_policy.py:validate_media_redirect",
+      "shopman/shop/services/marketing_url_policy.py:validate_media_url"
+    ],
+    "marketing.product-fact-requirement": [
+      "shopman/shop/services/marketing_facts.py:_PRODUCT_REQUIRED_VARIABLES",
+      "shopman/shop/services/marketing_facts.py:requires_product"
+    ],
+    "marketing.publication-canary-runtime-isolation": [
+      "shopman/shop/management/commands/run_marketing_publication_canary.py:Command",
+      "shopman/shop/management/commands/run_marketing_publication_canary.py:_require_isolated_runtime"
+    ],
+    "marketing.whatsapp-approved-delivery": [
+      "shopman/shop/adapters/marketing_delivery_whatsapp.py:_require_sealed_flow",
+      "shopman/shop/adapters/marketing_delivery_whatsapp.py:_sending_target",
+      "shopman/shop/adapters/marketing_delivery_whatsapp.py:sealed_context",
+      "shopman/shop/adapters/marketing_delivery_whatsapp.py:send"
+    ],
+    "marketing.whatsapp-sandbox-probe": [
+      "shopman/shop/services/manychat_marketing_safety.py:_SANDBOX_DECLARED_FIELDS_KEY",
+      "shopman/shop/services/manychat_marketing_safety.py:_SANDBOX_FLOW_NS_KEY",
+      "shopman/shop/services/manychat_marketing_safety.py:_SANDBOX_MARKER",
+      "shopman/shop/services/manychat_marketing_safety.py:_SANDBOX_MARKER_KEY",
+      "shopman/shop/services/manychat_marketing_safety.py:consume_sandbox_probe",
+      "shopman/shop/services/manychat_marketing_safety.py:consume_sandbox_probe_contract",
+      "shopman/shop/services/manychat_marketing_safety.py:sandbox_probe_context"
+    ],
+    "notification.active-notification-policy": [
+      "shopman/shop/services/notification.py:_ACTIVE_NOTIFICATION_TEMPLATES",
+      "shopman/shop/services/notification.py:requires_active_notification"
+    ],
+    "notification.delivery-uncertainty-policy": [
+      "shopman/shop/services/notification.py:delivery_uncertainty_refusal"
+    ],
+    "notification.development-console-policy": [
+      "shopman/shop/services/notification.py:dev_console_allowed"
+    ],
+    "notification.fiscal-note-carriage": [
+      "shopman/shop/services/notification.py:FISCAL_NOTE_CARRIERS",
+      "shopman/shop/services/notification.py:FISCAL_NOTE_MESSAGE_KEY",
+      "shopman/shop/services/notification.py:FISCAL_NOTE_TEMPLATE",
+      "shopman/shop/services/notification.py:_LAST_CARRIER",
+      "shopman/shop/services/notification.py:_LAST_CARRIER_AHEAD",
+      "shopman/shop/services/notification.py:_fiscal_note_carriage",
+      "shopman/shop/services/notification.py:_fiscal_note_url",
+      "shopman/shop/services/notification.py:_is_storefront_order",
+      "shopman/shop/services/notification.py:_last_carrier",
+      "shopman/shop/services/notification.py:_last_carrier_still_ahead",
+      "shopman/shop/services/notification.py:_status_note",
+      "shopman/shop/services/notification.py:_write_fiscal_note_state",
+      "shopman/shop/services/notification.py:send_fiscal_note_unless_carried"
+    ],
+    "notification.payment-notice": [
+      "shopman/shop/services/notification.py:PAYMENT_TAKEN_OVER_AT_COUNTER",
+      "shopman/shop/services/notification.py:_taken_over_at_counter_refusal",
+      "shopman/shop/services/notification.py:payment_link_resend_refusal",
+      "shopman/shop/services/notification.py:payment_link_revision",
+      "shopman/shop/services/notification.py:payment_notice_refusal",
+      "shopman/shop/services/notification.py:payment_notice_template",
+      "shopman/shop/services/notification.py:resend_payment_link",
+      "shopman/shop/services/notification.py:send_or_resend_payment_notice"
+    ],
+    "notification.push-endpoint-safety": [
+      "shopman/shop/services/push_endpoints.py:_EXACT_PUSH_HOSTS",
+      "shopman/shop/services/push_endpoints.py:_PUSH_HOST_SUFFIXES",
+      "shopman/shop/services/push_endpoints.py:normalize_push_endpoint"
+    ],
+    "notification.safe-contact-resolution": [
+      "shopman/shop/services/notification.py:_manychat_phone",
+      "shopman/shop/services/notification.py:customer_contact_phone",
+      "shopman/shop/services/notification.py:customer_phone_is_platform_relay"
+    ],
+    "notification.subscription-consent": [
+      "shopman/shop/services/notification.py:lock_subscription_channel",
+      "shopman/shop/services/notification.py:subscription_notification_allowed"
+    ],
+    "operations.capacity-policy-resolution": [
+      "shopman/shop/operator_capacity_policy.py:resolve_operator_capacity_policy"
+    ],
+    "operations.capacity-threshold-policy": [
+      "shopman/shop/operator_capacity_policy.py:DEFAULT_ATTENTION_PERCENT",
+      "shopman/shop/operator_capacity_policy.py:DEFAULT_CRITICAL_PERCENT",
+      "shopman/shop/operator_capacity_policy.py:DEFAULT_SUSTAIN_MINUTES",
+      "shopman/shop/operator_capacity_policy.py:OperatorCapacityPolicy",
+      "shopman/shop/operator_capacity_policy.py:PERCENT_CEILING",
+      "shopman/shop/operator_capacity_policy.py:PERCENT_FLOOR",
+      "shopman/shop/operator_capacity_policy.py:SUSTAIN_MINUTES_CEILING",
+      "shopman/shop/operator_capacity_policy.py:SUSTAIN_MINUTES_FLOOR",
+      "shopman/shop/operator_capacity_policy.py:_BLOCK",
+      "shopman/shop/operator_capacity_policy.py:_coerce"
+    ],
+    "operations.probe-rate-admission": [
+      "shopman/shop/views/health.py:ProbeRateLimiter"
+    ],
+    "operations.required-worker-readiness": [
+      "shopman/shop/views/health.py:_QUEUE_STALE_SECONDS",
+      "shopman/shop/views/health.py:_WORKER_PROBE_STARTED_AT",
+      "shopman/shop/views/health.py:_check_queue",
+      "shopman/shop/views/health.py:_check_required_workers",
+      "shopman/shop/watchman_checks.py:QueueCheck"
+    ],
+    "order.advanced-cancellation-classification": [
+      "shopman/shop/services/cancellation.py:ADVANCED_CANCEL_STATUSES",
+      "shopman/shop/services/cancellation.py:is_advanced_cancel"
+    ],
+    "order.cancellation-customer-copy": [
+      "shopman/shop/services/cancel_reasons.py:customer_text"
+    ],
+    "order.cancellation-reason-key": [
+      "shopman/shop/services/cancel_reasons.py:_MACHINE_REASON_KEYS",
+      "shopman/shop/services/cancel_reasons.py:_OPERATOR_KEYS",
+      "shopman/shop/services/cancel_reasons.py:payment_deadline_reason_key",
+      "shopman/shop/services/cancel_reasons.py:reason_key_for",
+      "shopman/shop/services/cancel_reasons.py:reason_key_of"
+    ],
+    "order.customer-rating-eligibility": [
+      "shopman/shop/services/customer_orders.py:can_rate"
+    ],
+    "order.edit-delivery-identity": [
+      "shopman/shop/services/order_edit.py:require_delivery_identity"
+    ],
+    "order.edit-state-eligibility": [
+      "shopman/shop/services/order_edit.py:EDITABLE_STATUSES",
+      "shopman/shop/services/order_edit.py:_REFUSED_STATUSES",
+      "shopman/shop/services/order_edit.py:fiscal_authorized",
+      "shopman/shop/services/order_edit.py:state_refusal"
+    ],
+    "order.edit-stock-refusal-copy": [
+      "shopman/shop/services/order_edit.py:stock_refusal"
+    ],
+    "order.lifecycle-transition-policy": [
+      "shopman/shop/lifecycle.py:DURABLE_PHASES",
+      "shopman/shop/lifecycle.py:LIFECYCLE_DATA_KEY",
+      "shopman/shop/lifecycle.py:PHASE_DONE",
+      "shopman/shop/lifecycle.py:PHASE_LABELS",
+      "shopman/shop/lifecycle.py:QUEUED_PHASES",
+      "shopman/shop/lifecycle.py:_ACCEPTED_PAYMENT_STATUSES",
+      "shopman/shop/lifecycle.py:_ALERT_MESSAGES",
+      "shopman/shop/lifecycle.py:_OFFLINE_PAYMENT_METHODS",
+      "shopman/shop/lifecycle.py:_PHASE_HANDLERS",
+      "shopman/shop/lifecycle.py:_UPFRONT_DIGITAL_PAYMENT_METHODS",
+      "shopman/shop/lifecycle.py:_requires_captured_payment_before_confirmation",
+      "shopman/shop/lifecycle.py:_requires_payment_before_physical_work",
+      "shopman/shop/lifecycle.py:_should_initiate_payment_on_commit",
+      "shopman/shop/lifecycle.py:_stock_fulfill_allowed",
+      "shopman/shop/lifecycle.py:activate_preorder",
+      "shopman/shop/lifecycle.py:dispatch",
+      "shopman/shop/lifecycle.py:enqueue_phase",
+      "shopman/shop/lifecycle.py:ensure_confirmable",
+      "shopman/shop/lifecycle.py:ensure_payment_captured",
+      "shopman/shop/lifecycle.py:has_availability_approval",
+      "shopman/shop/lifecycle.py:phase_complete",
+      "shopman/shop/lifecycle.py:phase_stuck_message",
+      "shopman/shop/lifecycle.py:preorder_activation_at",
+      "shopman/shop/lifecycle.py:secure_stock",
+      "shopman/shop/lifecycle.py:start_acceptance_deadline"
+    ],
+    "order.payment-transition-gate": [
+      "shopman/shop/services/payment_gate.py:ON_DELIVERY_PAYMENT_METHODS",
+      "shopman/shop/services/payment_gate.py:UPFRONT_DIGITAL_PAYMENT_METHODS",
+      "shopman/shop/services/payment_gate.py:collects_on_delivery",
+      "shopman/shop/services/payment_gate.py:payment_blocks_transition",
+      "shopman/shop/services/payment_gate.py:payment_is_captured",
+      "shopman/shop/services/payment_gate.py:requires_captured_payment",
+      "shopman/shop/services/payment_gate.py:transition_hands_over_goods"
+    ],
+    "order.product-option-selection": [
+      "shopman/shop/product_options.py:LINE_OPTIONS_KEY",
+      "shopman/shop/product_options.py:OptionSelectionError",
+      "shopman/shop/product_options.py:base_name",
+      "shopman/shop/product_options.py:kitchen_note",
+      "shopman/shop/product_options.py:line_name",
+      "shopman/shop/product_options.py:line_options",
+      "shopman/shop/product_options.py:options_unit_price_q",
+      "shopman/shop/product_options.py:own_options",
+      "shopman/shop/product_options.py:public_line_options",
+      "shopman/shop/product_options.py:requires_choice",
+      "shopman/shop/product_options.py:resolve_selection",
+      "shopman/shop/product_options.py:selection_of",
+      "shopman/shop/product_options.py:signature",
+      "shopman/shop/product_options.py:summary"
+    ],
+    "order.remote-payment-deadline": [
+      "shopman/shop/services/payment_deadline.py:service_cutoff"
+    ],
+    "order.reschedule-state-eligibility": [
+      "shopman/shop/services/reschedule.py:_REFUSED_STATUSES",
+      "shopman/shop/services/reschedule.py:_refuse_by_state",
+      "shopman/shop/services/reschedule.py:state_refusal"
+    ],
+    "order.reschedule-stock-refusal-copy": [
+      "shopman/shop/services/reschedule.py:stock_refusal"
+    ],
+    "order.store-review-deferral": [
+      "shopman/shop/services/business_calendar.py:store_review_deferred_state"
+    ],
+    "payment.deadline-state": [
+      "shopman/shop/services/payment_status.py:deadline_passed",
+      "shopman/shop/services/payment_status.py:payment_deadline_passed"
+    ],
+    "payment.link-expiry-policy": [
+      "shopman/shop/adapters/_payment_link.py:LINK_TTL_MAX",
+      "shopman/shop/adapters/_payment_link.py:LINK_TTL_MIN",
+      "shopman/shop/adapters/_payment_link.py:default_link_timeout",
+      "shopman/shop/adapters/_payment_link.py:link_expires_at",
+      "shopman/shop/adapters/_payment_link.py:link_window",
+      "shopman/shop/adapters/_payment_link.py:parse_expires_by"
+    ],
+    "payment.mock-adapter-runtime-safety": [
+      "shopman/shop/adapters/payment_mock.py:_ensure_simulation_allowed",
+      "shopman/shop/adapters/payment_mock.py:capture",
+      "shopman/shop/adapters/payment_mock.py:create_intent"
+    ],
+    "payment.mock-capture-exposure": [
+      "shopman/shop/services/payment.py:PaymentAttemptLookupUnavailable",
+      "shopman/shop/services/payment.py:mock_capture_allowed",
+      "shopman/shop/services/payment.py:mock_confirm"
+    ],
+    "payment.provider-test-constraints": [
+      "shopman/shop/services/pix_policy.py:EFI_PIX_ADAPTER_PATH",
+      "shopman/shop/services/pix_policy.py:PIX_PROVIDER_TEST_ERROR_CODE",
+      "shopman/shop/services/pix_policy.py:PIX_PROVIDER_TEST_MAX_AMOUNT_Q",
+      "shopman/shop/services/pix_policy.py:PIX_PROVIDER_TEST_MIXED_ERROR_CODE",
+      "shopman/shop/services/pix_policy.py:PixPaymentConstraint",
+      "shopman/shop/services/pix_policy.py:PixPaymentPolicyError",
+      "shopman/shop/services/pix_policy.py:enforce_pix_test_amount_limit",
+      "shopman/shop/services/pix_policy.py:payment_constraints_payload",
+      "shopman/shop/services/pix_policy.py:pix_payment_constraint",
+      "shopman/shop/services/pix_policy.py:reject_pix_in_mixed_payment"
+    ],
+    "pos.customer-name-refresh": [
+      "shopman/shop/services/pos.py:should_refresh_name"
+    ],
+    "pos.discount-approval-threshold": [
+      "shopman/shop/services/pos.py:discount_approval_threshold_q"
+    ],
+    "pos.edit-session-schedule-eligibility": [
+      "shopman/shop/services/pos_edit_session.py:schedule_refusal"
+    ],
+    "pos.fiscal-toggle": [
+      "shopman/shop/services/pos.py:fiscal_toggle_enabled"
+    ],
+    "pos.pix-payment-policy-warning": [
+      "shopman/shop/services/pos.py:pix_payment_policy_warning"
+    ],
+    "pos.receipt-identity-authorization": [
+      "shopman/shop/services/pos_receipt_identity.py:ReceiptIdentityConflict",
+      "shopman/shop/services/pos_receipt_identity.py:normalize_receipt_value",
+      "shopman/shop/services/pos_receipt_identity.py:receipt_identity_choices",
+      "shopman/shop/services/pos_receipt_identity.py:receipt_payload_for_channels",
+      "shopman/shop/services/pos_receipt_identity.py:require_receipt_identity_choice"
+    ],
+    "pos.sale-commit-gates": [
+      "shopman/shop/services/pos.py:DELIVERY_MINIMUM_RECOVERY",
+      "shopman/shop/services/pos.py:DELIVERY_OUT_OF_AREA_RECOVERY",
+      "shopman/shop/services/pos.py:PosSaleResult",
+      "shopman/shop/services/pos.py:_COMMIT_ADDRESS_CODES",
+      "shopman/shop/services/pos.py:_COMMIT_CONFLICT_CODES",
+      "shopman/shop/services/pos.py:_commit_refusal",
+      "shopman/shop/services/pos.py:_delivery_address_warning",
+      "shopman/shop/services/pos.py:_delivery_fiscal_order_view",
+      "shopman/shop/services/pos.py:_delivery_minimum_shortfall_q",
+      "shopman/shop/services/pos.py:_enforce_pix_payment_policy",
+      "shopman/shop/services/pos.py:_fulfillment_requires_customer",
+      "shopman/shop/services/pos.py:_payload_identifies_customer",
+      "shopman/shop/services/pos.py:_payload_payment_method_set",
+      "shopman/shop/services/pos.py:_pix_payment_policy_error",
+      "shopman/shop/services/pos.py:_require_confirmed_pix_in_mixed",
+      "shopman/shop/services/pos.py:_require_contact_if_payment_link",
+      "shopman/shop/services/pos.py:_require_customer_if_scheduled",
+      "shopman/shop/services/pos.py:_require_delivery_coverage",
+      "shopman/shop/services/pos.py:_require_delivery_fiscal_identity",
+      "shopman/shop/services/pos.py:_require_delivery_minimum",
+      "shopman/shop/services/pos.py:_require_house_account_if_on_account",
+      "shopman/shop/services/pos.py:_require_open_shift",
+      "shopman/shop/services/pos.py:_require_order_mode_if_payment_link",
+      "shopman/shop/services/pos.py:_total_changed",
+      "shopman/shop/services/pos.py:close_sale"
+    ],
+    "pos.sales-mode": [
+      "shopman/shop/services/pos_sales_mode.py:SALES_MODES",
+      "shopman/shop/services/pos_sales_mode.py:_PAYMENT_METHOD_SALES_MODES",
+      "shopman/shop/services/pos_sales_mode.py:is_pos_counter_order",
+      "shopman/shop/services/pos_sales_mode.py:is_pos_order_mode",
+      "shopman/shop/services/pos_sales_mode.py:order_sales_mode",
+      "shopman/shop/services/pos_sales_mode.py:payment_method_sales_modes",
+      "shopman/shop/services/pos_sales_mode.py:sales_mode",
+      "shopman/shop/services/pos_sales_mode.py:session_sales_payload",
+      "shopman/shop/services/pos_sales_mode.py:validate_sales_mode"
+    ],
+    "pricing.lot-discount": [
+      "shopman/shop/services/lot_pricing.py:batch_ref_for_hold",
+      "shopman/shop/services/lot_pricing.py:lot_context",
+      "shopman/shop/services/lot_pricing.py:percent_for_lot"
+    ],
+    "pricing.temporal-offer": [
+      "shopman/shop/modifiers.py:DEFAULT_TIME_WINDOW_DISCOUNT_PERCENT",
+      "shopman/shop/modifiers.py:DEFAULT_TIME_WINDOW_END",
+      "shopman/shop/modifiers.py:DEFAULT_TIME_WINDOW_START",
+      "shopman/shop/modifiers.py:PRICED_AT_CTX_KEY",
+      "shopman/shop/modifiers.py:TimeWindowDiscountModifier",
+      "shopman/shop/modifiers.py:TimeWindowOffer",
+      "shopman/shop/modifiers.py:_parse_time",
+      "shopman/shop/modifiers.py:in_time_window",
+      "shopman/shop/modifiers.py:pricing_now",
+      "shopman/shop/modifiers.py:time_window_offer"
+    ],
+    "production.forgotten-planned-orders": [
+      "shopman/shop/handlers/production_alerts.py:check_forgotten_planned_orders"
+    ],
+    "production.late-started-orders": [
+      "shopman/shop/handlers/production_alerts.py:check_late_started_orders"
+    ],
+    "production.lifecycle-selection": [
+      "shopman/shop/production_lifecycle.py:production_lifecycle_name_for"
+    ],
+    "production.low-yield-alert": [
+      "shopman/shop/handlers/production_alerts.py:maybe_create_low_yield_alert"
+    ],
+    "production.unfinished-started-orders": [
+      "shopman/shop/handlers/production_alerts.py:UNFINISHED_ALERTED_KEY",
+      "shopman/shop/handlers/production_alerts.py:_stamp_meta",
+      "shopman/shop/handlers/production_alerts.py:check_unfinished_started_orders"
+    ],
+    "promotion.active-scope": [
+      "shopman/shop/services/promotions.py:ADVANTAGE_KINDS",
+      "shopman/shop/services/promotions.py:get_active_promotions"
+    ],
+    "promotion.coupon-resolution": [
+      "shopman/shop/services/promotions.py:get_coupon_promotion"
+    ],
+    "promotion.customer-eligibility": [
+      "shopman/shop/services/cart.py:CouponRejected",
+      "shopman/shop/services/cart.py:customer_eligible_for_promotion",
+      "shopman/shop/services/cart.py:promotion_shopper"
+    ],
+    "promotion.customer-group-advantage": [
+      "shopman/shop/services/promotions.py:GROUP_DISCOUNT_REF_PREFIX",
+      "shopman/shop/services/promotions.py:GroupAdvantage",
+      "shopman/shop/services/promotions.py:_best_group_discount",
+      "shopman/shop/services/promotions.py:_best_group_listing",
+      "shopman/shop/services/promotions.py:_best_typed_advantage",
+      "shopman/shop/services/promotions.py:_tier_refs",
+      "shopman/shop/services/promotions.py:best_group_advantage",
+      "shopman/shop/services/promotions.py:customer_group_promotion",
+      "shopman/shop/services/promotions.py:group_discount_label",
+      "shopman/shop/services/promotions.py:group_discount_ref"
+    ],
+    "promotion.delivery-geography": [
+      "shopman/shop/services/promotions.py:match_delivery_zone",
+      "shopman/shop/services/promotions.py:match_distance_band"
+    ],
+    "promotion.free-delivery": [
+      "shopman/shop/modifiers.py:DeliveryFeeWaiver",
+      "shopman/shop/modifiers.py:_best_free_delivery_promotion",
+      "shopman/shop/modifiers.py:_free_delivery_covers_order",
+      "shopman/shop/modifiers.py:resolve_delivery_fee_waiver"
+    ],
+    "purchase.invoice-conversion-requirement": [
+      "shopman/shop/adapters/purchase_invoice_nfe.py:_requires_conversion",
+      "shopman/shop/adapters/purchase_invoice_nfe.py:parse_nfe_xml_to_purchase_draft"
+    ],
+    "purchasing.resale-markup-policy": [
+      "shopman/shop/resale_markup.py:DEFAULT_RESALE_MARKUP_PCT",
+      "shopman/shop/resale_markup.py:MAX_RESALE_MARKUP_PCT",
+      "shopman/shop/resale_markup.py:RESALE_COLLECTION_REF",
+      "shopman/shop/resale_markup.py:ResaleMarkup",
+      "shopman/shop/resale_markup.py:_coerce_pct",
+      "shopman/shop/resale_markup.py:resolve_resale_markup"
+    ],
+    "purchasing.resale-price-suggestion": [
+      "shopman/shop/resale_markup.py:suggested_price_q"
+    ],
+    "runtime.app-platform-probe-host-safety": [
+      "shopman/shop/middleware.py:AppPlatformHealthCheckHostMiddleware",
+      "shopman/shop/middleware.py:_canonical_allowed_host",
+      "shopman/shop/middleware.py:_is_app_platform_probe_host"
+    ],
+    "shop.fiscal-resolvers-amount-threshold": [
+      "shopman/shop/fiscal_resolvers.py:above_amount_q"
+    ],
+    "shop.fiscal-resolvers-card-payment": [
+      "shopman/shop/fiscal_resolvers.py:card_payment"
+    ],
+    "shop.fiscal-resolvers-channel-scope": [
+      "shopman/shop/fiscal_resolvers.py:channels"
+    ],
+    "shop.fiscal-resolvers-configured-payment-method": [
+      "shopman/shop/fiscal_resolvers.py:payment_methods"
+    ],
+    "shop.fiscal-resolvers-debug-safety": [
+      "shopman/shop/fiscal_resolvers.py:not_in_debug"
+    ],
+    "shop.fiscal-resolvers-deferred-settlement": [
+      "shopman/shop/fiscal_resolvers.py:deferred_settlement"
+    ],
+    "shop.fiscal-resolvers-electronic-payment": [
+      "shopman/shop/fiscal_resolvers.py:_payment_methods_present",
+      "shopman/shop/fiscal_resolvers.py:eletronic_payment"
+    ],
+    "shop.fiscal-resolvers-environment-scope": [
+      "shopman/shop/fiscal_resolvers.py:only_in_environments"
+    ],
+    "shop.fiscal-resolvers-explicit-request": [
+      "shopman/shop/fiscal_resolvers.py:on_request_or_tax_id",
+      "shopman/shop/fiscal_resolvers.py:on_requested_receipt"
+    ],
+    "shop.fiscal-resolvers-fulfillment-scope": [
+      "shopman/shop/fiscal_resolvers.py:fulfillment_types"
+    ],
+    "shop.fiscal-resolvers-intermediated-sale": [
+      "shopman/shop/fiscal_resolvers.py:intermediated_sale"
+    ],
+    "shop.fiscal-resolvers-unconditional-emission": [
+      "shopman/shop/fiscal_resolvers.py:always"
+    ],
+    "shop.marketing-policy": [
+      "shopman/shop/marketing_policy.py:CEREMONY_DUAL_CONTROL_MULTIPLE_MINIMUM",
+      "shopman/shop/marketing_policy.py:CEREMONY_RECIPIENT_FLOOR_MINIMUM",
+      "shopman/shop/marketing_policy.py:CeremonyThreshold",
+      "shopman/shop/marketing_policy.py:DEFAULT_CEREMONY_AUDIENCE_PERCENT",
+      "shopman/shop/marketing_policy.py:DEFAULT_CEREMONY_DUAL_CONTROL_MULTIPLE",
+      "shopman/shop/marketing_policy.py:DEFAULT_CEREMONY_RECIPIENT_FLOOR",
+      "shopman/shop/marketing_policy.py:DEFAULT_CEREMONY_SPEND_LIMIT_Q",
+      "shopman/shop/marketing_policy.py:DEFAULT_DIRECT_MESSAGE_COST_Q",
+      "shopman/shop/marketing_policy.py:DEFAULT_WHATSAPP_MINIMUM_AUDIENCE",
+      "shopman/shop/marketing_policy.py:MarketingPolicy",
+      "shopman/shop/marketing_policy.py:WHATSAPP_MINIMUM_AUDIENCE_FLOOR",
+      "shopman/shop/marketing_policy.py:resolve_marketing_policy"
+    ],
+    "shop.modifiers-delivery-fee": [
+      "shopman/shop/modifiers.py:DeliveryFeeModifier",
+      "shopman/shop/modifiers.py:_ZONE_MODE_EXCLUDE",
+      "shopman/shop/modifiers.py:_address_text",
+      "shopman/shop/modifiers.py:operator_agreed_delivery_fee_q"
+    ],
+    "shop.purchase-policy": [
+      "shopman/shop/purchase_policy.py:DEFAULT_CONSUMPTION_WINDOW_DAYS",
+      "shopman/shop/purchase_policy.py:DEFAULT_LEAD_TIME_HISTORY_DAYS",
+      "shopman/shop/purchase_policy.py:DEFAULT_LEAD_TIME_MAX_DAYS",
+      "shopman/shop/purchase_policy.py:DEFAULT_MIN_LEAD_TIME_DAYS",
+      "shopman/shop/purchase_policy.py:DEFAULT_REVIEW_PERIOD_DAYS",
+      "shopman/shop/purchase_policy.py:DEFAULT_SAFETY_DAYS",
+      "shopman/shop/purchase_policy.py:POLICY_MINIMUMS",
+      "shopman/shop/purchase_policy.py:PurchasePolicy",
+      "shopman/shop/purchase_policy.py:_coerce_day_count",
+      "shopman/shop/purchase_policy.py:resolve_purchase_policy"
+    ],
+    "shop.rules-pricing": [
+      "shopman/shop/rules/pricing.py:HappyHourRule"
+    ],
+    "shop.rules-security": [
+      "shopman/shop/rules/security.py:SignInHighlightRule",
+      "shopman/shop/rules/security.py:params_or_defaults"
+    ],
+    "shop.rules-suggestion-complement-decision": [
+      "shopman/shop/rules/suggestion.py:COMPLEMENT_REF",
+      "shopman/shop/rules/suggestion.py:ComplementRule",
+      "shopman/shop/rules/suggestion.py:DEFAULT_COMPLEMENT_PARAMS",
+      "shopman/shop/rules/suggestion.py:PRICE_POLICIES",
+      "shopman/shop/rules/suggestion.py:_ACCOMPANIMENT",
+      "shopman/shop/rules/suggestion.py:_BREAD",
+      "shopman/shop/rules/suggestion.py:_NO_DRINK",
+      "shopman/shop/rules/suggestion.py:_NO_FOOD",
+      "shopman/shop/rules/suggestion.py:_check_attribute",
+      "shopman/shop/rules/suggestion.py:_check_conditions",
+      "shopman/shop/rules/suggestion.py:_check_side",
+      "shopman/shop/rules/suggestion.py:_check_weight",
+      "shopman/shop/rules/suggestion.py:_comes_with",
+      "shopman/shop/rules/suggestion.py:_goes_with",
+      "shopman/shop/rules/suggestion.py:_known_attributes"
+    ],
+    "shop.rules-suggestion-substitute-decision": [
+      "shopman/shop/rules/suggestion.py:DEFAULT_SUBSTITUTE_PARAMS",
+      "shopman/shop/rules/suggestion.py:NON_ATTRIBUTE_SIGNALS",
+      "shopman/shop/rules/suggestion.py:SUBSTITUTE_REF",
+      "shopman/shop/rules/suggestion.py:SubstituteRule"
+    ],
+    "shop.rules-validation-business-hours": [
+      "shopman/shop/rules/validation.py:BusinessHoursRule",
+      "shopman/shop/rules/validation.py:_DAY_NAMES_PT",
+      "shopman/shop/rules/validation.py:_alert_calendar_unreadable"
+    ],
+    "shop.rules-validation-delivery-fiscal-identity": [
+      "shopman/shop/rules/validation.py:DeliveryFiscalIdentityRule"
+    ],
+    "shop.rules-validation-delivery-zone": [
+      "shopman/shop/rules/validation.py:DeliveryZoneRule",
+      "shopman/shop/rules/validation.py:_coordinates_match_claimed_address",
+      "shopman/shop/rules/validation.py:_delivery_minimum_q",
+      "shopman/shop/rules/validation.py:_normalize_city",
+      "shopman/shop/rules/validation.py:delivery_minimum_message"
+    ],
+    "shop.rules-validation-priced-items": [
+      "shopman/shop/rules/validation.py:PricedItemsRule"
+    ],
+    "shop.services-campaign-identity": [
+      "shopman/shop/services/campaign_identity.py:MAX_HOURS",
+      "shopman/shop/services/campaign_identity.py:link_expiry",
+      "shopman/shop/services/campaign_identity.py:personal_link"
+    ],
+    "shop.services-campaign-schedule": [
+      "shopman/shop/services/campaign_schedule.py:PREFERRED_HOURS",
+      "shopman/shop/services/campaign_schedule.py:describe",
+      "shopman/shop/services/campaign_schedule.py:next_publish_at"
+    ],
+    "shop.services-cancel-reasons": [
+      "shopman/shop/services/cancel_reasons.py:AUTOMATIC_CANCEL_REASONS",
+      "shopman/shop/services/cancel_reasons.py:CancelReason",
+      "shopman/shop/services/cancel_reasons.py:MISSING_REASON_MESSAGE",
+      "shopman/shop/services/cancel_reasons.py:OPERATOR_CANCEL_REASONS",
+      "shopman/shop/services/cancel_reasons.py:OTHER",
+      "shopman/shop/services/cancel_reasons.py:UNKNOWN_REASON_MESSAGE",
+      "shopman/shop/services/cancel_reasons.py:_BY_KEY",
+      "shopman/shop/services/cancel_reasons.py:cancel_reason",
+      "shopman/shop/services/cancel_reasons.py:validation_message"
+    ],
+    "shop.services-cancellation-operator-cancellation-policy": [
+      "shopman/shop/services/cancellation.py:OperatorCancelPolicy",
+      "shopman/shop/services/cancellation.py:operator_cancel_policy"
+    ],
+    "shop.services-channel-switch-channel-activation-policy": [
+      "shopman/shop/services/channel_switch.py:Activation",
+      "shopman/shop/services/channel_switch.py:_parse",
+      "shopman/shop/services/channel_switch.py:activation",
+      "shopman/shop/services/channel_switch.py:effective_active",
+      "shopman/shop/services/channel_switch.py:is_channel_active",
+      "shopman/shop/services/channel_switch.py:revision"
+    ],
+    "shop.services-delivery-readiness": [
+      "shopman/shop/services/delivery_readiness.py:DIRECT_MESSAGE",
+      "shopman/shop/services/delivery_readiness.py:PUBLICATION",
+      "shopman/shop/services/delivery_readiness.py:PlatformReadiness",
+      "shopman/shop/services/delivery_readiness.py:readiness_for"
+    ],
+    "shop.services-fulfillment-window": [
+      "shopman/shop/services/fulfillment_window.py:DEFAULT_CANONICAL_SLOTS",
+      "shopman/shop/services/fulfillment_window.py:canonical_slots",
+      "shopman/shop/services/fulfillment_window.py:window_label",
+      "shopman/shop/services/fulfillment_window.py:window_start_time"
+    ],
+    "shop.services-house-account": [
+      "shopman/shop/services/house_account.py:AccountLimitExcess",
+      "shopman/shop/services/house_account.py:HouseAccountError",
+      "shopman/shop/services/house_account.py:is_eligible",
+      "shopman/shop/services/house_account.py:limit_q",
+      "shopman/shop/services/house_account.py:over_limit",
+      "shopman/shop/services/house_account.py:require_eligible"
+    ],
+    "shop.services-ifood-merchant-calendar-closures": [
+      "shopman/shop/services/ifood_merchant.py:CalendarClosure",
+      "shopman/shop/services/ifood_merchant.py:desired_calendar_closures"
+    ],
+    "shop.services-ifood-merchant-merchant-governance": [
+      "shopman/shop/services/ifood_merchant.py:ALERT_CLOSED_WHILE_OPEN",
+      "shopman/shop/services/ifood_merchant.py:ALERT_OPEN_WHILE_CLOSED",
+      "shopman/shop/services/ifood_merchant.py:ALERT_SYNC_FAILED",
+      "shopman/shop/services/ifood_merchant.py:CALENDAR_HORIZON_DAYS",
+      "shopman/shop/services/ifood_merchant.py:CHANNEL_OFF_RENEW_AHEAD",
+      "shopman/shop/services/ifood_merchant.py:DIVERGENCE_ALERT_WINDOW_MINUTES",
+      "shopman/shop/services/ifood_merchant.py:DIVERGENCE_GRACE",
+      "shopman/shop/services/ifood_merchant.py:MAX_INTERRUPTION_DAYS",
+      "shopman/shop/services/ifood_merchant.py:RESYNC_EVERY",
+      "shopman/shop/services/ifood_merchant.py:_IFOOD_DAYS",
+      "shopman/shop/services/ifood_merchant.py:_MATCH_TOLERANCE",
+      "shopman/shop/services/ifood_merchant.py:_MERCHANTS_PATH",
+      "shopman/shop/services/ifood_merchant.py:_RETRYABLE_STATUS",
+      "shopman/shop/services/ifood_merchant.py:_STATE_SEVERITY",
+      "shopman/shop/services/ifood_merchant.py:_cfg",
+      "shopman/shop/services/ifood_merchant.py:enabled",
+      "shopman/shop/services/ifood_merchant.py:merchant_id"
+    ],
+    "shop.services-ifood-merchant-opening-hours": [
+      "shopman/shop/services/ifood_merchant.py:desired_shifts"
+    ],
+    "shop.services-invoice-fiscal-check": [
+      "shopman/shop/services/invoice_fiscal_check.py:FIELD_CEST",
+      "shopman/shop/services/invoice_fiscal_check.py:FIELD_NCM",
+      "shopman/shop/services/invoice_fiscal_check.py:FIELD_ST",
+      "shopman/shop/services/invoice_fiscal_check.py:FiscalDivergence",
+      "shopman/shop/services/invoice_fiscal_check.py:ST_CHARGED_CSOSN",
+      "shopman/shop/services/invoice_fiscal_check.py:ST_CHARGED_CST",
+      "shopman/shop/services/invoice_fiscal_check.py:ST_RETAINED_CSOSN",
+      "shopman/shop/services/invoice_fiscal_check.py:ST_RETAINED_CST",
+      "shopman/shop/services/invoice_fiscal_check.py:_CEST_RE",
+      "shopman/shop/services/invoice_fiscal_check.py:_NCM_RE",
+      "shopman/shop/services/invoice_fiscal_check.py:catalog_has_st",
+      "shopman/shop/services/invoice_fiscal_check.py:check_invoice_fiscal",
+      "shopman/shop/services/invoice_fiscal_check.py:invoice_has_st"
+    ],
+    "shop.services-kds-source-lock-and-due-date": [
+      "shopman/shop/services/kds.py:_ensure_source_due",
+      "shopman/shop/services/kds.py:_lock_source_for_session",
+      "shopman/shop/services/kds.py:_lock_source_then_ticket",
+      "shopman/shop/services/kds.py:ensure_ticket_due"
+    ],
+    "shop.services-lead-time": [
+      "shopman/shop/services/lead_time.py:earliest_allowed_date",
+      "shopman/shop/services/lead_time.py:effective_lead_time_hours"
+    ],
+    "shop.services-manychat-marketing-safety": [
+      "shopman/shop/services/manychat_marketing_safety.py:BLOCK_CODE",
+      "shopman/shop/services/manychat_marketing_safety.py:CANARY_CONTACTS_MISSING_CODE",
+      "shopman/shop/services/manychat_marketing_safety.py:CANARY_RECIPIENT_EXCLUDED_CODE",
+      "shopman/shop/services/manychat_marketing_safety.py:DEFAULT_FLOW_SETTLE_SECONDS",
+      "shopman/shop/services/manychat_marketing_safety.py:FLOW_DEFERRAL_CODES",
+      "shopman/shop/services/manychat_marketing_safety.py:FLOW_RESERVATION_KEY_PREFIX",
+      "shopman/shop/services/manychat_marketing_safety.py:FLOW_RESERVATION_UNAVAILABLE_CODE",
+      "shopman/shop/services/manychat_marketing_safety.py:MODES",
+      "shopman/shop/services/manychat_marketing_safety.py:MODE_BLOCKED",
+      "shopman/shop/services/manychat_marketing_safety.py:MODE_CANARY",
+      "shopman/shop/services/manychat_marketing_safety.py:MODE_OPEN",
+      "shopman/shop/services/manychat_marketing_safety.py:ManyChatMarketingSafety",
+      "shopman/shop/services/manychat_marketing_safety.py:SERIALIZATION_UNAVAILABLE_CODE",
+      "shopman/shop/services/manychat_marketing_safety.py:STATE_BLOCKED",
+      "shopman/shop/services/manychat_marketing_safety.py:STATE_CANARY",
+      "shopman/shop/services/manychat_marketing_safety.py:STATE_SAFE",
+      "shopman/shop/services/manychat_marketing_safety.py:SUBSCRIBER_BUSY_CODE",
+      "shopman/shop/services/manychat_marketing_safety.py:_MAX_FLOW_SETTLE_SECONDS",
+      "shopman/shop/services/manychat_marketing_safety.py:_SHARED_CACHE_BACKENDS",
+      "shopman/shop/services/manychat_marketing_safety.py:canary_customer_refs",
+      "shopman/shop/services/manychat_marketing_safety.py:canary_excludes",
+      "shopman/shop/services/manychat_marketing_safety.py:flow_settle_seconds",
+      "shopman/shop/services/manychat_marketing_safety.py:is_flow_deferral",
+      "shopman/shop/services/manychat_marketing_safety.py:recipient_refusal",
+      "shopman/shop/services/manychat_marketing_safety.py:require_safe_delivery",
+      "shopman/shop/services/manychat_marketing_safety.py:safety_state",
+      "shopman/shop/services/manychat_marketing_safety.py:serialization_available",
+      "shopman/shop/services/manychat_marketing_safety.py:whatsapp_mode"
+    ],
+    "shop.services-marketing-age": [
+      "shopman/shop/services/marketing_age.py:ADULT_DECLARATION_KEY",
+      "shopman/shop/services/marketing_age.py:ADULT_DECLARING_TERMS_VERSIONS",
+      "shopman/shop/services/marketing_age.py:canonical_age_evidence_for_customer_id",
+      "shopman/shop/services/marketing_age.py:customer_is_known_minor",
+      "shopman/shop/services/marketing_age.py:declares_adult",
+      "shopman/shop/services/marketing_age.py:is_known_adult",
+      "shopman/shop/services/marketing_age.py:is_known_minor",
+      "shopman/shop/services/marketing_age.py:is_proved_adult"
+    ],
+    "shop.services-marketing-capabilities": [
+      "shopman/shop/services/marketing_capabilities.py:DESTINATIONS",
+      "shopman/shop/services/marketing_capabilities.py:DESTINATIONS_BY_PLATFORM",
+      "shopman/shop/services/marketing_capabilities.py:MarketingPlatformCapability",
+      "shopman/shop/services/marketing_capabilities.py:_DESTINATIONS",
+      "shopman/shop/services/marketing_capabilities.py:_PUBLICATION_FIELD",
+      "shopman/shop/services/marketing_capabilities.py:platform_choices",
+      "shopman/shop/services/marketing_capabilities.py:platform_kind",
+      "shopman/shop/services/marketing_capabilities.py:platform_labels",
+      "shopman/shop/services/marketing_capabilities.py:platform_refs",
+      "shopman/shop/services/marketing_capabilities.py:publication_platform_refs"
+    ],
+    "shop.services-marketing-provider-capabilities": [
+      "shopman/shop/services/marketing_provider_capabilities.py:PROVIDER_CAPABILITIES",
+      "shopman/shop/services/marketing_provider_capabilities.py:PROVIDER_CAPABILITIES_BY_PLATFORM",
+      "shopman/shop/services/marketing_provider_capabilities.py:PROVIDER_CAPABILITY_SCHEMA_VERSION",
+      "shopman/shop/services/marketing_provider_capabilities.py:ProviderCapability",
+      "shopman/shop/services/marketing_provider_capabilities.py:ProviderFieldCapability",
+      "shopman/shop/services/marketing_provider_capabilities.py:ProviderFormatCapability",
+      "shopman/shop/services/marketing_provider_capabilities.py:ProviderMediaCapability",
+      "shopman/shop/services/marketing_provider_capabilities.py:_INSTAGRAM_COMMON_FIELDS",
+      "shopman/shop/services/marketing_provider_capabilities.py:_PROVIDER_CAPABILITIES",
+      "shopman/shop/services/marketing_provider_capabilities.py:provider_capability",
+      "shopman/shop/services/marketing_provider_capabilities.py:provider_platform_refs"
+    ],
+    "shop.services-marketing-transitions": [
+      "shopman/shop/services/marketing_transitions.py:TransitionResult",
+      "shopman/shop/services/marketing_transitions.py:reject_command"
+    ],
+    "shop.services-marketing-url-policy": [
+      "shopman/shop/services/marketing_url_policy.py:_CUSTOMER_PATH",
+      "shopman/shop/services/marketing_url_policy.py:_UNSAFE_CHARS",
+      "shopman/shop/services/marketing_url_policy.py:canonical_customer_path",
+      "shopman/shop/services/marketing_url_policy.py:safe_browser_customer_link",
+      "shopman/shop/services/marketing_url_policy.py:validate_customer_link"
+    ],
+    "shop.services-marketing-wave-selector": [
+      "shopman/shop/services/marketing_wave_selector.py:_WAVE_RE",
+      "shopman/shop/services/marketing_wave_selector.py:_parse_wave_key",
+      "shopman/shop/services/marketing_wave_selector.py:_preferred_hour",
+      "shopman/shop/services/marketing_wave_selector.py:select_partition",
+      "shopman/shop/services/marketing_wave_selector.py:select_snapshot_member_ids"
+    ],
+    "shop.services-menuboard-schedule": [
+      "shopman/shop/services/menuboard_schedule.py:AUTOMATIC_LAG_MINUTES",
+      "shopman/shop/services/menuboard_schedule.py:AUTOMATIC_LEAD_MINUTES",
+      "shopman/shop/services/menuboard_schedule.py:DEFAULT_IDLE_MESSAGE",
+      "shopman/shop/services/menuboard_schedule.py:MAX_IDLE_MESSAGE_LENGTH",
+      "shopman/shop/services/menuboard_schedule.py:MenuboardAutomaticState",
+      "shopman/shop/services/menuboard_schedule.py:automatic_settings",
+      "shopman/shop/services/menuboard_schedule.py:normalize_idle_messages",
+      "shopman/shop/services/menuboard_schedule.py:resolve_menuboard_automatic_state"
+    ],
+    "shop.services-offers": [
+      "shopman/shop/services/offers.py:DEFAULT_CHANNEL_REF",
+      "shopman/shop/services/offers.py:OfferUnavailable",
+      "shopman/shop/services/offers.py:get_offer",
+      "shopman/shop/services/offers.py:offer_action",
+      "shopman/shop/services/offers.py:offer_skus"
+    ],
+    "shop.services-operator-capacity": [
+      "shopman/shop/services/operator_capacity.py:ALERT_TYPE",
+      "shopman/shop/services/operator_capacity.py:CapacityEvaluation",
+      "shopman/shop/services/operator_capacity.py:CapacitySample",
+      "shopman/shop/services/operator_capacity.py:InvalidCapacitySample",
+      "shopman/shop/services/operator_capacity.py:RESOLVED_BY",
+      "shopman/shop/services/operator_capacity.py:SERVICE_LABELS",
+      "shopman/shop/services/operator_capacity.py:STALE_GAP_SECONDS",
+      "shopman/shop/services/operator_capacity.py:_CACHE_KEY",
+      "shopman/shop/services/operator_capacity.py:_SERVICE_RE",
+      "shopman/shop/services/operator_capacity.py:dedupe_key",
+      "shopman/shop/services/operator_capacity.py:evaluate_sample",
+      "shopman/shop/services/operator_capacity.py:level_for",
+      "shopman/shop/services/operator_capacity.py:parse_sample",
+      "shopman/shop/services/operator_capacity.py:service_label"
+    ],
+    "shop.services-operator-orders-expedition-policy": [
+      "shopman/shop/services/operator_orders.py:EXPEDITE_CUSTODY_REASON",
+      "shopman/shop/services/operator_orders.py:EXPEDITE_PERMISSION",
+      "shopman/shop/services/operator_orders.py:EXPEDITE_SCOPE_REASON",
+      "shopman/shop/services/operator_orders.py:EXPEDITE_TARGETS",
+      "shopman/shop/services/operator_orders.py:dispatch_custody_question",
+      "shopman/shop/services/operator_orders.py:expedite_refusal",
+      "shopman/shop/services/operator_orders.py:expedites_only"
+    ],
+    "shop.services-operator-orders-handoff-money": [
+      "shopman/shop/services/operator_orders.py:ChangeOutRequired",
+      "shopman/shop/services/operator_orders.py:_COLLECTED_STATUSES",
+      "shopman/shop/services/operator_orders.py:_PARTNER_CUSTODY_KEYS",
+      "shopman/shop/services/operator_orders.py:_money",
+      "shopman/shop/services/operator_orders.py:card_due_on_delivery_q",
+      "shopman/shop/services/operator_orders.py:cash_due_on_delivery_q",
+      "shopman/shop/services/operator_orders.py:change_for_q",
+      "shopman/shop/services/operator_orders.py:change_out_suggested_q",
+      "shopman/shop/services/operator_orders.py:partner_custody_asks",
+      "shopman/shop/services/operator_orders.py:record_partner_custody",
+      "shopman/shop/services/operator_orders.py:return_partner_custody"
+    ],
+    "shop.services-operator-orders-operational-contract": [
+      "shopman/shop/services/operator_orders.py:_undo_handoff_action",
+      "shopman/shop/services/operator_orders.py:confirmation_block_reason",
+      "shopman/shop/services/operator_orders.py:operational_actions",
+      "shopman/shop/services/operator_orders.py:operational_revision"
+    ],
+    "shop.services-payment-cancellation-eligibility": [
+      "shopman/shop/services/customer_orders.py:can_cancel",
+      "shopman/shop/services/payment.py:_CANCELLABLE_STATUSES",
+      "shopman/shop/services/payment.py:can_cancel",
+      "shopman/shop/services/payment_status.py:can_cancel"
+    ],
+    "shop.services-preorder-dates": [
+      "shopman/shop/services/preorder_dates.py:closed_date",
+      "shopman/shop/services/preorder_dates.py:date_refusal",
+      "shopman/shop/services/preorder_dates.py:max_preorder_days",
+      "shopman/shop/services/preorder_dates.py:preorder_config"
+    ],
+    "shop.services-product-readiness": [
+      "shopman/shop/services/product_readiness.py:DEFAULT_HISTORY_DAYS",
+      "shopman/shop/services/product_readiness.py:DEFAULT_ROUNDING_MINUTES",
+      "shopman/shop/services/product_readiness.py:ReadinessUnavailable",
+      "shopman/shop/services/product_readiness.py:_local_date",
+      "shopman/shop/services/product_readiness.py:_localize",
+      "shopman/shop/services/product_readiness.py:_round_up_minutes",
+      "shopman/shop/services/product_readiness.py:bottleneck",
+      "shopman/shop/services/product_readiness.py:declared_ready_times",
+      "shopman/shop/services/product_readiness.py:observed_ready_times",
+      "shopman/shop/services/product_readiness.py:parse_clock",
+      "shopman/shop/services/product_readiness.py:ready_times_for"
+    ],
+    "shop.services-receiving-position": [
+      "shopman/shop/services/receiving_position.py:CONFIG_KEYS",
+      "shopman/shop/services/receiving_position.py:DEFAULT_REFS",
+      "shopman/shop/services/receiving_position.py:MATERIAL",
+      "shopman/shop/services/receiving_position.py:RESALE",
+      "shopman/shop/services/receiving_position.py:position_for_role",
+      "shopman/shop/services/receiving_position.py:receiving_position",
+      "shopman/shop/services/receiving_position.py:role_for"
+    ],
+    "shop.services-volume-check": [
+      "shopman/shop/services/volume_check.py:DATA_KEY",
+      "shopman/shop/services/volume_check.py:OUTCOME_CHECKED",
+      "shopman/shop/services/volume_check.py:OUTCOME_OTHER_ORDER",
+      "shopman/shop/services/volume_check.py:OUTCOME_REPEATED",
+      "shopman/shop/services/volume_check.py:OUTCOME_STALE",
+      "shopman/shop/services/volume_check.py:OUTCOME_UNKNOWN",
+      "shopman/shop/services/volume_check.py:UNCHECKED_ALERT_TYPE",
+      "shopman/shop/services/volume_check.py:VOLUME_CODE_PREFIX",
+      "shopman/shop/services/volume_check.py:VolumeCheckResult",
+      "shopman/shop/services/volume_check.py:VolumeCode",
+      "shopman/shop/services/volume_check.py:_MAX_WRONG",
+      "shopman/shop/services/volume_check.py:_PATTERN",
+      "shopman/shop/services/volume_check.py:_SALT",
+      "shopman/shop/services/volume_check.py:_SIG_LEN",
+      "shopman/shop/services/volume_check.py:alert_if_unchecked",
+      "shopman/shop/services/volume_check.py:check_volume",
+      "shopman/shop/services/volume_check.py:checked_volumes",
+      "shopman/shop/services/volume_check.py:conference_started",
+      "shopman/shop/services/volume_check.py:declared_total",
+      "shopman/shop/services/volume_check.py:missing_volumes",
+      "shopman/shop/services/volume_check.py:parse_volume_code",
+      "shopman/shop/services/volume_check.py:progress_label",
+      "shopman/shop/services/volume_check.py:volume_code"
+    ],
+    "shop.services-waitlist-hold-state": [
+      "shopman/shop/services/waitlist.py:CONFIRMED",
+      "shopman/shop/services/waitlist.py:CONFIRMING",
+      "shopman/shop/services/waitlist.py:FERMATA",
+      "shopman/shop/services/waitlist.py:NONE",
+      "shopman/shop/services/waitlist.py:RELEASED",
+      "shopman/shop/services/waitlist.py:WAITLIST_HOLD_FILTER",
+      "shopman/shop/services/waitlist.py:WAITLIST_KEY",
+      "shopman/shop/services/waitlist.py:_is_materialized_hold",
+      "shopman/shop/services/waitlist.py:_is_waiting_hold",
+      "shopman/shop/services/waitlist.py:_order_holds",
+      "shopman/shop/services/waitlist.py:_quant_reservation_is_sound",
+      "shopman/shop/services/waitlist.py:is_waitlist_hold",
+      "shopman/shop/services/waitlist.py:planned_batch_date",
+      "shopman/shop/services/waitlist.py:state_for",
+      "shopman/shop/services/waitlist.py:states_for"
+    ],
+    "stock.current-sellability-gate": [
+      "shopman/shop/services/stock.py:require_current_sellability"
+    ],
+    "surface.channel-access": [
+      "shopman/shop/eventstream.py:ShopmanChannelManager",
+      "shopman/shop/eventstream.py:_BACKSTAGE_CHANNEL_RULES"
+    ],
+    "waitlist.batch-promise": [
+      "shopman/shop/services/waitlist.py:_candidate_batch_dates",
+      "shopman/shop/services/waitlist.py:candidate_batch_dates",
+      "shopman/shop/services/waitlist.py:first_batch_with_planned",
+      "shopman/shop/services/waitlist.py:next_batch_availability",
+      "shopman/shop/services/waitlist.py:next_batch_availability_for_skus",
+      "shopman/shop/services/waitlist.py:next_batch_date",
+      "shopman/shop/services/waitlist.py:promise_horizon",
+      "shopman/shop/services/waitlist.py:scope_kwargs"
+    ],
+    "waitlist.reservation-target": [
+      "shopman/shop/services/waitlist.py:is_enabled",
+      "shopman/shop/services/waitlist.py:reserve_target_date"
+    ]
+  }
+}

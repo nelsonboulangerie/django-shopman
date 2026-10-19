@@ -89,11 +89,20 @@ jobs:
       # must observe the same ADR-015 trigger state as the migrations gate.
       # It runs in the already-required Quality context, so drift blocks merge
       # without creating another workflow/context that could race the R5 gates.
+      #
+      # ⚠️ Gate que só existe no Makefile não é gate: o laudo CORE-SOVEREIGNTY
+      # (A12-1) achou o de docs, o teste puro das políticas de promoção e o de
+      # descritores de Instância rodando só na máquina de quem lembrava. Todo
+      # alvo stdlib-only de `make canonical-docs` mora aqui também.
       - name: Canonical go-live docs have no drift
         run: |
           .venv/bin/python scripts/check_adr_governance.py
+          .venv/bin/python scripts/check_docs_governance.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_docs_governance.py -q
           .venv/bin/python scripts/check_orchestrator_units.py
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py -q
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py scripts/tests/test_promotion_eligibility_policy.py -q
+          .venv/bin/python scripts/check_instance_descriptors.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_instance_descriptors.py -q
           python scripts/check_canonical_docs.py
 
       # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode

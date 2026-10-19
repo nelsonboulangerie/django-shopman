@@ -1,8 +1,2160 @@
 {
-  "maximum_by_kind": {
-    "missing_target": 394,
-    "outside_repo": 37
-  },
-  "scope": "Markdown em diretórios históricos; dívida viva tem teto zero",
-  "updated": "2026-10-18"
+  "scope": "Links quebrados conhecidos em diretórios históricos de docs/, um por um. Dívida viva tem teto zero; esta lista só encolhe.",
+  "historical_links": [
+    {
+      "source": "docs/_archive/redesign/04-architecture.md",
+      "destination": "../decisions/adr-005-orchestrator-as-coordination-center.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/_archive/redesign/04-architecture.md",
+      "destination": "../decisions/adr-012-headless-surface-contract.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/_archive/redesign/04-architecture.md",
+      "destination": "../decisions/adr-012-headless-surface-contract.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/_archive/redesign/04-architecture.md",
+      "destination": "../decisions/adr-012-headless-surface-contract.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/_archive/redesign/04-architecture.md",
+      "destination": "../decisions/adr-014-surface-data-presentation-cut.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/_quarantine/AVAILABILITY-PLAN.md",
+      "destination": "../../CLAUDE.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/_quarantine/AVAILABILITY-PLAN.md",
+      "destination": "../guides/lifecycle.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/_quarantine/AVAILABILITY-PLAN.md",
+      "destination": "../reference/data-schemas.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/AVAILABILITY-PLAN.md",
+      "destination": "../../../.claude/memory/feedback_transparent_timeouts.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/AVAILABILITY-PLAN.md",
+      "destination": "../../../.claude/memory/project_notify_me_pending.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/AVAILABILITY-PLAN.md",
+      "destination": "../../../.claude/memory/project_pdp_veja_tambem_pending.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/BACKOFFICE-UI-PLAN.md",
+      "destination": "../reference/design-surface-filter.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/BACKOFFICE-UI-PLAN.md",
+      "destination": "completed/POS-KDS-RUNTIME-SURFACE-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/CONTRACT-CONSOLIDATION-PLAN.md",
+      "destination": "../reports/analise_critica_externa_26-04-24_v1.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/adapters/pricing.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/adapters/pricing.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/handlers/pricing.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/services/checkout.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/shop/services/checkout.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/DISCOUNT-AUDIT-2026-08.md",
+      "destination": "../../shopman/storefront/api/serializers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/FASE4-PRODUCAO-FOURNIL-PLAN.md",
+      "destination": "../reference/data-schemas.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/GESTOR-PEDIDOS-PLAN.md",
+      "destination": "../../shopman/backstage/services/orders.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/GESTOR-PEDIDOS-PLAN.md",
+      "destination": "../reference/data-schemas.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/GESTOR-PEDIDOS-PLAN.md",
+      "destination": "PRODUCT-V1-SCOPE-BACKLOG.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/GESTOR-PEDIDOS-PLAN.md",
+      "destination": "PRODUCT-V1-SCOPE-BACKLOG.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/GO-LIVE-ALPHA-AUDIT.md",
+      "destination": "../../../shopman/backstage/models/cash_register.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/GO-LIVE-ALPHA-AUDIT.md",
+      "destination": "../../../shopman/storefront/models/promotions.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/HARDENING-PLAN-2.md",
+      "destination": "../reports/relatorio_final_suite_shopman_2026-04-18.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/MATERIAL-MASTER-PLAN.md",
+      "destination": "BUYMAN-PROCUREMENT-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/NAMING-CONSOLIDATION-PLAN.md",
+      "destination": "../../.claude/projects/-Users-pablovalentini-Dev-Claude-django-shopman/memory/feedback_zero_residuals.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/NAMING-CONSOLIDATION-PLAN.md",
+      "destination": "../../shopman/shop/apps.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/NAMING-CONSOLIDATION-PLAN.md",
+      "destination": "../../shopman/shop/apps.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/NAMING-CONSOLIDATION-PLAN.md",
+      "destination": "../../shopman/shop/web/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/OMOTENASHI-PLAN.md",
+      "destination": "../omotenashi.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/OMOTENASHI-PLAN.md",
+      "destination": "../omotenashi.md#corol%C3%A1rios-pr%C3%A1ticos-regras-derivadas",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/OMOTENASHI-PLAN.md",
+      "destination": "OMOTENASHI-FIRST-FULLNESS-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/OPERATOR-APPS-PLAN.md",
+      "destination": "../decisions/adr-012-headless-surface-contract.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/OPERATOR-APPS-PLAN.md",
+      "destination": "../decisions/adr-013-pos-offline-policy-and-surface-ownership.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/OPERATOR-APPS-PLAN.md",
+      "destination": "../decisions/adr-014-surface-data-presentation-cut.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/OPERATOR-APPS-PLAN.md",
+      "destination": "../reference/data-schemas.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PDP-DATA-FIELDS-PLAN.md",
+      "destination": "../../_/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/POS-UITHING-REDESIGN-PLAN.md",
+      "destination": "../constitution.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/POS-UITHING-REDESIGN-PLAN.md",
+      "destination": "../decisions/adr-013-pos-offline-policy-and-surface-ownership.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/POS-UITHING-REDESIGN-PLAN.md",
+      "destination": "../reference/data-schemas.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PRODUCTION-PLAN.md",
+      "destination": "docs/reference/data-schemas.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/base.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/v2/partials/_tokens.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/account-v2.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/account-v2.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/account-v2.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/cart.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/checkout.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/home.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/menu.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/pdp.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/tracking-v2.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/tracking.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/tracking.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "../../shopman/shop/web/templates/storefront/proto/tracking.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
+      "destination": "PROJECTION-UI-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/SEED-DATA-QUALITY-PLAN.md",
+      "destination": "../reference/data-schemas.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/SEED-DATA-QUALITY-PLAN.md",
+      "destination": "../reports/qa_exploratorio_backstage_2026-07-13.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/SEED-DATA-QUALITY-PLAN.md",
+      "destination": "../reports/qa_exploratorio_backstage_2026-07-13.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCK-SUBSTITUTE-1CLICK-PLAN.md",
+      "destination": "../../CLAUDE.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/availability.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/availability.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/holds.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/holds.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/shelflife.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/shelflife.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../shopman/shop/adapters/stock.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../shopman/shop/config.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../../shopman/shop/services/availability.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOCKMAN-SCOPE-UNIFICATION-PLAN.md",
+      "destination": "../business-rules.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../.claude/projects/-Users-pablovalentini-Dev-Claude-django-shopman/memory/feedback_tailwind_only_existing_classes.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/partials/product_card.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/product_detail.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../shopman/shop/tests/test_web.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../shopman/shop/web/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../shopman/shop/web/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../shopman/shop/web/views/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "../../shopman/shop/web/views/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
+      "destination": "PROJECTION-UI-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/SURFACE-CONVERGENCE-PLAN.md",
+      "destination": "../decisions/adr-012-headless-surface-contract.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/SURFACE-CONVERGENCE-PLAN.md",
+      "destination": "../decisions/adr-013-pos-offline-policy-and-surface-ownership.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/SURFACE-CONVERGENCE-PLAN.md",
+      "destination": "../decisions/adr-014-surface-data-presentation-cut.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/VALIDITY-SHELFLIFE-REVIEW.md",
+      "destination": "../../packages/offerman/shopman/offerman/models/product.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/VALIDITY-SHELFLIFE-REVIEW.md",
+      "destination": "../../packages/stockman/shopman/stockman/models/batch.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/VALIDITY-SHELFLIFE-REVIEW.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/holds.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/VALIDITY-SHELFLIFE-REVIEW.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/scope.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/VALIDITY-SHELFLIFE-REVIEW.md",
+      "destination": "../ROADMAP.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/VALIDITY-SHELFLIFE-REVIEW.md",
+      "destination": "GO-LIVE-READINESS-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/holds.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/api/availability.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/api/availability.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/handlers/__init__.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/handlers/_stock_receivers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/base.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/base.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/base.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/partials/_catalog_item_grid.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-10-SSE-PUSH-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/product_detail.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../.claude/projects/-Users-pablovalentini-Dev-Claude-django-shopman/memory/feedback_transparent_timeouts.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../.claude/projects/-Users-pablovalentini-Dev-Claude-django-shopman/memory/feedback_transparent_timeouts.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../.claude/projects/-Users-pablovalentini-Dev-Claude-django-shopman/memory/project_notify_me_pending.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../packages/stockman/shopman/stockman/services/planning.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/adapters/stock.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/adapters/stock.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/handlers/_stock_receivers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/handlers/_stock_receivers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/projections/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/projections/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/base.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/partials/_cart_page_content.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/templates/storefront/partials/cart_drawer.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/web/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-AV-13-FERMATA-UI-PLAN.md",
+      "destination": "../../shopman/shop/web/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../config/settings.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../config/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../instances/nelson/management/commands/seed.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../packages/orderman/shopman/orderman/services/commit.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/admin/channel.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/admin/channel.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/config.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/services/ifood_ingest.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/services/ifood_simulation.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/services/ifood_simulation.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/webhooks/efi.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/webhooks/efi.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/webhooks/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../../shopman/shop/webhooks/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-01-ifood-webhook.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../config/settings.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/adapters/payment_stripe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/adapters/payment_stripe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/adapters/payment_stripe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/services/payment.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/services/payment.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/templates/storefront/payment.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/templates/storefront/payment.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/webhooks/stripe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/webhooks/stripe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../../shopman/shop/webhooks/stripe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-02-card-checkout.md",
+      "destination": "/Users/pablovalentini/.claude/projects/-Users-pablovalentini-Dev-Claude-django-shopman/memory/project_card_payment_delegated_stripe.md",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/admin/dashboard.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/admin/omotenashi.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/admin/omotenashi.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/context_processors.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/context_processors.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/models/omotenashi_copy.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/models/omotenashi_copy.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/omotenashi/copy.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/omotenashi/copy.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/templates/storefront/cart.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/templates/storefront/checkout.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/templates/storefront/home.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/templates/storefront/menu.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../../shopman/shop/templates/storefront/order_tracking.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../omotenashi.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../omotenashi.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../omotenashi.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-03-omotenashi-copy.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../Makefile",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../Makefile",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../config/settings.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../config/settings.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../config/settings.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../packages/stockman/shopman/stockman/tests/test_concurrency.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../pyproject.toml",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../../pyproject.toml",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../guides/",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-04-postgres-dev.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": "../../Makefile",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": "../../package.json",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": "../../package.json",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": "../../shopman/shop/templates/storefront/partials/_tokens.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
+      "destination": "PROJECTION-UI-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../config/settings.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../shopman/shop/admin/rules.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../shopman/shop/admin/rules.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../shopman/shop/models/rules.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../shopman/shop/models/rules.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../shopman/shop/rules/engine.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../shopman/shop/rules/engine.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../../shopman/shop/rules/engine.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../../Makefile",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../../packages/stockman/shopman/stockman/models/move.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../../packages/stockman/shopman/stockman/models/quant.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../../packages/stockman/shopman/stockman/models/quant.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../../packages/stockman/shopman/stockman/tests/test_service.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../guides/stockman.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../guides/stockman.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-08-quant-cache-reconciliation.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../../CLAUDE.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../../instances/nelson/management/commands/seed.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../../packages/craftsman/shopman/craftsman/models/recipe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../../packages/craftsman/shopman/craftsman/models/recipe.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../../packages/utils/shopman/utils/phone.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../../packages/utils/shopman/utils/phone.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../../packages/utils/shopman/utils/phone.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../reference/glossary.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-09-rename-recipe-ref-phone-helper.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../../shopman/shop/modifiers.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../../shopman/shop/rules/engine.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../business-rules.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../business-rules.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../business-rules.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../business-rules.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../decisions/adr-005-orchestrator-as-coordination-center.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-10-discount-rules-externalization.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-11-health-check.md",
+      "destination": "../../config/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-11-health-check.md",
+      "destination": "../../config/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-11-health-check.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../../config/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../../config/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../../shopman/shop/api/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../../shopman/shop/api/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../../shopman/shop/api/urls.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-12-api-versioning.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-13-rbac-granular.md",
+      "destination": "../../shopman/shop/admin/",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-13-rbac-granular.md",
+      "destination": "../../shopman/shop/web/views/",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-13-rbac-granular.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-13-rbac-granular.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../packages/offerman/shopman/offerman/contrib/substitutes/substitutes.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../packages/offerman/shopman/offerman/contrib/substitutes/substitutes.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/omotenashi/copy.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/services/availability.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/services/availability.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/templates/storefront/partials/stock_error_modal.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/templates/storefront/partials/stock_error_modal.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/web/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/web/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/web/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../../shopman/shop/web/views/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "../omotenashi.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": ".claude/memory",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
+      "destination": "STOCK-UX-PLAN.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../../config/settings.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../../packages/offerman/shopman/offerman/protocols/catalog.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../../packages/offerman/shopman/offerman/protocols/catalog.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../../packages/offerman/shopman/offerman/service.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../../shopman/shop/directives.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../../shopman/shop/handlers/__init__.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../decisions/adr-001-protocol-adapter.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
+      "destination": "../reference/system-spec.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/plans/completed/_WP-LAUNCHER-TEMPLATE.md",
+      "destination": "WP-GAP-07-pre-prod-migration-playbook.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-AVANCO-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/0001-fix-maps-ci-contracts.patch",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-AVANCO-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/0002-fix-customer-merge-postgresql.patch",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-AVANCO-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/0003-fix-integrated-deploy-fixture.patch",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-AVANCO-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/0004-fix-provider-readiness-boundary.patch",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-AVANCO-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/pr-customer-merge-postgresql.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-ENTREGAS-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/0001-fix-maps-ci-contracts.patch",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-ENTREGAS-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/evidence.json",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/COORDENACAO-ENTREGAS-2026-09-13.md",
+      "destination": "/Users/pablovalentini/.codex/visualizations/2026/09/13/01a09879-e552-76b0-9941-172559376d37/go-live-638/entrega-pr-638.md",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/DECISAO-DEPLOY-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/pr631-audit.json",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/DECISAO-DEPLOY-2026-09-13.md",
+      "destination": "../../output/coordination-20260913/pr631-rollback.json",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/PIPELINE-AUDIT-2026-04-17.md",
+      "destination": "shopman/shop/config.py:229",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/PIPELINE-AUDIT-2026-04-17.md",
+      "destination": "shopman/shop/lifecycle.py:95",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_craftsman_spec_2026-04-18.md",
+      "destination": "../../packages/craftsman/shopman/craftsman/adapters/stock.py#L48",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_craftsman_spec_2026-04-18.md",
+      "destination": "../../packages/craftsman/shopman/craftsman/templates/crafting/daily_ingredients.html#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/backstage/admin_console/orders.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/backstage/templates/admin_console/orders/index.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/shop/static/storefront/css/output-v2.css",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/shop/templates/storefront/checkout.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/storefront/projections/catalog.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/storefront/static/storefront/css/output-v2.css",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/storefront/templates/storefront/checkout.html",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/storefront/urls.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/storefront/views/_helpers.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/storefront/views/account.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-20.md",
+      "destination": "../../shopman/storefront/views/checkout.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/packages/doorman/shopman/doorman/services/access_link.py:156",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/dispatch.py:110",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/models/order.py:227",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/registry.py:1",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/services/commit.py:362",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/packages/payman/shopman/payman/service.py:1",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/packages/stockman/shopman/stockman/services/holds.py:300",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/backstage/views/pos.py:110",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:27",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:61",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:61",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:89",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/apps.py:118",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/checks.py:1",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/checks.py:26",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/config.py:1",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/fiscal.py:15",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/handlers/__init__.py:149",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/lifecycle.py:121",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/lifecycle.py:175",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/services/customer.py:57",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/services/payment.py:53",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/services/stock.py:223",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/tests/test_architecture.py:1",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/tests/test_hold_adoption.py:129",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/tests/test_invariants.py:1",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/webhooks/efi.py:97",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/webhooks/ifood.py:137",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/webhooks/stripe.py:45",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:119",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:174",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:213",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:246",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/services/storefront_context.py:52",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_codigo_2026-04-22.md",
+      "destination": "/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/views/checkout.py:130",
+      "kind": "outside_repo"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/models/alerts.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/models/cash_register.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/models/closing.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/models/kds.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/projections/catalog.py#L110",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/projections/payment.py#L78",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/services/storefront_context.py#L46",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/auth.py#L209",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/auth.py#L53",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/checkout.py#L113",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/pwa.py#L18",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/pwa.py#L62",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/tracking.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/tracking.py#L90",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_shopman_shop_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/web/views/welcome.py#L41",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/api/views.py#L319-L341",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/api/views.py#L60-L74",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/contrib/alerts/apps.py#L1-L16",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/contrib/alerts/handlers.py#L1-L134",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/management/commands/recompute_quant_quantities.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/models/alert.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/models/quant.py#L79-L83",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/service.py#L24-L33",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/alerts.py#L26-L86",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/availability.py#L222-L234",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/availability.py#L365-L374",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/holds.py#L82-L352",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/planning.py#L147-L173",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/planning.py#L34-L57",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/planning.py#L59-L77",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/planning.py#L80-L116",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/queries.py#L169-L179",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/queries.py#L49-L111",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/queries.py#L73-L82",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/services/scope.py#L1-L77",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/shelflife.py#L1-L54",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/tests/test_quantity_invariant.py#L114-L216",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_critica_stockman_spec_2026-04-18.md",
+      "destination": "../../packages/stockman/shopman/tests/test_quantity_invariant.py#L114-L216",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/apps.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/apps.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/customer_strategies.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/customer_strategies.py#L17",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L119",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1258",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1315",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1319",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1330",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1339",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1344",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1382",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L166",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L1678",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L2046",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L2116",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L2292",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L327",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L330",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L751",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L777",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/management/commands/seed.py#L850",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/modifiers.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/modifiers.py#L34",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/modifiers.py#L94",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/static/icon-192.svg#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../instances/nelson/static/icon-512.svg#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/models/cash_register.py#L12",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_nelson_spec_2026-04-18.md",
+      "destination": "../../shopman/shop/models/kds.py#L8",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_orderman_spec_2026-04-18.md",
+      "destination": "../../packages/orderman/shopman/orderman/contrib/refs/models.py#L11",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_orderman_spec_2026-04-18.md",
+      "destination": "../../packages/orderman/shopman/orderman/contrib/refs/sequences.py#L1",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_payman_spec_2026-04-18.md",
+      "destination": "../../packages/payman/shopman/payman/api/serializers.py#L8",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_payman_spec_2026-04-18.md",
+      "destination": "../../packages/payman/shopman/payman/api/views.py#L14",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_payman_spec_2026-04-18.md",
+      "destination": "../../packages/payman/shopman/payman/api/views.py#L17",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/backstage/admin_console/orders.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/omotenashi/context.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/omotenashi/context.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/views/cart.py",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/views/cart.py#L177-L183",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/views/cart.py#L48-L58",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/views/checkout.py#L209-L219",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/views/checkout.py#L235-L238",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/analise_profunda_2026-04-21_externo_v3.md",
+      "destination": "../../shopman/storefront/views/checkout.py#L911-L919",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/doorman_spec_analysis_2026-04-18.md",
+      "destination": "../../packages/doorman/shopman/doorman/protocols/customer.py#L8",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/execution/pdv-20260910-a1.md",
+      "destination": "pdv-20260910-a1-artifacts.json",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/execution/pdv-20260910-a1.md",
+      "destination": "pdv-20260910-a1-continuation.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/execution/pos-encomendas-ux-20260929/README.md",
+      "destination": "../../../../surfaces/pos-nuxt/tests/visual/baselines/preorders-week-390x844-light.png",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/guestman_spec_analysis_2026-04-18.md",
+      "destination": "../../packages/guestman/shopman/guestman/models/group.py#L7",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/matriz_executiva_delta_constitucional_2026-04-11.md",
+      "destination": "./constituicao_semantica_suite_2026-04-11.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/plano_acao_definitivo_sem_legado_2026-04-11.md",
+      "destination": "./constituicao_semantica_suite_2026-04-11.md",
+      "kind": "missing_target"
+    },
+    {
+      "source": "docs/reports/plano_macro_execucao_suite_2026-04-13.md",
+      "destination": "./constituicao_semantica_suite_2026-04-11.md",
+      "kind": "missing_target"
+    }
+  ]
 }

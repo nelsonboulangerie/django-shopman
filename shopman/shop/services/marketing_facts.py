@@ -18,6 +18,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from shopman.shop.policies.promotion import PromotionContext, promotion_matches
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 SCHEMA_VERSION = 1
@@ -414,7 +415,8 @@ def _promotion(ref: str, *, sku: str, scheduled_for: datetime | None, now: datet
             detail="Uma oferta anunciada não pode depender de cupom oculto.",
             field_errors={"promotion_ref": ("Use uma promoção automática.",)},
         )
-    if promotion.customer_segments or promotion.birthday_only:
+    # O visitante anônimo, sem item nem atendimento, só falha por alvo POR CLIENTE.
+    if not promotion_matches(promotion, PromotionContext()):
         raise MarketingContractError(
             code="marketing_promotion_has_private_eligibility",
             detail="A oferta depende de uma condição individual não visível no anúncio.",
