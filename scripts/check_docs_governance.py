@@ -3,7 +3,10 @@
 
 The checker is intentionally stdlib-only: documentation governance must run before
 the application environment is installed.  Live documentation is held to zero debt;
-archived material is held to a checked-in, non-increasing ceiling.
+archived material is held to a checked-in list of known broken links, LINK BY LINK:
+fixing an old link never pays for a new broken one, and the list only shrinks.
+Every Markdown file of the repository is scanned (not only ``docs/``); outside the
+historical directories of ``docs/`` everything is live.
 """
 
 from __future__ import annotations
@@ -26,6 +29,10 @@ HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$")
 BASELINE_FILE = Path("docs/governance/docs-link-debt.json")
 PLAN_INDEX = Path("docs/plans/INDEX.md")
 PLAN_README = Path("docs/plans/README.md")
+SKIPPED_PARTS = {
+    ".git", ".venv", "node_modules", ".nuxt", ".output", ".claude", ".codex",
+    "__pycache__", ".pytest_cache", "dist", "coverage", "playwright-report", "test-results",
+}
 
 
 @dataclass(frozen=True)
@@ -38,6 +45,10 @@ class Debt:
     def render(self, root: Path) -> str:
         source = self.source.relative_to(root)
         return f"{source}:{self.line}: {self.kind}: {self.destination}"
+
+    def key(self, root: Path) -> tuple[str, str, str]:
+        """Identidade do link sem o número da linha: editar o arquivo não mexe nela."""
+        return (self.source.relative_to(root).as_posix(), self.destination, self.kind)
 
 
 def _is_historical(path: Path, root: Path) -> bool:
@@ -112,7 +123,7 @@ def link_debt(root: Path) -> tuple[list[Debt], list[Debt]]:
     root = root.resolve()
     live: list[Debt] = []
     historical: list[Debt] = []
-    for source in sorted((root / "docs").rglob("*.md")):
+    for source in _markdown_sources(root):
         bucket = historical if _is_historical(source, root) else live
         for line, destination in _links(source):
             target, fragment = _resolve(source, destination, root)
@@ -134,12 +145,42 @@ def link_debt(root: Path) -> tuple[list[Debt], list[Debt]]:
     return live, historical
 
 
-def _historical_ceiling(root: Path) -> dict[str, int]:
+def _markdown_sources(root: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in root.rglob("*.md")
+        if not set(path.relative_to(root).parts[:-1]) & SKIPPED_PARTS
+    )
+
+
+def _historical_baseline(root: Path) -> Counter[tuple[str, str, str]]:
     path = root / BASELINE_FILE
     if not path.is_file():
         raise ValueError(f"{BASELINE_FILE}: baseline ausente")
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {key: int(value) for key, value in data["maximum_by_kind"].items()}
+    return Counter(
+        (str(item["source"]), str(item["destination"]), str(item["kind"]))
+        for item in data["historical_links"]
+    )
+
+
+def write_baseline(root: Path) -> int:
+    """Regrava o baseline com a dívida histórica atual (uso: depois de PAGAR dívida)."""
+    root = root.resolve()
+    _live, historical = link_debt(root)
+    links = sorted(debt.key(root) for debt in historical)
+    data = {
+        "scope": (
+            "Links quebrados conhecidos em diretórios históricos de docs/, um por um. "
+            "Dívida viva tem teto zero; esta lista só encolhe."
+        ),
+        "historical_links": [
+            {"source": source, "destination": destination, "kind": kind}
+            for source, destination, kind in links
+        ],
+    }
+    (root / BASELINE_FILE).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return len(links)
 
 
 def _live_plans(root: Path) -> set[Path]:
@@ -193,16 +234,19 @@ def check(root: Path) -> list[str]:
     errors.extend(debt.render(root) for debt in live)
 
     try:
-        ceiling = _historical_ceiling(root)
+        baseline = _historical_baseline(root)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         errors.append(str(exc))
-        ceiling = {}
-    actual = Counter(debt.kind for debt in historical)
-    for kind in sorted(set(actual) | set(ceiling)):
-        if actual[kind] > ceiling.get(kind, 0):
-            errors.append(
-                f"dívida histórica {kind}: {actual[kind]} excede baseline {ceiling.get(kind, 0)}"
-            )
+        baseline = Counter()
+    actual = Counter(debt.key(root) for debt in historical)
+    rendered = {debt.key(root): debt.render(root) for debt in historical}
+    for key in sorted(actual - baseline):
+        errors.append(f"dívida histórica nova (fora do baseline): {rendered[key]}")
+    for source, destination, kind in sorted(baseline - actual):
+        errors.append(
+            f"{BASELINE_FILE}: o link não está mais quebrado, apague a entrada: "
+            f"{source}: {kind}: {destination}"
+        )
 
     live_plans = _live_plans(root)
     indexed_plans = _indexed_plans(root)
@@ -215,7 +259,15 @@ def check(root: Path) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="regrava o baseline com a dívida histórica atual (depois de consertar links)",
+    )
     args = parser.parse_args()
+    if args.write_baseline:
+        print(f"[OK] baseline regravado: {write_baseline(args.root)} links históricos")
+        return 0
     errors = check(args.root)
     if errors:
         for error in errors:
@@ -226,7 +278,7 @@ def main() -> int:
     summary = ", ".join(f"{kind}={counts[kind]}" for kind in sorted(counts)) or "zero"
     print(
         f"[OK] governança documental: dívida viva={len(live)}; "
-        f"dívida histórica dentro do teto ({summary}); planos vivos indexados={len(_live_plans(args.root.resolve()))}"
+        f"dívida histórica = baseline, link a link ({summary}); planos vivos indexados={len(_live_plans(args.root.resolve()))}"
     )
     return 0
 
