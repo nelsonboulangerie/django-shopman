@@ -211,7 +211,10 @@ O que conferir no log do `web` (`machine.webhook raw=...`), contra o payload doc
   certo, o evento foi entendido.
 - **posicao**: só chega com corrida aceita (`A`, `S`, `E`), em lote a cada 10 s, com `data[]`.
   Na homologação sem entregador simulado ele pode não chegar; anote se chegou.
-- Header `Signature-V2` presente (ainda não conferido pelo nosso endpoint).
+- Header `Signature-V2` conferido pelo nosso endpoint (HMAC-SHA-512 hexadecimal do corpo cru com
+  o `MACHINE_API_KEY` do `web`). Resposta `401` com `Signature-V2 não confere` no log e o corpo cru
+  logado logo antes: a chave do `web` não é a que a TaOn usa para assinar (a homologação pode ter
+  chave própria), ou a conta da Machine difere da documentada. Anote qual dos dois.
 
 ## Depois do ensaio
 

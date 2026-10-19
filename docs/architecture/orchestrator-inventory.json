@@ -13209,14 +13209,18 @@
           "symbols": [
             "MachineWebhookView",
             "POSITION_CACHE_SECONDS",
+            "SIGNATURE_HEADER",
             "_ID_KEYS",
             "_RIDE_STATUSES",
             "_STATUS_KEYS",
+            "_alert_signature_failure",
             "_cache_position",
             "_cfg",
+            "_check_signature",
             "_first",
             "_store_position",
-            "logger"
+            "logger",
+            "signature_for"
           ]
         }
       ]

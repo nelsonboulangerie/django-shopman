@@ -113,8 +113,12 @@ deprecado e a doc pede recadastro para o novo:
 
 `shopman/shop/webhooks/machine.py` entende os dois formatos: `status_code` de estado entra no
 funil `apply_status`; `AP`/`ER`/`L`/`R` são aceitos e logados sem mexer na letra; o lote de
-posição vai para o cache por `request_id`. Pendente: conferir a `Signature-V2` (hoje a borda
-autentica pelo token da URL).
+posição vai para o cache por `request_id`. [x] `Signature-V2` conferida (19/10/2026): além do
+token da URL, todo POST precisa da assinatura, HMAC-SHA-512 hexadecimal do corpo cru com
+`MACHINE_API_KEY`, comparada em tempo constante. Ausente ou divergente → 401 com alerta ao
+operador; `MACHINE_API_KEY` vazio → 401 em todo POST, log de erro e alerta (falha fechada,
+gritando). O `GET` de verificação do cadastro segue só no token. A doc não diz a codificação:
+hexadecimal é o que o exemplo dela mostra (128 caracteres), e a homologação confirma.
 
 **Limites.** O gateway conta por `api-key`, em janela deslizante de 60 s, e responde `429`
 com `Retry-After`. Os números que o dono trouxe (corridas 800/min, webhooks 60/min) são os da
