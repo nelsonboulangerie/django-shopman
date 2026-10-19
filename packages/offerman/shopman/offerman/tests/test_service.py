@@ -879,14 +879,26 @@ class TestCatalogUnitPriceCascade:
             ListingItem.objects.create(listing=listing, product=product, price_q=400)
             lines.append((product.sku, Decimal("1")))
 
-        with django_assert_num_queries(2):
+        # Tudo listado: o preço-base vem no join do tier, uma consulta só.
+        with django_assert_num_queries(1):
             assert CatalogService.unit_prices(lines, listings=("constant",)) == [400] * 12
-        with django_assert_num_queries(2):
+        with django_assert_num_queries(1):
             assert CatalogService.unit_prices(
                 lines,
                 listings=("constant",),
                 require_listing_match=True,
             ) == [400] * 12
+        # SKU fora da listing: só ele volta ao Product, para o preço-base.
+        loose = Product.objects.create(sku="UP-LOOSE", name="Solto", base_price_q=700)
+        with django_assert_num_queries(2):
+            assert CatalogService.unit_prices(
+                [*lines, (loose.sku, Decimal("1"))], listings=("constant",),
+            ) == [400] * 12 + [700]
+        # Exigindo a listing, o SKU solto é None sem ler o Product.
+        with django_assert_num_queries(1):
+            assert CatalogService.unit_prices(
+                [*lines, (loose.sku, Decimal("1"))], listings=("constant",), require_listing_match=True,
+            ) == [400] * 12 + [None]
 
 
 # ═══════════════════════════════════════════════════════════════════
