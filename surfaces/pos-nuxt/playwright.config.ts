@@ -20,6 +20,9 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
+  // Um worker: os specs da venda sem conexão contam os fechamentos que o mock viu
+  // (antes/depois), e o mock é um só para a suíte inteira.
+  workers: 1,
   retries: 0,
   reporter: [["list"]],
   use: {

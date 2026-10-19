@@ -346,6 +346,14 @@ build do PDV: o manifesto de precache não tem nenhuma entrada de navegação, s
 abre. É por isso que abrir a tela do cliente no PDV leva junto um `checkForUpdate()`:
 a janela nova não precisa de ajuda, a do operador precisa.
 
+ℹ️ **Casco sem conexão (`offlineShellPaths`, opt-in; hoje só a venda do PDV, `["/"]`).**
+Essas rotas trocam o `NetworkOnly` por `NetworkFirst`: com rede, a regra acima vale igual
+(o HTML vem da rede); sem rede, abre o último HTML que a rede devolveu ao dispositivo, num
+cache de runtime `<app>-shell`, nunca no precache. O `buildId` do Nuxt entra como literal
+no `sw.js`: o HTML só é guardado e só é usado se for da build do próprio worker, então
+uma versão nova (ou um rollback) não reabre HTML velho; sem casar, cai no `offline.html`.
+O gate (`make pwa app=pos`) confere rota única, cache próprio e o `buildId` da build.
+
 **3. Provar.** A troca termina em `location.reload()`, e nada que fique na memória
 sobrevive para contar o que houve. Então a marca vai ao `localStorage` **antes** do
 reload e é relatada no boot seguinte, quando as duas versões são conhecidas:

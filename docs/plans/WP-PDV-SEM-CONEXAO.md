@@ -214,10 +214,13 @@ PC Windows ligado no nobreak, ativação com o suporte da Focus e confirmação 
 
 ## 8. Riscos e o que fica de fora
 
-- **Recarregar a tela sem internet** cai no `offline.html` do PWA (navegação é `NetworkOnly`). A
-  fila sobrevive (IndexedDB) e sobe quando a tela volta com rede, mas a venda para até lá. Próximo
-  passo: casco offline para `/` no PDV (cache da última navegação), que mexe no `operator-kit` e no
-  que fica guardado no dispositivo (lista de operadores e gerentes no HTML).
+- **Recarregar a tela sem internet** (resolvido em 19/10/2026): a navegação da venda (`/`) vai à
+  rede primeiro e, sem rede, abre o último HTML que a rede devolveu a este dispositivo
+  (`offlineShellPaths` do `operator-kit`, cache de runtime `pos-shell`), com a leitura que veio nele;
+  a fila segue. O HTML só é guardado e só é usado se for da mesma build do service worker (versão
+  nova ou rollback não reabrem HTML velho). O que fica no dispositivo é o que já estava na tela:
+  catálogo, comandas, nomes e usuários de operadores e gerentes, sem PIN nem segredo. O resto do PDV
+  segue no `offline.html`.
 - **Gaveta sem rede abre sem registro prévio** (no Balcão já era assim na venda em dinheiro: chuta e
   registra depois). O registro vem com a venda.
 - **Preço trocado durante a queda**: vale o cobrado (§3.3). O preço do catálogo ainda é o de agora
