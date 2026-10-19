@@ -111,9 +111,6 @@ GET_WRITE_FOUND_BY_TRANSITIVE_GATE = {
     ("shopman/storefront/api/account.py", "account_privacy.begin_export"): 1,
     ("shopman/storefront/api/account.py", "account_export.prepare_account_export"): 1,
     ("shopman/storefront/api/account.py", "account_privacy.fail_export"): 1,
-    # Continuum: a leitura materializa a cabeça do snapshot do catálogo.
-    ("shopman/storefront/api/continuum.py", "current_or_build_head"): 1,
-    ("shopman/storefront/api/surface.py", "compare_shadow"): 1,
     # Recuperação do checkout por GET: concede acesso na sessão e refaz efeitos pós-commit.
     ("shopman/storefront/api/views.py", "order_service.grant_order_access"): 1,
     ("shopman/storefront/api/views.py", "checkout_service.recover_committed_checkout"): 1,

@@ -30,10 +30,10 @@ CACHE_PREFIX = "storefront:continuum:v0.2:catalog-structure"
 
 @dataclass(frozen=True)
 class ShadowComparison:
-    equal: bool
+    equal: bool | None
     cache_status: str
     snapshot_bytes: int
-    head: CatalogStructureHead
+    head: CatalogStructureHead | None
 
 
 def continuum_settings() -> dict[str, Any]:
@@ -251,8 +251,33 @@ def materialize_catalog_structure(
         return head
 
 
-def current_or_build_head(*, channel_ref: str) -> tuple[CatalogStructureHead, str]:
-    head = CatalogStructureHead.objects.filter(channel_ref=channel_ref).first()
+REFRESH_TOPIC = "continuum.catalog_structure.refresh"
+#: Uma reconstrução viva por canal: rajada de escrita no catálogo (seed, import,
+#: Admin salvando vários itens) vira UMA passada no worker.
+REFRESH_DEDUPE_PREFIX = REFRESH_TOPIC
+#: O dispatcher por signal roda inline a directive que nasce vencida, no fim da
+#: requisição que escreveu o catálogo. Nascendo um instante à frente, ela fica
+#: para o worker (``process_directives --watch``), e as escritas seguintes da
+#: mesma rajada caem no dedupe.
+REFRESH_DELAY_SECONDS = 1
+
+
+def read_head(*, channel_ref: str) -> CatalogStructureHead | None:
+    """A cabeça publicada, como está. Leitura pura: GET usa esta."""
+    return CatalogStructureHead.objects.filter(channel_ref=channel_ref).first()
+
+
+def head_is_publishable(head: CatalogStructureHead | None) -> bool:
+    return head is not None and bool(head.message)
+
+
+def refresh_head(*, channel_ref: str) -> tuple[CatalogStructureHead, str]:
+    """Reconstrói a cabeça quando falta, está suja ou venceu a reconciliação.
+
+    É a escrita da read model: roda no worker (directive de ``REFRESH_TOPIC``
+    e ``refresh_catalog_structure`` do ``maintenance_worker``), nunca no GET.
+    """
+    head = read_head(channel_ref=channel_ref)
     if head is not None and not head.dirty and head.message and not reconciliation_due(head):
         return head, "head"
 
@@ -264,38 +289,63 @@ def current_or_build_head(*, channel_ref: str) -> tuple[CatalogStructureHead, st
 
 
 def compare_shadow(projection: dict[str, Any], *, channel_ref: str) -> ShadowComparison:
-    """Compara sem recalcular a projeção que o menu acabou de produzir."""
+    """Compara sem recalcular a projeção que o menu acabou de produzir. Não grava.
+
+    Cabeça ausente ou suja é ``pending`` (a reconstrução já está na fila);
+    divergência é ``diverged`` e quem corrige é o worker, na reconciliação.
+    """
     state = catalog_structure_state_from_projection(projection)
     digest = sha256_digest(state)
-    head = CatalogStructureHead.objects.filter(channel_ref=channel_ref).first()
+    head = read_head(channel_ref=channel_ref)
     if head is None or head.dirty or not head.message:
-        head = materialize_catalog_structure(channel_ref=channel_ref, state=state)
-        body, body_cache_status = rendered_message(head)
-        return ShadowComparison(
-            equal=True,
-            cache_status=f"rebuild:{body_cache_status}",
-            snapshot_bytes=len(body),
-            head=head,
-        )
+        return ShadowComparison(equal=None, cache_status="pending", snapshot_bytes=0, head=head)
     equal = secrets.compare_digest(head.state_digest, digest)
-    if not equal:
-        head = materialize_catalog_structure(channel_ref=channel_ref, state=state)
     body, body_cache_status = rendered_message(head)
     return ShadowComparison(
         equal=equal,
-        cache_status=f"{'hit' if equal else 'diverged_rebuild'}:{body_cache_status}",
+        cache_status=f"{'hit' if equal else 'diverged'}:{body_cache_status}",
         snapshot_bytes=len(body),
         head=head,
     )
 
 
+def request_refresh(*, channel_ref: str = "web") -> None:
+    """Põe a reconstrução da cabeça na fila do worker (uma viva por canal)."""
+    if not (candidate_enabled() or shadow_enabled()):
+        return
+    from datetime import timedelta
+
+    from shopman.shop.directives import create_deduped
+
+    create_deduped(
+        REFRESH_TOPIC,
+        payload={"channel_ref": channel_ref},
+        dedupe_key=f"{REFRESH_DEDUPE_PREFIX}:{channel_ref}",
+        available_at=timezone.now() + timedelta(seconds=REFRESH_DELAY_SECONDS),
+    )
+
+
 def mark_catalog_structure_dirty() -> None:
     CatalogStructureHead.objects.filter(channel_ref="web").update(dirty=True)
+    request_refresh(channel_ref="web")
 
 
 def schedule_catalog_structure_dirty(sender=None, **kwargs) -> None:
     del sender, kwargs
     transaction.on_commit(mark_catalog_structure_dirty, robust=True)
+
+
+class CatalogStructureRefreshHandler:
+    """Reconstrói a cabeça do snapshot público. Topic: ``continuum.catalog_structure.refresh``."""
+
+    topic = REFRESH_TOPIC
+
+    def handle(self, *, message, ctx: dict) -> None:
+        del ctx
+        if not (candidate_enabled() or shadow_enabled()):
+            return
+        channel_ref = str((message.payload or {}).get("channel_ref") or "web")
+        refresh_head(channel_ref=channel_ref)
 
 
 def json_shape(value: Any) -> tuple[int, int]:
