@@ -1688,14 +1688,7 @@ def _group_free_shipping(price_tier_refs, *, customer_ref: str, merchandise_q: i
     """``(pedido mínimo, nome do grupo)`` do frete grátis do grupo que cobre o pedido, ou ``None``."""
     from shopman.shop.services import promotions as promotion_service
 
-    refs = (
-        promotion_service._tier_refs(price_tier_refs)
-        if price_tier_refs is not None
-        else promotion_service.customer_price_tier_refs(customer_ref)
-    )
-    if not refs:
-        return None
-    found = promotion_service.best_group_advantage(refs, "free_shipping")
+    found = promotion_service.best_group_free_shipping(price_tier_refs=price_tier_refs, customer_ref=customer_ref)
     if found is None:
         return None
     min_order_q = promotion_service.free_shipping_min_order_q(found.value)
