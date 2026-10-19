@@ -1181,8 +1181,12 @@ async function goToAuthRoute () {
 
 async function recoverCheckout (key = '') {
   try {
-    const receipt = await $fetch<CheckoutMutationResponse | undefined>(apiPath('/api/v1/checkout/'), {
-      credentials: 'include', headers: key ? { 'Idempotency-Key': key } : {}
+    // POST: recuperar dá a este navegador o acesso ao pedido e refaz o que ficou
+    // pendente depois do commit. GET não produz efeito.
+    const receipt = await $fetch<CheckoutMutationResponse | undefined>(apiPath('/api/v1/checkout/recover/'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { ...(await csrfHeaders()), ...(key ? { 'Idempotency-Key': key } : {}) }
     })
     if (!receipt?.order_ref) return false
     confirmedTrackingUrl.value = receipt.next_url || `/pedido/${encodeURIComponent(receipt.order_ref)}`
@@ -1202,9 +1206,17 @@ async function recoverCheckout (key = '') {
 function onDraftRemoved (event: StorageEvent) {
   if (event.key === CHECKOUT_DRAFT_KEY && event.newValue === null) window.location.reload()
 }
+// A pergunta sai uma vez, na primeira sacola que chegar: com a projeção lazy, a
+// navegação dentro do app monta a tela antes da sacola, e a checagem só no
+// `onMounted` não perguntava nada.
+let recoveryAsked = false
 onMounted(() => {
   window.addEventListener('storage', onDraftRemoved)
-  if (cart.value?.is_empty) void recoverCheckout()
+  watch(cart, (value) => {
+    if (recoveryAsked || !value) return
+    recoveryAsked = true
+    if (value.is_empty) void recoverCheckout()
+  }, { immediate: true })
 })
 onBeforeUnmount(() => { if (import.meta.client) window.removeEventListener('storage', onDraftRemoved) })
 
