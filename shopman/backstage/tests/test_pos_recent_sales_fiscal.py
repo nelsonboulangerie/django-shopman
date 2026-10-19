@@ -294,7 +294,7 @@ class POSRecentSalesFiscalTests(TestCase):
     def test_danfe_escpos_returns_printable_bytes(self) -> None:
         self._order("PDV-RS-3", nfce=True)
 
-        response = self.client.get("/api/v1/backstage/pos/orders/PDV-RS-3/danfe-escpos/")
+        response = self.client.post("/api/v1/backstage/pos/orders/PDV-RS-3/danfe-escpos/")
 
         self.assertEqual(response.status_code, 200)
         payload = base64.b64decode(response.json()["payload_b64"])
@@ -307,7 +307,7 @@ class POSRecentSalesFiscalTests(TestCase):
     def test_danfe_escpos_refuses_unemitted_note(self) -> None:
         self._order("PDV-RS-4", nfce=False)
 
-        response = self.client.get("/api/v1/backstage/pos/orders/PDV-RS-4/danfe-escpos/")
+        response = self.client.post("/api/v1/backstage/pos/orders/PDV-RS-4/danfe-escpos/")
 
         self.assertEqual(response.status_code, 409)
 

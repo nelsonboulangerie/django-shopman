@@ -162,3 +162,21 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
     w.unmount();
   });
 });
+
+/**
+ * Pedir os bytes é emitir a via: o servidor carimba a primeira, então a tela
+ * pede por POST. Um GET nunca gasta a primeira via (A8-1).
+ */
+describe("PosRecentSales — reimprimir a DANFE é um comando", () => {
+  it("o toque em DANFE pede os bytes por POST", async () => {
+    const w = await montar([sale({ fiscal_state: "authorized", can_print_danfe: true })]);
+    fetchMock.mockResolvedValueOnce({ ok: true, payload_b64: "REFORkU=", title: "danfe:PDV-042", reprint: true });
+    const button = Array.from(document.body.querySelectorAll("button")).find((el) => el.textContent?.trim() === "DANFE");
+    button!.click();
+
+    const danfeCall = () => fetchMock.mock.calls.find(([url]) => String(url).includes("/pos/orders/PDV-042/danfe-escpos/"));
+    await vi.waitFor(() => expect(danfeCall()).toBeTruthy());
+    expect(danfeCall()?.[1]).toMatchObject({ method: "POST", credentials: "include" });
+    w.unmount();
+  });
+});

@@ -3322,7 +3322,7 @@ class POSPreorderRedoTabView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="DANFE NFC-e bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="DANFE payload.")},
@@ -3340,7 +3340,7 @@ class POSDanfeEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.backstage.services.receipt_escpos import danfe_nfce
@@ -3389,24 +3389,30 @@ def _stamp_first_print(order_ref: str, key: str) -> bool:
     documentadas em docs/reference/data-schemas.md). Marca na COMPOSIÇÃO, não na
     confirmação do papel: o que importa é que um papel daquele pedido já saiu
     para o mundo uma vez — a partir daí, todo seguinte circula como segunda via.
+
+    Por isso toda rota que compõe papel é POST: pedir os bytes é emitir a via, e
+    leitura (GET) não carimba nada.
     """
     from django.utils import timezone
     from shopman.orderman.models import Order
 
-    order = Order.objects.filter(ref=order_ref).first()
-    if order is None:
-        return False
-    data = order.data or {}
-    if data.get(key):
-        return True
-    data[key] = timezone.now().isoformat()
-    order.data = data
-    order.save(update_fields=["data", "updated_at"])
+    # A trava da linha faz dois toques ao mesmo tempo darem UMA primeira via:
+    # o segundo espera o primeiro gravar e lê o carimbo.
+    with transaction.atomic():
+        order = Order.objects.select_for_update().filter(ref=order_ref).first()
+        if order is None:
+            return False
+        data = order.data or {}
+        if data.get(key):
+            return True
+        data[key] = timezone.now().isoformat()
+        order.data = data
+        order.save(update_fields=["data", "updated_at"])
     return False
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Non-fiscal sale receipt bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="Receipt payload.")},
@@ -3424,7 +3430,7 @@ class POSSaleReceiptEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.orderman.models import Order
@@ -3451,7 +3457,7 @@ class POSSaleReceiptEscposView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Order ticket bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="Order ticket payload.")},
@@ -3470,7 +3476,7 @@ class OrderTicketEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.orderman.models import Order
@@ -3538,7 +3544,7 @@ class OrderDanfeEscposView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Courier ticket bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="Courier ticket payload.")},
@@ -3566,7 +3572,7 @@ class CourierTicketEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.orderman.models import Order
@@ -3597,7 +3603,7 @@ class CourierTicketEscposView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Order-ticket batch bytes (ESC/POS, base64) for a committed period",
         responses={200: OpenApiResponse(description="Consecutive order tickets on one roll.")},
@@ -3624,14 +3630,15 @@ class OrderTicketBatchEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
-    def get(self, request):
+    def post(self, request):
         import base64
 
         from shopman.backstage.services import order_ticket as tickets
 
-        date_from, date_to = tickets.parse_period(request.GET.get("date_from"), request.GET.get("date_to"))
+        body = request.data
+        date_from, date_to = tickets.parse_period(body.get("date_from"), body.get("date_to"))
         orders = tickets.select_refs(
-            tickets.orders_for_period(date_from, date_to), tickets.parse_refs(request.GET.get("refs")),
+            tickets.orders_for_period(date_from, date_to), tickets.parse_refs(body.get("refs")),
         )
         if len(orders) > tickets.MAX_BATCH:
             return Response(

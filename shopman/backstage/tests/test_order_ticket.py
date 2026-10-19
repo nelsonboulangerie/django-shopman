@@ -529,7 +529,7 @@ def test_o_servidor_entrega_os_bytes_prontos_de_UMA_filipeta(logado, shop):
     """A tela relaia; ela não sabe compor ESC/POS nem precisa saber."""
     order = _order("ORD-E1")
 
-    corpo = logado.get(reverse("api-backstage-order-ticket-escpos", args=[order.ref])).json()
+    corpo = logado.post(reverse("api-backstage-order-ticket-escpos", args=[order.ref])).json()
 
     papel = base64.b64decode(corpo["payload_b64"])
     assert papel.startswith(bytes([0x1B, 0x40]))
@@ -538,7 +538,7 @@ def test_o_servidor_entrega_os_bytes_prontos_de_UMA_filipeta(logado, shop):
 
 
 def test_filipeta_de_pedido_inexistente_e_404(logado, shop):
-    assert logado.get(reverse("api-backstage-order-ticket-escpos", args=["NAO-EXISTE"])).status_code == 404
+    assert logado.post(reverse("api-backstage-order-ticket-escpos", args=["NAO-EXISTE"])).status_code == 404
 
 
 def test_staff_SEM_manage_orders_nao_imprime_filipeta(client, db, shop):
@@ -546,7 +546,7 @@ def test_staff_SEM_manage_orders_nao_imprime_filipeta(client, db, shop):
     client.login(username="sem-permissao", password="pw")
     order = _order("ORD-E2")
 
-    resposta = client.get(reverse("api-backstage-order-ticket-escpos", args=[order.ref]))
+    resposta = client.post(reverse("api-backstage-order-ticket-escpos", args=[order.ref]))
 
     assert resposta.status_code in (401, 403)
 
@@ -559,8 +559,8 @@ def test_a_SEGUNDA_composicao_sai_carimbada(logado, shop):
     order = _order("ORD-E3")
     url = reverse("api-backstage-order-ticket-escpos", args=[order.ref])
 
-    primeira = logado.get(url).json()
-    segunda = logado.get(url).json()
+    primeira = logado.post(url).json()
+    segunda = logado.post(url).json()
 
     assert primeira["reprint"] is False
     assert segunda["reprint"] is True
@@ -571,7 +571,7 @@ def test_a_SEGUNDA_composicao_sai_carimbada(logado, shop):
 def test_o_carimbo_fica_gravado_no_pedido(logado, shop):
     order = _order("ORD-E4")
 
-    logado.get(reverse("api-backstage-order-ticket-escpos", args=[order.ref]))
+    logado.post(reverse("api-backstage-order-ticket-escpos", args=[order.ref]))
 
     order.refresh_from_db()
     assert order.data["ticket_printed_at"]
@@ -584,7 +584,7 @@ def test_o_lote_carimba_pedido_a_pedido(logado, shop):
     ja_impresso.save(update_fields=["data"])
     novo = _order("ORD-E7", delivery_date=hoje.isoformat())
 
-    corpo = logado.get(
+    corpo = logado.post(
         reverse("api-backstage-order-tickets-escpos"),
         {"date_from": hoje.isoformat(), "date_to": hoje.isoformat()},
     ).json()
@@ -602,7 +602,7 @@ def test_o_lote_sai_como_filipetas_CONSECUTIVAS_num_trabalho_so(logado, shop):
     _order("ORD-E8", delivery_date=hoje.isoformat())
     _order("ORD-E9", delivery_date=hoje.isoformat())
 
-    corpo = logado.get(
+    corpo = logado.post(
         reverse("api-backstage-order-tickets-escpos"),
         {"date_from": hoje.isoformat(), "date_to": hoje.isoformat()},
     ).json()
@@ -615,7 +615,7 @@ def test_o_lote_sai_como_filipetas_CONSECUTIVAS_num_trabalho_so(logado, shop):
 def test_periodo_sem_pedido_devolve_lote_vazio(logado, shop):
     futuro = (timezone.localdate() + timedelta(days=400)).isoformat()
 
-    corpo = logado.get(
+    corpo = logado.post(
         reverse("api-backstage-order-tickets-escpos"), {"date_from": futuro, "date_to": futuro}
     ).json()
 
@@ -630,7 +630,7 @@ def test_lote_maior_que_a_bobina_e_RECUSADO_antes_de_carimbar(logado, shop, monk
     a = _order("ORD-E10", delivery_date=hoje.isoformat())
     _order("ORD-E11", delivery_date=hoje.isoformat())
 
-    resposta = logado.get(
+    resposta = logado.post(
         reverse("api-backstage-order-tickets-escpos"),
         {"date_from": hoje.isoformat(), "date_to": hoje.isoformat()},
     )
@@ -640,12 +640,47 @@ def test_lote_maior_que_a_bobina_e_RECUSADO_antes_de_carimbar(logado, shop, monk
     assert "ticket_printed_at" not in (a.data or {})
 
 
+def test_GET_nao_compoe_nem_carimba_via_nenhuma(logado, shop):
+    """Pedir os bytes é emitir a via: só o POST compõe. Um GET (pré-carga, aba
+    reaberta, robô) nunca gasta a primeira via do pedido."""
+    hoje = timezone.localdate()
+    order = _order("ORD-GET", delivery_date=hoje.isoformat())
+
+    rotas = (
+        reverse("api-backstage-order-ticket-escpos", args=[order.ref]),
+        reverse("api-backstage-order-courier-ticket-escpos", args=[order.ref]),
+        reverse("api-backstage-order-tickets-escpos") + f"?date_from={hoje}&date_to={hoje}",
+    )
+    for rota in rotas:
+        assert logado.get(rota).status_code == 405
+
+    order.refresh_from_db()
+    assert "ticket_printed_at" not in (order.data or {})
+    assert "courier_ticket_printed_at" not in (order.data or {})
+
+
+def test_o_lote_le_periodo_e_recorte_do_corpo_JSON(logado, shop):
+    """O corpo que a tela manda: período e refs separados por vírgula."""
+    hoje = timezone.localdate()
+    a = _order("ORD-J1", delivery_date=hoje.isoformat())
+    _order("ORD-J2", delivery_date=hoje.isoformat())
+
+    corpo = logado.post(
+        reverse("api-backstage-order-tickets-escpos"),
+        data={"date_from": hoje.isoformat(), "date_to": hoje.isoformat(), "refs": a.ref},
+        content_type="application/json",
+    ).json()
+
+    assert corpo["refs"] == [a.ref]
+    assert corpo["reprint_count"] == 0
+
+
 # ── A rota do lote não pode ser engolida pelo `<str:ref>` ─────────────────
 
 
 def test_a_rota_do_lote_nao_e_confundida_com_um_ref_de_pedido(logado, shop):
     """⚠️ ``orders/tickets/escpos/`` casa com ``orders/<str:ref>/…`` se vier depois."""
-    resposta = logado.get(reverse("api-backstage-order-tickets-escpos"))
+    resposta = logado.post(reverse("api-backstage-order-tickets-escpos"))
 
     assert resposta.status_code == 200
     assert "refs" in resposta.json()
@@ -677,7 +712,7 @@ def test_o_lote_imprime_so_o_recorte_visivel_na_ordem_do_painel(logado, shop):
     fora = _order("ORD-R2", delivery_date=hoje.isoformat())
     cedo = _order("ORD-R3", delivery_date=hoje.isoformat(), delivery_time_slot="slot-09")
 
-    corpo = logado.get(
+    corpo = logado.post(
         reverse("api-backstage-order-tickets-escpos"),
         {"date_from": hoje.isoformat(), "date_to": hoje.isoformat(), "refs": f"{tarde.ref},{cedo.ref}"},
     ).json()
@@ -692,7 +727,7 @@ def test_o_recorte_nunca_alarga_o_lote(logado, shop):
     hoje = timezone.localdate()
     longe = _order("ORD-R4", delivery_date=(hoje + timedelta(days=30)).isoformat())
 
-    corpo = logado.get(
+    corpo = logado.post(
         reverse("api-backstage-order-tickets-escpos"),
         {"date_from": hoje.isoformat(), "date_to": hoje.isoformat(), "refs": longe.ref},
     ).json()
