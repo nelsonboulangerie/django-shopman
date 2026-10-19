@@ -526,7 +526,15 @@ class DeviceCheckView(APIView):
         if not HAS_AUTH:
             return Response({"ok": True, "trusted": False, "phone": phone, **_session_payload(None)})
 
-        customer = auth_service.trusted_device_login(request, phone=phone)
+        try:
+            customer = auth_service.trusted_device_login(request, phone=phone)
+        except auth_service.TrustedDeviceIdentityConflict as exc:
+            # Falha fechado: o número tem mais de um dono e nenhum deles entra
+            # por aqui. O mesmo recado sai do pedido de código logo depois.
+            return Response(
+                {"detail": exc.detail, "field": "phone"},
+                status=status.HTTP_409_CONFLICT,
+            )
         if not customer:
             return Response({"ok": True, "trusted": False, "phone": phone, **_session_payload(None)})
 

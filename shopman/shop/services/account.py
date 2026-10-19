@@ -206,6 +206,13 @@ PHONE_TAKEN_DETAIL = "Este número já está em uso em outra conta."
 # precisa retirar os dois para que nenhum identificador antigo continue capaz
 # de resolver a identidade.
 PHONE_CONTACT_TYPES = ("phone", "whatsapp")
+# Canal por onde o código de troca de número saiu → origem gravada no contato
+# (valores de ``ContactPoint.VerificationMethod``). Canal fora desta lista não
+# prova posse de telefone, e a troca é recusada.
+PHONE_PROOF_VERIFICATION_METHODS = {
+    "sms": "otp_sms",
+    "whatsapp": "otp_whatsapp",
+}
 
 
 class PhoneChangeRefused(ValueError):
@@ -235,7 +242,7 @@ def _phone_belongs_to_someone_else(customer, phone: str) -> bool:
 
 
 @transaction.atomic
-def _set_primary_phone(customer, phone: str) -> None:
+def _set_primary_phone(customer, phone: str, *, proof: str) -> None:
     """Promove o número a contato principal do cliente — pelo Core, não à mão.
 
     ⚠️ O caminho intuitivo (``customer.phone = novo; customer.save()``) NÃO
@@ -266,6 +273,17 @@ def _set_primary_phone(customer, phone: str) -> None:
     from shopman.guestman.models import ContactPoint
     from shopman.guestman.services import identity as identity_service
 
+    # A origem da verificação é o canal por onde o código saiu de fato
+    # (``proof``), não o canal pedido: a cadeia de produção começa no SMS, e
+    # gravar "OTP via WhatsApp" fixo era carimbo falso.
+    verification_method = PHONE_PROOF_VERIFICATION_METHODS.get(proof)
+    if verification_method is None:
+        raise PhoneChangeRefused(
+            "Não foi possível confirmar o número. Peça um novo código.",
+            field="code",
+            error_code="unsupported_proof",
+        )
+
     if _phone_belongs_to_someone_else(customer, phone):
         raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
 
@@ -287,7 +305,7 @@ def _set_primary_phone(customer, phone: str) -> None:
                 is_primary=True,
             )
             if not contato.is_verified:
-                contato.mark_verified(ContactPoint.VerificationMethod.OTP_WHATSAPP)
+                contato.mark_verified(verification_method)
     except identity_service.ContactPointOwnershipConflict as exc:
         raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone") from exc
 
@@ -380,7 +398,11 @@ def confirm_phone_change(customer, raw_phone: str, code_input: str) -> str:
         if resultado.success:
             try:
                 with transaction.atomic():
-                    _set_primary_phone(locked_customer, phone)
+                    _set_primary_phone(
+                        locked_customer,
+                        phone,
+                        proof=resultado.delivery_method,
+                    )
             except IntegrityError:
                 # O savepoint reverte somente os contatos. O OTP confirmado
                 # continua consumido quando a transação externa fechar.

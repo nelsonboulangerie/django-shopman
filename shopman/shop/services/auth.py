@@ -19,10 +19,16 @@ def customer_by_uuid(customer_uuid):
     return customer_service.get_by_uuid(customer_uuid)
 
 
-def customer_by_phone(phone: str):
-    from shopman.guestman.services import customer as customer_service
+IDENTITY_CONFLICT_DETAIL = (
+    "Este número aparece em mais de um cadastro e, por segurança, não entramos "
+    "por ele agora. Fale com a gente para resolver."
+)
 
-    return customer_service.get_by_phone(phone)
+
+class TrustedDeviceIdentityConflict(Exception):
+    """O número do dispositivo confiável não tem um dono só: a entrada é recusada."""
+
+    detail = IDENTITY_CONFLICT_DETAIL
 
 
 def identity_by_customer_ref(customer_ref: str):
@@ -192,10 +198,15 @@ class ContactVerifyResult:
         success: bool,
         error_code: str = "",
         attempts_remaining: int | None = None,
+        delivery_method: str = "",
     ):
         self.success = success
         self.error_code = error_code
         self.attempts_remaining = attempts_remaining
+        # O canal por onde o código SAIU de fato (o doorman regrava o
+        # `delivery_method` do código quando a cadeia cai para o seguinte).
+        # É a prova da posse, e é o que o contato carimba como origem.
+        self.delivery_method = delivery_method
 
 
 def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> ContactVerifyResult:
@@ -250,8 +261,9 @@ def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> Contac
         # conferido não pode sobreviver para uma segunda tentativa, mesmo que a
         # troca seja recusada logo adiante por conflito.
         code.mark_verified(customer_uuid)
+        delivery_method = code.delivery_method
 
-    return ContactVerifyResult(success=True)
+    return ContactVerifyResult(success=True, delivery_method=delivery_method)
 
 
 def contact_verify_error_message(result: ContactVerifyResult) -> str:
@@ -297,6 +309,7 @@ def request_code_error_message(auth_result) -> str:
             "Não conseguimos enviar o código agora. Tente de novo em instantes "
             "ou entre pelo WhatsApp."
         ),
+        ErrorCode.IDENTITY_CONFLICT: IDENTITY_CONFLICT_DETAIL,
     }
     return error_map.get(
         auth_result.error_code,
@@ -323,6 +336,8 @@ def verify_error_message(auth_result) -> str:
         "Incorrect code.": "Código incorreto.",
         "Code expired. Please request a new one.": "Código expirado. Solicite um novo.",
         "Account not found. Please contact support.": "Conta não encontrada.",
+        "Identity ownership is conflicting.": IDENTITY_CONFLICT_DETAIL,
+        "This handle belongs to another account.": IDENTITY_CONFLICT_DETAIL,
     }
     raw_error = auth_result.error or ""
     error_msg = translations.get(raw_error, raw_error) or "Código inválido."
@@ -359,27 +374,55 @@ def safe_redirect_url(next_url: str | None, request) -> str:
 
 
 def trusted_device_login(request, *, phone: str):
-    """Authenticate request through trusted-device flow. Returns customer or None."""
-    customer_hint = customer_by_phone(phone)
-    if not customer_hint:
-        return None
+    """Entrar pelo dispositivo confiável. Devolve o cliente, ou None.
 
+    Quem diz de quem é o número é o porto de identidade do doorman
+    (``resolve_identity``), o mesmo que o login por código consulta. Uma
+    resolução paralela aqui seria a mesma decisão com dois donos: o
+    ``get_by_phone`` escolhe um dono por ordenação quando o número aparece em
+    dois cadastros, e o dispositivo confiável abriria a conta errada.
+
+    Conflito de dono falha FECHADO: ``TrustedDeviceIdentityConflict``, que a
+    superfície transforma em recusa com mensagem ao cliente. Nunca se escolhe
+    um dos donos.
+    """
     from django.contrib.auth import login
     from django.db import transaction
     from shopman.doorman.conf import get_adapter
+    from shopman.doorman.protocols.identity import IdentityConflict
     from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     from shopman.shop.services import account as account_service
     from shopman.shop.services.customer_sign_in import mark_method
 
+    adapter = get_adapter()
+    handle = adapter.login_handle(phone)
+    if handle.kind != "phone" or not handle.value:
+        return None
+    try:
+        identity_hint = adapter.resolve_identity(handle.kind, handle.value, purpose="login")
+    except IdentityConflict as exc:
+        raise TrustedDeviceIdentityConflict from exc
+    if identity_hint is None or not identity_hint.is_active:
+        return None
+
     with transaction.atomic():
         try:
-            customer = account_service.lock_active_customer(customer_uuid=customer_hint.uuid)
+            customer = account_service.lock_active_customer(customer_uuid=identity_hint.subject_id)
         except account_service.AccountUnavailable:
             # A exclusão pode vencer depois da leitura indicativa por telefone.
             # Login por dispositivo confiável é uma conveniência: nesse caso ele
             # simplesmente deixa de autenticar, sem transformar a corrida em 500.
+            return None
+        # Com a linha travada, o número ainda é desta conta? A troca de número
+        # pode ter vencido entre a leitura e o lock, e um conflito que surgiu
+        # nesse meio também recusa.
+        try:
+            still_owner = adapter.login_target_belongs_to_customer(identity_hint, handle)
+        except IdentityConflict as exc:
+            raise TrustedDeviceIdentityConflict from exc
+        if not still_owner:
             return None
         if not DeviceTrustService.check(request, "customer", customer.uuid):
             return None

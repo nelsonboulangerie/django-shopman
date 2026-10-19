@@ -182,7 +182,7 @@ def test_attach_binding_revalidates_phone_after_customer_lock(identity_context):
 
     with transaction.atomic():
         locked = account_service.lock_active_customer(customer_pk=customer.pk)
-        account_service._set_primary_phone(locked, "+5543999990003")
+        account_service._set_primary_phone(locked, "+5543999990003", proof="sms")
 
     with pytest.raises(service.BindingAttachmentRejected, match="identity_unverified"):
         service.attach_binding(ownerless.pk, scope, stale_resolution)

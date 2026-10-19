@@ -93,7 +93,7 @@ def _change_phone_while_holding_customer(
 
     with transaction.atomic():
         customer = Customer.objects.select_for_update().get(pk=customer_pk)
-        _set_primary_phone(customer, replacement)
+        _set_primary_phone(customer, replacement, proof="sms")
         changed.set()
         assert release.wait(10)
 
@@ -193,7 +193,7 @@ def test_concurrent_bridge_bind_and_shop_phone_writer_share_canonical_claim(
 
     def shop_write():
         try:
-            account_service._set_primary_phone(other_customer, value)
+            account_service._set_primary_phone(other_customer, value, proof="sms")
             return other_customer.uuid
         except account_service.ContactAlreadyTaken as exc:
             return exc

@@ -113,9 +113,19 @@ def test_invalid_integer_rules_names_only_non_convertible_fields():
 
 
 def test_trusted_device_login_refuses_an_unknown_phone(monkeypatch):
+    from shopman.doorman import conf as doorman_conf
+    from shopman.doorman.protocols.identity import IdentityHandle
+
     from shopman.shop.services import auth
 
-    monkeypatch.setattr(auth, "customer_by_phone", lambda _phone: None)
+    class _NoOwner:
+        def login_handle(self, raw):
+            return IdentityHandle(kind="phone", value=raw, verified=False, primary=False)
+
+        def resolve_identity(self, kind, value, *, purpose="login"):
+            return None
+
+    monkeypatch.setattr(doorman_conf, "get_adapter", lambda: _NoOwner())
 
     assert auth.trusted_device_login(SimpleNamespace(), phone="+5543999999999") is None
 

@@ -4838,6 +4838,7 @@
             "ContactAlreadyTaken",
             "PHONE_TAKEN_DETAIL",
             "PHONE_CONTACT_TYPES",
+            "PHONE_PROOF_VERIFICATION_METHODS",
             "PhoneChangeRefused",
             "_phone_belongs_to_someone_else",
             "_set_primary_phone",
@@ -5146,7 +5147,6 @@
           "symbols": [
             "customer_by_ref",
             "customer_by_uuid",
-            "customer_by_phone",
             "identity_by_customer_ref",
             "identify_manychat_subject"
           ]
@@ -5255,6 +5255,8 @@
         {
           "path": "shopman/shop/services/auth.py",
           "symbols": [
+            "IDENTITY_CONFLICT_DETAIL",
+            "TrustedDeviceIdentityConflict",
             "client_ip",
             "preserved_session_values",
             "trusted_device_login"
@@ -5268,7 +5270,8 @@
         "doorman"
       ],
       "ports": [
-        "shopman.doorman.conf:get_adapter"
+        "shopman.doorman.conf:get_adapter",
+        "shopman.doorman.protocols.identity"
       ],
       "events": [],
       "directives": [],
