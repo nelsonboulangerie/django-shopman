@@ -2175,6 +2175,25 @@ def _stamp_gateway_check(order) -> None:
         logger.debug("payment.gateway_check_stamp degraded", exc_info=True)
 
 
+def gateway_check_applies(order) -> bool:
+    """Este pedido é dos que a conferência com o gateway cobre? Só LÊ.
+
+    Cartão/link hospedado com intenção, pedido aberto (novo ou aceito) e ainda
+    sem captura suficiente. É o que a tela do operador lê para saber se pede o
+    comando de conferência (``reconcile_with_gateway_if_due``); o intervalo
+    mínimo entre perguntas fica no comando, não aqui.
+    """
+    from shopman.orderman.models import Order
+
+    payment = (order.data or {}).get("payment") or {}
+    method = str(payment.get("method") or "").lower()
+    if method not in HOSTED_CHECKOUT_METHODS or not payment.get("intent_ref"):
+        return False
+    if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
+        return False
+    return has_sufficient_captured_payment(order) is not True
+
+
 def reconcile_with_gateway_if_due(order) -> bool:
     """Volta do gateway: perguntar se pagou, e liquidar se pagou. Retorna se mudou.
 
@@ -2198,15 +2217,7 @@ def reconcile_with_gateway_if_due(order) -> bool:
     caso que já está coberto. O cartão é que não tinha rede nenhuma: o cliente
     SAI do site, e ao voltar não há sinal nenhum além desta conferência.
     """
-    from shopman.orderman.models import Order
-
-    payment = (order.data or {}).get("payment") or {}
-    method = str(payment.get("method") or "").lower()
-    if method not in HOSTED_CHECKOUT_METHODS or not payment.get("intent_ref"):
-        return False
-    if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
-        return False
-    if has_sufficient_captured_payment(order) is True:
+    if not gateway_check_applies(order):
         return False
     if not _gateway_recheck_is_due(order):
         return False

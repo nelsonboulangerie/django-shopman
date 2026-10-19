@@ -199,3 +199,40 @@ it("um recibo aplicado continua sucesso quando só a releitura falha", async () 
   expect(detail.mutationError.value).toContain("Ação confirmada");
   expect(env.fetchMock).toHaveBeenCalledTimes(1);
 });
+
+// A8-1: a leitura do detalhe não pergunta ao gateway; a tela pede o comando.
+describe("useOrderDetail: conferência do cartão", () => {
+  beforeEach(() => env.reset());
+
+  it("o pedido que deve cartão pede payment/check/ por POST ao abrir e relê se pagou", async () => {
+    env.fetchData.value = { order: { ref: "CARD-1", actions: [] }, payment_check_due: true };
+    env.fetchMock.mockResolvedValueOnce({ ok: true, changed: true, payment_check_due: true });
+    useOrderDetail("CARD-1");
+    await vi.waitFor(() => expect(env.refresh).toHaveBeenCalledTimes(1));
+    expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/orders/CARD-1/payment/check/", { method: "POST" });
+  });
+
+  it("sem mudança no gateway, não relê", async () => {
+    env.fetchData.value = { order: { ref: "CARD-2", actions: [] }, payment_check_due: true };
+    env.fetchMock.mockResolvedValueOnce({ ok: true, changed: false, payment_check_due: true });
+    useOrderDetail("CARD-2");
+    await vi.waitFor(() => expect(env.fetchMock).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(env.refresh).not.toHaveBeenCalled();
+  });
+
+  it("pedido que não deve cartão não pede nada", () => {
+    env.fetchData.value = { order: { ref: "CASH-1", actions: [] }, payment_check_due: false };
+    useOrderDetail("CASH-1");
+    expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a conferência que falha não derruba a tela", async () => {
+    env.fetchData.value = { order: { ref: "CARD-3", actions: [] }, payment_check_due: true };
+    env.fetchMock.mockRejectedValueOnce(new Error("503"));
+    const detail = useOrderDetail("CARD-3");
+    await vi.waitFor(() => expect(env.fetchMock).toHaveBeenCalledTimes(1));
+    expect(detail.order.value?.ref).toBe("CARD-3");
+    expect(env.refresh).not.toHaveBeenCalled();
+  });
+});

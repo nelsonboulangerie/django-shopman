@@ -106,10 +106,7 @@ DOMAIN_KERNEL_PACKAGES = {
 # catraca nos dois sentidos: escrita NOVA reprova, e linha que ficou velha
 # (escrita resolvida, linha esquecida) também. Cada grupo é uma frente própria.
 # Chave: (arquivo, chamada no GET) -> quantas vezes.
-GET_WRITE_FOUND_BY_TRANSITIVE_GATE = {
-    # Gestor/PDV: o detalhe do pedido pergunta ao gateway do cartão (e carimba a pergunta).
-    ("shopman/backstage/api/operations.py", "_reconcile_payment_if_due"): 2,
-}
+GET_WRITE_FOUND_BY_TRANSITIVE_GATE: dict[tuple[str, str], int] = {}
 KNOWN_NON_MUTATING_GET_CALLS = {"response.add_post_render_callback"}
 
 PROTECTED_KERNEL_PACKAGES = (

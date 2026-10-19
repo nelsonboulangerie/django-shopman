@@ -1864,19 +1864,40 @@ class DayClosingView(APIView):
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
 
 
-def _reconcile_payment_if_due(order) -> None:
-    """Pergunta ao gateway (throttled) se este pedido de cartão já foi pago.
+def _payment_check_due(order) -> bool:
+    """A tela deve pedir a conferência do pagamento (``payment/check/``)? Só LÊ.
 
-    Mesma função que a volta do Stripe usa na loja — um dono só para a regra,
-    duas portas de entrada. Degrada em silêncio: a tela do operador não pode
-    cair porque o provedor não respondeu.
+    Cartão/link em aberto, sem captura. Degrada para ``False``: a leitura do
+    pedido não pode cair porque o Payman não respondeu.
     """
     try:
         from shopman.shop.services import payment as payment_service
 
-        payment_service.reconcile_with_gateway_if_due(order)
+        return payment_service.gateway_check_applies(order)
+    except Exception:
+        logger.warning("order_detail.payment_check_due degraded ref=%s", order.ref, exc_info=True)
+        return False
+
+
+def _check_payment_with_gateway(order) -> bool:
+    """Pergunta ao gateway (throttled) se este pedido de cartão já foi pago.
+
+    Mesma função que a volta do Stripe usa na loja: um dono só para a regra,
+    duas portas de entrada. Degrada em silêncio (``False``): o gesto do
+    operador não pode cair porque o provedor não respondeu.
+    """
+    try:
+        from shopman.shop.services import payment as payment_service
+
+        return payment_service.reconcile_with_gateway_if_due(order)
     except Exception:
         logger.warning("order_detail.gateway_reconcile degraded ref=%s", order.ref, exc_info=True)
+        return False
+
+
+def _payment_check_response(order) -> Response:
+    changed = _check_payment_with_gateway(order)
+    return Response({"ok": True, "changed": changed, "payment_check_due": _payment_check_due(order)})
 
 
 @extend_schema_view(
@@ -1894,24 +1915,55 @@ class OrderDetailView(OperationalObservationMixin, APIView):
         order = orders_service.find_order(ref)
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
-        # ⚠️ O OPERADOR TAMBÉM PRECISA PODER PERGUNTAR AO GATEWAY.
-        #
-        # A reconciliação contra webhook perdido nasceu só no acompanhamento do
-        # cliente, e isso deixou a verdade do Gestor pendurada no navegador de
-        # outra pessoa: cliente que paga e fecha a aba (ou paga em outro
-        # dispositivo) some do circuito, e o card fica em "Aguardando pagamento…"
-        # sem que exista, na loja, um gesto capaz de resolver. O worker resgata
-        # em minutos; abrir o pedido resolve agora.
-        #
-        # Custo: o mesmo throttle de ``GATEWAY_RECHECK_SECONDS`` do cliente, e
-        # só para cartão em aberto. A fila (``OrderQueueView``) segue fora
-        # disto de propósito — ela relê o board inteiro o tempo todo, e uma
-        # chamada por card viraria enxurrada no provedor.
-        _reconcile_payment_if_due(order)
+        # Leitura não produz efeito (A8-1). A pergunta ao gateway é o comando
+        # ``POST orders/<ref>/payment/check/`` (``OrderPaymentCheckView``), que a
+        # tela pede ao abrir o pedido enquanto ``payment_check_due`` diz que ele
+        # deve cartão.
         proj = build_operator_order(order, user=request.user)
         # A impressora desta estação, a mesma que o quadro recebe: o "Imprimir Via
         # Pedido" do detalhe sai por ela (P2-19).
-        return Response(read_data(order=projection_data(proj), device_agent=_station_device_agent(request)))
+        return Response(
+            read_data(
+                order=projection_data(proj),
+                device_agent=_station_device_agent(request),
+                payment_check_due=_payment_check_due(order),
+            )
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Ask the card gateway now whether this order was paid",
+        responses={200: OpenApiResponse(description="Checked; `changed` says the payment moved.")},
+    ),
+)
+class OrderPaymentCheckView(APIView):
+    """⚠️ O OPERADOR TAMBÉM PRECISA PODER PERGUNTAR AO GATEWAY.
+
+    A reconciliação contra webhook perdido nasceu só no acompanhamento do
+    cliente, e isso deixou a verdade do Gestor pendurada no navegador de outra
+    pessoa: cliente que paga e fecha a aba (ou paga em outro dispositivo) some do
+    circuito, e o card fica em "Aguardando pagamento…" sem que exista, na loja,
+    um gesto capaz de resolver. O worker (``reconcile_payments``) resgata em
+    minutos; abrir o pedido resolve agora: a tela do detalhe pede este comando
+    ao abrir, enquanto o detalhe diz ``payment_check_due``.
+
+    Custo: o mesmo throttle de ``GATEWAY_RECHECK_SECONDS`` do cliente, e só para
+    cartão em aberto. A fila (``OrderQueueView``) segue fora disto de propósito:
+    ela relê o board inteiro o tempo todo, e uma chamada por card viraria
+    enxurrada no provedor. Era o GET do detalhe que perguntava, e leitura com
+    efeito perguntava a cada releitura da tela.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return _payment_check_response(order)
 
 
 @extend_schema_view(
@@ -3035,12 +3087,41 @@ class POSPreorderDetailView(APIView):
         order = preorders.find_preorder(ref)
         if order is None:
             return Response({"detail": "Encomenda não encontrada."}, status=404)
-        # A mesma pergunta ao gateway que o Gestor faz ao abrir o pedido: o
-        # balcão vai receber o saldo, e o cartão pago cujo webhook se perdeu não
-        # pode aparecer como "a pagar" justo aqui.
-        _reconcile_payment_if_due(order)
+        # Leitura não produz efeito (A8-1): a pergunta ao gateway é o comando
+        # ``POST pos/preorders/<ref>/payment/check/``, que a tela pede ao abrir
+        # enquanto ``payment_check_due`` diz que a encomenda deve cartão.
         projection = build_operator_order(order, user=request.user, context="pos")
-        return Response(read_data(order=projection_data(projection)))
+        return Response(
+            read_data(order=projection_data(projection), payment_check_due=_payment_check_due(order))
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Ask the card gateway now whether this preorder was paid",
+        responses={200: OpenApiResponse(description="Checked; `changed` says the payment moved."), 404: OpenApiResponse(description="Not a preorder.")},
+    ),
+)
+class POSPreorderPaymentCheckView(APIView):
+    """A mesma pergunta ao gateway que o Gestor faz ao abrir o pedido, no balcão.
+
+    O balcão vai receber o saldo, e o cartão pago cujo webhook se perdeu não pode
+    aparecer como "a pagar" justo aqui. A tela do detalhe da encomenda pede este
+    comando ao abrir, enquanto o detalhe diz ``payment_check_due``. Mesmo corte
+    e mesma porta do detalhe (``POSPreorderDetailView``).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections import preorders
+
+        order = preorders.find_preorder(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        return _payment_check_response(order)
 
 
 @extend_schema_view(
