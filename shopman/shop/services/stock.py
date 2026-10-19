@@ -53,6 +53,28 @@ def is_untracked_hold_entry(entry: dict) -> bool:
     return entry.get("is_tracked") is False
 
 
+def hold_pks(entries) -> list[int]:
+    """PKs das reservas de ``order.data["hold_ids"]``, só no formato canônico.
+
+    Cada entrada é ``{sku, hold_id: "hold:N", qty}`` ou o marcador de SKU sem
+    ledger (:func:`untracked_hold_entry`, que não tem reserva). Qualquer outra
+    forma (lista de ids, ``hold_id`` sem prefixo) não é dado que este sistema
+    grava: falha gritando, em vez de ler zero reservas em silêncio.
+    """
+    pks: list[int] = []
+    for entry in entries or ():
+        if not isinstance(entry, dict):
+            raise ValueError(f"hold_ids fora do formato canônico: {entry!r}")
+        if is_untracked_hold_entry(entry):
+            continue
+        raw = entry.get("hold_id")
+        prefix, sep, number = str(raw or "").partition(":")
+        if prefix != "hold" or not sep or not number.isdigit():
+            raise ValueError(f"hold_id fora do formato canônico: {raw!r}")
+        pks.append(int(number))
+    return pks
+
+
 def _items_to_hold(order) -> list[dict]:
     """As linhas que a reserva cobre: as que VALEM agora.
 
@@ -1110,4 +1132,4 @@ def _is_untracked(sku: str, prior_decisions: dict[str, dict], adapter) -> bool:
     if sku in prior_decisions:
         return prior_decisions[sku].get("is_tracked") is False
     info = adapter.get_availability(sku)
-    return not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions")))
+    return not info.get("is_paused", False) and info["is_tracked"] is False

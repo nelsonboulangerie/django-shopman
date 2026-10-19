@@ -592,37 +592,26 @@ def _earliest_fulfillable_date():
 
 
 def _line_availability(
-    sku: str, qty: int, avail: dict | None, own_holds: dict[str, Decimal],
-) -> tuple[bool, int | None]:
-    """Own-hold-corrected availability: a line is unavailable only when the
-    shortage is real (external), not when the session's own hold drained
-    ``total_promisable``. Returns ``(is_available, available_qty)``.
+    sku: str, qty, avail: dict | None, own_holds: dict[str, Decimal],
+) -> tuple[bool, int | Decimal | None]:
+    """Decisão do Stockman para a linha, com a reserva da própria sessão como dela.
+
+    Uma linha só fica indisponível quando a falta é real (de fora), nunca porque
+    o hold da própria sessão drenou ``total_promisable``; e o SKU sem ledger
+    (nenhum ``Quant``) não tem teto, como o Stockman e o commit decidem. A regra
+    mora em ``catalog_context.session_line_promise``. Returns
+    ``(is_available, available_qty)``; ``None`` = sem teto finito.
     """
     if avail is None:
         return True, None
-    if avail.get("availability_policy") == "demand_ok" and not avail.get("is_paused", False):
-        return True, None
+    from shopman.shop.projections import catalog_context
 
-    if avail.get("is_paused", False):
-        # Pausado é decisão do operador, não escassez: nem o próprio hold da
-        # sessão reabre a linha.
-        return False, 0
-
-    own_hold = own_holds.get(sku, Decimal("0"))
-    promisable = avail.get("total_promisable")
-    if promisable is None:
-        return True, None
-    # ``total_promisable`` já é a promessa da POLÍTICA (``stock_only`` →
-    # só o pronto; ``planned_ok`` → pronto + em produção + fornada
-    # planejada dentro do horizonte) e já desconta margem e holds — o da
-    # própria sessão inclusive, por isso ele volta somado. Ler
-    # ``ready_physical`` aqui era contar só a prateleira, e a linha em fila
-    # nascia com máximo 0: o stepper travava no "+" e o checkout bloqueava
-    # junto do selo que prometia a fornada (WP-P2E F1).
-    max_orderable = max(Decimal("0"), Decimal(str(promisable)) + own_hold)
-    if max_orderable == max_orderable.to_integral_value():
-        max_orderable = int(max_orderable)
-    return max_orderable >= qty, max_orderable
+    approved, ceiling = catalog_context.session_line_promise(
+        sku, qty, avail, own_holds.get(sku, Decimal("0")),
+    )
+    if ceiling is not None and ceiling == ceiling.to_integral_value():
+        ceiling = int(ceiling)
+    return approved, ceiling
 
 
 def _discount_lines(discount_data: dict, pricing: dict) -> tuple[CartDiscountLineProjection, ...]:

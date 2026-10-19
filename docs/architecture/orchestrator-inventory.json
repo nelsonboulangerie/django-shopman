@@ -6690,6 +6690,7 @@
             "published_products",
             "published_products_by_collection",
             "related_skus",
+            "session_line_promise",
             "storefront_availability",
             "visible_in_channel",
             "visible_listing_items",
@@ -6735,6 +6736,7 @@
           "responsibility": "leitura",
           "symbols": [
             "StockShortfallProjection",
+            "_qty",
             "availability_dates",
             "cart_stock_shortfalls",
             "customer_checkout_defaults",
@@ -6757,7 +6759,6 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "_availability_for_sku",
             "customer_name_by_phone",
             "logger",
             "loyalty_balance",
@@ -6976,7 +6977,6 @@
             "_event_for_status",
             "_fiscal_note",
             "_fulfillment_wait_context",
-            "_hold_pk",
             "_is_payment_timeout_cancelled",
             "_iso",
             "_mock_confirmation_projection_value",

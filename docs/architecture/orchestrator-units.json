@@ -15551,6 +15551,7 @@
           "symbols": [
             "untracked_hold_entry",
             "is_untracked_hold_entry",
+            "hold_pks",
             "hold",
             "fulfill",
             "release",
