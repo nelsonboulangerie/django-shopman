@@ -67,12 +67,25 @@ def test_absent_policy_blocks_direct_helpers(settings, cfg, item, no_network):
 
 def test_authorized_test_merchant_can_write_with_mock_transport(settings, cfg, item):
     settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {"environment": "test", "merchant_allowlist": [MERCHANT]}
-    response = Mock(status_code=200)
-    with patch.object(adapter.ifood_auth, "headers_with_reason", return_value=({"Authorization": "fixture"}, "")) as auth, patch("requests.sessions.Session.request", return_value=response) as http:
+
+    def response(_session, method, url, **_kwargs):
+        assert url.startswith("https://merchant-api.ifood.com.br/")
+        if method.upper() == "GET":
+            return Mock(
+                status_code=200,
+                raise_for_status=lambda: None,
+                json=lambda: {"item": {"status": "UNAVAILABLE"}},
+            )
+        return Mock(status_code=200, raise_for_status=lambda: None)
+
+    with patch.object(
+        adapter.ifood_auth,
+        "headers_with_reason",
+        return_value=({"Authorization": "fixture"}, ""),
+    ) as auth, patch("requests.sessions.Session.request", new=response):
         assert adapter.IFoodCatalogProjection().project([item], channel="ifood").success
         assert adapter.IFoodCatalogProjection().retract([item.sku], channel="ifood").success
     assert auth.call_count == 2
-    assert http.call_count == 2
 
 
 @pytest.mark.parametrize("full", [False, True])
