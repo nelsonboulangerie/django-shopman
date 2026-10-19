@@ -139,7 +139,7 @@ Eles não gravam nada em lugar nenhum.
 9. **Nada auto-suprimível atravessa.** A Meta não aceita parâmetro vazio, então todo pedaço
    que o código apaga sozinho quando não há dado **não pode virar variável**: `{eta_note}`,
    `{courier_tracking_suffix}`, `{reserve_note}`, `{deadline_note}`, `{pix_suffix}`,
-   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`. Eles continuam saindo inteiros
+   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`, `{commitment_suffix}`. Eles continuam saindo inteiros
    por SMS e e-mail, que interpolam na hora. No template, ou a informação é fixa no texto,
    ou fica de fora.
 
@@ -235,6 +235,11 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 - Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
+> ℹ️ **A data da encomenda não está neste template.** O texto do SMS, do e-mail e do
+> WhatsApp dentro da janela diz "confirmado para retirada amanhã, a partir das 9h"
+> (`{commitment_suffix}`, auto-suprimível, regra 9); o template aprovado, não. Levar a data
+> ao WhatsApp fora da janela pede um template-variante com a data fixa como variável.
+>
 > ⚠️ **Sem cumprimento e sem `customer_name`** — a numeração andou, `{{1}}` é o código do
 > pedido. Este texto passou por três versões em dois dias (24/09 sem agradecimento, 25/09
 > com "Oi, Ana!" e "Obrigado por nos prestigiar", e a revisão final); esta é a que vale.
