@@ -1338,7 +1338,8 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PaymentIntent",
-            "PaymentResult"
+            "PaymentResult",
+            "pix_timeout_minutes_from"
           ]
         }
       ]
@@ -2470,8 +2471,9 @@
             "ChannelConfig",
             "InstanceConfigurationError",
             "QUALITY_OK_GRADE_REFS",
+            "SHOP_RULE_POLICY_KEYS",
             "STAGE_GOAL_DEFAULTS",
-            "_safe_init",
+            "_section",
             "deep_merge",
             "quality_grade_refs_for_channel"
           ]
