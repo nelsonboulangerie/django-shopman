@@ -14,7 +14,7 @@ from shopman.orderman.models import Order
 
 from shopman.shop import lifecycle
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _order(ref, *, status=Order.Status.NEW, data=None):

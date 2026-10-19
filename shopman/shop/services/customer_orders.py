@@ -71,32 +71,6 @@ def grant_order_access(request, order_ref: str) -> None:
     request.session.modified = True
 
 
-# Momento "acabei de fazer o pedido": marcado no checkout, consumido UMA vez
-# no primeiro carregamento do acompanhamento. Não vive na URL — link
-# compartilhado não mostra a celebração de outra pessoa — e não repete no
-# refresh.
-JUST_PLACED_SESSION_KEY = "just_placed_order_ref"
-
-
-def mark_just_placed(request, order_ref: str) -> None:
-    """Marca, na sessão, que este pedido acabou de ser fechado aqui."""
-    if not order_ref or not hasattr(request, "session"):
-        return
-    request.session[JUST_PLACED_SESSION_KEY] = str(order_ref)
-    request.session.modified = True
-
-
-def consume_just_placed(request, order_ref: str) -> bool:
-    """True uma única vez, no primeiro acesso após o checkout."""
-    if not order_ref or not hasattr(request, "session"):
-        return False
-    if request.session.get(JUST_PLACED_SESSION_KEY) != str(order_ref):
-        return False
-    request.session.pop(JUST_PLACED_SESSION_KEY, None)
-    request.session.modified = True
-    return True
-
-
 def request_can_access_order(request, order) -> bool:
     """Return True for staff, same checkout session, or matching customer identity."""
     user = getattr(request, "user", None)
@@ -516,27 +490,29 @@ def _parse_payment_deadline(value) -> datetime | None:
 def ensure_payment_intent(order) -> bool:
     """Ensure a digital payment order has a Payman intent before payment UI.
 
-    This is a recovery guard for stale/misconfigured data. The customer-facing
-    storefront routes PIX/card orders to the payment page immediately, so a
-    missing intent must be repaired before payment actions are shown.
-    ``payment_service.initiate`` is idempotent and remains the only writer.
+    A cobrança nasce no lifecycle (commit ou aceite). Isto é a recuperação do
+    que o lifecycle não conseguiu fechar, e é COMANDO: roda no POST
+    ``orders/<ref>/payment/check/`` do acompanhamento (e na captura simulada),
+    nunca numa leitura. ``payment_service.initiate`` is idempotent and remains
+    the only writer.
     """
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
     if method not in {"pix", "card"}:
         return False
     if order.status in order.get_terminal_statuses():
-        # Pedido morto (cancelado, concluído, devolvido) não ganha cobrança. Todo
-        # GET do acompanhamento passa por aqui; sem esta porta, o Pix de um pedido
-        # recusado antes do aceite nascia na primeira recarga da tela — um QR
-        # pagável na Efí para um pedido que ninguém vai entregar.
+        # Pedido morto (cancelado, concluído, devolvido) não ganha cobrança. Sem
+        # esta porta, o Pix de um pedido recusado antes do aceite nascia na
+        # primeira conferência da tela: um QR pagável na Efí para um pedido que
+        # ninguém vai entregar.
         return False
     if payment.get("intent_ref"):
         if method != "pix" or payment.get("copy_paste") or payment.get("qr_code"):
             return True
-        # Efí persists the intent/txid before fetching the QR. A reload is the
-        # recovery trigger for that partial creation; an intent_ref by itself
-        # is not a payable artifact and must not be reported as ready.
+        # Efí persists the intent/txid before fetching the QR. The payment
+        # check of the tracking screen is the recovery trigger for that partial
+        # creation; an intent_ref by itself is not a payable artifact and must
+        # not be reported as ready.
         payment_service.initiate(order)
         refreshed = (order.data or {}).get("payment") or {}
         return bool(
@@ -758,8 +734,6 @@ __all__ = [
     "payment_is_due",
     "resolve_confirmation_timeout_if_due",
     "resolve_payment_timeout_if_due",
-    "mark_just_placed",
-    "consume_just_placed",
     "request_can_access_order",
     "user_can_access_order",
 ]

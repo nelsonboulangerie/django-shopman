@@ -9,6 +9,7 @@ import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
+import { markJustPlaced } from '~/utils/justPlaced'
 import {
   addressSummary as buildAddressSummary,
   availableFulfillmentOptions,
@@ -1245,6 +1246,9 @@ async function submitCheckout () {
     // que não entrou deixaria inferir que o documento é de outra conta (a loja
     // nunca revela isso). A nota sai com o documento de qualquer jeito.
     confirmedTrackingUrl.value = response.next_url || `/pedido/${encodeURIComponent(response.order_ref)}`
+    // O confete do acompanhamento é deste navegador: é ele quem sabe que o pedido
+    // acabou de ser fechado (utils/justPlaced).
+    markJustPlaced(response.order_ref)
     clearCart()
     clearCheckoutDraft()
     attemptKey.value = createCheckoutAttemptKey()

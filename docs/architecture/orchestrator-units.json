@@ -15599,6 +15599,7 @@
           "symbols": [
             "untracked_hold_entry",
             "is_untracked_hold_entry",
+            "hold_pks",
             "hold",
             "fulfill",
             "release",
@@ -17954,47 +17955,6 @@
       ],
       "tests": [
         "shopman/shop/tests/test_orchestrator_policy_gaps.py::test_allowed_hosts_safety_is_fail_closed_only_outside_debug"
-      ],
-      "test_gap_reason": null,
-      "policy": true,
-      "out_of_extraction": false
-    },
-    {
-      "id": "channel.whatsapp-bootstrap-requirements",
-      "question": "Quais capacidades ausentes o bootstrap do WhatsApp deve completar sem sobrescrever a configuração do Admin?",
-      "owner": "channel.whatsapp-bootstrap",
-      "responsibility": "decisão",
-      "public_entrypoint": "shopman.shop.management.commands.bootstrap_whatsapp_channel:Command.handle",
-      "authoritative_symbols": [
-        "shopman.shop.management.commands.bootstrap_whatsapp_channel:_required_keys"
-      ],
-      "entrypoint_kind": "symbol",
-      "sources": [
-        {
-          "path": "shopman/shop/management/commands/bootstrap_whatsapp_channel.py",
-          "symbols": [
-            "CHANNEL_CONFIG",
-            "Command",
-            "REQUIRED_KEYS",
-            "_required_keys",
-            "_storefront_ref"
-          ]
-        }
-      ],
-      "touchpoints": [
-        "outro"
-      ],
-      "domains": [
-        "offerman"
-      ],
-      "ports": [],
-      "events": [],
-      "directives": [],
-      "config_surface": [
-        "SHOPMAN_STOREFRONT_CHANNEL_REF"
-      ],
-      "tests": [
-        "shopman/shop/tests/test_orchestrator_policy_gaps.py::test_whatsapp_bootstrap_requirements_include_the_runtime_storefront"
       ],
       "test_gap_reason": null,
       "policy": true,

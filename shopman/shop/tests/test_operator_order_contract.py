@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
 from django.test import TestCase
 from shopman.orderman.models import Directive, Order
 
 from shopman.shop.services.cancel_reasons import cancel_reason
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.operator_orders import cancel_order, reject_order
+
+pytestmark = pytest.mark.channels("web")
 
 
 def _order(ref: str, status: str) -> Order:

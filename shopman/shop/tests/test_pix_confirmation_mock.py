@@ -6,6 +6,7 @@ import base64
 import json
 from unittest.mock import patch
 
+import pytest
 from django.test import TestCase
 from shopman.orderman.exceptions import DirectiveTerminalError
 from shopman.orderman.models import Directive, Order
@@ -14,6 +15,8 @@ from shopman.payman.models import PaymentIntent
 
 from shopman.shop.adapters import payment_mock
 from shopman.shop.handlers.mock_pix import MOCK_PIX_CONFIRM, MockPixConfirmHandler
+
+pytestmark = pytest.mark.channels("web")
 
 
 class MockPixConfirmationTests(TestCase):

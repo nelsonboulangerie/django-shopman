@@ -219,6 +219,7 @@ POLICY: dict[str, Rule] = {
     "shop.Coupon": _keep("promoções e cupons: entram ou não no Dia 1 é decisão do dono"),
     "shop.AttributeDefinition": _keep(_CATALOG),
     "shop.RetiredProduct": _keep("lápides do catálogo (URL antiga responde 410)"),
+    "shop.InstanceApplyRecord": _keep("trilha do descritor de Instância (base do próximo apply)"),
     "shop.QualityGrade": _keep(_CONFIG),
     "shop.QualityDefect": _keep(_CONFIG),
     "shop.CatalogSnapshot": _keep("vínculo do catálogo com o iFood"),

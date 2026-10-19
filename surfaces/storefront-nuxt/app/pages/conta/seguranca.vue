@@ -262,12 +262,14 @@ async function exportData () {
   privacyIssue.value = ''
   privacyIssueTitle.value = ''
   try {
+    // POST: cada pedido abre um recibo de privacidade (LGPD), e GET não produz efeito.
     const response = await $fetch.raw<Blob>(apiPath('/api/v1/account/export/'), {
+      method: 'POST',
       credentials: 'include',
-      headers: { accept: 'application/json' },
+      headers: { ...(await csrfHeaders()), accept: 'application/json' },
       responseType: 'blob',
-      // ⚠️ O ofetch repete GET sozinho em 503 (e o 503 daqui é justamente o de exportação
-      // incompleta). Cada repetição abre um recibo de privacidade novo, sem ninguém pedir.
+      // ⚠️ Repetição automática em 503 (o 503 daqui é justamente o de exportação
+      // incompleta) abriria um recibo novo a cada volta, sem ninguém pedir.
       retry: 0
     })
     const artifact = response._data

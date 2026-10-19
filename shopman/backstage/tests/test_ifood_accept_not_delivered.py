@@ -22,7 +22,7 @@ from shopman.backstage.projections.order_queue import build_operator_order, buil
 from shopman.shop.directives import IFOOD_STATUS_CALLBACK
 from shopman.shop.services import ifood_accept_sync
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("ifood")]
 
 
 @pytest.fixture

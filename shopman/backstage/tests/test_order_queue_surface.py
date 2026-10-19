@@ -13,6 +13,8 @@ from shopman.orderman.models import Order, OrderItem
 from shopman.backstage.presentation.status import order_status_label
 from shopman.backstage.projections.order_queue import build_order_card, build_two_zone_queue
 
+pytestmark = pytest.mark.channels("pdv", "web")
+
 
 def _order(
     ref: str,

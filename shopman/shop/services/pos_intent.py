@@ -356,7 +356,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         # do quilo do catálogo em ``weighed_sale.apply_to_payload`` — que precisa
         # do banco e por isso roda no service, logo depois deste parser.
         qty = 1 if weighed else _positive_int(item.get("qty", 1), f"items.{idx}.qty")
-        unit_price_q = _nonnegative_int(item.get("unit_price_q", item.get("price_q", 0)), f"items.{idx}.unit_price_q")
+        unit_price_q = _nonnegative_int(item.get("unit_price_q", 0), f"items.{idx}.unit_price_q")
         entry = {
             "sku": sku,
             "name": _text(item.get("name"), limit=180),

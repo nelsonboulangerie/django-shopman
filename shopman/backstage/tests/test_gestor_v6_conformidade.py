@@ -26,7 +26,7 @@ from shopman.backstage.projections.order_queue import (
     build_two_zone_queue,
 )
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _order(ref: str, status: str, *, channel_ref: str = "web", payment: dict | None = None, data_extra: dict | None = None) -> Order:

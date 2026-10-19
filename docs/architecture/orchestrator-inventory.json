@@ -3989,29 +3989,6 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/bootstrap_whatsapp_channel.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "channel.whatsapp-bootstrap-requirements"
-      ],
-      "responsibilities": [
-        "decisão",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "CHANNEL_REF",
-            "LISTING_REF"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/management/commands/capture_ifood_catalog.py",
       "touchpoints": [
         "outro"
@@ -5146,25 +5123,6 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/setup_groups.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/management/commands/setup_operators.py",
       "touchpoints": [
         "outro"
@@ -5812,6 +5770,25 @@
             "IFoodInterruptionKind",
             "IFoodInterruptionState",
             "IFoodStoreStatus"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/models/instance_apply.py",
+      "touchpoints": [
+        "model"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "InstanceApplyRecord"
           ]
         }
       ]
@@ -6690,6 +6667,7 @@
             "published_products",
             "published_products_by_collection",
             "related_skus",
+            "session_line_promise",
             "storefront_availability",
             "visible_in_channel",
             "visible_listing_items",
@@ -6735,6 +6713,7 @@
           "responsibility": "leitura",
           "symbols": [
             "StockShortfallProjection",
+            "_qty",
             "availability_dates",
             "cart_stock_shortfalls",
             "customer_checkout_defaults",
@@ -6757,7 +6736,6 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "_availability_for_sku",
             "customer_name_by_phone",
             "logger",
             "loyalty_balance",
@@ -6976,7 +6954,6 @@
             "_event_for_status",
             "_fiscal_note",
             "_fulfillment_wait_context",
-            "_hold_pk",
             "_is_payment_timeout_cancelled",
             "_iso",
             "_mock_confirmation_projection_value",
@@ -8545,7 +8522,6 @@
           "symbols": [
             "ACTIVE_STATUSES",
             "DEFAULT_CHANNEL_REF",
-            "JUST_PLACED_SESSION_KEY",
             "MAX_SESSION_ORDER_ACCESS_REFS",
             "ORDER_ACCESS_SESSION_KEY",
             "_customer_identity_from_info",
@@ -8565,7 +8541,6 @@
             "add_reorder_items",
             "cancel",
             "confirm_received",
-            "consume_just_placed",
             "customer_can_access_order",
             "customer_identity_filter",
             "ensure_payment_intent",
@@ -8578,7 +8553,6 @@
             "last_reorder_context",
             "lock_customer_order",
             "logger",
-            "mark_just_placed",
             "mock_confirm_payment",
             "order_count_for_customer",
             "order_matches_customer_identity",
@@ -11647,6 +11621,8 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "_DiscardPricingProbe",
+            "_ENGINE_DISCOUNTS_KEY",
+            "_NO_MANUAL_DISCOUNT",
             "_alert_fiscal_emit_failed",
             "_answer_sale_claim",
             "_append_delivery_ops",
@@ -11670,6 +11646,7 @@
             "_customer_by_ref_any_state",
             "_decimal_discount_value",
             "_digits",
+            "_engine_manual_discounts",
             "_ensure_contact_point",
             "_ensure_customer_address",
             "_ensure_customer_identifier",
@@ -11706,6 +11683,7 @@
             "_payload_commitment_date",
             "_payload_discount_q",
             "_payload_fulfillment_type",
+            "_payload_has_manual_discount",
             "_payload_has_tab_identity",
             "_payload_line_discounts_q",
             "_payload_manual_discount",
@@ -11738,6 +11716,7 @@
             "_resolve_pos_customer",
             "_resume_committed_sale",
             "_review_priced_lines",
+            "_run_pricing_probe",
             "_sale_already_committed",
             "_sale_claim_scope",
             "_sale_fiscal_hint",
@@ -11748,12 +11727,15 @@
             "_session_collects_at_handoff",
             "_session_has_customer",
             "_session_is_preorder",
+            "_session_prices_payload",
             "_session_tab_display",
             "_session_tab_ref",
             "_session_to_fire_lines",
             "_settle_after_shift_closed",
             "_settle_pos_sale",
             "_shift_for_refund",
+            "_stamp_discounts_left_to_the_save",
+            "_stamp_engine_manual_discounts",
             "_stamp_engine_prices",
             "_stamp_list_prices_from_session",
             "_stamp_pricing_channel",

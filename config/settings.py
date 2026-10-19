@@ -2175,6 +2175,15 @@ ASGI_APPLICATION = "config.asgi.application"
 # if this instance uses a different ref (e.g. "site", "loja").
 SHOPMAN_STOREFRONT_CHANNEL_REF = "web"
 
+# O descritor de Instância deste deployment (config/instances/<ref>.json). Os comandos
+# de release (`setup_groups`, `bootstrap_whatsapp_channel`) leem dele as personas RBAC e
+# o canal que garantem no banco vivo: uma definição só, versionada, sem segunda cópia em
+# código. O runtime NÃO lê este arquivo (o banco é a verdade de runtime). Outra
+# instalação aponta a env para o seu próprio descritor.
+SHOPMAN_INSTANCE_DESCRIPTOR = os.environ.get("SHOPMAN_INSTANCE_DESCRIPTOR") or os.path.join(
+    BASE_DIR, "config", "instances", "nelson.json"
+)
+
 # Base URL pública da LOJA (superfície Nuxt) — FONTE ÚNICA dos links de cliente que o
 # Django gera (notificações de pagamento/acompanhamento, magic links, "ver site").
 # O Django é headless: não serve páginas de cliente, só aponta para a loja Nuxt.

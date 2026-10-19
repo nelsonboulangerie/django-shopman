@@ -20,7 +20,7 @@ from shopman.shop.directives import COURIER_DISPATCH
 from shopman.shop.models import Shop
 from shopman.shop.services import courier
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("ifood", "pdv", "web")]
 
 MOCK_ADAPTER = "shopman.shop.adapters.courier_mock"
 

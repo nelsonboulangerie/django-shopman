@@ -29,7 +29,7 @@ import pytest
 from shopman.guestman import ConsentService
 from shopman.guestman.models import Customer
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _order(**overrides):

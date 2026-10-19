@@ -72,7 +72,6 @@ class OrderConversationView(APIView):
         except Http404:
             return Response({"detail": "Pedido não encontrado."}, status=404)
 
-        order_service.resolve_timeouts_if_due(order)
         channel_ref = str(request.query_params.get("channel_ref") or order.channel_ref or "whatsapp").strip()
         projection = build_order_conversation(order, channel_ref=channel_ref)
         serializer = RemoteConversationSerializer(projection_data(projection))

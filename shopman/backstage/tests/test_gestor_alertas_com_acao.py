@@ -30,7 +30,7 @@ from shopman.backstage.projections.alerts import readable_message
 from shopman.shop.models import Shop
 from shopman.shop.services.observability import create_operator_alert
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture

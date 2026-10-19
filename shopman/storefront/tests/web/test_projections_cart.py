@@ -333,6 +333,7 @@ class TestUnavailableLineOffersTheBell:
     def test_external_stockout_line_offers_the_bell(self, cart_session, product):
         proj = self._cart_with_availability(cart_session, product.sku, {
             "availability_policy": "planned_ok",
+            "is_tracked": True,
             "total_promisable": Decimal("0"),
             "is_planned": False,
         })
@@ -347,6 +348,7 @@ class TestUnavailableLineOffersTheBell:
         """Pausa é decisão do operador. Mesmo "Indisponível" na tela, sem sino."""
         proj = self._cart_with_availability(cart_session, product.sku, {
             "availability_policy": "planned_ok",
+            "is_tracked": True,
             "total_promisable": Decimal("0"),
             "is_paused": True,
         })
@@ -362,6 +364,7 @@ class TestUnavailableLineOffersTheBell:
 
         proj = self._cart_with_availability(cart_session, product.sku, {
             "availability_policy": "planned_ok",
+            "is_tracked": True,
             "total_promisable": Decimal("0"),
             "is_planned": False,
         })
@@ -374,6 +377,7 @@ class TestUnavailableLineOffersTheBell:
         """Sobrou 1 de 2: o avanço é "Usar 1 disponível", não esperar a volta."""
         proj = self._cart_with_availability(cart_session, product.sku, {
             "availability_policy": "planned_ok",
+            "is_tracked": True,
             "total_promisable": Decimal("1"),
             "is_planned": False,
         })

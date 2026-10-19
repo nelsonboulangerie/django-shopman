@@ -943,6 +943,24 @@ def reconcile_job_state(job: PrintJob) -> PrintJob:
         return locked
 
 
+def read_job_state(job: PrintJob, *, now=None) -> PrintJob:
+    """O estado que o relógio já decidiu, para LER: o mesmo veredito de
+    ``reconcile_job_state``, sem gravar nada.
+
+    O poll do operador é leitura e não produz efeito; quem grava o veredito é o
+    comando seguinte sobre o trabalho (repetir, reimprimir, confirmar) e o
+    ``maintenance_worker``. A instância devolvida não deve ser salva.
+    """
+    now = now or timezone.now()
+    if job.status in {PrintJob.Status.QUEUED, PrintJob.Status.PREPARED} and job.expires_at <= now:
+        job.status = PrintJob.Status.EXPIRED
+    elif job.status == PrintJob.Status.LEASED:
+        attempt = job.attempts.filter(status=PrintAttempt.Status.LEASED).order_by("-sequence").first()
+        if attempt is not None and attempt.lease_expires_at and attempt.lease_expires_at <= now:
+            job.status = PrintJob.Status.UNCERTAIN
+    return job
+
+
 _STATUS_MESSAGES = {
     PrintJob.Status.PREPARED: "Etiqueta preparada; abra o diálogo de impressão do navegador.",
     PrintJob.Status.QUEUED: "Aguardando estação de impressão.",

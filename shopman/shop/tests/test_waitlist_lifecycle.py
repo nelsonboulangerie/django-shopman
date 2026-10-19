@@ -29,7 +29,7 @@ from shopman.stockman.services.holds import (
 
 from shopman.shop.services import waitlist
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 requires_postgres = pytest.mark.skipif(
     "sqlite" in settings.DATABASES["default"]["ENGINE"],

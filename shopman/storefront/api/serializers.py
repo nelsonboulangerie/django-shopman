@@ -487,8 +487,11 @@ class OrderTrackingSerializer(serializers.Serializer):
     whatsapp_url = serializers.CharField(allow_blank=True, required=False)
     support_url = serializers.CharField(allow_blank=True, required=False)
     share_text = serializers.CharField(allow_blank=True, required=False)
-    # Momento yoin — só presentes no primeiro acesso depois do checkout.
-    just_placed = serializers.BooleanField(required=False, default=False)
+    # Momento yoin: o pedido já pode ser comemorado (não deve pagamento, não
+    # morreu). Quem sabe que ele ACABOU de ser fechado é o navegador do checkout.
+    placement_secured = serializers.BooleanField(required=False, default=False)
+    # O pedido deve pagamento agora: a tela pede ``orders/<ref>/payment/check/``.
+    payment_due = serializers.BooleanField(required=False, default=False)
     share_cta = serializers.CharField(allow_blank=True, required=False)
     is_debug = serializers.BooleanField()
     last_updated_iso = serializers.CharField()

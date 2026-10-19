@@ -131,7 +131,7 @@ ANON_401_ENDPOINTS = [
     ("get", "/api/v1/account/addresses/"),
     ("get", "/api/v1/account/favorites/"),
     ("get", "/api/v1/account/orders/"),
-    ("get", "/api/v1/account/export/"),
+    ("post", "/api/v1/account/export/"),
     ("post", "/api/v1/account/delete/"),
     ("post", "/api/v1/account/step-up/"),
     ("get", "/api/v1/account/devices/"),
@@ -167,6 +167,6 @@ def test_export_requires_step_up_even_when_logged_in(attacker, customer):
     """A logged-in customer without a fresh OTP step-up cannot export data —
     the sensitive-action gate returns 403 step_up_required, not the data."""
     login_as_customer(attacker, customer)
-    resp = attacker.get("/api/v1/account/export/")
+    resp = attacker.post("/api/v1/account/export/")
     assert resp.status_code == 403
     assert resp.json().get("code") == "step_up_required"

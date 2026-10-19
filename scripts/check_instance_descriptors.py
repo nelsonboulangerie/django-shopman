@@ -20,14 +20,26 @@ BOOTSTRAP_SECTIONS = (
 REF_RE = re.compile(r"^[a-z][a-z0-9_.-]*$")
 ENV_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 PERMISSION_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
-SECRET_KEY_RE = re.compile(r"(?:secret|password|passwd|token|credential|api[_-]?key|private[_-]?key)", re.I)
+# Espelho da segunda camada de ``config/instance_descriptors.py`` (este gate roda
+# sem Django). A primeira camada, a allowlist tipada, só existe com Django.
+SECRET_KEY_RE = re.compile(
+    r"(?:secret|password|passwd|senha|token|credential|api[_-]?key|private[_-]?key"
+    r"|pix|chave|hmac|signing|signature|authorization|bearer|certificad|certificate"
+    r"|webhook|cookie|session[_-]?key|otp|pin[_-]?code)",
+    re.I,
+)
 SECRET_VALUE_RES = (
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(r"-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"\bsk_(?:live|test)_[A-Za-z0-9]{12,}\b"),
-    re.compile(r"\b(?:postgres(?:ql)?|redis)://[^\s/@:]+:[^\s/@]+@", re.I),
+    re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{12,}\b"),
+    re.compile(r"\bwhsec_[A-Za-z0-9]{12,}\b"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\b(?:postgres(?:ql)?|redis|amqp|mysql)://[^\s/@:]+:[^\s/@]+@", re.I),
 )
+# Estado operacional do canal: é do operador, não se versiona
+# (``OPERATIONAL_STATE`` em ``config/instance_descriptors.py``).
+CHANNEL_OPERATIONAL_PATHS = (("activation",), ("display", "paused_skus"))
 OPERATIONAL_KEYS = {"orders", "payments", "ledger_entries", "stock_balances", "sessions", "audit_events"}
 
 
@@ -122,6 +134,17 @@ def validate_descriptor(data: dict, *, filename: str = "<memory>") -> None:
                 _require("enabled" not in item or isinstance(item["enabled"], bool), f"{filename}: enabled inválido em {item_ref}")
                 _require("config" not in item or isinstance(item["config"], dict), f"{filename}: config inválida em {item_ref}")
         _require(len(refs) == len(set(refs)), f"{filename}: refs duplicadas em {section}")
+
+    for item in bootstrap["channels"]:
+        overrides = (item.get("config") or {}).get("overrides") or {}
+        for path in CHANNEL_OPERATIONAL_PATHS:
+            node = overrides
+            for key in path:
+                node = node.get(key) if isinstance(node, dict) else None
+            _require(
+                node is None,
+                f"{filename}: estado operacional proibido em channels.{item['ref']}.overrides.{'.'.join(path)}",
+            )
 
     for path, key in _walk_mapping(bootstrap):
         _require(key not in OPERATIONAL_KEYS, f"{filename}: estado operacional proibido em {path}.{key}")

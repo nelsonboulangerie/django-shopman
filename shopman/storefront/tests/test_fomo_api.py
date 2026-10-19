@@ -18,7 +18,7 @@ from shopman.shop.services import fomo as fomo_context
 from shopman.shop.services.fomo import cache_key
 from shopman.storefront.services import fomo as fomo_service
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 SKU = "croissant-trad"
 

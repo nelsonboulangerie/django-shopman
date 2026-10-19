@@ -19,11 +19,10 @@ COUNTER = ROOT / "config/instances/counter-minimal.json"
 
 
 @pytest.mark.django_db
-@pytest.mark.instance_runtime_strict
 def test_counter_instance_materializes_and_boots_from_its_own_contract():
     descriptor = load_descriptor(COUNTER)
 
-    result = apply_to_database(descriptor)
+    result = apply_to_database(descriptor, actor="test")
 
     assert result["instance"] == "counter-minimal"
     assert Shop.objects.get().name == "Counter minimal"

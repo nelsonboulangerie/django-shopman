@@ -26,6 +26,8 @@ from shopman.shop.handlers.production_alerts import check_late_started_orders
 from shopman.shop.handlers.production_order_sync import WORK_ORDER_COMMITTED_ORDER_REFS_KEY
 from shopman.shop.models import Shop
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 @pytest.fixture
 def setup(db):

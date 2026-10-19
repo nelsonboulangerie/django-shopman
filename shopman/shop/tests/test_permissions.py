@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.test import Client, TestCase
@@ -65,7 +66,7 @@ def _kds_board_url():
 
 
 def _ensure_groups():
-    """Os grupos vêm do dono único deles: o comando ``setup_groups``.
+    """Os grupos vêm do descritor da Instância, aplicado pelo ``setup_groups`` (release).
 
     Antes vinham de data migrations, e o banco de teste os herdava sem ninguém
     pedir — dependência invisível que o reset de migrações expôs.
@@ -131,6 +132,7 @@ class TestOperateKdsPerm(TestCase):
         self.assertNotEqual(self.client.get(url).status_code, 403)
 
 
+@pytest.mark.channels("pdv")
 class TestOperatePosPerm(TestCase):
     def setUp(self):
         self.client = Client()
@@ -156,6 +158,7 @@ class TestOperatePosPerm(TestCase):
         self.assertEqual(resp.status_code, 200)
 
 
+@pytest.mark.channels("pdv")
 class TestCashierGroup(TestCase):
     """Cashier (Caixa) group: operate_pos + manage_orders + operate_kds."""
 
@@ -224,6 +227,7 @@ class TestKitchenGroup(TestCase):
         self.assertEqual(self.client.get(PRODUCTION_URL).status_code, 200)
 
 
+@pytest.mark.channels("pdv")
 class TestManagerGroup(TestCase):
     """Manager (Gerente) group: manage_orders, operate_pos, operate_kds, perform_closing, view_reports."""
 

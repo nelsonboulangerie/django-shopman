@@ -19,6 +19,8 @@ from shopman.backstage.tests._order_intent import advance_payload, context_paylo
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import cash_settlement_revision, operational_revision
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 def _manage_orders_perm() -> Permission:
     return Permission.objects.get(

@@ -100,16 +100,26 @@ DOMAIN_KERNEL_PACKAGES = {
     "stockman",
 }
 
-# Read effects that predate WP-8. Counts make this a ratchet: an extra call in
-# the same file still fails, while later WPs may remove entries without first
-# changing the gate. BlindPrepCode is intentionally not on this list.
-LEGACY_GET_WRITE_DEBT = {
-    ("shopman/backstage/api/notifications.py", "notification_lifecycle.reconcile_user_notifications"): 2,
-    ("shopman/backstage/api/print_jobs.py", "print_jobs.reconcile_job_state"): 1,
-    ("shopman/storefront/api/surface.py", "catalog_service.ensure_active_collection"): 1,
-    ("shopman/storefront/api/tracking.py", "order_service.consume_just_placed"): 1,
-    ("shopman/storefront/api/tracking.py", "order_service.ensure_payment_intent"): 1,
-    ("shopman/storefront/api/tracking.py", "order_service.reconcile_payment_with_gateway_if_due"): 1,
+# O que a rede TRANSITIVA (abaixo) achou no dia em que nasceu, além das sete
+# chamadas que a A8-1 tirou dos GETs (acompanhamento, sino, etiqueta, menu): GET
+# que alcança uma escrita por um serviço sem nome de comando. É dívida, com
+# catraca nos dois sentidos: escrita NOVA reprova, e linha que ficou velha
+# (escrita resolvida, linha esquecida) também. Cada grupo é uma frente própria.
+# Chave: (arquivo, chamada no GET) -> quantas vezes.
+GET_WRITE_FOUND_BY_TRANSITIVE_GATE = {
+    # Continuum: a leitura materializa a cabeça do snapshot do catálogo.
+    ("shopman/storefront/api/continuum.py", "current_or_build_head"): 1,
+    ("shopman/storefront/api/surface.py", "compare_shadow"): 1,
+    # Recuperação do checkout por GET: concede acesso na sessão e refaz efeitos pós-commit.
+    ("shopman/storefront/api/views.py", "order_service.grant_order_access"): 1,
+    ("shopman/storefront/api/views.py", "checkout_service.recover_committed_checkout"): 1,
+    # Marketing: o estado de segurança nasce na primeira leitura; a negação é auditada no GET.
+    ("shopman/backstage/api/marketing.py", "safety_state"): 1,
+    ("shopman/backstage/api/marketing_seal.py", "_authorization_error_response"): 1,
+    # Gestor/PDV: o detalhe do pedido pergunta ao gateway do cartão (e carimba a pergunta).
+    ("shopman/backstage/api/operations.py", "_reconcile_payment_if_due"): 2,
+    # ESC/POS: compor o papel carimba a "primeira via" no pedido.
+    ("shopman/backstage/api/operations.py", "_stamp_first_print"): 5,
 }
 KNOWN_NON_MUTATING_GET_CALLS = {"response.add_post_render_callback"}
 
@@ -199,6 +209,187 @@ def _get_handler_write_calls(path: Path) -> list[tuple[Path, int, str]]:
                 elif any(owner == module or owner.startswith(f"{module}.") for module in imported_command_modules):
                     violations.append((path, node.lineno, label))
     return violations
+
+
+# ── Escrita transitiva: GET/projeção que chama um serviço de comando ─────────
+#
+# O detector acima vê só a chamada que tem cara de escrita (prefixo de mutação,
+# ``.objects.create``). Um GET que chama ``tidy(order)``, e ``tidy`` grava,
+# passava. O grafo abaixo indexa toda função do framework (shop, storefront,
+# backstage), marca quem grava DIRETO e propaga pela chamada até o ponto fixo:
+# quem chama quem grava, grava. Um GET ou uma função da camada de leitura que
+# alcança uma escritora reprova.
+
+FRAMEWORK_GRAPH_ROOTS = (SHOP_ROOT, STOREFRONT_ROOT, BACKSTAGE_ROOT)
+_GRAPH_SKIP_PARTS = {"tests", "migrations", "__pycache__"}
+# Escrita que não depende de quem é o dono da chamada.
+_ALWAYS_WRITE_METHODS = {"bulk_create", "bulk_update", "get_or_create", "update_or_create", "transition_status"}
+# Escrita só quando o dono é um queryset/manager (``dict.update`` não é).
+_QUERYSET_WRITE_METHODS = {"create", "update", "delete"}
+_QUERYSET_OWNER_MARKERS = ("objects", "filter(", "exclude(", "all(", "select_for_update(", "_set")
+
+
+def _module_name(path: Path, *, base: Path) -> str:
+    parts = list(path.relative_to(base).with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
+def _direct_write(nodes: Iterable[ast.AST]) -> str | None:
+    """A primeira escrita que o corpo da função faz por conta própria, ou ``None``."""
+    for node in nodes:
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            owner = ast.unparse(node.func.value)
+            attr = node.func.attr
+            if attr in _ALWAYS_WRITE_METHODS:
+                return f"{owner}.{attr}"
+            if attr in _QUERYSET_WRITE_METHODS and any(marker in owner for marker in _QUERYSET_OWNER_MARKERS):
+                return f"{owner}.{attr}"
+            # ``instance.save()``/``.delete()`` de model não recebe posicional;
+            # ``workbook.save(stream)`` e ``image.save(buffer)`` recebem.
+            if attr in {"save", "delete"} and not node.args and "cache" not in owner:
+                return f"{owner}.{attr}"
+            if attr == "pop" and owner.endswith("session"):
+                return f"{owner}.pop"
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Subscript) and ast.unparse(target.value).endswith("session"):
+                    return f"{ast.unparse(target.value)}[...] ="
+                if isinstance(target, ast.Attribute) and target.attr == "modified" and ast.unparse(
+                    target.value
+                ).endswith("session"):
+                    return "session.modified ="
+    return None
+
+
+class _FrameworkWriteGraph:
+    """Funções do framework, quem cada uma chama e quem grava (transitivo)."""
+
+    def __init__(self, roots: Iterable[Path], *, base: Path = REPO_ROOT):
+        self.paths: dict[str, Path] = {}
+        trees: dict[str, ast.Module] = {}
+        for root in roots:
+            for path in sorted(root.rglob("*.py")):
+                if _GRAPH_SKIP_PARTS & set(path.relative_to(root).parts):
+                    continue
+                module = _module_name(path, base=base)
+                try:
+                    trees[module] = ast.parse(path.read_text(), filename=str(path))
+                except (SyntaxError, UnicodeDecodeError):
+                    continue
+                self.paths[module] = path
+        self.functions: dict[tuple[str, str], ast.AST] = {}
+        module_imports: dict[str, dict[str, tuple[str, ...]]] = {}
+        for module, tree in trees.items():
+            module_imports[module] = self._import_map(
+                [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))], {}
+            )
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    self.functions[(module, node.name)] = node
+                elif isinstance(node, ast.ClassDef):
+                    for member in node.body:
+                        if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            self.functions[(module, f"{node.name}.{member.name}")] = member
+        # Um passeio só por função: é a parte cara do gate.
+        self.calls: dict[tuple[str, str], list[tuple[int, ast.expr, tuple[str, str]]]] = {}
+        # Escritora -> o que a faz escritora: a escrita direta (``str``) ou a
+        # função que ela chama e que grava (``tuple``).
+        self.writers: dict[tuple[str, str], str | tuple[str, str]] = {}
+        for key, fn in self.functions.items():
+            nodes = list(ast.walk(fn))
+            local = self._import_map(
+                [node for node in nodes if isinstance(node, (ast.Import, ast.ImportFrom))],
+                module_imports[key[0]],
+            )
+            self.calls[key] = [
+                (node.lineno, node.func, target)
+                for node in nodes
+                if isinstance(node, ast.Call) and (target := self._resolve(node, key[0], local))
+            ]
+            if write := _direct_write(nodes):
+                self.writers[key] = write
+        changed = True
+        while changed:
+            changed = False
+            for key, calls in self.calls.items():
+                if key in self.writers:
+                    continue
+                for _line, _label, target in calls:
+                    if target in self.writers:
+                        self.writers[key] = target
+                        changed = True
+                        break
+
+    def _import_map(self, nodes, base: dict) -> dict[str, tuple[str, ...]]:
+        mapping = dict(base)
+        for node in nodes:
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                for alias in node.names:
+                    full = f"{node.module}.{alias.name}"
+                    mapping[alias.asname or alias.name] = (
+                        ("module", full) if full in self.paths else ("function", node.module, alias.name)
+                    )
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.asname:
+                        mapping[alias.asname] = ("module", alias.name)
+        return mapping
+
+    @staticmethod
+    def _resolve(call: ast.Call, module: str, imports: dict) -> tuple[str, str] | None:
+        func = call.func
+        if isinstance(func, ast.Name):
+            target = imports.get(func.id)
+            if target is None:
+                return (module, func.id)
+            return (target[1], target[2]) if target[0] == "function" else None
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            target = imports.get(func.value.id)
+            if target is not None and target[0] == "module":
+                return (target[1], func.attr)
+        return None
+
+    def chain(self, key: tuple[str, str]) -> str:
+        """Do ponto de chamada até a escrita direta: ``mod.a -> mod.b -> obj.save``."""
+        steps = [f"{key[0].rsplit('.', 1)[-1]}.{key[1]}"]
+        while isinstance(via := self.writers.get(key), tuple):
+            key = via
+            steps.append(f"{key[0].rsplit('.', 1)[-1]}.{key[1]}")
+        steps.append(str(via))
+        return " -> ".join(steps)
+
+    def get_handler_writes(self, roots: Iterable[Path]) -> list[tuple[Path, int, str]]:
+        """Chamadas, dentro de ``get`` HTTP, que alcançam uma escritora."""
+        violations = []
+        for (module, name), _fn in self.functions.items():
+            path = self.paths[module]
+            if not name.endswith(".get") or not any(path.is_relative_to(root) for root in roots):
+                continue
+            for line, func, target in self.calls[(module, name)]:
+                if target in self.writers:
+                    violations.append((path, line, f"{ast.unparse(func)} [{self.chain(target)}]"))
+        return violations
+
+    def read_side_writers(self, roots: Iterable[Path]) -> list[tuple[Path, int, str]]:
+        """Funções da camada de leitura que gravam, direto ou por quem chamam."""
+        return [
+            (self.paths[module], fn.lineno, f"{name} [{self.chain((module, name))}]")
+            for (module, name), fn in self.functions.items()
+            if (module, name) in self.writers
+            and any(self.paths[module].is_relative_to(root) for root in roots)
+        ]
+
+
+_FRAMEWORK_GRAPH: _FrameworkWriteGraph | None = None
+
+
+def _framework_graph() -> _FrameworkWriteGraph:
+    global _FRAMEWORK_GRAPH
+    if _FRAMEWORK_GRAPH is None:
+        _FRAMEWORK_GRAPH = _FrameworkWriteGraph(FRAMEWORK_GRAPH_ROOTS)
+    return _FRAMEWORK_GRAPH
 
 
 def test_offerman_is_the_only_list_tier_price_owner():
@@ -717,27 +908,51 @@ def test_read_side_does_not_write():
 
 
 def test_get_handlers_do_not_invoke_commands_or_write():
-    """HTTP GET/SSE delivery may assemble a read model but never mutate it."""
-    observed = [
+    """HTTP GET/SSE delivery may assemble a read model but never mutate it.
+
+    Duas redes: a chamada com cara de escrita (prefixo de mutação, ORM, módulo
+    de comando), sem dívida nenhuma; e a escrita transitiva (o GET chama quem
+    grava, a qualquer distância), contra o inventário do dia em que ela nasceu.
+    """
+    direct = [
         violation
         for root in API_ROOTS
         for path in _py_files(root, skip_parts={"tests"})
         for violation in _get_handler_write_calls(path)
+        if violation[2] not in KNOWN_NON_MUTATING_GET_CALLS
     ]
-    debt_counts: dict[tuple[str, str], int] = {}
-    violations = []
-    for path, line, call in observed:
-        if call in KNOWN_NON_MUTATING_GET_CALLS:
-            continue
-        key = (path.relative_to(REPO_ROOT).as_posix(), call)
-        debt_counts[key] = debt_counts.get(key, 0) + 1
-        if debt_counts[key] > LEGACY_GET_WRITE_DEBT.get(key, 0):
-            violations.append((path, line, call))
+    observed: dict[tuple[str, str], int] = {}
+    transitive = []
+    for path, line, call in _framework_graph().get_handler_writes(API_ROOTS):
+        key = (path.relative_to(REPO_ROOT).as_posix(), call.split(" [", 1)[0])
+        observed[key] = observed.get(key, 0) + 1
+        if observed[key] > GET_WRITE_FOUND_BY_TRANSITIVE_GATE.get(key, 0):
+            transitive.append((path, line, call))
+    stale = sorted(
+        f"  {path}: {call} (inventário diz {count}, achado {observed.get((path, call), 0)})"
+        for (path, call), count in GET_WRITE_FOUND_BY_TRANSITIVE_GATE.items()
+        if observed.get((path, call), 0) < count
+    )
+    violations = [*direct, *transitive]
     if violations:
         pytest.fail(
             "GET handlers invoked command-side code or direct writes:\n"
             f"{_format_violations(violations)}\n\n"
-            "Expose an Action in the projection and invoke it through POST/command ingress."
+            "Expose an Action in the projection and invoke it through POST/command ingress, "
+            "or move the effect to the lifecycle or the worker."
+        )
+    assert not stale, (
+        "GET_WRITE_FOUND_BY_TRANSITIVE_GATE tem linha que não acontece mais; tire-a:\n" + "\n".join(stale)
+    )
+
+
+def test_read_side_never_writes():
+    """Projeção e Presentation montam leitura; nenhuma função delas grava."""
+    violations = _framework_graph().read_side_writers(READ_SIDE_ROOTS)
+    if violations:
+        pytest.fail(
+            "Read-side functions write (directly or through what they call):\n"
+            f"{_format_violations(violations)}"
         )
 
 
@@ -754,6 +969,113 @@ def test_get_write_detector_rejects_command_service(tmp_path):
 
     violations = _get_handler_write_calls(source)
     assert [(line, call) for _, line, call in violations] == [(4, "allocate_blind_prep_codes")]
+
+
+def _mutant_framework(tmp_path: Path, files: dict[str, str]) -> _FrameworkWriteGraph:
+    root = tmp_path / "shopman" / "fake"
+    for relative, source in files.items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source, encoding="utf-8")
+    return _FrameworkWriteGraph((root,), base=tmp_path)
+
+
+_MUTANT_COMMAND = (
+    "def tidy(order):\n"
+    "    order.data['tidied'] = True\n"
+    "    order.save(update_fields=['data'])\n"
+    "\n"
+    "def tidy_later(order):\n"
+    "    tidy(order)\n"
+    "\n"
+    "def describe(order):\n"
+    "    return {'ref': order.ref}\n"
+)
+
+
+def test_get_write_detector_catches_a_write_behind_a_service_without_command_name(tmp_path):
+    """Mutante: um GET novo que grava por um serviço de nome inocente reprova.
+
+    ``tidy`` não tem prefixo de mutação e o módulo não está em
+    ``COMMAND_SERVICE_MODULES``: a rede antiga deixava passar. A transitiva
+    pega a chamada direta, a de duas voltas e o import por função, e não acusa
+    a leitura pura do mesmo módulo.
+    """
+    graph = _mutant_framework(
+        tmp_path,
+        {
+            "services/orders.py": _MUTANT_COMMAND,
+            "api/views.py": (
+                "from shopman.fake.services import orders as order_service\n"
+                "from shopman.fake.services.orders import tidy_later\n"
+                "\n"
+                "class TrackingView:\n"
+                "    def get(self, request, ref):\n"
+                "        order = request.order\n"
+                "        order_service.tidy(order)\n"
+                "        tidy_later(order)\n"
+                "        return order_service.describe(order)\n"
+                "\n"
+                "    def post(self, request, ref):\n"
+                "        order_service.tidy(request.order)\n"
+            ),
+        },
+    )
+
+    found = [(line, call) for _path, line, call in graph.get_handler_writes((tmp_path / "shopman" / "fake" / "api",))]
+    assert found == [
+        (7, "order_service.tidy [orders.tidy -> order.save]"),
+        (8, "tidy_later [orders.tidy_later -> orders.tidy -> order.save]"),
+    ]
+    assert _get_handler_write_calls(tmp_path / "shopman" / "fake" / "api" / "views.py") == []
+
+
+def test_read_side_detector_catches_a_projection_that_writes(tmp_path):
+    """Mutante: a projeção que chama quem grava reprova; a que só lê, não."""
+    graph = _mutant_framework(
+        tmp_path,
+        {
+            "services/orders.py": _MUTANT_COMMAND,
+            "projections/tracking.py": (
+                "from shopman.fake.services import orders\n"
+                "\n"
+                "def build_tracking(order):\n"
+                "    orders.tidy_later(order)\n"
+                "    return orders.describe(order)\n"
+                "\n"
+                "def build_summary(order):\n"
+                "    return orders.describe(order)\n"
+            ),
+        },
+    )
+
+    found = [call for _path, _line, call in graph.read_side_writers((tmp_path / "shopman" / "fake" / "projections",))]
+    assert found == ["build_tracking [tracking.build_tracking -> orders.tidy_later -> orders.tidy -> order.save]"]
+
+
+def test_session_and_workbook_writes_are_told_apart(tmp_path):
+    """A sessão é escrita; ``workbook.save(stream)`` e ``dict.update`` não são."""
+    graph = _mutant_framework(
+        tmp_path,
+        {
+            "services/misc.py": (
+                "def remember(request):\n"
+                "    request.session['k'] = 1\n"
+                "\n"
+                "def forget(request):\n"
+                "    request.session.pop('k', None)\n"
+                "\n"
+                "def export(book, stream):\n"
+                "    book.save(stream)\n"
+                "\n"
+                "def merge(data, extra):\n"
+                "    data.update(extra)\n"
+                "    return data\n"
+            ),
+        },
+    )
+
+    assert {name for _module, name in graph.writers} == {"remember", "forget"}
 
 
 # Tailwind colour/tone design-token classes — appearance, owned by each

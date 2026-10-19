@@ -423,13 +423,13 @@ class StockCheckDegradationTests(TestCase):
         )
 
     def test_all_unavailable_returns_service_down_flag(self) -> None:
-        """When every _get_availability returns None → service_unavailable=True."""
+        """When the stock read answers for no line → service_unavailable=True."""
         from shopman.shop.projections.checkout import cart_stock_shortfalls
 
         cart = self._make_cart()
         request = self._make_request()
 
-        with patch("shopman.shop.projections.checkout_context._availability_for_sku", return_value=None):
+        with patch("shopman.shop.projections.catalog_context.availability_for_skus", return_value={}):
             shortfalls, service_unavailable = cart_stock_shortfalls(
                 session_key=request.session.get("cart_session_key", ""),
                 cart_lines=cart,
@@ -448,12 +448,12 @@ class StockCheckDegradationTests(TestCase):
         cart = self._make_cart(skus=("SKU-A", "SKU-B"))
         request = self._make_request()
 
-        avail_ok = {"breakdown": {"ready": Decimal("10"), "in_production": Decimal("0")}}
+        avail_ok = {"is_tracked": True, "total_promisable": Decimal("10"), "availability_policy": "planned_ok"}
 
-        def _avail(sku, **kwargs):
-            return avail_ok if sku == "SKU-A" else None
-
-        with patch("shopman.shop.projections.checkout_context._availability_for_sku", side_effect=_avail):
+        with patch(
+            "shopman.shop.projections.catalog_context.availability_for_skus",
+            return_value={"SKU-A": avail_ok},
+        ):
             shortfalls, service_unavailable = cart_stock_shortfalls(
                 session_key=request.session.get("cart_session_key", ""),
                 cart_lines=cart,
@@ -483,9 +483,9 @@ class StockCheckDegradationTests(TestCase):
 
         cart = self._make_cart(skus=("SKU-C",))
         request = self._make_request()
-        avail = {"total_promisable": Decimal("5"), "breakdown": {"ready": Decimal("5"), "in_production": Decimal("0")}}
+        avail = {"is_tracked": True, "total_promisable": Decimal("5"), "availability_policy": "planned_ok"}
 
-        with patch("shopman.shop.projections.checkout_context._availability_for_sku", return_value=avail):
+        with patch("shopman.shop.projections.catalog_context.availability_for_skus", return_value={"SKU-C": avail}):
             shortfalls, service_unavailable = cart_stock_shortfalls(
                 session_key=request.session.get("cart_session_key", ""),
                 cart_lines=cart,
