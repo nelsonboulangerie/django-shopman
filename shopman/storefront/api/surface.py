@@ -457,9 +457,15 @@ def _gone_products() -> dict:
     """
     from shopman.shop.models import RetiredProduct
     from shopman.shop.projections import catalog_context
+    from shopman.shop.services.exclusive_collections import collection_access
+
+    # Rota pública: a lápide não aponta para coleção exclusiva de grupo (é 404 ao anônimo).
+    escondidas = collection_access(()).hidden
 
     def primeira_viva(refs):
         for ref in refs:
+            if ref in escondidas:
+                continue
             colecao = catalog_context.get_active_collection(ref)
             if colecao is None:
                 continue
@@ -540,7 +546,7 @@ class StorefrontMenuView(APIView):
         with capture_catalog_timing() as timing:
             with catalog_stage("projection"):
                 if collection is not None:
-                    catalog_service.get_active_collection_or_404(collection)
+                    catalog_service.get_active_collection_or_404(collection, request=request)
                 catalog = build_catalog(
                     channel_ref=STOREFRONT_CHANNEL_REF,
                     collection_ref=collection,
