@@ -252,8 +252,13 @@ export function usePosSale(deps: PosSaleDeps) {
   const offlineSales = usePosOfflineSales();
   /** Sem rede AGORA, pelo navegador (o mesmo sinal do aviso de conexão). */
   const offlineNow = () => import.meta.client && globalThis.navigator?.onLine === false;
-  /** Quando a tela leu os preços pela última vez: a nota do total sem conexão. */
-  const pricesAt = ref(new Date().toISOString());
+  /**
+   * Quando a tela leu os preços pela última vez: a nota do total sem conexão.
+   * `useState`, e não `ref`: nasce na renderização do servidor e viaja no HTML.
+   * A tela de venda que abre sem conexão (o HTML guardado pelo service worker)
+   * traz a hora em que AQUELA leitura foi feita, e não a hora em que abriu.
+   */
+  const pricesAt = useState("pos-prices-at", () => new Date().toISOString());
   // A tela de resultado de uma venda guardada passa a dizer o pedido quando a
   // fila a envia (a venda pode subir com a tela ainda de pé).
   watch(() => offlineSales.sentOrderRefs.value, (sent) => {

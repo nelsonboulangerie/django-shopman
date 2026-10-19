@@ -105,6 +105,12 @@ export default defineNuxtConfig({
       // do cliente ninguém toca, então ela seria considerada ociosa SEMPRE — e quem
       // recarregaria no meio da venda seria o PDV, não ela.
       idleReloadPaths: ["/"],
+      // A VENDA abre sem conexão (WP-PDV-SEM-CONEXAO §8): recarregar com a rede caída
+      // abre a última tela de venda que este dispositivo recebeu, com o catálogo e os
+      // preços daquela leitura, e a fila de vendas guardadas continua. O resto do PDV
+      // (caixa, encomendas, ajustes) segue no `offline.html`: abrir/fechar caixa e
+      // encomenda exigem rede de qualquer jeito.
+      offlineShellPaths: ["/"],
       push: { surfaceRef: "pos", categories: ["order", "system"] },
       shortcuts: [
         { name: "Venda", shortName: "Venda", url: "/" },
