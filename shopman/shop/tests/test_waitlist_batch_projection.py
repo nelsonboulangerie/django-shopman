@@ -12,7 +12,7 @@ from shopman.shop.models import Shop
 from shopman.shop.services import waitlist
 from shopman.shop.tests.test_waitlist_lifecycle import _order_in_fermata, _planned_quant
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.mark.parametrize("build", [build_order_queue, build_two_zone_queue])

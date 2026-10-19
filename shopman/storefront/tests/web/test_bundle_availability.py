@@ -16,7 +16,7 @@ from shopman.offerman.models import ListingItem, Product, ProductComponent
 from shopman.shop.projections.types import Availability
 from shopman.storefront.presentation import build_catalog
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _seed_stock(sku: str, qty: Decimal) -> None:

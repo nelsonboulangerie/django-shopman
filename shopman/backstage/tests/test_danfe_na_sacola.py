@@ -37,7 +37,7 @@ from shopman.backstage.services.receipt_escpos import ENCODING
 from shopman.shop.models import Shop
 from shopman.shop.tests.danfe_fixtures import xml_for_key
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 NOTA = {
     "nfce_access_key": "41260800000000000000650010000001521151375188",

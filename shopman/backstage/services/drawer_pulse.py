@@ -27,7 +27,9 @@ O trabalho vale :data:`PULSE_WINDOW`. Um pulso que chegasse minutos depois
 abriria a gaveta com ninguém na frente dela, então o que não foi buscado nesse
 prazo expira e a tela diz que o Balcão não respondeu. A tela acompanha o
 trabalho por :func:`pulse_state` até ``sent`` (o agente entregou à impressora)
-ou uma falha nomeada.
+ou uma falha nomeada. Acompanhar é só ler: a resposta chega ao livro pelo ack do
+agente ou, quando ele nunca respondeu, pela varredura do ``maintenance_worker``
+(:func:`sweep_stale_pulses`).
 
 ## O que NÃO muda
 
@@ -263,9 +265,17 @@ def _create_pulse_job(*, terminal, operator, purpose: str, order_ref: str):
 
 
 def pulse_state(*, ref, terminal_ref: str) -> PulseState:
-    """Em que pé está o pulso. Só o terminal que pediu lê (``terminal_ref`` da estação)."""
+    """Em que pé está o pulso. Só o terminal que pediu lê (``terminal_ref`` da estação).
+
+    É LEITURA: dá o veredito do relógio (``read_job_state``) sem gravar nada. O
+    pulso vencido não sai mesmo sem esta gravação, porque o agente só busca
+    trabalho com ``expires_at`` no futuro (``claim_next_job``). Quem escreve a
+    resposta no livro é o ack do agente (:func:`on_job_changed`) e, para o que o
+    agente nunca respondeu, a varredura do ``maintenance_worker``
+    (:func:`sweep_stale_pulses`).
+    """
     from shopman.backstage.models import PrintJob
-    from shopman.backstage.services.print_jobs import reconcile_job_state
+    from shopman.backstage.services.print_jobs import read_job_state
 
     job = (
         PrintJob.objects.select_related("target_terminal")
@@ -274,9 +284,33 @@ def pulse_state(*, ref, terminal_ref: str) -> PulseState:
     )
     if job is None:
         raise POSError("Pulso não encontrado para esta gaveta.")
-    job = reconcile_job_state(job)
-    _close_in_ledger(job)
-    return _state_of(job)
+    return _state_of(read_job_state(job))
+
+
+def sweep_stale_pulses(*, now=None) -> int:
+    """O pulso que o agente nunca respondeu ganha o veredito e a nota no livro.
+
+    Roda no ``maintenance_worker``. A fila vencida vira ``expired`` e o lease
+    vencido vira ``uncertain`` (``reconcile_job_state``); a abertura recebe a
+    nota filha com essa resposta, uma vez só. Devolve quantos pulsos fecharam.
+    """
+    from shopman.backstage.models import PrintJob
+    from shopman.backstage.services.print_jobs import reconcile_job_state
+
+    now = now or timezone.now()
+    closed = 0
+    pending = PrintJob.objects.filter(
+        kind=PrintJob.Kind.DRAWER_PULSE,
+        status__in=(PrintJob.Status.QUEUED, PrintJob.Status.LEASED),
+        created_at__lte=now - PULSE_WINDOW,
+    ).order_by("pk")
+    for job in pending:
+        job = reconcile_job_state(job)
+        if _state_of(job).state == "sending":
+            continue
+        _close_in_ledger(job)
+        closed += 1
+    return closed
 
 
 def _state_of(job) -> PulseState:

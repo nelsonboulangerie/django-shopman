@@ -32,7 +32,7 @@ from shopman.shop.services import cancellation
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services import pos as pos_service
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("delivery")]
 
 
 class _Balcao:

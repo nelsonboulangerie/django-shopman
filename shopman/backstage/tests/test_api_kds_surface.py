@@ -16,6 +16,8 @@ from shopman.orderman.models import Order, OrderItem
 
 from shopman.backstage.models import KDSInstance, KDSTicket
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 def _operate_kds_perm() -> Permission:
     return Permission.objects.get(

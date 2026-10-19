@@ -35,7 +35,10 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 
 ## Grupos padrão
 
-Criados por `python manage.py setup_groups`. Nenhum usuário é atribuído por default.
+Declarados na seção `rbac_personas` do descritor da Instância (`config/instances/nelson.json`
+na Nelson) e aplicados por `python manage.py setup_groups`, que lê o descritor apontado por
+`SHOPMAN_INSTANCE_DESCRIPTOR`. Não há segunda lista em código. Nenhum usuário é atribuído
+por default.
 
 | Grupo | Permissões de AÇÃO | Persona típica |
 |-------|-----------|----------------|
@@ -139,14 +142,41 @@ python manage.py setup_groups
 O comando recria/atualiza todos os grupos padrão com as permissões corretas. Seguro para
 rodar múltiplas vezes — o release job do deploy o chama logo depois do `migrate`.
 
-Ele é a **fonte da verdade** dos seis grupos padrão: usa `permissions.set(...)`, então
-o que sai da lista em `setup_groups.py` sai do banco no deploy seguinte, e as revogações
-aparecem no log da forma `Caixa: atualizado (2 permissões) — revogadas: shop.manage_catalog`.
+A **fonte da verdade** dos grupos padrão é o descritor: o comando usa `permissions.set(...)`,
+então o que sai de `rbac_personas` sai do banco no deploy seguinte, e as revogações
+aparecem no log da forma `Caixa: atualizado (2 permissões); revogadas: shop.manage_catalog`.
+Numa Instância que não seja a Nelson, o release aplica só as personas que ela declara.
 
 ⚠️ Consequência prática: **permissão marcada à mão** na tela de Grupos do Admin, num
-desses seis, dura até o próximo deploy. Para valer, escreva-a em `setup_groups.py`. Grupo
+desses grupos, dura até o próximo deploy. Para valer, escreva-a no descritor. Grupo
 customizado (criado fora dessa lista, como o "Supervisor" do exemplo acima) o comando
 não toca.
+
+### Por que cada persona tem o que tem
+
+JSON não guarda comentário, então o porquê das concessões mora aqui:
+
+- **Caixa** abre a Cozinha (`backstage.operate_kds`): vê o que está saindo e dá o
+  Pronto quando o prato passa por ele (decisão do dono, 13/10/2026).
+- **Cozinha** lê no Admin o que fabrica (`view_*` de craftsman, buyman e stockman):
+  ficha técnica, ordem, insumo, saldo, lote. Mexer acontece no app de Produção.
+- **Gerente** consulta auditoria e faz configuração ou reparo excepcional. Dinheiro
+  fica de fora de propósito: `payman` e a apuração do turno são do **Dono** (a régua do
+  fechamento cego: ela conta às cegas, quem vê o esperado audita). Lê a trilha das
+  unificações de cadastro (`customer_merge`); desfazer é `manage_customers`. Abre toda
+  estação de cozinha (13/10/2026), cancela depois de pronto (`cancel_advanced_order`),
+  lê os relatórios de produção, corrige QC depois do fechamento e lê o B.I. com o que o
+  alimenta. Regra de preço continua atrás de `manage_rules` (WP-GAP-06). Marketing:
+  só ver, editar e prévia; efeito externo fica nos grupos de Marketing.
+- **Admin de Catálogo**: `manage_catalog`/`manage_rules` dizem o que pode mudar; os
+  `view_*` abrem a tela. Sem eles o grupo inteiro respondia 403 na porta.
+- **Rules Managers** e **Dono** são portões, não personas, e nascem sem membros:
+  `manage_rules` executa expressão; `audit_shift`, `audit_stock` e `payman` são
+  dinheiro e auditoria.
+- **Marketing (sete grupos)**: personas por capacidade, sem membros; o descritor
+  governa concessões, não escolhe pessoas nem fura o controle duplo.
+- Apagar (`delete_*`) fica de fora em toda persona: no Admin quase tudo tem estado em
+  vez de sumiço (produto sai da vitrine, promoção expira, pedido cancela).
 
 ---
 

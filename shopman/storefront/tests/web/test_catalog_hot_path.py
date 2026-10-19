@@ -20,7 +20,7 @@ from shopman.storefront.presentation import catalog as catalog_module
 from shopman.storefront.presentation import home as home_module
 from shopman.storefront.presentation.catalog import build_catalog, build_featured_items
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _product(listing, sku: str, name: str, *, published_on_listing: bool = True, **extra) -> Product:

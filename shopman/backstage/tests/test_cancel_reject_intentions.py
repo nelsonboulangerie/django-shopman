@@ -11,7 +11,7 @@ from shopman.orderman.models import Directive, IdempotencyKey, Order
 from shopman.shop.models import Shop
 from shopman.shop.services import cancellation, ifood_cancellation, operator_orders
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.channels("web")]
 
 
 @pytest.fixture

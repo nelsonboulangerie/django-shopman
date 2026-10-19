@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from django.test import TestCase
 from django.utils import timezone
 from shopman.guestman.contrib.insights.models import CustomerInsight
@@ -25,6 +26,8 @@ from shopman.guestman.models import Customer
 from shopman.orderman.models import Order
 
 from shopman.backstage.projections.order_queue import build_operator_order
+
+pytestmark = pytest.mark.channels("web")
 
 
 def _order(ref: str, *, customer_ref: str = "", created_at=None, total_q: int = 4200) -> Order:
