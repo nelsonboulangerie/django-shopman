@@ -219,6 +219,7 @@ class TestAvailabilityListingMembership:
             "is_paused": False,
             "is_planned": True,
             "breakdown": {},
+            "is_tracked": True,
             "positions": [{"position_ref": "vitrine"}],
         }
         catalog_adapter = MagicMock()

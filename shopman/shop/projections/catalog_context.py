@@ -616,6 +616,34 @@ def _componentes_do_bundle(sku: str) -> list[dict]:
         return []
 
 
+def session_line_promise(
+    sku: str,
+    qty,
+    reading: dict,
+    own_held=Decimal("0"),
+) -> tuple[bool, Decimal | None]:
+    """A decisão do Stockman para uma linha da sacola, sobre uma leitura já feita.
+
+    A reserva da própria sessão já é dela, e o Stockman a desconta da promessa
+    de todo mundo: pergunta-se só pelo que falta (``qty - own_held``) e o teto
+    devolvido soma a reserva de volta. A regra (``demand_ok``, pausa, SKU sem
+    ledger, teto finito) não é refeita aqui: é ``decision_from_availability``.
+
+    Devolve ``(approved, ceiling)``: ``ceiling`` é o máximo que esta sessão
+    pode ter, ``None`` sem teto finito (sem ledger, ``demand_ok``) e ``0``
+    quando pausado (pausa é decisão do operador: nem a reserva própria reabre).
+    """
+    from shopman.stockman.services.availability import decision_from_availability
+
+    own = Decimal(str(own_held or 0))
+    asked = max(Decimal(str(qty)) - own, Decimal("0"))
+    decision = decision_from_availability(sku, asked, reading)
+    if decision.is_paused:
+        return False, Decimal("0")
+    ceiling = decision.orderable_ceiling
+    return decision.approved, (None if ceiling is None else max(Decimal("0"), ceiling + own))
+
+
 def availability_for_sku(
     sku: str,
     *,
