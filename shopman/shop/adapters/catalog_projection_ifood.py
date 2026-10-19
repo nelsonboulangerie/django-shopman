@@ -60,8 +60,9 @@ _UUID_NS = uuid.UUID("f0f4d7e2-0e2a-5c7a-9d1b-6b1e2a3c4d5e")
 class IFoodRateLimitError(Exception):
     """Raised when the iFood API responds with 429 Too Many Requests."""
 
-    def __init__(self, retry_after: int) -> None:
+    def __init__(self, retry_after: int, intention: dict | None = None) -> None:
         self.retry_after = retry_after
+        self.intention = intention
         super().__init__(f"iFood rate limit hit; retry after {retry_after}s")
 
 
@@ -71,7 +72,22 @@ class IFoodCategoryError(Exception):
 
 def _get_config(channel: str = "ifood") -> dict:
     from django.conf import settings
-    return getattr(settings, "SHOPMAN_IFOOD", {})
+    from django.core.exceptions import AppRegistryNotReady
+    from django.db import DatabaseError
+
+    cfg = dict(getattr(settings, "SHOPMAN_IFOOD", {}) or {})
+    from shopman.shop.services.ifood_catalog_categories import category_mapping
+
+    try:
+        mapping, default = category_mapping(channel, cfg)
+    except (AppRegistryNotReady, DatabaseError, RuntimeError):
+        # Comandos de bootstrap e checks podem rodar antes das tabelas existirem.
+        # Nessa fase, a configuração legada continua sendo a única fonte segura.
+        logger.debug("ifood category config unavailable; using settings", exc_info=True)
+        return cfg
+    cfg["catalog_category_map"] = mapping
+    cfg["catalog_default_category"] = default
+    return cfg
 
 
 class IFoodCatalogWriteBlocked(Exception):
@@ -131,7 +147,7 @@ def _resolve_category_id(item: ProjectedItem, cfg: dict) -> str:
         return str(default)
     raise IFoodCategoryError(
         f"no iFood category for collection={item.category!r} "
-        "(set catalog_category_map or catalog_default_category in SHOPMAN_IFOOD)"
+        "(configure the channel category map or the legacy SHOPMAN_IFOOD map)"
     )
 
 

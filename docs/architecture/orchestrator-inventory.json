@@ -9291,6 +9291,38 @@
       ]
     },
     {
+      "path": "shopman/shop/services/ifood_catalog_categories.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "IFoodCategoryConflict",
+            "IFoodCategoryOperationError",
+            "_adapter_contract",
+            "_channel",
+            "_managed_config",
+            "_request",
+            "category_mapping",
+            "create_category",
+            "list_categories",
+            "rename_category",
+            "reorder_category",
+            "resolve_category_ref",
+            "set_category_status",
+            "set_collection_category"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/ifood_catalog_reconciliation.py",
       "touchpoints": [
         "service"
