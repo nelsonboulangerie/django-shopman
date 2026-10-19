@@ -8,6 +8,7 @@ pausa continua vencendo, e produto sem rastreio de estoque segue disponível.
 from __future__ import annotations
 
 from decimal import Decimal
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 from xml.etree import ElementTree as ET
 
@@ -126,14 +127,25 @@ class TestRule:
 
 @pytest.fixture
 def ifood_push(settings):
+    from PIL import Image
+
     settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {"environment": "test", "merchant_allowlist": [MERCHANT]}
     settings.SHOPMAN_IFOOD = {
         "merchant_id": MERCHANT, "api_base": "https://mock-ifood.test",
         "catalog_default_category": "cat-default-uuid",
     }
+    image = BytesIO()
+    Image.new("RGB", (2, 2), color="red").save(image, format="PNG")
     response = MagicMock(status_code=200)
+    upload = MagicMock(status_code=200)
+    upload.json.return_value = {"imagePath": "merchant/pao.png"}
     with (
         patch("shopman.shop.services.ifood_auth.token_with_reason", return_value=("tok", "")),
+        patch(
+            "shopman.shop.adapters.catalog_projection_ifood._download_image",
+            return_value=image.getvalue(),
+        ),
+        patch("shopman.shop.adapters.catalog_projection_ifood.requests.post", return_value=upload),
         patch("shopman.shop.adapters.catalog_projection_ifood.requests.put", return_value=response) as put,
     ):
         yield put

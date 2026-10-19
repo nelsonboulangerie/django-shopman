@@ -127,8 +127,13 @@ class CatalogProjectHandler:
             _record_outcome(item, sku, listing_ref, status="retracted" if retracting else "synced")
             return
 
-        _record_outcome(item, sku, listing_ref, status="error", error="; ".join(result.errors))
-        raise DirectiveTransientError("; ".join(result.errors))
+        error = "; ".join(result.errors)
+        # Um item já projetado pode carregar uma pendência secundária, como a
+        # foto. O estado mostra o trabalho restante sem esconder que os demais
+        # dados chegaram ao canal.
+        status = "pending" if result.projected else "error"
+        _record_outcome(item, sku, listing_ref, status=status, error=error)
+        raise DirectiveTransientError(error)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

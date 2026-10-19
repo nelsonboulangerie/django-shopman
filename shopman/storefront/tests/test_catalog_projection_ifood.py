@@ -297,7 +297,7 @@ def test_changed_image_uploads_new_hash_only(ifood_item, ifood_settings, fake_oa
         (_image_bytes(image_format="WEBP"), "JPG, JPEG ou PNG"),
     ],
 )
-def test_invalid_image_becomes_pending_error_without_upsert(
+def test_invalid_image_projects_item_without_image_and_reports_pending(
     ifood_item, ifood_settings, fake_oauth, content, reason,
 ):
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
@@ -311,14 +311,17 @@ def test_invalid_image_becomes_pending_error_without_upsert(
         result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
 
     assert result.success is False
-    assert result.projected == 0
+    assert result.projected == 1
+    assert f"{ifood_item.sku}: foto pendente:" in result.errors[0]
     assert reason in result.errors[0]
     mock_post.assert_not_called()
-    mock_put.assert_not_called()
+    assert "imagePath" not in mock_put.call_args.kwargs["json"]["products"][0]
 
 
 @pytest.mark.django_db
-def test_failed_upload_does_not_upsert_or_cache_success(ifood_item, ifood_settings, fake_oauth):
+def test_failed_upload_projects_without_image_and_does_not_cache_success(
+    ifood_item, ifood_settings, fake_oauth,
+):
     from requests import HTTPError
 
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
@@ -335,14 +338,17 @@ def test_failed_upload_does_not_upsert_or_cache_success(ifood_item, ifood_settin
         result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
 
     assert result.success is False
-    assert result.projected == 0
+    assert result.projected == 1
+    assert f"{ifood_item.sku}: foto pendente:" in result.errors[0]
     assert "enviar a foto" in result.errors[0]
     assert CatalogImageUpload.objects.get().image_path == ""
-    mock_put.assert_not_called()
+    assert "imagePath" not in mock_put.call_args.kwargs["json"]["products"][0]
 
 
 @pytest.mark.django_db
-def test_image_download_timeout_is_readable_and_does_not_upsert(ifood_item, ifood_settings, fake_oauth):
+def test_image_download_timeout_projects_without_image_and_is_readable(
+    ifood_item, ifood_settings, fake_oauth,
+):
     from requests import Timeout
 
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
@@ -356,9 +362,11 @@ def test_image_download_timeout_is_readable_and_does_not_upsert(ifood_item, ifoo
         result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
 
     assert result.success is False
+    assert result.projected == 1
+    assert f"{ifood_item.sku}: foto pendente:" in result.errors[0]
     assert "baixar a foto" in result.errors[0]
     mock_post.assert_not_called()
-    mock_put.assert_not_called()
+    assert "imagePath" not in mock_put.call_args.kwargs["json"]["products"][0]
 
 
 @pytest.mark.django_db

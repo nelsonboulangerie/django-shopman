@@ -411,11 +411,25 @@ class IFoodCatalogProjection:
                     if item.is_published and item.is_sellable
                     else True
                 )
-                image_path = (
-                    _image_path(item.image_url, cfg, headers, channel=channel)
-                    if item.image_url
-                    else ""
-                )
+                image_path = ""
+                if item.image_url:
+                    try:
+                        image_path = _image_path(
+                            item.image_url,
+                            cfg,
+                            headers,
+                            channel=channel,
+                        )
+                    except Exception as exc:
+                        # O PUT sem imagePath preserva a foto que já está no iFood.
+                        # A pendência continua visível e pode ser tentada novamente
+                        # sem impedir preço, disponibilidade ou texto de avançarem.
+                        logger.warning(
+                            "catalog_projection_ifood.image pending for %s",
+                            item.sku,
+                            exc_info=True,
+                        )
+                        errors.append(f"{item.sku}: foto pendente: {exc}")
                 _upsert_item(item, cfg, headers, in_stock=in_stock, image_path=image_path)
                 projected += 1
             except IFoodRateLimitError:
