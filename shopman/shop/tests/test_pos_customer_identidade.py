@@ -210,9 +210,8 @@ def test_com_a_palavra_do_operador_o_telefone_errado_tem_conserto(_pdv):
     assert a.phone == "+5543988887777"
     novo = ContactPoint.objects.get(customer=a, value_normalized="+5543988887777")
     assert novo.is_primary is True
-    # O antigo fica no histórico, demovido — não sai apagando contato de ninguém.
-    antigo = ContactPoint.objects.get(customer=a, value_normalized="+5543999990011")
-    assert antigo.is_primary is False
+    # Corrigir é TROCAR (A4-1): o antigo sai, para não seguir abrindo a conta.
+    assert not ContactPoint.objects.filter(value_normalized="+5543999990011").exists()
 
 
 def test_a_correcao_recusa_quando_o_numero_novo_ja_e_de_terceiro(_pdv):
