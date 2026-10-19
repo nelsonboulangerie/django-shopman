@@ -3853,7 +3853,8 @@ def _old_dough_cap_pct(recipe: Recipe) -> Decimal | None:
             continue
         try:
             cap = Decimal(str(meta.get("cap_pct")))
-        except Exception:
+        except (ArithmeticError, ValueError):
+            logger.warning("production.weighing_invalid_old_dough_cap recipe=%s value=%r", recipe.ref, meta.get("cap_pct"))
             continue
         if cap.is_finite() and Decimal("0") < cap < Decimal("100"):
             return cap
