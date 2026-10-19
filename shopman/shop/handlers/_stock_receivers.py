@@ -249,8 +249,18 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
     except Exception:  # silêncio-deliberado: o aviso degrada para o SKU como nome
         logger.debug("stock_arrived: product lookup failed for sku=%s", sku, exc_info=True)
 
+    backend = _notification_backend(customer)
+    if backend is None:
+        # Sem canal com consentimento (e contato) não há aviso a mandar. Antes
+        # isto seguia para ``notify(backend=None)``, que fora de DEBUG não tem
+        # backend padrão e grita (fallbacks perigosos, item 14).
+        logger.debug(
+            "stock_arrived not dispatched (customer %s has no consented channel)",
+            getattr(customer, "pk", None),
+        )
+        return
+
     try:
-        backend = _notification_backend(customer)
         deadline_at = _deadline_at_for_holds(hold_ids or [])
         notify(
             event="stock_arrived",
