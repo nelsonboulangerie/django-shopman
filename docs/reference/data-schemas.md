@@ -1743,7 +1743,7 @@ grupos do MESMO cliente. Cliente em mais de um grupo: vale a melhor por tipo, se
 |--------|--------------------|----------|-----------|
 | `free_shipping` | `min_order_q` (`int`, centavos) | `shop/modifiers.resolve_delivery_fee_waiver` (loja e PDV, terceira política do frete grátis, `reason: "group"`) e `shop/projections/cart.build_free_delivery_progress` (barra "faltam R$ X") | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. Cliente em dois grupos com frete grátis: vale o de MENOR mínimo. A base é a mesma do limiar da loja (mercadoria, sem o cupom). |
 | `exclusive_collections` | `collection_refs` (`list[str]`) | follow-up (catálogo) | Coleções do Offerman que só o membro enxerga/comprar. |
-| `exclusive_notifications` | `campaign_refs` (`list[str]`) | follow-up (marketing) | Avisos/campanhas exclusivos do grupo. |
+| `exclusive_notifications` | `campaign_refs` (`list[str]`, cada item `campaign:<Campaign.pk>`, a identidade que o Marketing já usa nos comprovantes) | `shop/services/campaign_exclusivity.for_campaign` → `shop/services/audience.resolve(campaign_id=...)` (contagem, disparo, aprovação, planejamento e envio das ondas) e projeção da campanha (`exclusive_price_tiers`) | Campanhas EXCLUSIVAS do grupo. Campanha que aparece aqui em algum grupo só alcança membros dos grupos que a declaram, qualquer que seja o público escolhido (quem sai conta em `excluded_by_reason.outside_exclusive_groups`). Vantagem com `is_active=false` tira os membros DAQUELE grupo e a campanha continua exclusiva: nunca vira campanha para todos. Exclusiva só sai por mensagem direta: o CRUD e a aprovação recusam postagem pública. |
 
 `priority` (`int`) desempata tipos iguais entre grupos do mesmo cliente; `is_active`
 desliga a vantagem sem apagar. O resolvedor canônico é
@@ -1752,9 +1752,13 @@ desliga a vantagem sem apagar. O resolvedor canônico é
 
 **Quem escreve**: o Gestor (`shopman/backstage/services/customer_groups.py` → `PriceTierAdvantage`
 via `shop/services/customer_groups.sync_group_advantages`) é o dono de `priority`, `is_active` e
-das chaves de `free_shipping` e `exclusive_collections`. `campaign_refs` é do Marketing: o Gestor
-aceita a chave, mas não a oferece na tela, e chave AUSENTE no payload não é tocada, para que
-editar o frete não apague o que outro dono escreveu. O `kind`/`priority`/`is_active` aparece na
+das chaves de `free_shipping` e `exclusive_collections`. `campaign_refs` é do Marketing: quem
+escreve é `shop/services/campaign_exclusivity.set_exclusive_tiers`, chamado pelo CRUD de campanha
+(`exclusive_price_tiers` em `POST/PATCH marketing/rules/`; apagar a campanha retira a referência).
+Ele acrescenta ou retira SÓ a referência daquela campanha; grupo escolhido sem a vantagem ganha a
+linha ligada, e linha existente mantém `is_active`/`priority`, que são do Gestor. O Gestor aceita
+a chave, mas não a oferece na tela, e chave AUSENTE no payload não é tocada, para que editar o
+frete não apague o que outro dono escreveu. O `kind`/`priority`/`is_active` aparece na
 projection como `CustomerGroupAdvantageProjection`, e a lista de grupos do cliente como
 `CustomerPriceTierProjection` (`shopman/backstage/projections/customer_groups.py` e `customers.py`).
 

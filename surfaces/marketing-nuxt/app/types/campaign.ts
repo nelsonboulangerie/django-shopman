@@ -123,6 +123,10 @@ export interface Campaign {
   template_name: string;
   platforms: string[];
   audience_rules: AudienceRules;
+  /** Faixas de preço (`PriceTier.ref`) que têm a campanha como aviso exclusivo. Vazio =
+   *  não é exclusiva; com faixas, só os membros delas recebem, qualquer que seja o
+   *  público. O servidor grava em `PriceTierAdvantage.config.campaign_refs`. */
+  exclusive_price_tiers: string[];
   /** `ref` da oferta anunciada. Vazio = campanha sem desconto atrás. */
   promotion_ref: string;
   schedule: CampaignSchedule;

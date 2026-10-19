@@ -616,6 +616,7 @@ def test_the_list_does_not_query_per_campaign(db, django_assert_num_queries):
             platforms=["whatsapp"], is_active=True,
         )
 
-    # 1 campanhas + 1 anúncios. Sem o agrupamento seriam 1 + 5.
-    with django_assert_num_queries(2):
+    # 1 campanhas + 1 anúncios + 1 exclusividade por grupo (todas as campanhas de uma
+    # vez, `campaign_exclusivity.declared_by_campaign`). Sem o agrupamento seriam 1 + 5 + 5.
+    with django_assert_num_queries(3):
         mp.build_rules()

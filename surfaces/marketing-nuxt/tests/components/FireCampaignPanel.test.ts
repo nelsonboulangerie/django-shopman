@@ -11,6 +11,8 @@ let counted: AudienceCount;
 /** As regras que o painel MANDOU contar. É por aqui que se prova o `match`. */
 let lastCountedRules: Record<string, unknown> | null = null;
 let lastCountedSku = "";
+/** A campanha da contagem: campanha exclusiva conta só membros, no servidor. */
+let lastCountedCampaign: unknown = undefined;
 
 function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
   return {
@@ -49,6 +51,7 @@ beforeAll(() => {
           unknown
         > | null;
         lastCountedSku = String(opts?.body?.sku ?? "");
+        lastCountedCampaign = opts?.body?.campaign_id;
         return counted;
       },
     ),
@@ -59,6 +62,7 @@ beforeEach(() => {
   counted = fakeCount();
   lastCountedRules = null;
   lastCountedSku = "";
+  lastCountedCampaign = undefined;
   vi.useFakeTimers();
 });
 
@@ -370,6 +374,29 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     await settleCount(wrapper);
 
     expect(lastCountedRules).toEqual({ tags: ["clientes-da-casa"] });
+    expect(lastCountedCampaign).toBe(3);
+  });
+
+  it("campanha exclusiva diz quem recebe e o motivo de quem ficou de fora", async () => {
+    counted = fakeCount({
+      total: 1,
+      excluded_by_reason: { outside_exclusive_groups: 2 },
+    });
+    const wrapper = panel(makeRule({ exclusive_price_tiers: ["atacado"] }));
+    await settleCount(wrapper);
+
+    expect(wrapper.get('[data-testid="fire-exclusive-note"]').text()).toBe(
+      "Campanha exclusiva da faixa de preço Atacado: só quem está nela recebe, qualquer que seja o público.",
+    );
+    expect(wrapper.text()).toContain(
+      "2 pessoas fora da faixa de preço que tem esta campanha como exclusiva",
+    );
+  });
+
+  it("campanha comum não fala de exclusividade", async () => {
+    const wrapper = panel();
+    await settleCount(wrapper);
+    expect(wrapper.find('[data-testid="fire-exclusive-note"]').exists()).toBe(false);
   });
 
   it("diz que ninguém se encaixa, em vez de deixar um zero sem explicação", async () => {

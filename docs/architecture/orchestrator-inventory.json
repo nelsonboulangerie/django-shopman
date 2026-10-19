@@ -7958,6 +7958,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/campaign_exclusivity.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-campaign-exclusivity"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/campaign_identity.py",
       "touchpoints": [
         "service"

@@ -113,6 +113,10 @@ const EXCLUSION_LABELS: ReadonlyArray<readonly [string, string]> = [
   ["consent_unavailable", "com consentimento que não pôde ser conferido agora"],
   ["rule_mismatch", "fora do cruzamento (não se encaixam em todas as regras)"],
   ["invalid_contact", "com telefone que não serve para WhatsApp"],
+  [
+    "outside_exclusive_groups",
+    "fora da faixa de preço que tem esta campanha como exclusiva",
+  ],
 ];
 
 export function exclusionNotes(
@@ -410,6 +414,30 @@ function named(
   labels: Record<string, string> | undefined,
 ): string {
   return refs.map((ref) => labels?.[ref] ?? ref).join(", ");
+}
+
+/** Plataformas que publicam no mural: quem vê não é escolhido, então nunca é exclusivo.
+ *  A fonte é a capacidade do servidor (`delivery_kind`); o conjunto fixo só cobre a
+ *  tela antes de as capacidades chegarem. */
+const PUBLICATION_PLATFORMS = new Set(["instagram", "facebook", "google_business"]);
+
+export function publicationPlatforms(
+  platforms: string[],
+  deliveryKinds: Record<string, string | undefined> = {},
+): string[] {
+  return platforms.filter((platform) =>
+    deliveryKinds[platform]
+      ? deliveryKinds[platform] === "publication"
+      : PUBLICATION_PLATFORMS.has(platform),
+  );
+}
+
+/** "Só para Equipe, Aliança Francesa" — ou vazio quando a campanha não é exclusiva. */
+export function exclusiveSummary(
+  tiers: string[] | undefined,
+  labels: Record<string, string> | undefined,
+): string {
+  return tiers?.length ? `Só para ${named(tiers, labels)}` : "";
 }
 
 /** `Choice[]` (como a projection entrega) em mapa ref → rótulo. */

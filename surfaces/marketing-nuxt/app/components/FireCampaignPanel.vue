@@ -161,6 +161,14 @@ const emptyAlerts = computed(() =>
     : "",
 );
 
+/** Campanha exclusiva: o número já vem filtrado pelo servidor; a frase diz por quê. */
+const exclusiveNote = computed(() => {
+  const tiers = props.rule?.exclusive_price_tiers ?? [];
+  if (!tiers.length) return "";
+  const names = tiers.map((ref) => audienceLabels.value.priceTiers[ref] ?? ref).join(", ");
+  return `Campanha exclusiva da faixa de preço ${names}: só quem está nela recebe, qualquer que seja o público.`;
+});
+
 /** Rótulos do servidor: o resumo do público da campanha não traduz ref por conta. */
 const audienceLabels = computed(() => ({
   priceTiers: choiceLabels(props.priceTiers),
@@ -357,7 +365,7 @@ function measureAgain() {
   const rules = useSaved.value
     ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
     : chosen.value;
-  measure(rules, productSku.value);
+  measure(rules, productSku.value, props.rule?.pk);
 }
 
 // O número acompanha a escolha. "O público da campanha" mede as regras salvas, porque a
@@ -376,7 +384,7 @@ watch(
       clear();
       return;
     }
-    measure(rules, productSku.value);
+    measure(rules, productSku.value, props.rule?.pk);
   },
   { immediate: true, deep: true },
 );
@@ -436,6 +444,13 @@ watch(
         :items="audienceModeItems"
         legend="Público alvo"
       />
+      <p
+        v-if="exclusiveNote"
+        class="text-xs text-muted-foreground"
+        data-testid="fire-exclusive-note"
+      >
+        {{ exclusiveNote }}
+      </p>
       <NuxtAlert
         v-if="savedAudienceEmpty"
         color="warning"
