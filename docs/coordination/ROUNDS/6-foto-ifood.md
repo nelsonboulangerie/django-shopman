@@ -21,7 +21,7 @@
 - Catálogo do backstage (upload do Gestor, bindings e API): 147 passaram, 2 ignorados.
 - Guarda, estado e concorrência de catálogo: 34 passaram, 4 ignorados.
 - Migração conferida por `makemigrations --check --dry-run`: nenhuma mudança faltante.
-- Ruff e `git diff --check`: limpos.
+- Ruff, gate de silêncio, inventário do orquestrador e `git diff --check`: limpos.
 - O transporte dos testes é integralmente simulado: download, upload e upsert não chamam rede real.
 - Casos cobertos: storage local, HTTP com timeout, JPEG/PNG, WebP recusado, mais de 5 MB recusado durante streaming, mesmo conteúdo em URLs diferentes, cache após limpar memória, foto trocada e upload 503 sem `PUT`.
 - A guarda de escrita continua bloqueando antes de OAuth/HTTP quando a política explícita de teste não existe.

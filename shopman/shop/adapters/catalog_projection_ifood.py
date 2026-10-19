@@ -204,7 +204,7 @@ def _storage_image(image_url: str) -> bytes | None:
                 continue
             with default_storage.open(name, "rb") as source:
                 return source.read(_MAX_IMAGE_BYTES + 1)
-        except Exception:
+        except Exception:  # silêncio-deliberado: probe local falhou; o download HTTP é a segunda fonte.
             logger.debug("catalog_projection_ifood.storage_image degraded", exc_info=True)
     return None
 

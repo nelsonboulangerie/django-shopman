@@ -303,18 +303,26 @@
             "IFoodCatalogProjection",
             "IFoodCatalogWriteBlocked",
             "IFoodCategoryError",
+            "IFoodImageError",
             "IFoodRateLimitError",
+            "_IMAGE_PATHS",
+            "_MAX_IMAGE_BYTES",
             "_UUID_NS",
             "_base_url",
             "_check_rate_limit",
+            "_download_image",
             "_get_config",
             "_headers",
+            "_image_path",
             "_item_payload",
             "_item_uuid",
             "_product_uuid",
             "_resolve_category_id",
             "_set_item_status",
+            "_storage_image",
+            "_upload_image",
             "_upsert_item",
+            "_validated_image",
             "logger"
           ]
         }
@@ -5615,6 +5623,7 @@
         {
           "responsibility": "configuração",
           "symbols": [
+            "CatalogImageUpload",
             "CatalogSyncState",
             "SyncStatus"
           ]
