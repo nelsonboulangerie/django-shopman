@@ -2079,9 +2079,6 @@ SHOPMAN_ALERT_EMAIL = os.environ.get("SHOPMAN_ALERT_EMAIL", "").strip() or None
 # a tabela nunca virar problema. A varredura roda no maintenance_worker.
 SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS = int(os.environ.get("SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS", "180"))
 
-# PIX payment expiry in seconds (default: 1 hour).
-SHOPMAN_PIX_EXPIRY_SECONDS = int(os.environ.get("SHOPMAN_PIX_EXPIRY_SECONDS", "3600"))
-
 SHOPMAN_STRIPE = {
     "publishable_key": STRIPE_PUBLISHABLE_KEY,
     "secret_key": STRIPE_SECRET_KEY,

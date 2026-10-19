@@ -25,7 +25,7 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
-from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
+from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult, pix_timeout_minutes_from
 
 logger = logging.getLogger(__name__)
 
@@ -337,11 +337,7 @@ def create_intent(
     metadata = metadata or {}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
     efi_config = _get_config()
-    pix_timeout_minutes = config.get("pix_timeout_minutes")
-    if pix_timeout_minutes:
-        pix_expiry_seconds = int(pix_timeout_minutes) * 60
-    else:
-        pix_expiry_seconds = getattr(settings, "SHOPMAN_PIX_EXPIRY_SECONDS", 3600)
+    pix_expiry_seconds = pix_timeout_minutes_from(config) * 60
     expires_at = timezone.now() + timedelta(seconds=pix_expiry_seconds)
 
     candidate_txid = (

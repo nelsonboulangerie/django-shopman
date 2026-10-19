@@ -30,6 +30,7 @@ class MockPixConfirmationTests(TestCase):
         )
 
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",
@@ -55,6 +56,7 @@ class MockPixConfirmationTests(TestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             intent = payment_mock.create_intent(
+                pix_timeout_minutes=60,
                 order_ref=order.ref,
                 amount_q=order.total_q,
                 method="pix",
@@ -79,6 +81,7 @@ class MockPixConfirmationTests(TestCase):
         )
 
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",
@@ -141,6 +144,7 @@ class MockPixConfirmationTests(TestCase):
             message=f"Falha ao gerar pagamento PIX do pedido {order.ref}.",
         )
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",
@@ -177,6 +181,7 @@ class MockPixConfirmationTests(TestCase):
             data={"payment": {"method": "pix"}},
         )
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",
