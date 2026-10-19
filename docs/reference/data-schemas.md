@@ -782,7 +782,7 @@ Reagendar (`services.reschedule`) **move** a directive viva (edita `available_at
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | PixGenerateHandler |
 | `amount_q` | `int` | hooks | PixGenerateHandler |
-| `pix_timeout_minutes` | `int` | hooks (from channel config) | PixGenerateHandler (default 10) |
+| `pix_timeout_minutes` | `int` | `services.payment._adapter_config` (`ChannelConfig.payment.timeout_minutes`, ou o prazo do link na encomenda do PDV) | adapters de Pix (`payment_efi`, `payment_mock`): obrigatório, sem default |
 
 Write-back: spawns `pix.timeout` e `notification.send` (reminder)
 
@@ -1497,8 +1497,11 @@ gate de commit. Editáveis tipados em Reais no ShopAdmin (`shop/admin/shop.py`).
 | `rules.free_delivery_above_q` | só entrega | `build_free_delivery_progress`, `DeliveryFeeModifier` | Taxa de entrega zera no/above deste valor. Reusa a barra como upsell ("faltam X para frete grátis") |
 
 > Convivem no mesmo sub-dict `rules` que o tri-state `validators`/`modifiers`/
-> `checks` do `ChannelConfig` — o `_safe_init` filtra estas chaves de política, que
-> são lidas direto de `shop.defaults["rules"]` por `shop_rule_q()`.
+> `checks` do `ChannelConfig`. A seção `rules` as reconhece pelo nome
+> (`SHOP_RULE_POLICY_KEYS` em `shop/config.py`, junto com `default_delivery_fee_q`)
+> e não as carrega; elas são lidas direto de `shop.defaults["rules"]` por
+> `shop_rule_q()`. Qualquer outra chave desconhecida num aspecto do `ChannelConfig`
+> é RECUSADA com o nome dela (`ValueError` no `from_dict`, `ValidationError` no Admin).
 
 A taxa de entrega por região segue nas **Zonas de Entrega** (`DeliveryZone`, inline
 no admin). O frete grátis global é avaliado por cima da taxa da zona.
@@ -1506,7 +1509,7 @@ no admin). O frete grátis global é avaliado por cima da taxa da zona.
 ### Reposição de Compras — `Shop.defaults["purchase"]`
 
 Política do cálculo de reposição do app Compras, fora do schema do `ChannelConfig`
-(`_safe_init` filtra). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
+(o `from_dict` lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
 (`PurchasePolicy`, dataclass-driven), editável no ShopAdmin (página "Compras");
 lida por `_purchase_policy()` em `shopman/backstage/projections/purchase.py`;
 chave ausente = default. O prazo de entrega por insumo
@@ -1535,8 +1538,8 @@ fornecedor de um clique usa `suggestedQty` como fonte única.
 
 ### Fidelidade — `Shop.defaults["loyalty"]`
 
-Política do programa de fidelidade, fora do schema do `ChannelConfig` (`_safe_init`
-filtra). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
+Política do programa de fidelidade, fora do schema do `ChannelConfig` (o `from_dict`
+lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
 dataclass-driven), editável no ShopAdmin (fieldset "Fidelidade"). O Core (guestman)
 não depende do shop: o orquestrador (`shop/apps.py`) registra resolvers em
 `guestman.contrib.loyalty.conf` que injetam estes valores.

@@ -446,16 +446,16 @@ class ChannelConfig:
     @classmethod
     def from_dict(cls, data: dict) -> ChannelConfig:
         return cls(
-            confirmation=_safe_init(cls.Confirmation, data.get("confirmation", {})),
-            payment=_safe_init(cls.Payment, data.get("payment", {})),
-            fulfillment=_safe_init(cls.Fulfillment, data.get("fulfillment", {})),
-            stock=_safe_init(cls.Stock, data.get("stock", {})),
-            waitlist=_safe_init(cls.Waitlist, data.get("waitlist", {})),
-            notifications=_safe_init(cls.Notifications, data.get("notifications", {})),
-            pricing=_safe_init(cls.Pricing, data.get("pricing", {})),
-            editing=_safe_init(cls.Editing, data.get("editing", {})),
-            rules=_safe_init(cls.Rules, data.get("rules", {})),
-            display=_safe_init(cls.Display, data.get("display", {})),
+            confirmation=_section(cls.Confirmation, data.get("confirmation", {}), "confirmation"),
+            payment=_section(cls.Payment, data.get("payment", {}), "payment"),
+            fulfillment=_section(cls.Fulfillment, data.get("fulfillment", {}), "fulfillment"),
+            stock=_section(cls.Stock, data.get("stock", {}), "stock"),
+            waitlist=_section(cls.Waitlist, data.get("waitlist", {}), "waitlist"),
+            notifications=_section(cls.Notifications, data.get("notifications", {}), "notifications"),
+            pricing=_section(cls.Pricing, data.get("pricing", {}), "pricing"),
+            editing=_section(cls.Editing, data.get("editing", {}), "editing"),
+            rules=_section(cls.Rules, data.get("rules", {}), "rules", foreign=SHOP_RULE_POLICY_KEYS),
+            display=_section(cls.Display, data.get("display", {}), "display"),
             lifecycle=data.get("lifecycle", {}),
             handle_label=data.get("handle_label", cls.handle_label),
             handle_placeholder=data.get("handle_placeholder", cls.handle_placeholder),
@@ -662,13 +662,38 @@ class ChannelConfig:
             )
 
 
-def _safe_init(cls, data: dict):
-    """Instantiate a dataclass filtering out unknown fields."""
+# Políticas da LOJA que moram em ``Shop.defaults["rules"]``, ao lado das regras
+# do canal, e têm leitor próprio (``projections.cart.shop_rule_q``). São chaves
+# declaradas: a seção ``rules`` do ChannelConfig as reconhece e não as carrega.
+SHOP_RULE_POLICY_KEYS = frozenset({
+    "minimum_order_q",
+    "delivery_minimum_q",
+    "free_delivery_above_q",
+    "default_delivery_fee_q",
+})
+
+
+def _section(cls, data, section: str, *, foreign: frozenset[str] = frozenset()):
+    """Instancia a seção do ``ChannelConfig`` e GRITA com chave desconhecida.
+
+    Chave que a seção não declara é erro de digitação ou resto de um nome
+    antigo: ``safty_margin: 9`` era descartada em silêncio e a seção seguia
+    com o default, e o operador via o canal ignorar o que ele escreveu.
+    """
     import dataclasses
 
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{section} deve ser um objeto")
     valid_fields = {f.name for f in dataclasses.fields(cls)}
-    filtered = {k: v for k, v in data.items() if k in valid_fields}
-    return cls(**filtered)
+    unknown = sorted(set(data) - valid_fields - foreign)
+    if unknown:
+        raise ValueError(
+            f"{section}: chave desconhecida {', '.join(unknown)} "
+            f"(válidas: {', '.join(sorted(valid_fields))})"
+        )
+    return cls(**{key: value for key, value in data.items() if key in valid_fields})
 
 
 def deep_merge(base: dict, override: dict) -> dict:

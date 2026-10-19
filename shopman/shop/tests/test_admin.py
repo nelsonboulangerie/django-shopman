@@ -444,7 +444,7 @@ class TestShopAdminCalendar:
         shop.defaults = {
             "surface_policy": {"keep": True},
             "menu": {"dynamic_collections": ["featured"]},
-            "notifications": {"backend": "console", "other": "kept"},
+            "notifications": {"backend": "console", "customer_phone": "direct"},
             "pickup_slots": [
                 {"ref": "slot-legacy", "label": "Legado", "starts_at": "07:00"},
                 {"ref": "slot-extra-1", "label": "Extra 1", "starts_at": "19:00"},
@@ -499,7 +499,7 @@ class TestShopAdminCalendar:
             "fresh_from_oven",
             "new_arrivals",
         ]
-        assert saved.defaults["notifications"] == {"backend": "manychat", "other": "kept"}
+        assert saved.defaults["notifications"] == {"backend": "manychat", "customer_phone": "direct"}
         assert saved.defaults["max_preorder_days"] == 21
         assert saved.defaults["pickup_slots"][:2] == [
             {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
