@@ -58,15 +58,17 @@ def simulated_payment_blocks_emission(order) -> bool:
     return is_simulated_order_payment(order) and not _fiscal_backend_is_homologation()
 
 
-def emission_resolver(order) -> bool:
+def emission_resolver(order, *, on_broken=None) -> bool:
     """Decide SE a NFC-e deve ser emitida para este pedido.
 
     Delega a resolver(es) Python plugáveis (``settings.SHOPMAN_FISCAL_EMISSION_RESOLVER``,
     caminho pontilhado para ``callable(order) -> bool``). Centraliza a regra de negócio
     (acima de X, certos canais, com CPF na nota, forma de pagamento, ambiente…) sem tocar
     no fluxo. AUSENTE → fallback padrão (opt-in do operador). Resolver com ERRO →
-    os outros votam, o pedido explícito de nota vale, e o erro grita (log de erro +
-    alerta crítico); o ``SHOPMAN_E028`` reprova o caminho que não importa já no boot.
+    os outros votam, o pedido explícito de nota vale, e o erro grita: log de erro
+    sempre, e ``on_broken(order, caminhos)`` para quem está no lado de ESCRITA
+    (o ``emit`` passa o alerta crítico; as projeções, que só leem, não passam
+    nada). O ``SHOPMAN_E028`` reprova o caminho que não importa já no boot.
 
     **Vários resolvers**: separe por vírgula → combinados por OR (emite se QUALQUER um
     disser sim), ex.: ``"...on_request_or_tax_id,...card_payment"``. Para AND/NOT ou
@@ -98,7 +100,7 @@ def emission_resolver(order) -> bool:
     # Cada resolver vota sozinho (múltiplos = OR). Um caminho quebrado não pode
     # calar os outros: com o quinto resolver (``intermediated_sale``) acrescentado
     # no Dia D a um deploy que ainda não o tem, os quatro da casa continuam valendo.
-    # E o quebrado GRITA (erro no log + alerta crítico): até 19/10 ele era um
+    # E o quebrado GRITA (erro no log + ``on_broken``): até 19/10 ele era um
     # ``warning`` e a NFC-e parava de sair, venda após venda, sem nada em tela.
     emits = False
     broken: list[str] = []
@@ -115,7 +117,8 @@ def emission_resolver(order) -> bool:
                 exc_info=True,
             )
     if broken:
-        _alert_emission_resolver_broken(order, broken)
+        if on_broken is not None:
+            on_broken(order, broken)
         # Resolver quebrado NÃO trava o pedido: o que funciona vota, e o pedido
         # explícito de nota (CPF, papel, e-mail) segue valendo.
         return emits or _default_emission_decision(order)
@@ -386,7 +389,7 @@ def emit(order) -> None:
     if data.get("nfce_access_key"):
         return
 
-    if not emission_resolver(order):
+    if not emission_resolver(order, on_broken=_alert_emission_resolver_broken):
         _alert_receipt_promised_without_emission(order, data)
         return
 

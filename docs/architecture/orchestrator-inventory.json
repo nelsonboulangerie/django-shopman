@@ -2390,6 +2390,7 @@
             "check_environment_name_recognized",
             "check_fiscal_adapter",
             "check_fiscal_emission_resolver",
+            "check_fiscal_emission_resolver_importable",
             "check_google_maps_credential_boundary",
             "check_guestman_webhook_secret",
             "check_listing_channel_parity",

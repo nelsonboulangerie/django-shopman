@@ -14,7 +14,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E009  Real payment adapter is missing required credentials/files
   SHOPMAN_E011  Machine courier adapter enabled without API credentials
   SHOPMAN_E012  Piloto automático de staging habilitado em produção
-  SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
+  SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão
   SHOPMAN_E014  Operator subdomain zone configured without shared cookie scope
   SHOPMAN_E015  Captura simulada exposta fora de ambiente não produtivo
   SHOPMAN_E016  Catálogo de qualidade não tem exatamente um grau padrão ativo
@@ -29,6 +29,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E025  Chave HMAC dos recibos de privacidade ausente ou inválida
   SHOPMAN_E026  Ambiente de cobrança (EFI_SANDBOX) ou fiscal (FOCUS_NFE_ENVIRONMENT) não declarado em produção
   SHOPMAN_E027  Dinheiro ou nota de verdade com porta de teste aberta (em qualquer ambiente)
+  SHOPMAN_E028  Caminho de SHOPMAN_FISCAL_EMISSION_RESOLVER que não importa ou não é chamável (todo check)
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
