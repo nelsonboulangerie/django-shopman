@@ -514,9 +514,19 @@ def _apply_post_commit_side_effects(data: dict, channel_ref: str, *, order_ref: 
     if not _post_commit_intent(data, channel_ref).customer_phone:
         return []
     pending = []
-    for effect in ("session_takeover", "customer", "address", "defaults"):
-        key = f"checkout:{order_ref}:{effect}:v1"
-        message = Directive.objects.filter(topic=directives.CHECKOUT_CONVENIENCE, dedupe_key=key).first()
+    effects = ("session_takeover", "customer", "address", "defaults")
+    keys = {effect: f"checkout:{order_ref}:{effect}:v1" for effect in effects}
+    # As quatro conveniências numa leitura só (eram quatro consultas por checkout).
+    queued = {
+        message.dedupe_key: message
+        for message in Directive.objects.filter(
+            topic=directives.CHECKOUT_CONVENIENCE,
+            dedupe_key__in=keys.values(),
+        )
+    }
+    for effect in effects:
+        key = keys[effect]
+        message = queued.get(key)
         if message is None and effect != "session_takeover":
             message = directives.create_persistently_deduped(
                 directives.CHECKOUT_CONVENIENCE,

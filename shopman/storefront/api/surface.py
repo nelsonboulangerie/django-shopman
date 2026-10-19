@@ -540,7 +540,7 @@ class StorefrontMenuView(APIView):
         with capture_catalog_timing() as timing:
             with catalog_stage("projection"):
                 if collection is not None:
-                    catalog_service.ensure_active_collection(collection)
+                    catalog_service.get_active_collection_or_404(collection)
                 catalog = build_catalog(
                     channel_ref=STOREFRONT_CHANNEL_REF,
                     collection_ref=collection,

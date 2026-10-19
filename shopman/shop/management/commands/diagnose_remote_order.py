@@ -103,20 +103,18 @@ class Command(BaseCommand):
 
 
 def _hold_summary(hold_ids: list) -> dict[str, int | str]:
-    if not isinstance(hold_ids, (list, tuple, set)):
-        hold_ids = [hold_ids]
-    if not hold_ids:
-        return {"result": "OK", "total": 0, "expired": 0, "missing": 0}
-    try:
-        from shopman.stockman.models import Hold
-    except Exception:
-        logger.debug("diagnose_remote_order._hold_summary degraded; using fallback", exc_info=True)
-        return {"result": "WARN", "total": len(hold_ids), "expired": 0, "missing": len(hold_ids)}
+    """Reservas do pedido (formato canônico de ``hold_ids``) e quantas venceram."""
+    from shopman.shop.services.stock import hold_pks
 
-    holds = list(Hold.objects.filter(id__in=hold_ids))
+    pks = hold_pks(hold_ids)
+    if not pks:
+        return {"result": "OK", "total": 0, "expired": 0, "missing": 0}
+    from shopman.stockman.models import Hold
+
+    holds = list(Hold.objects.filter(pk__in=pks))
     now = timezone.now()
     expired = sum(1 for hold in holds if getattr(hold, "expires_at", None) and hold.expires_at <= now)
-    missing = max(len(hold_ids) - len(holds), 0)
+    missing = max(len(pks) - len(holds), 0)
     result = "FAIL" if expired or missing else "OK"
     return {"result": result, "total": len(holds), "expired": expired, "missing": missing}
 

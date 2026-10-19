@@ -312,7 +312,11 @@ def decision_from_availability(
     qty_d = Decimal(str(qty))
     availability_policy = info.get("availability_policy", "planned_ok")
     is_paused = bool(info.get("is_paused", False))
-    is_tracked = bool(info.get("is_tracked", bool(info.get("positions"))))
+    # Toda leitura do Stockman carrega ``is_tracked``; dict sem ele não é
+    # leitura do Stockman, e adivinhar pelo ``positions`` decidiria por ela.
+    is_tracked = info["is_tracked"]
+    if not isinstance(is_tracked, bool):
+        raise TypeError(f"is_tracked must be bool for {sku}, got {is_tracked!r}")
     factual_qty = Decimal(str(info.get("total_promisable", 0))) if is_tracked else None
 
     if is_paused:

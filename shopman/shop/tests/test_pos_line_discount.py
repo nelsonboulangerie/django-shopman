@@ -58,6 +58,17 @@ class TestIntentPreservesLineDiscount:
         )
         assert "discount" not in intent.payload["items"][0]
 
+    def test_o_ingresso_so_le_unit_price_q(self) -> None:
+        """A3-3: o nome antigo do preço morreu no ingresso (pré-go-live, zero legado).
+
+        A superfície manda ``unit_price_q``; um segundo nome no ingresso era uma
+        porta a mais para o navegador declarar preço.
+        """
+        intent = parse_pos_sale_intent(
+            {"items": [{"sku": "X", "qty": 1, "price_q": 1500}]}, for_commit=True,
+        )
+        assert intent.payload["items"][0]["unit_price_q"] == 0
+
 
 class TestIntentPreservesLineIdentity:
     """O `line_id` é a identidade da linha, e ela nasce no cliente.
@@ -101,14 +112,6 @@ class TestIntentPreservesLineIdentity:
         assert exc.value.code == "duplicate_line_id"
 
 
-class TestPayloadDiscountHelpers:
-    def test_line_discounts_sum_per_unit_times_qty(self) -> None:
-        payload = {"items": [
-            {"sku": "A", "qty": 2, "unit_price_q": 1300, "discount": {"value": 10}},  # 130 * 2
-            {"sku": "B", "qty": 1, "unit_price_q": 800},                               # no discount
-        ]}
-        assert pos_service._payload_line_discounts_q(payload) == 260
-
 @pytest.mark.django_db
 class TestBuildSessionOpsStampsDiscount:
     def test_stamps_manual_discount_meta_with_approved_by(self) -> None:
@@ -116,6 +119,7 @@ class TestBuildSessionOpsStampsDiscount:
             "items": [{"sku": "BAGUETE", "name": "Baguete", "qty": 1, "unit_price_q": 1300,
                        "discount": {"type": "percent", "value": 10, "reason": "cortesia"}}],
         }
+        pos_service._stamp_discounts_left_to_the_save(payload)
         ops = pos_service.build_session_ops(payload, operator_username="op", approved_by="gerente")
         add_line = next(op for op in ops if op["op"] == "add_line" and op["sku"] == "BAGUETE")
         assert add_line["meta"]["manual_discount"]["value"] == 10
@@ -136,12 +140,14 @@ class TestBuildSessionOpsStampsDiscount:
                        "discount": {"type": "percent", "value": 10, "reason": "cortesia"}}],
             "manager_approval": {"username": "joyce", "pin": ""},
         }
+        pos_service._stamp_discounts_left_to_the_save(payload)
         ops = pos_service.build_session_ops(payload, operator_username="op")
         add_line = next(op for op in ops if op["op"] == "add_line" and op["sku"] == "BAGUETE")
         assert "approved_by" not in add_line["meta"]["manual_discount"]
 
     def test_no_meta_discount_without_line_discount(self) -> None:
         payload = {"items": [{"sku": "BAGUETE", "name": "Baguete", "qty": 1, "unit_price_q": 1300}]}
+        pos_service._stamp_discounts_left_to_the_save(payload)
         ops = pos_service.build_session_ops(payload, operator_username="op")
         add_line = next(op for op in ops if op["op"] == "add_line" and op["sku"] == "BAGUETE")
         assert "manual_discount" not in (add_line.get("meta") or {})
@@ -153,6 +159,8 @@ class TestManagerApprovalGate:
         # Default threshold is 0 (no approval); a plain line discount does not gate.
         payload = {
             "items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 1300, "discount": {"value": 10}}],
+            # O desconto que o motor aplicou (o fechamento carimba antes do gate).
+            pos_service._ENGINE_DISCOUNTS_KEY: {"line_q": 130, "order_q": 0},
         }
         # Must not raise.
         pos_service.validate_manager_approval(payload, operator_username="op")

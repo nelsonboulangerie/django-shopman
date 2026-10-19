@@ -71,3 +71,29 @@ def test_rejects_persona_ref_that_does_not_match_its_name():
     descriptor["bootstrap"]["rbac_personas"][0]["ref"] = "wrong-name"
     with pytest.raises(gate.DescriptorError, match="não corresponde ao nome"):
         gate.validate_descriptor(descriptor)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"activation": {"by": "operador", "reason": "forno parado"}},
+        {"display": {"paused_skus": ["PAO-01"]}},
+    ],
+    ids=["activation", "paused_skus"],
+)
+def test_rejects_channel_operational_state(overrides):
+    descriptor = _nelson()
+    descriptor["bootstrap"]["channels"][0]["config"]["overrides"].update(overrides)
+    with pytest.raises(gate.DescriptorError, match="estado operacional proibido"):
+        gate.validate_descriptor(descriptor)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["pix_key", "chave_pix", "webhook_hmac", "authorization", "signing", "senha", "certificado_a1"],
+)
+def test_rejects_secret_names_the_old_denylist_let_through(key):
+    descriptor = _nelson()
+    descriptor["bootstrap"]["channels"][0]["config"]["overrides"][key] = "x"
+    with pytest.raises(gate.DescriptorError, match="segredo proibido"):
+        gate.validate_descriptor(descriptor)

@@ -164,7 +164,6 @@ class CheckoutView(APIView):
             return Response({"detail": "A confirmação ainda está em consulta. Mantenha esta tentativa.", "error_code": "mutation_in_progress"}, status=409)
         if receipt.response_code == 201:
             order_service.grant_order_access(request, receipt.response_body["order_ref"])
-            order_service.mark_just_placed(request, receipt.response_body["order_ref"])
             request.session.pop("cart_session_key", None)
         logger.info("storefront.checkout result=%s", "recovered" if receipt.replayed else receipt.response_code)
         return Response(receipt.response_body, status=receipt.response_code)
@@ -559,7 +558,6 @@ class CheckoutView(APIView):
 
         # Clear cart
         order_service.grant_order_access(request, result.order_ref)
-        order_service.mark_just_placed(request, result.order_ref)
         request.session.pop("cart_session_key", None)
         # PAYMENT-TRACKING-MERGE: pix/card não vão mais para uma tela de pagamento
         # à parte — o Pix/cartão aparecem inline no próprio acompanhamento.

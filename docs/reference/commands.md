@@ -61,6 +61,7 @@ DigitalOcean ou do Sentry.
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`prune_unbacked_login_identifiers`](#prune_unbacked_login_identifiers) | guestman (identifiers) | Segurança | Lista (padrão) ou, com `--apply`, apaga identificador de telefone/WhatsApp/e-mail sem contato que o sustente (A4-1); manual |
 | [`purge_consent_ip`](#purge_consent_ip) | guestman | Privacidade | Conta (padrão) ou, com `--apply`, apaga o IP bruto vencido das provas de consentimento — manual, fora do worker |
 | [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
@@ -77,6 +78,7 @@ DigitalOcean ou do Sentry.
 | [`reconcile_ifood_catalog`](#reconcile_ifood_catalog) | shop | Diagnóstico | Compara inventário local iFood com SKUs, sem HTTP ou gravações |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
+| [`reconcile_user_notifications`](#reconcile_user_notifications) | backstage | Operação | Fecha o alerta pessoal cuja causa acabou e que o produtor não fechou; roda no `maintenance_worker` |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
@@ -861,6 +863,18 @@ python manage.py cleanup_idempotency_keys --days 3 --include-in-progress
 
 ---
 
+### prune_unbacked_login_identifiers
+
+**App:** `shopman.guestman.contrib.identifiers` (app label: `customer_identifiers`)
+**Arquivo:** `packages/guestman/shopman/guestman/contrib/identifiers/management/commands/prune_unbacked_login_identifiers.py`
+
+Acha o `CustomerIdentifier` de telefone, WhatsApp ou e-mail cujo cadastro não tem mais nenhum `ContactPoint` da mesma família com o mesmo valor. Até o A4-1, a troca de número ou de e-mail deixava essa sobra, e o porto de identidade a lê: o valor antigo abria a conta por OTP. Desde a correção, o `post_delete` do contato apaga o identificador no mesmo ato; este comando limpa o que já existia. Sem flag só lista (cadastro, tipo, valor mascarado); `--apply` apaga. Num ambiente com dado real, o `--apply` é decisão de quem responde por ele.
+
+```bash
+python manage.py prune_unbacked_login_identifiers          # lista
+python manage.py prune_unbacked_login_identifiers --apply  # apaga
+```
+
 ### customers_cleanup
 
 **App:** `shopman.guestman` (app label: `guestman`)
@@ -1006,6 +1020,25 @@ python manage.py reconcile_payments --since=4h
 ```
 
 **Veja também:** [runbook de pedido pago sem confirmacao](../runbooks/pedido-pago-sem-confirmacao.md).
+
+---
+
+### reconcile_user_notifications
+
+**App:** `shopman.backstage`
+**Arquivo:** `shopman/backstage/management/commands/reconcile_user_notifications.py`
+
+Para toda caixa com alerta pessoal ativo, compara o alerta com a condição de
+origem (anúncio em revisão, ticket da Cozinha, revisão de qualidade, segundo
+controle do Marketing) e fecha o que já não vale. Cada produtor fecha o próprio
+alerta no caminho feliz; isto é a rede para o signal que falhou. Antes era a
+leitura do sino (GET da caixa) que fazia esta conferência, e leitura não produz
+efeito. Roda no `maintenance_worker`, depois do `check_directive_health`.
+Idempotente, sem flags.
+
+```bash
+python manage.py reconcile_user_notifications
+```
 
 ---
 

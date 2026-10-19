@@ -111,11 +111,17 @@ def test_full_seed_flush_drops_an_orphan_rule_and_its_channel_links(monkeypatch)
     for rule in RuleConfig.objects.all():
         rule.full_clean()
 
-    from config.instance_descriptors import descriptor_diff, load_descriptor, project_from_database
+    from config.instance_descriptors import (
+        descriptor_diff,
+        load_descriptor,
+        project_from_database,
+        without_operational_state,
+    )
     from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR
 
     descriptor = load_descriptor(NELSON_INSTANCE_DESCRIPTOR)
-    assert descriptor_diff(descriptor, project_from_database(descriptor)) == []
+    declared = without_operational_state(descriptor)
+    assert descriptor_diff(declared, project_from_database(descriptor)) == []
 
 
 def test_migracao_0096_apaga_a_regra_aposentada():

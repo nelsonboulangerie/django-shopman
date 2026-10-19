@@ -879,24 +879,11 @@ def _commitment_info(order):
     return commitment_date, is_preorder
 
 
-def _hold_pk(hold_id: object) -> int | None:
-    raw = str(hold_id or "")
-    if not raw.startswith("hold:"):
-        return None
-    try:
-        return int(raw.split(":", 1)[1])
-    except (TypeError, ValueError):
-        return None
-
-
 def _pending_planned_hold_date(order) -> date | None:
     """Earliest active planned/demand hold still waiting for materialization."""
-    hold_entries = (order.data or {}).get("hold_ids") or []
-    hold_pks = [
-        pk
-        for pk in (_hold_pk(entry.get("hold_id")) for entry in hold_entries if isinstance(entry, dict))
-        if pk is not None
-    ]
+    from shopman.shop.services.stock import hold_pks as canonical_hold_pks
+
+    hold_pks = canonical_hold_pks((order.data or {}).get("hold_ids"))
     if not hold_pks:
         return None
     try:
@@ -1080,7 +1067,7 @@ def _build_promise(
             )
         if is_hosted:
             # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a
-            # mesma ação "tentar de novo" reabre o acompanhamento, que regenera o intent.
+            # mesma ação "tentar de novo" pede a conferência, que regenera o intent.
             return _payment_retry_promise(order, method=method)
         # Pix sem código ainda → não é a bola do cliente; cai para a loja.
 
@@ -1210,7 +1197,7 @@ def _courier_tracking_url(order) -> str:
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
-    """intent_error + sessão hospedada sem URL: reabrir o acompanhamento regenera o intent."""
+    """intent_error + sessão hospedada sem URL: o POST de conferência refaz a cobrança."""
     return _promise(
         state="payment_retry",
         tone="warning",
@@ -1218,9 +1205,10 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
         actions=(
             _action(
                 ref="retry_payment",
-                kind="link",
+                kind="mutation",
                 label=_copy_title("TRACKING_PROMISE_RETRY_ACTION", "Tentar novamente"),
-                href=f"/pedido/{order.ref}",
+                href=f"/api/v1/orders/{order.ref}/payment/check/",
+                method="POST",
                 idempotency="none",
             ),
         ),

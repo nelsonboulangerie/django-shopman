@@ -101,6 +101,7 @@ def open_edit_session(order, *, channel_ref: str, actor: str, operator_username:
         # que já estava volta com o peso e o preço VENDIDOS, e só a nova se resolve.
         pinned = pin_kept_lines(order, payload)
         weighed_sale.apply_to_payload(payload, channel=channel, skip_line_ids=pinned)
+        pos_service._stamp_discounts_left_to_the_save(payload)
         ops = pos_service._replace_session_ops(session, payload, operator_username)
         ops.append({"op": "set_data", "path": DATA_KEY, "value": edit_info(session)})
         session_service.modify_session(

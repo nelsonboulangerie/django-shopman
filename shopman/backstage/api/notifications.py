@@ -149,9 +149,9 @@ class NotificationListView(APIView):
     permission_classes = [IsBackstageOperator]
 
     def get(self, request):
-        # Um push perdido não deixa card zumbi: o fetch sempre reconcilia com a
-        # condição canônica antes de projetar a caixa do owner.
-        notification_lifecycle.reconcile_user_notifications(user=request.user)
+        # Leitura não produz efeito. O alerta cuja causa acabou é fechado pelo
+        # próprio produtor (signal) e, na falha dele, pelo
+        # ``reconcile_user_notifications`` do maintenance_worker.
         queryset = _own(request)
         if not _flag(request, "all"):
             queryset = queryset.filter(is_read=False)
@@ -214,7 +214,6 @@ class NotificationListV2View(APIView):
     permission_classes = [IsBackstageOperator]
 
     def get(self, request):
-        notification_lifecycle.reconcile_user_notifications(user=request.user)
         limit = _limit(request)
         raw_cursor = str(request.query_params.get("cursor") or "").strip()
         try:

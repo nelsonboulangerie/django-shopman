@@ -2009,9 +2009,9 @@ def settle_from_gateway(order) -> str:
     # inofensivo. No ``payment_mock`` ele captura INCONDICIONALMENTE e devolve
     # sucesso. Com o mock configurado (que é o caso do staging), todo PIX que
     # vencia sem ninguém pagar era promovido a "pago" aqui: estoque baixado,
-    # cozinha acionada, cliente avisado. E o gatilho não era nem o worker — era o
-    # próprio cliente recarregando o acompanhamento, que chama
-    # ``resolve_timeouts_if_due`` a cada GET.
+    # cozinha acionada, cliente avisado. E o gatilho não era nem o worker: era o
+    # próprio cliente recarregando o acompanhamento, que chamava
+    # ``resolve_timeouts_if_due`` a cada GET (hoje o GET só lê).
     #
     # ``check_gateway_status`` é o verbo de leitura, e o docstring dele no adapter
     # da Efí já dizia para que serve: "safety check before cancelling expired
@@ -2138,8 +2138,8 @@ def settle_from_gateway(order) -> str:
 
 
 # Intervalo mínimo entre duas perguntas ao gateway pelo MESMO pedido. Existe para
-# o acompanhamento poder perguntar em toda leitura sem transformar cada refresh do
-# cliente numa chamada de rede ao provedor. Curto de propósito: quem volta do
+# o acompanhamento poder pedir a conferência (POST ``payment/check/``) a cada volta
+# à aba sem transformar cada uma numa chamada de rede ao provedor. Curto de propósito: quem volta do
 # checkout do Stripe tem que ver a verdade no primeiro carregamento, e a última
 # pergunta desse pedido foi lá atrás, na criação do intent.
 GATEWAY_RECHECK_SECONDS = 20
@@ -2185,8 +2185,9 @@ def reconcile_with_gateway_if_due(order) -> bool:
     (endpoint errado no painel, segredo de outro ambiente, 400 na assinatura).
     Nos dois casos o cliente pagava e continuava lendo "Pagar com cartão".
 
-    A leitura do acompanhamento agora fecha esse buraco sozinha: pedido de cartão
-    aberto e não capturado pergunta ao gateway, no máximo a cada
+    A conferência do acompanhamento (o POST ``orders/<ref>/payment/check/``, que
+    a tela pede ao abrir) e o ``reconcile_payments`` do worker fecham esse
+    buraco: pedido de cartão aberto e não capturado pergunta ao gateway, no máximo a cada
     ``GATEWAY_RECHECK_SECONDS``. Não substitui o webhook (que é quem responde
     rápido e sem cliente na tela) — é o piso por baixo dele.
 
@@ -2195,7 +2196,7 @@ def reconcile_with_gateway_if_due(order) -> bool:
     Efí antes de cancelar. Estender a pergunta preguiçosa ao PIX poria uma
     chamada à Efí a cada 20s enquanto alguém encara o QR code, para cobrir um
     caso que já está coberto. O cartão é que não tinha rede nenhuma: o cliente
-    SAI do site, e ao voltar não há sinal nenhum além desta leitura.
+    SAI do site, e ao voltar não há sinal nenhum além desta conferência.
     """
     from shopman.orderman.models import Order
 

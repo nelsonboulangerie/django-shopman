@@ -50,8 +50,7 @@
                 "salgados",
                 "doces"
               ],
-              "prices_from": "web",
-              "paused_skus": []
+              "prices_from": "web"
             }
           }
         }
@@ -113,8 +112,7 @@
                 "salgados",
                 "doces"
               ],
-              "prices_from": "web",
-              "paused_skus": []
+              "prices_from": "web"
             }
           }
         }
@@ -212,8 +210,7 @@
                 "bebidas-geladas",
                 "doces"
               ],
-              "prices_from": "pdv",
-              "paused_skus": []
+              "prices_from": "pdv"
             }
           }
         }
@@ -235,8 +232,7 @@
                 "folhados",
                 "salgados"
               ],
-              "prices_from": "pdv",
-              "paused_skus": []
+              "prices_from": "pdv"
             }
           }
         }
@@ -2240,6 +2236,7 @@
           "shop.view_historicalruleconfig",
           "shop.view_ifoodinterruption",
           "shop.view_ifoodstorestatus",
+          "shop.view_instanceapplyrecord",
           "shop.view_marketing",
           "shop.view_marketingaisuggestion",
           "shop.view_marketingaisuggestionevent",
