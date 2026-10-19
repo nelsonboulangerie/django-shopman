@@ -6,8 +6,8 @@ from django.utils import timezone
 from shopman.offerman.protocols import ContextualPrice, PriceAdjustment
 from shopman.utils.monetary import format_money, monetary_mult
 
-from shopman.shop.modifiers import DiscountModifier
-from shopman.shop.policies.promotion import promotion_minimum_eligible
+from shopman.shop.modifiers import DiscountModifier, promotion_context
+from shopman.shop.policies.promotion import promotion_matches
 
 
 class PromotionPricingBackend:
@@ -62,12 +62,16 @@ class PromotionPricingBackend:
                 timezone.now(), channel_ref=channel_ref
             )
 
-        match_ctx = {
-            "fulfillment_type": fulfillment_type,
-            "sku_collections": {sku: sku_collections},
-            "customer_segment": customer_segment,
-            "price_tier": price_tier,
-        }
+        match_ctx = promotion_context(
+            {
+                "fulfillment_type": fulfillment_type,
+                "sku_collections": {sku: sku_collections},
+                "customer_segment": customer_segment,
+                "price_tier": price_tier,
+            },
+            sku=sku,
+            merchandise_subtotal_q=session_total_q,
+        )
 
         for promo in promotions:
             # Só PERCENT compete no preço por-card. Um desconto de VALOR FIXO é
@@ -77,12 +81,7 @@ class PromotionPricingBackend:
             # por-linha e o trata no nível do pedido.
             if promo.type != Promotion.PERCENT:
                 continue
-            if not promotion_minimum_eligible(
-                min_order_q=promo.min_order_q,
-                merchandise_subtotal_q=session_total_q,
-            ):
-                continue
-            if not DiscountModifier._matches(promo, sku, match_ctx):
+            if not promotion_matches(promo, match_ctx):
                 continue
             discount_q = DiscountModifier._calc_discount(promo, list_unit_price_q)
             if discount_q > best_discount_q:

@@ -196,19 +196,18 @@ def _promotions_for_sku(sku: str, *, channel_ref: str = "") -> list[dict]:
         logger.debug("fomo.promotions_failed sku=%s", sku, exc_info=True)
         return []
 
-    collections = _collections_for_sku(sku)
-    matched = []
-    for promo in promos:
-        if promo.birthday_only or promo.customer_segments or promo.fulfillment_types:
-            continue
-        if promo.min_order_q:
-            continue
-        if promo.skus and sku not in promo.skus:
-            continue
-        if promo.collections and not any(ref in promo.collections for ref in collections):
-            continue
-        matched.append({"name": promo.name, "valid_until": promo.valid_until})
-    return matched
+    from shopman.shop.policies.promotion import PromotionContext, promotion_matches
+
+    showcase = PromotionContext(
+        sku=sku,
+        sku_collections=tuple(_collections_for_sku(sku)),
+        promise_to_any_visitor=True,
+    )
+    return [
+        {"name": promo.name, "valid_until": promo.valid_until}
+        for promo in promos
+        if promotion_matches(promo, showcase)
+    ]
 
 
 def _collections_for_sku(sku: str) -> list[str]:
