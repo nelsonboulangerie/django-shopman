@@ -1398,6 +1398,13 @@ Só faz sentido em canal com `commerce_policy=display` (menuboard/feed — ADR-0
 Lido por: `projections/menuboard.py` (`build_menuboard`), `services/display_prices.py`,
 `views/product_feed.py`, `backstage/projections/feeds.py`, `backstage/services/feeds.py`.
 
+> **Estado operacional, não configuração.** `display.paused_skus` e `activation`
+> (abaixo) são do operador: o descritor de Instância não os declara, o
+> `instance_descriptor apply` não os toca e o `dump` não os exporta
+> (`OPERATIONAL_STATE` em `config/instance_descriptors.py`). O dump é allowlist:
+> chave de `Channel.config` fora do `ChannelConfig` (e fora desta lista de
+> estado operacional) recusa o dump.
+
 ### Chaves fora do ChannelConfig schema
 
 Estas chaves são lidas diretamente de `channel.config` como dict bruto, sem passar pelo `ChannelConfig`:

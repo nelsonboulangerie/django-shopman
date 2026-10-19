@@ -21,7 +21,7 @@ COUNTER = ROOT / "config/instances/counter-minimal.json"
 @pytest.mark.instance_runtime_strict
 def test_descriptor_upgrade_preserves_tenant_rows_and_memberships():
     declared = load_descriptor(COUNTER)
-    apply_to_database(declared)
+    apply_to_database(declared, actor="test")
     shop = Shop.objects.get()
     persona = Group.objects.get(name="Counter operator")
     operator = get_user_model().objects.create_user(username="tenant-operator")
@@ -37,7 +37,7 @@ def test_descriptor_upgrade_preserves_tenant_rows_and_memberships():
     counter = upgraded["bootstrap"]["channels"][0]
     counter["config"]["name"] = "Counter v2"
     counter["config"]["overrides"]["payment"]["method"] = ["cash", "credit"]
-    apply_to_database(upgraded)
+    apply_to_database(upgraded, actor="test")
 
     operator.refresh_from_db()
     tenant_channel.refresh_from_db()
@@ -51,7 +51,7 @@ def test_descriptor_upgrade_preserves_tenant_rows_and_memberships():
 @pytest.mark.django_db
 def test_conflicting_upgrade_rolls_back_without_touching_tenant_data():
     declared = load_descriptor(COUNTER)
-    apply_to_database(declared)
+    apply_to_database(declared, actor="test")
     shop = Shop.objects.get()
     tenant_channel = Channel.objects.create(
         ref="tenant-pop-up",
@@ -73,7 +73,7 @@ def test_conflicting_upgrade_rolls_back_without_touching_tenant_data():
     }]
 
     with pytest.raises(ValueError, match="references unknown channel"):
-        apply_to_database(conflicting)
+        apply_to_database(conflicting, actor="test")
 
     assert Channel.objects.get(ref="counter").name == "Counter"
     assert Channel.objects.get(pk=tenant_channel.pk).name == "Tenant pop-up"

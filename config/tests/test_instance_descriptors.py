@@ -19,6 +19,7 @@ from config.instance_descriptors import (
     descriptor_diff,
     load_descriptor,
     project_from_database,
+    without_operational_state,
 )
 from shopman.backstage.models import (
     OperationChecklistTemplate,
@@ -129,21 +130,15 @@ def test_diff_refuses_an_unsafe_declared_descriptor_before_output(tmp_path):
 @pytest.mark.django_db
 def test_apply_is_idempotent():
     descriptor = load_descriptor(DECLARED)
-    first = apply_to_database(descriptor)
+    first = apply_to_database(descriptor, actor="test")
     snapshot = project_from_database(descriptor)
     with CaptureQueriesContext(connection) as queries:
-        second = apply_to_database(descriptor)
+        second = apply_to_database(descriptor, actor="test")
     assert first["shop_created"] is True
-    assert first["channels_created"] == 1
-    assert first["personas_created"] == 1
-    assert second == {
-        "instance": "counter-minimal",
-        "shop_created": False,
-        "channels_created": 0,
-        "rules_created": 0,
-        "personas_created": 0,
-        "templates_created": 0,
-    }
+    assert first["summary"] == {"create": 3}
+    assert second["shop_created"] is False
+    assert second["changes"] == []
+    assert second["summary"] == {}
     statements = [query["sql"].lstrip().upper() for query in queries.captured_queries]
     assert not any(statement.startswith(("INSERT", "UPDATE", "DELETE")) for statement in statements)
     assert project_from_database(descriptor) == snapshot
@@ -154,7 +149,7 @@ def test_apply_rolls_back_everything_on_late_failure():
     descriptor = load_descriptor(DECLARED)
     descriptor["bootstrap"]["rbac_personas"][0]["permissions"] = ["missing.permission"]
     with pytest.raises(ValueError, match="unknown permission"):
-        apply_to_database(descriptor)
+        apply_to_database(descriptor, actor="test")
     assert Shop.objects.count() == 0
     assert Channel.objects.count() == 0
     assert Group.objects.count() == 0
@@ -165,7 +160,7 @@ def test_apply_rejects_unowned_nonempty_section():
     descriptor = load_descriptor(DECLARED)
     descriptor["bootstrap"]["units"] = [{"ref": "each", "symbol": "un"}]
     with pytest.raises(UnsupportedInstanceSection, match="units"):
-        apply_to_database(descriptor)
+        apply_to_database(descriptor, actor="test")
 
 
 @pytest.mark.django_db
@@ -192,12 +187,12 @@ def test_apply_round_trips_operational_templates():
                 "system": False,
                 "task_sort_order": 5,
                 "sort_order": 20,
-                "config": {"minimum": 0},
+                "config": {"seed": "counter"},
             }],
         },
     }]
 
-    apply_to_database(descriptor)
+    apply_to_database(descriptor, actor="test")
 
     projected = project_from_database(descriptor)
     assert projected["bootstrap"]["templates"] == descriptor["bootstrap"]["templates"]
@@ -210,9 +205,9 @@ def test_apply_round_trips_operational_templates():
 def test_nelson_descriptor_materializes_all_database_owned_configuration():
     descriptor = load_descriptor(NELSON)
 
-    apply_to_database(descriptor)
+    apply_to_database(descriptor, actor="test")
 
-    assert project_from_database(descriptor) == descriptor
+    assert project_from_database(descriptor) == without_operational_state(descriptor)
 
 
 @pytest.mark.django_db
@@ -239,12 +234,13 @@ def test_nelson_seed_refuses_a_different_instance_descriptor():
 def test_apply_command_requires_exact_instance_confirmation():
     stdout = StringIO()
     with pytest.raises(CommandError, match="--confirm-instance counter-minimal"):
-        call_command("instance_descriptor", "apply", descriptor=DECLARED, stdout=stdout)
+        call_command("instance_descriptor", "apply", descriptor=DECLARED, commit=True, stdout=stdout)
     assert Shop.objects.count() == 0
     call_command(
         "instance_descriptor",
         "apply",
         descriptor=DECLARED,
+        commit=True,
         confirm_instance="counter-minimal",
         stdout=stdout,
     )
