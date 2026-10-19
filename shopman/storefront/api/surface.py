@@ -457,10 +457,10 @@ def _gone_products() -> dict:
     """
     from shopman.shop.models import RetiredProduct
     from shopman.shop.projections import catalog_context
-    from shopman.shop.services.exclusive_collections import collection_access
+    from shopman.shop.services.exclusive_collections import access_for_tiers
 
     # Rota pública: a lápide não aponta para coleção exclusiva de grupo (é 404 ao anônimo).
-    escondidas = collection_access(()).hidden
+    escondidas = access_for_tiers(()).hidden
 
     def primeira_viva(refs):
         for ref in refs:

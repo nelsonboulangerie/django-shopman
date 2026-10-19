@@ -22,6 +22,7 @@ from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.observability import catalog_stage
+from shopman.shop.policies.exclusive_collections import CollectionAccess
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.pricing_quote import PriceQuoteProjection
@@ -33,7 +34,6 @@ from shopman.shop.projections.types import (
     Availability,
     CategoryProjection,
 )
-from shopman.shop.services.exclusive_collections import CollectionAccess
 from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
 from shopman.storefront.presentation.icons import collection_icon
@@ -388,13 +388,19 @@ def viewer_collection_access(request: HttpRequest | None) -> CollectionAccess:
 
     Anônimo (e ``request=None``, o snapshot público) enxerga só as comuns. Sem
     ``try``: se a tabela de vantagens não responde, o cardápio falha em vez de
-    abrir a coleção do grupo para todo mundo.
+    abrir a coleção do grupo para todo mundo. Guardado no request: a página da
+    coleção pergunta duas vezes (o 404 e o cardápio) e paga uma.
     """
-    from shopman.shop.services.exclusive_collections import customer_collection_access
+    from shopman.shop.services.exclusive_collections import access_for_customer
     from shopman.storefront.identity import get_authenticated_customer
 
-    customer = get_authenticated_customer(request) if request is not None else None
-    return customer_collection_access(customer)
+    if request is None:
+        return access_for_customer(None)
+    cache_attr = "_shopman_collection_access"
+    state = vars(request)
+    if cache_attr not in state:
+        setattr(request, cache_attr, access_for_customer(get_authenticated_customer(request)))
+    return state[cache_attr]
 
 
 def build_catalog_items_for_skus(

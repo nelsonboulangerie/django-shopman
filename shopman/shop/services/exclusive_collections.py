@@ -1,68 +1,35 @@
-"""Coleções exclusivas de grupo: quem enxerga qual coleção do cardápio.
+"""Leitura das coleções exclusivas de grupo para o cardápio: UMA consulta por pedido.
 
-A vantagem ``exclusive_collections`` do grupo (``PriceTierAdvantage.config
-["collection_refs"]``, escrita pelo Gestor) diz que aquelas coleções do Offerman são
-do grupo: o cardápio as mostra ao cliente identificado que é membro, e a esconde de
-todo o resto, anônimo incluído.
-
-Não acumula nem compete: cliente em dois grupos enxerga as coleções dos dois. A regra
-"vale a melhor, sem acumular" é sobre vantagens concorrentes (dois descontos); duas
-coleções não disputam nada.
-
-Uma consulta resolve o cardápio inteiro, qualquer que seja o número de coleções, de
-grupos ou de produtos: a tabela de vantagens é lida de uma vez e o resto é conjunto.
-O cardápio anônimo não depende de quem pede, então continua igual para todos e
-cacheável na borda (``storefront/api/public_cache.py``).
+A decisão (quem enxerga o quê) é ``shop/policies/exclusive_collections.py``. Aqui só
+se lê a tabela de vantagens ativas de uma vez e se monta a subconsulta dos produtos
+que só existem em coleção escondida. Qualquer que seja o tamanho do cardápio, do
+número de grupos ou de coleções, o custo é o mesmo. O cardápio anônimo não depende de
+quem pede, então segue igual para todos e cacheável na borda
+(``storefront/api/public_cache.py``).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from typing import Any
+
+from shopman.shop.policies.exclusive_collections import CollectionAccess, collection_access
 
 
-@dataclass(frozen=True)
-class CollectionAccess:
-    """As coleções exclusivas de algum grupo, e quais delas este cliente enxerga."""
-
-    exclusive: frozenset[str]
-    granted: frozenset[str]
-
-    @property
-    def hidden(self) -> frozenset[str]:
-        return self.exclusive - self.granted
-
-    def is_hidden(self, collection_ref: str | None) -> bool:
-        return bool(collection_ref) and collection_ref in self.hidden
-
-
-NO_EXCLUSIVES = CollectionAccess(exclusive=frozenset(), granted=frozenset())
-
-
-def collection_access(price_tier_refs=()) -> CollectionAccess:
-    """Quais coleções são exclusivas e quais o cliente dos grupos ``price_tier_refs`` vê."""
+def access_for_tiers(price_tier_refs=()) -> CollectionAccess:
+    """O acesso de quem é membro dos grupos ``price_tier_refs`` (vazio = anônimo)."""
     from shopman.guestman.models import PriceTierAdvantage
 
-    member_of = {str(ref) for ref in (price_tier_refs or ()) if ref}
-    exclusive: set[str] = set()
-    granted: set[str] = set()
     rows = PriceTierAdvantage.objects.filter(
         kind=PriceTierAdvantage.Kind.EXCLUSIVE_COLLECTIONS, is_active=True,
     ).values_list("tier__ref", "config")
-    for tier_ref, config in rows:
-        refs = {str(ref).strip() for ref in ((config or {}).get("collection_refs") or []) if str(ref).strip()}
-        exclusive |= refs
-        if tier_ref in member_of:
-            granted |= refs
-    if not exclusive:
-        return NO_EXCLUSIVES
-    return CollectionAccess(exclusive=frozenset(exclusive), granted=frozenset(granted))
+    return collection_access(rows, member_of=price_tier_refs or ())
 
 
-def customer_collection_access(customer) -> CollectionAccess:
-    """O acesso do cliente (ou do anônimo, com ``None``)."""
+def access_for_customer(customer: Any) -> CollectionAccess:
+    """O acesso do cliente identificado, ou do anônimo com ``None``."""
     if customer is None:
-        return collection_access(())
-    return collection_access(customer.price_tiers.values_list("ref", flat=True))
+        return access_for_tiers(())
+    return access_for_tiers(list(customer.price_tiers.values_list("ref", flat=True)))
 
 
 def exclusive_only_product_ids(access: CollectionAccess):
