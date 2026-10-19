@@ -5061,7 +5061,8 @@
             "PUBLIC_RULE_KEYS",
             "INTEGER_RULE_KEYS",
             "AUDIENCE_POLICY_VERSION",
-            "AUDIENCE_PREVIEW_TTL"
+            "AUDIENCE_PREVIEW_TTL",
+            "_keep_exclusive_members"
           ]
         }
       ],
@@ -6387,6 +6388,51 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.services.campaign:marketing_test_target_options"
+      ]
+    },
+    {
+      "id": "shop.services-campaign-exclusivity",
+      "question": "Esta campanha é exclusiva de um grupo, e quem dos escolhidos pode recebê-la?",
+      "owner": "marketing.campaign-exclusivity",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.campaign_exclusivity:for_campaign",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/campaign_exclusivity.py",
+          "symbols": [
+            "for_campaign",
+            "declared_by_campaign",
+            "set_exclusive_tiers",
+            "clean_tier_refs",
+            "campaign_ref",
+            "Exclusivity",
+            "CampaignExclusivityError",
+            "KIND",
+            "CONFIG_KEY",
+            "_refs",
+            "_advantage_rows"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "guestman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_campaign_exclusivity.py::test_exclusive_campaign_reaches_only_members_even_with_another_audience"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.campaign_exclusivity:for_campaign"
       ]
     },
     {
