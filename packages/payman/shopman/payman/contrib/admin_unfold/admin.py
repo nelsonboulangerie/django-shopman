@@ -141,10 +141,11 @@ class PaymentTransactionInline(BaseTabularInline):
 # =============================================================================
 
 
-#: A permissão que estorna. Pontuada de propósito: o Unfold confere a forma com
-#: ponto direto com ``request.user.has_perm``; a forma curta chamaria
-#: ``has_change_permission``, que aqui é sempre ``False`` (a cobrança não se
-#: edita à mão) e mataria a ação até para superusuário.
+#: A permissão que estorna. As ações a pedem pela forma curta ``"refund"``, que o
+#: Unfold resolve em ``PaymentIntentAdmin.has_refund_permission``. A forma
+#: pontuada também funcionaria em runtime, mas o check de sistema do Unfold
+#: (``unfold/checks.py``, admin.E129) consulta a tabela ``Permission`` para ela:
+#: ``manage.py check`` passaria a exigir banco, e o contrato de produção roda sem.
 REFUND_PERMISSION = "payman.refund_paymentintent"
 
 
@@ -279,7 +280,7 @@ class PaymentIntentAdmin(BaseModelAdmin):
         url_path="refund",
         icon="undo",
         variant=ActionVariant.DANGER,
-        permissions=[REFUND_PERMISSION],
+        permissions=["refund"],
         dialog={
             "title": _("Estornar o total?"),
             "description": _(
@@ -304,7 +305,7 @@ class PaymentIntentAdmin(BaseModelAdmin):
         url_path="refund-amount",
         icon="undo",
         variant=ActionVariant.DANGER,
-        permissions=[REFUND_PERMISSION],
+        permissions=["refund"],
         dialog={
             "title": _("Estornar um valor?"),
             "description": _(
@@ -367,6 +368,10 @@ class PaymentIntentAdmin(BaseModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def has_refund_permission(self, request, obj=None):
+        # Não passa por `has_change_permission` (sempre False): estornar não é editar.
+        return request.user.has_perm(REFUND_PERMISSION)
 
     @display(description=_("Método"))
     def method_badge(self, obj):

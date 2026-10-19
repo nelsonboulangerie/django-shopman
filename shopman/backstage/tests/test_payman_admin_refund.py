@@ -148,6 +148,18 @@ def test_total_row_action_refunds_with_confirmation(refunder_client):
     assert PaymentService.refunded_total(intent.ref) == 7000
 
 
+def test_admin_system_check_does_not_touch_the_database(django_assert_num_queries):
+    """A forma pontuada faria o check do Unfold (admin.E129) consultar `Permission`.
+
+    O contrato de produção roda `check --deploy` sem banco: a consulta derrubava ele.
+    """
+    from django.contrib import admin as django_admin
+
+    model_admin = django_admin.site._registry[PaymentIntent]
+    with django_assert_num_queries(0):
+        assert model_admin.check() == []
+
+
 def test_bulk_refund_action_no_longer_exists():
     """Ação de lote do Django roda sem diálogo: estorno é um por vez."""
     from django.contrib import admin as django_admin

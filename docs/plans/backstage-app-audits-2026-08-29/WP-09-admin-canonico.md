@@ -48,7 +48,7 @@ Aceite:
 
 Estado (19/10/2026, frente 11):
 
-- [x] Permissao dedicada `payman.refund_paymentintent` (`PaymentIntent.Meta.permissions`, migracao `payman.0007_permissao_de_estorno`), exigida nas duas acoes pela forma pontuada. Concedida ao grupo **Dono** no descritor (`config/instances/nelson.json`), nunca ao Gerente: dinheiro e do Dono (`docs/guides/rbac-personas.md`). Paridade em `test_group_permission_parity.py`.
+- [x] Permissao dedicada `payman.refund_paymentintent` (`PaymentIntent.Meta.permissions`, migracao `payman.0007_permissao_de_estorno`), exigida nas duas acoes pelo metodo `has_refund_permission` (forma curta `"refund"`; a pontuada faz o check do Unfold consultar o banco e quebrava o contrato de producao). Concedida ao grupo **Dono** no descritor (`config/instances/nelson.json`), nunca ao Gerente: dinheiro e do Dono (`docs/guides/rbac-personas.md`). Paridade em `test_group_permission_parity.py`.
 - [x] Usuario view-only nao executa refund: 403 nas duas URLs (`test_payman_admin_refund.py`, `test_admin_state_actions_gate.py`).
 - [x] Segunda confirmacao: as duas acoes (`refund` total e `refund-amount`) sao dialog actions oficiais do Unfold com `BaseDialogForm` e marca obrigatoria "Confirmo o estorno, que nao tem desfazer". A pagina propria `payment_refund.html` saiu; o valor e o disponivel vivem no dialogo.
 - [x] Estorno em lote (`refund_selected`) removido: acao de lote do Django roda sem dialogo (laudo 01/09, 06-admin P0-1, opcao b).
