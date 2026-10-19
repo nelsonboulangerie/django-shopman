@@ -920,6 +920,27 @@ class OperatorEligibleView(APIView):
         return Response({"operators": [operator_card(u) for u in eligible_operators(perm=perm)]})
 
 
+def _unlock_target_key(group, request):
+    """Chave de rate-limit pela conta-alvo do destrave por PIN.
+
+    Mesma forma do ``_login_username_key``: lê form e JSON (o BFF manda JSON).
+    Crachá não nomeia conta, então cai num balde só, ``badge``.
+    """
+    data = request.POST
+    if not data and "json" in (request.content_type or ""):
+        try:
+            data = json.loads(request.body or b"{}") or {}
+        except (ValueError, TypeError):
+            data = {}
+    if not hasattr(data, "get"):
+        data = {}
+    if str(data.get("badge") or "").strip():
+        return "badge"
+    return f"op:{str(data.get('operator_id') or '').strip() or 'anon'}"
+
+
+@method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
+@method_decorator(ratelimit(key=_unlock_target_key, rate="5/m", method="POST", block=False), name="dispatch")
 class OperatorUnlockView(APIView):
     """Establish the active operator by PIN (operator_id + pin) or badge (token).
 
@@ -928,6 +949,12 @@ class OperatorUnlockView(APIView):
     Gate de ESTAÇÃO, e não de sessão: é AQUI que o balcão travado cria uma, e
     exigir sessão para criar sessão é a porta que não abre de manhã. A
     autorização real deste endpoint não é o gate — é provar o PIN ou o crachá.
+
+    Freio contra adivinhar PIN (4 dígitos = 10 mil combinações): o mesmo par do
+    ``OperatorLoginView``. Por conta-alvo, 5/min (ataque a um operador); teto por
+    IP, 30/min, generoso porque os dispositivos da loja dividem o IP (NAT). Até
+    19/10 este endpoint não tinha limite nenhum, e a estação confiável era o único
+    portão antes dele. Ambos ``block=False``: o handler devolve 429 amigável.
     """
 
     permission_classes = [IsTrustedStation]
@@ -936,6 +963,15 @@ class OperatorUnlockView(APIView):
         from django.contrib.auth import get_user_model
 
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return Response(
+                {
+                    "detail": "Muitas tentativas de identificação. Aguarde um minuto e tente de novo.",
+                    "error": {"code": "operator_unlock_rate_limited"},
+                },
+                status=429,
+            )
 
         body = request.data or {}
         perm, ok = _validated_unlock_perm(body.get("perm"))
