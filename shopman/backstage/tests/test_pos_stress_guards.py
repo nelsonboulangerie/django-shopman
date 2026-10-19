@@ -134,10 +134,14 @@ class DiscountThresholdHasOneOwnerTests(PosGuardsBase):
         self.assertEqual(review.manager_approval_threshold_q, 5000)
         # R$ 30,00 está abaixo do teto de R$ 50,00 que a loja configurou.
         self.assertFalse(review.requires_manager_approval)
-        pos_service.validate_manager_approval(
-            self._payload(manual_discount={"type": "fixed", "value": "30,00"}),
-            operator_username=self.operator.username,
+        # O gate lê o desconto que o MOTOR aplicou, carimbado como no fechamento.
+        payload = self._payload(manual_discount={"type": "fixed", "value": "30,00"})
+        channel, config = pos_service._channel_and_config("pdv")
+        pos_service._stamp_engine_manual_discounts(
+            payload, channel=channel, config=config, operator_username=self.operator.username,
         )
+        self.assertEqual(pos_service._payload_discount_q(payload), review.discount_q)
+        pos_service.validate_manager_approval(payload, operator_username=self.operator.username)
 
     @override_settings(SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q=500)
     def test_env_is_the_fallback_when_the_shop_says_nothing(self) -> None:
