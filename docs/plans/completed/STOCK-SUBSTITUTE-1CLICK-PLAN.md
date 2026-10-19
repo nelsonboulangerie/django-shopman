@@ -2,13 +2,13 @@
 
 > **Status (2026-07-11):** ✅ CONCLUÍDO e arquivado — substituto acionável em 1 toque
 > entregue no storefront Nuxt (fecha o princípio "NUNCA PERDER" do
-> [STOCK-UX-PLAN](../STOCK-UX-PLAN.md)). Este arquivo é a cópia canônica; a duplicata
+> [STOCK-UX-PLAN](STOCK-UX-PLAN.md)). Este arquivo é a cópia canônica; a duplicata
 > em `docs/plans/` foi removida e as referências ao nome morto `storefront-uithing-nuxt`
 > corrigidas para `storefront-nuxt`.
 
 ## Por que este arco existe
 
-A spec canônica [STOCK-UX-PLAN](../STOCK-UX-PLAN.md) (princípio "NUNCA PERDER") diz: alerta de
+A spec canônica [STOCK-UX-PLAN](STOCK-UX-PLAN.md) (princípio "NUNCA PERDER") diz: alerta de
 estoque **nunca é informacional — é acionável, em 1 toque**. Quando um item falta, o cliente deve
 poder **adicionar uma alternativa que já está em estoque com 1 clique**, sem fazer conta.
 
@@ -175,5 +175,5 @@ Confirmar no preview que o array `substitutes` chega populado no `cartIssue`.
 | Teste | `surfaces/storefront-nuxt/tests/cartPresentation.test.ts` |
 | Backend (já pronto; opcional polish) | `shopman/shop/services/substitutes.py`, `shopman/storefront/api/surface.py` |
 
-Ao concluir, atualizar [STOCK-UX-PLAN](../STOCK-UX-PLAN.md) (remover a nota de "lacuna real") e a
+Ao concluir, atualizar [STOCK-UX-PLAN](STOCK-UX-PLAN.md) (remover a nota de "lacuna real") e a
 memória `project_stock_ux_spec`, e mover ESTE plano para `docs/plans/completed/`.

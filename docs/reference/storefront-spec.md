@@ -10,7 +10,7 @@
 > (**Estado da revisão**) registra o que foi resolvido (WP-1..11) e o que de fato resta em aberto.
 >
 > Data: 2026-06-18. Base: `main` (WP-1..11 + WP-9/WP-10 mergeados, `5a2a0ed7`; deployado no staging).
-> Os WPs e decisões estão em [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/STOREFRONT-GAPS-ACTION-PLAN.md).
+> Os WPs e decisões estão em [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/completed/STOREFRONT-GAPS-ACTION-PLAN.md).
 
 ---
 
@@ -231,7 +231,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 
 > A revisão às avessas foi **executada**. Abaixo: o que foi resolvido (com o WP/commit), o que ainda
 > está em aberto (com o porquê), e as limpezas. Detalhe e decisões em
-> [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/STOREFRONT-GAPS-ACTION-PLAN.md).
+> [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/completed/STOREFRONT-GAPS-ACTION-PLAN.md).
 
 ### ✅ Resolvido (loja)
 - **WP-1 — Checkout persiste endereço/cliente/defaults.** Os 3 efeitos pós-commit

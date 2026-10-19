@@ -3,7 +3,7 @@
 Guia de configuração do login por WhatsApp unificado no fluxo de **access link** do
 doorman. Um fluxo só no ManyChat, um endpoint de geração, um exchange. SMS (Comtele)
 segue como fallback. Substitui o antigo reverse-OTP (ver
-[ACCESS-LINK-UNIFICATION-PLAN](../plans/ACCESS-LINK-UNIFICATION-PLAN.md)).
+[ACCESS-LINK-UNIFICATION-PLAN](../plans/completed/ACCESS-LINK-UNIFICATION-PLAN.md)).
 
 ## A ideia
 

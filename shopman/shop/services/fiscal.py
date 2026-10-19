@@ -535,7 +535,7 @@ def delivery_issues_as_presential(order, *, requested_tax_id: str) -> bool:
     Decisão do dono (13/10/2026, substitui a de 24/09): a praxe do delivery
     (ERPs de restaurante fazem assim) vale para TODOS os canais, da casa e
     intermediados. A confirmação do contador fica registrada como pendência
-    dele (``docs/plans/LEVA-CONTADOR-ADVOGADO.md``, item 2.1).
+    dele (``docs/plans/completed/LEVA-CONTADOR-ADVOGADO.md``, item 2.1).
 
     A nota de entrega a domicílio (``indPres=4``) exige destinatário
     identificado (E01-20 → 787) e endereço (E05-20 → 788), as duas vivas. O

@@ -2077,7 +2077,7 @@ class Command(BaseCommand):
         # As fotos moram no próprio storefront (surfaces/storefront-nuxt/public/
         # img/products/): 41 webp otimizados (1200px quadrado, q80, sem EXIF),
         # servidos pela própria loja — deploy atômico com o app, nenhum serviço
-        # externo no caminho da foto. Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
+        # externo no caminho da foto. Ver docs/plans/completed/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
         #
         # Ponteiro de domínio NÃO mora no código, e a foto não mora no host de um
         # site: quebrou em 01/09 (menu.* virou a loja) e em 17/09 (a loja virou
@@ -5076,7 +5076,7 @@ class Command(BaseCommand):
 
         # Buyman Material master — os insumos viram Material first-class (sku sem
         # prefixo; identidade própria, não Product). unit + shelf-life conforme a
-        # tabela aprovada em docs/plans/BUYMAN-PROCUREMENT-PLAN.md (todos frescos
+        # tabela aprovada em docs/plans/completed/BUYMAN-PROCUREMENT-PLAN.md (todos frescos
         # mesmo). sku → (unit, shelf_life_days|None); None = não perecível.
         #
         # ⚠️ O SKU é um namespace só, dividido com o catálogo vendável: nomes

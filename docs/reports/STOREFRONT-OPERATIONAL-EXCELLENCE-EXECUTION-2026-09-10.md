@@ -6,7 +6,7 @@ O histórico completo e auditável está entre a `main` do GitHub em `1138c95eee
 
 ## Proveniência e preservação
 
-- Plano integral: [fonte congelada](../plans/STOREFRONT-OPERATIONAL-EXCELLENCE-PLAN-2026-09-10.md).
+- Plano integral: [fonte congelada](../plans/completed/STOREFRONT-OPERATIONAL-EXCELLENCE-PLAN-2026-09-10.md).
 - Base congelada inicial: `88314ff0474ba35c6dc69f58bbc2700b545454a4`. A referência local chamada `origin/main` estava recuada e não representava o GitHub. A `main` do GitHub foi buscada diretamente em 2026-09-11 e apontava para `1138c95eee0862630330328cf3bfe2f0b6424796`, com 248 commits ausentes da candidata. Os commits finais da execução foram assentados sobre essa referência; conflitos foram resolvidos preservando os contratos operacionais mais recentes da `main` e incorporando os requisitos ainda necessários desta execução.
 - Worktree candidata: `/private/tmp/shopman-storefront-execution-20260910`, branch `codex/storefront-operational-excellence-20260910`.
 - Repositório independente sem hardlinks: `/private/tmp/shopman-storefront-execution-repo-20260910`; baseline: `/private/tmp/shopman-storefront-baseline-88314ff0`.

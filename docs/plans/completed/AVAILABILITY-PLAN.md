@@ -1,6 +1,6 @@
 # AVAILABILITY-PLAN
 
-**Status:** concluído e validado em 2026-05-05. Todos os WPs WP-AV-01..14 têm implementação e cobertura rastreável; WP-AV-08, WP-AV-09 e WP-AV-12 receberam correções adicionais de robustez na mesma data. Sucessor operativo do [STOCK-UX-PLAN.md](../STOCK-UX-PLAN.md) para o sistema de verificação de disponibilidade e sugestão de substituição no storefront.
+**Status:** concluído e validado em 2026-05-05. Todos os WPs WP-AV-01..14 têm implementação e cobertura rastreável; WP-AV-08, WP-AV-09 e WP-AV-12 receberam correções adicionais de robustez na mesma data. Sucessor operativo do [STOCK-UX-PLAN.md](STOCK-UX-PLAN.md) para o sistema de verificação de disponibilidade e sugestão de substituição no storefront.
 
 **Escopo:** unificar vocabulário, regras de derivação, fluxos canônicos (Ajuste × Substituição), stepper clamp, modal de erro de estoque, fermata (hold indefinido + materialização com notificação ativa), timeouts transparentes, correções dos 7 gaps mapeados, e rename global `alternatives → substitutes`.
 

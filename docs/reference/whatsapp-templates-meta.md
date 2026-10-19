@@ -763,6 +763,6 @@ fallback). Inverter antes troca "SMS que chega em 76%" por "WhatsApp que não ch
 - Nunca mova status de pedido para Marketing "pra passar" — passa, mas cobra caro e quebra a janela grátis.
 
 ## Referências
-- [WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN](../plans/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md)
+- [WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN](../plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md)
 - Meta: [template fundamentals](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview)
 - ManyChat: [usar Message Templates](https://help.manychat.com/hc/en-us/articles/14281326740124-How-to-use-WhatsApp-Messages-Templates-in-Manychat)

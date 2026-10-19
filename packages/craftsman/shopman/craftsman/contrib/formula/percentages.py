@@ -1,7 +1,7 @@
 """Porcentagem do padeiro: a matemática pura da fórmula de uma receita.
 
 Módulo sem Django. Recebe a ``formula`` de uma ``RecipeVersion`` (schema na
-``docs/plans/RECIPE-INVENTORY-PLAN.md`` §3) e responde, só com ``Decimal``:
+``docs/plans/completed/RECIPE-INVENTORY-PLAN.md`` §3) e responde, só com ``Decimal``:
 
 * :func:`classify_ingredient` / :func:`looks_like_flour` — o papel (``role``) de
   um ingrediente pelo nome e pelo SKU, em pt/en/fr/ja, sem acento e sem caixa;

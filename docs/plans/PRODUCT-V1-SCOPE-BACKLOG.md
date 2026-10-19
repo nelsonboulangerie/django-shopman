@@ -32,12 +32,12 @@ resto, explicitamente a entrega por parceiro (TaOn/Machine) e o Concierge. v1 é
 | **Gestor de pedidos ao estado da arte** | ✅ **Arcs 1–5 entregues + DEPLOYADO no staging (2026-06-27, gestor.boulangerie.com.br)**. [GESTOR-PEDIDOS-PLAN](completed/GESTOR-PEDIDOS-PLAN.md). Resta QA funcional autenticado | Pablo (2026-06-26) |
 | **Canal: Loja online (retirada)** | Base pronta; manter no escopo | existente |
 | **Canal: PDV / balcão** | Base pronta; manter no escopo | existente |
-| **Canal: Entrega / delivery** | Ativa a frente de **endereço canônico** (busca/geo/ajuste no mapa); taxa por distância já existe. **Entrega por parceiro (TaOn/Machine)** entra no go-live (D-017): adapter no ar (#1345, #1348; `SHOPMAN_COURIER_ADAPTER` e credenciais no painel, [D-020](../coordination/DECISIONS.md)); falta o dono ligar `fulfillment.courier="auto"` no canal `web` | [ADDRESS-UX-PLAN](ADDRESS-UX-PLAN.md); D-017; D-020 |
+| **Canal: Entrega / delivery** | Ativa a frente de **endereço canônico** (busca/geo/ajuste no mapa); taxa por distância já existe. **Entrega por parceiro (TaOn/Machine)** entra no go-live (D-017): adapter no ar (#1345, #1348; `SHOPMAN_COURIER_ADAPTER` e credenciais no painel, [D-020](../coordination/DECISIONS.md)); falta o dono ligar `fulfillment.courier="auto"` no canal `web` | [ADDRESS-UX-PLAN](../reference/ADDRESS-UX-PLAN.md); D-017; D-020 |
 | **Canal: WhatsApp conversacional (Concierge)** | Plano canônico: [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md) (supera o MANYCHAT-CONVERSACIONAL-PLAN). Visão do dono e distância medida em 01/10/2026 estão lá. Entra a **fase 1** do plano; a triagem foi decidida (D32 → [D-018](../coordination/DECISIONS.md)) e implementada (#1347). Ligar segue a sequência "Como ligar" do plano | ROADMAP "Dívida Viva"; dono (01/10/2026) |
-| **Sincronização com catálogos externos** | Feed pull Google/Meta e push Meta entregues; faltam homologação externa, vínculo do catálogo Meta ao WhatsApp e eventual push Google apenas se necessário. Plano: [CATALOG-SYNC-EXTERNO-PLAN](CATALOG-SYNC-EXTERNO-PLAN.md) | Revalidado (2026-09-29) |
+| **Sincronização com catálogos externos** | Feed pull Google/Meta e push Meta entregues; faltam homologação externa, vínculo do catálogo Meta ao WhatsApp e eventual push Google apenas se necessário. Plano: [CATALOG-SYNC-EXTERNO-PLAN](completed/CATALOG-SYNC-EXTERNO-PLAN.md) | Revalidado (2026-09-29) |
 | **Media persistente (Cloudflare R2)** | Código pronto e desligado (#1337, D-010). Falta o dono criar bucket e token e colar as chaves na DO (D30); depois, `SHOPMAN_MEDIA_STORAGE=r2` | ROADMAP "Dívida Viva"; D6 |
 | **Shelf life perecível** | ✅ precedência (shelf_life × batch expiry = AND) explícita + travada por teste (2026-06-26). Resta só decisão de onde validar consistência de lote. Ver ROADMAP | ROADMAP "Dívida Viva" |
-| **Revisão reversa do PDV (Fase C)** | ✅ auditoria feita: [POS-FASE-C-REVISION](POS-FASE-C-REVISION.md). POS é maduro; 1 fix aplicado, resto = itens a verificar/decisões | `project_storefront_gaps_review` |
+| **Revisão reversa do PDV (Fase C)** | ✅ auditoria feita: [POS-FASE-C-REVISION](completed/POS-FASE-C-REVISION.md). POS é maduro; 1 fix aplicado, resto = itens a verificar/decisões | `project_storefront_gaps_review` |
 | **Surface convergence** | ✅ Convergência completa (2026-06-27): POS-HTMX removido, KDS no Nuxt | [SURFACE-CONVERGENCE-PLAN](completed/SURFACE-CONVERGENCE-PLAN.md) |
 | **Playwright E2E como gate** | ✅ Obrigatória: `Storefront E2E (Playwright)` e `Browser QA (Nuxt store + Django operator)` estão entre os 23 checks obrigatórios de `main` (`.github/required-status-checks.json`, conferido contra o vivo por `make required-checks-drift`) | ROADMAP "Dívida Viva" |
 
@@ -48,7 +48,7 @@ resto, explicitamente a entrega por parceiro (TaOn/Machine) e o Concierge. v1 é
 | **Concierge além da fase 1** (pedido completo no chat; "o pedido de sempre" proativo) | O Concierge **entra** no go-live (D-017) na fase 1 do [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md). A fase 2 depende de dar autoridade de compra a um ingresso do ManyChat sem identificador de mensagem; o "Futuro" depende de template aprovado na Meta. Ver "Fases" no plano |
 | **Endereço — teleporte (WP-11 slice 3)** | Bloqueado em URL/campos do serviço; o fluxo base de endereço já cobre entrega |
 | **Customer rating** | Nice-to-have; hoje há `Order.data.customer_rating` mínimo |
-| **Mudar número de telefone** | Feature de borda ([CHANGE-PHONE-NUMBER-PLAN](CHANGE-PHONE-NUMBER-PLAN.md)) |
+| **Mudar número de telefone** | Feature de borda ([CHANGE-PHONE-NUMBER-PLAN](completed/CHANGE-PHONE-NUMBER-PLAN.md)) |
 | **Marketing** | Fora do go-live por decisão do dono (01/10/2026, D-017) |
 | **B.I.** | Fora do go-live por decisão do dono (01/10/2026, D-017) |
 

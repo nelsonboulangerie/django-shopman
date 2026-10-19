@@ -2,7 +2,7 @@
 
 > **Status: 🧪 ferramenta de medição pronta; a medição roda no staging.** Aprovado pelo dono em
 > 23/09/2026 ("vamos fazer esse piloto do De-Para do BI"). Nada aqui muda o fluxo do
-> `suggest_aliases`: o piloto só mede. Irmão de [BI-DATA-FOUNDATION-PLAN](BI-DATA-FOUNDATION-PLAN.md) (P1).
+> `suggest_aliases`: o piloto só mede. Irmão de [BI-DATA-FOUNDATION-PLAN](completed/BI-DATA-FOUNDATION-PLAN.md) (P1).
 
 ## Reconciliação factual (2026-09-29)
 

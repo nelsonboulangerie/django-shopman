@@ -2,7 +2,7 @@
 
 > Documento vivo. Quem assume a coordenação lê isto inteiro, depois o `CLAUDE.md`,
 > e atualiza a seção "Estado" ao encerrar o turno. Vale para Claude, Codex,
-> DeepSeek ou humano. Atualizado em 14/10/2026.
+> DeepSeek ou humano. Atualizado em 19/10/2026.
 
 ## 1. O papel
 
@@ -93,7 +93,17 @@ Coordenar o Shopman da Nelson Boulangerie até a virada para produção.
 - **Escrita no alpha vivo por terminal é barrada** no modo automático. Escrita no vivo
   vai pelo Admin, no Chrome do dono, com a palavra dele.
 
-## 5. Estado em 14/10/2026 (tarde)
+## 5. Estado em 19/10/2026
+
+- **Laudo de soberania inteiro no `main`:** #1873 a #1889 mergeados (identidade de
+  dispositivo e origem, identificador antigo não autentica, GET sem escrita em todas
+  as superfícies, instância como fonte única, promessa sem cópia, elegibilidade de
+  promoção). O que falta para 100% está na seção 10.
+- **Planos concluídos arquivados** em `docs/plans/completed/` (faxina de 19/10); a
+  árvore viva de `docs/plans/` guarda só frente aberta, referência de go-live e
+  backlog explícito.
+
+Estado de 14/10/2026 (tarde), ainda válido:
 
 - **Fila de merge vazia.** A auditoria dos cenários de pedido
   (`docs/reference/cenarios-de-pedido.md`) fechou: P0 6/6, P1 15/15, P2 17/17
@@ -290,3 +300,55 @@ desempenho, reaproveitável em outros projetos. Plano completo:
 - Roteiro completo: `docs/runbooks/go-live-cutover.md` e
   `docs/plans/GO-LIVE-READINESS-PLAN.md`; `make production-readiness target=1` diz o
   que falta.
+
+## 10. O que falta (medido 19/10/2026)
+
+Medido contra `origin/main`. Tamanho: P pequeno, M médio, G grande.
+
+### Bloqueia o go-live: nada de código, só dono ou externo
+
+Certificado Efí de homologação e chaves de produção (Efí, Stripe live, Focus
+produção, iFood, Machine) · 2FA, senha e PIN do staff · R2 · contador e advogado ·
+NFC-e em contingência (build Linux da Focus) e hardware · QA física por papel ·
+ensaio do pool (Watchman) e de restore de banco · GO/NO-GO.
+
+### Código antes do go-live, em ordem
+
+1. **Watchman vermelho desde 17/10:** `deployment_drift`. Duas chaves removidas do
+   `.do/` no #1853 seguem no spec vivo (`SHOPMAN_EXPOSE_DEBUG_OTP`,
+   `DOORMAN_MESSAGE_SENDER_CLASS`). Painel, com o dono. P
+2. **Fallbacks calados:** fiscal (#16, `fiscal.py:98`), notificação vira console
+   (#14), cancelar venda sem trava de replay (#18), PIN do operador sem limite por IP
+   (`operations.py:923`), geocode sem teto diário. P cada
+3. **Grupos:** frete grátis, coleções exclusivas e notificações exclusivas são
+   gravados mas não aplicados; teste de contagem de consultas com cliente de grupo;
+   lote "mudar grupo". M
+4. **Encomenda:** a sacola reserva sem a data escolhida (`cart.py:742`); o aviso
+   `order_accepted` sai sem data. M
+5. **PDV:** a 2ª venda Pix sobrescreve `pendingPixOrderRef`; PDV recarregado sem rede
+   cai no `offline.html`. M
+6. **iFood:** foto (`imagePath`), categorias pela API, preço e status, mais o ensaio na
+   loja de teste. M-G
+7. **CRUD turbo restante:** import/export genérico no kit; Compras paginar e filtrar no
+   servidor, mais lote; tabelão de insumos e clientes; vínculos do produto ainda só no
+   Admin; preço com vigência; lote em receitas e fornecedores. G
+8. **Restos do laudo:** A2-3 contrato `reserve`; `interpret_checkout` morto; prévia de
+   desconto própria no PDV (`lineDiscounts.ts`); tela Admin `InstanceApplyRecord`; A6-7
+   (`_safe_init`, prazo Pix duplo, limiar PDV); slots 9/12/15 fixos; AK-1
+   `apps.get_model`; wheel limpo. M-G
+9. **Produção:** baixa de insumo na venda (pede ADR); procedência e conferência da
+   ficha; pesagem por `final_mix`. G
+10. **Faxina de docs:** planos concluídos para `completed/` (feito em 19/10);
+    readiness e fallbacks desatualizados (outra frente).
+
+### Quem coordena e quem executa
+
+- **Frentes 6 (iFood) e 7 (CRUD turbo restante):** coordenação DeepSeek, execução
+  Codex.
+- **Demais frentes (1 a 5, 8 a 10):** coordenação Claude.
+
+### Depois do go-live (C)
+
+NF-e 55, Google Merchant push, TEF Stone, SSE de impressão, trava por dispositivo,
+Concierge V2, chamada antecipada do entregador, índices e desempenho, devolução no PDV,
+telas de parede, IDENT-PT-BR.

@@ -906,7 +906,7 @@ except json.JSONDecodeError:
 # ── WhatsApp (Meta Cloud API direto — spike/avaliação) ──────────────
 # Seam para o adapter notification_whatsapp (Meta Cloud API direto, sem ManyChat).
 # Inerte enquanto PHONE_NUMBER_ID/ACCESS_TOKEN vazios. Decisão ManyChat-vs-direto:
-# docs/plans/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md.
+# docs/plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md.
 SHOPMAN_WHATSAPP = {
     "VERIFY_TOKEN": os.environ.get("WHATSAPP_VERIFY_TOKEN", ""),
     "STOREFRONT_URL": os.environ.get("WHATSAPP_STOREFRONT_URL", ""),
@@ -1126,7 +1126,7 @@ if os.environ.get("META_CATALOG_PROJECTION", "").strip().lower() in ("1", "true"
 # ── SMS (Comtele — OTP por SMS) ─────────────────────────────────────
 # WhatsApp OTP não é viável (ManyChat não tem categoria Authentication; o número único da marca
 # não fica em ManyChat + Cloud API ao mesmo tempo). O código de login vai por SMS — canal padrão
-# de OTP. Inerte até api_key + route. Ver docs/plans/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md.
+# de OTP. Inerte até api_key + route. Ver docs/plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md.
 # API NOVA (portal.comtele.com.br): header `x-api-key` no endpoint api.comtele.com.br/messages/sms/send.
 # A chave vem do portal (Configurações → Chaves de API). route = ID da rota de envio da conta
 # (GET api.comtele.com.br/routes lista; use a transacional/Premium p/ OTP, não a Marketing).

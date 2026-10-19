@@ -9,7 +9,7 @@ single canonical craftsman→stockman write path.
 
 If no backend is configured, Craftsman runs standalone and availability checks
 are skipped. A backend implementation is provided by Buyman/Material (see
-docs/plans/BUYMAN-PROCUREMENT-PLAN.md).
+docs/plans/completed/BUYMAN-PROCUREMENT-PLAN.md).
 
 Vocabulary mapping (Craftsman → Stockman):
     available() →  stock.available()

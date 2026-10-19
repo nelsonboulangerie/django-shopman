@@ -1,6 +1,6 @@
 """Encomendas do PDV — a leitura que o balcão faz do que a casa prometeu.
 
-A seção "Encomendas" do PDV (``docs/plans/ENCOMENDAS-PDV-PLAN.md``) é uma tela
+A seção "Encomendas" do PDV (``docs/plans/completed/ENCOMENDAS-PDV-PLAN.md``) é uma tela
 só e responde três perguntas do balcão: *vim buscar a encomenda da Ana* (a
 busca, :func:`build_preorder_search`), *o que sai hoje?* (o modo Dia) e *quanto
 temos para sábado?* (o modo Semana, de segunda a domingo). Dia e Semana são a
