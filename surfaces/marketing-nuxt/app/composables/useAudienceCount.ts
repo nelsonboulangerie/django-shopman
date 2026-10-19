@@ -34,7 +34,9 @@ export function useAudienceCount() {
     pending.value = false;
   }
 
-  function measure(rules: ChosenAudience, sku = "") {
+  /** `campaignId`: a contagem é do disparo DESTA campanha. Campanha exclusiva de faixa
+   *  de preço só alcança membros, e o servidor conta pela mesma régua do envio. */
+  function measure(rules: ChosenAudience, sku = "", campaignId?: number) {
     if (timer) clearTimeout(timer);
     timer = null;
     const mine = ++epoch;
@@ -48,14 +50,23 @@ export function useAudienceCount() {
     // autorizar o botão enquanto a nova escolha espera o debounce.
     pending.value = true;
     failed.value = false;
-    timer = setTimeout(() => void load(rules, sku, mine), DEBOUNCE_MS);
+    timer = setTimeout(() => void load(rules, sku, mine, campaignId), DEBOUNCE_MS);
   }
 
-  async function load(rules: ChosenAudience, sku: string, mine: number) {
+  async function load(
+    rules: ChosenAudience,
+    sku: string,
+    mine: number,
+    campaignId?: number,
+  ) {
     try {
       const data = await $fetch<AudienceCount>("/api/v1/backstage/marketing/audience/count/", {
         method: "POST",
-        body: { audience_rules: rules, sku },
+        body: {
+          audience_rules: rules,
+          sku,
+          ...(campaignId ? { campaign_id: campaignId } : {}),
+        },
       });
       if (mine !== epoch) return;
       count.value = data;
