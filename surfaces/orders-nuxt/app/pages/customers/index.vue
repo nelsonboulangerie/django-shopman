@@ -8,12 +8,12 @@
 import type { ActiveFilters, FilterDimension } from "../../../../operator-kit/app/types/filters";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 import {
-  customersCsv,
   listQueryFromRoute,
   routeQueryFromList,
   type CustomerFilter,
   type CustomerSort,
 } from "~/presentation/customers";
+import { downloadCsv } from "../../../../operator-kit/app/presentation/csv";
 import type { OperatorBulkItem } from "../../../../operator-kit/app/presentation/bulkBar";
 import type { CustomerFormOptionsProjection } from "~/generated/ordersContract";
 import type { CustomerBulkOperation, CustomerMutationPayload } from "~/types/customers";
@@ -227,14 +227,19 @@ async function saveBulkTags({
 function exportSelectionCsv() {
   const chosen = items.value.filter((row) => selected.value.has(row.ref));
   if (!chosen.length) return;
-  const csv = customersCsv(chosen);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "clientes-" + new Date().toISOString().slice(0, 10) + ".csv";
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadCsv(
+    {
+      header: ["Cliente", "Referência", "Telefone", "CPF", "Pedidos"],
+      rows: chosen.map((row) => [
+        row.name,
+        row.ref,
+        row.phone_display,
+        row.document_display,
+        row.orders_label,
+      ]),
+    },
+    "clientes-" + new Date().toISOString().slice(0, 10) + ".csv",
+  );
 }
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)

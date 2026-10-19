@@ -1205,6 +1205,29 @@ const importOpen = ref(false);
 const importPreview = ref<ImportPreview | null>(null);
 const importCsv = ref("");
 const importPreviewBusy = ref(false);
+const importColumns = [
+  { id: "sku", header: "SKU", accessorKey: "sku" },
+  { id: "action", header: "Ação", accessorKey: "action" },
+  { id: "name", header: "Nome", accessorKey: "name" },
+  { id: "before", header: "Preço atual", accessorKey: "before" },
+];
+const importPreviewForKit = computed(() => {
+  if (!importPreview.value) return null;
+  return {
+    ...importPreview.value,
+    changes: importPreview.value.changes.map((change) => ({
+      sku: change.sku,
+      action: change.action === "new" ? "Novo" : "Atualiza",
+      name: change.name,
+      before: change.before
+        ? (change.before.base_price_q / 100).toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+          })
+        : "",
+    })),
+  };
+});
 async function previewImportCsv(csv: string) {
   importCsv.value = csv;
   importPreviewBusy.value = true;
@@ -2247,9 +2270,13 @@ useHead({ title: "Catálogo" });
     />
 
     <!-- import CSV pt-BR: prévia sem gravar, erro por linha, apply numa ida. -->
-    <CatalogImportCsv
+    <OperatorCsvImport
       :open="importOpen"
-      :preview="importPreview"
+      :preview="importPreviewForKit"
+      :columns="importColumns"
+      :row-key="(row) => String(row.sku)"
+      :total-labels="{ new: 'novo(s)', update: 'atualizado(s)', skip: 'sem mudança' }"
+      description="O arquivo tem as colunas do export. Use ponto e vírgula e vírgula decimal."
       :preview-busy="importPreviewBusy"
       :busy="isBusy('catalog:product-import')"
       :error="errorMsg"
