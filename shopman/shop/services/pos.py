@@ -118,8 +118,9 @@ class PosSaleReview:
     delivery_fee_source: str = ""
     delivery_distance_km: float | None = None
     #: Frete grátis (ou abatido) pela loja: ``{reason, promotion_name,
-    #: threshold_q, base_fee_q}``, ou ``None``. ``reason`` é ``"promotion"`` ou
-    #: ``"threshold"``; ``base_fee_q`` é a taxa sem a renúncia. O operador vê que o
+    #: threshold_q, base_fee_q, group_name}``, ou ``None``. ``reason`` é
+    #: ``"promotion"``, ``"threshold"`` ou ``"group"`` (o frete grátis do grupo
+    #: ``group_name``); ``base_fee_q`` é a taxa sem a renúncia. O operador vê que o
     #: frete saiu grátis e por quê (P2-21).
     delivery_fee_waiver: dict | None = None
     #: A data que o servidor usou — em branco no pedido, é HOJE (o relógio da
@@ -1194,6 +1195,7 @@ def _waiver_review(delivery: DeliveryFeeResolution) -> dict | None:
         "promotion_name": waiver.promotion_name,
         "threshold_q": waiver.threshold_q,
         "base_fee_q": waiver.base_fee_q,
+        "group_name": waiver.group_name,
     }
 
 
@@ -4200,18 +4202,24 @@ def _delivery_fee_waiver(base_fee_q: int, payload: dict):
     nunca a reavaliava: a loja dava o frete e o balcão cobrava. Agora a renúncia
     é ``modifiers.resolve_delivery_fee_waiver``, a função que o
     ``DeliveryFeeModifier`` chama, com o canal da venda (escopo da promoção) e o
-    cliente identificado (grupo de clientes, aniversário).
+    cliente identificado (grupo de clientes, aniversário, frete grátis do grupo).
 
     A base é a mercadoria líquida do desconto: a mesma soma que o limiar sempre
     mediu no balcão.
     """
+    from shopman.guestman.models import PriceTier
+
     from shopman.shop.modifiers import resolve_delivery_fee_waiver
 
+    customer_ref = _payload_pricing_customer_ref(payload)
+    # Os grupos do cliente, para o frete grátis do grupo: uma consulta, só com cliente.
+    tier_refs = PriceTier.objects.filter(customers__ref=customer_ref).values_list("ref", flat=True)
     return resolve_delivery_fee_waiver(
         base_fee_q,
         merchandise_q=_payload_subtotal_q(payload) - _payload_discount_q(payload),
         channel_ref=str(payload.get(_PRICING_CHANNEL_KEY) or ""),
-        customer_ref=_payload_pricing_customer_ref(payload),
+        customer_ref=customer_ref,
+        price_tier_refs=list(tier_refs) if customer_ref else (),
     )
 
 

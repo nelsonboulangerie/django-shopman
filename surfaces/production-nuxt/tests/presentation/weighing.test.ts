@@ -4,6 +4,7 @@ import {
   operationalTargetDisplay,
   preparationLabelsFromPrintDocument,
   projectedQuantityDisplay,
+  weighingRows,
 } from "~/presentation/weighing";
 import type { ProductionLabelPrintDocument } from "~/types/productionPrinting";
 
@@ -93,5 +94,58 @@ describe("apresentação da balança", () => {
       },
     ]);
     expect(blindLabelsFromPrintDocument(document)).toEqual([]);
+  });
+});
+
+describe("linhas da balança: mistura final e massa velha no teto", () => {
+  const ticket = {
+    output_sku: "MASSA-MF",
+    ingredients: [
+      {
+        sku: "FARINHA-T55",
+        name: "Farinha T55",
+        target_display: "1000 g",
+        quantity_display: "1000 g",
+        annotation: "",
+      },
+      {
+        sku: "OVO",
+        name: "Ovo",
+        target_display: "350 g",
+        quantity_display: "350 g",
+        annotation: "≈ 7 ovos",
+      },
+    ],
+    old_dough: {
+      old_dough_display: "344 g",
+      lines: [
+        { sku: "FARINHA-T55", target_display: "800 g" },
+        { sku: "OVO", target_display: "280 g" },
+      ],
+    },
+  };
+
+  it("sem massa velha pesa a ficha do preparo, com a ajuda de contagem", () => {
+    const rows = weighingRows(ticket, false);
+    expect(rows.map((row) => [row.sku, row.target, row.annotation])).toEqual([
+      ["FARINHA-T55", "1000 g", ""],
+      ["OVO", "350 g", "≈ 7 ovos"],
+    ]);
+  });
+
+  it("com massa velha pesa a mistura final no teto e põe a massa velha primeiro", () => {
+    const rows = weighingRows(ticket, true);
+    expect(rows.map((row) => [row.name, row.target, row.isOldDough])).toEqual([
+      ["Massa velha", "344 g", true],
+      ["Farinha T55", "800 g", false],
+      ["Ovo", "280 g", false],
+    ]);
+    // A contagem era do peso cheio: no teto ela mentiria.
+    expect(rows.every((row) => row.annotation === "")).toBe(true);
+  });
+
+  it("ficha sem teto ignora o pedido de massa velha", () => {
+    const rows = weighingRows({ ...ticket, old_dough: null }, true);
+    expect(rows.map((row) => row.target)).toEqual(["1000 g", "350 g"]);
   });
 });

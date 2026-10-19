@@ -15,7 +15,7 @@ import type { PreorderRedoResponse } from "~/types/preorders";
 import type { PosSettingsResponse } from "~/types/settings";
 import { rollStyle } from "~/presentation/printGeometry";
 import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
+import { enterAdvances, paymentFailed, pendingPixBadge, pixAwaiting } from "~/presentation/saleResult";
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -119,7 +119,8 @@ const {
   closeGuardNotice,
   restoreUncertainClose,
   acknowledgeUncertainClose,
-  pendingPixOrderRef,
+  pendingPixOrderRefs,
+  restorePendingPix,
   pixStatus,
   checkoutMode,
   moveDialogOpen,
@@ -402,6 +403,7 @@ const displaySources = { pos: () => pos.value, items: () => cart.items, review: 
 // de ociosidade enquanto o checkout está aberto ou um PIX segue aguardando —
 // travar no meio do pagamento derrubava o operador com o cliente na frente.
 const paymentHold = useState("pos-payment-hold", () => false);
+const pixBadge = computed(() => pendingPixBadge(pendingPixOrderRefs.value));
 watchEffect(() => {
   paymentHold.value = checkoutMode.value || pixStatus.value === "polling";
 });
@@ -1175,6 +1177,7 @@ onMounted(() => {
   else if (redoRef) void openRedoTab(redoRef);
   else if (newOrder) void startNewOrder();
   void restoreUncertainClose();
+  restorePendingPix();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
 });
@@ -1248,16 +1251,17 @@ onBeforeUnmount(() => {
             :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
             data-pos-unsaved
           />
-          <!-- PIX pendente que saiu da tela de resultado: o selo segue, com o polling por
-               baixo até resolver ou expirar (aí vira aviso passageiro). -->
+          <!-- PIX abertos fora da tela de resultado (um ou vários, e também depois de
+               recarregar): o selo segue, com o acompanhamento por baixo até cada um
+               resolver ou expirar (aí vira aviso passageiro). -->
           <NuxtBadge
-            v-if="pendingPixOrderRef"
+            v-if="pixBadge"
             color="info"
             icon="i-lucide-loader-circle"
             role="status"
-            :title="`Pix do pedido ${pendingPixOrderRef} aguardando confirmação`"
+            :title="pixBadge.title"
             data-pos-pix-pending
-          >Pix aguardando · {{ pendingPixOrderRef }}</NuxtBadge>
+          >{{ pixBadge.label }}</NuxtBadge>
         </template>
         <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
              quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,

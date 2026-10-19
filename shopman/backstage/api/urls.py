@@ -46,7 +46,7 @@ from .catalog import (
 )
 from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
 from .channel_health import ChannelHealthView
-from .customer_groups import CustomerGroupDetailView, CustomerGroupListView
+from .customer_groups import CustomerGroupDetailView, CustomerGroupListView, CustomerGroupMembersView
 from .customers import (
     CustomerAddressDetailView,
     CustomerAddressListView,
@@ -752,6 +752,11 @@ urlpatterns = [
     path("customers/bulk/", CustomerBulkView.as_view(), name="api-backstage-customers-bulk"),
     path("customers/groups/", CustomerGroupListView.as_view(), name="api-backstage-customer-groups"),
     path("customers/groups/<str:ref>/", CustomerGroupDetailView.as_view(), name="api-backstage-customer-group-detail"),
+    path(
+        "customers/groups/<str:ref>/members/",
+        CustomerGroupMembersView.as_view(),
+        name="api-backstage-customer-group-members",
+    ),
     path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
     path("customers/merge/", CustomerMergeView.as_view(), name="api-backstage-customers-merge"),
     path("customers/merges/", CustomerMergeListView.as_view(), name="api-backstage-customers-merges"),

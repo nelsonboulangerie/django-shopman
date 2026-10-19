@@ -1202,6 +1202,7 @@
         "ANNOUNCEMENT_NOTIFY"
       ],
       "config_surface": [
+        "DEBUG",
         "SHOPMAN_ENVIRONMENT"
       ],
       "tests": [
@@ -3611,6 +3612,45 @@
       "out_of_extraction": false
     },
     {
+      "id": "promotion.group-free-shipping",
+      "question": "Qual frete grátis de grupo vale para este cliente e cobre este pedido?",
+      "owner": "promotion.group-free-shipping",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.group_advantage:group_free_shipping_for_order",
+      "authoritative_symbols": [
+        "shopman.shop.policies.group_advantage:best_group_free_shipping",
+        "shopman.shop.policies.group_advantage:free_shipping_minimum_q",
+        "shopman.shop.policies.group_advantage:group_free_shipping_for_order"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/group_advantage.py",
+          "symbols": [
+            "free_shipping_minimum_q",
+            "best_group_free_shipping",
+            "group_free_shipping_for_order"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_group_free_shipping_policy.py::test_group_free_shipping_truth_table",
+        "scripts/tests/test_group_free_shipping_policy.py::test_lowest_minimum_wins_and_order_breaks_ties",
+        "scripts/tests/test_group_free_shipping_policy.py::test_minimum_reads_the_config"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "pricing.lot-discount-application",
       "question": "Como o desconto de lote já resolvido compõe o preço da linha correspondente?",
       "owner": "pricing.lot-discount-application",
@@ -3817,7 +3857,9 @@
       "ports": [],
       "events": [],
       "directives": [],
-      "config_surface": [],
+      "config_surface": [
+        "DEBUG"
+      ],
       "tests": [
         "shopman/shop/tests/test_manychat_flow_isolation.py::test_notify_turns_busy_into_a_retryable_result_never_unknown",
         "shopman/shop/tests/test_manychat_marketing_safety.py::test_notification_boundary_never_fabricates_receipt_or_logs_recipient",
@@ -6369,6 +6411,7 @@
       "events": [],
       "directives": [],
       "config_surface": [
+        "DEBUG",
         "MANYCHAT_API_TOKEN",
         "SECRET_KEY",
         "SHOPMAN_MANYCHAT",
@@ -6786,6 +6829,8 @@
           "path": "shopman/shop/services/cart.py",
           "symbols": [
             "add_item",
+            "_cart_date",
+            "_date_that_serves",
             "_catalog_product",
             "_other_lines_qty",
             "update_qty",
@@ -6801,7 +6846,8 @@
         "service"
       ],
       "domains": [
-        "offerman"
+        "offerman",
+        "stockman"
       ],
       "ports": [],
       "events": [],
@@ -11428,6 +11474,7 @@
             "refund_arrival_note",
             "_returned_money_note",
             "_commitment_phrase",
+            "_commitment_suffix",
             "_eta_clock",
             "_qualify_template"
           ]
@@ -11448,6 +11495,7 @@
       "events": [],
       "directives": [],
       "config_surface": [
+        "DEBUG",
         "SHOPMAN_FOCUS_NFE",
         "SHOPMAN_STOREFRONT_BASE_URL"
       ],
@@ -13947,7 +13995,9 @@
       "touchpoints": [
         "service"
       ],
-      "domains": [],
+      "domains": [
+        "guestman"
+      ],
       "ports": [],
       "events": [],
       "directives": [],
@@ -14977,7 +15027,7 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_customer_groups_nn.py::test_best_group_promotion_is_the_best_discount",
-        "shopman/shop/tests/test_customer_groups_nn.py::test_best_typed_advantage_by_priority",
+        "shopman/shop/tests/test_customer_groups_nn.py::test_best_typed_advantage_free_shipping_is_the_lowest_minimum",
         "shopman/shop/tests/test_customer_groups_nn.py::test_best_price_list_uses_the_priority_order"
       ],
       "test_gap_reason": null,

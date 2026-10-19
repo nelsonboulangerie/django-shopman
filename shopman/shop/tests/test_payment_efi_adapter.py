@@ -22,6 +22,20 @@ from django.test import override_settings
 from shopman.shop.adapters import payment_efi
 
 
+@pytest.mark.parametrize("raw", [None, 0, -5, "10", True])
+def test_pix_deadline_has_one_source_and_no_default(raw):
+    """O prazo do Pix vem só do orquestrador (`_adapter_config`): sem ele, grita.
+
+    Antes a Efí caía em ``SHOPMAN_PIX_EXPIRY_SECONDS`` e o simulador em 30 min, e o
+    QR vencia num relógio enquanto o pedido cancelava em outro (laudo A6-7)."""
+    from shopman.shop.adapters.payment_types import pix_timeout_minutes_from
+
+    config = {} if raw is None else {"pix_timeout_minutes": raw}
+    with pytest.raises(ValueError, match="pix_timeout_minutes"):
+        pix_timeout_minutes_from(config)
+    assert pix_timeout_minutes_from({"pix_timeout_minutes": 10}) == 10
+
+
 def _efi_config(certificate_path: str, *, sandbox: bool = True, client_id: str = "client-a") -> dict:
     return {
         "sandbox": sandbox,
@@ -64,6 +78,7 @@ def test_efi_sandbox_accepts_amounts_through_ten_reais(tmp_path, amount_q):
         ) as request_mock,
     ):
         result = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref=f"ORDER-{amount_q}",
             amount_q=amount_q,
             idempotency_key=f"idem-{amount_q}",
@@ -89,6 +104,7 @@ def test_efi_sandbox_rejects_above_ten_reais_before_ledger_or_network(tmp_path):
         pytest.raises(PixPaymentPolicyError) as raised,
     ):
         payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-1001",
             amount_q=1001,
             idempotency_key="idem-1001",
@@ -160,6 +176,7 @@ def test_efi_production_does_not_apply_sandbox_limit_and_marks_live_confirmation
         ) as request_mock,
     ):
         result = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-PRODUCTION",
             amount_q=1001,
             idempotency_key="idem-production-1001",
@@ -203,6 +220,7 @@ def test_efi_persists_deterministic_txid_before_creating_remote_charge(tmp_path)
         patch.object(payment_efi, "_request", side_effect=remote_request),
     ):
         result = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-RACE",
             amount_q=1000,
             idempotency_key=idempotency_key,
@@ -245,6 +263,7 @@ def test_efi_qr_save_preserves_webhook_capture_that_wins_after_put(tmp_path):
         patch.object(payment_efi, "_request", side_effect=remote_request),
     ):
         result = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order_ref,
             amount_q=1000,
             idempotency_key=idempotency_key,
@@ -290,6 +309,7 @@ def test_efi_qr_failure_stays_pending_and_retry_skips_second_charge_put(tmp_path
     ):
         with pytest.raises(TimeoutError, match="simulated QR timeout"):
             payment_efi.create_intent(
+                pix_timeout_minutes=60,
                 order_ref=order_ref,
                 amount_q=1000,
                 idempotency_key=idempotency_key,
@@ -305,6 +325,7 @@ def test_efi_qr_failure_stays_pending_and_retry_skips_second_charge_put(tmp_path
         assert intent.gateway_data["efi_last_error_type"] == "TimeoutError"
 
         retried = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order_ref,
             amount_q=1000,
             idempotency_key=idempotency_key,
@@ -415,6 +436,7 @@ def test_efi_put_timeout_retry_probes_same_txid_and_preserves_original_expiry(
     ):
         with pytest.raises(type(initial_failure)):
             payment_efi.create_intent(
+                pix_timeout_minutes=60,
                 order_ref="ORDER-PUT-TIMEOUT",
                 amount_q=1000,
                 idempotency_key=key,
@@ -423,6 +445,7 @@ def test_efi_put_timeout_retry_probes_same_txid_and_preserves_original_expiry(
         original_expiry = intent.expires_at
 
         resumed = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-PUT-TIMEOUT",
             amount_q=1000,
             idempotency_key=key,
@@ -461,6 +484,7 @@ def test_efi_txid_conflict_is_recovered_not_marked_not_created(tmp_path):
         ) as request_mock,
     ):
         result = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-TXID-CONFLICT",
             amount_q=1000,
             idempotency_key=key,
@@ -499,11 +523,13 @@ def test_put_timeout_then_official_not_found_response_reuses_same_txid(tmp_path)
     ):
         with pytest.raises(TimeoutError):
             payment_efi.create_intent(
+                pix_timeout_minutes=60,
                 order_ref="ORDER-OFFICIAL-NOT-FOUND",
                 amount_q=1000,
                 idempotency_key=key,
             )
         result = payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-OFFICIAL-NOT-FOUND",
             amount_q=1000,
             idempotency_key=key,
@@ -557,6 +583,7 @@ def test_environment_flip_blocks_orchestrator_and_adapter_before_network(tmp_pat
         payment.initiate(order)
         with pytest.raises(RuntimeError, match="outro ambiente Efí"):
             payment_efi.create_intent(
+                pix_timeout_minutes=60,
                 order_ref=order.ref,
                 amount_q=1000,
                 idempotency_key=key,
@@ -593,6 +620,7 @@ def test_unmarked_legacy_efi_resume_fails_before_network_or_metadata_change(tmp_
         pytest.raises(RuntimeError, match="outro ambiente Efí"),
     ):
         payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref=intent.order_ref,
             amount_q=1000,
             idempotency_key=key,
@@ -620,6 +648,7 @@ def test_efi_definitive_failure_before_charge_marks_attempt_failed(tmp_path):
         pytest.raises(payment_efi.EfiNotConfigured),
     ):
         payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-NOT-CREATED",
             amount_q=1000,
             idempotency_key="idem-not-created",
@@ -654,6 +683,7 @@ def test_efi_never_reuses_mock_intent_with_same_idempotency_key(tmp_path):
         pytest.raises(PaymentError) as raised,
     ):
         payment_efi.create_intent(
+            pix_timeout_minutes=60,
             order_ref="ORDER-PROVIDER",
             amount_q=1000,
             idempotency_key=idempotency_key,

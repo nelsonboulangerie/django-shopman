@@ -39,7 +39,7 @@
         "backstage.importbatch", "backstage.operationchecklistrun", "backstage.operationepisode",
         "backstage.operatoralert", "backstage.printjob", "backstage.recipeversionrating",
         "backstage.signinevent", "customer_merge.mergeaudit", "orderman.directive", "orderman.order",
-        "orderman.session", "payman.paymentintent", "shop.audiencesnapshot", "shop.contactrelease",
+        "orderman.session", "payman.paymentintent", "shop.audiencesnapshot", "shop.contactrelease", "shop.instanceapplyrecord",
         "shop.marketingauditevent", "shop.marketingcommandreceipt", "shop.marketingplatformauditevent",
         "shop.marketingsecurityevent", "storefront.intentpilotreport", "storefront.stockalertdelivery",
         "storefront.stockalertoccurrence"

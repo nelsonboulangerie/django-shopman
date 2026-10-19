@@ -1338,7 +1338,8 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PaymentIntent",
-            "PaymentResult"
+            "PaymentResult",
+            "pix_timeout_minutes_from"
           ]
         }
       ]
@@ -1782,6 +1783,25 @@
           "responsibility": "configuração",
           "symbols": [
             "FAQEntryAdmin"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/admin/instance_apply.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "InstanceApplyRecordAdmin"
           ]
         }
       ]
@@ -2470,8 +2490,9 @@
             "ChannelConfig",
             "InstanceConfigurationError",
             "QUALITY_OK_GRADE_REFS",
+            "SHOP_RULE_POLICY_KEYS",
             "STAGE_GOAL_DEFAULTS",
-            "_safe_init",
+            "_section",
             "deep_merge",
             "quality_grade_refs_for_channel"
           ]
@@ -7206,6 +7227,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/group_advantage.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "promotion.group-free-shipping"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/realtime.py",
       "touchpoints": [
         "outro"
@@ -7795,6 +7830,7 @@
             "classify_planned_hold_for_session_sku",
             "classify_planned_holds_for_session",
             "own_holds_by_sku",
+            "session_hold_dates",
             "session_hold_dates_around",
             "session_line_held_qty",
             "stock_on_dates"

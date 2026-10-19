@@ -48528,6 +48528,7 @@
   "list": {
    "query": "",
    "filter": "all",
+   "group": "",
    "filters": [
     {
      "ref": "all",
@@ -48561,7 +48562,19 @@
      "is_ifood": false,
      "orders_label": "19 pedidos",
      "last_order_display": "há 5 dias",
-     "duplicate_hint": ""
+     "duplicate_hint": "",
+     "groups": [
+      {
+       "ref": "equipe",
+       "name": "Equipe",
+       "is_primary": true
+      },
+      {
+       "ref": "varejo",
+       "name": "Varejo",
+       "is_primary": false
+      }
+     ]
     },
     {
      "ref": "CLI-006",
@@ -48573,7 +48586,14 @@
      "is_ifood": false,
      "orders_label": "19 pedidos",
      "last_order_display": "ontem",
-     "duplicate_hint": ""
+     "duplicate_hint": "",
+     "groups": [
+      {
+       "ref": "varejo",
+       "name": "Varejo",
+       "is_primary": true
+      }
+     ]
     },
     {
      "ref": "CLI-005",
@@ -48585,7 +48605,14 @@
      "is_ifood": false,
      "orders_label": "20 pedidos",
      "last_order_display": "há 2 dias",
-     "duplicate_hint": ""
+     "duplicate_hint": "",
+     "groups": [
+      {
+       "ref": "varejo",
+       "name": "Varejo",
+       "is_primary": true
+      }
+     ]
     },
     {
      "ref": "CLI-004",
@@ -48597,7 +48624,19 @@
      "is_ifood": false,
      "orders_label": "9 pedidos",
      "last_order_display": "ontem",
-     "duplicate_hint": ""
+     "duplicate_hint": "",
+     "groups": [
+      {
+       "ref": "equipe",
+       "name": "Equipe",
+       "is_primary": true
+      },
+      {
+       "ref": "varejo",
+       "name": "Varejo",
+       "is_primary": false
+      }
+     ]
     },
     {
      "ref": "CLI-003",
@@ -48609,7 +48648,14 @@
      "is_ifood": false,
      "orders_label": "22 pedidos",
      "last_order_display": "ontem",
-     "duplicate_hint": ""
+     "duplicate_hint": "",
+     "groups": [
+      {
+       "ref": "varejo",
+       "name": "Varejo",
+       "is_primary": true
+      }
+     ]
     },
     {
      "ref": "CLI-002",
@@ -48621,7 +48667,14 @@
      "is_ifood": false,
      "orders_label": "21 pedidos",
      "last_order_display": "ontem",
-     "duplicate_hint": ""
+     "duplicate_hint": "",
+     "groups": [
+      {
+       "ref": "varejo",
+       "name": "Varejo",
+       "is_primary": true
+      }
+     ]
     },
     {
      "ref": "CLI-001",
@@ -48633,7 +48686,19 @@
      "is_ifood": false,
      "orders_label": "26 pedidos",
      "last_order_display": "ontem",
-     "duplicate_hint": ""
+     "duplicate_hint": "",
+     "groups": [
+      {
+       "ref": "equipe",
+       "name": "Equipe",
+       "is_primary": true
+      },
+      {
+       "ref": "varejo",
+       "name": "Varejo",
+       "is_primary": false
+      }
+     ]
     }
    ],
    "page": 1,

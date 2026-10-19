@@ -511,32 +511,39 @@ function refreshAll() {
                   @click="openLabelsPreview('pesagem', ticketIdentity(ticket))"
                 />
               </header>
+              <NuxtSwitch
+                v-if="ticket.old_dough"
+                :model-value="weighing.usesOldDough(ticketIdentity(ticket))"
+                :label="`Com massa velha (até ${ticket.old_dough.cap_display})`"
+                data-weighing-old-dough
+                @update:model-value="
+                  (on: boolean) =>
+                    weighing.setOldDough(ticketIdentity(ticket), on)
+                "
+              />
               <ul class="flex flex-col divide-y text-sm">
                 <li
-                  v-for="ing in ticket.ingredients"
-                  :key="ing.sku"
+                  v-for="row in weighing.rowsFor(ticket, ticketIdentity(ticket))"
+                  :key="row.key"
                   class="flex items-center justify-between gap-3 py-1.5"
                 >
                   <span class="min-w-0">
                     <span class="block truncate font-medium">{{
-                      ing.name
+                      row.name
                     }}</span>
                     <span
                       class="block truncate font-mono text-xs text-muted-foreground"
-                      >{{ ing.sku }}</span
+                      >{{ row.sku }}</span
                     >
                   </span>
                   <span class="shrink-0 text-right">
                     <span class="block font-semibold tabular-nums">{{
-                      operationalTargetDisplay(
-                        ing.target_display,
-                        ing.quantity_display,
-                      )
+                      row.target
                     }}</span>
                     <span
-                      v-if="ing.annotation"
+                      v-if="row.annotation"
                       class="block text-xs text-muted-foreground"
-                      >{{ ing.annotation }}</span
+                      >{{ row.annotation }}</span
                     >
                   </span>
                 </li>

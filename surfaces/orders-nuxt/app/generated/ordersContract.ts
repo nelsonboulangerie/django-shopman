@@ -794,7 +794,7 @@ export interface CustomerPriceTierProjection {
   is_primary: boolean;
 }
 
-/** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str') */
+/** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str', groups: 'tuple[CustomerPriceTierProjection, ...]') */
 export interface CustomerRowProjection {
   ref: string;
   name: string;
@@ -806,12 +806,14 @@ export interface CustomerRowProjection {
   orders_label: string;
   last_order_display: string;
   duplicate_hint: string;
+  groups: CustomerPriceTierProjection[];
 }
 
-/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str', sort: 'str', form: 'CustomerFormOptionsProjection') */
+/** CustomerListProjection(query: 'str', filter: 'str', group: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str', sort: 'str', form: 'CustomerFormOptionsProjection') */
 export interface CustomerListProjection {
   query: string;
   filter: string;
+  group: string;
   filters: CustomerFilterOption[];
   items: CustomerRowProjection[];
   page: number;

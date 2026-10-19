@@ -782,7 +782,7 @@ Reagendar (`services.reschedule`) **move** a directive viva (edita `available_at
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | PixGenerateHandler |
 | `amount_q` | `int` | hooks | PixGenerateHandler |
-| `pix_timeout_minutes` | `int` | hooks (from channel config) | PixGenerateHandler (default 10) |
+| `pix_timeout_minutes` | `int` | `services.payment._adapter_config` (`ChannelConfig.payment.timeout_minutes`, ou o prazo do link na encomenda do PDV) | adapters de Pix (`payment_efi`, `payment_mock`): obrigatório, sem default |
 
 Write-back: spawns `pix.timeout` e `notification.send` (reminder)
 
@@ -1497,8 +1497,11 @@ gate de commit. Editáveis tipados em Reais no ShopAdmin (`shop/admin/shop.py`).
 | `rules.free_delivery_above_q` | só entrega | `build_free_delivery_progress`, `DeliveryFeeModifier` | Taxa de entrega zera no/above deste valor. Reusa a barra como upsell ("faltam X para frete grátis") |
 
 > Convivem no mesmo sub-dict `rules` que o tri-state `validators`/`modifiers`/
-> `checks` do `ChannelConfig` — o `_safe_init` filtra estas chaves de política, que
-> são lidas direto de `shop.defaults["rules"]` por `shop_rule_q()`.
+> `checks` do `ChannelConfig`. A seção `rules` as reconhece pelo nome
+> (`SHOP_RULE_POLICY_KEYS` em `shop/config.py`, junto com `default_delivery_fee_q`)
+> e não as carrega; elas são lidas direto de `shop.defaults["rules"]` por
+> `shop_rule_q()`. Qualquer outra chave desconhecida num aspecto do `ChannelConfig`
+> é RECUSADA com o nome dela (`ValueError` no `from_dict`, `ValidationError` no Admin).
 
 A taxa de entrega por região segue nas **Zonas de Entrega** (`DeliveryZone`, inline
 no admin). O frete grátis global é avaliado por cima da taxa da zona.
@@ -1506,7 +1509,7 @@ no admin). O frete grátis global é avaliado por cima da taxa da zona.
 ### Reposição de Compras — `Shop.defaults["purchase"]`
 
 Política do cálculo de reposição do app Compras, fora do schema do `ChannelConfig`
-(`_safe_init` filtra). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
+(o `from_dict` lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
 (`PurchasePolicy`, dataclass-driven), editável no ShopAdmin (página "Compras");
 lida por `_purchase_policy()` em `shopman/backstage/projections/purchase.py`;
 chave ausente = default. O prazo de entrega por insumo
@@ -1535,8 +1538,8 @@ fornecedor de um clique usa `suggestedQty` como fonte única.
 
 ### Fidelidade — `Shop.defaults["loyalty"]`
 
-Política do programa de fidelidade, fora do schema do `ChannelConfig` (`_safe_init`
-filtra). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
+Política do programa de fidelidade, fora do schema do `ChannelConfig` (o `from_dict`
+lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
 dataclass-driven), editável no ShopAdmin (fieldset "Fidelidade"). O Core (guestman)
 não depende do shop: o orquestrador (`shop/apps.py`) registra resolvers em
 `guestman.contrib.loyalty.conf` que injetam estes valores.
@@ -1738,7 +1741,7 @@ grupos do MESMO cliente. Cliente em mais de um grupo: vale a melhor por tipo, se
 
 | `kind` | Chaves de `config` | Lido por | Descrição |
 |--------|--------------------|----------|-----------|
-| `free_shipping` | `min_order_q` (`int`, centavos) | follow-up (frete) | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. |
+| `free_shipping` | `min_order_q` (`int`, centavos) | `shop/modifiers.resolve_delivery_fee_waiver` (loja e PDV, terceira política do frete grátis, `reason: "group"`) e `shop/projections/cart.build_free_delivery_progress` (barra "faltam R$ X") | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. Cliente em dois grupos com frete grátis: vale o de MENOR mínimo. A base é a mesma do limiar da loja (mercadoria, sem o cupom). |
 | `exclusive_collections` | `collection_refs` (`list[str]`) | follow-up (catálogo) | Coleções do Offerman que só o membro enxerga/comprar. |
 | `exclusive_notifications` | `campaign_refs` (`list[str]`) | follow-up (marketing) | Avisos/campanhas exclusivos do grupo. |
 
@@ -2005,7 +2008,7 @@ apontando a etapa ("Etapa 2: ...").
 | `nutrition` | `dict` | idem | `shop.services.nutrition_from_recipe` | Tabela nutricional por 100 g do insumo. Idem: preservado ao publicar. |
 | `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
 | `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
-| `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+| `cap_pct` | `int` | `publish_version` | projections do inventário, pesagem da Preparação (`build_production_weighing` → `ticket.old_dough`), WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
 | `note` | `string` | `publish_version` (de `formula.items[].note`, via `percentages._bom_items`) | Ninguém ainda | Anotação prática do ingrediente escrita na fórmula ("a farinha do bairro pede 2% mais água"). Diferente de alérgenos e nutrição, **não** é preservada da ficha anterior: a versão publicada decide se ela existe. Duas linhas do mesmo insumo somadas numa só levam as duas notas, separadas por `; `. Ausente quando a fórmula não tem nota. |
 
 ## RecipeEntry.meta

@@ -30,6 +30,7 @@ export function useCustomerList(query: Ref<CustomerListQuery>) {
         filter: query.value.filter,
         page: query.value.page,
         sort: query.value.sort,
+        group: query.value.group || undefined,
       })),
       dedupe: "defer",
       onResponseError: operatorSessionOnError,

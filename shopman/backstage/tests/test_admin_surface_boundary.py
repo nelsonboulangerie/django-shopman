@@ -16,7 +16,7 @@ def test_repository_boundary_contract_matches_live_admin_registry() -> None:
     live = gate.registered_model_admins()
     custom_pages = gate.registered_custom_admin_pages()
 
-    assert len(live) == 95
+    assert len(live) == 96
     assert len(custom_pages) == 7
     assert gate.validate_contract(
         contract,
