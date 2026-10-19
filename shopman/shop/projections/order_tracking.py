@@ -1067,7 +1067,7 @@ def _build_promise(
             )
         if is_hosted:
             # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a
-            # mesma ação "tentar de novo" reabre o acompanhamento, que regenera o intent.
+            # mesma ação "tentar de novo" pede a conferência, que regenera o intent.
             return _payment_retry_promise(order, method=method)
         # Pix sem código ainda → não é a bola do cliente; cai para a loja.
 
@@ -1197,7 +1197,7 @@ def _courier_tracking_url(order) -> str:
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
-    """intent_error + sessão hospedada sem URL: reabrir o acompanhamento regenera o intent."""
+    """intent_error + sessão hospedada sem URL: o POST de conferência refaz a cobrança."""
     return _promise(
         state="payment_retry",
         tone="warning",
@@ -1205,9 +1205,10 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
         actions=(
             _action(
                 ref="retry_payment",
-                kind="link",
+                kind="mutation",
                 label=_copy_title("TRACKING_PROMISE_RETRY_ACTION", "Tentar novamente"),
-                href=f"/pedido/{order.ref}",
+                href=f"/api/v1/orders/{order.ref}/payment/check/",
+                method="POST",
                 idempotency="none",
             ),
         ),

@@ -165,6 +165,10 @@ MAINTENANCE_COMMANDS = (
     # (por dia, fila aberta, placar semanal) — em ciclo vazio não custa nada.
     "run_intent_pilot",
     "check_directive_health",
+    # O alerta pessoal cuja causa acabou e cujo produtor não o fechou (signal
+    # que falhou, processo que caiu entre o fato e o alerta). Era a leitura do
+    # sino que fazia isto; leitura não produz efeito.
+    "reconcile_user_notifications",
     # Resultado incerto no provedor não pode depender do callback original: o
     # comando recupera incidentes antigos/órfãos e nunca reenvia ao cliente.
     "check_stock_alert_delivery_sla",

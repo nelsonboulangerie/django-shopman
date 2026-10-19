@@ -42,6 +42,7 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 IDEMPOTENT_BY_NATURE = {
     "review_sale": "calcula a previa do checkout e nao grava nada — POST so por causa do tamanho do payload",
     "reverse_geocode": "leitura pura: resolve lat/lng em endereco",
+    "retry_payment": "conferencia do pagamento: pergunta ao gateway com throttle e payment.initiate e idempotente por chave; repetir nao cria segunda cobranca",
     "customer_lookup": "GET",
     "customer_search": "GET",
     "open_tab": "abre a comanda pelo ref — abrir duas vezes deixa a mesma comanda aberta",

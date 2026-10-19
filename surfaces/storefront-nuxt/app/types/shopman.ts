@@ -1159,7 +1159,10 @@ export interface TrackingResponse {
   whatsapp_url: string
   support_url: string
   share_text: string
-  just_placed?: boolean
+  /** O pedido já pode ser comemorado: não deve pagamento e não morreu. */
+  placement_secured?: boolean
+  /** O pedido deve pagamento agora: a tela pede a conferência (POST payment/check). */
+  payment_due?: boolean
   share_cta: string
   is_debug: boolean
   last_updated_iso: string

@@ -692,21 +692,15 @@ class POSPaymentStatusView(APIView):
         from shopman.orderman.models import Order
 
         from shopman.shop.projections.payment_status import build_payment_status
-        from shopman.shop.services import customer_orders
 
         try:
             order = Order.objects.get(ref=ref)
         except Order.DoesNotExist as exc:
             raise Http404("Order not found") from exc
 
-        # Resolve timers vencidos (auto-cancel de PIX / confirmação) antes de
-        # reportar. Camada shop — backstage NUNCA importa storefront (CLAUDE.md).
-        try:
-            customer_orders.resolve_payment_timeout_if_due(order)
-            customer_orders.resolve_confirmation_timeout_if_due(order)
-        except Exception:
-            logger.warning("pos.payment_status: resolve_timeouts falhou order=%s", ref, exc_info=True)
-
+        # Leitura não produz efeito: o prazo vencido (auto-cancel do Pix,
+        # confirmação) é a directive do worker, que roda a cada segundo e
+        # pergunta ao gateway antes de cancelar. O balcão vê pelo próximo poll.
         payload = projection_data(build_payment_status(order))
         payload["payment_delivery"] = build_pos_payment_delivery(order)
         return Response(payload)

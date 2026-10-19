@@ -77,6 +77,7 @@ DigitalOcean ou do Sentry.
 | [`reconcile_ifood_catalog`](#reconcile_ifood_catalog) | shop | Diagnóstico | Compara inventário local iFood com SKUs, sem HTTP ou gravações |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
+| [`reconcile_user_notifications`](#reconcile_user_notifications) | backstage | Operação | Fecha o alerta pessoal cuja causa acabou e que o produtor não fechou; roda no `maintenance_worker` |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
@@ -1004,6 +1005,25 @@ python manage.py reconcile_payments --since=4h
 ```
 
 **Veja também:** [runbook de pedido pago sem confirmacao](../runbooks/pedido-pago-sem-confirmacao.md).
+
+---
+
+### reconcile_user_notifications
+
+**App:** `shopman.backstage`
+**Arquivo:** `shopman/backstage/management/commands/reconcile_user_notifications.py`
+
+Para toda caixa com alerta pessoal ativo, compara o alerta com a condição de
+origem (anúncio em revisão, ticket da Cozinha, revisão de qualidade, segundo
+controle do Marketing) e fecha o que já não vale. Cada produtor fecha o próprio
+alerta no caminho feliz; isto é a rede para o signal que falhou. Antes era a
+leitura do sino (GET da caixa) que fazia esta conferência, e leitura não produz
+efeito. Roda no `maintenance_worker`, depois do `check_directive_health`.
+Idempotente, sem flags.
+
+```bash
+python manage.py reconcile_user_notifications
+```
 
 ---
 

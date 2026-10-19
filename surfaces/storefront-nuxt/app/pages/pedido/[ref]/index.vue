@@ -22,6 +22,7 @@ import {
   shareNatively,
   whatsAppShareHref
 } from '~/utils/share'
+import { takeJustPlaced } from '~/utils/justPlaced'
 
 const route = useRoute()
 const apiPath = useShopmanApiPath()
@@ -173,7 +174,11 @@ const freshness = computed(() => trackingFreshness(
 // Reconexão / volta de foco → reconcilia NA HORA (não espera o próximo poll):
 // grande alívio do "esperei e nada" quando o operador muda o status.
 const { isOnline, watchConnectivity } = useConnectivity()
-watchConnectivity(() => { if (tracking.value?.is_active) void refresh() })
+watchConnectivity(() => {
+  if (!tracking.value?.is_active) return
+  if (tracking.value.payment_due) void checkPayment()
+  else void refresh()
+})
 // Banner de offline imediato no acompanhamento (paridade com a tela de pagamento):
 // o cliente vê "sem conexão" na hora, sem depender do limiar de frescor (~60s).
 const showOfflineBanner = computed(() => Boolean(tracking.value?.is_active && !isOnline.value))
@@ -182,6 +187,31 @@ const showOfflineBanner = computed(() => Boolean(tracking.value?.is_active && !i
 // mudança de status/pagamento; aqui refazemos o fetch canônico na hora, sem
 // esperar o poll. Convidado sem login cai no poll (o Django recusa o canal dele).
 useOrderTrackingStream(orderRef, () => { if (tracking.value?.is_active) void refresh() })
+
+// Conferir o pagamento é COMANDO, não efeito da leitura: o GET só lê. Enquanto o
+// pedido deve pagamento, a tela pede a conferência ao abrir, ao voltar para a aba
+// e quando o pedido passa a dever (o aceite chegou por SSE). É assim que a volta
+// do Stripe vê o pagamento na hora, mesmo com o webhook atrasado, e que o Pix que
+// não ganhou código no aceite ganha agora. O worker é a rede de quem fechou a aba.
+const paymentCheckPending = ref(false)
+async function checkPayment () {
+  if (!import.meta.client || paymentCheckPending.value || !tracking.value?.payment_due) return
+  paymentCheckPending.value = true
+  try {
+    const headers = await csrfHeaders()
+    data.value = await $fetch<TrackingResponse>(
+      apiPath(`/api/v1/orders/${encodeURIComponent(orderRef.value)}/payment/check/`),
+      { method: 'POST', headers, credentials: 'include' }
+    )
+  } catch {
+    // A conferência é um atalho; o acompanhamento segue no poll e no SSE.
+  } finally {
+    paymentCheckPending.value = false
+  }
+}
+watch(() => tracking.value?.payment_due, (due, wasDue) => {
+  if (due && !wasDue && mounted.value) void checkPayment()
+})
 
 // Linhas do resumo (ícone + valor) — mesma diagramação do overlay de revisão do
 // checkout (componente OrderSummaryRows), a partir da projeção do pedido.
@@ -212,6 +242,7 @@ onMounted(() => {
   mounted.value = true
   clientNow.value = Date.now()
   tick = setInterval(() => { clientNow.value = Date.now() }, 1000)
+  void checkPayment()
   poll = setInterval(() => {
     if (tracking.value?.is_active) void refresh()
   }, pollIntervalMs(tracking.value?.stale_after_seconds))
@@ -426,13 +457,16 @@ function dismissReorderConflict () {
   conflict.value = null
 }
 
-// Momento yoin: o backend devolve `just_placed` UMA vez, no primeiro acesso
-// depois do checkout. A celebração é o confete — efêmera, sem ocupar layout.
-// O banner fixo saiu: repetia notícia velha (no fluxo Pix ele aterrissava
-// DEPOIS do pagamento, dizendo "Pedido recebido") e competia com o painel.
+// Momento yoin: o checkout marcou NESTE navegador que o pedido acabou de ser
+// fechado (`utils/justPlaced`), e a tela consome a marca UMA vez, quando o
+// backend diz que o pedido já pode ser comemorado (`placement_secured`). A
+// celebração é o confete: efêmera, sem ocupar layout. O banner fixo saiu: repetia
+// notícia velha (no fluxo Pix ele aterrissava DEPOIS do pagamento, dizendo
+// "Pedido recebido") e competia com o painel.
 const yoinCelebrado = ref(false)
 watchEffect(() => {
-  if (!import.meta.client || yoinCelebrado.value || !tracking.value?.just_placed) return
+  if (!import.meta.client || yoinCelebrado.value || !tracking.value?.placement_secured) return
+  if (!takeJustPlaced(tracking.value.ref)) return
   yoinCelebrado.value = true
   nextTick(() => dispararConfetti())
 })

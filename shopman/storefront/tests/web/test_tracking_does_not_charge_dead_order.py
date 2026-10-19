@@ -1,10 +1,11 @@
 """Acompanhamento de pedido morto não cria cobrança.
 
-Todo GET de ``/api/v1/tracking/<ref>/`` chama ``ensure_payment_intent``. O Pix
-da loja nasce só depois do aceite (``timing=post_commit``), então um pedido
-recusado antes do aceite não tem intent — e a porta ``_payment_can_start``
-liberava qualquer status diferente de ``new``. Resultado: recarregar a tela de
-um pedido CANCELADO criava uma cobrança Pix nova (na Efí real, um QR pagável).
+A conferência do pagamento (``POST /api/v1/orders/<ref>/payment/check/``, que a
+tela pede ao abrir) chama ``ensure_payment_intent``. O Pix da loja nasce só
+depois do aceite (``timing=post_commit``), então um pedido recusado antes do
+aceite não tem intent, e a porta ``_payment_can_start`` liberava qualquer status
+diferente de ``new``. Resultado: reabrir a tela de um pedido CANCELADO criava
+uma cobrança Pix nova (na Efí real, um QR pagável).
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ def _set(order, *, status: str, method: str = "pix"):
 def test_recarregar_acompanhamento_de_pix_cancelado_nao_cria_cobranca(order, client):
     _set(order, status="cancelled")
 
-    resp = client.get(f"/api/v1/tracking/{order.ref}/")
+    resp = client.post(f"/api/v1/orders/{order.ref}/payment/check/")
 
     assert resp.status_code == 200
     assert list(PaymentService.get_by_order(order.ref)) == []
