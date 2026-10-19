@@ -15,7 +15,7 @@ import pytest
 from shopman.shop.adapters import payment_stripe
 from shopman.shop.services import notification
 
-pytestmark = pytest.mark.channels("pdv")
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
 
 
 def _order(*, phone, handle_type="", handle_ref=""):

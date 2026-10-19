@@ -21,7 +21,7 @@ from shopman.shop.adapters import courier_mock
 from shopman.shop.directives import COURIER_DISPATCH
 from shopman.shop.models import Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv", "ifood")]
 
 MOCK_ADAPTER = "shopman.shop.adapters.courier_mock"
 
@@ -236,8 +236,11 @@ def test_entrega_pronta_sem_corrida_diz_que_o_entregador_nao_foi_chamado(caixa, 
 
 
 def test_o_detalhe_diz_o_canal_pelo_nome_nunca_pelo_ref_cru(caixa, shop):
-    """Sem cadastro do canal, o rótulo humano das Encomendas ("PDV"), não o "pdv"."""
+    """Canal cadastrado sem nome: o rótulo humano das Encomendas ("PDV"), não o "pdv"."""
+    from shopman.shop.models import Channel
+
     client, _ = caixa
+    Channel.objects.filter(ref="pdv").update(name="")
     _delivery()
 
     assert _detail(client, "PDV-ENT")["channel_name"] == "PDV"
@@ -247,7 +250,7 @@ def test_o_canal_cadastrado_fala_o_nome_do_cadastro(caixa, shop):
     from shopman.shop.models import Channel
 
     client, _ = caixa
-    Channel.objects.create(ref="pdv", name="Balcão da loja")
+    Channel.objects.update_or_create(ref='pdv', defaults={'name': 'Balcão da loja'})[0]
     _delivery()
 
     assert _detail(client, "PDV-ENT")["channel_name"] == "Balcão da loja"

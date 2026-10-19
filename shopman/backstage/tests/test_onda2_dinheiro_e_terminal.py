@@ -15,6 +15,8 @@ from shopman.backstage.services import orders as orders_service
 from shopman.backstage.services import pos as pos_service
 from shopman.backstage.services.exceptions import OrderError, POSError
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
+
 
 @pytest.fixture
 def operador(db):

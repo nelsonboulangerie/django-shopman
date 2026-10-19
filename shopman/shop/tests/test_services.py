@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from shopman.orderman.models import Directive
 
-pytestmark = pytest.mark.channels("web")
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 # ── helpers ──
 

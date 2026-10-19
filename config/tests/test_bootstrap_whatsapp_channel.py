@@ -158,3 +158,23 @@ def test_instancia_sem_canal_whatsapp_nao_ganha_canal(web_listing, settings):
     assert "não declara o canal 'whatsapp'" in out
     assert not Channel.objects.filter(ref="whatsapp").exists()
     assert not Listing.objects.filter(ref="whatsapp").exists()
+
+
+def test_o_canal_existente_recebe_o_ponteiro_que_o_descritor_declara(web_listing, settings, tmp_path):
+    """O valor das chaves exigidas vem do descritor; o comando só sabe QUAIS são."""
+    import json
+    from pathlib import Path
+
+    descriptor = json.loads(
+        (Path(__file__).resolve().parents[1] / "instances/nelson.json").read_text(encoding="utf-8")
+    )
+    item = next(c for c in descriptor["bootstrap"]["channels"] if c["ref"] == "whatsapp")
+    item["config"]["overrides"]["pricing"]["listing_from"] = "catalogo"
+    path = tmp_path / "nelson.json"
+    path.write_text(json.dumps(descriptor), encoding="utf-8")
+    settings.SHOPMAN_INSTANCE_DESCRIPTOR = str(path)
+    Channel.objects.create(ref="whatsapp", name="WhatsApp", is_active=True, config={})
+
+    _run()
+
+    assert Channel.objects.get(ref="whatsapp").config["pricing"] == {"listing_from": "catalogo"}

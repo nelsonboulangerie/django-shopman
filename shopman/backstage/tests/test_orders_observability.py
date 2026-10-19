@@ -17,6 +17,8 @@ from shopman.shop.models import Shop
 from shopman.shop.services.observability import current_operational_context, operational_context, operational_event
 from shopman.shop.services.remote_mutations import run_idempotent_mutation
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 @pytest.fixture(autouse=True)
 def capture_operational_logger(caplog, monkeypatch):
@@ -137,7 +139,7 @@ def test_cash_commit_trace_links_exact_receiving_shift_and_entry(client, actor, 
 
     caplog.set_level(logging.INFO, logger="shopman.operational")
     shift = cash.open_shift(operator=actor, terminal=Terminal.objects.create(ref="OBS-DRAWER", label="Synthetic drawer"))
-    order = Order.objects.create(ref="OBS-CASH", status="dispatched", total_q=1500,
+    order = Order.objects.create(channel_ref="web", ref="OBS-CASH", status="dispatched", total_q=1500,
         data={"fulfillment_type": "delivery", "payment": {"method": "cash", "collection": "on_delivery"}})
     client.force_login(actor)
     detail = client.get(reverse("api-backstage-order-detail", args=[order.ref])).json()["order"]
@@ -169,7 +171,7 @@ def test_courier_attempt_trace_precedes_network_and_keeps_remote_classification(
     from shopman.shop.handlers.courier_cancel import CourierCancelHandler
 
     caplog.set_level(logging.INFO, logger="shopman.operational")
-    order = Order.objects.create(ref="OBS-RIDE", status="ready", data={"fulfillment_type": "delivery", "courier": {"id_mch": "remote-123", "status": "A"}})
+    order = Order.objects.create(channel_ref="web", ref="OBS-RIDE", status="ready", data={"fulfillment_type": "delivery", "courier": {"id_mch": "remote-123", "status": "A"}})
     task = Directive.objects.create(topic="courier.cancel", payload={"order_ref": order.ref, "courier_ref": "remote-123", "actor": str(actor.pk)})
     def cancel(*args, **kwargs):
         assert not connection.in_atomic_block

@@ -14,7 +14,7 @@ from shopman.shop.models import Shop
 from shopman.shop.services import ifood_handshake as hs
 from shopman.shop.services import operator_orders
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.channels("ifood")]
 
 
 @pytest.fixture

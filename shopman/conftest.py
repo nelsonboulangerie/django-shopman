@@ -23,8 +23,15 @@ def _materialized_channels(request):
     marker = request.node.get_closest_marker("channels")
     if marker is None:
         return
-    if request.node.get_closest_marker("django_db") is None:
-        request.getfixturevalue("db")
+    import unittest
+
+    if request.node.get_closest_marker("django_db") is None and not isinstance(
+        request.instance, unittest.TestCase
+    ):
+        # Pedir o banco aqui, tarde, não reordena o teste: o pytest-django roda
+        # os testes sem marca DEPOIS dos transacionais, e lá o esquema pode estar
+        # num estado de migração antigo. Quem precisa de canal é teste de banco.
+        pytest.fail("@pytest.mark.channels exige @pytest.mark.django_db no teste", pytrace=False)
     from shopman.shop.models import Channel
 
     for ref in marker.args:

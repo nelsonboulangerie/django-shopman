@@ -23,7 +23,7 @@ import pytest
 
 from shopman.shop.models import Channel
 
-pytestmark = pytest.mark.channels("web")
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 # ── helpers ──
 

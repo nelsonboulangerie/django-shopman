@@ -28,7 +28,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.shop.services import notification as notification_svc
 from shopman.shop.services.notification import NotificationResendRefused, resend_payment_link
 
-pytestmark = pytest.mark.channels("pdv")
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
 
 CHECKOUT_URL = "https://checkout.stripe.com/c/pay/cs_test_resend"
 

@@ -34,19 +34,6 @@ def test_allowed_hosts_safety_is_fail_closed_only_outside_debug(settings):
     assert checks.check_allowed_hosts(None) == []
 
 
-def test_whatsapp_bootstrap_requirements_include_the_runtime_storefront(settings):
-    from shopman.shop.management.commands import bootstrap_whatsapp_channel
-
-    settings.SHOPMAN_STOREFRONT_CHANNEL_REF = "catalogo"
-
-    assert bootstrap_whatsapp_channel._required_keys() == (
-        ("payment", "method", ["pix", "card"]),
-        ("payment", "timing", "at_commit"),
-        ("notifications", "backend", "manychat"),
-        ("pricing", "listing_from", "catalogo"),
-    )
-
-
 def test_publication_canary_requires_an_enabled_isolated_runtime(settings):
     from django.core.management.base import CommandError
 
