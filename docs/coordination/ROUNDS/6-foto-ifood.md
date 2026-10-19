@@ -3,7 +3,7 @@
 - **id:** §6-foto
 - **branch:** `codex/ifood-foto`
 - **PR:** #1905
-- **estado:** PR aberto; pronto para sair de draft após a CI
+- **estado:** na fila #1905
 - **início:** 2026-10-19
 
 ## O que entrou
