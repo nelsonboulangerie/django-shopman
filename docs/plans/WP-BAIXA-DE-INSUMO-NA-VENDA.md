@@ -98,6 +98,9 @@ baixa na venda descer até a folha, desconta o que a produção já descontou.
 
 - **F1 — o gatilho, decidido e escrito.** Uma linha no ADR, não um palpite no
   código. Depende da resposta 1.
+  Proposta em [ADR-040](../decisions/adr-040-baixa-de-insumo-na-venda-do-feito-na-hora.md)
+  (19/10/2026, status Proposto): directive na venda, um nível de ficha, marca
+  explícita `made_to_order`; espera a palavra do dono.
 - **F2 — o consumo por signal, escritor único.** `issue(kind=MAKE)` a partir dos
   itens da ficha inativa, com a mesma política greedy/present-stock-first que a
   produção usa; shortfall **não fatal**, mas **registrado** (foi o silêncio que
