@@ -8905,6 +8905,7 @@
             "_payment_below_total",
             "_requested_receipt_channels",
             "_alert_receipt_promised_without_emission",
+            "_alert_emission_resolver_broken",
             "_alert_intermediary_base_unknown",
             "_alert_intermediary_benefit_unattributed",
             "_alert_payment_mismatch",
