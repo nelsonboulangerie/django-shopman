@@ -249,9 +249,13 @@ class MarketingFreezeView(_CampaignBase):
     }
 
     def get(self, request):
-        from shopman.shop.services.marketing_security import read_safety_state
+        # Leitura sem gravar: antes do primeiro comando a linha ainda não existe, e
+        # o que se mostra é o estado de nascença (não congelado, versão e geração 1).
+        # A linha nasce no primeiro comando, por ``safety_state(for_update=True)``.
+        from shopman.shop.models import MarketingSafetyState
 
-        return Response(_safety_payload(read_safety_state()))
+        state = MarketingSafetyState.objects.filter(scope="default").first()
+        return Response(_safety_payload(state or MarketingSafetyState(scope="default")))
 
     def post(self, request):
         from shopman.shop.services.marketing_security import activate_freeze
