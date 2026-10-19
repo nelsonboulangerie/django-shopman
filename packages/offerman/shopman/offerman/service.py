@@ -145,12 +145,13 @@ class CatalogService:
         from shopman.offerman.models import ListingItem, Product
 
         skus = list(dict.fromkeys(sku for sku, _qty in normalized))
-        products = {
-            product.sku: product for product in Product.objects.filter(sku__in=skus).only("sku", "base_price_q")
-        }
         listing_refs = tuple(dict.fromkeys(ref for ref in listings if ref))
         tiers: dict[tuple[str, str], list[tuple[Decimal, int]]] = {}
         listed_skus: set[str] = set()
+        # O preço-base vem junto com o tier (join no Product), e o Product só é
+        # lido de novo para o SKU que nenhuma listing trouxe: uma consulta no
+        # caso comum, não duas.
+        base_prices: dict[str, int] = {}
         if listing_refs:
             items = ListingItem.objects.filter(
                 listing__ref__in=listing_refs,
@@ -161,16 +162,21 @@ class CatalogService:
                 items = items.filter(is_sellable=True)
             if published_only:
                 items = items.filter(is_published=True)
-            for listing_ref, sku, min_qty, price_q in items.order_by("-min_qty").values_list(
-                "listing__ref", "product__sku", "min_qty", "price_q"
+            for listing_ref, sku, base_price_q, min_qty, price_q in items.order_by("-min_qty").values_list(
+                "listing__ref", "product__sku", "product__base_price_q", "min_qty", "price_q"
             ):
                 listed_skus.add(sku)
+                base_prices[sku] = base_price_q
                 tiers.setdefault((listing_ref, sku), []).append((min_qty, price_q))
+        unlisted = [sku for sku in skus if sku not in base_prices]
+        if unlisted and not require_listing_match:
+            base_prices.update(
+                Product.objects.filter(sku__in=unlisted).order_by().values_list("sku", "base_price_q")
+            )
 
         result: list[int | None] = []
         for sku, qty in normalized:
-            product = products.get(sku)
-            if product is None:
+            if sku not in base_prices:
                 result.append(None)
                 continue
             if require_listing_match and sku not in listed_skus:
@@ -193,7 +199,7 @@ class CatalogService:
                 )
                 if price_q is not None:
                     break
-            result.append(price_q if price_q is not None else product.base_price_q)
+            result.append(price_q if price_q is not None else base_prices[sku])
         return result
 
     @classmethod
