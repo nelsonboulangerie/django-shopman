@@ -497,7 +497,14 @@ def _validate_hermetic(tmp_path, inventory, manifests):
         manifests,
         root=tmp_path,
         instance_debt={"schema_version": 1, "findings": []},
+        policy_namespace_baseline=_hermetic_policy_baseline(manifests),
+        policy_field_exemptions={},
     )
+
+
+def _hermetic_policy_baseline(manifests):
+    """O caso hermético congela as próprias políticas: a trava de namespace tem teste próprio."""
+    return {"schema_version": 1, "units": gate.policy_units_outside_namespace(manifests["units"])}
 
 
 def _hermetic_negative_case(tmp_path, case):
@@ -1014,3 +1021,156 @@ def test_validate_rejects_synthetic_question(tmp_path):
         _validate_hermetic(tmp_path, inventory, manifests)
 
     assert caught.value.code == "synthetic-question"
+
+
+# ── A7-3: (a) "não reimplementar decisão" e (c) "um entrypoint" por estrutura ──
+#
+# Os dois primeiros mutantes são os do laudo CORE-SOVEREIGNTY (2026-10-18), que
+# passavam pelo gate de nomes. Cada teste aplica a mutação numa cópia do arquivo
+# real e exige que o gate REPROVE.
+
+POLICY_MODULE = "shopman/shop/policies/promotion.py"
+
+
+def _policy_tree(tmp_path, mutations):
+    """Cópia mínima: a política e os arquivos mutados, com o texto real de origem."""
+    (tmp_path / POLICY_MODULE).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / POLICY_MODULE).write_text((ROOT / POLICY_MODULE).read_text())
+    for rel, mutate in mutations.items():
+        target = tmp_path / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = ROOT / rel
+        target.write_text(mutate(source.read_text() if source.exists() else ""))
+    return tmp_path
+
+
+def _reimplemented(tmp_path, mutations):
+    root = _policy_tree(tmp_path, mutations)
+    with pytest.raises(gate.GateError) as caught:
+        gate.check_policy_owned_fields(root, exemptions={})
+    assert caught.value.code == "policy-reimplemented"
+    return str(caught.value)
+
+
+def test_canonical_promotion_decision_lives_in_one_file():
+    """A métrica de localidade do piloto, calculada: 1 arquivo de produção decide."""
+    assert gate.check_policy_owned_fields(ROOT) == {"promotion.eligibility": 1}
+
+
+def test_laudo_mutant_second_minimum_comparison_in_discount_modifier_fails(tmp_path):
+    def mutate(text):
+        old = "    @staticmethod\n    def _calc_discount("
+        assert old in text
+        new = (
+            "    @staticmethod\n    def _reaches_floor(promo, total):\n"
+            "        return not promo.min_order_q or total > promo.min_order_q\n\n" + old
+        )
+        return text.replace(old, new, 1)
+
+    message = _reimplemented(tmp_path, {"shopman/shop/modifiers.py": mutate})
+    assert "('shopman/shop/modifiers.py', 'DiscountModifier', 'min_order_q')" in message
+
+
+def test_laudo_mutant_coupon_minimum_in_cart_service_fails(tmp_path):
+    def mutate(text):
+        return text + (
+            "\n\ndef coupon_minimum_eligible(promo, total: int) -> bool:\n"
+            "    return not promo.min_order_q or total > promo.min_order_q\n"
+        )
+
+    message = _reimplemented(tmp_path, {"shopman/shop/services/cart.py": mutate})
+    assert "coupon_minimum_eligible" in message
+
+
+def test_laudo_mutant_declared_in_a_frozen_policy_unit_fails_the_namespace():
+    """O mutante do laudo declarado na unidade que já existia: a unidade congelada não cresce."""
+    _inventory, manifests = _canonical()
+    manifests = copy.deepcopy(manifests)
+    unit = _unit(manifests, "promotion.customer-eligibility")
+    unit["sources"][0]["symbols"] = sorted([*unit["sources"][0]["symbols"], "coupon_minimum_eligible"])
+    baseline = json.loads((ROOT / "docs/architecture/policy-namespace-baseline.json").read_text())
+
+    with pytest.raises(gate.GateError) as caught:
+        gate.check_policy_namespace(manifests["units"], baseline)
+
+    assert caught.value.code == "policy-outside-namespace"
+    assert "coupon_minimum_eligible" in str(caught.value)
+
+
+def test_new_policy_unit_outside_policies_namespace_fails():
+    _inventory, manifests = _canonical()
+    manifests = copy.deepcopy(manifests)
+    clone = copy.deepcopy(_unit(manifests, "promotion.customer-eligibility"))
+    clone["id"] = "promotion.coupon-minimum"
+    manifests["units"].append(clone)
+    baseline = json.loads((ROOT / "docs/architecture/policy-namespace-baseline.json").read_text())
+
+    with pytest.raises(gate.GateError) as caught:
+        gate.check_policy_namespace(manifests["units"], baseline)
+
+    assert caught.value.code == "policy-outside-namespace"
+
+
+def test_policy_namespace_baseline_only_shrinks():
+    _inventory, manifests = _canonical()
+    baseline = json.loads((ROOT / "docs/architecture/policy-namespace-baseline.json").read_text())
+    gate.check_policy_namespace(manifests["units"], baseline)
+    baseline = copy.deepcopy(baseline)
+    baseline["units"]["promotion.gone"] = ["shopman/shop/services/cart.py:gone"]
+
+    with pytest.raises(gate.GateError) as caught:
+        gate.check_policy_namespace(manifests["units"], baseline)
+
+    assert caught.value.code == "policy-baseline-stale"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # local que guarda o campo
+        "def floor(promo, total):\n    minimum = int(promo.min_order_q or 0)\n    return total >= minimum\n",
+        # getattr com o nome do campo
+        "def birthday(promo, ctx):\n    if getattr(promo, 'birthday_only', False):\n        return ctx.is_birthday\n    return True\n",
+        # campo genérico com receptor de promoção
+        "def scoped(coupon_promo, sku):\n    return not coupon_promo.skus or sku in coupon_promo.skus\n",
+        # segmento lido numa compreensão
+        "def targeted(promos):\n    return [p for p in promos if p.customer_segments]\n",
+    ],
+)
+def test_reimplementation_variants_fail_in_storefront_too(tmp_path, body):
+    _reimplemented(tmp_path, {"shopman/storefront/services/promo_probe.py": lambda _text: body})
+
+
+def test_delegating_to_the_policy_and_normalizing_fields_pass(tmp_path):
+    body = (
+        "from shopman.shop.policies.promotion import PromotionContext, promotion_matches, promotion_minimum_eligible\n\n"
+        "def ok(promo, total, sku):\n"
+        "    record = {'fulfillment_types': list(promo.fulfillment_types or [])}\n"
+        "    if not promotion_minimum_eligible(min_order_q=promo.min_order_q, merchandise_subtotal_q=total):\n"
+        "        return record\n"
+        "    return promotion_matches(promo, PromotionContext(sku=sku))\n"
+        "\n"
+        "def channel(policy, chosen):\n"
+        "    return chosen in policy.fulfillment_types\n"
+    )
+    root = _policy_tree(tmp_path, {"shopman/backstage/services/promo_probe.py": lambda _text: body})
+    assert gate.check_policy_owned_fields(root, exemptions={}) == {"promotion.eligibility": 1}
+
+
+def test_stale_policy_exemption_fails(tmp_path):
+    root = _policy_tree(tmp_path, {})
+    with pytest.raises(gate.GateError) as caught:
+        gate.check_policy_owned_fields(root, exemptions={("shopman/shop/x.py", "f", "skus"): "motivo"})
+    assert caught.value.code == "policy-exemption-stale"
+
+
+def test_modifiers_cannot_grow_past_its_budget(tmp_path):
+    gate.check_source_budgets(ROOT)
+    target = tmp_path / "shopman/shop/modifiers.py"
+    target.parent.mkdir(parents=True)
+    target.write_text((ROOT / "shopman/shop/modifiers.py").read_text() + "\n\nclass AnotherModifier:\n    pass\n")
+
+    with pytest.raises(gate.GateError) as caught:
+        gate.check_source_budgets(tmp_path)
+
+    assert caught.value.code == "source-budget"
