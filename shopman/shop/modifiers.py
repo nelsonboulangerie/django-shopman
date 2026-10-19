@@ -39,12 +39,14 @@ from typing import Any
 from django.utils import timezone
 from shopman.utils.monetary import monetary_div, monetary_mult
 
+from shopman.shop.policies.group_advantage import free_shipping_minimum_q, group_free_shipping_for_order
 from shopman.shop.policies.promotion import (
     PromotionContext,
     Shopper,
     promotion_matches,
     promotion_minimum_eligible,
 )
+from shopman.shop.services import promotions as promotion_service
 
 logger = logging.getLogger(__name__)
 
@@ -1454,10 +1456,7 @@ class DeliveryFeeModifier:
             fee_q = None
         else:
             fee_q = self._effective_fee_q(
-                base_fee_q, session, channel=channel, now=pricing_now(ctx),
-                # O ``CustomerPricingModifier`` (order 5) já publicou os grupos; com
-                # cliente sem grupo a lista é vazia e o motor não consulta de novo.
-                price_tier_refs=ctx.get("price_tiers") or ([] if ctx.get("customer") is not None else None),
+                base_fee_q, session, channel=channel, now=pricing_now(ctx), price_tier_refs=ctx.get("price_tiers") or ()
             )
             new_data["delivery_fee_q"] = fee_q
             new_data.pop("delivery_zone_error", None)
@@ -1562,10 +1561,7 @@ class DeliveryFeeModifier:
         return (shop_rule_q("default_delivery_fee_q"), None, False)
 
     @staticmethod
-    def _effective_fee_q(
-        base_fee_q: int, session: Any, *, channel: Any = None, now: datetime | None = None,
-        price_tier_refs=None,
-    ) -> int:
+    def _effective_fee_q(base_fee_q: int, session: Any, *, channel: Any = None, now=None, price_tier_refs=()) -> int:
         """A taxa efetiva da sessão: ``resolve_delivery_fee_waiver`` sobre o carrinho.
 
         Entrega grátis é renúncia AQUI, nunca linha de desconto: a linha
@@ -1598,8 +1594,7 @@ class DeliveryFeeModifier:
             channel_ref=getattr(channel, "ref", "") or "",
             customer_ref=(data.get("customer") or {}).get("ref") or "",
             coupon_code=data.get("coupon_code") or "",
-            now=now,
-            price_tier_refs=price_tier_refs,
+            now=now, price_tier_refs=price_tier_refs,
         ).fee_q
 
 
@@ -1607,9 +1602,8 @@ class DeliveryFeeModifier:
 class DeliveryFeeWaiver:
     """A taxa que sobra depois da renúncia, e QUAL política renunciou.
 
-    ``reason``: ``""`` (nada renunciou) · ``"threshold"`` (o limiar permanente
-    da loja, ``threshold_q``) · ``"promotion"`` (a promoção ``promotion_name``) ·
-    ``"group"`` (o frete grátis do grupo ``group_name``, a partir de ``threshold_q``).
+    ``reason``: ``""`` (nada) · ``"threshold"`` (limiar da loja, ``threshold_q``) · ``"promotion"``
+    (``promotion_name``) · ``"group"`` (frete grátis do grupo ``group_name``, desde ``threshold_q``).
     """
 
     fee_q: int
@@ -1628,24 +1622,19 @@ def resolve_delivery_fee_waiver(
     customer_ref: str = "",
     coupon_code: str = "",
     now: datetime | None = None,
-    price_tier_refs=None,
+    price_tier_refs=(),
 ) -> DeliveryFeeWaiver:
     """A renúncia de frete que renuncia MAIS, entre três políticas. Um motor, todo canal.
 
     Três políticas, **um dono**. O limiar permanente (`free_delivery_above_q`, de
-    `Shop.defaults`), a promoção `free_delivery` ativa NO CANAL (automática ou por
-    cupom) e o frete grátis do GRUPO do cliente (`PriceTierAdvantage`
-    `free_shipping`, a partir do `min_order_q` dele). Vence a que renuncia mais, na
-    convenção best-wins do desconto: nada acumula, a taxa só zera uma vez. É a
+    `Shop.defaults`), a promoção `free_delivery` NO CANAL (automática ou por cupom) e o frete
+    grátis dos grupos ``price_tier_refs`` (``policies.group_advantage``). Vence a que renuncia mais. É a
     mesma função para a sessão da loja (``DeliveryFeeModifier``) e para a revisão
     do PDV (``pos._compute_engine_delivery_fee``): o PDV não tem sessão até fechar,
     e uma cópia da regra lá seria a segunda opinião sobre o frete (P2-21).
 
     ``channel_ref`` é obrigatório de propósito: vazio, ``get_active_promotions``
     não filtra, e a promoção só da loja online valeria em todo canal.
-
-    ``price_tier_refs``: os grupos do cliente quando o chamador já os tem (a loja
-    publica no ``ctx`` do motor); ``None`` busca pelo ``customer_ref`` numa consulta.
     """
     if base_fee_q <= 0:
         return DeliveryFeeWaiver(fee_q=base_fee_q, base_fee_q=base_fee_q)
@@ -1672,29 +1661,11 @@ def resolve_delivery_fee_waiver(
                 fee_q=remaining, base_fee_q=base_fee_q, reason="promotion",
                 promotion_name=str(getattr(promo, "name", "") or ""),
             )
-
-    # Política 3: o frete grátis do grupo do cliente. No empate o grupo nomeia: é a
-    # vantagem que o cliente tem por ser quem é, e é ela que a tela agradece.
-    grouped = _group_free_shipping(price_tier_refs, customer_ref=customer_ref, merchandise_q=merchandise_q)
-    if grouped is not None:
-        best = DeliveryFeeWaiver(
-            fee_q=0, base_fee_q=base_fee_q, reason="group",
-            threshold_q=grouped[0], group_name=grouped[1],
-        )
+    group = promotion_service.best_group_advantage(price_tier_refs, "free_shipping")  # o grupo nomeia o empate
+    if group is not None and group_free_shipping_for_order([group.value], merchandise_q=merchandise_q):
+        minimum_q = free_shipping_minimum_q(group.value.config)
+        best = DeliveryFeeWaiver(0, base_fee_q, reason="group", threshold_q=minimum_q, group_name=group.label)
     return best
-
-
-def _group_free_shipping(price_tier_refs, *, customer_ref: str, merchandise_q: int) -> tuple[int, str] | None:
-    """``(pedido mínimo, nome do grupo)`` do frete grátis do grupo que cobre o pedido, ou ``None``."""
-    from shopman.shop.services import promotions as promotion_service
-
-    found = promotion_service.best_group_free_shipping(price_tier_refs=price_tier_refs, customer_ref=customer_ref)
-    if found is None:
-        return None
-    min_order_q = promotion_service.free_shipping_min_order_q(found.value)
-    if merchandise_q < min_order_q:
-        return None
-    return (min_order_q, found.label)
 
 
 def _best_free_delivery_promotion(

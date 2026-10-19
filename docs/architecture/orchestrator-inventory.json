@@ -7211,6 +7211,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/group_advantage.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "promotion.group-free-shipping"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/realtime.py",
       "touchpoints": [
         "outro"

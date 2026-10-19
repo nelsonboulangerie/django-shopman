@@ -773,11 +773,12 @@ def build_free_delivery_progress(
     """
     threshold_q = shop_rule_q("free_delivery_above_q")
     if price_tier_refs:
+        from shopman.shop.policies.group_advantage import free_shipping_minimum_q
         from shopman.shop.services import promotions as promotion_service
 
         group = promotion_service.best_group_advantage(price_tier_refs, "free_shipping")
         if group is not None:
-            group_q = promotion_service.free_shipping_min_order_q(group.value)
+            group_q = free_shipping_minimum_q(group.value.config)
             threshold_q = group_q if not threshold_q else min(threshold_q, group_q)
             if threshold_q <= 0:
                 return None

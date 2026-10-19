@@ -4207,13 +4207,19 @@ def _delivery_fee_waiver(base_fee_q: int, payload: dict):
     A base é a mercadoria líquida do desconto: a mesma soma que o limiar sempre
     mediu no balcão.
     """
+    from shopman.guestman.models import PriceTier
+
     from shopman.shop.modifiers import resolve_delivery_fee_waiver
 
+    customer_ref = _payload_pricing_customer_ref(payload)
+    # Os grupos do cliente, para o frete grátis do grupo: uma consulta, só com cliente.
+    tier_refs = PriceTier.objects.filter(customers__ref=customer_ref).values_list("ref", flat=True)
     return resolve_delivery_fee_waiver(
         base_fee_q,
         merchandise_q=_payload_subtotal_q(payload) - _payload_discount_q(payload),
         channel_ref=str(payload.get(_PRICING_CHANNEL_KEY) or ""),
-        customer_ref=_payload_pricing_customer_ref(payload),
+        customer_ref=customer_ref,
+        price_tier_refs=list(tier_refs) if customer_ref else (),
     )
 
 

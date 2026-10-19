@@ -19,6 +19,7 @@ from shopman.orderman.models import Order
 
 from shopman.shop.models import Channel, DeliveryZone, Shop
 from shopman.shop.modifiers import resolve_delivery_fee_waiver
+from shopman.shop.policies.group_advantage import free_shipping_minimum_q
 from shopman.shop.projections.cart import build_cart
 from shopman.shop.services import pos as pos_service
 from shopman.shop.services import promotions, sessions
@@ -55,7 +56,7 @@ def test_dois_grupos_com_frete_gratis_vale_o_menor_minimo():
     best = promotions.best_group_advantage(["equipe", "alianca"], "free_shipping")
 
     assert best.tier_ref == "alianca"
-    assert promotions.free_shipping_min_order_q(best.value) == 2000
+    assert free_shipping_minimum_q(best.value.config) == 2000
 
 
 def test_vantagem_desligada_nao_vale():
@@ -76,6 +77,11 @@ def test_o_motor_respeita_o_minimo_do_grupo_e_diz_o_grupo():
 def test_sem_grupo_o_motor_nao_consulta_a_vantagem(django_assert_num_queries):
     with django_assert_num_queries(1):  # só o Shop do limiar; lista vazia não pergunta ao banco
         resolve_delivery_fee_waiver(FEE_Q, merchandise_q=9999, channel_ref="", price_tier_refs=[])
+
+
+def test_balcao_pdv_sem_cliente_nao_procura_grupo(django_assert_num_queries):
+    with django_assert_num_queries(1):
+        resolve_delivery_fee_waiver(FEE_Q, merchandise_q=9999, channel_ref="")
 
 
 # ── a loja online ────────────────────────────────────────────────────────────
