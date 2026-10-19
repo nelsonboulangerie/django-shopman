@@ -1788,6 +1788,25 @@
       ]
     },
     {
+      "path": "shopman/shop/admin/instance_apply.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "InstanceApplyRecordAdmin"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/admin/omotenashi.py",
       "touchpoints": [
         "admin"
