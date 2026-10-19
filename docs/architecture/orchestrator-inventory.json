@@ -3989,29 +3989,6 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/bootstrap_whatsapp_channel.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [
-        "channel.whatsapp-bootstrap-requirements"
-      ],
-      "responsibilities": [
-        "decisão",
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "CHANNEL_REF",
-            "LISTING_REF"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/management/commands/capture_ifood_catalog.py",
       "touchpoints": [
         "outro"
@@ -5141,25 +5118,6 @@
             "Command",
             "GROUPS",
             "ensure_commercial_groups"
-          ]
-        }
-      ]
-    },
-    {
-      "path": "shopman/shop/management/commands/setup_groups.py",
-      "touchpoints": [
-        "outro"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "Command"
           ]
         }
       ]

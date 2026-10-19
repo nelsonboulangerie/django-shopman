@@ -37,7 +37,7 @@ from pathlib import Path
 import pytest
 from django.utils import timezone
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[3] / "contracts" / "projections"
 

@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from shopman.orderman.models import Directive
 
+pytestmark = pytest.mark.channels("web")
+
 # ── helpers ──
 
 
@@ -250,6 +252,7 @@ class TestAvailabilityListingMembership:
             allowed_quality_grade_refs=None,
         )
 
+    @pytest.mark.channels("ifood")
     @patch("shopman.stockman.services.availability.decision_from_availability")
     @patch("shopman.shop.services.availability.get_adapter")
     def test_check_reuses_loaded_availability_for_stockman_decision(

@@ -131,3 +131,30 @@ def test_canal_criado_nasce_em_aceite_manual_como_o_seed(web_listing):
 
     confirmation = Channel.objects.get(ref="whatsapp").config["confirmation"]
     assert confirmation == {"mode": "manual", "stale_new_alert_minutes": 10}
+
+
+def test_o_canal_criado_e_o_que_o_descritor_declara(web_listing):
+    """Uma definição só: o canal novo nasce igual ao item ``whatsapp`` do descritor."""
+    from config.instance_descriptors import configured_descriptor, declared_channel
+
+    _run()
+
+    declared = declared_channel(configured_descriptor(), "whatsapp")
+    channel = Channel.objects.get(ref="whatsapp")
+    assert channel.config == declared["config"]["overrides"]
+    assert channel.name == declared["config"]["name"]
+    assert channel.display_order == declared["config"]["display_order"]
+
+
+def test_instancia_sem_canal_whatsapp_nao_ganha_canal(web_listing, settings):
+    from pathlib import Path
+
+    settings.SHOPMAN_INSTANCE_DESCRIPTOR = str(
+        Path(__file__).resolve().parents[1] / "instances/counter-minimal.json"
+    )
+
+    out = _run()
+
+    assert "não declara o canal 'whatsapp'" in out
+    assert not Channel.objects.filter(ref="whatsapp").exists()
+    assert not Listing.objects.filter(ref="whatsapp").exists()

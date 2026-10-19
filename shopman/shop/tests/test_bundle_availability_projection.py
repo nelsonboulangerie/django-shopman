@@ -19,6 +19,8 @@ from shopman.stockman.services.movements import StockMovements
 
 from shopman.shop.projections import catalog_context as cc
 
+pytestmark = pytest.mark.channels("web")
+
 
 @pytest.fixture
 def pacote(db):

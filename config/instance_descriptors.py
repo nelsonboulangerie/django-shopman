@@ -37,6 +37,37 @@ def load_descriptor(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def configured_descriptor_path() -> Path:
+    """The Instance descriptor this deployment declares (``SHOPMAN_INSTANCE_DESCRIPTOR``).
+
+    Release commands read their configuration from here instead of carrying a
+    second copy in code. Missing setting or file fails loudly.
+    """
+    from django.conf import settings
+
+    raw = getattr(settings, "SHOPMAN_INSTANCE_DESCRIPTOR", "")
+    if not raw:
+        raise ValueError("SHOPMAN_INSTANCE_DESCRIPTOR is not configured")
+    path = Path(raw)
+    if not path.is_file():
+        raise ValueError(f"SHOPMAN_INSTANCE_DESCRIPTOR not found: {path}")
+    return path
+
+
+def configured_descriptor() -> dict:
+    descriptor = load_descriptor(configured_descriptor_path())
+    assert_export_safe(descriptor["bootstrap"])
+    return descriptor
+
+
+def declared_channel(descriptor: dict, ref: str) -> dict | None:
+    """The ``bootstrap.channels`` item for ``ref``, or ``None`` when undeclared."""
+    return next(
+        (item for item in descriptor["bootstrap"]["channels"] if item["ref"] == ref),
+        None,
+    )
+
+
 def _config_item(ref: str, *, enabled: bool | None = None, config: dict | None = None) -> dict:
     item: dict = {"ref": ref}
     if enabled is not None:
@@ -268,8 +299,15 @@ def _apply_rules(items: list[dict]) -> int:
     return changed
 
 
-def _apply_personas(items: list[dict]) -> int:
-    changed = 0
+def sync_personas(items: list[dict]) -> list[dict]:
+    """Make each declared group hold exactly the declared permissions.
+
+    Returns one report per persona: ``name``, ``created``, ``granted`` and
+    ``revoked`` (``app_label.codename``), so a release log says what changed.
+    Groups absent from the descriptor are left alone: the descriptor owns the
+    personas it declares, not every group an operator may create.
+    """
+    reports = []
     for item in items:
         if slugify(item["name"]) != item["ref"]:
             raise ValueError(
@@ -277,12 +315,26 @@ def _apply_personas(items: list[dict]) -> int:
             )
         group, created = Group.objects.get_or_create(name=item["name"])
         permissions = [_permission(ref) for ref in item["permissions"]]
-        current_permission_ids = set(group.permissions.values_list("pk", flat=True))
-        desired_permission_ids = {permission.pk for permission in permissions}
-        if current_permission_ids != desired_permission_ids:
+        current = {
+            f"{app_label}.{codename}"
+            for app_label, codename in group.permissions.values_list(
+                "content_type__app_label", "codename"
+            )
+        }
+        desired = set(item["permissions"])
+        if current != desired:
             group.permissions.set(permissions)
-        changed += int(created)
-    return changed
+        reports.append({
+            "name": group.name,
+            "created": created,
+            "granted": sorted(desired - current),
+            "revoked": sorted(current - desired),
+        })
+    return reports
+
+
+def _apply_personas(items: list[dict]) -> int:
+    return sum(int(report["created"]) for report in sync_personas(items))
 
 
 def _apply_templates(items: list[dict]) -> int:

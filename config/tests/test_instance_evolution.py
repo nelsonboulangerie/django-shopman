@@ -18,7 +18,6 @@ COUNTER = ROOT / "config/instances/counter-minimal.json"
 
 
 @pytest.mark.django_db
-@pytest.mark.instance_runtime_strict
 def test_descriptor_upgrade_preserves_tenant_rows_and_memberships():
     declared = load_descriptor(COUNTER)
     apply_to_database(declared)

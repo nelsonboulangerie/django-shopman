@@ -19,7 +19,7 @@ from shopman.shop.handlers.courier_sync import CourierSyncHandler
 from shopman.shop.models import Shop
 from shopman.shop.services import courier
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web", "pdv")]
 
 MOCK_ADAPTER = "shopman.shop.adapters.courier_mock"
 
