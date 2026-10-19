@@ -2723,7 +2723,7 @@ def cancel_recent_order(
     if channel_ref is None:
         from django.conf import settings
 
-        channel_ref = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+        channel_ref = settings.SHOPMAN_POS_CHANNEL_REF
     try:
         order = Order.objects.get(ref=order_ref)
     except Order.DoesNotExist as exc:

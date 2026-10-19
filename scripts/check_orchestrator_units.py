@@ -511,6 +511,71 @@ def _runtime_strings(tree: ast.Module) -> set[str]:
     }
 
 
+HHMM_RE = re.compile(r"^(?:[01]?\d|2[0-3]):[0-5]\d$")
+RGB_CHANNELS_RE = re.compile(r"^\d{1,3} \d{1,3} \d{1,3}$")
+#: A palette is a mapping of at least this many 'R G B' strings.
+PALETTE_MIN_ENTRIES = 5
+
+
+def _literal_strings(node: ast.AST) -> list[str]:
+    return [
+        child.value
+        for child in ast.walk(node)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    ]
+
+
+def _structural_instance_defaults(tree: ast.Module) -> set[str]:
+    """Names that carry an instance's policy as code, without naming the instance.
+
+    - ``DEFAULT_*`` (module or class level) that IS a clock time (``"17:30"``) or a
+      mapping of clock times, or a ``*_PARAMS`` mapping: a house's window or rule
+      params frozen as product code. A clock nested in records (a list of slots)
+      is a catalog default, not a policy constant, and is not matched here;
+    - ``params.get("<key>", DEFAULT_*)``: a rule param silently completed by code;
+    - a module-level mapping of ``'R G B'`` strings: a brand palette.
+    """
+    found: set[str] = set()
+    scopes: list[list[ast.stmt]] = [tree.body]
+    scopes.extend(node.body for node in tree.body if isinstance(node, ast.ClassDef))
+    for body in scopes:
+        for node in body:
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            names = [target.id for target in targets if isinstance(target, ast.Name)]
+            strings = _literal_strings(node.value)
+            direct = [node.value] if not isinstance(node.value, ast.Dict) else list(node.value.values)
+            clocks = [
+                value.value
+                for value in direct
+                if isinstance(value, ast.Constant) and isinstance(value.value, str) and HHMM_RE.match(value.value)
+            ]
+            for name in names:
+                bare = name.lstrip("_")
+                if bare.startswith("DEFAULT_") and (bare.endswith("_PARAMS") or clocks):
+                    found.add(name)
+                if (
+                    body is tree.body
+                    and isinstance(node.value, ast.Dict)
+                    and sum(bool(RGB_CHANNELS_RE.match(value)) for value in strings) >= PALETTE_MIN_ENTRIES
+                ):
+                    found.add(name)
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "params"
+            and len(node.args) == 2
+            and isinstance(node.args[1], ast.Name)
+            and node.args[1].id.lstrip("_").startswith("DEFAULT_")
+        ):
+            found.add(node.args[1].id)
+    return found
+
+
 def _derived_touchpoints(facts: SourceFacts) -> set[str]:
     parts = Path(facts.path).parts
     points = {
@@ -1595,24 +1660,19 @@ def validate(
         for marker in instance_markers:
             if any(marker in value for value in runtime_values) and (rel, marker) not in covered_markers:
                 _fail("instance-debt-untriaged", f"{rel}: untriaged instance marker {marker!r}")
-    # Structural instance defaults do not need a proper name to be dangerous.
-    structural_candidates = {
-        ("shopman/shop/brand_tokens.py", "<module>"),
-        ("shopman/shop/rules/suggestion.py", "DEFAULT_COMPLEMENT_PARAMS"),
-        ("shopman/shop/rules/suggestion.py", "DEFAULT_SUBSTITUTE_PARAMS"),
-        ("shopman/shop/management/commands/setup_commercial_groups.py", "GROUPS"),
-    }
-    structural_candidates = {
-        (path, symbol)
-        for path, symbol in structural_candidates
-        if path in facts_by_path and (symbol == "<module>" or symbol in facts_by_path[path].symbols)
-    }
+    # Structural instance defaults do not need a proper name to be dangerous: a
+    # house's hour, percentage, palette or rule params written as product code is
+    # the same leak. Each detection must be a declared finding, and the canonical
+    # registry declares none (CORE-SOVEREIGNTY A7-1/A7-2).
     declared_structural = {(finding["source"], finding["symbol"]) for finding in findings}
-    if structural_candidates - declared_structural:
-        _fail(
-            "instance-debt-untriaged",
-            f"untriaged structural defaults: {sorted(structural_candidates - declared_structural)}",
-        )
+    untriaged_structural = sorted(
+        (rel, symbol)
+        for rel, facts in facts_by_path.items()
+        for symbol in _structural_instance_defaults(facts.tree)
+        if (rel, symbol) not in declared_structural
+    )
+    if untriaged_structural:
+        _fail("instance-debt-untriaged", f"untriaged structural defaults: {untriaged_structural}")
     physical = set(facts_by_path)
     inventoried = [item.get("path") for item in sources if isinstance(item, dict)]
     if len(inventoried) != len(set(inventoried)):

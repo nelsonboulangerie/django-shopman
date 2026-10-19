@@ -106,7 +106,7 @@ def _fold(text: str) -> str:
 
 
 def _storefront_ref() -> str:
-    return getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web") or "web"
+    return settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 
 
 def _storefront_base_url() -> str:

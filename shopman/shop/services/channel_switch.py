@@ -186,7 +186,7 @@ def is_switchable(channel) -> bool:
 
 
 def pos_channel_ref() -> str:
-    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+    return settings.SHOPMAN_POS_CHANNEL_REF
 
 
 def ensure_accepting_orders(channel_ref: str, *, now: datetime | None = None) -> None:

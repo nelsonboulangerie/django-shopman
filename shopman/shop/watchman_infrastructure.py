@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -85,6 +86,11 @@ class DeploymentDriftCheck:
         )
 
 
+#: O detector de prontidão composto que o Sentry Uptime consulta.
+READINESS_PATH = "/api/watchman-readiness"
+EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
 class ExternalMonitoringContractCheck:
     id = "external_monitoring"
     description = "Versioned Sentry monitoring contract matches the live account."
@@ -113,7 +119,10 @@ class ExternalMonitoringContractCheck:
                 and len(endpoints) == 1
                 and uptime_policy["maximum_active_monitors"] == 1
                 and not isinstance(uptime_policy["maximum_active_monitors"], bool)
-                and endpoints[0]["url"] == "https://status.boulangerie.com.br/api/watchman-readiness"
+                # O host é o desta instalação e mora no contrato versionado
+                # (ops/watchman/sentry.json); aqui se confere só a forma.
+                and endpoints[0]["url"].startswith("https://")
+                and endpoints[0]["url"].endswith(READINESS_PATH)
                 and all(
                     item["url"].startswith("https://")
                     and item["interval_seconds"] == 60
@@ -125,8 +134,9 @@ class ExternalMonitoringContractCheck:
                 and rate["aggregate"] == "count()"
                 and rate["time_window_seconds"] == 300
                 and rate["open_above"] > rate["resolve_at_or_below"] >= 0
-                and notification["name"] == "Watchman: operações ti@"
-                and recipient == "ti@boulangerie.com.br"
+                and notification["name"].startswith("Watchman: ")
+                and isinstance(recipient, str)
+                and EMAIL_RE.fullmatch(recipient) is not None
                 and notification["frequency_minutes"] == 30
                 and email_action["target_type"] == "user"
                 and "target_identifier" not in email_action

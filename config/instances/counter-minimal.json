@@ -2,12 +2,13 @@
   "schema_version": 1,
   "instance": {"ref": "counter-minimal", "display_name": "Counter minimal"},
   "ownership": {
-    "instance_db": ["channels", "fiscal_profiles", "pipelines", "pricing_policies", "rbac_personas", "rule_configs", "templates", "units"],
+    "instance_db": ["channels", "customer_groups", "fiscal_profiles", "pipelines", "pricing_policies", "rbac_personas", "rule_configs", "templates", "units"],
     "deploy": ["ALLOWED_HOSTS", "SHOPMAN_INSTANCE_DESCRIPTOR", "SHOPMAN_POS_CHANNEL_REF"],
     "secret": ["DATABASE_URL", "SECRET_KEY"],
     "structural": ["INSTALLED_APPS", "MIDDLEWARE", "ROOT_URLCONF"]
   },
   "bootstrap": {
+    "customer_groups": [],
     "channels": [{
       "ref": "counter",
       "enabled": true,

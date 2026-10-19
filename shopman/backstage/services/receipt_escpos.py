@@ -70,7 +70,7 @@ def cash_movement_receipt(entry, *, verify_code: str, verify_url: str, reprint: 
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered("NELSON BOULANGERIE")
+    out += _store_heading()
     out += _centered(str(entry.get_kind_display()).upper())
     if reprint:
         # Sem esta marca, dois papéis idênticos circulam e a segunda via passa
@@ -140,6 +140,20 @@ _TRANSLITERACAO = str.maketrans(
         "\u00a0": " ",  # espaço não separável, comum em texto colado
     }
 )
+
+
+def _store_heading(shop_name: str = "") -> bytes:
+    """O nome da loja no topo do papel: o que veio, ou a marca da ``Shop``.
+
+    Nunca um nome escrito aqui. Sem loja cadastrada, o papel sai sem a linha.
+    """
+    name = (shop_name or "").strip()
+    if not name:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        name = ((shop.brand_name or shop.name) if shop else "").strip()
+    return _centered(name.upper()) if name else b""
 
 
 def _line(text: str) -> bytes:
@@ -333,7 +347,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(shop_name)
     out += _centered("Recibo não fiscal")
     if reprint:
         # Sem esta marca, dois papéis idênticos circulam e a segunda via passa
@@ -589,7 +603,7 @@ def order_ticket(
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(shop_name)
     # "Ficha do pedido", nunca "comprovante": o papel que diz no rodapé que não
     # comprova pagamento não pode se apresentar como comprovante no topo.
     out += _centered("Ficha do pedido")
@@ -923,7 +937,7 @@ def courier_ticket(order, *, shop_name: str = "", reprint: bool = False) -> byte
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(shop_name)
     # O nome da via no alto, e não só no rodapé de quem programou: duas pessoas
     # segurando papéis diferentes precisam saber qual é qual antes de comparar.
     out += _centered("Via do entregador (identificada)" if identificada else "Via do entregador (anônima)")
@@ -1067,7 +1081,7 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += bytes([ESC, ord("@")])
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((doc.shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(doc.shop_name)
     if doc.shop_legal_name:
         out += _centered(doc.shop_legal_name)
     if doc.shop_cnpj:

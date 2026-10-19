@@ -46,7 +46,7 @@ def test_projection_is_deterministic_and_read_only():
         ref="happy-hour",
         rule_path="shopman.shop.rules.pricing.HappyHourRule",
         label="Happy hour",
-        params={"discount_percent": 10},
+        params={"discount_percent": 10, "start": "16:00", "end": "17:00"},
         priority=20,
     )
     rule.channels.add(channel)

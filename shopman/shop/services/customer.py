@@ -286,7 +286,7 @@ def _handle_phone(order):
 # the configured POS channel ref (default "pdv") since that ref is deployment-set.
 register_strategy("manychat", _handle_manychat)
 register_strategy("ifood", _handle_ifood)
-register_strategy(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv"), _handle_counter)
+register_strategy(settings.SHOPMAN_POS_CHANNEL_REF, _handle_counter)
 
 
 # ── helpers ──

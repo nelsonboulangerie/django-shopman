@@ -69,7 +69,8 @@ caminho e nunca o valor. A denylist de nomes e de padrões de valor (chave Pix,
 HMAC, JWT, `whsec_`, certificado, URL com senha) continua como segunda camada.
 
 A projeção cobre somente modelos comprovados: identidade da `Shop`, canais,
-`RuleConfig`, grupos/permissões e templates operacionais. Seções sem modelo DB
+`RuleConfig`, grupos/permissões, grupos comerciais (`customer_groups`: faixa de
+preço + promoção `grupo-<ref>`) e templates operacionais. Seções sem modelo DB
 canônico permanecem vazias; o dump não inventa que unidades ou perfis fiscais
 são editáveis.
 
@@ -79,6 +80,14 @@ são editáveis.
 imprime o diff (o que seria criado, acrescentado, atualizado, removido e o que
 diverge) e não escreve nada. Grava com `--commit --confirm-instance <ref>`; a
 confirmação precisa coincidir exatamente com `instance.ref`.
+
+Grupo comercial (`customer_groups`) é seção de criar-se-faltar: o apply cria o que
+falta e nunca compara nem reescreve o que existe (depois de criado, o cadastro é do
+gestor).
+
+O release (`setup_groups`, `setup_commercial_groups`, `bootstrap_whatsapp_channel`)
+lê o descritor apontado por `SHOPMAN_INSTANCE_DESCRIPTOR`: personas, grupos
+comerciais e o canal WhatsApp têm uma definição só, a do descritor.
 
 A comparação é de três vias: o declarado agora, o banco e a última versão
 aplicada (a trilha `InstanceApplyRecord`). Valor que o banco tem igual à última

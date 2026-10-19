@@ -15,7 +15,7 @@ from shopman.utils.monetary import format_money
 from shopman.shop.adapters import get_adapter
 
 HAS_STOCKMAN = True
-STOREFRONT_CHANNEL_REF: str = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+STOREFRONT_CHANNEL_REF: str = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 
 logger = logging.getLogger(__name__)
 

@@ -6,6 +6,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
+
 from shopman.shop.config import ChannelConfig, deep_merge, quality_grade_refs_for_channel
 
 _DIGITAL_PAYMENT_METHODS = {"pix", "card"}
@@ -57,7 +59,7 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
     can_rate = _bool_override(
         overrides,
         "can_rate",
-        config.fulfillment.timing != "external" and channel_ref not in {"pdv", "pos"},
+        config.fulfillment.timing != "external" and channel_ref != settings.SHOPMAN_POS_CHANNEL_REF,
     )
     allowed_quality_grade_refs = quality_grade_refs_for_channel(
         channel_ref,

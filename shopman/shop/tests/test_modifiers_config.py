@@ -191,13 +191,13 @@ class TestTimeWindowDiscountModifier:
             modifier.apply(channel=channel, session=session, ctx={})
         assert session.items[0]["unit_price_q"] == 850  # 1000 - 15%
 
-    def test_falls_back_to_default_percent_when_params_empty(self, modifier):
+    def test_empty_params_fail_closed_without_a_house_default(self, modifier):
+        """Janela e percentual são da casa (RuleConfig.params): sem eles, preço de etiqueta (A7-2)."""
         session = _make_session()
         channel = _make_channel()
-        # Empty params dict = rule enabled, default window 17:30-18:00, 25%.
         with self._gate({}), patch("django.utils.timezone.localtime", self._at(17, 45)):
             modifier.apply(channel=channel, session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 750  # 1000 - 25% (module default)
+        assert session.items[0]["unit_price_q"] == 1000
 
     def test_does_not_compound_on_a_bigger_existing_discount(self, modifier):
         # "Maior desconto ganha": a line already at 50% off (manual → 500) must NOT

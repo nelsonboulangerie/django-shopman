@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTANCE_DIR = ROOT / "config" / "instances"
 OWNERS = ("instance_db", "deploy", "secret", "structural")
 BOOTSTRAP_SECTIONS = (
-    "channels", "fiscal_profiles", "pipelines", "pricing_policies",
+    "channels", "customer_groups", "fiscal_profiles", "pipelines", "pricing_policies",
     "rbac_personas", "rule_configs", "templates", "units",
 )
 REF_RE = re.compile(r"^[a-z][a-z0-9_.-]*$")

@@ -43,7 +43,14 @@ CANCELLABLE_STATUSES = frozenset({"D", "G", "P", "A", "S"})
 #: (`python-requests/x.y`) com 403 e uma página HTML, nos dois ambientes; com qualquer
 #: outro, a chamada chega à API. Medido em 01/10/2026 com a chave de produção: o mesmo
 #: pedido devolveu 403 HTML como `python-requests/2.32.3` e JSON como `curl/8`.
-USER_AGENT = "Shopman/1.0 (+https://www.nelsonboulangerie.com.br)"
+#: O endereço de contato é o da loja deste deployment (``SHOPMAN_STOREFRONT_BASE_URL``),
+#: nunca um domínio escrito aqui.
+USER_AGENT_PRODUCT = "Shopman/1.0"
+
+
+def user_agent() -> str:
+    base = (getattr(settings, "SHOPMAN_STOREFRONT_BASE_URL", "") or "").strip()
+    return f"{USER_AGENT_PRODUCT} (+{base})" if base else USER_AGENT_PRODUCT
 
 
 class CourierError(Exception):
@@ -126,7 +133,7 @@ def _request(method: str, path: str, *, base: str | None = None, params: dict | 
             params=params,
             json=json_body,
             auth=(cfg["username"], cfg["password"]),
-            headers={"api-key": cfg["api_key"], "User-Agent": USER_AGENT},
+            headers={"api-key": cfg["api_key"], "User-Agent": user_agent()},
             timeout=int(cfg.get("timeout") or 15),
         )
     except requests.RequestException as exc:
