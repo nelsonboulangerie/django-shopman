@@ -42,7 +42,6 @@ TEST_DEPENDENCIES = ("pytest", "pytest-django")
 # declara. Cada entrada sai daqui no PR que declara a dependência (ou corta o
 # acoplamento) e entra no gate. Pacote fora daqui que quebra reprova o job.
 PENDING: dict[str, str] = {
-    "craftsman": "importa drf_spectacular, não declarado; e um teste alcança shopman.shop",
     "doorman": "a suíte importa shopman.guestman, que o pacote não declara",
 }
 
