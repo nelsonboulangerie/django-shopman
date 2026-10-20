@@ -37,13 +37,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGES_ROOT = REPO_ROOT / "packages"
 TEST_DEPENDENCIES = ("pytest", "pytest-django")
 
-# Dívida medida em 19/10/2026 (laudo de soberania, critério global 1): o wheel
-# destes pacotes instala, mas a suíte dele precisa de algo que o pacote não
-# declara. Cada entrada sai daqui no PR que declara a dependência (ou corta o
-# acoplamento) e entra no gate. Pacote fora daqui que quebra reprova o job.
-PENDING: dict[str, str] = {
-    "doorman": "a suíte importa shopman.guestman, que o pacote não declara",
-}
+# Pacote cujo wheel instala, mas cuja suíte precisa de algo que o pacote não
+# declara, com a causa escrita. A dívida medida em 19/10/2026 (laudo de
+# soberania, critério global 1) zerou: os 13 pacotes estão no gate. Entrada
+# nova aqui é regressão declarada, nunca atalho; pacote fora daqui que quebra
+# reprova o job.
+PENDING: dict[str, str] = {}
 
 
 def _run(cmd: list[str], **kwargs) -> None:
