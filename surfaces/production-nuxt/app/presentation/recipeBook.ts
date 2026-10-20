@@ -463,6 +463,7 @@ export function filterEntries(
   onlyWithoutSku: boolean,
   onlyWithDraft: boolean,
   onlyFavorites = false,
+  onlyUnreviewed = false,
 ): RecipeEntryCardProjection[] {
   const needle = term.trim().toLowerCase();
   return entries.filter((entry) => {
@@ -470,6 +471,7 @@ export function filterEntries(
     if (onlyWithoutSku && entry.output_sku) return false;
     if (onlyWithDraft && entry.draft_count <= 0) return false;
     if (onlyFavorites && !entry.is_favorite) return false;
+    if (onlyUnreviewed && (!entry.review_status || entry.review_status === "confirmed")) return false;
     if (!needle) return true;
     return (
       entry.name.toLowerCase().includes(needle) ||
@@ -503,6 +505,7 @@ export function bookQuery(
     withoutSku?: boolean;
     withDraft?: boolean;
     favorites?: boolean;
+    unreviewed?: boolean;
     sort?: string;
     page?: number;
     pageSize?: number;
@@ -516,6 +519,7 @@ export function bookQuery(
   if (options.withoutSku) query.without_sku = "1";
   if (options.withDraft) query.with_draft = "1";
   if (options.favorites) query.favorites = "1";
+  if (options.unreviewed) query.unreviewed = "1";
   if (options.sort && options.sort !== "updated") query.sort = options.sort;
   if ((options.page ?? 1) > 1) query.page = String(options.page);
   if (options.pageSize && options.pageSize !== 48) query.page_size = String(options.pageSize);
@@ -567,4 +571,24 @@ export function splitDataUrl(dataUrl: string): { media_type: string; data_base64
  *  todo o resto vira JPEG, que é o que a foto de uma ficha é. */
 export function outputMediaType(inputType: string): "image/png" | "image/jpeg" {
   return inputType === "image/png" ? "image/png" : "image/jpeg";
+}
+
+// ── Conferência (WP-RECEITAS-DA-CASA F1/F2) ─────────────────────────────────
+
+/** A versão em uso ainda pede o olho de alguém da casa? */
+export function needsReview(status: string): boolean {
+  return status === "pending" || status === "changed";
+}
+
+/** O ícone da procedência: o padeiro, o caderno ou o cadastro inicial. */
+export function provenanceIcon(kind: string): string {
+  if (kind === "house") return "i-lucide-chef-hat";
+  if (kind === "notebook") return "i-lucide-notebook-pen";
+  return "i-lucide-bot";
+}
+
+/** "Conferida por Maysa em 19/10/2026 14:02", ou vazio sem conferência. */
+export function reviewSignature(byName: string, atDisplay: string): string {
+  if (!byName) return "";
+  return atDisplay ? `Conferida por ${byName} em ${atDisplay}` : `Conferida por ${byName}`;
 }

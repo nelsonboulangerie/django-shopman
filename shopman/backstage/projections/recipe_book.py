@@ -47,7 +47,12 @@ from shopman.craftsman.services.recipe_book import (
 )
 
 from shopman.backstage.services import recipe_book as recipe_book_service
-from shopman.backstage.services import recipe_external_references, recipe_favorites, recipe_ratings
+from shopman.backstage.services import (
+    recipe_external_references,
+    recipe_favorites,
+    recipe_ratings,
+    recipe_review,
+)
 from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeSheetNotFound, RecipeVersionNotFound
 from shopman.backstage.services.recipe_capture import CapturedRecipe, is_configured
 from shopman.backstage.services.recipe_matching import (
@@ -157,6 +162,13 @@ class RecipeEntryCardProjection:
     #: Vazio quando a versão atual ainda não foi avaliada.
     rating_display: str
     rating_count: int
+    #: De onde veio a versão atual (``recipe_review.provenance_of``): house,
+    #: notebook ou agent. Vazio sem versão publicada.
+    provenance_kind: str
+    provenance_label: str
+    #: Conferência da versão atual: pending, confirmed ou changed. Vazio sem versão.
+    review_status: str
+    review_label: str
 
 
 @dataclass(frozen=True)
@@ -311,6 +323,45 @@ class RecipeVersionProjection:
     lens: FormulaLensProjection
     formula: dict
     origin: dict
+    provenance_kind: str
+    provenance_label: str
+    provenance_detail: str
+    review_status: str
+    review_label: str
+    review_by_name: str
+    review_at_display: str
+
+
+@dataclass(frozen=True)
+class RecipeReviewItemProjection:
+    """One recipe waiting for the baker's check, in the order of what sells most."""
+
+    ref: str
+    name: str
+    kind_label: str
+    output_sku: str
+    output_name: str
+    version_number: int
+    provenance_kind: str
+    provenance_label: str
+    provenance_detail: str
+    review_status: str
+    review_label: str
+    #: A massa da peça, em destaque (foi ali que as seis fichas erraram). Vazio na massa.
+    dough_sku: str
+    dough_name: str
+    #: "1.240 vendidos em 12 meses" ou, para a massa, "... por 3 produtos". Vazio sem venda.
+    sold_display: str
+
+
+@dataclass(frozen=True)
+class RecipeReviewQueueProjection:
+    """The baker's check queue: current versions nobody from the house confirmed yet."""
+
+    items: tuple[RecipeReviewItemProjection, ...]
+    total: int
+    confirmed_total: int
+    recipe_total: int
 
 
 @dataclass(frozen=True)
@@ -962,6 +1013,7 @@ def build_recipe_book(
     only_without_sku: bool = False,
     only_with_draft: bool = False,
     only_favorites: bool = False,
+    only_unreviewed: bool = False,
     sort: str = "updated",
     page: int = 1,
     page_size: int = 48,
@@ -994,6 +1046,15 @@ def build_recipe_book(
     favorites = recipe_favorites.favorite_refs(operator_ref)
     if only_favorites:
         entries_qs = entries_qs.filter(ref__in=favorites)
+    if only_unreviewed:
+        # A conferência mora no JSON da versão e o "mudou depois" é conta de
+        # digital: o recorte sai em Python, sobre o inventário (cem e poucas).
+        pending = [
+            entry.ref
+            for entry in RecipeEntry.objects.filter(current_version__isnull=False).select_related("current_version")
+            if recipe_review.review_of(entry.current_version).status != recipe_review.REVIEW_CONFIRMED
+        ]
+        entries_qs = entries_qs.filter(ref__in=pending)
 
     ordering = {
         "updated": ("-updated_at", "name", "ref"),
@@ -1059,7 +1120,21 @@ def _card(
         is_favorite=entry.ref in favorites,
         rating_display=_rating_display(ratings.get(entry.ref, (None, 0))[0]),
         rating_count=ratings.get(entry.ref, (None, 0))[1],
+        **_card_review_fields(current),
     )
+
+
+def _card_review_fields(current: RecipeVersion | None) -> dict:
+    if current is None:
+        return {"provenance_kind": "", "provenance_label": "", "review_status": "", "review_label": ""}
+    provenance = recipe_review.provenance_of(current)
+    review = recipe_review.review_of(current)
+    return {
+        "provenance_kind": provenance.kind,
+        "provenance_label": provenance.label,
+        "review_status": review.status,
+        "review_label": review.label,
+    }
 
 
 def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetailProjection:
@@ -1303,6 +1378,81 @@ def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionP
         lens=build_formula_lens(version.formula or {}, kind),
         formula=wire_formula(version.formula),
         origin=dict(version.origin or {}),
+        **_version_review_fields(version),
+    )
+
+
+def _version_review_fields(version: RecipeVersion) -> dict:
+    provenance = recipe_review.provenance_of(version)
+    if version.status == RecipeVersion.Status.DRAFT:
+        review_status, review_label, by_name, at_display = "", "", "", ""
+    else:
+        review = recipe_review.review_of(version)
+        review_status, review_label, by_name = review.status, review.label, review.by_name
+        at_display = _iso_display(review.at)
+    return {
+        "provenance_kind": provenance.kind,
+        "provenance_label": provenance.label,
+        "provenance_detail": provenance.detail,
+        "review_status": review_status,
+        "review_label": review_label,
+        "review_by_name": by_name,
+        "review_at_display": at_display,
+    }
+
+
+def _iso_display(value: str) -> str:
+    if not value:
+        return ""
+    from django.utils.dateparse import parse_datetime
+
+    parsed = parse_datetime(value)
+    return _datetime_display(parsed) if parsed is not None else ""
+
+
+def _sold_display(qty: Decimal, via: int) -> str:
+    if qty <= 0:
+        return ""
+    whole = int(qty.to_integral_value(rounding=ROUND_HALF_UP))
+    text = f"{whole:,}".replace(",", ".")
+    noun = "vendido" if whole == 1 else "vendidos"
+    suffix = ""
+    if via == 1:
+        suffix = " por 1 produto"
+    elif via > 1:
+        suffix = f" por {via} produtos"
+    return f"{text} {noun} em 12 meses{suffix}"
+
+
+def build_recipe_review_queue(*, sold: dict | None = None) -> RecipeReviewQueueProjection:
+    """A fila do padeiro (WP-RECEITAS-DA-CASA F2): o que falta conferir, do que mais sai."""
+    queue = recipe_review.review_queue(sold=sold)
+    names = _output_names({item.entry.output_sku for item in queue if item.entry.output_sku})
+    recipe_total = RecipeEntry.objects.filter(is_archived=False, current_version__isnull=False).count()
+    items = tuple(
+        RecipeReviewItemProjection(
+            ref=item.entry.ref,
+            name=item.entry.name,
+            kind_label=_kind_label(item.entry.kind),
+            output_sku=item.entry.output_sku,
+            output_name=names.get(item.entry.output_sku, "") if item.entry.output_sku else "",
+            version_number=item.version.number,
+            provenance_kind=item.provenance.kind,
+            provenance_label=item.provenance.label,
+            provenance_detail=item.provenance.detail,
+            review_status=item.review.status,
+            review_label=item.review.label,
+            dough_sku=item.dough_sku,
+            dough_name=item.dough_name,
+            sold_display=_sold_display(item.sold_qty, item.sold_via),
+        )
+        for item in queue
+    )
+    return RecipeReviewQueueProjection(
+        items=items,
+        total=len(items),
+        confirmed_total=recipe_total - len(items),
+        recipe_total=recipe_total,
     )
 
 

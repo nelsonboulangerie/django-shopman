@@ -448,7 +448,72 @@ const RECIPE_CARDS = RECIPES.map((recipe, index) => ({
   is_favorite: index === 0,
   rating_display: index < 3 ? "4,5" : "",
   rating_count: index < 3 ? 6 : 0,
+  provenance_kind: index === 0 ? "house" : "agent",
+  provenance_label: index === 0 ? "Da casa" : "Do cadastro inicial",
+  review_status: index === 5 ? "" : index === 0 ? "confirmed" : index === 2 ? "changed" : "pending",
+  review_label:
+    index === 5 ? "" : index === 0 ? "Conferida" : index === 2 ? "Mudou depois da conferência" : "Não conferida",
 }));
+
+// A fila do padeiro: do que mais sai para o que menos sai, a massa da peça em destaque.
+const RECIPE_REVIEW = {
+  queue: {
+    items: [
+      {
+        ref: "massa-brioche",
+        name: "Massa Brioche",
+        kind_label: "Massa doce",
+        output_sku: "MASSA-BRIOCHE",
+        output_name: "",
+        version_number: 2,
+        provenance_kind: "agent",
+        provenance_label: "Do cadastro inicial",
+        provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+        review_status: "pending",
+        review_label: "Não conferida",
+        dough_sku: "",
+        dough_name: "",
+        sold_display: "41.230 vendidos em 12 meses por 6 produtos",
+      },
+      {
+        ref: "pain-aux-raisins",
+        name: "Pain aux Raisins",
+        kind_label: "Viennoiserie",
+        output_sku: "PAIN-RAISINS",
+        output_name: "Pain aux Raisins",
+        version_number: 1,
+        provenance_kind: "agent",
+        provenance_label: "Do cadastro inicial",
+        provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+        review_status: "pending",
+        review_label: "Não conferida",
+        dough_sku: "MASSA-BRIOCHE",
+        dough_name: "Massa Brioche",
+        sold_display: "8.904 vendidos em 12 meses",
+      },
+      {
+        ref: "baguete-tradicao",
+        name: "Baguete Tradição",
+        kind_label: "Pão",
+        output_sku: "BAGUETE",
+        output_name: "Baguete Tradição",
+        version_number: 3,
+        provenance_kind: "notebook",
+        provenance_label: "Do caderno",
+        provenance_detail: "Uma foto do caderno, lida pelo sistema.",
+        review_status: "changed",
+        review_label: "Mudou depois da conferência",
+        dough_sku: "MASSA-TRADICAO",
+        dough_name: "Massa Tradição",
+        sold_display: "6.120 vendidos em 12 meses",
+      },
+    ],
+    total: 3,
+    confirmed_total: 64,
+    recipe_total: 67,
+  },
+  access: RECIPE_ACCESS,
+};
 const RECIPE_BOOK = {
   book: {
     entries: RECIPE_CARDS,
@@ -538,6 +603,13 @@ function recipeVersion(number, status, statusLabel) {
     lens: LENS,
     formula: {},
     origin: {},
+    provenance_kind: "agent",
+    provenance_label: "Do cadastro inicial",
+    provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+    review_status: status === "draft" ? "" : "pending",
+    review_label: status === "draft" ? "" : "Não conferida",
+    review_by_name: "",
+    review_at_display: "",
   };
 }
 
@@ -690,6 +762,7 @@ const WEIGHING_POPULATED = {
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
   if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
+  if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
   const card = detail && RECIPE_CARDS.find((entry) => entry.ref === detail[1]);
   if (card) return recipeDetail(card);

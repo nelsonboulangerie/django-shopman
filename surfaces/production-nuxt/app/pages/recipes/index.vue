@@ -7,7 +7,7 @@ import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 // SKU/produto, versão atual, hidratação. "Nova receita" só com `can_edit`. A estrela
 // é de cada operador (pede só a leitura), e "Favoritas" filtra as dele.
 import { isStale } from "~/presentation/production";
-import { favoriteActionHint, favoriteToggleLabel, filterEntries } from "~/presentation/recipeBook";
+import { favoriteActionHint, favoriteToggleLabel, filterEntries, needsReview } from "~/presentation/recipeBook";
 
 useHead({ title: "Receitas" });
 
@@ -18,6 +18,7 @@ const archived = ref(false);
 const onlyWithoutSku = ref(false);
 const onlyWithDraft = ref(false);
 const onlyFavorites = ref(false);
+const onlyUnreviewed = ref(route.query.unreviewed === "1");
 const sort = ref("updated");
 const page = ref(1);
 
@@ -29,6 +30,7 @@ const { entries, kinds, total, pageSize, canEdit, forbidden, pending, error, ref
     withoutSku: onlyWithoutSku,
     withDraft: onlyWithDraft,
     favorites: onlyFavorites,
+    unreviewed: onlyUnreviewed,
     sort,
     page,
   },
@@ -43,10 +45,16 @@ const visible = computed(() => filterEntries(
   onlyWithoutSku.value,
   onlyWithDraft.value,
   onlyFavorites.value,
+  onlyUnreviewed.value,
 ));
 const hasFilters = computed(
   () =>
-    !!query.value.trim() || !!kind.value || onlyWithoutSku.value || onlyWithDraft.value || onlyFavorites.value,
+    !!query.value.trim() ||
+    !!kind.value ||
+    onlyWithoutSku.value ||
+    onlyWithDraft.value ||
+    onlyFavorites.value ||
+    onlyUnreviewed.value,
 );
 const stale = computed(() => isStale({ error: !!error.value, hasData: entries.value.length > 0 }));
 
@@ -56,6 +64,7 @@ function clearFilters() {
   onlyWithoutSku.value = false;
   onlyWithDraft.value = false;
   onlyFavorites.value = false;
+  onlyUnreviewed.value = false;
   page.value = 1;
 }
 const ALL_KINDS = "__all__";
@@ -71,7 +80,7 @@ const sortItems = [
   { value: "name", label: "Nome" },
   { value: "kind", label: "Tipo e nome" },
 ];
-watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, sort], () => {
+watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, onlyUnreviewed, sort], () => {
   page.value = 1;
 });
 
@@ -88,6 +97,7 @@ const trailFrom = computed(() => {
   if (onlyWithoutSku.value) params.set("without_sku", "1");
   if (onlyWithDraft.value) params.set("with_draft", "1");
   if (onlyFavorites.value) params.set("favorites", "1");
+  if (onlyUnreviewed.value) params.set("unreviewed", "1");
   if (sort.value !== "updated") params.set("sort", sort.value);
   if (page.value > 1) params.set("page", String(page.value));
   const search = params.toString();
@@ -157,8 +167,17 @@ watch(
           aria-label="Ordenar receitas"
         />
 
+        <NuxtButton
+          to="/recipes/review"
+          color="primary"
+          variant="ghost"
+          icon="i-lucide-badge-check"
+          label="Conferência"
+        />
+
         <div class="ml-auto flex flex-wrap items-center gap-3">
           <NuxtCheckbox v-model="onlyFavorites" label="Favoritas" />
+          <NuxtCheckbox v-model="onlyUnreviewed" label="Não conferidas" />
           <NuxtCheckbox v-model="onlyWithoutSku" label="Sem SKU" />
           <NuxtCheckbox v-model="onlyWithDraft" label="Com rascunho" />
           <NuxtCheckbox v-model="archived" label="Arquivadas" />
@@ -266,6 +285,12 @@ watch(
               />
               <NuxtBadge v-if="entry.is_archived" color="neutral" label="Arquivada" />
               <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Sem ficha" />
+              <NuxtBadge
+                v-if="needsReview(entry.review_status)"
+                :color="entry.review_status === 'changed' ? 'warning' : 'neutral'"
+                :label="entry.review_label"
+                :title="entry.provenance_label"
+              />
             </div>
 
             <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">

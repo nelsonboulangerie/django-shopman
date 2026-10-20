@@ -15,6 +15,7 @@ import type {
   RecipeCompareProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeReviewQueueProjection,
   RecipeSheetDetailProjection,
   RecipeSheetListProjection,
   RecipeVersionProjection,
@@ -44,6 +45,8 @@ export type {
   RecipeEntryCardProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeReviewItemProjection,
+  RecipeReviewQueueProjection,
   RecipeSheetCardProjection,
   RecipeSheetDetailProjection,
   RecipeSheetItemProjection,
@@ -250,6 +253,11 @@ export interface CaptureImagePayload {
 
 export interface RecipeBookListResponse {
   book: RecipeBookListProjection;
+  access: RecipeBookAccessProjection;
+}
+
+export interface RecipeReviewQueueResponse {
+  queue: RecipeReviewQueueProjection;
   access: RecipeBookAccessProjection;
 }
 
