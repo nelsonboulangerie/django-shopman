@@ -68,6 +68,7 @@ def published_levain():
 class TestCreate:
     def test_entry_and_first_draft(self, entry, draft):
         assert entry.ref == "massa-tradicao"
+        assert entry.is_active is True
         assert entry.current_version is None
         assert draft.number == 1
         assert draft.status == RecipeVersion.Status.DRAFT
@@ -103,11 +104,16 @@ class TestCreate:
         assert exc.value.data["field"] == "yield_unit"
 
     def test_archived_entry_takes_no_version(self, entry):
-        entry.is_archived = True
+        entry.is_active = False
         entry.save()
         with pytest.raises(RecipeBookError) as exc:
             recipe_book.create_version(entry, formula=flour_formula(), yield_quantity=1, yield_unit="kg")
         assert exc.value.code == "ENTRY_ARCHIVED"
+
+        entry.is_active = True
+        entry.save(update_fields=["is_active"])
+        version = recipe_book.create_version(entry, formula=flour_formula(), yield_quantity=1, yield_unit="kg")
+        assert version.entry_id == entry.pk
 
     def test_update_draft_only_touches_drafts(self, draft):
         recipe_book.update_draft(draft, formula=flour_formula(water=750), label="mais água", notes="teste")

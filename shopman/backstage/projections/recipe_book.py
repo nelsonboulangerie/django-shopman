@@ -154,7 +154,7 @@ class RecipeEntryCardProjection:
     anchor_kind: str
     hydration_display: str
     updated_at_display: str
-    is_archived: bool
+    is_active: bool
     #: Estrela do operador que pediu a lista (``OperatorRecipeFavorite``): é
     #: preferência dele, não atributo da receita; outro operador vê a sua.
     is_favorite: bool
@@ -581,7 +581,7 @@ class RecipeEntryDetailProjection:
     output_sku: str
     output_name: str
     notes: str
-    is_archived: bool
+    is_active: bool
     current_version_number: int | None
     ficha_ref: str
     #: A ficha de execução ainda é a que a versão atual escreveu (ADR-027)?
@@ -1025,7 +1025,7 @@ def build_recipe_book(
     tela, sobre ``is_favorite``, como "Sem SKU" e "Com rascunho".
     """
     entries_qs = (
-        RecipeEntry.objects.filter(is_archived=bool(archived))
+        RecipeEntry.objects.filter(is_active=not bool(archived))
         .select_related("current_version")
         .annotate(
             version_total=Count("versions", distinct=True),
@@ -1116,7 +1116,7 @@ def _card(
         anchor_kind=anchor_kind,
         hydration_display=hydration,
         updated_at_display=_date_display(entry.updated_at),
-        is_archived=entry.is_archived,
+        is_active=entry.is_active,
         is_favorite=entry.ref in favorites,
         rating_display=_rating_display(ratings.get(entry.ref, (None, 0))[0]),
         rating_count=ratings.get(entry.ref, (None, 0))[1],
@@ -1159,7 +1159,7 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
         output_sku=entry.output_sku,
         output_name=names.get(entry.output_sku, "") if entry.output_sku else "",
         notes=entry.notes or "",
-        is_archived=entry.is_archived,
+        is_active=entry.is_active,
         current_version_number=current.number if current is not None else None,
         ficha_ref=entry.ref if ficha is not None else "",
         execution_in_sync=execution_in_sync(current, ficha),
@@ -1428,7 +1428,7 @@ def build_recipe_review_queue(*, sold: dict | None = None) -> RecipeReviewQueueP
     """A fila do padeiro (WP-RECEITAS-DA-CASA F2): o que falta conferir, do que mais sai."""
     queue = recipe_review.review_queue(sold=sold)
     names = _output_names({item.entry.output_sku for item in queue if item.entry.output_sku})
-    recipe_total = RecipeEntry.objects.filter(is_archived=False, current_version__isnull=False).count()
+    recipe_total = RecipeEntry.objects.filter(is_active=True, current_version__isnull=False).count()
     items = tuple(
         RecipeReviewItemProjection(
             ref=item.entry.ref,
@@ -1731,7 +1731,7 @@ def _range(code: str, label: str, bounds: dict) -> ReferenceRangeProjection:
 def _part_entries() -> list[RecipeEntry]:
     """As receitas com versão atual e SKU: são as partes que outra receita pode consumir."""
     return list(
-        RecipeEntry.objects.filter(current_version__isnull=False, is_archived=False)
+        RecipeEntry.objects.filter(current_version__isnull=False, is_active=True)
         .exclude(output_sku="")
         .select_related("current_version")
         .order_by("name", "ref")

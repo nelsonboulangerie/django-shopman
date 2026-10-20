@@ -215,7 +215,7 @@ export interface EntryPatch {
   kind?: string;
   output_sku?: string;
   notes?: string;
-  is_archived?: boolean;
+  is_active?: boolean;
   external_references?: ExternalReferenceInput[];
   expectedRevision?: string;
 }
