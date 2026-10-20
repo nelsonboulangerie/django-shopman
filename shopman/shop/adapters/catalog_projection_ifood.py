@@ -47,8 +47,12 @@ iFood's WAF answers ``403`` to a generic UA). Config lives in the
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 import uuid
+from io import BytesIO
+from urllib.parse import unquote, urlparse
 
 import requests
 from shopman.offerman.protocols.projection import ProjectedItem, ProjectionResult
@@ -59,6 +63,8 @@ logger = logging.getLogger(__name__)
 
 # Fixed namespace so item/product UUIDs are stable across processes and syncs.
 _UUID_NS = uuid.UUID("f0f4d7e2-0e2a-5c7a-9d1b-6b1e2a3c4d5e")
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_IMAGE_PATHS: dict[tuple[str, str], str] = {}
 
 
 class IFoodRateLimitError(Exception):
@@ -72,6 +78,10 @@ class IFoodRateLimitError(Exception):
 
 class IFoodCategoryError(Exception):
     """Raised when an item has no resolvable iFood category."""
+
+
+class IFoodImageError(Exception):
+    """A foto não pôde ser lida, validada ou enviada ao iFood."""
 
 
 class IFoodConfirmationError(Exception):
@@ -160,7 +170,12 @@ def _resolve_category_id(item: ProjectedItem, cfg: dict) -> str:
 
 
 def _item_payload(
-    item: ProjectedItem, *, merchant_id: str, category_id: str, in_stock: bool = True,
+    item: ProjectedItem,
+    *,
+    merchant_id: str,
+    category_id: str,
+    in_stock: bool = True,
+    image_path: str = "",
 ) -> dict:
     """Build the FullItemDto body for ``PUT /items`` from a ProjectedItem.
 
@@ -171,6 +186,14 @@ def _item_payload(
     product_id = _product_uuid(merchant_id, item.sku)
     item_id = _item_uuid(merchant_id, item.sku)
     available = item.is_published and item.is_sellable and in_stock
+    product = {
+        "id": product_id,
+        "name": item.name,
+        "description": item.description,
+        "externalCode": item.sku,
+    }
+    if image_path:
+        product["imagePath"] = image_path
     return {
         "item": {
             "id": item_id,
@@ -182,18 +205,140 @@ def _item_payload(
             "index": 0,
             "shifts": [],
         },
-        "products": [
-            {
-                "id": product_id,
-                "name": item.name,
-                "description": item.description,
-                "externalCode": item.sku,
-                # NOTE: no inline image. iFood catalog v2.0 rejects an inline
-                # image URL here with 500 (verified live 2026-07-01); product
-                # images use a separate upload flow (imagePath), out of scope.
-            }
-        ],
+        "products": [product],
     }
+
+
+def _storage_image(image_url: str) -> bytes | None:
+    """Lê uma foto nossa direto do storage, sem dar uma volta por HTTP."""
+    from django.core.files.storage import default_storage
+
+    parsed = urlparse(image_url)
+    path = unquote(parsed.path).lstrip("/")
+    base_path = urlparse(str(getattr(default_storage, "base_url", "") or "")).path.strip("/")
+    candidates = [path]
+    if base_path and path.startswith(f"{base_path}/"):
+        candidates.insert(0, path[len(base_path) + 1 :])
+    if "/products/" in f"/{path}":
+        candidates.append(f"products/{path.split('/products/', 1)[1]}")
+
+    for name in dict.fromkeys(candidate for candidate in candidates if candidate):
+        try:
+            if not default_storage.exists(name):
+                continue
+            with default_storage.open(name, "rb") as source:
+                return source.read(_MAX_IMAGE_BYTES + 1)
+        except Exception:  # silêncio-deliberado: probe local falhou; o download HTTP é a segunda fonte.
+            logger.debug("catalog_projection_ifood.storage_image degraded", exc_info=True)
+    return None
+
+
+def _download_image(image_url: str, cfg: dict) -> bytes:
+    stored = _storage_image(image_url)
+    if stored is not None:
+        return stored
+    try:
+        response = requests.get(
+            image_url,
+            stream=True,
+            timeout=int(cfg.get("image_timeout") or cfg.get("timeout") or 30),
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise IFoodImageError("Não foi possível baixar a foto do produto.") from exc
+    try:
+        declared_size = int(response.headers.get("Content-Length") or 0)
+    except (TypeError, ValueError):
+        declared_size = 0
+    if declared_size > _MAX_IMAGE_BYTES:
+        response.close()
+        raise IFoodImageError("A foto excede o limite de 5 MB do iFood.")
+    chunks: list[bytes] = []
+    size = 0
+    try:
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > _MAX_IMAGE_BYTES:
+                raise IFoodImageError("A foto excede o limite de 5 MB do iFood.")
+            chunks.append(chunk)
+    finally:
+        response.close()
+    return b"".join(chunks)
+
+
+def _validated_image(image_url: str, cfg: dict) -> tuple[bytes, str, str]:
+    from PIL import Image, UnidentifiedImageError
+
+    payload = _download_image(image_url, cfg)
+    if len(payload) > _MAX_IMAGE_BYTES:
+        raise IFoodImageError("A foto excede o limite de 5 MB do iFood.")
+    try:
+        with Image.open(BytesIO(payload)) as image:
+            image_format = str(image.format or "").upper()
+            image.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise IFoodImageError("A foto não é um arquivo JPG, JPEG ou PNG válido.") from exc
+    content_types = {"JPEG": "image/jpeg", "PNG": "image/png"}
+    content_type = content_types.get(image_format)
+    if not content_type:
+        raise IFoodImageError("O iFood aceita somente fotos JPG, JPEG ou PNG.")
+    return payload, content_type, hashlib.sha256(payload).hexdigest()
+
+
+def _upload_image(payload: bytes, content_type: str, cfg: dict, headers: dict) -> str:
+    merchant_id = cfg["merchant_id"]
+    url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/image/upload"
+    encoded = base64.b64encode(payload).decode("ascii")
+    try:
+        response = requests.post(
+            url,
+            json={"image": f"data:{content_type};base64,{encoded}"},
+            headers=headers,
+            timeout=int(cfg.get("timeout") or 30),
+        )
+        _check_rate_limit(response)
+        response.raise_for_status()
+    except IFoodRateLimitError:
+        raise
+    except requests.RequestException as exc:
+        raise IFoodImageError("Não foi possível enviar a foto ao iFood.") from exc
+    try:
+        image_path = str(response.json()["imagePath"]).strip()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise IFoodImageError("O iFood recebeu a foto, mas não devolveu o caminho da imagem.") from exc
+    if not image_path:
+        raise IFoodImageError("O iFood recebeu a foto, mas devolveu um caminho vazio.")
+    return image_path
+
+
+def _image_path(image_url: str, cfg: dict, headers: dict, *, channel: str) -> str:
+    """Resolve ``sha256(bytes) → imagePath`` em memória e no banco."""
+    from django.db import transaction
+
+    from shopman.shop.models import CatalogImageUpload
+
+    payload, content_type, digest = _validated_image(image_url, cfg)
+    merchant_id = str(cfg["merchant_id"])
+    memory_key = (merchant_id, digest)
+    if cached := _IMAGE_PATHS.get(memory_key):
+        return cached
+
+    record, _ = CatalogImageUpload.objects.get_or_create(
+        channel_ref=channel,
+        merchant_id=merchant_id,
+        sha256=digest,
+    )
+    with transaction.atomic():
+        record = CatalogImageUpload.objects.select_for_update().get(pk=record.pk)
+        if not record.image_path:
+            record.image_path = _upload_image(payload, content_type, cfg, headers)
+            record.content_type = content_type
+            record.size = len(payload)
+            record.save(update_fields=["image_path", "content_type", "size", "updated_at"])
+    _IMAGE_PATHS[memory_key] = record.image_path
+    return record.image_path
 
 
 def _check_rate_limit(resp: requests.Response) -> None:
@@ -213,14 +358,27 @@ def _headers(cfg: dict) -> tuple[dict | None, str]:
     return ifood_auth.headers_with_reason({"Content-Type": "application/json"})
 
 
-def _upsert_item(item: ProjectedItem, cfg: dict, headers: dict, *, in_stock: bool = True) -> None:
+def _upsert_item(
+    item: ProjectedItem,
+    cfg: dict,
+    headers: dict,
+    *,
+    in_stock: bool = True,
+    image_path: str = "",
+) -> None:
     ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
     category_id = _resolve_category_id(item, cfg)
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items"
     resp = requests.put(
         url,
-        json=_item_payload(item, merchant_id=merchant_id, category_id=category_id, in_stock=in_stock),
+        json=_item_payload(
+            item,
+            merchant_id=merchant_id,
+            category_id=category_id,
+            in_stock=in_stock,
+            image_path=image_path,
+        ),
         headers=headers,
         timeout=int(cfg.get("timeout") or 30),
     )
@@ -329,7 +487,26 @@ class IFoodCatalogProjection:
                     if item.is_published and item.is_sellable
                     else True
                 )
-                _upsert_item(item, cfg, headers, in_stock=in_stock)
+                image_path = ""
+                if item.image_url:
+                    try:
+                        image_path = _image_path(
+                            item.image_url,
+                            cfg,
+                            headers,
+                            channel=channel,
+                        )
+                    except Exception as exc:
+                        # O PUT sem imagePath preserva a foto que já está no iFood.
+                        # A pendência continua visível e pode ser tentada novamente
+                        # sem impedir preço, disponibilidade ou texto de avançarem.
+                        logger.warning(
+                            "catalog_projection_ifood.image pending for %s",
+                            item.sku,
+                            exc_info=True,
+                        )
+                        errors.append(f"{item.sku}: foto pendente: {exc}")
+                _upsert_item(item, cfg, headers, in_stock=in_stock, image_path=image_path)
                 projected += 1
             except IFoodRateLimitError:
                 raise

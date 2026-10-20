@@ -14,7 +14,10 @@ Coverage:
 
 from __future__ import annotations
 
+import base64
 import uuid
+from dataclasses import replace
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,6 +28,23 @@ from shopman.orderman.models import Directive
 
 from shopman.shop.directives import CATALOG_PROJECT_SKU
 from shopman.shop.services import ifood_auth
+
+
+def _image_bytes(image_format="PNG", color="red"):
+    from PIL import Image
+
+    stream = BytesIO()
+    Image.new("RGB", (2, 2), color=color).save(stream, format=image_format)
+    return stream.getvalue()
+
+
+def _response(*, content=b"", status=200, json_data=None):
+    response = MagicMock(status_code=status, headers={})
+    response.content = content
+    response.iter_content.return_value = [content]
+    response.json.return_value = json_data or {}
+    response.raise_for_status = MagicMock()
+    return response
 
 # ── Canonical projection registry (OFFERMAN["PROJECTION_BACKENDS"]) ─────────────
 # Mirrors config/settings.py OFFERMAN so override_settings preserves the other
@@ -47,6 +67,15 @@ def isolated_catalog_write_policy(settings):
         "environment": "test",
         "merchant_allowlist": ["00000000-0000-4000-8000-000000000001"],
     }
+
+
+@pytest.fixture(autouse=True)
+def clear_image_memory_cache():
+    from shopman.shop.adapters.catalog_projection_ifood import _IMAGE_PATHS
+
+    _IMAGE_PATHS.clear()
+    yield
+    _IMAGE_PATHS.clear()
 
 
 @pytest.fixture
@@ -180,14 +209,17 @@ def test_adapter_marks_unavailable_when_not_sellable():
 # ── Adapter: project() ────────────────────────────────────────────────────────
 
 
-def test_adapter_project_calls_ifood_put(ifood_item, ifood_settings, fake_oauth):
-    """project() PUTs each item to the merchant-level /items endpoint."""
+@pytest.mark.django_db
+def test_adapter_uploads_image_then_puts_image_path(ifood_item, ifood_settings, fake_oauth):
+    """A foto sobe em base64 antes do item, que recebe somente imagePath."""
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
 
     with patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings):
-        with patch("requests.put") as mock_put:
-            mock_put.return_value = MagicMock(status_code=200, headers={})
-            mock_put.return_value.raise_for_status = MagicMock()
+        with (
+            patch("requests.get", return_value=_response(content=_image_bytes())) as mock_get,
+            patch("requests.post", return_value=_response(json_data={"imagePath": "merchant/photo.png"})) as mock_post,
+            patch("requests.put", return_value=_response()) as mock_put,
+        ):
 
             backend = IFoodCatalogProjection()
             result = backend.project([ifood_item], channel="ifood")
@@ -195,13 +227,192 @@ def test_adapter_project_calls_ifood_put(ifood_item, ifood_settings, fake_oauth)
     assert result.success is True
     assert result.projected == 1
     assert result.errors == []
+    mock_get.assert_called_once()
+    assert mock_get.call_args.kwargs["timeout"] == 30
+    assert mock_post.call_args.args[0].endswith("/image/upload")
+    encoded = mock_post.call_args.kwargs["json"]["image"]
+    assert encoded.startswith("data:image/png;base64,")
+    assert base64.b64decode(encoded.partition(",")[2]) == _image_bytes()
     mock_put.assert_called_once()
     url, kwargs = mock_put.call_args[0][0], mock_put.call_args[1]
     assert url == "https://mock-ifood.test/catalog/v2.0/merchants/00000000-0000-4000-8000-000000000001/items"
     assert kwargs["json"]["item"]["externalCode"] == "PAO-FRANCES"
     # "paes" is mapped in catalog_category_map.
     assert kwargs["json"]["item"]["categoryId"] == "cat-paes-uuid"
+    assert kwargs["json"]["products"][0]["imagePath"] == "merchant/photo.png"
     assert kwargs["headers"]["Authorization"] == "Bearer fake-token-xyz"
+
+
+@pytest.mark.django_db
+def test_same_image_uploads_once_across_urls_and_process_cache(ifood_item, ifood_settings, fake_oauth):
+    from shopman.shop.adapters.catalog_projection_ifood import _IMAGE_PATHS, IFoodCatalogProjection
+    from shopman.shop.models import CatalogImageUpload
+
+    other = replace(ifood_item, sku="OUTRO", image_url="https://other.test/same.png")
+    image = _image_bytes()
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.get", side_effect=[_response(content=image), _response(content=image), _response(content=image)]),
+        patch("requests.post", return_value=_response(json_data={"imagePath": "merchant/photo.png"})) as mock_post,
+        patch("requests.put", return_value=_response()) as mock_put,
+    ):
+        backend = IFoodCatalogProjection()
+        first = backend.project([ifood_item, other], channel="ifood")
+        _IMAGE_PATHS.clear()  # simula outro processo; o registro durável continua.
+        second = backend.project([ifood_item], channel="ifood")
+
+    assert first.success is True
+    assert second.success is True
+    assert mock_post.call_count == 1
+    assert mock_put.call_count == 3
+    assert CatalogImageUpload.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_changed_image_uploads_new_hash_only(ifood_item, ifood_settings, fake_oauth):
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.get", side_effect=[_response(content=_image_bytes(color="red")), _response(content=_image_bytes(color="blue"))]),
+        patch("requests.post", side_effect=[
+            _response(json_data={"imagePath": "merchant/red.png"}),
+            _response(json_data={"imagePath": "merchant/blue.png"}),
+        ]) as mock_post,
+        patch("requests.put", return_value=_response()) as mock_put,
+    ):
+        backend = IFoodCatalogProjection()
+        assert backend.project([ifood_item], channel="ifood").success is True
+        assert backend.project([ifood_item], channel="ifood").success is True
+
+    assert mock_post.call_count == 2
+    assert mock_put.call_args.kwargs["json"]["products"][0]["imagePath"] == "merchant/blue.png"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("content", "reason"),
+    [
+        (b"x" * (5 * 1024 * 1024 + 1), "5 MB"),
+        (_image_bytes(image_format="WEBP"), "JPG, JPEG ou PNG"),
+    ],
+)
+def test_invalid_image_projects_item_without_image_and_reports_pending(
+    ifood_item, ifood_settings, fake_oauth, content, reason,
+):
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.get", return_value=_response(content=content)),
+        patch("requests.post") as mock_post,
+        patch("requests.put") as mock_put,
+    ):
+        result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
+
+    assert result.success is False
+    assert result.projected == 1
+    assert f"{ifood_item.sku}: foto pendente:" in result.errors[0]
+    assert reason in result.errors[0]
+    mock_post.assert_not_called()
+    assert "imagePath" not in mock_put.call_args.kwargs["json"]["products"][0]
+
+
+@pytest.mark.django_db
+def test_failed_upload_projects_without_image_and_does_not_cache_success(
+    ifood_item, ifood_settings, fake_oauth,
+):
+    from requests import HTTPError
+
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+    from shopman.shop.models import CatalogImageUpload
+
+    failed = _response(status=503)
+    failed.raise_for_status.side_effect = HTTPError("503")
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.get", return_value=_response(content=_image_bytes())),
+        patch("requests.post", return_value=failed),
+        patch("requests.put") as mock_put,
+    ):
+        result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
+
+    assert result.success is False
+    assert result.projected == 1
+    assert f"{ifood_item.sku}: foto pendente:" in result.errors[0]
+    assert "enviar a foto" in result.errors[0]
+    assert CatalogImageUpload.objects.get().image_path == ""
+    assert "imagePath" not in mock_put.call_args.kwargs["json"]["products"][0]
+
+
+@pytest.mark.django_db
+def test_image_download_timeout_projects_without_image_and_is_readable(
+    ifood_item, ifood_settings, fake_oauth,
+):
+    from requests import Timeout
+
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.get", side_effect=Timeout("expired")),
+        patch("requests.post") as mock_post,
+        patch("requests.put") as mock_put,
+    ):
+        result = IFoodCatalogProjection().project([ifood_item], channel="ifood")
+
+    assert result.success is False
+    assert result.projected == 1
+    assert f"{ifood_item.sku}: foto pendente:" in result.errors[0]
+    assert "baixar a foto" in result.errors[0]
+    mock_post.assert_not_called()
+    assert "imagePath" not in mock_put.call_args.kwargs["json"]["products"][0]
+
+
+@pytest.mark.django_db
+def test_item_without_image_does_not_upload_or_remove_remote_image(ifood_settings, fake_oauth):
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    item = ProjectedItem(
+        sku="SEM-FOTO", name="Sem foto", description="", unit="un",
+        price_q=100, is_published=True, is_sellable=True, category="paes",
+    )
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.get") as mock_get,
+        patch("requests.post") as mock_post,
+        patch("requests.put", return_value=_response()) as mock_put,
+    ):
+        result = IFoodCatalogProjection().project([item], channel="ifood")
+
+    assert result.success is True
+    assert "imagePath" not in mock_put.call_args.kwargs["json"]["products"][0]
+    mock_get.assert_not_called()
+    mock_post.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_our_media_url_is_read_from_default_storage(
+    ifood_item, ifood_settings, fake_oauth, settings, tmp_path,
+):
+    from django.core.files.base import ContentFile
+    from django.core.files.storage import default_storage
+
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    settings.MEDIA_ROOT = tmp_path
+    name = default_storage.save("products/local.png", ContentFile(_image_bytes()))
+    local_item = replace(ifood_item, image_url=default_storage.url(name))
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.get") as mock_get,
+        patch("requests.post", return_value=_response(json_data={"imagePath": "merchant/local.png"})),
+        patch("requests.put", return_value=_response()),
+    ):
+        result = IFoodCatalogProjection().project([local_item], channel="ifood")
+
+    assert result.success is True
+    mock_get.assert_not_called()
 
 
 def test_adapter_project_uses_default_category_when_unmapped(ifood_settings, fake_oauth):
@@ -357,6 +568,7 @@ def test_adapter_raises_rate_limit_on_429(ifood_item, ifood_settings, fake_oauth
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection, IFoodRateLimitError
 
     mock_resp = MagicMock(status_code=429, headers={"Retry-After": "45"})
+    ifood_item = replace(ifood_item, image_url=None)
 
     with patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings):
         with patch("requests.put", return_value=mock_resp):
