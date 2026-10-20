@@ -4642,7 +4642,8 @@
         "GOOGLE_MAPS_API_KEY",
         "GOOGLE_MAPS_BROWSER_API_KEY",
         "GOOGLE_MAPS_SERVER_API_KEY",
-        "SHOPMAN_ENVIRONMENT"
+        "SHOPMAN_ENVIRONMENT",
+        "SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT"
       ],
       "tests": [
         "shopman/shop/tests/test_rules.py::TestDeliveryZoneRule::test_code_and_stage",
