@@ -178,7 +178,7 @@ def _item_payload(
     vendável zerado sai ``UNAVAILABLE``, e a pausa (``is_sellable``) continua vencendo.
     """
     price = round(item.price_q / 100, 2)
-    from shopman.shop.services.catalog_identity import resolve_catalog_identity
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
 
     if identity is None:
         identity = resolve_catalog_identity(
@@ -370,7 +370,7 @@ def _upsert_item(
 ) -> None:
     ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
-    from shopman.shop.services.catalog_identity import resolve_catalog_identity
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
 
     identity = resolve_catalog_identity(item.sku, channel, config=cfg)
     category_id = _resolve_category_id(item, cfg, binding_category=identity.category_ref)
@@ -403,7 +403,7 @@ def _patch_item_price(
     channel: str = "",
 ) -> tuple[str, float]:
     ensure_catalog_write_allowed(cfg)
-    from shopman.shop.services.catalog_identity import resolve_catalog_identity
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
 
     merchant_id = cfg["merchant_id"]
     item_id = resolve_catalog_identity(sku, channel, config=cfg).item_id
@@ -429,7 +429,7 @@ def _set_item_status(
     channel: str = "",
 ) -> str:
     ensure_catalog_write_allowed(cfg)
-    from shopman.shop.services.catalog_identity import resolve_catalog_identity
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
 
     merchant_id = cfg["merchant_id"]
     item_id = resolve_catalog_identity(sku, channel, config=cfg).item_id

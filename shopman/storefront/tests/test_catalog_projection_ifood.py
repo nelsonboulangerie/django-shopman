@@ -269,7 +269,7 @@ def test_without_binding_identity_remains_deterministic(
     ifood_channel,
     django_assert_num_queries,
 ):
-    from shopman.shop.services.catalog_identity import resolve_catalog_identity
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
 
     with django_assert_num_queries(2):
         first = resolve_catalog_identity("SEM-VINCULO", ifood_channel.ref, config=ifood_settings)
@@ -285,7 +285,7 @@ def test_binding_from_other_account_is_ignored_with_warning(
     ifood_settings,
     ifood_channel,
 ):
-    from shopman.shop.services import catalog_identity
+    from shopman.shop.policies import catalog_identity
 
     _catalog_binding(channel=ifood_channel, account_ref="other-merchant")
     with patch.object(catalog_identity.logger, "warning") as warning:
@@ -305,7 +305,7 @@ def test_binding_from_other_account_is_ignored_with_warning(
 
 
 def test_same_remote_item_bound_to_two_skus_is_explicit_error(ifood_channel):
-    from shopman.shop.services.catalog_identity import (
+    from shopman.shop.policies.catalog_identity import (
         CatalogIdentityConflict,
         resolve_catalog_identity,
     )

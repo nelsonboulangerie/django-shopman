@@ -211,6 +211,49 @@
       "out_of_extraction": false
     },
     {
+      "id": "catalog.remote-item-identity",
+      "question": "Qual item, produto e categoria remotos representam este SKU no catálogo iFood configurado?",
+      "owner": "catalog.remote-item-identity",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.catalog_identity:resolve_catalog_identity",
+      "authoritative_symbols": [
+        "shopman.shop.policies.catalog_identity:_derived_identity",
+        "shopman.shop.policies.catalog_identity:resolve_catalog_identity"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/catalog_identity.py",
+          "symbols": [
+            "CatalogIdentity",
+            "CatalogIdentityConflict",
+            "_UUID_NS",
+            "_derived_identity",
+            "logger",
+            "resolve_catalog_identity"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [
+        "SHOPMAN_IFOOD"
+      ],
+      "tests": [
+        "shopman/storefront/tests/test_catalog_projection_ifood.py::test_without_binding_identity_remains_deterministic",
+        "shopman/storefront/tests/test_catalog_projection_ifood.py::test_binding_from_other_account_is_ignored_with_warning",
+        "shopman/storefront/tests/test_catalog_projection_ifood.py::test_same_remote_item_bound_to_two_skus_is_explicit_error"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "marketing.whatsapp-approved-delivery",
       "question": "O envio por WhatsApp preserva exatamente o flow, o conteúdo e o destino selados no artefato aprovado?",
       "owner": "marketing.whatsapp-approved-delivery",

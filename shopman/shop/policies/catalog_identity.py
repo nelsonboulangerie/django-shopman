@@ -1,4 +1,4 @@
-"""Resolve a identidade remota usada pela projeção de catálogo iFood."""
+"""Decide a identidade remota usada pela projeção de catálogo iFood."""
 
 from __future__ import annotations
 
