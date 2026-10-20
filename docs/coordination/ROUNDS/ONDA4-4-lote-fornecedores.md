@@ -1,6 +1,6 @@
 # ONDA4-4: lote de fornecedores
 
-Ordem: `ORDERS/next-onda4.md`, frente 4. Branch: `codex/lote-fornecedores`.
+Ordem: `ORDERS/next-onda4.md`, frente 4. Branch: `codex/lote-fornecedores`. PR: [#1957](https://github.com/nelsonboulangerie/django-shopman/pull/1957).
 
 A Base permite marcar os fornecedores da página e Arquivar/Desarquivar em um POST
 `purchase/suppliers/batch/`, com confirmação. A barra canônica ocupa a toolbar na
