@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PRODUCTION_MODE_ALL,
+  PRODUCTION_MODE_FILTER_OPTIONS,
   addItem,
   addPart,
   anchorLabel,
@@ -526,5 +528,24 @@ describe("downscaleTarget", () => {
     expect(splitDataUrl("nope")).toBeNull();
     expect(outputMediaType("image/png")).toBe("image/png");
     expect(outputMediaType("image/heic")).toBe("image/jpeg");
+  });
+});
+
+describe("recipeBook: modo de produção", () => {
+  it("os filtros têm valor próprio e a consulta só leva o modo escolhido", () => {
+    expect(PRODUCTION_MODE_FILTER_OPTIONS.map((option) => option.label)).toEqual(["Todos os modos", "Em lote", "Na hora"]);
+    expect(PRODUCTION_MODE_FILTER_OPTIONS.every((option) => option.value !== "")).toBe(true);
+    expect(bookQuery("", "", false, { mode: "made_to_order" })).toEqual({ mode: "made_to_order" });
+    expect(bookQuery("", "", false, { mode: PRODUCTION_MODE_ALL })).toEqual({});
+  });
+
+  it("o recorte local acompanha o modo", () => {
+    const base = { kind: "other", output_sku: "SP", output_name: "", draft_count: 0, is_favorite: false, review_status: "" };
+    const entries = [
+      { ...base, ref: "espresso", name: "Espresso", production_mode: "made_to_order" },
+      { ...base, ref: "batard", name: "Bâtard", production_mode: "batch" },
+    ] as never[];
+    expect(filterEntries(entries, "", "", false, false, false, false, "made_to_order").map((e: { ref: string }) => e.ref)).toEqual(["espresso"]);
+    expect(filterEntries(entries, "", "", false, false, false, false, PRODUCTION_MODE_ALL)).toHaveLength(2);
   });
 });

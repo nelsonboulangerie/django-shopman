@@ -775,6 +775,10 @@ def _detail_payload(product) -> dict:
         # Promessa da casa sobre o produto ("Preparado na hora"), não política de
         # estoque. Ver docs/reference/data-schemas.md → Product.metadata.
         "made_to_order": bool(metadata.get("made_to_order", False)),
+        # Somente leitura (ADR-040): o modo de produção da ficha vigente do SKU
+        # ("Em lote" ou "Na hora") e, no feito na hora, a estação de preparo que o
+        # recebe. A fonte é a FICHA, na Produção; ``None`` sem ficha (revenda).
+        "production": _production_payload(product.sku),
         # Hora declarada de prontidão ("HH:MM", "" = deduzir do histórico). É o
         # que impede prometer a baguete de tradição para as 9h.
         "ready_from": str(metadata.get("ready_from") or ""),
@@ -976,6 +980,43 @@ def _apply_vocation(sku: str, raw) -> None:
     tag.save(update_fields=["role", "eat_in_weight", "reviewed", "updated_at"])
 
 
+def _production_payload(sku: str) -> dict | None:
+    """O modo de produção do SKU, a estação dele e o endereço da ficha na Produção."""
+    from urllib.parse import quote
+
+    from shopman.craftsman.models import ProductionMode, Recipe
+
+    from shopman.backstage.projections.hub import surface_link
+
+    recipe = Recipe.objects.filter(output_sku=sku, is_active=True).values("ref", "name", "production_mode").first()
+    if recipe is None:
+        return None
+    mode = recipe["production_mode"]
+    station = ""
+    if mode == ProductionMode.MADE_TO_ORDER:
+        from shopman.shop.services.kds import kitchen_routes_for_skus
+
+        station = str((kitchen_routes_for_skus([sku]).get(sku) or {}).get("station") or "")
+        if station:
+            summary = f"Feito na hora na estação {station}: os insumos baixam a cada venda."
+        else:
+            summary = (
+                "Feito na hora, mas nenhuma estação de preparo recebe a coleção dele: "
+                "a cozinha não vê este item."
+            )
+    else:
+        summary = "Produzido em lote: planejado e estocado pela Produção."
+    return {
+        "mode": str(mode),
+        "mode_label": str(ProductionMode(mode).label),
+        "station": station,
+        "summary": summary,
+        "recipe_ref": recipe["ref"],
+        "recipe_name": recipe["name"],
+        "url": surface_link("production", f"recipes/sheets?open={quote(recipe['ref'], safe='')}"),
+    }
+
+
 def _roles_payload(sku: str) -> dict[str, bool]:
     from shopman.shop.services.sku_records import sku_roles
 
@@ -1019,7 +1060,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
+    readonly = {"sku", "production", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():

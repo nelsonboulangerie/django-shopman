@@ -234,6 +234,61 @@ describe("Permitir compra", () => {
   });
 });
 
+describe("Modo de produção (ADR-040)", () => {
+  it("o feito na hora diz a estação e leva à receita, só leitura", async () => {
+    const w = panel();
+    await w.setProps({
+      detail: {
+        ...detail,
+        production: {
+          mode: "made_to_order",
+          mode_label: "Na hora",
+          station: "Cafés",
+          summary: "Feito na hora na estação Cafés: os insumos baixam a cada venda.",
+          recipe_ref: "espresso",
+          recipe_name: "Espresso",
+          url: "https://prod.example.test/recipes/sheets?open=espresso",
+        },
+      },
+    });
+    const block = w.get('[data-testid="production-mode"]');
+    expect(block.text()).toContain("Feito na hora na estação Cafés: os insumos baixam a cada venda.");
+    expect(block.text()).not.toContain("—");
+    const link = block.get("a");
+    expect(link.attributes("href")).toBe("https://prod.example.test/recipes/sheets?open=espresso");
+    expect(link.text()).toContain("Abrir a receita Espresso na Produção");
+    expect(block.find("input").exists()).toBe(false);
+    expect(block.find('[role="checkbox"]').exists()).toBe(false);
+  });
+
+  it("em lote diz que é produzido em lote", async () => {
+    const w = panel();
+    await w.setProps({
+      detail: {
+        ...detail,
+        production: {
+          mode: "batch",
+          mode_label: "Em lote",
+          station: "",
+          summary: "Produzido em lote: planejado e estocado pela Produção.",
+          recipe_ref: "batard",
+          recipe_name: "Bâtard",
+          url: "",
+        },
+      },
+    });
+    const block = w.get('[data-testid="production-mode"]');
+    expect(block.text()).toContain("Produzido em lote: planejado e estocado pela Produção.");
+    expect(block.find("a").exists()).toBe(false);
+  });
+
+  it("revenda, sem receita, não mostra nada", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, production: null } });
+    expect(w.find('[data-testid="production-mode"]').exists()).toBe(false);
+  });
+});
+
 it("mostra mudança de origem mesmo quando o valor não mudou", async () => {
   const w = panel();
   await w.setProps({

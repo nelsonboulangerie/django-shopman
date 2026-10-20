@@ -1215,6 +1215,30 @@ const sectionClass =
                 </div>
               </NuxtCard>
 
+              <!-- Modo de produção (ADR-040): só leitura. A fonte é a ficha, na
+                 Produção; produto sem ficha (revenda) não mostra nada. -->
+              <NuxtCard
+                v-if="detail?.production"
+                variant="soft"
+                data-testid="production-mode"
+              >
+                <div class="space-y-2">
+                  <p :class="sectionClass">Produção</p>
+                  <p class="text-sm">{{ detail.production.summary }}</p>
+                  <NuxtLink
+                    v-if="detail.production.url"
+                    :to="detail.production.url"
+                    external
+                    class="text-sm text-primary underline-offset-2 hover:underline"
+                  >
+                    Abrir a receita {{ detail.production.recipe_name }} na Produção
+                  </NuxtLink>
+                  <p v-else class="text-xs text-muted-foreground">
+                    Receita {{ detail.production.recipe_name }}, na Produção.
+                  </p>
+                </div>
+              </NuxtCard>
+
               <!-- Vocação: o que a presença do produto na cesta diz ao B.I. (consumo
                  aqui × levar). Não muda a venda, por isso fica discreta, aqui e não
                  na aba Geral. Entra no rascunho: grava no "Salvar". -->

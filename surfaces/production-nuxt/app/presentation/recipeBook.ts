@@ -456,6 +456,33 @@ export function errorField(data: unknown): string {
 
 // ── Inventário: filtros ─────────────────────────────────────────────────────
 
+// ── Modo de produção (ADR-040) ───────────────────────────────────────────────
+
+/** O recorte sem modo: valor próprio, porque o Select do Nuxt UI recusa item vazio. */
+export const PRODUCTION_MODE_ALL = "all";
+
+export const PRODUCTION_MODE_BATCH = "batch";
+export const PRODUCTION_MODE_MADE_TO_ORDER = "made_to_order";
+
+/** As escolhas do seletor quando o servidor ainda não as mandou (ficha nova). */
+export const PRODUCTION_MODE_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: PRODUCTION_MODE_BATCH, label: "Em lote" },
+  { value: PRODUCTION_MODE_MADE_TO_ORDER, label: "Na hora" },
+] as const;
+
+export const PRODUCTION_MODE_FILTER_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: PRODUCTION_MODE_ALL, label: "Todos os modos" },
+  ...PRODUCTION_MODE_OPTIONS,
+] as const;
+
+/** A linha de ajuda do seletor, a mesma na ficha e na operação da receita. */
+export const PRODUCTION_MODE_HELP = "Em lote: planejado e estocado. Na hora: feito quando vende, baixa os insumos na venda.";
+
+/** O valor do filtro que vai ao servidor (`?mode=`); vazio quando é "todos". */
+export function productionModeQuery(mode: string): string {
+  return mode && mode !== PRODUCTION_MODE_ALL ? mode : "";
+}
+
 export function filterEntries(
   entries: readonly RecipeEntryCardProjection[],
   term: string,
@@ -464,10 +491,13 @@ export function filterEntries(
   onlyWithDraft: boolean,
   onlyFavorites = false,
   onlyUnreviewed = false,
+  mode = "",
 ): RecipeEntryCardProjection[] {
   const needle = term.trim().toLowerCase();
+  const wantedMode = productionModeQuery(mode);
   return entries.filter((entry) => {
     if (kind && entry.kind !== kind) return false;
+    if (wantedMode && entry.production_mode !== wantedMode) return false;
     if (onlyWithoutSku && entry.output_sku) return false;
     if (onlyWithDraft && entry.draft_count <= 0) return false;
     if (onlyFavorites && !entry.is_favorite) return false;
@@ -506,6 +536,7 @@ export function bookQuery(
     withDraft?: boolean;
     favorites?: boolean;
     unreviewed?: boolean;
+    mode?: string;
     sort?: string;
     page?: number;
     pageSize?: number;
@@ -515,6 +546,8 @@ export function bookQuery(
   const q = term.trim();
   if (q) query.q = q;
   if (kind) query.kind = kind;
+  const mode = productionModeQuery(options.mode ?? "");
+  if (mode) query.mode = mode;
   if (archived) query.archived = "1";
   if (options.withoutSku) query.without_sku = "1";
   if (options.withDraft) query.with_draft = "1";

@@ -13,7 +13,7 @@ from decimal import Decimal
 
 import pytest
 from django.utils import timezone
-from shopman.craftsman.models import Recipe, RecipeItem
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem
 from shopman.orderman.models import Directive, Order, OrderItem
 from shopman.stockman import stock
 from shopman.stockman.models import Move, Position, Quant
@@ -64,7 +64,7 @@ def deposito(db):
 def _croque_com_ficha() -> Recipe:
     recipe = Recipe.objects.create(
         ref="croque", name="croque", output_sku="CQMO", batch_size=Decimal("1"),
-        is_active=False, meta={"made_to_order": True},
+        is_active=True, production_mode=ProductionMode.MADE_TO_ORDER,
     )
     RecipeItem.objects.create(recipe=recipe, input_sku="PRESUNTO", quantity=Decimal("60"), unit="g")
     return recipe

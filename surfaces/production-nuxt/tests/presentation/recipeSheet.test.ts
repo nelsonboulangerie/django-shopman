@@ -138,6 +138,18 @@ describe("recipeSheet: corpo do cadastro", () => {
     expect(sheetQuery("pao", "1", "name", 2, 24)).toEqual({ q: "pao", active: "1", sort: "name", page: "2", page_size: "24" });
   });
 
+  it("o modo de produção vai como mode, e Todos os modos não filtra", () => {
+    expect(sheetQuery("", SHEET_ALL_FILTER, "updated", 1, 48, "made_to_order")).toEqual({ mode: "made_to_order" });
+    expect(sheetQuery("", SHEET_ALL_FILTER, "updated", 1, 48, "all")).toEqual({});
+  });
+
+  it("a ficha nova nasce Em lote e o modo vai no corpo", () => {
+    const draft = { ...emptySheetDraft(), name: "Espresso", outputSku: "sp", batchSize: "1" };
+    draft.items = [emptySheetItem({ inputSku: "CAFE-GRAO", quantity: "0,007" })];
+    expect(draft.productionMode).toBe("batch");
+    expect(sheetPayloadFromDraft({ ...draft, productionMode: "made_to_order" }).productionMode).toBe("made_to_order");
+  });
+
   it("Todas tem valor próprio (item vazio derruba o Select) e não filtra", () => {
     expect(SHEET_ACTIVE_OPTIONS.every((option) => option.value !== "")).toBe(true);
     expect(SHEET_ACTIVE_OPTIONS[0]).toEqual({ value: SHEET_ALL_FILTER, label: "Todas" });

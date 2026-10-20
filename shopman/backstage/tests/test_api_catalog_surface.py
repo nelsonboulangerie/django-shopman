@@ -936,7 +936,10 @@ def test_product_detail_get_shape(client, operator, catalog):
         "back_at",
         "back_reason",
         "admin_history_path",
+        # somente-leitura: o modo de produção da ficha vigente (ADR-040), None sem ficha
+        "production",
     }
+    assert product["production"] is None
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500
     assert product["primary_collection"] == "doces"

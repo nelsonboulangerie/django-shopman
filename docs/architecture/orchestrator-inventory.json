@@ -1431,7 +1431,7 @@
             "CanonicalProductionCommands",
             "count_adjusted_events",
             "get_finished_work_orders",
-            "get_prep_skus",
+            "get_made_to_order_skus",
             "get_work_order",
             "logger"
           ]
@@ -10012,7 +10012,6 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "_Q",
-            "_alert_ambiguous",
             "_alert_shortfall",
             "_consumable_quants",
             "_fmt",

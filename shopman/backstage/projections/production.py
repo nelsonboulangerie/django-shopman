@@ -22,7 +22,7 @@ from django.conf import settings
 from django.db.models import Count, Max, Sum
 from django.utils import timezone
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderEvent
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem, WorkOrder, WorkOrderEvent
 from shopman.stockman import Position
 from shopman.utils import units
 from shopman.utils.units import UnitError
@@ -1345,7 +1345,9 @@ def build_production_board(
 
     wos = list(wos_qs)
 
-    all_recipes = tuple(Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("name", "ref"))
+    all_recipes = tuple(
+        Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).prefetch_related("items").order_by("name", "ref")
+    )
     recipes = tuple(
         RecipeOptionProjection(
             pk=recipe.pk,
@@ -1355,7 +1357,9 @@ def build_production_board(
         for recipe in all_recipes
     )
     consumed_recipe_skus = set(
-        RecipeItem.objects.filter(recipe__is_active=True).exclude(input_sku="").values_list("input_sku", flat=True)
+        RecipeItem.objects.filter(recipe__is_active=True, recipe__production_mode=ProductionMode.BATCH)
+        .exclude(input_sku="")
+        .values_list("input_sku", flat=True)
     )
     matrix_recipes = tuple(recipe for recipe in all_recipes if recipe.output_sku not in consumed_recipe_skus)
 
@@ -1467,7 +1471,7 @@ def build_production_weighing(
 
     active_recipes = {
         recipe.output_sku: recipe
-        for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("ref")
+        for recipe in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).prefetch_related("items").order_by("ref")
     }
     tickets: dict[tuple, dict] = {}
 
@@ -1713,7 +1717,8 @@ def build_production_mise_en_place(
 
     skus = {need.item_ref for need in needs}
     active_recipes = {
-        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True, output_sku__in=skus)
+        recipe.output_sku: recipe
+        for recipe in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH, output_sku__in=skus)
     }
     product_names = _product_names(skus)
     availability = _ingredient_availability(skus)
@@ -2087,7 +2092,11 @@ def build_qc_kiosk(
 
     recipes = tuple(
         RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-        for r in (Recipe.objects.filter(is_active=True).order_by("name", "ref") if access.can_quick_finish else ())
+        for r in (
+            Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).order_by("name", "ref")
+            if access.can_quick_finish
+            else ()
+        )
     )
     from shopman.backstage.models import OvenRun
 
@@ -2405,7 +2414,7 @@ def build_production_reports(
 def _report_options():
     recipes = tuple(
         RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
+        for r in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).order_by("name", "ref")
     )
     positions = tuple(
         PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
@@ -3970,7 +3979,8 @@ def _work_order_needs(
     """
 
     active_recipes = {
-        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items")
+        recipe.output_sku: recipe
+        for recipe in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).prefetch_related("items")
     }
     output_units = _recipe_output_units(
         {work_order.recipe_id: work_order.recipe for work_order in work_orders}.values()

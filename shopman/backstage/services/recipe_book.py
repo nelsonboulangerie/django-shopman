@@ -23,7 +23,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 from shopman.craftsman.exceptions import RecipeBookError
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.craftsman.services import recipe_book as craftsman
 
@@ -337,10 +337,26 @@ def update_execution(entry: RecipeEntry, data: dict, *, actor: str) -> Recipe:
         raise RecipeEntryNotFound("Publique uma versão antes de configurar a ficha de execução.")
     _assert_revision(recipe, data)
     recipe.meta = apply_execution_settings(dict(recipe.meta or {}), data, actor=actor)
+    apply_production_mode(recipe, data)
     with translating_errors():
         recipe.full_clean()
         recipe.save()
     return recipe
+
+
+def apply_production_mode(recipe: Recipe, data: dict) -> None:
+    """``productionMode`` do corpo vira ``Recipe.production_mode`` (ADR-040).
+
+    Faz parte da operação da ficha, no mesmo dialeto camelCase dela: "Em lote"
+    é planejado e sai por ordem de produção; "Na hora" é puxado pela venda, vai
+    à estação de preparo e a venda baixa os insumos. Ausente no corpo, fica.
+    """
+    if "productionMode" not in data:
+        return
+    mode = str(data.get("productionMode") or "").strip()
+    if mode not in ProductionMode.values:
+        raise _fail("Escolha Em lote ou Na hora.", field="productionMode")
+    recipe.production_mode = mode
 
 
 def apply_execution_settings(meta: dict, data: dict, *, actor: str) -> dict:
@@ -716,6 +732,7 @@ def recipe_revision(recipe: Recipe) -> str:
         "output_sku": recipe.output_sku,
         "batch_size": str(recipe.batch_size),
         "is_active": bool(recipe.is_active),
+        "production_mode": str(recipe.production_mode),
         "steps": recipe.steps or [],
         "meta": recipe.meta or {},
         "items": [
@@ -881,6 +898,7 @@ def create_sheet_from_payload(data: dict, *, actor: str = "") -> Recipe:
         is_active=_sheet_is_active(data.get("is_active"), default=True),
         meta=apply_execution_settings({}, data, actor=actor),
     )
+    apply_production_mode(recipe, data)
     try:
         with translating_errors():
             recipe.full_clean()
@@ -917,6 +935,7 @@ def update_sheet_from_payload(sheet: Recipe, data: dict, *, actor: str = "") -> 
     if "is_active" in data:
         recipe.is_active = _sheet_is_active(data.get("is_active"), default=recipe.is_active)
     recipe.meta = apply_execution_settings(dict(recipe.meta or {}), data, actor=actor)
+    apply_production_mode(recipe, data)
     lines = _item_lines(data) if "items" in data else None
     try:
         with translating_errors():
@@ -959,8 +978,10 @@ def duplicate_sheet(sheet: Recipe, data: dict, *, actor: str = "") -> Recipe:
         batch_size=source.batch_size,
         steps=list(source.steps or []),
         is_active=_sheet_is_active(data.get("is_active"), default=False),
+        production_mode=source.production_mode,
         meta=meta,
     )
+    apply_production_mode(copy, data)
     source_items = list(source.items.order_by("sort_order", "input_sku"))
     try:
         with translating_errors():

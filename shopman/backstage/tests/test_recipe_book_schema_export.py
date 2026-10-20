@@ -64,6 +64,7 @@ def test_every_projection_of_the_plan_is_exported() -> None:
         "RecipeUsageProjection",
         "RecipeEntryDetailProjection",
         "LifecycleOptionProjection",
+        "ProductionModeOptionProjection",
         "ExecutionSheetProjection",
         "ExternalReferenceProjection",
         "RatingCriterionProjection",

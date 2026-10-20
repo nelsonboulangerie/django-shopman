@@ -234,7 +234,7 @@ class CraftQueries:
         Returns [] if DEMAND_BACKEND is not configured.
         """
         from shopman.craftsman.conf import get_setting
-        from shopman.craftsman.models import Recipe
+        from shopman.craftsman.models import ProductionMode, Recipe
 
         backend_path = get_setting("DEMAND_BACKEND")
         if not backend_path:
@@ -255,7 +255,8 @@ class CraftQueries:
         exclude_dates = frozenset(exclude_dates or ())
 
         suggestions = []
-        recipes = Recipe.objects.filter(is_active=True)
+        # Só o que se fabrica para estoque: o feito na hora nunca é planejado.
+        recipes = Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH)
         if output_skus:
             recipes = recipes.filter(output_sku__in=output_skus)
         for recipe in recipes:

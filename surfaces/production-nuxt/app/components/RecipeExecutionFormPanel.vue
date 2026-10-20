@@ -3,6 +3,7 @@ import type { ExecutionPatch, ExecutionSheetProjection } from "~/types/recipeBoo
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm";
+import { PRODUCTION_MODE_BATCH, PRODUCTION_MODE_HELP, PRODUCTION_MODE_OPTIONS } from "~/presentation/recipeBook";
 
 const props = defineProps<{ open: boolean; execution: ExecutionSheetProjection | null; busy?: boolean }>();
 const emit = defineEmits<{
@@ -17,6 +18,7 @@ const form = reactive({
   shelfLifeDays: "",
   shelfLifeReviewed: false,
   productionLifecycle: "",
+  productionMode: PRODUCTION_MODE_BATCH,
 });
 const initialShelfLife = ref("");
 const { dirty, changedKeys, capture } = useDirtyForm(() => ({ ...form }));
@@ -32,6 +34,7 @@ watch(
     initialShelfLife.value = form.shelfLifeDays;
     form.shelfLifeReviewed = props.execution.shelf_life_reviewed;
     form.productionLifecycle = props.execution.production_lifecycle;
+    form.productionMode = props.execution.production_mode;
     nextTick(capture);
   },
   { immediate: true },
@@ -82,8 +85,10 @@ function save() {
     shelfLifeDays: shelfLife.value,
     shelfLifeReviewed: form.shelfLifeReviewed,
     productionLifecycle: form.productionLifecycle,
+    productionMode: form.productionMode,
   });
 }
+const productionModeOptions = computed(() => props.execution?.production_mode_options ?? [...PRODUCTION_MODE_OPTIONS]);
 </script>
 
 <template>
@@ -104,6 +109,16 @@ function save() {
   >
     <OperatorFormSection section-key="planning" title="Planejamento" description="Limites que alimentam atraso e ocupação.">
       <div class="grid gap-3 sm:grid-cols-2">
+        <NuxtFormField label="Modo de produção" :description="PRODUCTION_MODE_HELP" class="sm:col-span-2">
+          <NuxtRadioGroup
+            v-model="form.productionMode"
+            :items="productionModeOptions"
+            value-key="value"
+            label-key="label"
+            orientation="horizontal"
+            data-testid="execution-production-mode"
+          />
+        </NuxtFormField>
         <NuxtFormField label="Tempo máximo de lote aberto (min)" description="Vazio usa o padrão da loja.">
           <NuxtInput v-model="form.maxStartedMinutes" inputmode="numeric" class="w-full" />
         </NuxtFormField>

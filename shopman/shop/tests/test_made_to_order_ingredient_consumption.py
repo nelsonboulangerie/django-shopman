@@ -19,7 +19,7 @@ from decimal import Decimal
 
 import pytest
 from django.utils import timezone
-from shopman.craftsman.models import Recipe, RecipeItem
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem
 from shopman.orderman.models import Directive, Order, OrderItem
 from shopman.stockman import stock
 from shopman.stockman.models import Move, Position, Quant
@@ -61,7 +61,8 @@ def deposito(db):
 def _ficha(ref: str, output_sku: str, items, *, made_to_order: bool = True, batch: str = "1") -> Recipe:
     recipe = Recipe.objects.create(
         ref=ref, name=ref, output_sku=output_sku, batch_size=Decimal(batch),
-        is_active=False, meta={"made_to_order": True} if made_to_order else {},
+        is_active=True,
+        production_mode=ProductionMode.MADE_TO_ORDER if made_to_order else ProductionMode.BATCH,
     )
     for order, (sku, qty, *factor) in enumerate(items):
         RecipeItem.objects.create(
@@ -158,7 +159,7 @@ def test_o_handler_da_directive_baixa(deposito):
 
 
 def test_a_ficha_desce_um_nivel_so_o_bechamel_sai_como_bechamel(deposito):
-    # O bechamel tem ficha própria (ATIVA, é fornada) com farinha e leite.
+    # O bechamel tem ficha própria, vigente e EM LOTE, com farinha e leite.
     bechamel = Recipe.objects.create(ref="bechamel", name="Bechamel", output_sku="MOLHO-BECHAMEL", batch_size=1000)
     RecipeItem.objects.create(recipe=bechamel, input_sku="FARINHA", quantity=Decimal("60"), unit="g")
     RecipeItem.objects.create(recipe=bechamel, input_sku="LEITE", quantity=Decimal("900"), unit="g")
@@ -172,13 +173,14 @@ def test_a_ficha_desce_um_nivel_so_o_bechamel_sai_como_bechamel(deposito):
     assert _saldo("MOLHO-BECHAMEL") == Decimal("930")
     # A BRUTA do gouda: 50 g líquidos com 95% de aproveitamento.
     assert _saldo("QUEIJO-GOUDA") == Decimal("1000") - Decimal("52.632")
-    # A farinha e o leite do bechamel já saíram na fornada dele: não contam duas vezes.
+    # A farinha e o leite do bechamel já saíram na ordem de produção dele: não contam duas vezes.
     assert _saldo("FARINHA") == Decimal("1000")
     assert _saldo("LEITE") == Decimal("1000")
 
 
-def test_ficha_inativa_sem_marca_e_ficha_desligada_e_nao_baixa(deposito):
-    _ficha("espresso-velho", "SP", [("CAFE-GRAO", "7")], made_to_order=False)
+def test_ficha_em_lote_nao_baixa_na_venda(deposito):
+    # Em lote, a ordem de produção já baixou os insumos: a venda não baixa de novo.
+    _ficha("espresso-lote", "SP", [("CAFE-GRAO", "7")], made_to_order=False)
     stock.receive(quantity=Decimal("100"), sku="CAFE-GRAO", position=deposito, reason="compra")
     order = _pedido("MTO-6", [("SP", 1)])
 
@@ -206,16 +208,18 @@ def test_falta_de_insumo_nao_trava_baixa_o_que_existe_e_alerta(deposito):
     assert alert.get_type_display() == "Venda baixou menos insumo que a ficha"
 
 
-def test_duas_fichas_marcadas_para_o_mesmo_produto_nao_escolhe_e_alerta(deposito):
-    _ficha("espresso-a", "SP", [("CAFE-GRAO", "7")])
-    _ficha("espresso-b", "SP", [("CAFE-GRAO", "9")])
+def test_ficha_arquivada_na_hora_nao_baixa(deposito):
+    recipe = _ficha("espresso-arquivado", "SP", [("CAFE-GRAO", "7")])
+    recipe.is_active = False
+    recipe.save()
     stock.receive(quantity=Decimal("100"), sku="CAFE-GRAO", position=deposito, reason="compra")
     order = _pedido("MTO-8", [("SP", 1)])
 
+    stock_service.fulfill(order)
     made_to_order.consume(order)
 
+    assert not Directive.objects.filter(topic=STOCK_CONSUME_MADE_TO_ORDER).exists()
     assert _saldo("CAFE-GRAO") == Decimal("100")
-    assert OperatorAlert.objects.filter(type="stock_sale_recipe_ambiguous").exists()
 
 
 # ── Cancelamento: antes ou depois de preparado ─────────────────────────

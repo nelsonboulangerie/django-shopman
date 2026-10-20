@@ -462,12 +462,12 @@ def _preflight_quick_finish(
     """Validate the command before creating any persistent receipt or WO."""
     from types import SimpleNamespace
 
-    from shopman.craftsman.models import Recipe
+    from shopman.craftsman.models import ProductionMode, Recipe
 
     if force and not str(override_reason or "").strip():
         raise ProductionError("Justificativa obrigatória para confirmar a falta.")
     try:
-        recipe = Recipe.objects.get(pk=recipe_id, is_active=True)
+        recipe = Recipe.objects.get(pk=recipe_id, is_active=True, production_mode=ProductionMode.BATCH)
     except Recipe.DoesNotExist:
         raise ProductionNotFound(
             "Receita de produção não encontrada.",
@@ -1073,7 +1073,7 @@ def apply_planned(
     The recipe lock keeps the coverage read and the cell write in one transaction.
     """
     from django.db import transaction
-    from shopman.craftsman.models import Recipe
+    from shopman.craftsman.models import ProductionMode, Recipe
 
     _require_creation_attempt(actor=actor, idempotency_key=idempotency_key)
     quantity = _positive_quantity(quantity, allow_zero=True)
@@ -1117,7 +1117,7 @@ def apply_planned(
             # This lock contains the order-coverage read and the cell write in
             # one transaction.  The core acquires the same lock defensively for
             # non-backstage callers.
-            Recipe.objects.select_for_update().get(pk=recipe_id, is_active=True)
+            Recipe.objects.select_for_update().get(pk=recipe_id, is_active=True, production_mode=ProductionMode.BATCH)
             resolved_position_ref = _locked_planning_position_ref(position_ref)
             replay = production_core.replay_planned_quantity(
                 recipe_id=recipe_id,

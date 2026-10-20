@@ -10,6 +10,7 @@ from shopman.craftsman.services.queries import CraftQueries, Need, Suggestion
 from shopman.craftsman.services.recipes import (
     get_active_recipe_for_output_sku,
     has_active_recipe_for_output_sku,
+    production_modes_for_output_skus,
 )
 from shopman.craftsman.services.scheduling import CraftPlanning
 
@@ -21,4 +22,5 @@ __all__ = [
     "Suggestion",
     "get_active_recipe_for_output_sku",
     "has_active_recipe_for_output_sku",
+    "production_modes_for_output_skus",
 ]

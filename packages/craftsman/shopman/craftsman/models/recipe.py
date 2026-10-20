@@ -28,6 +28,23 @@ RECIPE_ITEM_UNIT_VALUES = ["un", "kg", "g", "mg", "L", "ml"]
 _CRAFTSMAN_SPELLING = {"l": "L"}
 
 
+class ProductionMode(models.TextChoices):
+    """Como o SKU da ficha chega à venda (vocabulário de MRP).
+
+    * ``BATCH`` (Em lote): fabricado para estoque. Planejado, sai por ordem de
+      produção (``WorkOrder``) e a ordem baixa os insumos: pão, creme, recheio,
+      o bechamel, o hot dog de lote.
+    * ``MADE_TO_ORDER`` (Na hora): fabricado sob pedido. Nunca é planejado nem
+      tem ordem de produção; a venda o puxa, o KDS o manda para a estação de
+      preparo e a venda baixa os insumos da ficha (ADR-040): café, chá, croque.
+
+    Revenda é o SKU sem ficha; não é um modo.
+    """
+
+    BATCH = "batch", _("Em lote")
+    MADE_TO_ORDER = "made_to_order", _("Na hora")
+
+
 class Recipe(models.Model):
     """
     Ficha tecnica de producao (BOM).
@@ -74,6 +91,14 @@ class Recipe(models.Model):
     is_active = models.BooleanField(
         default=True,
         verbose_name=_("Ativa"),
+        help_text=_("A ficha vigente do SKU (uma só por SKU). Desligada é ficha arquivada."),
+    )
+    production_mode = models.CharField(
+        max_length=20,
+        choices=ProductionMode.choices,
+        default=ProductionMode.BATCH,
+        verbose_name=_("Modo de produção"),
+        help_text=_("Em lote: planejado e estocado. Na hora: feito quando vende, baixa os insumos na venda."),
     )
     meta = models.JSONField(
         default=dict,

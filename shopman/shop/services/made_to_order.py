@@ -1,16 +1,16 @@
 """Baixa de insumo na venda do item feito na hora (ADR-040).
 
-O que se faz quando o cliente pede (café, chá, croque) tem ficha, e a ficha não
-é fornada: nenhuma ``WorkOrder`` desconta o insumo dela. Este service é o
+O que se faz quando o cliente pede (café, chá, croque) tem ficha vigente no modo
+"Na hora" (``Recipe.production_mode``): nunca é planejado, nenhuma ``WorkOrder``
+desconta o insumo dela. Este service é o
 escritor ÚNICO dessa saída, e roda por directive, nunca no caminho da venda:
 
 - **na venda** (:func:`schedule_consumption`, chamada por ``stock.fulfill``, o
   mesmo ponto em que o pedido baixa o próprio SKU): agenda
   ``stock.consume_made_to_order``, uma vez na vida do pedido;
-- **o handler** (:func:`consume`) acha a ficha marcada
-  ``Recipe.meta["made_to_order"] = true`` de cada item, desconta UM nível dela
-  (o bechamel do croque sai como bechamel, que a fornada dele já pôs no
-  estoque) e escreve ``issue(kind=MAKE)`` com ``metadata.source = "sale"``.
+- **o handler** (:func:`consume`) acha a ficha vigente "Na hora" de cada
+  item, desconta UM nível dela (o bechamel do croque sai como bechamel, que a
+  ordem de produção dele, em lote, já pôs no estoque) e escreve ``issue(kind=MAKE)`` com ``metadata.source = "sale"``.
   O que faltou não trava nada: baixa o que existe e o resto vira alerta;
 - **os adicionais** escolhidos na linha (``meta["options"]``, "+ Ovo frito")
   baixam, na mesma directive, o insumo que o cadastro da opção declara
@@ -50,9 +50,6 @@ from shopman.shop.services.order_helpers import is_test_order
 
 logger = logging.getLogger(__name__)
 
-#: ``Recipe.meta``: a ficha é montada na venda (não é fornada nem está desligada).
-MADE_TO_ORDER_KEY = "made_to_order"
-
 #: ``Move.metadata["source"]`` das pernas deste service.
 SOURCE_SALE = "sale"
 SOURCE_SALE_CANCEL = "sale_cancel"
@@ -71,28 +68,27 @@ SETTLE_RECEIPT_SCOPE = "stock:made_to_order_cancellation"
 _Q = Decimal("0.001")
 
 
-class AmbiguousRecipe(Exception):
-    """Duas fichas feitas na hora para o mesmo SKU: a baixa não escolhe."""
-
-
 # ── Leitura da ficha ─────────────────────────────────────────────────
 
 
-def made_to_order_recipes(skus) -> dict[str, list]:
-    """``sku`` → fichas marcadas como feitas na hora (com itens pré-carregados)."""
-    from shopman.craftsman.models import Recipe
+def made_to_order_recipes(skus) -> dict:
+    """``sku`` → a ficha VIGENTE "Na hora" do SKU, com os itens pré-carregados.
+
+    O modo de produção é da ficha (``Recipe.production_mode``): em lote baixa
+    na ordem de produção, nunca aqui; ficha arquivada não baixa nada. A
+    constraint de uma ficha vigente por SKU garante uma ficha só por SKU.
+    """
+    from shopman.craftsman.models import ProductionMode, Recipe
 
     skus = sorted({sku for sku in skus if sku})
     if not skus:
         return {}
-    found: dict[str, list] = {}
-    for recipe in (
-        Recipe.objects.filter(output_sku__in=skus, **{f"meta__{MADE_TO_ORDER_KEY}": True})
-        .prefetch_related("items")
-        .order_by("pk")
-    ):
-        found.setdefault(recipe.output_sku, []).append(recipe)
-    return found
+    return {
+        recipe.output_sku: recipe
+        for recipe in Recipe.objects.filter(
+            output_sku__in=skus, is_active=True, production_mode=ProductionMode.MADE_TO_ORDER
+        ).prefetch_related("items")
+    }
 
 
 def _sold_components(order) -> list[tuple[str, Decimal]]:
@@ -162,7 +158,7 @@ def _option_requirements(order) -> list[dict]:
     Opção sem ``ref`` (iFood) não é desta casa e não baixa.
 
     O ``consumes`` cadastrado é a marca explícita: ao contrário da ficha, não
-    depende de ``made_to_order``, porque nenhuma fornada conhece o adicional que
+    depende do modo da ficha, porque nenhuma ordem de produção conhece o adicional que
     o cliente escolheu na linha.
 
     Devolve uma entrada por opção por linha: ``{sold_sku, line_qty, sold_qty,
@@ -336,15 +332,10 @@ def consume(order) -> dict:
         recipes = made_to_order_recipes([sku for sku, _qty in sold])
         lines: list[dict] = []
         shortfalls: list[dict] = []
-        ambiguous: list[str] = []
         for sold_sku, sold_qty in sold:
-            candidates = recipes.get(sold_sku) or []
-            if not candidates:
+            recipe = recipes.get(sold_sku)
+            if recipe is None:
                 continue
-            if len(candidates) > 1:
-                ambiguous.append(sold_sku)
-                continue
-            recipe = candidates[0]
             line = {
                 "sku": sold_sku,
                 "qty": str(sold_qty),
@@ -427,8 +418,6 @@ def consume(order) -> dict:
         record = {"consumed_at": timezone.now().isoformat(), "lines": lines}
         if shortfalls:
             record["shortfalls"] = shortfalls
-        if ambiguous:
-            record["ambiguous_skus"] = ambiguous
         data = dict(order.data or {})
         data[ORDER_DATA_KEY] = record
         order.data = data
@@ -438,8 +427,6 @@ def consume(order) -> dict:
 
     for short in shortfalls:
         _alert_shortfall(order, short)
-    for sku in ambiguous:
-        _alert_ambiguous(order, sku)
     if cancelled:
         settle_cancellation(order)
     logger.info(
@@ -638,18 +625,4 @@ def _alert_shortfall(order, short: dict) -> None:
             f"A venda seguiu. Conte o {sku} e ajuste no Estoque."
         ),
         dedupe_key=f"stock_sale_ingredient_short:{sku}",
-    )
-
-
-def _alert_ambiguous(order, sold_sku: str) -> None:
-    from shopman.shop.services.observability import create_operator_alert
-
-    create_operator_alert(
-        type="stock_sale_recipe_ambiguous",
-        severity="error",
-        message=(
-            f"{sold_sku} tem duas fichas marcadas como feitas na hora, e a venda do pedido "
-            f"{order.ref} não baixou insumo dele. Deixe uma ficha só com a marca."
-        ),
-        dedupe_key=f"stock_sale_recipe_ambiguous:{sold_sku}",
     )
