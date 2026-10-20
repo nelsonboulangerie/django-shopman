@@ -192,3 +192,33 @@ fora do Git; credenciais originais do dono mantidas no `.env` ignorado.
 As intercorrências de descrição e restauração permanecem registradas. O ensaio cobre somente
 esse item sem promoção e esse contexto; não demonstra concorrência PostgreSQL, promoção ativa,
 catálogo de produção ou tipos PIZZA. Não houve alteração de implementação do adapter.
+
+
+## Encerramento e acompanhamento dos merges
+
+O dono pediu acompanhar #1929 e #1962 até o merge, resolver falhas e encerrar a frente.
+O encerramento documental está em preparação no branch `codex/ifood-e-encerramento`.
+**Não publicar como concluído antes dos dois merges efetivos.**
+
+| PR | Entrega | Merge confirmado |
+|---|---|---|
+| #1929 | Registro da primeira interrupção e restauração | aguardando checks/fila |
+| #1962 | Contrato conferido, roteiro completo e restauração exata | aguardando checks/fila |
+
+Conferência inicial do acompanhamento em 20/10/2026: ambos abertos, mergeáveis e com
+merge automático habilitado; nenhuma falha nos checks naquele momento. #1929 ainda aguardava
+`Backstage rest`; #1962 tinha testes em execução e aguardando capacidade dos runners.
+A conclusão vai registrar os horários e commits de merge observados na API do GitHub.
+
+### Sobreposição de outra sessão
+
+O inventário encontrou #1963 (`claude/ensaio-pedidos-execucao-a13c08`), que parte do registro
+#1929 e altera os mesmos documentos, além do payload de preço para enviar também
+`originalValue=value`. O PR relata o adendo de coordenação e uma tentativa adicional, com
+preço/alterações rápidas/descrição confirmados e interrupção na categoria PIZZA, seguida de
+restauração. Isso não invalida o contrato oficial nem a evidência da execução completa de #1962.
+
+O encerramento deve preservar os históricos e conferir a integração dessa frente para não
+reintroduzir a alegação de que categoria DEFAULT e foto ainda não foram provadas. Não houve
+nova execução ou escrita remota no iFood durante este acompanhamento. Nenhum PR de outra sessão
+foi fechado, alterado ou reenfileirado por este trabalho.
