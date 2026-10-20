@@ -108,7 +108,9 @@ baixa na venda descer até a folha, desconta o que a produção já descontou.
   dos itens da ficha marcada `made_to_order`, com `metadata.source="sale"`, a mesma
   política greedy/present-stock-first da produção; shortfall **não fatal**, mas
   **registrado** (alerta `stock_sale_ingredient_short`). O cancelamento acerta pela
-  regra do preparo (`RETURN` ou `WASTE`).
+  regra do preparo (`RETURN` ou `WASTE`). Os **adicionais** escolhidos no produto
+  (`items[].meta.options`, "+ Ovo frito") baixam o `consumes` da opção na mesma
+  directive, com a mesma regra de falta e de cancelamento (ADR-040, Implementação).
 - **F3 — o que a tela mostra.** O Compras precisa dizer "isto desceu por venda",
   e não misturar com a fornada. O `Move.kind` já separa.
 - **F4 — a margem.** Com consumo real, a P6 do B.I. deixa de ser 🔴.

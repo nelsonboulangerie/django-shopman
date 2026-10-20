@@ -18198,6 +18198,8 @@
             "made_to_order_recipes",
             "_sold_components",
             "_one_level_requirements",
+            "_base_unit_quantity",
+            "_option_requirements",
             "schedule_consumption",
             "consume",
             "schedule_cancellation_settlement",
@@ -18211,12 +18213,16 @@
         "service"
       ],
       "domains": [
+        "buyman",
         "craftsman",
+        "offerman",
         "orderman",
         "stockman"
       ],
       "ports": [
-        "adapter:catalog"
+        "adapter:catalog",
+        "shopman.buyman.adapters.sku_validator",
+        "shopman.offerman.adapters.sku_validator"
       ],
       "events": [],
       "directives": [
@@ -18226,7 +18232,9 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_a_venda_baixa_o_insumo_uma_vez_com_a_origem_no_movimento",
-        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_cancelado_depois_de_preparado_vira_perda"
+        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_cancelado_depois_de_preparado_vira_perda",
+        "shopman/shop/tests/test_made_to_order_option_consumption.py::test_o_adicional_baixa_o_insumo_dele_junto_da_ficha",
+        "shopman/shop/tests/test_made_to_order_option_consumption.py::test_cancelado_depois_de_preparado_o_adicional_vira_perda"
       ],
       "test_gap_reason": null,
       "policy": false,

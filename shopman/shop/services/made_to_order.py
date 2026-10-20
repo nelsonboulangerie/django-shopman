@@ -12,6 +12,11 @@ escritor ÚNICO dessa saída, e roda por directive, nunca no caminho da venda:
   (o bechamel do croque sai como bechamel, que a fornada dele já pôs no
   estoque) e escreve ``issue(kind=MAKE)`` com ``metadata.source = "sale"``.
   O que faltou não trava nada: baixa o que existe e o resto vira alerta;
+- **os adicionais** escolhidos na linha (``meta["options"]``, "+ Ovo frito")
+  baixam, na mesma directive, o insumo que o cadastro da opção declara
+  (``consumes``, congelado na linha no momento da venda). A marca aqui é o
+  próprio ``consumes``: nenhuma fornada conhece o adicional, então ele baixa
+  mesmo quando o item não tem ficha ``made_to_order``;
 - **no cancelamento** (:func:`schedule_cancellation_settlement` e
   :func:`settle_cancellation`), a regra do dono, de 20/10/2026: *"não é antes
   ou depois de pago que define, é antes ou depois de preparado"*. O que não
@@ -129,6 +134,97 @@ def _one_level_requirements(recipe, sold_qty: Decimal) -> list[tuple[str, Decima
     return lines
 
 
+def _base_unit_quantity(sku: str, qty: Decimal, unit: str) -> tuple[Decimal, str]:
+    """``qty`` na unidade-base do insumo, quando a conversão é definicional.
+
+    O cadastro do adicional é escrito na unidade-base (Admin, aba Escolhas), e o
+    validador dele só aceita unidade da mesma dimensão. Se o insumo conta em
+    outra grafia da mesma dimensão (``g`` no cadastro, ``kg`` no insumo),
+    converte; sem base conhecida, fica como veio.
+    """
+    from shopman.utils import units
+
+    from shopman.shop.adapters.sku_validator import get_composed_sku_validator
+
+    info = get_composed_sku_validator().get_sku_info(sku)
+    base = units.normalize(getattr(info, "unit", "") if info is not None else "")
+    if base and units.normalize(unit) != base and units.same_dimension(unit, base):
+        return units.convert(qty, unit, base).quantize(_Q), base
+    return qty, unit
+
+
+def _option_requirements(order) -> list[dict]:
+    """O insumo dos adicionais escolhidos nas linhas que valem agora.
+
+    Cada opção da linha (``meta["options"]``) leva o ``consumes`` CONGELADO na
+    venda (``product_options.resolve_selection``): ``[{sku, qty, unit}]`` por
+    unidade do item. A baixa é ``qty do insumo × qty da opção × qty da linha``.
+    Opção sem ``ref`` (iFood) não é desta casa e não baixa.
+
+    O ``consumes`` cadastrado é a marca explícita: ao contrário da ficha, não
+    depende de ``made_to_order``, porque nenhuma fornada conhece o adicional que
+    o cliente escolheu na linha.
+
+    Devolve uma entrada por opção por linha: ``{sold_sku, line_qty, sold_qty,
+    group, ref, name, items: [(sku, qty, unit)]}``. ``sold_qty`` é o total do
+    SKU no pedido, a mesma régua da ficha: o cancelamento parcial acerta na
+    proporção do item.
+    """
+    from shopman.shop import product_options
+    from shopman.shop.services.stock import _items_to_hold
+
+    totals: dict[str, Decimal] = {}
+    found: list[dict] = []
+    for item in _items_to_hold(order):
+        meta = item.get("meta") or {}
+        if meta.get("non_production") or meta.get("type") == "delivery_fee":
+            continue
+        try:
+            line_qty = Decimal(str(item.get("qty") or 0))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        if line_qty <= 0:
+            continue
+        sold_sku = str(item.get("sku") or "")
+        totals[sold_sku] = totals.get(sold_sku, Decimal("0")) + line_qty
+        for option in product_options.own_options(product_options.line_options(meta)):
+            try:
+                option_qty = Decimal(str(option.get("qty") or 1))
+            except (InvalidOperation, TypeError, ValueError):
+                option_qty = Decimal("1")
+            items = []
+            for entry in option.get("consumes") or []:
+                if not isinstance(entry, dict):
+                    continue
+                input_sku = str(entry.get("sku") or "").strip()
+                try:
+                    per_unit = Decimal(str(entry.get("qty") or 0))
+                except (InvalidOperation, TypeError, ValueError):
+                    logger.warning(
+                        "made_to_order: qty ilegível no adicional %s de %s: %r",
+                        option.get("ref"), sold_sku, entry.get("qty"),
+                    )
+                    continue
+                if not input_sku or per_unit <= 0:
+                    continue
+                qty, unit = _base_unit_quantity(
+                    input_sku, (per_unit * option_qty * line_qty).quantize(_Q), str(entry.get("unit") or ""),
+                )
+                items.append((input_sku, qty, unit))
+            if items:
+                found.append({
+                    "sold_sku": sold_sku,
+                    "line_qty": line_qty,
+                    "group": str(option.get("group") or ""),
+                    "ref": str(option.get("ref") or ""),
+                    "name": str(option.get("name") or option.get("ref") or ""),
+                    "items": items,
+                })
+    for requirement in found:
+        requirement["sold_qty"] = totals[requirement["sold_sku"]]
+    return found
+
+
 def _consumable_quants(sku: str):
     """De onde a ficha tira ``sku``, na ordem em que tira: a régua da fornada.
 
@@ -166,7 +262,7 @@ def schedule_consumption(order) -> bool:
     if is_test_order(order):
         return False
     skus = [sku for sku, _qty in _sold_components(order)]
-    if not made_to_order_recipes(skus):
+    if not made_to_order_recipes(skus) and not _option_requirements(order):
         return False
     from shopman.shop.directives import STOCK_CONSUME_MADE_TO_ORDER, create_persistently_deduped
 
@@ -198,6 +294,26 @@ def _settlement_moves(order_ref: str):
     )
 
 
+def _issue_sale(input_sku: str, needed: Decimal, *, reason: str, metadata: dict) -> Decimal:
+    """Tira ``needed`` de ``input_sku`` pela régua da fornada; devolve quanto saiu.
+
+    O que falta não levanta: quem chama registra a falta e alerta.
+    """
+    from shopman.stockman import Move
+    from shopman.stockman.services.movements import StockMovements
+
+    remaining = needed
+    for quant in _consumable_quants(input_sku):
+        if remaining <= 0:
+            break
+        take = min(remaining, quant.available)
+        if take <= 0:
+            continue
+        StockMovements.issue(quantity=take, quant=quant, reason=reason, kind=Move.Kind.MAKE, metadata=metadata)
+        remaining -= take
+    return needed - remaining
+
+
 def consume(order) -> dict:
     """Escreve a baixa de insumo da venda. Uma transação; idempotente.
 
@@ -207,8 +323,6 @@ def consume(order) -> dict:
     vale igual.
     """
     from shopman.orderman.models import Order
-    from shopman.stockman import Move
-    from shopman.stockman.services.movements import StockMovements
 
     with transaction.atomic():
         order = Order.objects.select_for_update().get(pk=order.pk)
@@ -238,28 +352,19 @@ def consume(order) -> dict:
                 "items": [],
             }
             for input_sku, needed, unit in _one_level_requirements(recipe, sold_qty):
-                remaining = needed
-                for quant in _consumable_quants(input_sku):
-                    if remaining <= 0:
-                        break
-                    take = min(remaining, quant.available)
-                    if take <= 0:
-                        continue
-                    StockMovements.issue(
-                        quantity=take,
-                        quant=quant,
-                        reason=f"Consumo de venda: {order.ref}",
-                        kind=Move.Kind.MAKE,
-                        metadata={
-                            "source": SOURCE_SALE,
-                            "order_ref": order.ref,
-                            "sold_sku": sold_sku,
-                            "sold_qty": str(sold_qty),
-                            "recipe_ref": recipe.ref,
-                        },
-                    )
-                    remaining -= take
-                issued = needed - remaining
+                issued = _issue_sale(
+                    input_sku,
+                    needed,
+                    reason=f"Consumo de venda: {order.ref}",
+                    metadata={
+                        "source": SOURCE_SALE,
+                        "order_ref": order.ref,
+                        "sold_sku": sold_sku,
+                        "sold_qty": str(sold_qty),
+                        "recipe_ref": recipe.ref,
+                    },
+                )
+                remaining = needed - issued
                 line["items"].append(
                     {"sku": input_sku, "unit": unit, "needed": str(needed), "issued": str(issued)}
                 )
@@ -269,6 +374,47 @@ def consume(order) -> dict:
                             "sku": input_sku,
                             "unit": unit,
                             "sold_sku": sold_sku,
+                            "needed": str(needed),
+                            "issued": str(issued),
+                            "short": str(remaining),
+                        }
+                    )
+            lines.append(line)
+
+        # Os adicionais escolhidos (``meta["options"]``): uma linha do registro
+        # por opção de cada item, com o insumo que o cadastro dela declara.
+        for req in _option_requirements(order):
+            line = {
+                "sku": req["sold_sku"],
+                "qty": str(req["line_qty"]),
+                "option": {"group": req["group"], "ref": req["ref"], "name": req["name"]},
+                "items": [],
+            }
+            for input_sku, needed, unit in req["items"]:
+                issued = _issue_sale(
+                    input_sku,
+                    needed,
+                    reason=f"Consumo de venda (adicional {req['name']}): {order.ref}",
+                    metadata={
+                        "source": SOURCE_SALE,
+                        "order_ref": order.ref,
+                        "sold_sku": req["sold_sku"],
+                        "sold_qty": str(req["sold_qty"]),
+                        "option_group": req["group"],
+                        "option_ref": req["ref"],
+                    },
+                )
+                remaining = needed - issued
+                line["items"].append(
+                    {"sku": input_sku, "unit": unit, "needed": str(needed), "issued": str(issued)}
+                )
+                if remaining > 0:
+                    shortfalls.append(
+                        {
+                            "sku": input_sku,
+                            "unit": unit,
+                            "sold_sku": req["sold_sku"],
+                            "option": req["name"],
                             "needed": str(needed),
                             "issued": str(issued),
                             "short": str(remaining),
@@ -477,12 +623,17 @@ def _alert_shortfall(order, short: dict) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
     sku = short["sku"]
+    who = (
+        f"o adicional {short['option']} de {short['sold_sku']}"
+        if short.get("option")
+        else f"a ficha de {short['sold_sku']}"
+    )
     create_operator_alert(
         type="stock_sale_ingredient_short",
         severity="warning",
         message=(
-            f"Faltou {sku} no estoque para a venda do pedido {order.ref}: a ficha de "
-            f"{short['sold_sku']} pede {_fmt(short['needed'], short['unit'])} e saíram "
+            f"Faltou {sku} no estoque para a venda do pedido {order.ref}: {who} "
+            f"pede {_fmt(short['needed'], short['unit'])} e saíram "
             f"{_fmt(short['issued'], short['unit'])}. "
             f"A venda seguiu. Conte o {sku} e ajuste no Estoque."
         ),
