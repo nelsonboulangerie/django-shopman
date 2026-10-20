@@ -303,18 +303,28 @@
             "IFoodCatalogProjection",
             "IFoodCatalogWriteBlocked",
             "IFoodCategoryError",
+            "IFoodConfirmationError",
+            "IFoodImageError",
             "IFoodRateLimitError",
-            "_UUID_NS",
+            "_IMAGE_PATHS",
+            "_MAX_IMAGE_BYTES",
             "_base_url",
             "_check_rate_limit",
+            "_confirm_item_price",
+            "_confirm_item_status",
+            "_download_image",
             "_get_config",
             "_headers",
+            "_image_path",
             "_item_payload",
-            "_item_uuid",
-            "_product_uuid",
+            "_patch_item_price",
+            "_read_item",
             "_resolve_category_id",
             "_set_item_status",
+            "_storage_image",
+            "_upload_image",
             "_upsert_item",
+            "_validated_image",
             "logger"
           ]
         }
@@ -1021,6 +1031,7 @@
           "symbols": [
             "COURIER_TRACKING_TEMPLATE_NAME",
             "MESSAGE_TEMPLATES",
+            "PREORDER_ACCEPTED_TEMPLATE_NAME",
             "TEXT_MAX_CHARS",
             "_ACCESS_TOKEN_IN_QUERY",
             "_FIELD_DENYLIST",
@@ -1036,6 +1047,7 @@
             "_message_buttons",
             "_message_contents",
             "_plain_text_button_fallback",
+            "_preorder_accepted_variant",
             "_prepare_call",
             "_provider_error_code",
             "_push_custom_fields",
@@ -1173,6 +1185,25 @@
             "_TWILIO_API",
             "_get_config",
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/adapters/payman_refund.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "GatewayRefundBackend"
           ]
         }
       ]
@@ -1338,7 +1369,8 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PaymentIntent",
-            "PaymentResult"
+            "PaymentResult",
+            "pix_timeout_minutes_from"
           ]
         }
       ]
@@ -1398,8 +1430,9 @@
           "symbols": [
             "CanonicalProductionCommands",
             "count_adjusted_events",
+            "get_batch_produced_skus",
             "get_finished_work_orders",
-            "get_prep_skus",
+            "get_made_to_order_skus",
             "get_work_order",
             "logger"
           ]
@@ -1602,7 +1635,8 @@
             "reserve_ceding_cart_holds",
             "retag_hold_reference",
             "return_fulfilled_hold",
-            "return_hold_remainder"
+            "return_hold_remainder",
+            "stock_error_code"
           ]
         }
       ]
@@ -1782,6 +1816,25 @@
           "responsibility": "configuração",
           "symbols": [
             "FAQEntryAdmin"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/admin/instance_apply.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "InstanceApplyRecordAdmin"
           ]
         }
       ]
@@ -2390,6 +2443,7 @@
             "check_environment_name_recognized",
             "check_fiscal_adapter",
             "check_fiscal_emission_resolver",
+            "check_fiscal_emission_resolver_importable",
             "check_google_maps_credential_boundary",
             "check_guestman_webhook_secret",
             "check_listing_channel_parity",
@@ -2470,8 +2524,9 @@
             "ChannelConfig",
             "InstanceConfigurationError",
             "QUALITY_OK_GRADE_REFS",
+            "SHOP_RULE_POLICY_KEYS",
             "STAGE_GOAL_DEFAULTS",
-            "_safe_init",
+            "_section",
             "deep_merge",
             "quality_grade_refs_for_channel"
           ]
@@ -2540,6 +2595,8 @@
             "STAGING_AUTOPILOT",
             "STOCK_ALERT_DELIVER",
             "STOCK_ALERT_DELIVERY_RECEIPT_SCOPE",
+            "STOCK_CONSUME_MADE_TO_ORDER",
+            "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION",
             "logger"
           ]
         }
@@ -2810,6 +2867,7 @@
             "_register_ifood_status_callbacks",
             "_register_kds_alerts",
             "_register_loyalty_handler",
+            "_register_made_to_order_handlers",
             "_register_mock_pix_handler",
             "_register_notification_handlers",
             "_register_payment_refund_handler",
@@ -3447,6 +3505,29 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/handlers/made_to_order.py",
+      "touchpoints": [
+        "handler"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.made-to-order-handlers"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_order_for",
             "logger"
           ]
         }
@@ -5615,6 +5696,7 @@
         {
           "responsibility": "configuração",
           "symbols": [
+            "CatalogImageUpload",
             "CatalogSyncState",
             "SyncStatus"
           ]
@@ -6432,6 +6514,7 @@
           "responsibility": "contrato",
           "symbols": [
             "ProductionConfig",
+            "_TOP_LEVEL_KEYS",
             "_decimal_or_none",
             "_is_int",
             "_require_decimal_or_none",
@@ -7154,7 +7237,8 @@
         {
           "responsibility": "contrato",
           "symbols": [
-            "NotificationResult"
+            "NotificationResult",
+            "ReserveRefusal"
           ]
         }
       ]
@@ -7191,6 +7275,20 @@
       ]
     },
     {
+      "path": "shopman/shop/policies/exclusive_collections.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "catalog.group-exclusive-collections"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/promotion.py",
       "touchpoints": [
         "outro"
@@ -7199,6 +7297,20 @@
       "unit_ids": [
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/group_advantage.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "promotion.group-free-shipping"
       ],
       "responsibilities": [
         "decisão"
@@ -7781,7 +7893,6 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "_cart_hold_metadata",
-            "_reason_value",
             "logger"
           ]
         },
@@ -7919,6 +8030,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/services/campaign_exclusivity.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-campaign-exclusivity"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
     },
     {
       "path": "shopman/shop/services/campaign_identity.py",
@@ -8112,6 +8237,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/policies/catalog_identity.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "catalog.remote-item-identity"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
     },
     {
       "path": "shopman/shop/services/catalog_sync.py",
@@ -8647,6 +8786,27 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/projections/exclusive_collections.py",
+      "touchpoints": [
+        "projection"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "access_for_customer",
+            "access_for_tiers",
+            "exclusive_only_product_ids"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/delivery_fiscal_identity.py",
       "touchpoints": [
         "service"
@@ -9014,14 +9174,19 @@
           "symbols": [
             "CACHE_TTL_SECONDS",
             "GEOCODE_URL",
+            "GeocodingDailyLimitReached",
             "GeocodingError",
             "INTEGRATION_ERROR_STATUSES",
             "REQUEST_TIMEOUT_SECONDS",
+            "REVERSE_DAILY_LIMIT_DEFAULT",
+            "REVERSE_DAILY_LIMIT_MESSAGE",
             "ReverseGeocodeResult",
             "_component",
             "_component_short",
             "_parse_result",
             "_record_failure",
+            "_reverse_daily_limit",
+            "_spend_reverse_daily_budget",
             "forward_geocode",
             "forward_geocode_structured",
             "logger",
@@ -9235,6 +9400,38 @@
             "_object",
             "canonical_uuid",
             "capture_catalog"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/ifood_catalog_categories.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "IFoodCategoryConflict",
+            "IFoodCategoryOperationError",
+            "_adapter_contract",
+            "_channel",
+            "_managed_config",
+            "_request",
+            "category_mapping",
+            "create_category",
+            "list_categories",
+            "rename_category",
+            "reorder_category",
+            "resolve_category_ref",
+            "set_category_status",
+            "set_collection_category"
           ]
         }
       ]
@@ -9793,6 +9990,35 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/made_to_order.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.made-to-order-consumption"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_Q",
+            "_alert_shortfall",
+            "_consumable_quants",
+            "_fmt",
+            "_issue_sale",
+            "_sale_moves",
+            "_settlement_moves",
             "logger"
           ]
         }
@@ -11350,6 +11576,7 @@
             "_existing_active_intent",
             "_existing_tender_intent_ref",
             "_extract_qr_data",
+            "_gateway_answer_text",
             "_gateway_for_adapter",
             "_gateway_recheck_is_due",
             "_held_refund_balance",
@@ -11360,6 +11587,7 @@
             "_methods_of",
             "_notify_payment_failed",
             "_notify_refund",
+            "_order_for_intent",
             "_payman_captured_balance_q",
             "_payman_intent",
             "_payman_intent_captured",
@@ -13174,14 +13402,18 @@
           "symbols": [
             "MachineWebhookView",
             "POSITION_CACHE_SECONDS",
+            "SIGNATURE_HEADER",
             "_ID_KEYS",
             "_RIDE_STATUSES",
             "_STATUS_KEYS",
+            "_alert_signature_failure",
             "_cache_position",
             "_cfg",
+            "_check_signature",
             "_first",
             "_store_position",
-            "logger"
+            "logger",
+            "signature_for"
           ]
         }
       ]

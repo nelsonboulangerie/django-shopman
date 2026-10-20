@@ -135,3 +135,29 @@ class TestHandlerRecordsState:
         state = CatalogSyncState.objects.get(sku="PAO", channel_ref="ifood")
         assert state.status == "error"
         assert "boom" in state.last_error
+
+    def test_projected_item_with_photo_pending_records_readable_pending(
+        self, ifood_channel, directive,
+    ):
+        from shopman.orderman.exceptions import DirectiveTransientError
+
+        from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
+
+        backend = MagicMock()
+        backend.project.return_value = ProjectionResult(
+            success=False,
+            projected=1,
+            errors=["PAO: foto pendente: Não foi possível baixar a foto do produto."],
+            channel="ifood",
+        )
+        handler = CatalogProjectHandler(backend=backend)
+        with patch(
+            "shopman.shop.handlers.catalog_projection._get_projected_item",
+            return_value=self._item(),
+        ):
+            with pytest.raises(DirectiveTransientError):
+                handler.handle(message=directive, ctx={})
+
+        state = CatalogSyncState.objects.get(sku="PAO", channel_ref="ifood")
+        assert state.status == "pending"
+        assert state.last_error == "PAO: foto pendente: Não foi possível baixar a foto do produto."

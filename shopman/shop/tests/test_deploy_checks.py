@@ -609,11 +609,33 @@ def test_fiscal_resolver_check_silent_without_active_selling_channel(db):
     SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
     SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.nao_existe",
 )
-def test_fiscal_resolver_that_does_not_import_blocks_deploy(selling_channel):
-    # O motor engole o ImportError e cai no fallback: a emissão fica desligada
-    # em silêncio. É exatamente o modo de falha que o check existe para pegar.
-    messages = checks.check_fiscal_emission_resolver(None)
-    assert [m.id for m in messages] == ["SHOPMAN_E013"]
+def test_fiscal_resolver_that_does_not_import_blocks_every_check(selling_channel):
+    # Caminho que não importa deixou de ser só do ``--deploy`` (E013): o E028 é
+    # um check comum, roda no ``migrate`` do PRE_DEPLOY e no boot do runserver.
+    assert checks.check_fiscal_emission_resolver(None) == []
+    messages = checks.check_fiscal_emission_resolver_importable(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E028"]
+
+
+@override_settings(
+    DEBUG=True,
+    SHOPMAN_FISCAL_ADAPTER=None,
+    SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.nao_existe"
+    ),
+)
+def test_broken_resolver_path_fails_even_in_debug_without_db():
+    # Sem banco, sem adapter, em DEBUG: caminho quebrado é defeito em qualquer
+    # ambiente. Só o caminho quebrado é acusado, o bom passa.
+    messages = checks.check_fiscal_emission_resolver_importable(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E028"]
+    assert "nao_existe" in messages[0].msg
+
+
+def test_fiscal_resolver_importable_check_runs_outside_deploy():
+    from django.core.checks.registry import registry
+
+    assert checks.check_fiscal_emission_resolver_importable in registry.get_checks(include_deployment_checks=False)
 
 
 @override_settings(

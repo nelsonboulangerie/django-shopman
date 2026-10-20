@@ -16,6 +16,8 @@ export interface CustomerListQuery {
   filter: CustomerFilter;
   page: number;
   sort: CustomerSort;
+  /** O grupo comercial que recorta a lista (`?group=<ref>`); vazio = todos. */
+  group: string;
 }
 
 type RouteQueryValue = string | null | (string | null)[] | undefined;
@@ -36,6 +38,7 @@ export function listQueryFromRoute(
     filter: CUSTOMER_FILTERS.includes(filter) ? filter : "all",
     page: Number.isFinite(page) && page > 1 ? page : 1,
     sort: CUSTOMER_SORTS.includes(sort) ? sort : "recent",
+    group: first(query.group).slice(0, 50),
   };
 }
 
@@ -48,6 +51,7 @@ export function routeQueryFromList(
   if (list.filter !== "all") out.filter = list.filter;
   if (list.page > 1) out.page = String(list.page);
   if (list.sort !== "recent") out.sort = list.sort;
+  if (list.group) out.group = list.group;
   return out;
 }
 

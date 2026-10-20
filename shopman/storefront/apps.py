@@ -51,6 +51,7 @@ class StorefrontConfig(AppConfig):
         # do ``CatalogStructureRefreshHandler``). O GET do snapshot e o shadow do
         # menu só leem; falha do cache nunca muda a resposta canônica do menu.
         from django.db.models.signals import m2m_changed, post_delete
+        from shopman.guestman.models import PriceTierAdvantage
         from shopman.offerman.models import (
             Collection,
             CollectionItem,
@@ -63,6 +64,8 @@ class StorefrontConfig(AppConfig):
         from shopman.storefront.continuum import schedule_catalog_structure_dirty
 
         for model in (
+            # A coleção exclusiva de grupo sai do snapshot público quando nasce.
+            PriceTierAdvantage,
             Product,
             Listing,
             ListingItem,

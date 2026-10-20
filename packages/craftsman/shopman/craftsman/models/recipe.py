@@ -11,7 +11,6 @@ vNext: string refs (output_sku, input_sku) replace GenericForeignKey.
 
 from decimal import Decimal
 
-from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -27,6 +26,23 @@ RECIPE_ITEM_UNIT_VALUES = ["un", "kg", "g", "mg", "L", "ml"]
 #: segunda tabela de conversão: os apelidos ("un.", "litros", …) e a física
 #: moram em um lugar só.
 _CRAFTSMAN_SPELLING = {"l": "L"}
+
+
+class ProductionMode(models.TextChoices):
+    """Como o SKU da ficha chega à venda (vocabulário de MRP).
+
+    * ``BATCH`` (Em lote): fabricado para estoque. Planejado, sai por ordem de
+      produção (``WorkOrder``) e a ordem baixa os insumos: pão, creme, recheio,
+      o bechamel, o hot dog de lote.
+    * ``MADE_TO_ORDER`` (Na hora): fabricado sob pedido. Nunca é planejado nem
+      tem ordem de produção; a venda o puxa, o KDS o manda para a estação de
+      preparo e a venda baixa os insumos da ficha (ADR-040): café, chá, croque.
+
+    Revenda é o SKU sem ficha; não é um modo.
+    """
+
+    BATCH = "batch", _("Em lote")
+    MADE_TO_ORDER = "made_to_order", _("Na hora")
 
 
 class Recipe(models.Model):
@@ -75,6 +91,14 @@ class Recipe(models.Model):
     is_active = models.BooleanField(
         default=True,
         verbose_name=_("Ativa"),
+        help_text=_("A ficha vigente do SKU (uma só por SKU). Desligada é ficha arquivada."),
+    )
+    production_mode = models.CharField(
+        max_length=20,
+        choices=ProductionMode.choices,
+        default=ProductionMode.BATCH,
+        verbose_name=_("Modo de produção"),
+        help_text=_("Em lote: planejado e estocado. Na hora: feito quando vende, baixa os insumos na venda."),
     )
     meta = models.JSONField(
         default=dict,
@@ -397,17 +421,9 @@ def normalize_recipe_item_unit(value: str | None) -> str:
 
 
 def _catalog_unit_for_sku(sku: str) -> str:
+    """A unidade do SKU no catálogo, pelo ``CATALOG_BACKEND``; "" quando não há."""
     info = _catalog_product_info(sku)
-    if info is not None:
-        return getattr(info, "unit", "") or ""
-    try:
-        Product = apps.get_model("offerman", "Product")
-    except LookupError:
-        return ""
-    try:
-        return Product.objects.only("unit").get(sku=sku).unit or ""
-    except Product.DoesNotExist:
-        return ""
+    return (getattr(info, "unit", "") or "") if info is not None else ""
 
 
 def _validate_output_sku_for_recipe(sku: str) -> None:

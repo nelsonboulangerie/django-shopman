@@ -197,7 +197,7 @@ admin.site.unregister(PriceTier)
 
 @admin.register(PriceTier)
 class PriceTierAdmin(_GuestmanPriceTierAdmin):
-    """A faixa de preço do guestman, com o desconto automático do grupo."""
+    """O grupo de clientes do guestman (`PriceTier`), com o desconto automático do grupo."""
 
     form = PriceTierGroupDiscountForm
     inlines = [PriceTierAdvantageInline]

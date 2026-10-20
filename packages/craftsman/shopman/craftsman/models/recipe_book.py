@@ -52,7 +52,7 @@ class RecipeEntry(models.Model):
         help_text=_("Vazio = receita sem SKU, só conhecimento."),
     )
     notes = models.TextField(blank=True, default="", verbose_name=_("Observações"))
-    is_archived = models.BooleanField(default=False, verbose_name=_("Arquivada"))
+    is_active = models.BooleanField(default=True, verbose_name=_("Ativa"))
     current_version = models.ForeignKey(
         "craftsman.RecipeVersion",
         null=True,

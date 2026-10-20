@@ -430,6 +430,10 @@ const QC_POPULATED = {
 };
 
 const RECIPE_ACCESS = { can_view: true, can_edit: true, capture_available: false };
+const PRODUCTION_MODE_OPTIONS = [
+  { value: "batch", label: "Em lote" },
+  { value: "made_to_order", label: "Na hora" },
+];
 const RECIPE_CARDS = RECIPES.map((recipe, index) => ({
   ref: recipe.ref,
   name: recipe.name,
@@ -438,17 +442,84 @@ const RECIPE_CARDS = RECIPES.map((recipe, index) => ({
   output_sku: recipe.sku,
   output_name: recipe.name,
   has_ficha: index !== 5,
+  production_mode: index === 5 ? "" : "batch",
+  production_mode_label: index === 5 ? "" : "Em lote",
   current_version_number: index === 5 ? null : 2,
   version_count: index === 5 ? 1 : 2,
   draft_count: index === 5 ? 1 : 0,
   anchor_kind: "flour",
   hydration_display: recipe.kind === "bread" ? "68%" : "",
   updated_at_display: "04/07/2026",
-  is_archived: false,
+  is_active: true,
   is_favorite: index === 0,
   rating_display: index < 3 ? "4,5" : "",
   rating_count: index < 3 ? 6 : 0,
+  provenance_kind: index === 0 ? "house" : "agent",
+  provenance_label: index === 0 ? "Da casa" : "Do cadastro inicial",
+  review_status: index === 5 ? "" : index === 0 ? "confirmed" : index === 2 ? "changed" : "pending",
+  review_label:
+    index === 5 ? "" : index === 0 ? "Conferida" : index === 2 ? "Mudou depois da conferência" : "Não conferida",
 }));
+
+// A fila do padeiro: do que mais sai para o que menos sai, a massa da peça em destaque.
+const RECIPE_REVIEW = {
+  queue: {
+    items: [
+      {
+        ref: "massa-brioche",
+        name: "Massa Brioche",
+        kind_label: "Massa doce",
+        output_sku: "MASSA-BRIOCHE",
+        output_name: "",
+        version_number: 2,
+        provenance_kind: "agent",
+        provenance_label: "Do cadastro inicial",
+        provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+        review_status: "pending",
+        review_label: "Não conferida",
+        dough_sku: "",
+        dough_name: "",
+        sold_display: "41.230 vendidos em 12 meses por 6 produtos",
+      },
+      {
+        ref: "pain-aux-raisins",
+        name: "Pain aux Raisins",
+        kind_label: "Viennoiserie",
+        output_sku: "PAIN-RAISINS",
+        output_name: "Pain aux Raisins",
+        version_number: 1,
+        provenance_kind: "agent",
+        provenance_label: "Do cadastro inicial",
+        provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+        review_status: "pending",
+        review_label: "Não conferida",
+        dough_sku: "MASSA-BRIOCHE",
+        dough_name: "Massa Brioche",
+        sold_display: "8.904 vendidos em 12 meses",
+      },
+      {
+        ref: "baguete-tradicao",
+        name: "Baguete Tradição",
+        kind_label: "Pão",
+        output_sku: "BAGUETE",
+        output_name: "Baguete Tradição",
+        version_number: 3,
+        provenance_kind: "notebook",
+        provenance_label: "Do caderno",
+        provenance_detail: "Uma foto do caderno, lida pelo sistema.",
+        review_status: "changed",
+        review_label: "Mudou depois da conferência",
+        dough_sku: "MASSA-TRADICAO",
+        dough_name: "Massa Tradição",
+        sold_display: "6.120 vendidos em 12 meses",
+      },
+    ],
+    total: 3,
+    confirmed_total: 64,
+    recipe_total: 67,
+  },
+  access: RECIPE_ACCESS,
+};
 const RECIPE_BOOK = {
   book: {
     entries: RECIPE_CARDS,
@@ -538,6 +609,13 @@ function recipeVersion(number, status, statusLabel) {
     lens: LENS,
     formula: {},
     origin: {},
+    provenance_kind: "agent",
+    provenance_label: "Do cadastro inicial",
+    provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+    review_status: status === "draft" ? "" : "pending",
+    review_label: status === "draft" ? "" : "Não conferida",
+    review_by_name: "",
+    review_at_display: "",
   };
 }
 
@@ -552,7 +630,7 @@ function recipeDetail(card) {
       output_sku: card.output_sku,
       output_name: card.output_name,
       notes: "",
-      is_archived: false,
+      is_active: true,
       current_version_number: card.current_version_number,
       ficha_ref: card.has_ficha ? card.ref : "",
       execution_in_sync: true,
@@ -570,6 +648,8 @@ function recipeDetail(card) {
           { value: "standard", label: "Padrão" },
           { value: "ready", label: "Pronto para venda" },
         ],
+        production_mode: card.production_mode || "batch",
+        production_mode_options: PRODUCTION_MODE_OPTIONS,
         revision: card.has_ficha ? "2026-07-04T12:00:00+00:00" : "",
       },
       is_favorite: card.is_favorite,
@@ -592,9 +672,204 @@ function recipeDetail(card) {
   };
 }
 
+function weighingIngredient(sku, name, grams, annotation = "", isSubrecipe = false) {
+  const display = `${grams} g`;
+  return {
+    sku,
+    name,
+    quantity_display: display,
+    target_display: display,
+    annotation,
+    is_subrecipe: isSubrecipe,
+    theoretical_g: String(grams),
+    target_g: String(grams),
+    rounding_delta_g: "0",
+    accepted_min_g: String(grams),
+    accepted_max_g: String(grams),
+  };
+}
+
+function weighingTicket(ref, name, sku, blindCode, ingredients, oldDough = null) {
+  const total = ingredients.reduce((sum, ing) => sum + Number(ing.target_g), 0);
+  return {
+    ticket_ref: `prep-${ref}`,
+    recipe_ref: ref,
+    output_sku: sku,
+    name,
+    output_quantity_display: `${total} g`,
+    dough_weight_display: "",
+    total_weight_display: `${total} g`,
+    theoretical_total_g: String(total),
+    target_total_g: String(total),
+    rounding_delta_total_g: "0",
+    sources_display: "40 un. BAGUETE",
+    ingredients,
+    table: { contract_version: 1, headers: ["Insumo", "Quantidade"], rows: [] },
+    blind_code: blindCode,
+    made_display: "06/07",
+    expiry_display: "07/07",
+    validity_configured: true,
+    validity_source: "recipe",
+    old_dough: oldDough,
+  };
+}
+
+// Massa com teto de massa velha (20%) e massa sem teto: a mistura final no teto
+// encolhe cada linha por 0,8 e a massa velha cobre o resto, com o mesmo total.
+const WEIGHING_POPULATED = {
+  weighing: {
+    selected_date: "2026-07-06",
+    selected_date_display: "segunda, 06/07",
+    selected_position_ref: "",
+    selected_base_recipe: "",
+    codes_ready: true,
+    tickets: [
+      weighingTicket(
+        "massa-tradicao",
+        "Massa Tradição",
+        "MASSA-TRADICAO",
+        "D8",
+        [
+          weighingIngredient("FARINHA-T55", "Farinha T55", 4000),
+          weighingIngredient("AGUA-FILTRADA", "Água filtrada", 2800),
+          weighingIngredient("SAL-REFINADO", "Sal refinado", 80),
+          weighingIngredient("LEVAIN", "Levain", 800, "", true),
+        ],
+        {
+          cap_pct: "20",
+          cap_display: "20%",
+          old_dough_display: "1536 g",
+          old_dough_g: "1536",
+          lines: [
+            { sku: "FARINHA-T55", target_display: "3200 g", target_g: "3200" },
+            { sku: "AGUA-FILTRADA", target_display: "2240 g", target_g: "2240" },
+            { sku: "SAL-REFINADO", target_display: "64 g", target_g: "64" },
+            { sku: "LEVAIN", target_display: "640 g", target_g: "640" },
+          ],
+        },
+      ),
+      weighingTicket("massa-brioche", "Massa Brioche", "MASSA-BRIOCHE", "S5", [
+        weighingIngredient("FARINHA-T55", "Farinha T55", 2000),
+        weighingIngredient("OVO", "Ovo", 700, "≈ 14 ovos"),
+        weighingIngredient("MANTEIGA", "Manteiga", 1000),
+      ]),
+    ],
+    actions: [],
+    access: {},
+    generated_at: "2026-07-06T09:00:00Z",
+    source_revision: "weighing:populated",
+    fresh_until: "2099-07-06T09:05:00Z",
+    contract_version: 1,
+    scale_precision_g: "2",
+    scale_precision_display: "2 g",
+    scale_rounding_note: "Alvos arredondados para cima · balança 2 g",
+  },
+};
+
+// Fichas de execução (/recipes/sheets): o modo de produção (ADR-040), com o
+// selo e o recorte "Na hora". O PATCH devolve a ficha gravada sem mudar a lista:
+// cada projeto do e2e parte do mesmo estado.
+function sheetItem(sku, name, quantity, unit) {
+  return { input_sku: sku, name, quantity, unit, usable_factor: "1", gross_quantity: quantity, correction_factor: "1", sort_order: 0, is_optional: false, note: "" };
+}
+
+function sheetDetail(ref, name, sku, { mode, unit = "un", items }) {
+  return {
+    ref,
+    revision: `${ref}-1`,
+    name,
+    output_sku: sku,
+    output_name: name,
+    batch_size: "1",
+    output_unit: unit,
+    is_active: true,
+    steps: [],
+    items: items.map((item, index) => ({ ...item, sort_order: index })),
+    mass_balance: { status: "incomparable", output_unit: unit, batch_display: "1 " + unit, total_display: "", message: "", tone: "muted" },
+    execution: {
+      exists: true,
+      ref,
+      revision: `${ref}-1`,
+      max_started_minutes: null,
+      capacity_per_day: "",
+      requires_batch_tracking: false,
+      shelf_life_days: null,
+      shelf_life_reviewed: false,
+      shelf_life_reviewed_by: "",
+      production_lifecycle: "",
+      lifecycle_options: [],
+      production_mode: mode,
+      production_mode_options: PRODUCTION_MODE_OPTIONS,
+    },
+    has_entry: false,
+    entry_ref: "",
+  };
+}
+
+const SHEETS = [
+  sheetDetail("espresso", "Espresso", "SP", { mode: "made_to_order", items: [sheetItem("CAFE-GRAO", "Café em grão", "0.007", "kg")] }),
+  sheetDetail("cappuccino", "Cappuccino", "CAP", {
+    mode: "made_to_order",
+    items: [sheetItem("CAFE-GRAO", "Café em grão", "0.007", "kg"), sheetItem("LEITE-INTEGRAL", "Leite integral", "0.15", "kg")],
+  }),
+  sheetDetail("croque-monsieur", "Croque Monsieur", "CQMO", {
+    mode: "made_to_order",
+    items: [sheetItem("MOLHO-BECHAMEL", "Molho bechamel", "0.07", "kg"), sheetItem("QUEIJO-GOUDA", "Queijo gouda", "0.05", "kg")],
+  }),
+  sheetDetail("pao-frances", "Pão francês", "PAO-FRANCES", { mode: "batch", unit: "kg", items: [sheetItem("FARINHA-T55", "Farinha T55", "1", "kg")] }),
+  sheetDetail("molho-bechamel", "Molho bechamel", "MOLHO-BECHAMEL", { mode: "batch", unit: "kg", items: [sheetItem("LEITE-INTEGRAL", "Leite integral", "0.9", "kg")] }),
+];
+
+function sheetCard(sheet) {
+  return {
+    ref: sheet.ref,
+    name: sheet.name,
+    output_sku: sheet.output_sku,
+    output_name: sheet.output_name,
+    batch_size: sheet.batch_size,
+    item_count: sheet.items.length,
+    is_active: sheet.is_active,
+    production_mode: sheet.execution.production_mode,
+    production_mode_label: sheet.execution.production_mode === "made_to_order" ? "Na hora" : "Em lote",
+    has_entry: sheet.has_entry,
+    updated_at_display: "20/10/2026",
+  };
+}
+
+function sheetList(url) {
+  const query = new URL(url, "http://mock").searchParams;
+  let rows = SHEETS;
+  const mode = query.get("mode");
+  if (mode) rows = rows.filter((sheet) => sheet.execution.production_mode === mode);
+  if (query.get("active") === "0") rows = rows.filter((sheet) => !sheet.is_active);
+  const cards = rows.map(sheetCard);
+  return {
+    sheets: { cards, count: cards.length, page: 1, page_size: 48, total: cards.length, has_next: false, sort: "updated" },
+    access: RECIPE_ACCESS,
+  };
+}
+
+/** GET/PATCH de /recipes/sheets/; `null` quando a URL não é de ficha. */
+function sheetResponse(req, url, body) {
+  if (/\/recipes\/sheets\/?(\?|$)/.test(url) && req.method === "GET") return [200, sheetList(url)];
+  const match = url.match(/\/recipes\/sheets\/([\w-]+)\/?(\?|$)/);
+  if (!match) return null;
+  const sheet = SHEETS.find((row) => row.ref === match[1]);
+  if (!sheet) return [404, { detail: `Ficha '${match[1]}' não existe no cadastro.` }];
+  if (req.method === "GET") return [200, { sheet, access: RECIPE_ACCESS }];
+  if (req.method === "PATCH") {
+    const data = body ? JSON.parse(body) : {};
+    const mode = data.productionMode ?? sheet.execution.production_mode;
+    return [200, { sheet: { ...sheet, revision: `${sheet.ref}-2`, execution: { ...sheet.execution, production_mode: mode } } }];
+  }
+  return null;
+}
+
 /** A resposta do cenário povoado para esta URL, ou `null` para seguir o mock de base. */
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
+  if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
+  if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
   const card = detail && RECIPE_CARDS.find((entry) => entry.ref === detail[1]);
   if (card) return recipeDetail(card);
@@ -657,6 +932,16 @@ const server = createServer((req, res) => {
       detail: "Estação travada.",
       error: { code: "station_locked" },
     });
+  }
+  if (populated && /\/recipes\/sheets\//.test(url)) {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      const answer = sheetResponse(req, url, body);
+      if (answer) return json(res, answer[0], answer[1]);
+      return json(res, 405, { detail: "Método não suportado no mock." });
+    });
+    return;
   }
   const populatedBody = populated ? populatedResponse(url) : null;
   if (populatedBody) return json(res, 200, populatedBody);

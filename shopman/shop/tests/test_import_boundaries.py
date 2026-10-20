@@ -471,6 +471,62 @@ def test_domain_kernels_do_not_import_each_other_outside_bridges():
         )
 
 
+HOST_APP_LABELS = frozenset({"shop", "storefront", "backstage"})
+
+
+def _registry_lookups(source: str) -> Iterable[tuple[int, str]]:
+    """``(linha, app_label)`` de cada ``get_model("<label>"...)`` com label literal."""
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        first = node.args[0]
+        if name == "get_model" and isinstance(first, ast.Constant) and isinstance(first.value, str):
+            yield node.lineno, first.value.split(".", 1)[0]
+
+
+def _foreign_registry_lookups(source: str, owner: str) -> list[tuple[int, str]]:
+    foreign = (DOMAIN_KERNEL_PACKAGES - {owner}) | HOST_APP_LABELS
+    return [(line, label) for line, label in _registry_lookups(source) if label in foreign]
+
+
+def test_registry_lookup_detector_sees_both_spellings():
+    """O detector pega a forma de dois argumentos e a de ``"app.Model"``."""
+    source = (
+        "from django.apps import apps\n"
+        "a = apps.get_model('guestman', 'Customer')\n"
+        "b = apps.get_model('shop.Channel')\n"
+        "c = apps.get_model('orderman', 'Order')\n"
+        "d = apps.get_model(label)\n"
+    )
+    assert _foreign_registry_lookups(source, "orderman") == [(2, "guestman"), (3, "shop")]
+
+
+def test_kernels_do_not_reach_other_apps_through_the_registry():
+    """``apps.get_model("<outro kernel>", ...)`` é import com outro nome.
+
+    O gate de imports não via: o Orderman consultava ``guestman.Customer`` e
+    ``shop.Channel``, e o Craftsman ``offerman.Product``, pelo registro do Django
+    (laudo de soberania 18/10, AK-1). Fora de ``adapters``/``contrib``
+    (pontes opt-in) e de ``migrations``, o kernel pede ao porto ou à setting
+    que o host declara.
+    """
+    violations = []
+    for package_root in sorted(p for p in PACKAGES_ROOT.iterdir() if p.is_dir()):
+        owner = package_root.name
+        for path in _py_files(package_root, skip_parts={"tests", "migrations", "adapters", "contrib"}):
+            for line, label in _foreign_registry_lookups(path.read_text(), owner):
+                violations.append((path, line, f'get_model("{label}", ...)'))
+
+    if violations:
+        pytest.fail(
+            "Kernel packages reached another app through apps.get_model:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Declare a port (protocols + adapter in the owning kernel) or a host setting instead."
+        )
+
+
 def test_doorman_identity_port_has_no_legacy_contract_residue():
     """The identity cut is atomic: old names cannot silently become a second API."""
     roots = (

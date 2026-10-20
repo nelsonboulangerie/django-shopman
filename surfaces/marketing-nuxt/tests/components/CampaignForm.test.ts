@@ -829,3 +829,66 @@ describe("CampaignForm — a voz do gestor", () => {
     expect(text).not.toMatch(/\b(favorites|alerts|tags)\b/);
   });
 });
+
+describe("CampaignForm — campanha exclusiva do grupo", () => {
+  function exclusiveBox(wrapper: ReturnType<typeof form>) {
+    return wrapper
+      .find('[data-testid="campaign-exclusive-tiers"]')
+      .find('[role="checkbox"]');
+  }
+
+  it("marca o grupo e manda exclusive_price_tiers, fora das regras de público", async () => {
+    const wrapper = form(makeRule({ trigger: "production_finished" }));
+
+    expect(wrapper.text()).toContain(
+      "Nenhum marcado: a campanha vale para o público escolhido acima.",
+    );
+    await exclusiveBox(wrapper).trigger("click");
+    expect(wrapper.text()).toContain(
+      "Só quem está num grupo marcado recebe, mesmo com outro público escolhido acima.",
+    );
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(payload.exclusive_price_tiers).toEqual(["atacado"]);
+    expect(payload.audience_rules).toEqual({});
+  });
+
+  it("relê a exclusividade salva e a mostra na revisão", async () => {
+    const wrapper = form(
+      makeRule({
+        trigger: "production_finished",
+        exclusive_price_tiers: ["atacado"],
+      }),
+    );
+
+    expect(exclusiveBox(wrapper).attributes("aria-checked")).toBe("true");
+    expect(wrapper.text()).toContain("Só para Atacado");
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(payload.exclusive_price_tiers).toEqual(["atacado"]);
+  });
+
+  it("avisa e não salva exclusiva com postagem pública escolhida", async () => {
+    const wrapper = form(
+      makeRule({
+        trigger: "production_finished",
+        platforms: ["whatsapp", "instagram"],
+        exclusive_price_tiers: ["atacado"],
+      }),
+    );
+
+    const conflict = wrapper.find('[data-testid="campaign-exclusive-conflict"]');
+    expect(conflict.exists()).toBe(true);
+    expect(conflict.text()).toContain(
+      "Campanha exclusiva sai só pelo WhatsApp. Desmarque Instagram em Destinos.",
+    );
+    expect(conflict.text()).toContain("Ir para Destinos");
+    await wrapper.find("form").trigger("submit");
+    expect(wrapper.emitted("submit")).toBeUndefined();
+  });
+});

@@ -13,9 +13,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+api = [
+    "djangorestframework>=3.17,<4.0",
+]
+# Geração de refs pelo registro do shopman-refs; sem ele, `ids.py` cai no gerador local.
+refs = [
+    "shopman-refs>=0.1.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-django>=4.5",
+    "djangorestframework>=3.17,<4.0",
+    "shopman-refs>=0.1.0",
 ]
 
 [tool.setuptools.packages.find]

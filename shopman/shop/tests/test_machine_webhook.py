@@ -1,6 +1,9 @@
-"""Webhook Machine: auth fail-closed, idempotência e transições via funil."""
+"""Webhook Machine: auth fail-closed (token + Signature-V2), idempotência e transições via funil."""
 
 from __future__ import annotations
+
+import json
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
@@ -13,11 +16,26 @@ from shopman.backstage.models import OperatorAlert
 from shopman.shop.adapters import courier_mock
 from shopman.shop.models import Shop
 from shopman.shop.services import courier
+from shopman.shop.webhooks.machine import signature_for
 
 pytestmark = pytest.mark.django_db
 
 MOCK_ADAPTER = "shopman.shop.adapters.courier_mock"
-MACHINE = {"webhook_token": "tok-machine-1"}
+API_KEY = "chave-da-api-machine"
+MACHINE = {"webhook_token": "tok-machine-1", "api_key": API_KEY}
+
+
+class SignedClient(APIClient):
+    """Cliente que assina como a Machine: ``Signature-V2`` = HMAC-SHA-512 do corpo."""
+
+    def post(self, path, data=None, format=None, content_type=None, **extra):
+        body = json.dumps(data if data is not None else {}).encode("utf-8")
+        extra.setdefault("HTTP_SIGNATURE_V2", signature_for(body, API_KEY))
+        return super().post(path, body, content_type="application/json", **extra)
+
+
+def _client() -> APIClient:
+    return SignedClient()
 
 
 @pytest.fixture(autouse=True)
@@ -74,26 +92,26 @@ def _url(token="tok-machine-1"):
 
 @override_settings(SHOPMAN_MACHINE=MACHINE)
 def test_rejects_without_token():
-    resp = APIClient().post(_url(token=""), {"id_mch": "1", "status": "E"}, format="json")
+    resp = _client().post(_url(token=""), {"id_mch": "1", "status": "E"}, format="json")
     assert resp.status_code == 401
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE)
 def test_rejects_wrong_token():
-    resp = APIClient().post(_url(token="errado"), {"id_mch": "1", "status": "E"}, format="json")
+    resp = _client().post(_url(token="errado"), {"id_mch": "1", "status": "E"}, format="json")
     assert resp.status_code == 401
 
 
 @override_settings(SHOPMAN_MACHINE={"webhook_token": ""})
 def test_rejects_everything_when_token_unconfigured():
     # Fail-closed: sem token configurado o endpoint rejeita até o token "vazio".
-    resp = APIClient().post(_url(token=""), {}, format="json")
+    resp = _client().post(_url(token=""), {}, format="json")
     assert resp.status_code == 401
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE)
 def test_accepts_token_via_header():
-    client = APIClient()
+    client = _client()
     resp = client.post(
         reverse("webhooks:machine-webhook"),
         {"foo": "bar"},
@@ -103,19 +121,86 @@ def test_accepts_token_via_header():
     assert resp.status_code == 202  # autenticado; payload não reconhecido
 
 
+# ── Signature-V2 (HMAC-SHA-512 do corpo com a chave da API) ─────────
+
+
+def _raw_post(body: bytes, **headers):
+    return APIClient().post(_url(), body, content_type="application/json", **headers)
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_valid_signature_over_the_raw_body_is_accepted():
+    # Bytes exatos, com espaços que um re-serializador mudaria: a conta é sobre o corpo cru.
+    body = b'{"algo":  "desconhecido" }'
+    resp = _raw_post(body, HTTP_SIGNATURE_V2=signature_for(body, API_KEY))
+    assert resp.status_code == 202
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_uppercase_hex_signature_is_accepted():
+    body = b'{"algo": "desconhecido"}'
+    resp = _raw_post(body, HTTP_SIGNATURE_V2=signature_for(body, API_KEY).upper())
+    assert resp.status_code == 202
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_invalid_signature_is_rejected_and_touches_nothing(shop):
+    order = _order_with_ride()
+    body = json.dumps({"id_mch": "184532", "status": "E"}).encode()
+    forged = signature_for(body, "outra-chave")
+    resp = _raw_post(body, HTTP_SIGNATURE_V2=forged)
+    assert resp.status_code == 401
+    order.refresh_from_db()
+    assert order.status == Order.Status.READY
+    assert OperatorAlert.objects.filter(type="webhook_failed").exists()
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_signature_of_another_body_is_rejected():
+    signed = b'{"id_mch": "184532", "status": "E"}'
+    sent = b'{"id_mch": "184532", "status": "F"}'
+    resp = _raw_post(sent, HTTP_SIGNATURE_V2=signature_for(signed, API_KEY))
+    assert resp.status_code == 401
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_missing_signature_is_rejected_even_with_the_right_token():
+    resp = _raw_post(b'{"algo": "desconhecido"}')
+    assert resp.status_code == 401
+
+
+@override_settings(SHOPMAN_MACHINE={"webhook_token": "tok-machine-1", "api_key": ""})
+def test_without_api_key_every_post_is_rejected_loudly():
+    # Falha fechada e gritando: sem a chave não há o que conferir, e ninguém é aceito calado.
+    from shopman.shop.webhooks import machine
+
+    body = b'{"algo": "desconhecido"}'
+    with patch.object(machine.logger, "error") as error:
+        resp = _raw_post(body, HTTP_SIGNATURE_V2=signature_for(body, ""))
+    assert resp.status_code == 401
+    assert "MACHINE_API_KEY" in error.call_args.args[0]
+    assert OperatorAlert.objects.filter(type="webhook_failed").exists()
+
+
+@override_settings(SHOPMAN_MACHINE=MACHINE)
+def test_registration_probe_get_needs_only_the_token():
+    assert APIClient().get(_url()).status_code == 200
+    assert APIClient().get(_url(token="errado")).status_code == 401
+
+
 # ── payload defensivo ───────────────────────────────────────────────
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE)
 def test_unrecognized_payload_is_accepted_not_rejected():
-    resp = APIClient().post(_url(), {"algo": "desconhecido"}, format="json")
+    resp = _client().post(_url(), {"algo": "desconhecido"}, format="json")
     assert resp.status_code == 202
     assert resp.data["status"] == "unrecognized"
 
 
 @override_settings(SHOPMAN_MACHINE=MACHINE)
 def test_unknown_ride_returns_ok(shop):
-    resp = APIClient().post(_url(), {"id_mch": "999999", "status": "E"}, format="json")
+    resp = _client().post(_url(), {"id_mch": "999999", "status": "E"}, format="json")
     assert resp.status_code == 200
     assert resp.data["kind"] == "unknown_ride"
 
@@ -126,7 +211,7 @@ def test_unknown_ride_returns_ok(shop):
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_status_e_advances_order_to_dispatched(shop):
     order = _order_with_ride()
-    resp = APIClient().post(_url(), {"id_mch": "184532", "status": "E"}, format="json")
+    resp = _client().post(_url(), {"id_mch": "184532", "status": "E"}, format="json")
     assert resp.status_code == 200
     order.refresh_from_db()
     assert order.status == Order.Status.DISPATCHED
@@ -137,7 +222,7 @@ def test_status_e_advances_order_to_dispatched(shop):
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_status_f_marks_delivered(shop):
     order = _order_with_ride()
-    client = APIClient()
+    client = _client()
     client.post(_url(), {"id_mch": "184532", "status": "E"}, format="json")
     resp = client.post(_url(), {"id_mch": "184532", "status": "F"}, format="json")
     assert resp.status_code == 200
@@ -148,7 +233,7 @@ def test_status_f_marks_delivered(shop):
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_status_n_alerts_operator(shop):
     order = _order_with_ride()
-    resp = APIClient().post(_url(), {"id_mch": "184532", "status": "N"}, format="json")
+    resp = _client().post(_url(), {"id_mch": "184532", "status": "N"}, format="json")
     assert resp.status_code == 200
     order.refresh_from_db()
     assert not courier.has_active_ride(order)
@@ -158,7 +243,7 @@ def test_status_n_alerts_operator(shop):
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_replay_same_status_is_noop(shop):
     order = _order_with_ride()
-    client = APIClient()
+    client = _client()
     first = client.post(_url(), {"id_mch": "184532", "status": "E"}, format="json")
     assert first.data["kind"] == "status"
     replay = client.post(_url(), {"id_mch": "184532", "status": "E"}, format="json")
@@ -171,7 +256,7 @@ def test_replay_same_status_is_noop(shop):
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_alternate_id_and_status_keys_are_understood(shop):
     order = _order_with_ride()
-    resp = APIClient().post(
+    resp = _client().post(
         _url(), {"solicitacao_id": 184532, "situacao": "e"}, format="json"
     )
     assert resp.status_code == 200
@@ -186,7 +271,7 @@ def test_alternate_id_and_status_keys_are_understood(shop):
 def test_position_event_goes_to_cache_not_order(shop):
     order = _order_with_ride()
     before = order.updated_at
-    resp = APIClient().post(
+    resp = _client().post(
         _url(), {"id_mch": "184532", "lat": "-23.305", "lng": "-51.162"}, format="json"
     )
     assert resp.status_code == 200
@@ -214,7 +299,7 @@ def _documented_status(code, label):
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_documented_status_payload_advances_the_order(shop):
     order = _order_with_ride()
-    resp = APIClient().post(_url(), _documented_status("E", "IN_PROGRESS"), format="json")
+    resp = _client().post(_url(), _documented_status("E", "IN_PROGRESS"), format="json")
     assert resp.status_code == 200
     assert resp.data["kind"] == "status"
     order.refresh_from_db()
@@ -226,7 +311,7 @@ def test_documented_status_payload_advances_the_order(shop):
 @override_settings(SHOPMAN_MACHINE=MACHINE, SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_documented_event_that_is_not_a_state_keeps_the_ride_letter(shop, code, label):
     order = _order_with_ride()
-    resp = APIClient().post(_url(), _documented_status(code, label), format="json")
+    resp = _client().post(_url(), _documented_status(code, label), format="json")
     assert resp.status_code == 200
     assert resp.data["kind"] == "event"
     order.refresh_from_db()
@@ -242,7 +327,7 @@ def test_status_push_asks_for_a_full_reading_now(shop):
     from shopman.shop.directives import COURIER_SYNC
 
     order = _order_with_ride()
-    APIClient().post(_url(), _documented_status("A", "ACCEPTED"), format="json")
+    _client().post(_url(), _documented_status("A", "ACCEPTED"), format="json")
     sync = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED)
     assert sync.available_at <= timezone.now()
     order.refresh_from_db()
@@ -253,7 +338,7 @@ def test_status_push_asks_for_a_full_reading_now(shop):
 def test_arrival_event_marks_the_driver_at_the_shop(shop):
     order = _order_with_ride()
     courier.apply_status(order, "A", source="poll")
-    resp = APIClient().post(_url(), _documented_status("AP", "ARRIVED_AT_LOCATION"), format="json")
+    resp = _client().post(_url(), _documented_status("AP", "ARRIVED_AT_LOCATION"), format="json")
     assert resp.data["kind"] == "event"
     order.refresh_from_db()
     block = courier.get_block(order)
@@ -262,7 +347,7 @@ def test_arrival_event_marks_the_driver_at_the_shop(shop):
 
     courier.apply_status(order, "E", source="poll")
     order.refresh_from_db()
-    APIClient().post(_url(), _documented_status("AP", "ARRIVED_AT_LOCATION"), format="json")
+    _client().post(_url(), _documented_status("AP", "ARRIVED_AT_LOCATION"), format="json")
     order.refresh_from_db()
     assert courier.get_block(order)["progress"]["arrived_dropoff_at"] == "2026-10-01T13:20:05Z"
 
@@ -278,7 +363,7 @@ def test_documented_position_batch_goes_to_cache(shop):
             {"timestamp": 1786381200000, "company_id": 8, "request_id": 184533, "driver_id": 8102},
         ],
     }
-    resp = APIClient().post(_url(), batch, format="json")
+    resp = _client().post(_url(), batch, format="json")
     assert resp.status_code == 200
     assert resp.data == {"status": "ok", "kind": "position_batch", "positions": 1}
     assert cache.get("courier:pos:184532") == {"lat": "-23.305", "lng": "-51.162"}
@@ -287,7 +372,7 @@ def test_documented_position_batch_goes_to_cache(shop):
 
 @override_settings(SHOPMAN_MACHINE=MACHINE)
 def test_deprecated_position_payload_goes_to_cache(shop):
-    resp = APIClient().post(
+    resp = _client().post(
         _url(), {"id_mch": "184532", "condutor_id": "9", "lat_cond": "-23.3", "lng_cond": "-51.1"}, format="json"
     )
     assert resp.status_code == 200

@@ -37,12 +37,33 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 | §7.2-4 | Clientes: duplicar cadastro e etiquetar em lote | EM_PR | `claude/cadastro-clientes` / #1815 | 2026-10-15 12:5x |
 | §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
 | WATCHMAN | Saúde, autocura e desempenho (Codex, outro agente) | EM_PR | `codex/watchman-*` / #1809, #1813 | 2026-10-15 11:5x |
-| §7.2-kit | Importação e exportação CSV genéricas no operator-kit | EM_PR | `codex/kit-import-export` / #1895 | 2026-10-19 17:25 UTC |
-| IFOOD-E | Ensaio de catálogo na loja de teste | ADIADO | `codex/ifood-ensaio` / #1929 draft; alvos/credenciais encontrados, aguarda #1905 e #1931 | 2026-10-20 09:34 UTC |
+| IFOOD-E | Ensaio de catálogo na loja de teste | EM_EXECUCAO | `codex/ifood-ensaio` / #1929; turno 5b autorizado, runtime isolado | 2026-10-20 |
 
 **SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
 
 **Turno de 15/10 (coordenação DSH):** mergeados #1810 (`GET /api/sessions` responde 200) e #1814 (card de desconto por tipo no B.I.). Higiene de disco: 185 worktrees removidas, 34 GB para ~140 GB livres. Reconciliação com o Codex: o núcleo das ondas 3, 4 e 5 do §7.2 já entrou por #1802 a #1806. Detalhe em `HANDOFF-DSH-2026-10-15.md`.
+
+**Turno ARQUIVAR de 20/10:** Frente A, `offerman.Product.is_active`, entregue e colocada na fila no
+#1945. A decisão está em D-034, a ordem em `ORDERS/2026-10-19-arquivar.md` e a prova em
+`ROUNDS/ARQUIVAR-A-core-produto.md`. Não fica linha ativa no quadro porque a frente já saiu da
+execução para a fila.
+
+**Turno ARQUIVAR, Frente F:** o gesto confirmado de Arquivar/Desarquivar, individual e em lote,
+foi entregue e colocado na fila no #1948 (`codex/arquivar-gesto`), com as dependências #1945 e
+#1947 integradas. Prova funcional, desempenho, D1 a D12 e capturas em
+`ROUNDS/ARQUIVAR-F-gesto.md`.
+
+**Turno Arquivar (20/10, Frente D):** Compras passou a separar insumos e fornecedores
+arquivados das listas correntes, com o filtro explícito **Arquivados**, no PR #1946. A
+frente saiu do quadro ao entrar na fila; prova e limites estão em
+`ROUNDS/D-arquivar-compras.md`.
+
+**Turno ARQUIVAR (20/10):** Frente E, receitas com `RecipeEntry.is_active`, na fila no PR #1944. Detalhe em `ROUNDS/E-arquivar-receita.md`.
+
+**Turno ARQUIVAR (20/10):** Frentes B+C, trava transversal e superfícies de produto arquivado,
+entregues e colocadas na fila no PR #1947. A loja, a busca, a matriz, os feeds, os canais e o B.I.
+agora respeitam o arquivamento; retração e reenvio foram provados por transporte simulado. Detalhe
+em `ROUNDS/ARQUIVAR-BC-superficies.md`.
 
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),

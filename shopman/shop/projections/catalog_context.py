@@ -100,7 +100,7 @@ def commercial_identity(product) -> CommercialIdentity:
 def products_queryset():
     from shopman.offerman.models import Product
 
-    return Product.objects.all()
+    return Product.objects.active()
 
 
 def active_collections_queryset():
@@ -140,32 +140,23 @@ def get_sellable_published_product(sku: str):
 
 
 def comes_out_of_the_oven(sku: str) -> bool:
-    """Este SKU nasce de uma fornada, ou chega pronto na prateleira?
+    """Este SKU nasce de um lote, ou chega pronto na prateleira?
 
-    Duas evidências, nesta ordem, porque nenhuma sozinha basta:
-
-    1. ``Product.is_batch_produced`` — a declaração do gestor. É a resposta
-       autoritativa quando alguém a deu.
-    2. Uma ``Recipe`` ativa com ``output_sku`` igual a este SKU — a evidência
-       operacional. Existe porque a declaração NÃO é preenchida na prática: no
-       banco vivo do alpha (05/09/2026) todo produto tem ``is_batch_produced``
-       em ``False``, inclusive os pães. Confiar só na flag entregaria uma
-       derivação que nunca dispara, e o defeito voltaria calado.
-
-    A receita ativa é também exatamente o conjunto de SKUs que algum dia vai
-    disparar ``production_changed`` — que é o evento por trás do aviso "saiu do
-    forno". Perguntar por outra coisa prometeria um aviso que nunca chega.
+    A resposta é o modo de produção da ficha vigente (``Recipe.production_mode``,
+    ADR-040), lido pelo adapter de produção: só a ficha "Em lote" sai do forno.
+    É também exatamente o conjunto de SKUs que dispara ``production_changed`` (só
+    ficha em lote vira ordem de produção), o evento por trás do aviso "saiu do
+    forno". Ficha "Na hora" é feita quando vende e revenda não tem ficha: as
+    duas ficam no eixo de prateleira (chegada de estoque).
 
     Falha para ``False``: na dúvida o produto é de prateleira, e o eixo de
-    prateleira (chegada de estoque) tem mais caminhos de chegada.
+    prateleira tem mais caminhos de chegada.
     """
-    product = products_queryset().filter(sku=sku).only("sku", "is_batch_produced").first()
-    if product is not None and product.is_batch_produced:
-        return True
-    try:
-        from shopman.craftsman.models import Recipe
+    from shopman.shop.adapters import get_adapter
 
-        return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+    try:
+        production = get_adapter("production")
+        return bool(production) and sku in production.get_batch_produced_skus([sku])
     except Exception:
         logger.debug("catalog_context.comes_out_of_the_oven degraded sku=%s", sku, exc_info=True)
         return False

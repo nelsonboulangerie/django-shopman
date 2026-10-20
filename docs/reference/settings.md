@@ -272,7 +272,14 @@ DOORMAN = {
 
 ## Payments (Pagamentos)
 
-O payments core não tem `conf.py` próprio — configuração é feita via settings do orquestrador (`SHOPMAN_PAYMENT_ADAPTERS`) e via `ChannelConfig.payment`.
+Os gateways são configurados no orquestrador (`SHOPMAN_PAYMENT_ADAPTERS`) e em `ChannelConfig.payment`. O Payman lê uma chave só:
+
+**Arquivo:** `packages/payman/shopman/payman/conf.py`
+**Dict:** `PAYMAN`
+
+| Setting | Tipo | Default | Descrição |
+|---------|------|---------|-----------|
+| `REFUND_BACKEND` | str | vazio (o settings do projeto usa `shopman.shop.adapters.payman_refund.GatewayRefundBackend`) | Dotted path do `RefundBackend` que o Admin de cobranças usa para devolver pelo gateway. Vazio = o Admin não estorna |
 
 Veja [Shopman — Orquestrador](#shopman--orquestrador) para `SHOPMAN_PAYMENT_ADAPTERS`.
 
@@ -292,10 +299,11 @@ Settings flat no `settings.py` do Django (sem dict wrapper).
 | `SHOPMAN_CARD_ADAPTER` | env str | `shopman.shop.adapters.payment_mock` | Override do adapter cartão; staging real usa `shopman.shop.adapters.payment_stripe` |
 | `SHOPMAN_FISCAL_ADAPTER` | str | *(sem default)* | Adapter fiscal. Se ausente, handlers fiscais não são registrados |
 | `SHOPMAN_FOCUS_NFE` | dict | homologação | Configuração do adapter `shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend` |
-| `SHOPMAN_FISCAL_EMISSION_RESOLVER` | env str | `shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt,shopman.shop.fiscal_resolvers.intermediated_sale` | Política de QUANDO emitir NFC-e: caminho(s) pontilhado(s) para `callable(order) -> bool`, vários separados por vírgula = OR. `intermediated_sale` emite a venda por marketplace (iFood), presencial quando sem CPF (ADR-035). Com adapter fiscal ligado e canal de venda ativo, vazio ou não importável **bloqueia o deploy** (`SHOPMAN_E013`) — silêncio fiscal é o pior modo de falha |
+| `SHOPMAN_FISCAL_EMISSION_RESOLVER` | env str | `shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt,shopman.shop.fiscal_resolvers.intermediated_sale` | Política de QUANDO emitir NFC-e: caminho(s) pontilhado(s) para `callable(order) -> bool`, vários separados por vírgula = OR. `intermediated_sale` emite a venda por marketplace (iFood), presencial quando sem CPF (ADR-035). Com adapter fiscal ligado e canal de venda ativo, vazio **bloqueia o deploy** (`SHOPMAN_E013`); caminho que não importa reprova TODO `check`, inclusive o `migrate` do PRE_DEPLOY (`SHOPMAN_E028`), e em runtime vira log de erro + alerta crítico — silêncio fiscal é o pior modo de falha |
 | `SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH` | env bool | `false` | Porteiro fiscal do catálogo: publicar vendável em canal de venda exige classificação completa (perfil + NCM; CEST na revenda), em qualquer porta. Desligado no pré-go-live; ligar junto com o adapter fiscal. **Não ligue sem o procedimento** — ver "Ligar o porteiro fiscal do catálogo" abaixo |
 | `SHOPMAN_EFI` | dict | sandbox | Configuração Efí PIX (`sandbox`, `client_id`, `client_secret`, `certificate_path`, `pix_key`) |
 | `SHOPMAN_EFI_WEBHOOK` | dict | vazio | Segredo de webhook Efí e header mTLS opcional |
+| `SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT` | env int | `300` | Teto diário GLOBAL de chamadas pagas ao Google no geocoding reverso ("usar minha localização" e o pin do WhatsApp), somado no cache compartilhado; acerto de cache não gasta. Atingido, o reverso recusa até a virada do dia (429 `geocode_daily_limit_reached`, "Digite o endereço") e a TI recebe um alerta; contador ilegível também recusa. `0` fecha a porta. 300/dia fica dentro da faixa gratuita do Geocoding |
 | `SHOPMAN_STRIPE` | dict | vazio | Configuração Stripe Checkout (`publishable_key`, `secret_key`, `webhook_secret`, `capture_method`, `domain`) |
 | `SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q` | int | `500` | Padrão do deploy para o teto de aprovação de desconto no PDV, em centavos. `0` **desativa** o teto (nenhum desconto passa a exigir gerente por valor; D-1 e preço alterado seguem exigindo). A loja sobrepõe em `Shop.defaults["pos"]["discount_approval_threshold_q"]` pelo Admin; quem lê os dois é `shop.services.pos.discount_approval_threshold_q` |
 | `SHOPMAN_ACCOUNTING_BACKEND` | str | *(sem default)* | Backend de contabilidade. Se ausente, handler de accounting não é registrado |

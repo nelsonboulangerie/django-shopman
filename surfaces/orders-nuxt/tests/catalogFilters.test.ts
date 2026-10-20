@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FILTER_ARCHIVED,
   FILTER_PIM,
   FILTER_PUBLISHED,
   FILTER_SELLABLE,
@@ -40,11 +41,12 @@ const facets: CatalogFacets = {
 };
 
 describe("serverCatalogDimensions", () => {
-  it("oferece as 7 dimensões (coleção fica de fora — é o eixo das pills)", () => {
+  it("oferece as 8 dimensões (coleção fica de fora — é o eixo das pills)", () => {
     const ids = serverCatalogDimensions(surfaces, facets).map((d) => d.id);
     expect(ids).toEqual([
       FILTER_SYNC,
       FILTER_SURFACE,
+      FILTER_ARCHIVED,
       FILTER_PUBLISHED,
       FILTER_SELLABLE,
       FILTER_STOCK,
@@ -60,6 +62,7 @@ describe("serverCatalogDimensions", () => {
     ).map((d) => d.id);
     expect(ids).toEqual([
       FILTER_SURFACE,
+      FILTER_ARCHIVED,
       FILTER_PUBLISHED,
       FILTER_SELLABLE,
       FILTER_STOCK,
@@ -108,11 +111,13 @@ describe("filtersFromQuery", () => {
       filtersFromQuery({
         stock: "out,low",
         pim_complete: "true",
+        archived: "true",
         is_published: "false",
       }),
     ).toEqual({
       [FILTER_STOCK]: ["out", "low"],
       [FILTER_PIM]: ["true"],
+      [FILTER_ARCHIVED]: ["true"],
       [FILTER_PUBLISHED]: ["false"],
     });
   });

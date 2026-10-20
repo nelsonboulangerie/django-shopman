@@ -1486,6 +1486,159 @@ def _notify_refund(order, *, method: str, amount_q: int, idempotency_key: str) -
         logger.warning("payment.refund: aviso do estorno não enfileirado order=%s", order.ref, exc_info=True)
 
 
+#: Por onde o dinheiro volta quando a cobrança NÃO passou por gateway. O Admin não
+#: devolve dinheiro que não está no gateway: gravar o estorno daqui diria ao livro
+#: que o cliente recebeu, com o dinheiro ainda na gaveta ou na adquirente.
+_REFUND_ELSEWHERE = {
+    "cash": (
+        "Esta cobrança foi em dinheiro: a devolução sai da gaveta, no PDV, com o caixa aberto, "
+        "e entra no livro-caixa. Nada foi estornado aqui."
+    ),
+    "card_machine": (
+        "Esta cobrança foi na maquininha: o estorno se faz na própria maquininha, e depois se "
+        "registra em Estornei na maquininha, na Sessão de caixa do PDV. Nada foi estornado aqui."
+    ),
+    "account": (
+        "Esta cobrança é de venda em conta e não passou por gateway. Nada foi estornado aqui."
+    ),
+}
+
+_GATEWAY_NAMES = {"efi": "Efí", "stripe": "Stripe", "mock": "gateway de teste"}
+
+#: Recusas conhecidas dos adapters, em português de balcão. O resto chega com a
+#: mensagem do próprio gateway anexada (``_gateway_answer_text``).
+_GATEWAY_REFUSALS = {
+    "intent_not_found": "Cobrança não encontrada no Payman.",
+    "not_paid": "A Efí diz que esta cobrança Pix não foi paga, então não há o que devolver.",
+    "no_payment": "A Efí não encontrou o Pix desta cobrança, então não há o que devolver.",
+}
+
+
+def refund_intent_at_gateway(
+    intent_ref: str, *, amount_q: int, idempotency_key: str, actor: str
+) -> PaymentResult:
+    """Devolve ``amount_q`` de UMA cobrança pelo gateway dela (o estorno do Admin).
+
+    É o mesmo caminho do estorno do pedido (:func:`refund`): o adapter da rota
+    gravada na cobrança (``_adapter_for_persisted_intent``) devolve no gateway e
+    registra no Payman. O que muda é quem pede: aqui é gente, na tela, então nada
+    vira retry em segundo plano. Recusa e falha voltam ``success=False`` com a
+    frase pronta para a tela, e o livro não é tocado.
+
+    Parcial: Efí (devolução Pix com ``valor``) e Stripe (``Refund`` com
+    ``amount``) aceitam; várias parciais somam até o capturado.
+
+    Idempotência: ``idempotency_key`` vai ao gateway (Stripe: chave do
+    ``Refund.create``; Efí: ``dev_id`` determinístico da devolução), que devolve a
+    MESMA devolução se a chave voltar, e o Payman deduplica pelo id dela. O duplo
+    clique não devolve duas vezes.
+
+    Auditoria: ``actor`` entra no motivo da transação de estorno, que é imutável.
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    from shopman.shop.services.order_edit import ROUTE_GATEWAY, refund_route
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        return PaymentResult(
+            success=False, error_code="intent_not_found", message=_GATEWAY_REFUSALS["intent_not_found"]
+        )
+
+    route = refund_route(intent)
+    if route != ROUTE_GATEWAY:
+        return PaymentResult(success=False, error_code=f"refund_route_{route}", message=_REFUND_ELSEWHERE[route])
+
+    adapter = _adapter_for_persisted_intent(intent_ref, method=intent.method)
+    if adapter is None:
+        return PaymentResult(
+            success=False,
+            error_code="no_gateway_route",
+            message=(
+                "Não há como chegar ao gateway desta cobrança com a configuração de hoje "
+                "(gateway desconhecido ou ambiente diferente do que a criou). Nada foi estornado; "
+                "confira a cobrança no painel do gateway."
+            ),
+        )
+    gateway = _GATEWAY_NAMES.get(str(intent.gateway or "").lower(), "o gateway")
+    refunds = intent.transactions.filter(type="refund")
+    before = set(refunds.values_list("pk", flat=True))
+
+    try:
+        result = adapter.refund(
+            intent_ref, amount_q=amount_q, reason=f"Estorno no Admin por {actor}", idempotency_key=idempotency_key
+        )
+    except Exception as exc:
+        # Timeout/5xx em volta de uma devolução idempotente é AMBÍGUO: o gateway
+        # pode ter aceitado. Nada foi gravado aqui; quem decide é o painel dele.
+        logger.error("payment.admin_refund: falha ambígua (%s) intent=%s: %s", gateway, intent_ref, exc)
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type="payment_refund_failed",
+            severity="critical",
+            message=(
+                f"O estorno da cobrança {intent_ref}, pedido no Admin, ficou sem resposta ({gateway}). "
+                "O dinheiro pode ter saído sem registro aqui: confira no painel antes de estornar de novo."
+            ),
+            order_ref=intent.order_ref or "",
+            dedupe_key=f"admin_refund_ambiguous:{intent_ref}",
+        )
+        return PaymentResult(
+            success=False,
+            error_code="gateway_unreachable",
+            message=(
+                f"Sem resposta ({gateway}), e o estorno pode ter saído. Nada foi registrado aqui. "
+                "Confira no painel do gateway antes de tentar de novo."
+            ),
+        )
+
+    if not result.success:
+        code = str(result.error_code or "")
+        logger.warning("payment.admin_refund: recusa (%s) intent=%s: %s", gateway, intent_ref, result.message or code)
+        message = _GATEWAY_REFUSALS.get(code) or _gateway_answer_text(gateway, result.message or code)
+        return PaymentResult(success=False, error_code=code or "refused", message=message)
+
+    if not refunds.filter(gateway_id=result.transaction_id or "").exists():
+        # O adapter já abriu o alerta de conciliação (``payment_ledger_drift``).
+        return PaymentResult(
+            success=False,
+            error_code="ledger_drift",
+            transaction_id=result.transaction_id,
+            message=(
+                f"O dinheiro saiu ({gateway}), mas o registro aqui falhou. O alerta de conciliação "
+                "foi aberto. Não estorne de novo."
+            ),
+        )
+
+    refunded_q = int(result.amount_q or amount_q)
+    is_new = refunds.exclude(pk__in=before).exists()
+    logger.info(
+        "payment.admin_refund: devolveu %sq (%s) intent=%s actor=%s new=%s",
+        refunded_q, gateway, intent_ref, actor, is_new,
+    )
+    if is_new:
+        order = _order_for_intent(intent)
+        if order is not None:
+            _notify_refund(order, method=intent.method, amount_q=refunded_q, idempotency_key=idempotency_key)
+    return PaymentResult(success=True, transaction_id=result.transaction_id, amount_q=refunded_q)
+
+
+def _gateway_answer_text(gateway: str, detail: str) -> str:
+    detail = str(detail or "").strip().rstrip(".")
+    suffix = f" Resposta ({gateway}): {detail}." if detail else ""
+    return f"O estorno foi recusado ({gateway}), e nada foi registrado aqui.{suffix}"
+
+
+def _order_for_intent(intent):
+    if not intent.order_ref:
+        return None
+    from shopman.orderman.models import Order
+
+    return Order.objects.filter(ref=intent.order_ref).first()
+
+
 def _asserted_at_terminal(intent_ref: str) -> bool:
     """Pix/cartão atestados no balcão (venda mista) não têm gateway para estornar."""
     try:

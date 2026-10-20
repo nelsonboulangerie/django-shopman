@@ -85,13 +85,12 @@ def test_double_submit_never_duplicates_order(channel, product):
         expected_revision=session.rev,
     )
 
-    # O pedido selado carrega a identidade e o cleanup pós-commit a copia para
-    # a sessão já fechada. Replay só lê o recibo e não toca a sacola nova.
+    # O pedido selado carrega a identidade. Sem sacola anterior do mesmo dono
+    # não há troca de dono, e a sessão fechada não ganha carimbo de telefone
+    # (ninguém a lê por telefone). Replay só lê o recibo e não toca a sacola nova.
     committed = Session.objects.get(pk=session.pk)
-    assert (committed.handle_type, committed.handle_ref) == (
-        "phone",
-        data["customer"]["phone"],
-    )
+    assert committed.state == "committed"
+    assert Order.objects.get(ref=r1.order_ref).data["customer"]["phone"] == data["customer"]["phone"]
     newer = session_service.create_session("web")
     session_service.assign_phone_handle(
         session_key=newer.session_key,

@@ -8,6 +8,7 @@ import type {
   WeighingTicketProjection,
 } from "~/types/production";
 import { newProductionMutationKey } from "~/utils/mutationKey";
+import { weighingRows } from "~/presentation/weighing";
 
 export async function allocateColdWeighingProjection(
   current: WeighingResponse["weighing"] | null,
@@ -77,5 +78,32 @@ export function useWeighing(selectedDate: Ref<string>) {
 
   useAdaptivePoll(refresh, () => 60_000);
 
-  return { projection, tickets, dateDisplay, pending, error, refresh };
+  // Massa velha é escolha do padeiro na bancada, preparo a preparo: estado
+  // local da tela. O servidor já mandou a mistura final no teto
+  // (`ticket.old_dough`); aqui só se escolhe qual das duas listas pesar.
+  const oldDoughKeys = ref<Set<string>>(new Set());
+  function usesOldDough(key: string): boolean {
+    return oldDoughKeys.value.has(key);
+  }
+  function setOldDough(key: string, on: boolean) {
+    const next = new Set(oldDoughKeys.value);
+    if (on) next.add(key);
+    else next.delete(key);
+    oldDoughKeys.value = next;
+  }
+  function rowsFor(ticket: WeighingTicketProjection, key: string) {
+    return weighingRows(ticket, usesOldDough(key) && !!ticket.old_dough);
+  }
+
+  return {
+    projection,
+    tickets,
+    dateDisplay,
+    pending,
+    error,
+    refresh,
+    usesOldDough,
+    setOldDough,
+    rowsFor,
+  };
 }

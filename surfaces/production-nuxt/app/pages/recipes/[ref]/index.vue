@@ -15,6 +15,9 @@ import {
   comparePath,
   favoriteActionHint,
   formulaFromServed,
+  needsReview,
+  provenanceIcon,
+  reviewSignature,
   statusBadgeColor,
   stepsForPayload,
   toneClass,
@@ -45,9 +48,17 @@ const {
   publish,
   saveReferences,
   rateVersion,
+  confirmVersion,
   toggleFavorite,
   favoriteBusy,
 } = useRecipeEntry(entryRef);
+
+// Conferência (WP-RECEITAS-DA-CASA F1): só a versão em uso se confere.
+async function confirmSelected() {
+  if (!selected.value) return;
+  const result = await confirmVersion(selected.value.number);
+  if (result.ok) useSonner.success(`Versão ${selected.value.number} conferida.`);
+}
 
 useHead({ title: computed(() => entry.value?.name || "Receita") });
 
@@ -225,21 +236,21 @@ async function saveExecutionForm(payload: Parameters<typeof saveExecution>[0]) {
   }
 }
 
-// ── Arquivar / restaurar (destrutivo pede confirmação) ──────────────────────
+// ── Arquivar / desarquivar (destrutivo pede confirmação) ────────────────────
 const archiveOpen = ref(false);
 async function confirmArchive() {
   if (!entry.value) return;
   const result = await patchEntry({
-    is_archived: !entry.value.is_archived,
+    is_active: !entry.value.is_active,
     expectedRevision: entry.value.revision,
   });
   if (result.ok) {
     archiveOpen.value = false;
-    useSonner.success(entry.value.is_archived ? "Receita restaurada." : "Receita arquivada.");
+    useSonner.success(entry.value.is_active ? "Receita desarquivada." : "Receita arquivada.");
   }
 }
 const archiveDescription = computed(() =>
-  entry.value?.is_archived
+  entry.value && !entry.value.is_active
     ? "Ela volta ao inventário e pode receber versões de novo."
     : 'Ela sai do inventário (fica em "Arquivadas") e não recebe novas versões. A ficha de execução publicada não muda.',
 );
@@ -359,7 +370,7 @@ const publishDiff = computed(() => [
         <!-- ── Cabeçalho da receita: tipo, SKU, ficha, arquivada ─────────── -->
         <NuxtCard class="mb-4" :ui="{ body: 'flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm sm:p-3' }">
           <NuxtBadge color="neutral" :label="entry.kind_label" />
-          <NuxtBadge v-if="entry.is_archived" color="neutral" label="Arquivada" />
+          <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
 
           <div class="flex min-w-0 items-center gap-1.5">
             <Icon name="lucide:tag" class="size-4 shrink-0 text-muted-foreground" />
@@ -370,7 +381,7 @@ const publishDiff = computed(() => [
               </span>
               <span v-else class="text-warning">Sem SKU</span>
               <NuxtButton
-                v-if="canEdit && !entry.is_archived"
+                v-if="canEdit && entry.is_active"
                 color="primary"
                 variant="ghost"
                 :label="entry.output_sku ? 'Trocar' : 'Associar SKU'"
@@ -452,8 +463,8 @@ const publishDiff = computed(() => [
               v-if="canEdit"
               color="neutral"
               variant="outline"
-              :icon="entry.is_archived ? 'i-lucide-archive-restore' : 'i-lucide-archive'"
-              :label="entry.is_archived ? 'Restaurar' : 'Arquivar'"
+              :icon="!entry.is_active ? 'i-lucide-archive-restore' : 'i-lucide-archive'"
+              :label="!entry.is_active ? 'Desarquivar' : 'Arquivar'"
               @click="archiveOpen = true"
             />
           </div>
@@ -491,7 +502,7 @@ const publishDiff = computed(() => [
                   Rende {{ selected.yield_display }}
                 </span>
 
-                <div v-if="canEdit && !entry.is_archived" class="ml-auto flex flex-wrap items-center gap-1.5">
+                <div v-if="canEdit && entry.is_active" class="ml-auto flex flex-wrap items-center gap-1.5">
                   <NuxtButton
                     v-if="selected.status === 'draft'"
                     color="neutral"
@@ -530,6 +541,29 @@ const publishDiff = computed(() => [
                   icon="i-lucide-git-compare"
                   label="Comparar com…"
                   @click="compareWith"
+                />
+              </div>
+
+              <div class="mb-3 flex flex-wrap items-center gap-2 text-sm" data-version-review>
+                <NuxtIcon :name="provenanceIcon(selected.provenance_kind)" class="size-4 shrink-0 text-muted-foreground" />
+                <span class="text-muted-foreground">
+                  <b class="text-foreground">{{ selected.provenance_label }}.</b> {{ selected.provenance_detail }}
+                </span>
+                <NuxtBadge
+                  v-if="needsReview(selected.review_status)"
+                  :color="selected.review_status === 'changed' ? 'warning' : 'neutral'"
+                  :label="selected.review_label"
+                />
+                <span v-else-if="selected.review_by_name" class="text-muted-foreground">
+                  {{ reviewSignature(selected.review_by_name, selected.review_at_display) }}
+                </span>
+                <NuxtButton
+                  v-if="canEdit && isCurrent && entry.is_active && needsReview(selected.review_status)"
+                  class="ml-auto"
+                  icon="i-lucide-check"
+                  label="Está certa"
+                  :loading="busy"
+                  @click="confirmSelected"
                 />
               </div>
 
@@ -697,10 +731,10 @@ const publishDiff = computed(() => [
       </template>
     </NuxtModal>
 
-    <!-- ── Arquivar / restaurar ──────────────────────────────────────────── -->
+    <!-- ── Arquivar / desarquivar ───────────────────────────────────────── -->
     <NuxtModal
       v-model:open="archiveOpen"
-      :title="entry?.is_archived ? 'Restaurar a receita' : 'Arquivar a receita'"
+      :title="entry && !entry.is_active ? 'Desarquivar a receita' : 'Arquivar a receita'"
       :description="archiveDescription"
       :ui="{ content: 'sm:max-w-sm' }"
     >
@@ -708,8 +742,8 @@ const publishDiff = computed(() => [
         <div class="flex w-full justify-end gap-2">
           <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="archiveOpen = false" />
           <NuxtButton
-            :color="entry?.is_archived ? 'primary' : 'error'"
-            :label="entry?.is_archived ? 'Restaurar' : 'Arquivar'"
+            :color="entry && !entry.is_active ? 'primary' : 'error'"
+            :label="entry && !entry.is_active ? 'Desarquivar' : 'Arquivar'"
             :disabled="busy"
             @click="confirmArchive"
           />

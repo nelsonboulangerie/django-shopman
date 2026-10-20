@@ -93,7 +93,11 @@ capturam o código por dublê explícito fora da superfície pública. Foram
 removidos flag, segredo, aliases de payload e UI de exibição. O gate ativo
 reprova qualquer reintrodução desses símbolos.
 
-### 4. ⬜ O adapter de e-mail devolve sucesso enquanto o backend só imprime
+### 4. ✅ O adapter de e-mail devolve sucesso enquanto o backend só imprime
+
+> **✅ Já fechado no `main`** (conferido em 19/10): `notification_email.is_available`
+> devolve `False` para backend inerte (console, locmem, dummy) e para SMTP sem host;
+> a cadeia segue para SMS e WhatsApp.
 
 - `shopman/shop/adapters/notification_email.py:238-240` — `is_available` devolve `bool(EMAIL_HOST or EMAIL_BACKEND)`
 - `config/settings.py:799-802` — `EMAIL_BACKEND` cai no `console.EmailBackend`
@@ -229,7 +233,11 @@ em silêncio a escolha explícita do gestor e cai para settings. E `logger.debug
 
 ## Tier 3 — fail-open em decisão de segurança
 
-### 13. ⬜ O middleware de 2FA do Admin deixa passar quando a URL não resolve
+### 13. ✅ O middleware de 2FA do Admin deixa passar quando a URL não resolve
+
+> **✅ Já fechado no `main`** (conferido em 19/10): os dois `NoReverseMatch` de
+> `middleware_2fa.py` devolvem 503 ("Verificação em duas etapas indisponível."),
+> nunca o request passando.
 
 - `shopman/backstage/middleware_2fa.py:26-30` — `except NoReverseMatch: return self.get_response(request)`
 - idem `:42-45` — `except NoReverseMatch: return False` ("não precisa verificar")
@@ -239,7 +247,12 @@ URLconf falhar ao importar, o portão de 2FA vira no-op e todo `/admin/` abre pa
 qualquer sessão staff. **Um middleware de segurança que não acha a própria view
 de verificação deve dar 500, não acenar para o request passar.**
 
-### 14. ⬜ `notifications.get_backend(None)` resolve para o console
+### 14. ✅ `notifications.get_backend(None)` resolve para o console
+
+> **✅ Fechado (19/10, PR #1898).** Fora de `DEBUG` não existe backend padrão:
+> `get_backend(None)` devolve `None` com `logger.error`, e `notify()` falha com
+> "Backend not named". O aviso de estoque para cliente sem canal com consentimento
+> para antes do `notify()`. Regressão: `shop/tests/test_notification_backend_unnamed.py`.
 
 - `shopman/shop/notifications.py:33-37` — `if name is None: name = "console"`
 - `shopman/shop/adapters/notification_console.py:45,48-50` — `send`/`is_available` devolvem `True` incondicionalmente
@@ -266,7 +279,13 @@ de produção transforma toda notificação em sucesso silencioso pelo resto da 
 daquele processo. O adapter de OTP acertou (`otp_sms_comtele.py:51-56` devolve
 `False` no ramo inerte, para a cadeia seguir) — é o modelo.
 
-### 16. ⬜ O resolver fiscal degrada para "só se o operador pedir"
+### 16. ✅ O resolver fiscal degrada para "só se o operador pedir"
+
+> **✅ Fechado (19/10, PR #1894).** Cada resolver vota sozinho; o quebrado vira
+> `logger.error` e, no `emit` (lado de escrita), alerta crítico
+> `integration_config_drift`, sem calar os que funcionam. No boot, o
+> `SHOPMAN_E028` (check comum, roda no `migrate` do PRE_DEPLOY) reprova caminho que
+> não importa, inclusive o `intermediated_sale` do delta do Dia D num build sem ele.
 
 - `shopman/shop/services/fiscal.py:49-52` — `except Exception: logger.warning(...); return _default_emission_decision(order)`
 
@@ -296,7 +315,13 @@ por isso Tier 3 — mas é o ramo permissivo escolhido no `except`, em `logger.d
 
 ## Uma classe acima — quando o permissivo não é esquecimento, é o default do tipo
 
-### 18. 🟨 `Action.idempotency` nasce `"none"`: toda ação nova do PDV nasce sem trava de replay
+### 18. ✅ `Action.idempotency` nasce `"none"`: toda ação nova do PDV nasce sem trava de replay
+
+> **✅ Metade 2 fechada (19/10, PR #1918).** As oito mutações de caixa já estavam no
+> replay por `client_request_id` (`DIVIDA_ONDA_2` vazia); `cancel_recent_sale` entrou
+> no mesmo claim (`_local_idempotent`, escopo `pos.sale.cancel_recent`) e o PDV manda
+> o id, reusado na mesma tentativa. `clear_tab` segue `none` de propósito: DELETE por
+> `session_key`, o segundo disparo não acha o que liberar.
 
 > **Metade 1 fechada (29/08).** O default virou `"required"` no dataclass, nas duas
 > fábricas de ação (`storefront/api/actions.py`, `shop/projections/order_tracking.py`)
@@ -385,7 +410,7 @@ Todos em `shopman/shop/checks.py`, com `@register(deploy=True)`: rodam em
 | `check_allowed_hosts` (E002) | sem `*` | ⚠️ **Sim.** Default é `"*"` (`:104`) |
 | `check_payment_adapters` (E003/W006/E009) | adapters + credenciais | ✅ Fechado para o mock (runtime em `payment_mock`). `EFI_SANDBOX` e a chave test-vs-live do Stripe são cobertos pelo E022 (valor) e E026 (omissão); o sentido contrário (chave live com porta de teste aberta, em qualquer ambiente) pelo E027 |
 | `check_shared_cache_backend` (E006) | Redis em prod | ⚠️ **Sim.** LocMem em prod faz o `django-ratelimit` virar por-worker: os limites de OTP/login multiplicam pelo número de workers |
-| `check_fiscal_emission_resolver` (E013) | resolver configurado | ⚠️ **Sim** (item 16). E não checa `FOCUS_NFE_ENVIRONMENT` |
+| `check_fiscal_emission_resolver` (E013) | resolver configurado | ✅ Fechado (item 16): caminho quebrado é o E028, check comum, e o motor grita em runtime. O ambiente da Focus é o E022/E026 |
 | `check_operator_cookie_domain` (E014) | hosts sob o domínio-pai | ⚠️ Leve — divergência quebra CSRF/sessão em silêncio |
 | `check_webhook_tokens` (E004) | tokens EFI/iFood | Não — os endpoints já falham fechados |
 | `check_guestman_webhook_secret` (W009) | segredo ManyChat | Não — `Gates.provider_event_authenticity` falha fechado em runtime |

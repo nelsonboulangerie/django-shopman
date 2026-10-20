@@ -39,14 +39,15 @@ class SkuValidator:
 
         try:
             product = Product.objects.get(sku=sku)
-            is_published = product.is_published
+            is_published = product.is_active and product.is_published
+            is_sellable = product.is_active and product.is_sellable
             return SkuValidationResult(
                 valid=True,
                 sku=sku,
                 product_name=product.name,
                 is_published=is_published,
-                is_sellable=product.is_sellable,
-                message=None if (product.is_published and product.is_sellable) else "Product is not sellable",
+                is_sellable=is_sellable,
+                message=None if (is_published and is_sellable) else "Product is not sellable",
             )
         except Product.DoesNotExist:
             return SkuValidationResult(
@@ -72,8 +73,8 @@ class SkuValidator:
                     valid=True,
                     sku=sku,
                     product_name=product.name,
-                    is_published=product.is_published,
-                    is_sellable=product.is_sellable,
+                    is_published=product.is_active and product.is_published,
+                    is_sellable=product.is_active and product.is_sellable,
                 )
             else:
                 result[sku] = SkuValidationResult(
@@ -97,8 +98,8 @@ class SkuValidator:
                 sku=product.sku,
                 name=product.name,
                 description=product.long_description,
-                is_published=product.is_published,
-                is_sellable=product.is_sellable,
+                is_published=product.is_active and product.is_published,
+                is_sellable=product.is_active and product.is_sellable,
                 unit=product.unit,
                 category=category,
                 base_price_q=product.base_price_q,
@@ -138,8 +139,8 @@ class SkuValidator:
                 sku=product.sku,
                 name=product.name,
                 description=product.long_description,
-                is_published=product.is_published,
-                is_sellable=product.is_sellable,
+                is_published=product.is_active and product.is_published,
+                is_sellable=product.is_active and product.is_sellable,
                 unit=product.unit,
                 category=category,
                 base_price_q=product.base_price_q,
@@ -163,7 +164,7 @@ class SkuValidator:
         ).prefetch_related("collection_items__collection")
 
         if not include_inactive:
-            qs = qs.filter(is_published=True)
+            qs = qs.active().filter(is_published=True)
 
         qs = qs[:limit]
 

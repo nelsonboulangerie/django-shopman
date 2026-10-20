@@ -46,7 +46,6 @@ Tabela de preços por canal (WhatsApp, iFood, balcão). Suporta preços por faix
 | `is_published` | BooleanField | Visível no catálogo |
 | `is_sellable` | BooleanField | Elegível comercialmente para venda |
 | `image_url` | URLField | URL da imagem |
-| `is_batch_produced` | BooleanField | Produção em lote |
 | `metadata` | JSONField | Dados customizados |
 | `created_at` / `updated_at` | DateTimeField | Timestamps |
 | `history` | HistoricalRecords | Auditoria (simple-history) |

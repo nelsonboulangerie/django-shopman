@@ -75,6 +75,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Horários e operação", "shop_shopoperation", "Dias e horas de funcionamento, feriados e fechamentos.", "schedule"),
             _model("Cardápio", "shop_shopmenu", "Coleções que aparecem na loja e como o cardápio se monta.", "restaurant_menu"),
             _model("Integrações", "shop_shopintegrations", "Serviços externos: pagamento, mensagens, iFood, o mínimo de público das campanhas de WhatsApp e os limites de capacidade dos apps de operação.", "extension"),
+            _model("Histórico da configuração", "shop_instanceapplyrecord", "Cada vez que a configuração da loja foi aplicada pelo descritor: quem aplicou, quando e o que mudou. Só leitura.", "history"),
         ),
     ),
     SettingsGroup(
@@ -87,7 +88,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Regras de preço", "shop_ruleconfig", "As regras que alteram preço automaticamente.", "price_change"),
             _model("Promoções", "shop_promotion", "Campanhas de desconto por período, produto ou público.", "campaign"),
             _model("Cupons", "shop_coupon", "Códigos que o cliente digita para ganhar desconto.", "confirmation_number"),
-            _model("Faixas de preço", "guestman_pricetier", "Tabelas de preço por tipo de cliente.", "groups"),
+            _model("Grupos de clientes", "guestman_pricetier", "A tabela de preço e as vantagens de cada grupo de clientes.", "groups"),
             _model("Fidelidade", "shop_shoployalty", "Como o cliente acumula e troca pontos.", "loyalty"),
             _model("Atributos de produto", "shop_attributedefinition", "O vocabulário que o catálogo conhece: natureza, sabor, temperatura. É dele que as regras de sugestão falam.", "sell"),
             _model("Papéis de consumo", "backstage_consumptionrole", "O que faz uma cesta indicar consumo no salão: bebida, lanche, prato quente.", "restaurant"),

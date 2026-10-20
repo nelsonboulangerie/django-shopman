@@ -16,3 +16,9 @@ def get_orderman_setting(key: str):
     if isinstance(value, list) and value and isinstance(value[0], str):
         return [import_string(cls) for cls in value]
     return value
+
+
+def get_customer_fence():
+    """O porto da cerca do titular (``ORDERMAN["CUSTOMER_FENCE"]``), ou ``None``."""
+    path = getattr(settings, "ORDERMAN", {}).get("CUSTOMER_FENCE")
+    return import_string(path)() if path else None

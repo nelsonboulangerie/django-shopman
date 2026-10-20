@@ -10,12 +10,7 @@ export type SurfaceKind = "channel" | "display" | "feed";
 // Estado de sync por CÉLULA (produto × plataforma) — CatalogSyncState (Arc C).
 // "" = nunca sincronizado / superfície que não projeta (feed de pull).
 export type CellSyncStatus =
-  | "synced"
-  | "pending"
-  | "error"
-  | "retracted"
-  | "skipped"
-  | "";
+  "synced" | "pending" | "error" | "retracted" | "skipped" | "";
 
 // Atributos PIM sociais da linha (Arc A) — Product.metadata['social'].
 export interface ProductSocial {
@@ -70,6 +65,7 @@ export interface CatalogRowProjection {
   image_url: string;
   primary_collection: string;
   primary_collection_name: string;
+  is_active: boolean;
   is_published: boolean;
   is_sellable: boolean;
   base_price_q: number;
@@ -125,13 +121,7 @@ export interface CatalogMatrixProjection {
 }
 
 export type CatalogOrder =
-  | "name"
-  | "-name"
-  | "sku"
-  | "-sku"
-  | "price"
-  | "-price"
-  | "updated";
+  "name" | "-name" | "sku" | "-sku" | "price" | "-price" | "updated";
 
 export interface VocationPending {
   sku: string;
@@ -207,7 +197,8 @@ export interface ProductDetailProjection {
   shelf_life_days: number | null;
   storage_tip: string;
   production_cycle_hours: number | null;
-  is_batch_produced: boolean;
+  /** Cadastro operacional: muda só pelo gesto Arquivar/Desarquivar. */
+  readonly is_active: boolean;
   is_published: boolean;
   is_sellable: boolean;
   ingredients_text: string;
@@ -237,6 +228,12 @@ export interface ProductDetailProjection {
   // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
   // (POST .../purchase/), não campo do rascunho.
   readonly roles?: SkuRoles;
+  /**
+   * O modo de produção da ficha vigente do SKU (ADR-040): "Em lote" ou "Na hora",
+   * e a estação de preparo do feito na hora. Somente leitura: o modo se muda na
+   * ficha, na Produção. `null` sem ficha (revenda).
+   */
+  readonly production?: ProductProduction | null;
   /** Vocação do SKU (ref do papel de consumo); "" = sem vocação. Só para o B.I. */
   vocation: string;
   readonly vocation_choices: VocationChoice[];
@@ -284,6 +281,20 @@ export interface GtinRejected {
   readonly confirmed_at: string;
 }
 
+/** O modo de produção de um produto, com a frase pronta e o endereço da ficha. */
+export interface ProductProduction {
+  readonly mode: "batch" | "made_to_order";
+  readonly mode_label: string;
+  /** A estação de preparo do feito na hora; vazia em lote ou sem estação. */
+  readonly station: string;
+  /** "Feito na hora na estação Cafés: os insumos baixam a cada venda." */
+  readonly summary: string;
+  readonly recipe_ref: string;
+  readonly recipe_name: string;
+  /** Vazio quando a Produção não tem endereço configurado. */
+  readonly url: string;
+}
+
 /** Comprável · Vendável · Produzido · Usado em receita — derivados no servidor. */
 export interface SkuRoles {
   purchasable: boolean;
@@ -303,10 +314,12 @@ export type ProductDetailPatch = Partial<
     | "field_sources"
     | "dietary_from_recipe"
     | "nutrition_auto_filled"
+    | "is_active"
     | "fiscal_profiles"
     | "fiscal_origins"
     | "fiscal_warnings"
     | "roles"
+    | "production"
     | "vocation_choices"
     | "gtin_rejected"
     | "social"
@@ -427,7 +440,6 @@ export interface CreateProductPayload {
   storage_tip?: string;
   ingredients_text?: string;
   production_cycle_hours?: number | null;
-  is_batch_produced?: boolean;
   is_published?: boolean;
   is_sellable?: boolean;
   social?: Partial<ProductSocial>;
@@ -487,6 +499,31 @@ export interface BulkCellsResponse {
     conflicting_fields?: string[];
   }[];
   errors: { index: number; sku: string; surface_ref: string; detail: string }[];
+}
+
+export interface ProductArchiveLine {
+  index: number;
+  sku: string;
+  name: string;
+  before_is_active: boolean;
+  is_active: boolean;
+  changed: boolean;
+}
+
+export interface ProductArchiveReceipt {
+  ok: boolean;
+  outcome: string;
+  intention: string;
+  applied: ProductArchiveLine[];
+  conflicts: {
+    index: number;
+    sku: string;
+    detail: string;
+    is_active: boolean;
+  }[];
+  errors: { index: number; sku: string; detail: string }[];
+  server_now: string;
+  undo_until: string;
 }
 // Import CSV pt-BR: a prévia não grava; o apply leva a revisão da prévia.
 export interface ImportPreviewChange {

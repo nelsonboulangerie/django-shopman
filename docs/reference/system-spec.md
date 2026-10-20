@@ -85,7 +85,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 **Escopo**: catálogo de produtos **vendáveis**. Nunca insumos.
 
 **Modelos**
-- `Product(uuid, sku[unique], name, short_description, long_description, keywords[taggit], unit, unit_weight_g, storage_tip, ingredients_text, nutrition_facts[JSON|NutritionFacts], base_price_q, availability_policy∈{stock_only, planned_ok, demand_ok}, shelf_life_days, production_cycle_hours, is_published, is_sellable, image_url, is_batch_produced, metadata, history[simple-history])`.
+- `Product(uuid, sku[unique], name, short_description, long_description, keywords[taggit], unit, unit_weight_g, storage_tip, ingredients_text, nutrition_facts[JSON|NutritionFacts], base_price_q, availability_policy∈{stock_only, planned_ok, demand_ok}, shelf_life_days, production_cycle_hours, is_published, is_sellable, image_url, metadata, history[simple-history])`.
 - `ProductComponent(parent FK Product, component FK Product, qty ≥ 0.001)` — UniqueConstraint(parent,component); cycles/self-reference proibidos; `BUNDLE_MAX_DEPTH=5`.
 - `Listing(ref[unique], name, valid_from, valid_until, priority, is_active)`.
 - `ListingItem(listing FK, product FK, price_q, min_qty, is_published, is_sellable, history)` — UniqueConstraint(listing, product, min_qty).

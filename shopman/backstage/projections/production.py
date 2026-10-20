@@ -22,7 +22,7 @@ from django.conf import settings
 from django.db.models import Count, Max, Sum
 from django.utils import timezone
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderEvent
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem, WorkOrder, WorkOrderEvent
 from shopman.stockman import Position
 from shopman.utils import units
 from shopman.utils.units import UnitError
@@ -392,6 +392,32 @@ class ProductionWeighingTableProjection:
 
 
 @dataclass(frozen=True)
+class ProductionWeighingOldDoughLineProjection:
+    """One ingredient of the final mix with old dough at the recipe's cap."""
+
+    sku: str
+    target_display: str
+    target_g: str | None
+
+
+@dataclass(frozen=True)
+class ProductionWeighingOldDoughProjection:
+    """A pesagem com massa velha no teto da ficha (``final_mix_at_cap``).
+
+    Massa velha é a própria massa da véspera, então ela entra como fatia da
+    fórmula inteira: cada linha da mistura final encolhe por ``(1 − teto)`` e a
+    massa velha cobre a diferença, com o mesmo peso total. A ficha publica o
+    teto como linha opcional (``meta.role == "old_dough"``); sem ela, ``None``.
+    """
+
+    cap_pct: str
+    cap_display: str
+    old_dough_display: str
+    old_dough_g: str | None
+    lines: tuple[ProductionWeighingOldDoughLineProjection, ...]
+
+
+@dataclass(frozen=True)
 class ProductionWeighingTicketProjection:
     """A printable weighing ticket for one recipe/base recipe."""
 
@@ -420,6 +446,8 @@ class ProductionWeighingTicketProjection:
     expiry_display: str  # Validade: dd/mm; vazio quando não há regra responsável.
     validity_configured: bool
     validity_source: str
+    # Mistura final com massa velha no teto; None quando a ficha não tem teto.
+    old_dough: ProductionWeighingOldDoughProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -1317,7 +1345,9 @@ def build_production_board(
 
     wos = list(wos_qs)
 
-    all_recipes = tuple(Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("name", "ref"))
+    all_recipes = tuple(
+        Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).prefetch_related("items").order_by("name", "ref")
+    )
     recipes = tuple(
         RecipeOptionProjection(
             pk=recipe.pk,
@@ -1327,7 +1357,9 @@ def build_production_board(
         for recipe in all_recipes
     )
     consumed_recipe_skus = set(
-        RecipeItem.objects.filter(recipe__is_active=True).exclude(input_sku="").values_list("input_sku", flat=True)
+        RecipeItem.objects.filter(recipe__is_active=True, recipe__production_mode=ProductionMode.BATCH)
+        .exclude(input_sku="")
+        .values_list("input_sku", flat=True)
     )
     matrix_recipes = tuple(recipe for recipe in all_recipes if recipe.output_sku not in consumed_recipe_skus)
 
@@ -1439,7 +1471,7 @@ def build_production_weighing(
 
     active_recipes = {
         recipe.output_sku: recipe
-        for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("ref")
+        for recipe in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).prefetch_related("items").order_by("ref")
     }
     tickets: dict[tuple, dict] = {}
 
@@ -1490,6 +1522,7 @@ def build_production_weighing(
         # de produção que este preparo alimenta, não um "destino" físico.
         source = f"{_measure(effective_quantity, 'un.')} {work_order.output_sku}"
 
+        output_unit = _mass_output_unit(recipe)
         if base_items:
             for item in base_items:
                 add_ticket(
@@ -1498,12 +1531,18 @@ def build_production_weighing(
                     item.unit,
                     source,
                 )
-            continue
+            # A peça é feita DE massa: o preparo dela é o ticket da massa. Mas
+            # a ordem que rende massa é ela mesma um preparo, e a ficha dela é
+            # a mistura final + as partes prontas (RECIPE-MODELING-BRIEF §0.2):
+            # sem o ticket próprio, a balança via só o levain e a farinha, a
+            # água e o sal da mistura final nunca chegavam a ser pesados.
+            if not output_unit:
+                continue
 
         add_ticket(
             recipe,
             effective_quantity,
-            "un.",
+            output_unit or "un.",
             source,
             items=items,
             batch_size=batch_size,
@@ -1678,7 +1717,8 @@ def build_production_mise_en_place(
 
     skus = {need.item_ref for need in needs}
     active_recipes = {
-        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True, output_sku__in=skus)
+        recipe.output_sku: recipe
+        for recipe in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH, output_sku__in=skus)
     }
     product_names = _product_names(skus)
     availability = _ingredient_availability(skus)
@@ -2052,7 +2092,11 @@ def build_qc_kiosk(
 
     recipes = tuple(
         RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-        for r in (Recipe.objects.filter(is_active=True).order_by("name", "ref") if access.can_quick_finish else ())
+        for r in (
+            Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).order_by("name", "ref")
+            if access.can_quick_finish
+            else ()
+        )
     )
     from shopman.backstage.models import OvenRun
 
@@ -2370,7 +2414,7 @@ def build_production_reports(
 def _report_options():
     recipes = tuple(
         RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
+        for r in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).order_by("name", "ref")
     )
     positions = tuple(
         PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
@@ -3785,6 +3829,85 @@ def _build_weighing_ticket(
         expiry_display=expiry.strftime("%d/%m") if expiry is not None else "",
         validity_configured=expiry is not None,
         validity_source=validity_source if expiry is not None else "",
+        old_dough=_weighing_old_dough(recipe, items, coefficient, theoretical_total_g),
+    )
+
+
+def _mass_output_unit(recipe: Recipe) -> str:
+    """A unidade de massa em que a ficha rende (massa, levain, creme); "" se não.
+
+    Declarada (catálogo ou ``meta.output_unit``), nunca deduzida.
+    """
+    unit = recipe._declared_output_unit()
+    if not unit:
+        return ""
+    try:
+        return unit if units.dimension(unit) == units.MASS else ""
+    except UnitError:
+        return ""
+
+
+def _old_dough_cap_pct(recipe: Recipe) -> Decimal | None:
+    """O teto de massa velha que a ficha publicou, em % da fórmula inteira.
+
+    Mora na linha opcional que ``publish_version`` escreve a partir de
+    ``formula.parts[{kind: "old_dough", cap_pct}]``. Teto fora de (0, 100) não é
+    teto: a ficha fica sem a variante, em vez de pesar zero ou negativo.
+    """
+    prefetched = getattr(recipe, "_prefetched_objects_cache", {}).get("items")
+    items = prefetched if prefetched is not None else recipe.items.all()
+    for item in items:
+        meta = item.meta or {}
+        if not item.is_optional or meta.get("role") != "old_dough":
+            continue
+        try:
+            cap = Decimal(str(meta.get("cap_pct")))
+        except (ArithmeticError, ValueError):
+            logger.warning("production.weighing_invalid_old_dough_cap recipe=%s value=%r", recipe.ref, meta.get("cap_pct"))
+            continue
+        if cap.is_finite() and Decimal("0") < cap < Decimal("100"):
+            return cap
+    return None
+
+
+def _weighing_old_dough(
+    recipe: Recipe,
+    items: tuple[_RecipeItemData, ...],
+    coefficient: Decimal,
+    theoretical_total_g: Decimal | None,
+) -> ProductionWeighingOldDoughProjection | None:
+    """A mistura final no teto: cada linha × (1 − teto); a massa velha é o resto.
+
+    Mesma conta de ``final_mix_at_cap`` (``craftsman/contrib/formula``), aplicada
+    sobre a ficha congelada do preparo, que é a mistura final + as partes.
+    """
+    cap = _old_dough_cap_pct(recipe)
+    if cap is None:
+        return None
+    factor = Decimal("1") - cap / Decimal("100")
+    lines = []
+    for item in items:
+        display, facts = _weighing_measure(Decimal(str(item.quantity)) * coefficient * factor, item.unit)
+        lines.append(
+            ProductionWeighingOldDoughLineProjection(
+                sku=item.input_sku,
+                target_display=display,
+                target_g=_decimal_fact_string(facts[1]) if facts[1] is not None else None,
+            )
+        )
+    old_dough_g = None
+    old_dough_display = ""
+    if theoretical_total_g is not None and theoretical_total_g > 0:
+        old_display, old_facts = _weighing_measure(theoretical_total_g * cap / Decimal("100"), "g")
+        old_dough_display = old_display
+        old_dough_g = _decimal_fact_string(old_facts[1]) if old_facts[1] is not None else None
+    cap_text = format(cap.normalize(), "f")
+    return ProductionWeighingOldDoughProjection(
+        cap_pct=cap_text,
+        cap_display=f"{cap_text.replace('.', ',')}%",
+        old_dough_display=old_dough_display,
+        old_dough_g=old_dough_g,
+        lines=tuple(lines),
     )
 
 
@@ -3856,7 +3979,8 @@ def _work_order_needs(
     """
 
     active_recipes = {
-        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items")
+        recipe.output_sku: recipe
+        for recipe in Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH).prefetch_related("items")
     }
     output_units = _recipe_output_units(
         {work_order.recipe_id: work_order.recipe for work_order in work_orders}.values()

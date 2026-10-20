@@ -63,7 +63,10 @@ def devolve(apps, schema_editor):
     except Exception:  # pragma: no cover - ambiente sem o app carregado
         return
 
-    for produto in ProdutoVivo.objects.all().iterator():
+    # O serviço vivo só precisa da identidade e dos metadados. Limitar a leitura
+    # também impede que campos adicionados ao Product depois desta migração sejam
+    # selecionados ao reproduzir um estado histórico que ainda não tem a coluna.
+    for produto in ProdutoVivo.objects.only("id", "sku", "metadata").iterator():
         try:
             aggregate_dietary_from_recipe(produto)
         except Exception:  # pragma: no cover - um produto torto não trava o deploy

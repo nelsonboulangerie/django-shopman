@@ -44,7 +44,8 @@ Termos de domínio usados no código e na documentação.
 
 | Termo | Definição |
 |-------|-----------|
-| **Recipe** | Ficha técnica / BOM (Bill of Materials). `ref` único (slug), `output_ref` (string-agnostic), `batch_size` como rendimento base. |
+| **Recipe** | Ficha técnica / BOM (Bill of Materials). `ref` único (slug), `output_ref` (string-agnostic), `batch_size` como rendimento base. `is_active` = vigente × arquivada (uma vigente por SKU). |
+| **Modo de produção** | `Recipe.production_mode`: **Em lote** (`batch`, fabricado para estoque: planejado, sai por ordem de produção, que baixa os insumos) ou **Na hora** (`made_to_order`, fabricado sob pedido: nunca planejado, vai à estação de Preparo do KDS e a venda baixa os insumos, ADR-040). Revenda = SKU sem ficha vigente. É a única fonte da pergunta "é produzido em lote?": o produto não tem campo próprio (o antigo `Product.is_batch_produced` saiu em `offerman.0006`). |
 | **RecipeItem** | Ingrediente na receita. Usa coeficiente francês para escalar quantidades proporcionalmente ao rendimento base. |
 | **WorkOrder** | Ordem de produção. Liga uma receita às quantidades `planned`, `started` e `finished`, com status canônico `planned` → `started` → `finished` (ou `void`). Na tela, desde 03/10/2026 (parecer do dono): status **Planejada · Aberta · Fechada · Cancelada**, rótulos com fonte única nos choices de `WorkOrder.Status`. |
 | **Abertura** | O evento `started` e a aba `/` da Produção: o ponto sem volta do lote, onde se declara o **previsto**. "Abertura de lote" quando a frase sai da Produção (Central, alertas, B.I.), para não colidir com a abertura do caixa. |
@@ -60,7 +61,7 @@ Termos de domínio usados no código e na documentação.
 | Termo | Definição |
 |-------|-----------|
 | **Customer** | Cliente com `ref`, nome, tipo (`individual`/`business`), grupo, telefone. |
-| **PriceTier** | A faixa comercial do cliente (varejo, atacado, staff): escolhe a tabela de preço (`listing_ref`) e serve de segmento para promoção. UMA por cliente, e ela precifica. Chamava-se `CustomerGroup`, nome que escondia o efeito no preço. Não confundir com o tier de FIDELIDADE (`LoyaltyAccount.tier`, bronze/ouro). |
+| **PriceTier** | O grupo de clientes (varejo, atacado, staff), "Grupo" em toda tela desde 20/10/2026: escolhe a tabela de preço (`listing_ref`) e serve de segmento para promoção. UMA por cliente, e ela precifica. Chamava-se `CustomerGroup`, nome que escondia o efeito no preço. Não confundir com o tier de FIDELIDADE (`LoyaltyAccount.tier`, bronze/ouro). |
 | **CustomerTag** (etiqueta) | Rótulo livre que o operador cria na ficha do cliente ("corredores", "sem glúten"). MUITAS por cliente, sem efeito em preço, e o único público que quem atende monta sozinho. Namespace PRÓPRIO, nunca o `taggit.Tag` global de `Product.keywords`. |
 | **ContactPoint** | Ponto de contato do cliente (WhatsApp, email, etc.). `type` + `value_normalized`. |
 | **CustomerAddress** | Endereço de entrega com label, componentes estruturados, flag `is_default`. |

@@ -2,7 +2,7 @@
 // Base · Fornecedores: a tabela da suíte com os fornecedores, quantos insumos cada um
 // cobre e a pontualidade. O fornecedor aberto é a rota filha (`/base/suppliers/<ref>`).
 import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
-import { matchesSupplierFilters, plural, supplierDimensions } from "~/presentation/purchaseUi";
+import { plural, supplierDimensions } from "~/presentation/purchaseUi";
 import type { Supplier } from "~/types/purchase";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
@@ -10,12 +10,14 @@ type SupplierRow = { supplier: Supplier; materialsCovered: number; preferredCoun
 
 const route = useRoute();
 const {
+  query,
   suppliers,
+  supplierList,
+  materialList,
   supplierSummaries,
   supplierFilters,
   supplierForm,
   supplierFormSource,
-  metrics,
   selectSupplier,
   openSupplierCreate,
   saveSupplier,
@@ -30,8 +32,16 @@ watch(openRef, (ref) => {
   if (ref) selectSupplier(ref);
 }, { immediate: true });
 
-const search = ref("");
+const search = query;
 const sorting = ref<{ id: string; desc: boolean }[]>([]);
+watch(sorting, (value) => {
+  const sort = value[0];
+  const order = sort?.id === "name" ? (sort.desc ? "-name" : "name") : "name";
+  void navigateTo({ query: { ...route.query, order, page: "1" } }, { replace: true });
+}, { deep: true });
+function goToPage(page: number) {
+  void navigateTo({ query: { ...route.query, page: String(page) } }, { replace: true });
+}
 
 // O painel de filtros da suíte: Situação e "tem contato comercial?" — a pergunta
 // que o comprador faz antes de apertar enviar.
@@ -69,33 +79,14 @@ const SORT_VALUE: Record<string, (row: SupplierRow) => number | string> = {
 const yieldsToDetail = computed(() => (openRef.value ? { th: "max-2xl:hidden", td: "max-2xl:hidden" } : undefined));
 const columns = computed(() => [
   { id: "name", header: "Fornecedor", accessorFn: SORT_VALUE.name, enableSorting: true, enableHiding: false },
-  { id: "materials", header: "Insumos", accessorFn: SORT_VALUE.materials, enableSorting: true },
-  { id: "preferred", header: "Preferidos", accessorFn: SORT_VALUE.preferred, enableSorting: true, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "reliability", header: "No prazo", accessorFn: SORT_VALUE.reliability, enableSorting: true, meta: { supporting: true } },
-  { id: "lead", header: "Prazo de entrega", accessorFn: SORT_VALUE.lead, enableSorting: true, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "status", header: "Situação" },
+  { id: "materials", header: "Insumos", accessorFn: SORT_VALUE.materials },
+  { id: "preferred", header: "Preferidos", accessorFn: SORT_VALUE.preferred, meta: { supporting: true, class: yieldsToDetail.value } },
+  { id: "reliability", header: "No prazo", accessorFn: SORT_VALUE.reliability, meta: { supporting: true } },
+  { id: "lead", header: "Prazo de entrega", accessorFn: SORT_VALUE.lead, meta: { supporting: true, class: yieldsToDetail.value } },
+  { id: "status", header: "Cadastro" },
 ]);
 
-const displayed = computed<SupplierRow[]>(() => {
-  const term = search.value.trim().toLowerCase();
-  const list = supplierSummaries.value.filter(
-    (row) =>
-      (!term ||
-        row.supplier.displayName.toLowerCase().includes(term) ||
-        row.supplier.name.toLowerCase().includes(term) ||
-        row.supplier.ref.toLowerCase().includes(term)) &&
-      matchesSupplierFilters(row.supplier, supplierFilters.value),
-  );
-  const sort = sorting.value[0];
-  const value = sort ? SORT_VALUE[sort.id] : undefined;
-  if (!sort || !value) return list;
-  return [...list].sort((a, b) => {
-    const left = value(a);
-    const right = value(b);
-    const order = typeof left === "string" ? left.localeCompare(String(right), "pt-BR") : left - (right as number);
-    return sort.desc ? -order : order;
-  });
-});
+const displayed = computed<SupplierRow[]>(() => supplierSummaries.value);
 const { remember } = useRecordTrail(SUPPLIERS_TRAIL);
 watch(
   displayed,
@@ -140,7 +131,7 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
         />
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <PurchaseBaseSections :counts="{ materials: materialList.total, suppliers: supplierList.total }" />
       </template>
       <template #filter-panel>
         <OperatorFilterPanel
@@ -162,7 +153,7 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
         <OperatorTableView table-key="purchase-suppliers" />
       </template>
       <template #filters-end>
-        <span class="text-xs text-muted tabular-nums">{{ plural(displayed.length, "fornecedor", "fornecedores") }}</span>
+        <span class="text-xs text-muted tabular-nums">{{ plural(supplierList.total, "fornecedor", "fornecedores") }}</span>
       </template>
     </OperatorPageHeader>
 
@@ -183,6 +174,15 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
             :empty-title="!suppliers.length ? 'Nenhum fornecedor cadastrado ainda.' : `Nenhum fornecedor com “${search.trim()}”.`"
             data-base-suppliers-table
           >
+            <template v-if="supplierList.page > 1 || supplierList.has_next" #footer>
+              <NuxtPagination
+                :page="supplierList.page"
+                :total="supplierList.total"
+                :items-per-page="supplierList.page_size"
+                aria-label="Páginas de fornecedores"
+                @update:page="goToPage"
+              />
+            </template>
             <template #name-cell="{ row }">
               <span class="block font-semibold">{{ row.original.supplier.displayName }}</span>
               <span class="block font-mono text-xs text-muted">{{ row.original.supplier.ref }}</span>
@@ -200,7 +200,10 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
               <span class="whitespace-nowrap tabular-nums">{{ row.original.supplier.leadTimeDays }} {{ row.original.supplier.leadTimeDays === 1 ? "dia" : "dias" }}</span>
             </template>
             <template #status-cell="{ row }">
-              <NuxtBadge :color="row.original.supplier.isActive ? 'success' : 'neutral'" :label="row.original.supplier.isActive ? 'Ativo' : 'Inativo'" />
+              <NuxtBadge
+                :color="row.original.supplier.isActive ? 'success' : 'neutral'"
+                :label="row.original.supplier.isActive ? 'Em uso' : 'Arquivado'"
+              />
             </template>
           </OperatorTable>
           <MoreBelow />

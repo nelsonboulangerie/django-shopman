@@ -21,6 +21,7 @@ import {
   sheetPayloadFromDraft,
   type SheetDraft,
 } from "~/presentation/recipeSheet";
+import { PRODUCTION_MODE_HELP, PRODUCTION_MODE_OPTIONS } from "~/presentation/recipeBook";
 
 const props = defineProps<{
   open: boolean;
@@ -46,6 +47,7 @@ const { dirty, changedKeys, capture } = useDirtyForm(() => ({
   shelfLifeDays: form.shelfLifeDays,
   shelfLifeReviewed: form.shelfLifeReviewed,
   productionLifecycle: form.productionLifecycle,
+  productionMode: form.productionMode,
   items: form.items.map((item) => ({ ...item })),
 }));
 
@@ -65,6 +67,7 @@ function seed() {
     draft.shelfLifeDays = sheet.execution.shelf_life_days == null ? "" : String(sheet.execution.shelf_life_days);
     draft.shelfLifeReviewed = sheet.execution.shelf_life_reviewed;
     draft.productionLifecycle = sheet.execution.production_lifecycle;
+    draft.productionMode = sheet.execution.production_mode;
     draft.items = itemsFromProjection(sheet.items);
   }
   if (!draft.items.length) draft.items = [emptySheetItem()];
@@ -90,6 +93,7 @@ const outputUnit = computed(() => props.sheet?.output_unit ?? "");
 const units = [...SHEET_UNIT_OPTIONS];
 const yieldUnits = [...SHEET_YIELD_UNIT_OPTIONS];
 const lifecycleOptions = computed(() => props.sheet?.execution.lifecycle_options ?? []);
+const productionModeOptions = computed(() => props.sheet?.execution.production_mode_options ?? [...PRODUCTION_MODE_OPTIONS]);
 const error = computed(() => sheetDraftError(form));
 const valid = computed(() => !error.value);
 const mass = computed(() => massBalancePreview(form.items, form.batchSize, outputUnit.value));
@@ -210,6 +214,16 @@ function save() {
 
     <OperatorFormSection section-key="operation" title="Operação" description="Como a ficha se comporta no planejamento e no chão.">
       <div class="grid gap-3 sm:grid-cols-2">
+        <NuxtFormField label="Modo de produção" :description="PRODUCTION_MODE_HELP" class="sm:col-span-2">
+          <NuxtRadioGroup
+            v-model="form.productionMode"
+            :items="productionModeOptions"
+            value-key="value"
+            label-key="label"
+            orientation="horizontal"
+            data-testid="sheet-production-mode"
+          />
+        </NuxtFormField>
         <NuxtFormField label="Tempo máximo de lote aberto (min)" description="Vazio usa o padrão da loja.">
           <NuxtInput v-model="form.maxStartedMinutes" inputmode="numeric" class="w-full" />
         </NuxtFormField>

@@ -92,10 +92,10 @@ def _with_previous_season(lines, *, target_date, output_skus, suggestion, formul
     recalculada só com os meses da estação anterior; a troca só vale se a
     anterior tiver mais amostra, senão fica o que a corrente já sabe.
     """
-    from shopman.craftsman.models import Recipe
+    from shopman.craftsman.models import ProductionMode, Recipe
 
     min_samples = suggestion.season_min_samples
-    recipes = Recipe.objects.filter(is_active=True)
+    recipes = Recipe.objects.filter(is_active=True, production_mode=ProductionMode.BATCH)
     if output_skus:
         recipes = recipes.filter(output_sku__in=output_skus)
     recipe_order = list(recipes.values_list("pk", "output_sku"))
@@ -561,7 +561,7 @@ def quick_plan(
     partição: é lá que mora o guardrail de insumo.
     """
     from django.db import transaction
-    from shopman.craftsman.models import Recipe, WorkOrder
+    from shopman.craftsman.models import ProductionMode, Recipe, WorkOrder
     from shopman.craftsman.services.scheduling import CraftPlanning
 
     qty = _positive_decimal(quantity, error="Quantidade inválida.")
@@ -597,6 +597,7 @@ def quick_plan(
             recipe = Recipe.objects.select_for_update().get(
                 pk=recipe_id,
                 is_active=True,
+                production_mode=ProductionMode.BATCH,
             )
             replay = _replay_planning_attempt(
                 attempt_key=attempt_key,
@@ -663,7 +664,7 @@ def set_planned_quantity(
     """
     from django.db import transaction
     from shopman.craftsman.exceptions import CraftError, StaleRevision
-    from shopman.craftsman.models import Recipe, WorkOrder, WorkOrderEvent
+    from shopman.craftsman.models import ProductionMode, Recipe, WorkOrder, WorkOrderEvent
     from shopman.craftsman.services.execution import CraftExecution
     from shopman.craftsman.services.scheduling import CraftPlanning, _next_seq
 
@@ -714,7 +715,7 @@ def set_planned_quantity(
             # Locking the recipe serializes every cell for that recipe.  It is
             # intentionally a little broader than recipe/date/position and is
             # portable across PostgreSQL and the SQLite test suite.
-            recipe = Recipe.objects.select_for_update().get(pk=recipe_id, is_active=True)
+            recipe = Recipe.objects.select_for_update().get(pk=recipe_id, is_active=True, production_mode=ProductionMode.BATCH)
         except (Recipe.DoesNotExist, ValueError, TypeError) as exc:
             raise ValueError("Receita inválida.") from exc
 
@@ -1167,10 +1168,10 @@ def _merge_committed_order_links(primary, duplicates: list) -> None:
 
 
 def _get_active_recipe(recipe_id):
-    from shopman.craftsman.models import Recipe
+    from shopman.craftsman.models import ProductionMode, Recipe
 
     try:
-        return Recipe.objects.get(pk=recipe_id, is_active=True)
+        return Recipe.objects.get(pk=recipe_id, is_active=True, production_mode=ProductionMode.BATCH)
     except (Recipe.DoesNotExist, ValueError, TypeError) as exc:
         raise ValueError("Receita inválida.") from exc
 

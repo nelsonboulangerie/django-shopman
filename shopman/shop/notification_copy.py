@@ -45,10 +45,13 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
         ),
     },
     # Só sai quando não falta nada (quem ainda paga recebe o payment_requested).
+    # ``{commitment_suffix}`` é a data da ENCOMENDA (" para retirada amanhã, a partir
+    # das 9h"), sem ponto final; vazio no pedido de hoje
+    # (``services/notification._commitment_suffix``).
     "order_accepted": {
         "subject": "Pedido {order_ref_short} confirmado",
         "body": (
-            "Seu pedido *{order_ref_short}* está confirmado. O total é *{order_total_display}*. "
+            "Seu pedido *{order_ref_short}* está confirmado{commitment_suffix}. O total é *{order_total_display}*. "
             "Vamos preparar com todo carinho. ✨\n"
             "Acompanhe por aqui: {tracking_url}"
         ),

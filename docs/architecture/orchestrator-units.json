@@ -211,6 +211,49 @@
       "out_of_extraction": false
     },
     {
+      "id": "catalog.remote-item-identity",
+      "question": "Qual item, produto e categoria remotos representam este SKU no catálogo iFood configurado?",
+      "owner": "catalog.remote-item-identity",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.catalog_identity:resolve_catalog_identity",
+      "authoritative_symbols": [
+        "shopman.shop.policies.catalog_identity:_derived_identity",
+        "shopman.shop.policies.catalog_identity:resolve_catalog_identity"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/catalog_identity.py",
+          "symbols": [
+            "CatalogIdentity",
+            "CatalogIdentityConflict",
+            "_UUID_NS",
+            "_derived_identity",
+            "logger",
+            "resolve_catalog_identity"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [
+        "SHOPMAN_IFOOD"
+      ],
+      "tests": [
+        "shopman/storefront/tests/test_catalog_projection_ifood.py::test_without_binding_identity_remains_deterministic",
+        "shopman/storefront/tests/test_catalog_projection_ifood.py::test_binding_from_other_account_is_ignored_with_warning",
+        "shopman/storefront/tests/test_catalog_projection_ifood.py::test_same_remote_item_bound_to_two_skus_is_explicit_error"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "marketing.whatsapp-approved-delivery",
       "question": "O envio por WhatsApp preserva exatamente o flow, o conteúdo e o destino selados no artefato aprovado?",
       "owner": "marketing.whatsapp-approved-delivery",
@@ -1202,6 +1245,7 @@
         "ANNOUNCEMENT_NOTIFY"
       ],
       "config_surface": [
+        "DEBUG",
         "SHOPMAN_ENVIRONMENT"
       ],
       "tests": [
@@ -3611,6 +3655,45 @@
       "out_of_extraction": false
     },
     {
+      "id": "promotion.group-free-shipping",
+      "question": "Qual frete grátis de grupo vale para este cliente e cobre este pedido?",
+      "owner": "promotion.group-free-shipping",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.group_advantage:group_free_shipping_for_order",
+      "authoritative_symbols": [
+        "shopman.shop.policies.group_advantage:best_group_free_shipping",
+        "shopman.shop.policies.group_advantage:free_shipping_minimum_q",
+        "shopman.shop.policies.group_advantage:group_free_shipping_for_order"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/group_advantage.py",
+          "symbols": [
+            "free_shipping_minimum_q",
+            "best_group_free_shipping",
+            "group_free_shipping_for_order"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_group_free_shipping_policy.py::test_group_free_shipping_truth_table",
+        "scripts/tests/test_group_free_shipping_policy.py::test_lowest_minimum_wins_and_order_breaks_ties",
+        "scripts/tests/test_group_free_shipping_policy.py::test_minimum_reads_the_config"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "pricing.lot-discount-application",
       "question": "Como o desconto de lote já resolvido compõe o preço da linha correspondente?",
       "owner": "pricing.lot-discount-application",
@@ -3817,7 +3900,9 @@
       "ports": [],
       "events": [],
       "directives": [],
-      "config_surface": [],
+      "config_surface": [
+        "DEBUG"
+      ],
       "tests": [
         "shopman/shop/tests/test_manychat_flow_isolation.py::test_notify_turns_busy_into_a_retryable_result_never_unknown",
         "shopman/shop/tests/test_manychat_marketing_safety.py::test_notification_boundary_never_fabricates_receipt_or_logs_recipient",
@@ -4600,7 +4685,8 @@
         "GOOGLE_MAPS_API_KEY",
         "GOOGLE_MAPS_BROWSER_API_KEY",
         "GOOGLE_MAPS_SERVER_API_KEY",
-        "SHOPMAN_ENVIRONMENT"
+        "SHOPMAN_ENVIRONMENT",
+        "SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT"
       ],
       "tests": [
         "shopman/shop/tests/test_rules.py::TestDeliveryZoneRule::test_code_and_stage",
@@ -5061,7 +5147,8 @@
             "PUBLIC_RULE_KEYS",
             "INTEGER_RULE_KEYS",
             "AUDIENCE_POLICY_VERSION",
-            "AUDIENCE_PREVIEW_TTL"
+            "AUDIENCE_PREVIEW_TTL",
+            "_keep_exclusive_members"
           ]
         }
       ],
@@ -5143,6 +5230,7 @@
         "service"
       ],
       "domains": [
+        "doorman",
         "guestman"
       ],
       "ports": [
@@ -5152,7 +5240,8 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_customer_lookup_delegates_to_guestman"
+        "shopman/shop/tests/test_services_semantic_units_a_m.py::test_customer_lookup_delegates_to_guestman",
+        "shopman/shop/tests/test_identity_by_customer_ref.py::test_uses_the_configured_resolver"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -6369,6 +6458,7 @@
       "events": [],
       "directives": [],
       "config_surface": [
+        "DEBUG",
         "MANYCHAT_API_TOKEN",
         "SECRET_KEY",
         "SHOPMAN_MANYCHAT",
@@ -6387,6 +6477,56 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.services.campaign:marketing_test_target_options"
+      ]
+    },
+    {
+      "id": "shop.services-campaign-exclusivity",
+      "question": "Esta campanha é exclusiva de um grupo, e quem dos escolhidos pode recebê-la?",
+      "owner": "marketing.campaign-exclusivity",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.campaign_exclusivity:for_campaign",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/campaign_exclusivity.py",
+          "symbols": [
+            "for_campaign",
+            "declared_by_campaign",
+            "set_exclusive_tiers",
+            "clean_tier_refs",
+            "campaign_ref",
+            "Exclusivity",
+            "CampaignExclusivityError",
+            "KIND",
+            "CONFIG_KEY",
+            "INHERITED_KEY",
+            "for_announcement",
+            "inherit_into_announcements",
+            "forget_campaign",
+            "_refs",
+            "_advantage_rows"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "guestman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_campaign_exclusivity.py::test_exclusive_campaign_reaches_only_members_even_with_another_audience",
+        "shopman/shop/tests/test_campaign_exclusivity.py::test_waves_of_a_deleted_exclusive_campaign_still_reach_only_members"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.campaign_exclusivity:for_campaign"
       ]
     },
     {
@@ -8860,6 +9000,7 @@
             "_payment_below_total",
             "_requested_receipt_channels",
             "_alert_receipt_promised_without_emission",
+            "_alert_emission_resolver_broken",
             "_alert_intermediary_base_unknown",
             "_alert_intermediary_benefit_unattributed",
             "_alert_payment_mismatch",
@@ -10002,6 +10143,7 @@
             "fired_line_ids",
             "_order_to_lines",
             "order_lines",
+            "_made_to_order_skus",
             "_match_instances",
             "_build_routable_items"
           ]
@@ -11431,6 +11573,8 @@
             "refund_arrival_note",
             "_returned_money_note",
             "_commitment_phrase",
+            "_commitment_note",
+            "_commitment_suffix",
             "_eta_clock",
             "_qualify_template"
           ]
@@ -11451,6 +11595,7 @@
       "events": [],
       "directives": [],
       "config_surface": [
+        "DEBUG",
         "SHOPMAN_FOCUS_NFE",
         "SHOPMAN_STOREFRONT_BASE_URL"
       ],
@@ -13353,6 +13498,10 @@
             "overpaid_q",
             "refund_cash",
             "alert_refund_failed",
+            "refund_intent_at_gateway",
+            "_REFUND_ELSEWHERE",
+            "_GATEWAY_NAMES",
+            "_GATEWAY_REFUSALS",
             "_REFUND_ALL_STATUSES",
             "_PAYMAN_REFUND_REASONS"
           ]
@@ -13950,7 +14099,9 @@
       "touchpoints": [
         "service"
       ],
-      "domains": [],
+      "domains": [
+        "guestman"
+      ],
       "ports": [],
       "events": [],
       "directives": [],
@@ -14980,7 +15131,7 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_customer_groups_nn.py::test_best_group_promotion_is_the_best_discount",
-        "shopman/shop/tests/test_customer_groups_nn.py::test_best_typed_advantage_by_priority",
+        "shopman/shop/tests/test_customer_groups_nn.py::test_best_typed_advantage_free_shipping_is_the_lowest_minimum",
         "shopman/shop/tests/test_customer_groups_nn.py::test_best_price_list_uses_the_priority_order"
       ],
       "test_gap_reason": null,
@@ -15595,6 +15746,7 @@
             "fulfill",
             "release",
             "revert_fulfilled",
+            "settle_made_to_order_cancellation",
             "revert",
             "reconcile_to_items",
             "unknown_sku_alert_sku",
@@ -16926,6 +17078,7 @@
             "MARKETING_FLOW_FIELDS",
             "_PURCHASE_REQUEST_FLOW_FIELDS",
             "COURIER_DISPATCH_VARIANT",
+            "PREORDER_ACCEPTED_VARIANT",
             "_CUSTOMER",
             "_ORDER",
             "_ORDER_BUTTON",
@@ -18026,6 +18179,144 @@
       ],
       "test_gap_reason": null,
       "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "catalog.group-exclusive-collections",
+      "question": "Quais coleções exclusivas de grupo este cliente enxerga no cardápio?",
+      "owner": "catalog.group-exclusive-collections",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.exclusive_collections:collection_access",
+      "authoritative_symbols": [
+        "shopman.shop.policies.exclusive_collections:collection_access"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/exclusive_collections.py",
+          "symbols": [
+            "CollectionAccess",
+            "collection_access"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_exclusive_collections_policy.py::test_exclusive_collections_truth_table"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "stock.made-to-order-consumption",
+      "question": "A venda do item feito na hora baixa o insumo da ficha, e o cancelamento devolve ou registra perda conforme o preparo?",
+      "owner": "stock.made-to-order-consumption",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.made_to_order:consume",
+      "authoritative_symbols": [
+        "shopman.shop.services.made_to_order:consume",
+        "shopman.shop.services.made_to_order:settle_cancellation"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/made_to_order.py",
+          "symbols": [
+            "SOURCE_SALE",
+            "SOURCE_SALE_CANCEL",
+            "OUTCOME_RETURNED",
+            "OUTCOME_WASTED",
+            "ORDER_DATA_KEY",
+            "CONSUME_RECEIPT_SCOPE",
+            "SETTLE_RECEIPT_SCOPE",
+            "made_to_order_recipes",
+            "_sold_components",
+            "_one_level_requirements",
+            "_base_unit_quantity",
+            "_option_requirements",
+            "schedule_consumption",
+            "consume",
+            "schedule_cancellation_settlement",
+            "_ticket_is_prepared",
+            "unprepared_quantities",
+            "settle_cancellation"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "buyman",
+        "craftsman",
+        "offerman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:catalog",
+        "shopman.buyman.adapters.sku_validator",
+        "shopman.offerman.adapters.sku_validator"
+      ],
+      "events": [],
+      "directives": [
+        "STOCK_CONSUME_MADE_TO_ORDER",
+        "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_a_venda_baixa_o_insumo_uma_vez_com_a_origem_no_movimento",
+        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_cancelado_depois_de_preparado_vira_perda",
+        "shopman/shop/tests/test_made_to_order_option_consumption.py::test_o_adicional_baixa_o_insumo_dele_junto_da_ficha",
+        "shopman/shop/tests/test_made_to_order_option_consumption.py::test_cancelado_depois_de_preparado_o_adicional_vira_perda"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "stock.made-to-order-handlers",
+      "question": "Como o worker durável executa a baixa de insumo da venda e o acerto do cancelamento?",
+      "owner": "stock.made-to-order-handlers",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.handlers.made_to_order:MadeToOrderConsumeHandler.handle",
+      "authoritative_symbols": [
+        "shopman.shop.handlers.made_to_order:MadeToOrderConsumeHandler.handle"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/handlers/made_to_order.py",
+          "symbols": [
+            "MadeToOrderConsumeHandler",
+            "MadeToOrderCancellationHandler"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "handler"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "STOCK_CONSUME_MADE_TO_ORDER",
+        "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_o_handler_da_directive_baixa"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
       "out_of_extraction": false
     }
   ]

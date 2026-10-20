@@ -19,6 +19,7 @@ from django.core.cache import cache
 from django.core.management import call_command
 from django.db import IntegrityError
 from django.utils import timezone
+from shopman.craftsman.models import ProductionMode
 from shopman.guestman import ConsentService
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
@@ -53,15 +54,30 @@ def _state(can_add: bool, available_qty: int | None = None):
     return MagicMock(can_add_to_cart=can_add, available_qty=available_qty)
 
 
-def _publish(sku="SKU-NOTIFY", *, is_batch_produced=False):
-    return Product.objects.create(
+def _publish(sku="SKU-NOTIFY", *, production_mode=None):
+    """Publica o produto e, com ``production_mode``, dá a ele uma ficha vigente nesse modo.
+
+    Sem modo é revenda (sem ficha): água, lata, o que chega pronto.
+    """
+    product = Product.objects.create(
         sku=sku,
         name="Pão Teste",
         base_price_q=500,
         is_published=True,
         is_sellable=True,
-        is_batch_produced=is_batch_produced,
     )
+    if production_mode is not None:
+        from shopman.craftsman.models import Recipe
+
+        Recipe.objects.create(
+            ref=f"ficha-{sku.lower()}",
+            name=f"Ficha {sku}",
+            output_sku=sku,
+            batch_size=Decimal("10"),
+            is_active=True,
+            production_mode=production_mode,
+        )
+    return product
 
 
 def _move(
@@ -1341,7 +1357,7 @@ def test_bread_subscribes_to_the_oven_not_to_the_shelf():
     A loja manda só o telefone. Antes, sem ``alert_type`` no corpo, todo mundo
     caía em ``stock_back`` e a fila de fornada nascia vazia para sempre.
     """
-    _publish(sku="BF", is_batch_produced=True)
+    _publish(sku="BF", production_mode=ProductionMode.BATCH)
     sub = stock_alerts.subscribe("BF", phone=PHONE, adult_declared=True)
     assert sub.alert_type == StockAlertSubscription.AlertType.PRODUCTION_READY
 
@@ -1352,26 +1368,24 @@ def test_shelf_item_subscribes_to_the_shelf():
     assert sub.alert_type == StockAlertSubscription.AlertType.STOCK_BACK
 
 
-def test_an_active_recipe_is_enough_to_make_it_an_oven_item():
-    """A flag do gestor não é preenchida na prática; a receita ativa é a prova.
+def test_a_made_to_order_recipe_stays_on_the_shelf_axis():
+    """Ficha vigente "Na hora" não sai do forno: é feita quando vende.
 
-    No banco vivo do alpha (05/09/2026) todo produto tem ``is_batch_produced``
-    em ``False``, pães inclusive. Derivar só pela flag entregaria uma correção
-    que nunca dispara.
+    Croque e café nunca disparam ``production_changed`` (ficha "Na hora" não vira
+    ordem de produção, ADR-040). Inscrever o cliente na fila do forno seria
+    prometer um aviso que nunca chega.
     """
-    from decimal import Decimal
+    _publish(sku="CQ", production_mode=ProductionMode.MADE_TO_ORDER)
+    assert stock_alerts.subscribe("CQ", phone=PHONE, adult_declared=True).alert_type == "stock_back"
 
+
+def test_an_archived_batch_recipe_is_not_an_oven_item():
+    """Só a ficha VIGENTE responde: a arquivada não tem modo."""
     from shopman.craftsman.models import Recipe
 
-    _publish(sku="CI")
-    Recipe.objects.create(
-        ref="ciabatta",
-        name="Ciabatta",
-        output_sku="CI",
-        batch_size=Decimal("10"),
-        is_active=True,
-    )
-    assert stock_alerts.subscribe("CI", phone=PHONE, adult_declared=True).alert_type == "production_ready"
+    _publish(sku="CI", production_mode=ProductionMode.BATCH)
+    Recipe.objects.filter(output_sku="CI").update(is_active=False)
+    assert stock_alerts.subscribe("CI", phone=PHONE, adult_declared=True).alert_type == "stock_back"
 
 
 def test_unknown_sku_falls_back_to_the_shelf():
@@ -1380,14 +1394,14 @@ def test_unknown_sku_falls_back_to_the_shelf():
 
 
 def test_explicit_alert_type_still_wins():
-    _publish(sku="BF-EXPLICIT", is_batch_produced=True)
+    _publish(sku="BF-EXPLICIT", production_mode=ProductionMode.BATCH)
     sub = stock_alerts.subscribe("BF-EXPLICIT", phone=PHONE, alert_type="stock_back", adult_declared=True)
     assert sub.alert_type == "stock_back"
 
 
 def test_endpoint_derives_the_oven_axis_without_the_front_asking(client):
     """A tela continua dizendo só "avise-me sobre este produto"."""
-    p = _publish(sku="BF-API", is_batch_produced=True)
+    p = _publish(sku="BF-API", production_mode=ProductionMode.BATCH)
     _authenticate(client, ref="CUS-OVEN-API")
     resp = client.post(
         f"/api/v1/availability/{p.sku}/notify/",
@@ -1410,7 +1424,7 @@ def test_a_bake_waits_for_qc_and_does_not_send_twice_to_the_same_person():
     """
     from shopman.storefront import handlers
 
-    _publish(sku="BF-BAKE", is_batch_produced=True)
+    _publish(sku="BF-BAKE", production_mode=ProductionMode.BATCH)
     stock_alerts.subscribe("BF-BAKE", phone=PHONE, adult_declared=True)
 
     with (
@@ -1454,7 +1468,7 @@ def test_a_production_move_never_serves_the_oven_queue():
     """
     from shopman.storefront import handlers
 
-    _publish(sku="BF-MAKE", is_batch_produced=True)
+    _publish(sku="BF-MAKE", production_mode=ProductionMode.BATCH)
     stock_alerts.subscribe("BF-MAKE", phone=PHONE, adult_declared=True)
 
     with (
@@ -1495,7 +1509,7 @@ def test_one_event_only_targets_its_matching_subscription():
 def test_a_non_production_arrival_does_not_impersonate_a_bake():
     from shopman.storefront import handlers
 
-    _publish(sku="BF-RECEBIDO", is_batch_produced=True)
+    _publish(sku="BF-RECEBIDO", production_mode=ProductionMode.BATCH)
     stock_alerts.subscribe("BF-RECEBIDO", phone=PHONE, adult_declared=True)
 
     with (

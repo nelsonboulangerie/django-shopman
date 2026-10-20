@@ -15,7 +15,7 @@ from statistics import median
 from typing import Any
 
 from django.apps import apps
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from shopman.shop.purchase_policy import PurchasePolicy, resolve_purchase_policy
@@ -284,8 +284,8 @@ class ReceiptHistoryProjection:
 
 @dataclass(frozen=True)
 class PurchaseProjection:
-    materials: tuple[MaterialProjection, ...]
-    suppliers: tuple[SupplierProjection, ...]
+    materials: tuple[MaterialProjection, ...] | PurchaseListProjection
+    suppliers: tuple[SupplierProjection, ...] | PurchaseListProjection
     conversions: tuple[MaterialConversionProjection, ...]
     costs: tuple[SupplierMaterialCostProjection, ...]
     purchaseRequestStatuses: dict[str, str]
@@ -294,17 +294,98 @@ class PurchaseProjection:
     receiptHistory: tuple[ReceiptHistoryProjection, ...]
 
 
-def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseProjection:
+@dataclass(frozen=True)
+class PurchaseListProjection:
+    items: tuple[Any, ...]
+    total: int
+    has_next: bool
+    page: int
+    page_size: int
+    query: str
+    order: str
+
+
+MAX_PURCHASE_PAGE_SIZE = 100
+
+
+def _page(value: Any, default: int) -> int:
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def build_purchase(
+    *,
+    active_receipt: dict[str, Any] | None = None,
+    paginate: bool = False,
+    page: int = 1,
+    page_size: int = 30,
+    query: str = "",
+    order: str = "name",
+    material_filters: dict[str, list[str]] | None = None,
+    supplier_filters: dict[str, list[str]] | None = None,
+) -> PurchaseProjection:
     """Build the full purchase operator projection."""
     Material = apps.get_model("buyman", "Material")
     Supplier = apps.get_model("buyman", "Supplier")
     MaterialConversion = apps.get_model("buyman", "MaterialConversion")
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
 
-    material_rows = list(Material.objects.all().order_by("-is_active", "sku"))
-    supplier_rows = list(
-        Supplier.objects.prefetch_related("contacts").order_by("-is_active", "name", "ref")
-    )
+    page = _page(page, 1)
+    page_size = min(MAX_PURCHASE_PAGE_SIZE, _page(page_size, 30))
+    query = query.strip()
+    material_filters = material_filters or {}
+    supplier_filters = supplier_filters or {}
+
+    material_archived = material_filters.get("archive") == ["archived"]
+    material_qs = Material.objects.filter(is_active=not material_archived)
+    if query:
+        material_qs = material_qs.filter(
+            Q(sku__icontains=query)
+            | Q(name__icontains=query)
+            | Q(metadata__purchase__category__icontains=query)
+        )
+    if categories := material_filters.get("category"):
+        material_qs = material_qs.filter(metadata__purchase__category__in=categories)
+    material_orders = {
+        "name": ("name", "sku"),
+        "-name": ("-name", "sku"),
+        "sku": ("sku",),
+        "-sku": ("-sku",),
+        "status": ("-is_active", "name", "sku"),
+        "-status": ("is_active", "name", "sku"),
+    }
+    material_order = order if order in material_orders else "name"
+    material_qs = material_qs.order_by(*material_orders[material_order])
+
+    supplier_archived = supplier_filters.get("archive") == ["archived"]
+    supplier_qs = Supplier.objects.filter(is_active=not supplier_archived).prefetch_related("contacts")
+    if query:
+        supplier_qs = supplier_qs.filter(
+            Q(ref__icontains=query) | Q(name__icontains=query) | Q(trade_name__icontains=query)
+        )
+    contacts = supplier_filters.get("contact", [])
+    if contacts and set(contacts) != {"with", "without"}:
+        with_contact = contacts == ["with"]
+        contact_q = Q(contacts__is_active=True, contacts__is_primary=True) | Q(email__gt="") | Q(phone__gt="")
+        supplier_qs = supplier_qs.filter(contact_q if with_contact else ~contact_q).distinct()
+    supplier_orders = {
+        "name": ("name", "ref"),
+        "-name": ("-name", "ref"),
+        "ref": ("ref",),
+        "-ref": ("-ref",),
+        "status": ("-is_active", "name", "ref"),
+        "-status": ("is_active", "name", "ref"),
+    }
+    supplier_order = order if order in supplier_orders else "name"
+    supplier_qs = supplier_qs.order_by(*supplier_orders[supplier_order])
+
+    material_total = material_qs.count()
+    supplier_total = supplier_qs.count()
+    offset = (page - 1) * page_size
+    material_rows = list(material_qs[offset : offset + page_size] if paginate else material_qs)
+    supplier_rows = list(supplier_qs[offset : offset + page_size] if paginate else supplier_qs)
     skus = [material.sku for material in material_rows]
     supplier_refs = [supplier.ref for supplier in supplier_rows]
 
@@ -387,8 +468,32 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
 
     default_supplier_ref = supplier_rows[0].ref if supplier_rows else ""
     return PurchaseProjection(
-        materials=materials,
-        suppliers=suppliers,
+        materials=(
+            PurchaseListProjection(
+                items=materials,
+                total=material_total,
+                has_next=offset + len(materials) < material_total,
+                page=page,
+                page_size=page_size,
+                query=query,
+                order=material_order,
+            )
+            if paginate
+            else materials
+        ),
+        suppliers=(
+            PurchaseListProjection(
+                items=suppliers,
+                total=supplier_total,
+                has_next=offset + len(suppliers) < supplier_total,
+                page=page,
+                page_size=page_size,
+                query=query,
+                order=supplier_order,
+            )
+            if paginate
+            else suppliers
+        ),
         conversions=conversions,
         costs=costs,
         purchaseRequestStatuses=statuses,

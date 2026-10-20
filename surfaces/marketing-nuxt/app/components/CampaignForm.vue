@@ -15,7 +15,9 @@ import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import {
   audienceRulesSummary,
   choiceLabels,
+  exclusiveSummary,
   platformsSummary,
+  publicationPlatforms,
 } from "~/presentation/campaign";
 import {
   platformReadinessNote,
@@ -109,6 +111,9 @@ const vipFirstMinutes = ref(0);
 const preferredHourWindowHours = ref(0);
 const audienceMatch = ref<"any" | "all">("any");
 const selectedPriceTiers = ref<string[]>([]);
+// Grupos (`PriceTier`) que têm esta campanha como exclusiva. Não é regra de público: é um
+// limite sobre qualquer público, gravado pelo servidor na vantagem do grupo.
+const exclusivePriceTiers = ref<string[]>([]);
 const selectedTags = ref<string[]>([]);
 const selectedRfmSegments = ref<string[]>([]);
 const churnRiskOn = ref(false);
@@ -159,6 +164,7 @@ const DRAFT_LABELS = {
   is_active: "Campanha ligada",
   schedule: "Agendamento",
   audience_rules: "Público",
+  exclusive_price_tiers: "Exclusiva do grupo",
 };
 
 // ⚠️ A tela imprimia a CHAVE do JSON ("collections, skus", "bought_skus") quando
@@ -247,6 +253,12 @@ function describeDraftValue(field: string, value: unknown): string | undefined {
   if (field === "audience_rules" && value && typeof value === "object") {
     return audienceRulesSummary(value as AudienceRules, audienceLabels.value);
   }
+  if (field === "exclusive_price_tiers" && Array.isArray(value)) {
+    return (
+      exclusiveSummary(value.map(String), audienceLabels.value.priceTiers) ||
+      "Não é exclusiva"
+    );
+  }
   if (field === "schedule" && value && typeof value === "object") {
     return scheduleDraftSummary(value as Record<string, unknown>);
   }
@@ -278,6 +290,7 @@ watch(
     expiresAfterMinutes.value = rule?.expires_after_minutes ?? 0;
     promotionRef.value = rule?.promotion_ref ?? props.initialPromotionRef ?? "";
     isActive.value = rule?.is_active ?? true;
+    exclusivePriceTiers.value = [...(rule?.exclusive_price_tiers ?? [])];
     currentStep.value = 0;
 
     const schedule = (rule?.schedule ?? {}) as Record<string, unknown>;
@@ -343,6 +356,32 @@ const recurrencePeriod = computed({
   },
 });
 
+/** Postagem pública escolhida numa campanha exclusiva: o mural é visto por todos, então
+ *  a exclusividade não vale lá. O servidor recusa o par; a tela avisa antes. */
+const exclusivePublicPlatforms = computed(() =>
+  exclusivePriceTiers.value.length
+    ? publicationPlatforms(
+        platforms.value,
+        Object.fromEntries(
+          (props.deliveryCapabilities ?? []).map((capability) => [
+            capability.platform,
+            capability.delivery_kind,
+          ]),
+        ),
+      )
+    : [],
+);
+const exclusiveConflict = computed(
+  () => exclusivePublicPlatforms.value.length > 0,
+);
+const exclusiveConflictTitle = computed(
+  () =>
+    `Campanha exclusiva sai só pelo WhatsApp. Desmarque ${platformsSummary(
+      exclusivePublicPlatforms.value,
+      props.platformLabels,
+    )} em Destinos.`,
+);
+
 const canSubmit = computed(
   () =>
     !props.busy &&
@@ -350,6 +389,7 @@ const canSubmit = computed(
     trigger.value !== "" &&
     templateId.value !== null &&
     platforms.value.length > 0 &&
+    !exclusiveConflict.value &&
     (!schedules.value || scheduleReady.value),
 );
 
@@ -357,7 +397,7 @@ const stepReady = computed(() => [
   name.value.trim().length > 0 && trigger.value !== "",
   platforms.value.length > 0,
   templateId.value !== null,
-  !schedules.value || scheduleReady.value,
+  (!schedules.value || scheduleReady.value) && !exclusiveConflict.value,
   canSubmit.value,
 ]);
 
@@ -556,6 +596,7 @@ function campaignPayload(): MarketingDraftPayload {
     is_active: isActive.value,
     ...(schedules.value ? { schedule: buildSchedule() } : {}),
     audience_rules: buildAudienceRules(),
+    exclusive_price_tiers: [...exclusivePriceTiers.value],
   };
   if (props.rule?.trigger === "schedule" && !schedules.value) {
     payload.schedule = eventScheduleAfterTriggerChange();
@@ -586,6 +627,7 @@ function campaignBase(): MarketingDraftPayload {
           }
         : {}),
       audience_rules: {},
+      exclusive_price_tiers: [],
     };
   }
   return {
@@ -601,6 +643,7 @@ function campaignBase(): MarketingDraftPayload {
       ? { schedule: cloneRecord(rule.schedule) }
       : {}),
     audience_rules: cloneRecord(rule.audience_rules),
+    exclusive_price_tiers: [...(rule.exclusive_price_tiers ?? [])],
   };
 }
 
@@ -617,6 +660,7 @@ function applyCampaignDraft(payload: MarketingDraftPayload) {
   promotionRef.value =
     typeof payload.promotion_ref === "string" ? payload.promotion_ref : "";
   isActive.value = payload.is_active !== false;
+  exclusivePriceTiers.value = stringList(payload.exclusive_price_tiers);
 
   const audience = cloneRecord(payload.audience_rules);
   baseAudienceRules.value = audience;
@@ -762,6 +806,9 @@ const reviewAudience = computed(() =>
         audienceLabels.value,
       )
     : "Público das contas selecionadas",
+);
+const reviewExclusive = computed(() =>
+  exclusiveSummary(exclusivePriceTiers.value, audienceLabels.value.priceTiers),
 );
 
 // As listas com busca (`NuxtSelectMenu`) devolvem o ITEM escolhido; o formulário
@@ -1236,7 +1283,7 @@ function submit() {
           :items="priceTiers"
           orientation="horizontal"
         >
-          <template #legend>Faixa de preço</template>
+          <template #legend>Grupo</template>
         </NuxtCheckboxGroup>
 
         <NuxtCheckboxGroup
@@ -1287,6 +1334,29 @@ function submit() {
           </span>
         </NuxtFormField>
 
+        <!-- Não é mais um critério de público: é um LIMITE sobre qualquer público. Por
+             isso fica fora da soma/cruzamento, separado por linha, e diz o efeito. -->
+        <div
+          v-if="priceTiers?.length"
+          class="space-y-1.5 border-t border-default pt-4"
+          data-testid="campaign-exclusive-tiers"
+        >
+          <NuxtCheckboxGroup
+            v-model="exclusivePriceTiers"
+            :items="priceTiers"
+            orientation="horizontal"
+          >
+            <template #legend>Exclusiva do grupo</template>
+          </NuxtCheckboxGroup>
+          <p class="text-xs text-muted-foreground">
+            {{
+              exclusivePriceTiers.length
+                ? "Só quem está num grupo marcado recebe, mesmo com outro público escolhido acima."
+                : "Nenhum marcado: a campanha vale para o público escolhido acima."
+            }}
+          </p>
+        </div>
+
         <p
           v-if="preservedAudienceKeys.length"
           class="text-xs text-muted-foreground"
@@ -1306,6 +1376,19 @@ function submit() {
       Estas publicações vão para o público geral das plataformas. A lista de
       contatos só é usada quando o WhatsApp está selecionado.
     </p>
+
+    <NuxtAlert
+      v-if="exclusiveConflict"
+      v-show="currentStep === 3"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-lock"
+      :title="exclusiveConflictTitle"
+      data-testid="campaign-exclusive-conflict"
+      :actions="alertActions('warning', [
+        { label: 'Ir para Destinos', size: 'md', onClick: () => goToStep(1) },
+      ])"
+    />
 
     <div v-show="currentStep === 3" class="space-y-3">
       <NuxtCheckbox v-model="requiresApproval" label="Revisar antes de publicar" />
@@ -1374,6 +1457,10 @@ function submit() {
           <div class="sm:col-span-2">
             <dt class="text-xs text-muted-foreground">Público</dt>
             <dd class="font-medium">{{ reviewAudience }}</dd>
+          </div>
+          <div v-if="reviewExclusive" class="sm:col-span-2">
+            <dt class="text-xs text-muted-foreground">Exclusiva</dt>
+            <dd class="font-medium">{{ reviewExclusive }}</dd>
           </div>
         </dl>
 

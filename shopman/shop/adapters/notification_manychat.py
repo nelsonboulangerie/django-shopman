@@ -325,12 +325,15 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     )
 
     # O template do flow: o próprio evento, ou a variante com o botão de rastreio do
-    # entregador quando o `order_dispatched` tem corrida com link.
+    # entregador quando o `order_dispatched` tem corrida com link, ou a variante com a
+    # data quando o `order_accepted` é de encomenda.
     flow_template = template
     if template == "order_dispatched" and not sandbox_flow_override:
         flow_template, flow_ns, ctx = _courier_tracking_variant(
             template, flow_ns, ctx, mc_config
         )
+    elif template == "order_accepted" and not sandbox_flow_override:
+        flow_template, flow_ns = _preorder_accepted_variant(template, flow_ns, ctx, mc_config)
 
     if flow_ns and _flow_lacks_name(template, ctx):
         # O template aprovado diz "Oi, {{1}}!" e a Meta recusa variável vazia; o campo
@@ -506,6 +509,46 @@ def _courier_tracking_variant(
         )
         return template, flow_ns, ctx
     return COURIER_DISPATCH_VARIANT, variant_ns, {**ctx, "courier_tracking_path": path}
+
+
+#: Nome do modelo aprovado da variante com a data da encomenda (para o log dizer o que ligar).
+PREORDER_ACCEPTED_TEMPLATE_NAME = "pedido_encomenda_confirmada"
+
+
+def _preorder_accepted_variant(
+    template: str, flow_ns: str | None, ctx: dict, mc_config: dict
+) -> tuple[str, str | None]:
+    """Trocar o flow do ``order_accepted`` pelo da encomenda, se der.
+
+    Devolve ``(template do flow, flow_ns)``. A variante só sai na ENCOMENDA, que é
+    quando o ``status_note`` do ``order_accepted`` traz a promessa ("retirada amanhã,
+    a partir das 9h", ``services/notification._commitment_note``); no pedido do dia ele
+    vem vazio e o aviso segue no ``pedido_confirmado``.
+
+    Ligar é ter o flow da variante: ``MANYCHAT_FLOW_MAP["order_accepted_preorder"]``
+    ou o ``NotificationTemplate`` desse evento. Enquanto o modelo está em análise na
+    Meta não há flow, e a encomenda sai pelo ``pedido_confirmado`` (sem a data), como
+    antes. Mesma precedência do ``send``: Admin antes do ``flow_map``.
+    """
+    from shopman.shop.services.manychat_marketing_safety import PREORDER_ACCEPTED_VARIANT
+
+    if not str(ctx.get("status_note") or "").strip():
+        return template, flow_ns
+    variant_ns = _load_db_flow_ns(PREORDER_ACCEPTED_VARIANT) or (
+        mc_config.get("flow_map", {}).get(PREORDER_ACCEPTED_VARIANT)
+    )
+    if not variant_ns:
+        if flow_ns:
+            # Estado esperado enquanto o modelo está em análise: info, não alarme.
+            logger.info(
+                "manychat.preorder_accepted_flow_pending template=%s: a confirmação da "
+                "encomenda saiu sem a data. Ligue o flow do modelo %s em %s.",
+                template,
+                PREORDER_ACCEPTED_TEMPLATE_NAME,
+                PREORDER_ACCEPTED_VARIANT,
+            )
+        return template, flow_ns
+    return PREORDER_ACCEPTED_VARIANT, variant_ns
 
 
 def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:

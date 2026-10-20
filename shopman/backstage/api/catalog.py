@@ -57,7 +57,7 @@ class CatalogMatrixView(_CatalogBase):
         query = (params.get("q") or "").strip()
         order = (params.get("order") or "name").strip()
         filters = {name: params.get(name) == "true"
-            for name in ("is_published", "is_sellable", "has_vocation", "pim_complete") if params.get(name) in ("true", "false")}
+            for name in ("archived", "is_published", "is_sellable", "has_vocation", "pim_complete") if params.get(name) in ("true", "false")}
         # Listas de opção da faceta (estoque e envio): valor fora da lista é
         # ignorado pela projection, então não há recorte torto.
         for name in ("stock", "sync_status"):
@@ -198,6 +198,72 @@ class CatalogCellsView(_CatalogBase):
             return Response({"detail": "Esta intenção já representa outro lote.", "error": {"code": "intention_conflict"}}, status=409)
         except RemoteMutationInProgress:
             return Response({"outcome": "unknown", "detail": "Lote em processamento; consulte esta intenção."}, status=202)
+
+
+class CatalogProductArchiveView(_CatalogBase):
+    """Arquivar/desarquivar um ou vários produtos, com recibo por linha."""
+
+    def _scope(self, request):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.products-active"})
+
+    def get(self, request):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not key:
+            return Response({"detail": "Informe a intenção."}, status=400)
+        try:
+            receipt = lookup_local_mutation(scope=self._scope(request), key=key)
+        except RemoteMutationInProgress:
+            receipt = None
+        if receipt is None:
+            return Response({"outcome": "unknown", "detail": "Resultado ainda não confirmado."}, status=202)
+        return Response(receipt.response_body, status=receipt.response_code)
+
+    def post(self, request):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        data = request.data if isinstance(request.data, dict) else {}
+        key = request.headers.get("Idempotency-Key") or data.get("idempotency_key")
+        products = data.get("products")
+        is_active = data.get("is_active")
+        if (
+            not isinstance(key, str)
+            or not key
+            or len(key) > 128
+            or not isinstance(products, list)
+            or not products
+            or not isinstance(is_active, bool)
+            or not data.get("base_revision")
+        ):
+            return Response({"detail": "Atualize os produtos e confirme o gesto.", "error": {"code": "intention_required"}}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira os produtos.", "error": {"code": "actor_changed"}}, status=409)
+
+        scope = self._scope(request)
+        fingerprint = mutation_fingerprint({"scope": scope, "products": products, "is_active": is_active})
+
+        def execute():
+            try:
+                receipt = catalog_service.set_products_active(products, is_active=is_active, actor=request.user)
+            except (CatalogError, ValidationError) as exc:
+                return {"outcome": "not_applied", "detail": str(exc)}, 400
+            return {"ok": True, "outcome": "applied", "intention": key, **receipt}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outro gesto.", "error": {"code": "intention_conflict"}}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "unknown", "detail": "Gesto em processamento; consulte esta intenção."}, status=202)
 
 class CatalogProductDetailView(_CatalogBase):
     """Partial product edits have leaf revisions and an atomic local receipt."""

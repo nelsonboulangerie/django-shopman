@@ -622,9 +622,10 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,
-        # Venda sem comanda: o que cada linha cobra e o desconto automático que a
-        # venceu ("Aliança Francesa −10%"), no formato do eco do salvar da comanda.
-        # Com comanda vem vazio: quem diz é o salvar.
+        # O que cada linha cobra e o desconto que a venceu ("Aliança Francesa
+        # −10%"), no formato do eco do salvar da comanda, com o aviso de desconto
+        # manual descartado. Sem comanda vêm todas as linhas; com comanda, as que
+        # o motor reviu com desconto manual (o resto, quem diz é o salvar).
         "line_prices": review_line_prices(getattr(review, "priced_lines", ())),
     }
 
@@ -4810,6 +4811,27 @@ def _falha_do_caixa(exc, padrao: str) -> Response:
 
 def _cash_idempotent(request, *, acao: str, executar):
     """Efeito interno e recibo compartilham a transação e o conteúdo da tentativa."""
+    return _local_idempotent(
+        request,
+        scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
+        terminal_ref=_terminal_do_pedido(request),
+        executar=executar,
+    )
+
+
+#: Escopo da trava de replay das mutações do PDV que não são do caixa (hoje,
+#: cancelar venda recente). Mesma tabela ``IdempotencyKey``, outro escopo.
+POS_IDEMPOTENCY_SCOPE = "pos.sale"
+
+
+def _local_idempotent(request, *, scope: str, executar, terminal_ref: str = ""):
+    """Claim + replay por ``client_request_id`` de uma mutação local do PDV.
+
+    O mesmo ``client_request_id`` com o mesmo conteúdo devolve a resposta
+    gravada da primeira vez, sem executar de novo; recusa (status >= 300) não
+    queima a chave, e a próxima tentativa executa. O caixa usa com o terminal
+    da estação na impressão digital; o cancelamento de venda, sem ele.
+    """
     from shopman.shop.services.remote_mutations import (
         RemoteMutationConflict,
         RemoteMutationInProgress,
@@ -4817,7 +4839,6 @@ def _cash_idempotent(request, *, acao: str, executar):
         run_idempotent_mutation,
     )
 
-    terminal_ref = _terminal_do_pedido(request)
     chave = str(request.data.get("client_request_id") or "").strip()
     if not chave or len(chave) > 128:
         return Response({"detail": "Identifique a tentativa antes de registrar.",
@@ -4838,7 +4859,7 @@ def _cash_idempotent(request, *, acao: str, executar):
 
     try:
         resultado = run_idempotent_mutation(
-            scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
+            scope=scope,
             key=chave,
             fingerprint=fingerprint,
             execute=_executar_para_o_claim,
@@ -6484,6 +6505,18 @@ class POSCancelRecentSaleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
+        # Trava de replay (fallbacks perigosos, item 18): o toque repetido depois
+        # de uma resposta perdida no 4G devolve a resposta da primeira vez em vez
+        # de executar de novo. Com motivo, a correção reabriria a venda duas
+        # vezes; sem ele, o segundo toque virava "venda já cancelada" e o
+        # operador perdia o aviso do estorno na maquininha.
+        return _local_idempotent(
+            request,
+            scope=f"{POS_IDEMPOTENCY_SCOPE}.cancel_recent",
+            executar=lambda: self._cancel(request),
+        )
+
+    def _cancel(self, request):
         order_ref = (request.data.get("order_ref") or "").strip()
         reason = (request.data.get("reason") or "").strip()
         if not order_ref:

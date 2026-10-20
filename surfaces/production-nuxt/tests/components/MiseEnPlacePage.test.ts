@@ -5,6 +5,7 @@ import { mount } from "@vue/test-utils";
 import MiseEnPlacePage from "../../app/pages/mise-en-place.vue";
 import type { WeighingTicketProjection } from "../../app/types/production";
 import { nuxtUiStubs } from "../support/nuxtUiStubs";
+import { weighingRows } from "../../app/presentation/weighing";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const miseLines = ref<Array<Record<string, unknown>>>([]);
@@ -81,6 +82,7 @@ function installGlobals() {
     checkedCount: ref(0),
     checklistRevisionChanged: ref(false),
   }));
+  const oldDoughKeys = ref(new Set<string>());
   vi.stubGlobal("useWeighing", () => ({
     projection: weighingProjection,
     tickets,
@@ -88,12 +90,33 @@ function installGlobals() {
     pending: ref(false),
     error: ref(null),
     refresh: vi.fn(),
+    usesOldDough: (key: string) => oldDoughKeys.value.has(key),
+    setOldDough: (key: string, on: boolean) => {
+      const next = new Set(oldDoughKeys.value);
+      if (on) next.add(key);
+      else next.delete(key);
+      oldDoughKeys.value = next;
+    },
+    rowsFor: (ticket: WeighingTicketProjection, key: string) =>
+      weighingRows(ticket, oldDoughKeys.value.has(key) && !!ticket.old_dough),
   }));
   vi.stubGlobal("print", printSpy);
 }
 
 const stubs = {
   ...nuxtUiStubs,
+  NuxtSwitch: {
+    props: ["modelValue", "label"],
+    emits: ["update:modelValue"],
+    template: `
+      <button
+        type="button"
+        role="switch"
+        :aria-checked="String(modelValue === true)"
+        @click="$emit('update:modelValue', modelValue !== true)"
+      >{{ label }}</button>
+    `,
+  },
   ProductionHeader: true,
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
@@ -185,6 +208,44 @@ describe("Preparação — preview e identificação", () => {
     expect(header.text()).toContain("Massa Croissant");
     expect(header.text()).toContain("MASSA-BASE · Peso total 2.000 g");
     expect(header.text()).not.toContain("12 un. · MASSA-BASE");
+  });
+
+  it("só a ficha com teto oferece massa velha, e ligar troca para a mistura final no teto", async () => {
+    tickets.value = [
+      {
+        ...ticket("massa-base", "Massa Croissant", "D8", "ticket-croissant"),
+        old_dough: {
+          cap_pct: "20",
+          cap_display: "20%",
+          old_dough_display: "400 g",
+          old_dough_g: "400",
+          lines: [
+            { sku: "FARINHA", target_display: "800 g", target_g: "800" },
+            { sku: "AGUA", target_display: "560 g", target_g: "560" },
+          ],
+        },
+      },
+      ticket("massa-forma", "Massa Forma", "S5", "ticket-forma"),
+    ];
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    const [comTeto, semTeto] = wrapper.findAll("article");
+    expect(semTeto!.find('[role="switch"]').exists()).toBe(false);
+
+    const toggle = comTeto!.get('[role="switch"]');
+    expect(toggle.text()).toBe("Com massa velha (até 20%)");
+    expect(comTeto!.findAll("ul li").map((li) => li.text())).toEqual([
+      expect.stringContaining("1.000 g"),
+      expect.stringContaining("700 g"),
+    ]);
+
+    await toggle.trigger("click");
+    const rows = comTeto!.findAll("ul li").map((li) => li.text());
+    expect(rows[0]).toContain("Massa velha");
+    expect(rows[0]).toContain("400 g");
+    expect(rows[1]).toContain("800 g");
+    expect(rows[2]).toContain("560 g");
+    // O outro preparo não muda: a escolha é por preparo.
+    expect(semTeto!.findAll("ul li")[0]!.text()).toContain("1.000 g");
   });
 
   it("identifica o insumo por Nome + SKU e apresenta kg em gramas", () => {

@@ -739,6 +739,10 @@ export interface POSCartItem {
    *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
    *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
   charged_price_q?: number;
+  /** A linha mudou o desconto e o servidor ainda não disse o que ela cobra: a
+   *  tela mostra "calculando" no total da linha, sem fazer a conta do motor. Só
+   *  da tela; nunca viaja nem entra na chave da revisão. */
+  price_pending?: boolean;
 }
 
 /** Um ticket da cozinha, como o PDV o mostra (``projections/pos._kitchen_tickets_by_line``). */
@@ -964,8 +968,10 @@ export interface POSScheduleResponse {
  *  `promotion_name`; `threshold`: compras a partir de `threshold_q`.
  *  `base_fee_q` é a taxa sem a renúncia. */
 export interface POSDeliveryFeeWaiverProjection {
-  reason: "promotion" | "threshold";
+  reason: "promotion" | "threshold" | "group";
   promotion_name: string;
+  /** O grupo do cliente que dá o frete grátis (reason "group"). */
+  group_name?: string;
   threshold_q: number;
   base_fee_q: number;
   threshold_display?: string;
@@ -1025,10 +1031,13 @@ export interface POSSaleReviewProjection {
   delivery_slots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** A primeira janela oferecível deste dia para este carrinho, ou "". */
   delivery_earliest_slot?: string;
-  /** VENDA SEM COMANDA: o que cada linha cobra pelo motor (`line_id` → cobrado,
-   *  etiqueta, desconto automático que venceu). Com comanda vem vazio: quem diz é
-   *  o eco do salvar. Mesmo formato, aplicado por `applyLinePrices`. */
-  line_prices?: Record<string, Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount">>;
+  /** O que cada linha cobra pelo motor (`line_id` → cobrado, etiqueta, desconto
+   *  automático que venceu, desconto manual descartado). Sem comanda vêm todas;
+   *  com comanda, as que o motor reviu com desconto manual (o resto, quem diz é o
+   *  eco do salvar). Mesmo formato, aplicado por `applyLinePrices`. */
+  line_prices?: Record<string, Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount"> & {
+    manual_discount_discarded?: boolean;
+  }>;
   /** Só na revisão montada pela TELA sem conexão (`offlineSaleReview`): a hora
    *  da leitura de preços usada. O servidor nunca manda este campo. */
   offline?: { prices_at: string };

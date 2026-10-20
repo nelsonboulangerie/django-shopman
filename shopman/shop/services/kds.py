@@ -115,8 +115,8 @@ def dispatch(order) -> list:
 def _customer_holds_the_goods(order) -> bool:
     """Venda de balcão presencial: item de prateleira já saiu pela porta.
 
-    Nessa venda só o que tem RECEITA vai à cozinha (o lanche a montar); o pão
-    pronto não vira ticket de picking — a estação "Encomendas" é para pedido
+    Nessa venda só o feito na hora vai à cozinha (o café, o lanche a montar); o
+    pão pronto não vira ticket de picking — a estação "Encomendas" é para pedido
     remoto/agendado que alguém precisa separar, não para a sacola que o cliente
     já está segurando. Sem isto, toda venda de pão criava ticket com som e meta
     de 5 minutos para uma mercadoria já entregue.
@@ -139,13 +139,14 @@ def fire_lines(*, session_key: str, lines: list[dict], prep_only: bool = False) 
     a dict ``{line_id, sku, name, qty, notes, meta}``.
 
     For each routable item:
-    - active Recipe → type "prep"; otherwise "picking"
-    - match to KDSInstance by type + collection overlap, preferring a
+    - ficha vigente "Na hora" (``Recipe.production_mode``) → type "prep";
+      em lote ou revenda → "picking"
+    - match to KDSInstance of the SAME type by collection, preferring a
       collection-specific station over a generic catch-all
 
-    ``prep_only=True`` (venda de balcão presencial): itens sem receita são
-    pulados em silêncio — nem ticket de picking, nem alerta de item sem estação.
-    A mercadoria já está com o cliente; só a cozinha tem trabalho a fazer.
+    ``prep_only=True`` (venda de balcão presencial): só o feito na hora vai à
+    cozinha; o resto (pão de lote, revenda) é pulado em silêncio, sem ticket de
+    separação nem alerta. A mercadoria já está com o cliente.
 
     Idempotent per ``line_id``: a line already on a live (non-cancelled) ticket
     is skipped; a cancelled line may re-fire (reprint). Returns created tickets.
@@ -209,9 +210,8 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
     # Bulk-query primary collections: sku → collection_id
     sku_to_collection = catalog.bulk_sku_to_collection_id(skus)
 
-    # Bulk-query recipes: set of SKUs that need prep
-    production = get_adapter("production")
-    prep_skus = production.get_prep_skus(skus) if production else set()
+    # O modo de produção da ficha decide preparo × separação (ADR-040).
+    prep_skus = _made_to_order_skus(get_adapter("production"), skus)
 
     # Build instance lookup: (type, collection_id) → [instance, ...]
     type_col_map = defaultdict(list)
@@ -294,8 +294,9 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
     automático da estação (``KDSInstance.config["auto_fire"]``, opcional por
     estação e desligado por padrão; PDV › Ajustes › Envio à cozinha).
 
-    Leitura pura, sem ticket: a MESMA precedência do ``fire_lines`` (receita
-    decide prep × picking, coleção decide a estação, catch-all por último) e a
+    Leitura pura, sem ticket: a MESMA precedência do ``fire_lines`` (o modo
+    de produção decide prep × picking, a coleção decide a estação do mesmo tipo,
+    catch-all por último) e a
     mesma expansão de combo (o combo vai à cozinha se algum componente vai). O
     PDV usa para dizer "vai à cozinha" na linha nova antes do envio. SKU sem
     estação fica de fora (é mercadoria que o cliente já leva).
@@ -319,8 +320,7 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
 
     catalog = get_adapter("catalog")
     sku_to_collection = catalog.bulk_sku_to_collection_id(concrete)
-    production = get_adapter("production")
-    prep_skus = production.get_prep_skus(concrete) if production else set()
+    prep_skus = _made_to_order_skus(get_adapter("production"), concrete)
 
     type_col_map = defaultdict(list)
     catchall_map = defaultdict(list)
@@ -409,6 +409,16 @@ def order_lines(order) -> list[dict]:
     return _order_to_lines(order)
 
 
+def _made_to_order_skus(production, skus) -> set[str]:
+    """Os SKUs feitos na hora: vão à estação de preparo; o resto é separação.
+
+    A leitura é o modo de produção da ficha vigente (``Recipe.production_mode``),
+    a mesma que a baixa de insumo na venda usa. Em lote e revenda não são
+    preparo: o pão já está pronto, a água já está na geladeira.
+    """
+    return production.get_made_to_order_skus(list(skus)) if production else set()
+
+
 def _match_instances(
     *,
     item_type: str,
@@ -416,30 +426,19 @@ def _match_instances(
     type_col_map: dict,
     catchall_map: dict,
 ) -> list:
-    """Return KDS instances for one routable item.
+    """As estações de UM item: do mesmo tipo do item, sempre.
 
-    Recipe tells whether an item is batch production. Collection tells which
-    real workstation owns the item. A collection-specific station must win
-    over a generic catch-all, otherwise drinks and made-to-order items without
-    a Recipe end up in the "Encomendas" bucket.
+    O modo de produção diz o tipo (feito na hora = preparo; em lote e revenda =
+    separação); a coleção diz QUAL estação daquele tipo (Cafés × Lanches). A
+    estação da coleção vence a genérica (sem coleção) do mesmo tipo. Um item
+    nunca cai em estação de outro tipo: o feito na hora sem estação de preparo
+    fica sem rota e vira alerta de configuração, em vez de virar separação.
     """
     if collection_id:
         exact = type_col_map.get((item_type, collection_id), [])
         if exact:
             return exact
-
-        fallback_type = "prep" if item_type == "picking" else "picking"
-        collection_specific = type_col_map.get((fallback_type, collection_id), [])
-        if collection_specific:
-            return collection_specific
-
-    catchall = catchall_map.get(item_type, [])
-    if catchall:
-        return catchall
-
-    if item_type == "prep":
-        return catchall_map.get("picking", [])
-    return []
+    return catchall_map.get(item_type, [])
 
 
 def _build_routable_items(lines: list[dict]) -> list[dict]:

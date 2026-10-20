@@ -26,8 +26,8 @@ def record_sync(
     """Upsert the sync state for ``(sku, channel_ref)``.
 
     ``synced``/``retracted`` stamp ``last_synced_at``; ``error`` keeps the message;
-    ``pending`` (e.g. rate-limited) clears the error. ``external_id`` is only
-    overwritten when provided (adapters may not always know it).
+    ``pending`` keeps a supplied reason (or clears it when omitted). ``external_id``
+    is only overwritten when provided (adapters may not always know it).
     """
     defaults: dict = {
         "status": status,

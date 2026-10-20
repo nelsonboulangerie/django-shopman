@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 
 from django.db.models import Count, Q
 from django.utils import timezone
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeEntry, RecipeVersion
 from shopman.craftsman.services.recipe_book import (
     BAKERY_KINDS,
     REFERENCE_RANGES,
@@ -47,7 +47,12 @@ from shopman.craftsman.services.recipe_book import (
 )
 
 from shopman.backstage.services import recipe_book as recipe_book_service
-from shopman.backstage.services import recipe_external_references, recipe_favorites, recipe_ratings
+from shopman.backstage.services import (
+    recipe_external_references,
+    recipe_favorites,
+    recipe_ratings,
+    recipe_review,
+)
 from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeSheetNotFound, RecipeVersionNotFound
 from shopman.backstage.services.recipe_capture import CapturedRecipe, is_configured
 from shopman.backstage.services.recipe_matching import (
@@ -143,13 +148,16 @@ class RecipeEntryCardProjection:
     output_sku: str
     output_name: str
     has_ficha: bool
+    #: Modo de produção da ficha vigente (``batch`` | ``made_to_order``); vazio sem ficha.
+    production_mode: str
+    production_mode_label: str
     current_version_number: int | None
     version_count: int
     draft_count: int
     anchor_kind: str
     hydration_display: str
     updated_at_display: str
-    is_archived: bool
+    is_active: bool
     #: Estrela do operador que pediu a lista (``OperatorRecipeFavorite``): é
     #: preferência dele, não atributo da receita; outro operador vê a sua.
     is_favorite: bool
@@ -157,6 +165,13 @@ class RecipeEntryCardProjection:
     #: Vazio quando a versão atual ainda não foi avaliada.
     rating_display: str
     rating_count: int
+    #: De onde veio a versão atual (``recipe_review.provenance_of``): house,
+    #: notebook ou agent. Vazio sem versão publicada.
+    provenance_kind: str
+    provenance_label: str
+    #: Conferência da versão atual: pending, confirmed ou changed. Vazio sem versão.
+    review_status: str
+    review_label: str
 
 
 @dataclass(frozen=True)
@@ -311,6 +326,45 @@ class RecipeVersionProjection:
     lens: FormulaLensProjection
     formula: dict
     origin: dict
+    provenance_kind: str
+    provenance_label: str
+    provenance_detail: str
+    review_status: str
+    review_label: str
+    review_by_name: str
+    review_at_display: str
+
+
+@dataclass(frozen=True)
+class RecipeReviewItemProjection:
+    """One recipe waiting for the baker's check, in the order of what sells most."""
+
+    ref: str
+    name: str
+    kind_label: str
+    output_sku: str
+    output_name: str
+    version_number: int
+    provenance_kind: str
+    provenance_label: str
+    provenance_detail: str
+    review_status: str
+    review_label: str
+    #: A massa da peça, em destaque (foi ali que as seis fichas erraram). Vazio na massa.
+    dough_sku: str
+    dough_name: str
+    #: "1.240 vendidos em 12 meses" ou, para a massa, "... por 3 produtos". Vazio sem venda.
+    sold_display: str
+
+
+@dataclass(frozen=True)
+class RecipeReviewQueueProjection:
+    """The baker's check queue: current versions nobody from the house confirmed yet."""
+
+    items: tuple[RecipeReviewItemProjection, ...]
+    total: int
+    confirmed_total: int
+    recipe_total: int
 
 
 @dataclass(frozen=True)
@@ -426,6 +480,14 @@ class LifecycleOptionProjection:
 
 
 @dataclass(frozen=True)
+class ProductionModeOptionProjection:
+    """Uma escolha do modo de produção ("Em lote", "Na hora")."""
+
+    value: str
+    label: str
+
+
+@dataclass(frozen=True)
 class ExecutionSheetProjection:
     """Configuração operacional da ficha que a versão publicada materializa."""
 
@@ -440,6 +502,9 @@ class ExecutionSheetProjection:
     shelf_life_reviewed_by: str
     production_lifecycle: str
     lifecycle_options: tuple[LifecycleOptionProjection, ...]
+    #: ``Recipe.production_mode``: "Em lote" (planejado e estocado) ou "Na hora".
+    production_mode: str
+    production_mode_options: tuple[ProductionModeOptionProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -481,6 +546,8 @@ class RecipeSheetCardProjection:
     batch_size: str
     item_count: int
     is_active: bool
+    production_mode: str
+    production_mode_label: str
     has_entry: bool
     updated_at_display: str
 
@@ -530,7 +597,7 @@ class RecipeEntryDetailProjection:
     output_sku: str
     output_name: str
     notes: str
-    is_archived: bool
+    is_active: bool
     current_version_number: int | None
     ficha_ref: str
     #: A ficha de execução ainda é a que a versão atual escreveu (ADR-027)?
@@ -962,6 +1029,8 @@ def build_recipe_book(
     only_without_sku: bool = False,
     only_with_draft: bool = False,
     only_favorites: bool = False,
+    only_unreviewed: bool = False,
+    production_mode: str = "",
     sort: str = "updated",
     page: int = 1,
     page_size: int = 48,
@@ -973,7 +1042,7 @@ def build_recipe_book(
     tela, sobre ``is_favorite``, como "Sem SKU" e "Com rascunho".
     """
     entries_qs = (
-        RecipeEntry.objects.filter(is_archived=bool(archived))
+        RecipeEntry.objects.filter(is_active=not bool(archived))
         .select_related("current_version")
         .annotate(
             version_total=Count("versions", distinct=True),
@@ -987,6 +1056,10 @@ def build_recipe_book(
         entries_qs = entries_qs.filter(
             Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term)
         )
+    if production_mode:
+        entries_qs = entries_qs.filter(
+            ref__in=Recipe.objects.filter(is_active=True, production_mode=production_mode).values("ref")
+        )
     if only_without_sku:
         entries_qs = entries_qs.filter(output_sku="")
     if only_with_draft:
@@ -994,6 +1067,15 @@ def build_recipe_book(
     favorites = recipe_favorites.favorite_refs(operator_ref)
     if only_favorites:
         entries_qs = entries_qs.filter(ref__in=favorites)
+    if only_unreviewed:
+        # A conferência mora no JSON da versão e o "mudou depois" é conta de
+        # digital: o recorte sai em Python, sobre o inventário (cem e poucas).
+        pending = [
+            entry.ref
+            for entry in RecipeEntry.objects.filter(current_version__isnull=False).select_related("current_version")
+            if recipe_review.review_of(entry.current_version).status != recipe_review.REVIEW_CONFIRMED
+        ]
+        entries_qs = entries_qs.filter(ref__in=pending)
 
     ordering = {
         "updated": ("-updated_at", "name", "ref"),
@@ -1007,14 +1089,16 @@ def build_recipe_book(
     start = (current - 1) * size
     entries = list(entries_qs[start : start + size])
     names = _output_names({entry.output_sku for entry in entries if entry.output_sku})
-    ficha_refs = set(
-        Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list("ref", flat=True)
+    ficha_modes = dict(
+        Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list(
+            "ref", "production_mode"
+        )
     )
     ratings = recipe_ratings.overall_by_entry(
         [entry.ref for entry in entries],
         {entry.ref: entry.current_version.number for entry in entries if entry.current_version is not None},
     )
-    cards = tuple(_card(entry, names, ficha_refs, favorites, ratings) for entry in entries)
+    cards = tuple(_card(entry, names, ficha_modes, favorites, ratings) for entry in entries)
     return RecipeBookListProjection(
         entries=cards,
         kinds=_kind_options(),
@@ -1030,7 +1114,7 @@ def build_recipe_book(
 def _card(
     entry: RecipeEntry,
     names: dict[str, str],
-    ficha_refs: set[str],
+    ficha_modes: dict[str, str],
     favorites: set[str],
     ratings: dict[str, tuple[Decimal | None, int]],
 ) -> RecipeEntryCardProjection:
@@ -1048,18 +1132,34 @@ def _card(
         kind_label=_kind_label(entry.kind),
         output_sku=entry.output_sku,
         output_name=names.get(entry.output_sku, "") if entry.output_sku else "",
-        has_ficha=entry.ref in ficha_refs,
+        has_ficha=entry.ref in ficha_modes,
+        production_mode=ficha_modes.get(entry.ref, ""),
+        production_mode_label=_production_mode_label(ficha_modes.get(entry.ref, "")),
         current_version_number=current.number if current is not None else None,
         version_count=int(getattr(entry, "version_total", 0) or 0),
         draft_count=int(getattr(entry, "draft_total", 0) or 0),
         anchor_kind=anchor_kind,
         hydration_display=hydration,
         updated_at_display=_date_display(entry.updated_at),
-        is_archived=entry.is_archived,
+        is_active=entry.is_active,
         is_favorite=entry.ref in favorites,
         rating_display=_rating_display(ratings.get(entry.ref, (None, 0))[0]),
         rating_count=ratings.get(entry.ref, (None, 0))[1],
+        **_card_review_fields(current),
     )
+
+
+def _card_review_fields(current: RecipeVersion | None) -> dict:
+    if current is None:
+        return {"provenance_kind": "", "provenance_label": "", "review_status": "", "review_label": ""}
+    provenance = recipe_review.provenance_of(current)
+    review = recipe_review.review_of(current)
+    return {
+        "provenance_kind": provenance.kind,
+        "provenance_label": provenance.label,
+        "review_status": review.status,
+        "review_label": review.label,
+    }
 
 
 def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetailProjection:
@@ -1084,7 +1184,7 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
         output_sku=entry.output_sku,
         output_name=names.get(entry.output_sku, "") if entry.output_sku else "",
         notes=entry.notes or "",
-        is_archived=entry.is_archived,
+        is_active=entry.is_active,
         current_version_number=current.number if current is not None else None,
         ficha_ref=entry.ref if ficha is not None else "",
         execution_in_sync=execution_in_sync(current, ficha),
@@ -1122,6 +1222,8 @@ def _execution_sheet(recipe: Recipe | None) -> ExecutionSheetProjection:
             shelf_life_reviewed_by="",
             production_lifecycle=choices[0].value if choices else "",
             lifecycle_options=choices,
+            production_mode=ProductionMode.BATCH,
+            production_mode_options=_production_mode_options(),
         )
 
     meta = recipe.meta or {}
@@ -1147,7 +1249,20 @@ def _execution_sheet(recipe: Recipe | None) -> ExecutionSheetProjection:
         shelf_life_reviewed_by=str(meta.get("shelf_life_reviewed_by") or "") if reviewed else "",
         production_lifecycle=lifecycle,
         lifecycle_options=choices,
+        production_mode=str(recipe.production_mode),
+        production_mode_options=_production_mode_options(),
     )
+
+
+def _production_mode_options() -> tuple[ProductionModeOptionProjection, ...]:
+    return tuple(
+        ProductionModeOptionProjection(value=str(value), label=str(label))
+        for value, label in ProductionMode.choices
+    )
+
+
+def _production_mode_label(mode: str) -> str:
+    return str(dict(ProductionMode.choices).get(mode, "")) if mode else ""
 
 
 def _safe_int(value: Any, *, minimum: int) -> int | None:
@@ -1303,6 +1418,81 @@ def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionP
         lens=build_formula_lens(version.formula or {}, kind),
         formula=wire_formula(version.formula),
         origin=dict(version.origin or {}),
+        **_version_review_fields(version),
+    )
+
+
+def _version_review_fields(version: RecipeVersion) -> dict:
+    provenance = recipe_review.provenance_of(version)
+    if version.status == RecipeVersion.Status.DRAFT:
+        review_status, review_label, by_name, at_display = "", "", "", ""
+    else:
+        review = recipe_review.review_of(version)
+        review_status, review_label, by_name = review.status, review.label, review.by_name
+        at_display = _iso_display(review.at)
+    return {
+        "provenance_kind": provenance.kind,
+        "provenance_label": provenance.label,
+        "provenance_detail": provenance.detail,
+        "review_status": review_status,
+        "review_label": review_label,
+        "review_by_name": by_name,
+        "review_at_display": at_display,
+    }
+
+
+def _iso_display(value: str) -> str:
+    if not value:
+        return ""
+    from django.utils.dateparse import parse_datetime
+
+    parsed = parse_datetime(value)
+    return _datetime_display(parsed) if parsed is not None else ""
+
+
+def _sold_display(qty: Decimal, via: int) -> str:
+    if qty <= 0:
+        return ""
+    whole = int(qty.to_integral_value(rounding=ROUND_HALF_UP))
+    text = f"{whole:,}".replace(",", ".")
+    noun = "vendido" if whole == 1 else "vendidos"
+    suffix = ""
+    if via == 1:
+        suffix = " por 1 produto"
+    elif via > 1:
+        suffix = f" por {via} produtos"
+    return f"{text} {noun} em 12 meses{suffix}"
+
+
+def build_recipe_review_queue(*, sold: dict | None = None) -> RecipeReviewQueueProjection:
+    """A fila do padeiro (WP-RECEITAS-DA-CASA F2): o que falta conferir, do que mais sai."""
+    queue = recipe_review.review_queue(sold=sold)
+    names = _output_names({item.entry.output_sku for item in queue if item.entry.output_sku})
+    recipe_total = RecipeEntry.objects.filter(is_active=True, current_version__isnull=False).count()
+    items = tuple(
+        RecipeReviewItemProjection(
+            ref=item.entry.ref,
+            name=item.entry.name,
+            kind_label=_kind_label(item.entry.kind),
+            output_sku=item.entry.output_sku,
+            output_name=names.get(item.entry.output_sku, "") if item.entry.output_sku else "",
+            version_number=item.version.number,
+            provenance_kind=item.provenance.kind,
+            provenance_label=item.provenance.label,
+            provenance_detail=item.provenance.detail,
+            review_status=item.review.status,
+            review_label=item.review.label,
+            dough_sku=item.dough_sku,
+            dough_name=item.dough_name,
+            sold_display=_sold_display(item.sold_qty, item.sold_via),
+        )
+        for item in queue
+    )
+    return RecipeReviewQueueProjection(
+        items=items,
+        total=len(items),
+        confirmed_total=recipe_total - len(items),
+        recipe_total=recipe_total,
     )
 
 
@@ -1581,7 +1771,7 @@ def _range(code: str, label: str, bounds: dict) -> ReferenceRangeProjection:
 def _part_entries() -> list[RecipeEntry]:
     """As receitas com versão atual e SKU: são as partes que outra receita pode consumir."""
     return list(
-        RecipeEntry.objects.filter(current_version__isnull=False, is_archived=False)
+        RecipeEntry.objects.filter(current_version__isnull=False, is_active=True)
         .exclude(output_sku="")
         .select_related("current_version")
         .order_by("name", "ref")
@@ -1722,13 +1912,17 @@ def resolve_recipe_book_access(user) -> RecipeBookAccessProjection:
 # ── Ficha de execução: lista e detalhe ──────────────────────────────────────
 
 
-def build_recipe_sheet_list(*, query="", active="", sort="updated", page=1, page_size=48) -> RecipeSheetListProjection:
+def build_recipe_sheet_list(
+    *, query="", active="", production_mode="", sort="updated", page=1, page_size=48
+) -> RecipeSheetListProjection:
     """As fichas de execução, com busca por nome/ref/SKU e recorte por situação."""
     sheets_qs = Recipe.objects.annotate(item_count=Count("items"))
     if active in ("1", "true", "yes"):
         sheets_qs = sheets_qs.filter(is_active=True)
     elif active in ("0", "false", "no"):
         sheets_qs = sheets_qs.filter(is_active=False)
+    if production_mode:
+        sheets_qs = sheets_qs.filter(production_mode=production_mode)
     term = (query or "").strip()
     if term:
         sheets_qs = sheets_qs.filter(Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term))
@@ -1769,6 +1963,8 @@ def _sheet_card(sheet: Recipe, names: dict[str, str], entry_refs: set[str]) -> R
         batch_size=_plain_number(sheet.batch_size),
         item_count=int(getattr(sheet, "item_count", 0) or 0),
         is_active=bool(sheet.is_active),
+        production_mode=str(sheet.production_mode),
+        production_mode_label=_production_mode_label(sheet.production_mode),
         has_entry=sheet.ref in entry_refs,
         updated_at_display=_datetime_display(sheet.updated_at),
     )

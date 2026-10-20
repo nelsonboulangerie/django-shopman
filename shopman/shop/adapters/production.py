@@ -57,14 +57,28 @@ def count_adjusted_events(work_order_ref: str) -> int:
     ).count()
 
 
-def get_prep_skus(skus: list[str]) -> set[str]:
-    """Retorna o conjunto de SKUs que têm receitas ativas (necessitam preparo no KDS)."""
-    try:
-        from shopman.craftsman.models import Recipe
+def get_made_to_order_skus(skus: list[str]) -> set[str]:
+    """Os SKUs cuja ficha vigente é "Na hora" (``Recipe.production_mode``).
 
-        return set(Recipe.objects.filter(output_sku__in=skus, is_active=True).values_list("output_sku", flat=True))
-    except ImportError:
-        return set()
+    Em lote e revenda (sem ficha vigente) ficam de fora.
+    """
+    from shopman.craftsman.models import ProductionMode
+    from shopman.craftsman.services import production_modes_for_output_skus
+
+    return {
+        sku for sku, mode in production_modes_for_output_skus(skus).items() if mode == ProductionMode.MADE_TO_ORDER
+    }
+
+
+def get_batch_produced_skus(skus: list[str]) -> set[str]:
+    """Os SKUs cuja ficha vigente é "Em lote" (``Recipe.production_mode``).
+
+    Na hora e revenda (sem ficha vigente) ficam de fora.
+    """
+    from shopman.craftsman.models import ProductionMode
+    from shopman.craftsman.services import production_modes_for_output_skus
+
+    return {sku for sku, mode in production_modes_for_output_skus(skus).items() if mode == ProductionMode.BATCH}
 
 
 def get_finished_work_orders(skus: list[str], cutoff_date) -> list[tuple]:

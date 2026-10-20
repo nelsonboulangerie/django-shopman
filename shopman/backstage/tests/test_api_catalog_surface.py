@@ -122,6 +122,28 @@ def test_matrix_shape(client, operator, catalog):
     assert colls["doces"]["product_count"] == 1
 
 
+def test_matrix_hides_archived_by_default_and_exposes_explicit_filter(client, operator, catalog):
+    catalog["bolo"].is_active = False
+    catalog["bolo"].save(update_fields=["is_active"])
+    client.force_login(operator)
+
+    default_rows = client.get(MATRIX_URL).json()["matrix"]["rows"]
+    assert [row["sku"] for row in default_rows] == ["PAO"]
+
+    archived_rows = client.get(MATRIX_URL, {"archived": "true"}).json()["matrix"]["rows"]
+    assert [row["sku"] for row in archived_rows] == ["BOLO"]
+    assert archived_rows[0]["is_active"] is False
+    assert archived_rows[0]["is_published"] is True
+    assert archived_rows[0]["is_sellable"] is True
+    assert not any(cell["available"] for cell in archived_rows[0]["cells"])
+
+    collection_rows = client.get(
+        MATRIX_URL, {"archived": "true", "collection": "doces"}
+    ).json()["matrix"]
+    assert [row["sku"] for row in collection_rows["rows"]] == ["BOLO"]
+    assert collection_rows["collections"][0]["product_count"] == 1
+
+
 def test_matrix_filtered_by_collection(client, operator, catalog):
     client.force_login(operator)
     resp = client.get(MATRIX_URL, {"collection": "doces"})
@@ -839,7 +861,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     row = matrix["rows"][0]
     assert set(row) == {
         "sku", "name", "image_url", "primary_collection", "primary_collection_name",
-        "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
+        "is_active", "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
         "hidden_by_inactive_collection", "has_vocation", "product_action", "resync_action",
@@ -895,7 +917,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "sku", "name", "short_description", "long_description", "keywords",
         "base_price_q", "unit", "unit_weight_g", "availability_policy",
         "shelf_life_days", "storage_tip", "production_cycle_hours",
-        "is_batch_produced", "is_published", "is_sellable", "ingredients_text",
+        "is_active", "is_published", "is_sellable", "ingredients_text",
         "image_url", "primary_collection", "primary_collection_name",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
@@ -914,7 +936,10 @@ def test_product_detail_get_shape(client, operator, catalog):
         "back_at",
         "back_reason",
         "admin_history_path",
+        # somente-leitura: o modo de produção da ficha vigente (ADR-040), None sem ficha
+        "production",
     }
+    assert product["production"] is None
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500
     assert product["primary_collection"] == "doces"

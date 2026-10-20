@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PRODUCTION_MODE_ALL,
+  PRODUCTION_MODE_FILTER_OPTIONS,
   addItem,
   addPart,
   anchorLabel,
@@ -89,7 +91,7 @@ function card(over: Partial<RecipeEntryCardProjection> = {}): RecipeEntryCardPro
     anchor_kind: "flour",
     hydration_display: "72%",
     updated_at_display: "hoje 08:10",
-    is_archived: false,
+    is_active: true,
     is_favorite: false,
     ...over,
   };
@@ -441,6 +443,22 @@ describe("filterEntries", () => {
     expect(filterEntries(entries, "  ", "", false, false)).toHaveLength(3);
   });
 
+  it("'Não conferidas' keeps pending and changed, never the confirmed or the unpublished", () => {
+    const reviewed = [
+      card({ ref: "a", review_status: "pending" }),
+      card({ ref: "b", review_status: "changed" }),
+      card({ ref: "c", review_status: "confirmed" }),
+      card({ ref: "d", review_status: "" }),
+    ];
+    expect(filterEntries(reviewed, "", "", false, false, false, true).map((e) => e.ref)).toEqual(["a", "b"]);
+    expect(filterEntries(reviewed, "", "", false, false, false, false)).toHaveLength(4);
+  });
+
+  it("bookQuery sends unreviewed only when asked", () => {
+    expect(bookQuery("", "", false, { unreviewed: true })).toEqual({ unreviewed: "1" });
+    expect(bookQuery("", "", false, { unreviewed: false })).toEqual({});
+  });
+
   it("'Favoritas' keeps only the operator's starred entries, combined with the other filters", () => {
     const starred = [
       card({ is_favorite: true }),
@@ -510,5 +528,24 @@ describe("downscaleTarget", () => {
     expect(splitDataUrl("nope")).toBeNull();
     expect(outputMediaType("image/png")).toBe("image/png");
     expect(outputMediaType("image/heic")).toBe("image/jpeg");
+  });
+});
+
+describe("recipeBook: modo de produção", () => {
+  it("os filtros têm valor próprio e a consulta só leva o modo escolhido", () => {
+    expect(PRODUCTION_MODE_FILTER_OPTIONS.map((option) => option.label)).toEqual(["Todos os modos", "Em lote", "Na hora"]);
+    expect(PRODUCTION_MODE_FILTER_OPTIONS.every((option) => option.value !== "")).toBe(true);
+    expect(bookQuery("", "", false, { mode: "made_to_order" })).toEqual({ mode: "made_to_order" });
+    expect(bookQuery("", "", false, { mode: PRODUCTION_MODE_ALL })).toEqual({});
+  });
+
+  it("o recorte local acompanha o modo", () => {
+    const base = { kind: "other", output_sku: "SP", output_name: "", draft_count: 0, is_favorite: false, review_status: "" };
+    const entries = [
+      { ...base, ref: "espresso", name: "Espresso", production_mode: "made_to_order" },
+      { ...base, ref: "batard", name: "Bâtard", production_mode: "batch" },
+    ] as never[];
+    expect(filterEntries(entries, "", "", false, false, false, false, "made_to_order").map((e: { ref: string }) => e.ref)).toEqual(["espresso"]);
+    expect(filterEntries(entries, "", "", false, false, false, false, PRODUCTION_MODE_ALL)).toHaveLength(2);
   });
 });

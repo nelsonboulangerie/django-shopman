@@ -98,6 +98,8 @@ demais vantagens; o resolvedor trata os tipos de forma uniforme.
 - `best_group_advantage(price_tier_refs, kind, ...)` resolve, por tipo:
   - `discount` → a melhor `Promotion` `grupo-<ref>` dos grupos;
   - `price_list` → o melhor `PriceTier.listing_ref` (maior `priority`);
+  - `free_shipping` → a de MENOR `min_order_q` (o melhor para o cliente; a prioridade só
+    desempata), decidido em `shop/policies/group_advantage.py` (frente 3, 19/10);
   - demais tipos → a `PriceTierAdvantage` ativa de maior `priority`.
 - Nada acumula: o motor já aplica **um** desconto vencedor por linha ("maior desconto
   ganha"); o que muda é o universo de candidatos, que passa a ser a união dos grupos.

@@ -11,15 +11,17 @@ Both models are mutated exclusively through ``PaymentService`` (and the immutabl
 
 import json
 import logging
+import uuid
 from decimal import Decimal
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.validators import RegexValidator
 from django.http import HttpResponseRedirect
-from django.shortcuts import render
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext_lazy as _
+from shopman.payman.conf import get_refund_backend
 from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.payman.service import PaymentService
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
@@ -29,23 +31,10 @@ from unfold.contrib.filters.admin.choice_filters import ChoicesRadioFilter
 from unfold.decorators import action, display
 from unfold.enums import ActionVariant
 from unfold.forms import BaseDialogForm
-from unfold.widgets import UnfoldAdminDecimalFieldWidget
+from unfold.widgets import UnfoldAdminDecimalFieldWidget, UnfoldBooleanWidget
 
 logger = logging.getLogger(__name__)
 
-
-class RefundForm(forms.Form):
-    """Valor do reembolso em Reais. Em branco = total disponível (capturado − já reembolsado)."""
-
-    amount_reais = forms.DecimalField(
-        label=_("Valor a reembolsar (R$)"),
-        required=False,
-        min_value=Decimal("0.01"),
-        max_digits=10,
-        decimal_places=2,
-        widget=UnfoldAdminDecimalFieldWidget,
-        help_text=_("Deixe em branco para reembolsar o total disponível."),
-    )
 
 # Rótulos amigáveis para as chaves de gateway_data (heterogêneas por gateway).
 _GATEWAY_LABELS = {
@@ -155,15 +144,82 @@ class PaymentTransactionInline(BaseTabularInline):
 # =============================================================================
 
 
-class RefundConfirmForm(BaseDialogForm):
-    """Confirmação do estorno total — sem campo além do próprio "eu confirmo".
+#: A permissão que estorna. As ações a pedem pela forma curta ``"refund"``, que o
+#: Unfold resolve em ``PaymentIntentAdmin.has_refund_permission``. A forma
+#: pontuada também funcionaria em runtime, mas o check de sistema do Unfold
+#: (``unfold/checks.py``, admin.E129) consulta a tabela ``Permission`` para ela:
+#: ``manage.py check`` passaria a exigir banco, e o contrato de produção roda sem.
+REFUND_PERMISSION = "payman.refund_paymentintent"
 
-    O `BaseDialogForm` já carrega o `_form_submitted` obrigatório, que é o que
-    torna o GET incapaz de validar. Declarar a subclasse explicitamente (em vez de
-    deixar `form_class=None` e herdar o fallback do Unfold) é exigência do gate
-    canônico: uma ação de dialog cujo form não se lê no arquivo é uma ação cujo
-    contrato de confirmação ninguém consegue revisar.
+
+class RefundConfirmForm(BaseDialogForm):
+    """Segunda confirmação do estorno, dentro do diálogo oficial do Unfold.
+
+    O primeiro gesto é escolher a ação; o segundo é marcar a confirmação e
+    enviar. Sem a marca o formulário não valida e nada é estornado. O
+    `BaseDialogForm` ainda carrega o `_form_submitted` obrigatório, que é o que
+    torna o GET incapaz de validar: GET só desenha o diálogo, o estorno é POST com
+    CSRF.
+
+    ``refund_key`` nasce no GET, uma por diálogo aberto, e é a chave de
+    idempotência do estorno no gateway: o duplo clique reenvia a MESMA chave e o
+    gateway devolve a mesma devolução, em vez de uma segunda.
     """
+
+    refund_key = forms.CharField(
+        widget=forms.HiddenInput,
+        initial=lambda: uuid.uuid4().hex,
+        validators=[RegexValidator(r"^[0-9a-f]{32}$")],
+    )
+    confirm = forms.BooleanField(
+        label=_("Confirmo o estorno, que não tem desfazer"),
+        required=True,
+        widget=UnfoldBooleanWidget,
+        error_messages={"required": _("Marque a confirmação para estornar.")},
+    )
+
+
+class RefundAmountForm(RefundConfirmForm):
+    """Estorno de um valor (ou do disponível inteiro, em branco), com a mesma confirmação."""
+
+    amount_reais = forms.DecimalField(
+        label=_("Valor a estornar (R$)"),
+        required=False,
+        min_value=Decimal("0.01"),
+        max_digits=10,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+    )
+
+    field_order = ["amount_reais", "confirm", "refund_key"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.available_q = _available_q(self.object_id)
+        self.fields["amount_reais"].help_text = _(
+            "Disponível para estorno: R$ %(v)s. Em branco, estorna todo o disponível."
+        ) % {"v": format_money(self.available_q)}
+
+    def clean_amount_reais(self):
+        amount = self.cleaned_data.get("amount_reais")
+        if amount is None:
+            return None
+        amount_q = int((amount * 100).to_integral_value())
+        if amount_q > self.available_q:
+            raise forms.ValidationError(
+                _("Valor acima do disponível (R$ %(v)s).") % {"v": format_money(self.available_q)}
+            )
+        return amount_q
+
+
+def _available_q(object_id) -> int:
+    """Capturado menos o já devolvido (estorno e chargeback); zero se a cobrança não existe."""
+    intent = PaymentIntent.objects.filter(pk=object_id).first() if object_id else None
+    if intent is None:
+        return 0
+    ref = intent.ref
+    returned_q = PaymentService.refunded_total(ref) + PaymentService.chargeback_total(ref)
+    return max(PaymentService.captured_total(ref) - returned_q, 0)
 
 
 @admin.register(PaymentIntent)
@@ -216,140 +272,130 @@ class PaymentIntentAdmin(BaseModelAdmin):
     inlines = [PaymentTransactionInline]
     ordering = ("-created_at",)
     compressed_fields = True
-    actions = ["refund_selected"]
     actions_row = ["refund_row"]
     actions_detail = ["refund_detail"]
 
     # ⚠️ `dialog` não é enfeite de UX: é o que faz esta ação exigir POST.
     #
     # O Unfold monta a URL de `actions_row` embrulhada só em `admin_site.admin_view`
-    # — `is_active and is_staff`, zero permissão de modelo — e a renderiza como um
+    # (`is_active and is_staff`, zero permissão de modelo) e a renderiza como um
     # `<a href>`. Sem `dialog`, o corpo executava em GET. Com `SESSION_COOKIE_SAMESITE
     # = "Lax"` o cookie VAI em navegação top-level GET, então um link mandado num
-    # WhatsApp e clicado pelo gestor logado estornava e redirecionava para a lista
-    # como se nada tivesse acontecido.
+    # WhatsApp e clicado pelo gestor logado estornava.
     #
     # Com `dialog`, o GET só renderiza o diálogo (o form nasce inválido, sem
-    # `_form_submitted`); o estorno acontece no POST, com CSRF. Ver
-    # `unfold/decorators.py`.
+    # `_form_submitted` e sem a confirmação marcada); o estorno acontece no POST,
+    # com CSRF. Ver `unfold/decorators.py`.
+    #
+    # A permissão é a dedicada (`payman.refund_paymentintent`), não `view`: ver a
+    # cobrança não dá direito a devolver o dinheiro dela.
     @action(
-        description=_("Reembolsar (total)"),
+        description=_("Estornar o total"),
         url_path="refund",
         icon="undo",
         variant=ActionVariant.DANGER,
-        # `view` é o mesmo alcance que a TELA já oferecia — o único grupo
-        # não-superusuário com `view_paymentintent` é o Dono, e o RBAC define o
-        # dinheiro como dele. Aqui a URL passa a valer o que a tela já valia, sem
-        # janela em que ninguém consegue estornar. Apertar para uma permissão
-        # dedicada (`refund_paymentintent`) é da onda 4, junto com a concessão.
-        # ⚠️ ONDA 4, ATENÇÃO: apertar isto para `permissions=["change"]` NÃO
-        # funciona — este admin sobrescreve `has_change_permission` para `False`
-        # incondicionalmente (PaymentIntent não se edita à mão), e o decorador do Unfold
-        # chama o MÉTODO quando a permissão vem sem ponto. A ação morreria até para
-        # superusuário. A forma que funciona é a pontuada
-        # (`permissions=["payman.refund_paymentintent"]`), que o Unfold confere direto com
-        # `request.user.has_perm` e não passa pelo método. Verificado por
-        # introspecção em 29/08.
-        permissions=["view"],
+        permissions=["refund"],
         dialog={
-            "title": _("Reembolsar o total?"),
+            "title": _("Estornar o total?"),
             "description": _(
-                "O valor capturado volta inteiro para o cliente pelo gateway. "
-                "Não há desfazer: um estorno a mais só se corrige com uma cobrança nova."
+                "Devolve ao cliente todo o valor disponível desta cobrança, pelo mesmo meio do "
+                "pagamento. No Pix o dinheiro volta em instantes; no cartão aparece na fatura em "
+                "alguns dias, conforme o banco do cartão. Não há desfazer."
             ),
             "form_class": RefundConfirmForm,
-            "form_submit_text": _("Reembolsar"),
+            "form_submit_text": _("Estornar"),
         },
     )
     def refund_row(self, request, form, object_id):
         intent = self.get_object(request, object_id)
         if intent is None:
-            messages.error(request, _("Intent não encontrado."))
+            messages.error(request, _("Cobrança não encontrada."))
             return HttpResponseRedirect(reverse("admin:payman_paymentintent_changelist"))
-        self._refund_one(request, intent)
+        self._refund_one(request, intent, form)
         return HttpResponseRedirect(reverse("admin:payman_paymentintent_change", args=[intent.pk]))
 
     @action(
-        description=_("Reembolsar (parcial/total)"),
+        description=_("Estornar um valor"),
         url_path="refund-amount",
         icon="undo",
         variant=ActionVariant.DANGER,
-        # Esta já só estorna em POST (tem página de formulário própria). O que
-        # faltava era a permissão: a URL era alcançável por qualquer staff.
-        permissions=["view"],
+        permissions=["refund"],
+        dialog={
+            "title": _("Estornar um valor?"),
+            "description": _(
+                "Devolve ao cliente o valor informado, pelo mesmo meio do pagamento. No Pix o "
+                "dinheiro volta em instantes; no cartão aparece na fatura em alguns dias, conforme "
+                "o banco do cartão. Não há desfazer."
+            ),
+            "form_class": RefundAmountForm,
+            "form_submit_text": _("Estornar"),
+        },
     )
-    def refund_detail(self, request, object_id):
-        """Intermediate page to refund a specific amount (or total if left blank)."""
+    def refund_detail(self, request, form, object_id):
         intent = self.get_object(request, object_id)
         if intent is None:
-            messages.error(request, _("Intent não encontrado."))
+            messages.error(request, _("Cobrança não encontrada."))
             return HttpResponseRedirect(reverse("admin:payman_paymentintent_changelist"))
+        self._refund_one(request, intent, form)
+        return HttpResponseRedirect(reverse("admin:payman_paymentintent_change", args=[intent.pk]))
 
-        change_url = reverse("admin:payman_paymentintent_change", args=[intent.pk])
-        available_q = max(intent.amount_q - PaymentService.refunded_total(intent.ref), 0)
+    # Estorno em LOTE não existe: ação de lote do Django roda direto no POST do
+    # changelist, sem diálogo nem confirmação (laudo 01/09, 06-admin P0-1). Estorno
+    # é um por vez, pelas duas ações acima.
 
-        if request.method == "POST":
-            form = RefundForm(request.POST)
-            if form.is_valid():
-                amount = form.cleaned_data.get("amount_reais")
-                amount_q = int((amount * 100).to_integral_value()) if amount is not None else None
-                if amount_q is not None and amount_q > available_q:
-                    form.add_error(
-                        "amount_reais",
-                        _("Valor acima do disponível (R$ %(v)s).") % {"v": format_money(available_q)},
-                    )
-                else:
-                    self._refund_one(request, intent, amount_q=amount_q)
-                    return HttpResponseRedirect(change_url)
-        else:
-            form = RefundForm()
+    def _refund_one(self, request, intent, form) -> bool:
+        """Devolve pelo gateway ``amount_reais`` (ou todo o disponível). True se devolveu.
 
-        context = {
-            **self.admin_site.each_context(request),
-            "title": _("Reembolso %(ref)s") % {"ref": intent.ref},
-            "form": form,
-            "intent": intent,
-            "available_display": format_money(available_q),
-            "back_url": change_url,
-            "opts": self.model._meta,
-        }
-        return render(request, "admin/payman/payment_refund.html", context)
-
-    @admin.action(
-        description=_("Reembolsar total dos selecionados"),
-        permissions=["view"],
-    )
-    def refund_selected(self, request, queryset):
-        done = 0
-        for intent in queryset:
-            if self._refund_one(request, intent, quiet=True):
-                done += 1
-        if done:
-            messages.success(request, _("%(n)d reembolso(s) processado(s).") % {"n": done})
-        if done < queryset.count():
-            messages.warning(
+        O dinheiro sai pelo ``RefundBackend`` configurado (``PAYMAN["REFUND_BACKEND"]``),
+        o mesmo caminho do estorno do pedido. Este método não grava no livro por
+        conta própria: quem registra é o backend, e só depois de o gateway aceitar.
+        """
+        backend = get_refund_backend()
+        if backend is None:
+            messages.error(
                 request,
-                _("%(n)d intent(s) não puderam ser reembolsados (sem saldo capturado).")
-                % {"n": queryset.count() - done},
+                _("O estorno pelo gateway não está configurado nesta instalação. Nada foi estornado."),
             )
-
-    def _refund_one(self, request, intent, *, amount_q: int | None = None, quiet: bool = False) -> bool:
-        """Refund ``amount_q`` (or the full remaining balance if None). Returns True on success."""
-        try:
-            transaction = PaymentService.refund(
-                intent.ref, amount_q=amount_q, reason="Reembolso via admin"
-            )
-        except Exception as exc:  # PaymentService valida elegibilidade e levanta
-            logger.warning("refund failed for %s: %s", intent.ref, exc)
-            if not quiet:
-                messages.error(request, str(exc))
             return False
-        if not quiet:
-            messages.success(
-                request,
-                _("Reembolso de R$ %(v)s processado para %(ref)s.")
-                % {"v": format_money(transaction.amount_q), "ref": intent.ref},
+        amount_q = form.cleaned_data.get("amount_reais") or _available_q(intent.pk)
+        if amount_q <= 0:
+            messages.info(request, _("Esta cobrança não tem valor disponível para estorno."))
+            return False
+        actor = request.user.get_username()
+        try:
+            result = backend.refund(
+                intent.ref,
+                amount_q=amount_q,
+                idempotency_key=f"admin-refund:{intent.ref}:{form.cleaned_data['refund_key']}",
+                actor=actor,
             )
+        except Exception:
+            # O backend fala por ``RefundResult``; exceção aqui é defeito, e o
+            # estado do gateway é desconhecido. Falha alto, sem afirmar nada.
+            logger.exception("admin refund crashed for %s", intent.ref)
+            messages.error(
+                request,
+                _(
+                    "O estorno parou no meio, e não dá para saber se o dinheiro saiu. "
+                    "Confira no painel do gateway antes de tentar de novo."
+                ),
+            )
+            return False
+        if not result.success:
+            logger.warning("admin refund refused for %s: %s", intent.ref, result.error_code)
+            messages.error(request, result.message or _("O estorno foi recusado. Nada foi estornado."))
+            return False
+        refunded_q = result.amount_q or amount_q
+        self.log_change(
+            request,
+            intent,
+            f"Estorno de R$ {format_money(refunded_q)} pelo gateway ({result.refund_id or 'sem id'}).",
+        )
+        messages.success(
+            request,
+            _("R$ %(v)s devolvidos ao cliente pelo mesmo meio do pagamento (%(ref)s).")
+            % {"v": format_money(refunded_q), "ref": intent.ref},
+        )
         return True
 
     @display(description=_("Dados do gateway"))
@@ -374,6 +420,10 @@ class PaymentIntentAdmin(BaseModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def has_refund_permission(self, request, obj=None):
+        # Não passa por `has_change_permission` (sempre False): estornar não é editar.
+        return request.user.has_perm(REFUND_PERMISSION)
 
     @display(description=_("Método"))
     def method_badge(self, obj):

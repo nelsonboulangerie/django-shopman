@@ -115,7 +115,31 @@ class PurchaseBoardView(ServerTimingMixin, APIView):
         responses={200: OpenApiResponse(description="Materials, suppliers, costs and active receipt draft.")},
     )
     def get(self, request):
-        return Response({"purchase": projection_data(build_purchase())})
+        def values(name: str) -> list[str]:
+            return [value for value in request.query_params.getlist(name) if value]
+
+        return Response(
+            {
+                "purchase": projection_data(
+                    build_purchase(
+                        paginate=True,
+                        page=request.query_params.get("page", 1),
+                        page_size=request.query_params.get("page_size", 30),
+                        query=request.query_params.get("q", ""),
+                        order=request.query_params.get("order", "name"),
+                        material_filters={
+                            "archive": values("material_archive"),
+                            "category": values("category"),
+                            "tone": values("tone"),
+                        },
+                        supplier_filters={
+                            "archive": values("supplier_archive"),
+                            "contact": values("contact"),
+                        },
+                    )
+                )
+            }
+        )
 
 
 class PurchaseScanInvoiceView(APIView):

@@ -271,6 +271,8 @@ explica nada. Ele passa na revisão porque é bonito.
 **"Faixa de preço"** é conceito de negócio no formulário ao lado. O gestor acabou de montar
 um público por faixa de preço e lê "3 faixas que não tinham começado foram canceladas".
 Ninguém desconfia de uma palavra que acabou de aprender no app.
+*(Desde 20/10/2026 o conceito de negócio se chama **Grupo**, o mesmo nome do Gestor, e
+"faixa" não aparece mais na tela do Marketing: ver `suite-vocabulary.md` §1.)*
 → `"As plataformas que ainda não tinham começado não enviaram nada."`
 
 **(c) O mesmo conceito com nomes diferentes conforme a porta de entrada.** "Para quem" /

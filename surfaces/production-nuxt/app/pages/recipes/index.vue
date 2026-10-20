@@ -7,7 +7,15 @@ import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 // SKU/produto, versão atual, hidratação. "Nova receita" só com `can_edit`. A estrela
 // é de cada operador (pede só a leitura), e "Favoritas" filtra as dele.
 import { isStale } from "~/presentation/production";
-import { favoriteActionHint, favoriteToggleLabel, filterEntries } from "~/presentation/recipeBook";
+import {
+  PRODUCTION_MODE_ALL,
+  PRODUCTION_MODE_FILTER_OPTIONS,
+  PRODUCTION_MODE_MADE_TO_ORDER,
+  favoriteActionHint,
+  favoriteToggleLabel,
+  filterEntries,
+  needsReview,
+} from "~/presentation/recipeBook";
 
 useHead({ title: "Receitas" });
 
@@ -18,6 +26,9 @@ const archived = ref(false);
 const onlyWithoutSku = ref(false);
 const onlyWithDraft = ref(false);
 const onlyFavorites = ref(false);
+const onlyUnreviewed = ref(route.query.unreviewed === "1");
+const mode = ref(typeof route.query.mode === "string" ? route.query.mode : PRODUCTION_MODE_ALL);
+const modeItems = [...PRODUCTION_MODE_FILTER_OPTIONS];
 const sort = ref("updated");
 const page = ref(1);
 
@@ -29,6 +40,8 @@ const { entries, kinds, total, pageSize, canEdit, forbidden, pending, error, ref
     withoutSku: onlyWithoutSku,
     withDraft: onlyWithDraft,
     favorites: onlyFavorites,
+    unreviewed: onlyUnreviewed,
+    mode,
     sort,
     page,
   },
@@ -43,10 +56,18 @@ const visible = computed(() => filterEntries(
   onlyWithoutSku.value,
   onlyWithDraft.value,
   onlyFavorites.value,
+  onlyUnreviewed.value,
+  mode.value,
 ));
 const hasFilters = computed(
   () =>
-    !!query.value.trim() || !!kind.value || onlyWithoutSku.value || onlyWithDraft.value || onlyFavorites.value,
+    !!query.value.trim() ||
+    !!kind.value ||
+    onlyWithoutSku.value ||
+    onlyWithDraft.value ||
+    onlyFavorites.value ||
+    onlyUnreviewed.value ||
+    mode.value !== PRODUCTION_MODE_ALL,
 );
 const stale = computed(() => isStale({ error: !!error.value, hasData: entries.value.length > 0 }));
 
@@ -56,6 +77,8 @@ function clearFilters() {
   onlyWithoutSku.value = false;
   onlyWithDraft.value = false;
   onlyFavorites.value = false;
+  onlyUnreviewed.value = false;
+  mode.value = PRODUCTION_MODE_ALL;
   page.value = 1;
 }
 const ALL_KINDS = "__all__";
@@ -71,7 +94,7 @@ const sortItems = [
   { value: "name", label: "Nome" },
   { value: "kind", label: "Tipo e nome" },
 ];
-watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, sort], () => {
+watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, onlyUnreviewed, mode, sort], () => {
   page.value = 1;
 });
 
@@ -88,6 +111,8 @@ const trailFrom = computed(() => {
   if (onlyWithoutSku.value) params.set("without_sku", "1");
   if (onlyWithDraft.value) params.set("with_draft", "1");
   if (onlyFavorites.value) params.set("favorites", "1");
+  if (onlyUnreviewed.value) params.set("unreviewed", "1");
+  if (mode.value !== PRODUCTION_MODE_ALL) params.set("mode", mode.value);
   if (sort.value !== "updated") params.set("sort", sort.value);
   if (page.value > 1) params.set("page", String(page.value));
   const search = params.toString();
@@ -149,6 +174,14 @@ watch(
           aria-label="Tipo de receita"
         />
         <NuxtSelect
+          v-model="mode"
+          :items="modeItems"
+          value-key="value"
+          label-key="label"
+          class="w-44"
+          aria-label="Modo de produção"
+        />
+        <NuxtSelect
           v-model="sort"
           :items="sortItems"
           value-key="value"
@@ -157,8 +190,17 @@ watch(
           aria-label="Ordenar receitas"
         />
 
+        <NuxtButton
+          to="/recipes/review"
+          color="primary"
+          variant="ghost"
+          icon="i-lucide-badge-check"
+          label="Conferência"
+        />
+
         <div class="ml-auto flex flex-wrap items-center gap-3">
           <NuxtCheckbox v-model="onlyFavorites" label="Favoritas" />
+          <NuxtCheckbox v-model="onlyUnreviewed" label="Não conferidas" />
           <NuxtCheckbox v-model="onlyWithoutSku" label="Sem SKU" />
           <NuxtCheckbox v-model="onlyWithDraft" label="Com rascunho" />
           <NuxtCheckbox v-model="archived" label="Arquivadas" />
@@ -222,7 +264,7 @@ watch(
           <NuxtLink
             :to="`/recipes/${entry.ref}`"
             class="grid h-full min-w-0 grid-cols-1 gap-2 rounded-xl border border-border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
-            :class="entry.is_archived ? 'opacity-70' : ''"
+            :class="!entry.is_active ? 'opacity-70' : ''"
           >
             <div class="flex items-start justify-between gap-2 pr-10">
               <div class="min-w-0">
@@ -264,8 +306,20 @@ watch(
                 color="warning"
                 :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
               />
-              <NuxtBadge v-if="entry.is_archived" color="neutral" label="Arquivada" />
+              <NuxtBadge
+                v-if="entry.production_mode === PRODUCTION_MODE_MADE_TO_ORDER"
+                color="primary"
+                icon="i-lucide-coffee"
+                :label="entry.production_mode_label"
+              />
+              <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
               <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Sem ficha" />
+              <NuxtBadge
+                v-if="needsReview(entry.review_status)"
+                :color="entry.review_status === 'changed' ? 'warning' : 'neutral'"
+                :label="entry.review_label"
+                :title="entry.provenance_label"
+              />
             </div>
 
             <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">

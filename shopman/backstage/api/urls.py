@@ -29,6 +29,7 @@ from .catalog import (
     CatalogCellsView,
     CatalogCellView,
     CatalogMatrixView,
+    CatalogProductArchiveView,
     CatalogProductCreateView,
     CatalogProductDetailView,
     CatalogProductDraftView,
@@ -44,9 +45,14 @@ from .catalog import (
     CatalogSocialView,
     CatalogSyncStatusView,
 )
-from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
+from .catalog_bindings import (
+    CatalogBindingConfirmView,
+    CatalogBindingReviewView,
+    CatalogCategoryView,
+    CatalogSnapshotImportView,
+)
 from .channel_health import ChannelHealthView
-from .customer_groups import CustomerGroupDetailView, CustomerGroupListView
+from .customer_groups import CustomerGroupDetailView, CustomerGroupListView, CustomerGroupMembersView
 from .customers import (
     CustomerAddressDetailView,
     CustomerAddressListView,
@@ -324,12 +330,14 @@ from .recipe_book import (
     RecipeExecutionView,
     RecipeFavoriteView,
     RecipeReferenceView,
+    RecipeReviewQueueView,
     RecipeSheetDuplicateView,
     RecipeSheetListView,
     RecipeSheetView,
     RecipeVersionCreateView,
     RecipeVersionPublishView,
     RecipeVersionRatingView,
+    RecipeVersionReviewView,
     RecipeVersionView,
 )
 from .saved_views import SavedViewDetailView, SavedViewListView
@@ -559,6 +567,8 @@ urlpatterns = [
     path("recipes/ingredients/", IngredientOptionsView.as_view(), name="api-backstage-recipes-ingredients"),
     path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
     path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
+    # A fila de conferência: rota fixa ANTES de recipes/<slug:ref>/ ("review" também é slug).
+    path("recipes/review/", RecipeReviewQueueView.as_view(), name="api-backstage-recipes-review"),
     # Ficha de execução: rotas fixas ANTES de recipes/<slug:ref>/ ("sheets" também é slug).
     path("recipes/sheets/", RecipeSheetListView.as_view(), name="api-backstage-recipe-sheets"),
     path("recipes/sheets/<slug:ref>/", RecipeSheetView.as_view(), name="api-backstage-recipe-sheet"),
@@ -573,6 +583,11 @@ urlpatterns = [
     path("recipes/<slug:ref>/favorite/", RecipeFavoriteView.as_view(), name="api-backstage-recipe-favorite"),
     path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
     path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
+    path(
+        "recipes/<slug:ref>/versions/<int:number>/review/",
+        RecipeVersionReviewView.as_view(),
+        name="api-backstage-recipe-version-review",
+    ),
     path(
         "recipes/<slug:ref>/versions/<int:number>/rating/",
         RecipeVersionRatingView.as_view(),
@@ -737,12 +752,22 @@ urlpatterns = [
         CatalogBindingConfirmView.as_view(),
         name="api-backstage-catalog-binding-confirm",
     ),
+    path(
+        "catalog/channels/<str:ref>/categories/",
+        CatalogCategoryView.as_view(),
+        name="api-backstage-catalog-category",
+    ),
     # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
     # se chama "merge", mas a ordem não deveria depender disso.
     path("customers/", CustomerListView.as_view(), name="api-backstage-customers"),
     path("customers/bulk/", CustomerBulkView.as_view(), name="api-backstage-customers-bulk"),
     path("customers/groups/", CustomerGroupListView.as_view(), name="api-backstage-customer-groups"),
     path("customers/groups/<str:ref>/", CustomerGroupDetailView.as_view(), name="api-backstage-customer-group-detail"),
+    path(
+        "customers/groups/<str:ref>/members/",
+        CustomerGroupMembersView.as_view(),
+        name="api-backstage-customer-group-members",
+    ),
     path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
     path("customers/merge/", CustomerMergeView.as_view(), name="api-backstage-customers-merge"),
     path("customers/merges/", CustomerMergeListView.as_view(), name="api-backstage-customers-merges"),
@@ -770,6 +795,7 @@ urlpatterns = [
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/cells/", CatalogCellsView.as_view(), name="api-backstage-catalog-cells"),
+    path("catalog/products/archive/", CatalogProductArchiveView.as_view(), name="api-backstage-catalog-products-archive"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
     # ⚠️ ANTES de `catalog/product/<str:sku>/`: `create` e `duplicate` casariam com `<str:sku>`.
     path("catalog/product/create/", CatalogProductCreateView.as_view(), name="api-backstage-catalog-product-create"),

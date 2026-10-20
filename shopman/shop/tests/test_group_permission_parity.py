@@ -81,6 +81,9 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     # api/purchase.py::PURCHASE_COUNT_PERMISSIONS (stock count = audit, same
     # ruler as cashman.audit_shift: it belongs to Dono, never to Gerente)
     ("backstage.audit_stock", {"Dono"}),
+    # payman.contrib.admin_unfold.PaymentIntentAdmin (refund_row, refund_detail):
+    # estornar é dinheiro, mesma régua do audit_shift. Do Dono, nunca do Gerente.
+    ("payman.refund_paymentintent", {"Dono"}),
     # permissions.can_manage_orders (orders API + sidebar)
     ("shop.manage_orders", {"Caixa", "Gerente"}),
     # api/operations.py::OrderCancelView.ADVANCED_PERMISSION — cancelar depois de

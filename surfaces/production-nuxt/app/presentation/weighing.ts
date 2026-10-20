@@ -76,3 +76,66 @@ export function preparationLabelsFromPrintDocument(
     expiry_display: ticket.expiry_display ?? "",
   }));
 }
+
+/** Linha da balança no cartão do preparo. */
+export interface WeighingRow {
+  key: string;
+  sku: string;
+  name: string;
+  target: string;
+  annotation: string;
+  isOldDough: boolean;
+}
+
+interface WeighingRowsTicket {
+  output_sku: string;
+  ingredients: Array<{
+    sku: string;
+    name: string;
+    target_display?: string;
+    quantity_display: string;
+    annotation: string;
+  }>;
+  old_dough?: {
+    old_dough_display: string;
+    lines: Array<{ sku: string; target_display: string }>;
+  } | null;
+}
+
+/**
+ * As linhas que o padeiro pesa. Sem massa velha, a ficha do preparo (mistura
+ * final + partes prontas). Com massa velha, a variante no teto que o servidor
+ * já calculou (`final_mix_at_cap`): a massa velha primeiro, e cada insumo no
+ * alvo encolhido. A ajuda de contagem ("≈ 7 ovos") é do peso cheio e sai.
+ */
+export function weighingRows(
+  ticket: WeighingRowsTicket,
+  withOldDough: boolean,
+): WeighingRow[] {
+  const oldDough = withOldDough ? ticket.old_dough : null;
+  const atCap = new Map(
+    (oldDough?.lines ?? []).map((line) => [line.sku, line.target_display]),
+  );
+  const rows: WeighingRow[] = ticket.ingredients.map((ing) => ({
+    key: ing.sku,
+    sku: ing.sku,
+    name: ing.name,
+    target: projectedQuantityDisplay(
+      atCap.get(ing.sku) ??
+        operationalTargetDisplay(ing.target_display, ing.quantity_display),
+    ),
+    annotation: oldDough ? "" : ing.annotation,
+    isOldDough: false,
+  }));
+  if (oldDough?.old_dough_display) {
+    rows.unshift({
+      key: `old-dough-${ticket.output_sku}`,
+      sku: ticket.output_sku,
+      name: "Massa velha",
+      target: projectedQuantityDisplay(oldDough.old_dough_display),
+      annotation: "",
+      isOldDough: true,
+    });
+  }
+  return rows;
+}

@@ -118,8 +118,9 @@ class PosSaleReview:
     delivery_fee_source: str = ""
     delivery_distance_km: float | None = None
     #: Frete grátis (ou abatido) pela loja: ``{reason, promotion_name,
-    #: threshold_q, base_fee_q}``, ou ``None``. ``reason`` é ``"promotion"`` ou
-    #: ``"threshold"``; ``base_fee_q`` é a taxa sem a renúncia. O operador vê que o
+    #: threshold_q, base_fee_q, group_name}``, ou ``None``. ``reason`` é
+    #: ``"promotion"``, ``"threshold"`` ou ``"group"`` (o frete grátis do grupo
+    #: ``group_name``); ``base_fee_q`` é a taxa sem a renúncia. O operador vê que o
     #: frete saiu grátis e por quê (P2-21).
     delivery_fee_waiver: dict | None = None
     #: A data que o servidor usou — em branco no pedido, é HOJE (o relógio da
@@ -923,7 +924,7 @@ def review_sale(
     with_manual = _stamp_engine_manual_discounts(
         payload, channel=channel, config=config, operator_username=operator_username, session=session,
     )
-    priced_lines = _review_priced_lines(payload, priced, with_manual) if session is None else ()
+    priced_lines = _review_priced_lines(payload, priced, with_manual)
 
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
@@ -1150,21 +1151,31 @@ def review_sale(
 def _review_priced_lines(
     payload: dict, priced: dict[int, dict], with_manual: dict[int, dict],
 ) -> tuple[dict, ...]:
-    """As linhas da venda sem comanda como o motor as cobra, no formato da comanda.
+    """As linhas da venda como o motor as cobra, no formato da linha da comanda.
 
-    ``priced`` é a linha do motor sem os descontos manuais; ``with_manual``, com
-    eles (vazio quando a venda não tem desconto manual). Nenhuma das duas é conta
-    do PDV: quando o desconto manual vence a linha, o motor carimba ``_disc`` do
-    tipo ``manual`` com o valor por unidade, e é esse o preço que a linha cobra;
-    quando perde, a linha cobra o automático e mostra o rótulo dele. O desconto
-    de PEDIDO não entra no preço da linha: a tela o mostra à parte.
+    ``priced`` é a linha do motor sem os descontos manuais (só na venda sem
+    comanda); ``with_manual``, com eles (vazio quando a venda não tem desconto
+    manual). Nenhuma das duas é conta do PDV: quando o desconto manual vence a
+    linha, o motor carimba ``_disc`` do tipo ``manual`` com o valor por unidade,
+    e é esse o preço que a linha cobra; quando perde, a linha cobra o automático
+    e mostra o rótulo dele. O desconto de PEDIDO não entra no preço da linha: a
+    tela o mostra à parte.
+
+    Com comanda, o preço sem desconto manual é o da gravação (o eco do salvar), e
+    a revisão só responde pelas linhas que o motor reviu com o desconto manual:
+    é o que a tela espera depois de o operador aplicar ou trocar um desconto, e
+    o que a prévia do editor de desconto pergunta antes do Aplicar.
+
+    ``meta.manual_discount`` volta quando o motor decidiu o desconto pedido: é por
+    ele que o eco diz se o desconto do operador valeu ou foi descartado por um
+    automático maior (``manual_discount_discarded``).
     """
     lines: list[dict] = []
     for index, item in enumerate(payload.get("items") or []):
         if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
         line_id = str(item.get("line_id") or "")
-        engine_line = priced.get(index)
+        engine_line = priced.get(index) or with_manual.get(index)
         if not line_id or not engine_line:
             continue
         meta = engine_line.get("meta") or {}
@@ -1176,12 +1187,11 @@ def _review_priced_lines(
         if manual_disc.get("type") == "manual":
             list_q = _int_q(manual_meta.get("_list_q")) or list_q
             charged_q = list_q - _int_q(manual_disc.get("amount_q"))
-            disc = {}
-        lines.append({
-            "line_id": line_id,
-            "unit_price_q": charged_q,
-            "meta": {"_list_q": list_q, **({"_disc": disc} if disc else {})},
-        })
+            disc = dict(manual_disc)
+        line_meta: dict = {"_list_q": list_q, **({"_disc": disc} if disc else {})}
+        if manual_meta.get("manual_discount"):
+            line_meta["manual_discount"] = dict(manual_meta["manual_discount"])
+        lines.append({"line_id": line_id, "unit_price_q": charged_q, "meta": line_meta})
     return tuple(lines)
 
 
@@ -1194,6 +1204,7 @@ def _waiver_review(delivery: DeliveryFeeResolution) -> dict | None:
         "promotion_name": waiver.promotion_name,
         "threshold_q": waiver.threshold_q,
         "base_fee_q": waiver.base_fee_q,
+        "group_name": waiver.group_name,
     }
 
 
@@ -4200,18 +4211,24 @@ def _delivery_fee_waiver(base_fee_q: int, payload: dict):
     nunca a reavaliava: a loja dava o frete e o balcão cobrava. Agora a renúncia
     é ``modifiers.resolve_delivery_fee_waiver``, a função que o
     ``DeliveryFeeModifier`` chama, com o canal da venda (escopo da promoção) e o
-    cliente identificado (grupo de clientes, aniversário).
+    cliente identificado (grupo de clientes, aniversário, frete grátis do grupo).
 
     A base é a mercadoria líquida do desconto: a mesma soma que o limiar sempre
     mediu no balcão.
     """
+    from shopman.guestman.models import PriceTier
+
     from shopman.shop.modifiers import resolve_delivery_fee_waiver
 
+    customer_ref = _payload_pricing_customer_ref(payload)
+    # Os grupos do cliente, para o frete grátis do grupo: uma consulta, só com cliente.
+    tier_refs = PriceTier.objects.filter(customers__ref=customer_ref).values_list("ref", flat=True)
     return resolve_delivery_fee_waiver(
         base_fee_q,
         merchandise_q=_payload_subtotal_q(payload) - _payload_discount_q(payload),
         channel_ref=str(payload.get(_PRICING_CHANNEL_KEY) or ""),
-        customer_ref=_payload_pricing_customer_ref(payload),
+        customer_ref=customer_ref,
+        price_tier_refs=list(tier_refs) if customer_ref else (),
     )
 
 

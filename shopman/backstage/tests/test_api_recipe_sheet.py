@@ -428,6 +428,7 @@ def test_admin_form_reads_back_what_the_sheet_wrote(client, editor, materials, p
         "name": "Pão Tradição",
         "output_sku": recipe.output_sku,
         "batch_size": "1.7",
+        "production_mode": "batch",
         "is_active": "on",
         "steps_text": "Mistura\nFermentação",
         "max_started_minutes": "45",

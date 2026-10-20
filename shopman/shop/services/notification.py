@@ -923,6 +923,9 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # caber no template aprovado do WhatsApp, que não aceita variável vazia
     # (revisão do dono, 25/09/2026; texto em `shopman/shop/notification_copy.py`).
     context["status_note"] = _status_note(order, template, reason, note=payload.get("status_note"))
+    # A data da ENCOMENDA no aviso de confirmado ("confirmado para retirada amanhã,
+    # a partir das 9h"). Auto-suprimível: pedido de hoje fica sem nada.
+    context["commitment_suffix"] = _commitment_suffix(order)
 
     # A NFC-e autorizada (aviso ``fiscal_note_ready``): o link da DANFE que o
     # provedor hospeda, ou a consulta da SEFAZ do QR. Não é link pessoal (não
@@ -1141,6 +1144,11 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
     if template == "order_rescheduled":
         return _commitment_phrase(order) or "a nova data que está no pedido"
+    if template == "order_accepted":
+        # Só na ENCOMENDA: "retirada amanhã, a partir das 9h", sem ponto final. Vazio
+        # no pedido do dia, e é esse vazio que faz o adapter manter o modelo
+        # ``pedido_confirmado`` (``notification_manychat._preorder_accepted_variant``).
+        return _commitment_note(order)
     if template == "payment_refunded":
         # Montada por quem estornou (sabe o meio); a padrão é a do meio desconhecido.
         return str(note or "").strip() or refund_arrival_note("")
@@ -1235,6 +1243,49 @@ def _commitment_phrase(order) -> str:
     if window:
         phrase = f"{phrase}, {window[:1].lower()}{window[1:]}"
     return phrase
+
+
+def _commitment_note(order) -> str:
+    """"retirada amanhã, a partir das 9h" quando o pedido é ENCOMENDA; senão "".
+
+    A promessa da encomenda numa frase só, SEM ponto final, para duas bocas: o
+    sufixo do texto livre (``_commitment_suffix``: "confirmado para …") e o
+    ``{{2}}`` do modelo ``pedido_encomenda_confirmada`` ("confirmada para {{2}}."),
+    via ``status_note`` do ``order_accepted``.
+
+    Encomenda é ``is_preorder`` gravado no commit (data futura) ou data ainda à
+    frente de hoje. Dia da semana leva o artigo ("no sábado", "na sexta-feira");
+    "hoje" e "amanhã" vão sem. O recebimento diz o que acontece na data:
+    retirada ou entrega.
+    """
+    from datetime import date as _date
+
+    data = order.data or {}
+    try:
+        day = _date.fromisoformat(str(data.get("delivery_date") or "").strip())
+    except ValueError:
+        return ""
+    if not (data.get("is_preorder") or day > timezone.localdate()):
+        return ""
+    phrase = _commitment_phrase(order)
+    if not phrase:
+        return ""
+    # O nome do dia vem com maiúscula do formatador; no meio da frase, minúscula.
+    phrase = f"{phrase[:1].lower()}{phrase[1:]}"
+    if not phrase.startswith(("hoje", "amanhã")):
+        phrase = f"{'no' if phrase.startswith(('sábado', 'domingo')) else 'na'} {phrase}"
+    receipt = "entrega" if data.get("fulfillment_type") == "delivery" else "retirada"
+    return f"{receipt} {phrase}"
+
+
+def _commitment_suffix(order) -> str:
+    """" para retirada amanhã, a partir das 9h" quando o pedido é ENCOMENDA; senão "".
+
+    Entra logo depois de "está confirmado", sem ponto final (o ponto é do texto).
+    A frase é a de ``_commitment_note`` (uma fonte só).
+    """
+    note = _commitment_note(order)
+    return f" para {note}" if note else ""
 
 
 def _eta_clock(order) -> str:

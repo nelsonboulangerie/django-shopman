@@ -113,6 +113,9 @@ class CustomerRowProjection:
     last_order_display: str
     # Motivo da suspeita, quando há: "Mesmo nome de outro cadastro".
     duplicate_hint: str
+    # Os grupos comerciais do cliente, o de maior prioridade primeiro. Vem do prefetch
+    # da página: uma consulta para a lista inteira, nunca uma por linha.
+    groups: tuple[CustomerPriceTierProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,8 @@ class CustomerFormOptionsProjection:
 class CustomerListProjection:
     query: str
     filter: str
+    # O grupo comercial que recorta a lista (``?group=<ref>``); vazio = todos.
+    group: str
     filters: tuple[CustomerFilterOption, ...]
     items: tuple[CustomerRowProjection, ...]
     page: int
@@ -469,10 +474,11 @@ def _search_q(query: str) -> Q:
 
 
 def build_customer_list(
-    query: str = "", filter_ref: str = "all", page: int = 1, sort: str = "recent",
+    query: str = "", filter_ref: str = "all", page: int = 1, sort: str = "recent", group_ref: str = "",
 ) -> CustomerListProjection:
     Customer = _customer_model()
     query = (query or "").strip()
+    group_ref = (group_ref or "").strip()[:50]
     filter_ref = filter_ref if filter_ref in _FILTER_REFS else "all"
     page = max(int(page or 1), 1)
     sort = sort if sort in {"recent", "name"} else "recent"
@@ -490,6 +496,9 @@ def build_customer_list(
         qs = qs.filter(Q(full_name__in=names) | Q(document__in=documents))
     if query:
         qs = qs.filter(_search_q(query))
+    if group_ref:
+        # Recorte por grupo: é por aqui que se acha quem tirar de um grupo em lote.
+        qs = qs.filter(price_tiers__ref=group_ref)
 
     # Duplicados em sequência: quem está comparando lê os dois lado a lado.
     if filter_ref == "possible_duplicates" or sort == "name":
@@ -498,7 +507,7 @@ def build_customer_list(
         ordering = ("-created_at", "ref")
     total = qs.count()
     start = (page - 1) * PAGE_SIZE
-    customers = list(qs.order_by(*ordering)[start:start + PAGE_SIZE])
+    customers = list(qs.order_by(*ordering).prefetch_related("price_tiers")[start:start + PAGE_SIZE])
     stats = _order_stats([customer.ref for customer in customers])
     if filter_ref != "possible_duplicates" and customers:
         names, documents = _duplicate_sets(
@@ -521,12 +530,16 @@ def build_customer_list(
                 orders_label=_orders_label(count),
                 last_order_display=_elapsed_label(last),
                 duplicate_hint=_duplicate_hint(customer, names, documents),
+                groups=tuple(
+                    CustomerPriceTierProjection(ref=tier.ref, name=tier.name, is_primary=index == 0)
+                    for index, tier in enumerate(customer.price_tiers.all())
+                ),
             )
         )
 
     if total:
         total_label = "1 cliente" if total == 1 else f"{total} clientes"
-    elif query or filter_ref != "all":
+    elif query or filter_ref != "all" or group_ref:
         total_label = "Nenhum cliente com essa busca"
     else:
         total_label = "Nenhum cliente cadastrado"
@@ -534,6 +547,7 @@ def build_customer_list(
     return CustomerListProjection(
         query=query,
         filter=filter_ref,
+        group=group_ref,
         filters=tuple(CustomerFilterOption(ref=ref, label=label, active=ref == filter_ref) for ref, label in FILTERS),
         items=tuple(items),
         page=page,

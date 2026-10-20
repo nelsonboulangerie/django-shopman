@@ -40,7 +40,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `items[].line_id` | `string` | cliente (PDV) → `pos_intent._items` → `build_session_ops` (`add_line`) | `Session._normalize_items`, ledger de fire do KDS, projection do tab | A IDENTIDADE durável da linha, **gerada pelo cliente** ao criar a linha (`L-` + 8 chars) e devolvida em todo save. É ela — nunca o SKU — que diz qual linha é qual: duas linhas do MESMO SKU são legítimas (o segundo chá, pedido depois de o primeiro ir para a cozinha) e não são fundidas por ninguém. Ausente, o kernel gera; REPETIDA no mesmo payload é recusada (`duplicate_line_id`), porque duas linhas com o mesmo id colapsariam numa só no `_persist_items`. Preservada no remove+readd do save e do fechamento, e é por isso que o pedido committado não re-dispara para a cozinha |
 | `items[].meta.manual_discount` | `dict` | POS `build_session_ops` | `DiscountModifier._calc_manual`, projection do tab | Desconto manual do operador **numa LINHA**: `{type, value, reason, approved_by?}`. Mesma convenção do de pedido — `type` `"percent"` (0–100) ou `"fixed"` (REAIS). ⚠️ Em `fixed` o valor é **POR UNIDADE**: é assim que ele compete com o desconto automático no "maior desconto ganha", que mede tudo por unidade contra a etiqueta. Rateio de um valor pela linha inteira é do desconto de PEDIDO, que não disputa linha com ninguém. A review do PDV não calcula: lê o que o motor aplicou (`pos._stamp_engine_manual_discounts`, A3-1) |
 | `items[].meta.notes` | `string` | PDV (`pos.build_session_ops`, campo "Obs." da linha) · loja (`PUT /api/v1/cart/lines/<line_id>/notes/` → `shop/services/cart.set_line_notes`, pela linha: o mesmo SKU pode ter duas linhas com escolhas diferentes, até 280 caracteres como o PDV, numa linha só; vazio apaga a chave) | `kds._order_to_lines` → ticket do KDS (`items[].notes`) → `backstage/projections/kds` (card da cozinha e card da Saída) · sacola da loja (`CartItemProjection.notes`) | **Observação de UM item para a cozinha** ("sem gergelim", "bem assado"). Distinta de `order_notes` (o pedido inteiro). ⚠️ **Texto pessoal**: a cerca de sessão anonimizada recusa gravar (`ModifyService._assert_line_meta_is_allowed`), a exclusão de conta apaga (`account._scrub_item_meta`) e a exportação de dados inclui (`account_export.ITEM_META_QUERY_PATHS`). A loja grava pelo op `replace_sku` com o mesmo SKU, que troca o `meta` mantendo `line_id` e quantidade |
-| `items[].meta.options` | `list[dict]` | loja (`POST /api/v1/cart/lines/` → `shop/services/cart.add_item(options=)`), PDV (`pos._resolve_payload_options` em `build_session_ops`), edição de encomenda (`order_edit.add_new`), recompra/transferência da concierge (revalidam pelo `{group, ref}`) · iFood (`ifood_orders._map_options`, sem `ref`) | `ItemPricingModifier` (preço = produto + opções relidas pelo `ref`, só `pricing_policy=internal`), `kds._build_routable_items` (observação = `product_options.kitchen_note`), sacola (`options_summary`, `has_options`), comanda do PDV e `pos_edit_session.cart_payload` (`options` sem `consumes`) | **Escolhas no produto** (Fase 1, dono 02/10/2026): `[{group, group_label, ref, name, qty, unit_price_q, consumes}]`, resolvidas por `shop/product_options.resolve_selection` a partir do cadastro (`Product.metadata.option_groups`); o cliente só manda `{group, ref}`. `consumes` é CONGELADO na linha (o que a opção gasta, registro; a venda NÃO baixa estoque dele). Linha igual = mesmo SKU + mesma `product_options.signature`. O nome da linha leva o resumo (`"Croque Monsieur (+ Ovo frito)"`), e é ele que sai na NFC-e: uma linha só, preço unitário = produto + opções. O resumo da cozinha é derivado, nunca gravado em `meta.notes`. Opção sem `ref` (iFood) é ignorada pelo preço (externo) e pela cozinha (a nota do iFood já a traz). Não é texto pessoal. |
+| `items[].meta.options` | `list[dict]` | loja (`POST /api/v1/cart/lines/` → `shop/services/cart.add_item(options=)`), PDV (`pos._resolve_payload_options` em `build_session_ops`), edição de encomenda (`order_edit.add_new`), recompra/transferência da concierge (revalidam pelo `{group, ref}`) · iFood (`ifood_orders._map_options`, sem `ref`) | `ItemPricingModifier` (preço = produto + opções relidas pelo `ref`, só `pricing_policy=internal`), `kds._build_routable_items` (observação = `product_options.kitchen_note`), sacola (`options_summary`, `has_options`), comanda do PDV e `pos_edit_session.cart_payload` (`options` sem `consumes`) | **Escolhas no produto** (Fase 1, dono 02/10/2026): `[{group, group_label, ref, name, qty, unit_price_q, consumes}]`, resolvidas por `shop/product_options.resolve_selection` a partir do cadastro (`Product.metadata.option_groups`); o cliente só manda `{group, ref}`. `consumes` é CONGELADO na linha (o que a opção gasta) e é o que a venda baixa: `shop/services/made_to_order` (ADR-040) tira `qty do insumo × qty da opção × qty da linha` na mesma directive da ficha, convertido para a unidade-base do insumo quando a grafia difere na mesma dimensão (`g` → `kg`). Opção sem `ref` (iFood) não baixa. Linha igual = mesmo SKU + mesma `product_options.signature`. O nome da linha leva o resumo (`"Croque Monsieur (+ Ovo frito)"`), e é ele que sai na NFC-e: uma linha só, preço unitário = produto + opções. O resumo da cozinha é derivado, nunca gravado em `meta.notes`. Opção sem `ref` (iFood) é ignorada pelo preço (externo) e pela cozinha (a nota do iFood já a traz). Não é texto pessoal. |
 | `items[].meta.weighed` | `dict` | POS `build_session_ops` (a partir de `shop/services/weighed_sale.apply_to_payload`) | projection do tab (`_tab_payload_weighed`), prévia do tab | **Venda por peso** (`Product.unit == "kg"`; o mesmo preço do catálogo é o preço DO QUILO): o que o operador tinha em mãos e o que isso virou. `{entry, weight_g, price_per_kg_q, total_q, label_q?, by}`. `entry`: `"label"` (digitou o valor da etiqueta; o peso é o MAIOR em gramas cujo valor não passa dela) ou `"weight"` (digitou o peso — só com `Shop.defaults.pos.weighed_weight_entry`). `qty` da linha = `weight_g / 1000` (kg, 3 casas); `unit_price_q` = preço do quilo. ⚠️ **Registro, não preço**: o kernel reprecifica a linha pelo catálogo a cada passagem. Produto por peso sem preço do quilo não vende (`price_missing`). `by` é o username de quem digitou |
 | `items[].meta.pos_authorship` | `dict` | **um escritor só**: `shop/services/pos_intent.stamp_line_authorship`, chamado por `pos._replace_session_ops` (salvar, fechar e editar encomenda passam todos por ele); `build_session_ops` só copia | `backstage/api/pos_concurrency.tab_command` (`line_authors` na resposta), projection do tab (`build_open_tab`, `authorship` por item), PDV (`PosCartPanel`, "Lançado por / Editado por") | **Quem lançou e quem editou a linha da comanda.** `{created_by, created_label, created_at, updated_by?, updated_label?, updated_at?}`. `*_by` é o `User.pk` do operador, como texto: identificador ESTÁVEL, que sobrevive a renomear a pessoa. `*_label` é o nome legível (`get_full_name()` ou o username) **congelado no ato**, nunca derivado na leitura: renomear alguém depois não reescreve quem era. `*_at` é ISO 8601. `created_*` é gravado uma vez, quando a linha nasce, e nunca muda; `updated_*` a cada mudança do que o operador controla (SKU, quantidade, observação, desconto de linha, entrada de peso). Reprecificação pelo catálogo não é edição de ninguém. Linha que já existia sem carimbo não ganha `created_*` inventado. O cliente não escreve: o parser do intent copia campo a campo e descarta o que vier com esse nome. Sem operador identificado (username sem `User`), o save é recusado (`operator_unidentified`) |
 | `tab_ref` | `string` | POS tab service | POS tab service, projections | Referência canônica da comanda. Aceita texto curto alfanumérico; referências numéricas de até 8 dígitos continuam normalizadas com zeros. Ex: `"00001007"`, `"MESA ANA"` |
@@ -385,6 +385,7 @@ for key in (
 | `dispatch` | `dict` | `operator_orders.advance_order`, `mark_equipment_returned` | Custódia e projeções do Gestor | `equipment` conserva tipos legados (ex. `card_machine`); `equipment_out_at/by`, `equipment_back_at/by` são trilha. Novo `device_ref` (UUID string) e `device_label` registram qual dispositivo foi levado, sem inferir históricos. `trip_ref` (ref do pedido que abriu a saída) existe só nos pedidos que saíram JUNTO com outro: a saída é o pedido-âncora mais os que apontam para ele, e o pedido de cartão que entra numa saída com maquininha grava o mesmo `device_ref` sem reserva nova (o vínculo `DeliveryDevice.current_order` fica com quem a reservou). `collector: "courier_partner"` + `collector_at`: o pedido saiu pela coleta da TaOn (status `E`, `advance_order(partner_collects=True)`, decisão do dono 13/10/2026) sem troco da gaveta nem maquininha registrados no Gestor; fato externo não inventa custódia (a trava `guard_dispatch` aceita esse despacho sem reserva). `custody_at/by`: a custódia da TaOn foi registrada NA CHAMADA ("Chamar entregador", `operator_orders.record_partner_custody`, decisão do dono E4=1): troco da gaveta (`courier_out`) e/ou maquininha (`equipment`, `device_ref`) pelas mesmas peças do despacho do Gestor, com `collector: "courier_partner"` já gravado; a coleta depois não lança nada, e a chamada repetida sem a custódia ter voltado não lança de novo. `custody_returns` (lista de `{at, by, reason, change_q, equipment, device_label}`): a corrida terminou sem coleta (`N`, `C`, pedido cancelado antes do `E`) e `operator_orders.return_partner_custody` devolveu o troco (`courier_in` com `payload.custody_return = true`, que anula o `courier_out` em `courier_change_by_order` e na conciliação) e a maquininha (`mark_equipment_returned`); as chaves da custódia saem do `dispatch` e a chamada seguinte registra do zero. "Chamar de novo" mantém a custódia (a nova chamada sai no mesmo gesto). `courier_back_at/by`: "Entregador voltou" fechou a saída (`operator_orders.courier_returned`: entregue, acerto com troco integral, maquininha devolvida, concluído). Maquininha na rua além de `Shop.defaults.delivery.card_machine_alert_minutes` (default 120; 0 desliga) vira alerta `card_machine_overdue` (`check_card_machines_out`, no ciclo do `maintenance_worker`). Disponibilidade individual vem exclusivamente de `backstage.DeliveryDevice.current_order` (vínculo exclusivo), alterado na mesma transação do despacho/devolução. Pagamento é independente. |
 | `auto_ready` | `dict` | `kds.on_all_tickets_done` → `order_undo.record_auto_ready` (antes da transição a READY); some em `order_undo.undo_auto_ready` e no recall do ticket (`kds.reopen_ticket`) | `order_undo.ready_hold`, `lifecycle.enqueue_phase`, `LifecyclePhaseHandler`, `order_queue._undo_projection` | O pronto automático da Cozinha (SUITE-UX §5.1). `{token, at, undo_until, ticket_ids, actor}`: `token` (hex) identifica ESTE pronto; `at`/`undo_until` ISO; `ticket_ids` = o ticket cuja baixa fechou o pedido (o desfazer o reabre). Enquanto `undo_until` não vence, a fase `on_ready` (aviso de pronto, nota da sacola, corrida) fica agendada para `undo_until` com `hold_token`; desfeito, vira no-op. O `readyToPickup` do iFood sai na hora (o card diz "iFood já avisado"). Só fora do balcão e com `fulfillment.ready_undo_seconds > 0`. Fica no pedido depois da janela (o card diz "Pronto · automático"). |
 | `pending_handoff` | `dict` | `operator_orders.advance_order(undo_window=True)` → `order_undo.request_handoff`; some no commit (`order_undo.commit_handoff`), no desfazer (`undo_handoff`) ou na recusa da gravação | `order_undo`, `HandoffCommitHandler`, `operational_actions`, projeções do Gestor e da Saída | Entregar/Despachar tocado no Gestor ou na Saída e ainda não gravado. `{token, from_status, to_status, requested_at, commit_at, actor, change_out_q, cash_shift_id, equipment, trip_ref}`: os argumentos do toque, reaplicados por `advance_order(handoff_token=token)` quando `commit_at` vence (directive `order.handoff_commit`). Até lá o status não muda e nada sai da casa. Recusa na gravação (turno fechado, maquininha tomada) apaga o registro e cria alerta `handoff_refused`. Entra na revisão `advance`. |
+| `made_to_order_consumption` | `dict` | `shop/services/made_to_order.consume` (directive `stock.consume_made_to_order`) e `.settle_cancellation` (directive `stock.settle_made_to_order_cancellation`) | auditoria, B.I. (margem do feito na hora, F4 do WP-BAIXA-DE-INSUMO-NA-VENDA) | O insumo que a venda do item feito na hora baixou (ADR-040): `{consumed_at, lines: [{sku, qty, recipe_ref, items: [{sku, unit, needed, issued}]} | {sku, qty, option: {group, ref, name}, items: [...]}], shortfalls?: [{sku, unit, sold_sku, option?, needed, issued, short}], cancellation?: {settled_at, returned: {sku: qty}, wasted: {sku: qty}}}` (quantidades em string Decimal, na unidade da ficha; a linha com `option` é o adicional escolhido, uma por opção de cada item, na unidade-base do insumo; `shortfalls[].option` = nome do adicional). **Rastro, não guarda**: a idempotência mora no recibo permanente das duas directives e no ledger (`Move.metadata.source` = `sale`/`sale_cancel` com o `order_ref`), então uma regravação do `data` por outra fase nunca faz a baixa rodar duas vezes. Ausente em pedido sem item de ficha vigente "Na hora" (`Recipe.production_mode`) e sem adicional com `consumes` |
 
 ### courier — detalhamento
 
@@ -760,6 +761,22 @@ Write-back: `holds` (list de hold objects do backend)
 | `alert_at` | `string` (ISO) | idem | StaleNewOrderAlertHandler |
 | `deadline_at` | `string` (ISO) | `lifecycle._schedule_stale_alert_before_deadline` | StaleNewOrderAlertHandler: o aviso diz até quando aceitar e que, vencido, o pedido é cancelado e o pagamento devolvido. Só no `auto_cancel`; anda junto quando o prazo é reagendado |
 
+#### `stock.consume_made_to_order` e `stock.settle_made_to_order_cancellation`
+
+A baixa de insumo do item feito na hora (ADR-040). A primeira nasce em
+`stock.fulfill` (o mesmo ponto em que o pedido baixa o próprio SKU), só quando o
+pedido tem item cuja ficha vigente é "Na hora" (`Recipe.production_mode`) ou linha com
+adicional cujo `consumes` declara insumo (`items[].meta.options`); a segunda
+nasce no `on_cancelled`, só quando a primeira nasceu. As duas por
+`create_persistently_deduped` com `dedupe_key = order_ref` e recibo permanente
+(`IdempotencyKey` nos scopes `stock:made_to_order_consumption` e
+`stock:made_to_order_cancellation`): uma vez na vida do pedido.
+
+| Chave | Tipo | Escrito por | Lido por |
+|-------|------|-------------|----------|
+| `order_ref` | `string` | `services/made_to_order.schedule_consumption` · `.schedule_cancellation_settlement` | `MadeToOrderConsumeHandler` · `MadeToOrderCancellationHandler` |
+| `channel_ref` | `string` | idem | auditoria |
+
 #### `preorder.activate`
 
 Despertador da encomenda (pedido com `delivery_date` futura): o lifecycle adia
@@ -782,7 +799,7 @@ Reagendar (`services.reschedule`) **move** a directive viva (edita `available_at
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | PixGenerateHandler |
 | `amount_q` | `int` | hooks | PixGenerateHandler |
-| `pix_timeout_minutes` | `int` | hooks (from channel config) | PixGenerateHandler (default 10) |
+| `pix_timeout_minutes` | `int` | `services.payment._adapter_config` (`ChannelConfig.payment.timeout_minutes`, ou o prazo do link na encomenda do PDV) | adapters de Pix (`payment_efi`, `payment_mock`): obrigatório, sem default |
 
 Write-back: spawns `pix.timeout` e `notification.send` (reminder)
 
@@ -1222,6 +1239,13 @@ directive nasce com `available_at` depois da janela
 `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` e a onda é filtrada a esses refs — nunca
 telefone, e quem já recebeu não recebe de novo.
 
+`Announcement.trigger_context["exclusive_price_tiers"]` (`list[string]`, refs de
+`PriceTier`): os grupos que o anúncio HERDOU da campanha exclusiva apagada. Escrito por
+`campaign_exclusivity.forget_campaign` (a API de exclusão e o `pre_delete` de `Campaign`
+chamam), antes de a FK `rule` virar nula; lido por `campaign_exclusivity.for_announcement`
+(contagem do envio, planejamento, ondas e aprovação). Sem a herança, a onda que ainda
+faltava saía para o público das regras inteiro.
+
 #### `ifood.merchant_sync`
 
 Grava no iFood a grade semanal (`PUT opening-hours`) e as interrupções do calendário.
@@ -1497,8 +1521,11 @@ gate de commit. Editáveis tipados em Reais no ShopAdmin (`shop/admin/shop.py`).
 | `rules.free_delivery_above_q` | só entrega | `build_free_delivery_progress`, `DeliveryFeeModifier` | Taxa de entrega zera no/above deste valor. Reusa a barra como upsell ("faltam X para frete grátis") |
 
 > Convivem no mesmo sub-dict `rules` que o tri-state `validators`/`modifiers`/
-> `checks` do `ChannelConfig` — o `_safe_init` filtra estas chaves de política, que
-> são lidas direto de `shop.defaults["rules"]` por `shop_rule_q()`.
+> `checks` do `ChannelConfig`. A seção `rules` as reconhece pelo nome
+> (`SHOP_RULE_POLICY_KEYS` em `shop/config.py`, junto com `default_delivery_fee_q`)
+> e não as carrega; elas são lidas direto de `shop.defaults["rules"]` por
+> `shop_rule_q()`. Qualquer outra chave desconhecida num aspecto do `ChannelConfig`
+> é RECUSADA com o nome dela (`ValueError` no `from_dict`, `ValidationError` no Admin).
 
 A taxa de entrega por região segue nas **Zonas de Entrega** (`DeliveryZone`, inline
 no admin). O frete grátis global é avaliado por cima da taxa da zona.
@@ -1506,7 +1533,7 @@ no admin). O frete grátis global é avaliado por cima da taxa da zona.
 ### Reposição de Compras — `Shop.defaults["purchase"]`
 
 Política do cálculo de reposição do app Compras, fora do schema do `ChannelConfig`
-(`_safe_init` filtra). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
+(o `from_dict` lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
 (`PurchasePolicy`, dataclass-driven), editável no ShopAdmin (página "Compras");
 lida por `_purchase_policy()` em `shopman/backstage/projections/purchase.py`;
 chave ausente = default. O prazo de entrega por insumo
@@ -1535,8 +1562,8 @@ fornecedor de um clique usa `suggestedQty` como fonte única.
 
 ### Fidelidade — `Shop.defaults["loyalty"]`
 
-Política do programa de fidelidade, fora do schema do `ChannelConfig` (`_safe_init`
-filtra). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
+Política do programa de fidelidade, fora do schema do `ChannelConfig` (o `from_dict`
+lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
 dataclass-driven), editável no ShopAdmin (fieldset "Fidelidade"). O Core (guestman)
 não depende do shop: o orquestrador (`shop/apps.py`) registra resolvers em
 `guestman.contrib.loyalty.conf` que injetam estes valores.
@@ -1738,9 +1765,9 @@ grupos do MESMO cliente. Cliente em mais de um grupo: vale a melhor por tipo, se
 
 | `kind` | Chaves de `config` | Lido por | Descrição |
 |--------|--------------------|----------|-----------|
-| `free_shipping` | `min_order_q` (`int`, centavos) | follow-up (frete) | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. |
-| `exclusive_collections` | `collection_refs` (`list[str]`) | follow-up (catálogo) | Coleções do Offerman que só o membro enxerga/comprar. |
-| `exclusive_notifications` | `campaign_refs` (`list[str]`) | follow-up (marketing) | Avisos/campanhas exclusivos do grupo. |
+| `free_shipping` | `min_order_q` (`int`, centavos) | `shop/modifiers.resolve_delivery_fee_waiver` (loja e PDV, terceira política do frete grátis, `reason: "group"`) e `shop/projections/cart.build_free_delivery_progress` (barra "faltam R$ X") | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. Cliente em dois grupos com frete grátis: vale o de MENOR mínimo. A base é a mesma do limiar da loja (mercadoria, sem o cupom). |
+| `exclusive_collections` | `collection_refs` (`list[str]`) | `shop/policies/exclusive_collections.collection_access` via `shop/projections/exclusive_collections` (uma consulta) → cardápio do storefront (`build_catalog`, página da coleção, home), snapshot público e `/api/v1/catalog/` | Coleções do Offerman que só o membro identificado enxerga. Quem não é do grupo (anônimo incluído) não vê a coleção nem o produto que só existe nela; o produto que também está numa coleção comum continua por ela. Cliente em dois grupos enxerga as coleções dos dois (não competem). A página do produto que só existe em coleção escondida é 404 (link direto incluído, `CollectionAccess.hides_product`), e a sacola (`CartService.add_item`) e o checkout recusam o item com 403 `error_code=group_exclusive` (`ReserveRefusal.GROUP_EXCLUSIVE`, dialeto `{detail, field, errors}` + `skus`). |
+| `exclusive_notifications` | `campaign_refs` (`list[str]`, cada item `campaign:<Campaign.pk>`, a identidade que o Marketing já usa nos comprovantes) | `shop/services/campaign_exclusivity.for_campaign` → `shop/services/audience.resolve(campaign_id=...)` (contagem, disparo) e `resolve(announcement=...)` via `for_announcement` (aprovação, planejamento e envio das ondas) e projeção da campanha (`exclusive_price_tiers`) | Campanhas EXCLUSIVAS do grupo. Campanha que aparece aqui em algum grupo só alcança membros dos grupos que a declaram, qualquer que seja o público escolhido (quem sai conta em `excluded_by_reason.outside_exclusive_groups`). Vantagem com `is_active=false` tira os membros DAQUELE grupo e a campanha continua exclusiva: nunca vira campanha para todos. Apagar a campanha não abre a porta: os anúncios dela herdam os grupos (`Announcement.trigger_context["exclusive_price_tiers"]`) antes da referência sair daqui. Exclusiva só sai por mensagem direta: o CRUD e a aprovação recusam postagem pública. |
 
 `priority` (`int`) desempata tipos iguais entre grupos do mesmo cliente; `is_active`
 desliga a vantagem sem apagar. O resolvedor canônico é
@@ -1749,9 +1776,13 @@ desliga a vantagem sem apagar. O resolvedor canônico é
 
 **Quem escreve**: o Gestor (`shopman/backstage/services/customer_groups.py` → `PriceTierAdvantage`
 via `shop/services/customer_groups.sync_group_advantages`) é o dono de `priority`, `is_active` e
-das chaves de `free_shipping` e `exclusive_collections`. `campaign_refs` é do Marketing: o Gestor
-aceita a chave, mas não a oferece na tela, e chave AUSENTE no payload não é tocada, para que
-editar o frete não apague o que outro dono escreveu. O `kind`/`priority`/`is_active` aparece na
+das chaves de `free_shipping` e `exclusive_collections`. `campaign_refs` é do Marketing: quem
+escreve é `shop/services/campaign_exclusivity.set_exclusive_tiers`, chamado pelo CRUD de campanha
+(`exclusive_price_tiers` em `POST/PATCH marketing/rules/`; apagar a campanha retira a referência).
+Ele acrescenta ou retira SÓ a referência daquela campanha; grupo escolhido sem a vantagem ganha a
+linha ligada, e linha existente mantém `is_active`/`priority`, que são do Gestor. O Gestor aceita
+a chave, mas não a oferece na tela, e chave AUSENTE no payload não é tocada, para que editar o
+frete não apague o que outro dono escreveu. O `kind`/`priority`/`is_active` aparece na
 projection como `CustomerGroupAdvantageProjection`, e a lista de grupos do cliente como
 `CustomerPriceTierProjection` (`shopman/backstage/projections/customer_groups.py` e `customers.py`).
 
@@ -1957,6 +1988,8 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `bake_loss_weighed_by` | `string` | ficha (Admin/inventário) | idem | Quem pesou a peça pronta. Sem ele, `weighed` não vale como conferido. |
 | `bake_loss_weighed_at` | `string` (data ISO) | ficha (Admin/inventário) | idem | Quando pesou. Idem. |
 | `weight_slack_pct` | `Decimal` (string ou número) | ficha (Admin/inventário) | idem | Folga de segurança sobre o assado esperado, em %. Ausente = `ProductionConfig.weight.default_slack_pct` (hoje 5). É o que faz o anunciado ser **piso**: `anunciado = ⌊assado esperado × (1 − folga)⌋`, sempre para baixo. Fora de `[0, 100)` cai no padrão. |
+| ~~`made_to_order`~~ | — | **REMOVIDA (20/10/2026, `shop.0104`)** | — | A marca "ficha montada na venda" numa ficha INATIVA sobrepunha "arquivada" com "montada na venda". O modo de produção virou campo do Core, `Recipe.production_mode` (`batch` "Em lote" \| `made_to_order` "Na hora"), e `is_active` voltou a ser só vigente × arquivada. Ver ADR-040, "Modo de produção". ⚠️ Não confundir com `Product.metadata["made_to_order"]`, que é a PROMESSA ao cliente ("Preparado na hora" na sacola) e continua |
+| ~~`made_to_order_marked_by`~~ | — | **REMOVIDA (20/10/2026, `shop.0104`)** | — | Proveniência da marca acima, escrita pela `shop.0102`. A `shop.0104` apaga as duas chaves de toda ficha |
 
 ## Recipe.steps / RecipeVersion.steps
 
@@ -2005,7 +2038,7 @@ apontando a etapa ("Etapa 2: ...").
 | `nutrition` | `dict` | idem | `shop.services.nutrition_from_recipe` | Tabela nutricional por 100 g do insumo. Idem: preservado ao publicar. |
 | `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
 | `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
-| `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+| `cap_pct` | `int` | `publish_version` | projections do inventário, pesagem da Preparação (`build_production_weighing` → `ticket.old_dough`), WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
 | `note` | `string` | `publish_version` (de `formula.items[].note`, via `percentages._bom_items`) | Ninguém ainda | Anotação prática do ingrediente escrita na fórmula ("a farinha do bairro pede 2% mais água"). Diferente de alérgenos e nutrição, **não** é preservada da ficha anterior: a versão publicada decide se ela existe. Duas linhas do mesmo insumo somadas numa só levam as duas notas, separadas por `; `. Ausente quando a fórmula não tem nota. |
 
 ## RecipeEntry.meta
@@ -2033,6 +2066,7 @@ se apaga como qualquer registro (D11, dono, 01/10/2026: "o padeiro pode fazer o 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
 | `published_by` | `string` | `craftsman.services.recipe_book.publish_version` | linha do tempo do inventário | Quem publicou (o `actor`). |
+| `review` | `{by, by_name, at, formula_digest}` | `backstage.services.recipe_review.confirm` ("Está certa", `POST recipes/<ref>/versions/<n>/review/`, pede `shop.manage_production`) | `recipe_review.review_of` → cartão e versão do inventário (`review_status`/`review_label`), fila `/recipes/review`, filtro `unreviewed=1` | **Conferência por alguém da casa** (WP-RECEITAS-DA-CASA F1, 19/10/2026). `by` = username (obrigatório: conferência anônima é recusada), `by_name` = nome para a tela, `at` = ISO. `formula_digest` = sha256 de fórmula + rendimento + etapas no momento da assinatura: se a versão publicada for editada depois (D11), o estado vira `changed` ("Mudou depois da conferência") em vez de seguir "conferida". Só a versão em uso (`entry.current_version`, publicada) se confere. Ausente = não conferida. A **procedência** não é chave nova: sai de `source.kind` (`manual`/`import` = da casa, `note`/`photo` = do caderno, `ficha`/vazio = do cadastro inicial, escrito por agente). |
 | `execution_digest` | `string` (sha256 hex) | `publish_version` (da ficha que acabou de escrever), `bootstrap_entry_from_recipe` (da ficha lida) | `craftsman.services.recipe_book.execution_in_sync` → `RecipeEntryDetailProjection.execution_in_sync` | Impressão digital do que a ficha manda produzir (`execution_digest`: `output_sku`, `batch_size`, `steps` (etapa só com `name` entra como o nome, para a digital anterior à `craftsman/0015` seguir valendo) e itens `input_sku`/`quantity`/`unit`/`is_optional`, sem ordem). Fica de fora o que se edita à mão por direito: nome, `Recipe.meta` e `RecipeItem.meta`. Ausente = versão publicada antes de 30/09/2026: a sincronia fala só pelo `version_ref` até a próxima publicação. |
 
 ## RecipeVersion.formula / .origin / .source
@@ -2612,6 +2646,29 @@ exata. É o carimbo da Fase 5 do
 pergunta poder ser feita depois: *este saldo foi medido ou foi convertido?*
 (ADR-024, R3). `projections/purchase.py::_approximate_stock_skus` lê
 `converted_via.approximate` para pôr o `≈` no saldo.
+
+
+### `stockman.Move.metadata` — a baixa de insumo da venda (ADR-040)
+
+Escrito por `shop/services/made_to_order.py` (via o argumento `metadata` de
+`StockMovements.issue`, e direto no `Move` no `RETURN` do acerto, que volta ao
+MESMO saldo de onde saiu). É o que separa, dentro do mesmo `kind`, a saída da
+venda da saída da fornada: a fornada não grava `source`.
+
+| Chave | Tipo | O que é |
+|-------|------|---------|
+| `source` | `"sale" \| "sale_cancel"` | `sale`: o `MAKE` da venda do feito na hora. `sale_cancel`: o acerto do cancelamento (`RETURN`, e o `WASTE` da perda) |
+| `order_ref` | `str` | o pedido |
+| `sold_sku` | `str` | o produto vendido cuja ficha (ou adicional) mandou baixar |
+| `sold_qty` | `str` (Decimal) | só em `sale`: quanto do produto o pedido levou (a régua da proporção no cancelamento parcial) |
+| `recipe_ref` | `str` | só em `sale` da ficha: a ficha vigente "Na hora" usada |
+| `option_group` · `option_ref` | `str` | só em `sale` do adicional (`items[].meta.options`): o grupo e a opção cujo `consumes` mandou baixar; sem `recipe_ref`. O `sold_sku`/`sold_qty` é o do item que levou o adicional, e o cancelamento acerta pela mesma regra do preparo |
+| `sale_move_id` | `int` | só em `sale_cancel`: o `MAKE` de venda que este acerto desfaz |
+| `outcome` | `"returned" \| "wasted"` | só em `sale_cancel`. `returned`: o item não foi preparado e o insumo voltou (`RETURN`). `wasted`: foi preparado e é perda: o par `RETURN` + `WASTE` no mesmo saldo, que não mexe no número e reclassifica a saída de consumo de venda para perda |
+
+Leitura: consumo real de venda = `MAKE` com `source=sale` menos `RETURN` com
+`source=sale_cancel`; perda do preparado e cancelado = `WASTE` com
+`source=sale_cancel`.
 
 ---
 

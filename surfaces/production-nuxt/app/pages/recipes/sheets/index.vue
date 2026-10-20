@@ -8,23 +8,26 @@ import { alertActions } from "../../../../../operator-kit/app/utils/alertActions
 // ficha pelo mesmo caminho canônico.
 import type { RecipeSheetCardProjection, RecipeSheetDetailProjection, RecipeSheetDuplicatePayload, RecipeSheetPayload } from "~/types/recipeBook";
 import { isStale } from "~/presentation/production";
-import { SHEET_ACTIVE_OPTIONS, SHEET_SORT_OPTIONS } from "~/presentation/recipeSheet";
+import { SHEET_ACTIVE_OPTIONS, SHEET_ALL_FILTER, SHEET_SORT_OPTIONS } from "~/presentation/recipeSheet";
+import { PRODUCTION_MODE_ALL, PRODUCTION_MODE_FILTER_OPTIONS, PRODUCTION_MODE_MADE_TO_ORDER } from "~/presentation/recipeBook";
 
 useHead({ title: "Fichas de execução" });
 
 const route = useRoute();
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
-const active = ref("");
+const active = ref(SHEET_ALL_FILTER);
+const mode = ref(typeof route.query.mode === "string" ? route.query.mode : PRODUCTION_MODE_ALL);
 const sort = ref("updated");
 const page = ref(1);
 
 const { cards, total, pageSize, canEdit, forbidden, pending, error, refresh, busy, createSheet, updateSheet, duplicateSheet, fetchSheet } =
-  useRecipeSheets(query, { active, sort, page });
+  useRecipeSheets(query, { active, mode, sort, page });
 
 const stale = computed(() => isStale({ error: !!error.value, hasData: cards.value.length > 0 }));
 const sortItems = [...SHEET_SORT_OPTIONS];
 const activeItems = [...SHEET_ACTIVE_OPTIONS];
-watch([query, active, sort], () => {
+const modeItems = [...PRODUCTION_MODE_FILTER_OPTIONS];
+watch([query, active, mode, sort], () => {
   page.value = 1;
 });
 
@@ -124,6 +127,7 @@ onMounted(async () => {
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div class="mb-3 flex flex-wrap items-center gap-3">
         <NuxtSelect v-model="active" :items="activeItems" value-key="value" label-key="label" class="w-40" aria-label="Situação da ficha" />
+        <NuxtSelect v-model="mode" :items="modeItems" value-key="value" label-key="label" class="w-44" aria-label="Modo de produção" />
         <NuxtSelect v-model="sort" :items="sortItems" value-key="value" label-key="label" class="w-56" aria-label="Ordenar fichas" />
         <NuxtLink to="/recipes" class="ml-auto text-sm text-primary underline-offset-2 hover:underline">Inventário de fórmulas</NuxtLink>
       </div>
@@ -161,10 +165,13 @@ onMounted(async () => {
         <NuxtCard v-for="card in cards" :key="card.ref" :ui="{ body: 'grid gap-2 p-3' }">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="truncate font-bold">{{ card.name }}</p>
+              <p class="truncate font-bold" :title="card.name">{{ card.name }}</p>
               <p class="truncate font-mono text-xs text-muted-foreground">{{ card.ref }}</p>
             </div>
-            <NuxtBadge :color="card.is_active ? 'success' : 'neutral'" :label="card.is_active ? 'Ativa' : 'Inativa'" />
+            <span class="flex shrink-0 flex-wrap justify-end gap-1">
+              <NuxtBadge v-if="card.production_mode === PRODUCTION_MODE_MADE_TO_ORDER" color="primary" icon="i-lucide-coffee" :label="card.production_mode_label" />
+              <NuxtBadge :color="card.is_active ? 'success' : 'neutral'" :label="card.is_active ? 'Ativa' : 'Inativa'" />
+            </span>
           </div>
 
           <p class="flex items-center gap-1.5 text-sm">

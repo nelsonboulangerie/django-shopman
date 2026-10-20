@@ -5,6 +5,10 @@ import pytest
 
 @pytest.mark.django_db
 def test_dispatch_prefers_collection_specific_station_before_picking_catchall():
+    """O feito na hora vai à estação de preparo da coleção dele, não à separação."""
+    from decimal import Decimal
+
+    from shopman.craftsman.models import ProductionMode, Recipe
     from shopman.offerman.models import Collection, CollectionItem, Product
     from shopman.orderman.models import Order, OrderItem
 
@@ -21,6 +25,10 @@ def test_dispatch_prefers_collection_specific_station_before_picking_catchall():
         base_price_q=1200,
     )
     CollectionItem.objects.create(collection=cafes, product=product, is_primary=True)
+    Recipe.objects.create(
+        ref="cappuccino", name="Cappuccino", output_sku="CAPPUCCINO", batch_size=Decimal("1"),
+        production_mode=ProductionMode.MADE_TO_ORDER,
+    )
 
     cafes_kds = KDSInstance.objects.create(
         ref="kdsroute-cafes-station",
@@ -198,3 +206,93 @@ def test_empty_session_key_ticket_never_resolves_to_a_random_order():
     ticket = KDSTicket.objects.create(session_key="", kds_instance=instance, items=[])
 
     assert _resolve_ticket_source(ticket) is None
+
+
+
+def _station_setup():
+    """Cafés (preparo, coleção bebidas) e Encomendas (separação, sem coleção)."""
+    from shopman.offerman.models import Collection
+
+    from shopman.backstage.models import KDSInstance
+
+    bebidas = Collection.objects.create(ref="modo-bebidas", name="Bebidas")
+    doces = Collection.objects.create(ref="modo-doces", name="Doces")
+    cafes = KDSInstance.objects.create(ref="modo-cafes", name="Cafés", type="prep")
+    cafes.collections.add(bebidas)
+    KDSInstance.objects.create(ref="modo-encomendas", name="Encomendas", type="picking")
+    return bebidas, doces
+
+
+def _product(sku: str, collection, *, mode: str | None = None):
+    from decimal import Decimal
+
+    from shopman.craftsman.models import Recipe
+    from shopman.offerman.models import CollectionItem, Product
+
+    product = Product.objects.create(sku=sku, name=sku, base_price_q=500)
+    CollectionItem.objects.create(collection=collection, product=product, is_primary=True)
+    if mode:
+        Recipe.objects.create(ref=sku.lower(), name=sku, output_sku=sku, batch_size=Decimal("1"), production_mode=mode)
+    return product
+
+
+def _fire(skus: list[str], *, prep_only: bool) -> dict[str, list[str]]:
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.adapters import kds as kds_adapter
+    from shopman.shop.services.kds import _fire_lines_locked
+
+    lines = [{"line_id": f"L{i}", "sku": sku, "name": sku, "qty": 1, "notes": "", "meta": {}} for i, sku in enumerate(skus)]
+    tickets = _fire_lines_locked(
+        session_key=f"modo-{prep_only}", lines=lines, get_adapter=get_adapter, kds_adapter=kds_adapter, prep_only=prep_only,
+    )
+    return {ticket.kds_instance.name: sorted(item["sku"] for item in ticket.items) for ticket in tickets}
+
+
+@pytest.mark.django_db
+def test_revenda_na_colecao_da_estacao_de_preparo_e_separacao():
+    """Água e soda na coleção de Cafés, sem ficha: revenda nunca vai ao preparo."""
+    from shopman.craftsman.models import ProductionMode
+
+    bebidas, _doces = _station_setup()
+    _product("ESPRESSO", bebidas, mode=ProductionMode.MADE_TO_ORDER)
+    _product("AGUA", bebidas)
+
+    assert _fire(["ESPRESSO", "AGUA"], prep_only=False) == {"Cafés": ["ESPRESSO"], "Encomendas": ["AGUA"]}
+
+
+@pytest.mark.django_db
+def test_balcao_presencial_so_manda_o_feito_na_hora():
+    """O defeito de 20/10/2026: no balcão o café sumia e o pão pronto tocava o KDS."""
+    from shopman.craftsman.models import ProductionMode
+
+    bebidas, doces = _station_setup()
+    _product("ESPRESSO", bebidas, mode=ProductionMode.MADE_TO_ORDER)
+    _product("PAO", doces, mode=ProductionMode.BATCH)
+    _product("AGUA", bebidas)
+
+    assert _fire(["ESPRESSO", "PAO", "AGUA"], prep_only=True) == {"Cafés": ["ESPRESSO"]}
+
+
+@pytest.mark.django_db
+def test_feito_na_hora_sem_estacao_de_preparo_alerta_e_nao_vira_separacao():
+    from shopman.craftsman.models import ProductionMode
+
+    from shopman.backstage.models import OperatorAlert
+
+    _bebidas, doces = _station_setup()
+    _product("PAIN-PERDU", doces, mode=ProductionMode.MADE_TO_ORDER)
+
+    assert _fire(["PAIN-PERDU"], prep_only=False) == {}
+    alert = OperatorAlert.objects.get(type="kds_unrouted_item")
+    assert "PAIN-PERDU" in alert.message
+
+
+@pytest.mark.django_db
+def test_em_lote_nunca_cai_na_estacao_de_preparo_da_colecao():
+    """O fallback antigo casava item de um tipo com estação de outro pela coleção."""
+    from shopman.craftsman.models import ProductionMode
+
+    bebidas, _doces = _station_setup()
+    _product("CHA-GELADO-LOTE", bebidas, mode=ProductionMode.BATCH)
+
+    assert _fire(["CHA-GELADO-LOTE"], prep_only=False) == {"Encomendas": ["CHA-GELADO-LOTE"]}

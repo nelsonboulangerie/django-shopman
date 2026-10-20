@@ -15,6 +15,7 @@ import type {
   RecipeCompareProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeReviewQueueProjection,
   RecipeSheetDetailProjection,
   RecipeSheetListProjection,
   RecipeVersionProjection,
@@ -44,6 +45,8 @@ export type {
   RecipeEntryCardProjection,
   RecipeEntryDetailProjection,
   RecipeReferenceProjection,
+  RecipeReviewItemProjection,
+  RecipeReviewQueueProjection,
   RecipeSheetCardProjection,
   RecipeSheetDetailProjection,
   RecipeSheetItemProjection,
@@ -212,7 +215,7 @@ export interface EntryPatch {
   kind?: string;
   output_sku?: string;
   notes?: string;
-  is_archived?: boolean;
+  is_active?: boolean;
   external_references?: ExternalReferenceInput[];
   expectedRevision?: string;
 }
@@ -233,6 +236,8 @@ export interface ExecutionPatch {
   shelfLifeDays?: number | null;
   shelfLifeReviewed?: boolean;
   productionLifecycle?: string;
+  /** `Recipe.production_mode`: "batch" (Em lote) ou "made_to_order" (Na hora). */
+  productionMode?: string;
 }
 
 /** Corpo de `PUT recipes/<ref>/versions/<n>/rating/`: id do critério → nota inteira de 0 a 5. */
@@ -250,6 +255,11 @@ export interface CaptureImagePayload {
 
 export interface RecipeBookListResponse {
   book: RecipeBookListProjection;
+  access: RecipeBookAccessProjection;
+}
+
+export interface RecipeReviewQueueResponse {
+  queue: RecipeReviewQueueProjection;
   access: RecipeBookAccessProjection;
 }
 
@@ -355,6 +365,7 @@ export interface RecipeSheetPayload {
   shelfLifeDays?: number | null;
   shelfLifeReviewed?: boolean;
   productionLifecycle?: string;
+  productionMode?: string;
 }
 
 /** Corpo de `POST sheets/<ref>/duplicate/`: a cópia nasce inativa. */

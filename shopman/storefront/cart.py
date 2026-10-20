@@ -9,6 +9,7 @@ from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 from shopman.utils.monetary import format_money
 
+from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.services import cart as cart_mutations
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF as CHANNEL_REF
 
@@ -17,6 +18,41 @@ logger = logging.getLogger(__name__)
 
 class CartLineNotesRefused(Exception):
     """A sacola não aceita mais a observação (encerrada ou anonimizada)."""
+
+
+class CartItemRefused(Exception):
+    """A loja recusa o item a este visitante: o produto é de um grupo que ele não integra.
+
+    ``error_code`` é do vocabulário fechado ``ReserveRefusal`` (``GROUP_EXCLUSIVE``);
+    ``detail`` é a frase ao cliente. Nada da sacola muda.
+    """
+
+    def __init__(self, *, skus, error_code: ReserveRefusal, detail: str):
+        super().__init__(detail)
+        self.skus = sorted(skus)
+        self.error_code = error_code
+        self.detail = detail
+
+
+def refuse_group_exclusive(request: HttpRequest, skus) -> None:
+    """Levanta ``CartItemRefused`` se algum dos ``skus`` é de grupo que o visitante não integra.
+
+    A decisão é a do cardápio (``storefront.services.catalog.group_exclusive_skus``):
+    o que o cardápio e a página do produto escondem não entra na sacola nem fecha
+    pedido. Custo fixo por chamada, qualquer que seja o número de itens.
+    """
+    from shopman.storefront.identity import get_authenticated_customer
+    from shopman.storefront.services.catalog import group_exclusive_skus
+
+    refused = group_exclusive_skus(skus, request=request)
+    if not refused:
+        return
+    detail = "Este item é exclusivo de um grupo de clientes." if len(refused) == 1 else (
+        "Alguns itens da sacola são exclusivos de um grupo de clientes. Tire-os para continuar."
+    )
+    if get_authenticated_customer(request) is None:
+        detail += " Se você faz parte do grupo, entre na sua conta."
+    raise CartItemRefused(skus=refused, error_code=ReserveRefusal.GROUP_EXCLUSIVE, detail=detail)
 
 
 class CartService:
@@ -140,6 +176,9 @@ class CartService:
         For merges (existing line), checks availability for the *additional* qty only
         and adopts an additional hold tagged with the same session_key.
         """
+        # Produto de coleção exclusiva de grupo: quem não é do grupo não põe na
+        # sacola, nem pelo link direto. Recusa antes de tocar sessão ou estoque.
+        refuse_group_exclusive(request, [sku])
         # Link the customer to an EXISTING cart before the add reprices, so a
         # segment/tier-gated promo already discounts this line. For a brand-new
         # cart (no key yet) the session doesn't exist to write to; we link right

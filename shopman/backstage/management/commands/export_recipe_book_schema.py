@@ -33,6 +33,7 @@ from shopman.backstage.projections.recipe_book import (
     IngredientOptionProjection,
     KindOptionProjection,
     LifecycleOptionProjection,
+    ProductionModeOptionProjection,
     QualityShareProjection,
     RatingCriterionProjection,
     RecipeBookAccessProjection,
@@ -44,6 +45,8 @@ from shopman.backstage.projections.recipe_book import (
     RecipeEntryCardProjection,
     RecipeEntryDetailProjection,
     RecipeReferenceProjection,
+    RecipeReviewItemProjection,
+    RecipeReviewQueueProjection,
     RecipeSheetCardProjection,
     RecipeSheetDetailProjection,
     RecipeSheetItemProjection,
@@ -83,6 +86,7 @@ CONTRACT_DATACLASSES = (
     CriterionAverageProjection,
     VersionRatingProjection,
     LifecycleOptionProjection,
+    ProductionModeOptionProjection,
     ExecutionSheetProjection,
     RecipeSheetItemProjection,
     RecipeSheetMassBalanceProjection,
@@ -98,6 +102,8 @@ CONTRACT_DATACLASSES = (
     IngredientOptionProjection,
     CaptureItemProjection,
     RecipeCaptureDraftProjection,
+    RecipeReviewItemProjection,
+    RecipeReviewQueueProjection,
 )
 
 

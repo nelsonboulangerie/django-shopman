@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { toast } from "vue-sonner";
 
-import { lineTotalQ } from "~/presentation/lineDiscounts";
-
 import { makeProjection, makeSale } from "./_posSaleHarness";
 
 // O toast é efeito colateral do watcher de serverError — silenciamos.
@@ -155,20 +153,17 @@ describe("usePosSale — tenders (injeção de pagamento estilo Odoo)", () => {
 });
 
 describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
-  it("sem review, o total acompanha o desconto da linha pela régua do servidor, e a linha concorda", () => {
-    // Antes o total esperava o servidor, e o servidor só devolvia o preço
-    // cobrado ao reabrir a comanda: o dono deu R$ 1,00 numa linha e nada mudou
-    // até recarregar (13/10/2026). Agora o toque escreve o preço cobrado da
-    // LINHA pela régua do kernel ("maior desconto ganha, um por item"), e o
-    // total soma as linhas: os dois números saem do mesmo lugar, e não voltam a
-    // discordar como no caso da Tabatière (linha R$ 9,00, Total parcial R$ 8,10).
-    // O eco do salvar confirma o preço logo depois.
+  it("o desconto na linha não vira número da tela: a linha espera o servidor", () => {
+    // A tela escrevia o preço cobrado pela régua dela (cópia do kernel), e cada
+    // cópia diverge do motor em algum arredondamento (laudo de soberania,
+    // 18/10/2026). Agora a linha diz "calculando" até o eco, e o total
+    // confirmado sai junto (a revisão foi invalidada pelo toque).
     const h = saleWithTotal1000();
     const line = h.sale.cart.items[0]!;
     h.sale.setLineDiscount(line.line_id, 10, "cortesia");
     expect(line.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
-    expect(lineTotalQ(line)).toBe(900);
-    expect(h.sale.paymentTotalQ.value).toBe(900);
+    expect(line.price_pending).toBe(true);
+    expect(h.sale.review.value).toBeNull();
     h.handles.dispose();
   });
 

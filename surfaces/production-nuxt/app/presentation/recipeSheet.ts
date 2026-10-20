@@ -12,7 +12,7 @@ import type {
   RecipeStepInput,
   RecipeStepProjection,
 } from "~/types/recipeBook";
-import { formatNumber, stepsFromText } from "~/presentation/recipeBook";
+import { PRODUCTION_MODE_BATCH, formatNumber, productionModeQuery, stepsFromText } from "~/presentation/recipeBook";
 
 /** Unidades aceitas pelo RecipeItem (inclui mg, que a fórmula não usa). */
 export const SHEET_UNIT_OPTIONS: readonly string[] = ["un", "kg", "g", "mg", "L", "ml"] as const;
@@ -27,8 +27,14 @@ export const SHEET_SORT_OPTIONS: readonly { value: string; label: string }[] = [
   { value: "active", label: "Ativas primeiro" },
 ] as const;
 
+/**
+ * "Todas": o Select do Nuxt UI (Reka) recusa item de valor vazio e derruba a
+ * página inteira com 500. O recorte sem filtro tem valor próprio, e a consulta o ignora.
+ */
+export const SHEET_ALL_FILTER = "all";
+
 export const SHEET_ACTIVE_OPTIONS: readonly { value: string; label: string }[] = [
-  { value: "", label: "Todas" },
+  { value: SHEET_ALL_FILTER, label: "Todas" },
   { value: "1", label: "Ativas" },
   { value: "0", label: "Inativas" },
 ] as const;
@@ -209,6 +215,8 @@ export interface SheetDraft {
   shelfLifeDays: string;
   shelfLifeReviewed: boolean;
   productionLifecycle: string;
+  /** `Recipe.production_mode`: "batch" (Em lote) ou "made_to_order" (Na hora). */
+  productionMode: string;
   items: RecipeSheetItemDraft[];
 }
 
@@ -226,6 +234,7 @@ export function emptySheetDraft(): SheetDraft {
     shelfLifeDays: "",
     shelfLifeReviewed: false,
     productionLifecycle: "",
+    productionMode: PRODUCTION_MODE_BATCH,
     items: [emptySheetItem()],
   };
 }
@@ -299,6 +308,7 @@ export function sheetPayloadFromDraft(
     shelfLifeDays: shelfLife,
     shelfLifeReviewed: draft.shelfLifeReviewed,
     productionLifecycle: draft.productionLifecycle,
+    productionMode: draft.productionMode,
   };
 }
 
@@ -310,11 +320,14 @@ export function sheetQuery(
   sort: string,
   page = 1,
   pageSize = 48,
+  mode = "",
 ): Record<string, string> {
   const query: Record<string, string> = {};
+  const wantedMode = productionModeQuery(mode);
+  if (wantedMode) query.mode = wantedMode;
   const q = term.trim();
   if (q) query.q = q;
-  if (active) query.active = active;
+  if (active && active !== SHEET_ALL_FILTER) query.active = active;
   if (sort && sort !== "updated") query.sort = sort;
   if (page > 1) query.page = String(page);
   if (pageSize && pageSize !== 48) query.page_size = String(pageSize);

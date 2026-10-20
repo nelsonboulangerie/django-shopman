@@ -15,6 +15,7 @@ import type {
   ProductDetailPatch,
   ProductEditConflict,
   ProductDetailProjection,
+  ProductArchiveReceipt,
   SkuRoles,
 } from "~/types/catalog";
 import { vocationLabel, vocationOptions } from "~/presentation/vocation";
@@ -39,6 +40,8 @@ const props = defineProps<{
   // Selos do SKU e o gesto "Permitir compra" — fora do rascunho: valem na hora.
   roles?: SkuRoles | null;
   purchaseBusy?: boolean;
+  archiveBusy?: boolean;
+  archiveUndo?: ProductArchiveReceipt | null;
   // O interruptor de cada canal na tabela (G22): pausado à mão, gesto liberado e
   // ocupado. O "Pausar" da linha é o MESMO gesto da célula da matriz.
   channelCells?: Record<
@@ -58,7 +61,35 @@ const emit = defineEmits<{
   "dirty-change": [dirty: boolean];
   "set-purchasable": [enabled: boolean];
   "pause-channel": [ref: string, pause: boolean];
+  "set-active": [active: boolean];
 }>();
+
+const confirmArchive = useConfirm();
+async function requestSetActive(active: boolean) {
+  const product = props.detail;
+  if (!product) return;
+  if (
+    !(await confirmArchive({
+      ...(active
+        ? {
+            tone: "primary" as const,
+            confirmLabel: "Desarquivar",
+            cancelLabel: "Manter arquivado",
+          }
+        : {
+            tone: "danger" as const,
+            confirmLabel: "Arquivar",
+            cancelLabel: "Manter produto",
+          }),
+      title: `${active ? "Desarquivar" : "Arquivar"} ${product.name}?`,
+      description: active
+        ? "O produto volta às listas e aos canais conforme os estados publicado e vendável que já tinha."
+        : "O produto sai do cardápio, dos canais e das listas. O histórico e os vínculos ficam guardados.",
+    }))
+  )
+    return;
+  emit("set-active", active);
+}
 
 // ⋯ do cabeçalho (v4): Ocultar/Exibir (entra no rascunho), Permitir compra (vale na
 // hora) e o Histórico de alterações.
@@ -251,7 +282,6 @@ const draft = reactive({
   shelf_life_days: "" as number | "",
   storage_tip: "",
   production_cycle_hours: "" as number | "",
-  is_batch_produced: false,
   is_published: true,
   is_sellable: true,
   allows_next_day_sale: false,
@@ -295,7 +325,6 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.production_cycle_hours = numOrBlank(
     detail?.production_cycle_hours ?? null,
   );
-  draft.is_batch_produced = detail?.is_batch_produced ?? false;
   draft.is_published = detail?.is_published ?? true;
   draft.is_sellable = detail?.is_sellable ?? true;
   draft.allows_next_day_sale = detail?.allows_next_day_sale ?? false;
@@ -460,7 +489,6 @@ function buildPatch(): ProductDetailPatch {
     nullableInt(draft.production_cycle_hours),
     current.production_cycle_hours,
   );
-  put("is_batch_produced", draft.is_batch_produced, current.is_batch_produced);
   put("is_published", draft.is_published, current.is_published);
   put("is_sellable", draft.is_sellable, current.is_sellable);
   put(
@@ -621,7 +649,6 @@ const conflictLabels: Record<string, string> = {
   shelf_life_days: "Validade",
   storage_tip: "Conservação",
   production_cycle_hours: "Tempo de produção",
-  is_batch_produced: "Produção em lote",
   is_published: "Publicado",
   is_sellable: "Disponível para venda",
   allows_next_day_sale: "Venda no dia seguinte",
@@ -698,6 +725,38 @@ const sectionClass =
     @update:open="requestClose"
   >
     <template #actions>
+      <NuxtBadge
+        v-if="detail && !detail.is_active"
+        label="Arquivado"
+        color="neutral"
+      />
+      <OperatorTimedButton
+        v-if="archiveUndo"
+        label="Desfazer"
+        short-label="Desfazer"
+        icon="i-lucide-undo-2"
+        color="error"
+        :until="archiveUndo.undo_until"
+        :server-now="archiveUndo.server_now"
+        :loading="archiveBusy"
+        data-product-archive-undo
+        @click="
+          emit('set-active', archiveUndo.applied[0]?.before_is_active ?? true)
+        "
+      />
+      <NuxtButton
+        v-else-if="detail"
+        type="button"
+        :label="detail.is_active ? 'Arquivar' : 'Desarquivar'"
+        :icon="
+          detail.is_active ? 'i-lucide-archive' : 'i-lucide-archive-restore'
+        "
+        :color="detail.is_active ? 'error' : 'primary'"
+        variant="solid"
+        :loading="archiveBusy"
+        data-product-archive
+        @click="requestSetActive(!detail.is_active)"
+      />
       <OperatorMoreMenu
         v-model:open="headerMenuOpen"
         :items="panelMenuItems"
@@ -1105,11 +1164,6 @@ const sectionClass =
               </NuxtFormField>
 
               <NuxtCheckbox
-                v-model="draft.is_batch_produced"
-                label="Produzido em lote"
-              />
-
-              <NuxtCheckbox
                 v-model="draft.allows_next_day_sale"
                 label="Pode ser vendido no dia seguinte"
               />
@@ -1148,6 +1202,30 @@ const sectionClass =
                     class="text-xs text-muted-foreground"
                   >
                     Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
+                  </p>
+                </div>
+              </NuxtCard>
+
+              <!-- Modo de produção (ADR-040): só leitura. A fonte é a ficha, na
+                 Produção; produto sem ficha (revenda) não mostra nada. -->
+              <NuxtCard
+                v-if="detail?.production"
+                variant="soft"
+                data-testid="production-mode"
+              >
+                <div class="space-y-2">
+                  <p :class="sectionClass">Produção</p>
+                  <p class="text-sm">{{ detail.production.summary }}</p>
+                  <NuxtLink
+                    v-if="detail.production.url"
+                    :to="detail.production.url"
+                    external
+                    class="text-sm text-primary underline-offset-2 hover:underline"
+                  >
+                    Abrir a receita {{ detail.production.recipe_name }} na Produção
+                  </NuxtLink>
+                  <p v-else class="text-xs text-muted-foreground">
+                    Receita {{ detail.production.recipe_name }}, na Produção.
                   </p>
                 </div>
               </NuxtCard>

@@ -32,6 +32,36 @@ function projection() {
   return scenario === "receiving" ? receivingFixture() : purchaseFixture();
 }
 
+function paginatedProjection(url) {
+  const value = projection();
+  const pageSize = 10;
+  const archivedMaterials = url.searchParams.get("material_archive") === "archived";
+  const archivedSuppliers = url.searchParams.get("supplier_archive") === "archived";
+  const materials = value.materials.filter((row) => row.isActive !== archivedMaterials);
+  const suppliers = value.suppliers.filter((row) => row.isActive !== archivedSuppliers);
+  return {
+    ...value,
+    materials: {
+      items: materials.slice(0, pageSize),
+      total: materials.length,
+      has_next: materials.length > pageSize,
+      page: 1,
+      page_size: pageSize,
+      query: "",
+      order: "name",
+    },
+    suppliers: {
+      items: suppliers.slice(0, pageSize),
+      total: suppliers.length,
+      has_next: suppliers.length > pageSize,
+      page: 1,
+      page_size: pageSize,
+      query: "",
+      order: "name",
+    },
+  };
+}
+
 function send(res, status, payload) {
   const body = JSON.stringify(payload);
   res.statusCode = status;
@@ -71,7 +101,7 @@ createServer((req, res) => {
       send(res, 500, { detail: "Falha simulada da matriz visual.", field: null, errors: {} });
       return;
     }
-    send(res, 200, { purchase: projection() });
+    send(res, 200, { purchase: paginatedProjection(url) });
     return;
   }
   if (path === "/api/v1/backstage/purchase/count/") {

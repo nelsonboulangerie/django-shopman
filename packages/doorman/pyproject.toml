@@ -16,12 +16,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# `shopman.doorman.api`: endpoints DRF com schema do drf-spectacular.
+api = [
+    "djangorestframework>=3.17,<4.0",
+    "drf-spectacular>=0.29,<1.0",
+]
 guestman = [
     "shopman-guestman>=0.1.0",
 ]
 dev = [
     "pytest>=8.0",
     "pytest-django>=4.5",
+    "djangorestframework>=3.17,<4.0",
+    "drf-spectacular>=0.29,<1.0",
+    # A suíte prova a ponte de identidade com o guestman (extra `guestman`):
+    # o resolvedor canônico mora lá, e os settings da suíte o configuram.
+    "shopman-guestman[unfold]>=0.1.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -92,8 +92,8 @@ def best_group_advantage(
 
     ``discount`` = a ``Promotion`` ``grupo-<ref>`` de maior percentual (o valor fixo só
     quando não há percentual); ``price_list`` = a lista de preço do grupo de maior
-    prioridade que tem uma; os demais tipos = a ``PriceTierAdvantage`` ativa de maior
-    prioridade. Cliente em Equipe (−30%) e Aliança (−15%) fica com UMA: os −30%.
+    prioridade que tem uma; ``free_shipping`` = o de menor pedido mínimo; os demais
+    tipos = a ``PriceTierAdvantage`` ativa de maior prioridade. Cliente em Equipe (−30%) e Aliança (−15%) fica com UMA: os −30%.
     """
     refs = _tier_refs(price_tier_refs)
     if not refs:
@@ -143,14 +143,24 @@ def _best_group_listing(refs: list[str]) -> GroupAdvantage | None:
 
 
 def _best_typed_advantage(refs: list[str], kind: str) -> GroupAdvantage | None:
+    """A vantagem tipada que vence entre os grupos: UMA consulta.
+
+    Frete grátis: o de MENOR pedido mínimo (``policies.group_advantage``), o melhor
+    para o cliente; a prioridade só desempata. Os demais tipos: maior prioridade.
+    """
     from shopman.guestman.models import PriceTierAdvantage
 
-    advantage = (
+    from shopman.shop.policies.group_advantage import best_group_free_shipping
+
+    ranked = (
         PriceTierAdvantage.objects.filter(tier__ref__in=refs, kind=kind, is_active=True)
         .select_related("tier")
         .order_by("-priority", "-tier__priority", "id")
-        .first()
     )
+    if kind == PriceTierAdvantage.Kind.FREE_SHIPPING:
+        advantage = best_group_free_shipping(ranked)
+    else:
+        advantage = ranked.first()
     if advantage is None:
         return None
     return GroupAdvantage(

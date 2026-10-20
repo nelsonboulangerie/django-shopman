@@ -307,6 +307,40 @@ def test_delayed_takeover_only_abandons_sessions_sealed_with_the_order(cart_sess
     assert saved[0].label == "home"
 
 
+def test_checkout_without_prior_cart_queues_no_takeover(cart_session):
+    """Sem sacola anterior do mesmo dono não há troca de dono a fazer.
+
+    O efeito só carimbaria o telefone numa sessão já fechada, que ninguém lê por
+    telefone; a Directive custava uma escrita, dupla idempotência e quatro
+    SAVEPOINTs por checkout (laudo de soberania 18/10, AP-3).
+    """
+    from shopman.orderman.models import Directive
+
+    from shopman.shop import directives
+
+    phone = "+5543999990007"
+    current = Session.objects.get(
+        session_key=cart_session.session["cart_session_key"],
+        channel_ref="web",
+    )
+    result = checkout_service.process(
+        session_key=current.session_key,
+        channel_ref="web",
+        data={"customer": {"name": "Ana", "phone": phone}, "fulfillment_type": "pickup"},
+        idempotency_key=session_service.new_idempotency_key(),
+        expected_total_q=sum(item["line_total_q"] for item in current.items),
+        expected_revision=current.rev,
+    )
+
+    effects = set(
+        Directive.objects.filter(
+            topic=directives.CHECKOUT_CONVENIENCE,
+            payload__order_ref=result.order_ref,
+        ).values_list("payload__effect", flat=True)
+    )
+    assert effects == {"customer", "address", "defaults"}
+
+
 def test_expected_total_guard_blocks_stale_undercharge(cart_session, product):
     """If the client sends the total it saw (180) but the catalog price rose to
     150 (real total 300), the commit is REJECTED — the customer is never
