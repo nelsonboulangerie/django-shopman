@@ -47,6 +47,11 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 `ROUNDS/ARQUIVAR-A-core-produto.md`. Não fica linha ativa no quadro porque a frente já saiu da
 execução para a fila.
 
+**Turno ARQUIVAR, Frente F:** o gesto confirmado de Arquivar/Desarquivar, individual e em lote,
+está publicado no draft #1948 (`codex/arquivar-gesto`) e aguarda as dependências #1945 e #1947
+entrarem no `main`. Prova funcional, desempenho, D1 a D12 e capturas em
+`ROUNDS/ARQUIVAR-F-gesto.md`.
+
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
 #1384 (T4) e #1385 (T1b). Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`, `T1b-*.md`. Fatias do redesenho mergeadas: S3 #1388, S4 #1391, S7 #1390, S7b #1392, S8 #1387, S9 #1393, S2 #1394, S5 #1396, S6 #1397; D42 #1389. O brief das Encomendas (T6) está entregue inteiro. Registros em `ROUNDS/S*-*.md` e `ROUNDS/D42-*.md`.

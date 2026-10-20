@@ -342,9 +342,7 @@ function undoArchive() {
             ·
           </template>
           <span class="tabular-nums">{{ edit.dirty.value }}</span>
-          alteração{{ edit.dirty.value === 1 ? "" : "ões" }} não salva{{
-            edit.dirty.value === 1 ? "" : "s"
-          }}
+          {{ edit.dirty.value === 1 ? "alteração não salva" : "alterações não salvas" }}
         </p>
         <div class="flex items-center gap-1.5">
           <OperatorTimedButton
