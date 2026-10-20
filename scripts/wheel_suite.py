@@ -42,12 +42,7 @@ TEST_DEPENDENCIES = ("pytest", "pytest-django")
 # declara. Cada entrada sai daqui no PR que declara a dependência (ou corta o
 # acoplamento) e entra no gate. Pacote fora daqui que quebra reprova o job.
 PENDING: dict[str, str] = {
-    "utils": "os settings da suíte ligam o app unfold; django-unfold só está no extra `unfold`, fora do `dev`",
-    "offerman": "os settings da suíte ligam o app unfold; o pacote não declara django-unfold",
-    "stockman": "a suíte importa taggit (django-taggit), que o pacote não declara",
-    "orderman": "importa rest_framework (djangorestframework), que o pacote não declara",
     "craftsman": "importa drf_spectacular, não declarado; e um teste alcança shopman.shop",
-    "guestman": "a suíte importa psycopg (Postgres), fora do extra `dev`",
     "doorman": "a suíte importa shopman.guestman, que o pacote não declara",
 }
 
@@ -123,8 +118,15 @@ def run_package(package: str, workdir: Path, dist_dir: Path) -> int:
         return 1
     print(f"{module} importado de {origin}", flush=True)
 
+    # A suíte é importada do site-packages, e o pytest só procura conftest.py
+    # subindo a partir dela: o da raiz do pacote (fixtures autouse que limpam
+    # registro, resolvedor etc.) nunca seria visto. Entra como plugin.
+    root_conftest = ["-p", "conftest"] if (rundir / "conftest.py").exists() else []
     result = subprocess.run(
-        [str(python), "-m", "pytest", "--pyargs", f"{module}.tests", "-q", "-p", "no:cacheprovider"],
+        [
+            str(python), "-m", "pytest", "--pyargs", f"{module}.tests",
+            "-q", "-p", "no:cacheprovider", *root_conftest,
+        ],
         cwd=rundir,
         env={"PATH": f"{venv / 'bin'}:/usr/bin:/bin", "HOME": str(workdir)},
     )
