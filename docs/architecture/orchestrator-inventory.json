@@ -1026,6 +1026,7 @@
           "symbols": [
             "COURIER_TRACKING_TEMPLATE_NAME",
             "MESSAGE_TEMPLATES",
+            "PREORDER_ACCEPTED_TEMPLATE_NAME",
             "TEXT_MAX_CHARS",
             "_ACCESS_TOKEN_IN_QUERY",
             "_FIELD_DENYLIST",
@@ -1041,6 +1042,7 @@
             "_message_buttons",
             "_message_contents",
             "_plain_text_button_fallback",
+            "_preorder_accepted_variant",
             "_prepare_call",
             "_provider_error_code",
             "_push_custom_fields",
