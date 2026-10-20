@@ -8,6 +8,7 @@ import { filterBarActiveFilters } from "../../../../operator-kit/app/presentatio
 
 type SupplierRow = { supplier: Supplier; materialsCovered: number; preferredCount: number };
 
+const csvTools = ref<{ openImport: () => void; openExport: () => void } | null>(null);
 const route = useRoute();
 const {
   query,
@@ -95,6 +96,8 @@ watch(
 );
 
 const headerActions = [
+  { label: "Importar CSV", icon: "i-lucide-upload", onSelect: () => csvTools.value?.openImport() },
+  { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => csvTools.value?.openExport() },
   { label: "Novo fornecedor", icon: "i-lucide-plus", onSelect: () => openSupplierCreate() },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
 ];
@@ -226,5 +229,6 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
       @save="onSubmitSupplier"
       @save-contact="onSaveSupplierContact"
     />
+    <PurchaseCsvTools ref="csvTools" entity="suppliers" @applied="refresh()" />
   </main>
 </template>

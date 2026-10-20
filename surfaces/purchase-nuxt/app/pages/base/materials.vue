@@ -17,6 +17,7 @@ import {
 } from "~/presentation/purchaseUi";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
+const csvTools = ref<{ openImport: () => void; openExport: () => void } | null>(null);
 const route = useRoute();
 const {
   query,
@@ -164,6 +165,8 @@ const alerts = computed(() => {
 });
 
 const headerActions = [
+  { label: "Importar CSV", icon: "i-lucide-upload", onSelect: () => csvTools.value?.openImport() },
+  { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => csvTools.value?.openExport() },
   { label: "Novo insumo", icon: "i-lucide-plus", onSelect: () => openMaterialCreate() },
   { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
   { label: "Contagem de estoque", icon: "i-lucide-clipboard-check", to: baseSectionPath("count") },
@@ -369,5 +372,6 @@ const saveLabel = computed(() =>
       @save-conversion="onSaveMaterialConversion"
       @save-cost="onSaveMaterialCost"
     />
+    <PurchaseCsvTools ref="csvTools" entity="materials" @applied="refresh()" />
   </main>
 </template>

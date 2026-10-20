@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.urls import path
 
+from shopman.backstage.api.purchase_csv import PurchaseCsvView
 from shopman.shop.eventstream import events as eventstream_view
 
 from .alerts import AlertAckView, AlertListView
@@ -643,6 +644,7 @@ urlpatterns = [
     ),
     # Cadastro da Base. A ordem importa: `min-stock` e os subgestos de um SKU
     # vêm antes do detalhe, senão "min-stock" casaria com <material_sku>.
+    path("purchase/<str:entity>/csv/", PurchaseCsvView.as_view(), name="api-backstage-purchase-csv"),
     path("purchase/materials/", PurchaseMaterialView.as_view(), name="api-backstage-purchase-materials"),
     path(
         "purchase/materials/<str:material_sku>/duplicate/",
