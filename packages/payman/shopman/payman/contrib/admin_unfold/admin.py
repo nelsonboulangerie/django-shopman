@@ -11,14 +11,17 @@ Both models are mutated exclusively through ``PaymentService`` (and the immutabl
 
 import json
 import logging
+import uuid
 from decimal import Decimal
 
 from django import forms
 from django.contrib import admin, messages
+from django.core.validators import RegexValidator
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext_lazy as _
+from shopman.payman.conf import get_refund_backend
 from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.payman.service import PaymentService
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge, unfold_badge_numeric
@@ -157,8 +160,17 @@ class RefundConfirmForm(BaseDialogForm):
     `BaseDialogForm` ainda carrega o `_form_submitted` obrigatório, que é o que
     torna o GET incapaz de validar: GET só desenha o diálogo, o estorno é POST com
     CSRF.
+
+    ``refund_key`` nasce no GET, uma por diálogo aberto, e é a chave de
+    idempotência do estorno no gateway: o duplo clique reenvia a MESMA chave e o
+    gateway devolve a mesma devolução, em vez de uma segunda.
     """
 
+    refund_key = forms.CharField(
+        widget=forms.HiddenInput,
+        initial=lambda: uuid.uuid4().hex,
+        validators=[RegexValidator(r"^[0-9a-f]{32}$")],
+    )
     confirm = forms.BooleanField(
         label=_("Confirmo o estorno, que não tem desfazer"),
         required=True,
@@ -179,7 +191,7 @@ class RefundAmountForm(RefundConfirmForm):
         widget=UnfoldAdminDecimalFieldWidget,
     )
 
-    field_order = ["amount_reais", "confirm"]
+    field_order = ["amount_reais", "confirm", "refund_key"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -201,11 +213,13 @@ class RefundAmountForm(RefundConfirmForm):
 
 
 def _available_q(object_id) -> int:
-    """Capturado menos o já estornado; zero se a cobrança não existe."""
+    """Capturado menos o já devolvido (estorno e chargeback); zero se a cobrança não existe."""
     intent = PaymentIntent.objects.filter(pk=object_id).first() if object_id else None
     if intent is None:
         return 0
-    return max(intent.amount_q - PaymentService.refunded_total(intent.ref), 0)
+    ref = intent.ref
+    returned_q = PaymentService.refunded_total(ref) + PaymentService.chargeback_total(ref)
+    return max(PaymentService.captured_total(ref) - returned_q, 0)
 
 
 @admin.register(PaymentIntent)
@@ -284,9 +298,9 @@ class PaymentIntentAdmin(BaseModelAdmin):
         dialog={
             "title": _("Estornar o total?"),
             "description": _(
-                "Registra nesta cobrança o estorno de todo o valor disponível. "
-                "Daqui o dinheiro não sai: a devolução pelo Pix ou cartão é feita no gateway. "
-                "Não há desfazer."
+                "Devolve ao cliente todo o valor disponível desta cobrança, pelo mesmo meio do "
+                "pagamento. No Pix o dinheiro volta em instantes; no cartão aparece na fatura em "
+                "alguns dias, conforme o banco do cartão. Não há desfazer."
             ),
             "form_class": RefundConfirmForm,
             "form_submit_text": _("Estornar"),
@@ -297,7 +311,7 @@ class PaymentIntentAdmin(BaseModelAdmin):
         if intent is None:
             messages.error(request, _("Cobrança não encontrada."))
             return HttpResponseRedirect(reverse("admin:payman_paymentintent_changelist"))
-        self._refund_one(request, intent)
+        self._refund_one(request, intent, form)
         return HttpResponseRedirect(reverse("admin:payman_paymentintent_change", args=[intent.pk]))
 
     @action(
@@ -309,9 +323,9 @@ class PaymentIntentAdmin(BaseModelAdmin):
         dialog={
             "title": _("Estornar um valor?"),
             "description": _(
-                "Registra nesta cobrança o estorno do valor informado. "
-                "Daqui o dinheiro não sai: a devolução pelo Pix ou cartão é feita no gateway. "
-                "Não há desfazer."
+                "Devolve ao cliente o valor informado, pelo mesmo meio do pagamento. No Pix o "
+                "dinheiro volta em instantes; no cartão aparece na fatura em alguns dias, conforme "
+                "o banco do cartão. Não há desfazer."
             ),
             "form_class": RefundAmountForm,
             "form_submit_text": _("Estornar"),
@@ -322,27 +336,65 @@ class PaymentIntentAdmin(BaseModelAdmin):
         if intent is None:
             messages.error(request, _("Cobrança não encontrada."))
             return HttpResponseRedirect(reverse("admin:payman_paymentintent_changelist"))
-        self._refund_one(request, intent, amount_q=form.cleaned_data.get("amount_reais"))
+        self._refund_one(request, intent, form)
         return HttpResponseRedirect(reverse("admin:payman_paymentintent_change", args=[intent.pk]))
 
     # Estorno em LOTE não existe: ação de lote do Django roda direto no POST do
     # changelist, sem diálogo nem confirmação (laudo 01/09, 06-admin P0-1). Estorno
     # é um por vez, pelas duas ações acima.
 
-    def _refund_one(self, request, intent, *, amount_q: int | None = None) -> bool:
-        """Estorna ``amount_q`` (ou todo o disponível, se None). True se gravou."""
-        try:
-            transaction = PaymentService.refund(
-                intent.ref, amount_q=amount_q, reason="Reembolso via admin"
+    def _refund_one(self, request, intent, form) -> bool:
+        """Devolve pelo gateway ``amount_reais`` (ou todo o disponível). True se devolveu.
+
+        O dinheiro sai pelo ``RefundBackend`` configurado (``PAYMAN["REFUND_BACKEND"]``),
+        o mesmo caminho do estorno do pedido. Este método não grava no livro por
+        conta própria: quem registra é o backend, e só depois de o gateway aceitar.
+        """
+        backend = get_refund_backend()
+        if backend is None:
+            messages.error(
+                request,
+                _("O estorno pelo gateway não está configurado nesta instalação. Nada foi estornado."),
             )
-        except Exception as exc:  # PaymentService valida elegibilidade e levanta
-            logger.warning("refund failed for %s: %s", intent.ref, exc)
-            messages.error(request, str(exc))
             return False
+        amount_q = form.cleaned_data.get("amount_reais") or _available_q(intent.pk)
+        if amount_q <= 0:
+            messages.info(request, _("Esta cobrança não tem valor disponível para estorno."))
+            return False
+        actor = request.user.get_username()
+        try:
+            result = backend.refund(
+                intent.ref,
+                amount_q=amount_q,
+                idempotency_key=f"admin-refund:{intent.ref}:{form.cleaned_data['refund_key']}",
+                actor=actor,
+            )
+        except Exception:
+            # O backend fala por ``RefundResult``; exceção aqui é defeito, e o
+            # estado do gateway é desconhecido. Falha alto, sem afirmar nada.
+            logger.exception("admin refund crashed for %s", intent.ref)
+            messages.error(
+                request,
+                _(
+                    "O estorno parou no meio, e não dá para saber se o dinheiro saiu. "
+                    "Confira no painel do gateway antes de tentar de novo."
+                ),
+            )
+            return False
+        if not result.success:
+            logger.warning("admin refund refused for %s: %s", intent.ref, result.error_code)
+            messages.error(request, result.message or _("O estorno foi recusado. Nada foi estornado."))
+            return False
+        refunded_q = result.amount_q or amount_q
+        self.log_change(
+            request,
+            intent,
+            f"Estorno de R$ {format_money(refunded_q)} pelo gateway ({result.refund_id or 'sem id'}).",
+        )
         messages.success(
             request,
-            _("Estorno de R$ %(v)s registrado em %(ref)s.")
-            % {"v": format_money(transaction.amount_q), "ref": intent.ref},
+            _("R$ %(v)s devolvidos ao cliente pelo mesmo meio do pagamento (%(ref)s).")
+            % {"v": format_money(refunded_q), "ref": intent.ref},
         )
         return True
 

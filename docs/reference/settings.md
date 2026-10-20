@@ -272,7 +272,14 @@ DOORMAN = {
 
 ## Payments (Pagamentos)
 
-O payments core não tem `conf.py` próprio — configuração é feita via settings do orquestrador (`SHOPMAN_PAYMENT_ADAPTERS`) e via `ChannelConfig.payment`.
+Os gateways são configurados no orquestrador (`SHOPMAN_PAYMENT_ADAPTERS`) e em `ChannelConfig.payment`. O Payman lê uma chave só:
+
+**Arquivo:** `packages/payman/shopman/payman/conf.py`
+**Dict:** `PAYMAN`
+
+| Setting | Tipo | Default | Descrição |
+|---------|------|---------|-----------|
+| `REFUND_BACKEND` | str | vazio (o settings do projeto usa `shopman.shop.adapters.payman_refund.GatewayRefundBackend`) | Dotted path do `RefundBackend` que o Admin de cobranças usa para devolver pelo gateway. Vazio = o Admin não estorna |
 
 Veja [Shopman — Orquestrador](#shopman--orquestrador) para `SHOPMAN_PAYMENT_ADAPTERS`.
 

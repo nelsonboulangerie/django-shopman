@@ -1875,6 +1875,11 @@ SHOPMAN_PAYMENT_ADAPTERS = {
     "cash": None,
     "external": None,
 }
+# ── Payman ───────────────────────────────────────────────────────────
+# O estorno do Admin de cobranças devolve pelo gateway pelo MESMO caminho do
+# estorno do pedido (adapters acima). Sem esta chave o Admin não estorna.
+# See packages/payman/shopman/payman/conf.py.
+PAYMAN = {"REFUND_BACKEND": "shopman.shop.adapters.payman_refund.GatewayRefundBackend"}
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = _env_bool("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False)
 # "O cliente pode quitar o próprio pedido com um clique?" — pergunta SEPARADA de
 # "este ambiente pode rodar com gateway simulado?" (a de cima). Enquanto as duas
