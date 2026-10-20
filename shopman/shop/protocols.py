@@ -42,7 +42,9 @@ class ReserveRefusal(StrEnum):
 
     Compõe o ``PromiseReasonCode`` do Stockman (pausado, falta de oferta) com
     as recusas que só o orquestrador conhece: o portão da vitrine do canal, o
-    SKU que o catálogo não tem e a quantidade inválida. Toda recusa de
+    portão do grupo (produto de coleção exclusiva, ``GROUP_EXCLUSIVE``, que a
+    sacola e o checkout da loja recusam a quem não é do grupo), o SKU que o
+    catálogo não tem e a quantidade inválida. Toda recusa de
     ``create_hold`` (adapter), ``availability.reserve`` e
     ``availability.reconcile`` sai daqui. Código cru do Stockman
     (``INSUFFICIENT_AVAILABLE``) não atravessa o adapter, e código que não
@@ -52,6 +54,7 @@ class ReserveRefusal(StrEnum):
     PAUSED = PromiseReasonCode.PAUSED.value
     INSUFFICIENT_SUPPLY = PromiseReasonCode.INSUFFICIENT_SUPPLY.value
     NOT_IN_LISTING = "not_in_listing"
+    GROUP_EXCLUSIVE = "group_exclusive"
     PRODUCT_NOT_FOUND = "product_not_found"
     INVALID_QUANTITY = "invalid_quantity"
 

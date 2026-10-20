@@ -176,6 +176,17 @@ class CheckoutView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Item de coleção exclusiva de grupo que o visitante não integra (pôs na sacola
+        # quando era do grupo, ou o grupo mudou): o pedido não fecha com ele. A decisão é
+        # a da sacola e do cardápio; custo fixo, qualquer que seja o número de itens.
+        from shopman.storefront.api.surface import cart_item_refused_response
+        from shopman.storefront.cart import CartItemRefused, refuse_group_exclusive
+
+        try:
+            refuse_group_exclusive(request, [line.sku for line in cart.lines if line.sku])
+        except CartItemRefused as refused:
+            return cart_item_refused_response(refused, field="items")
+
         session_key = cart.session_key
         # O nome impresso no ticket do KDS: sanitiza controle/bidi (a serializer
         # ja limita o comprimento em 120) antes de gravar no pedido.
