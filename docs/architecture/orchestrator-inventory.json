@@ -7221,6 +7221,20 @@
       ]
     },
     {
+      "path": "shopman/shop/policies/exclusive_collections.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "catalog.group-exclusive-collections"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/promotion.py",
       "touchpoints": [
         "outro"
@@ -8702,6 +8716,27 @@
         "decisão"
       ],
       "support_claims": []
+    },
+    {
+      "path": "shopman/shop/projections/exclusive_collections.py",
+      "touchpoints": [
+        "projection"
+      ],
+      "out_of_extraction": true,
+      "unit_ids": [],
+      "responsibilities": [
+        "leitura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "leitura",
+          "symbols": [
+            "access_for_customer",
+            "access_for_tiers",
+            "exclusive_only_product_ids"
+          ]
+        }
+      ]
     },
     {
       "path": "shopman/shop/services/delivery_fiscal_identity.py",

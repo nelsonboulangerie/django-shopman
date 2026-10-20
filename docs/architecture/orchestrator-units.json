@@ -18124,6 +18124,40 @@
       "test_gap_reason": null,
       "policy": true,
       "out_of_extraction": false
+    },
+    {
+      "id": "catalog.group-exclusive-collections",
+      "question": "Quais coleções exclusivas de grupo este cliente enxerga no cardápio?",
+      "owner": "catalog.group-exclusive-collections",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.exclusive_collections:collection_access",
+      "authoritative_symbols": [
+        "shopman.shop.policies.exclusive_collections:collection_access"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/exclusive_collections.py",
+          "symbols": [
+            "CollectionAccess",
+            "collection_access"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_exclusive_collections_policy.py::test_exclusive_collections_truth_table"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
     }
   ]
 }
