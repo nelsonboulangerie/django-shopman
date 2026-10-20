@@ -733,7 +733,6 @@ const sectionClass =
         v-if="detail && !detail.is_active"
         label="Arquivado"
         color="neutral"
-        variant="subtle"
       />
       <OperatorTimedButton
         v-if="archiveUndo"
