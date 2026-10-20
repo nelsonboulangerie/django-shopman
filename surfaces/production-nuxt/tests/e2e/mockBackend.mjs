@@ -430,6 +430,10 @@ const QC_POPULATED = {
 };
 
 const RECIPE_ACCESS = { can_view: true, can_edit: true, capture_available: false };
+const PRODUCTION_MODE_OPTIONS = [
+  { value: "batch", label: "Em lote" },
+  { value: "made_to_order", label: "Na hora" },
+];
 const RECIPE_CARDS = RECIPES.map((recipe, index) => ({
   ref: recipe.ref,
   name: recipe.name,
@@ -438,6 +442,8 @@ const RECIPE_CARDS = RECIPES.map((recipe, index) => ({
   output_sku: recipe.sku,
   output_name: recipe.name,
   has_ficha: index !== 5,
+  production_mode: index === 5 ? "" : "batch",
+  production_mode_label: index === 5 ? "" : "Em lote",
   current_version_number: index === 5 ? null : 2,
   version_count: index === 5 ? 1 : 2,
   draft_count: index === 5 ? 1 : 0,
@@ -642,6 +648,8 @@ function recipeDetail(card) {
           { value: "standard", label: "Padrão" },
           { value: "ready", label: "Pronto para venda" },
         ],
+        production_mode: card.production_mode || "batch",
+        production_mode_options: PRODUCTION_MODE_OPTIONS,
         revision: card.has_ficha ? "2026-07-04T12:00:00+00:00" : "",
       },
       is_favorite: card.is_favorite,
@@ -758,6 +766,105 @@ const WEIGHING_POPULATED = {
   },
 };
 
+// Fichas de execução (/recipes/sheets): o modo de produção (ADR-040), com o
+// selo e o recorte "Na hora". O PATCH devolve a ficha gravada sem mudar a lista:
+// cada projeto do e2e parte do mesmo estado.
+function sheetItem(sku, name, quantity, unit) {
+  return { input_sku: sku, name, quantity, unit, usable_factor: "1", gross_quantity: quantity, correction_factor: "1", sort_order: 0, is_optional: false, note: "" };
+}
+
+function sheetDetail(ref, name, sku, { mode, unit = "un", items }) {
+  return {
+    ref,
+    revision: `${ref}-1`,
+    name,
+    output_sku: sku,
+    output_name: name,
+    batch_size: "1",
+    output_unit: unit,
+    is_active: true,
+    steps: [],
+    items: items.map((item, index) => ({ ...item, sort_order: index })),
+    mass_balance: { status: "incomparable", output_unit: unit, batch_display: "1 " + unit, total_display: "", message: "", tone: "muted" },
+    execution: {
+      exists: true,
+      ref,
+      revision: `${ref}-1`,
+      max_started_minutes: null,
+      capacity_per_day: "",
+      requires_batch_tracking: false,
+      shelf_life_days: null,
+      shelf_life_reviewed: false,
+      shelf_life_reviewed_by: "",
+      production_lifecycle: "",
+      lifecycle_options: [],
+      production_mode: mode,
+      production_mode_options: PRODUCTION_MODE_OPTIONS,
+    },
+    has_entry: false,
+    entry_ref: "",
+  };
+}
+
+const SHEETS = [
+  sheetDetail("espresso", "Espresso", "SP", { mode: "made_to_order", items: [sheetItem("CAFE-GRAO", "Café em grão", "0.007", "kg")] }),
+  sheetDetail("cappuccino", "Cappuccino", "CAP", {
+    mode: "made_to_order",
+    items: [sheetItem("CAFE-GRAO", "Café em grão", "0.007", "kg"), sheetItem("LEITE-INTEGRAL", "Leite integral", "0.15", "kg")],
+  }),
+  sheetDetail("croque-monsieur", "Croque Monsieur", "CQMO", {
+    mode: "made_to_order",
+    items: [sheetItem("MOLHO-BECHAMEL", "Molho bechamel", "0.07", "kg"), sheetItem("QUEIJO-GOUDA", "Queijo gouda", "0.05", "kg")],
+  }),
+  sheetDetail("pao-frances", "Pão francês", "PAO-FRANCES", { mode: "batch", unit: "kg", items: [sheetItem("FARINHA-T55", "Farinha T55", "1", "kg")] }),
+  sheetDetail("molho-bechamel", "Molho bechamel", "MOLHO-BECHAMEL", { mode: "batch", unit: "kg", items: [sheetItem("LEITE-INTEGRAL", "Leite integral", "0.9", "kg")] }),
+];
+
+function sheetCard(sheet) {
+  return {
+    ref: sheet.ref,
+    name: sheet.name,
+    output_sku: sheet.output_sku,
+    output_name: sheet.output_name,
+    batch_size: sheet.batch_size,
+    item_count: sheet.items.length,
+    is_active: sheet.is_active,
+    production_mode: sheet.execution.production_mode,
+    production_mode_label: sheet.execution.production_mode === "made_to_order" ? "Na hora" : "Em lote",
+    has_entry: sheet.has_entry,
+    updated_at_display: "20/10/2026",
+  };
+}
+
+function sheetList(url) {
+  const query = new URL(url, "http://mock").searchParams;
+  let rows = SHEETS;
+  const mode = query.get("mode");
+  if (mode) rows = rows.filter((sheet) => sheet.execution.production_mode === mode);
+  if (query.get("active") === "0") rows = rows.filter((sheet) => !sheet.is_active);
+  const cards = rows.map(sheetCard);
+  return {
+    sheets: { cards, count: cards.length, page: 1, page_size: 48, total: cards.length, has_next: false, sort: "updated" },
+    access: RECIPE_ACCESS,
+  };
+}
+
+/** GET/PATCH de /recipes/sheets/; `null` quando a URL não é de ficha. */
+function sheetResponse(req, url, body) {
+  if (/\/recipes\/sheets\/?(\?|$)/.test(url) && req.method === "GET") return [200, sheetList(url)];
+  const match = url.match(/\/recipes\/sheets\/([\w-]+)\/?(\?|$)/);
+  if (!match) return null;
+  const sheet = SHEETS.find((row) => row.ref === match[1]);
+  if (!sheet) return [404, { detail: `Ficha '${match[1]}' não existe no cadastro.` }];
+  if (req.method === "GET") return [200, { sheet, access: RECIPE_ACCESS }];
+  if (req.method === "PATCH") {
+    const data = body ? JSON.parse(body) : {};
+    const mode = data.productionMode ?? sheet.execution.production_mode;
+    return [200, { sheet: { ...sheet, revision: `${sheet.ref}-2`, execution: { ...sheet.execution, production_mode: mode } } }];
+  }
+  return null;
+}
+
 /** A resposta do cenário povoado para esta URL, ou `null` para seguir o mock de base. */
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
@@ -825,6 +932,16 @@ const server = createServer((req, res) => {
       detail: "Estação travada.",
       error: { code: "station_locked" },
     });
+  }
+  if (populated && /\/recipes\/sheets\//.test(url)) {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      const answer = sheetResponse(req, url, body);
+      if (answer) return json(res, answer[0], answer[1]);
+      return json(res, 405, { detail: "Método não suportado no mock." });
+    });
+    return;
   }
   const populatedBody = populated ? populatedResponse(url) : null;
   if (populatedBody) return json(res, 200, populatedBody);

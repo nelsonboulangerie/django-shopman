@@ -229,6 +229,12 @@ export interface ProductDetailProjection {
   // Selos derivados do SKU — somente leitura. "Permitir compra" é gesto próprio
   // (POST .../purchase/), não campo do rascunho.
   readonly roles?: SkuRoles;
+  /**
+   * O modo de produção da ficha vigente do SKU (ADR-040): "Em lote" ou "Na hora",
+   * e a estação de preparo do feito na hora. Somente leitura: o modo se muda na
+   * ficha, na Produção. `null` sem ficha (revenda).
+   */
+  readonly production?: ProductProduction | null;
   /** Vocação do SKU (ref do papel de consumo); "" = sem vocação. Só para o B.I. */
   vocation: string;
   readonly vocation_choices: VocationChoice[];
@@ -276,6 +282,20 @@ export interface GtinRejected {
   readonly confirmed_at: string;
 }
 
+/** O modo de produção de um produto, com a frase pronta e o endereço da ficha. */
+export interface ProductProduction {
+  readonly mode: "batch" | "made_to_order";
+  readonly mode_label: string;
+  /** A estação de preparo do feito na hora; vazia em lote ou sem estação. */
+  readonly station: string;
+  /** "Feito na hora na estação Cafés: os insumos baixam a cada venda." */
+  readonly summary: string;
+  readonly recipe_ref: string;
+  readonly recipe_name: string;
+  /** Vazio quando a Produção não tem endereço configurado. */
+  readonly url: string;
+}
+
 /** Comprável · Vendável · Produzido · Usado em receita — derivados no servidor. */
 export interface SkuRoles {
   purchasable: boolean;
@@ -300,6 +320,7 @@ export type ProductDetailPatch = Partial<
     | "fiscal_origins"
     | "fiscal_warnings"
     | "roles"
+    | "production"
     | "vocation_choices"
     | "gtin_rejected"
     | "social"

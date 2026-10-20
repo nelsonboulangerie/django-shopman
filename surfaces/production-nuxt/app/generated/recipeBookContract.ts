@@ -11,6 +11,8 @@ export interface RecipeEntryCardProjection {
   output_sku: string;
   output_name: string;
   has_ficha: boolean;
+  production_mode: string;
+  production_mode_label: string;
   current_version_number: number | null;
   version_count: number;
   draft_count: number;
@@ -245,6 +247,12 @@ export interface LifecycleOptionProjection {
   label: string;
 }
 
+/** Uma escolha do modo de produção ("Em lote", "Na hora"). */
+export interface ProductionModeOptionProjection {
+  value: string;
+  label: string;
+}
+
 /** Configuração operacional da ficha que a versão publicada materializa. */
 export interface ExecutionSheetProjection {
   exists: boolean;
@@ -258,6 +266,8 @@ export interface ExecutionSheetProjection {
   shelf_life_reviewed_by: string;
   production_lifecycle: string;
   lifecycle_options: LifecycleOptionProjection[];
+  production_mode: string;
+  production_mode_options: ProductionModeOptionProjection[];
 }
 
 /** Uma linha da ficha de execução: o insumo e o que ele consome do estoque. */
@@ -293,6 +303,8 @@ export interface RecipeSheetCardProjection {
   batch_size: string;
   item_count: number;
   is_active: boolean;
+  production_mode: string;
+  production_mode_label: string;
   has_entry: boolean;
   updated_at_display: string;
 }

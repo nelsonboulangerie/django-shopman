@@ -1,11 +1,12 @@
-"""Quais fichas baixam insumo na VENDA: a marca explícita, travada (ADR-040).
+"""O modo de produção das fichas do seed, e o que ele decide na cozinha (ADR-040).
 
-Irmã de ``test_massa_de_cada_peca.py``. A venda do item feito na hora baixa o
-insumo da ficha marcada ``Recipe.meta["made_to_order"] = true``. Ficha inativa
-sem a marca é ficha DESLIGADA e não baixa nada; ficha marcada e ativa entraria
-no plano de forno (``craft.suggest`` olha toda ficha ativa). As duas derivas são
-silenciosas: a primeira deixa o café em grão sem descer, a segunda põe croque
-na fornada. Por isso a lista é fechada aqui, pelo ref da ficha.
+Irmã de ``test_massa_de_cada_peca.py``. Toda ficha do seed é a VIGENTE do SKU
+(``is_active`` é só vigente × arquivada). O modo de produção diz o resto: "Na
+hora" (montagem e bebida) nunca é planejado, vai à estação de preparo e a venda
+baixa os insumos; "Em lote" é planejado, sai por ordem de produção e, na venda,
+é separação. As derivas são silenciosas (café que não baixa grão, croque que
+entra no plano, pão pronto que toca o KDS no balcão), por isso a lista é fechada
+aqui, pelo ref da ficha, e o roteamento é provado com o seed inteiro.
 
 ⚠️ Roda o seed inteiro de propósito: ler a tabela do seed provaria que a tabela
 concorda consigo mesma.
@@ -17,51 +18,65 @@ import importlib
 
 import pytest
 from django.core.management import call_command
-from shopman.craftsman.models import Recipe
+from shopman.craftsman.models import ProductionMode, Recipe
 
 pytestmark = pytest.mark.django_db
 
-#: Montagem (croques, sanduíches, pain perdu) e bebida: o que se faz quando o
-#: cliente pede. A seção 2b do seed. FONTE ÚNICA: a lista mora na migração que
-#: marca o banco já semeado (``shop.0102``); o seed que marcar outra coisa reprova
-#: aqui, e a migração nunca anda descolada do seed.
-FEITAS_NA_HORA = set(
-    importlib.import_module("shopman.shop.migrations.0102_fichas_feitas_na_hora").MADE_TO_ORDER_RECIPE_REFS
-)
+#: FONTE ÚNICA: a lista mora na migração que leva o modo ao banco já semeado
+#: (``shop.0104``); o seed que montar outra coisa na venda reprova aqui.
+NA_HORA = set(importlib.import_module("shopman.shop.migrations.0104_fichas_na_hora_vigentes").MADE_TO_ORDER_RECIPE_REFS)
 
 
-def test_so_as_fichas_de_montagem_e_bebida_baixam_na_venda(monkeypatch):
+def _fire(session_key: str, skus: list[str], *, prep_only: bool) -> dict[str, list[str]]:
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.adapters import kds as kds_adapter
+    from shopman.shop.services.kds import _fire_lines_locked
+
+    lines = [
+        {"line_id": f"L{index}", "sku": sku, "name": sku, "qty": 1, "notes": "", "meta": {}}
+        for index, sku in enumerate(skus)
+    ]
+    tickets = _fire_lines_locked(
+        session_key=session_key, lines=lines, get_adapter=get_adapter, kds_adapter=kds_adapter, prep_only=prep_only,
+    )
+    return {str(ticket.kds_instance.name): sorted(item["sku"] for item in ticket.items) for ticket in tickets}
+
+
+def test_modo_de_producao_do_seed_e_o_roteamento_da_cozinha(monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "Seed-Feita-Na-Hora-2026!")
     call_command("seed", verbosity=0)
 
-    marcadas = {
-        recipe.ref: recipe
-        for recipe in Recipe.objects.all()
-        if (recipe.meta or {}).get("made_to_order") is True
+    # 1. Toda ficha do seed é vigente; nada fica desligado para sair do plano.
+    arquivadas = sorted(Recipe.objects.filter(is_active=False).values_list("ref", flat=True))
+    assert not arquivadas, f"ficha arquivada no seed (o modo de produção é que tira do plano): {arquivadas}"
+
+    # 2. "Na hora" é exatamente a montagem e a bebida.
+    na_hora = set(Recipe.objects.filter(production_mode=ProductionMode.MADE_TO_ORDER).values_list("ref", flat=True))
+    assert na_hora == NA_HORA
+
+    # 3. Nenhuma marca antiga sobrou.
+    assert not [r.ref for r in Recipe.objects.all() if {"made_to_order", "made_to_order_marked_by"} & set(r.meta or {})]
+
+    # 4. Todo SKU "Na hora" tem estação de preparo: senão a cozinha nunca o vê.
+    from shopman.backstage.models import KDSInstance
+    from shopman.shop.services.kds import kitchen_routes_for_skus
+
+    skus = sorted(Recipe.objects.filter(production_mode=ProductionMode.MADE_TO_ORDER).values_list("output_sku", flat=True))
+    routes = kitchen_routes_for_skus(skus)
+    prep_stations = set(KDSInstance.objects.filter(type="prep", is_active=True).values_list("name", flat=True))
+    sem_preparo = sorted(sku for sku in skus if (routes.get(sku) or {}).get("station") not in prep_stations)
+    assert not sem_preparo, f"feito na hora sem estação de preparo: {sem_preparo}"
+
+    # 5. O defeito medido em 20/10/2026, fechado: no balcão presencial o café e
+    #    o croque viravam NADA e o pão pronto virava ticket em Encomendas.
+    balcao = _fire("SEED-BALCAO", ["SP", "CQMO", "BAT", "HOD", "AGUA-MINERAL-PRATA-310", "SDLA"], prep_only=True)
+    assert balcao == {"Cafés": ["SP"], "Lanches": ["CQMO"]}
+
+    # 6. No pedido remoto, o que se separa vai à Separação (Encomendas), sempre
+    #    do mesmo tipo: em lote e revenda nunca caem em estação de preparo.
+    remoto = _fire("SEED-REMOTO", ["SP", "CQMO", "BAT", "HOD", "AGUA-MINERAL-PRATA-310"], prep_only=False)
+    assert remoto == {
+        "Cafés": ["SP"],
+        "Lanches": ["CQMO"],
+        "Encomendas": ["AGUA-MINERAL-PRATA-310", "BAT", "HOD"],
     }
-    assert set(marcadas) == FEITAS_NA_HORA
-
-    ativas = sorted(ref for ref, recipe in marcadas.items() if recipe.is_active)
-    assert not ativas, f"ficha feita na hora entraria no plano de forno: {ativas}"
-
-    desligadas = sorted(
-        recipe.ref for recipe in Recipe.objects.filter(is_active=False) if recipe.ref not in marcadas
-    )
-    assert not desligadas, f"ficha inativa sem a marca (desligada ou esquecida?): {desligadas}"
-
-    # Um nível só e uma ficha por produto: a baixa não escolhe entre duas.
-    por_produto: dict[str, list[str]] = {}
-    for ref, recipe in marcadas.items():
-        por_produto.setdefault(recipe.output_sku, []).append(ref)
-    duplicadas = {sku: refs for sku, refs in por_produto.items() if len(refs) > 1}
-    assert not duplicadas, duplicadas
-
-    # O banco semeado ANTES do ADR-040 (o alpha) não tem a marca: a migração
-    # ``shop.0102`` a escreve nas mesmas 21 fichas, todas presentes e inativas.
-    from django.apps import apps
-
-    migration = importlib.import_module("shopman.shop.migrations.0102_fichas_feitas_na_hora")
-    for recipe in marcadas.values():
-        recipe.meta = {k: v for k, v in recipe.meta.items() if k != "made_to_order"}
-        recipe.save(update_fields=["meta"])
-    assert sorted(migration.mark(apps, None)) == sorted(FEITAS_NA_HORA)

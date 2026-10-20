@@ -102,11 +102,12 @@ escreve os `MAKE` de uma vez.
 1. **Gatilho:** o mesmo ponto em que o pedido baixa o próprio estoque
    (`services/stock.fulfill`, ou seja, `on_paid`/`on_accepted` conforme o canal). Pedido
    de teste (`is_test_order`) não baixa, como já não baixa o `SELL`.
-2. **Qual ficha:** só a ficha marcada como feita na hora, por marca **explícita** em
-   `Recipe.meta["made_to_order"] = true` (JSON, sem migração; chave registrada em
-   `docs/reference/data-schemas.md` no PR de implementação). Ficha inativa sem a marca é
-   ficha desligada e não baixa. Duas fichas marcadas para o mesmo SKU: a directive falha
-   gritando (alerta), não escolhe.
+2. **Qual ficha:** a ficha VIGENTE do SKU cujo modo de produção é "Na hora"
+   (`Recipe.production_mode`, ver "Modo de produção" abaixo). Ficha "Em lote" não baixa na
+   venda (a ordem de produção já baixou); ficha arquivada não baixa nada. A constraint
+   de uma ficha vigente por SKU garante que a baixa nunca escolhe entre duas. ⚠️ Até
+   20/10/2026 a regra era uma marca em `Recipe.meta["made_to_order"]` numa ficha
+   INATIVA; ela morreu (`shop.0104`).
 3. **Um nível só.** A baixa desconta os itens da ficha como publicados, nunca desce até a
    folha. O `MOLHO-BECHAMEL` do croque sai como `MOLHO-BECHAMEL`, que a fornada dele já
    pôs no estoque com `MAKE`; a farinha do bechamel já saiu na fornada. Sem dupla
@@ -144,14 +145,75 @@ escreve os `MAKE` de uma vez.
      worker baixar, a própria baixa vê o pedido cancelado e acerta na mesma passada.
 7. **Nada retroage.** O saldo de hoje foi contado à mão; o histórico do Yooga e do alpha
    fica como está.
-8. **Pré-condição:** as fichas marcadas como feitas na hora conferidas pelo dono
-   (WP-RECEITAS-DA-CASA F1). Baixa automática em ficha errada desconta o insumo errado
-   para sempre. A marca nasce no seed; no banco já semeado (o alpha) ela chega pela
-   migração de dados `shop.0102_fichas_feitas_na_hora`, que marca as MESMAS 21 fichas
-   pelo `ref` (lista única, travada contra o seed em
-   `backstage/tests/test_ficha_feita_na_hora.py`), deixa de fora a ficha ausente ou
-   ativa, não toca em mais nada e, no reverse, desmarca só o que ela marcou
-   (`Recipe.meta.made_to_order_marked_by`). Sem reseed.
+8. **Pré-condição:** as fichas "Na hora" conferidas pelo dono (WP-RECEITAS-DA-CASA
+   F1). Baixa automática em ficha errada desconta o insumo errado para sempre. O modo
+   nasce no seed; no banco já semeado (o alpha) ele chega pela migração de dados
+   `shop.0104_fichas_na_hora_vigentes`, que dá o modo "Na hora" às MESMAS 21 fichas pelo
+   `ref` (lista única, travada contra o seed em `backstage/tests/test_ficha_feita_na_hora.py`),
+   devolve a vigência às que estavam inativas só por isso (sem violar uma vigente por
+   SKU: a que não pode fica arquivada e o log diz qual), limpa `made_to_order` e
+   `made_to_order_marked_by` do `meta` de toda ficha e põe a coleção Doces na estação
+   Lanches (o pain perdu é "Na hora"). Sem reseed. A `shop.0102` continua no histórico;
+   o que ela escreveu, a `0104` apaga.
+
+## Modo de produção (decisão do dono, 20/10/2026)
+
+O vocabulário é o de MRP: fabricar para estoque, fabricar sob pedido, comprar.
+
+- **Em lote** (`ProductionMode.BATCH`, o padrão): planejado, sai por ordem de produção
+  (`WorkOrder`), empurra estoque, e a ordem baixa os insumos. Pão, creme, recheio,
+  molho (o bechamel), o hot dog de lote.
+- **Na hora** (`ProductionMode.MADE_TO_ORDER`): puxado pela venda. Nunca é planejado nem
+  tem ordem de produção; o KDS o manda à estação de preparo; a venda baixa os insumos da
+  ficha, um nível só. Café, chá, croque, pain perdu.
+- **Revenda** é o SKU sem ficha vigente. Não é um modo.
+
+**Onde mora.** Campo do Core, `craftsman.Recipe.production_mode` (`craftsman.0019`), e
+não JSON: é estrutural, o próprio Core o consulta (o `craft.suggest` e a recusa de
+ordem de produção vivem no `craftsman`), e o KDS, a venda e o planejamento o leem em lote
+por SKU. Fica na ficha (o `Recipe`, cujo `ref` é o da receita do inventário), não na
+versão: publicar uma versão reescreve itens e rendimento, nunca o modo.
+
+**`is_active` é só vigente × arquivada.** O seed desligava café, chá e croque para
+tirá-los do planejamento, e isso sobrepunha "arquivada" com "montada na venda" (a
+ambiguidade 1 do Contexto). Agora toda ficha em uso é vigente, e quem tira o "Na hora"
+do plano é o modo.
+
+**Uma leitura, três usos.** `craftsman.services.production_modes_for_output_skus(skus)`
+(sku → modo da ficha vigente; sem ficha vigente = revenda, fica de fora):
+
+1. **Planejamento** só vê "Em lote": `craft.suggest`, a matriz e as opções do
+   planejamento, a mise-en-place, a finalização rápida, os relatórios de produção, a
+   sugestão por estação, a conferência de déficit a jusante, as escritas de ordem de
+   produção (`shop/services/production`, `backstage/services/production`) e o "sai do
+   forno" do aviso de estoque (`catalog_context.comes_out_of_the_oven`). O Core recusa
+   ordem de produção de ficha "Na hora" (`CraftError("MADE_TO_ORDER_RECIPE")`).
+2. **Venda** baixa só "Na hora" (`made_to_order_recipes`). Se o próprio SKU é "Em lote",
+   a venda não baixa insumo: a ordem de produção já baixou, e baixar de novo seria
+   contar duas vezes.
+3. **KDS:** o tipo de ESTAÇÃO continua (Preparo, Separação, Saída: o trabalho que a
+   estação faz). O que morreu é o KDS classificar o item sozinho ("receita ativa" era
+   preparo, `get_prep_skus`). Item "Na hora" vai à estação de Preparo, e a coleção
+   escolhe qual (Cafés × Lanches); item "Em lote" ou revenda é Separação, e só quando
+   há o que separar (pedido remoto, encomenda). No balcão presencial (`prep_only`) ele
+   nunca vira ticket. Uma estação só recebe item do tipo dela: o fallback que casava
+   item de um tipo com estação de outro pela coleção morreu (ele escondia o defeito
+   abaixo). Item "Na hora" sem estação de Preparo para a coleção fica sem rota e vira
+   o alerta `kds_unrouted_item`.
+
+**O defeito que isso fecha (medido contra o seed em 20/10/2026).** No balcão presencial
+o café e o croque não viravam ticket (eram "picking" por terem ficha inativa, e o
+`prep_only` os pulava), enquanto o pão de lote virava ticket em Encomendas (era "prep"
+por ter ficha ativa, e caía no catch-all de separação). No pedido remoto o café chegava a
+Cafés só pelo fallback de coleção. Agora: café e croque vão a Cafés e Lanches; pão, água
+e soda não tocam o KDS no balcão.
+
+**Como o dono muda o modo.** Produção → Ajustes → Receitas → Fichas de execução →
+Editar → Operação → "Modo de produção" (também na operação da receita do inventário), ou
+Admin → Fichas técnicas → a ficha → Identificação. Que estação de Preparo recebe o item é
+Admin → KDS → a estação → coleções, e a coleção principal do produto no Catálogo. O
+Gestor mostra, só para ler, "Feito na hora na estação Cafés" ou "Produzido em lote" no
+produto, com o link para a ficha.
 
 ## Impacto no ledger
 
@@ -169,7 +231,7 @@ Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda 
 ## Decisões do dono (20/10/2026)
 
 1. **Gatilho: a venda** (opção B), pela directive idempotente por pedido no ponto do
-   `stock.fulfill`, com a marca explícita `Recipe.meta.made_to_order` e um nível de ficha.
+   `stock.fulfill`, com o modo de produção "Na hora" da ficha vigente e um nível de ficha.
    Falta de insumo não trava a venda: vira alerta. Nada retroage.
 2. **Cancelamento: antes de preparado devolve, depois de preparado é perda** (regra 6).
 
@@ -182,8 +244,8 @@ Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda 
   (`create_persistently_deduped`, uma vez na vida do pedido), efeito numa transação só
   e, como guarda final, o próprio ledger (`Move.metadata.source` = `sale`/`sale_cancel`
   com o `order_ref`). O `Order.data["made_to_order_consumption"]` é rastro, não guarda.
-- Alertas: `stock_sale_ingredient_short` (um ativo por insumo, não por pedido) e
-  `stock_sale_recipe_ambiguous`.
+- Alerta: `stock_sale_ingredient_short` (um ativo por insumo, não por pedido). O
+  `stock_sale_recipe_ambiguous` morreu com a marca: a ficha vigente é uma só por SKU.
 - Mudança de Core: só o argumento opcional `metadata` em `StockMovements.issue`. Medida:
   `Move.metadata` existia, mas o único jeito de o `issue` gravá-lo era nenhum, e sem ele
   o `MAKE` da venda e o da fornada são indistinguíveis no ledger (o `reason` é texto
@@ -207,10 +269,11 @@ Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda 
 ## Consequências
 
 - Uma directive nova (`stock.consume_made_to_order` e a inversa) e um handler no
-  orquestrador; nenhuma mudança de modelo.
+  orquestrador. Um campo novo no Core: `Recipe.production_mode` (ver "Modo de produção").
 - `StockMovements.issue` aceita `metadata` opcional.
-- O seed marca `made_to_order` nas 21 fichas de montagem e bebida; a irmã do
-  `test_massa_de_cada_peca.py` é `backstage/tests/test_ficha_feita_na_hora.py`.
-  A migração `shop.0102` leva a mesma marca ao banco já semeado.
+- O seed dá o modo "Na hora" às 21 fichas de montagem e bebida, todas vigentes; a irmã
+  do `test_massa_de_cada_peca.py` é `backstage/tests/test_ficha_feita_na_hora.py`, que
+  roda o seed e prova o roteamento do KDS no balcão e no remoto. A migração `shop.0104`
+  leva o mesmo modo ao banco já semeado.
 - O guardrail `INVENTORY_BACKEND` e o alerta de reposição passam a ver consumo real de
   café, chá e recheio.

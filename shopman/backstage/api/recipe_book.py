@@ -31,6 +31,7 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.craftsman.models import ProductionMode
 
 from shopman.backstage.projections.recipe_book import (
     build_capture_draft,
@@ -82,6 +83,8 @@ _KINDS = ("bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", 
 _RECIPE_SORTS = ("updated", "name", "kind")
 #: Ordenação do cadastro direto da ficha de execução.
 _RECIPE_SHEET_SORTS = ("updated", "name", "output", "active")
+#: ``?mode=`` do inventário e das fichas: os valores de ``ProductionMode``.
+_PRODUCTION_MODES = tuple(str(value) for value in ProductionMode.values)
 
 
 def _positive_int(value, *, default: int, maximum: int) -> int:
@@ -214,6 +217,12 @@ class RecipeBookListView(ServerTimingMixin, _RecipeBookBase):
                 {"detail": "Ordenação desconhecida.", "field": "sort", "errors": {"sort": ["Ordenação desconhecida."]}},
                 status=400,
             )
+        mode = str(request.query_params.get("mode") or "").strip()
+        if mode and mode not in _PRODUCTION_MODES:
+            return Response(
+                {"detail": "Modo de produção desconhecido.", "field": "mode", "errors": {"mode": ["Modo de produção desconhecido."]}},
+                status=400,
+            )
         book = build_recipe_book(
             query=request.query_params.get("q", ""),
             kind=kind,
@@ -223,6 +232,7 @@ class RecipeBookListView(ServerTimingMixin, _RecipeBookBase):
             only_with_draft=request.query_params.get("with_draft", "") in ("1", "true", "yes"),
             only_favorites=request.query_params.get("favorites", "") in ("1", "true", "yes"),
             only_unreviewed=request.query_params.get("unreviewed", "") in ("1", "true", "yes"),
+            production_mode=mode,
             sort=sort,
             page=_positive_int(request.query_params.get("page"), default=1, maximum=100000),
             page_size=_positive_int(request.query_params.get("page_size"), default=48, maximum=100),
@@ -783,9 +793,16 @@ class RecipeSheetListView(_RecipeBookBase):
                 {"detail": "Ordenação desconhecida.", "field": "sort", "errors": {"sort": ["Ordenação desconhecida."]}},
                 status=400,
             )
+        mode = str(request.query_params.get("mode") or "").strip()
+        if mode and mode not in _PRODUCTION_MODES:
+            return Response(
+                {"detail": "Modo de produção desconhecido.", "field": "mode", "errors": {"mode": ["Modo de produção desconhecido."]}},
+                status=400,
+            )
         sheets = build_recipe_sheet_list(
             query=request.query_params.get("q", ""),
             active=request.query_params.get("active", ""),
+            production_mode=mode,
             sort=sort,
             page=_positive_int(request.query_params.get("page"), default=1, maximum=100000),
             page_size=_positive_int(request.query_params.get("page_size"), default=48, maximum=100),

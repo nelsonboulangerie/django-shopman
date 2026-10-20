@@ -7,7 +7,15 @@ import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 // SKU/produto, versão atual, hidratação. "Nova receita" só com `can_edit`. A estrela
 // é de cada operador (pede só a leitura), e "Favoritas" filtra as dele.
 import { isStale } from "~/presentation/production";
-import { favoriteActionHint, favoriteToggleLabel, filterEntries, needsReview } from "~/presentation/recipeBook";
+import {
+  PRODUCTION_MODE_ALL,
+  PRODUCTION_MODE_FILTER_OPTIONS,
+  PRODUCTION_MODE_MADE_TO_ORDER,
+  favoriteActionHint,
+  favoriteToggleLabel,
+  filterEntries,
+  needsReview,
+} from "~/presentation/recipeBook";
 
 useHead({ title: "Receitas" });
 
@@ -19,6 +27,8 @@ const onlyWithoutSku = ref(false);
 const onlyWithDraft = ref(false);
 const onlyFavorites = ref(false);
 const onlyUnreviewed = ref(route.query.unreviewed === "1");
+const mode = ref(typeof route.query.mode === "string" ? route.query.mode : PRODUCTION_MODE_ALL);
+const modeItems = [...PRODUCTION_MODE_FILTER_OPTIONS];
 const sort = ref("updated");
 const page = ref(1);
 
@@ -31,6 +41,7 @@ const { entries, kinds, total, pageSize, canEdit, forbidden, pending, error, ref
     withDraft: onlyWithDraft,
     favorites: onlyFavorites,
     unreviewed: onlyUnreviewed,
+    mode,
     sort,
     page,
   },
@@ -46,6 +57,7 @@ const visible = computed(() => filterEntries(
   onlyWithDraft.value,
   onlyFavorites.value,
   onlyUnreviewed.value,
+  mode.value,
 ));
 const hasFilters = computed(
   () =>
@@ -54,7 +66,8 @@ const hasFilters = computed(
     onlyWithoutSku.value ||
     onlyWithDraft.value ||
     onlyFavorites.value ||
-    onlyUnreviewed.value,
+    onlyUnreviewed.value ||
+    mode.value !== PRODUCTION_MODE_ALL,
 );
 const stale = computed(() => isStale({ error: !!error.value, hasData: entries.value.length > 0 }));
 
@@ -65,6 +78,7 @@ function clearFilters() {
   onlyWithDraft.value = false;
   onlyFavorites.value = false;
   onlyUnreviewed.value = false;
+  mode.value = PRODUCTION_MODE_ALL;
   page.value = 1;
 }
 const ALL_KINDS = "__all__";
@@ -80,7 +94,7 @@ const sortItems = [
   { value: "name", label: "Nome" },
   { value: "kind", label: "Tipo e nome" },
 ];
-watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, onlyUnreviewed, sort], () => {
+watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, onlyUnreviewed, mode, sort], () => {
   page.value = 1;
 });
 
@@ -98,6 +112,7 @@ const trailFrom = computed(() => {
   if (onlyWithDraft.value) params.set("with_draft", "1");
   if (onlyFavorites.value) params.set("favorites", "1");
   if (onlyUnreviewed.value) params.set("unreviewed", "1");
+  if (mode.value !== PRODUCTION_MODE_ALL) params.set("mode", mode.value);
   if (sort.value !== "updated") params.set("sort", sort.value);
   if (page.value > 1) params.set("page", String(page.value));
   const search = params.toString();
@@ -157,6 +172,14 @@ watch(
           value-key="value"
           class="w-48"
           aria-label="Tipo de receita"
+        />
+        <NuxtSelect
+          v-model="mode"
+          :items="modeItems"
+          value-key="value"
+          label-key="label"
+          class="w-44"
+          aria-label="Modo de produção"
         />
         <NuxtSelect
           v-model="sort"
@@ -282,6 +305,12 @@ watch(
                 v-if="entry.draft_count > 0"
                 color="warning"
                 :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
+              />
+              <NuxtBadge
+                v-if="entry.production_mode === PRODUCTION_MODE_MADE_TO_ORDER"
+                color="primary"
+                icon="i-lucide-coffee"
+                :label="entry.production_mode_label"
               />
               <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
               <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Sem ficha" />

@@ -41,7 +41,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem, WorkOrder, WorkOrderItem
 from shopman.craftsman.models.recipe import normalize_recipe_item_unit
 from shopman.guestman.models import (
     ContactPoint,
@@ -4672,8 +4672,9 @@ class Command(BaseCommand):
                     ("CREME-CHOCOLATE", Decimal("12")),   # 12 g/un
                 ],
             },
-            # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
-            # Dão custo, insumo e rótulo; não são fornada. A convenção dos
+            # ══ Seção 2b — fichas de MONTAGEM (modo "Na hora") ══════════════
+            # Vigentes como qualquer ficha; o modo de produção diz que são
+            # montadas na venda, nunca planejadas. A convenção dos
             # croques é do dono (P7): monsieur vai salada, madame vai ovo,
             # complet vai salada e ovo. O resto do croque é o da ficha da casa
             # (Croque / Tartine, Maysa 10/10/2022): pão CAMPAGNE fatiado fino,
@@ -4682,8 +4683,8 @@ class Command(BaseCommand):
             # na balança.
             #
             # A VENDA destes itens baixa o insumo da ficha (ADR-040, dono
-            # 20/10/2026): `made_to_order: True` é a marca explícita que separa
-            # "montada na venda" de "ficha desligada" (as duas são inativas).
+            # 20/10/2026): o modo "Na hora" (`production_mode`) é o que a baixa,
+            # o KDS e o planejamento leem. `is_active` é só vigente × arquivada.
             # Um nível só: o bechamel sai como bechamel. Cancelado antes de
             # preparar devolve; depois de preparado é perda.
             # `shop/services/made_to_order.py`.
@@ -4695,8 +4696,7 @@ class Command(BaseCommand):
                 "name": "Queijo-Quente",
                 "output_sku": "QJQT",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("FORMA", Decimal("110")),
                     ("REQUEIJAO-CORTE", Decimal("40")),
@@ -4711,8 +4711,7 @@ class Command(BaseCommand):
                 "name": "Croque Monsieur",
                 "output_sku": "CQMO",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4727,8 +4726,7 @@ class Command(BaseCommand):
                 "name": "Croque Madame",
                 "output_sku": "CQMA",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4743,8 +4741,7 @@ class Command(BaseCommand):
                 "name": "Croque Complet",
                 "output_sku": "CQCOM",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4763,8 +4760,7 @@ class Command(BaseCommand):
                 "name": "Jambon-Beurre",
                 "output_sku": "JB",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("BGL", Decimal("230")),     # a baguete lanche assada
                     ("PRESUNTO-CASA", Decimal("85")),
@@ -4783,8 +4779,7 @@ class Command(BaseCommand):
                 "name": "Pain Perdu",
                 "output_sku": "PERDU",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("BRNT", Decimal("26")),
                     ("CREME-LEITE-OVOS", Decimal("65")),
@@ -4794,14 +4789,13 @@ class Command(BaseCommand):
                     ("FLOR-DE-SAL", Decimal("1")),
                 ],
             },
-            # ══ Seção 2b — fichas de BEBIDA (is_active=False) ════════════════
+            # ══ Seção 2b — fichas de BEBIDA (modo "Na hora") ═════════════════
             {
                 "ref": "espresso",
                 "name": "Espresso",
                 "output_sku": "SP",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [("CAFE-ORFEU-CLASSICO", Decimal("18"))],
             },
             {
@@ -4809,8 +4803,7 @@ class Command(BaseCommand):
                 "name": "Espresso Macchiato",
                 "output_sku": "SPMC",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("21"))
@@ -4821,8 +4814,7 @@ class Command(BaseCommand):
                 "name": "Cappuccino",
                 "output_sku": "CAP",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("155"))
@@ -4833,8 +4825,7 @@ class Command(BaseCommand):
                 "name": "Mochaccino",
                 "output_sku": "CAPMO",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("155")),
@@ -4846,8 +4837,7 @@ class Command(BaseCommand):
                 "name": "Mocha",
                 "output_sku": "MOCHA",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("185")),
@@ -4859,8 +4849,7 @@ class Command(BaseCommand):
                 "name": "Caffè Latte",
                 "output_sku": "CAFL",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("227"))
@@ -4871,8 +4860,7 @@ class Command(BaseCommand):
                 "name": "Chocolate Quente",
                 "output_sku": "CHOQ",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("LEITE-INTEGRAL-A", Decimal("227")),
                     ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("30"))
@@ -4883,8 +4871,7 @@ class Command(BaseCommand):
                 "name": "Chá Camille",
                 "output_sku": "CHCAM",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-CAMILLE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4895,8 +4882,7 @@ class Command(BaseCommand):
                 "name": "Chá Rouge",
                 "output_sku": "CHROU",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-ROUGE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4907,8 +4893,7 @@ class Command(BaseCommand):
                 "name": "Chá Sophie",
                 "output_sku": "CHSOP",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-SOPHIE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4919,8 +4904,7 @@ class Command(BaseCommand):
                 "name": "Chá Bleu",
                 "output_sku": "CHBLU",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-BLEU", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4931,8 +4915,7 @@ class Command(BaseCommand):
                 "name": "Chá Hibisco",
                 "output_sku": "CHHIB",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-HIBISCO", Decimal("8")),
                     ("ACUCAR-CRISTAL", Decimal("15")),
@@ -4944,8 +4927,7 @@ class Command(BaseCommand):
                 "name": "Soft Chai Cítrico",
                 "output_sku": "SFTCH",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-CHAI", Decimal("8")),
                     ("LIMAO-SICILIANO", Decimal("20")),
@@ -4960,8 +4942,7 @@ class Command(BaseCommand):
                 "name": "Vienna",
                 "output_sku": "VIEN",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("52")),
@@ -4975,8 +4956,7 @@ class Command(BaseCommand):
                 "name": "Chá Tônica Frutas Vermelhas",
                 "output_sku": "CTFV",
                 "batch_size": Decimal("1"),
-                "is_active": False,
-                "made_to_order": True,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-FRUTAS-VERMELHAS", Decimal("8")),
                     # ⅓ da lata de 350 ml por bebida (dono, 23/09) ≈ 115 g.
@@ -5429,14 +5409,11 @@ class Command(BaseCommand):
                     "output_sku": rd["output_sku"],
                     "batch_size": rd["batch_size"],
                     "steps": rd["steps"] if "steps" in rd else self._production_steps_for_recipe(rd["ref"]),
-                    # Ficha de MONTAGEM/BEBIDA nasce inativa: dá custo, insumo
-                    # e rótulo, mas não é fornada — `craft.suggest` considera
-                    # toda ficha ativa, e croque não entra em plano de forno.
-                    "is_active": rd.get("is_active", True),
+                    # Toda ficha do seed é a vigente do SKU. O que a monta na
+                    # venda é o modo de produção, não a ficha desligada.
+                    "is_active": True,
+                    "production_mode": rd.get("production_mode", ProductionMode.BATCH),
                     "meta": {
-                        # Montada na venda (ADR-040): a venda baixa o insumo
-                        # desta ficha. Só nas fichas de montagem e bebida.
-                        **({"made_to_order": True} if rd.get("made_to_order") else {}),
                         "capacity_per_day": PROVISIONAL_CAPACITY_PER_DAY[rd["ref"]],
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
                         "requires_batch_tracking": shelf_life_days is not None,
@@ -8281,13 +8258,17 @@ class Command(BaseCommand):
 
         # Get collections for KDS routing
         col_salgados = Collection.objects.filter(ref="salgados").first()
+        col_doces = Collection.objects.filter(ref="doces").first()
         col_bebidas_quentes = Collection.objects.filter(ref="bebidas-quentes").first()
         col_bebidas_geladas = Collection.objects.filter(ref="bebidas-geladas").first()
 
         # Remove old KDS instances that no longer exist
         KDSInstance.objects.filter(ref__in=["paes", "folhados", "salgados"]).delete()
 
-        # KDS Lanches — Prep: montagem de lanches e salgados na hora
+        # KDS Lanches — Prep: montagem de lanches e salgados na hora. Uma
+        # estação só recebe item do tipo dela: daqui só passa o que é "Na hora"
+        # (croque, queijo-quente, o pain perdu dos doces); o salgado e o doce
+        # de lote, prontos, são separação.
         kds_lanches, _ = KDSInstance.objects.update_or_create(
             ref="lanches",
             defaults={
@@ -8299,7 +8280,7 @@ class Command(BaseCommand):
             },
         )
         kds_lanches.collections.clear()
-        for col in [col_salgados]:
+        for col in [col_salgados, col_doces]:
             if col:
                 kds_lanches.collections.add(col)
 

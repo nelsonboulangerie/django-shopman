@@ -100,12 +100,13 @@ baixa na venda descer até a folha, desconta o que a produção já descontou.
   código. Depende da resposta 1.
   ✅ **Decidida** em [ADR-040](../decisions/adr-040-baixa-de-insumo-na-venda-do-feito-na-hora.md)
   (proposta 19/10, **aceita pelo dono em 20/10/2026**): directive na venda, um nível
-  de ficha, marca explícita `made_to_order`. Cancelamento: antes de preparado devolve,
+  de ficha, modo de produção "Na hora" da ficha vigente (`Recipe.production_mode`,
+  que em 20/10/2026 substituiu a marca `meta.made_to_order`). Cancelamento: antes de preparado devolve,
   depois de preparado é perda ("preparado" = ticket do KDS iniciado ou concluído; sem
   ticket, conta como preparado).
 - **F2 — o consumo, escritor único.** ✅ Entregue por **directive** (não signal: a
   ADR-040 escolheu a opção B), `shop/services/made_to_order.py`. `issue(kind=MAKE)`
-  dos itens da ficha marcada `made_to_order`, com `metadata.source="sale"`, a mesma
+  dos itens da ficha vigente "Na hora", com `metadata.source="sale"`, a mesma
   política greedy/present-stock-first da produção; shortfall **não fatal**, mas
   **registrado** (alerta `stock_sale_ingredient_short`). O cancelamento acerta pela
   regra do preparo (`RETURN` ou `WASTE`). Os **adicionais** escolhidos no produto

@@ -10143,6 +10143,7 @@
             "fired_line_ids",
             "_order_to_lines",
             "order_lines",
+            "_made_to_order_skus",
             "_match_instances",
             "_build_routable_items"
           ]
@@ -18229,7 +18230,6 @@
         {
           "path": "shopman/shop/services/made_to_order.py",
           "symbols": [
-            "MADE_TO_ORDER_KEY",
             "SOURCE_SALE",
             "SOURCE_SALE_CANCEL",
             "OUTCOME_RETURNED",
@@ -18237,7 +18237,6 @@
             "ORDER_DATA_KEY",
             "CONSUME_RECEIPT_SCOPE",
             "SETTLE_RECEIPT_SCOPE",
-            "AmbiguousRecipe",
             "made_to_order_recipes",
             "_sold_components",
             "_one_level_requirements",

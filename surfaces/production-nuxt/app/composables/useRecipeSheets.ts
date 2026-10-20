@@ -35,6 +35,7 @@ function sheetUrl(ref: string): string {
 
 export interface SheetServerFilters {
   active?: Ref<string>;
+  mode?: Ref<string>;
   sort?: Ref<string>;
   page?: Ref<number>;
   pageSize?: Ref<number>;
@@ -51,6 +52,7 @@ export function useRecipeSheets(query: Ref<string>, filters: SheetServerFilters 
         filters.sort?.value ?? "updated",
         filters.page?.value ?? 1,
         filters.pageSize?.value ?? 48,
+        filters.mode?.value ?? "",
       ),
     ),
   });

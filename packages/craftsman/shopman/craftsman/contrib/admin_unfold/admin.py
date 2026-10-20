@@ -389,9 +389,10 @@ class RecipeAdmin(BaseModelAdmin):
         "name",
         "output_sku",
         "batch_size",
+        "production_mode",
         "is_active",
     ]
-    list_filter = ["is_active"]
+    list_filter = ["production_mode", "is_active"]
     search_fields = ["ref", "name", "output_sku"]
     ordering = ["name"]
     prepopulated_fields = {"ref": ("name",)}
@@ -401,7 +402,7 @@ class RecipeAdmin(BaseModelAdmin):
     fieldsets = (
         (
             _("Identificação"),
-            {"fields": ("ref", "name", "is_active")},
+            {"fields": ("ref", "name", "production_mode", "is_active")},
         ),
         (
             _("BOM"),

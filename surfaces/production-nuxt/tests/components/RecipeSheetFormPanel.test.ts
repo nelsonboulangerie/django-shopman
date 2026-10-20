@@ -92,7 +92,7 @@ function sheetFixture(over: Record<string, unknown> = {}) {
       { input_sku: "FARINHA-T55", name: "Farinha", quantity: "1.5", unit: "kg", usable_factor: "1", gross_quantity: "1.5", correction_factor: "1", sort_order: 0, is_optional: false, note: "" },
     ],
     mass_balance: { status: "ok", output_unit: "kg", batch_display: "1,7 kg", total_display: "1,5 kg", message: "", tone: "ok" },
-    execution: { exists: true, ref: "pao-tradicao", revision: "rev-1", max_started_minutes: 90, capacity_per_day: "120", requires_batch_tracking: true, shelf_life_days: 3, shelf_life_reviewed: true, shelf_life_reviewed_by: "Pablo", production_lifecycle: "standard", lifecycle_options: [] },
+    execution: { exists: true, ref: "pao-tradicao", revision: "rev-1", max_started_minutes: 90, capacity_per_day: "120", requires_batch_tracking: true, shelf_life_days: 3, shelf_life_reviewed: true, shelf_life_reviewed_by: "Pablo", production_lifecycle: "standard", lifecycle_options: [], production_mode: "batch", production_mode_options: [{ value: "batch", label: "Em lote" }, { value: "made_to_order", label: "Na hora" }] },
     has_entry: true,
     entry_ref: "pao-tradicao",
     ...over,
@@ -152,6 +152,40 @@ describe("RecipeSheetFormPanel", () => {
     expect(payload.name).toBe("Pão novo");
     expect(payload.expectedRevision).toBe("rev-1");
     expect(payload.steps).toEqual([{ name: "Mistura" }]);
+  });
+});
+
+describe("RecipeSheetFormPanel · modo de produção", () => {
+  const radios = (wrapper: ReturnType<typeof mount>) =>
+    wrapper.find('[data-testid="sheet-production-mode"]').findAll('[role="radio"]');
+
+  it("mostra Em lote e Na hora com a linha de ajuda, semeado da ficha", async () => {
+    const wrapper = mount(RecipeSheetFormPanel, { props: { open: true, sheet: sheetFixture() }, global: { stubs } });
+    await nextTick();
+    expect(radios(wrapper).map((radio) => radio.text())).toEqual(["Em lote", "Na hora"]);
+    expect(radios(wrapper)[0]!.attributes("aria-checked")).toBe("true");
+    expect(wrapper.text()).toContain("Em lote: planejado e estocado. Na hora: feito quando vende, baixa os insumos na venda.");
+    expect(wrapper.text()).not.toContain("—");
+  });
+
+  it("trocar para Na hora manda productionMode no corpo, sem mexer na ficha ativa", async () => {
+    const wrapper = mount(RecipeSheetFormPanel, { props: { open: true, sheet: sheetFixture() }, global: { stubs } });
+    await nextTick();
+    await radios(wrapper)[1]!.trigger("click");
+    await nextTick();
+    await wrapper.findAll("button").find((button) => button.text() === "Salvar")!.trigger("click");
+    const payload = wrapper.emitted("save")?.[0]?.[0] as Record<string, unknown>;
+    expect(payload.productionMode).toBe("made_to_order");
+    expect(payload.is_active).toBe(true);
+  });
+
+  it("ficha nova nasce Em lote", async () => {
+    const wrapper = mount(RecipeSheetFormPanel, { props: { open: true, sheet: null }, global: { stubs } });
+    await fillCreate(wrapper);
+    expect(radios(wrapper)[0]!.attributes("aria-checked")).toBe("true");
+    await wrapper.findAll("button").find((button) => button.text() === "Salvar")!.trigger("click");
+    const payload = wrapper.emitted("save")?.[0]?.[0] as Record<string, unknown>;
+    expect(payload.productionMode).toBe("batch");
   });
 });
 

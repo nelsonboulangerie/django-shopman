@@ -29,6 +29,7 @@ export interface RecipeBookServerFilters {
   withDraft?: Ref<boolean>;
   favorites?: Ref<boolean>;
   unreviewed?: Ref<boolean>;
+  mode?: Ref<string>;
   sort?: Ref<string>;
   page?: Ref<number>;
   pageSize?: Ref<number>;
@@ -48,6 +49,7 @@ export function useRecipeBook(
       withDraft: filters.withDraft?.value,
       favorites: filters.favorites?.value,
       unreviewed: filters.unreviewed?.value,
+      mode: filters.mode?.value,
       sort: filters.sort?.value,
       page: filters.page?.value,
       pageSize: filters.pageSize?.value,

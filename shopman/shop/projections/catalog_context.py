@@ -163,9 +163,9 @@ def comes_out_of_the_oven(sku: str) -> bool:
     if product is not None and product.is_batch_produced:
         return True
     try:
-        from shopman.craftsman.models import Recipe
+        from shopman.craftsman.models import ProductionMode, Recipe
 
-        return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+        return Recipe.objects.filter(output_sku=sku, is_active=True, production_mode=ProductionMode.BATCH).exists()
     except Exception:
         logger.debug("catalog_context.comes_out_of_the_oven degraded sku=%s", sku, exc_info=True)
         return False

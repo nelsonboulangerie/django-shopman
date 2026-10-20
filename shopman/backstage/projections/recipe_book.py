@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 
 from django.db.models import Count, Q
 from django.utils import timezone
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeEntry, RecipeVersion
 from shopman.craftsman.services.recipe_book import (
     BAKERY_KINDS,
     REFERENCE_RANGES,
@@ -148,6 +148,9 @@ class RecipeEntryCardProjection:
     output_sku: str
     output_name: str
     has_ficha: bool
+    #: Modo de produção da ficha vigente (``batch`` | ``made_to_order``); vazio sem ficha.
+    production_mode: str
+    production_mode_label: str
     current_version_number: int | None
     version_count: int
     draft_count: int
@@ -477,6 +480,14 @@ class LifecycleOptionProjection:
 
 
 @dataclass(frozen=True)
+class ProductionModeOptionProjection:
+    """Uma escolha do modo de produção ("Em lote", "Na hora")."""
+
+    value: str
+    label: str
+
+
+@dataclass(frozen=True)
 class ExecutionSheetProjection:
     """Configuração operacional da ficha que a versão publicada materializa."""
 
@@ -491,6 +502,9 @@ class ExecutionSheetProjection:
     shelf_life_reviewed_by: str
     production_lifecycle: str
     lifecycle_options: tuple[LifecycleOptionProjection, ...]
+    #: ``Recipe.production_mode``: "Em lote" (planejado e estocado) ou "Na hora".
+    production_mode: str
+    production_mode_options: tuple[ProductionModeOptionProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -532,6 +546,8 @@ class RecipeSheetCardProjection:
     batch_size: str
     item_count: int
     is_active: bool
+    production_mode: str
+    production_mode_label: str
     has_entry: bool
     updated_at_display: str
 
@@ -1014,6 +1030,7 @@ def build_recipe_book(
     only_with_draft: bool = False,
     only_favorites: bool = False,
     only_unreviewed: bool = False,
+    production_mode: str = "",
     sort: str = "updated",
     page: int = 1,
     page_size: int = 48,
@@ -1038,6 +1055,10 @@ def build_recipe_book(
     if term:
         entries_qs = entries_qs.filter(
             Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term)
+        )
+    if production_mode:
+        entries_qs = entries_qs.filter(
+            ref__in=Recipe.objects.filter(is_active=True, production_mode=production_mode).values("ref")
         )
     if only_without_sku:
         entries_qs = entries_qs.filter(output_sku="")
@@ -1068,14 +1089,16 @@ def build_recipe_book(
     start = (current - 1) * size
     entries = list(entries_qs[start : start + size])
     names = _output_names({entry.output_sku for entry in entries if entry.output_sku})
-    ficha_refs = set(
-        Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list("ref", flat=True)
+    ficha_modes = dict(
+        Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list(
+            "ref", "production_mode"
+        )
     )
     ratings = recipe_ratings.overall_by_entry(
         [entry.ref for entry in entries],
         {entry.ref: entry.current_version.number for entry in entries if entry.current_version is not None},
     )
-    cards = tuple(_card(entry, names, ficha_refs, favorites, ratings) for entry in entries)
+    cards = tuple(_card(entry, names, ficha_modes, favorites, ratings) for entry in entries)
     return RecipeBookListProjection(
         entries=cards,
         kinds=_kind_options(),
@@ -1091,7 +1114,7 @@ def build_recipe_book(
 def _card(
     entry: RecipeEntry,
     names: dict[str, str],
-    ficha_refs: set[str],
+    ficha_modes: dict[str, str],
     favorites: set[str],
     ratings: dict[str, tuple[Decimal | None, int]],
 ) -> RecipeEntryCardProjection:
@@ -1109,7 +1132,9 @@ def _card(
         kind_label=_kind_label(entry.kind),
         output_sku=entry.output_sku,
         output_name=names.get(entry.output_sku, "") if entry.output_sku else "",
-        has_ficha=entry.ref in ficha_refs,
+        has_ficha=entry.ref in ficha_modes,
+        production_mode=ficha_modes.get(entry.ref, ""),
+        production_mode_label=_production_mode_label(ficha_modes.get(entry.ref, "")),
         current_version_number=current.number if current is not None else None,
         version_count=int(getattr(entry, "version_total", 0) or 0),
         draft_count=int(getattr(entry, "draft_total", 0) or 0),
@@ -1197,6 +1222,8 @@ def _execution_sheet(recipe: Recipe | None) -> ExecutionSheetProjection:
             shelf_life_reviewed_by="",
             production_lifecycle=choices[0].value if choices else "",
             lifecycle_options=choices,
+            production_mode=ProductionMode.BATCH,
+            production_mode_options=_production_mode_options(),
         )
 
     meta = recipe.meta or {}
@@ -1222,7 +1249,20 @@ def _execution_sheet(recipe: Recipe | None) -> ExecutionSheetProjection:
         shelf_life_reviewed_by=str(meta.get("shelf_life_reviewed_by") or "") if reviewed else "",
         production_lifecycle=lifecycle,
         lifecycle_options=choices,
+        production_mode=str(recipe.production_mode),
+        production_mode_options=_production_mode_options(),
     )
+
+
+def _production_mode_options() -> tuple[ProductionModeOptionProjection, ...]:
+    return tuple(
+        ProductionModeOptionProjection(value=str(value), label=str(label))
+        for value, label in ProductionMode.choices
+    )
+
+
+def _production_mode_label(mode: str) -> str:
+    return str(dict(ProductionMode.choices).get(mode, "")) if mode else ""
 
 
 def _safe_int(value: Any, *, minimum: int) -> int | None:
@@ -1872,13 +1912,17 @@ def resolve_recipe_book_access(user) -> RecipeBookAccessProjection:
 # ── Ficha de execução: lista e detalhe ──────────────────────────────────────
 
 
-def build_recipe_sheet_list(*, query="", active="", sort="updated", page=1, page_size=48) -> RecipeSheetListProjection:
+def build_recipe_sheet_list(
+    *, query="", active="", production_mode="", sort="updated", page=1, page_size=48
+) -> RecipeSheetListProjection:
     """As fichas de execução, com busca por nome/ref/SKU e recorte por situação."""
     sheets_qs = Recipe.objects.annotate(item_count=Count("items"))
     if active in ("1", "true", "yes"):
         sheets_qs = sheets_qs.filter(is_active=True)
     elif active in ("0", "false", "no"):
         sheets_qs = sheets_qs.filter(is_active=False)
+    if production_mode:
+        sheets_qs = sheets_qs.filter(production_mode=production_mode)
     term = (query or "").strip()
     if term:
         sheets_qs = sheets_qs.filter(Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term))
@@ -1919,6 +1963,8 @@ def _sheet_card(sheet: Recipe, names: dict[str, str], entry_refs: set[str]) -> R
         batch_size=_plain_number(sheet.batch_size),
         item_count=int(getattr(sheet, "item_count", 0) or 0),
         is_active=bool(sheet.is_active),
+        production_mode=str(sheet.production_mode),
+        production_mode_label=_production_mode_label(sheet.production_mode),
         has_entry=sheet.ref in entry_refs,
         updated_at_display=_datetime_display(sheet.updated_at),
     )
