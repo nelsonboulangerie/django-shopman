@@ -30,6 +30,7 @@ from shopman.shop.projections.types import (
     CategoryProjection,
 )
 from shopman.storefront.identity import customer_pricing_hints
+from shopman.storefront.presentation.catalog import viewer_collection_access
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
 from shopman.storefront.presentation.types import ComponentProjection
 
@@ -256,6 +257,11 @@ def build_product_detail(
     base_q = listed_q if listed_q is not None else product.base_price_q
 
     sku_collections = catalog_context.collection_refs_by_sku([product.sku]).get(product.sku, [])
+    # Produto que só existe em coleção exclusiva de grupo: para quem não é do grupo
+    # (anônimo incluído) ele não existe, como a página da coleção (404). A regra é a
+    # do cardápio; o link direto não abre o que o cardápio esconde.
+    if viewer_collection_access(request).hides_product(sku_collections):
+        return None
 
     ft_hint, sub_hint = session_pricing_hints(request)
     tier_hint, segment_hint = customer_pricing_hints(request)

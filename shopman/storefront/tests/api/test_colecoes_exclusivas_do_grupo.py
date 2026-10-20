@@ -10,6 +10,8 @@ borda), e a resolução é UMA consulta, qualquer que seja o tamanho do cardápi
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from django.db import connection
 from django.test import Client
@@ -171,3 +173,125 @@ def test_resolucao_em_lote_o_cardapio_anonimo_nao_cresce_com_a_colecao(cardapio)
     before = _count(anon)
     _grow_exclusive(8)
     assert _count(anon) == before
+
+
+# ── Link direto e sacola (frente 3b) ─────────────────────────────────────────
+# O #1916 escondia a coleção do cardápio, mas a página do produto abria pelo link
+# direto e a sacola aceitava o item. Agora a decisão do cardápio vale também ali.
+
+
+def _put_sku(client: Client, sku: str, qty: int = 1):
+    return client.put(f"/api/v1/cart/skus/{sku}/", data=json.dumps({"qty": qty}), content_type="application/json")
+
+
+def _cart_skus(client: Client) -> set[str]:
+    body = client.get("/api/v1/storefront/cart/").json()
+    return {line["sku"] for line in (body.get("cart") or body)["items"]}
+
+
+def test_pagina_do_produto_exclusivo_e_404_para_quem_nao_e_do_grupo(cardapio):
+    ana, beto = cardapio
+    assert Client().get("/api/v1/storefront/products/BRIGADEIRO/").status_code == 404
+    assert Client().get("/api/v1/catalog/products/BRIGADEIRO/").status_code == 404
+
+    outsider = Client()
+    _login_as_customer(outsider, beto)
+    assert outsider.get("/api/v1/storefront/products/BRIGADEIRO/").status_code == 404
+
+    member = Client()
+    _login_as_customer(member, ana)
+    assert member.get("/api/v1/storefront/products/BRIGADEIRO/").status_code == 200
+
+    # Produto comum segue aberto a todos.
+    assert Client().get("/api/v1/storefront/products/PAO-FRANCES/").status_code == 200
+
+
+def test_produto_tambem_numa_colecao_comum_abre_pelo_link(cardapio):
+    CollectionItem.objects.create(
+        collection=Collection.objects.get(ref="paes"), product=Product.objects.get(sku="BRIGADEIRO"), sort_order=99,
+    )
+    assert Client().get("/api/v1/storefront/products/BRIGADEIRO/").status_code == 200
+
+
+@pytest.mark.parametrize("who", ["anonimo", "fora_do_grupo"])
+def test_sacola_recusa_o_exclusivo_a_quem_nao_e_do_grupo(cardapio, who):
+    _, beto = cardapio
+    client = Client()
+    if who == "fora_do_grupo":
+        _login_as_customer(client, beto)
+
+    response = _put_sku(client, "BRIGADEIRO")
+
+    assert response.status_code == 403, response.content[:300]
+    body = response.json()
+    assert body["error_code"] == "group_exclusive"
+    assert body["field"] == "sku" and body["errors"]["sku"] == [body["detail"]]
+    assert body["skus"] == ["BRIGADEIRO"]
+    assert "exclusivo de um grupo" in body["detail"]
+    assert ("entre na sua conta" in body["detail"]) is (who == "anonimo")
+    assert "BRIGADEIRO" not in _cart_skus(client)
+
+
+def test_sacola_com_escolhas_tambem_recusa(cardapio):
+    response = Client().post(
+        "/api/v1/cart/lines/",
+        data={"sku": "BRIGADEIRO", "qty": 1, "options": [{"group": "sabor", "ref": "x"}]},
+        content_type="application/json",
+    )
+    assert response.status_code == 403, response.content[:300]
+    assert response.json()["error_code"] == "group_exclusive"
+
+
+def test_membro_poe_o_exclusivo_na_sacola_e_o_anonimo_o_comum(cardapio):
+    ana, _ = cardapio
+    member = Client()
+    _login_as_customer(member, ana)
+    assert _put_sku(member, "BRIGADEIRO").status_code == 200
+    assert "BRIGADEIRO" in _cart_skus(member)
+
+    assert _put_sku(Client(), "PAO-FRANCES").status_code == 200
+
+
+def test_checkout_recusa_o_exclusivo_de_quem_saiu_do_grupo(cardapio):
+    from django.utils import timezone
+    from shopman.orderman.models import Order
+
+    from shopman.storefront.services.pickup_slots import get_slots
+    from shopman.storefront.tests._checkout_baseline import with_baseline
+
+    ana, _ = cardapio
+    client = Client()
+    _login_as_customer(client, ana)
+    assert _put_sku(client, "BRIGADEIRO").status_code == 200
+    ana.price_tiers.clear()  # saiu do grupo com o item já na sacola
+
+    payload = with_baseline(client, {
+        "name": "Ana", "phone": "+5543999990001",
+        "fulfillment_type": "pickup",
+        "delivery_date": timezone.localdate().isoformat(),
+        "delivery_time_slot": get_slots()[-1]["ref"],
+        "payment_method": "cash",
+    })
+    response = client.post("/api/v1/checkout/", data=payload, content_type="application/json")
+
+    assert response.status_code == 403, response.content[:400]
+    body = response.json()
+    assert (body["error_code"], body["field"], body["skus"]) == ("group_exclusive", "items", ["BRIGADEIRO"])
+    assert not Order.objects.exists()
+
+
+def test_portao_da_sacola_tem_custo_fixo_para_o_anonimo(cardapio):
+    """O anônimo não ganha consulta por item: 1 item ou 10, o portão custa o mesmo."""
+    from django.test import RequestFactory
+
+    from shopman.storefront.cart import refuse_group_exclusive
+
+    def cost(skus) -> int:
+        request = RequestFactory().get("/")
+        with CaptureQueriesContext(connection) as ctx:
+            refuse_group_exclusive(request, skus)
+        return len(ctx.captured_queries)
+
+    common = list(Product.objects.exclude(sku__in=DOCES).values_list("sku", flat=True))
+    assert len(common) >= 10
+    assert cost(common[:1]) == cost(common)

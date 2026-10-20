@@ -74,6 +74,29 @@ def without_exclusive_only_products(qs):
     return qs.exclude(pk__in=exclusive_only_product_ids(access))
 
 
+def group_exclusive_skus(skus, *, request=None, collection_refs_by_sku=None) -> set[str]:
+    """Dos ``skus``, os que são de um grupo que o visitante não integra.
+
+    A decisão é a do cardápio (``CollectionAccess.hides_product``): a página do
+    produto, a sacola e o checkout não abrem o que o cardápio esconde. Sem
+    ``request`` é o anônimo (rota pública). Custo fixo, qualquer que seja o número
+    de itens: a leitura das vantagens (guardada no request) e, só se há coleção
+    escondida, UMA leitura das coleções dos ``skus`` (ou nenhuma, quando o
+    chamador já as tem em ``collection_refs_by_sku``).
+    """
+    from shopman.storefront.presentation.catalog import viewer_collection_access
+
+    wanted = sorted({str(sku) for sku in skus if sku})
+    if not wanted:
+        return set()
+    access = viewer_collection_access(request)
+    if not access.hidden:
+        return set()
+    if collection_refs_by_sku is None:
+        collection_refs_by_sku = catalog_context.collection_refs_by_sku(wanted)
+    return {sku for sku in wanted if access.hides_product(collection_refs_by_sku.get(sku, ()))}
+
+
 def search_index(catalog) -> list[dict]:
     """Build the lightweight client-side search index for the menu overlay."""
     seen: set[str] = set()
