@@ -146,9 +146,12 @@ escreve os `MAKE` de uma vez.
    fica como está.
 8. **Pré-condição:** as fichas marcadas como feitas na hora conferidas pelo dono
    (WP-RECEITAS-DA-CASA F1). Baixa automática em ficha errada desconta o insumo errado
-   para sempre. A marca nasce no seed; num banco já semeado (o alpha), ela só chega com
-   reseed ou marcada à mão na ficha (Admin), e as duas coisas pedem a palavra do dono.
-   Sem a marca, nada baixa: o código entra no ar inerte.
+   para sempre. A marca nasce no seed; no banco já semeado (o alpha) ela chega pela
+   migração de dados `shop.0102_fichas_feitas_na_hora`, que marca as MESMAS 21 fichas
+   pelo `ref` (lista única, travada contra o seed em
+   `backstage/tests/test_ficha_feita_na_hora.py`), deixa de fora a ficha ausente ou
+   ativa, não toca em mais nada e, no reverse, desmarca só o que ela marcou
+   (`Recipe.meta.made_to_order_marked_by`). Sem reseed.
 
 ## Impacto no ledger
 
@@ -196,5 +199,6 @@ Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda 
 - `StockMovements.issue` aceita `metadata` opcional.
 - O seed marca `made_to_order` nas 21 fichas de montagem e bebida; a irmã do
   `test_massa_de_cada_peca.py` é `backstage/tests/test_ficha_feita_na_hora.py`.
+  A migração `shop.0102` leva a mesma marca ao banco já semeado.
 - O guardrail `INVENTORY_BACKEND` e o alerta de reposição passam a ver consumo real de
   café, chá e recheio.
