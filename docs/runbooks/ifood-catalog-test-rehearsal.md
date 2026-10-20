@@ -16,8 +16,10 @@ ensaio. Não substitua nenhum deles por recurso de outra loja:
    `16baacff-c490-5805-872a-44210ae4d721`;
 4. categoria inicial e de restauração `Categoria Item Normal`
    (`1d097d39-0ce0-47a6-ad6b-1ab9f4d9692a`);
-5. categoria temporária do movimento `Categoria Pizza`
-   (`1470ab8d-bf8c-4ac6-9b87-9394b25c559a`).
+5. categoria temporária do movimento `Categoria Bebida`
+   (`e4f00b97-ad97-4fe2-aad6-7c2026815e6c`, template `DEFAULT`). A `Categoria Pizza`
+   (`1470ab8d-bf8c-4ac6-9b87-9394b25c559a`) **não serve**: tem template `PIZZA`, e o iFood
+   recusa com `400` um item `DEFAULT` nela (provado em 20/10, 21:18:32 UTC).
 
 As credenciais do app de teste já estão no `.env` local ignorado pelo Git, e o `client_id` confere
 com o app documentado `NB Teste (C)`. Carregue-as diretamente desse arquivo no runtime isolado; não
@@ -28,11 +30,12 @@ copie valores para terminal gravado, arquivo novo, banco, log, captura, document
 As frentes de categoria, identidade, PATCH, foto e tela precisam estar mergeadas. No turno 5b de
 20/10/2026, #1927, #1928, #1905, #1931, #1947 e #1948 já estavam no `main` (`65b658d31`).
 
-A execução desse turno parou na conferência do preço: o PATCH confirmou `price.value`, mas o
-GET deixou de incluir `originalValue`. O item foi restaurado integralmente. Veja os recibos e
-os passos não executados em `docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md`. Antes de uma nova
-execução, explicite o critério de `originalValue`; não classifique a aprovação de `price.value`
-pelo adapter como aprovação da preservação de todo o objeto `price`.
+A primeira execução (turno 5b) parou na conferência do preço: o PATCH só com `value` fez o
+iFood apagar `originalValue`. O critério foi fechado pela coordenação (o item fica idêntico ao
+baseline, exceto o campo pretendido) e o adapter passou a mandar `value` e `originalValue`.
+A segunda execução (turno 5c) provou preço, alterações rápidas e descrição, e parou no
+movimento de categoria por causa do destino `PIZZA`. Recibos de ambas em
+`docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md`. Falta: categoria e foto.
 
 ## Preparação segura
 
@@ -66,7 +69,8 @@ não repita manualmente com outra chave.
 1. **Pausar:** pause o item pelo controle canônico. Confirme `UNAVAILABLE` no GET remoto e confirme
    que preço, descrição, categoria, índice, turnos, `imagePath` e contextos não mudaram.
 2. **Retomar:** retome o mesmo item. Confirme `AVAILABLE` e os mesmos campos preservados.
-3. **Preço:** aplique um preço temporário inequivocamente diferente. Confirme o valor no GET remoto
+3. **Preço:** com o item **retomado** (pausado, o handler recolhe o item e não manda preço),
+   aplique um preço temporário inequivocamente diferente. Confirme o valor no GET remoto
    e prove que o PATCH não enviou texto, categoria, índice, turnos, imagem ou contextos.
 4. **Alterações rápidas:** ainda com o envio observado, aplique dois preços em sequência e depois
    pausa/retomada em sequência. O estado final remoto deve ser exatamente a última intenção; não
@@ -76,6 +80,7 @@ não repita manualmente com outra chave.
    complementos e contextos.
 6. **Categoria:** mova explicitamente o item para a categoria de teste. Confirme o `categoryId`
    vinculado, sem criar categoria homônima nem trocar `itemId`/`productId`.
+   O `PUT items` é eventualmente consistente: espere ~3 s e leia de novo antes de concluir.
 7. **Foto:** envie a foto descartável pelo fluxo próprio. Confirme o `imagePath` novo na leitura
    remota e confirme que nenhum teste ou captura buscou a URL pública da imagem.
 
@@ -86,7 +91,9 @@ de autorização, token, segredo ou resposta integral com dados desnecessários.
 ## Restauração
 
 1. Restaure foto, categoria, descrição, preço e status para os valores exatos do baseline, nessa
-   ordem, usando novas intenções explícitas.
+   ordem, usando novas intenções explícitas. O adapter nunca apaga foto (PUT sem
+   `imagePath` preserva a que existe); o caminho previsto é um `PUT items` explícito com
+   `imagePath: ""`, **ainda não provado**. Se o iFood não limpar a foto assim, registre e pare.
 2. Faça outra captura completa em arquivo novo. Compare item, produto, categoria, complementos,
    índice, turnos e contextos com o baseline.
 3. A restauração só termina quando a leitura remota coincide e não há diretiva pendente para o SKU.

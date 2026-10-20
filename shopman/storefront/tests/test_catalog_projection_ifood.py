@@ -652,7 +652,7 @@ def test_adapter_price_change_uses_specific_patch_and_confirms_read(
     assert url.endswith(f"/catalog/v2.0/merchants/{ifood_settings['merchant_id']}/items/price")
     assert kwargs["json"] == {
         "itemId": kwargs["json"]["itemId"],
-        "price": {"value": 3.5},
+        "price": {"value": 3.5, "originalValue": 3.5},
     }
     assert set(kwargs["json"]) == {"itemId", "price"}
     mock_get.assert_called_once()

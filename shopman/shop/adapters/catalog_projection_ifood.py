@@ -28,7 +28,9 @@ Structure: **Merchant → Catálogos → Categorias → Itens**.
   "AVAILABLE"|"UNAVAILABLE"}``.
 
 - **Change price** — ``PATCH /catalog/v2.0/merchants/{mid}/items/price`` with
-  only ``itemId`` and ``price``. Both PATCH paths are confirmed by reading
+  only ``itemId`` and ``price``. ``price`` carries ``value`` and ``originalValue``
+  with the same number, as the upsert does: sending only ``value`` makes iFood
+  drop ``originalValue`` from the item. Both PATCH paths are confirmed by reading
   ``GET /items/{itemId}/flat`` before the projection is reported as synced.
 
 Authentication is OAuth 2.0 ``client_credentials`` via
@@ -411,7 +413,7 @@ def _patch_item_price(
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/price"
     resp = requests.patch(
         url,
-        json={"itemId": item_id, "price": {"value": value}},
+        json={"itemId": item_id, "price": {"value": value, "originalValue": value}},
         headers=headers,
         timeout=int(cfg.get("timeout") or 30),
     )
