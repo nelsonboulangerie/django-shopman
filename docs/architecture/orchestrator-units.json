@@ -6456,6 +6456,10 @@
             "CampaignExclusivityError",
             "KIND",
             "CONFIG_KEY",
+            "INHERITED_KEY",
+            "for_announcement",
+            "inherit_into_announcements",
+            "forget_campaign",
             "_refs",
             "_advantage_rows"
           ]
@@ -6472,7 +6476,8 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_campaign_exclusivity.py::test_exclusive_campaign_reaches_only_members_even_with_another_audience"
+        "shopman/shop/tests/test_campaign_exclusivity.py::test_exclusive_campaign_reaches_only_members_even_with_another_audience",
+        "shopman/shop/tests/test_campaign_exclusivity.py::test_waves_of_a_deleted_exclusive_campaign_still_reach_only_members"
       ],
       "test_gap_reason": null,
       "policy": false,

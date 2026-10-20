@@ -180,14 +180,15 @@ def approve_command(
                     },
                 )
 
-        if announcement.rule_id:
-            from shopman.shop.services import campaign_exclusivity
-            from shopman.shop.services.marketing_capabilities import platform_kind
+        from shopman.shop.services import campaign_exclusivity
+        from shopman.shop.services.marketing_capabilities import platform_kind
 
-            public = [p for p in safe_platforms if platform_kind(p) == "publication"]
+        public = [p for p in safe_platforms if platform_kind(p) == "publication"]
+        if public:
             # Aviso exclusivo de grupo publicado no mural deixa de ser exclusivo. O CRUD
-            # já recusa o par; aqui fecha a porta para a exclusividade gravada depois.
-            if public and campaign_exclusivity.for_campaign(announcement.rule_id).is_exclusive:
+            # já recusa o par; aqui fecha a porta para a exclusividade gravada depois e
+            # para a herdada de campanha apagada.
+            if campaign_exclusivity.for_announcement(announcement).is_exclusive:
                 raise RejectCommand(
                     code="exclusive_campaign_public_post",
                     detail="Campanha exclusiva de grupo sai só pelo WhatsApp. Desligue as postagens públicas.",
@@ -245,7 +246,7 @@ def approve_command(
         rules = _audience_rules(announcement)
         sku = str((announcement.trigger_context or {}).get("sku") or "")
         resolution = audience_service.resolve(
-            rules, sku=sku, now=now, campaign_id=announcement.rule_id
+            rules, sku=sku, now=now, announcement=announcement
         )
         if resolution.degraded_sources:
             raise RejectCommand(

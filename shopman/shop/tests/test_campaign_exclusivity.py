@@ -229,3 +229,81 @@ def test_fire_now_seals_only_the_members_and_the_waves_send_to_them(groups, camp
         campaign_id=announcement.rule_id,
     )
     assert [r.phone for r in sent] == [member.phone]
+
+
+# ── 3. Apagar a campanha não abre a porta (frente 3b) ────────────────────────
+# Medido em 19/10/2026: o anúncio liga à campanha por FK ``SET_NULL``. Apagada a
+# campanha, o ``rule_id`` virava nulo, ``for_campaign(None)`` dizia "não exclusiva", e
+# as ondas que ainda faltavam saíam para o público escolhido inteiro.
+
+
+def _send_wave(announcement, wave: str = "all") -> list[str]:
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from shopman.shop.handlers.campaign import AnnouncementNotifyHandler
+
+    message = SimpleNamespace(
+        pk=announcement.pk, payload={"announcement_id": announcement.pk, "wave": wave}
+    )
+    with patch("shopman.shop.handlers.campaign._send_to", return_value=(0, 0)) as send:
+        AnnouncementNotifyHandler().handle(message=message, ctx={})
+    return [r.phone for r in send.call_args.args[0]]
+
+
+def test_waves_of_a_deleted_exclusive_campaign_still_reach_only_members(groups, campaign):
+    from shopman.shop.models import Announcement
+
+    equipe, alianca, varejo = groups
+    member = _customer("+5543999992051", "CLI-AL5", alianca)
+    _customer("+5543999992052", "CLI-VA5", varejo)
+    campaign_exclusivity.set_exclusive_tiers(campaign.pk, ["alianca"])
+    announcement = campaign_service.fire_now(
+        campaign.pk, audience_rules={"price_tiers": ["varejo", "alianca"]}
+    )
+    assert _send_wave(announcement) == [member.phone]
+
+    campaign.delete()  # qualquer caminho: o pre_delete herda antes da FK virar nula
+    announcement = Announcement.objects.get(pk=announcement.pk)
+
+    assert announcement.rule_id is None
+    assert announcement.trigger_context["exclusive_price_tiers"] == ["alianca"]
+    assert _send_wave(announcement) == [member.phone]
+    # A referência morreu junto: grupo nenhum aponta para a campanha apagada.
+    assert _refs("alianca") == []
+
+
+def test_inherited_exclusivity_with_the_advantage_switched_off_reaches_nobody(groups, campaign):
+    from shopman.shop.models import Announcement
+
+    _equipe, alianca, varejo = groups
+    _customer("+5543999992061", "CLI-AL6", alianca)
+    _customer("+5543999992062", "CLI-VA6", varejo)
+    campaign_exclusivity.set_exclusive_tiers(campaign.pk, ["alianca"])
+    announcement = campaign_service.fire_now(
+        campaign.pk, audience_rules={"price_tiers": ["varejo", "alianca"]}
+    )
+    campaign.delete()
+    PriceTierAdvantage.objects.filter(tier=alianca, kind="exclusive_notifications").update(
+        is_active=False
+    )
+
+    assert _send_wave(Announcement.objects.get(pk=announcement.pk)) == []
+
+
+def test_deleting_a_campaign_that_is_not_exclusive_leaves_its_announcements_as_they_were(
+    groups, campaign
+):
+    from shopman.shop.models import Announcement
+
+    _equipe, alianca, varejo = groups
+    _customer("+5543999992071", "CLI-AL7", alianca)
+    _customer("+5543999992072", "CLI-VA7", varejo)
+    announcement = campaign_service.fire_now(
+        campaign.pk, audience_rules={"price_tiers": ["varejo", "alianca"]}
+    )
+    campaign.delete()
+    announcement = Announcement.objects.get(pk=announcement.pk)
+
+    assert "exclusive_price_tiers" not in announcement.trigger_context
+    assert len(_send_wave(announcement)) == 2

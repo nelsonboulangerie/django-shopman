@@ -1222,6 +1222,13 @@ directive nasce com `available_at` depois da janela
 `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` e a onda é filtrada a esses refs — nunca
 telefone, e quem já recebeu não recebe de novo.
 
+`Announcement.trigger_context["exclusive_price_tiers"]` (`list[string]`, refs de
+`PriceTier`): os grupos que o anúncio HERDOU da campanha exclusiva apagada. Escrito por
+`campaign_exclusivity.forget_campaign` (a API de exclusão e o `pre_delete` de `Campaign`
+chamam), antes de a FK `rule` virar nula; lido por `campaign_exclusivity.for_announcement`
+(contagem do envio, planejamento, ondas e aprovação). Sem a herança, a onda que ainda
+faltava saía para o público das regras inteiro.
+
 #### `ifood.merchant_sync`
 
 Grava no iFood a grade semanal (`PUT opening-hours`) e as interrupções do calendário.
@@ -1743,7 +1750,7 @@ grupos do MESMO cliente. Cliente em mais de um grupo: vale a melhor por tipo, se
 |--------|--------------------|----------|-----------|
 | `free_shipping` | `min_order_q` (`int`, centavos) | `shop/modifiers.resolve_delivery_fee_waiver` (loja e PDV, terceira política do frete grátis, `reason: "group"`) e `shop/projections/cart.build_free_delivery_progress` (barra "faltam R$ X") | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. Cliente em dois grupos com frete grátis: vale o de MENOR mínimo. A base é a mesma do limiar da loja (mercadoria, sem o cupom). |
 | `exclusive_collections` | `collection_refs` (`list[str]`) | `shop/policies/exclusive_collections.collection_access` via `shop/projections/exclusive_collections` (uma consulta) → cardápio do storefront (`build_catalog`, página da coleção, home), snapshot público e `/api/v1/catalog/` | Coleções do Offerman que só o membro identificado enxerga. Quem não é do grupo (anônimo incluído) não vê a coleção nem o produto que só existe nela; o produto que também está numa coleção comum continua por ela. Cliente em dois grupos enxerga as coleções dos dois (não competem). A página do produto que só existe em coleção escondida é 404 (link direto incluído, `CollectionAccess.hides_product`), e a sacola (`CartService.add_item`) e o checkout recusam o item com 403 `error_code=group_exclusive` (`ReserveRefusal.GROUP_EXCLUSIVE`, dialeto `{detail, field, errors}` + `skus`). |
-| `exclusive_notifications` | `campaign_refs` (`list[str]`, cada item `campaign:<Campaign.pk>`, a identidade que o Marketing já usa nos comprovantes) | `shop/services/campaign_exclusivity.for_campaign` → `shop/services/audience.resolve(campaign_id=...)` (contagem, disparo, aprovação, planejamento e envio das ondas) e projeção da campanha (`exclusive_price_tiers`) | Campanhas EXCLUSIVAS do grupo. Campanha que aparece aqui em algum grupo só alcança membros dos grupos que a declaram, qualquer que seja o público escolhido (quem sai conta em `excluded_by_reason.outside_exclusive_groups`). Vantagem com `is_active=false` tira os membros DAQUELE grupo e a campanha continua exclusiva: nunca vira campanha para todos. Exclusiva só sai por mensagem direta: o CRUD e a aprovação recusam postagem pública. |
+| `exclusive_notifications` | `campaign_refs` (`list[str]`, cada item `campaign:<Campaign.pk>`, a identidade que o Marketing já usa nos comprovantes) | `shop/services/campaign_exclusivity.for_campaign` → `shop/services/audience.resolve(campaign_id=...)` (contagem, disparo) e `resolve(announcement=...)` via `for_announcement` (aprovação, planejamento e envio das ondas) e projeção da campanha (`exclusive_price_tiers`) | Campanhas EXCLUSIVAS do grupo. Campanha que aparece aqui em algum grupo só alcança membros dos grupos que a declaram, qualquer que seja o público escolhido (quem sai conta em `excluded_by_reason.outside_exclusive_groups`). Vantagem com `is_active=false` tira os membros DAQUELE grupo e a campanha continua exclusiva: nunca vira campanha para todos. Apagar a campanha não abre a porta: os anúncios dela herdam os grupos (`Announcement.trigger_context["exclusive_price_tiers"]`) antes da referência sair daqui. Exclusiva só sai por mensagem direta: o CRUD e a aprovação recusam postagem pública. |
 
 `priority` (`int`) desempata tipos iguais entre grupos do mesmo cliente; `is_active`
 desliga a vantagem sem apagar. O resolvedor canônico é

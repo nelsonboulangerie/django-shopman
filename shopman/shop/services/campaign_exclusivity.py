@@ -19,6 +19,13 @@ Três regras, e todas falham fechado:
    acrescenta ou retira apenas a referência DELA; as outras campanhas do mesmo grupo,
    a prioridade e o ``is_active`` (do Gestor) ficam como estavam.
 
+4. **Apagar a campanha não abre a porta.** O anúncio guarda a ligação com a campanha
+   numa FK que vira nula quando ela é apagada; sem a campanha, ``for_campaign`` não
+   teria o que ler e o anúncio ainda pendente ou em ondas sairia para o público das
+   regras dele, sem filtro. Antes de apagar, os anúncios HERDAM os grupos
+   (``trigger_context["exclusive_price_tiers"]``, ``forget_campaign``), e
+   ``for_announcement`` lê a herança quando a campanha não existe mais.
+
 A referência da campanha é a identidade que o Marketing já usa nos comprovantes e na
 projeção v2: ``campaign:<pk>``.
 
@@ -35,6 +42,8 @@ from django.db import transaction
 
 KIND = "exclusive_notifications"
 CONFIG_KEY = "campaign_refs"
+#: Em ``Announcement.trigger_context``: os grupos herdados da campanha apagada.
+INHERITED_KEY = "exclusive_price_tiers"
 
 
 class CampaignExclusivityError(ValueError):
@@ -103,6 +112,65 @@ def for_campaign(campaign_id: int | None) -> Exclusivity:
             if is_active:
                 reachable.add(tier_ref)
     return Exclusivity(declared=tuple(sorted(declared)), reachable=frozenset(reachable))
+
+
+def for_announcement(announcement) -> Exclusivity:
+    """A exclusividade de um anúncio: a da campanha viva, ou a herdada da apagada.
+
+    Herdada, ela vale como a viva: só membros dos grupos herdados cuja vantagem
+    ``exclusive_notifications`` continua ligada recebem. Grupo que perdeu a vantagem
+    (desligada ou apagada) tira os membros dele, e o anúncio continua exclusivo.
+    Anúncio que nunca teve campanha exclusiva não é exclusivo e não custa consulta.
+    """
+    if announcement.rule_id:
+        return for_campaign(announcement.rule_id)
+    inherited = (announcement.trigger_context or {}).get(INHERITED_KEY)
+    declared = sorted({str(ref) for ref in inherited or () if str(ref or "").strip()}) if isinstance(
+        inherited, list
+    ) else []
+    if not declared:
+        return Exclusivity()
+    from shopman.guestman.models import PriceTierAdvantage
+
+    reachable = set(
+        PriceTierAdvantage.objects.filter(
+            kind=KIND, is_active=True, tier__ref__in=declared
+        ).values_list("tier__ref", flat=True)
+    )
+    return Exclusivity(declared=tuple(declared), reachable=frozenset(reachable))
+
+
+def inherit_into_announcements(campaign_id: int) -> int:
+    """Gravar nos anúncios da campanha os grupos que a declaram. Devolve quantos herdaram.
+
+    Roda ANTES de apagar a campanha (``forget_campaign`` e o ``pre_delete`` do model),
+    enquanto ``campaign_refs`` ainda aponta para ela. Campanha que não é exclusiva não
+    escreve nada, e herança já gravada nunca é trocada por vazio.
+    """
+    from shopman.shop.models import Announcement
+
+    declared = for_campaign(campaign_id).declared
+    if not declared:
+        return 0
+    inherited = 0
+    for announcement in Announcement.objects.select_for_update().filter(rule_id=campaign_id):
+        context = dict(announcement.trigger_context or {})
+        context[INHERITED_KEY] = list(declared)
+        announcement.trigger_context = context
+        announcement.save(update_fields=["trigger_context"])
+        inherited += 1
+    return inherited
+
+
+def forget_campaign(campaign_id: int) -> None:
+    """A campanha vai ser apagada: os anúncios herdam a exclusividade e a referência morre.
+
+    Nessa ordem: herdar lê ``campaign_refs``, e retirar a referência apaga o que
+    herdar precisa ler.
+    """
+    with transaction.atomic():
+        inherit_into_announcements(campaign_id)
+        set_exclusive_tiers(campaign_id, [])
 
 
 def clean_tier_refs(value) -> list[str]:
