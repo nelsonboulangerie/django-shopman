@@ -27,6 +27,9 @@
 >   `pedido_saiu_entrega`, `pedido_entregue` (⚠️ reclassificado como Marketing),
 >   `nota_fiscal_disponivel`, `pedido_cancelado`, `pedido_nao_confirmado`,
 >   `pedido_agendado_lembrete`, `pedido_nova_data`, `pedido_atualizado`, `pagamento_solicitado`.
+> - **Aprovado depois desta leitura (1):** `pedido_encomenda_confirmada`, aprovado pela
+>   Meta em 20/10/2026 (Utility), flow `content20261020201824_274658`, ligado no
+>   `MANYCHAT_FLOW_MAP` como `order_accepted_preorder`.
 > - **Aprovados fora deste pacote (5):** `AutoReply`, `LateResponse`, `OrderConfirmation`,
 >   `product_available_alert`, `Unsold Bread` (os dois últimos Marketing).
 > - **Faltam submeter, texto já revisado pelo dono em 25/09 (11):** `pagamento_confirmado`,
@@ -239,18 +242,18 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 > ligada. O texto do SMS, do e-mail e do WhatsApp dentro da janela diz "confirmado para
 > retirada amanhã, a partir das 9h" (`{commitment_suffix}`, auto-suprimível, regra 9); este
 > modelo não tem a data. A encomenda fora da janela sai pelo
-> `pedido_encomenda_confirmada` (abaixo); enquanto ele está em análise na Meta, ela
-> continua saindo por aqui, sem a data.
+> `pedido_encomenda_confirmada` (abaixo), ligado desde 20/10/2026; este modelo fica só
+> com o pedido do dia.
 >
 > ⚠️ **Sem cumprimento e sem `customer_name`** — a numeração andou, `{{1}}` é o código do
 > pedido. Este texto passou por três versões em dois dias (24/09 sem agradecimento, 25/09
 > com "Oi, Ana!" e "Obrigado por nos prestigiar", e a revisão final); esta é a que vale.
 
-### `pedido_encomenda_confirmada` — evento `order_accepted_preorder` 🆕 · ⏳ SUBMETIDO à Meta em 20/10/2026, em análise
+### `pedido_encomenda_confirmada` — evento `order_accepted_preorder` 🆕 · ✅ aprovado pela Meta em 20/10/2026 (Utility), flow `content20261020201824_274658`
 Variante do `order_accepted` com a data combinada. Não é evento emitido: o adapter
 (`notification_manychat._preorder_accepted_variant`) a escolhe quando o pedido é
 encomenda (`is_preorder` ou data depois de hoje, a mesma condição do texto livre) e o
-flow dela está ligado. Pedido do dia segue no `pedido_confirmado`.
+flow dela está ligado (está, desde 20/10/2026). Pedido do dia segue no `pedido_confirmado`.
 - Categoria: **Utility** · Idioma: **pt_BR**
 - Corpo: `Sua encomenda {{1}} está confirmada para {{2}}. O total é {{3}}. Vamos preparar com todo carinho. ✨`
 - Vars: `{{1}}`=`A47` (`order_ref_short`, `cuf_15003507`) · `{{2}}`=`retirada amanhã, a partir das 9h` (`status_note`, `cuf_15003511`, SEM ponto final) · `{{3}}`=`R$ 38,00` (`order_total_display`, `cuf_15003510`, o antigo `total`)
@@ -262,12 +265,12 @@ flow dela está ligado. Pedido do dia segue no `pedido_confirmado`.
 > do dia a frase é vazia, e é isso que mantém o `pedido_confirmado` (a Meta não aceita
 > variável vazia, regra 9).
 >
-> ⚠️ **Ligar depois de aprovado, e só depois.** Enquanto não houver flow para
-> `order_accepted_preorder`, a encomenda sai pelo `pedido_confirmado`, sem a data, e o
-> adapter registra `manychat.preorder_accepted_flow_pending` (info). O gesto é um só:
-> criar no ManyChat o flow "Aviso: encomenda confirmada" com o modelo aprovado e pôr o
-> namespace dele em `MANYCHAT_FLOW_MAP["order_accepted_preorder"]` (`config/settings.py`,
-> push no `main` é o deploy), como foi com `pedido_nova_data` e `pedido_atualizado`. O
+> ✅ **Ligado em 20/10/2026.** O flow "Aviso: encomenda confirmada (order_accepted_preorder)"
+> envia o modelo aprovado, e o namespace dele está em
+> `MANYCHAT_FLOW_MAP["order_accepted_preorder"]` (`config/settings.py`), como
+> `pedido_nova_data` e `pedido_atualizado`. Sem flow para a variante (por exemplo, se a
+> chave sair do mapa), a encomenda volta a sair pelo `pedido_confirmado`, sem a data, e o
+> adapter registra `manychat.preorder_accepted_flow_pending` (info). O
 > `NotificationTemplate` do evento `order_accepted_preorder`, se existir, tem precedência.
 
 ### `pedido_em_preparo` — evento `order_preparing`
@@ -675,7 +678,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `order_received` | `pedido_recebido` | Utility |
 | `order_received_outside_hours` | `pedido_recebido_fora_horario` | Utility 🆕 |
 | `order_accepted` (pedido do dia) | `pedido_confirmado` | Utility |
-| `order_accepted` na encomenda (`order_accepted_preorder`) | `pedido_encomenda_confirmada` | Utility 🆕 (submetido 20/10/2026, em análise; até ligar, sai o `pedido_confirmado`) |
+| `order_accepted` na encomenda (`order_accepted_preorder`) | `pedido_encomenda_confirmada` | Utility 🆕 (aprovado 20/10/2026, flow `content20261020201824_274658`) |
 | `order_rejected` | `pedido_nao_confirmado` | Utility |
 | `order_preparing` | `pedido_em_preparo` | Utility |
 | `order_ready_pickup` | `pedido_pronto_retirada` | Utility |
