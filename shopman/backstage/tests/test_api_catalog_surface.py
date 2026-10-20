@@ -186,10 +186,11 @@ def test_cell_price(client, operator, catalog):
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 720
 
 
-def test_cell_unknown_returns_400(client, operator, catalog):
+def test_cell_missing_without_membership_revision_conflicts(client, operator, catalog):
     client.force_login(operator)
     resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "ifood", "is_sellable": False})
-    assert resp.status_code == 400  # BOLO não está na superfície ifood
+    assert resp.status_code == 409  # A intenção da matriz não autoriza criar um vínculo ausente.
+    assert not ListingItem.objects.filter(product__sku="BOLO", listing__ref="ifood").exists()
 
 
 def test_cell_negative_price_rejected(client, operator, catalog):
@@ -919,6 +920,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "shelf_life_days", "storage_tip", "production_cycle_hours",
         "is_active", "is_published", "is_sellable", "ingredients_text",
         "image_url", "primary_collection", "primary_collection_name",
+        "collections", "collection_choices", "listing_links",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
         "allows_next_day_sale", "made_to_order", "ready_from",

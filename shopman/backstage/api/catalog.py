@@ -24,6 +24,7 @@ from shopman.backstage.services.exceptions import (
     AiAssistNotConfigured,
     CatalogError,
 )
+from shopman.shop.observability import ServerTimingMixin
 
 
 def _actor(request) -> str:
@@ -116,7 +117,7 @@ class CatalogCellView(_CatalogBase):
             return Response({"detail": "Atualize a célula: a gravação exige intenção e revisão."}, status=400)
         if data.get("expected_actor_id") != request.user.pk:
             return Response({"detail": "A identificação mudou. Confira a célula."}, status=409)
-        patch = {field: data[field] for field in ("is_published", "is_sellable", "price_q") if field in data}
+        patch = {field: data[field] for field in ("is_published", "is_sellable", "price_q", "min_qty") if field in data}
         if "price_q" in patch:
             patch["price_q"] = as_int(data, "price_q", default=None)
         ref = mutation_fingerprint({"sku": sku, "surface": surface_ref})
@@ -130,7 +131,7 @@ class CatalogCellView(_CatalogBase):
             except (CatalogError, ValidationError) as exc:
                 return {"outcome": "not_applied", "detail": str(exc)}, 400
             return {"ok": True, "outcome": "applied", "intention": key, "sku": sku, "surface_ref": surface_ref,
-                "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q}, 200
+                "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q, "min_qty": str(getattr(item, "min_qty", ""))}, 200
 
         try:
             result = run_idempotent_mutation(scope=scope, key=key,
@@ -265,7 +266,7 @@ class CatalogProductArchiveView(_CatalogBase):
         except RemoteMutationInProgress:
             return Response({"outcome": "unknown", "detail": "Gesto em processamento; consulte esta intenção."}, status=202)
 
-class CatalogProductDetailView(_CatalogBase):
+class CatalogProductDetailView(ServerTimingMixin, _CatalogBase):
     """Partial product edits have leaf revisions and an atomic local receipt."""
 
     def _scope(self, request, sku):
@@ -277,6 +278,26 @@ class CatalogProductDetailView(_CatalogBase):
         from shopman.backstage.projections.catalog import product_detail_action
 
         product = catalog_service.get_product_detail(sku)
+        from shopman.offerman.models import ListingItem
+
+        from shopman.backstage.projections.catalog import cell_action
+        from shopman.shop.models import Channel
+        from shopman.shop.services import listing_mirror
+
+        items = {item.listing.ref: item for item in ListingItem.objects.filter(product__sku=sku).select_related("listing").order_by("-min_qty", "-pk")}
+        links = []
+        for channel in Channel.objects.filter(commerce_policy=Channel.CommercePolicy.ORDER).order_by("display_order", "pk"):
+            item = items.get(channel.ref)
+            action = projection_data(cell_action(sku, channel.ref, request.user, item=item))
+            source = listing_mirror.source_ref_from_config(channel.config)
+            if source:
+                action["enabled"] = False
+                action["reason"] = "Este canal acompanha o catálogo de outro canal. Edite o canal de origem."
+            links.append({"surface_ref": channel.ref, "name": channel.name, "in_listing": item is not None,
+                "price_q": item.price_q if item else product["base_price_q"], "min_qty": str(item.min_qty) if item else "1",
+                "is_published": item.is_published if item else False, "is_sellable": item.is_sellable if item else False,
+                "action": action})
+        product["listing_links"] = links
         return {"product": product, "action": projection_data(product_detail_action(sku, product, request.user))}
 
     def get(self, request, sku: str):

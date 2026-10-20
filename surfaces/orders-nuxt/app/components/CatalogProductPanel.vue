@@ -1,15 +1,17 @@
 <script setup lang="ts">
 // Painel de produto — edição COMPLETA de um produto sem sair do Gestor. Presentacional:
 // o pai é dono do fetch/save (useCatalogMatrix.fetchProductDetail / saveProductDetail)
-// e do estado de ocupado; aqui mora só o rascunho, dividido em cinco abas:
+// e do estado de ocupado; aqui mora só o rascunho, dividido em seis abas:
 // Geral · Preço e config · Ingredientes e nutrição · Redes sociais · Fiscal.
 //
 // Emitimos APENAS o que mudou — o backend faz merge parcial, então não tocar num campo
 // é diferente de gravá-lo igual. Os blocos aninhados (social, fiscal, nutricional)
 // também vão parciais: mandar só `brand` não apaga a categoria.
 //
-// Fora do escopo (segue no Admin): componentes de bundle, coleções e listings.
+// Vínculos de coleções e canais têm editor inline próprio.
 import type {
+  ProductCollectionLink,
+  ProductListingLink,
   AssistableField,
   NutritionFacts,
   ProductDetailPatch,
@@ -23,6 +25,16 @@ import { useIntersectionObserver } from "@vueuse/core";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
+  saveCollections?: (rows: ProductCollectionLink[]) => Promise<boolean>;
+  saveListing?: (
+    link: ProductListingLink,
+    patch: {
+      price_q: number;
+      min_qty: string;
+      is_published: boolean;
+      is_sellable: boolean;
+    },
+  ) => Promise<boolean>;
   open: boolean;
   sku: string | null;
   detail: ProductDetailProjection | null;
@@ -182,6 +194,7 @@ const TABS = [
   { id: "rotulagem", label: "Ingredientes e nutrição" },
   { id: "social", label: "Redes sociais" },
   { id: "fiscal", label: "Fiscal" },
+  { id: "links", label: "Vínculos" },
 ] as const;
 const tabItems = TABS.map((item) => ({ value: item.id, label: item.label }));
 const panelMenuItems = computed(() => [
@@ -567,9 +580,18 @@ function buildPatch(): ProductDetailPatch {
   return patch;
 }
 
+const linksDirty = ref(false);
+const linksSaving = ref(false);
+watch(
+  () => [props.open, props.sku],
+  () => {
+    linksDirty.value = false;
+    linksSaving.value = false;
+  },
+);
 const patchSize = computed(() => Object.keys(buildPatch()).length);
 watch(
-  () => props.open && patchSize.value > 0,
+  () => props.open && (patchSize.value > 0 || linksDirty.value),
   (dirty) => emit("dirty-change", dirty),
   { immediate: true, flush: "sync" },
 );
@@ -578,6 +600,8 @@ const formInvalid = computed(
 );
 const canSave = computed(
   () =>
+    !linksDirty.value &&
+    !linksSaving.value &&
     !props.busy &&
     !props.loading &&
     !props.conflict &&
@@ -623,8 +647,8 @@ function keepWithoutGtin() {
 
 const discardRequested = ref(false);
 function requestClose(open: boolean) {
-  if (!open && props.busy) return;
-  if (!open && patchSize.value) {
+  if (!open && (props.busy || linksSaving.value)) return;
+  if (!open && (patchSize.value || linksDirty.value)) {
     discardRequested.value = true;
     return;
   }
@@ -823,7 +847,7 @@ const sectionClass =
 
         <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
            porque cinco rótulos não cabem na largura do slide-over. -->
-        <!-- as cinco abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
+        <!-- as seis abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
         <NuxtTabs
           v-model="tab"
           :items="tabItems"
@@ -847,6 +871,16 @@ const sectionClass =
           />
 
           <template v-else>
+            <CatalogProductLinks
+              v-if="saveCollections && saveListing"
+              v-show="tab === 'links'"
+              :detail="detail"
+              :busy="busy"
+              :save-collections="saveCollections"
+              :save-listing="saveListing"
+              @dirty-change="linksDirty = $event"
+              @saving-change="linksSaving = $event"
+            />
             <!-- Geral -->
             <div v-show="tab === 'geral'" class="space-y-4">
               <!-- A Geral começa pelo nome no cardápio (v4); a disponibilidade vem logo abaixo. -->
@@ -1222,7 +1256,8 @@ const sectionClass =
                     external
                     class="text-sm text-primary underline-offset-2 hover:underline"
                   >
-                    Abrir a receita {{ detail.production.recipe_name }} na Produção
+                    Abrir a receita {{ detail.production.recipe_name }} na
+                    Produção
                   </NuxtLink>
                   <p v-else class="text-xs text-muted-foreground">
                     Receita {{ detail.production.recipe_name }}, na Produção.

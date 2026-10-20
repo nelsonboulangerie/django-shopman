@@ -184,7 +184,30 @@ export interface FiscalProfileChoice {
 // (GET/PATCH /api/v1/backstage/catalog/product/<sku>/). Espelha
 // `backstage.services.catalog._detail_payload`. Fora daqui (segue no Admin):
 // componentes de bundle, coleções e listings.
+export interface ProductCollectionLink {
+  ref: string;
+  is_primary: boolean;
+  sort_order: number;
+}
+export interface ProductListingLink {
+  in_listing?: boolean;
+  surface_ref: string;
+  name: string;
+  price_q: number;
+  min_qty: string;
+  is_published: boolean;
+  is_sellable: boolean;
+  action: Action;
+}
+
 export interface ProductDetailProjection {
+  collections?: ProductCollectionLink[];
+  readonly collection_choices?: {
+    ref: string;
+    name: string;
+    is_active: boolean;
+  }[];
+  readonly listing_links?: ProductListingLink[];
   readonly sku: string;
   name: string;
   short_description: string;
@@ -309,6 +332,8 @@ export type ProductDetailPatch = Partial<
   Omit<
     ProductDetailProjection,
     | "sku"
+    | "collection_choices"
+    | "listing_links"
     | "primary_collection"
     | "primary_collection_name"
     | "field_sources"

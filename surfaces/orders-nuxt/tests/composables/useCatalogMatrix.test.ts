@@ -289,6 +289,47 @@ describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
     expect(m.socialKey("PAO")).toBe("social@PAO");
   });
 
+  it("releitura de vínculos preserva revisão dos campos com rascunho", async () => {
+    const action = (name: string, collections: string) => ({
+      ...cellAction,
+      method: "PATCH",
+      payload_schema: {
+        ...cellAction.payload_schema,
+        base_revisions: { name, collections },
+      },
+    });
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO", name: "Original" },
+      action: action("name-before", "collections-before"),
+    });
+    const m = useCatalogMatrix();
+    await m.fetchProductDetail("PAO");
+    // Nome mudou por terceiro enquanto o operador tinha um rascunho da Geral.
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO", name: "Terceiro" },
+      action: action("name-after", "collections-after"),
+    });
+    await m.fetchProductDetail("PAO", ["collections"]);
+    expect(await m.saveProductDetail("PAO", { name: "Meu rascunho" })).toBe(
+      true,
+    );
+    expect(env.fetchMock.mock.calls[2]![1].body.base_revisions).toEqual({
+      name: "name-before",
+      collections: "collections-after",
+    });
+    // Uma releitura após célula não renova nenhuma revisão do rascunho global.
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO" },
+      action: action("name-later", "collections-later"),
+    });
+    await m.fetchProductDetail("PAO", []);
+    await m.saveProductDetail("PAO", { storage_tip: "Guardar fechado" });
+    expect(env.fetchMock.mock.calls[4]![1].body.base_revisions).toEqual({
+      name: "name-before",
+      collections: "collections-after",
+    });
+  });
+
   it("saveSocial em erro de validação acende errorMsg + false", async () => {
     env.fetchMock.mockResolvedValueOnce({
       product: { sku: "PAO" },
