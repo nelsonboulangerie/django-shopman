@@ -1,6 +1,6 @@
 # ONDA4-5: importar e exportar a Base
 
-Ordem: `ORDERS/next-onda4.md`, frente 5. Branch `codex/import-export-base`.
+Ordem: `ORDERS/next-onda4.md`, frente 5. Branch `codex/import-export-base`. PR [#1964](https://github.com/nelsonboulangerie/django-shopman/pull/1964).
 PR empilhado sobre `codex/lote-fornecedores` (#1957) até a base chegar ao main.
 
 Os menus da Base de Insumos e Fornecedores abrem as peças existentes

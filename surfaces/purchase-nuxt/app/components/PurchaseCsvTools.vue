@@ -155,7 +155,15 @@ defineExpose({ openImport, openExport });
       />
       <div v-if="table" class="flex flex-col items-start gap-3">
         <p class="text-sm text-muted">
-          {{ table.rows.length }} {{ label }} no arquivo.
+          {{ table.rows.length }}
+          {{
+            table.rows.length === 1
+              ? entity === "materials"
+                ? "insumo"
+                : "fornecedor"
+              : label
+          }}
+          no arquivo.
         </p>
         <OperatorCsvExportButton
           :table="table"
