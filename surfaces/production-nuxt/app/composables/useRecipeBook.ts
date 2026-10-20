@@ -28,6 +28,7 @@ export interface RecipeBookServerFilters {
   withoutSku?: Ref<boolean>;
   withDraft?: Ref<boolean>;
   favorites?: Ref<boolean>;
+  unreviewed?: Ref<boolean>;
   sort?: Ref<string>;
   page?: Ref<number>;
   pageSize?: Ref<number>;
@@ -46,6 +47,7 @@ export function useRecipeBook(
       withoutSku: filters.withoutSku?.value,
       withDraft: filters.withDraft?.value,
       favorites: filters.favorites?.value,
+      unreviewed: filters.unreviewed?.value,
       sort: filters.sort?.value,
       page: filters.page?.value,
       pageSize: filters.pageSize?.value,

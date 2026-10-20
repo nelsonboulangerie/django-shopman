@@ -22,6 +22,7 @@ from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.observability import catalog_stage
+from shopman.shop.policies.exclusive_collections import CollectionAccess
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.pricing_quote import PriceQuoteProjection
@@ -255,7 +256,9 @@ def build_catalog(
     with catalog_stage("personalization"):
         favorite_category_ref: str | None = OmotenashiContext.from_request(request).favorite_category
 
-    categories = _build_categories()
+    with catalog_stage("personalization"):
+        access = viewer_collection_access(request)
+    categories = tuple(c for c in _build_categories() if not access.is_hidden(c.ref))
 
     active_collection: Any | None = None
     if collection_ref:
@@ -264,6 +267,7 @@ def build_catalog(
     products_by_collection = _fetch_products_by_collection(
         listing_ref=channel_ref,
         active_collection=active_collection,
+        access=access,
     )
 
     popular = popular_skus(limit=5)
@@ -359,16 +363,44 @@ def _fetch_products_by_collection(
     *,
     listing_ref: str,
     active_collection: Any | None,
+    access: CollectionAccess,
 ) -> list[tuple[str | None, list[Any]]]:
     """Return an ordered list of (collection_ref | None, products).
 
     Products MUST have an active ``ListingItem`` on the channel's listing.
     No fallback: missing Listing → empty result (caller's problem to seed it).
+
+    A coleção exclusiva de um grupo que o visitante não integra sai inteira; o
+    produto que só existe nela sai junto, e o que também está numa coleção comum
+    continua por ela.
     """
-    return catalog_context.published_products_by_collection(
+    groups = catalog_context.published_products_by_collection(
         listing_ref=listing_ref,
         active_collection=active_collection,
     )
+    if not access.hidden:
+        return groups
+    return [(ref, products) for ref, products in groups if not access.is_hidden(ref)]
+
+
+def viewer_collection_access(request: HttpRequest | None) -> CollectionAccess:
+    """As coleções exclusivas que o visitante enxerga: UMA leitura das vantagens.
+
+    Anônimo (e ``request=None``, o snapshot público) enxerga só as comuns. Sem
+    ``try``: se a tabela de vantagens não responde, o cardápio falha em vez de
+    abrir a coleção do grupo para todo mundo. Guardado no request: a página da
+    coleção pergunta duas vezes (o 404 e o cardápio) e paga uma.
+    """
+    from shopman.shop.projections.exclusive_collections import access_for_customer
+    from shopman.storefront.identity import get_authenticated_customer
+
+    if request is None:
+        return access_for_customer(None)
+    cache_attr = "_shopman_collection_access"
+    state = vars(request)
+    if cache_attr not in state:
+        setattr(request, cache_attr, access_for_customer(get_authenticated_customer(request)))
+    return state[cache_attr]
 
 
 def build_catalog_items_for_skus(
@@ -421,6 +453,7 @@ def build_featured_items(
         for _col_ref, products in _fetch_products_by_collection(
             listing_ref=channel_ref,
             active_collection=None,
+            access=viewer_collection_access(request),
         )
         for product in products
     ]

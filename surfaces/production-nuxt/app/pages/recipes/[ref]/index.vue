@@ -15,6 +15,9 @@ import {
   comparePath,
   favoriteActionHint,
   formulaFromServed,
+  needsReview,
+  provenanceIcon,
+  reviewSignature,
   statusBadgeColor,
   stepsForPayload,
   toneClass,
@@ -45,9 +48,17 @@ const {
   publish,
   saveReferences,
   rateVersion,
+  confirmVersion,
   toggleFavorite,
   favoriteBusy,
 } = useRecipeEntry(entryRef);
+
+// Conferência (WP-RECEITAS-DA-CASA F1): só a versão em uso se confere.
+async function confirmSelected() {
+  if (!selected.value) return;
+  const result = await confirmVersion(selected.value.number);
+  if (result.ok) useSonner.success(`Versão ${selected.value.number} conferida.`);
+}
 
 useHead({ title: computed(() => entry.value?.name || "Receita") });
 
@@ -530,6 +541,29 @@ const publishDiff = computed(() => [
                   icon="i-lucide-git-compare"
                   label="Comparar com…"
                   @click="compareWith"
+                />
+              </div>
+
+              <div class="mb-3 flex flex-wrap items-center gap-2 text-sm" data-version-review>
+                <NuxtIcon :name="provenanceIcon(selected.provenance_kind)" class="size-4 shrink-0 text-muted-foreground" />
+                <span class="text-muted-foreground">
+                  <b class="text-foreground">{{ selected.provenance_label }}.</b> {{ selected.provenance_detail }}
+                </span>
+                <NuxtBadge
+                  v-if="needsReview(selected.review_status)"
+                  :color="selected.review_status === 'changed' ? 'warning' : 'neutral'"
+                  :label="selected.review_label"
+                />
+                <span v-else-if="selected.review_by_name" class="text-muted-foreground">
+                  {{ reviewSignature(selected.review_by_name, selected.review_at_display) }}
+                </span>
+                <NuxtButton
+                  v-if="canEdit && isCurrent && !entry.is_archived && needsReview(selected.review_status)"
+                  class="ml-auto"
+                  icon="i-lucide-check"
+                  label="Está certa"
+                  :loading="busy"
+                  @click="confirmSelected"
                 />
               </div>
 

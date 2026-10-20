@@ -293,7 +293,11 @@ class TestTrigger:
         shelf_outages.observe("PAO")
         queued = _queued("ifood")
         assert len(queued) == 1
-        assert queued[0].payload == {"sku": "PAO", "listing_ref": "ifood"}
+        assert queued[0].payload == {
+            "sku": "PAO",
+            "listing_ref": "ifood",
+            "trigger": "stock_changed",
+        }
 
         # Idempotente: observar de novo sem mudança não enfileira nada.
         shelf_outages.observe("PAO")

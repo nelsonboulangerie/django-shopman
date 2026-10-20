@@ -172,6 +172,13 @@ export function useRecipeEntry(entryRef: string) {
       "Não foi possível salvar a nota.",
     );
 
+  /** "Está certa": assina a conferência da versão em uso (WP-RECEITAS-DA-CASA F1). */
+  const confirmVersion = (number: number) =>
+    act(
+      () => $fetch<RecipeEntryResponse>(`${base}versions/${number}/review/`, { method: "POST" }),
+      "Não foi possível registrar a conferência.",
+    );
+
   const publishKeys = new Map<number, string>();
   async function publish(number: number) {
     const key = publishKeys.get(number) ?? newMutationKey();
@@ -218,6 +225,7 @@ export function useRecipeEntry(entryRef: string) {
     publish,
     saveReferences,
     rateVersion,
+    confirmVersion,
     toggleFavorite,
     favoriteBusy,
   };

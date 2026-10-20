@@ -9,7 +9,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-from shopman.orderman.integrations import get_shop_channel_model
+from shopman.orderman.integrations import get_channel_model
 
 # Unfold is optional - fallback to standard Django admin if not installed
 try:
@@ -129,7 +129,7 @@ class SalesChannelFilter(admin.SimpleListFilter):
     parameter_name = "channel_ref"
 
     def lookups(self, request, model_admin):
-        Channel = get_shop_channel_model()
+        Channel = get_channel_model()
         if Channel is None:
             return []
         qs = Channel.objects.filter(is_active=True).order_by(
@@ -347,7 +347,7 @@ class SessionAdmin(ModelAdmin):
         # Supra-filtro por canal (barra rápida) — preserva contexto e mantém intenção do status (tabs).
         extra_context = extra_context or {}
 
-        Channel = get_shop_channel_model()
+        Channel = get_channel_model()
         channels = (
             list(
                 Channel.objects.filter(is_active=True).order_by(
@@ -703,7 +703,7 @@ class OrderAdmin(ModelAdmin):
         # Supra-filtro por canal (barra rápida) — preserva contexto e mantém intenção do status (tabs).
         extra_context = extra_context or {}
 
-        Channel = get_shop_channel_model()
+        Channel = get_channel_model()
         channels = (
             list(
                 Channel.objects.filter(is_active=True).order_by(

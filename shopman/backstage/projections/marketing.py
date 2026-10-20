@@ -202,6 +202,10 @@ class CampaignProjection:
     template_name: str
     platforms: tuple[str, ...]
     audience_rules: dict
+    #: Grupos de clientes (`PriceTier.ref`) que têm esta campanha como aviso exclusivo
+    #: (`PriceTierAdvantage.config["campaign_refs"]`). Vazio = a campanha não é
+    #: exclusiva. Com grupos, só os membros deles recebem, qualquer que seja o público.
+    exclusive_price_tiers: tuple[str, ...]
     #: `Promotion.ref` da oferta anunciada. Vazio = campanha sem desconto atrás.
     promotion_ref: str
     schedule: dict
@@ -336,10 +340,10 @@ class CampaignOptionsProjection:
     provider_capabilities: tuple[ProviderCapabilityProjection, ...]
     templates: tuple[AnnouncementTemplateProjection, ...]
     variables: tuple[str, ...]
-    #: As faixas de preço (`PriceTier`) — varejo, atacado, staff.
+    #: Os grupos de clientes (`PriceTier`): varejo, atacado, staff.
     price_tiers: tuple[ChoiceProjection, ...] = ()
     #: As etiquetas que o operador criou (`CustomerTag`). É o único público que ele monta
-    #: sozinho: RFM e churn são calculados, faixa é comercial, aniversário é cadastral.
+    #: sozinho: RFM e churn são calculados, grupo é comercial, aniversário é cadastral.
     tags: tuple[ChoiceProjection, ...] = ()
     rfm_segments: tuple[ChoiceProjection, ...] = ()
     #: Produtos publicáveis para preencher uma ocorrência disparada manualmente.
@@ -363,7 +367,7 @@ class CampaignOptionsProjection:
 #: dicionário: primeiro quem foi escolhido, depois quem se qualificou.
 _AUDIENCE_PART_LABELS: tuple[tuple[str, str], ...] = (
     ("chosen_count", "Escolhidos um a um"),
-    ("price_tiers_count", "Faixa de preço"),
+    ("price_tiers_count", "Grupo"),
     ("tags_count", "Etiquetas"),
     ("rfm_count", "Comportamento de compra"),
     ("churn_risk_count", "Estão sumindo"),
@@ -428,7 +432,9 @@ class AudienceCountProjection:
     alerts_notified: int
 
 
-def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountProjection:
+def build_audience_count(
+    rules: dict | None, *, sku: str = "", campaign_id: int | None = None
+) -> AudienceCountProjection:
     """Resolver o público SÓ para contar, pelo mesmo caminho do envio.
 
     Pelo mesmo caminho de propósito (``services/audience.resolve``): uma contagem com
@@ -438,7 +444,7 @@ def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountP
     from shopman.shop.services import audience as audience_service
 
     rules = dict(rules or {})
-    result = audience_service.resolve(rules, sku=sku)
+    result = audience_service.resolve(rules, sku=sku, campaign_id=campaign_id)
     counts = result.counts or {}
 
     parts = tuple(
@@ -748,10 +754,22 @@ def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection
 # ── Regras e modelos ─────────────────────────────────────────────────
 
 
-def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignProjection:
-    """Uma campanha. ``performance`` pronto evita N+1 quando a lista inteira é montada."""
+def build_rule(
+    rule: Campaign,
+    *,
+    performance: dict | None = None,
+    exclusive_by_campaign: dict[str, tuple[str, ...]] | None = None,
+) -> CampaignProjection:
+    """Uma campanha. ``performance`` e ``exclusive_by_campaign`` prontos evitam N+1
+    quando a lista inteira é montada."""
+    from shopman.shop.services import campaign_exclusivity
     from shopman.shop.services import campaign_schedule as sched
     from shopman.shop.services.audience import PUBLIC_RULE_KEYS
+
+    if exclusive_by_campaign is None:
+        exclusive_tiers = campaign_exclusivity.for_campaign(rule.pk).declared
+    else:
+        exclusive_tiers = exclusive_by_campaign.get(campaign_exclusivity.campaign_ref(rule.pk), ())
 
     fires = sched.fires_on_its_own(rule.schedule)
     audience_rules = rule.audience_rules if isinstance(rule.audience_rules, dict) else {}
@@ -766,6 +784,7 @@ def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignPr
         template_name=rule.template.name if rule.template_id else "",
         platforms=tuple(rule.platforms or ()),
         audience_rules={key: audience_rules[key] for key in sorted(PUBLIC_RULE_KEYS) if key in audience_rules},
+        exclusive_price_tiers=tuple(exclusive_tiers),
         promotion_ref=rule.promotion_ref,
         schedule=dict(rule.schedule or {}),
         **(performance if performance is not None else _performance_by_rule([rule.pk])[rule.pk]),
@@ -824,9 +843,15 @@ def _performance_by_rule(rule_ids: list[int]) -> dict[int, dict]:
 
 
 def build_rules() -> tuple[CampaignProjection, ...]:
+    from shopman.shop.services import campaign_exclusivity
+
     rules = list(Campaign.objects.select_related("template").all())
     performance = _performance_by_rule([rule.pk for rule in rules])
-    return tuple(build_rule(rule, performance=performance[rule.pk]) for rule in rules)
+    exclusive = campaign_exclusivity.declared_by_campaign()
+    return tuple(
+        build_rule(rule, performance=performance[rule.pk], exclusive_by_campaign=exclusive)
+        for rule in rules
+    )
 
 
 def build_template(

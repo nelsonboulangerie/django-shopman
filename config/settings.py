@@ -833,6 +833,11 @@ GEOIP_CITY_MAX_AGE_DAYS = _env_int("GEOIP_CITY_MAX_AGE_DAYS", 90)
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 GOOGLE_MAPS_BROWSER_API_KEY = os.environ.get("GOOGLE_MAPS_BROWSER_API_KEY", "")
 GOOGLE_MAPS_SERVER_API_KEY = os.environ.get("GOOGLE_MAPS_SERVER_API_KEY", "")
+# Teto diário GLOBAL de chamadas pagas ao Google no geocoding reverso ("usar minha
+# localização" e o pin do WhatsApp). O limite por IP do endpoint não segura custo;
+# este sim. Atingido, o reverso recusa até a virada do dia (falha fechada), e o
+# cliente digita o endereço. 300/dia fica dentro da faixa gratuita do Geocoding.
+SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT = _env_int("SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT", 300)
 
 # ── Stripe ────────────────────────────────────────────────────────────
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
@@ -1810,9 +1815,13 @@ GUESTMAN_LOYALTY = {}
 
 # ── Orderman ─────────────────────────────────────────────────────────
 
-# Available keys: DEFAULT_PERMISSION_CLASSES, ADMIN_PERMISSION_CLASSES
+# Available keys: DEFAULT_PERMISSION_CLASSES, ADMIN_PERMISSION_CLASSES,
+# CUSTOMER_FENCE (porto da cerca do titular), CHANNEL_MODEL (o Channel do host).
 # See packages/orderman/shopman/orderman/conf.py for defaults.
-ORDERMAN = {}
+ORDERMAN = {
+    "CUSTOMER_FENCE": "shopman.guestman.adapters.orderman.GuestmanCustomerFence",
+    "CHANNEL_MODEL": "shop.Channel",
+}
 
 # ── Shopman Instance Hooks (optional) ────────────────────────────────
 
@@ -1866,6 +1875,11 @@ SHOPMAN_PAYMENT_ADAPTERS = {
     "cash": None,
     "external": None,
 }
+# ── Payman ───────────────────────────────────────────────────────────
+# O estorno do Admin de cobranças devolve pelo gateway pelo MESMO caminho do
+# estorno do pedido (adapters acima). Sem esta chave o Admin não estorna.
+# See packages/payman/shopman/payman/conf.py.
+PAYMAN = {"REFUND_BACKEND": "shopman.shop.adapters.payman_refund.GatewayRefundBackend"}
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = _env_bool("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False)
 # "O cliente pode quitar o próprio pedido com um clique?" — pergunta SEPARADA de
 # "este ambiente pode rodar com gateway simulado?" (a de cima). Enquanto as duas
@@ -2078,9 +2092,6 @@ SHOPMAN_ALERT_EMAIL = os.environ.get("SHOPMAN_ALERT_EMAIL", "").strip() or None
 # 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
 # a tabela nunca virar problema. A varredura roda no maintenance_worker.
 SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS = int(os.environ.get("SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS", "180"))
-
-# PIX payment expiry in seconds (default: 1 hour).
-SHOPMAN_PIX_EXPIRY_SECONDS = int(os.environ.get("SHOPMAN_PIX_EXPIRY_SECONDS", "3600"))
 
 SHOPMAN_STRIPE = {
     "publishable_key": STRIPE_PUBLISHABLE_KEY,

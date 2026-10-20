@@ -448,7 +448,72 @@ const RECIPE_CARDS = RECIPES.map((recipe, index) => ({
   is_favorite: index === 0,
   rating_display: index < 3 ? "4,5" : "",
   rating_count: index < 3 ? 6 : 0,
+  provenance_kind: index === 0 ? "house" : "agent",
+  provenance_label: index === 0 ? "Da casa" : "Do cadastro inicial",
+  review_status: index === 5 ? "" : index === 0 ? "confirmed" : index === 2 ? "changed" : "pending",
+  review_label:
+    index === 5 ? "" : index === 0 ? "Conferida" : index === 2 ? "Mudou depois da conferência" : "Não conferida",
 }));
+
+// A fila do padeiro: do que mais sai para o que menos sai, a massa da peça em destaque.
+const RECIPE_REVIEW = {
+  queue: {
+    items: [
+      {
+        ref: "massa-brioche",
+        name: "Massa Brioche",
+        kind_label: "Massa doce",
+        output_sku: "MASSA-BRIOCHE",
+        output_name: "",
+        version_number: 2,
+        provenance_kind: "agent",
+        provenance_label: "Do cadastro inicial",
+        provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+        review_status: "pending",
+        review_label: "Não conferida",
+        dough_sku: "",
+        dough_name: "",
+        sold_display: "41.230 vendidos em 12 meses por 6 produtos",
+      },
+      {
+        ref: "pain-aux-raisins",
+        name: "Pain aux Raisins",
+        kind_label: "Viennoiserie",
+        output_sku: "PAIN-RAISINS",
+        output_name: "Pain aux Raisins",
+        version_number: 1,
+        provenance_kind: "agent",
+        provenance_label: "Do cadastro inicial",
+        provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+        review_status: "pending",
+        review_label: "Não conferida",
+        dough_sku: "MASSA-BRIOCHE",
+        dough_name: "Massa Brioche",
+        sold_display: "8.904 vendidos em 12 meses",
+      },
+      {
+        ref: "baguete-tradicao",
+        name: "Baguete Tradição",
+        kind_label: "Pão",
+        output_sku: "BAGUETE",
+        output_name: "Baguete Tradição",
+        version_number: 3,
+        provenance_kind: "notebook",
+        provenance_label: "Do caderno",
+        provenance_detail: "Uma foto do caderno, lida pelo sistema.",
+        review_status: "changed",
+        review_label: "Mudou depois da conferência",
+        dough_sku: "MASSA-TRADICAO",
+        dough_name: "Massa Tradição",
+        sold_display: "6.120 vendidos em 12 meses",
+      },
+    ],
+    total: 3,
+    confirmed_total: 64,
+    recipe_total: 67,
+  },
+  access: RECIPE_ACCESS,
+};
 const RECIPE_BOOK = {
   book: {
     entries: RECIPE_CARDS,
@@ -538,6 +603,13 @@ function recipeVersion(number, status, statusLabel) {
     lens: LENS,
     formula: {},
     origin: {},
+    provenance_kind: "agent",
+    provenance_label: "Do cadastro inicial",
+    provenance_detail: "Ficha do cadastro inicial, escrita por agente. Ninguém da casa a declarou.",
+    review_status: status === "draft" ? "" : "pending",
+    review_label: status === "draft" ? "" : "Não conferida",
+    review_by_name: "",
+    review_at_display: "",
   };
 }
 
@@ -592,9 +664,105 @@ function recipeDetail(card) {
   };
 }
 
+function weighingIngredient(sku, name, grams, annotation = "", isSubrecipe = false) {
+  const display = `${grams} g`;
+  return {
+    sku,
+    name,
+    quantity_display: display,
+    target_display: display,
+    annotation,
+    is_subrecipe: isSubrecipe,
+    theoretical_g: String(grams),
+    target_g: String(grams),
+    rounding_delta_g: "0",
+    accepted_min_g: String(grams),
+    accepted_max_g: String(grams),
+  };
+}
+
+function weighingTicket(ref, name, sku, blindCode, ingredients, oldDough = null) {
+  const total = ingredients.reduce((sum, ing) => sum + Number(ing.target_g), 0);
+  return {
+    ticket_ref: `prep-${ref}`,
+    recipe_ref: ref,
+    output_sku: sku,
+    name,
+    output_quantity_display: `${total} g`,
+    dough_weight_display: "",
+    total_weight_display: `${total} g`,
+    theoretical_total_g: String(total),
+    target_total_g: String(total),
+    rounding_delta_total_g: "0",
+    sources_display: "40 un. BAGUETE",
+    ingredients,
+    table: { contract_version: 1, headers: ["Insumo", "Quantidade"], rows: [] },
+    blind_code: blindCode,
+    made_display: "06/07",
+    expiry_display: "07/07",
+    validity_configured: true,
+    validity_source: "recipe",
+    old_dough: oldDough,
+  };
+}
+
+// Massa com teto de massa velha (20%) e massa sem teto: a mistura final no teto
+// encolhe cada linha por 0,8 e a massa velha cobre o resto, com o mesmo total.
+const WEIGHING_POPULATED = {
+  weighing: {
+    selected_date: "2026-07-06",
+    selected_date_display: "segunda, 06/07",
+    selected_position_ref: "",
+    selected_base_recipe: "",
+    codes_ready: true,
+    tickets: [
+      weighingTicket(
+        "massa-tradicao",
+        "Massa Tradição",
+        "MASSA-TRADICAO",
+        "D8",
+        [
+          weighingIngredient("FARINHA-T55", "Farinha T55", 4000),
+          weighingIngredient("AGUA-FILTRADA", "Água filtrada", 2800),
+          weighingIngredient("SAL-REFINADO", "Sal refinado", 80),
+          weighingIngredient("LEVAIN", "Levain", 800, "", true),
+        ],
+        {
+          cap_pct: "20",
+          cap_display: "20%",
+          old_dough_display: "1536 g",
+          old_dough_g: "1536",
+          lines: [
+            { sku: "FARINHA-T55", target_display: "3200 g", target_g: "3200" },
+            { sku: "AGUA-FILTRADA", target_display: "2240 g", target_g: "2240" },
+            { sku: "SAL-REFINADO", target_display: "64 g", target_g: "64" },
+            { sku: "LEVAIN", target_display: "640 g", target_g: "640" },
+          ],
+        },
+      ),
+      weighingTicket("massa-brioche", "Massa Brioche", "MASSA-BRIOCHE", "S5", [
+        weighingIngredient("FARINHA-T55", "Farinha T55", 2000),
+        weighingIngredient("OVO", "Ovo", 700, "≈ 14 ovos"),
+        weighingIngredient("MANTEIGA", "Manteiga", 1000),
+      ]),
+    ],
+    actions: [],
+    access: {},
+    generated_at: "2026-07-06T09:00:00Z",
+    source_revision: "weighing:populated",
+    fresh_until: "2099-07-06T09:05:00Z",
+    contract_version: 1,
+    scale_precision_g: "2",
+    scale_precision_display: "2 g",
+    scale_rounding_note: "Alvos arredondados para cima · balança 2 g",
+  },
+};
+
 /** A resposta do cenário povoado para esta URL, ou `null` para seguir o mock de base. */
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
+  if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
+  if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
   const card = detail && RECIPE_CARDS.find((entry) => entry.ref === detail[1]);
   if (card) return recipeDetail(card);

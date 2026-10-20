@@ -2070,6 +2070,28 @@
           "status": "pending"
         },
         {
+          "id": "recipe-review",
+          "source_files": [
+            "app/pages/recipes/review.vue"
+          ],
+          "routes": [
+            "/recipes/review"
+          ],
+          "variants": [
+            "list",
+            "empty",
+            "forbidden",
+            "stale"
+          ],
+          "families": [
+            "action",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending"
+        },
+        {
           "id": "recipe-sheets",
           "source_files": [
             "app/pages/recipes/sheets/index.vue"

@@ -207,6 +207,7 @@ def campaign(pk: int, *, active: bool = True, long: bool = False) -> dict:
         "template_name": "Novidades da padaria",
         "platforms": ["instagram", "whatsapp"] if pk % 2 else ["facebook"],
         "audience_rules": {"tags": ["clientes-da-casa"]},
+        "exclusive_price_tiers": [],
         "promotion_ref": "",
         "schedule": {"type": "immediate", "timezone": "America/Sao_Paulo"},
         "schedule_label": "Assim que o lote terminar",

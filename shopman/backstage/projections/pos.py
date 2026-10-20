@@ -1429,11 +1429,11 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/sale/recent/cancel/",
             payload_schema={
-                "required": ["order_ref", "manager_approval"],
+                "required": ["order_ref", "manager_approval", "client_request_id"],
                 "optional": ["reason"],
             },
             confirmation={"style": "destructive"},
-            idempotency="none",
+            idempotency="client_request_id",
         ),
         Action(
             ref="emit_fiscal",
@@ -2957,7 +2957,24 @@ def _tab_line_price_fields(item: dict, manual_originals: dict[str, int]) -> dict
         "pricing_discount": _tab_payload_pricing_discount(item),
         "list_price_q": _tab_line_list_price_q(item, manual_originals),
         "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+        "manual_discount_discarded": _manual_discount_discarded(item),
     }
+
+
+def _manual_discount_discarded(item: dict) -> bool:
+    """O desconto que o operador deu nesta linha foi DESCARTADO pelo motor?
+
+    "Maior desconto ganha, um por item": um manual que não bate o automático da
+    linha (Semana do Pão −15%, grupo, Xepa) não vale, e o motor deixa na linha o
+    carimbo do vencedor (``meta._disc``). Quem diz é o motor, não a tela: a tela
+    já fez essa conta por conta própria e errou (R$ 2,50 numa Tabatière com −15%
+    ganha, e o operador ouvia que não).
+    """
+    meta = item.get("meta") or {}
+    manual = meta.get("manual_discount") or {}
+    if not manual.get("value"):
+        return False
+    return (meta.get("_disc") or {}).get("type") != "manual"
 
 
 def tab_line_prices(session: Session) -> dict[str, dict]:
@@ -2974,11 +2991,12 @@ def tab_line_prices(session: Session) -> dict[str, dict]:
 
 
 def review_line_prices(priced_lines) -> dict[str, dict]:
-    """``line_id -> preço cobrado`` da venda SEM comanda, a partir da revisão.
+    """``line_id -> preço cobrado`` segundo a revisão.
 
     Mesmo formato do eco do salvar (:func:`tab_line_prices`): as linhas que a
     revisão devolve (``PosSaleReview.priced_lines``) já têm o feitio da linha da
-    comanda, e o desconto manual já foi decidido contra o automático ali.
+    comanda, e o desconto manual já foi decidido contra o automático ali. Sem
+    comanda vêm todas; com comanda, as que o motor reviu com desconto manual.
     """
     return {
         line["line_id"]: _tab_line_price_fields(line, {})

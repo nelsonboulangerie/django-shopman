@@ -47,7 +47,7 @@ por default.
 | **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi` | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
-| **Dono** | `cashman.audit_shift` | Quem vê dinheiro. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
+| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent` | Quem vê dinheiro e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
 
 ### Ação é uma permissão; ABRIR A TELA é outra
 
@@ -69,7 +69,7 @@ cards do dashboard perguntam à própria tela antes de oferecê-la
 | **Gerente** | catálogo, clientes, produção, estoque, pedidos, B.I. e a configuração inteira | catálogo, clientes, promoções, cupons, textos da interface, terminais |
 | **Admin de Catálogo** | catálogo, regras, promoções, cupons | catálogo e regras |
 | **Rules Managers** | regras de preço | regras de preço |
-| **Dono** | turnos de caixa (apuração), cobranças, comprovantes | — |
+| **Dono** | turnos de caixa (apuração), cobranças, comprovantes | estorno de cobrança (`payman.refund_paymentintent`, com segunda confirmação no diálogo) |
 
 ⚠️ **Dinheiro é do Dono, e o Gerente não vê** — nem a apuração do turno, nem as
 cobranças (Pix/cartão). É a mesma régua do fechamento cego, explicada abaixo.

@@ -782,7 +782,7 @@ Reagendar (`services.reschedule`) **move** a directive viva (edita `available_at
 |-------|------|-------------|----------|
 | `order_ref` | `string` | hooks | PixGenerateHandler |
 | `amount_q` | `int` | hooks | PixGenerateHandler |
-| `pix_timeout_minutes` | `int` | hooks (from channel config) | PixGenerateHandler (default 10) |
+| `pix_timeout_minutes` | `int` | `services.payment._adapter_config` (`ChannelConfig.payment.timeout_minutes`, ou o prazo do link na encomenda do PDV) | adapters de Pix (`payment_efi`, `payment_mock`): obrigatório, sem default |
 
 Write-back: spawns `pix.timeout` e `notification.send` (reminder)
 
@@ -1222,6 +1222,13 @@ directive nasce com `available_at` depois da janela
 `SHOPMAN_MANYCHAT_FLOW_SETTLE_SECONDS` e a onda é filtrada a esses refs — nunca
 telefone, e quem já recebeu não recebe de novo.
 
+`Announcement.trigger_context["exclusive_price_tiers"]` (`list[string]`, refs de
+`PriceTier`): os grupos que o anúncio HERDOU da campanha exclusiva apagada. Escrito por
+`campaign_exclusivity.forget_campaign` (a API de exclusão e o `pre_delete` de `Campaign`
+chamam), antes de a FK `rule` virar nula; lido por `campaign_exclusivity.for_announcement`
+(contagem do envio, planejamento, ondas e aprovação). Sem a herança, a onda que ainda
+faltava saía para o público das regras inteiro.
+
 #### `ifood.merchant_sync`
 
 Grava no iFood a grade semanal (`PUT opening-hours`) e as interrupções do calendário.
@@ -1497,8 +1504,11 @@ gate de commit. Editáveis tipados em Reais no ShopAdmin (`shop/admin/shop.py`).
 | `rules.free_delivery_above_q` | só entrega | `build_free_delivery_progress`, `DeliveryFeeModifier` | Taxa de entrega zera no/above deste valor. Reusa a barra como upsell ("faltam X para frete grátis") |
 
 > Convivem no mesmo sub-dict `rules` que o tri-state `validators`/`modifiers`/
-> `checks` do `ChannelConfig` — o `_safe_init` filtra estas chaves de política, que
-> são lidas direto de `shop.defaults["rules"]` por `shop_rule_q()`.
+> `checks` do `ChannelConfig`. A seção `rules` as reconhece pelo nome
+> (`SHOP_RULE_POLICY_KEYS` em `shop/config.py`, junto com `default_delivery_fee_q`)
+> e não as carrega; elas são lidas direto de `shop.defaults["rules"]` por
+> `shop_rule_q()`. Qualquer outra chave desconhecida num aspecto do `ChannelConfig`
+> é RECUSADA com o nome dela (`ValueError` no `from_dict`, `ValidationError` no Admin).
 
 A taxa de entrega por região segue nas **Zonas de Entrega** (`DeliveryZone`, inline
 no admin). O frete grátis global é avaliado por cima da taxa da zona.
@@ -1506,7 +1516,7 @@ no admin). O frete grátis global é avaliado por cima da taxa da zona.
 ### Reposição de Compras — `Shop.defaults["purchase"]`
 
 Política do cálculo de reposição do app Compras, fora do schema do `ChannelConfig`
-(`_safe_init` filtra). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
+(o `from_dict` lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/purchase_policy.py`
 (`PurchasePolicy`, dataclass-driven), editável no ShopAdmin (página "Compras");
 lida por `_purchase_policy()` em `shopman/backstage/projections/purchase.py`;
 chave ausente = default. O prazo de entrega por insumo
@@ -1535,8 +1545,8 @@ fornecedor de um clique usa `suggestedQty` como fonte única.
 
 ### Fidelidade — `Shop.defaults["loyalty"]`
 
-Política do programa de fidelidade, fora do schema do `ChannelConfig` (`_safe_init`
-filtra). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
+Política do programa de fidelidade, fora do schema do `ChannelConfig` (o `from_dict`
+lê só os aspectos declarados). Source-of-truth tipado em `shopman/shop/loyalty_config.py` (`LoyaltyConfig`,
 dataclass-driven), editável no ShopAdmin (fieldset "Fidelidade"). O Core (guestman)
 não depende do shop: o orquestrador (`shop/apps.py`) registra resolvers em
 `guestman.contrib.loyalty.conf` que injetam estes valores.
@@ -1739,8 +1749,8 @@ grupos do MESMO cliente. Cliente em mais de um grupo: vale a melhor por tipo, se
 | `kind` | Chaves de `config` | Lido por | Descrição |
 |--------|--------------------|----------|-----------|
 | `free_shipping` | `min_order_q` (`int`, centavos) | `shop/modifiers.resolve_delivery_fee_waiver` (loja e PDV, terceira política do frete grátis, `reason: "group"`) e `shop/projections/cart.build_free_delivery_progress` (barra "faltam R$ X") | Pedido a partir do qual a entrega é grátis para o membro. `0` = sempre. Cliente em dois grupos com frete grátis: vale o de MENOR mínimo. A base é a mesma do limiar da loja (mercadoria, sem o cupom). |
-| `exclusive_collections` | `collection_refs` (`list[str]`) | follow-up (catálogo) | Coleções do Offerman que só o membro enxerga/comprar. |
-| `exclusive_notifications` | `campaign_refs` (`list[str]`) | follow-up (marketing) | Avisos/campanhas exclusivos do grupo. |
+| `exclusive_collections` | `collection_refs` (`list[str]`) | `shop/policies/exclusive_collections.collection_access` via `shop/projections/exclusive_collections` (uma consulta) → cardápio do storefront (`build_catalog`, página da coleção, home), snapshot público e `/api/v1/catalog/` | Coleções do Offerman que só o membro identificado enxerga. Quem não é do grupo (anônimo incluído) não vê a coleção nem o produto que só existe nela; o produto que também está numa coleção comum continua por ela. Cliente em dois grupos enxerga as coleções dos dois (não competem). A página do produto que só existe em coleção escondida é 404 (link direto incluído, `CollectionAccess.hides_product`), e a sacola (`CartService.add_item`) e o checkout recusam o item com 403 `error_code=group_exclusive` (`ReserveRefusal.GROUP_EXCLUSIVE`, dialeto `{detail, field, errors}` + `skus`). |
+| `exclusive_notifications` | `campaign_refs` (`list[str]`, cada item `campaign:<Campaign.pk>`, a identidade que o Marketing já usa nos comprovantes) | `shop/services/campaign_exclusivity.for_campaign` → `shop/services/audience.resolve(campaign_id=...)` (contagem, disparo) e `resolve(announcement=...)` via `for_announcement` (aprovação, planejamento e envio das ondas) e projeção da campanha (`exclusive_price_tiers`) | Campanhas EXCLUSIVAS do grupo. Campanha que aparece aqui em algum grupo só alcança membros dos grupos que a declaram, qualquer que seja o público escolhido (quem sai conta em `excluded_by_reason.outside_exclusive_groups`). Vantagem com `is_active=false` tira os membros DAQUELE grupo e a campanha continua exclusiva: nunca vira campanha para todos. Apagar a campanha não abre a porta: os anúncios dela herdam os grupos (`Announcement.trigger_context["exclusive_price_tiers"]`) antes da referência sair daqui. Exclusiva só sai por mensagem direta: o CRUD e a aprovação recusam postagem pública. |
 
 `priority` (`int`) desempata tipos iguais entre grupos do mesmo cliente; `is_active`
 desliga a vantagem sem apagar. O resolvedor canônico é
@@ -1749,9 +1759,13 @@ desliga a vantagem sem apagar. O resolvedor canônico é
 
 **Quem escreve**: o Gestor (`shopman/backstage/services/customer_groups.py` → `PriceTierAdvantage`
 via `shop/services/customer_groups.sync_group_advantages`) é o dono de `priority`, `is_active` e
-das chaves de `free_shipping` e `exclusive_collections`. `campaign_refs` é do Marketing: o Gestor
-aceita a chave, mas não a oferece na tela, e chave AUSENTE no payload não é tocada, para que
-editar o frete não apague o que outro dono escreveu. O `kind`/`priority`/`is_active` aparece na
+das chaves de `free_shipping` e `exclusive_collections`. `campaign_refs` é do Marketing: quem
+escreve é `shop/services/campaign_exclusivity.set_exclusive_tiers`, chamado pelo CRUD de campanha
+(`exclusive_price_tiers` em `POST/PATCH marketing/rules/`; apagar a campanha retira a referência).
+Ele acrescenta ou retira SÓ a referência daquela campanha; grupo escolhido sem a vantagem ganha a
+linha ligada, e linha existente mantém `is_active`/`priority`, que são do Gestor. O Gestor aceita
+a chave, mas não a oferece na tela, e chave AUSENTE no payload não é tocada, para que editar o
+frete não apague o que outro dono escreveu. O `kind`/`priority`/`is_active` aparece na
 projection como `CustomerGroupAdvantageProjection`, e a lista de grupos do cliente como
 `CustomerPriceTierProjection` (`shopman/backstage/projections/customer_groups.py` e `customers.py`).
 
@@ -2005,7 +2019,7 @@ apontando a etapa ("Etapa 2: ...").
 | `nutrition` | `dict` | idem | `shop.services.nutrition_from_recipe` | Tabela nutricional por 100 g do insumo. Idem: preservado ao publicar. |
 | `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
 | `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
-| `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+| `cap_pct` | `int` | `publish_version` | projections do inventário, pesagem da Preparação (`build_production_weighing` → `ticket.old_dough`), WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
 | `note` | `string` | `publish_version` (de `formula.items[].note`, via `percentages._bom_items`) | Ninguém ainda | Anotação prática do ingrediente escrita na fórmula ("a farinha do bairro pede 2% mais água"). Diferente de alérgenos e nutrição, **não** é preservada da ficha anterior: a versão publicada decide se ela existe. Duas linhas do mesmo insumo somadas numa só levam as duas notas, separadas por `; `. Ausente quando a fórmula não tem nota. |
 
 ## RecipeEntry.meta
@@ -2033,6 +2047,7 @@ se apaga como qualquer registro (D11, dono, 01/10/2026: "o padeiro pode fazer o 
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
 | `published_by` | `string` | `craftsman.services.recipe_book.publish_version` | linha do tempo do inventário | Quem publicou (o `actor`). |
+| `review` | `{by, by_name, at, formula_digest}` | `backstage.services.recipe_review.confirm` ("Está certa", `POST recipes/<ref>/versions/<n>/review/`, pede `shop.manage_production`) | `recipe_review.review_of` → cartão e versão do inventário (`review_status`/`review_label`), fila `/recipes/review`, filtro `unreviewed=1` | **Conferência por alguém da casa** (WP-RECEITAS-DA-CASA F1, 19/10/2026). `by` = username (obrigatório: conferência anônima é recusada), `by_name` = nome para a tela, `at` = ISO. `formula_digest` = sha256 de fórmula + rendimento + etapas no momento da assinatura: se a versão publicada for editada depois (D11), o estado vira `changed` ("Mudou depois da conferência") em vez de seguir "conferida". Só a versão em uso (`entry.current_version`, publicada) se confere. Ausente = não conferida. A **procedência** não é chave nova: sai de `source.kind` (`manual`/`import` = da casa, `note`/`photo` = do caderno, `ficha`/vazio = do cadastro inicial, escrito por agente). |
 | `execution_digest` | `string` (sha256 hex) | `publish_version` (da ficha que acabou de escrever), `bootstrap_entry_from_recipe` (da ficha lida) | `craftsman.services.recipe_book.execution_in_sync` → `RecipeEntryDetailProjection.execution_in_sync` | Impressão digital do que a ficha manda produzir (`execution_digest`: `output_sku`, `batch_size`, `steps` (etapa só com `name` entra como o nome, para a digital anterior à `craftsman/0015` seguir valendo) e itens `input_sku`/`quantity`/`unit`/`is_optional`, sem ordem). Fica de fora o que se edita à mão por direito: nome, `Recipe.meta` e `RecipeItem.meta`. Ausente = versão publicada antes de 30/09/2026: a sincronia fala só pelo `version_ref` até a próxima publicação. |
 
 ## RecipeVersion.formula / .origin / .source

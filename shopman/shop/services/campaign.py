@@ -241,7 +241,9 @@ def _create_announcement(
             rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
         )
     )
-    resolved = resolved_audience or audience_service.resolve(rule.audience_rules, sku=sku)
+    resolved = resolved_audience or audience_service.resolve(
+        rule.audience_rules, sku=sku, campaign_id=rule.pk
+    )
     if resolved.degraded_sources:
         raise CampaignError(
             "Não foi possível validar toda a audiência. Nenhum anúncio foi criado."
@@ -1972,7 +1974,7 @@ def _queue_notify(announcement: Announcement) -> int:
     rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
     sku = (announcement.trigger_context or {}).get("sku", "")
 
-    resolved = audience_service.resolve(rules, sku=sku)
+    resolved = audience_service.resolve(rules, sku=sku, announcement=announcement)
     if resolved.degraded_sources:
         raise CampaignError(
             "Não foi possível revalidar toda a audiência. O envio permanece bloqueado."

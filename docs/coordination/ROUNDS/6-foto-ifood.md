@@ -18,7 +18,8 @@
 
 ## Prova
 
-- Regressão de adapter, disponibilidade externa e estado de sync: 67 testes passaram.
+- Regressão de adapter, disponibilidade externa, guarda de escrita e estado de sync: 83 testes passaram após integrar `origin/main` em 20/10.
+- Gate canônico do grafo de migrações: 12 testes passaram; `makemigrations --check --dry-run` não encontrou mudança.
 - Catálogo do backstage (upload do Gestor, bindings e API): 147 passaram, 2 ignorados.
 - Guarda, estado e concorrência de catálogo: 34 passaram, 4 ignorados.
 - Migração conferida por `makemigrations --check --dry-run`: nenhuma mudança faltante.
@@ -26,6 +27,8 @@
 - O transporte dos testes é integralmente simulado: download, upload e upsert não chamam rede real, inclusive na projeção de disponibilidade externa.
 - Casos cobertos: storage local, HTTP com timeout, JPEG/PNG, WebP recusado, mais de 5 MB recusado durante streaming, mesmo conteúdo em URLs diferentes, cache após limpar memória, foto trocada e upload 503 com item enviado sem `imagePath`.
 - A guarda de escrita continua bloqueando antes de OAuth/HTTP quando a política explícita de teste não existe.
+- A migração da foto é `0102_catalogimageupload`, dependente de `0101_confirmado_diz_a_data_da_encomenda`; não existe outra `0101` nova nesta frente.
+- O comando bruto de prefixos ainda lista `0023` a `0039`, colisões históricas que já existem em `origin/main` e são declaradas em `LEGACY_PREFIX_COLLISIONS`. Renomeá-las é proibido porque já foram aplicadas; o gate canônico confirma zero colisão nova e zero folha ambígua.
 
 ## D1 a D12
 

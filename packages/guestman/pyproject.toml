@@ -17,13 +17,25 @@ dependencies = [
 [project.optional-dependencies]
 api = [
     "djangorestframework>=3.17,<4.0",
+    "drf-spectacular>=0.29,<1.0",
     "django-filter>=25.2,<26.0",
+]
+unfold = [
+    "django-unfold>=0.107,<0.108",
+]
+# `contrib.insights` indexa com GinIndex (django.contrib.postgres), que importa o psycopg.
+postgres = [
+    "psycopg[binary]>=3.2,<4.0",
 ]
 dev = [
     "pytest>=8.0",
     "pytest-django>=4.5",
     "djangorestframework>=3.17,<4.0",
+    "drf-spectacular>=0.29,<1.0",
     "django-filter>=25.2,<26.0",
+    "psycopg[binary]>=3.2,<4.0",
+    # O admin de `contrib.*` é Unfold; os settings da suíte ligam o admin.
+    "django-unfold>=0.107,<0.108",
 ]
 
 [tool.setuptools.packages.find]

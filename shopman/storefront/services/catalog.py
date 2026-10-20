@@ -17,14 +17,29 @@ def published_products(listing_ref: str | None):
 
 
 def filter_by_collection(qs, collection_ref: str):
-    """Filtra produtos por coleção (smart collections resolvem por regra)."""
+    """Filtra produtos por coleção (smart collections resolvem por regra).
+
+    Rota pública e anônima: coleção exclusiva de grupo é vazia, como a inexistente.
+    """
+    from shopman.shop.projections.exclusive_collections import access_for_tiers
+
+    if access_for_tiers(()).is_hidden(collection_ref):
+        return qs.none()
     return catalog_context.filter_by_collection(qs, collection_ref)
 
 
-def get_active_collection_or_404(collection_ref: str):
-    """A coleção ativa, ou 404. Só lê."""
+def get_active_collection_or_404(collection_ref: str, *, request=None):
+    """A coleção ativa que o visitante enxerga, ou 404. Só lê.
+
+    A coleção exclusiva de um grupo é 404 para quem não é do grupo, anônimo
+    incluído: para ele, ela não existe (e não vira "coleção vazia").
+    """
     collection = catalog_context.get_active_collection(collection_ref)
     if collection is None:
+        raise Http404
+    from shopman.storefront.presentation.catalog import viewer_collection_access
+
+    if viewer_collection_access(request).is_hidden(collection.ref):
         raise Http404
     return collection
 
@@ -42,7 +57,44 @@ def get_sellable_published_product(sku: str):
 
 
 def active_collections_with_counts() -> list[dict]:
-    return catalog_context.active_collections_with_counts()
+    """As coleções do catálogo público, sem as exclusivas de grupo (rota anônima)."""
+    from shopman.shop.projections.exclusive_collections import access_for_tiers
+
+    hidden = access_for_tiers(()).hidden
+    return [row for row in catalog_context.active_collections_with_counts() if row["ref"] not in hidden]
+
+
+def without_exclusive_only_products(qs):
+    """Tira do queryset público o produto que só existe em coleção exclusiva de grupo."""
+    from shopman.shop.projections.exclusive_collections import access_for_tiers, exclusive_only_product_ids
+
+    access = access_for_tiers(())
+    if not access.hidden:
+        return qs
+    return qs.exclude(pk__in=exclusive_only_product_ids(access))
+
+
+def group_exclusive_skus(skus, *, request=None, collection_refs_by_sku=None) -> set[str]:
+    """Dos ``skus``, os que são de um grupo que o visitante não integra.
+
+    A decisão é a do cardápio (``CollectionAccess.hides_product``): a página do
+    produto, a sacola e o checkout não abrem o que o cardápio esconde. Sem
+    ``request`` é o anônimo (rota pública). Custo fixo, qualquer que seja o número
+    de itens: a leitura das vantagens (guardada no request) e, só se há coleção
+    escondida, UMA leitura das coleções dos ``skus`` (ou nenhuma, quando o
+    chamador já as tem em ``collection_refs_by_sku``).
+    """
+    from shopman.storefront.presentation.catalog import viewer_collection_access
+
+    wanted = sorted({str(sku) for sku in skus if sku})
+    if not wanted:
+        return set()
+    access = viewer_collection_access(request)
+    if not access.hidden:
+        return set()
+    if collection_refs_by_sku is None:
+        collection_refs_by_sku = catalog_context.collection_refs_by_sku(wanted)
+    return {sku for sku in wanted if access.hides_product(collection_refs_by_sku.get(sku, ()))}
 
 
 def search_index(catalog) -> list[dict]:

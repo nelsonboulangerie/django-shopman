@@ -33,6 +33,8 @@ unfold = [
 dev = [
     "pytest",
     "pytest-django",
+    # Os settings da suíte ligam `unfold` para testar o caminho canônico do admin.
+    "django-unfold>=0.107,<0.108",
 ]
 
 [tool.setuptools.packages.find]

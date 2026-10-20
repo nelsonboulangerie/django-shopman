@@ -33,6 +33,21 @@ describe("useConnectivity — reconciliação ao reconectar", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it("a tela que já ABRE sem rede reconcilia quando a rede volta", async () => {
+    // O PDV recarregado com a rede caída abre do casco sem conexão: a primeira
+    // leitura já é offline, e a volta da rede tem de contar como reconexão.
+    useConnectivity(); // importa o @vueuse mockado (cria o ref)
+    online().value = false;
+    const { onReconnect } = useConnectivity();
+    const handler = vi.fn();
+    onReconnect(handler);
+
+    online().value = true;
+    await nextTick();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   it("NÃO dispara se nunca esteve offline (online estável)", async () => {
     const { onReconnect } = useConnectivity();
     const handler = vi.fn();

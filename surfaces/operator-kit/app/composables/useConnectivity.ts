@@ -14,7 +14,10 @@ type ReconnectHandler = () => void | Promise<void>;
 export function useConnectivity() {
   const online = useOnline();
   const handlers = new Set<ReconnectHandler>();
-  const wasOffline = ref(false);
+  // A tela que JÁ ABRE sem rede (o casco sem conexão do PDV, `offlineShellPaths`)
+  // nunca vê a transição online→offline: sem isto, a volta da rede não contava
+  // como reconexão e a fila de vendas guardadas esperava o próximo ciclo de 30 s.
+  const wasOffline = ref(online.value === false);
 
   const runHandlers = () => {
     for (const handler of handlers) {

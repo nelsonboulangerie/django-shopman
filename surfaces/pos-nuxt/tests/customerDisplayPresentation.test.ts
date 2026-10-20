@@ -9,7 +9,7 @@ import {
   displayPhase,
   firstName,
 } from "~/presentation/customerDisplay";
-import { lineDiscountBadge, lineTotalQ, manualDiscountLabel, manualDiscountWasOverridden, pricingDiscountBadge } from "~/presentation/lineDiscounts";
+import { applyLinePrices, lineDiscountBadge, lineTotalQ, manualDiscountLabel, pricingDiscountBadge } from "~/presentation/lineDiscounts";
 import type { PaymentProofView } from "~/presentation/payment";
 import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
 import type { POSCartItem, POSCheckoutOptionProjection, POSSaleReviewProjection } from "~/types/pos";
@@ -366,13 +366,13 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
   });
 });
 
-describe("lineDiscounts — o desconto manual só se diz perdido quando PERDE", () => {
-  // A checagem era um chute: "tem automático carimbado e o operador pediu
-  // manual, logo o manual perdeu". Acertava por acidente enquanto o manual só
-  // existia em percentuais pequenos, e passou a errar assim que ele aceitou
-  // reais. A régua agora é a do kernel: os dois medidos por unidade, contra a
-  // etiqueta.
+describe("lineDiscounts — o descarte do desconto manual é o que o MOTOR disse", () => {
+  // A tela media os dois descontos com a régua dela e adivinhava o descarte
+  // (laudo de soberania, 18/10/2026): primeiro um chute, depois a régua do kernel
+  // copiada, e cada cópia diverge do motor em algum arredondamento. Agora o eco do
+  // servidor diz, por linha, se o desconto do operador foi descartado.
   const tabatiere = (discount: POSCartItem["discount"]): POSCartItem => ({
+    line_id: "L1",
     sku: "TAB",
     name: "Tabatière",
     qty: 2,
@@ -384,25 +384,27 @@ describe("lineDiscounts — o desconto manual só se diz perdido quando PERDE", 
     discount,
   });
 
-  it("10% (R$ 0,60) perde para o automático de R$ 0,90", () => {
-    expect(manualDiscountWasOverridden(tabatiere({ value: 10, reason: "cortesia", type: "percent" }))).toBe(true);
+  it("o eco que diz descartado volta como descarte, e a linha fica com o automático", () => {
+    const line = { ...tabatiere({ value: 10, reason: "cortesia", type: "percent" }), price_pending: true };
+    const discarded = applyLinePrices([line], {
+      L1: {
+        charged_price_q: 510, list_price_q: 600, manual_discount_discarded: true,
+        pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+      },
+    });
+    expect(discarded).toEqual(["L1"]);
+    expect(line.price_pending).toBe(false);
+    expect(lineTotalQ(line)).toBe(1020);
   });
 
-  it("30% (R$ 1,80) ganha — e o operador não pode ouvir que não valeu", () => {
-    expect(manualDiscountWasOverridden(tabatiere({ value: 30, reason: "cortesia", type: "percent" }))).toBe(false);
-  });
-
-  it("R$ 2,50 por unidade ganha; R$ 0,50 perde", () => {
-    expect(manualDiscountWasOverridden(tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }))).toBe(false);
-    expect(manualDiscountWasOverridden(tabatiere({ value: 0.5, reason: "cortesia", type: "fixed" }))).toBe(true);
-  });
-
-  it("sem desconto automático na linha, o manual nunca perde", () => {
-    const semAuto: POSCartItem = {
-      sku: "PAO", name: "Pão", qty: 1, price_q: 500, charged_price_q: 500, list_price_q: 500, notes: "",
-      discount: { value: 1, reason: "cortesia", type: "fixed" },
-    };
-    expect(manualDiscountWasOverridden(semAuto)).toBe(false);
+  it("R$ 2,50 por unidade ganha: o eco diz que valeu, e ninguém ouve que não", () => {
+    const line = { ...tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }), price_pending: true };
+    const discarded = applyLinePrices([line], {
+      L1: { charged_price_q: 350, list_price_q: 600, pricing_discount: null, manual_discount_discarded: false },
+    });
+    expect(discarded).toEqual([]);
+    expect(line.pricing_discount).toBeNull();
+    expect(lineTotalQ(line)).toBe(700);
   });
 
   it("o rótulo da linha fala o formato que o operador digitou", () => {

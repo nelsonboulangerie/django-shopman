@@ -441,6 +441,22 @@ describe("filterEntries", () => {
     expect(filterEntries(entries, "  ", "", false, false)).toHaveLength(3);
   });
 
+  it("'Não conferidas' keeps pending and changed, never the confirmed or the unpublished", () => {
+    const reviewed = [
+      card({ ref: "a", review_status: "pending" }),
+      card({ ref: "b", review_status: "changed" }),
+      card({ ref: "c", review_status: "confirmed" }),
+      card({ ref: "d", review_status: "" }),
+    ];
+    expect(filterEntries(reviewed, "", "", false, false, false, true).map((e) => e.ref)).toEqual(["a", "b"]);
+    expect(filterEntries(reviewed, "", "", false, false, false, false)).toHaveLength(4);
+  });
+
+  it("bookQuery sends unreviewed only when asked", () => {
+    expect(bookQuery("", "", false, { unreviewed: true })).toEqual({ unreviewed: "1" });
+    expect(bookQuery("", "", false, { unreviewed: false })).toEqual({});
+  });
+
   it("'Favoritas' keeps only the operator's starred entries, combined with the other filters", () => {
     const starred = [
       card({ is_favorite: true }),

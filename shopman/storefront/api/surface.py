@@ -26,10 +26,12 @@ from shopman.shop.observability import (
     log_catalog_observation,
 )
 from shopman.shop.omotenashi import resolve_copy
+from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH, CartDateMismatchError
 from shopman.storefront.api import clean_name, clean_text
+from shopman.storefront.cart import CartItemRefused
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
 from shopman.storefront.presentation import (
@@ -205,8 +207,9 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
     # "Me avise quando disponível": escassez genuína (não pausa/encomenda, que têm
     # enquadramento próprio) ganha o caminho de reposição — mesmo fluxo do sino da
     # PDP. Sem estoque agora (available_qty 0) não há clamp, então esta é a única
-    # ação de avanço além de continuar comprando.
-    is_notifiable = not exc.is_paused and not exc.is_planned
+    # ação de avanço além de continuar comprando. Só a FALTA avisa: pausado, fora
+    # da vitrine do canal ou de outra data não voltam com reposição.
+    is_notifiable = exc.error_code == ReserveRefusal.INSUFFICIENT_SUPPLY and not exc.is_planned
     if is_notifiable:
         actions.append(action_payload(
             ref="notify_when_available",
@@ -457,9 +460,15 @@ def _gone_products() -> dict:
     """
     from shopman.shop.models import RetiredProduct
     from shopman.shop.projections import catalog_context
+    from shopman.shop.projections.exclusive_collections import access_for_tiers
+
+    # Rota pública: a lápide não aponta para coleção exclusiva de grupo (é 404 ao anônimo).
+    escondidas = access_for_tiers(()).hidden
 
     def primeira_viva(refs):
         for ref in refs:
+            if ref in escondidas:
+                continue
             colecao = catalog_context.get_active_collection(ref)
             if colecao is None:
                 continue
@@ -540,7 +549,7 @@ class StorefrontMenuView(APIView):
         with capture_catalog_timing() as timing:
             with catalog_stage("projection"):
                 if collection is not None:
-                    catalog_service.get_active_collection_or_404(collection)
+                    catalog_service.get_active_collection_or_404(collection, request=request)
                 catalog = build_catalog(
                     channel_ref=STOREFRONT_CHANNEL_REF,
                     collection_ref=collection,
@@ -1130,6 +1139,7 @@ class CheckoutLoyaltyView(APIView):
         responses={
             200: OpenApiResponse(description="Cart mutation response plus authoritative cart projection."),
             400: DetailSerializer,
+            403: OpenApiResponse(description="Item de coleção exclusiva de grupo (error_code=group_exclusive)."),
             404: DetailSerializer,
             409: OpenApiResponse(
                 description=(
@@ -1172,6 +1182,8 @@ class CartSkuQtyView(APIView):
             )
         except CartMutationNotFound:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except CartItemRefused as refused:
+            return cart_item_refused_response(refused)
         except CartMutationOptionRefused as refused:
             return _option_refused_response(refused)
         except CartMutationUnavailable as unavailable:
@@ -1195,6 +1207,20 @@ def _cart_mutation_response(request, outcome) -> Response:
         "summary": summary,
         "cart": _cart_payload_after_mutation(request),
     })
+
+
+def cart_item_refused_response(refused: CartItemRefused, *, field: str = "sku") -> Response:
+    """403 no dialeto ``{detail, field, errors}``: o item é de um grupo que o visitante não integra."""
+    return Response(
+        {
+            "detail": refused.detail,
+            "field": field,
+            "errors": {field: [refused.detail]},
+            "error_code": refused.error_code,
+            "skus": refused.skus,
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 def _option_refused_response(refused: CartMutationOptionRefused) -> Response:
@@ -1233,6 +1259,7 @@ def _cart_rate_limited(request, *, group: str, method: str):
                 description="Escolha que não fecha com o cadastro (error_code option_required, "
                 "option_unknown ou option_unavailable).",
             ),
+            403: OpenApiResponse(description="Item de coleção exclusiva de grupo (error_code=group_exclusive)."),
             404: DetailSerializer,
             409: OpenApiResponse(description="Estoque insuficiente, ou item de outra data."),
         },
@@ -1267,6 +1294,8 @@ class CartLinesView(APIView):
             )
         except CartMutationNotFound:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except CartItemRefused as refused:
+            return cart_item_refused_response(refused)
         except CartMutationOptionRefused as refused:
             return _option_refused_response(refused)
         except CartMutationUnavailable as unavailable:

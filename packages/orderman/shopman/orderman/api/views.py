@@ -35,7 +35,7 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from shopman.orderman.conf import get_orderman_setting
 from shopman.orderman.exceptions import IssueResolveError, SessionError, ValidationError
 from shopman.orderman.ids import generate_session_key
-from shopman.orderman.integrations import get_shop_channel_model
+from shopman.orderman.integrations import get_channel_model
 from shopman.orderman.models import Directive, Order, Session
 from shopman.orderman.services import ModifyService, ResolveService
 
@@ -107,7 +107,7 @@ class ChannelViewSet(viewsets.ReadOnlyModelViewSet):
 
     @property
     def queryset(self):
-        Channel = get_shop_channel_model()
+        Channel = get_channel_model()
         if Channel is None:
             raise NotFound("Channels are provided by the host shop app.")
         return Channel.objects.all()

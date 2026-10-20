@@ -86,9 +86,13 @@ cd ../..
 make pwa app=pos
 ```
 
-O gate falha se o service worker cachear API, eventos, Admin, HTML ou navegação.
-Por isso, recarregar a tela sem rede abre só um aviso (`public/offline.html`): as
-vendas guardadas continuam no dispositivo e sobem quando a tela abre com rede.
+O gate falha se o service worker cachear API, eventos, Admin ou HTML no precache.
+A única navegação que abre de cache é a da **venda** (`/`, `offlineShellPaths` do
+kit): com a rede caída, recarregar abre o último HTML que a rede devolveu a este
+dispositivo, com o catálogo e os preços daquela leitura, e a fila de vendas guardadas
+continua (`tests/e2e/offline-shell.spec.ts`). O HTML só entra e só sai do cache se for
+da mesma build do service worker; o de uma versão anterior não abre. Fora da venda
+(caixa, encomendas, ajustes), recarregar sem rede abre o aviso (`public/offline.html`).
 
 ## Tests
 

@@ -180,7 +180,7 @@ class TestReservableNextBatch:
         )
         assert reserved["ok"] is True
         assert Hold.objects.get(
-            pk=int(reserved["hold_id"].split(":")[1])
+            pk=int(reserved["hold_ids"][0].split(":")[1])
         ).target_date == today + timedelta(days=1)
 
 
@@ -600,7 +600,7 @@ class TestWaitlistReservationIntegrity:
             target_date=tomorrow,
         )
         assert result["ok"] is True
-        hold = Hold.objects.get(pk=int(result["hold_id"].split(":")[1]))
+        hold = Hold.objects.get(pk=int(result["hold_ids"][0].split(":")[1]))
         assert hold.metadata[QUALITY_GRADE_POLICY_VERSION_METADATA_KEY] == QUALITY_GRADE_POLICY_VERSION
 
         stock_service.hold(order, require_all=True)

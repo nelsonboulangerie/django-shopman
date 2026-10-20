@@ -68,7 +68,8 @@ const profiles = {
     display: 'standalone',
     orientation: 'portrait',
   },
-  pos: operatorProfile('pos'),
+  // A venda do PDV abre sem conexão (`offlineShellPaths`, WP-PDV-SEM-CONEXAO §8).
+  pos: { ...operatorProfile('pos'), offlineShell: ['/'] },
   hub: operatorProfile('hub'),
   orders: operatorProfile('orders'),
   // Kiosks giram livres (tablets); quem trava é o operador, no rail (useOrientationLock).
@@ -121,6 +122,10 @@ const swPath = join(output, 'public/sw.js')
 await stat(swPath)
 const sw = await readFile(swPath, 'utf8')
 const precache = [...sw.matchAll(/url:"([^"]+)"/g)].map(match => match[1])
+// O id desta build (o mesmo `buildId` que o Nuxt escreve no HTML).
+const shellBuildId = profile.offlineShell
+  ? JSON.parse(await readFile(join(output, 'public/_nuxt/builds/latest.json'), 'utf8')).id
+  : null
 const forbidden = precache.filter(url => /^(?:\/)?(?:api|events|admin)(?:\/|$)/.test(url))
 const html = precache.filter(url => url.endsWith('.html'))
 check(precache.includes('offline.html'), 'offline.html está no precache')
@@ -128,6 +133,16 @@ check(forbidden.length === 0, 'precache não contém /api/, /events/ nem /admin/
 check(html.length === 1 && html[0] === 'offline.html', 'nenhuma navegação/HTML entra no precache além do casco offline')
 check(sw.includes('=>"navigate"===') && sw.includes('NetworkOnly') && sw.includes('PrecacheFallbackPlugin'), 'navegação usa NetworkOnly com fallback offline')
 check((sw.match(/\.CacheFirst\(/g) || []).length === 2, 'existem exatamente dois caches CacheFirst')
+if (profile.offlineShell) {
+  // O casco sem conexão guarda HTML em cache de RUNTIME, nunca no precache (o check
+  // acima), e só o HTML da MESMA build: o `buildId` desta build tem de estar no sw.js.
+  check((sw.match(/\.NetworkFirst\(/g) || []).length === 1, 'existe exatamente uma rota NetworkFirst (o casco sem conexão)')
+  check(sw.includes(`"${requestedApp}-shell"`), 'o casco sem conexão tem cache próprio')
+  check(sw.includes(JSON.stringify(profile.offlineShell)), `o casco sem conexão cobre só ${JSON.stringify(profile.offlineShell)}`)
+  check(typeof shellBuildId === 'string' && sw.includes(JSON.stringify(shellBuildId)), 'o casco sem conexão só aceita o HTML desta build')
+} else {
+  check(!sw.includes('NetworkFirst'), 'nenhuma navegação abre de cache (sem casco sem conexão)')
+}
 if (profile.publicStatus) {
   check(sw.includes('startsWith("/fonts/")') && sw.includes('"/nelson-logo.svg"'), 'status cacheia somente fontes e marca')
 } else {
@@ -259,6 +274,7 @@ try {
   const csp = documentResponse.headers.get('content-security-policy') || ''
   if (profile.storefront) check(csp.includes("worker-src 'self' blob:") && csp.includes("manifest-src 'self'"), 'CSP existente libera worker e manifesto locais')
   check(document.includes(`href="${profile.manifestHref}"`), 'HTML referencia o manifesto da surface')
+  if (profile.offlineShell) check(document.includes(shellBuildId), 'o HTML da venda carrega o buildId que o casco sem conexão confere')
   check(document.includes('rel="manifest"') && document.includes('name="theme-color"'), 'HTML contém manifesto e theme-color')
   if (!profile.storefront && !profile.publicStatus) {
     check(document.includes(`content="${profile.identity.color}"`), 'theme-color do HTML é a mesma cor do manifesto')

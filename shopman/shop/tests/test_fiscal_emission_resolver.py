@@ -109,6 +109,88 @@ def test_missing_resolver_path_falls_back():
     assert emission_resolver(_order(fiscal={"issue_document": True})) is True
 
 
+# ── resolver quebrado GRITA (fallbacks perigosos, item 16) ──────────────────
+
+
+def _alert_broken(order, broken):
+    from shopman.shop.services.fiscal import _alert_emission_resolver_broken
+
+    _alert_emission_resolver_broken(order, broken)
+
+
+def _capture_alerts(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "shopman.shop.services.observability.create_operator_alert",
+        lambda **kw: calls.append(kw),
+    )
+    return calls
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=f"{_HERE}.does_not_exist")
+def test_missing_resolver_path_logs_error_and_raises_critical_alert(monkeypatch):
+    from shopman.shop.services import fiscal
+
+    alerts = _capture_alerts(monkeypatch)
+    errors, warnings = [], []
+    monkeypatch.setattr(fiscal.logger, "error", lambda *a, **kw: errors.append(a))
+    monkeypatch.setattr(fiscal.logger, "warning", lambda *a, **kw: warnings.append(a))
+    assert emission_resolver(_order(fiscal={}), on_broken=_alert_broken) is False
+    assert len(errors) == 1 and warnings == []
+    assert len(alerts) == 1
+    assert alerts[0]["type"] == "integration_config_drift"
+    assert alerts[0]["severity"] == "critical"
+    assert alerts[0]["dedupe_key"] == f"fiscal_emission_resolver_broken:{_HERE}.does_not_exist"
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=f"{_HERE}.resolver_boom")
+def test_resolver_that_raises_also_screams(monkeypatch):
+    alerts = _capture_alerts(monkeypatch)
+    emission_resolver(_order(fiscal={}), on_broken=_alert_broken)
+    assert [a["severity"] for a in alerts] == ["critical"]
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=f"{_HERE}.resolver_only_big,{_HERE}.does_not_exist")
+def test_broken_path_does_not_silence_the_working_resolvers(monkeypatch):
+    # O delta do Dia D acrescenta ``intermediated_sale`` no fim da lista. Num
+    # build sem ele, os quatro da casa tinham de continuar votando: antes, um
+    # caminho quebrado jogava a lista INTEIRA no fallback (só emite se pediu).
+    alerts = _capture_alerts(monkeypatch)
+    assert emission_resolver(_order(total_q=9000, fiscal={}), on_broken=_alert_broken) is True
+    assert emission_resolver(_order(total_q=10, fiscal={}), on_broken=_alert_broken) is False
+    assert emission_resolver(_order(total_q=10, fiscal={"issue_document": True}), on_broken=_alert_broken) is True
+    assert {a["dedupe_key"] for a in alerts} == {f"fiscal_emission_resolver_broken:{_HERE}.does_not_exist"}
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=f"{_HERE}.resolver_only_big")
+def test_healthy_resolver_raises_no_alert(monkeypatch):
+    alerts = _capture_alerts(monkeypatch)
+    emission_resolver(_order(total_q=10), on_broken=_alert_broken)
+    assert alerts == []
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=f"{_HERE}.does_not_exist")
+def test_read_side_call_logs_but_never_writes_an_alert(monkeypatch):
+    # As projeções (fila de pedidos, últimas vendas) perguntam a mesma coisa e
+    # só LEEM: sem ``on_broken`` não há escrita, só o log de erro.
+    alerts = _capture_alerts(monkeypatch)
+    assert emission_resolver(_order(fiscal={})) is False
+    assert alerts == []
+
+
+@override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=f"{_HERE}.does_not_exist")
+def test_emit_is_the_write_side_that_raises_the_alert(monkeypatch):
+    from shopman.shop.services import fiscal
+
+    alerts = _capture_alerts(monkeypatch)
+    monkeypatch.setattr(fiscal.fiscal_pool, "get_backend", lambda *a, **k: object())
+    monkeypatch.setattr(fiscal, "is_test_order", lambda order: False)
+    order = _order(fiscal={})
+    order.ref = "P-ALERTA"
+    fiscal.emit(order)
+    assert [a["dedupe_key"] for a in alerts] == [f"fiscal_emission_resolver_broken:{_HERE}.does_not_exist"]
+
+
 @override_settings(SHOPMAN_FISCAL_EMISSION_RESOLVER=f"{_HERE}.resolver_only_big,{_HERE}.resolver_always_true")
 def test_multiple_resolvers_are_or():
     # Vírgula = OR: o always_true faz emitir mesmo com total baixo.

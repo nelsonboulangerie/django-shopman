@@ -148,7 +148,13 @@ def _endpoint_queries(client: Client, path: str) -> int:
     return len(ctx.captured_queries)
 
 
-def test_listing_price_map_keeps_membership_and_tiers_in_two_queries(catalog, django_assert_num_queries):
+def test_listing_price_map_reads_membership_and_tiers_in_one_query(catalog, django_assert_num_queries):
+    """Pertença à vitrine, tiers e preço-base saem do mesmo SELECT de ListingItem.
+
+    O SKU fora da vitrine não volta ao Product: o mapa exige a listing
+    (laudo de soberania 18/10, AP-1: eram duas consultas, a do Product só para
+    o fallback de ``base_price_q``).
+    """
     Product.objects.create(
         sku="FORA-DA-VITRINE",
         name="Fora da vitrine",
@@ -158,7 +164,7 @@ def test_listing_price_map_keeps_membership_and_tiers_in_two_queries(catalog, dj
     )
     skus = [*PAES, "FORA-DA-VITRINE"]
 
-    with django_assert_num_queries(2):
+    with django_assert_num_queries(1):
         prices = catalog_context.listing_price_map(skus, STOREFRONT_CHANNEL_REF)
 
     assert prices == {sku: 500 + index * 100 for index, sku in enumerate(PAES)}

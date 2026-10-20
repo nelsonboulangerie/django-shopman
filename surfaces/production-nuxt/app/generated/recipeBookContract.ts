@@ -21,6 +21,10 @@ export interface RecipeEntryCardProjection {
   is_favorite: boolean;
   rating_display: string;
   rating_count: number;
+  provenance_kind: string;
+  provenance_label: string;
+  review_status: string;
+  review_label: string;
 }
 
 /** A recipe kind option (filter chip). */
@@ -145,6 +149,13 @@ export interface RecipeVersionProjection {
   lens: FormulaLensProjection;
   formula: Record<string, unknown>;
   origin: Record<string, unknown>;
+  provenance_kind: string;
+  provenance_label: string;
+  provenance_detail: string;
+  review_status: string;
+  review_label: string;
+  review_by_name: string;
+  review_at_display: string;
 }
 
 /** A warning that travels with the usage numbers (what they do NOT measure). */
@@ -417,4 +428,30 @@ export interface RecipeCaptureDraftProjection {
   steps: string[];
   notes: string;
   formula: Record<string, unknown>;
+}
+
+/** One recipe waiting for the baker's check, in the order of what sells most. */
+export interface RecipeReviewItemProjection {
+  ref: string;
+  name: string;
+  kind_label: string;
+  output_sku: string;
+  output_name: string;
+  version_number: number;
+  provenance_kind: string;
+  provenance_label: string;
+  provenance_detail: string;
+  review_status: string;
+  review_label: string;
+  dough_sku: string;
+  dough_name: string;
+  sold_display: string;
+}
+
+/** The baker's check queue: current versions nobody from the house confirmed yet. */
+export interface RecipeReviewQueueProjection {
+  items: RecipeReviewItemProjection[];
+  total: number;
+  confirmed_total: number;
+  recipe_total: number;
 }

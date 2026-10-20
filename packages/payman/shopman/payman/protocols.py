@@ -112,3 +112,31 @@ class PaymentBackend(Protocol):
     def cancel(self, intent_id: str) -> bool: ...
 
     def get_status(self, intent_id: str) -> PaymentStatus: ...
+
+
+@runtime_checkable
+class RefundBackend(Protocol):
+    """Quem devolve o dinheiro de uma cobrança pelo gateway dela.
+
+    O Payman sabe quanto entrou e quanto saiu; não sabe falar com a Efí nem com a
+    Stripe. O Admin de cobranças estorna por este contrato, configurado em
+    ``PAYMAN["REFUND_BACKEND"]`` (caminho pontuado de uma classe), para que o
+    dinheiro saia pelo MESMO caminho que o resto do sistema usa, sem o Core
+    importar o orquestrador. Sem backend configurado, o Admin não estorna: gravar
+    no livro um estorno que não saiu do gateway afirmaria que o cliente recebeu.
+
+    O backend devolve pelo gateway e registra no Payman (``PaymentService.refund``)
+    na mesma operação. ``idempotency_key`` é estável por gesto: a mesma chave
+    reapresentada não devolve duas vezes. ``actor`` é quem pediu o estorno, e vai
+    para o motivo da transação. Recusa e falha voltam como ``success=False`` com
+    ``message`` em português, pronta para a tela; nada é gravado nesse caso.
+    """
+
+    def refund(
+        self,
+        intent_ref: str,
+        *,
+        amount_q: int,
+        idempotency_key: str,
+        actor: str,
+    ) -> RefundResult: ...

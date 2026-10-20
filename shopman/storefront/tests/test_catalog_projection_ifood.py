@@ -473,9 +473,12 @@ def test_adapter_retract_patches_item_status(ifood_settings, fake_oauth):
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
 
     with patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings):
-        with patch("requests.patch") as mock_patch:
+        with patch("requests.patch") as mock_patch, patch("requests.get") as mock_get:
             mock_patch.return_value = MagicMock(status_code=200, headers={})
             mock_patch.return_value.raise_for_status = MagicMock()
+            mock_get.return_value = MagicMock(status_code=200, headers={})
+            mock_get.return_value.raise_for_status = MagicMock()
+            mock_get.return_value.json.return_value = {"item": {"status": "UNAVAILABLE"}}
             result = IFoodCatalogProjection().retract(["PAO-FRANCES"], channel="ifood")
 
     assert result.success is True
@@ -483,6 +486,81 @@ def test_adapter_retract_patches_item_status(ifood_settings, fake_oauth):
     assert url == "https://mock-ifood.test/catalog/v2.0/merchants/00000000-0000-4000-8000-000000000001/items/status"
     assert kwargs["json"]["status"] == "UNAVAILABLE"
     uuid.UUID(kwargs["json"]["itemId"])
+
+
+def test_adapter_price_change_uses_specific_patch_and_confirms_read(
+    ifood_item, ifood_settings, fake_oauth,
+):
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    with patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings):
+        with patch("requests.patch") as mock_patch, patch("requests.get") as mock_get:
+            mock_patch.return_value = MagicMock(status_code=200, headers={})
+            mock_patch.return_value.raise_for_status = MagicMock()
+            mock_get.return_value = MagicMock(status_code=200, headers={})
+            mock_get.return_value.raise_for_status = MagicMock()
+            mock_get.return_value.json.return_value = {"item": {"price": {"value": 3.5}}}
+
+            result = IFoodCatalogProjection().update_price(ifood_item, channel="ifood")
+
+    assert result.success is True
+    url, kwargs = mock_patch.call_args.args[0], mock_patch.call_args.kwargs
+    assert url.endswith(f"/catalog/v2.0/merchants/{ifood_settings['merchant_id']}/items/price")
+    assert kwargs["json"] == {
+        "itemId": kwargs["json"]["itemId"],
+        "price": {"value": 3.5},
+    }
+    assert set(kwargs["json"]) == {"itemId", "price"}
+    mock_get.assert_called_once()
+    assert mock_get.call_args.args[0].endswith(f"/items/{kwargs['json']['itemId']}/flat")
+
+
+@pytest.mark.parametrize(
+    ("sellable", "remote_status"),
+    [(False, "UNAVAILABLE"), (True, "AVAILABLE")],
+)
+def test_adapter_availability_uses_specific_status_patch_and_confirms_read(
+    ifood_item, ifood_settings, fake_oauth, sellable, remote_status,
+):
+    from dataclasses import replace
+
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    item = replace(ifood_item, is_sellable=sellable)
+    with patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings):
+        with patch("shopman.shop.services.external_availability.in_stock", return_value=True):
+            with patch("requests.patch") as mock_patch, patch("requests.get") as mock_get:
+                mock_patch.return_value = MagicMock(status_code=200, headers={})
+                mock_patch.return_value.raise_for_status = MagicMock()
+                mock_get.return_value = MagicMock(status_code=200, headers={})
+                mock_get.return_value.raise_for_status = MagicMock()
+                mock_get.return_value.json.return_value = {"item": {"status": remote_status}}
+
+                result = IFoodCatalogProjection().set_availability(item, channel="ifood")
+
+    assert result.success is True
+    assert mock_patch.call_args.kwargs["json"] == {
+        "itemId": mock_patch.call_args.kwargs["json"]["itemId"],
+        "status": remote_status,
+    }
+
+
+def test_adapter_does_not_report_success_when_confirmation_read_fails(
+    ifood_item, ifood_settings, fake_oauth,
+):
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    with patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings):
+        with patch("requests.patch") as mock_patch, patch("requests.get") as mock_get:
+            mock_patch.return_value = MagicMock(status_code=200, headers={})
+            mock_patch.return_value.raise_for_status = MagicMock()
+            mock_get.return_value = MagicMock(status_code=503, headers={})
+            mock_get.return_value.raise_for_status.side_effect = RuntimeError("read failed")
+
+            result = IFoodCatalogProjection().update_price(ifood_item, channel="ifood")
+
+    assert result.success is False
+    assert result.projected == 0
 
 
 def test_adapter_raises_rate_limit_on_429(ifood_item, ifood_settings, fake_oauth):
@@ -558,6 +636,44 @@ def test_handler_retracts_when_item_dropped_from_listing(db, ifood_channel, ifoo
     backend.project.assert_not_called()
 
 
+def test_handler_routes_price_intention_to_specific_patch(db, ifood_channel, ifood_directive):
+    from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
+
+    item = ProjectedItem(
+        sku="PAO-FRANCES", name="Pão", description="", unit="un",
+        price_q=425, is_published=True, is_sellable=True,
+    )
+    ifood_directive.payload["trigger"] = "price_changed"
+    ifood_directive.save(update_fields=["payload"])
+    backend = MagicMock()
+    backend.update_price.return_value = ProjectionResult(success=True, projected=1, channel="ifood")
+
+    with patch("shopman.shop.handlers.catalog_projection._get_projected_item", return_value=item):
+        CatalogProjectHandler(backend=backend).handle(message=ifood_directive, ctx={})
+
+    backend.update_price.assert_called_once_with(item, channel="ifood")
+    backend.project.assert_not_called()
+
+
+def test_handler_routes_pause_intention_to_specific_patch(db, ifood_channel, ifood_directive):
+    from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
+
+    item = ProjectedItem(
+        sku="PAO-FRANCES", name="Pão", description="", unit="un",
+        price_q=425, is_published=True, is_sellable=False,
+    )
+    ifood_directive.payload["trigger"] = "availability_changed"
+    ifood_directive.save(update_fields=["payload"])
+    backend = MagicMock()
+    backend.set_availability.return_value = ProjectionResult(success=True, projected=1, channel="ifood")
+
+    with patch("shopman.shop.handlers.catalog_projection._get_projected_item", return_value=item):
+        CatalogProjectHandler(backend=backend).handle(message=ifood_directive, ctx={})
+
+    backend.set_availability.assert_called_once_with(item, channel="ifood")
+    backend.retract.assert_not_called()
+
+
 def test_handler_skips_when_channel_inactive(db, ifood_directive):
     """Handler skips API call when iFood channel is inactive."""
     from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
@@ -596,6 +712,41 @@ def test_handler_schedules_retry_on_rate_limit(db, ifood_channel, ifood_directiv
     assert ifood_directive.available_at > before
     delta = (ifood_directive.available_at - before).total_seconds()
     assert 25 <= delta <= 35, f"Retry-After=30 but delta={delta}s"
+
+
+def test_price_retry_reads_current_state_and_preserves_intention(
+    db, ifood_channel, ifood_directive,
+):
+    from dataclasses import replace
+
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodRateLimitError
+    from shopman.shop.handlers.catalog_projection import CatalogProjectHandler
+
+    first = ProjectedItem(
+        sku="PAO-FRANCES", name="Pão", description="", unit="un",
+        price_q=350, is_published=True, is_sellable=True,
+    )
+    latest = replace(first, price_q=450)
+    ifood_directive.payload["trigger"] = "price_changed"
+    ifood_directive.save(update_fields=["payload"])
+    backend = MagicMock()
+    backend.update_price.side_effect = [
+        IFoodRateLimitError(retry_after=1),
+        ProjectionResult(success=True, projected=1, channel="ifood"),
+    ]
+
+    with patch(
+        "shopman.shop.handlers.catalog_projection._get_projected_item",
+        side_effect=[first, first, latest, latest],
+    ):
+        handler = CatalogProjectHandler(backend=backend)
+        handler.handle(message=ifood_directive, ctx={})
+        ifood_directive.refresh_from_db()
+        assert ifood_directive.status == "queued"
+        assert ifood_directive.payload["trigger"] == "price_changed"
+        handler.handle(message=ifood_directive, ctx={})
+
+    assert [call.args[0].price_q for call in backend.update_price.call_args_list] == [350, 450]
 
 
 # Note: max_attempts / retry limits are managed by the orderman directive
@@ -643,6 +794,7 @@ def test_on_availability_changed_enqueues_directive(db):
     directives = Directive.objects.filter(topic=CATALOG_PROJECT_SKU)
     assert directives.count() == 1
     assert directives.first().payload["sku"] == "CROISSANT"
+    assert directives.first().payload["trigger"] == "availability_changed"
 
 
 @override_settings(OFFERMAN=_OFFERMAN_NONE)
@@ -671,6 +823,7 @@ def test_on_price_changed_enqueues_directive(db):
     directives = Directive.objects.filter(topic=CATALOG_PROJECT_SKU)
     assert directives.count() == 1
     assert directives.first().payload["sku"] == "CROISSANT"
+    assert directives.first().payload["trigger"] == "price_changed"
 
 
 @override_settings(OFFERMAN=_OFFERMAN_IFOOD)
@@ -808,11 +961,16 @@ def test_sync_catalog_ifood_incremental_retracts(db, ifood_settings, fake_oauth,
 
     with patch("shopman.offerman.service.CatalogService.get_projection_items", return_value=items):
         with patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings):
-            with patch("requests.put") as mock_put, patch("requests.patch") as mock_patch:
+            with patch("requests.put") as mock_put, patch("requests.patch") as mock_patch, patch(
+                "requests.get",
+            ) as mock_get:
                 mock_put.return_value = MagicMock(status_code=200, headers={})
                 mock_put.return_value.raise_for_status = MagicMock()
                 mock_patch.return_value = MagicMock(status_code=202, headers={})
                 mock_patch.return_value.raise_for_status = MagicMock()
+                mock_get.return_value = MagicMock(status_code=200, headers={})
+                mock_get.return_value.raise_for_status = MagicMock()
+                mock_get.return_value.json.return_value = {"item": {"status": "UNAVAILABLE"}}
                 call_command("sync_catalog_ifood")
 
     mock_put.assert_called_once()  # PAO upserted

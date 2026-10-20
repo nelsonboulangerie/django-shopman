@@ -45,7 +45,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from shopman.shop.adapters._payment_link import link_expires_at
-from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
+from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult, pix_timeout_minutes_from
 
 logger = logging.getLogger(__name__)
 
@@ -138,9 +138,8 @@ def create_intent(
     # ``payment._persist_intent`` a copia para ``Order.data["payment"]``.
     metadata = {**(metadata or {}), **provenance_stamp(environment=LOCAL_MOCK_ENVIRONMENT, simulated=True)}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
-    pix_timeout = config.get("pix_timeout_minutes", 30)
     if method == "pix":
-        expires_at = timezone.now() + timedelta(minutes=pix_timeout)
+        expires_at = timezone.now() + timedelta(minutes=pix_timeout_minutes_from(config))
     elif method == "link":
         # O link simulado vence no MESMO prazo do real (janela do canal e corte
         # do atendimento, vindos do `_adapter_config`): quem desenvolve o balcão
