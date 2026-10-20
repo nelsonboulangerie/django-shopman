@@ -53,3 +53,17 @@ O job `operator-kit` (run 39497839136, job 118888858793) recusou o aviso de erro
 por faltar `variant="subtle"` explícito. GraphQL confirmou `isInMergeQueue=false`:
 a solicitação automática existia, mas o PR vermelho ainda não estava na fila real.
 O mesmo PR recebeu o atributo canônico; `guardrails.minimalSet.test.ts`: **10 passed**.
+
+
+## Evidência preservada no repositório
+
+As capturas antes/depois foram copiadas do cache local para EVIDENCE/onda4-base.
+
+- [onda4-4-fornecedores-antes-dark-desktop.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-antes-dark-desktop.png)
+- [onda4-4-fornecedores-antes-dark-mobile.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-antes-dark-mobile.png)
+- [onda4-4-fornecedores-antes-light-desktop.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-antes-light-desktop.png)
+- [onda4-4-fornecedores-antes-light-mobile.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-antes-light-mobile.png)
+- [onda4-4-fornecedores-depois-dark-desktop.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-depois-dark-desktop.png)
+- [onda4-4-fornecedores-depois-dark-mobile.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-depois-dark-mobile.png)
+- [onda4-4-fornecedores-depois-light-desktop.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-depois-light-desktop.png)
+- [onda4-4-fornecedores-depois-light-mobile.png](../EVIDENCE/onda4-base/onda4-4-fornecedores-depois-light-mobile.png)

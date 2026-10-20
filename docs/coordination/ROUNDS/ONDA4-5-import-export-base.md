@@ -71,3 +71,33 @@ não seja objeto. A guarda vem antes de `dict(request.data)` e devolve 400 no di
 `detail/field/errors`, sem escrita. Um caso autenticado `["x"]` comprova a recusa;
 os oito testes do lote passaram. A correção acompanha a #1964 para não reiniciar
 os checks finais da #1957. A superfície e o gesto do lote não mudam.
+
+
+## Evidência preservada no repositório
+
+As capturas antes/depois foram copiadas do cache local para EVIDENCE/onda4-base.
+
+- [onda4-5-materials-antes-dark-desktop.png](../EVIDENCE/onda4-base/onda4-5-materials-antes-dark-desktop.png)
+- [onda4-5-materials-antes-dark-mobile.png](../EVIDENCE/onda4-base/onda4-5-materials-antes-dark-mobile.png)
+- [onda4-5-materials-antes-light-desktop.png](../EVIDENCE/onda4-base/onda4-5-materials-antes-light-desktop.png)
+- [onda4-5-materials-antes-light-mobile.png](../EVIDENCE/onda4-base/onda4-5-materials-antes-light-mobile.png)
+- [onda4-5-materials-depois-dark-desktop.png](../EVIDENCE/onda4-base/onda4-5-materials-depois-dark-desktop.png)
+- [onda4-5-materials-depois-dark-mobile.png](../EVIDENCE/onda4-base/onda4-5-materials-depois-dark-mobile.png)
+- [onda4-5-materials-depois-light-desktop.png](../EVIDENCE/onda4-base/onda4-5-materials-depois-light-desktop.png)
+- [onda4-5-materials-depois-light-mobile.png](../EVIDENCE/onda4-base/onda4-5-materials-depois-light-mobile.png)
+- [onda4-5-materials-export-dark-desktop.png](../EVIDENCE/onda4-base/onda4-5-materials-export-dark-desktop.png)
+- [onda4-5-materials-export-dark-mobile.png](../EVIDENCE/onda4-base/onda4-5-materials-export-dark-mobile.png)
+- [onda4-5-materials-export-light-desktop.png](../EVIDENCE/onda4-base/onda4-5-materials-export-light-desktop.png)
+- [onda4-5-materials-export-light-mobile.png](../EVIDENCE/onda4-base/onda4-5-materials-export-light-mobile.png)
+- [onda4-5-suppliers-antes-dark-desktop.png](../EVIDENCE/onda4-base/onda4-5-suppliers-antes-dark-desktop.png)
+- [onda4-5-suppliers-antes-dark-mobile.png](../EVIDENCE/onda4-base/onda4-5-suppliers-antes-dark-mobile.png)
+- [onda4-5-suppliers-antes-light-desktop.png](../EVIDENCE/onda4-base/onda4-5-suppliers-antes-light-desktop.png)
+- [onda4-5-suppliers-antes-light-mobile.png](../EVIDENCE/onda4-base/onda4-5-suppliers-antes-light-mobile.png)
+- [onda4-5-suppliers-depois-dark-desktop.png](../EVIDENCE/onda4-base/onda4-5-suppliers-depois-dark-desktop.png)
+- [onda4-5-suppliers-depois-dark-mobile.png](../EVIDENCE/onda4-base/onda4-5-suppliers-depois-dark-mobile.png)
+- [onda4-5-suppliers-depois-light-desktop.png](../EVIDENCE/onda4-base/onda4-5-suppliers-depois-light-desktop.png)
+- [onda4-5-suppliers-depois-light-mobile.png](../EVIDENCE/onda4-base/onda4-5-suppliers-depois-light-mobile.png)
+- [onda4-5-suppliers-export-dark-desktop.png](../EVIDENCE/onda4-base/onda4-5-suppliers-export-dark-desktop.png)
+- [onda4-5-suppliers-export-dark-mobile.png](../EVIDENCE/onda4-base/onda4-5-suppliers-export-dark-mobile.png)
+- [onda4-5-suppliers-export-light-desktop.png](../EVIDENCE/onda4-base/onda4-5-suppliers-export-light-desktop.png)
+- [onda4-5-suppliers-export-light-mobile.png](../EVIDENCE/onda4-base/onda4-5-suppliers-export-light-mobile.png)
