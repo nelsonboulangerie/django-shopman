@@ -45,6 +45,10 @@ for (const viewport of selectedOperatorViewports()) {
         await page.getByText("Arquivados", { exact: true }).last().click();
         await expect(page.getByText("Arquivado", { exact: true }).first()).toBeVisible();
         await expect(page.locator("[data-operator-filter-chip]")).toContainText("Arquivados");
+        const done = page.locator("[data-operator-filter-panel-done]");
+        if (await done.isVisible()) await done.click();
+        else await page.keyboard.press("Escape");
+        await expect(page.locator("[data-operator-filter-panel]")).toBeHidden();
 
         await captureOperatorEvidence(page, testInfo, {
           app: "purchase",

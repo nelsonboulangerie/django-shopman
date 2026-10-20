@@ -31,9 +31,19 @@ frente.
 - Consultas da projeção: `28` no recorte corrente e `28` no recorte arquivado.
 - API medida com `Server-Timing`: `33` consultas no recorte corrente e `32` no arquivado;
   o teste fixa que o recorte arquivado não pode custar mais que o corrente.
-- Navegador, build de produção: `4 passed`, cobrindo insumos e fornecedores, antes e
-  depois do filtro, em tema claro e escuro, com varredura de geometria e zero respostas
-  HTTP 4xx/5xx. As capturas foram abertas e conferidas.
+- Navegador, build de produção: `36 passed`, cobrindo insumos e fornecedores, antes e
+  depois do filtro, em tema claro e escuro nos nove viewports canônicos, com varredura
+  de geometria e zero respostas HTTP 4xx/5xx. As capturas foram abertas e conferidas.
+
+### Correção do gate do PR
+
+O primeiro CI executou a nova prova em toda a matriz e encontrou `16` falhas idênticas
+fora do desktop: a captura final ainda mantinha o painel de filtros aberto, e a varredura
+de geometria avaliava a opção interna **Envelope operacional** (`20×20`) como alvo de
+toque. A causa foi reproduzida localmente (`4 failed` no tablet deitado). O cenário agora
+fecha o popover ou a gaveta pelo gesto correspondente antes da captura final; assim a
+varredura volta a medir a lista arquivada, que é o estado em prova. A matriz completa
+passou em seguida (`36 passed`).
 
 ## Limite conhecido
 
