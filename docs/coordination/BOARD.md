@@ -52,6 +52,11 @@ foi entregue e colocado na fila no #1948 (`codex/arquivar-gesto`), com as depend
 #1947 integradas. Prova funcional, desempenho, D1 a D12 e capturas em
 `ROUNDS/ARQUIVAR-F-gesto.md`.
 
+**Turno Arquivar (20/10, Frente D):** Compras passou a separar insumos e fornecedores
+arquivados das listas correntes, com o filtro explícito **Arquivados**, no PR #1946. A
+frente saiu do quadro ao entrar na fila; prova e limites estão em
+`ROUNDS/D-arquivar-compras.md`.
+
 **Turno ARQUIVAR (20/10):** Frente E, receitas com `RecipeEntry.is_active`, na fila no PR #1944. Detalhe em `ROUNDS/E-arquivar-receita.md`.
 
 **Turno ARQUIVAR (20/10):** Frentes B+C, trava transversal e superfícies de produto arquivado,
