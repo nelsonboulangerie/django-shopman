@@ -1,7 +1,7 @@
 # ONDA4-F6: componentes de combo
 
 - Data: 2026-10-20. Branch: `codex/produto-combo`.
-- PR: #1961, draft empilhado no #1960. Aguarda integração das frentes 1 e 2 para retarget ao main e fila.
+- PR: #1961, pronto para revisão, empilhado no #1960. Main das frentes 2 e 3 integrado via head 81fa9f9f7 do pai. Aguarda merge da frente 1 para retarget ao main e fila.
 - Ordem: `ORDERS/next-onda4.md`, frente 6.
 
 O painel Vínculos lista componentes e quantidades por unidade do combo. O editor inline usa Aplicar/Cancelar, busca em modal e confirmação ao retirar, com Desfazer por 10 segundos. O aviso explica que a alteração muda o estoque necessário nas próximas vendas. O rascunho da aba Geral é preservado ao salvar composição.
@@ -35,3 +35,7 @@ Leitura do detalhe instrumentada por Server-Timing. Antes: **20 consultas com 0 
 - **D12:** abertos e conferidos os antes/depois claro/escuro, edição e busca desktop e celular. Uma captura transitória durante resolução de merge exibiu overlay do compilador e foi descartada e refeita após integração limpa.
 
 Capturas únicas em `img/onda4-f6-produto-combo/`: `onda4-f6-before-{light,dark}.png`, `onda4-f6-{after,edit,choose}-{light,dark}.png` e `onda4-f6-{after,edit,choose}-mobile-{light,dark}.png`.
+
+## Integração com main das frentes 2 e 3
+
+Head do pai `81fa9f9f7` integrado: só BOARD teve conflito, com registros preservados. Revalidação: 30 backend, 64 testes em quatro arquivos frontend e typecheck aprovados. Schema regenerado sem diferença. Mock ecoa order/date_from/date_to; navegador desktop e celular em ambos os temas repetiu salvar, Desfazer, busca e preservação do rascunho Geral sem erros HTTP/pageerror. Ruff e diff-check aprovados.
