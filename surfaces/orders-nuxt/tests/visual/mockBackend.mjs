@@ -31,6 +31,17 @@ function catalogPayload(url) {
   const source = recordedFor(url);
   if (!source) return null;
   const body = JSON.parse(JSON.stringify(source));
+  if (process.env.MOCK_VALIDITY === "1") {
+    body.matrix.order = url.searchParams.get("order") || "name";
+    body.matrix.date_from = url.searchParams.get("date_from") || "";
+    body.matrix.date_to = url.searchParams.get("date_to") || "";
+    for (const row of body.matrix.rows) for (const cell of row.cells) {
+      if (cell.in_listing) {
+        cell.valid_from = "2026-10-20";
+        cell.valid_until = "2026-10-22";
+      }
+    }
+  }
   if (url.searchParams.get("archived") === "true") {
     const archived = body.matrix?.rows?.slice(0, 1) || [];
     for (const row of archived) row.is_active = false;

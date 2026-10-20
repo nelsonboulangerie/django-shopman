@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   availableAnywhere,
   cellPrice,
+  cellValidity,
   cellState,
   cellSyncView,
   cellView,
@@ -131,7 +132,9 @@ describe("cellView", () => {
 describe("rowStatus", () => {
   it("identifica o produto arquivado antes dos estados efêmeros", () => {
     expect(
-      rowStatus(row({ is_active: false, is_published: true, is_sellable: true })),
+      rowStatus(
+        row({ is_active: false, is_published: true, is_sellable: true }),
+      ),
     ).toEqual({ off: true, label: "Arquivado", tone: "muted", hint: "" });
   });
 });
@@ -414,5 +417,24 @@ describe("pimSummary", () => {
   });
   it("sem PIM → falta marca e categoria", () => {
     expect(pimSummary(row()).missing).toEqual(["marca", "categoria"]);
+  });
+});
+
+describe("vigência por canal", () => {
+  it("omite o selo sem limites e diz as duas datas por extenso numérico", () => {
+    expect(cellValidity(cell())).toBe("");
+    expect(
+      cellValidity(
+        cell({ valid_from: "2026-10-20", valid_until: "2026-11-02" }),
+      ),
+    ).toBe("Vale de 20/10/2026 até 02/11/2026");
+  });
+  it("aceita qualquer uma das pontas aberta", () => {
+    expect(cellValidity(cell({ valid_from: "2026-10-20" }))).toBe(
+      "Vale a partir de 20/10/2026",
+    );
+    expect(cellValidity(cell({ valid_until: "2026-10-20" }))).toBe(
+      "Vale até 20/10/2026",
+    );
   });
 });

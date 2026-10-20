@@ -28,6 +28,8 @@ PR** (escreva o registro com "na fila #N").
 
 ## Em execução agora
 
+**ONDA4-F2 (20/10):** preço com vigência em execução no branch `codex/preco-vigencia`. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
+
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 

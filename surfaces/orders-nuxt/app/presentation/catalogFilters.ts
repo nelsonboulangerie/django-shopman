@@ -55,7 +55,12 @@ export function serverCatalogDimensions(
   facets?: CatalogFacets,
 ): FilterDimension[] {
   const hasTargets = surfaces.some((s) => s.is_projection_target);
-  const dimensions: FilterDimension[] = [];
+  const dimensions: FilterDimension[] = [{
+    id: "validity",
+    label: "Vigência do preço",
+    type: "single-select",
+    options: [{ value: "any", label: "Qualquer data" }],
+  }];
 
   if (hasTargets) {
     dimensions.push({
@@ -130,6 +135,7 @@ const QUERY_DIMENSIONS: Record<
   string,
   { id: string; values?: readonly string[] }
 > = {
+  validity: { id: "validity", values: ["any"] },
   surface: { id: FILTER_SURFACE },
   // Na URL a chave é `sync` (contrato do checklist); a dimensão é `sync_status`.
   sync: { id: FILTER_SYNC, values: SYNC_OPTIONS.map((o) => o.value) },

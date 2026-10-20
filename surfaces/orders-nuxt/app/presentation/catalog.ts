@@ -375,3 +375,15 @@ export function catalogCsv(
     }),
   });
 }
+
+/** Vigência pertence ao canal; não altera a disponibilidade por conta própria. */
+export function cellValidity(
+  cell: Pick<SurfaceCellProjection, "valid_from" | "valid_until">,
+): string {
+  const date = (value: string) => value.split("-").reverse().join("/");
+  if (cell.valid_from && cell.valid_until)
+    return `Vale de ${date(cell.valid_from)} até ${date(cell.valid_until)}`;
+  if (cell.valid_from) return `Vale a partir de ${date(cell.valid_from)}`;
+  if (cell.valid_until) return `Vale até ${date(cell.valid_until)}`;
+  return "";
+}
