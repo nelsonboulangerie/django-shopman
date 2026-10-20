@@ -4,7 +4,8 @@
 - **Branch:** `codex/preco-vigencia`.
 - **Ordem:** `ORDERS/next-onda4.md`, frente 2.
 - **PR:** [#1958](https://github.com/nelsonboulangerie/django-shopman/pull/1958).
-- **Estado:** entrega concluída, fila solicitada após o push final.
+- **Estado final:** MERGED em 2026-10-20 22:26:48 UTC.
+- **Commit de merge:** `3d0a10a57fdc69a539c3a881111d97037bca4d78`.
 
 ## Entrega
 

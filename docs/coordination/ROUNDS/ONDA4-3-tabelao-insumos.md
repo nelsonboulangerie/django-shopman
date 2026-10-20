@@ -1,7 +1,9 @@
 # ONDA4-3: tabelão de insumos
 
 Ordem: `ORDERS/next-onda4.md`, frente 3. Base: `65b658d31`.
-Branch: `codex/tabelao-insumos`. PR: #1959. Estado: pronto, solicitado auto-merge após os checks.
+Branch: `codex/tabelao-insumos`. PR: #1959.
+Estado final: MERGED em 2026-10-20 22:36:10 UTC.
+Commit de merge: `0cdc545781440dc0e32e56d40037c1b524eae538`.
 
 ## Entrega
 

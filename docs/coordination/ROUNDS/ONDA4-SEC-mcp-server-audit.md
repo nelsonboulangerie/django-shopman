@@ -1,6 +1,8 @@
 # ONDA4-SEC: auditoria de dependências
 
-Estado: na fila #1967. O dono autorizou a atualização de segurança no lock de production-nuxt.
+Estado final: MERGED no #1967 em 2026-10-20 22:59:36 UTC.
+Commit de merge: `486423dc2abcf6539ab0e6e5c6222f0b45cc7fbb`.
+O dono autorizou a atualização de segurança no lock de production-nuxt.
 
 A falha Supply chain marketing de #1957 foi lida no job 118893254167. O caminho é @eslint/config-inspector → @devframes/agentic → @modelcontextprotocol/server. Sete locks permitidos travavam server/core 2.0.0. Atualizados para a estável 2.3.1, já compatível com a faixa ^2.0.0. Status já estava corrigido. Nenhuma allowlist alterada.
 

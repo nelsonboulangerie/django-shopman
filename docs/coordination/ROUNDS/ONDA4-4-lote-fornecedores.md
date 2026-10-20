@@ -1,5 +1,8 @@
 # ONDA4-4: lote de fornecedores
 
+Estado final: MERGED no #1957 em 2026-10-20 23:32:08 UTC.
+Commit de merge: `8d54b1e537a8f71706cf647412f84cead7076e5c`.
+
 Ordem: `ORDERS/next-onda4.md`, frente 4. Branch: `codex/lote-fornecedores`. PR: [#1957](https://github.com/nelsonboulangerie/django-shopman/pull/1957).
 
 A Base permite marcar os fornecedores da página e Arquivar/Desarquivar em um POST
