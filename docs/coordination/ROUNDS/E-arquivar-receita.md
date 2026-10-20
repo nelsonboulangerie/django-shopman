@@ -16,7 +16,7 @@
 ## Provas
 
 - Backend direcionado: 200 testes verdes; migração e limite de consultas: mais 2 testes verdes.
-- Lista do inventário: 10 consultas antes e 10 depois.
+- Lista do inventário: 10 consultas antes e 10 depois; `Server-Timing` passou de ausente para os estágios canônicos `projection` e `db`.
 - Produção: 63 testes Vitest verdes, typecheck verde e E2E Chromium desktop verde.
 - Admin/Unfold: 300 testes verdes pelo `make admin`.
 - `makemigrations --check --dry-run craftsman`: nenhuma mudança pendente.

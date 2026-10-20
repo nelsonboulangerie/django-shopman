@@ -239,6 +239,8 @@ def test_list_query_count_stays_bounded(client, viewer, entry):
         response = client.get(LIST_URL)
 
     assert response.status_code == 200
+    assert "projection;dur=" in response.headers["Server-Timing"]
+    assert "db;dur=" in response.headers["Server-Timing"]
     assert len(queries) <= 10, [query["sql"] for query in queries]
 
 
