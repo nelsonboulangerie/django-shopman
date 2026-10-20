@@ -14,9 +14,8 @@ fallback derivado apenas quando não houver vínculo no mesmo escopo.
 ## Bloqueio confirmado
 
 A ordem exige a #1905 mergeada antes desta frente porque ambas alteram
-`shopman/shop/adapters/catalog_projection_ifood.py`. Em 19/10, depois de concluir a frente C, a
-#1905 continuava aberta, sem auto-merge e com falhas em `Shop rest`, `Testes (test-shop)` e
-`Coverage Gate`. A própria ordem também diz para não tocar nesse PR.
+`shopman/shop/adapters/catalog_projection_ifood.py`. Em 20/10, a #1905 continuava aberta,
+conflitante e vermelha em quatro checks. A própria ordem também diz para não tocar nesse PR.
 
 Abrir a frente agora criaria exatamente a colisão que a dependência evita e não permitiria cumprir
 a instrução de partir do `main` com `imagePath` já integrado. Por isso não houve branch, código ou

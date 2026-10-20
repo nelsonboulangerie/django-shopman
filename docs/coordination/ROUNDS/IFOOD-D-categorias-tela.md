@@ -3,9 +3,9 @@
 - **id:** IFOOD-D
 - **sessão:** frente 6, turno 2 de 19/10/2026 (Codex)
 - **branch:** `codex/ifood-categorias-tela`
-- **PR:** #1931, empilhado sobre #1927
-- **estado:** draft enquanto a frente A não está no `main`
-- **início / fim:** 2026-10-19
+- **PR:** #1931, base `main`
+- **estado:** na fila #1931
+- **início / fim:** 2026-10-19 / 2026-10-20
 
 ## Objetivo
 
@@ -69,7 +69,8 @@ remoto ou JSON aparece como ferramenta de operação.
 - Criar e mudar o status de categoria seguem disponíveis na API da frente A, mas não foram pedidos
   na tela desta fatia.
 - Nenhuma chamada foi feita a loja real e nenhuma credencial foi usada.
-- O ensaio real permanece na frente E, aguardando os três insumos do dono.
+- O ensaio real permanece na frente E. Merchant, credenciais locais e alvos de teste foram
+  encontrados em 20/10; a execução aguarda a #1905 e esta tela entrarem no `main`.
 
 ## Perguntas ao dono
 
