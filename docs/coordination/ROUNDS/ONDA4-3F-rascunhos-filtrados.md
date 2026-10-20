@@ -46,3 +46,8 @@ campos preservada. D8: erro reaparece junto ao insumo quando o filtro o revela.
 D9: salvar confirma só o recorte, Desfazer das outras células é preservado, Limpar
 continua explícito. D10: nenhuma nova copy de produto. D11: helper canônico do kit.
 D12: seis capturas antes/depois claro/escuro abertas e conferidas.
+
+
+## Esteira após o pai
+
+O pai #1959 mergeou em 20/10 às 22:36 UTC (0cdc54578). Este seguimento #1968 foi integrado ao main, deixou de ser draft empilhado e segue para a fila. A reivindicação saiu do BOARD; o histórico permanece neste registro.

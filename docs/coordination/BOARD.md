@@ -126,6 +126,3 @@ leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-
 `codex/tabelao-insumos`. A falha CI de overflow no rodapé de custos do celular foi
 reproduzida e corrigida localmente (6 casos visuais passaram). Registro: `ROUNDS/ONDA4-3-tabelao-insumos.md`.
 
-**ONDA4-3F (20/10):** seguimento do tabelão para alinhar validação e payload ao
-recorte visível e preservar rascunhos ocultos após salvar. PR #1968 draft empilhado no #1959;
-registro: `ROUNDS/ONDA4-3F-rascunhos-filtrados.md`.
