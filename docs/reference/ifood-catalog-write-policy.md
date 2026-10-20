@@ -59,6 +59,10 @@ Três fatos medidos no merchant de teste (`ROUNDS/IFOOD-E-ensaio-teste.md`):
   ~0,3 s depois ainda mostrou o valor anterior; a seguinte, ~3 s depois, mostrou o novo.
   Os `PATCH` de preço e status confirmaram na primeira leitura. Conferência remota
   de upsert precisa de espera e nova leitura, nunca de uma leitura só.
+- **Foto: o upsert sem `imagePath` preserva a foto; com `imagePath: ""` a remove.** O
+  adapter só manda `imagePath` quando há foto, então tirar a foto do produto aqui não a
+  tira do iFood. A leitura devolve o caminho com o prefixo
+  `https://static-images.ifood.com.br/pratos/`, e o envio usa o caminho relativo.
 
 ## Estoque: o item esgotado sai indisponível
 

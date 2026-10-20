@@ -4,8 +4,9 @@
 - **sessão:** frente 6, turno 5b, 20/10/2026 (Codex)
 - **branch:** `codex/ifood-ensaio`
 - **PR:** #1929
-- **estado:** EM_PR; turno 5b parou no preço; turno 5c (Claude) corrigiu o preço, provou
-  preço, alterações rápidas e descrição, e parou na categoria; item restaurado nas duas vezes
+- **estado:** ROTEIRO FECHADO no turno 5d (20/10, 21:28 UTC). 5b parou no preço; 5c corrigiu o
+  preço e provou preço, alterações rápidas e descrição; 5d provou categoria e foto. Item
+  restaurado ao baseline nas três vezes
 - **execução:** 2026-10-20 20:59:46–20:59:49 UTC (17:59:46–17:59:49 em São Paulo)
 - **ordem:** `ORDERS/next-ensaio.md`, autorização expressa para um merchant e um SKU
 
@@ -172,3 +173,41 @@ retentaria 5 vezes. Nenhum dos dois mudou o resultado do ensaio.
 Próximo ensaio: do movimento de categoria em diante (para `Categoria Bebida`), depois foto e
 restauração completa, incluindo provar que `PUT items` com `imagePath: ""` limpa a foto. A
 frente só fecha quando esse trecho fechar.
+
+---
+
+# Turno 5d — 20/10/2026, 21:26–21:28 UTC (Claude, `claude/ifood-ensaio-5d`)
+
+Ordem do dono no chat: repetir da categoria em diante, para `Categoria Bebida`, depois a foto,
+e restaurar tudo. Mesmo runtime isolado do 5c, recriado do zero (SQLite novo, mesma política,
+mesmas credenciais só em memória). A trava de transporte passou a recusar também `PUT items`
+para categoria fora de `Categoria Item Normal`/`Categoria Bebida`. Cada leitura flat espera 3 s
+depois da diretiva (o `PUT items` é eventualmente consistente).
+
+Baseline (GET flat 21:26 UTC) igual ao do 5c; captura inicial nova; dry-run com **1** item.
+
+| Passo | Escrita (UTC) | Leitura flat | Resultado |
+|---|---|---|---|
+| Retomar (pré-condição) | 21:27:04.926 `PATCH /items/status` `AVAILABLE`, 200 | 21:27:08.712 | Só o status. Diretiva 2, `synced`. |
+| **Categoria → Bebida** | 21:27:11.580 `PUT /items`, `categoryId=e4f00b97…`, 200 | 21:27:15.158 | Só `item.categoryId` mudou. Mesmo `itemId`/`productId`; nenhuma categoria criada (captura final). Diretiva 3, `manual_resync`, `synced`. |
+| **Foto** | 21:27:24.370 `POST /image/upload`, **201**; 21:27:24.774 `PUT /items` com `imagePath`, 200 | 21:27:29.011 | Só `products[0].imagePath` mudou, para `https://static-images.ifood.com.br/pratos/f36a17d0…/202610201827_zet66chxk4c.png`. Foto PNG descartável lida do storage local; nenhum GET à URL pública (a trava recusaria). Diretiva 4, `product_updated`, `synced`. |
+
+Restauração, na ordem do roteiro:
+
+| Passo | Escrita (UTC) | Leitura flat | Resultado |
+|---|---|---|---|
+| Foto | 21:27:38.092 `PUT /items` explícito com `imagePath: ""`, 200 | 21:27:41.896 | `imagePath` voltou a `""`. **Provado: PUT com `imagePath` vazio limpa a foto.** |
+| Categoria | 21:27:52.954 `PUT /items` (mapa de volta + reenvio canônico), 200 | 21:27:56.526 | `categoryId` de volta a `Categoria Item Normal`. Diretiva 5, `synced`. |
+| Status | 21:27:58.719 `PATCH /items/status` `UNAVAILABLE`, 200 | 21:28:02.886 | **Zero diferenças contra o baseline.** Diretiva 6, `retracted`. |
+
+Captura integral final às 21:28:13 UTC: `merchant_id`, `catalog_id`, `context`, `categories`
+e `category_items` iguais à captura inicial; GET flat de 21:28:16 com zero diferenças. Zero
+diretivas `queued`/`running` (2 a 6 `done`). SQLite e mídia privados apagados; credenciais não
+alteradas. A imagem enviada continua no armazenamento de imagens do iFood, sem item ligado a
+ela; o catálogo não tem endpoint de apagar imagem.
+
+## Fechamento do roteiro
+
+As sete intenções foram confirmadas por leitura remota, somando os turnos 5b (pausa e
+retomada), 5c (preço, alterações rápidas, descrição) e 5d (categoria, foto). Nenhum campo
+alheio mudou, nenhuma identidade paralela surgiu, e o item voltou ao baseline nas três vezes.

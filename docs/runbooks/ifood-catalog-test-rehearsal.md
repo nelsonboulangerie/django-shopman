@@ -34,8 +34,9 @@ A primeira execução (turno 5b) parou na conferência do preço: o PATCH só co
 iFood apagar `originalValue`. O critério foi fechado pela coordenação (o item fica idêntico ao
 baseline, exceto o campo pretendido) e o adapter passou a mandar `value` e `originalValue`.
 A segunda execução (turno 5c) provou preço, alterações rápidas e descrição, e parou no
-movimento de categoria por causa do destino `PIZZA`. Recibos de ambas em
-`docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md`. Falta: categoria e foto.
+movimento de categoria por causa do destino `PIZZA`. A terceira (turno 5d) provou categoria
+(para `Categoria Bebida`) e foto, e restaurou tudo. **O roteiro inteiro fechou em 20/10/2026,
+21:28 UTC.** Recibos em `docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md`.
 
 ## Preparação segura
 
@@ -92,8 +93,8 @@ de autorização, token, segredo ou resposta integral com dados desnecessários.
 
 1. Restaure foto, categoria, descrição, preço e status para os valores exatos do baseline, nessa
    ordem, usando novas intenções explícitas. O adapter nunca apaga foto (PUT sem
-   `imagePath` preserva a que existe); o caminho previsto é um `PUT items` explícito com
-   `imagePath: ""`, **ainda não provado**. Se o iFood não limpar a foto assim, registre e pare.
+   `imagePath` preserva a que existe); restaure com um `PUT items` explícito com
+   `imagePath: ""`, que limpa a foto (provado em 20/10, 21:27:38 UTC).
 2. Faça outra captura completa em arquivo novo. Compare item, produto, categoria, complementos,
    índice, turnos e contextos com o baseline.
 3. A restauração só termina quando a leitura remota coincide e não há diretiva pendente para o SKU.
