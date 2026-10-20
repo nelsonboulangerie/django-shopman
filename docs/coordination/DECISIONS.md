@@ -981,3 +981,19 @@ continua sumindo no próximo deploy, e a linha "Arquivos de usuário (R2)" da ma
 `BLOQUEADO`.
 
 **Prova.** `doctl apps spec get` em 10/10: nenhuma variável `R2_*`.
+
+---
+
+## D-034 · Arquivar é o estado indefinido dos cadastros
+
+- **Estado:** `EM_EXECUCAO` · **Dono:** Pablo (produto) · **Data:** 2026-10-19 · **revisar_em:** ao concluir a ordem ARQUIVAR
+
+**Decisão do dono.** `is_active=False` se chama **Arquivar** em todo o sistema; o gesto é
+Arquivar/Desarquivar e o estado é Arquivado. O registro arquivado sai das listagens padrão e só
+aparece quando o filtro explícito de arquivados é pedido. Para produto, arquivar não altera
+`is_published` nem `is_sellable`, mas impede venda e exposição enquanto durar o arquivamento;
+desarquivar devolve os dois estados exatamente como estavam. `offerman.Product` recebe
+`is_active`, e `craftsman.RecipeBook.is_archived` será alinhado para `is_active`.
+
+**Prova.** Execução iniciada no PR #1945, Frente A da ordem arquivada em
+`docs/coordination/ORDERS/2026-10-19-arquivar.md`.

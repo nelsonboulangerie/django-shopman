@@ -9,6 +9,8 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from import_export.admin import ExportMixin, ImportExportModelAdmin
@@ -35,8 +37,9 @@ from taggit.forms import TagWidgetMixin
 from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.numeric_filters import RangeNumericFilter
 from unfold.contrib.import_export.forms import ExportForm, ImportForm
-from unfold.decorators import display
-from unfold.forms import ActionForm
+from unfold.decorators import action, display
+from unfold.enums import ActionVariant
+from unfold.forms import ActionForm, BaseDialogForm
 from unfold.widgets import (
     UnfoldAdminSelectWidget,
     UnfoldAdminTextareaWidget,
@@ -104,7 +107,6 @@ class CollectionAdminForm(forms.ModelForm):
             "ref", "name", "description", "parent",
             "valid_from", "valid_until", "sort_order", "is_active", "rule",
         )
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk and self.instance.rule:
@@ -318,6 +320,31 @@ class ProductActionForm(ActionForm):
     )
 
 
+class ProductArchiveFilter(admin.SimpleListFilter):
+    """Esconde arquivados por padrão e só os revela por pedido explícito."""
+
+    title = _("Arquivamento")
+    parameter_name = "arquivados"
+
+    def lookups(self, request, model_admin):
+        return (("sim", _("Arquivados")), ("todos", _("Todos")))
+
+    def queryset(self, request, queryset):
+        if self.value() == "sim":
+            return queryset.archived()
+        if self.value() == "todos":
+            return queryset
+        return queryset.active()
+
+
+class ProductArchiveConfirmForm(BaseDialogForm):
+    """Confirmação nativa do Unfold para arquivar um produto."""
+
+
+class ProductUnarchiveConfirmForm(BaseDialogForm):
+    """Confirmação nativa do Unfold para desarquivar um produto."""
+
+
 @admin.register(Product)
 class ProductAdmin(_ProductImportExportBase):
     from shopman.offerman.contrib.admin_unfold.resources import ProductResource
@@ -343,6 +370,7 @@ class ProductAdmin(_ProductImportExportBase):
     ]
     list_display_links = ["product_header"]
     list_filter = [
+        ProductArchiveFilter,
         "is_published",
         "is_sellable",
         "availability_policy",
@@ -469,6 +497,9 @@ class ProductAdmin(_ProductImportExportBase):
         """Display visibility status with colored badges."""
         badges = []
 
+        if not obj.is_active:
+            badges.append(unfold_badge("Arquivado", "base"))
+
         if not obj.is_published:
             badges.append(unfold_badge("Oculto", "yellow"))
         if not obj.is_sellable:
@@ -486,7 +517,6 @@ class ProductAdmin(_ProductImportExportBase):
         return super().get_queryset(request).annotate(
             has_components=Exists(ProductComponent.objects.filter(parent=OuterRef("pk"))),
         )
-
     def get_list_display(self, request):
         """Custo e margem só entram na lista quando existe de onde tirá-los.
 
@@ -561,6 +591,7 @@ class ProductAdmin(_ProductImportExportBase):
             return "—"
 
     action_form = ProductActionForm
+    actions_detail = ["archive_product", "unarchive_product"]
     actions = [
         "unpublish_products",
         "publish_products",
@@ -569,6 +600,64 @@ class ProductAdmin(_ProductImportExportBase):
         "update_price_percent",
         "add_to_collection",
     ]
+
+    def _change_url(self, object_id):
+        return reverse(
+            f"admin:{self.model._meta.app_label}_{self.model._meta.model_name}_change",
+            args=[object_id],
+        )
+    @action(
+        description=_("Arquivar"),
+        url_path="archive",
+        icon="archive",
+        variant=ActionVariant.DANGER,
+        permissions=["change"],
+        dialog={
+            "title": _("Arquivar este produto?"),
+            "description": _(
+                "Sai do cardápio, dos canais e das listas. O histórico e os vínculos ficam."
+            ),
+            "form_class": ProductArchiveConfirmForm,
+            "form_submit_text": _("Arquivar"),
+        },
+    )
+    def archive_product(self, request, form, object_id):
+        product = self.get_object(request, object_id)
+        if product is None:
+            messages.error(request, _("Produto não encontrado."))
+            return HttpResponseRedirect(self._change_url(object_id))
+        if product.is_active:
+            product.is_active = False
+            product.save(update_fields=["is_active"])
+            self.log_change(request, product, _("Produto arquivado."))
+            messages.success(request, _("Produto arquivado."))
+        return HttpResponseRedirect(self._change_url(object_id))
+
+    @action(
+        description=_("Desarquivar"),
+        url_path="unarchive",
+        icon="unarchive",
+        permissions=["change"],
+        dialog={
+            "title": _("Desarquivar este produto?"),
+            "description": _(
+                "Volta às listas com os estados de publicação e vendabilidade preservados."
+            ),
+            "form_class": ProductUnarchiveConfirmForm,
+            "form_submit_text": _("Desarquivar"),
+        },
+    )
+    def unarchive_product(self, request, form, object_id):
+        product = self.get_object(request, object_id)
+        if product is None:
+            messages.error(request, _("Produto não encontrado."))
+            return HttpResponseRedirect(self._change_url(object_id))
+        if not product.is_active:
+            product.is_active = True
+            product.save(update_fields=["is_active"])
+            self.log_change(request, product, _("Produto desarquivado."))
+            messages.success(request, _("Produto desarquivado."))
+        return HttpResponseRedirect(self._change_url(object_id))
 
     def _bulk_set(self, request, queryset, field, value, label):
         """Itera com save() (não queryset.update()) para disparar product_updated →
@@ -631,7 +720,6 @@ class ProductAdmin(_ProductImportExportBase):
                 "pct": percent,
             },
         )
-
     @admin.action(description=_("Adicionar à coleção"))
     def add_to_collection(self, request, queryset):
         collection_id = request.POST.get("collection_id", "").strip()

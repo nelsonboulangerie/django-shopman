@@ -46,7 +46,7 @@ class ProductInfoBackend:
                 category=category,
                 unit=product.unit,
                 base_price_q=product.base_price_q,
-                is_active=product.is_published and product.is_sellable,
+                is_active=product.is_active and product.is_published and product.is_sellable,
             )
         except Product.DoesNotExist:
             return None
@@ -71,7 +71,7 @@ class ProductInfoBackend:
                 valid=True,
                 sku=sku,
                 product_name=product.name,
-                is_active=product.is_published and product.is_sellable,
+                is_active=product.is_active and product.is_published and product.is_sellable,
             )
 
         except Product.DoesNotExist:
@@ -108,7 +108,7 @@ class ProductInfoBackend:
                     category=category,
                     unit=p.unit,
                     base_price_q=p.base_price_q,
-                    is_active=p.is_published and p.is_sellable,
+                    is_active=p.is_active and p.is_published and p.is_sellable,
                 )
             else:
                 result[sku] = None
@@ -131,7 +131,7 @@ class ProductInfoBackend:
         ).prefetch_related("collection_items__collection")
 
         if not include_inactive:
-            qs = qs.filter(is_published=True, is_sellable=True)
+            qs = qs.available_for_sale()
 
         qs = qs[:limit]
 
@@ -150,7 +150,7 @@ class ProductInfoBackend:
                     category=category,
                     unit=p.unit,
                     base_price_q=p.base_price_q,
-                    is_active=p.is_published and p.is_sellable,
+                    is_active=p.is_active and p.is_published and p.is_sellable,
                 )
             )
         return result
