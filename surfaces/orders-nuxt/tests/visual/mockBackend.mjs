@@ -31,10 +31,10 @@ function catalogPayload(url) {
   const source = recordedFor(url);
   if (!source) return null;
   const body = JSON.parse(JSON.stringify(source));
-  if (process.env.MOCK_VALIDITY === "1") {
-    body.matrix.order = url.searchParams.get("order") || "name";
-    body.matrix.date_from = url.searchParams.get("date_from") || "";
-    body.matrix.date_to = url.searchParams.get("date_to") || "";
+  body.matrix.order = url.searchParams.get("order") || "name";
+  body.matrix.date_from = url.searchParams.get("date_from") || "";
+  body.matrix.date_to = url.searchParams.get("date_to") || "";
+  if (scenario === "validity") {
     for (const row of body.matrix.rows) for (const cell of row.cells) {
       if (cell.in_listing) {
         cell.valid_from = "2026-10-20";

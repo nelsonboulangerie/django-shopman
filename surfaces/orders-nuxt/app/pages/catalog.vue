@@ -7,7 +7,7 @@
 import {
   catalogCsv,
   cellPrice,
-  cellValidity,
+  rowValidities,
   cellSyncView,
   cellView,
   letterTile,
@@ -1979,6 +1979,12 @@ useHead({ title: "Catálogo" });
                       }}</span></template
                     >
                   </span>
+                  <div v-if="rowValidities(row, surfaces).length" class="mt-1 flex flex-wrap gap-1">
+                    <NuxtBadge v-for="validity in rowValidities(row, surfaces)" :key="validity.label"
+                      color="neutral" class="max-w-full whitespace-normal" data-catalog-validity>
+                      {{ validity.channels }}: {{ validity.label }}
+                    </NuxtBadge>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2015,7 +2021,7 @@ useHead({ title: "Catálogo" });
             >
               <div
                 v-if="cell.in_listing"
-                class="flex flex-wrap items-center justify-center gap-1"
+                class="flex items-center justify-center gap-1"
                 :class="rowStatuses[row.sku]?.off ? 'opacity-50 grayscale' : ''"
               >
                 <!-- ÁREA 1 — toggle: verde=ligado&disponível · cinza=pausado (posição off).
@@ -2198,9 +2204,6 @@ useHead({ title: "Catálogo" });
                     :aria-label="`${cellSync(cell).label} em ${surfaceName(cell.surface_ref)}`"
                   />
                 </template>
-                <span v-if="cellValidity(cell)" class="flex basis-full justify-center">
-                  <NuxtBadge color="neutral" class="max-w-32 whitespace-normal text-center" data-catalog-validity>{{ cellValidity(cell) }}</NuxtBadge>
-                </span>
               </div>
               <div
                 v-else

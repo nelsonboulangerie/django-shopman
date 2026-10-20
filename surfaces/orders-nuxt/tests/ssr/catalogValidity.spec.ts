@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 const before = process.env.VALIDITY_STAGE === "before";
+const backend = `http://127.0.0.1:${process.env.ORDERS_SSR_MOCK_PORT || 34895}`;
+test.beforeEach(async () => {
+  await fetch(`${backend}/__visual/scenario?set=validity`);
+});
+test.afterEach(async () => {
+  await fetch(`${backend}/__visual/scenario?set=normal`);
+});
 test("vigência por canal e período canônico sem falhas HTTP", async ({
   page,
 }, testInfo) => {
@@ -11,7 +18,7 @@ test("vigência por canal e período canônico sem falhas HTTP", async ({
   });
   await page.goto("/catalog", { waitUntil: "networkidle" });
   if (!before) {
-    await expect(page.locator("[data-catalog-validity]").first()).toHaveText(
+    await expect(page.locator("[data-catalog-validity]").first()).toContainText(
       "Vale de 20/10/2026 até 22/10/2026",
     );
     await expect(page.locator("[data-catalog-validity-period]")).toContainText("Vigência:");
@@ -30,6 +37,7 @@ test("vigência por canal e período canônico sem falhas HTTP", async ({
         `onda4-f2-vigencia-${before ? "antes" : "depois"}-${theme}.png`,
       ),
       fullPage: true,
+      animations: "disabled",
     });
   }
   if (!before) {

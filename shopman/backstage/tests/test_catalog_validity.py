@@ -97,3 +97,15 @@ def test_invalid_period_is_rejected(client, operator, catalog, params):
     assert response.status_code == 400
     assert response.json()["detail"]
     assert response.json()["errors"]
+
+
+def test_date_filter_does_not_invent_a_price_window_for_feeds(catalog):
+    from shopman.shop.tests._display import display_channel
+
+    Listing.objects.all().update(valid_until=date(2026, 10, 10))
+    display_channel("tv", "TV", collections=["doces"], prices_from="web")
+    out = build_catalog_matrix(date_from=date(2026, 10, 20), date_to=date(2026, 10, 20),
+        filters={"surface": ["tv"]})
+    assert [row.sku for row in out.rows] == ["BOLO"]
+    cell = next(cell for cell in out.rows[0].cells if cell.surface_ref == "tv")
+    assert cell.valid_from == cell.valid_until == ""

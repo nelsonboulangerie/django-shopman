@@ -387,3 +387,22 @@ export function cellValidity(
   if (cell.valid_until) return `Vale até ${date(cell.valid_until)}`;
   return "";
 }
+
+
+/** Canais com a mesma janela compartilham um selo na linha do produto. */
+export function rowValidities(row: CatalogRowProjection, surfaces: SurfaceProjection[]) {
+  const groups = new Map<string, { label: string; channels: string[] }>();
+  for (const cell of row.cells) {
+    const label = cellValidity(cell);
+    if (!cell.in_listing || !label) continue;
+    const surface = surfaces.find((surface) => surface.ref === cell.surface_ref);
+    if (!surface?.transactional) continue;
+    const group = groups.get(label) ?? { label, channels: [] };
+    group.channels.push(surface.short_name || surface.name);
+    groups.set(label, group);
+  }
+  return Array.from(groups.values(), (group) => ({
+    label: group.label,
+    channels: group.channels.join(", "),
+  }));
+}

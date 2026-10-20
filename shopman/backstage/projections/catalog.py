@@ -725,7 +725,12 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         if date_to is not None:
             validity_items = validity_items.filter(
                 Q(listing__valid_from__isnull=True) | Q(listing__valid_from__lte=date_to))
-        products = products.filter(pk__in=validity_items.values("product_id"))
+        # Feed não tem preço próprio: seu recorte de curadoria continua válido
+        # quando o operador o seleciona, inclusive junto de um canal de venda.
+        selected_feed_skus = set().union(*(
+            display_index[ref]["members"] for ref in surface_refs if ref in display_index
+        ))
+        products = products.filter(Q(pk__in=validity_items.values("product_id")) | Q(sku__in=selected_feed_skus))
     if order == "validity":
         products = products.annotate(_valid_from=Min("listing_items__listing__valid_from",
             filter=Q(listing_items__pk__in=validity_items.values("pk"))))

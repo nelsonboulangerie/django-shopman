@@ -4,6 +4,7 @@ import {
   availableAnywhere,
   cellPrice,
   cellValidity,
+  rowValidities,
   cellState,
   cellSyncView,
   cellView,
@@ -437,4 +438,22 @@ describe("vigência por canal", () => {
       "Vale até 20/10/2026",
     );
   });
+});
+
+
+it("agrupa uma mesma vigência e conserva o canal das janelas diferentes", () => {
+  const validity = { valid_from: "2026-10-20", valid_until: "2026-10-22" };
+  const product = row({ cells: [
+    cell({ surface_ref: "web", ...validity }),
+    cell({ surface_ref: "ifood", ...validity }),
+    cell({ surface_ref: "pdv", valid_until: "2026-10-25" }),
+  ] });
+  expect(rowValidities(product, [
+    surface({ ref: "web", short_name: "Site" }),
+    surface({ ref: "ifood", short_name: "iFood" }),
+    surface({ ref: "pdv", short_name: "PDV" }),
+  ])).toEqual([
+    { channels: "Site, iFood", label: "Vale de 20/10/2026 até 22/10/2026" },
+    { channels: "PDV", label: "Vale até 25/10/2026" },
+  ]);
 });
