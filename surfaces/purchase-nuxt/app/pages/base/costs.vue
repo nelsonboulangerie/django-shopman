@@ -17,6 +17,10 @@ const {
   batchConversionIds,
   batchOnlyMissing,
   batchQuery,
+  costGridErrors,
+  canUndoCost,
+  undoCost,
+  pasteCost,
   batchLineErrors,
   batchRows,
   batchFilledCount,
@@ -155,7 +159,7 @@ async function onPrefer(cost: SupplierMaterialCost) {
         <section class="space-y-3" aria-labelledby="batch-title" data-cost-batch>
           <div>
             <h2 id="batch-title" class="text-base font-semibold">Tabela do fornecedor</h2>
-            <p class="text-sm text-muted">Escolha o fornecedor e preencha os valores que você sabe. Quem ficar em branco não entra.</p>
+            <p class="text-sm text-muted">Escolha o fornecedor e preencha os valores que você sabe. Quem ficar em branco não entra. Cole uma coluna da planilha no primeiro valor. Desfazer volta uma edição por vez.</p>
           </div>
           <div class="flex flex-wrap items-end gap-2">
             <NuxtFormField label="Fornecedor" class="w-full sm:w-64">
@@ -194,7 +198,7 @@ async function onPrefer(cost: SupplierMaterialCost) {
             <template #material-cell="{ row }">
               <span class="block font-semibold">{{ row.original.name }}</span>
               <span class="block text-xs text-muted"><span class="font-mono">{{ row.original.sku }}</span> · {{ row.original.unit }}</span>
-              <span v-if="batchLineErrors[row.original.sku]" class="block text-xs font-semibold text-error">{{ batchLineErrors[row.original.sku] }}</span>
+              <span v-if="(costGridErrors[row.original.sku] || batchLineErrors[row.original.sku])" class="block text-xs font-semibold text-error">{{ (costGridErrors[row.original.sku] || batchLineErrors[row.original.sku]) }}</span>
               <!-- Celular: a unidade de compra desce para baixo do nome (a coluna some). -->
               <NuxtSelect
                 :model-value="batchConversionIds[row.original.sku] || BASE_UNIT"
@@ -221,9 +225,10 @@ async function onPrefer(cost: SupplierMaterialCost) {
                 placeholder="0,00"
                 :aria-label="`Valor de ${row.original.name}`"
                 :model-value="batchInputs[row.original.sku] ?? ''"
-                :color="batchLineErrors[row.original.sku] ? 'error' : 'primary'"
-                :highlight="Boolean(batchLineErrors[row.original.sku] || batchInputs[row.original.sku])"
+                :color="(costGridErrors[row.original.sku] || batchLineErrors[row.original.sku]) ? 'error' : 'primary'"
+                :highlight="Boolean((costGridErrors[row.original.sku] || batchLineErrors[row.original.sku]) || batchInputs[row.original.sku])"
                 class="w-24 sm:w-28 [&_input]:text-end [&_input]:tabular-nums"
+                @paste="pasteCost($event, row.original.sku)"
                 @update:model-value="(value: string | number) => setBatchInput(row.original.sku, String(value ?? ''))"
               />
             </template>
@@ -233,13 +238,14 @@ async function onPrefer(cost: SupplierMaterialCost) {
                   <template v-if="!batchSupplierRef">Escolha o fornecedor para lançar.</template>
                   <template v-else><span class="font-semibold tabular-nums">{{ plural(batchFilledCount, "valor preenchido", "valores preenchidos") }}</span></template>
                 </p>
-                <div class="flex gap-2">
+                <div class="flex max-w-full flex-wrap justify-end gap-2">
+                  <NuxtButton label="Desfazer" icon="i-lucide-undo-2" color="neutral" variant="outline" :disabled="!canUndoCost || actionPending" @click="undoCost()" />
                   <NuxtButton label="Limpar" color="neutral" variant="outline" :disabled="!batchFilledCount || actionPending" @click="clearCostBatch()" />
                   <NuxtButton
                     icon="i-lucide-check"
                     :label="batchFilledCount ? `Salvar ${batchFilledCount} como padrão` : 'Salvar como padrão'"
                     :loading="savingBatch"
-                    :disabled="readonlyFallback || !batchReady || actionPending"
+                    :disabled="readonlyFallback || !batchReady || actionPending || Object.keys(costGridErrors).length > 0"
                     data-cost-batch-save
                     @click="onSaveBatch()"
                   />

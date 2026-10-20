@@ -120,3 +120,8 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
    apague: o `make coordination` o mostra como "conteúdo já no main".
 5. O `make coordination` só mede CI e auto-merge **com `gh` autenticado**. Sem `gh` ele diz isso numa
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
+
+**ONDA4-3 (20/10):** tabelão de insumos com colagem de coluna, erro por insumo e Desfazer,
+leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-merge solicitado após os checks. Branch
+`codex/tabelao-insumos`. A falha CI de overflow no rodapé de custos do celular foi
+reproduzida e corrigida localmente (6 casos visuais passaram). Registro: `ROUNDS/ONDA4-3-tabelao-insumos.md`.
