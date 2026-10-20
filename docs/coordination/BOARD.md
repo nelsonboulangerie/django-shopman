@@ -26,7 +26,10 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
+**Turno ONDA4 (20/10), frente2:** preço com vigência entregue no PR #1958, com fila solicitada. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
+
 ## Em execução agora
+
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
@@ -37,7 +40,7 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 | §7.2-4 | Clientes: duplicar cadastro e etiquetar em lote | EM_PR | `claude/cadastro-clientes` / #1815 | 2026-10-15 12:5x |
 | §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
 | WATCHMAN | Saúde, autocura e desempenho (Codex, outro agente) | EM_PR | `codex/watchman-*` / #1809, #1813 | 2026-10-15 11:5x |
-| IFOOD-E | Ensaio de catálogo na loja de teste | EM_PR | `codex/ifood-ensaio` / #1929; turno 5b interrompido na conferência de `originalValue`; item restaurado, demais passos não executados. Evidência: `ROUNDS/IFOOD-E-ensaio-teste.md` | 2026-10-20 20:59 UTC |
+| IFOOD-E | Ensaio de catálogo na loja de teste | EM_PR | `codex/ifood-ensaio-completo` / #1962 (seguimento de #1929); contrato de `originalValue` conferido, roteiro completo confirmado e restauração exata. Evidência: `ROUNDS/IFOOD-E-ensaio-teste.md` | 2026-10-20 21:17 UTC |
 
 **SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
 
@@ -117,3 +120,8 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
    apague: o `make coordination` o mostra como "conteúdo já no main".
 5. O `make coordination` só mede CI e auto-merge **com `gh` autenticado**. Sem `gh` ele diz isso numa
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
+
+**ONDA4-3 (20/10):** tabelão de insumos com colagem de coluna, erro por insumo e Desfazer,
+leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-merge solicitado após os checks. Branch
+`codex/tabelao-insumos`. A falha CI de overflow no rodapé de custos do celular foi
+reproduzida e corrigida localmente (6 casos visuais passaram). Registro: `ROUNDS/ONDA4-3-tabelao-insumos.md`.

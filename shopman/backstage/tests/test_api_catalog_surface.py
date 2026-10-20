@@ -842,7 +842,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     assert set(matrix) == {
         "surfaces", "rows", "collections", "vocation_pending",
         # Paginação/filtro/ordenação no servidor (onda 1, fatia B).
-        "total", "page", "page_size", "has_next", "order", "query",
+        "total", "page", "page_size", "has_next", "order", "query", "date_from", "date_to",
         # Contagens por opção das facetas de multi-escolha (onda 1, fatia B).
         "facets",
     }
@@ -871,6 +871,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     assert set(cell) == {
         "surface_ref", "in_listing", "is_published", "is_sellable", "available",
         "price_q", "price_display", "sync_status", "sync_error", "synced_at", "action", "pause_audit",
+        "valid_from", "valid_until",
     }
 
     assert set(row["social"]) == {
