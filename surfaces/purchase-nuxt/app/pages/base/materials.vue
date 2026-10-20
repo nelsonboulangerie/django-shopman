@@ -28,6 +28,10 @@ const {
   enrichedMaterials,
   filteredMaterials,
   metrics,
+  minimumGridErrors,
+  canUndoMinimum,
+  undoMinimum,
+  pasteMinimum,
   minStockInputs,
   minStockLineErrors,
   minStockFilledCount,
@@ -224,7 +228,7 @@ const saveLabel = computed(() =>
             icon="i-lucide-check"
             :label="saveLabel"
             :loading="saving"
-            :disabled="readonlyFallback || actionPending"
+            :disabled="readonlyFallback || actionPending || Object.keys(minimumGridErrors).length > 0"
             @click="onSaveMinStock()"
           />
         </div>
@@ -261,6 +265,10 @@ const saveLabel = computed(() =>
     <div class="flex min-h-0 flex-1">
       <section class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6" data-base-materials>
         <PurchaseLoadState>
+          <div class="mb-3 flex flex-wrap items-center gap-2">
+            <p class="text-sm text-muted">Cole uma coluna da planilha no primeiro mínimo. Desfazer volta uma edição por vez.</p>
+            <NuxtButton label="Desfazer" icon="i-lucide-undo-2" color="neutral" variant="outline" :disabled="!canUndoMinimum || actionPending" @click="undoMinimum()" />
+          </div>
           <OperatorTable
             v-model:sorting="sorting"
             :data="displayed"
@@ -311,9 +319,10 @@ const saveLabel = computed(() =>
                   :model-value="minStockInputs[row.original.sku] ?? ''"
                   :placeholder="row.original.minStockDeclared ? row.original.minStock.toLocaleString('pt-BR') : 'nenhum'"
                   :aria-label="`Mínimo de ${row.original.name}`"
-                  :color="minStockLineErrors[row.original.sku] ? 'error' : 'primary'"
-                  :highlight="Boolean(minStockLineErrors[row.original.sku] || minStockInputs[row.original.sku])"
+                  :color="(minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku]) ? 'error' : 'primary'"
+                  :highlight="Boolean((minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku]) || minStockInputs[row.original.sku])"
                   class="w-full [&_input]:text-end [&_input]:tabular-nums"
+                  @paste="pasteMinimum($event, row.original.sku)"
                   @update:model-value="(value: string | number) => setMinStockInput(row.original.sku, String(value ?? ''))"
                 >
                   <template #trailing>
@@ -323,8 +332,8 @@ const saveLabel = computed(() =>
                 <p v-if="!row.original.minStockDeclared && row.original.minStock" class="mt-0.5 text-xs text-muted">
                   pelo consumo: {{ formatQty(row.original.minStock, row.original.unit) }}
                 </p>
-                <p v-if="minStockLineErrors[row.original.sku]" class="mt-0.5 text-xs font-semibold text-error">
-                  {{ minStockLineErrors[row.original.sku] }}
+                <p v-if="(minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku])" class="mt-0.5 text-xs font-semibold text-error">
+                  {{ (minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku]) }}
                 </p>
               </div>
             </template>
@@ -348,7 +357,7 @@ const saveLabel = computed(() =>
 
     <OperatorActionBar
       v-if="minStockFilledCount"
-      :action="{ label: saveLabel, icon: 'i-lucide-check', loading: saving, disabled: readonlyFallback || actionPending, onSelect: () => void onSaveMinStock() }"
+      :action="{ label: saveLabel, icon: 'i-lucide-check', loading: saving, disabled: readonlyFallback || actionPending || Object.keys(minimumGridErrors).length > 0, onSelect: () => void onSaveMinStock() }"
       :secondary="{ label: 'Limpar', onSelect: () => clearMinStock() }"
       context-label="Zero apaga o mínimo do insumo"
     />
