@@ -27,6 +27,7 @@ import type {
   ImportPreview,
   PhotoEnhanceResponse,
   ProductDetailPatch,
+  ProductArchiveReceipt,
   ProductDetailProjection,
   ProductDetailResponse,
   ProductDraft,
@@ -61,8 +62,9 @@ export function useCatalogMatrix(
   list: CatalogListOptions = {},
 ) {
   const intentions = useOrderIntention();
-  const { data: operatorSession } =
-    useNuxtData<{ operator?: { id: number } }>("operator-session");
+  const { data: operatorSession } = useNuxtData<{ operator?: { id: number } }>(
+    "operator-session",
+  );
   const detailActions = new Map<string, Action>();
   const productConflicts = ref<Record<string, ProductEditConflict>>({});
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
@@ -87,15 +89,22 @@ export function useCatalogMatrix(
   const activeFilters = list.filters ?? ref<Record<string, string[]>>({});
   // TODAS as facetas da FilterBar viram parâmetro do servidor. As listas vão
   // separadas por vírgula ou vazias (vazio = sem recorte, o servidor ignora).
-  const facet = (id: string) => computed(() => activeFilters.value[id]?.[0] ?? "");
+  const facet = (id: string) =>
+    computed(() => activeFilters.value[id]?.[0] ?? "");
   const archived = facet("archived");
   const isPublished = facet("is_published");
   const isSellable = facet("is_sellable");
   const hasVocation = facet("has_vocation");
   const pimComplete = facet("pim_complete");
-  const surfaceFilter = computed(() => (activeFilters.value["surface"] ?? []).join(","));
-  const stockFilter = computed(() => (activeFilters.value["stock"] ?? []).join(","));
-  const syncFilter = computed(() => (activeFilters.value["sync_status"] ?? []).join(","));
+  const surfaceFilter = computed(() =>
+    (activeFilters.value["surface"] ?? []).join(","),
+  );
+  const stockFilter = computed(() =>
+    (activeFilters.value["stock"] ?? []).join(","),
+  );
+  const syncFilter = computed(() =>
+    (activeFilters.value["sync_status"] ?? []).join(","),
+  );
   const resourceKey = useOperatorResourceKey("catalog-matrix");
   const {
     data,
@@ -330,7 +339,10 @@ export function useCatalogMatrix(
       useSonner.success(`${count} item(ns) atualizado(s).`);
       return count;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Não deu para publicar as mudanças. Tente de novo.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não deu para publicar as mudanças. Tente de novo.",
+      );
       useSonner.error(errorMsg.value);
       return null;
     } finally {
@@ -861,7 +873,9 @@ export function useCatalogMatrix(
   // responde 503 e o painel avisa: a capability é degradável.
   // ── tabelão: salvar o lote numa ida (fatia C) ──────────────────────────────
   // A intenção é a mesma das outras escritas; o lote inteiro vai num POST só.
-  async function saveCells(cells: BulkCell[]): Promise<BulkCellsResponse | null> {
+  async function saveCells(
+    cells: BulkCell[],
+  ): Promise<BulkCellsResponse | null> {
     const key = "catalog:cells";
     if (!cells.length || busy.value.has(key) || !canWrite()) return null;
     clearError();
@@ -875,7 +889,7 @@ export function useCatalogMatrix(
       method: "POST",
       idempotency: "required",
       payload_schema: {
-        base_revision: `catalog-batch-${Date.now()}` ,
+        base_revision: `catalog-batch-${Date.now()}`,
         expected_actor_id: operatorSession.value?.operator?.id ?? null,
       },
     } as unknown as Action;
@@ -900,6 +914,66 @@ export function useCatalogMatrix(
       errorMsg.value = httpErrorMessage(
         error,
         "Não foi possível salvar o lote. Tente de novo.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  async function setProductsActive(
+    products: { sku: string; base_is_active: boolean }[],
+    isActive: boolean,
+  ): Promise<ProductArchiveReceipt | null> {
+    const key = "catalog:products-active";
+    if (!products.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    const action = {
+      ref: isActive ? "unarchive-products" : "archive-products",
+      kind: "mutation",
+      label: isActive ? "Desarquivar" : "Arquivar",
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: products
+          .map((product) => `${product.sku}:${Number(product.base_is_active)}`)
+          .join("|"),
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/products/archive/",
+        action,
+        { products, is_active: isActive },
+      );
+      await refreshAfterCommit();
+      const receipt = result as unknown as ProductArchiveReceipt;
+      if (receipt.conflicts.length || receipt.errors.length) {
+        errorMsg.value =
+          "Gesto aplicado em parte. Confira as linhas do recibo antes de repetir.";
+      } else {
+        const count = receipt.applied.filter((row) => row.changed).length;
+        useSonner.success(
+          isActive
+            ? `${count} produto(s) desarquivado(s).`
+            : `${count} produto(s) arquivado(s).`,
+        );
+      }
+      return receipt;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        isActive
+          ? "Não foi possível desarquivar os produtos."
+          : "Não foi possível arquivar os produtos.",
       );
       useSonner.error(errorMsg.value);
       return null;
@@ -1025,6 +1099,7 @@ export function useCatalogMatrix(
     enhancePhoto,
     uploadPhoto,
     saveCells,
+    setProductsActive,
     previewImport,
     applyImport,
   };

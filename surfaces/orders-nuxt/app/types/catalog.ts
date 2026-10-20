@@ -10,12 +10,7 @@ export type SurfaceKind = "channel" | "display" | "feed";
 // Estado de sync por CÉLULA (produto × plataforma) — CatalogSyncState (Arc C).
 // "" = nunca sincronizado / superfície que não projeta (feed de pull).
 export type CellSyncStatus =
-  | "synced"
-  | "pending"
-  | "error"
-  | "retracted"
-  | "skipped"
-  | "";
+  "synced" | "pending" | "error" | "retracted" | "skipped" | "";
 
 // Atributos PIM sociais da linha (Arc A) — Product.metadata['social'].
 export interface ProductSocial {
@@ -126,13 +121,7 @@ export interface CatalogMatrixProjection {
 }
 
 export type CatalogOrder =
-  | "name"
-  | "-name"
-  | "sku"
-  | "-sku"
-  | "price"
-  | "-price"
-  | "updated";
+  "name" | "-name" | "sku" | "-sku" | "price" | "-price" | "updated";
 
 export interface VocationPending {
   sku: string;
@@ -209,6 +198,8 @@ export interface ProductDetailProjection {
   storage_tip: string;
   production_cycle_hours: number | null;
   is_batch_produced: boolean;
+  /** Cadastro operacional: muda só pelo gesto Arquivar/Desarquivar. */
+  readonly is_active: boolean;
   is_published: boolean;
   is_sellable: boolean;
   ingredients_text: string;
@@ -304,6 +295,7 @@ export type ProductDetailPatch = Partial<
     | "field_sources"
     | "dietary_from_recipe"
     | "nutrition_auto_filled"
+    | "is_active"
     | "fiscal_profiles"
     | "fiscal_origins"
     | "fiscal_warnings"
@@ -488,6 +480,31 @@ export interface BulkCellsResponse {
     conflicting_fields?: string[];
   }[];
   errors: { index: number; sku: string; surface_ref: string; detail: string }[];
+}
+
+export interface ProductArchiveLine {
+  index: number;
+  sku: string;
+  name: string;
+  before_is_active: boolean;
+  is_active: boolean;
+  changed: boolean;
+}
+
+export interface ProductArchiveReceipt {
+  ok: boolean;
+  outcome: string;
+  intention: string;
+  applied: ProductArchiveLine[];
+  conflicts: {
+    index: number;
+    sku: string;
+    detail: string;
+    is_active: boolean;
+  }[];
+  errors: { index: number; sku: string; detail: string }[];
+  server_now: string;
+  undo_until: string;
 }
 // Import CSV pt-BR: a prévia não grava; o apply leva a revisão da prévia.
 export interface ImportPreviewChange {

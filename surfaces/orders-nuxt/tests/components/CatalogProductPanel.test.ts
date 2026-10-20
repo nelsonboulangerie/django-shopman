@@ -1,39 +1,106 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { computed, reactive, ref, watch } from "vue";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import CatalogProductPanel from "../../app/components/CatalogProductPanel.vue";
 import type { ProductDetailProjection } from "../../app/types/catalog";
+import OperatorConfirmDialog from "../../../operator-kit/app/components/OperatorConfirmDialog.vue";
+import {
+  answerConfirm,
+  useConfirm,
+} from "../../../operator-kit/app/composables/useConfirm";
 
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("reactive", reactive);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
+vi.stubGlobal("useConfirm", useConfirm);
+let archiveDialog: ReturnType<typeof mount> | null = null;
+afterEach(() => {
+  answerConfirm(false);
+  archiveDialog?.unmount();
+  archiveDialog = null;
+});
 const detail = {
-  sku: "A", name: "Original", base_price_q: 500, unit: "un", availability_policy: "planned_ok",
-  is_published: true, is_sellable: true, keywords: [], allergens: [], dietary_info: [],
-  short_description: "", long_description: "", image_url: "", storage_tip: "", ingredients_text: "",
-  unit_weight_g: null, shelf_life_days: null, production_cycle_hours: null, is_batch_produced: false,
-  allows_next_day_sale: false, serves: "", approx_dimensions: "",
-  social: { condition: "new", brand: "", gtin: "", mpn: "", google_product_category: "", tiktok_category_id: "", social_caption: "", hashtags: [] },
+  sku: "A",
+  name: "Original",
+  base_price_q: 500,
+  unit: "un",
+  availability_policy: "planned_ok",
+  is_active: true,
+  is_published: true,
+  is_sellable: true,
+  keywords: [],
+  allergens: [],
+  dietary_info: [],
+  short_description: "",
+  long_description: "",
+  image_url: "",
+  storage_tip: "",
+  ingredients_text: "",
+  unit_weight_g: null,
+  shelf_life_days: null,
+  production_cycle_hours: null,
+  is_batch_produced: false,
+  allows_next_day_sale: false,
+  serves: "",
+  approx_dimensions: "",
+  social: {
+    condition: "new",
+    brand: "",
+    gtin: "",
+    mpn: "",
+    google_product_category: "",
+    tiktok_category_id: "",
+    social_caption: "",
+    hashtags: [],
+  },
   fiscal: { profile: "standard", ncm: "", cest: "", unit: "UN", origin: "0" },
 } as ProductDetailProjection;
 function panel() {
-  return mount(CatalogProductPanel, { props: { open: true, sku: "A", detail, loading: false, busy: false,
-    assist: vi.fn(), assistBusy: () => false }, global: { stubs: {
-      UiSheet: { template: "<div><slot /></div>" }, UiSheetContent: { template: "<div><slot /></div>" },
-      Icon: true, CatalogAiSuggest: true,
-    } } });
+  return mount(CatalogProductPanel, {
+    props: {
+      open: true,
+      sku: "A",
+      detail,
+      loading: false,
+      busy: false,
+      assist: vi.fn(),
+      assistBusy: () => false,
+    },
+    global: {
+      stubs: {
+        NuxtSlideover: {
+          template:
+            '<div><slot name="actions" /><slot name="body" /><slot name="footer" /></div>',
+        },
+        UiSheet: { template: "<div><slot /></div>" },
+        UiSheetContent: { template: "<div><slot /></div>" },
+        Icon: true,
+        CatalogAiSuggest: true,
+      },
+    },
+  });
 }
 
 describe("rascunho do produto", () => {
   it("conflito conserva a digitação e aguarda revisão explícita", async () => {
     const w = panel();
     await w.find('input[type="text"]').setValue("Meu rascunho");
-    await w.setProps({ conflict: { product: { ...detail, name: "Outra pessoa" }, conflicting_fields: ["name"] } });
-    expect((w.find('input[type="text"]').element as HTMLInputElement).value).toBe("Meu rascunho");
+    await w.setProps({
+      conflict: {
+        product: { ...detail, name: "Outra pessoa" },
+        conflicting_fields: ["name"],
+      },
+    });
+    expect(
+      (w.find('input[type="text"]').element as HTMLInputElement).value,
+    ).toBe("Meu rascunho");
     expect(w.text()).toContain("Nome. Valor atual: Outra pessoa");
     expect(w.find("[data-panel-save]").attributes("disabled")).toBeDefined();
-    await w.findAll("button").find(b => b.text() === "Manter meu rascunho")!.trigger("click");
+    await w
+      .findAll("button")
+      .find((b) => b.text() === "Manter meu rascunho")!
+      .trigger("click");
     expect(w.emitted("review-conflict")).toEqual([[true]]);
     expect(w.emitted("save")).toBeUndefined();
   });
@@ -43,12 +110,53 @@ describe("rascunho do produto", () => {
     await w.find('input[type="text"]').setValue("Meu rascunho");
     await w.find("[data-panel-discard]").trigger("click");
     expect(w.emitted("update:open")).toBeUndefined();
-    await w.findAll("button").find(b => b.text() === "Continuar editando")!.trigger("click");
-    expect((w.find('input[type="text"]').element as HTMLInputElement).value).toBe("Meu rascunho");
+    await w
+      .findAll("button")
+      .find((b) => b.text() === "Continuar editando")!
+      .trigger("click");
+    expect(
+      (w.find('input[type="text"]').element as HTMLInputElement).value,
+    ).toBe("Meu rascunho");
     await w.find("[data-panel-discard]").trigger("click");
-    await w.findAll("button").find(b => b.text() === "Descartar e fechar")!.trigger("click");
+    await w
+      .findAll("button")
+      .find((b) => b.text() === "Descartar e fechar")!
+      .trigger("click");
     expect(w.emitted("update:open")).toEqual([[false]]);
     expect(w.emitted("save")).toBeUndefined();
+  });
+});
+
+describe("Arquivar produto", () => {
+  it("é gesto na barra, fora do rascunho e nunca vira checkbox", async () => {
+    const w = panel();
+    const action = w.get("[data-product-archive]");
+    expect(action.text()).toContain("Arquivar");
+    archiveDialog = mount(OperatorConfirmDialog, { attachTo: document.body });
+    await action.trigger("click");
+    await flushPromises();
+    expect(document.body.textContent).toContain(
+      "O produto sai do cardápio, dos canais e das listas.",
+    );
+    await archiveDialog.get("[data-operator-confirm-act]").trigger("click");
+    await flushPromises();
+    expect(w.emitted("set-active")).toEqual([[false]]);
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+    expect(w.find('input[name="is_active"]').exists()).toBe(false);
+  });
+
+  it("arquivado mostra estado e o gesto Desarquivar", async () => {
+    const w = panel();
+    await w.setProps({ detail: { ...detail, is_active: false } });
+    expect(w.text()).toContain("Arquivado");
+    const action = w.get("[data-product-archive]");
+    expect(action.text()).toContain("Desarquivar");
+    archiveDialog = mount(OperatorConfirmDialog, { attachTo: document.body });
+    await action.trigger("click");
+    await flushPromises();
+    await archiveDialog.get("[data-operator-confirm-act]").trigger("click");
+    await flushPromises();
+    expect(w.emitted("set-active")).toEqual([[true]]);
   });
 });
 
@@ -85,10 +193,21 @@ describe("Vendido por peso", () => {
 describe("Permitir compra", () => {
   it("é gesto na hora, fora do rascunho, e o quadrado espera o servidor", async () => {
     const w = panel();
-    await w.setProps({ roles: { purchasable: false, sellable: true, produced: false, used_in_recipe: true } });
+    await w.setProps({
+      roles: {
+        purchasable: false,
+        sellable: true,
+        produced: false,
+        used_in_recipe: true,
+      },
+    });
     const box = w.get('[data-testid="purchase-toggle"] [role="checkbox"]');
-    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Vendável");
-    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("Usado em receita");
+    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain(
+      "Vendável",
+    );
+    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain(
+      "Usado em receita",
+    );
     await box.trigger("click");
     expect(w.emitted("set-purchasable")).toEqual([[true]]);
     // Ninguém confirmou ainda: o quadrado volta ao que o servidor diz.
@@ -98,16 +217,42 @@ describe("Permitir compra", () => {
 
   it("o que é produzido aqui não oferece o interruptor", async () => {
     const w = panel();
-    await w.setProps({ roles: { purchasable: false, sellable: true, produced: true, used_in_recipe: false } });
-    expect(w.find('[data-testid="purchase-toggle"] [role="checkbox"]').exists()).toBe(false);
-    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain("É produzido aqui");
+    await w.setProps({
+      roles: {
+        purchasable: false,
+        sellable: true,
+        produced: true,
+        used_in_recipe: false,
+      },
+    });
+    expect(
+      w.find('[data-testid="purchase-toggle"] [role="checkbox"]').exists(),
+    ).toBe(false);
+    expect(w.find('[data-testid="purchase-toggle"]').text()).toContain(
+      "É produzido aqui",
+    );
   });
 });
 
 it("mostra mudança de origem mesmo quando o valor não mudou", async () => {
   const w = panel();
-  await w.setProps({ detail: { ...detail, allergens: ["leite"], field_sources: { allergens: "recipe" } } });
-  await w.setProps({ conflict: { product: { ...detail, allergens: ["leite"], field_sources: { allergens: "manual" } }, conflicting_fields: ["allergens"] } });
+  await w.setProps({
+    detail: {
+      ...detail,
+      allergens: ["leite"],
+      field_sources: { allergens: "recipe" },
+    },
+  });
+  await w.setProps({
+    conflict: {
+      product: {
+        ...detail,
+        allergens: ["leite"],
+        field_sources: { allergens: "manual" },
+      },
+      conflicting_fields: ["allergens"],
+    },
+  });
   expect(w.text()).toContain("Origem: ficha técnica → edição manual.");
   expect(w.find("[data-panel-save]").attributes("disabled")).toBeDefined();
   expect(w.emitted("save")).toBeUndefined();
@@ -115,37 +260,64 @@ it("mostra mudança de origem mesmo quando o valor não mudou", async () => {
 
 describe("GTIN recusado pela SEFAZ", () => {
   const recusa = {
-    gtin: "7896064200011", code: "890", reason: "Rejeicao: GTIN inexistente no CCG", at: "2026-09-24T10:00:00-03:00",
-    order_ref: "WEB-7", confirmed: false, confirmed_by: "", confirmed_at: "",
+    gtin: "7896064200011",
+    code: "890",
+    reason: "Rejeicao: GTIN inexistente no CCG",
+    at: "2026-09-24T10:00:00-03:00",
+    order_ref: "WEB-7",
+    confirmed: false,
+    confirmed_by: "",
+    confirmed_at: "",
   };
-  const recusado = { ...detail, social: { ...detail.social, gtin: recusa.gtin }, gtin_rejected: recusa } as ProductDetailProjection;
+  const recusado = {
+    ...detail,
+    social: { ...detail.social, gtin: recusa.gtin },
+    gtin_rejected: recusa,
+  } as ProductDetailProjection;
 
   it("diz o que houve e o que fazer, e Manter sem GTIN na nota salva num toque", async () => {
     const w = panel();
     await w.setProps({ detail: recusado });
     const bloco = w.find("[data-gtin-rejected]");
-    expect(bloco.text()).toContain("A SEFAZ recusou o GTIN 7896064200011 na NFC-e do pedido WEB-7");
+    expect(bloco.text()).toContain(
+      "A SEFAZ recusou o GTIN 7896064200011 na NFC-e do pedido WEB-7",
+    );
     expect(bloco.text()).toContain("Compare com o código da embalagem");
     expect(bloco.text()).not.toContain("gtin_nf_rejected");
     expect(bloco.text()).not.toContain("—");
     await w.find("[data-gtin-keep-without]").trigger("click");
-    expect(w.emitted("save")).toEqual([[{ gtin_rejected: { confirmed: true } }]]);
+    expect(w.emitted("save")).toEqual([
+      [{ gtin_rejected: { confirmed: true } }],
+    ]);
   });
 
   it("com o código corrigido, o botão sai e o Salvar leva o GTIN novo", async () => {
     const w = panel();
     await w.setProps({ detail: recusado });
-    await w.find('input[placeholder="8, 12, 13 ou 14 dígitos"]').setValue("3088542500285");
+    await w
+      .find('input[placeholder="8, 12, 13 ou 14 dígitos"]')
+      .setValue("3088542500285");
     expect(w.find("[data-gtin-keep-without]").exists()).toBe(false);
-    expect(w.find("[data-gtin-rejected-corrected]").text()).toContain("o código novo volta a ir na nota");
+    expect(w.find("[data-gtin-rejected-corrected]").text()).toContain(
+      "o código novo volta a ir na nota",
+    );
     await w.find("[data-panel-save]").trigger("click");
-    expect(w.emitted("save")).toEqual([[{ social: { gtin: "3088542500285" } }]]);
+    expect(w.emitted("save")).toEqual([
+      [{ social: { gtin: "3088542500285" } }],
+    ]);
   });
 
   it("depois de conferido, só registra quem conferiu e como voltar atrás", async () => {
     const w = panel();
-    await w.setProps({ detail: { ...recusado, gtin_rejected: { ...recusa, confirmed: true, confirmed_by: "maria" } } });
-    expect(w.find("[data-gtin-rejected-confirmed]").text()).toContain("maria conferiu a embalagem");
+    await w.setProps({
+      detail: {
+        ...recusado,
+        gtin_rejected: { ...recusa, confirmed: true, confirmed_by: "maria" },
+      },
+    });
+    expect(w.find("[data-gtin-rejected-confirmed]").text()).toContain(
+      "maria conferiu a embalagem",
+    );
     expect(w.find("[data-gtin-keep-without]").exists()).toBe(false);
   });
 });
@@ -156,20 +328,37 @@ describe("Vocação", () => {
     { ref: "leva", label: "Leva", hint: "Pão, geleia" },
     { ref: "hibrido", label: "Híbrido", hint: "Croissant" },
   ];
-  const radios = (w: ReturnType<typeof panel>) => w.findAll('[data-testid="vocation"] [role="radio"]');
+  const radios = (w: ReturnType<typeof panel>) =>
+    w.findAll('[data-testid="vocation"] [role="radio"]');
 
   it("mostra as escolhas do servidor com a gravada marcada e a nota de que é só para o B.I.", async () => {
     const w = panel();
-    await w.setProps({ detail: { ...detail, vocation: "leva", vocation_choices: choices } });
-    expect(radios(w).map((r) => r.text())).toEqual(["Consome aqui", "Leva", "Híbrido"]);
-    expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual(["false", "true", "false"]);
-    expect(w.find('[data-testid="vocation"]').text()).toContain("só para o B.I.");
+    await w.setProps({
+      detail: { ...detail, vocation: "leva", vocation_choices: choices },
+    });
+    expect(radios(w).map((r) => r.text())).toEqual([
+      "Consome aqui",
+      "Leva",
+      "Híbrido",
+    ]);
+    expect(radios(w).map((r) => r.attributes("aria-checked"))).toEqual([
+      "false",
+      "true",
+      "false",
+    ]);
+    expect(w.find('[data-testid="vocation"]').text()).toContain(
+      "só para o B.I.",
+    );
   });
 
   it("escolher entra no rascunho e só grava no Salvar", async () => {
     const w = panel();
-    await w.setProps({ detail: { ...detail, vocation: "", vocation_choices: choices } });
-    expect(w.text()).toContain("Sem vocação: o B.I. não classifica as vendas deste produto.");
+    await w.setProps({
+      detail: { ...detail, vocation: "", vocation_choices: choices },
+    });
+    expect(w.text()).toContain(
+      "Sem vocação: o B.I. não classifica as vendas deste produto.",
+    );
     await radios(w)[2]!.trigger("click");
     expect(w.emitted("save")).toBeUndefined();
     expect(w.text()).toContain("1 campo alterado");
@@ -179,16 +368,28 @@ describe("Vocação", () => {
 
   it("Deixar sem vocação manda vazio", async () => {
     const w = panel();
-    await w.setProps({ detail: { ...detail, vocation: "leva", vocation_choices: choices } });
-    await w.findAll("button").find(b => b.text() === "Deixar sem vocação")!.trigger("click");
+    await w.setProps({
+      detail: { ...detail, vocation: "leva", vocation_choices: choices },
+    });
+    await w
+      .findAll("button")
+      .find((b) => b.text() === "Deixar sem vocação")!
+      .trigger("click");
     await w.find("[data-panel-save]").trigger("click");
     expect(w.emitted("save")).toEqual([[{ vocation: "" }]]);
   });
 
   it("no conflito, o valor atual sai pelo rótulo, não pelo ref", async () => {
     const w = panel();
-    await w.setProps({ detail: { ...detail, vocation: "", vocation_choices: choices } });
-    await w.setProps({ conflict: { product: { ...detail, vocation: "hibrido", vocation_choices: choices }, conflicting_fields: ["vocation"] } });
+    await w.setProps({
+      detail: { ...detail, vocation: "", vocation_choices: choices },
+    });
+    await w.setProps({
+      conflict: {
+        product: { ...detail, vocation: "hibrido", vocation_choices: choices },
+        conflicting_fields: ["vocation"],
+      },
+    });
     expect(w.text()).toContain("Vocação. Valor atual: Híbrido");
   });
 });
@@ -196,11 +397,37 @@ describe("Vocação", () => {
 describe("disponibilidade nos canais (V4-G4)", () => {
   it("um estado só no topo e o porquê por canal; o automático é marcado", async () => {
     const w = panel();
-    await w.setProps({ detail: { ...detail, channel_availability: [
-      { ref: "web", name: "Loja online", kind: "sale", state: "sold_out", since: "09:52", automatic: false },
-      { ref: "ifood", name: "iFood", kind: "sale", state: "sold_out", since: "09:52", automatic: true },
-      { ref: "pos", name: "PDV", kind: "sale", state: "available", since: "", automatic: false },
-    ] } });
+    await w.setProps({
+      detail: {
+        ...detail,
+        channel_availability: [
+          {
+            ref: "web",
+            name: "Loja online",
+            kind: "sale",
+            state: "sold_out",
+            since: "09:52",
+            automatic: false,
+          },
+          {
+            ref: "ifood",
+            name: "iFood",
+            kind: "sale",
+            state: "sold_out",
+            since: "09:52",
+            automatic: true,
+          },
+          {
+            ref: "pos",
+            name: "PDV",
+            kind: "sale",
+            state: "available",
+            since: "",
+            automatic: false,
+          },
+        ],
+      },
+    });
     const block = w.find("[data-panel-availability]");
     expect(block.text()).toContain("Esgotado em 2 de 3 desde 09:52");
     const rows = w.findAll("[data-panel-channel]");
