@@ -36,6 +36,7 @@ import type {
 } from "~/types/catalog";
 
 export interface CellPatch {
+  min_qty?: string;
   is_published?: boolean;
   is_sellable?: boolean;
   price_q?: number;
@@ -71,10 +72,35 @@ export function useCatalogMatrix(
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
   function acknowledgeProductConflict(
     sku: string,
+    keepDraft = false,
   ): ProductDetailProjection | null {
     const conflict = productConflicts.value[sku];
     if (!conflict?.action) return null;
-    detailActions.set(sku, conflict.action);
+    const previous = detailActions.get(sku);
+    if (keepDraft && previous) {
+      const fresh = conflict.action.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      const prior = previous.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      detailActions.set(sku, {
+        ...previous,
+        payload_schema: {
+          ...previous.payload_schema,
+          base_revisions: {
+            ...prior,
+            ...Object.fromEntries(
+              conflict.conflicting_fields
+                .filter((field) => field in fresh)
+                .map((field) => [field, fresh[field]]),
+            ),
+          },
+        },
+      });
+    } else detailActions.set(sku, conflict.action);
     Reflect.deleteProperty(productConflicts.value, sku);
     clearError();
     return conflict.product;
@@ -540,14 +566,41 @@ export function useCatalogMatrix(
 
   async function fetchProductDetail(
     sku: string,
+    revisionFields?: string[],
   ): Promise<ProductDetailProjection | null> {
     clearError();
     try {
       const res = await $fetch<ProductDetailResponse>(
         `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`,
       );
-      if (res?.action) detailActions.set(sku, res.action);
-      Reflect.deleteProperty(productConflicts.value, sku);
+      if (res?.action) {
+        const previous = detailActions.get(sku);
+        if (revisionFields && previous) {
+          const fresh = res.action.payload_schema.base_revisions as Record<
+            string,
+            string
+          >;
+          const prior = previous.payload_schema.base_revisions as Record<
+            string,
+            string
+          >;
+          detailActions.set(sku, {
+            ...previous,
+            payload_schema: {
+              ...previous.payload_schema,
+              base_revisions: {
+                ...prior,
+                ...Object.fromEntries(
+                  revisionFields
+                    .filter((field) => field in fresh)
+                    .map((field) => [field, fresh[field]]),
+                ),
+              },
+            },
+          });
+        } else detailActions.set(sku, res.action);
+      }
+      if (!revisionFields) Reflect.deleteProperty(productConflicts.value, sku);
       return res?.product ?? null;
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, "Falha ao carregar o produto.");
