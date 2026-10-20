@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -38,14 +39,25 @@ class _CatalogBase(OperationalObservationMixin, APIView):
     required_permission = "shop.manage_catalog"
 
 
+class _CatalogPeriodSerializer(serializers.Serializer):
+    date_from = serializers.DateField(required=False)
+    date_to = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        if attrs.get("date_from") and attrs.get("date_to") and attrs["date_to"] < attrs["date_from"]:
+            raise serializers.ValidationError({"date_to": ["A data final deve ser igual ou posterior à inicial."]})
+        return attrs
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="Catalog matrix (produto × superfície)",
+        parameters=[_CatalogPeriodSerializer],
         responses={200: OpenApiResponse(description="Matriz de catálogo por superfície.")},
     ),
 )
-class CatalogMatrixView(_CatalogBase):
+class CatalogMatrixView(ServerTimingMixin, _CatalogBase):
     def get(self, request):
         from shopman.backstage.projections.catalog import (
             build_catalog_matrix,
@@ -54,6 +66,8 @@ class CatalogMatrixView(_CatalogBase):
         )
 
         params = request.query_params
+        period = _CatalogPeriodSerializer(data=params)
+        period.is_valid(raise_exception=True)
         collection_ref = (params.get("collection") or "").strip()
         query = (params.get("q") or "").strip()
         order = (params.get("order") or "name").strip()
@@ -70,7 +84,7 @@ class CatalogMatrixView(_CatalogBase):
             filters["surface"] = surface
         matrix = build_catalog_matrix(collection_ref, user=request.user, query=query, order=order,
             page=as_int(params, "page", default=1) or 1,
-            page_size=as_int(params, "page_size", default=50) or 50, filters=filters)
+            page_size=as_int(params, "page_size", default=50) or 50, filters=filters, **period.validated_data)
         actions = (*curation_actions(collection_ref, request.user), product_create_action(request.user))
         return Response(read_data(matrix=projection_data(matrix), collection_ref=collection_ref,
             actions=[projection_data(action) for action in actions]))

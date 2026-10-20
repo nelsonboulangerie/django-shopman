@@ -227,9 +227,10 @@ class PurchaseCostView(APIView):
         return _purchase_response(projection, message="Custo salvo.")
 
 
-class PurchaseCostBatchView(APIView):
+class PurchaseCostBatchView(ServerTimingMixin, APIView):
     """Tabela de preços do fornecedor num gesto só — ver `upsert_costs`."""
 
+    server_timing_methods = ("POST",)
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"
 
@@ -250,9 +251,10 @@ class PurchaseCostBatchView(APIView):
         )
 
 
-class PurchaseMinStockView(APIView):
+class PurchaseMinStockView(ServerTimingMixin, APIView):
     """Estoque mínimo declarado — ver `set_min_stock`."""
 
+    server_timing_methods = ("POST",)
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"
 

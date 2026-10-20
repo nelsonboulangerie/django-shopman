@@ -1,3 +1,4 @@
+import { usePurchaseGridFields } from "~/composables/usePurchaseGridFields";
 import type {
   PurchaseContactUpsertPayload,
   PurchaseConversionUpsertPayload,
@@ -175,6 +176,16 @@ export function usePurchaseDesk() {
   // insumo nunca vira sugestão. Declarar o mínimo é o que o destrava.
   const minStockInputs = useState<Record<string, string>>("purchase-min-stock-inputs", () => ({}));
   const minStockLineErrors = useState<Record<string, string>>("purchase-min-stock-errors", () => ({}));
+  const costGrid = usePurchaseGridFields(batchInputs, "cost");
+  const minimumGrid = usePurchaseGridFields(minStockInputs, "minimum");
+  const costGridErrors = costGrid.errors;
+  const minimumGridErrors = minimumGrid.errors;
+  const canUndoCost = costGrid.canUndo;
+  const canUndoMinimum = minimumGrid.canUndo;
+  const undoCost = () => { costGrid.undo(); batchLineErrors.value = {}; };
+  const undoMinimum = () => { minimumGrid.undo(); minStockLineErrors.value = {}; };
+  const pasteCost = (event: ClipboardEvent, sku: string) => { costGrid.paste(event, sku, batchRows.value); batchLineErrors.value = {}; };
+  const pasteMinimum = (event: ClipboardEvent, sku: string) => { minimumGrid.paste(event, sku, filteredMaterials.value); minStockLineErrors.value = {}; };
   const countPending = ref(false);
   const api = usePurchaseApi();
   const confirm = useConfirm();
@@ -441,7 +452,7 @@ export function usePurchaseDesk() {
   }
 
   function setBatchInput(materialSku: string, value: string) {
-    batchInputs.value = { ...batchInputs.value, [materialSku]: value };
+    costGrid.set(materialSku, value);
     // Editar a linha apaga o erro dela: o aviso descreve o que foi enviado, e o
     // que está na tela já não é isso.
     if (batchLineErrors.value[materialSku]) {
@@ -465,7 +476,7 @@ export function usePurchaseDesk() {
   const minStockFilledCount = computed(() => minStockRows.value.length);
 
   function setMinStockInput(materialSku: string, value: string) {
-    minStockInputs.value = { ...minStockInputs.value, [materialSku]: value };
+    minimumGrid.set(materialSku, value);
     if (minStockLineErrors.value[materialSku]) {
       minStockLineErrors.value = Object.fromEntries(
         Object.entries(minStockLineErrors.value).filter(([sku]) => sku !== materialSku),
@@ -474,13 +485,13 @@ export function usePurchaseDesk() {
   }
 
   function clearMinStock() {
-    minStockInputs.value = {};
+    minimumGrid.clear();
     minStockLineErrors.value = {};
   }
 
   /** Declara os mínimos digitados. Mesmo contrato do lote de custos. */
   async function saveMinStock() {
-    if (!minStockFilledCount.value) return;
+    if (!minStockFilledCount.value || Object.keys(minimumGridErrors.value).length) return;
     if (!requireBackend("salvar os mínimos")) return;
     if (actionPending.value) return;
 
@@ -560,7 +571,7 @@ export function usePurchaseDesk() {
   }
 
   function clearCostBatch() {
-    batchInputs.value = {};
+    costGrid.clear();
     batchConversionIds.value = {};
     batchLineErrors.value = {};
   }
@@ -573,7 +584,7 @@ export function usePurchaseDesk() {
    * campos preenchidos. Os erros voltam em `error.lines` e vão para o campo.
    */
   async function saveCostBatch() {
-    if (!batchReady.value) return;
+    if (!batchReady.value || Object.keys(costGridErrors.value).length) return;
     if (!requireBackend("salvar os custos")) return;
     if (actionPending.value) return;
 
@@ -1437,6 +1448,14 @@ export function usePurchaseDesk() {
     integrityQueue,
     reorderRows,
     reorderBlockers,
+    costGridErrors,
+    minimumGridErrors,
+    canUndoCost,
+    canUndoMinimum,
+    undoCost,
+    undoMinimum,
+    pasteCost,
+    pasteMinimum,
     batchSupplierRef,
     batchInputs,
     batchConversionIds,

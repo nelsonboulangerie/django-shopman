@@ -651,6 +651,18 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
     if not isinstance(raw_lines, list):
         raise PurchaseError("Lote de custos inválido.", code="cost_batch_invalid", field="costs")
 
+    materials_by_sku = Material.objects.in_bulk(
+        [str(line.get("materialSku") or line.get("material_sku") or "").strip() for line in raw_lines],
+        field_name="sku",
+    )
+    suppliers_by_ref = Supplier.objects.in_bulk(
+        [str(line.get("supplierRef") or line.get("supplier_ref") or "").strip() or default_supplier_ref for line in raw_lines],
+        field_name="ref",
+    )
+    conversion_ids = [str(line.get("conversionId") or line.get("conversion_id") or "") for line in raw_lines]
+    conversions_by_id = apps.get_model("buyman", "MaterialConversion").objects.in_bulk(
+        [int(value) for value in conversion_ids if value.isdigit()]
+    )
     resolved: list[tuple[Any, Any, Any, int]] = []
     line_errors: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -665,7 +677,7 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         def fail(detail: str, *, field: str, sku: str = material_sku, at: int = index) -> None:
             line_errors.append({"index": at, "materialSku": sku, "field": field, "detail": detail})
 
-        material = Material.objects.filter(sku=material_sku).first()
+        material = materials_by_sku.get(material_sku)
         if not material:
             fail("Insumo não encontrado.", field="materialSku")
             continue
@@ -681,7 +693,7 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         supplier_ref = (
             str(entry.get("supplierRef") or entry.get("supplier_ref") or "").strip() or default_supplier_ref
         )
-        supplier = Supplier.objects.filter(ref=supplier_ref).first()
+        supplier = suppliers_by_ref.get(supplier_ref)
         if not supplier:
             fail("Fornecedor não encontrado.", field="supplierRef")
             continue
@@ -709,6 +721,7 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
                 material=material,
                 supplier=supplier,
                 field="conversionId",
+                conversions=conversions_by_id,
             )
         except PurchaseError as exc:
             fail(str(exc), field=exc.field or "conversionId")
@@ -777,6 +790,10 @@ def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
     if not isinstance(raw_lines, list):
         raise PurchaseError("Lote de mínimos inválido.", code="min_stock_batch_invalid", field="minimums")
 
+    materials_by_sku = Material.objects.in_bulk(
+        [str(line.get("materialSku") or line.get("material_sku") or "").strip() for line in raw_lines],
+        field_name="sku",
+    )
     resolved: list[tuple[Any, Decimal | None]] = []
     line_errors: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -792,7 +809,7 @@ def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         def fail(detail: str, *, field: str, sku: str = material_sku, at: int = index) -> None:
             line_errors.append({"index": at, "materialSku": sku, "field": field, "detail": detail})
 
-        material = Material.objects.filter(sku=material_sku).first()
+        material = materials_by_sku.get(material_sku)
         if not material:
             fail("Insumo não encontrado.", field="materialSku")
             continue
@@ -829,7 +846,8 @@ def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
                 purchase.pop("minStock", None)
             metadata["purchase"] = purchase
             material.metadata = metadata
-            material.save(update_fields=["metadata", "updated_at"])
+            material.updated_at = timezone.now()
+        Material.objects.bulk_update([material for material, _ in resolved], ["metadata", "updated_at"])
 
     logger.info(
         "purchase.min_stock_set",
@@ -1819,7 +1837,7 @@ def _resolve_receipt_material(raw: dict[str, Any], *, index: int):
     return material
 
 
-def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
+def _resolve_conversion(raw_id: Any, *, material, supplier, field: str, conversions: dict | None = None):
     if raw_id in (None, "", "null"):
         return None
     MaterialConversion = apps.get_model("buyman", "MaterialConversion")
@@ -1827,7 +1845,10 @@ def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
         conversion_id = int(raw_id)
     except (TypeError, ValueError):
         raise PurchaseError("Conversão inválida.", code="conversion_invalid", field=field) from None
-    conversion = MaterialConversion.objects.filter(pk=conversion_id).select_related("material", "supplier").first()
+    conversion = (
+        conversions.get(conversion_id) if conversions is not None
+        else MaterialConversion.objects.filter(pk=conversion_id).select_related("material", "supplier").first()
+    )
     if not conversion:
         raise PurchaseError("Conversão não encontrada.", code="conversion_not_found", field=field)
     if conversion.material_id != material.pk:

@@ -7,6 +7,7 @@
 import {
   catalogCsv,
   cellPrice,
+  rowValidities,
   cellSyncView,
   cellView,
   letterTile,
@@ -51,6 +52,14 @@ import { refDebounced } from "@vueuse/core";
 
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
+import { periodLabel, resolvePeriod, todayIso, STORE_TIME_ZONE, type PeriodSelection } from "../../../operator-kit/app/presentation/dates";
+const DEFAULT_PERIOD: PeriodSelection = { preset: "day", from: "", to: "" };
+const validityPeriod = ref<PeriodSelection>({ ...DEFAULT_PERIOD });
+const today = useState("catalog-validity-today", () => todayIso(new Date(), STORE_TIME_ZONE));
+const validityRange = computed(() => resolvePeriod(validityPeriod.value, { today: today.value }));
+const validityLabel = computed(() => filters.value.validity?.includes("any")
+  ? "Qualquer data"
+  : `Vigência: ${periodLabel(validityPeriod.value, validityRange.value, today.value)}`);
 const collectionRef = ref("");
 // A busca, a ordenação e a página são do SERVIDOR (onda 1, fatia B): mudar
 // qualquer um refaz a consulta, e a matriz não vem mais inteira.
@@ -58,7 +67,7 @@ const query = ref("");
 // A busca só vira consulta 300 ms depois da última tecla: cada tecla não é um GET.
 const searchTerm = refDebounced(query, 300);
 const catalogPage = ref(1);
-const catalogOrder = ref<CatalogOrder>("name");
+const catalogOrder = ref<CatalogOrder>("validity");
 // O cabeçalho "Produto" ordena no BANCO; a tabela é quem manda o estado.
 const catalogSorting = ref<{ id: string; desc: boolean }[]>([]);
 // Facetas: TODAS as dimensões do painel filtram no SERVIDOR. O recorte pode vir
@@ -111,6 +120,7 @@ const {
   search: searchTerm,
   page: catalogPage,
   order: catalogOrder,
+  period: validityRange,
   filters,
 });
 
@@ -251,6 +261,14 @@ const searched = computed<CatalogRowProjection[]>(
   () => matrix.value?.rows ?? [],
 );
 // Conjunto novo (busca, coleção ou faceta) volta para a primeira página.
+watch(validityRange, () => {
+  catalogPage.value = 1;
+  if (filters.value.validity) {
+    const next = { ...filters.value };
+    delete next.validity;
+    filters.value = next;
+  }
+});
 watch(searchTerm, () => {
   catalogPage.value = 1;
 });
@@ -1552,6 +1570,11 @@ useHead({ title: "Catálogo" });
       <template #filter-panel>
         <OperatorFilterPanel
           v-model="filters"
+          v-model:period="validityPeriod"
+          :default-period="DEFAULT_PERIOD"
+          :period-presets="['day', 'week', 'month', 'next7d', 'next28d']"
+          :today="today"
+          custom-period
           :dimensions="dimensions"
           surface="orders"
           screen="catalog"
@@ -1559,6 +1582,7 @@ useHead({ title: "Catálogo" });
       </template>
       <!-- Na mesa: Exibir e as coleções. No celular a coleção é o primário da linha. -->
       <template #filters>
+        <NuxtBadge color="neutral" data-catalog-validity-period>{{ validityLabel }}</NuxtBadge>
         <OperatorTableView v-if="surfaces.length" table-key="orders-catalog" />
         <!-- No celular a coleção é o primário da linha (o `NuxtSelect` abaixo); aqui,
              só do `sm` para cima, pelo CSS. -->
@@ -2007,6 +2031,12 @@ useHead({ title: "Catálogo" });
                       }}</span></template
                     >
                   </span>
+                  <div v-if="rowValidities(row, surfaces).length" class="mt-1 flex flex-wrap gap-1">
+                    <NuxtBadge v-for="validity in rowValidities(row, surfaces)" :key="validity.label"
+                      color="neutral" class="max-w-full whitespace-normal" data-catalog-validity>
+                      {{ validity.channels }}: {{ validity.label }}
+                    </NuxtBadge>
+                  </div>
                 </div>
               </div>
             </div>

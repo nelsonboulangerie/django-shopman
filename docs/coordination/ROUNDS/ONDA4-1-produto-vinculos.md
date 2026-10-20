@@ -79,3 +79,8 @@ O custo novo de leitura é fixo: teste aumenta de zero para **30 coleções e ma
 ## Estado da esteira
 
 PR **#1960** publicado. Implementação e verificação local concluídas; acompanha CI e fila pelo PR.
+
+
+## Integração para a fila (20/10)
+
+Na fila #1960 após integrar o main com #1958 e #1959. O conflito era apenas no BOARD; os vínculos e a matriz foram mesclados sem conflito de código. A linha da frente sai do BOARD conforme a regra do cabeçalho.
