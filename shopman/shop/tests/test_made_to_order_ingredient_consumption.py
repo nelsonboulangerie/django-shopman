@@ -74,6 +74,7 @@ def _ficha(ref: str, output_sku: str, items, *, made_to_order: bool = True, batc
 def _pedido(ref: str, lines, *, status=Order.Status.ACCEPTED) -> Order:
     order = Order.objects.create(
         ref=ref, channel_ref="pdv", session_key=f"SESS-{ref}", status=status, total_q=1000, data={},
+        snapshot={"items": [{"line_id": str(n), "sku": sku, "qty": qty} for n, (sku, qty) in enumerate(lines, 1)]},
     )
     for n, (sku, qty) in enumerate(lines, start=1):
         OrderItem.objects.create(

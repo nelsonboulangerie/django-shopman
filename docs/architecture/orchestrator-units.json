@@ -15697,6 +15697,7 @@
             "fulfill",
             "release",
             "revert_fulfilled",
+            "settle_made_to_order_cancellation",
             "revert",
             "reconcile_to_items",
             "unknown_sku_alert_sku",

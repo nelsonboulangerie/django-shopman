@@ -37,7 +37,7 @@ roda numa transação só. O guarda final é o próprio ledger: com movimento de
 from __future__ import annotations
 
 import logging
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 from django.db import transaction
 
@@ -91,16 +91,20 @@ def made_to_order_recipes(skus) -> dict[str, list]:
 
 
 def _sold_components(order) -> list[tuple[str, Decimal]]:
-    """As linhas que valem agora, combos abertos, somadas por SKU (ordem estável)."""
-    from shopman.shop.services import order_composition
-    from shopman.shop.services.stock import _expand_if_bundle
+    """As linhas que valem agora, combos abertos, somadas por SKU (ordem estável).
+
+    A MESMA leitura que a reserva e a baixa do próprio SKU usam
+    (``stock._items_to_hold``: o snapshot, ou o pedido ajustado quando houve
+    ajuste): o insumo sai pelo que o pedido vendeu, nem mais nem menos.
+    """
+    from shopman.shop.services.stock import _expand_if_bundle, _items_to_hold
 
     totals: dict[str, Decimal] = {}
-    for item in order_composition.effective_items(order):
-        meta = item.meta or {}
+    for item in _items_to_hold(order):
+        meta = item.get("meta") or {}
         if meta.get("non_production") or meta.get("type") == "delivery_fee":
             continue
-        for comp in _expand_if_bundle(item.sku, Decimal(str(item.qty))):
+        for comp in _expand_if_bundle(item["sku"], Decimal(str(item["qty"]))):
             sku = comp["sku"]
             totals[sku] = totals.get(sku, Decimal("0")) + Decimal(str(comp["qty"]))
     return [(sku, qty) for sku, qty in totals.items() if qty > 0]
@@ -123,6 +127,31 @@ def _one_level_requirements(recipe, sold_qty: Decimal) -> list[tuple[str, Decima
         if qty > 0:
             lines.append((item.input_sku, qty, item.unit))
     return lines
+
+
+def _consumable_quants(sku: str):
+    """De onde a ficha tira ``sku``, na ordem em que tira: a régua da fornada.
+
+    Espelho de ``craftsman.contrib.stockman.handlers.consumable_quants`` (o
+    orquestrador não importa ``contrib`` do Core, mesma razão de
+    ``package_opening._open_quants``): produção e estoque primeiro, vitrine fora
+    salvo ``CONSUME_FROM_SALEABLE_POSITIONS`` e então por último; dentro de cada
+    grupo, presente antes de futuro.
+    """
+    from django.db.models import Case, F, IntegerField, Value, When
+    from shopman.craftsman.conf import get_setting
+    from shopman.stockman.services.queries import StockQueries
+
+    quants = StockQueries.list_quants(sku, include_empty=False)
+    if not get_setting("CONSUME_FROM_SALEABLE_POSITIONS"):
+        quants = quants.exclude(position__is_saleable=True)
+    return quants.annotate(
+        _shop_window=Case(
+            When(position__is_saleable=True, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+    ).order_by("_shop_window", F("target_date").asc(nulls_first=True), "pk")
 
 
 # ── Venda: agenda e baixa ────────────────────────────────────────────
@@ -151,7 +180,7 @@ def schedule_consumption(order) -> bool:
 
 
 def _sale_moves(order_ref: str):
-    from shopman.stockman.models.move import Move
+    from shopman.stockman import Move
 
     return Move.objects.filter(
         kind=Move.Kind.MAKE,
@@ -161,7 +190,7 @@ def _sale_moves(order_ref: str):
 
 
 def _settlement_moves(order_ref: str):
-    from shopman.stockman.models.move import Move
+    from shopman.stockman import Move
 
     return Move.objects.filter(
         metadata__source=SOURCE_SALE_CANCEL,
@@ -177,9 +206,8 @@ def consume(order) -> dict:
     venda e o worker) baixa e acerta na mesma passada: a regra do preparado
     vale igual.
     """
-    from shopman.craftsman.contrib.stockman.handlers import consumable_quants
     from shopman.orderman.models import Order
-    from shopman.stockman.models.move import Move
+    from shopman.stockman import Move
     from shopman.stockman.services.movements import StockMovements
 
     with transaction.atomic():
@@ -211,7 +239,7 @@ def consume(order) -> dict:
             }
             for input_sku, needed, unit in _one_level_requirements(recipe, sold_qty):
                 remaining = needed
-                for quant in consumable_quants(input_sku):
+                for quant in _consumable_quants(input_sku):
                     if remaining <= 0:
                         break
                     take = min(remaining, quant.available)
@@ -288,6 +316,10 @@ def schedule_cancellation_settlement(order) -> bool:
     """
     from shopman.orderman.models import IdempotencyKey
 
+    from shopman.shop.services.stock import _items_to_hold
+
+    if is_test_order(order) or not _items_to_hold(order):
+        return False
     if not IdempotencyKey.objects.filter(scope=CONSUME_RECEIPT_SCOPE, key=order.ref).exists():
         return False
     from shopman.shop.directives import STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION, create_persistently_deduped
@@ -326,7 +358,8 @@ def unprepared_quantities(order) -> dict[str, Decimal]:
                 continue
             try:
                 qty = Decimal(str(item.get("qty") or 0))
-            except Exception:
+            except (InvalidOperation, TypeError, ValueError):
+                logger.warning("made_to_order: qty ilegível no ticket %s: %r", ticket.pk, item.get("qty"))
                 continue
             if qty > 0:
                 unprepared[sku] = unprepared.get(sku, Decimal("0")) + qty
@@ -345,7 +378,7 @@ def settle_cancellation(order) -> dict:
     """
     from django.utils import timezone
     from shopman.orderman.models import Order
-    from shopman.stockman.models.move import Move
+    from shopman.stockman import Move
     from shopman.stockman.services.movements import StockMovements
 
     with transaction.atomic():

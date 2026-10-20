@@ -523,6 +523,18 @@ def revert_fulfilled(order) -> None:
         order.save(update_fields=["data", "updated_at"])
 
 
+def settle_made_to_order_cancellation(order) -> None:
+    """Agenda o acerto do insumo do item feito na hora no cancelamento (ADR-040).
+
+    O que a cozinha não começou volta ao estoque; o que ela preparou é perda. O
+    acerto roda por directive (``services/made_to_order``) e só existe quando a
+    venda agendou baixa de insumo.
+    """
+    from shopman.shop.services import made_to_order
+
+    made_to_order.schedule_cancellation_settlement(order)
+
+
 def revert(order) -> None:
     """
     Revert stock for returned items (receive back into inventory).

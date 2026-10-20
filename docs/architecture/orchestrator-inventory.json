@@ -9973,6 +9973,7 @@
             "_Q",
             "_alert_ambiguous",
             "_alert_shortfall",
+            "_consumable_quants",
             "_fmt",
             "_sale_moves",
             "_settlement_moves",
