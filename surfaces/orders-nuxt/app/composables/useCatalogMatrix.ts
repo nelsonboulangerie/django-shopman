@@ -47,6 +47,7 @@ export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 export interface CatalogListOptions {
   /** Busca textual (nome/SKU) — filtrada no BANCO. */
   search?: Ref<string>;
+  period?: Readonly<Ref<{ date_from: string; date_to: string }>>;
   /** Página corrente (1-based). */
   page?: Ref<number>;
   /** Linhas por página (o servidor tem teto). */
@@ -87,6 +88,9 @@ export function useCatalogMatrix(
   const pageSize = list.pageSize ?? ref(50);
   const order = list.order ?? ref("name");
   const activeFilters = list.filters ?? ref<Record<string, string[]>>({});
+  const anyDate = computed(() => activeFilters.value.validity?.includes("any") ?? false);
+  const dateFrom = computed(() => anyDate.value ? undefined : list.period?.value.date_from || undefined);
+  const dateTo = computed(() => anyDate.value ? undefined : list.period?.value.date_to || undefined);
   // TODAS as facetas da FilterBar viram parâmetro do servidor. As listas vão
   // separadas por vírgula ou vazias (vazio = sem recorte, o servidor ignora).
   const facet = (id: string) =>
@@ -118,6 +122,9 @@ export function useCatalogMatrix(
         collection.value,
         search.value,
         order.value,
+        dateFrom.value,
+        dateTo.value,
+        anyDate.value,
         page.value,
         pageSize.value,
         archived.value,
@@ -135,6 +142,8 @@ export function useCatalogMatrix(
       collection,
       q: search,
       order,
+      date_from: dateFrom,
+      date_to: dateTo,
       page,
       page_size: pageSize,
       archived,
@@ -155,7 +164,9 @@ export function useCatalogMatrix(
     (value?.collection_ref ?? "") === collection.value &&
     (value?.matrix?.query ?? "") === search.value &&
     (value?.matrix?.page ?? 1) === page.value &&
-    (value?.matrix?.order ?? "name") === order.value;
+    (value?.matrix?.order ?? "name") === order.value &&
+    (!dateFrom.value || value?.matrix?.date_from === dateFrom.value) &&
+    (!dateTo.value || value?.matrix?.date_to === dateTo.value);
   const readMetadata = useReadMetadata(
     computed(() => (matchesScope(data.value) ? data.value : null)),
     error,
