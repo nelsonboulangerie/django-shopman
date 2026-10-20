@@ -29,6 +29,8 @@ from shopman.orderman.models import Directive
 from shopman.shop.directives import CATALOG_PROJECT_SKU
 from shopman.shop.services import ifood_auth
 
+pytestmark = pytest.mark.django_db
+
 
 def _image_bytes(image_format="PNG", color="red"):
     from PIL import Image
@@ -98,6 +100,8 @@ def ifood_settings():
     return {
         "webhook_token": "wh-tok",
         "merchant_id": "00000000-0000-4000-8000-000000000001",
+        "catalog_id": "catalog-main",
+        "catalog_context": "DEFAULT",
         "api_base": "https://mock-ifood.test",
         "catalog_category_map": {"paes": "cat-paes-uuid"},
         "catalog_default_category": "cat-default-uuid",
@@ -142,6 +146,52 @@ def ifood_directive(db):
     )
 
 
+def _catalog_binding(
+    *,
+    channel,
+    sku="PAO-FRANCES",
+    account_ref="00000000-0000-4000-8000-000000000001",
+    catalog_ref="catalog-main",
+    context="DEFAULT",
+    resource_id="remote-item",
+    product_ref="remote-product",
+    category_ref="remote-category",
+):
+    from django.contrib.auth import get_user_model
+    from shopman.offerman.models import Product
+
+    from shopman.shop.models import CatalogBinding, CatalogSnapshot
+
+    actor = get_user_model().objects.create_user(f"actor-{sku}-{catalog_ref}-{context}")
+    product = Product.objects.create(sku=sku, name=sku, unit="un", base_price_q=350)
+    snapshot = CatalogSnapshot.objects.create(
+        channel=channel,
+        provider="ifood",
+        account_ref=account_ref,
+        catalog_ref=catalog_ref,
+        context=context,
+        captured_at=timezone.now(),
+        imported_by=actor,
+        sha256="0" * 64,
+        raw_json="{}",
+        source="test",
+        item_count=1,
+    )
+    return CatalogBinding.objects.create(
+        channel=channel,
+        product=product,
+        provider="ifood",
+        account_ref=account_ref,
+        catalog_ref=catalog_ref,
+        context=context,
+        resource_id=resource_id,
+        external_product_ref=product_ref,
+        category_ref=category_ref,
+        snapshot=snapshot,
+        confirmed_by=actor,
+    )
+
+
 # ── Adapter: payload construction ─────────────────────────────────────────────
 
 
@@ -180,6 +230,100 @@ def test_adapter_ids_are_deterministic_per_merchant_and_sku(ifood_item):
     # Different merchant → different ids.
     other = _item_payload(ifood_item, merchant_id="other", category_id="c")
     assert other["item"]["id"] != a["item"]["id"]
+
+
+def test_binding_drives_payload_and_status_patch(
+    ifood_item,
+    ifood_settings,
+    ifood_channel,
+    fake_oauth,
+):
+    from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
+
+    binding = _catalog_binding(channel=ifood_channel)
+    item = replace(ifood_item, image_url="", category="sem-excecao-local")
+    with (
+        patch("shopman.shop.adapters.catalog_projection_ifood._get_config", return_value=ifood_settings),
+        patch("requests.put", return_value=_response()) as put,
+        patch("requests.patch", return_value=_response()) as patch_request,
+        patch(
+            "requests.get",
+            return_value=_response(json_data={"item": {"status": "UNAVAILABLE"}}),
+        ),
+    ):
+        projected = IFoodCatalogProjection().project([item], channel=ifood_channel.ref)
+        retracted = IFoodCatalogProjection().retract([item.sku], channel=ifood_channel.ref)
+
+    assert projected.success is True
+    assert retracted.success is True
+    payload = put.call_args.kwargs["json"]
+    assert payload["item"]["id"] == binding.resource_id
+    assert payload["item"]["productId"] == binding.external_product_ref
+    assert payload["products"][0]["id"] == binding.external_product_ref
+    assert payload["item"]["categoryId"] == binding.category_ref
+    assert patch_request.call_args.kwargs["json"]["itemId"] == binding.resource_id
+
+
+def test_without_binding_identity_remains_deterministic(
+    ifood_settings,
+    ifood_channel,
+    django_assert_num_queries,
+):
+    from shopman.shop.services.catalog_identity import resolve_catalog_identity
+
+    with django_assert_num_queries(2):
+        first = resolve_catalog_identity("SEM-VINCULO", ifood_channel.ref, config=ifood_settings)
+    second = resolve_catalog_identity("SEM-VINCULO", ifood_channel.ref, config=ifood_settings)
+
+    assert first == second
+    assert first.origin == "derived"
+    uuid.UUID(first.item_id)
+    uuid.UUID(first.product_id)
+
+
+def test_binding_from_other_account_is_ignored_with_warning(
+    ifood_settings,
+    ifood_channel,
+):
+    from shopman.shop.services import catalog_identity
+
+    _catalog_binding(channel=ifood_channel, account_ref="other-merchant")
+    with patch.object(catalog_identity.logger, "warning") as warning:
+        identity = catalog_identity.resolve_catalog_identity(
+            "PAO-FRANCES",
+            ifood_channel.ref,
+            config=ifood_settings,
+        )
+
+    assert identity.origin == "derived"
+    warning.assert_called_once_with(
+        "catalog_identity.binding_ignored sku=%s channel=%s merchant=%s reason=account_mismatch",
+        "PAO-FRANCES",
+        ifood_channel.ref,
+        ifood_settings["merchant_id"],
+    )
+
+
+def test_same_remote_item_bound_to_two_skus_is_explicit_error(ifood_channel):
+    from shopman.shop.services.catalog_identity import (
+        CatalogIdentityConflict,
+        resolve_catalog_identity,
+    )
+
+    _catalog_binding(channel=ifood_channel, sku="SKU-A", resource_id="shared-item")
+    _catalog_binding(
+        channel=ifood_channel,
+        sku="SKU-B",
+        catalog_ref="catalog-secondary",
+        resource_id="shared-item",
+    )
+
+    with pytest.raises(CatalogIdentityConflict, match="SKU-A.*SKU-B"):
+        resolve_catalog_identity(
+            "SKU-A",
+            ifood_channel.ref,
+            config={"merchant_id": "00000000-0000-4000-8000-000000000001"},
+        )
 
 
 def test_adapter_never_sends_inline_image():
@@ -451,7 +595,7 @@ def test_adapter_project_errors_when_no_category(fake_oauth):
     assert "category" in result.errors[0].lower()
 
 
-def test_adapter_project_returns_failure_without_oauth(ifood_item, settings):
+def test_adapter_project_returns_failure_without_oauth(ifood_item, settings, ifood_channel):
     """No OAuth credentials → no header → loud failure naming the real cause, no PUT."""
     from shopman.shop.adapters.catalog_projection_ifood import IFoodCatalogProjection
 

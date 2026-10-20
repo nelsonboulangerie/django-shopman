@@ -956,6 +956,8 @@ SHOPMAN_WA_VERIFY = {
 SHOPMAN_IFOOD = {
     "webhook_token": os.environ.get("IFOOD_WEBHOOK_TOKEN", ""),
     "merchant_id": os.environ.get("IFOOD_MERCHANT_ID", ""),
+    "catalog_id": os.environ.get("IFOOD_CATALOG_ID", "").strip(),
+    "catalog_context": os.environ.get("IFOOD_CATALOG_CONTEXT", "DEFAULT").strip(),
     # API direta (OAuth client_credentials) — app no Portal do Desenvolvedor iFood.
     "client_id": os.environ.get("IFOOD_CLIENT_ID", "").strip(),
     "client_secret": os.environ.get("IFOOD_CLIENT_SECRET", "").strip(),
