@@ -4,7 +4,8 @@
     "Contrato canônico da fronteira Admin/Unfold × superfícies de operador.",
     "Admin concentra configuração rara, segurança, integrações, segredos, permissões e auditoria.",
     "Fluxos continuous, per_shift ou daily precisam de superfície de operador, página, API e teste reais.",
-    "Os grupos admin_models cobrem exatamente uma vez todo ModelAdmin registrado em django.contrib.admin.site."
+    "Os grupos admin_models cobrem exatamente uma vez todo ModelAdmin registrado em django.contrib.admin.site.",
+    "A frequency de um grupo Admin mede o uso DO ADMIN. A rotina do mesmo model mora no workflow que o declara em admin_models: shop.promotion é rare no Admin e daily no Marketing. O gate cruza os dois: model de workflow de rotina não pode estar em grupo Admin de rotina, e grupo Admin de rotina exige um workflow de rotina que o declare."
   ],
   "dimensions": {
     "frequency": ["continuous", "per_shift", "daily", "on_event", "weekly", "rare"],
@@ -39,7 +40,7 @@
         "backstage.importbatch", "backstage.operationchecklistrun", "backstage.operationepisode",
         "backstage.operatoralert", "backstage.printjob", "backstage.recipeversionrating",
         "backstage.signinevent", "customer_merge.mergeaudit", "orderman.directive", "orderman.order",
-        "orderman.session", "payman.paymentintent", "shop.audiencesnapshot", "shop.contactrelease",
+        "orderman.session", "payman.paymentintent", "shop.audiencesnapshot", "shop.contactrelease", "shop.instanceapplyrecord",
         "shop.marketingauditevent", "shop.marketingcommandreceipt", "shop.marketingplatformauditevent",
         "shop.marketingsecurityevent", "storefront.intentpilotreport", "storefront.stockalertdelivery",
         "storefront.stockalertoccurrence"
@@ -165,111 +166,111 @@
       "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/index.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-pos"}],
       "tests": ["surfaces/pos-nuxt/tests/orderPayment.test.ts"],
-      "locks": ["pos"]
+      "locks": ["pos"], "admin_models": ["backstage.postab"]
     },
     {
       "id": "terminal-operation", "frequency": "per_shift", "audience": "cashier", "risk": "high",
       "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/session/index.vue", "surfaces/pos-nuxt/app/pages/settings/terminal.vue"],
       "api": [{"path": "shopman/backstage/api/operations.py", "contains": "POSTerminal"}],
       "tests": ["surfaces/pos-nuxt/tests/composables/usePosTerminal.test.ts"],
-      "locks": ["terminal", "shift-opening"]
+      "locks": ["terminal", "shift-opening"], "admin_models": ["cashman.terminal", "cashman.shift"]
     },
     {
       "id": "day-closing", "frequency": "daily", "audience": "manager", "risk": "high",
       "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/session/closing.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-closing"}],
       "tests": ["surfaces/pos-nuxt/tests/pages/sessionClosing.corridor.test.ts"],
-      "locks": ["closing"]
+      "locks": ["closing"], "admin_models": ["backstage.dayclosing"]
     },
     {
       "id": "house-accounts", "frequency": "continuous", "audience": "cashier", "risk": "high",
       "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/index.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-pos-accounts"}],
       "tests": ["surfaces/pos-nuxt/tests/presentation.test.ts"],
-      "locks": ["house-accounts"]
+      "locks": ["house-accounts"], "admin_models": []
     },
     {
       "id": "order-management", "frequency": "continuous", "audience": "floor_operator", "risk": "high",
       "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/index.vue", "surfaces/orders-nuxt/app/pages/[ref].vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-orders"}],
       "tests": ["surfaces/orders-nuxt/tests/board.test.ts"],
-      "locks": ["orders"]
+      "locks": ["orders"], "admin_models": ["orderman.order"]
     },
     {
       "id": "catalog-crud", "frequency": "daily", "audience": "manager", "risk": "medium",
       "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/catalog.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-catalog-product"}],
       "tests": ["surfaces/orders-nuxt/tests/catalog.test.ts"],
-      "locks": ["products"]
+      "locks": ["products"], "admin_models": ["offerman.product"]
     },
     {
       "id": "catalog-structure-administration", "frequency": "rare", "audience": "manager", "risk": "high",
       "admin_only": true, "admin_fit": "advanced_configuration",
       "reason": "Coleções e vitrines estruturam o catálogo inteiro; não são CRUD rotineiro do operador.",
-      "locks": ["collections", "listings"]
+      "locks": ["collections", "listings"], "admin_models": ["offerman.collection", "offerman.listing"]
     },
     {
       "id": "customer-crud", "frequency": "daily", "audience": "manager", "risk": "high",
       "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/customers/index.vue", "surfaces/orders-nuxt/app/pages/customers/[ref].vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-customers"}],
       "tests": ["surfaces/orders-nuxt/tests/customers.test.ts"],
-      "locks": ["customers"]
+      "locks": ["customers"], "admin_models": ["guestman.customer"]
     },
     {
       "id": "recipe-crud", "frequency": "daily", "audience": "production_lead", "risk": "medium",
       "surface": "production", "pages": ["surfaces/production-nuxt/app/pages/recipes/index.vue", "surfaces/production-nuxt/app/pages/recipes/new.vue", "surfaces/production-nuxt/app/pages/recipes/[ref]/edit.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-recipes"}],
       "tests": ["surfaces/production-nuxt/tests/e2e/recipeCrud.spec.ts"],
-      "locks": ["recipes"]
+      "locks": ["recipes"], "admin_models": ["craftsman.recipe"]
     },
     {
       "id": "production-execution", "frequency": "continuous", "audience": "production_lead", "risk": "high",
       "surface": "production", "pages": ["surfaces/production-nuxt/app/pages/index.vue", "surfaces/production-nuxt/app/pages/plan.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-wo-start"}],
       "tests": ["surfaces/production-nuxt/tests/presentation/productionSections.test.ts"],
-      "locks": ["work-orders"]
+      "locks": ["work-orders"], "admin_models": ["craftsman.workorder"]
     },
     {
       "id": "material-crud", "frequency": "daily", "audience": "purchasing", "risk": "medium",
       "surface": "purchase", "pages": ["surfaces/purchase-nuxt/app/pages/base/materials/index.vue", "surfaces/purchase-nuxt/app/pages/base/materials/[sku].vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-purchase-materials"}],
       "tests": ["surfaces/purchase-nuxt/tests/materialFilters.test.ts"],
-      "locks": ["materials"]
+      "locks": ["materials"], "admin_models": ["buyman.material"]
     },
     {
       "id": "supplier-crud", "frequency": "daily", "audience": "purchasing", "risk": "medium",
       "surface": "purchase", "pages": ["surfaces/purchase-nuxt/app/pages/base/suppliers/index.vue", "surfaces/purchase-nuxt/app/pages/base/suppliers/[ref].vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-purchase-suppliers"}],
       "tests": ["surfaces/purchase-nuxt/tests/supplierFilters.test.ts"],
-      "locks": ["suppliers"]
+      "locks": ["suppliers"], "admin_models": ["buyman.supplier"]
     },
     {
       "id": "marketing-offer-crud", "frequency": "daily", "audience": "manager", "risk": "high",
       "surface": "marketing", "pages": ["surfaces/marketing-nuxt/app/pages/settings/offers.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-marketing-offer"}],
       "tests": ["shopman/backstage/tests/test_api_marketing_surface.py", "surfaces/marketing-nuxt/tests/useMarketingOffers.test.ts"],
-      "locks": ["promotions", "coupons"]
+      "locks": ["promotions", "coupons"], "admin_models": ["shop.promotion", "shop.coupon"]
     },
     {
       "id": "operational-checklists", "frequency": "daily", "audience": "floor_operator", "risk": "high",
       "surface": "orders", "pages": ["surfaces/orders-nuxt/app/pages/checklists.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-operation-checklists"}],
       "tests": ["shopman/backstage/tests/test_api_operation_checklists.py", "surfaces/orders-nuxt/tests/composables/useOperationChecklists.test.ts"],
-      "locks": ["operational-checklists"]
+      "locks": ["operational-checklists"], "admin_models": ["backstage.operationchecklistrun"]
     },
     {
       "id": "operator-credential-self-service", "frequency": "daily", "audience": "floor_operator", "risk": "high",
       "surface": "pos", "pages": ["surfaces/pos-nuxt/app/pages/index.vue", "surfaces/operator-kit/app/components/OperatorLock.vue"],
       "api": [{"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-operator-pin-change"}, {"path": "shopman/backstage/api/urls.py", "contains": "api-backstage-operator-badge-lost"}],
       "tests": ["surfaces/operator-kit/tests/useOperatorLock.test.ts"],
-      "locks": ["operator-pin", "lost-badge"]
+      "locks": ["operator-pin", "lost-badge"], "admin_models": ["doorman.pincredential"]
     },
     {
       "id": "staff-account-administration", "frequency": "rare", "audience": "security_admin", "risk": "critical",
       "admin_only": true,
       "admin_fit": "permission",
       "reason": "Criar, suspender ou privilegiar contas staff é segurança e segregação de funções, não trabalho rotineiro do operador.",
-      "locks": ["staff-accounts"]
+      "locks": ["staff-accounts"], "admin_models": ["auth.user", "auth.group"]
     }
   ],
   "required_locks": [

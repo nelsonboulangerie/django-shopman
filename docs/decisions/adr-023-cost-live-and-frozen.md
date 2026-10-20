@@ -50,7 +50,7 @@ do próprio campo ("não reescreve os lotes de ontem"). O custo da fornada merec
 mesmo tratamento pelo mesmo motivo: é fato, não configuração.
 
 **O B.I. está no caminho desta decisão, não depois dela.** As Frentes A e B
-([BI-DATA-FOUNDATION-PLAN](../plans/BI-DATA-FOUNDATION-PLAN.md), ADR-021)
+([BI-DATA-FOUNDATION-PLAN](../plans/completed/BI-DATA-FOUNDATION-PLAN.md), ADR-021)
 agregam sobre fatos duráveis; margem por fornada é o próximo pedido natural. Se
 o fato nascer sem custo, o B.I. vai reconstruí-lo com o custo de hoje — e o
 número vai mudar sozinho a cada compra de farinha.
@@ -70,7 +70,7 @@ número vai mudar sozinho a cada compra de farinha.
    mesmo desenho já usado pelo validador e pelo catálogo compostos
    (`shopman/shop/adapters/sku_validator.py`,
    `shopman/shop/adapters/catalog_backend.py`) e o que o
-   [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) §Fronteiras já
+   [BUYMAN-PROCUREMENT-PLAN](../plans/completed/BUYMAN-PROCUREMENT-PLAN.md) §Fronteiras já
    previa ("os adapters compostos vivem no ORQUESTRADOR").
 3. **O congelamento acontece no `finish` da fornada**, junto da partição de
    qualidade que já congela (ADR-017 §7): cada linha CONSUMPTION carrega o custo
@@ -137,5 +137,5 @@ que esse custo é expresso.
 - [ADR-021](adr-021-bi-cross-suite-read-layer.md) — agregação é leitura; o fato tem dono
 - [ADR-001](adr-001-protocol-adapter.md) — cores não se importam; composição no orquestrador
 - [ADR-024](adr-024-material-unit-base-and-purchase.md) — a unidade em que esse custo é expresso
-- [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) — fases e fronteiras
+- [BUYMAN-PROCUREMENT-PLAN](../plans/completed/BUYMAN-PROCUREMENT-PLAN.md) — fases e fronteiras
 - `packages/offerman/shopman/offerman/protocols/cost.py`, `packages/buyman/shopman/buyman/models/cost.py`

@@ -21,10 +21,16 @@ Payload documentado em docs.machine.global (v1, entregas, "Webhooks > Sobre"):
 - O formato antigo (``id_mch``/``status_solicitacao`` e ``id_mch``/
   ``lat_cond``/``lng_cond``) está DEPRECADO na doc, mas continua aceito.
 
-A Machine assina com ``Signature-V2`` (HMAC-SHA-512 com a chave da API); esta
-borda autentica pelo token na URL e ainda não confere a assinatura. O corpo cru
-é SEMPRE logado e o polling (``courier.sync``) segue como via garantida.
-Payload não reconhecido → 202 (nada é perdido: o polling converge).
+Além do token, todo POST tem de trazer o header ``Signature-V2``: HMAC-SHA-512,
+em hexadecimal, do corpo cru inteiro, com a chave da API
+(``SHOPMAN_MACHINE["api_key"]``, env ``MACHINE_API_KEY``), conferido em tempo
+constante. Assinatura ausente ou que não confere → 401. Chave da API vazia →
+401 em TODO POST, com log de erro e alerta ao operador (falha fechada e
+gritando: nunca aceitar sem conferir). O ``GET`` de verificação do cadastro não
+tem corpo e fica só no token. O corpo cru é logado assim que o token confere
+(antes da assinatura, para diagnosticar uma conta divergente), e o
+polling (``courier.sync``) segue como via garantida. Payload não reconhecido →
+202 (nada é perdido: o polling converge).
 
 Status converge no funil ``courier.apply_status`` (idempotente — replay do
 mesmo status é no-op). Posição não toca o Order: vai para o cache
@@ -33,6 +39,7 @@ mesmo status é no-op). Posição não toca o Order: vai para o cache
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import logging
 
@@ -64,6 +71,9 @@ _RIDE_STATUSES = frozenset({"D", "G", "P", "S", "N", "A", "E", "C", "F", "U"})
 
 POSITION_CACHE_SECONDS = 120
 
+#: Header da assinatura documentada (``Signature`` é o antigo, deprecado).
+SIGNATURE_HEADER = "HTTP_SIGNATURE_V2"
+
 
 def _cfg() -> dict:
     return getattr(settings, "SHOPMAN_MACHINE", {}) or {}
@@ -85,9 +95,12 @@ class MachineWebhookView(APIView):
     def post(self, request: Request) -> Response:
         if not self._check_auth(request):
             return Response({"error": "Unauthorized"}, status=http.HTTP_401_UNAUTHORIZED)
-
-        raw = request.body[:2000] if isinstance(request.body, bytes) else b""
-        logger.info("machine.webhook raw=%s", raw.decode("utf-8", errors="replace"))
+        body = request.body if isinstance(request.body, bytes) else b""
+        # Logado antes da assinatura: com o token certo e a assinatura errada, o
+        # corpo cru é o que permite descobrir se a conta da Machine é outra.
+        logger.info("machine.webhook raw=%s", body[:2000].decode("utf-8", errors="replace"))
+        if not _check_signature(request, body):
+            return Response({"error": "Unauthorized"}, status=http.HTTP_401_UNAUTHORIZED)
 
         event = request.data if isinstance(request.data, dict) else {}
         if isinstance(event.get("data"), list):
@@ -187,6 +200,49 @@ class MachineWebhookView(APIView):
             logger.warning("MachineWebhook: token não confere — rejeitando")
             return False
         return True
+
+
+def signature_for(body: bytes, key: str) -> str:
+    """``Signature-V2`` esperada: HMAC-SHA-512 do corpo cru, em hexadecimal."""
+    return hmac.new(key.encode("utf-8"), body, hashlib.sha512).hexdigest()
+
+
+def _check_signature(request: Request, body: bytes) -> bool:
+    """Confere ``Signature-V2`` contra o corpo cru. Falha fechada sempre."""
+    key = _cfg().get("api_key") or ""
+    if not key:
+        # Sem a chave não há como conferir: rejeita e grita (log + alerta).
+        logger.error(
+            "MachineWebhook: SHOPMAN_MACHINE['api_key'] não configurado; sem ela a "
+            "Signature-V2 não pode ser conferida e todo POST é rejeitado. "
+            "Defina MACHINE_API_KEY."
+        )
+        _alert_signature_failure("signature_key_missing")
+        return False
+    received = (request.META.get(SIGNATURE_HEADER) or "").strip().lower()
+    if not received:
+        logger.warning("MachineWebhook: Signature-V2 ausente, rejeitando")
+        _alert_signature_failure("signature_missing")
+        return False
+    if not hmac.compare_digest(received.encode("ascii", "replace"), signature_for(body, key).encode("ascii")):
+        logger.warning("MachineWebhook: Signature-V2 não confere, rejeitando")
+        _alert_signature_failure("signature_mismatch")
+        return False
+    return True
+
+
+def _alert_signature_failure(reason: str) -> None:
+    """O token da URL bateu e a assinatura não: é config ou é vazamento do token."""
+    from shopman.shop.services import observability
+
+    try:
+        observability.record_webhook_failure(
+            provider="machine",
+            reason=reason,
+            status_code=http.HTTP_401_UNAUTHORIZED,
+        )
+    except Exception:
+        logger.exception("MachineWebhook: falha ao registrar o alerta de assinatura (%s)", reason)
 
 
 def _store_position(ride_ref: str, lat, lng) -> None:

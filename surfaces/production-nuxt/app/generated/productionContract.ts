@@ -432,6 +432,22 @@ export interface ProductionWeighingIngredientProjection {
   accepted_max_g: string | null;
 }
 
+/** One ingredient of the final mix with old dough at the recipe's cap. */
+export interface ProductionWeighingOldDoughLineProjection {
+  sku: string;
+  target_display: string;
+  target_g: string | null;
+}
+
+/** A pesagem com massa velha no teto da ficha (``final_mix_at_cap``). */
+export interface ProductionWeighingOldDoughProjection {
+  cap_pct: string;
+  cap_display: string;
+  old_dough_display: string;
+  old_dough_g: string | null;
+  lines: ProductionWeighingOldDoughLineProjection[];
+}
+
 /** Closed printable row contract for one weighing ingredient. */
 export interface ProductionWeighingTableRowProjection {
   cols: string[];
@@ -477,6 +493,7 @@ export interface ProductionWeighingTicketProjection {
   expiry_display: string;
   validity_configured: boolean;
   validity_source: string;
+  old_dough: ProductionWeighingOldDoughProjection | null;
 }
 
 /** Printable weighing tickets for saved production planning. */

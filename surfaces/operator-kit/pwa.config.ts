@@ -76,6 +76,21 @@ export interface OperatorPwaCapabilityOptions {
    * trocaria de versão sem ela.
    */
   idleReloadPaths?: string[];
+  /**
+   * Rotas que ABREM SEM CONEXÃO (opt-in; hoje só a venda do PDV, `["/"]`). A navegação
+   * delas deixa de ser `NetworkOnly`: vai à rede primeiro e, com a rede caída, abre o
+   * último HTML que a rede devolveu NESTE dispositivo, com a leitura que veio nele
+   * (catálogo, preços, comandas). O resto do app segue no `offline.html`.
+   *
+   * Travas, porque HTML guardado é o que o WP-RELEASE-01 manda não deixar preso:
+   * - só entra o HTML da MESMA build do service worker (o `buildId` do Nuxt está no
+   *   HTML), e só sai dele também: depois de uma versão nova (ou de um rollback), o
+   *   HTML da anterior não abre, e a tela cai no `offline.html` honesto;
+   * - só a resposta 200, sem redirecionamento, da rota sem query (aceita a
+   *   `?source=pwa` do ícone instalado), guardada sob o caminho limpo;
+   * - fica em cache de runtime (`<app>-shell`), nunca no precache.
+   */
+  offlineShellPaths?: string[];
   push?: {
     surfaceRef: "hub" | "orders" | "pos" | "production" | "marketing" | "purchase" | "bi" | "kds";
     categories: Array<"campaign" | "production" | "order" | "purchase" | "report" | "kitchen" | "sign_in" | "system">;
@@ -141,6 +156,69 @@ export const OPERATOR_HEAD_LINKS = [
   { rel: "icon", sizes: "48x48", href: `/favicon.ico${FAVICON_VERSION}` },
 ] as const;
 
+/** Query que não muda a tela: a do ícone instalado (`start_url`). */
+const OFFLINE_SHELL_ALLOWED_QUERY = ["source"];
+
+type ShellPluginFn = (...args: never[]) => Promise<unknown>;
+/** Uma entrada de `workbox.runtimeCaching`, pelo tipo que o @vite-pwa/nuxt aceita. */
+type OperatorRuntimeCaching = NonNullable<NonNullable<VitePwaModuleOptions["workbox"]>["runtimeCaching"]>[number];
+type OperatorWorkboxPlugin = NonNullable<NonNullable<OperatorRuntimeCaching["options"]>["plugins"]>[number];
+ 
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (...source: string[]) => ShellPluginFn;
+
+/**
+ * A rota de runtime do casco sem conexão. As funções viram TEXTO dentro do `sw.js`
+ * (o workbox-build serializa por `toString()`), então não podem fechar sobre
+ * variável deste módulo: rotas, query aceita e `buildId` entram como literais no
+ * corpo, por isso o `new Function`.
+ */
+export function operatorOfflineShellCaching(app: string, paths: string[], buildId: string): OperatorRuntimeCaching {
+  if (!buildId.trim()) throw new TypeError("casco sem conexão exige o buildId do Nuxt");
+  if (!paths.length || paths.some((path) => !path.startsWith("/"))) {
+    throw new TypeError("casco sem conexão exige caminhos absolutos");
+  }
+  const pathsLiteral = JSON.stringify(paths);
+  const queryLiteral = JSON.stringify(OFFLINE_SHELL_ALLOWED_QUERY);
+  const buildLiteral = JSON.stringify(buildId);
+   
+  const urlPattern = new Function("context", `
+    return context.request.mode === "navigate" && ${pathsLiteral}.includes(context.url.pathname);
+  `) as (context: { request: Request; url: URL }) => boolean;
+  const plugin = {
+    cacheKeyWillBeUsed: new AsyncFunction("context", `
+      const url = new URL(context.request.url);
+      return url.origin + url.pathname;
+    `),
+    cacheWillUpdate: new AsyncFunction("context", `
+      const response = context.response;
+      if (!response || response.status !== 200 || response.redirected) return null;
+      const url = new URL(context.request.url);
+      for (const key of url.searchParams.keys()) {
+        if (!${queryLiteral}.includes(key)) return null;
+      }
+      const html = await response.clone().text();
+      return html.includes(${buildLiteral}) ? response : null;
+    `),
+    cachedResponseWillBeUsed: new AsyncFunction("context", `
+      const cached = context.cachedResponse;
+      if (!cached) return null;
+      const html = await cached.clone().text();
+      return html.includes(${buildLiteral}) ? cached : null;
+    `),
+  };
+  return {
+    urlPattern: urlPattern as unknown as OperatorRuntimeCaching["urlPattern"],
+    handler: "NetworkFirst",
+    options: {
+      cacheName: `${app}-shell`,
+      // O workbox chama os três ganchos com o contexto dele; o tipo do plugin não
+      // conhece funções montadas por texto, daí a conversão.
+      plugins: [plugin as unknown as OperatorWorkboxPlugin],
+      precacheFallback: { fallbackURL: "/offline.html" },
+    },
+  };
+}
+
 function namesImport(entry: unknown, name: string): boolean {
   if (typeof entry === "string") return entry === name;
   if (Array.isArray(entry)) return entry[0] === name || entry[1] === name;
@@ -160,6 +238,7 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
     wakeLock: false,
     kiosk: false,
     idleReloadPaths: [],
+    offlineShellPaths: [],
     precacheIgnores: [],
     push: undefined,
   },
@@ -276,6 +355,10 @@ const pwaCapabilityModule = defineNuxtModule<OperatorPwaCapabilityOptions>({
         manifestTransforms: [async entries => ({ manifest: entries, warnings: [] })],
         importScripts: options.push ? ["/operator-push-sw.js"] : undefined,
         runtimeCaching: [
+          // Antes da regra geral de navegação: o workbox usa a primeira rota que casa.
+          ...(options.offlineShellPaths?.length
+            ? [operatorOfflineShellCaching(String(options.app), options.offlineShellPaths, String(nuxt.options.buildId || ""))]
+            : []),
           {
             urlPattern: ({ request }: { request: Request }) => request.mode === "navigate",
             handler: "NetworkOnly",

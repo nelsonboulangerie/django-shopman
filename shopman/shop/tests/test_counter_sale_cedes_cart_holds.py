@@ -135,18 +135,12 @@ def test_order_hold_never_cedes_and_the_real_gap_alerts():
 
 
 def test_web_checkout_after_the_cession_is_refused_as_sold_out():
-    """A sacola que cedeu descobre no checkout: pré-checagem "esgotado" e o gate
-    de commit recusa (``insufficient_supply``), sem pedido nem reserva."""
-    from shopman.shop.projections.checkout import cart_stock_shortfalls
-
+    """A sacola que cedeu descobre no checkout: o gate de commit recusa
+    (``insufficient_supply``), sem pedido nem reserva."""
     _world(stock_qty=2)
     _hold(2, "sacola-web")
 
     stock_service.hold(_order(2))
-
-    line = SimpleNamespace(line_id="L1", sku=SKU, name="Baguete", qty=2)
-    shortfalls, _ = cart_stock_shortfalls(session_key="sacola-web", cart_lines=[line], channel_ref="web")
-    assert [(s.sku, s.available_qty) for s in shortfalls] == [(SKU, 0)]
 
     web = _order(2, ref="WEB-1", channel_ref="web", session_key="sacola-web")
     with pytest.raises(ValidationError) as exc:

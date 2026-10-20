@@ -25,7 +25,7 @@ mesmo lugar, e fingir que guarda custaria migração de dados sem ganho:
   O ponteiro deixa o registro completo hoje sem mexer no editor de rótulo do
   Offerman, que é quem escreve essas chaves. Rebatizar as três é WP próprio,
   com migração de dados e os leitores do Core junto — ver
-  ``docs/plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md``.
+  ``docs/plans/completed/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md``.
 
 Ninguém lê estes campos direto: quem lê e escreve valor é
 ``shopman.shop.services.attributes``.

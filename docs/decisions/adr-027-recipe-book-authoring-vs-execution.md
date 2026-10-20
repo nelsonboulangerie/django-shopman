@@ -3,7 +3,7 @@
 **Status:** Aceito
 **Data:** 2026-09-03
 **Escopo:** `craftsman` (`RecipeEntry`, `RecipeVersion`, `contrib/formula/percentages.py`), orquestrador (`backstage/services/recipe_*`, `projections/recipe_book.py`, `api/recipe_book.py`) e a superfície Produção (`surfaces/production-nuxt`)
-**Plano:** [RECIPE-INVENTORY-PLAN](../plans/RECIPE-INVENTORY-PLAN.md)
+**Plano:** [RECIPE-INVENTORY-PLAN](../plans/completed/RECIPE-INVENTORY-PLAN.md)
 **Refina:** [ADR-008](adr-008-pdp-nutrition.md) (Recipe é fonte do PDP), [ADR-011](adr-011-formula-and-cashshift.md) (`contrib/formula` é a vertical de panificação), [ADR-014](adr-014-surface-data-presentation-cut.md) (projection de dado vs presentation)
 
 ---

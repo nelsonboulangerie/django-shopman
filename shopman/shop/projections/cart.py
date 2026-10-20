@@ -326,7 +326,10 @@ def build_cart(
     threshold_base_q = subtotal_q + coupon_discount_q
     minimum_order = build_minimum_order_progress(threshold_base_q, channel_ref)
     delivery_minimum = build_delivery_minimum_progress(threshold_base_q, channel_ref)
-    free_delivery = build_free_delivery_progress(threshold_base_q, channel_ref)
+    free_delivery = build_free_delivery_progress(
+        threshold_base_q, channel_ref,
+        price_tier_refs=((session.data or {}).get("customer") or {}).get("price_tiers") or (),
+    )
 
     can_checkout, block_reason = _checkout_eligibility(
         is_empty=False,
@@ -755,13 +758,30 @@ def build_delivery_minimum_progress(
 def build_free_delivery_progress(
     subtotal_q: int,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,
+    *,
+    price_tier_refs=(),
 ) -> FreeDeliveryProgressProjection | None:
     """Progress toward free delivery (``shop.defaults.rules.free_delivery_above_q``).
 
     Returns ``None`` when the policy is off or the subtotal already qualifies.
     The same value zeroes the fee in ``DeliveryFeeModifier`` — single source.
+
+    Cliente de grupo com frete grátis (``PriceTierAdvantage`` ``free_shipping``)
+    mede contra o MENOR dos dois mínimos: o do grupo e o da loja. É o mesmo que o
+    ``resolve_delivery_fee_waiver`` usa para zerar a taxa, senão a barra diria
+    "faltam R$ 40" a quem já tem frete grátis por ser do grupo.
     """
     threshold_q = shop_rule_q("free_delivery_above_q")
+    if price_tier_refs:
+        from shopman.shop.policies.group_advantage import free_shipping_minimum_q
+        from shopman.shop.services import promotions as promotion_service
+
+        group = promotion_service.best_group_advantage(price_tier_refs, "free_shipping")
+        if group is not None:
+            group_q = free_shipping_minimum_q(group.value.config)
+            threshold_q = group_q if not threshold_q else min(threshold_q, group_q)
+            if threshold_q <= 0:
+                return None
     progress = _threshold_progress(subtotal_q, threshold_q)
     if progress is None:
         return None

@@ -10,7 +10,6 @@ from django.test import TestCase
 from shopman.guestman.models import Customer, CustomerAddress, PriceTier
 
 from shopman.shop.services import checkout as checkout_service
-from shopman.storefront.intents.types import CheckoutIntent
 
 PHONE = "+5543999990001"
 FORMATTED = "Rua das Flores, 123, Centro, Londrina - PR, 86020-000"
@@ -38,25 +37,18 @@ def _make_intent(
     delivery_address_structured: dict | None = STRUCTURED,
     saved_address_id: int | None = None,
     customer_phone: str = PHONE,
-) -> CheckoutIntent:
-    return CheckoutIntent(
-        session_key="sk-test",
-        channel_ref="web",
-        customer_name="João Silva",
-        customer_phone=customer_phone,
-        fulfillment_type=fulfillment_type,
-        payment_method="pix",
-        delivery_address=delivery_address,
-        delivery_address_structured=delivery_address_structured,
-        saved_address_id=saved_address_id,
-        delivery_date=None,
-        delivery_time_slot=None,
-        notes=None,
-        loyalty_redeem=False,
-        loyalty_balance_q=0,
-        stock_check_unavailable=False,
-        idempotency_key="idem-test",
-        checkout_data={},
+):
+    """A intenção pós-commit como o serviço a monta a partir do dado selado."""
+    return checkout_service._post_commit_intent(
+        {
+            "customer": {"name": "João Silva", "phone": customer_phone},
+            "fulfillment_type": fulfillment_type,
+            "delivery_address": delivery_address,
+            "delivery_address_structured": delivery_address_structured,
+            "saved_address_id": saved_address_id,
+            "payment": {"method": "pix"},
+        },
+        "web",
     )
 
 

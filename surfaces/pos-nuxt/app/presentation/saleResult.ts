@@ -233,6 +233,22 @@ export function pixAwaiting(payment: PaymentProofView | null, pixStatus: PixPoll
 }
 
 /** Troco pronto para exibir; "" quando não há troco. */
+/**
+ * O selo do cabeçalho para os Pix ainda abertos fora da tela de resultado. Um só
+ * selo, de altura fixa, por mais que haja: com um, diz o pedido; com vários, a
+ * contagem, e os pedidos vão inteiros no `title`. `null` = nenhum Pix aberto.
+ */
+export function pendingPixBadge(orderRefs: readonly string[]): { label: string; title: string } | null {
+  if (orderRefs.length === 0) return null;
+  if (orderRefs.length === 1) {
+    return { label: `Pix aguardando · ${orderRefs[0]}`, title: `Pix do pedido ${orderRefs[0]} aguardando confirmação` };
+  }
+  return {
+    label: `${orderRefs.length} Pix aguardando`,
+    title: `Pix aguardando confirmação nos pedidos ${orderRefs.join(", ")}`,
+  };
+}
+
 export function changeDisplay(changeQ: number): string {
   return changeQ > 0 ? formatBRL(changeQ) : "";
 }

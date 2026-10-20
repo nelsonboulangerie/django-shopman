@@ -97,6 +97,7 @@ import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
+import { pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
 import { sourceReleasedMessage } from "~/presentation/moveLines";
 import { tabTitleView } from "~/presentation/tabTitle";
 import {
@@ -251,8 +252,13 @@ export function usePosSale(deps: PosSaleDeps) {
   const offlineSales = usePosOfflineSales();
   /** Sem rede AGORA, pelo navegador (o mesmo sinal do aviso de conexão). */
   const offlineNow = () => import.meta.client && globalThis.navigator?.onLine === false;
-  /** Quando a tela leu os preços pela última vez: a nota do total sem conexão. */
-  const pricesAt = ref(new Date().toISOString());
+  /**
+   * Quando a tela leu os preços pela última vez: a nota do total sem conexão.
+   * `useState`, e não `ref`: nasce na renderização do servidor e viaja no HTML.
+   * A tela de venda que abre sem conexão (o HTML guardado pelo service worker)
+   * traz a hora em que AQUELA leitura foi feita, e não a hora em que abriu.
+   */
+  const pricesAt = useState("pos-prices-at", () => new Date().toISOString());
   // A tela de resultado de uma venda guardada passa a dizer o pedido quando a
   // fila a envia (a venda pode subir com a tela ainda de pé).
   watch(() => offlineSales.sentOrderRefs.value, (sent) => {
@@ -279,6 +285,10 @@ export function usePosSale(deps: PosSaleDeps) {
   const cancelSaleReason = ref("");
   const cancelSaleDialogOpen = ref(false);
   const cancelSaleError = ref("");
+  // A tentativa de cancelamento em curso: o MESMO pedido com o MESMO motivo
+  // reusa o `client_request_id`, e o servidor devolve a resposta da primeira
+  // vez em vez de cancelar (ou reabrir) de novo quando a resposta se perdeu.
+  let cancelSaleAttempt: { orderRef: string; reason: string; id: string } | null = null;
   const lookupBusy = ref(false);
   const serverError = ref("");
   // Errors surface as a dismissible floating toast (UI Thing Sonner), not an
@@ -453,9 +463,36 @@ export function usePosSale(deps: PosSaleDeps) {
   const pixStatus = ref<"idle" | "polling" | "paid" | "expired">("idle");
   // De qual pedido é o polling atual — o chip pendente compara com ele.
   const pixOrderRef = ref("");
-  // Sair da tela de resultado com o PIX ainda aguardando NÃO descarta a prova:
-  // o pedido vira um chip compacto no header e o polling segue até resolver.
-  const pendingPixOrderRef = ref("");
+  // TODO Pix aberto nesta estação, e não só o último: o cliente 1 ainda paga
+  // quando o operador já atende o 2. Cada um fica aqui até resolver (pago,
+  // cancelado/expirado ou desistência), e a lista sobrevive a recarregar a
+  // página (`pendingPixStore`). O da tela de resultado é acompanhado pelo
+  // polling da tela (`pixStatus`); os outros, pelo acompanhamento de fundo.
+  // Começa vazia também durante a hydration (o HTML do servidor não sabe do
+  // dispositivo); a página chama `restorePendingPix` no mounted.
+  const pendingPix = ref<PendingPix[]>([]);
+  /** Recarregou a página: os Pix que ficaram abertos voltam ao acompanhamento. */
+  function restorePendingPix() {
+    const known = new Set(pendingPix.value.map((entry) => entry.orderRef));
+    const stored = readPendingPix().filter((entry) => !known.has(entry.orderRef));
+    if (stored.length) savePendingPix([...pendingPix.value, ...stored]);
+  }
+  function savePendingPix(entries: PendingPix[]) {
+    pendingPix.value = entries;
+    writePendingPix(entries);
+  }
+  function trackPendingPix(orderRef: string) {
+    if (pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
+    savePendingPix([...pendingPix.value, { orderRef, since: new Date().toISOString() }]);
+  }
+  function forgetPendingPix(orderRef: string) {
+    if (!pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
+    savePendingPix(pendingPix.value.filter((entry) => entry.orderRef !== orderRef));
+  }
+  /** Os selos do cabeçalho: os Pix abertos que NÃO estão na tela de resultado. */
+  const pendingPixOrderRefs = computed(() => pendingPix.value
+    .map((entry) => entry.orderRef)
+    .filter((orderRef) => orderRef !== result.value?.orderRef));
   let pixPollTimer: ReturnType<typeof setInterval> | null = null;
   let deliveryPollTimer: ReturnType<typeof setInterval> | null = null;
   let pixPollGeneration = 0;
@@ -536,19 +573,59 @@ export function usePosSale(deps: PosSaleDeps) {
     }, 2500);
   }
 
-  // O chip pendente resolve em voz alta, nunca em silêncio: confirmou → toast
-  // de sucesso; desistimos (expirado/cancelado) → aviso honesto com o próximo
-  // passo. Em ambos, o chip sai do header.
+  // O Pix da tela de resultado resolveu: sai da lista. A tela já diz o desfecho.
   watch(pixStatus, (status) => {
-    if (!pendingPixOrderRef.value || pixOrderRef.value !== pendingPixOrderRef.value) return;
-    if (status === "paid") {
-      toast.success(`PIX do pedido ${pendingPixOrderRef.value} confirmado.`);
-      pendingPixOrderRef.value = "";
-    } else if (status === "expired") {
-      toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
-      pendingPixOrderRef.value = "";
-    }
+    if ((status === "paid" || status === "expired") && pixOrderRef.value) forgetPendingPix(pixOrderRef.value);
   });
+
+  // ACOMPANHAMENTO DE FUNDO: cada Pix aberto que não está na tela é consultado
+  // na mesma cadência, um de cada vez, e resolve em voz alta, nunca em silêncio:
+  // confirmou → aviso de sucesso; cancelado/expirado ou passou do teto → aviso
+  // honesto com o próximo passo. Em todos, o selo sai do cabeçalho.
+  let backgroundPixTimer: ReturnType<typeof setInterval> | null = null;
+  let backgroundPixInFlight = false;
+  function resolveBackgroundPix(orderRef: string, outcome: "paid" | "expired") {
+    if (!pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
+    forgetPendingPix(orderRef);
+    if (outcome === "paid") toast.success(`PIX do pedido ${orderRef} confirmado.`);
+    else toast.warning(`Não confirmamos o PIX do pedido ${orderRef}. Confira no gestor ou gere um novo pagamento.`);
+  }
+  async function pollBackgroundPix() {
+    if (backgroundPixInFlight) return;
+    const foreground = pixStatus.value === "polling" ? pixOrderRef.value : "";
+    const entries = pendingPix.value.filter((entry) => entry.orderRef !== foreground);
+    if (entries.length === 0) return;
+    backgroundPixInFlight = true;
+    try {
+      for (const entry of entries) {
+        try {
+          const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean }>(
+            apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(entry.orderRef)}/status/`),
+            { credentials: "include" },
+          );
+          if (status?.is_paid) resolveBackgroundPix(entry.orderRef, "paid");
+          else if (status?.is_terminal || pendingPixExpired(entry, Date.now())) resolveBackgroundPix(entry.orderRef, "expired");
+        } catch {
+          // silêncio-deliberado: falha transiente segue tentando; só a desistência
+          // (passou do teto sem resposta) fala, e fala alto.
+          if (pendingPixExpired(entry, Date.now())) resolveBackgroundPix(entry.orderRef, "expired");
+        }
+      }
+    } finally {
+      backgroundPixInFlight = false;
+    }
+  }
+  function stopBackgroundPix() {
+    if (backgroundPixTimer) { clearInterval(backgroundPixTimer); backgroundPixTimer = null; }
+  }
+  watch(
+    () => pendingPix.value.length > 0,
+    (hasPending) => {
+      if (hasPending && !backgroundPixTimer) backgroundPixTimer = setInterval(() => { void pollBackgroundPix(); }, 2500);
+      else if (!hasPending) stopBackgroundPix();
+    },
+    { immediate: true },
+  );
 
   /**
    * Fecha a tela de resultado (CTA "Nova venda", F2, Enter). PIX ainda
@@ -570,14 +647,12 @@ export function usePosSale(deps: PosSaleDeps) {
   function dismissResult() {
     if (!result.value) return;
     stopDeliveryPolling();
-    const proof = result.value.payment;
-    const pixStillPending = Boolean(proof?.isPix && proof?.hasProof) && pixStatus.value === "polling";
-    if (pixStillPending) {
-      pendingPixOrderRef.value = result.value.orderRef;
-    } else if (!pendingPixOrderRef.value) {
-      stopPixPolling();
-      pixStatus.value = "idle";
-    }
+    // O Pix ainda aguardando NÃO é descartado: segue na lista (já estava nela
+    // desde a cobrança), vira selo no cabeçalho e passa ao acompanhamento de
+    // fundo. A tela de resultado larga o polling dela.
+    stopPixPolling();
+    pixStatus.value = "idle";
+    pixOrderRef.value = "";
     result.value = null;
   }
 
@@ -622,7 +697,7 @@ export function usePosSale(deps: PosSaleDeps) {
    * venda em cena — palco, chip ou polling — o vestígio dela sai junto.
    */
   function onExternalSaleCancelled(orderRef: string) {
-    if (pendingPixOrderRef.value === orderRef) pendingPixOrderRef.value = "";
+    forgetPendingPix(orderRef);
     if (pixOrderRef.value === orderRef) {
       stopPixPolling();
       pixStatus.value = "idle";
@@ -3394,22 +3469,19 @@ export function usePosSale(deps: PosSaleDeps) {
           ...(offline ? { offline: { capturedAt: offline.capturedAt, id: offline.id } } : {}),
         };
         // PIX pendente → polla até confirmar; outros métodos já saem resolvidos.
+        // A venda nova não derruba as anteriores: um Pix ainda aberto segue na
+        // lista e no acompanhamento de fundo até resolver.
         if (proof?.isPix && proof?.hasProof) {
-          if (pendingPixOrderRef.value) {
-            // Um só polling por estação: a prova anterior ainda pendente não
-            // pode ser abandonada calada — acusa e aponta o gestor.
-            toast.warning(`Não confirmamos o PIX do pedido ${pendingPixOrderRef.value}. Confira no gestor ou gere um novo pagamento.`);
-            pendingPixOrderRef.value = "";
-          }
+          trackPendingPix(orderRef);
           startPixPolling(orderRef);
-        } else if (proof?.isLink && response.payment_delivery
-          && ["queued", "sending"].includes(response.payment_delivery.status)) {
-          startDeliveryPolling(orderRef);
-        } else if (!pendingPixOrderRef.value) {
-          // Sem prova nova e sem chip pendente: nada a pollar. (Com chip, o
-          // polling da venda anterior segue vivo até resolver/expirar.)
+        } else {
           stopPixPolling();
           pixStatus.value = "idle";
+          pixOrderRef.value = "";
+          if (proof?.isLink && response.payment_delivery
+            && ["queued", "sending"].includes(response.payment_delivery.status)) {
+            startDeliveryPolling(orderRef);
+          }
         }
         // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
         // do snapshot congelado, não do cart, que a linha abaixo já zerou.
@@ -3788,21 +3860,26 @@ export function usePosSale(deps: PosSaleDeps) {
     try {
       const orderRef = result.value.orderRef;
       const reason = cancelSaleReason.value.trim();
+      if (!cancelSaleAttempt || cancelSaleAttempt.orderRef !== orderRef || cancelSaleAttempt.reason !== reason) {
+        cancelSaleAttempt = { orderRef, reason, id: newClientRequestId() };
+      }
       const response = await action.call<{ card_machine_refund?: { amount_display: string; method_label: string } | null }>(
         actionHref(actions.value, "cancel_recent_sale", "/api/v1/backstage/pos/sale/recent/cancel/"),
         {
           body: {
             order_ref: orderRef,
             manager_approval: aprovacao,
+            client_request_id: cancelSaleAttempt.id,
             ...(reason ? { reason } : {}),
           },
         },
       );
+      cancelSaleAttempt = null;
       result.value = null;
       cancelSaleReason.value = "";
       cancelSaleDialogOpen.value = false;
       // A venda cancelada não deixa polling nem chip para trás.
-      if (pendingPixOrderRef.value === orderRef) pendingPixOrderRef.value = "";
+      forgetPendingPix(orderRef);
       if (pixOrderRef.value === orderRef) {
         stopPixPolling();
         pixStatus.value = "idle";
@@ -3933,6 +4010,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   onScopeDispose(() => {
     stopPixPolling();
+    stopBackgroundPix();
     stopDeliveryPolling();
     if (autoReviewTimer) clearTimeout(autoReviewTimer);
     autoReviewTimer = null;
@@ -3981,7 +4059,8 @@ export function usePosSale(deps: PosSaleDeps) {
     })),
     restoreUncertainClose,
     acknowledgeUncertainClose,
-    pendingPixOrderRef,
+    pendingPixOrderRefs,
+    restorePendingPix,
     checkoutMode,
     showTabs,
     moveDialogOpen,

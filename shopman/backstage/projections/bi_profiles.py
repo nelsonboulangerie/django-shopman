@@ -1,4 +1,4 @@
-"""B.I. — perfis de consumo do balcão (docs/plans/BI-CONSUMPTION-PROFILES.md).
+"""B.I. — perfis de consumo do balcão (docs/plans/completed/BI-CONSUMPTION-PROFILES.md).
 
 Quem são os clientes de balcão, em três perfis presumidos pela cesta:
 

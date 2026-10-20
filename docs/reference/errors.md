@@ -361,7 +361,7 @@ raise BaseError(code="SOME_CODE", message="descrição", extra_key="valor")
 
 **Subclasse:** `StaleRevision(CraftError)` — levantada com `code="STALE_REVISION"` automaticamente, recebe `(order, expected_rev)`.
 
-**Subclasse:** `RecipeBookError(CraftError)` — inventário de receitas (`RecipeEntry`/`RecipeVersion`, [RECIPE-INVENTORY-PLAN](../plans/RECIPE-INVENTORY-PLAN.md) §5). `data["field"]` carrega o caminho do campo ofensor na fórmula (`items[2].sku`, `parts[0]`).
+**Subclasse:** `RecipeBookError(CraftError)` — inventário de receitas (`RecipeEntry`/`RecipeVersion`, [RECIPE-INVENTORY-PLAN](../plans/completed/RECIPE-INVENTORY-PLAN.md) §5). `data["field"]` carrega o caminho do campo ofensor na fórmula (`items[2].sku`, `parts[0]`).
 
 | Código | Quando ocorre | Na API do backstage (`/api/v1/backstage/recipes/*`) |
 |--------|--------------|------|

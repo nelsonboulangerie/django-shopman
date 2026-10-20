@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Trava do CONJUNTO MÍNIMO da suíte (dono, 08/10/2026, PR #1539; laudo em
-// docs/plans/WP-BI-CANON-LAUDO.md, seção F). O tema do kit fixa o default de cada
+// docs/plans/completed/WP-BI-CANON-LAUDO.md, seção F). O tema do kit fixa o default de cada
 // peça; esta trava conta o que foge do conjunto escrito na chamada e só deixa a
 // conta CAIR. Cada número abaixo é o que existia quando o conjunto foi aprovado:
 // migrar um uso baixa o teto (atualize o número para o novo valor); um uso NOVO fora

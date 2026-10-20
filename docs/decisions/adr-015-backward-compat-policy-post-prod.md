@@ -5,7 +5,7 @@
 **Data:** 2026-06-26
 **Escopo:** migrations, renames, política de código pós-produção, WP-GAP-07
 
-> O [WP-GAP-07](../plans/WP-GAP-07-pre-prod-migration-playbook.md) previa um
+> O [WP-GAP-07](../plans/completed/WP-GAP-07-pre-prod-migration-playbook.md) previa um
 > `adr-011`; o número 011 já é `formula-and-cashshift`. Esta é a ADR equivalente,
 > com o próximo número livre (015).
 
@@ -113,6 +113,6 @@ simular a política localmente sem tag: `SHOPMAN_ADR015_FORCE=1` (ou `0`).
 
 ## Referências
 
-- [WP-GAP-07 pre-prod migration playbook](../plans/WP-GAP-07-pre-prod-migration-playbook.md)
+- [WP-GAP-07 pre-prod migration playbook](../plans/completed/WP-GAP-07-pre-prod-migration-playbook.md)
 - [GO-LIVE-READINESS-PLAN](../plans/GO-LIVE-READINESS-PLAN.md)
 - [production-upgrades.md](../guides/production-upgrades.md)

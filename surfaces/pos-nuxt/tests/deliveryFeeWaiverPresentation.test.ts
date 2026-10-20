@@ -15,6 +15,9 @@ const promotion: POSDeliveryFeeWaiverProjection = {
 const threshold: POSDeliveryFeeWaiverProjection = {
   reason: "threshold", promotion_name: "", threshold_q: 12000, base_fee_q: 800,
 };
+const group: POSDeliveryFeeWaiverProjection = {
+  reason: "group", promotion_name: "", threshold_q: 0, base_fee_q: 800, group_name: "Aliança Francesa",
+};
 const nbsp = (text: string) => text.replace(/\u00a0/g, " ");
 
 describe("frete grátis no balcão", () => {
@@ -44,6 +47,20 @@ describe("frete grátis no balcão", () => {
       "Frete grátis nas compras a partir de R$ 120,00 (a taxa seria R$ 8,00).",
     );
     expect(nbsp(deliveryFeeWaiverShort(threshold))).toBe("Compras a partir de R$ 120,00");
+  });
+
+  it("frete grátis do grupo: diz o grupo e, com mínimo, a partir de quanto", () => {
+    expect(nbsp(deliveryFeeWaiverNote(group, 0))).toBe(
+      "Frete grátis por ser Aliança Francesa (a taxa seria R$ 8,00).",
+    );
+    expect(nbsp(deliveryFeeWaiverNote({ ...group, threshold_q: 5000 }, 0))).toBe(
+      "Frete grátis por ser Aliança Francesa nas compras a partir de R$ 50,00 (a taxa seria R$ 8,00).",
+    );
+    expect(deliveryFeeWaiverShort(group)).toBe("Grupo Aliança Francesa");
+    expect(deliveryFeeWaiverShort({ ...group, group_name: " " })).toBe("Grupo do cliente");
+    expect(nbsp(deliveryFeeWaiverNote({ ...group, group_name: "" }, 0))).toBe(
+      "Frete grátis do grupo do cliente (a taxa seria R$ 8,00).",
+    );
   });
 
   it("promoção sem nome não vira frase quebrada", () => {

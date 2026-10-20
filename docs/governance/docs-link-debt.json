@@ -172,11 +172,6 @@
       "kind": "missing_target"
     },
     {
-      "source": "docs/plans/completed/MATERIAL-MASTER-PLAN.md",
-      "destination": "BUYMAN-PROCUREMENT-PLAN.md",
-      "kind": "missing_target"
-    },
-    {
       "source": "docs/plans/completed/NAMING-CONSOLIDATION-PLAN.md",
       "destination": "../../.claude/projects/-Users-pablovalentini-Dev-Claude-django-shopman/memory/feedback_zero_residuals.md",
       "kind": "missing_target"
@@ -332,11 +327,6 @@
       "kind": "missing_target"
     },
     {
-      "source": "docs/plans/completed/PROTO-EXTRACTION-PLAN.md",
-      "destination": "PROJECTION-UI-PLAN.md",
-      "kind": "missing_target"
-    },
-    {
       "source": "docs/plans/completed/SEED-DATA-QUALITY-PLAN.md",
       "destination": "../reference/data-schemas.md",
       "kind": "missing_target"
@@ -444,11 +434,6 @@
     {
       "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
       "destination": "../../shopman/shop/web/views/cart.py",
-      "kind": "missing_target"
-    },
-    {
-      "source": "docs/plans/completed/STOREFRONT-ADDTOCART-UX-PLAN.md",
-      "destination": "PROJECTION-UI-PLAN.md",
       "kind": "missing_target"
     },
     {
@@ -982,11 +967,6 @@
       "kind": "missing_target"
     },
     {
-      "source": "docs/plans/completed/WP-GAP-05-backoffice-ui.md",
-      "destination": "PROJECTION-UI-PLAN.md",
-      "kind": "missing_target"
-    },
-    {
       "source": "docs/plans/completed/WP-GAP-06-ruleconfig-rce-hardening.md",
       "destination": "../../config/settings.py",
       "kind": "missing_target"
@@ -1352,11 +1332,6 @@
       "kind": "missing_target"
     },
     {
-      "source": "docs/plans/completed/WP-GAP-14-availability-substitutes-ux.md",
-      "destination": "STOCK-UX-PLAN.md",
-      "kind": "missing_target"
-    },
-    {
       "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
       "destination": "../../config/settings.py",
       "kind": "missing_target"
@@ -1399,11 +1374,6 @@
     {
       "source": "docs/plans/completed/WP-GAP-15-catalog-projection-ifood.md",
       "destination": "../reference/system-spec.md",
-      "kind": "missing_target"
-    },
-    {
-      "source": "docs/plans/completed/_WP-LAUNCHER-TEMPLATE.md",
-      "destination": "WP-GAP-07-pre-prod-migration-playbook.md",
       "kind": "missing_target"
     },
     {

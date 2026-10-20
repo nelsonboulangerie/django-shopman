@@ -1,0 +1,36 @@
+name: Wheel Sovereignty
+
+# Critério global 1 do laudo de soberania: o wheel de cada pacote instala num
+# venv limpo, só com o que ele DECLARA, e passa a própria suíte importada do
+# site-packages (nunca da árvore). Pacotes com dívida medida ficam em
+# PENDING (scripts/wheel_suite.py), cada um com a causa escrita.
+
+"on":
+  pull_request:
+    paths:
+      - "packages/**"
+      - "scripts/wheel_suite.py"
+      - ".github/workflows/wheel-sovereignty.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wheel-sovereignty-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wheel-suite:
+    name: Wheel limpo passa a própria suíte
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Wheel de cada pacote, venv limpo, suíte do pacote
+        run: python scripts/wheel_suite.py --all

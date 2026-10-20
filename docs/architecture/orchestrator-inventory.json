@@ -1338,7 +1338,8 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "PaymentIntent",
-            "PaymentResult"
+            "PaymentResult",
+            "pix_timeout_minutes_from"
           ]
         }
       ]
@@ -1602,7 +1603,8 @@
             "reserve_ceding_cart_holds",
             "retag_hold_reference",
             "return_fulfilled_hold",
-            "return_hold_remainder"
+            "return_hold_remainder",
+            "stock_error_code"
           ]
         }
       ]
@@ -1782,6 +1784,25 @@
           "responsibility": "configuração",
           "symbols": [
             "FAQEntryAdmin"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/admin/instance_apply.py",
+      "touchpoints": [
+        "admin"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "configuração"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "configuração",
+          "symbols": [
+            "InstanceApplyRecordAdmin"
           ]
         }
       ]
@@ -2390,6 +2411,7 @@
             "check_environment_name_recognized",
             "check_fiscal_adapter",
             "check_fiscal_emission_resolver",
+            "check_fiscal_emission_resolver_importable",
             "check_google_maps_credential_boundary",
             "check_guestman_webhook_secret",
             "check_listing_channel_parity",
@@ -2470,8 +2492,9 @@
             "ChannelConfig",
             "InstanceConfigurationError",
             "QUALITY_OK_GRADE_REFS",
+            "SHOP_RULE_POLICY_KEYS",
             "STAGE_GOAL_DEFAULTS",
-            "_safe_init",
+            "_section",
             "deep_merge",
             "quality_grade_refs_for_channel"
           ]
@@ -6681,10 +6704,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "StockShortfallProjection",
-            "_qty",
             "availability_dates",
-            "cart_stock_shortfalls",
             "customer_checkout_defaults",
             "logger"
           ]
@@ -6705,12 +6725,10 @@
         {
           "responsibility": "leitura",
           "symbols": [
-            "customer_name_by_phone",
             "logger",
             "loyalty_balance",
             "payment_methods",
             "preorder_config",
-            "saved_address_text",
             "session_held_qty"
           ]
         }
@@ -7159,7 +7177,8 @@
         {
           "responsibility": "contrato",
           "symbols": [
-            "NotificationResult"
+            "NotificationResult",
+            "ReserveRefusal"
           ]
         }
       ]
@@ -7218,6 +7237,20 @@
       "unit_ids": [
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/group_advantage.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "promotion.group-free-shipping"
       ],
       "responsibilities": [
         "decisão"
@@ -7800,7 +7833,6 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "_cart_hold_metadata",
-            "_reason_value",
             "logger"
           ]
         },
@@ -7814,6 +7846,7 @@
             "classify_planned_hold_for_session_sku",
             "classify_planned_holds_for_session",
             "own_holds_by_sku",
+            "session_hold_dates",
             "session_hold_dates_around",
             "session_line_held_qty",
             "stock_on_dates"
@@ -13213,14 +13246,18 @@
           "symbols": [
             "MachineWebhookView",
             "POSITION_CACHE_SECONDS",
+            "SIGNATURE_HEADER",
             "_ID_KEYS",
             "_RIDE_STATUSES",
             "_STATUS_KEYS",
+            "_alert_signature_failure",
             "_cache_position",
             "_cfg",
+            "_check_signature",
             "_first",
             "_store_position",
-            "logger"
+            "logger",
+            "signature_for"
           ]
         }
       ]

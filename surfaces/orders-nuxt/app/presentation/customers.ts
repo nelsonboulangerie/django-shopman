@@ -1,8 +1,6 @@
 // Presentation — Clientes do Gestor. Transforms puros: a query da lista na URL e a
 // decisão de quem FICA numa unificação. Sem rede e sem DOM.
 
-import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
-
 export const CUSTOMER_FILTERS = [
   "all",
   "possible_duplicates",
@@ -18,6 +16,8 @@ export interface CustomerListQuery {
   filter: CustomerFilter;
   page: number;
   sort: CustomerSort;
+  /** O grupo comercial que recorta a lista (`?group=<ref>`); vazio = todos. */
+  group: string;
 }
 
 type RouteQueryValue = string | null | (string | null)[] | undefined;
@@ -38,6 +38,7 @@ export function listQueryFromRoute(
     filter: CUSTOMER_FILTERS.includes(filter) ? filter : "all",
     page: Number.isFinite(page) && page > 1 ? page : 1,
     sort: CUSTOMER_SORTS.includes(sort) ? sort : "recent",
+    group: first(query.group).slice(0, 50),
   };
 }
 
@@ -50,6 +51,7 @@ export function routeQueryFromList(
   if (list.filter !== "all") out.filter = list.filter;
   if (list.page > 1) out.page = String(list.page);
   if (list.sort !== "recent") out.sort = list.sort;
+  if (list.group) out.group = list.group;
   return out;
 }
 
@@ -93,29 +95,4 @@ export function mergePair(
   return keeper === "current"
     ? { source_ref: otherRef, target_ref: currentRef }
     : { source_ref: currentRef, target_ref: otherRef };
-}
-
-export interface CustomerCsvRow {
-  name: string;
-  ref: string;
-  phone_display: string;
-  document_display: string;
-  orders_label: string;
-}
-
-/**
- * O CSV da seleção: as colunas que a lista mostra, com ";" e BOM para a planilha em
- * português ler o acento certo (mesmo contrato de `catalogCsv`).
- */
-export function customersCsv(rows: readonly CustomerCsvRow[]): string {
-  return readingCsvText({
-    header: ["Cliente", "Referência", "Telefone", "CPF", "Pedidos"],
-    rows: rows.map((row) => [
-      row.name,
-      row.ref,
-      row.phone_display,
-      row.document_display,
-      row.orders_label,
-    ]),
-  });
 }

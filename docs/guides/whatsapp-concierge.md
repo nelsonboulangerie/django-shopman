@@ -253,8 +253,8 @@ operacional continua começando pela contenção e conciliação; downgrade exig
 backup, alvo fixado e ensaio G07. Retorno humano, retry de saída e transferência
 continuam fechados até seus gates próprios.
 
-Referências: [plano de excelência operacional](../plans/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
-[fluxo canônico ManyChat](../plans/CONCIERGE-MANYCHAT-CANONICAL-FLOW-2026-09-12.md),
+Referências: [plano de excelência operacional](../plans/completed/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
+[fluxo canônico ManyChat](../plans/completed/CONCIERGE-MANYCHAT-CANONICAL-FLOW-2026-09-12.md),
 [melhoria supervisionada por conversas](concierge-supervised-improvement.md),
 [relatório da janela](../reports/concierge-whatsapp-window-20260912.md) e
 [evidências de ingresso](../../evidence/conversational/INGRESS.md).

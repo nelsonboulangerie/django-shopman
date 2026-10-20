@@ -6,7 +6,7 @@ matemática pura de ``contrib/formula/percentages.py`` (``analyze``,
 quem está fora do Craftsman importe tudo de ``shopman.craftsman.services.recipe_book``.
 
 Publicar é o único verbo que escreve na ficha de execução (``Recipe``). O
-bootstrap lê a ficha e não a toca. Ver ``docs/plans/RECIPE-INVENTORY-PLAN.md`` §5.
+bootstrap lê a ficha e não a toca. Ver ``docs/plans/completed/RECIPE-INVENTORY-PLAN.md`` §5.
 """
 
 from __future__ import annotations

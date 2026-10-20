@@ -182,8 +182,8 @@ export interface ReceiptHistoryEntry {
 }
 
 export interface PurchaseProjection {
-  materials: Material[];
-  suppliers: Supplier[];
+  materials: Material[] | PurchaseList<Material>;
+  suppliers: Supplier[] | PurchaseList<Supplier>;
   conversions: MaterialConversion[];
   costs: SupplierMaterialCost[];
   purchaseRequestStatuses: Record<string, PurchaseRequestStatus>;
@@ -200,6 +200,16 @@ export interface PurchaseProjection {
   };
   /** Entradas já registradas, a mais recente primeiro ("essa nota já entrou?"). */
   receiptHistory?: ReceiptHistoryEntry[];
+}
+
+export interface PurchaseList<T> {
+  items: T[];
+  total: number;
+  has_next: boolean;
+  page: number;
+  page_size: number;
+  query: string;
+  order: string;
 }
 
 export interface PurchaseResponse {

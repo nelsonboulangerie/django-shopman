@@ -17,7 +17,7 @@ preço que a loja honra.
 
 Spec verificada (2026-07-01): support.google.com/merchants/answer/7052112 (Google) +
 facebook.com/business/help/120325381656392 (Meta). Detalhes em
-docs/plans/CATALOG-FEEDS-GOOGLE-META.md.
+docs/plans/completed/CATALOG-FEEDS-GOOGLE-META.md.
 """
 
 from __future__ import annotations

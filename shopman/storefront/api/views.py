@@ -449,8 +449,10 @@ class CheckoutView(APIView):
             payment_data = {"method": "cash"}
             change_for_q = parse_change_for(validated_data.get("change_for", ""))
             if fulfillment_type == "delivery":
-                # Marca canônica do pagamento na porta (a mesma do PDV). Ver o
-                # comentário gêmeo em ``storefront/intents/checkout.py``.
+                # Marca canônica do pagamento na porta (a mesma do PDV). Sem
+                # ela o Gestor não oferece o acerto (``settle_delivery_cash``
+                # recusa), o troco do entregador não sai da gaveta e o gate de
+                # pagamento não distingue "receber na porta" de "não pagou".
                 payment_data["collection"] = "on_delivery"
                 if change_for_q:
                     payment_data["change_for_q"] = change_for_q

@@ -9,15 +9,18 @@ deixavam o PDV sem cupom.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
 from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 
 from shopman.shop.policies.promotion import PromotionContext, Shopper, promotion_matches
-from shopman.shop.services import availability, lot_pricing
+from shopman.shop.services import availability, lot_pricing, waitlist
 from shopman.shop.services import sessions as session_service
+from shopman.shop.services.order_helpers import parse_commitment_date
 
 logger = logging.getLogger(__name__)
 
@@ -214,13 +217,16 @@ def add_item(
         ),
         None,
     )
-    hold_id = _reserve_or_raise(
+    hold_ids, lot_hold_id = _reserve_or_raise(
         sku=sku,
         qty=qty,
         session_key=resolved_key,
         channel_ref=channel_ref,
+        cart_date=_cart_date(session),
     )
-    _refuse_a_second_date(session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_id)
+    _refuse_a_second_date(
+        session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_ids[0] if hold_ids else None,
+    )
     availability.bump_session_hold_expiry(resolved_key)
 
     if existing:
@@ -248,7 +254,7 @@ def add_item(
     # O lote que a reserva ancorou vira flag durável de linha (``meta``, único
     # lugar que sobrevive ao ``_normalize_items``). É daqui que o
     # LotDiscountModifier lê o desconto congelado no lote — ADR-017 §7.
-    batch_ref = lot_pricing.batch_ref_for_hold(hold_id)
+    batch_ref = lot_pricing.batch_ref_for_hold(lot_hold_id)
     if batch_ref:
         meta["batch_ref"] = batch_ref
     if meta:
@@ -308,6 +314,7 @@ def update_qty(
             new_qty=Decimal(str(qty)) + others,
             session_key=session_key,
             channel_ref=channel_ref,
+            target_date=_cart_date(session),
         )
         if not result["ok"]:
             # A recusa não toca na reserva que existia: o teto da linha é o que
@@ -733,20 +740,76 @@ def clear_session(*, session_key: str, channel_ref: str) -> None:
     session_service.abandon_session(session_key=session_key, channel_ref=channel_ref)
 
 
-def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str):
-    """Reserva e devolve o ``hold_id`` — o elo até o LOTE (ADR-017/D1-RETIREMENT).
+def _cart_date(session: Session | None) -> date | None:
+    """A data da sacola: a que as reservas dela já prometem, ou a escolhida.
 
-    O hold ancora em um Quant, e o Quant carrega a ``Batch.ref``; é por aqui que
-    a linha descobre de qual lote saiu, e portanto qual desconto de lote vale.
+    A reserva manda (P2 do WP-DATA-E-PROMESSA: a data da sacola é a que o
+    cliente montou). Sem reserva datada, vale a data que o cliente escolheu e
+    que já está na sessão (``delivery_date``: a concierge grava ao combinar a
+    retirada ou a entrega; a loja, ao tentar fechar). Data que já passou não
+    vale. ``None`` = sacola sem data, e a reserva segue a regra de sempre:
+    pronto de hoje primeiro, depois a fornada.
+    """
+    if session is None:
+        return None
+    held = availability.session_hold_dates(session.session_key)
+    if held:
+        return min(held)
+    chosen = parse_commitment_date((session.data or {}).get("delivery_date"))
+    if chosen is not None and chosen >= timezone.localdate():
+        return chosen
+    return None
+
+
+def _date_that_serves(*, sku: str, qty: int, channel_ref: str) -> date | None:
+    """A data em que o item caberia inteiro pela regra de sempre (só leitura).
+
+    Pronto de hoje primeiro, depois a fornada da fila. ``None`` = nenhuma.
+    """
+    qty_d = Decimal(str(qty))
+    candidate = waitlist.reserve_target_date(sku, qty_d, channel_ref=channel_ref) or timezone.localdate()
+    reading = availability.check(sku, qty_d, channel_ref=channel_ref, target_date=candidate)
+    return candidate if reading["ok"] else None
+
+
+def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str, cart_date: date | None = None):
+    """Reserva e devolve ``(reservas criadas, reserva que ancora o LOTE da linha)``.
+
+    A primeira reserva criada é a fronteira que ``session_hold_dates_around``
+    usa para separar o que a mutação criou do que a sacola já tinha.
+
+    O lote vira flag da linha (ADR-017/D1-RETIREMENT: o hold ancora num Quant, e
+    o Quant carrega a ``Batch.ref``) só quando UMA reserva cobre a linha inteira.
+    Reserva fatiada entre quants pode cair em lotes diferentes, e combo reserva
+    componentes, que não são o SKU da linha: nos dois casos não há lote da linha.
+
+    Sacola com data (``cart_date``) reserva NESSA data: a encomenda de amanhã
+    sai da fornada de amanhã mesmo com o pronto de hoje esgotado, e o pronto de
+    hoje não serve a quem pediu amanhã quando a validade não deixa. Sem nada na
+    data da sacola e com o item inteiro em outra data, a recusa é "outro
+    pedido" sem reserva nenhuma; com um tanto na data, a recusa oferece esse
+    tanto ("Levar N").
     """
     result = availability.reserve(
         sku,
         Decimal(str(qty)),
         session_key=session_key,
         channel_ref=channel_ref,
+        target_date=cart_date,
     )
+    if (
+        not result["ok"]
+        and cart_date is not None
+        and not result["is_paused"]
+        and not result.get("available_qty")
+    ):
+        item_date = _date_that_serves(sku=sku, qty=qty, channel_ref=channel_ref)
+        if item_date is not None and item_date != cart_date:
+            raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=cart_date, item_date=item_date)
     if result["ok"]:
-        return result.get("hold_id")
+        hold_ids = result["hold_ids"]
+        lot_hold_id = hold_ids[0] if len(hold_ids) == 1 and not result.get("is_bundle") else None
+        return hold_ids, lot_hold_id
     # No ``add`` o número é o livre; na linha nova (o caso da loja) ele é o
     # teto, porque nada é dela ainda. Inteiro quando é inteiro: o ``Decimal``
     # cru saía como "3.000" no JSON, e a folha da loja, que só aceita número,

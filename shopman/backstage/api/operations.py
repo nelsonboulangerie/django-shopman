@@ -920,6 +920,27 @@ class OperatorEligibleView(APIView):
         return Response({"operators": [operator_card(u) for u in eligible_operators(perm=perm)]})
 
 
+def _unlock_target_key(group, request):
+    """Chave de rate-limit pela conta-alvo do destrave por PIN.
+
+    Mesma forma do ``_login_username_key``: lê form e JSON (o BFF manda JSON).
+    Crachá não nomeia conta, então cai num balde só, ``badge``.
+    """
+    data = request.POST
+    if not data and "json" in (request.content_type or ""):
+        try:
+            data = json.loads(request.body or b"{}") or {}
+        except (ValueError, TypeError):
+            data = {}
+    if not hasattr(data, "get"):
+        data = {}
+    if str(data.get("badge") or "").strip():
+        return "badge"
+    return f"op:{str(data.get('operator_id') or '').strip() or 'anon'}"
+
+
+@method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
+@method_decorator(ratelimit(key=_unlock_target_key, rate="5/m", method="POST", block=False), name="dispatch")
 class OperatorUnlockView(APIView):
     """Establish the active operator by PIN (operator_id + pin) or badge (token).
 
@@ -928,6 +949,12 @@ class OperatorUnlockView(APIView):
     Gate de ESTAÇÃO, e não de sessão: é AQUI que o balcão travado cria uma, e
     exigir sessão para criar sessão é a porta que não abre de manhã. A
     autorização real deste endpoint não é o gate — é provar o PIN ou o crachá.
+
+    Freio contra adivinhar PIN (4 dígitos = 10 mil combinações): o mesmo par do
+    ``OperatorLoginView``. Por conta-alvo, 5/min (ataque a um operador); teto por
+    IP, 30/min, generoso porque os dispositivos da loja dividem o IP (NAT). Até
+    19/10 este endpoint não tinha limite nenhum, e a estação confiável era o único
+    portão antes dele. Ambos ``block=False``: o handler devolve 429 amigável.
     """
 
     permission_classes = [IsTrustedStation]
@@ -936,6 +963,15 @@ class OperatorUnlockView(APIView):
         from django.contrib.auth import get_user_model
 
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return Response(
+                {
+                    "detail": "Muitas tentativas de identificação. Aguarde um minuto e tente de novo.",
+                    "error": {"code": "operator_unlock_rate_limited"},
+                },
+                status=429,
+            )
 
         body = request.data or {}
         perm, ok = _validated_unlock_perm(body.get("perm"))
@@ -4774,6 +4810,27 @@ def _falha_do_caixa(exc, padrao: str) -> Response:
 
 def _cash_idempotent(request, *, acao: str, executar):
     """Efeito interno e recibo compartilham a transação e o conteúdo da tentativa."""
+    return _local_idempotent(
+        request,
+        scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
+        terminal_ref=_terminal_do_pedido(request),
+        executar=executar,
+    )
+
+
+#: Escopo da trava de replay das mutações do PDV que não são do caixa (hoje,
+#: cancelar venda recente). Mesma tabela ``IdempotencyKey``, outro escopo.
+POS_IDEMPOTENCY_SCOPE = "pos.sale"
+
+
+def _local_idempotent(request, *, scope: str, executar, terminal_ref: str = ""):
+    """Claim + replay por ``client_request_id`` de uma mutação local do PDV.
+
+    O mesmo ``client_request_id`` com o mesmo conteúdo devolve a resposta
+    gravada da primeira vez, sem executar de novo; recusa (status >= 300) não
+    queima a chave, e a próxima tentativa executa. O caixa usa com o terminal
+    da estação na impressão digital; o cancelamento de venda, sem ele.
+    """
     from shopman.shop.services.remote_mutations import (
         RemoteMutationConflict,
         RemoteMutationInProgress,
@@ -4781,7 +4838,6 @@ def _cash_idempotent(request, *, acao: str, executar):
         run_idempotent_mutation,
     )
 
-    terminal_ref = _terminal_do_pedido(request)
     chave = str(request.data.get("client_request_id") or "").strip()
     if not chave or len(chave) > 128:
         return Response({"detail": "Identifique a tentativa antes de registrar.",
@@ -4802,7 +4858,7 @@ def _cash_idempotent(request, *, acao: str, executar):
 
     try:
         resultado = run_idempotent_mutation(
-            scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
+            scope=scope,
             key=chave,
             fingerprint=fingerprint,
             execute=_executar_para_o_claim,
@@ -6448,6 +6504,18 @@ class POSCancelRecentSaleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
+        # Trava de replay (fallbacks perigosos, item 18): o toque repetido depois
+        # de uma resposta perdida no 4G devolve a resposta da primeira vez em vez
+        # de executar de novo. Com motivo, a correção reabriria a venda duas
+        # vezes; sem ele, o segundo toque virava "venda já cancelada" e o
+        # operador perdia o aviso do estorno na maquininha.
+        return _local_idempotent(
+            request,
+            scope=f"{POS_IDEMPOTENCY_SCOPE}.cancel_recent",
+            executar=lambda: self._cancel(request),
+        )
+
+    def _cancel(self, request):
         order_ref = (request.data.get("order_ref") or "").strip()
         reason = (request.data.get("reason") or "").strip()
         if not order_ref:

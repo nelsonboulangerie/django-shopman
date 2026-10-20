@@ -4,7 +4,7 @@
 **Decisão:** aguarda palavra do dono desde 2026-09-03
 **Data:** 2026-09-03
 **Escopo:** o atendimento conversacional de pedidos no WhatsApp da casa (o "concierge"): quem decide o que dizer, quem decide o que vale, e por onde a resposta viaja
-**Origem:** [WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md); supera o mecanismo do [MANYCHAT-CONVERSACIONAL-PLAN](../plans/MANYCHAT-CONVERSACIONAL-PLAN.md) (um endpoint por intenção), que fica como registro
+**Origem:** [WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md); supera o mecanismo do [MANYCHAT-CONVERSACIONAL-PLAN](../plans/completed/MANYCHAT-CONVERSACIONAL-PLAN.md) (um endpoint por intenção), que fica como registro
 **Não decide:** se o WhatsApp passa por ManyChat (isso é a [ADR-009](adr-009-whatsapp-via-manychat.md), e continua valendo); qual modelo roda (é configuração, ver abaixo); se a casa oferece entrega no chat na v1 (pergunta aberta do plano)
 
 ---

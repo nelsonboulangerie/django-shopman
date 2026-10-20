@@ -1,6 +1,6 @@
 """A régua da Concierge: quanto custou e quanto demorou cada resposta.
 
-Fatia 1 do estudo ``docs/plans/CONCIERGE-ARQUITETURA-ALVO.md`` (OBS0310-K). O
+Fatia 1 do estudo ``docs/plans/completed/CONCIERGE-ARQUITETURA-ALVO.md`` (OBS0310-K). O
 cliente não vê nada mudar: o turno roda igual, e o que ele gastou fica gravado
 em ``ConversationMessage.usage`` do primeiro bloco da resposta (formato em
 ``docs/reference/data-schemas.md``, "Régua da Concierge").

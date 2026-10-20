@@ -3,7 +3,7 @@
 Autoria e execução são duas coisas. A ``Recipe`` continua sendo a ficha de
 execução (o BOM que a fornada consome). O inventário é onde o padeiro escreve,
 padroniza, compara e versiona; **publicar** uma versão é o único caminho que
-escreve na ficha. Ver ``docs/plans/RECIPE-INVENTORY-PLAN.md`` §2.
+escreve na ficha. Ver ``docs/plans/completed/RECIPE-INVENTORY-PLAN.md`` §2.
 """
 
 from decimal import Decimal

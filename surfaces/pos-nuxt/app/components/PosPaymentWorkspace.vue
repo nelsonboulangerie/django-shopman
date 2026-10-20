@@ -629,7 +629,7 @@ const paymentGuidance = computed(() => orderPaymentGuidance({
 // "o operador lembrou o valor".
 //
 // ⚠️ Sai de cena inteiro quando o TEF da Stone entrar: ali o terminal recebe o
-// valor pela API e não há o que conferir. Ver docs/plans/WP-PAGAMENTO-LINK-E-TEF.md.
+// valor pela API e não há o que conferir. Ver docs/plans/completed/WP-PAGAMENTO-LINK-E-TEF.md.
 const machineTenders = computed(() => machineTenderLines(tenderLines.value));
 // O Pix da venda MISTA entra no mesmo degrau (P1-7): sem provedor, quem atesta
 // que o dinheiro entrou é o operador, com o gesto "Recebi o Pix".

@@ -97,4 +97,4 @@ não há fallback escondido para SMS, email ou Meta Cloud direto.
 
 Adapter `notification_whatsapp` (spike, inerte até `WHATSAPP_PHONE_NUMBER_ID` +
 `WHATSAPP_ACCESS_TOKEN`). Decisão ManyChat-vs-direto:
-[`WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN`](../plans/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md).
+[`WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN`](../plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md).
