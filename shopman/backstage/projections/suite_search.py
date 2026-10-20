@@ -433,7 +433,7 @@ def _recipes(user, query, app, app_label, base):
 
     if not resolve_recipe_book_access(user).can_view:
         return
-    entries = RecipeEntry.objects.filter(is_archived=False).filter(
+    entries = RecipeEntry.objects.filter(is_active=True).filter(
         Q(name__icontains=query) | Q(ref__icontains=query) | Q(output_sku__icontains=query)
     )
     for entry in entries.order_by("name")[:PER_TYPE_LIMIT]:

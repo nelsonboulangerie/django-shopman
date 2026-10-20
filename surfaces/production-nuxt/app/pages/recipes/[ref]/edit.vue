@@ -377,7 +377,7 @@ const touch = useTouchPointer();
         </p>
         <p class="text-sm">Uma nova versão copia a mais recente em rascunho; a publicada continua intacta.</p>
         <NuxtButton
-          v-if="!entry.is_archived"
+          v-if="entry.is_active"
           class="mt-1"
           icon="i-lucide-copy-plus"
           label="Nova versão"
