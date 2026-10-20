@@ -67,6 +67,24 @@ export default defineAppConfig({
         },
       },
     },
+    // Faixa `neutral` (a "Sem conexão" do `OfflineBanner`) acompanha o tema. O oficial
+    // pinta `bg-inverted` + `text-inverted`, a cor OPOSTA ao tema: no escuro a faixa
+    // saía creme sobre a tela escura (PDV, 19/10/2026). Aqui ela é a superfície elevada
+    // do próprio tema, com texto de destaque e um fio de borda na base. O fio é sombra
+    // interna, não `border`: a altura segue os 48 px do `--operator-offline-inset`.
+    banner: {
+      compoundVariants: [
+        {
+          color: "neutral",
+          class: {
+            root: "bg-elevated shadow-[inset_0_-1px_0_var(--ui-border)]",
+            icon: "text-highlighted",
+            title: "text-highlighted",
+            close: "text-highlighted",
+          },
+        },
+      ],
+    },
     // `soft` é uma variante oficial do Kbd. Defini-la aqui evita que atalhos
     // idênticos mudem de aparência conforme a tela ou o componente consumidor.
     kbd: {
