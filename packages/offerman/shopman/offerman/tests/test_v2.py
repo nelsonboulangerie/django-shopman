@@ -248,6 +248,22 @@ class TestProductUpdatedSignal:
         finally:
             product_updated.disconnect(h)
 
+    def test_emitted_on_archive_and_unarchive(self, db):
+        from shopman.offerman.signals import product_updated
+
+        product = Product.objects.create(sku="PU-ARCHIVE", name="X")
+        received = []
+        h = lambda sender, sku, **k: received.append(sku)  # noqa: E731
+        product_updated.connect(h)
+        try:
+            product.is_active = False
+            product.save(update_fields=["is_active"])
+            product.is_active = True
+            product.save(update_fields=["is_active"])
+            assert received == ["PU-ARCHIVE", "PU-ARCHIVE"]
+        finally:
+            product_updated.disconnect(h)
+
     def test_not_emitted_on_create_or_irrelevant_change(self, db):
         from shopman.offerman.signals import product_updated
 

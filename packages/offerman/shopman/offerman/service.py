@@ -157,6 +157,7 @@ class CatalogService:
                 listing__ref__in=listing_refs,
                 listing__is_active=True,
                 product__sku__in=skus,
+                product__is_active=True,
             ).filter(cls._listing_validity_q(prefix="listing__"))
             if sellable_only:
                 items = items.filter(is_sellable=True)
@@ -171,7 +172,7 @@ class CatalogService:
         unlisted = [sku for sku in skus if sku not in base_prices]
         if unlisted and not require_listing_match:
             base_prices.update(
-                Product.objects.filter(sku__in=unlisted).order_by().values_list("sku", "base_price_q")
+                Product.objects.active().filter(sku__in=unlisted).order_by().values_list("sku", "base_price_q")
             )
 
         result: list[int | None] = []
@@ -308,13 +309,15 @@ class CatalogService:
             valid=True,
             sku=sku,
             name=product.name,
-            is_published=product.is_published,
-            is_sellable=product.is_sellable,
+            is_published=product.is_active and product.is_published,
+            is_sellable=product.is_active and product.is_sellable,
             message=cls._get_validation_message(product),
         )
 
     @classmethod
     def _get_validation_message(cls, product: "Product") -> str | None:
+        if not product.is_active:
+            return "Product is archived"
         if not product.is_published:
             return "Product is not published in catalog"
         if not product.is_sellable:
@@ -337,7 +340,7 @@ class CatalogService:
     ) -> list["Product"]:
         from shopman.offerman.models import Product
 
-        qs = Product.objects.all()
+        qs = Product.objects.active()
 
         if only_published:
             qs = qs.filter(is_published=True)
@@ -379,7 +382,7 @@ class CatalogService:
     def get_listed_products(cls, listing_ref: str) -> models.QuerySet["Product"]:
         from shopman.offerman.models import Product
 
-        return Product.objects.filter(
+        return Product.objects.active().filter(
             cls._listing_validity_q(),
             listing_items__listing__ref=listing_ref,
             listing_items__listing__is_active=True,
@@ -387,6 +390,9 @@ class CatalogService:
 
     @classmethod
     def is_product_listed(cls, product: "Product", listing_ref: str) -> bool:
+        if not product.is_active:
+            return False
+
         from shopman.offerman.models import ListingItem
 
         today = timezone.localdate()
@@ -409,7 +415,7 @@ class CatalogService:
 
     @classmethod
     def is_product_published(cls, product: "Product", listing_ref: str) -> bool:
-        if not product.is_published:
+        if not product.is_active or not product.is_published:
             return False
 
         from shopman.offerman.models import ListingItem
@@ -435,7 +441,7 @@ class CatalogService:
 
     @classmethod
     def is_product_sellable(cls, product: "Product", listing_ref: str) -> bool:
-        if not product.is_sellable:
+        if not product.is_active or not product.is_sellable:
             return False
 
         from shopman.offerman.models import ListingItem
@@ -499,8 +505,8 @@ class CatalogService:
                 description=product.long_description or product.short_description,
                 unit=product.unit,
                 price_q=item.price_q,
-                is_published=product.is_published and item.is_published,
-                is_sellable=product.is_sellable and item.is_sellable,
+                is_published=product.is_active and product.is_published and item.is_published,
+                is_sellable=product.is_active and product.is_sellable and item.is_sellable,
                 category=primary_collection,
                 image_url=product.image_url or None,
                 # names() clona a queryset e volta ao banco; iterar as tags
