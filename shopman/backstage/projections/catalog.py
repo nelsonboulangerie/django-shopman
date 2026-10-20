@@ -222,6 +222,7 @@ class CatalogRowProjection:
     image_url: str
     primary_collection: str  # ref
     primary_collection_name: str
+    is_active: bool  # cadastro presente na operação; falso = arquivado
     is_published: bool  # produto-level
     is_sellable: bool  # produto-level
     base_price_q: int
@@ -619,7 +620,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
 
     ``collection_ref`` (opcional) recorta os produtos daquela coleção
     (``product_queryset()``, smart-aware). ``query`` busca em nome e SKU;
-    ``filters`` aceita ``is_published``/``is_sellable``/``has_vocation``/
+    ``filters`` aceita ``archived``/``is_published``/``is_sellable``/``has_vocation``/
     ``surface``/``stock``/``pim_complete``/``sync_status``; ``order`` é uma das
     chaves de ``_CATALOG_ORDERS``; a página é do BANCO — só as linhas dela viram
     projection. As coleções e a vocação pendente continuam da casa inteira.
@@ -659,6 +660,8 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
 
     # A consulta é do BANCO: busca, filtros simples e ordenação acontecem antes
     # de materializar. A página é o único recorte que vira linha na resposta.
+    filters = filters or {}
+    archived = bool(filters.get("archived"))
     products = Product.objects.all()
     collection_smart = False
     if collection_ref:
@@ -671,7 +674,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     term = (query or "").strip()
     if term:
         products = products.filter(Q(name__icontains=term) | Q(sku__icontains=term))
-    filters = filters or {}
+    products = products.filter(is_active=not archived)
     if filters.get("is_published") is not None:
         products = products.filter(is_published=bool(filters["is_published"]))
     if filters.get("is_sellable") is not None:
@@ -810,6 +813,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
                         available=(
                             in_feed
                             and not paused_here
+                            and product.is_active
                             and product.is_published
                             and product.is_sellable
                         ),
@@ -841,7 +845,11 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
                 )
                 continue
             available = (
-                product.is_published and product.is_sellable and item.is_published and item.is_sellable
+                product.is_active
+                and product.is_published
+                and product.is_sellable
+                and item.is_published
+                and item.is_sellable
             )
             cells.append(
                 SurfaceCellProjection(
@@ -871,6 +879,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
                 image_url=product.image_url or "",
                 primary_collection=primary_ref,
                 primary_collection_name=primary_name,
+                is_active=product.is_active,
                 is_published=product.is_published,
                 is_sellable=product.is_sellable,
                 base_price_q=product.base_price_q,
@@ -908,7 +917,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     # fora de venda não entra: classificar o que não se vende não informa o B.I.
     vocation_pending = tuple(
         VocationPendingProjection(sku=sku, name=name)
-        for sku, name in Product.objects.filter(is_sellable=True)
+        for sku, name in Product.objects.filter(is_active=True, is_sellable=True)
         .exclude(sku__in=tagged_skus)
         .order_by("name", "sku")
         .values_list("sku", "name")

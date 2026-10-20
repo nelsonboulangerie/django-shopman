@@ -308,6 +308,7 @@ describe("useCatalogMatrix — facetas na query", () => {
       stock: ["out"],
       sync_status: ["error"],
       pim_complete: ["true"],
+      archived: ["true"],
       is_published: ["false"],
       surface: ["ifood"],
     });
@@ -319,6 +320,7 @@ describe("useCatalogMatrix — facetas na query", () => {
     expect(unref(opts.query.stock)).toBe("out");
     expect(unref(opts.query.sync_status)).toBe("error");
     expect(unref(opts.query.pim_complete)).toBe("true");
+    expect(unref(opts.query.archived)).toBe("true");
     expect(unref(opts.query.is_published)).toBe("false");
     expect(unref(opts.query.surface)).toBe("ifood");
     // A chave inclui as facetas: trocar o recorte refaz o GET.
