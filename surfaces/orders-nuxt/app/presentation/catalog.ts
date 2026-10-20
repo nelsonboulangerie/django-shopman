@@ -375,3 +375,34 @@ export function catalogCsv(
     }),
   });
 }
+
+/** Vigência pertence ao canal; não altera a disponibilidade por conta própria. */
+export function cellValidity(
+  cell: Pick<SurfaceCellProjection, "valid_from" | "valid_until">,
+): string {
+  const date = (value: string) => value.split("-").reverse().join("/");
+  if (cell.valid_from && cell.valid_until)
+    return `Vale de ${date(cell.valid_from)} até ${date(cell.valid_until)}`;
+  if (cell.valid_from) return `Vale a partir de ${date(cell.valid_from)}`;
+  if (cell.valid_until) return `Vale até ${date(cell.valid_until)}`;
+  return "";
+}
+
+
+/** Canais com a mesma janela compartilham um selo na linha do produto. */
+export function rowValidities(row: CatalogRowProjection, surfaces: SurfaceProjection[]) {
+  const groups = new Map<string, { label: string; channels: string[] }>();
+  for (const cell of row.cells) {
+    const label = cellValidity(cell);
+    if (!cell.in_listing || !label) continue;
+    const surface = surfaces.find((surface) => surface.ref === cell.surface_ref);
+    if (!surface?.transactional) continue;
+    const group = groups.get(label) ?? { label, channels: [] };
+    group.channels.push(surface.short_name || surface.name);
+    groups.set(label, group);
+  }
+  return Array.from(groups.values(), (group) => ({
+    label: group.label,
+    channels: group.channels.join(", "),
+  }));
+}

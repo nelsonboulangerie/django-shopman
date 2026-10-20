@@ -26,7 +26,10 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
+**Turno ONDA4 (20/10), frente2:** preço com vigência entregue no PR #1958, com fila solicitada. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
+
 ## Em execução agora
+
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
