@@ -8,13 +8,13 @@ import { alertActions } from "../../../../../operator-kit/app/utils/alertActions
 // ficha pelo mesmo caminho canônico.
 import type { RecipeSheetCardProjection, RecipeSheetDetailProjection, RecipeSheetDuplicatePayload, RecipeSheetPayload } from "~/types/recipeBook";
 import { isStale } from "~/presentation/production";
-import { SHEET_ACTIVE_OPTIONS, SHEET_SORT_OPTIONS } from "~/presentation/recipeSheet";
+import { SHEET_ACTIVE_OPTIONS, SHEET_ALL_FILTER, SHEET_SORT_OPTIONS } from "~/presentation/recipeSheet";
 
 useHead({ title: "Fichas de execução" });
 
 const route = useRoute();
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
-const active = ref("");
+const active = ref(SHEET_ALL_FILTER);
 const sort = ref("updated");
 const page = ref(1);
 

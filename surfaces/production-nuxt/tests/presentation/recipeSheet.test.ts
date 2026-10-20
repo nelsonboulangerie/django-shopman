@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  SHEET_ACTIVE_OPTIONS,
+  SHEET_ALL_FILTER,
   addSheetItem,
   emptySheetDraft,
   emptySheetItem,
@@ -134,5 +136,11 @@ describe("recipeSheet: corpo do cadastro", () => {
   it("não envia filtros vazios nem a ordenação padrão", () => {
     expect(sheetQuery("", "", "updated", 1, 48)).toEqual({});
     expect(sheetQuery("pao", "1", "name", 2, 24)).toEqual({ q: "pao", active: "1", sort: "name", page: "2", page_size: "24" });
+  });
+
+  it("Todas tem valor próprio (item vazio derruba o Select) e não filtra", () => {
+    expect(SHEET_ACTIVE_OPTIONS.every((option) => option.value !== "")).toBe(true);
+    expect(SHEET_ACTIVE_OPTIONS[0]).toEqual({ value: SHEET_ALL_FILTER, label: "Todas" });
+    expect(sheetQuery("", SHEET_ALL_FILTER, "updated")).toEqual({});
   });
 });

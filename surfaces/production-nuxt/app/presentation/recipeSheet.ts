@@ -27,8 +27,14 @@ export const SHEET_SORT_OPTIONS: readonly { value: string; label: string }[] = [
   { value: "active", label: "Ativas primeiro" },
 ] as const;
 
+/**
+ * "Todas": o Select do Nuxt UI (Reka) recusa item de valor vazio e derruba a
+ * página inteira com 500. O recorte sem filtro tem valor próprio, e a consulta o ignora.
+ */
+export const SHEET_ALL_FILTER = "all";
+
 export const SHEET_ACTIVE_OPTIONS: readonly { value: string; label: string }[] = [
-  { value: "", label: "Todas" },
+  { value: SHEET_ALL_FILTER, label: "Todas" },
   { value: "1", label: "Ativas" },
   { value: "0", label: "Inativas" },
 ] as const;
@@ -314,7 +320,7 @@ export function sheetQuery(
   const query: Record<string, string> = {};
   const q = term.trim();
   if (q) query.q = q;
-  if (active) query.active = active;
+  if (active && active !== SHEET_ALL_FILTER) query.active = active;
   if (sort && sort !== "updated") query.sort = sort;
   if (page > 1) query.page = String(page);
   if (pageSize && pageSize !== 48) query.page_size = String(pageSize);
