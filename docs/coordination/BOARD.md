@@ -31,6 +31,7 @@ PR** (escreva o registro com "na fila #N").
 
 ## Em execução agora
 
+**ONDA4-F6 (20/10):** componentes de combo em execução no branch `codex/produto-combo`, empilhado na frente1. Registro: `ROUNDS/ONDA4-F6-produto-combo.md`.
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
@@ -125,6 +126,11 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 5. O `make coordination` só mede CI e auto-merge **com `gh` autenticado**. Sem `gh` ele diz isso numa
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
 
+**ONDA4-1 (20/10):** vínculos de produto publicados no PR **#1960** (`codex/produto-vinculos`): coleções e
+canais no painel, reutilizando as intenções/revisões/recibos do detalhe e da célula. Registro e
+provas em `ROUNDS/ONDA4-1-produto-vinculos.md`. Nenhuma área reservada à outra coordenação foi editada.
+
+**ONDA4-6 (20/10):** componentes do combo implementados no PR **#1961**, empilhado no #1960. Escrita canônica com revisão/unidade, ciclo e outbox atômico; editor inline, busca e Desfazer. Provas, desempenho e D1-D12 em `ROUNDS/ONDA4-F6-produto-combo.md`. Main da frente 2 integrado; aguarda merge da frente 1 para base main e fila.
 **ONDA4-3 (20/10):** tabelão de insumos com colagem de coluna, erro por insumo e Desfazer,
 leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-merge solicitado após os checks. Branch
 `codex/tabelao-insumos`. A falha CI de overflow no rodapé de custos do celular foi
