@@ -111,8 +111,8 @@ const vipFirstMinutes = ref(0);
 const preferredHourWindowHours = ref(0);
 const audienceMatch = ref<"any" | "all">("any");
 const selectedPriceTiers = ref<string[]>([]);
-// Faixas de preço que têm esta campanha como exclusiva. Não é regra de público: é um
-// limite sobre qualquer público, gravado pelo servidor na vantagem da faixa.
+// Grupos (`PriceTier`) que têm esta campanha como exclusiva. Não é regra de público: é um
+// limite sobre qualquer público, gravado pelo servidor na vantagem do grupo.
 const exclusivePriceTiers = ref<string[]>([]);
 const selectedTags = ref<string[]>([]);
 const selectedRfmSegments = ref<string[]>([]);
@@ -164,7 +164,7 @@ const DRAFT_LABELS = {
   is_active: "Campanha ligada",
   schedule: "Agendamento",
   audience_rules: "Público",
-  exclusive_price_tiers: "Exclusiva da faixa de preço",
+  exclusive_price_tiers: "Exclusiva do grupo",
 };
 
 // ⚠️ A tela imprimia a CHAVE do JSON ("collections, skus", "bought_skus") quando
@@ -1283,7 +1283,7 @@ function submit() {
           :items="priceTiers"
           orientation="horizontal"
         >
-          <template #legend>Faixa de preço</template>
+          <template #legend>Grupo</template>
         </NuxtCheckboxGroup>
 
         <NuxtCheckboxGroup
@@ -1346,13 +1346,13 @@ function submit() {
             :items="priceTiers"
             orientation="horizontal"
           >
-            <template #legend>Exclusiva da faixa de preço</template>
+            <template #legend>Exclusiva do grupo</template>
           </NuxtCheckboxGroup>
           <p class="text-xs text-muted-foreground">
             {{
               exclusivePriceTiers.length
-                ? "Só quem está numa faixa de preço marcada recebe, mesmo com outro público escolhido acima."
-                : "Nenhuma marcada: a campanha vale para o público escolhido acima."
+                ? "Só quem está num grupo marcado recebe, mesmo com outro público escolhido acima."
+                : "Nenhum marcado: a campanha vale para o público escolhido acima."
             }}
           </p>
         </div>

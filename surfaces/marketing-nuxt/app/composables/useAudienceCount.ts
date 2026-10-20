@@ -34,8 +34,8 @@ export function useAudienceCount() {
     pending.value = false;
   }
 
-  /** `campaignId`: a contagem é do disparo DESTA campanha. Campanha exclusiva de faixa
-   *  de preço só alcança membros, e o servidor conta pela mesma régua do envio. */
+  /** `campaignId`: a contagem é do disparo DESTA campanha. Campanha exclusiva de um
+   *  grupo só alcança membros dele, e o servidor conta pela mesma régua do envio. */
   function measure(rules: ChosenAudience, sku = "", campaignId?: number) {
     if (timer) clearTimeout(timer);
     timer = null;

@@ -278,40 +278,35 @@ describe("o mesmo conceito tem um nome só nas duas telas", () => {
   });
 });
 
-describe("faixa é preço; a lane chama-se plataforma", () => {
-  // ⚠️ A colisão do §D7b do `omotenashi-copy.md`, que o §5 listava como dívida viva
-  // ("B1, 5 ocorrências"): "faixa" servia de *lane* de processamento num app onde
-  // **"Faixa de preço"** é conceito de negócio no formulário ao lado. O gestor acabava
-  // de montar um público por faixa de preço e lia "3 faixas que não tinham começado
-  // foram canceladas" — e ninguém desconfia de uma palavra que acabou de aprender no
-  // app. A lane passou a ser nomeada pelo que é: **plataforma**.
+describe("grupo é o conjunto do cliente; a lane chama-se plataforma", () => {
+  // ⚠️ Duas decisões, uma trava.
   //
-  // Esta é a razão de a trava existir em vez de uma lista de palavras proibidas: a
-  // palavra não é proibida, o SENTIDO é. "Faixa de preço" fica e é retirada antes da
-  // varredura; o que sobrar em texto de tela é a lane voltando.
+  // 1. A colisão do §D7b do `omotenashi-copy.md`: "faixa" servia de *lane* de
+  //    processamento num app onde "Faixa de preço" era conceito de negócio no
+  //    formulário ao lado ("3 faixas que não tinham começado foram canceladas"). A lane
+  //    passou a ser nomeada pelo que é: **plataforma**.
+  // 2. Decisão do dono (20/10/2026): o Marketing dizia "Faixa de preço" e o Gestor dizia
+  //    "Grupos" para a mesma coisa (`guestman.PriceTier`). Ficou **Grupo** nos dois
+  //    (`docs/reference/suite-vocabulary.md` §1).
   //
-  // Comentário e docstring seguem livres — a regra é sobre a tela (§5.1: a ampliação
-  // de canal valeu para "aparelho", e o documento diz explicitamente que ela NÃO
-  // generaliza). É por isso que a faixa-banner ("a faixa dizia 'Enviado' em verde"),
-  // que é outro sentido ainda, continua podendo ser escrita para quem lê o código.
-  const PRICE_TIER = /faixa de preço/gi;
-  const LANE = /\bfaixas?\b/i;
+  // Juntas, as duas tiram "faixa" de todo texto de tela do Marketing: o que aparecer é
+  // a lane voltando ou o nome aposentado voltando. Comentário e docstring seguem livres
+  // (a faixa-banner, "a faixa dizia 'Enviado' em verde", é outro sentido ainda, e
+  // continua podendo ser escrita para quem lê o código).
+  const FAIXA = /\bfaixas?\b/i;
 
-  it("nenhum texto de tela chama a plataforma de faixa", () => {
+  it("nenhum texto de tela diz faixa", () => {
     const appRoot = new URL("../app", import.meta.url).pathname;
-    const strip = (text: string) => text.replace(PRICE_TIER, " ");
 
     const leaks = [
       ...vueFiles(appRoot).flatMap((path) => {
-        const found = strip(screenText(readFileSync(path, "utf8"))).match(LANE);
+        const found = screenText(readFileSync(path, "utf8")).match(FAIXA);
         return found ? [`${path} (tela): ${found[0]}`] : [];
       }),
       ...sourceFiles(appRoot, [".ts"])
         .filter((path) => !path.includes("/generated/"))
         .flatMap((path) => {
-          const found = strip(
-            codeWithoutComments(readFileSync(path, "utf8")),
-          ).match(LANE);
+          const found = codeWithoutComments(readFileSync(path, "utf8")).match(FAIXA);
           return found ? [`${path} (código): ${found[0]}`] : [];
         }),
     ];
@@ -319,16 +314,30 @@ describe("faixa é preço; a lane chama-se plataforma", () => {
     expect(leaks).toEqual([]);
   });
 
-  // A outra metade da trava: se "Faixa de preço" sumir do formulário, a varredura
-  // acima continuaria verde sem que ninguém percebesse que o conceito de negócio foi
-  // renomeado por engano.
-  it("'Faixa de preço' continua sendo o conceito de negócio no formulário", () => {
+  // A outra metade da trava: se "Grupo" sumir do público e da exclusividade, a varredura
+  // acima continuaria verde sem que ninguém percebesse que o conceito foi renomeado de
+  // novo, para um terceiro nome.
+  it("'Grupo' é o conceito no público e na campanha exclusiva", () => {
     const appRoot = new URL("../app", import.meta.url).pathname;
-    const screens = vueFiles(appRoot)
+    const text = vueFiles(appRoot)
       .map((path) => screenText(readFileSync(path, "utf8")))
-      .filter((text) => /faixa de preço/i.test(text));
+      .join(" ");
 
-    expect(screens.length).toBeGreaterThan(0);
+    expect(text).toMatch(/\bGrupo\b/);
+    expect(text).toContain("Exclusiva do grupo");
+  });
+
+  // Com "Grupo" virando o nome de UM critério, "grupo" genérico (qualquer critério de
+  // público) passou a mentir: "Escolha pelo menos um grupo acima" mandava marcar o
+  // Grupo, quando etiqueta ou comportamento também servem.
+  it("'grupo' não é sinônimo de critério de público", () => {
+    const appRoot = new URL("../app", import.meta.url).pathname;
+    const leaks = vueFiles(appRoot).flatMap((path) => {
+      const found = screenText(readFileSync(path, "utf8")).match(/\bum grupo acima\b/i);
+      return found ? [`${path}: ${found[0]}`] : [];
+    });
+
+    expect(leaks).toEqual([]);
   });
 });
 

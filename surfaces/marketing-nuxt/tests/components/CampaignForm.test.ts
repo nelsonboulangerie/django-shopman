@@ -830,22 +830,22 @@ describe("CampaignForm — a voz do gestor", () => {
   });
 });
 
-describe("CampaignForm — campanha exclusiva da faixa de preço", () => {
+describe("CampaignForm — campanha exclusiva do grupo", () => {
   function exclusiveBox(wrapper: ReturnType<typeof form>) {
     return wrapper
       .find('[data-testid="campaign-exclusive-tiers"]')
       .find('[role="checkbox"]');
   }
 
-  it("marca a faixa e manda exclusive_price_tiers, fora das regras de público", async () => {
+  it("marca o grupo e manda exclusive_price_tiers, fora das regras de público", async () => {
     const wrapper = form(makeRule({ trigger: "production_finished" }));
 
     expect(wrapper.text()).toContain(
-      "Nenhuma marcada: a campanha vale para o público escolhido acima.",
+      "Nenhum marcado: a campanha vale para o público escolhido acima.",
     );
     await exclusiveBox(wrapper).trigger("click");
     expect(wrapper.text()).toContain(
-      "Só quem está numa faixa de preço marcada recebe, mesmo com outro público escolhido acima.",
+      "Só quem está num grupo marcado recebe, mesmo com outro público escolhido acima.",
     );
     await wrapper.find("form").trigger("submit");
 

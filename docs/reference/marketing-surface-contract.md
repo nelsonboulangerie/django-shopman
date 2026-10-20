@@ -204,9 +204,11 @@ leitura ausente falham fechado, sem chamada de rede; `409` recarrega a projeçã
 aplica estado otimista. Enquanto um PATCH está em voo, outro gesto de liga/desliga é
 bloqueado para não duplicar a intenção.
 
-**Campanha exclusiva de faixa de preço.** No passo "Público e momento", com WhatsApp
-escolhido, o gestor marca as faixas de preço (grupos de clientes, `guestman.PriceTier`) que
-têm a campanha como exclusiva. O CRUD recebe `exclusive_price_tiers` (`POST`/`PATCH
+**Campanha exclusiva de grupo.** No passo "Público e momento", com WhatsApp
+escolhido, o gestor marca em "Exclusiva do grupo" os grupos de clientes (`guestman.PriceTier`) que
+têm a campanha como exclusiva. Na tela o conceito se chama **Grupo** (também no filtro de
+público e na contagem), o mesmo nome do Gestor: decisão do dono de 20/10/2026, que aposentou
+"Faixa de preço" ([suite-vocabulary.md](suite-vocabulary.md)). O CRUD recebe `exclusive_price_tiers` (`POST`/`PATCH
 marketing/rules/`; ausente no `PATCH` = não mexe) e grava `campaign:<pk>` em
 `PriceTierAdvantage(kind="exclusive_notifications").config.campaign_refs` pela porta única
 `shop/services/campaign_exclusivity.py` (dono da chave, ver
@@ -215,12 +217,12 @@ a referência, e antes disso os anúncios dela herdam os grupos
 (`Announcement.trigger_context.exclusive_price_tiers`, `campaign_exclusivity.forget_campaign`,
 também no `pre_delete` de `Campaign`): o anúncio de campanha exclusiva apagada nunca vira envio
 para todos. A projeção da campanha devolve `exclusive_price_tiers`. Campanha exclusiva só
-alcança membros das faixas que a declaram, qualquer que seja o público: o resolvedor recebe
+alcança membros dos grupos que a declaram, qualquer que seja o público: o resolvedor recebe
 `campaign_id` na contagem do disparo (`POST marketing/audience/count/` com `campaign_id`) e no
 disparo, e o anúncio (`announcement`, exclusividade viva ou herdada) na aprovação, no
 planejamento e no envio das ondas, e quem sai conta em
 `excluded_by_reason.outside_exclusive_groups`. Vantagem desligada no Gestor tira os membros
-daquela faixa; a campanha nunca vira campanha para todos. Exclusiva sai só por mensagem
+daquele grupo; a campanha nunca vira campanha para todos. Exclusiva sai só por mensagem
 direta: o CRUD recusa postagem pública no mesmo salvamento e a aprovação recusa com
 `exclusive_campaign_public_post`.
 
