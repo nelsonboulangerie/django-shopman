@@ -1,7 +1,7 @@
 # ADR-041 — Topologia das superfícies: apps federados sob uma layer e uma Central
 
-**Status:** Proposto
-**Data:** 2026-10-19
+**Status:** Aceito
+**Data:** 2026-10-20
 **Escopo:** `surfaces/*` (registro, apps Nuxt, `operator-kit`, `operator-router`), Django headless
 **Origem:** laudo adversarial de soberania, achado A10-1 (`docs/reports/core-sovereignty-adversarial-2026-10-18.md`)
 
@@ -35,14 +35,14 @@ O que está no `main` em 19/10/2026:
 - Nasce superfície nova por `make new-surface`, e `scripts/check_surface_registry.py`
   reprova o que divergir do registro.
 
-## Decisão proposta
+## Decisão
 
 A topologia canônica é **federada**: uma superfície de produto é um app Nuxt próprio,
 com subdomínio, BFF e ciclo de build próprios, registrado em `surfaces/registry.json`.
 O que é comum entre os apps de operador mora **uma vez** na layer `operator-kit`; a
 navegação entre eles é a Central, não um shell que os carrega.
 
-Consequências que valem a partir do aceite:
+Consequências:
 
 1. Não se cria shell, micro-frontend em runtime nem app que hospede telas de outro.
    Tela nova de um domínio entra no app daquele domínio; domínio novo de rotina vira
@@ -62,7 +62,7 @@ Consequências que valem a partir do aceite:
 - **Shell com módulos**: navegação contínua, ao custo de um contrato de carregamento em
   runtime que hoje não existe e de acoplar o ciclo de deploy de todos ao do shell.
 
-## Pergunta ao dono
+## Aceite
 
-Aceitar a federação como topologia canônica (status passa a **Aceito**)? A alternativa é
-abrir um WP para medir o shell antes de decidir.
+O dono aceitou a federação como topologia canônica em 20/10/2026 (proposta de
+19/10/2026). A alternativa de medir um shell antes de decidir não foi aberta.
