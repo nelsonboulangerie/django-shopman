@@ -33,7 +33,6 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 
 | id | frente | estado | branch / PR | desde (UTC) |
 |---|---|---|---|---|
-| ONDA4-SEC | Corrigir MCP transitivo e auditoria de dependências | AGUARDA_DONO | codex/mcp-server-audit-fix, draft #1967 | 2026-10-20 21:48 |
 | §7.1-5a | Core: cliente em vários grupos (N:N) e vantagens tipadas | EM_PR | `claude/grupos-core` / #1812 | 2026-10-15 12:07 |
 | §7.2-4 | Clientes: duplicar cadastro e etiquetar em lote | EM_PR | `claude/cadastro-clientes` / #1815 | 2026-10-15 12:5x |
 | §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
