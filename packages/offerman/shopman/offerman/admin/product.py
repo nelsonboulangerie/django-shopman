@@ -73,7 +73,6 @@ class ProductAdmin(admin.ModelAdmin):
                     "shelf_life_days",
                     "is_perishable",
                     "production_cycle_hours",
-                    "is_batch_produced",
                 )
             },
         ),

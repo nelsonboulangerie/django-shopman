@@ -71,7 +71,6 @@ const form = reactive({
   storage_tip: "",
   ingredients_text: "",
   unit_weight_g: "",
-  is_batch_produced: false,
   is_published: true,
   is_sellable: true,
   fiscal_profile: "",
@@ -137,7 +136,6 @@ function resetForm() {
   form.storage_tip = "";
   form.ingredients_text = "";
   form.unit_weight_g = "";
-  form.is_batch_produced = false;
   form.is_published = true;
   form.is_sellable = true;
   form.fiscal_profile = "";
@@ -281,10 +279,6 @@ function useSuggestion(suggestion: CorrelateResult["suggestions"][number]) {
     form.shelf_life_days = String(suggestion.value);
     return;
   }
-  if (suggestion.field === "is_batch_produced") {
-    form.is_batch_produced = Boolean(suggestion.value);
-    return;
-  }
   if (
     suggestion.field === "unit" ||
     suggestion.field === "availability_policy"
@@ -368,7 +362,6 @@ function submit() {
     ingredients_text: form.ingredients_text.trim(),
     is_published: form.is_published,
     is_sellable: form.is_sellable,
-    is_batch_produced: form.is_batch_produced,
   };
   if (form.unit_weight_g !== "")
     payload.unit_weight_g = Number(form.unit_weight_g);

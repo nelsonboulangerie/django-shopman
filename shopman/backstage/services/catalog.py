@@ -631,7 +631,7 @@ _DETAIL_TEXT_FIELDS = (
 )
 _DETAIL_INT_FIELDS = ("base_price_q",)
 _DETAIL_NULLABLE_INT_FIELDS = ("unit_weight_g", "shelf_life_days", "production_cycle_hours")
-_DETAIL_BOOL_FIELDS = ("is_published", "is_sellable", "is_batch_produced")
+_DETAIL_BOOL_FIELDS = ("is_published", "is_sellable")
 
 # Rotulagem de compra remota: o cliente não pega o produto na mão, então alérgenos,
 # restrições, porção e medidas precisam estar escritos. Vivem em ``metadata``.
@@ -760,7 +760,6 @@ def _detail_payload(product) -> dict:
         "shelf_life_days": product.shelf_life_days,
         "storage_tip": product.storage_tip,
         "production_cycle_hours": product.production_cycle_hours,
-        "is_batch_produced": product.is_batch_produced,
         "is_active": product.is_active,
         "is_published": product.is_published,
         "is_sellable": product.is_sellable,
@@ -1576,7 +1575,6 @@ def duplicate_product(sku: str, data: dict, *, actor: str = "", expected_revisio
             shelf_life_days=source.shelf_life_days,
             production_cycle_hours=source.production_cycle_hours,
             image_url=source.image_url,
-            is_batch_produced=source.is_batch_produced,
             metadata=_duplicate_metadata(source),
             is_published=False,
             is_sellable=False,
@@ -1606,7 +1604,7 @@ def duplicate_product(sku: str, data: dict, *, actor: str = "", expected_revisio
 # aceite campo a campo (``product_enrichment.accept_fields``), o MESMO caminho do
 # Admin; esta camada não reimplementa prioridade, fusão nem licença de foto.
 
-_CORRELATE_CONFIG_FIELDS = ("unit", "availability_policy", "is_batch_produced", "shelf_life_days")
+_CORRELATE_CONFIG_FIELDS = ("unit", "availability_policy", "shelf_life_days")
 _PHOTO_MAX_BYTES = 8 * 1024 * 1024
 
 
@@ -1660,7 +1658,7 @@ def correlate_suggestions(draft: dict, *, limit: int = 5) -> dict:
     """O que reaproveitar de produtos parecidos (NCM, marca, nome).
 
     A sugestão é a CONFIGURAÇÃO do cadastro (unidade, disponibilidade,
-    produzido em lote, validade) e o PERFIL fiscal da casa. CFOP/CSOSN não se
+    validade) e o PERFIL fiscal da casa. CFOP/CSOSN não se
     inventam por produto: saem do perfil. Nada aqui escreve.
     """
     from collections import Counter
@@ -1670,7 +1668,7 @@ def correlate_suggestions(draft: dict, *, limit: int = 5) -> dict:
     ncm, brand, words = _draft_hints(draft or {})
     scored = []
     products = Product.objects.only(
-        "id", "sku", "name", "unit", "availability_policy", "is_batch_produced", "shelf_life_days", "metadata",
+        "id", "sku", "name", "unit", "availability_policy", "shelf_life_days", "metadata",
     ).order_by("name")
     for product in products:
         meta = product.metadata or {}

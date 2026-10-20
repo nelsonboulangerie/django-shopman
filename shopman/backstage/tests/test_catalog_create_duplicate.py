@@ -306,7 +306,6 @@ def test_correlate_suggests_from_similar_products(catalog):
         "social": {"brand": "Nelson"},
     }
     catalog["pao"].availability_policy = "planned_ok"
-    catalog["pao"].is_batch_produced = True
     catalog["pao"].shelf_life_days = 1
     catalog["pao"].save()
     catalog["bolo"].metadata = {
@@ -319,7 +318,7 @@ def test_correlate_suggests_from_similar_products(catalog):
     assert {item["sku"] for item in result["correlates"]} == {"PAO", "BOLO"}
     by_field = {item["field"]: item["value"] for item in result["suggestions"]}
     assert by_field["availability_policy"] == "planned_ok"
-    assert by_field["is_batch_produced"] is True
+    assert "is_batch_produced" not in by_field
     assert by_field["shelf_life_days"] == 1
     assert by_field["fiscal_profile"] == "padaria"
 

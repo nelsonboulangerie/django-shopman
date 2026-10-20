@@ -197,7 +197,6 @@ export interface ProductDetailProjection {
   shelf_life_days: number | null;
   storage_tip: string;
   production_cycle_hours: number | null;
-  is_batch_produced: boolean;
   /** Cadastro operacional: muda só pelo gesto Arquivar/Desarquivar. */
   readonly is_active: boolean;
   is_published: boolean;
@@ -441,7 +440,6 @@ export interface CreateProductPayload {
   storage_tip?: string;
   ingredients_text?: string;
   production_cycle_hours?: number | null;
-  is_batch_produced?: boolean;
   is_published?: boolean;
   is_sellable?: boolean;
   social?: Partial<ProductSocial>;

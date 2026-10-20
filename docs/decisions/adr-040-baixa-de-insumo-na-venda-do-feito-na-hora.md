@@ -174,6 +174,15 @@ ordem de produção vivem no `craftsman`), e o KDS, a venda e o planejamento o l
 por SKU. Fica na ficha (o `Recipe`, cujo `ref` é o da receita do inventário), não na
 versão: publicar uma versão reescreve itens e rendimento, nunca o modo.
 
+**Uma pergunta, um campo.** O produto tinha um quadrado próprio, "Produzido em lote"
+(`offerman.Product.is_batch_produced`, Gestor → Catálogo → produto → Preço e config), que
+respondia a mesma pergunta por outra fonte. Aposentado em 20/10/2026 (`offerman.0006`):
+saiu do modelo, do Admin, da tela e do contrato do Gestor, e da sugestão por produtos
+parecidos no cadastro por GTIN. O único leitor de verdade era o "sai do forno" do aviso
+de estoque, que agora pergunta ao adapter de produção
+(`get_batch_produced_skus`, sobre `production_modes_for_output_skus`): o offerman é Core
+e não conhece o craftsman, quem cruza é o shop.
+
 **`is_active` é só vigente × arquivada.** O seed desligava café, chá e croque para
 tirá-los do planejamento, e isso sobrepunha "arquivada" com "montada na venda" (a
 ambiguidade 1 do Contexto). Agora toda ficha em uso é vigente, e quem tira o "Na hora"

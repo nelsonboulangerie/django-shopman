@@ -40,7 +40,6 @@ const detail = {
   unit_weight_g: null,
   shelf_life_days: null,
   production_cycle_hours: null,
-  is_batch_produced: false,
   allows_next_day_sale: false,
   serves: "",
   approx_dimensions: "",
