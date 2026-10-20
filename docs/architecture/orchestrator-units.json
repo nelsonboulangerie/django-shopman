@@ -15702,6 +15702,7 @@
             "fulfill",
             "release",
             "revert_fulfilled",
+            "settle_made_to_order_cancellation",
             "revert",
             "reconcile_to_items",
             "unknown_sku_alert_sku",
@@ -18168,6 +18169,104 @@
       ],
       "test_gap_reason": null,
       "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "stock.made-to-order-consumption",
+      "question": "A venda do item feito na hora baixa o insumo da ficha, e o cancelamento devolve ou registra perda conforme o preparo?",
+      "owner": "stock.made-to-order-consumption",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.made_to_order:consume",
+      "authoritative_symbols": [
+        "shopman.shop.services.made_to_order:consume",
+        "shopman.shop.services.made_to_order:settle_cancellation"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/made_to_order.py",
+          "symbols": [
+            "MADE_TO_ORDER_KEY",
+            "SOURCE_SALE",
+            "SOURCE_SALE_CANCEL",
+            "OUTCOME_RETURNED",
+            "OUTCOME_WASTED",
+            "ORDER_DATA_KEY",
+            "CONSUME_RECEIPT_SCOPE",
+            "SETTLE_RECEIPT_SCOPE",
+            "AmbiguousRecipe",
+            "made_to_order_recipes",
+            "_sold_components",
+            "_one_level_requirements",
+            "schedule_consumption",
+            "consume",
+            "schedule_cancellation_settlement",
+            "_ticket_is_prepared",
+            "unprepared_quantities",
+            "settle_cancellation"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "craftsman",
+        "orderman",
+        "stockman"
+      ],
+      "ports": [
+        "adapter:catalog"
+      ],
+      "events": [],
+      "directives": [
+        "STOCK_CONSUME_MADE_TO_ORDER",
+        "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_a_venda_baixa_o_insumo_uma_vez_com_a_origem_no_movimento",
+        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_cancelado_depois_de_preparado_vira_perda"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "stock.made-to-order-handlers",
+      "question": "Como o worker durável executa a baixa de insumo da venda e o acerto do cancelamento?",
+      "owner": "stock.made-to-order-handlers",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.handlers.made_to_order:MadeToOrderConsumeHandler.handle",
+      "authoritative_symbols": [
+        "shopman.shop.handlers.made_to_order:MadeToOrderConsumeHandler.handle"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/handlers/made_to_order.py",
+          "symbols": [
+            "MadeToOrderConsumeHandler",
+            "MadeToOrderCancellationHandler"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "handler"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "STOCK_CONSUME_MADE_TO_ORDER",
+        "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_made_to_order_ingredient_consumption.py::test_o_handler_da_directive_baixa"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
       "out_of_extraction": false
     }
   ]
