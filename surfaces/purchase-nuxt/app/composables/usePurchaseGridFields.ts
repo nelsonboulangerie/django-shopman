@@ -18,9 +18,9 @@ export function usePurchaseGridFields(
     grid.undo();
     inputs.value = grid.draft.value;
   }
-  function clear() {
-    grid.clear();
-    inputs.value = {};
+  function clear(keys?: readonly string[]) {
+    grid.clear(keys);
+    inputs.value = grid.draft.value;
   }
   function error(value: string): string {
     if (!value.trim()) return "";
@@ -48,6 +48,12 @@ export function usePurchaseGridFields(
         .filter(([, message]) => message),
     ),
   );
+  function errorsFor(rows: readonly { sku: string }[]) {
+    const visible = new Set(rows.map((row) => row.sku));
+    return Object.fromEntries(
+      Object.entries(errors.value).filter(([sku]) => visible.has(sku)),
+    );
+  }
   function paste(
     event: ClipboardEvent,
     startSku: string,
@@ -70,5 +76,5 @@ export function usePurchaseGridFields(
       if (target && row[0]?.trim()) set(target.sku, row[0]);
     });
   }
-  return { set, undo, clear, paste, errors, canUndo: grid.canUndo };
+  return { set, undo, clear, paste, errors, errorsFor, canUndo: grid.canUndo };
 }
