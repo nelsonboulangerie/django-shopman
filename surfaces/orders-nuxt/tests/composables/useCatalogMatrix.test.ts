@@ -1,3 +1,4 @@
+import { ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
@@ -45,6 +46,34 @@ describe("useCatalogMatrix — leitura + célula", () => {
       },
     };
     env.fetchMock.mockResolvedValue({ outcome: "applied" });
+  });
+
+  it("envia a janela ao servidor e descarta resposta do período anterior", () => {
+    const period = ref({ date_from: "2026-10-20", date_to: "2026-10-22" });
+    env.fetchData.value = {
+      matrix: {
+        rows: [],
+        date_from: "2026-10-10",
+        date_to: "2026-10-12",
+        order: "validity",
+      },
+    };
+    const m = useCatalogMatrix(undefined, { period, order: ref("validity") });
+    const [, options] = env.useFetchMock.mock.calls[0]!;
+    expect(options.query.date_from.value).toBe("2026-10-20");
+    expect(options.query.date_to.value).toBe("2026-10-22");
+    expect(m.matrix.value).toBeNull();
+    expect(options.key.value).toContain("2026-10-20:2026-10-22");
+    period.value = { date_from: "2026-11-01", date_to: "2026-11-30" };
+    expect(options.query.date_from.value).toBe("2026-11-01");
+  });
+
+  it("Qualquer data retira as duas pontas da consulta", () => {
+    const filters = ref({ validity: ["any"] });
+    useCatalogMatrix(undefined, { filters, period: ref({ date_from: "2026-10-20", date_to: "2026-10-22" }) });
+    const [, options] = env.useFetchMock.mock.calls[0]!;
+    expect(options.query.date_from.value).toBeUndefined();
+    expect(options.query.date_to.value).toBeUndefined();
   });
 
   it("deriva matrix da projection", () => {

@@ -856,12 +856,13 @@ MANYCHAT_FLOW_MAP = {
     # Encomendas (templates aprovados em 29/09/2026; flows "Aviso: …" na conta):
     "order_rescheduled": "content20260929125821_042737",  # pedido_nova_data
     "order_updated": "content20260929130117_994990",  # pedido_atualizado
+    # Variante do `order_accepted` na encomenda, com a data (aprovado pela Meta em
+    # 20/10/2026, Utility; flow "Aviso: encomenda confirmada (order_accepted_preorder)").
+    # Pedido do dia segue no `pedido_confirmado`, sem a data.
+    "order_accepted_preorder": "content20261020201824_274658",  # pedido_encomenda_confirmada
     # Variante do `order_dispatched` com o botão de rastreio do entregador
     # (`pedido_saiu_entrega_rastreio`): chave "order_dispatched_courier", ligada só
     # depois de aprovado o template. Sem ela o aviso sai pelo `pedido_saiu_entrega`.
-    # Variante do `order_accepted` na encomenda, com a data (`pedido_encomenda_confirmada`,
-    # submetido à Meta em 20/10/2026): chave "order_accepted_preorder", ligada só depois
-    # de aprovado. Sem ela a encomenda sai pelo `pedido_confirmado`, sem a data.
 }
 try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))
