@@ -1,5 +1,6 @@
 """Gesto único para o lote de fornecedores da Base."""
 
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
@@ -14,6 +15,15 @@ class PurchaseSupplierBulkView(ServerTimingMixin, APIView):
     server_timing_methods = ("POST",)
 
     def post(self, request):
+        if not isinstance(request.data, dict):
+            return Response(
+                {
+                    "detail": "Marque os fornecedores na lista antes de alterar.",
+                    "field": "rows",
+                    "errors": {"rows": ["Seleção de fornecedores inválida."]},
+                },
+                status=400,
+            )
         return _catalog_mutation(
             request,
             operation="purchase.supplier-bulk",
