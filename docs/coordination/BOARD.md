@@ -26,6 +26,7 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
+**ONDA4-4 (20/10):** lote de fornecedores entregue no PR #1957 (`codex/lote-fornecedores`), com confirmação, Desfazer revisado e auditoria atômica. Sete testes API, dois de componente e quatro de navegador aprovados. Medição: 188 → 30 consultas para dez fornecedores; 2/40 fornecedores mantêm 28 consultas. Registro em `ROUNDS/ONDA4-4-lote-fornecedores.md`.
 **Turno ONDA4 (20/10), frente2:** preço com vigência entregue no PR #1958, com fila solicitada. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
 
 ## Em execução agora

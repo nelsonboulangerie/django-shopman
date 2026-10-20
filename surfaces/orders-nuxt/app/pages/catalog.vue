@@ -1125,6 +1125,44 @@ function closeDetail() {
   detailDirty.value = false;
   detailArchiveReceipt.value = null;
 }
+async function saveDetailCollections(
+  rows: NonNullable<ProductDetailProjection["collections"]>,
+) {
+  if (!detailSku.value) return false;
+  const sku = detailSku.value;
+  const ok = await saveProductDetail(sku, { collections: rows });
+  if (ok && detailSku.value === sku) {
+    const fresh = await fetchProductDetail(sku, ["collections"]);
+    if (fresh && detail.value)
+      Object.assign(detail.value, {
+        collections: fresh.collections,
+        collection_choices: fresh.collection_choices,
+        listing_links: fresh.listing_links,
+        primary_collection: fresh.primary_collection,
+        primary_collection_name: fresh.primary_collection_name,
+      });
+  }
+  return ok;
+}
+async function saveDetailListing(
+  link: NonNullable<ProductDetailProjection["listing_links"]>[number],
+  patch: {
+    price_q: number;
+    min_qty: string;
+    is_published: boolean;
+    is_sellable: boolean;
+  },
+) {
+  if (!detailSku.value) return false;
+  const sku = detailSku.value;
+  const ok = await setCell(sku, link.surface_ref, patch, link.action);
+  if (ok && detailSku.value === sku) {
+    const fresh = await fetchProductDetail(sku, []);
+    if (fresh && detail.value)
+      Object.assign(detail.value, { listing_links: fresh.listing_links });
+  }
+  return ok;
+}
 async function saveDetail(patch: ProductDetailPatch) {
   if (!detailSku.value) return;
   const sku = detailSku.value;
@@ -1164,7 +1202,7 @@ async function togglePurchasable(enabled: boolean) {
 
 function reviewProductConflict(keepDraft: boolean) {
   if (!detailSku.value) return;
-  const current = acknowledgeProductConflict(detailSku.value);
+  const current = acknowledgeProductConflict(detailSku.value, keepDraft);
   if (!keepDraft && current) detail.value = current;
 }
 
@@ -2276,6 +2314,8 @@ useHead({ title: "Catálogo" });
     <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
          slide-over à direita -->
     <CatalogProductPanel
+      :save-collections="saveDetailCollections"
+      :save-listing="saveDetailListing"
       :open="detailSku !== null"
       :sku="detailSku"
       :detail="detail"
