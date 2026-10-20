@@ -618,8 +618,8 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     filters: dict | None = None) -> CatalogMatrixProjection:
     """Monta a matriz produto × superfície com o eixo coleção, PAGINADA.
 
-    ``collection_ref`` (opcional) recorta os produtos daquela coleção
-    (``product_queryset()``, smart-aware). ``query`` busca em nome e SKU;
+    ``collection_ref`` (opcional) recorta os produtos daquela coleção, inclusive
+    os arquivados quando esse é o filtro explícito. ``query`` busca em nome e SKU;
     ``filters`` aceita ``archived``/``is_published``/``is_sellable``/``has_vocation``/
     ``surface``/``stock``/``pim_complete``/``sync_status``; ``order`` é uma das
     chaves de ``_CATALOG_ORDERS``; a página é do BANCO — só as linhas dela viram
@@ -647,6 +647,12 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     from django.db.models import Max, Q, Subquery
     from django.utils import timezone
     from shopman.offerman.models import ListingItem
+    from shopman.offerman.smart_collection import resolve_products
+
+    def collection_products(collection):
+        if collection.is_smart:
+            return resolve_products(collection.rule)
+        return Product.objects.filter(collection_items__collection=collection).distinct()
 
     item_ids = [item.pk for cells in cells_index.values() for item in cells.values()]
     latest = ListingItem.history.filter(id__in=item_ids).values("id").annotate(last=Max("history_id")).values("last")
@@ -670,7 +676,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
             products = products.none()
         else:
             collection_smart = coll.is_smart
-            products = coll.product_queryset()
+            products = collection_products(coll)
     term = (query or "").strip()
     if term:
         products = products.filter(Q(name__icontains=term) | Q(sku__icontains=term))
@@ -908,7 +914,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
             ref=c.ref,
             name=c.name,
             is_smart=c.is_smart,
-            product_count=c.product_queryset().count(),
+            product_count=collection_products(c).filter(is_active=not archived).count(),
         )
         for c in Collection.objects.filter(is_active=True).order_by("sort_order", "name")
     )

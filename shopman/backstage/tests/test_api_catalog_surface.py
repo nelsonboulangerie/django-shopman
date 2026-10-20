@@ -137,6 +137,12 @@ def test_matrix_hides_archived_by_default_and_exposes_explicit_filter(client, op
     assert archived_rows[0]["is_sellable"] is True
     assert not any(cell["available"] for cell in archived_rows[0]["cells"])
 
+    collection_rows = client.get(
+        MATRIX_URL, {"archived": "true", "collection": "doces"}
+    ).json()["matrix"]
+    assert [row["sku"] for row in collection_rows["rows"]] == ["BOLO"]
+    assert collection_rows["collections"][0]["product_count"] == 1
+
 
 def test_matrix_filtered_by_collection(client, operator, catalog):
     client.force_login(operator)
