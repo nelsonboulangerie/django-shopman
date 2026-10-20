@@ -90,6 +90,7 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 |---|---|---|---|
 | A1 | `npm audit` acusa `node-forge` | não há versão corrigida; o job não é obrigatório; o pacote não chega ao `.output` (D-027, reconfirmada pelo dono em 02/10) | sair o 1.4.1 |
 | A2 | Controles de data, o resto | PDV, Produção, B.I. e Compras entraram (#1371, #1372). Restam só os do Marketing (`CampaignForm`, `AnnouncementCard`, `GoogleBusinessPostOptions`, `MarketingOfferForm`), fora do go-live (D-017), e o aniversário do perfil na loja, que é superfície de cliente e não entra na D37 | o Marketing voltar ao escopo |
+| IFOOD-B | O vínculo dirige a identidade enviada ao iFood | #1905 ainda está aberto e vermelho no mesmo adapter; a ordem proíbe tocar ou abrir a frente sobre essa base | #1905 mergear; então criar `codex/ifood-vinculo-resolvedor` a partir do `main` atualizado |
 
 ## Armadilhas ativas (leia antes de mexer)
 
