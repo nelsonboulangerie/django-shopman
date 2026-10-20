@@ -197,7 +197,8 @@ catálogo de produção ou tipos PIZZA. Não houve alteração de implementaçã
 ## Encerramento e acompanhamento dos merges
 
 O dono pediu acompanhar #1929 e #1962 até o merge, resolver falhas e encerrar a frente.
-O encerramento documental está em preparação no branch `codex/ifood-e-encerramento`.
+O encerramento documental está em preparação no PR draft #1965, branch
+`codex/ifood-e-encerramento`.
 **Não publicar como concluído antes dos dois merges efetivos.**
 
 | PR | Entrega | Merge confirmado |
