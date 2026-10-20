@@ -825,6 +825,9 @@ def _detail_payload(product) -> dict:
         # Só ``confirmed`` é editável (o gesto "Manter sem GTIN na nota"); o
         # resto é o registro da recusa. Corrigir ``social.gtin`` apaga a marca.
         "gtin_rejected": _gtin_rejected_payload(metadata),
+        "components": [{"sku": row.component.sku, "name": row.component.name,
+            "unit": row.component.unit, "qty": str(row.qty)}
+            for row in product.components.select_related("component").order_by("component__name", "component__sku")],
         "collections": [{"ref": ci.collection.ref, "is_primary": ci.is_primary, "sort_order": ci.sort_order} for ci in memberships],
         "collection_choices": list(Collection.objects.filter(rule={}).order_by("sort_order", "name").values("ref", "name", "is_active")),
         "primary_collection": primary.collection.ref if primary else "",
@@ -1106,7 +1109,12 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
             continue
         if path.startswith("gtin_rejected.") and path != "gtin_rejected.confirmed":
             continue
+        if path == "components":
+            # O rótulo vem do componente; a unidade faz parte da quantidade.
+            value = sorted(({"sku": row["sku"], "qty": row["qty"], "unit": row["unit"]} for row in value), key=lambda row: row["sku"])
         state = {"version": 1, "sku": detail["sku"], "field": path, "value": value}
+        if path == "components":
+            state["parent_unit"] = detail["unit"]
         root = path.split(".", 1)[0]
         if root in {"nutrition_facts", *_DETAIL_ATTR_LIST_FIELDS, *_DETAIL_ATTR_TEXT_FIELDS}:
             state["source"] = (detail.get("field_sources") or {}).get(root, "")
@@ -1179,6 +1187,58 @@ def _apply_product_collections(product, rows, *, expected_revision=None):
         item = current.get(row["ref"]) or CollectionItem(product=product, collection=groups[row["ref"]])
         item.is_primary, item.sort_order = primary, order
         item.save()
+
+
+
+def _apply_product_components(product, rows):
+    """Composição atômica; a validação de ciclo e profundidade é do Core."""
+    from decimal import Decimal, InvalidOperation
+
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product, ProductComponent
+    from shopman.offerman.signals import product_updated
+
+    if not isinstance(rows, list) or len(rows) > 200 or any(not isinstance(row, dict) for row in rows):
+        raise CatalogError("Informe até 200 componentes.")
+    skus = [row.get("sku") for row in rows]
+    if any(not isinstance(sku, str) or not sku for sku in skus) or len(set(skus)) != len(skus):
+        raise CatalogError("Escolha cada produto componente uma única vez.")
+    products = {p.sku: p for p in Product.objects.filter(sku__in=skus)}
+    if set(products) != set(skus):
+        raise CatalogError("Um dos produtos componentes não existe mais. Escolha outro produto.")
+    parsed = []
+    for row in rows:
+        raw = row.get("qty")
+        try:
+            if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+                raise ValueError
+            qty = Decimal(raw)
+            if not qty.is_finite() or qty <= 0 or qty > Decimal("9999999.999") or qty != qty.quantize(Decimal("0.001")):
+                raise ValueError
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise CatalogError("Informe uma quantidade positiva com até três casas decimais por componente.") from exc
+        parsed.append((products[row["sku"]], qty))
+    ProductComponent.objects.filter(parent=product).delete()
+    for component, qty in parsed:
+        try:
+            ProductComponent.objects.create(parent=product, component=component, qty=qty)
+        except ValidationError as exc:
+            messages = " ".join(exc.messages)
+            if component.pk == product.pk:
+                detail = "O produto não pode compor a si mesmo."
+            elif "Circular" in messages:
+                detail = "A composição criaria um ciclo entre produtos. Escolha outro componente."
+            elif "Max bundle depth" in messages:
+                detail = "A composição ultrapassa o limite de níveis de combos. Escolha um produto com menos níveis."
+            else:
+                detail = "Não foi possível incluir o componente. Confira o produto e a quantidade."
+            raise CatalogError(detail) from exc
+    from shopman.shop.handlers._sse_emitters import emit_catalog_changed
+
+    # O sinal grava a outbox na mesma transação; o emissor SSE agenda o push
+    # para depois do commit. Falha de outbox não pode confirmar a composição.
+    product_updated.send(sender=Product, instance=product, sku=product.sku)
+    emit_catalog_changed()
 
 
 def get_product_detail(sku: str) -> dict:
@@ -1416,11 +1476,20 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     from django.core.exceptions import ValidationError
     from shopman.offerman.models import Product
 
+    if "components" in data:
+        # Serializa alterações cruzadas do grafo antes do lock do produto atual.
+        # Ordem única evita A→B e B→A bloquearem uma à outra em ordem inversa.
+        list(Product.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
     product = Product.objects.select_for_update().filter(sku=sku).first()
     if product is None:
         raise CatalogError(f"Produto '{sku}' não encontrado.")
     if expected_revisions is not None:
         _check_product_revisions(product, data, expected_revisions)
+    if "components" in data:
+        _apply_product_components(product, data["components"])
+        data = {key: value for key, value in data.items() if key != "components"}
+        if not data:
+            return _detail_payload(product)
     if "collections" in data:
         _apply_product_collections(product, data["collections"], expected_revision=(expected_revisions or {}).get("collections"))
         data = {key: value for key, value in data.items() if key != "collections"}

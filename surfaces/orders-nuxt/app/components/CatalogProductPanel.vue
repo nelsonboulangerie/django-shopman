@@ -2,7 +2,7 @@
 // Painel de produto — edição COMPLETA de um produto sem sair do Gestor. Presentacional:
 // o pai é dono do fetch/save (useCatalogMatrix.fetchProductDetail / saveProductDetail)
 // e do estado de ocupado; aqui mora só o rascunho, dividido em seis abas:
-// Geral · Preço e config · Ingredientes e nutrição · Redes sociais · Fiscal.
+// Geral · Preço e config · Ingredientes e nutrição · Redes sociais · Fiscal · Vínculos.
 //
 // Emitimos APENAS o que mudou — o backend faz merge parcial, então não tocar num campo
 // é diferente de gravá-lo igual. Os blocos aninhados (social, fiscal, nutricional)
@@ -11,6 +11,7 @@
 // Vínculos de coleções e canais têm editor inline próprio.
 import type {
   ProductCollectionLink,
+  ProductComponentInput,
   ProductListingLink,
   AssistableField,
   NutritionFacts,
@@ -25,6 +26,8 @@ import { useIntersectionObserver } from "@vueuse/core";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
+  saveComponents?: (rows: ProductComponentInput[]) => Promise<boolean>;
+  searchComponents?: (query: string) => Promise<{ sku: string; name: string; unit?: string }[]>;
   saveCollections?: (rows: ProductCollectionLink[]) => Promise<boolean>;
   saveListing?: (
     link: ProductListingLink,
@@ -580,18 +583,22 @@ function buildPatch(): ProductDetailPatch {
   return patch;
 }
 
+const componentsDirty = ref(false);
+const componentsSaving = ref(false);
 const linksDirty = ref(false);
 const linksSaving = ref(false);
 watch(
   () => [props.open, props.sku],
   () => {
+    componentsDirty.value = false;
+    componentsSaving.value = false;
     linksDirty.value = false;
     linksSaving.value = false;
   },
 );
 const patchSize = computed(() => Object.keys(buildPatch()).length);
 watch(
-  () => props.open && (patchSize.value > 0 || linksDirty.value),
+  () => props.open && (patchSize.value > 0 || linksDirty.value || componentsDirty.value),
   (dirty) => emit("dirty-change", dirty),
   { immediate: true, flush: "sync" },
 );
@@ -601,6 +608,8 @@ const formInvalid = computed(
 const canSave = computed(
   () =>
     !linksDirty.value &&
+    !componentsDirty.value &&
+    !componentsSaving.value &&
     !linksSaving.value &&
     !props.busy &&
     !props.loading &&
@@ -647,8 +656,8 @@ function keepWithoutGtin() {
 
 const discardRequested = ref(false);
 function requestClose(open: boolean) {
-  if (!open && (props.busy || linksSaving.value)) return;
-  if (!open && (patchSize.value || linksDirty.value)) {
+  if (!open && (props.busy || linksSaving.value || componentsSaving.value)) return;
+  if (!open && (patchSize.value || linksDirty.value || componentsDirty.value)) {
     discardRequested.value = true;
     return;
   }
@@ -666,6 +675,7 @@ const conflictLabels: Record<string, string> = {
   long_description: "Descrição completa",
   keywords: "Palavras-chave",
   image_url: "Imagem",
+  components: "Componentes do combo",
   base_price_q: "Preço",
   unit: "Unidade",
   unit_weight_g: "Peso por unidade",
@@ -716,6 +726,10 @@ function sourceChange(field: string): string {
 }
 
 function currentValue(path: string): string {
+  if (path === "components") {
+    const rows = props.conflict?.product.components ?? [];
+    return rows.length ? `Para 1 ${props.conflict?.product.unit || props.detail?.unit || "un"} do combo: ${rows.map((row) => `${row.name}: ${row.qty.replace(".", ",")} ${row.unit}`).join("; ")}` : "Sem componentes";
+  }
   if (path === "vocation")
     return vocationLabel(
       props.conflict?.product.vocation ?? "",
@@ -875,11 +889,23 @@ const sectionClass =
               v-if="saveCollections && saveListing"
               v-show="tab === 'links'"
               :detail="detail"
-              :busy="busy"
+              :busy="busy || componentsDirty || componentsSaving"
               :save-collections="saveCollections"
               :save-listing="saveListing"
               @dirty-change="linksDirty = $event"
               @saving-change="linksSaving = $event"
+            />
+            <CatalogProductComponents
+              v-if="saveComponents && searchComponents"
+              v-show="tab === 'links'"
+              :sku="detail.sku"
+              :unit="detail.unit"
+              :components="detail.components ?? []"
+              :busy="busy || linksDirty || linksSaving"
+              :save="saveComponents"
+              :search="searchComponents"
+              @dirty-change="componentsDirty = $event"
+              @saving-change="componentsSaving = $event"
             />
             <!-- Geral -->
             <div v-show="tab === 'geral'" class="space-y-4">

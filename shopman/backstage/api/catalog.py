@@ -266,6 +266,21 @@ class CatalogProductArchiveView(_CatalogBase):
         except RemoteMutationInProgress:
             return Response({"outcome": "unknown", "detail": "Gesto em processamento; consulte esta intenção."}, status=202)
 
+class CatalogProductOptionsView(ServerTimingMixin, _CatalogBase):
+    """Busca leve de produtos para compor um combo, sem montar a matriz."""
+
+    def get(self, request):
+        from django.db.models import Q
+        from shopman.offerman.models import Product
+
+        term = str(request.query_params.get("q") or "").strip()[:200]
+        products = Product.objects.filter(is_active=True)
+        if term:
+            products = products.filter(Q(name__icontains=term) | Q(sku__icontains=term))
+        rows = list(products.order_by("name", "sku").values("sku", "name", "unit")[:21])
+        return Response({"products": rows[:20], "has_next": len(rows) > 20})
+
+
 class CatalogProductDetailView(ServerTimingMixin, _CatalogBase):
     """Partial product edits have leaf revisions and an atomic local receipt."""
 

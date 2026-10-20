@@ -183,7 +183,7 @@ export interface FiscalProfileChoice {
 // Detalhe de UM produto — tudo que o painel de produto edita
 // (GET/PATCH /api/v1/backstage/catalog/product/<sku>/). Espelha
 // `backstage.services.catalog._detail_payload`. Fora daqui (segue no Admin):
-// componentes de bundle, coleções e listings.
+// Vínculos e composição usam o mesmo escritor versionado do detalhe.
 export interface ProductCollectionLink {
   ref: string;
   is_primary: boolean;
@@ -200,7 +200,16 @@ export interface ProductListingLink {
   action: Action;
 }
 
+export interface ProductComponentInput {
+  sku: string;
+  qty: string;
+}
+export interface ProductComponentLink extends ProductComponentInput {
+  name: string;
+  unit: string;
+}
 export interface ProductDetailProjection {
+  components?: ProductComponentLink[];
   collections?: ProductCollectionLink[];
   readonly collection_choices?: {
     ref: string;
@@ -332,6 +341,7 @@ export type ProductDetailPatch = Partial<
   Omit<
     ProductDetailProjection,
     | "sku"
+    | "components"
     | "collection_choices"
     | "listing_links"
     | "primary_collection"
@@ -352,6 +362,7 @@ export type ProductDetailPatch = Partial<
     | "nutrition_facts"
   >
 > & {
+  components?: ProductComponentInput[];
   gtin_rejected?: { confirmed: true };
   social?: Partial<Omit<ProductSocial, "has_data">>;
   fiscal?: Partial<ProductFiscal>;
