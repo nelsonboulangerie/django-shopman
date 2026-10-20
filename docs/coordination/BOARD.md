@@ -117,6 +117,6 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 5. O `make coordination` só mede CI e auto-merge **com `gh` autenticado**. Sem `gh` ele diz isso numa
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
 
-**ONDA4-1 (20/10):** vínculos de produto em execução em `codex/produto-vinculos`: coleções e
+**ONDA4-1 (20/10):** vínculos de produto publicados no PR **#1960** (`codex/produto-vinculos`): coleções e
 canais no painel, reutilizando as intenções/revisões/recibos do detalhe e da célula. Registro e
 provas em `ROUNDS/ONDA4-1-produto-vinculos.md`. Nenhuma área reservada à outra coordenação foi editada.

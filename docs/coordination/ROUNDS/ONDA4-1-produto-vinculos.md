@@ -23,6 +23,7 @@ Ordem: `ORDERS/next-onda4.md`, frente 1. Base `65b658d31`. Branch
 
 ## Verificação
 
+- Regressão ampliada final: **118 passed, 3 skipped** (locks concorrentes exigem PostgreSQL).
 - Backend direcionado: **10 passed**, incluindo intenção obrigatória, replay, conflito,
   troca de primária, retirada, rollback se recibo falha, mínimo inválido e colisão de patamar.
 - Componentes: **26 passed**. Composable: **27 passed**, incluindo revisão seletiva.
@@ -69,4 +70,4 @@ O custo novo de leitura é fixo: teste aumenta de zero para **30 vínculos** e m
 
 ## Estado da esteira
 
-Implementação concluída; regressão ampliada final e publicação do PR em andamento.
+PR **#1960** publicado. Implementação e verificação local concluídas; acompanha CI e fila pelo PR.
