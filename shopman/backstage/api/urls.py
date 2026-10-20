@@ -5,6 +5,8 @@ from __future__ import annotations
 from django.urls import path
 
 from shopman.backstage.api.purchase_csv import PurchaseCsvView
+
+from shopman.backstage.api.purchase_supplier_bulk import PurchaseSupplierBulkView
 from shopman.shop.eventstream import events as eventstream_view
 
 from .alerts import AlertAckView, AlertListView
@@ -656,6 +658,7 @@ urlpatterns = [
         PurchaseMaterialDetailView.as_view(),
         name="api-backstage-purchase-material",
     ),
+    path("purchase/suppliers/batch/", PurchaseSupplierBulkView.as_view(), name="api-backstage-purchase-supplier-bulk"),
     path("purchase/suppliers/", PurchaseSupplierView.as_view(), name="api-backstage-purchase-suppliers"),
     path(
         "purchase/suppliers/<str:ref>/duplicate/",
