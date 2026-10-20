@@ -138,3 +138,12 @@ def test_audit_failure_rolls_back_entire_batch(client, purchase_operator, monkey
         send(client, {"rows": rows(suppliers), "isActive": False})
     assert Supplier.objects.filter(is_active=True).count() == 2
     assert LogEntry.objects.count() == 0
+
+
+def test_non_object_body_refused_without_writing(client, purchase_operator):
+    client.force_login(purchase_operator)
+    response = send(client, ["x"])
+    assert response.status_code == 400
+    assert response.json()["field"] == "rows"
+    assert response.json()["errors"]["rows"]
+    assert Supplier.objects.count() == LogEntry.objects.count() == 0

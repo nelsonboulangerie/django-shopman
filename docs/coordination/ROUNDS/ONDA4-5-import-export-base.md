@@ -62,4 +62,12 @@ D12: capturas antes/depois/export de ambas as entidades nos dois temas e tamanho
 Sem alteração de Core ou migração. As duplicatas históricas de prefixo 0023 a 0039
 em shop já estavam na base; esta frente não criou nenhuma.
 
-Validação: **15 testes CSV passaram**, além dos **7 testes de lote de fornecedores** já aprovados na rodada empilhada, **6 testes de componente passaram** (4 CSV + 2 lote), typecheck e oito cenários Chromium passaram novamente.
+Validação: **15 testes CSV passaram**, além dos **8 testes de lote de fornecedores** aprovados com a guarda de corpo descrita abaixo, **6 testes de componente passaram** (4 CSV + 2 lote), typecheck e oito cenários Chromium passaram novamente.
+
+## Robustez do lote herdado da frente 4
+
+Este PR também protege o endpoint de lote de fornecedores contra corpo JSON que
+não seja objeto. A guarda vem antes de `dict(request.data)` e devolve 400 no dialeto
+`detail/field/errors`, sem escrita. Um caso autenticado `["x"]` comprova a recusa;
+os oito testes do lote passaram. A correção acompanha a #1964 para não reiniciar
+os checks finais da #1957. A superfície e o gesto do lote não mudam.
