@@ -13453,6 +13453,10 @@
             "overpaid_q",
             "refund_cash",
             "alert_refund_failed",
+            "refund_intent_at_gateway",
+            "_REFUND_ELSEWHERE",
+            "_GATEWAY_NAMES",
+            "_GATEWAY_REFUSALS",
             "_REFUND_ALL_STATUSES",
             "_PAYMAN_REFUND_REASONS"
           ]

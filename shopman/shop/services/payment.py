@@ -1506,7 +1506,7 @@ _REFUND_ELSEWHERE = {
 _GATEWAY_NAMES = {"efi": "Efí", "stripe": "Stripe", "mock": "gateway de teste"}
 
 #: Recusas conhecidas dos adapters, em português de balcão. O resto chega com a
-#: mensagem do próprio gateway anexada (``_gateway_refusal``).
+#: mensagem do próprio gateway anexada (``_gateway_answer_text``).
 _GATEWAY_REFUSALS = {
     "intent_not_found": "Cobrança não encontrada no Payman.",
     "not_paid": "A Efí diz que esta cobrança Pix não foi paga, então não há o que devolver.",
@@ -1597,7 +1597,7 @@ def refund_intent_at_gateway(
     if not result.success:
         code = str(result.error_code or "")
         logger.warning("payment.admin_refund: recusa (%s) intent=%s: %s", gateway, intent_ref, result.message or code)
-        message = _GATEWAY_REFUSALS.get(code) or _gateway_refusal(gateway, result.message or code)
+        message = _GATEWAY_REFUSALS.get(code) or _gateway_answer_text(gateway, result.message or code)
         return PaymentResult(success=False, error_code=code or "refused", message=message)
 
     if not refunds.filter(gateway_id=result.transaction_id or "").exists():
@@ -1625,7 +1625,7 @@ def refund_intent_at_gateway(
     return PaymentResult(success=True, transaction_id=result.transaction_id, amount_q=refunded_q)
 
 
-def _gateway_refusal(gateway: str, detail: str) -> str:
+def _gateway_answer_text(gateway: str, detail: str) -> str:
     detail = str(detail or "").strip().rstrip(".")
     suffix = f" Resposta ({gateway}): {detail}." if detail else ""
     return f"O estorno foi recusado ({gateway}), e nada foi registrado aqui.{suffix}"
