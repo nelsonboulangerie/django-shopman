@@ -2955,8 +2955,8 @@ class Command(BaseCommand):
         # Frappé e adicionais com preço no Croque Monsieur. Dado, não código
         # (``metadata["option_groups"]``, aba Escolhas do Admin; formato em
         # ``shopman/shop/product_options.py``). Cada opção declara o insumo que
-        # gasta (``consumes``, na unidade-base do insumo); é registro gravado
-        # na linha, sem baixa de estoque na venda. Frutas vermelhas fica sem
+        # gasta (``consumes``, na unidade-base do insumo), congelado na linha;
+        # a venda baixa esse insumo (ADR-040). Frutas vermelhas fica sem
         # insumo declarado: o cadastro de compra não tem polpa/fruta hoje.
         option_groups = {
             "FRAP": [

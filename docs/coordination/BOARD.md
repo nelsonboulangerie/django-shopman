@@ -42,6 +42,11 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 
 **Turno de 15/10 (coordenação DSH):** mergeados #1810 (`GET /api/sessions` responde 200) e #1814 (card de desconto por tipo no B.I.). Higiene de disco: 185 worktrees removidas, 34 GB para ~140 GB livres. Reconciliação com o Codex: o núcleo das ondas 3, 4 e 5 do §7.2 já entrou por #1802 a #1806. Detalhe em `HANDOFF-DSH-2026-10-15.md`.
 
+**Turno ARQUIVAR de 20/10:** Frente A, `offerman.Product.is_active`, entregue e colocada na fila no
+#1945. A decisão está em D-034, a ordem em `ORDERS/2026-10-19-arquivar.md` e a prova em
+`ROUNDS/ARQUIVAR-A-core-produto.md`. Não fica linha ativa no quadro porque a frente já saiu da
+execução para a fila.
+
 **Turno Arquivar (20/10, Frente D):** Compras passou a separar insumos e fornecedores
 arquivados das listas correntes, com o filtro explícito **Arquivados**, no PR #1946. A
 frente saiu do quadro ao entrar na fila; prova e limites estão em

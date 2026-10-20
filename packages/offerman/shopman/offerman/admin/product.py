@@ -6,6 +6,21 @@ from django.utils.safestring import mark_safe
 from shopman.offerman.models import Product, ProductComponent
 
 
+class ProductArchiveFilter(admin.SimpleListFilter):
+    title = "Arquivamento"
+    parameter_name = "arquivados"
+
+    def lookups(self, request, model_admin):
+        return (("sim", "Arquivados"), ("todos", "Todos"))
+
+    def queryset(self, request, queryset):
+        if self.value() == "sim":
+            return queryset.archived()
+        if self.value() == "todos":
+            return queryset
+        return queryset.active()
+
+
 class ProductComponentInline(admin.TabularInline):
     model = ProductComponent
     fk_name = "parent"
@@ -24,6 +39,7 @@ class ProductAdmin(admin.ModelAdmin):
         "is_bundle_display",
     ]
     list_filter = [
+        ProductArchiveFilter,
         "is_published",
         "is_sellable",
         "availability_policy",
@@ -79,6 +95,12 @@ class ProductAdmin(admin.ModelAdmin):
     def visibility_status(self, obj):
         """Display visibility status with colored badges."""
         badges = []
+
+        if not obj.is_active:
+            badges.append(
+                '<span style="background-color:#6c757d;color:#fff;'
+                'padding:2px 6px;border-radius:3px;font-size:11px;">Arquivado</span>'
+            )
 
         if not obj.is_published:
             badges.append(

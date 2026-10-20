@@ -13,6 +13,8 @@ concorda consigo mesma.
 
 from __future__ import annotations
 
+import importlib
+
 import pytest
 from django.core.management import call_command
 from shopman.craftsman.models import Recipe
@@ -20,15 +22,12 @@ from shopman.craftsman.models import Recipe
 pytestmark = pytest.mark.django_db
 
 #: Montagem (croques, sanduíches, pain perdu) e bebida: o que se faz quando o
-#: cliente pede. A seção 2b do seed.
-FEITAS_NA_HORA = {
-    "queijo-quente", "croque-monsieur", "croque-madame", "croque-complet",
-    "jambon-beurre", "pain-perdu",
-    "espresso", "espresso-macchiato", "cappuccino", "mochaccino", "mocha",
-    "caffe-latte", "chocolate-quente",
-    "cha-camille", "cha-rouge", "cha-sophie", "cha-bleu", "cha-hibisco",
-    "soft-chai-citrico", "vienna-gelado", "cha-tonica-frutas-vermelhas",
-}
+#: cliente pede. A seção 2b do seed. FONTE ÚNICA: a lista mora na migração que
+#: marca o banco já semeado (``shop.0102``); o seed que marcar outra coisa reprova
+#: aqui, e a migração nunca anda descolada do seed.
+FEITAS_NA_HORA = set(
+    importlib.import_module("shopman.shop.migrations.0102_fichas_feitas_na_hora").MADE_TO_ORDER_RECIPE_REFS
+)
 
 
 def test_so_as_fichas_de_montagem_e_bebida_baixam_na_venda(monkeypatch):
@@ -56,3 +55,13 @@ def test_so_as_fichas_de_montagem_e_bebida_baixam_na_venda(monkeypatch):
         por_produto.setdefault(recipe.output_sku, []).append(ref)
     duplicadas = {sku: refs for sku, refs in por_produto.items() if len(refs) > 1}
     assert not duplicadas, duplicadas
+
+    # O banco semeado ANTES do ADR-040 (o alpha) não tem a marca: a migração
+    # ``shop.0102`` a escreve nas mesmas 21 fichas, todas presentes e inativas.
+    from django.apps import apps
+
+    migration = importlib.import_module("shopman.shop.migrations.0102_fichas_feitas_na_hora")
+    for recipe in marcadas.values():
+        recipe.meta = {k: v for k, v in recipe.meta.items() if k != "made_to_order"}
+        recipe.save(update_fields=["meta"])
+    assert sorted(migration.mark(apps, None)) == sorted(FEITAS_NA_HORA)

@@ -9996,6 +9996,7 @@
             "_alert_shortfall",
             "_consumable_quants",
             "_fmt",
+            "_issue_sale",
             "_sale_moves",
             "_settlement_moves",
             "logger"

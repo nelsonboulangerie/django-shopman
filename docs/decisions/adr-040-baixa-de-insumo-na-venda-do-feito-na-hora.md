@@ -146,9 +146,12 @@ escreve os `MAKE` de uma vez.
    fica como está.
 8. **Pré-condição:** as fichas marcadas como feitas na hora conferidas pelo dono
    (WP-RECEITAS-DA-CASA F1). Baixa automática em ficha errada desconta o insumo errado
-   para sempre. A marca nasce no seed; num banco já semeado (o alpha), ela só chega com
-   reseed ou marcada à mão na ficha (Admin), e as duas coisas pedem a palavra do dono.
-   Sem a marca, nada baixa: o código entra no ar inerte.
+   para sempre. A marca nasce no seed; no banco já semeado (o alpha) ela chega pela
+   migração de dados `shop.0102_fichas_feitas_na_hora`, que marca as MESMAS 21 fichas
+   pelo `ref` (lista única, travada contra o seed em
+   `backstage/tests/test_ficha_feita_na_hora.py`), deixa de fora a ficha ausente ou
+   ativa, não toca em mais nada e, no reverse, desmarca só o que ela marcou
+   (`Recipe.meta.made_to_order_marked_by`). Sem reseed.
 
 ## Impacto no ledger
 
@@ -185,9 +188,21 @@ Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda 
   `Move.metadata` existia, mas o único jeito de o `issue` gravá-lo era nenhum, e sem ele
   o `MAKE` da venda e o da fornada são indistinguíveis no ledger (o `reason` é texto
   livre). O `receive` já aceitava `**metadata`.
-- Fora daqui, de propósito: o insumo dos **adicionais** escolhidos no produto
-  (`meta["options"]`, "+ Ovo frito") ainda não baixa; a devolução de mercadoria
-  (`on_returned`) não devolve insumo, porque o item devolvido já foi preparado.
+- **Adicionais escolhidos no produto** (`items[].meta.options`, "+ Ovo frito"; extensão
+  de 20/10/2026): a mesma directive baixa o insumo que o cadastro da opção declara
+  (`consumes`, congelado na linha no momento da venda por
+  `product_options.resolve_selection`): `qty do insumo × qty da opção × qty da linha`,
+  na unidade-base do insumo (conversão definicional `g` → `kg` quando a grafia difere).
+  Mesmo ledger (`MAKE`, `source=sale`, com `option_group`/`option_ref` no lugar de
+  `recipe_ref`), mesmo alerta de falta sem travar ("o adicional Ovo frito de CQMO
+  pede…"), mesma regra de cancelamento pelo preparo (o `sold_sku` é o item que levou o
+  adicional, e a proporção é a do item). A marca é o próprio `consumes`: ao contrário
+  da ficha, o adicional baixa mesmo quando o item não tem ficha `made_to_order` (o
+  Frappé, por exemplo), porque nenhuma fornada conhece a escolha do cliente e o
+  `consumes` só existe se alguém o cadastrou na aba Escolhas. Opção sem `ref` (iFood)
+  não é da casa e não baixa.
+- Fora daqui, de propósito: a devolução de mercadoria (`on_returned`) não devolve
+  insumo, porque o item devolvido já foi preparado.
 
 ## Consequências
 
@@ -196,5 +211,6 @@ Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda 
 - `StockMovements.issue` aceita `metadata` opcional.
 - O seed marca `made_to_order` nas 21 fichas de montagem e bebida; a irmã do
   `test_massa_de_cada_peca.py` é `backstage/tests/test_ficha_feita_na_hora.py`.
+  A migração `shop.0102` leva a mesma marca ao banco já semeado.
 - O guardrail `INVENTORY_BACKEND` e o alerta de reposição passam a ver consumo real de
   café, chá e recheio.
