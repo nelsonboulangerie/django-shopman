@@ -18,6 +18,8 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from shopman.buyman.models import Material
 from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
@@ -206,18 +208,40 @@ def test_list_carries_cards_kinds_and_access(client, viewer, entry):
     assert card["version_count"] == 1
     assert card["draft_count"] == 1
     assert card["hydration_display"] == ""
+    assert card["is_active"] is True
 
 
-def test_list_filters_by_text_kind_and_archived(client, viewer, entry):
+def test_list_filters_by_text_kind_and_archived(client, viewer, editor, entry):
     other = craftsman.create_entry(ref="creme-confeiteiro", name="Creme de Confeiteiro", kind="cream")
     archived = craftsman.create_entry(ref="ideia-velha", name="Ideia velha", kind="bread")
-    archived.is_archived = True
+    archived.is_active = False
     archived.save()
     client.force_login(viewer)
 
     assert [c["ref"] for c in client.get(LIST_URL, {"q": "confeit"}).json()["book"]["entries"]] == [other.ref]
     assert [c["ref"] for c in client.get(LIST_URL, {"kind": "bread"}).json()["book"]["entries"]] == [entry.ref]
-    assert [c["ref"] for c in client.get(LIST_URL, {"archived": "1"}).json()["book"]["entries"]] == [archived.ref]
+    archived_cards = client.get(LIST_URL, {"archived": "1"}).json()["book"]["entries"]
+    assert [c["ref"] for c in archived_cards] == [archived.ref]
+    assert archived_cards[0]["is_active"] is False
+
+    client.force_login(editor)
+    assert _patch(client, f"{LIST_URL}{archived.ref}/", {"is_active": True}).status_code == 200
+    client.force_login(viewer)
+    assert archived.ref in [c["ref"] for c in client.get(LIST_URL).json()["book"]["entries"]]
+    assert archived.ref not in [c["ref"] for c in client.get(LIST_URL, {"archived": "1"}).json()["book"]["entries"]]
+
+
+def test_list_query_count_stays_bounded(client, viewer, entry):
+    craftsman.create_entry(ref="creme-confeiteiro", name="Creme de Confeiteiro", kind="cream")
+    client.force_login(viewer)
+
+    with CaptureQueriesContext(connection) as queries:
+        response = client.get(LIST_URL)
+
+    assert response.status_code == 200
+    assert "projection;dur=" in response.headers["Server-Timing"]
+    assert "db;dur=" in response.headers["Server-Timing"]
+    assert len(queries) <= 10, [query["sql"] for query in queries]
 
 
 def test_list_pages_sorts_and_filters_in_the_database(client, viewer, entry):
@@ -439,18 +463,18 @@ def test_detail_404_for_a_missing_entry(client, viewer):
 def test_patch_entry(client, editor, entry):
     client.force_login(editor)
     response = _patch(client, f"{LIST_URL}{entry.ref}/", {
-        "name": "Massa Tradição 2027", "kind": "viennoiserie", "output_sku": "MASSA-NOVA", "notes": "x", "is_archived": True,
+        "name": "Massa Tradição 2027", "kind": "viennoiserie", "output_sku": "MASSA-NOVA", "notes": "x", "is_active": False,
     })
     assert response.status_code == 200
     body = response.json()["entry"]
     assert body["name"] == "Massa Tradição 2027"
     assert body["kind"] == "viennoiserie"
     assert body["output_sku"] == "MASSA-NOVA"
-    assert body["is_archived"] is True
+    assert body["is_active"] is False
     assert "access" not in response.json()
 
     assert _patch(client, f"{LIST_URL}{entry.ref}/", {"kind": "pizza"}).json()["field"] == "kind"
-    assert _patch(client, f"{LIST_URL}{entry.ref}/", {"is_archived": "sim"}).json()["field"] == "is_archived"
+    assert _patch(client, f"{LIST_URL}{entry.ref}/", {"is_active": "sim"}).json()["field"] == "is_active"
     assert _patch(client, f"{LIST_URL}nao-existe/", {"notes": "x"}).status_code == 404
 
 

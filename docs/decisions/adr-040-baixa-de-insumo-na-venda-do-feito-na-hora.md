@@ -1,8 +1,8 @@
 # ADR-040 — Baixa de insumo na venda do item feito na hora
 
-**Data:** 2026-10-19
+**Data:** 2026-10-19 (proposta) · 2026-10-20 (aceita pelo dono)
 
-**Status:** Proposto
+**Status:** Aceito
 **Escopo:** Orquestrador (`shopman/shop`), Stockman (ledger), Craftsman (ficha)
 **Plano:** [WP-BAIXA-DE-INSUMO-NA-VENDA](../plans/WP-BAIXA-DE-INSUMO-NA-VENDA.md) (fatia F1)
 
@@ -95,9 +95,9 @@ escreve os `MAKE` de uma vez.
   existe para matar. Venda fora do dia (encomenda, ajuste depois do fechamento) precisa
   de regra própria.
 
-## Recomendação
+## Decisão
 
-**Opção B**, com estas regras:
+**Opção B**, decidida pelo dono em 20/10/2026, com estas regras:
 
 1. **Gatilho:** o mesmo ponto em que o pedido baixa o próprio estoque
    (`services/stock.fulfill`, ou seja, `on_paid`/`on_accepted` conforme o canal). Pedido
@@ -120,14 +120,38 @@ escreve os `MAKE` de uma vez.
    estoque de espresso.
 5. **Falta de insumo não trava a venda**, mas fica registrada: baixa o que existe, e o
    que faltou vira `OperatorAlert` (mesmo desenho do `production_stock_shortfall`).
-6. **Cancelamento depois da baixa** devolve o insumo (`RETURN`, mesma posição de onde
-   saiu), espelhando o `revert_fulfilled` do produto. Item já preparado e jogado fora é
-   perda (`WASTE`) e decisão do operador, não da directive.
+6. **Cancelamento: o que decide é o preparo, não o pagamento** (dono, 20/10/2026, palavra
+   por palavra: *"cafés preparados, croques preparados, não voltam pro estoque, é perda
+   mesmo. Não é antes ou depois de pago que define, é antes ou depois de preparado. Se
+   pagou e cancelou antes de fazer/preparar, aí sim volta para o estoque."*).
+   - **Antes de preparado:** o insumo volta (`RETURN`, no mesmo saldo de onde saiu).
+   - **Depois de preparado:** perda. O par `RETURN` + `WASTE` no mesmo saldo: o número
+     fica onde a venda o deixou e a saída deixa de ser consumo de venda para ser perda
+     (`WASTE` é o movimento de perda que o Stockman já usa, o mesmo do fechamento).
+   - **"Preparado" é o ticket do KDS**, o único fato que o sistema registra sobre o
+     preparo do item: o item está num ticket que a estação **iniciou** (`started_at`) ou
+     **concluiu** (`completed_at`/`status="done"`). Iniciado já conta, porque começar a
+     fazer já gasta o insumo (o café moído não volta para o pacote). O cancelamento
+     fecha o ticket aberto, mas guarda o `started_at`, então a leitura vale depois dele.
+   - **Item sem ticket** (balcão que tira o café sem KDS, item que nenhuma estação
+     recebe): não há fato que diga "não foi feito", e a regra é a conservadora para o
+     estoque: conta como preparado, vira perda. Devolver sem prova inflaria o saldo, que
+     é o defeito que este ADR existe para matar.
+   - Cancelamento parcial (2 cafés, 1 feito): proporção por item; a parte devolvida
+     arredonda para baixo (na dúvida de um grama, é perda).
+   - Por directive (`stock.settle_made_to_order_cancellation`), agendada no
+     `on_cancelled` só quando a venda agendou baixa. Se o cancelamento chega antes de o
+     worker baixar, a própria baixa vê o pedido cancelado e acerta na mesma passada.
 7. **Nada retroage.** O saldo de hoje foi contado à mão; o histórico do Yooga e do alpha
    fica como está.
 8. **Pré-condição:** as fichas marcadas como feitas na hora conferidas pelo dono
    (WP-RECEITAS-DA-CASA F1). Baixa automática em ficha errada desconta o insumo errado
-   para sempre.
+   para sempre. A marca nasce no seed; no banco já semeado (o alpha) ela chega pela
+   migração de dados `shop.0102_fichas_feitas_na_hora`, que marca as MESMAS 21 fichas
+   pelo `ref` (lista única, travada contra o seed em
+   `backstage/tests/test_ficha_feita_na_hora.py`), deixa de fora a ficha ausente ou
+   ativa, não toca em mais nada e, no reverse, desmarca só o que ela marcou
+   (`Recipe.meta.made_to_order_marked_by`). Sem reseed.
 
 ## Impacto no ledger
 
@@ -142,18 +166,39 @@ escreve os `MAKE` de uma vez.
 Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda =
 `metadata.source == "sale"`. O Compras (F3) e a margem do B.I. (F4) leem daí.
 
-## Perguntas ao dono
+## Decisões do dono (20/10/2026)
 
-1. O gatilho é a **venda** (B, recomendado) ou o **fechamento do dia** (C)?
-2. Cancelamento depois do pagamento devolve o insumo ao estoque (recomendado), ou conta
-   como perda?
+1. **Gatilho: a venda** (opção B), pela directive idempotente por pedido no ponto do
+   `stock.fulfill`, com a marca explícita `Recipe.meta.made_to_order` e um nível de ficha.
+   Falta de insumo não trava a venda: vira alerta. Nada retroage.
+2. **Cancelamento: antes de preparado devolve, depois de preparado é perda** (regra 6).
+
+## Implementação
+
+- `shop/services/made_to_order.py`: `schedule_consumption` (chamada por
+  `stock.fulfill`), `consume`, `schedule_cancellation_settlement` (chamada pelo
+  `on_cancelled`), `settle_cancellation`. Handlers em `shop/handlers/made_to_order.py`.
+- Idempotência em três camadas: recibo permanente das directives
+  (`create_persistently_deduped`, uma vez na vida do pedido), efeito numa transação só
+  e, como guarda final, o próprio ledger (`Move.metadata.source` = `sale`/`sale_cancel`
+  com o `order_ref`). O `Order.data["made_to_order_consumption"]` é rastro, não guarda.
+- Alertas: `stock_sale_ingredient_short` (um ativo por insumo, não por pedido) e
+  `stock_sale_recipe_ambiguous`.
+- Mudança de Core: só o argumento opcional `metadata` em `StockMovements.issue`. Medida:
+  `Move.metadata` existia, mas o único jeito de o `issue` gravá-lo era nenhum, e sem ele
+  o `MAKE` da venda e o da fornada são indistinguíveis no ledger (o `reason` é texto
+  livre). O `receive` já aceitava `**metadata`.
+- Fora daqui, de propósito: o insumo dos **adicionais** escolhidos no produto
+  (`meta["options"]`, "+ Ovo frito") ainda não baixa; a devolução de mercadoria
+  (`on_returned`) não devolve insumo, porque o item devolvido já foi preparado.
 
 ## Consequências
 
 - Uma directive nova (`stock.consume_made_to_order` e a inversa) e um handler no
   orquestrador; nenhuma mudança de modelo.
 - `StockMovements.issue` aceita `metadata` opcional.
-- O seed marca `made_to_order` nas fichas de montagem e bebida; o guard
-  `test_massa_de_cada_peca.py` ganha a irmã para essa marca.
+- O seed marca `made_to_order` nas 21 fichas de montagem e bebida; a irmã do
+  `test_massa_de_cada_peca.py` é `backstage/tests/test_ficha_feita_na_hora.py`.
+  A migração `shop.0102` leva a mesma marca ao banco já semeado.
 - O guardrail `INVENTORY_BACKEND` e o alerta de reposição passam a ver consumo real de
   café, chá e recheio.

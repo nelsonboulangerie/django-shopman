@@ -106,8 +106,8 @@ def test_unknown_recipe_is_404_in_the_canonical_dialect(client, viewer, entries)
 
 def test_archived_recipe_keeps_accepting_the_star(client, viewer, entries):
     craftsman_entry = entries[0]
-    craftsman_entry.is_archived = True
-    craftsman_entry.save(update_fields=["is_archived"])
+    craftsman_entry.is_active = False
+    craftsman_entry.save(update_fields=["is_active"])
     client.force_login(viewer)
     assert client.post(_favorite_url("massa-tradicao")).json()["is_favorite"] is True
     archived = client.get(LIST_URL, {"archived": "1"}).json()["book"]["entries"]
