@@ -65,8 +65,10 @@ def test_absent_policy_blocks_direct_helpers(settings, cfg, item, no_network):
             operation()
 
 
+@pytest.mark.django_db
 def test_authorized_test_merchant_can_write_with_mock_transport(settings, cfg, item):
     settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {"environment": "test", "merchant_allowlist": [MERCHANT]}
+    Channel.objects.create(ref="ifood", name="Loja de exemplo")
 
     def response(_session, method, url, **_kwargs):
         assert url.startswith("https://merchant-api.ifood.com.br/")

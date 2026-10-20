@@ -19,9 +19,9 @@ Structure: **Merchant → Catálogos → Categorias → Itens**.
         }
 
   ``item.id``, ``item.productId`` and ``products[0].id`` **must be UUIDs**, and
-  ``item.productId`` must equal ``products[0].id``. We derive both UUIDs
-  deterministically from ``(merchant_id, sku)`` (uuid5), so re-syncing the same
-  SKU upserts the same item instead of duplicating it.
+  ``item.productId`` must equal ``products[0].id``. Um vínculo confirmado fornece
+  os IDs remotos; sem vínculo, ambos são derivados deterministicamente de
+  ``(merchant_id, sku)`` (uuid5), preservando a idempotência do upsert.
 
 - **Toggle availability / retract** — ``PATCH /catalog/v2.0/merchants/{mid}/items/status``
   → ``200``. Body is a single object ``{"itemId": <item uuid>, "status":
@@ -61,8 +61,6 @@ from shopman.shop.services import ifood_auth
 
 logger = logging.getLogger(__name__)
 
-# Fixed namespace so item/product UUIDs are stable across processes and syncs.
-_UUID_NS = uuid.UUID("f0f4d7e2-0e2a-5c7a-9d1b-6b1e2a3c4d5e")
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024
 _IMAGE_PATHS: dict[tuple[str, str], str] = {}
 
@@ -142,15 +140,7 @@ def _base_url(cfg: dict) -> str:
     return str(cfg.get("api_base") or "https://merchant-api.ifood.com.br").rstrip("/")
 
 
-def _product_uuid(merchant_id: str, sku: str) -> str:
-    return str(uuid.uuid5(_UUID_NS, f"{merchant_id}:product:{sku}"))
-
-
-def _item_uuid(merchant_id: str, sku: str) -> str:
-    return str(uuid.uuid5(_UUID_NS, f"{merchant_id}:item:{sku}"))
-
-
-def _resolve_category_id(item: ProjectedItem, cfg: dict) -> str:
+def _resolve_category_id(item: ProjectedItem, cfg: dict, *, binding_category: str = "") -> str:
     """Map the item's internal collection to an iFood category UUID.
 
     Raises :class:`IFoodCategoryError` when neither a mapped collection nor a
@@ -160,6 +150,8 @@ def _resolve_category_id(item: ProjectedItem, cfg: dict) -> str:
     category_map = cfg.get("catalog_category_map") or {}
     if item.category and item.category in category_map:
         return str(category_map[item.category])
+    if binding_category:
+        return binding_category
     default = cfg.get("catalog_default_category")
     if default:
         return str(default)
@@ -176,6 +168,9 @@ def _item_payload(
     category_id: str,
     in_stock: bool = True,
     image_path: str = "",
+    channel: str = "",
+    config: dict | None = None,
+    identity=None,
 ) -> dict:
     """Build the FullItemDto body for ``PUT /items`` from a ProjectedItem.
 
@@ -183,11 +178,17 @@ def _item_payload(
     vendável zerado sai ``UNAVAILABLE``, e a pausa (``is_sellable``) continua vencendo.
     """
     price = round(item.price_q / 100, 2)
-    product_id = _product_uuid(merchant_id, item.sku)
-    item_id = _item_uuid(merchant_id, item.sku)
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
+
+    if identity is None:
+        identity = resolve_catalog_identity(
+            item.sku,
+            channel,
+            config=config or {"merchant_id": merchant_id},
+        )
     available = item.is_published and item.is_sellable and in_stock
     product = {
-        "id": product_id,
+        "id": identity.product_id,
         "name": item.name,
         "description": item.description,
         "externalCode": item.sku,
@@ -196,8 +197,8 @@ def _item_payload(
         product["imagePath"] = image_path
     return {
         "item": {
-            "id": item_id,
-            "productId": product_id,
+            "id": identity.item_id,
+            "productId": identity.product_id,
             "status": "AVAILABLE" if available else "UNAVAILABLE",
             "price": {"value": price, "originalValue": price},
             "categoryId": category_id,
@@ -365,10 +366,14 @@ def _upsert_item(
     *,
     in_stock: bool = True,
     image_path: str = "",
+    channel: str = "",
 ) -> None:
     ensure_catalog_write_allowed(cfg)
     merchant_id = cfg["merchant_id"]
-    category_id = _resolve_category_id(item, cfg)
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
+
+    identity = resolve_catalog_identity(item.sku, channel, config=cfg)
+    category_id = _resolve_category_id(item, cfg, binding_category=identity.category_ref)
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items"
     resp = requests.put(
         url,
@@ -378,6 +383,9 @@ def _upsert_item(
             category_id=category_id,
             in_stock=in_stock,
             image_path=image_path,
+            channel=channel,
+            config=cfg,
+            identity=identity,
         ),
         headers=headers,
         timeout=int(cfg.get("timeout") or 30),
@@ -386,10 +394,19 @@ def _upsert_item(
     resp.raise_for_status()
 
 
-def _patch_item_price(sku: str, price_q: int, cfg: dict, headers: dict) -> tuple[str, float]:
+def _patch_item_price(
+    sku: str,
+    price_q: int,
+    cfg: dict,
+    headers: dict,
+    *,
+    channel: str = "",
+) -> tuple[str, float]:
     ensure_catalog_write_allowed(cfg)
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
+
     merchant_id = cfg["merchant_id"]
-    item_id = _item_uuid(merchant_id, sku)
+    item_id = resolve_catalog_identity(sku, channel, config=cfg).item_id
     value = round(price_q / 100, 2)
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/price"
     resp = requests.patch(
@@ -403,19 +420,29 @@ def _patch_item_price(sku: str, price_q: int, cfg: dict, headers: dict) -> tuple
     return item_id, value
 
 
-def _set_item_status(sku: str, status: str, cfg: dict, headers: dict) -> str:
+def _set_item_status(
+    sku: str,
+    status: str,
+    cfg: dict,
+    headers: dict,
+    *,
+    channel: str = "",
+) -> str:
     ensure_catalog_write_allowed(cfg)
+    from shopman.shop.policies.catalog_identity import resolve_catalog_identity
+
     merchant_id = cfg["merchant_id"]
+    item_id = resolve_catalog_identity(sku, channel, config=cfg).item_id
     url = f"{_base_url(cfg)}/catalog/v2.0/merchants/{merchant_id}/items/status"
     resp = requests.patch(
         url,
-        json={"itemId": _item_uuid(merchant_id, sku), "status": status},
+        json={"itemId": item_id, "status": status},
         headers=headers,
         timeout=int(cfg.get("timeout") or 30),
     )
     _check_rate_limit(resp)
     resp.raise_for_status()
-    return _item_uuid(merchant_id, sku)
+    return item_id
 
 
 def _read_item(item_id: str, cfg: dict, headers: dict) -> dict:
@@ -506,7 +533,14 @@ class IFoodCatalogProjection:
                             exc_info=True,
                         )
                         errors.append(f"{item.sku}: foto pendente: {exc}")
-                _upsert_item(item, cfg, headers, in_stock=in_stock, image_path=image_path)
+                _upsert_item(
+                    item,
+                    cfg,
+                    headers,
+                    in_stock=in_stock,
+                    image_path=image_path,
+                    channel=channel,
+                )
                 projected += 1
             except IFoodRateLimitError:
                 raise
@@ -534,7 +568,13 @@ class IFoodCatalogProjection:
                 success=False, errors=[ifood_auth.failure_message(reason)], channel=channel,
             )
         try:
-            item_id, value = _patch_item_price(item.sku, item.price_q, cfg, headers)
+            item_id, value = _patch_item_price(
+                item.sku,
+                item.price_q,
+                cfg,
+                headers,
+                channel=channel,
+            )
             _confirm_item_price(item_id, value, cfg, headers)
         except IFoodRateLimitError:
             raise
@@ -568,7 +608,7 @@ class IFoodCatalogProjection:
             else "UNAVAILABLE"
         )
         try:
-            item_id = _set_item_status(item.sku, status, cfg, headers)
+            item_id = _set_item_status(item.sku, status, cfg, headers, channel=channel)
             _confirm_item_status(item_id, status, cfg, headers)
         except IFoodRateLimitError:
             raise
@@ -595,7 +635,13 @@ class IFoodCatalogProjection:
         retracted = 0
         for sku in skus:
             try:
-                item_id = _set_item_status(sku, "UNAVAILABLE", cfg, headers)
+                item_id = _set_item_status(
+                    sku,
+                    "UNAVAILABLE",
+                    cfg,
+                    headers,
+                    channel=channel,
+                )
                 _confirm_item_status(item_id, "UNAVAILABLE", cfg, headers)
                 retracted += 1
             except IFoodRateLimitError:

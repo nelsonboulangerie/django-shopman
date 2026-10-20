@@ -1,35 +1,63 @@
-# IFOOD-B - vínculo como resolvedor de identidade
+# IFOOD-B — vínculo dirige a identidade enviada ao iFood
 
 - **id:** IFOOD-B
-- **sessão:** frente 6, turno 2 de 19/10/2026 (Codex)
-- **branch / PR:** não abertos, por dependência explícita
-- **estado:** adiado pela #1905 aberta e vermelha
-- **data:** 2026-10-19
+- **sessão:** consertos ordenados, turno de 20/10/2026 (Codex)
+- **branch:** `codex/ifood-vinculo-resolvedor`
+- **PR:** #1951
+- **estado final:** na fila #1951
+- **início / fim:** 2026-10-20
 
 ## Objetivo
 
-Fazer o vínculo vigente decidir `item_id`, `product_id` e `category_ref` no envio ao iFood, com
-fallback derivado apenas quando não houver vínculo no mesmo escopo.
+Usar a identidade remota confirmada no vínculo ao publicar, mudar preço ou pausar um item do
+iFood, sem criar um anúncio paralelo com UUID derivado.
 
-## Bloqueio confirmado
+## O que mudou
 
-A ordem exige a #1905 mergeada antes desta frente porque ambas alteram
-`shopman/shop/adapters/catalog_projection_ifood.py`. Em 20/10, a #1905 continuava aberta,
-conflitante e vermelha em quatro checks. A própria ordem também diz para não tocar nesse PR.
+- `catalog_identity.resolve_catalog_identity` é o único resolvedor de `item_id`, `product_id` e
+  categoria remota. Ele devolve também a origem `binding` ou `derived`.
+- Vínculo do mesmo canal, provider, merchant, catálogo e contexto vence. `IFOOD_CATALOG_ID` e
+  `IFOOD_CATALOG_CONTEXT` tornam catálogo e contexto explícitos; sem catálogo configurado, só um
+  vínculo não ambíguo da conta pode vencer.
+- Sem vínculo compatível, os UUIDs continuam sendo derivados por `uuid5(merchant, sku)`, sem mudar
+  a identidade dos anúncios ainda não reconciliados.
+- PUT completo, PATCH de preço e PATCH de disponibilidade usam o mesmo resolvedor. O caminho de
+  imagem do #1905 foi preservado.
+- A categoria escolhida localmente continua sendo exceção prioritária. Sem exceção local, a
+  categoria do vínculo vem antes do fallback configurado.
+- Vínculo de outra conta é ignorado com aviso. Mais de um vínculo aplicável ou o mesmo item remoto
+  associado a dois SKUs produz erro explícito.
+- O resolvedor é somente leitura: não cria, altera, apaga nem enfileira vínculo.
 
-Abrir a frente agora criaria exatamente a colisão que a dependência evita e não permitiria cumprir
-a instrução de partir do `main` com `imagePath` já integrado. Por isso não houve branch, código ou
-PR dormente.
+## Impacto nos anúncios existentes
 
-## Próximo passo objetivo
+Anúncios já vinculados passam a receber PUT, preço e disponibilidade no próprio item remoto. Sem
+vínculo, o comportamento anterior permanece.
 
-Quando a #1905 mergear:
+## Prova
 
-1. atualizar `origin/main`;
-2. criar `codex/ifood-vinculo-resolvedor` em worktree próprio;
-3. preservar `imagePath` e adicionar o resolvedor único de identidade;
-4. executar as quatro provas da ordem e colocar o PR verde na fila.
+- 65 testes da projeção iFood e dos vínculos do catálogo aprovados, com 2 casos PostgreSQL
+  ignorados no SQLite local.
+- 20 testes da guarda de escrita aprovados depois de integrar o resolvedor ao caminho autorizado.
+- Transporte integralmente simulado: nenhum teste chamou a API real do iFood.
+- Casos cobertos: vínculo dirigindo payload e PATCH, fallback determinístico, conta divergente com
+  aviso e colisão entre dois SKUs com erro explícito.
+- Ruff e `git diff --check` aprovados.
+- Desempenho medido: o fallback faz 2 consultas constantes (busca do vínculo e detecção de vínculo
+  em outra conta); um vínculo confirmado também faz 2 (identidade e guarda de colisão). Não há
+  consulta adicional entre a montagem da categoria e do payload, nem crescimento pelo número de
+  vínculos retornados. Esta fatia não altera endpoint de superfície, portanto Server-Timing e
+  capturas claro/escuro não se aplicam.
+
+## D1 a D12
+
+- Não se aplicam: nenhuma superfície visual foi alterada.
+
+## O que ficou de fora
+
+- Ensaio ao vivo, credencial e qualquer alteração na loja real do iFood.
+- Criação, alteração ou remoção de vínculos.
 
 ## Perguntas ao dono
 
-nada; o bloqueio é a dependência técnica já determinada na ordem
+nada

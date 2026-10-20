@@ -3,7 +3,7 @@
 - **id:** §6-foto
 - **branch:** `codex/ifood-foto`
 - **PR:** #1905
-- **estado:** na fila #1905
+- **estado:** mergeado #1905 em 20/10/2026
 - **início:** 2026-10-19
 
 ## O que entrou
@@ -27,7 +27,8 @@
 - O transporte dos testes é integralmente simulado: download, upload e upsert não chamam rede real, inclusive na projeção de disponibilidade externa.
 - Casos cobertos: storage local, HTTP com timeout, JPEG/PNG, WebP recusado, mais de 5 MB recusado durante streaming, mesmo conteúdo em URLs diferentes, cache após limpar memória, foto trocada e upload 503 com item enviado sem `imagePath`.
 - A guarda de escrita continua bloqueando antes de OAuth/HTTP quando a política explícita de teste não existe.
-- A migração da foto é `0102_catalogimageupload`, dependente de `0101_confirmado_diz_a_data_da_encomenda`; não existe outra `0101` nova nesta frente.
+- Depois da integração com a #1949, a migração da foto é `0103_catalogimageupload`, dependente de
+  `0102_fichas_feitas_na_hora`; o gate canônico confirmou uma única folha no app `shop`.
 - O comando bruto de prefixos ainda lista `0023` a `0039`, colisões históricas que já existem em `origin/main` e são declaradas em `LEGACY_PREFIX_COLLISIONS`. Renomeá-las é proibido porque já foram aplicadas; o gate canônico confirma zero colisão nova e zero folha ambígua.
 
 ## D1 a D12

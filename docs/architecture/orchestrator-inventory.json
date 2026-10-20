@@ -308,7 +308,6 @@
             "IFoodRateLimitError",
             "_IMAGE_PATHS",
             "_MAX_IMAGE_BYTES",
-            "_UUID_NS",
             "_base_url",
             "_check_rate_limit",
             "_confirm_item_price",
@@ -318,9 +317,7 @@
             "_headers",
             "_image_path",
             "_item_payload",
-            "_item_uuid",
             "_patch_item_price",
-            "_product_uuid",
             "_read_item",
             "_resolve_category_id",
             "_set_item_status",
@@ -8239,6 +8236,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/policies/catalog_identity.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "catalog.remote-item-identity"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
     },
     {
       "path": "shopman/shop/services/catalog_sync.py",
