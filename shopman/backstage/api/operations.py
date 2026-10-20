@@ -622,9 +622,10 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,
-        # Venda sem comanda: o que cada linha cobra e o desconto automático que a
-        # venceu ("Aliança Francesa −10%"), no formato do eco do salvar da comanda.
-        # Com comanda vem vazio: quem diz é o salvar.
+        # O que cada linha cobra e o desconto que a venceu ("Aliança Francesa
+        # −10%"), no formato do eco do salvar da comanda, com o aviso de desconto
+        # manual descartado. Sem comanda vêm todas as linhas; com comanda, as que
+        # o motor reviu com desconto manual (o resto, quem diz é o salvar).
         "line_prices": review_line_prices(getattr(review, "priced_lines", ())),
     }
 

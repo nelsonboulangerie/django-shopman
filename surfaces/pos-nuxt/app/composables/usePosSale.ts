@@ -70,11 +70,8 @@ import { composedAddressLine, emptyAddressDraft } from "~/presentation/address";
 import { cartNetTotalQ, cashLandedInDrawer, receiptFiscalHandoffLine, type PosReceiptSnapshot } from "~/presentation/receipt";
 import {
   applyLinePrices,
-  lineListUnitQ,
   linesWithoutServerPrices,
-  manualDiscountChargedQ,
-  manualDiscountWasOverridden,
-  winningDiscountLabel,
+  type DiscountPreview,
   type POSLinePrice,
 } from "~/presentation/lineDiscounts";
 import { resolveFiscalState, type PosSaleResultSnapshot } from "~/presentation/saleResult";
@@ -1641,30 +1638,114 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.items.push({ ...item });
   }
 
+  // ── Desconto de linha: o MOTOR decide, a tela não faz a conta ────────────
+  // (laudo de soberania, 18/10/2026). A tela calculava o preço da linha com a
+  // régua dela e adivinhava se o desconto do operador tinha perdido para o
+  // automático; quando as duas réguas divergiam, a venda pagava. Agora o preço
+  // e o descarte vêm do servidor: da prévia do editor (antes do Aplicar), da
+  // revisão e do eco do salvar. Entre o toque e a resposta, a linha diz
+  // "calculando" (`price_pending`) em vez de um número que ainda pode mudar.
+
+  /** As linhas em que o operador ACABOU de pedir desconto: o eco que disser que
+   *  o motor descartou o pedido vira o aviso, uma vez, no momento do pedido. */
+  const discardNoticeLines = new Set<string>();
+
+  /** Aplica o preço que o servidor deu a cada linha e diz o descarte pedido. */
+  function acceptLinePrices(linePrices: Record<string, POSLinePrice> | undefined | null) {
+    if (!linePrices) return;
+    const discarded = new Set(applyLinePrices(cart.items, linePrices));
+    for (const lineId of Object.keys(linePrices)) {
+      if (!discardNoticeLines.delete(lineId) || !discarded.has(lineId)) continue;
+      const item = cart.items.find((entry) => entry.line_id === lineId);
+      if (!item) continue;
+      // "Maior desconto ganha, um por item": a linha mostra só o vencedor; o
+      // descarte se diz aqui, no momento do pedido.
+      const winner = item.pricing_discount?.label;
+      toast.info(
+        winner
+          ? `Desconto não aplicado em ${item.name}: "${winner}" é maior, e só um desconto vale por item.`
+          : `Desconto não aplicado em ${item.name}: a linha já tem um desconto maior, e só um vale por item.`,
+      );
+    }
+  }
+
+  /** Sem resposta do servidor para dar, a linha sai do "calculando" e fica com o
+   *  último preço que ele disse; o total da venda diz que não foi calculado. */
+  function releasePendingPrices() {
+    for (const item of cart.items) if (item.price_pending) item.price_pending = false;
+    discardNoticeLines.clear();
+  }
+
+  // A PRÉVIA do editor: o operador digita "10" e, antes do Aplicar, a tela mostra
+  // o que a revisão do servidor diz desse desconto nesta linha ("10% · R$ 2,40 na
+  // linha", ou que ele não vale). Debounce curto; resposta velha é descartada.
+  const discountPreview = ref<DiscountPreview | null>(null);
+  let discountPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+  let discountPreviewSeq = 0;
+  /** Quanto a última prévia levou, ida e volta (ms), para quem mede. */
+  const discountPreviewMs = ref(0);
+  function sameDraft(preview: DiscountPreview | null, lineId: string, kind: string, value: number): boolean {
+    return Boolean(preview && preview.lineId === lineId && preview.kind === kind && preview.value === value);
+  }
+  function previewLineDiscount(lineId: string, kind: "percent" | "fixed", value: number) {
+    if (sameDraft(discountPreview.value, lineId, kind, value) && discountPreview.value?.status !== "failed") return;
+    discountPreviewSeq += 1;
+    if (discountPreviewTimer) clearTimeout(discountPreviewTimer);
+    discountPreviewTimer = null;
+    const item = cart.items.find((entry) => entry.line_id === lineId);
+    if (!item || !(value > 0) || offlineNow()) {
+      discountPreview.value = null;
+      return;
+    }
+    discountPreview.value = { lineId, kind, value, status: "pending" };
+    const seq = discountPreviewSeq;
+    discountPreviewTimer = setTimeout(() => {
+      discountPreviewTimer = null;
+      void runDiscountPreview(seq, lineId, kind, value);
+    }, 250);
+  }
+  async function runDiscountPreview(seq: number, lineId: string, kind: "percent" | "fixed", value: number) {
+    const state = currentIntentState();
+    const items = state.items.map((entry) => (entry.line_id === lineId
+      ? { ...entry, discount: { value, reason: entry.discount?.reason || "cortesia", type: kind } }
+      : entry));
+    const started = performance.now();
+    try {
+      const response = await action.call<POSSaleReviewResponse>(
+        actionHref(actions.value, "review_sale", "/api/v1/backstage/pos/sale/review/"),
+        { body: buildPosSaleIntent({ ...state, items }, checkoutContract.value?.intent_version) },
+      );
+      if (seq !== discountPreviewSeq) return;
+      discountPreviewMs.value = Math.round(performance.now() - started);
+      const price = response.review.line_prices?.[lineId];
+      discountPreview.value = { lineId, kind, value, status: price ? "ready" : "failed", price };
+    } catch {
+      if (seq !== discountPreviewSeq) return;
+      discountPreview.value = { lineId, kind, value, status: "failed" };
+    }
+  }
+
   function setLineDiscount(lineId: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
     const item = cart.items.find((entry) => entry.line_id === lineId);
     if (!item) return;
     invalidateReview();
     if (value > 0) {
       item.discount = { value, reason, type };
-      // "Maior desconto ganha, um por item": o servidor DESCARTA um manual menor
-      // que o automático que já venceu a linha. Sem aviso, o operador digitava a
-      // cortesia, o preço não mudava e ele não tinha como saber por quê. A linha
-      // mostra só o vencedor; o descarte se diz aqui, no momento do pedido.
-      if (manualDiscountWasOverridden(item)) {
-        toast.info(
-          `Desconto não aplicado em ${item.name}: "${winningDiscountLabel(item)}" é maior, e só um desconto vale por item.`,
-        );
-      }
+      discardNoticeLines.add(lineId);
     } else {
       delete item.discount;
+      discardNoticeLines.delete(lineId);
     }
-    // O total da linha, o da comanda e o do Pagamento mudam no mesmo toque: o
-    // preço cobrado sai da régua do kernel aqui, e o eco da gravação confirma.
-    // A etiqueta fica fixada antes, porque sem ela a régua leria o preço já
-    // descontado como etiqueta no próximo desconto.
-    item.list_price_q = lineListUnitQ(item);
-    item.charged_price_q = manualDiscountChargedQ(item);
+    // O preço da linha é o que o motor disser. A prévia do editor já perguntou
+    // por ESTE desconto nesta linha: a resposta dela vale agora, e o eco da
+    // gravação confirma. Sem ela, a linha diz "calculando" até o eco.
+    const preview = discountPreview.value;
+    if (value > 0 && preview?.status === "ready" && preview.price && sameDraft(preview, lineId, type, value)) {
+      acceptLinePrices({ [lineId]: preview.price });
+    } else {
+      item.price_pending = true;
+    }
+    discountPreview.value = null;
   }
 
   function resetCart() {
@@ -2892,7 +2973,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // E o preço que cada linha cobra, decidido pelo servidor (desconto manual
       // contra o automático). Só quando a tela ainda é a que foi gravada: um toque
       // feito durante a ida já tem o próprio preço, e o próximo salvar o confirma.
-      if (!unsaved.value) applyLinePrices(cart.items, saved?.line_prices);
+      if (!unsaved.value) acceptLinePrices(saved?.line_prices);
       if (!quiet) await refresh();
       return saved;
     };
@@ -3035,7 +3116,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // Resposta de um carrinho que já mudou: descartada (ver `invalidateReview`).
       if (generation !== reviewGeneration) return null;
       review.value = response.review;
-      if (!hasOpenTab.value) applyLinePrices(cart.items, response.review.line_prices);
+      acceptLinePrices(response.review.line_prices);
       reviewedGeneration = generation;
       return response.review;
     } catch (error) {
@@ -3982,13 +4063,17 @@ export function usePosSale(deps: PosSaleDeps) {
       // Resposta de um carrinho que já mudou: descartada.
       if (seq !== saleReviewSeq) return;
       saleReview.value = response.review;
-      // Sem comanda, a revisão é quem diz o que cada linha cobra (o desconto do
-      // grupo do cliente, a Xepa): o selo entra na linha junto com o total.
-      if (!hasOpenTab.value) applyLinePrices(cart.items, response.review.line_prices);
+      // A revisão diz o que cada linha cobra (o desconto do grupo do cliente, a
+      // Xepa, o desconto manual decidido pelo motor): o selo entra na linha
+      // junto com o total. Com comanda, ela responde pelas linhas com desconto
+      // manual; as outras, o eco do salvar.
+      acceptLinePrices(response.review.line_prices);
+      if (!hasOpenTab.value) releasePendingPrices();
     } catch {
       // Sem toast: quem diz o motivo é o Pagamento, que revisa de novo ao abrir
       // e oferece "Tentar de novo". Aqui a tela só não mostra número.
       if (seq !== saleReviewSeq) return;
+      if (!hasOpenTab.value) releasePendingPrices();
       if (offlineNow()) {
         saleReview.value = localReview();
         return;
@@ -4016,6 +4101,8 @@ export function usePosSale(deps: PosSaleDeps) {
     autoReviewTimer = null;
     if (saleReviewTimer) clearTimeout(saleReviewTimer);
     saleReviewTimer = null;
+    if (discountPreviewTimer) clearTimeout(discountPreviewTimer);
+    discountPreviewTimer = null;
   });
 
   return {
@@ -4157,6 +4244,9 @@ export function usePosSale(deps: PosSaleDeps) {
     restoreItem,
     setLineNotes,
     setLineDiscount,
+    discountPreview,
+    discountPreviewMs,
+    previewLineDiscount,
     sanitizeTabRef,
     requestTabAssociation,
     openTab,
