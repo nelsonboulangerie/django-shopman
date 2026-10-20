@@ -241,7 +241,7 @@ watch(
           <NuxtLink
             :to="`/recipes/${entry.ref}`"
             class="grid h-full min-w-0 grid-cols-1 gap-2 rounded-xl border border-border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
-            :class="entry.is_archived ? 'opacity-70' : ''"
+            :class="!entry.is_active ? 'opacity-70' : ''"
           >
             <div class="flex items-start justify-between gap-2 pr-10">
               <div class="min-w-0">
@@ -283,7 +283,7 @@ watch(
                 color="warning"
                 :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
               />
-              <NuxtBadge v-if="entry.is_archived" color="neutral" label="Arquivada" />
+              <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
               <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Sem ficha" />
               <NuxtBadge
                 v-if="needsReview(entry.review_status)"

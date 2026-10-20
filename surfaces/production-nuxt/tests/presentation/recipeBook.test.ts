@@ -89,7 +89,7 @@ function card(over: Partial<RecipeEntryCardProjection> = {}): RecipeEntryCardPro
     anchor_kind: "flour",
     hydration_display: "72%",
     updated_at_display: "hoje 08:10",
-    is_archived: false,
+    is_active: true,
     is_favorite: false,
     ...over,
   };
