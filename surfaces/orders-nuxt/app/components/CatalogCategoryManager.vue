@@ -103,7 +103,6 @@ async function saveMapping(collectionRef: string, current: string) {
           </div>
           <NuxtBadge
             color="neutral"
-            variant="subtle"
             :label="`${board.categories.length} categorias`"
           />
         </div>
@@ -152,7 +151,6 @@ async function saveMapping(collectionRef: string, current: string) {
                 </div>
                 <NuxtBadge
                   color="neutral"
-                  variant="subtle"
                   :label="
                     category.status === 'AVAILABLE'
                       ? 'Disponível'

@@ -30,7 +30,7 @@ remoto ou JSON aparece como ferramenta de operação.
 
 ## D1 a D12
 
-- **D1:** card superior outline; cards internos soft; selo de quantidade/status subtle.
+- **D1:** card superior outline; cards internos soft; selos sem variante explícita, com `soft` do tema.
 - **D2:** cards sem faixas próprias de cabeçalho ou rodapé.
 - **D3:** botões do conjunto canônico, sem esticar e agrupados pelo conteúdo.
 - **D4:** conteúdo usa toda a largura disponível em `md` e `xl`.
@@ -40,8 +40,8 @@ remoto ou JSON aparece como ferramenta de operação.
 - **D8:** indisponibilidade da leitura usa aviso acionável da página, na cor de warning.
 - **D9:** nome e posição são ajustes inline com Aplicar/Cancelar; mapeamento é escolha explícita.
 - **D10:** copy revista com o vocabulário da casa, sem jargão, IDs ou JSON.
-- **D11:** Nuxt UI canônico (`NuxtCard`, `NuxtBadge`, `NuxtAlert`, `NuxtFormField`, `NuxtInput`,
-  `NuxtSelect`, `NuxtButton`).
+- **D11:** Nuxt UI canônico (`NuxtCard`, `NuxtBadge` sem `variant`, `NuxtAlert`, `NuxtFormField`,
+  `NuxtInput`, `NuxtSelect`, `NuxtButton`).
 - **D12:** as oito capturas foram abertas e inspecionadas depois do teste em navegador real.
 
 ## Desempenho
@@ -63,6 +63,22 @@ remoto ou JSON aparece como ferramenta de operação.
 - Capturas depois: [md claro](img/ifood-d-after-md-light.png),
   [md escuro](img/ifood-d-after-md-dark.png), [xl claro](img/ifood-d-after-xl-light.png),
   [xl escuro](img/ifood-d-after-xl-dark.png).
+
+## Conserto do turno 4, 20/10/2026
+
+- Removida a variante explícita dos dois selos novos; o teto `badgeVariant=0` do Gestor voltou a
+  passar sem ampliar o conjunto mínimo.
+- A falha da leitura remota agora registra canal, catálogo e traceback antes de conservar a captura
+  conhecida e mostrar o aviso legível.
+- Prova focada: conjunto mínimo 10/10; componente e composable 10/10; catálogo e higiene 27
+  aprovados, 2 pulados; navegador de produção 4/4; ESLint e Ruff aprovados.
+- `test-backstage`: 9.758 aprovados, 62 pulados e uma falha de infraestrutura do `xdist/execnet`
+  ao serializar `datetime.date` de um `subTest` do PDV. O caso isolado, sem `xdist`, passou com 1
+  teste e 3 subtestes.
+- Capturas do conserto, abertas e inspecionadas: [md claro](img/ifood-d-fix-1931-after-md-light.png),
+  [md escuro](img/ifood-d-fix-1931-after-md-dark.png),
+  [xl claro](img/ifood-d-fix-1931-after-xl-light.png) e
+  [xl escuro](img/ifood-d-fix-1931-after-xl-dark.png).
 
 ## O que ficou de fora
 

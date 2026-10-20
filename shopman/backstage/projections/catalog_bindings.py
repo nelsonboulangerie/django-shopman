@@ -1,5 +1,6 @@
 """Revisão de evidências remotas e escolhas locais, sem aprovar publicação."""
 
+import logging
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
@@ -11,6 +12,8 @@ from shopman.backstage.services import catalog_bindings as service
 from shopman.shop.models import CatalogBinding, CatalogSnapshot
 from shopman.shop.projections.types import Action
 from shopman.shop.services import ifood_catalog_categories
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -215,6 +218,12 @@ def build_catalog_binding_review(*, channel_ref, snapshot_id=None, user=None, ca
             try:
                 category_rows = _category_rows(category_reader(channel_ref=channel.ref, catalog_ref=snapshot.catalog_ref))
             except Exception:
+                logger.warning(
+                    "catalog_bindings.category_reader_failed channel=%s catalog=%s",
+                    channel.ref,
+                    snapshot.catalog_ref,
+                    exc_info=True,
+                )
                 categories_error = "Não foi possível confirmar as categorias agora. Exibindo a última captura disponível."
     mapping, _default = ifood_catalog_categories.category_mapping(
         channel.ref, getattr(settings, "SHOPMAN_IFOOD", {}) or {}, channel=channel,

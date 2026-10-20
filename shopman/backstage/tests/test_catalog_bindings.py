@@ -138,6 +138,29 @@ def test_review_uses_one_projection_for_remote_categories_and_local_mapping(
     reader.assert_called_once_with(channel_ref=channel.ref, catalog_ref="catalog-A")
 
 
+def test_review_logs_remote_category_failure_before_using_saved_evidence(
+    channel, operator, products, snapshot, settings,
+):
+    settings.SHOPMAN_IFOOD = {"merchant_id": "merchant-A"}
+
+    with patch("shopman.backstage.projections.catalog_bindings.logger.warning") as warning:
+        projection = build_catalog_binding_review(
+            channel_ref=channel.ref,
+            snapshot_id=snapshot.pk,
+            user=operator,
+            category_reader=MagicMock(side_effect=RuntimeError("iFood indisponível")),
+        )
+
+    assert projection.categories_error.startswith("Não foi possível confirmar")
+    assert projection.categories[0].ref == "category-A"
+    warning.assert_called_once_with(
+        "catalog_bindings.category_reader_failed channel=%s catalog=%s",
+        "review-channel",
+        "catalog-A",
+        exc_info=True,
+    )
+
+
 def test_review_exposes_timing_and_keeps_query_count_bounded(
     client, channel, operator, products, snapshot, settings,
 ):
