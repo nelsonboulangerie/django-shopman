@@ -28,7 +28,7 @@ registros/1 MB por importação. Campos ausentes preservam os dados existentes.
 - `PurchaseCsvTools.test.ts`: **4 passed**. Prévia antes de aplicar, reenvio com a mesma intenção
   após resposta perdida, resultado em processamento sem aplicação anunciada,
   erro por registro e exportação pelo botão do kit.
-- Typecheck, ESLint e Ruff aprovados. Guard `minimalSet`: **10 passed**.
+- Typecheck, ESLint e Ruff aprovados. Guard `minimalSet`: **10 passed**. Suíte unitária completa do operator-kit: **108 arquivos, 1.319 testes aprovados**.
 - Navegador Chromium, build de produção, transporte hermético: **8 passed**
   (duas entidades × claro/escuro × 1280×720/390×844). Upload, prévia sem escrita,
   uma aplicação e download CSV real. Nenhum 4xx/5xx. A transação em banco é provada
