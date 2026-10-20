@@ -130,7 +130,7 @@ function materials() {
       name,
       unit,
       shelfLifeDays: category === "Frutas" ? 4 : category === "Laticínios" ? 20 : null,
-      isActive: true,
+      isActive: sku !== "AMENDOA-LAMINADA",
       category,
       stockOnHand: stock,
       dailyUse,

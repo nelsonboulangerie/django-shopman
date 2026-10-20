@@ -42,6 +42,11 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 
 **Turno de 15/10 (coordenação DSH):** mergeados #1810 (`GET /api/sessions` responde 200) e #1814 (card de desconto por tipo no B.I.). Higiene de disco: 185 worktrees removidas, 34 GB para ~140 GB livres. Reconciliação com o Codex: o núcleo das ondas 3, 4 e 5 do §7.2 já entrou por #1802 a #1806. Detalhe em `HANDOFF-DSH-2026-10-15.md`.
 
+**Turno Arquivar (20/10, Frente D):** Compras passou a separar insumos e fornecedores
+arquivados das listas correntes, com o filtro explícito **Arquivados**, no PR #1946. A
+frente saiu do quadro ao entrar na fila; prova e limites estão em
+`ROUNDS/D-arquivar-compras.md`.
+
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
 #1384 (T4) e #1385 (T1b). Registros em `ROUNDS/R1-*.md` e `ROUNDS/T0-*.md` a `T6-*.md`, `T1b-*.md`. Fatias do redesenho mergeadas: S3 #1388, S4 #1391, S7 #1390, S7b #1392, S8 #1387, S9 #1393, S2 #1394, S5 #1396, S6 #1397; D42 #1389. O brief das Encomendas (T6) está entregue inteiro. Registros em `ROUNDS/S*-*.md` e `ROUNDS/D42-*.md`.

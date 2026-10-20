@@ -127,8 +127,15 @@ class PurchaseBoardView(ServerTimingMixin, APIView):
                         page_size=request.query_params.get("page_size", 30),
                         query=request.query_params.get("q", ""),
                         order=request.query_params.get("order", "name"),
-                        material_filters={"category": values("category"), "tone": values("tone")},
-                        supplier_filters={"status": values("status"), "contact": values("contact")},
+                        material_filters={
+                            "archive": values("material_archive"),
+                            "category": values("category"),
+                            "tone": values("tone"),
+                        },
+                        supplier_filters={
+                            "archive": values("supplier_archive"),
+                            "contact": values("contact"),
+                        },
                     )
                 )
             }

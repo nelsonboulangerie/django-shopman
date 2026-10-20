@@ -29,19 +29,21 @@ function supplier(patch: Partial<Supplier>): Supplier {
 }
 
 describe("supplierDimensions", () => {
-  it("conta ativos, inativos, com e sem contato comercial", () => {
+  it("oferece Arquivados e conta fornecedores com e sem contato comercial", () => {
     const dimensions = supplierDimensions([
       supplier({ ref: "a", isActive: true, orderContactName: "Cláudia" }),
       supplier({ ref: "b", isActive: true, orderContactName: "" }),
       supplier({ ref: "c", isActive: false, orderContactName: "" }),
     ]);
 
-    const status = dimensions.find((dimension) => dimension.id === "status");
+    const archive = dimensions.find((dimension) => dimension.id === "archive");
     const contact = dimensions.find((dimension) => dimension.id === "contact");
-    expect(status?.options).toEqual([
-      { value: "active", label: "Ativo", count: 2 },
-      { value: "inactive", label: "Inativo", count: 1 },
-    ]);
+    expect(archive).toEqual({
+      id: "archive",
+      label: "Cadastro",
+      type: "single-select",
+      options: [{ value: "archived", label: "Arquivados" }],
+    });
     expect(contact?.options).toEqual([
       { value: "with", label: "Com contato comercial", count: 1 },
       { value: "without", label: "Sem contato comercial", count: 2 },
@@ -50,20 +52,21 @@ describe("supplierDimensions", () => {
 });
 
 describe("matchesSupplierFilters", () => {
-  it("sem recorte, todo fornecedor passa", () => {
+  it("sem recorte, somente fornecedor em uso passa", () => {
     expect(matchesSupplierFilters(supplier({}), {})).toBe(true);
+    expect(matchesSupplierFilters(supplier({ isActive: false }), {})).toBe(false);
   });
 
-  it("dentro de uma dimensão é OU", () => {
-    const filters = { status: ["inactive"] };
+  it("o recorte Arquivados traz somente os arquivados", () => {
+    const filters = { archive: ["archived"] };
     expect(matchesSupplierFilters(supplier({ isActive: false }), filters)).toBe(true);
     expect(matchesSupplierFilters(supplier({ isActive: true }), filters)).toBe(false);
   });
 
-  it("entre dimensões é E: ativo e sem contato não deixa passar o inativo", () => {
-    const filters = { status: ["active"], contact: ["without"] };
-    expect(matchesSupplierFilters(supplier({ isActive: true, orderContactName: "" }), filters)).toBe(true);
-    expect(matchesSupplierFilters(supplier({ isActive: false, orderContactName: "" }), filters)).toBe(false);
-    expect(matchesSupplierFilters(supplier({ isActive: true, orderContactName: "Cláudia" }), filters)).toBe(false);
+  it("entre dimensões é E: arquivado e sem contato exclui quem tem contato", () => {
+    const filters = { archive: ["archived"], contact: ["without"] };
+    expect(matchesSupplierFilters(supplier({ isActive: false, orderContactName: "" }), filters)).toBe(true);
+    expect(matchesSupplierFilters(supplier({ isActive: true, orderContactName: "" }), filters)).toBe(false);
+    expect(matchesSupplierFilters(supplier({ isActive: false, orderContactName: "Cláudia" }), filters)).toBe(false);
   });
 });
