@@ -1198,7 +1198,7 @@ async function togglePurchasable(enabled: boolean) {
 
 function reviewProductConflict(keepDraft: boolean) {
   if (!detailSku.value) return;
-  const current = acknowledgeProductConflict(detailSku.value);
+  const current = acknowledgeProductConflict(detailSku.value, keepDraft);
   if (!keepDraft && current) detail.value = current;
 }
 

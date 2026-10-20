@@ -75,11 +75,11 @@ def resync_action(product, targets: list[str], user):
             "expected_actor_id": getattr(user, "pk", None), "base_revision": resync_revision(product, targets), "targets": sorted(targets)})
 
 
-def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True):
+def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True, unit=""):
     from shopman.backstage.services.catalog import cell_field_revisions
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display, missing=available and item is None and display is None)
+    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display, missing=available and item is None and display is None, unit=unit)
     allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
     reason = "" if allowed and available else "O produto não pertence a esta superfície." if not available else "Sem permissão para editar o catálogo."
     return Action(ref="edit-cell", kind="mutation", label="Alterar célula", enabled=allowed and available,

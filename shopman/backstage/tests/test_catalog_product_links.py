@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from shopman.offerman.models import Collection, CollectionItem, ListingItem
+from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem
 
 from shopman.backstage.tests import test_api_catalog_surface as fixtures
 
@@ -98,12 +98,19 @@ def test_detail_queries_do_not_grow_with_links(client, operator, catalog):
     client.get(URL)
     with CaptureQueriesContext(connection) as before:
         first = client.get(URL)
+    from shopman.shop.models import Channel
+
     for index in range(30):
+        channel = Channel.objects.create(ref=f"extra{index}", name=f"Canal {index}")
+        listing = Listing.objects.create(ref=channel.ref, name=channel.name)
+        ListingItem.objects.create(listing=listing, product=catalog["pao"], price_q=500)
         collection = Collection.objects.create(ref=f"c{index}", name=f"Coleção {index}")
         CollectionItem.objects.create(collection=collection, product=catalog["pao"])
     with CaptureQueriesContext(connection) as after:
         second = client.get(URL)
     assert len(second.json()["product"]["collections"]) == 30
+    assert len(second.json()["product"]["listing_links"]) == 32
+    assert "projection;dur=" in second.headers["Server-Timing"]
     assert len(after) == len(before), f"Vínculos: {len(before)} -> {len(after)} consultas"
     print(f"LINKS QUERIES before={len(before)} after={len(after)} timing_before={first.headers.get('Server-Timing')} timing_after={second.headers.get('Server-Timing')}")
 
@@ -172,3 +179,17 @@ def test_collection_revision_is_checked_again_after_curation_locks(client, opera
     result = write(client, observed, {"collections": [{"ref": "doces", "sort_order": 3, "is_primary": True}]})
     assert result.status_code == 409
     assert result.json()["conflicting_fields"] == ["collections"]
+
+
+
+def test_minimum_revision_includes_the_product_unit(client, operator, catalog):
+    observed = read(client, operator)
+    link = next(row for row in observed["product"]["listing_links"] if row["surface_ref"] == "web")
+    product = catalog["pao"]
+    product.unit = "kg"
+    product.save()
+    result = client.post(fixtures.CELL_URL, {**link["action"]["payload_schema"], "min_qty": "2"},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+    assert result.status_code == 409
+    assert "min_qty" in result.json()["conflicting_fields"]
+    assert ListingItem.objects.get(product=product, listing__ref="web").min_qty == 1
