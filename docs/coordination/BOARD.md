@@ -26,7 +26,10 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
+**Turno ONDA4 (20/10), frente2:** preço com vigência entregue no PR #1958, com fila solicitada. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
+
 ## Em execução agora
+
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
@@ -120,3 +123,8 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
    apague: o `make coordination` o mostra como "conteúdo já no main".
 5. O `make coordination` só mede CI e auto-merge **com `gh` autenticado**. Sem `gh` ele diz isso numa
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
+
+**ONDA4-3 (20/10):** tabelão de insumos com colagem de coluna, erro por insumo e Desfazer,
+leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-merge solicitado após os checks. Branch
+`codex/tabelao-insumos`. A falha CI de overflow no rodapé de custos do celular foi
+reproduzida e corrigida localmente (6 casos visuais passaram). Registro: `ROUNDS/ONDA4-3-tabelao-insumos.md`.
