@@ -46,3 +46,10 @@ D9: Arquivar/Desarquivar confirmam e oferecem Desfazer com prazo/revisão.
 D10: Arquivar, Arquivado, Desarquivar; texto sem travessão.
 D11: OperatorTable, OperatorBulkBar, OperatorTimedButton, Nuxt UI canônicos.
 D12: oito capturas claro/escuro mesa/celular abertas e verificadas.
+
+## Correção do gate antes de entrar na fila real
+
+O job `operator-kit` (run 39497839136, job 118888858793) recusou o aviso de erro
+por faltar `variant="subtle"` explícito. GraphQL confirmou `isInMergeQueue=false`:
+a solicitação automática existia, mas o PR vermelho ainda não estava na fila real.
+O mesmo PR recebeu o atributo canônico; `guardrails.minimalSet.test.ts`: **10 passed**.

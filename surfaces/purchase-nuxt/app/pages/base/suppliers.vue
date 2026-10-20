@@ -338,6 +338,7 @@ async function onSaveSupplierContact(
         <NuxtAlert
           v-if="bulkError"
           color="error"
+          variant="subtle"
           title="Confira a alteração dos fornecedores"
           :description="bulkError"
           close
