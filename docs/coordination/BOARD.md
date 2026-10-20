@@ -41,7 +41,7 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 **SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
 
 **IFOOD-E (20/10):** encerramento preparado após ensaio completo e restauração exata.
-A publicação deste encerramento aguarda o merge de #1929 e #1962. Evidência e acompanhamento
+O registro #1929 já foi mergeado; a publicação deste encerramento aguarda #1962. Evidência e acompanhamento
 em `ROUNDS/IFOOD-E-ensaio-teste.md`.
 
 **Turno de 15/10 (coordenação DSH):** mergeados #1810 (`GET /api/sessions` responde 200) e #1814 (card de desconto por tipo no B.I.). Higiene de disco: 185 worktrees removidas, 34 GB para ~140 GB livres. Reconciliação com o Codex: o núcleo das ondas 3, 4 e 5 do §7.2 já entrou por #1802 a #1806. Detalhe em `HANDOFF-DSH-2026-10-15.md`.

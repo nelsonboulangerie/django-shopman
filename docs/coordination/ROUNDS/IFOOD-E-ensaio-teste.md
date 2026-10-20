@@ -203,8 +203,8 @@ O encerramento documental está em preparação no PR draft #1965, branch
 
 | PR | Entrega | Merge confirmado |
 |---|---|---|
-| #1929 | Registro da primeira interrupção e restauração | aguardando checks/fila |
-| #1962 | Contrato conferido, roteiro completo e restauração exata | aguardando checks/fila |
+| #1929 | Registro da primeira interrupção e restauração | **mergeado em 2026-10-20 22:15:23 UTC**, commit `b0db4409a5a09b44ebbd0db38be009761fd25e41` |
+| #1962 | Contrato conferido, roteiro completo e restauração exata | base atualizada após #1929; novamente na fila, aguardando merge |
 
 Conferência inicial do acompanhamento em 20/10/2026: ambos abertos, mergeáveis e com
 merge automático habilitado; nenhuma falha nos checks naquele momento. #1929 ainda aguardava
@@ -223,3 +223,22 @@ O encerramento deve preservar os históricos e conferir a integração dessa fre
 reintroduzir a alegação de que categoria DEFAULT e foto ainda não foram provadas. Não houve
 nova execução ou escrita remota no iFood durante este acompanhamento. Nenhum PR de outra sessão
 foi fechado, alterado ou reenfileirado por este trabalho.
+
+
+### Atualização após o merge de #1929
+
+A API confirmou o merge de #1929 às 22:15:23 UTC em 20/10/2026 (19:15:23 em São Paulo),
+commit `b0db4409a5a09b44ebbd0db38be009761fd25e41`.
+
+#1962 havia sido removido da fila pelo bot às 22:06:21 e 22:09:20 UTC, motivo
+`invalid_merge_commit`, apesar de seus checks verdes. Não houve reenfileiramento repetido
+sem mudança de base. Depois do merge de #1929, `origin/main` foi integrado no branch do
+#1962, fora da fila, sem conflitos de conteúdo. Novo head:
+`da3998ff1fbd4aaaeae5929660d38aa37c3280f5`. `git diff --check origin/main...HEAD` passou;
+o diff funcional continua limitado aos três documentos do ensaio. O PR voltou à fila
+(posição 4 na conferência), e seu novo head inicia as verificações correspondentes.
+O branch do encerramento também recebeu essa base; #1965 permanece draft até #1962 mergear.
+
+O inventário encontrou ainda o seguimento #1966, da mesma outra sessão de #1963, com prova
+adicional de categoria DEFAULT, foto e restauração. Esses registros devem permanecer como
+histórico complementar ao ensaio completo de #1962, sem substituir ou apagar sua evidência.
