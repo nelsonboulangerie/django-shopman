@@ -2,7 +2,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("shop", "0101_confirmado_diz_a_data_da_encomenda")]
+    dependencies = [("shop", "0102_fichas_feitas_na_hora")]
 
     operations = [
         migrations.CreateModel(
