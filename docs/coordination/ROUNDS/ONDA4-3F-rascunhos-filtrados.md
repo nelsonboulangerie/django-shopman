@@ -2,7 +2,7 @@
 
 Seguimento concreto do #1959, autorizado pela coordenação. Branch
 `codex/tabelao-insumos-hidden-errors`, iniciado em `32a2cdbbd`.
-Estado: PR draft empilhado no #1959, aguardando o merge do pai para seguir a esteira.
+Estado: PR #1968 draft empilhado no #1959, aguardando o merge do pai para seguir a esteira.
 
 ## Problema e correção
 
