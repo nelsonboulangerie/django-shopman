@@ -661,6 +661,7 @@ watch(
   },
 );
 const conflictLabels: Record<string, string> = {
+  collections: "Coleções",
   name: "Nome",
   short_description: "Descrição curta",
   long_description: "Descrição completa",
@@ -716,6 +717,20 @@ function sourceChange(field: string): string {
 }
 
 function currentValue(path: string): string {
+  if (path === "collections") {
+    const rows = props.conflict?.product.collections ?? [];
+    const choices = props.conflict?.product.collection_choices ?? [];
+    return rows.length
+      ? rows
+          .map((row) => {
+            const name =
+              choices.find((choice) => choice.ref === row.ref)?.name ??
+              "Coleção indisponível";
+            return `${name}${row.is_primary ? " (primária)" : ""}, ordem ${row.sort_order}`;
+          })
+          .join("; ")
+      : "Sem coleção manual";
+  }
   if (path === "vocation")
     return vocationLabel(
       props.conflict?.product.vocation ?? "",

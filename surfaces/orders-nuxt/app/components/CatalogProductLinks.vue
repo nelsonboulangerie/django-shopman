@@ -35,6 +35,15 @@ const sellable = ref(false);
 const localError = ref("");
 const collections = ref<ProductCollectionLink[]>([]);
 const chooseOpen = ref(false);
+watch(
+  () => props.detail,
+  () => {
+    if (saving.value) return;
+    editing.value = null;
+    chooseOpen.value = false;
+    localError.value = "";
+  },
+);
 function editCollections() {
   collections.value = (props.detail.collections ?? []).map((row) => ({
     ...row,

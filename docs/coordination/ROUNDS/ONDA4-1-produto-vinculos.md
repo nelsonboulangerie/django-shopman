@@ -19,7 +19,11 @@ Ordem: `ORDERS/next-onda4.md`, frente 1. Base `65b658d31`. Branch
 - Aplicar/Cancelar independentes, rascunho preservado na recusa. Salvar geral e fechar são
   protegidos durante a gravação local. Releitura de coleção renova apenas sua revisão;
   releitura de canal preserva revisões e dados dos demais rascunhos. Teste cobre nome
-  alterado por terceiro enquanto se aplica a curadoria.
+  alterado por terceiro enquanto se aplica a curadoria. Manter rascunho após conflito
+  também só renova os campos explicitamente revisados; usar valores atuais descarta
+  o editor local anterior. A revisão de célula inclui unidade, impedindo aplicar um
+  mínimo pensado em peças depois de o produto ter mudado para kg. Conflitos de coleção
+  exibem nome, primária e ordem, sem serialização técnica.
 
 ## Verificação
 
@@ -27,9 +31,10 @@ Ordem: `ORDERS/next-onda4.md`, frente 1. Base `65b658d31`. Branch
 - Rechecagem final de curadoria sob os locks compartilhados com a ordenação: **9 passed**.
   Inclui intercalação entre a checagem inicial e a aquisição do lock, sem sobrescrever
   a ordenação concorrente. Grupos antigos/novos são bloqueados juntos em ordem de PK.
+- Revisões de célula/unidade: **12 passed, 1 skipped** na rodada final direcionada.
 - Backend direcionado: **10 passed**, incluindo intenção obrigatória, replay, conflito,
   troca de primária, retirada, rollback se recibo falha, mínimo inválido e colisão de patamar.
-- Componentes: **26 passed**. Composable: **27 passed**, incluindo revisão seletiva.
+- Componentes: **28 passed**. Composable: **28 passed**, incluindo revisão seletiva.
 - Ruff, ESLint e typecheck passaram. `export_orders_schema` regenerado sem diferença:
   os novos campos do detalhe são espelhados em `app/types/catalog.ts`.
 - Navegador Chromium 1243, prévia Nuxt com respostas de API de fixture Django real,
@@ -53,7 +58,7 @@ e as novas funções no mesmo processo e sob o mesmo `ServerTimingMixin`:
 
 A base não enviava `Server-Timing`; o detalhe agora usa o mixin canônico.
 A comparação de duração é observacional em máquina concorrida, sem alegar ganho.
-O custo novo de leitura é fixo: teste aumenta de zero para **30 vínculos** e mantém
+O custo novo de leitura é fixo: teste aumenta de zero para **30 coleções e mais 30 canais com ListingItems** e mantém
 **20 → 20 consultas**, reprovando crescimento por linha. Sonda removida depois da medição.
 
 ## D1 a D12

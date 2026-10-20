@@ -71,10 +71,35 @@ export function useCatalogMatrix(
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
   function acknowledgeProductConflict(
     sku: string,
+    keepDraft = false,
   ): ProductDetailProjection | null {
     const conflict = productConflicts.value[sku];
     if (!conflict?.action) return null;
-    detailActions.set(sku, conflict.action);
+    const previous = detailActions.get(sku);
+    if (keepDraft && previous) {
+      const fresh = conflict.action.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      const prior = previous.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      detailActions.set(sku, {
+        ...previous,
+        payload_schema: {
+          ...previous.payload_schema,
+          base_revisions: {
+            ...prior,
+            ...Object.fromEntries(
+              conflict.conflicting_fields
+                .filter((field) => field in fresh)
+                .map((field) => [field, fresh[field]]),
+            ),
+          },
+        },
+      });
+    } else detailActions.set(sku, conflict.action);
     Reflect.deleteProperty(productConflicts.value, sku);
     clearError();
     return conflict.product;

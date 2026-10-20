@@ -98,6 +98,17 @@ describe("Vínculos do produto", () => {
       wrapper.findAll("button").some((button) => button.text() === "Cancelar"),
     ).toBe(true);
   });
+  it("usar detalhe atual descarta o editor local antigo", async () => {
+    const { wrapper, click } = setup();
+    await click("Editar coleções");
+    await click("Retirar");
+    await wrapper.setProps({ detail: { ...detail, name: "Detalhe relido" } });
+    expect(wrapper.text()).toContain("Editar coleções");
+    expect(wrapper.text()).toContain("Pães");
+    expect(
+      wrapper.findAll("button").some((button) => button.text() === "Aplicar"),
+    ).toBe(false);
+  });
   it("cancelar coleções não grava; aplicar retirada salva só curadoria", async () => {
     const { click, saveCollections, saveListing } = setup();
     await click("Editar coleções");

@@ -284,11 +284,11 @@ class CatalogProductDetailView(ServerTimingMixin, _CatalogBase):
         from shopman.shop.models import Channel
         from shopman.shop.services import listing_mirror
 
-        items = {item.listing.ref: item for item in ListingItem.objects.filter(product__sku=sku).select_related("listing").order_by("-min_qty", "-pk")}
+        items = {item.listing.ref: item for item in ListingItem.objects.filter(product__sku=sku).select_related("listing", "product").order_by("-min_qty", "-pk")}
         links = []
         for channel in Channel.objects.filter(commerce_policy=Channel.CommercePolicy.ORDER).order_by("display_order", "pk"):
             item = items.get(channel.ref)
-            action = projection_data(cell_action(sku, channel.ref, request.user, item=item))
+            action = projection_data(cell_action(sku, channel.ref, request.user, item=item, unit=product["unit"]))
             source = listing_mirror.source_ref_from_config(channel.config)
             if source:
                 action["enabled"] = False

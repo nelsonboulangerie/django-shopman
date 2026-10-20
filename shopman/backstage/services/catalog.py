@@ -114,7 +114,7 @@ def _is_display_surface(surface_ref: str) -> bool:
     ).exists()
 
 
-def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None, missing=False) -> dict[str, str]:
+def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None, missing=False, unit="") -> dict[str, str]:
     """A cell's relevant canonical target and independent field values."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
@@ -123,10 +123,10 @@ def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None,
         context = {"display_id": display.pk, "collections": config.get("collections") or []}
         values = {"is_sellable": sku not in (config.get("paused_skus") or [])}
     elif item is not None:
-        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty)}
+        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty), "unit": item.product.unit}
         values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q", "min_qty")}
     elif missing:
-        context = {"membership": "absent"}
+        context = {"membership": "absent", "unit": unit}
         values = dict.fromkeys(("is_published", "is_sellable", "price_q", "min_qty"))
     else:
         return {}
@@ -215,13 +215,13 @@ def set_cell(
     if creating:
         if expected_revisions is None:
             raise CatalogError("Atualize o canal antes de incluir o produto.")
-        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True), expected_revisions, {})
+        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True, unit=product.unit), expected_revisions, {})
         if listing is None:
             listing = Listing.objects.create(ref=surface_ref, name=channel.name)
         item = ListingItem(listing=listing, product=product, price_q=product.base_price_q,
             is_published=False, is_sellable=False)
     item.product, item.listing = product, listing
-    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True) if creating else cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
+    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True, unit=product.unit) if creating else cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
         {field: str(getattr(item, field)) if field == "min_qty" else getattr(item, field) for field in ("price_q", "is_published", "is_sellable", "min_qty")})
     if "min_qty" in patch and ListingItem.objects.filter(listing=listing, product=product, min_qty=patch["min_qty"]).exclude(pk=item.pk).exists():
         raise CatalogError("Já existe um preço para esta quantidade mínima no canal.")

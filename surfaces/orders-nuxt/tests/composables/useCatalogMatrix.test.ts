@@ -330,6 +330,38 @@ describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
     });
   });
 
+  it("revisar conflito de coleção não aceita revisão nova de nome não revisado", async () => {
+    const action = (name: string, collections: string) => ({
+      ...cellAction,
+      method: "PATCH",
+      payload_schema: {
+        ...cellAction.payload_schema,
+        base_revisions: { name, collections },
+      },
+    });
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO" },
+      action: action("old-name", "old-collections"),
+    });
+    const m = useCatalogMatrix();
+    await m.fetchProductDetail("PAO");
+    env.fetchMock.mockRejectedValueOnce({
+      status: 409,
+      data: {
+        product: { sku: "PAO", name: "Terceiro" },
+        action: action("new-name", "new-collections"),
+        conflicting_fields: ["collections"],
+      },
+    });
+    expect(await m.saveProductDetail("PAO", { collections: [] })).toBe(false);
+    m.acknowledgeProductConflict("PAO", true);
+    await m.saveProductDetail("PAO", { name: "Meu rascunho" });
+    expect(env.fetchMock.mock.calls[2]![1].body.base_revisions).toEqual({
+      name: "old-name",
+      collections: "new-collections",
+    });
+  });
+
   it("saveSocial em erro de validação acende errorMsg + false", async () => {
     env.fetchMock.mockResolvedValueOnce({
       product: { sku: "PAO" },
