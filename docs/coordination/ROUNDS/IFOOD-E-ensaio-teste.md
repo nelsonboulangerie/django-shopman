@@ -4,7 +4,7 @@
 - **sessão:** frente 6, turno 5b e retomada autorizada em 20/10/2026 (Codex)
 - **branch:** `codex/ifood-ensaio-completo` (seguimento de `codex/ifood-ensaio`)
 - **PR anterior:** #1929 (evidência da primeira interrupção)
-- **PR de seguimento:** a registrar após publicação
+- **PR de seguimento:** #1962
 - **estado:** EM_PR; ensaio completo confirmado na retomada, restauração exata concluída
 - **execução final:** 2026-10-20 21:16:14–21:17:22 UTC (18:16:14–18:17:22 em São Paulo)
 - **execução inicial:** 2026-10-20 20:59:46–20:59:49 UTC
