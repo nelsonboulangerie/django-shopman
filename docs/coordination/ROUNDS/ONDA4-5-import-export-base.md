@@ -21,11 +21,11 @@ registros/1 MB por importação. Campos ausentes preservam os dados existentes.
 
 ## Evidência
 
-- `test_purchase_csv.py`: **10 passed**: prévia/aplicação/reenvio para ambas as
+- `test_purchase_csv.py`: **14 passed**: prévia/aplicação/reenvio para ambas as
   entidades, vírgula decimal, export, erro por registro sem escrita parcial,
   revisão obsoleta/CSV alterado, preservação de metadata, SKU/unidade, duplicata,
-  permissão/cabeçalho e rollback da escrita se a auditoria falhar.
-- `PurchaseCsvTools.test.ts`: prévia antes de aplicar, reenvio com a mesma intenção
+  permissão/cabeçalho, corpos JSON que não são objeto e rollback da escrita se a auditoria falhar.
+- `PurchaseCsvTools.test.ts`: **4 passed**. Prévia antes de aplicar, reenvio com a mesma intenção
   após resposta perdida, resultado em processamento sem aplicação anunciada,
   erro por registro e exportação pelo botão do kit.
 - Typecheck, ESLint e Ruff aprovados. Guard `minimalSet`: **10 passed**.
@@ -61,3 +61,5 @@ D12: capturas antes/depois/export de ambas as entidades nos dois temas e tamanho
 
 Sem alteração de Core ou migração. As duplicatas históricas de prefixo 0023 a 0039
 em shop já estavam na base; esta frente não criou nenhuma.
+
+Validação após empilhar a frente 4: **21 testes API passaram** (14 CSV + 7 lote de fornecedores), **6 testes de componente passaram** (4 CSV + 2 lote), typecheck e oito cenários Chromium passaram novamente.

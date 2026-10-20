@@ -90,13 +90,11 @@ for (const entity of ["materials", "suppliers"] as const)
         await page
           .getByRole("menuitem", { name: "Importar CSV", exact: true })
           .click();
-        await page
-          .locator('input[type="file"]')
-          .setInputFiles({
-            name: "base.csv",
-            mimeType: "text/csv",
-            buffer: Buffer.from(csv),
-          });
+        await page.locator('input[type="file"]').setInputFiles({
+          name: "base.csv",
+          mimeType: "text/csv",
+          buffer: Buffer.from(csv),
+        });
         await expect(page.locator("[data-import-preview]")).toContainText(
           "Cadastro de exemplo",
         );

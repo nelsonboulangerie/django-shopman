@@ -5,7 +5,6 @@ from __future__ import annotations
 from django.urls import path
 
 from shopman.backstage.api.purchase_csv import PurchaseCsvView
-
 from shopman.backstage.api.purchase_supplier_bulk import PurchaseSupplierBulkView
 from shopman.shop.eventstream import events as eventstream_view
 

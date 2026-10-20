@@ -28,7 +28,16 @@ class PurchaseCsvView(ServerTimingMixin, APIView):
             return _error_response(exc)
 
     def post(self, request, entity):
-        data = dict(request.data or {})
+        if not isinstance(request.data, dict):
+            return Response(
+                {
+                    "detail": "Escolha o arquivo CSV antes de importar.",
+                    "field": "csv",
+                    "errors": {"csv": ["Arquivo CSV inválido."]},
+                },
+                status=400,
+            )
+        data = dict(request.data)
         try:
             if data.get("preview") is True:
                 return Response(purchase_csv.preview_import(entity, data, user=request.user))

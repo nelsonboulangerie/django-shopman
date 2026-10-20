@@ -81,23 +81,30 @@ describe("CSV da Base", () => {
     expect(wrapper.emitted("applied")).toHaveLength(1);
   });
   it("resultado em processamento mantém a intenção e não anuncia aplicação", async () => {
-    const fetch = vi.fn().mockResolvedValueOnce({ preview: preview() }).mockResolvedValueOnce({ outcome: "unknown" }).mockResolvedValueOnce({ ok: true, outcome: "applied" });
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ preview: preview() })
+      .mockResolvedValueOnce({ outcome: "unknown" })
+      .mockResolvedValueOnce({ ok: true, outcome: "applied" });
     vi.stubGlobal("$fetch", fetch);
     const wrapper = tools();
-    await wrapper.findAll("button")[0]!.trigger("click"); await flushPromises();
-    await wrapper.findAll("button")[1]!.trigger("click"); await flushPromises();
+    await wrapper.findAll("button")[0]!.trigger("click");
+    await flushPromises();
+    await wrapper.findAll("button")[1]!.trigger("click");
+    await flushPromises();
     expect(wrapper.emitted("applied")).toBeUndefined();
     expect(wrapper.text()).toContain("ainda não foi confirmada");
-    await wrapper.findAll("button")[1]!.trigger("click"); await flushPromises();
-    expect(fetch.mock.calls[1]![1].headers["Idempotency-Key"]).toBe(fetch.mock.calls[2]![1].headers["Idempotency-Key"]);
+    await wrapper.findAll("button")[1]!.trigger("click");
+    await flushPromises();
+    expect(fetch.mock.calls[1]![1].headers["Idempotency-Key"]).toBe(
+      fetch.mock.calls[2]![1].headers["Idempotency-Key"],
+    );
     expect(wrapper.emitted("applied")).toHaveLength(1);
   });
   it("erro por registro impede aplicação", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValue({
-        preview: preview([{ row: 2, detail: "Unidade inválida" }]),
-      });
+    const fetch = vi.fn().mockResolvedValue({
+      preview: preview([{ row: 2, detail: "Unidade inválida" }]),
+    });
     vi.stubGlobal("$fetch", fetch);
     const wrapper = tools();
     await wrapper.findAll("button")[0]!.trigger("click");
@@ -109,11 +116,9 @@ describe("CSV da Base", () => {
   it("exporta todos os registros pelo botão do kit", async () => {
     vi.stubGlobal(
       "$fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          table: { header: ["SKU"], rows: [["A"], ["B"]] },
-        }),
+      vi.fn().mockResolvedValue({
+        table: { header: ["SKU"], rows: [["A"], ["B"]] },
+      }),
     );
     const wrapper = tools();
     await (

@@ -124,7 +124,10 @@ defineExpose({ openImport, openExport });
     :row-key="(row: Record<string, unknown>) => String(row.ref)"
     :title="`Importar ${label}`"
     description="Use o CSV exportado como modelo. Confira até 1.000 cadastros na prévia antes de salvar. Quantidades com vírgula decimal."
-    :total-labels="{ new: preview?.totals.new === 1 ? 'novo' : 'novos', update: preview?.totals.update === 1 ? 'atualizado' : 'atualizados' }"
+    :total-labels="{
+      new: preview?.totals.new === 1 ? 'novo' : 'novos',
+      update: preview?.totals.update === 1 ? 'atualizado' : 'atualizados',
+    }"
     :preview-busy="previewBusy || busy"
     :busy="busy"
     :error="error"

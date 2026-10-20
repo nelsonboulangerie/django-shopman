@@ -26,7 +26,7 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
-**ONDA4-5 (20/10):** import/export da Base de insumos e fornecedores implementado em `codex/import-export-base`, empilhado sobre #1957. Prévia sem escrita, revisão/ator, erro por registro, aplicação e auditoria atômicas; exportação completa pelo kit. Dez testes API e oito de navegador aprovados; 300 → 22 consultas para dez cadastros, e custo fixo 5/22/5 para prévia/aplicação/export com 2 ou 40 registros. Registro em `ROUNDS/ONDA4-5-import-export-base.md`.
+**ONDA4-5 (20/10):** import/export da Base de insumos e fornecedores implementado em `codex/import-export-base`, empilhado sobre #1957. Prévia sem escrita, revisão/ator, erro por registro, aplicação e auditoria atômicas; exportação completa pelo kit. Quatorze testes API e oito de navegador aprovados; 300 → 22 consultas para dez cadastros, e custo fixo 5/22/5 para prévia/aplicação/export com 2 ou 40 registros. Registro em `ROUNDS/ONDA4-5-import-export-base.md`.
 
 **ONDA4-4 (20/10):** lote de fornecedores entregue no PR #1957 (`codex/lote-fornecedores`), com confirmação, Desfazer revisado e auditoria atômica. Sete testes API, dois de componente e quatro de navegador aprovados. Medição: 188 → 30 consultas para dez fornecedores; 2/40 fornecedores mantêm 28 consultas. Registro em `ROUNDS/ONDA4-4-lote-fornecedores.md`.
 

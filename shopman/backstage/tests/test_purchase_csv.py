@@ -169,3 +169,13 @@ def test_before_individual_creations_and_after_one_import(client, purchase_opera
     assert response.status_code == 200, response.content
     assert len(after) < baseline.query_count
     print("CSV_BEFORE_AFTER", baseline.query_count, baseline.server_timing(), len(after), response["Server-Timing"])
+
+
+@pytest.mark.parametrize("body", [["x"], "x", 1, None])
+def test_non_object_body_is_a_field_error(client, purchase_operator, body):
+    client.force_login(purchase_operator)
+    response = post(client, "suppliers", body)
+    assert response.status_code == 400
+    assert response.json()["field"] == "csv"
+    assert response.json()["errors"]["csv"]
+    assert Supplier.objects.count() == 0
