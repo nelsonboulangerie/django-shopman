@@ -186,9 +186,10 @@ export function usePurchaseDesk() {
     page: Number(route.query.page) > 0 ? Number(route.query.page) : 1,
     page_size: 30,
     order: typeof route.query.order === "string" ? route.query.order : "name",
+    material_archive: materialFilters.value.archive,
     category: materialFilters.value.category,
     tone: materialFilters.value.tone,
-    status: supplierFilters.value.status,
+    supplier_archive: supplierFilters.value.archive,
     contact: supplierFilters.value.contact,
   }));
   const { data, pending, error, refresh } = useFetch<PurchaseResponse>(PURCHASE_API_ENDPOINTS.projection, {

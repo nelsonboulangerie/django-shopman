@@ -47,6 +47,11 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 `ROUNDS/ARQUIVAR-A-core-produto.md`. Não fica linha ativa no quadro porque a frente já saiu da
 execução para a fila.
 
+**Turno Arquivar (20/10, Frente D):** Compras passou a separar insumos e fornecedores
+arquivados das listas correntes, com o filtro explícito **Arquivados**, no PR #1946. A
+frente saiu do quadro ao entrar na fila; prova e limites estão em
+`ROUNDS/D-arquivar-compras.md`.
+
 **Turno ARQUIVAR (20/10):** Frente E, receitas com `RecipeEntry.is_active`, na fila no PR #1944. Detalhe em `ROUNDS/E-arquivar-receita.md`.
 
 **Turno ARQUIVAR (20/10):** Frentes B+C, trava transversal e superfícies de produto arquivado,
