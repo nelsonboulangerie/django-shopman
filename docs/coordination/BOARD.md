@@ -28,6 +28,8 @@ PR** (escreva o registro com "na fila #N").
 
 ## Em execução agora
 
+**ONDA4-F6 (20/10):** componentes de combo em execução no branch `codex/produto-combo`, empilhado na frente1. Registro: `ROUNDS/ONDA4-F6-produto-combo.md`.
+
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 
