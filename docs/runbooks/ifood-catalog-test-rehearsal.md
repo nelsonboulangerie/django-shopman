@@ -25,9 +25,14 @@ copie valores para terminal gravado, arquivo novo, banco, log, captura, document
 
 ## Bloqueios obrigatórios
 
-Aguarde as frentes de categoria, identidade, PATCH, foto e tela estarem mergeadas. Em 20/10/2026,
-A (#1927) e C (#1928) já estavam no `main`; #1905 seguia conflitante/vermelha e D (#1931) ainda
-era draft. O ensaio não serve para testar código parcial ou resolver conflito de branch.
+As frentes de categoria, identidade, PATCH, foto e tela precisam estar mergeadas. No turno 5b de
+20/10/2026, #1927, #1928, #1905, #1931, #1947 e #1948 já estavam no `main` (`65b658d31`).
+
+A execução desse turno parou na conferência do preço: o PATCH confirmou `price.value`, mas o
+GET deixou de incluir `originalValue`. O item foi restaurado integralmente. Veja os recibos e
+os passos não executados em `docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md`. Antes de uma nova
+execução, explicite o critério de `originalValue`; não classifique a aprovação de `price.value`
+pelo adapter como aprovação da preservação de todo o objeto `price`.
 
 ## Preparação segura
 
