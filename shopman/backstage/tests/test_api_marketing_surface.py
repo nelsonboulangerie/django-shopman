@@ -2834,7 +2834,7 @@ class TestAudienceCount:
         assert data["match_label"] == "Cruzando as regras"
 
     def test_the_parts_explain_the_total(self, client, gestor):
-        """ ""Faixa de preço 2, comportamento 2, total 1": a leitura junta ensina o recorte."""
+        """ ""Grupo 2, comportamento 2, total 1": a leitura junta ensina o recorte."""
         self._audience()
         client.force_login(gestor)
 
@@ -2851,7 +2851,7 @@ class TestAudienceCount:
         ).json()
 
         parts = {part["label"]: part["count"] for part in data["parts"]}
-        assert parts == {"Faixa de preço": 2, "Comportamento de compra": 2}
+        assert parts == {"Grupo": 2, "Comportamento de compra": 2}
         assert data["total"] == 1
 
     def test_nothing_chosen_is_not_the_same_as_nobody_found(self, client, gestor):

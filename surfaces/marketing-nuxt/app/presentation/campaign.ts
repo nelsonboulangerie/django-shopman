@@ -115,7 +115,7 @@ const EXCLUSION_LABELS: ReadonlyArray<readonly [string, string]> = [
   ["invalid_contact", "com telefone que não serve para WhatsApp"],
   [
     "outside_exclusive_groups",
-    "fora da faixa de preço que tem esta campanha como exclusiva",
+    "fora do grupo que tem esta campanha como exclusiva",
   ],
 ];
 
@@ -393,7 +393,7 @@ export function audienceRulesSummary(
   return summary.charAt(0).toUpperCase() + summary.slice(1);
 }
 
-/** Rótulos vindos do servidor. Faixa de preço e segmento têm dono no guestman
+/** Rótulos vindos do servidor. Grupo (`PriceTier`) e segmento têm dono no guestman
  *  (`PriceTier.name`, `RFM_SEGMENTS`), e a projection já os entrega em
  *  `options.price_tiers` / `options.rfm_segments`.
  *

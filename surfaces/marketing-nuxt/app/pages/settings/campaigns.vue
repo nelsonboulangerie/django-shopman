@@ -71,7 +71,7 @@ onMounted(() => {
   waTemplate.load();
 });
 
-// Rótulo de faixa e de segmento tem dono no servidor (`PriceTier.name`,
+// Rótulo de grupo e de segmento tem dono no servidor (`PriceTier.name`,
 // `RFM_SEGMENTS`); a tela só consulta o mapa que a projection entrega.
 const audienceLabels = computed(() => ({
   priceTiers: choiceLabels(priceTiers.value),

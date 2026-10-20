@@ -2,7 +2,7 @@
 // Definir público — a campanha manual, com o público montado na hora.
 //
 // "Definir", não "escolher": aqui não se pega de uma lista pronta, se MONTA o público
-// com regras (etiquetas, faixa, comportamento, cruzamento). Escolher descreve um menu;
+// com regras (etiquetas, grupo, comportamento, cruzamento). Escolher descreve um menu;
 // definir descreve o que esta tela faz.
 //
 // ⚠️ O botão daqui NÃO dispara: ele cria o anúncio e leva à revisão. Enquanto dizia
@@ -166,7 +166,9 @@ const exclusiveNote = computed(() => {
   const tiers = props.rule?.exclusive_price_tiers ?? [];
   if (!tiers.length) return "";
   const names = tiers.map((ref) => audienceLabels.value.priceTiers[ref] ?? ref).join(", ");
-  return `Campanha exclusiva da faixa de preço ${names}: só quem está nela recebe, qualquer que seja o público.`;
+  return tiers.length > 1
+    ? `Campanha exclusiva dos grupos ${names}: só quem está num deles recebe, qualquer que seja o público.`
+    : `Campanha exclusiva do grupo ${names}: só quem está nele recebe, qualquer que seja o público.`;
 });
 
 /** Rótulos do servidor: o resumo do público da campanha não traduz ref por conta. */
@@ -465,7 +467,7 @@ watch(
     <NuxtCard v-if="!publicOnly && !useSaved">
       <div class="space-y-4">
         <!-- Etiquetas primeiro: é o único público que o operador monta sozinho. RFM e
-             churn são calculados, faixa é comercial, aniversário é cadastral. -->
+             churn são calculados, grupo é comercial, aniversário é cadastral. -->
         <div v-if="tags.length">
           <NuxtCheckboxGroup
             v-model="chosenTags"
@@ -484,7 +486,7 @@ watch(
           :items="priceTiers"
           orientation="horizontal"
         >
-          <template #legend>Faixa de preço</template>
+          <template #legend>Grupo</template>
         </NuxtCheckboxGroup>
 
         <NuxtCheckboxGroup
@@ -504,7 +506,7 @@ watch(
         />
 
         <p v-if="nothingChosen" class="text-xs text-muted-foreground">
-          Escolha pelo menos um grupo acima para ver quantas pessoas recebem.
+          Marque pelo menos uma opção acima para ver quantas pessoas recebem.
         </p>
 
         <!-- ⚠️ Só com duas ou mais regras escolhidas: cruzar uma regra com nada dá ela
