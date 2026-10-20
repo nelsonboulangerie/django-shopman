@@ -88,6 +88,7 @@ export function useCatalogMatrix(
   // TODAS as facetas da FilterBar viram parâmetro do servidor. As listas vão
   // separadas por vírgula ou vazias (vazio = sem recorte, o servidor ignora).
   const facet = (id: string) => computed(() => activeFilters.value[id]?.[0] ?? "");
+  const archived = facet("archived");
   const isPublished = facet("is_published");
   const isSellable = facet("is_sellable");
   const hasVocation = facet("has_vocation");
@@ -110,6 +111,7 @@ export function useCatalogMatrix(
         order.value,
         page.value,
         pageSize.value,
+        archived.value,
         isPublished.value,
         isSellable.value,
         hasVocation.value,
@@ -126,6 +128,7 @@ export function useCatalogMatrix(
       order,
       page,
       page_size: pageSize,
+      archived,
       is_published: isPublished,
       is_sellable: isSellable,
       has_vocation: hasVocation,

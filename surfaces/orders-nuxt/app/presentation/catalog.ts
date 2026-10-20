@@ -11,7 +11,12 @@ import type {
 } from "~/types/catalog";
 import { readingCsvMoney, readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
 
-export type CellState = "available" | "paused" | "unpublished" | "absent";
+export type CellState =
+  | "available"
+  | "paused"
+  | "unpublished"
+  | "archived"
+  | "absent";
 
 export interface CellView {
   state: CellState;
@@ -42,6 +47,7 @@ export function cellState(
   cell: SurfaceCellProjection,
 ): CellState {
   if (!cell.in_listing) return "absent";
+  if (!row.is_active) return "archived";
   // Product-level switches gate every surface; listing-level gates this one.
   const published = row.is_published && cell.is_published;
   const sellable = row.is_sellable && cell.is_sellable;
@@ -54,6 +60,7 @@ const CELL_TONES: Record<CellState, string> = {
   available: "border-success/40 bg-success/10 text-success",
   paused: "border-warning/40 bg-warning/10 text-warning",
   unpublished: "border-border bg-muted text-muted-foreground",
+  archived: "border-border bg-muted text-muted-foreground",
   absent: "border-dashed border-border bg-transparent text-muted-foreground/60",
 };
 
@@ -61,6 +68,7 @@ const CELL_LABELS: Record<CellState, string> = {
   available: "Disponível",
   paused: "Pausado",
   unpublished: "Oculto",
+  archived: "Arquivado",
   absent: "Não ofertado",
 };
 
@@ -92,6 +100,8 @@ export interface RowStatus {
 // Escala de estados "fora", do mais deliberado ao mais urgente:
 // Oculto (cinza) · Pausado (âmbar) · Esgotado (vermelho/danger).
 export function rowStatus(row: CatalogRowProjection): RowStatus {
+  if (!row.is_active)
+    return { off: true, label: "Arquivado", tone: "muted", hint: "" };
   if (!row.is_published)
     return { off: true, label: "Oculto", tone: "muted", hint: "" };
   if (!row.is_sellable)

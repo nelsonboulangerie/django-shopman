@@ -70,6 +70,7 @@ const row = (
   image_url: "",
   primary_collection: "",
   primary_collection_name: "",
+  is_active: true,
   is_published: true,
   is_sellable: true,
   base_price_q: 500,
@@ -112,6 +113,10 @@ describe("cellState", () => {
   it("product unpublish gates every cell", () => {
     expect(cellState(row({ is_published: false }), cell())).toBe("unpublished");
   });
+
+  it("archived product gates every listed cell", () => {
+    expect(cellState(row({ is_active: false }), cell())).toBe("archived");
+  });
 });
 
 describe("cellView", () => {
@@ -120,6 +125,14 @@ describe("cellView", () => {
     expect(v.state).toBe("available");
     expect(v.label).toBe("Disponível");
     expect(v.toneClass).toContain("success");
+  });
+});
+
+describe("rowStatus", () => {
+  it("identifica o produto arquivado antes dos estados efêmeros", () => {
+    expect(
+      rowStatus(row({ is_active: false, is_published: true, is_sellable: true })),
+    ).toEqual({ off: true, label: "Arquivado", tone: "muted", hint: "" });
   });
 });
 
