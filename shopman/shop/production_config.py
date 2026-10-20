@@ -200,6 +200,12 @@ class ProductionConfig:
     def from_dict(cls, data: dict) -> ProductionConfig:
         if not isinstance(data, dict):
             raise ValueError("production deve ser um dict")
+        unknown = sorted(set(data) - _TOP_LEVEL_KEYS)
+        if unknown:
+            raise ValueError(
+                f"production: chave desconhecida {', '.join(unknown)} "
+                f"(válidas: {', '.join(sorted(_TOP_LEVEL_KEYS))})"
+            )
         return cls(
             suggestion=_safe_init(cls.Suggestion, data.get("suggestion", {}), "production.suggestion"),
             alerts=_safe_init(cls.Alerts, data.get("alerts", {}), "production.alerts"),
@@ -315,15 +321,36 @@ class ProductionConfig:
             raise ValueError(f"production.order_match inválido: {self.order_match}")
 
 
+_TOP_LEVEL_KEYS = frozenset({
+    "suggestion",
+    "alerts",
+    "episodes",
+    "weight",
+    "notifications",
+    "panel",
+    "order_match",
+})
+
+
 def _safe_init(cls, data: dict, label: str):
-    """Instancia um dataclass filtrando campos desconhecidos."""
+    """Instancia o bloco do ``ProductionConfig`` e GRITA com chave desconhecida.
+
+    Chave que o bloco não declara é erro de digitação ou resto de um nome
+    antigo: ``low_yeld_threshold: "0.70"`` era descartada em silêncio e o bloco
+    seguia com o default, e o gestor via a produção ignorar o que ele escreveu.
+    """
     import dataclasses
 
     if not isinstance(data, dict):
         raise ValueError(f"{label} deve ser um dict")
     valid_fields = {f.name for f in dataclasses.fields(cls)}
-    filtered = {k: v for k, v in data.items() if k in valid_fields}
-    return cls(**filtered)
+    unknown = sorted(set(data) - valid_fields)
+    if unknown:
+        raise ValueError(
+            f"{label}: chave desconhecida {', '.join(unknown)} "
+            f"(válidas: {', '.join(sorted(valid_fields))})"
+        )
+    return cls(**data)
 
 
 def _is_int(value) -> bool:
