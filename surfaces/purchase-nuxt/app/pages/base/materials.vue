@@ -23,6 +23,7 @@ const {
   materialFilters,
   materials,
   materialList,
+  supplierList,
   suppliers,
   enrichedMaterials,
   filteredMaterials,
@@ -229,7 +230,7 @@ const saveLabel = computed(() =>
         </div>
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <PurchaseBaseSections :counts="{ materials: materialList.total, suppliers: supplierList.total }" />
       </template>
       <template #filter-panel>
         <OperatorFilterPanel
@@ -287,6 +288,7 @@ const saveLabel = computed(() =>
               <span class="block min-w-24 font-semibold sm:min-w-36">{{ row.original.name }}</span>
               <span class="mt-0.5 flex flex-wrap items-center gap-1" data-base-role-tags>
                 <span class="font-mono text-xs text-muted">{{ row.original.sku }}</span>
+                <NuxtBadge v-if="!row.original.isActive" color="neutral" size="sm" label="Arquivado" />
                 <NuxtBadge v-for="badge in skuRoleBadges(row.original.roles)" :key="badge" color="neutral" size="sm" :label="badge" class="max-sm:hidden" />
                 <NuxtBadge :color="TONE_BADGE[row.original.tone]" size="sm" :label="TONE_LABEL[row.original.tone]" class="sm:hidden" />
               </span>

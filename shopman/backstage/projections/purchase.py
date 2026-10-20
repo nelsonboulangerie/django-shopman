@@ -338,7 +338,8 @@ def build_purchase(
     material_filters = material_filters or {}
     supplier_filters = supplier_filters or {}
 
-    material_qs = Material.objects.all()
+    material_archived = material_filters.get("archive") == ["archived"]
+    material_qs = Material.objects.filter(is_active=not material_archived)
     if query:
         material_qs = material_qs.filter(
             Q(sku__icontains=query)
@@ -358,14 +359,12 @@ def build_purchase(
     material_order = order if order in material_orders else "name"
     material_qs = material_qs.order_by(*material_orders[material_order])
 
-    supplier_qs = Supplier.objects.prefetch_related("contacts")
+    supplier_archived = supplier_filters.get("archive") == ["archived"]
+    supplier_qs = Supplier.objects.filter(is_active=not supplier_archived).prefetch_related("contacts")
     if query:
         supplier_qs = supplier_qs.filter(
             Q(ref__icontains=query) | Q(name__icontains=query) | Q(trade_name__icontains=query)
         )
-    statuses = supplier_filters.get("status", [])
-    if statuses and set(statuses) != {"active", "inactive"}:
-        supplier_qs = supplier_qs.filter(is_active=statuses == ["active"])
     contacts = supplier_filters.get("contact", [])
     if contacts and set(contacts) != {"with", "without"}:
         with_contact = contacts == ["with"]

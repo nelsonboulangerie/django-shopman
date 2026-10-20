@@ -70,6 +70,7 @@ export interface CatalogRowProjection {
   image_url: string;
   primary_collection: string;
   primary_collection_name: string;
+  is_active: boolean;
   is_published: boolean;
   is_sellable: boolean;
   base_price_q: number;

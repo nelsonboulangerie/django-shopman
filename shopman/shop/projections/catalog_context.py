@@ -100,7 +100,7 @@ def commercial_identity(product) -> CommercialIdentity:
 def products_queryset():
     from shopman.offerman.models import Product
 
-    return Product.objects.all()
+    return Product.objects.active()
 
 
 def active_collections_queryset():

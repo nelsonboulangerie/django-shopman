@@ -147,6 +147,48 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
 
 
 @pytest.mark.django_db
+def test_purchase_board_defaults_to_current_records_and_explicitly_lists_archived(
+    client,
+    purchase_operator,
+    material,
+    supplier,
+):
+    archived_material = Material.objects.create(
+        sku="FARINHA-ARQUIVADA",
+        name="Farinha arquivada",
+        unit="kg",
+        is_active=False,
+    )
+    archived_supplier = Supplier.objects.create(
+        ref="moinho-arquivado",
+        name="Moinho arquivado",
+        is_active=False,
+    )
+    client.force_login(purchase_operator)
+
+    current_response = client.get(reverse("api-backstage-purchase"))
+    current = current_response.json()["purchase"]
+    assert [row["sku"] for row in current["materials"]["items"]] == [material.sku]
+    assert current["materials"]["total"] == 1
+    assert [row["ref"] for row in current["suppliers"]["items"]] == [supplier.ref]
+    assert current["suppliers"]["total"] == 1
+
+    response = client.get(
+        reverse("api-backstage-purchase"),
+        {"material_archive": "archived", "supplier_archive": "archived"},
+    )
+
+    assert response.status_code == 200
+    assert "projection;dur=" in response["Server-Timing"]
+    assert response._watchman_query_count <= current_response._watchman_query_count
+    archived = response.json()["purchase"]
+    assert [row["sku"] for row in archived["materials"]["items"]] == [archived_material.sku]
+    assert archived["materials"]["total"] == 1
+    assert [row["ref"] for row in archived["suppliers"]["items"]] == [archived_supplier.ref]
+    assert archived["suppliers"]["total"] == 1
+
+
+@pytest.mark.django_db
 def test_scan_invoice_validates_key_and_resolves_supplier(client, purchase_operator, supplier):
     client.force_login(purchase_operator)
     response = client.post(

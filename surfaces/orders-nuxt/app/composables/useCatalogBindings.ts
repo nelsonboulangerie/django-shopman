@@ -55,7 +55,7 @@ export function useCatalogBindings(channel: string) {
       pending.value ||
       Boolean(
         selected.value &&
-          String(board.value?.selected_snapshot?.id ?? "") !== selected.value,
+        String(board.value?.selected_snapshot?.id ?? "") !== selected.value,
       ),
   );
   const busy = ref(false);
@@ -67,6 +67,7 @@ export function useCatalogBindings(channel: string) {
     path: string,
     action: CatalogBindingReviewProjection["import_action"] | undefined,
     body: Record<string, unknown>,
+    successMessage = "Gravação local confirmada. Nenhuma alteração enviada à plataforma.",
   ) {
     if (busy.value || stale.value || !board.value) return false;
     busy.value = true;
@@ -79,8 +80,7 @@ export function useCatalogBindings(channel: string) {
         typeof snapshotId === "number"
       )
         selected.value = String(snapshotId);
-      message.value =
-        "Gravação local confirmada. Nenhuma alteração enviada à plataforma.";
+      message.value = successMessage;
       try {
         await refresh();
       } catch {
@@ -131,6 +131,18 @@ export function useCatalogBindings(channel: string) {
       },
     );
   }
+  function changeCategory(body: Record<string, unknown>) {
+    const categoryRef = String(body.category_ref || "category");
+    return execute(
+      `catalog-category:${channel}:${categoryRef}`,
+      `${base}/categories/`,
+      board.value?.category_action,
+      body,
+      body.action === "map"
+        ? "Coleção ligada à categoria confirmada no iFood."
+        : "Alteração confirmada pela leitura atual do iFood.",
+    );
+  }
   return {
     board,
     pending,
@@ -144,5 +156,6 @@ export function useCatalogBindings(channel: string) {
     message,
     importSnapshot,
     bind,
+    changeCategory,
   };
 }

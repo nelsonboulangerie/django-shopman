@@ -27,6 +27,19 @@ function recordedFor(url) {
   const key = Object.keys(recorded).find((k) => k.split("?")[0] === url.pathname);
   return key ? recorded[key] : null;
 }
+function catalogPayload(url) {
+  const source = recordedFor(url);
+  if (!source) return null;
+  const body = JSON.parse(JSON.stringify(source));
+  if (url.searchParams.get("archived") === "true") {
+    const archived = body.matrix?.rows?.slice(0, 1) || [];
+    for (const row of archived) row.is_active = false;
+    body.matrix.rows = archived;
+    body.matrix.total = archived.length;
+    body.matrix.has_next = false;
+  }
+  return body;
+}
 const detailTemplate = recorded["/api/v1/backstage/orders/IFOOD-261006-W01/"];
 /** O detalhe de um pedido da galeria: o detalhe real gravado, com os dados do card. */
 function galleryDetail(ref) {
@@ -243,7 +256,8 @@ createServer((req, res) => {
   if (path.indexOf("/events/") >= 0 || path.indexOf("/sse/") >= 0) { res.statusCode = 204; res.end(); return; }
   if (req.method === "GET") {
     const detail = path.match(/^\/api\/v1\/backstage\/orders\/([A-Z0-9-]+)\/$/);
-    const body = (detail && !recorded[path] && galleryDetail(detail[1])) || recordedFor(url);
+    const catalog = path === "/api/v1/backstage/catalog/" ? catalogPayload(url) : null;
+    const body = catalog || (detail && !recorded[path] && galleryDetail(detail[1])) || recordedFor(url);
     if (body) { send(res, 200, body); return; }
   }
   send(res, 200, {});

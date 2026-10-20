@@ -66,7 +66,59 @@ def test_page_outside_range_is_empty_and_coherent():
     assert result.materials.has_next is False
 
 
-def test_material_category_and_supplier_status_filters_run_before_pagination():
+def test_default_lists_hide_archived_materials_and_suppliers():
+    Material.objects.create(sku="ATIVO", name="Ativo", unit="kg", is_active=True)
+    Material.objects.create(sku="ARQUIVADO", name="Arquivado", unit="kg", is_active=False)
+    Supplier.objects.create(ref="em-uso", name="Em uso", is_active=True)
+    Supplier.objects.create(ref="arquivado", name="Arquivado", is_active=False)
+
+    result = build_purchase(paginate=True)
+
+    assert result.materials.total == 1
+    assert [item.sku for item in result.materials.items] == ["ATIVO"]
+    assert result.suppliers.total == 1
+    assert [item.ref for item in result.suppliers.items] == ["em-uso"]
+
+
+def test_archived_filters_return_only_archived_before_pagination():
+    Material.objects.create(sku="ATIVO", name="Ativo", unit="kg", is_active=True)
+    Material.objects.create(sku="ARQUIVADO", name="Arquivado", unit="kg", is_active=False)
+    Supplier.objects.create(ref="em-uso", name="Em uso", is_active=True)
+    Supplier.objects.create(ref="arquivado", name="Arquivado", is_active=False)
+
+    result = build_purchase(
+        paginate=True,
+        material_filters={"archive": ["archived"]},
+        supplier_filters={"archive": ["archived"]},
+    )
+
+    assert result.materials.total == 1
+    assert [item.sku for item in result.materials.items] == ["ARQUIVADO"]
+    assert result.materials.items[0].isActive is False
+    assert result.suppliers.total == 1
+    assert [item.ref for item in result.suppliers.items] == ["arquivado"]
+    assert result.suppliers.items[0].isActive is False
+
+
+def test_archived_filter_does_not_add_queries():
+    Material.objects.create(sku="ATIVO", name="Ativo", unit="kg", is_active=True)
+    Material.objects.create(sku="ARQUIVADO", name="Arquivado", unit="kg", is_active=False)
+    Supplier.objects.create(ref="em-uso", name="Em uso", is_active=True)
+    Supplier.objects.create(ref="arquivado", name="Arquivado", is_active=False)
+
+    with CaptureQueriesContext(connection) as current:
+        build_purchase(paginate=True)
+    with CaptureQueriesContext(connection) as archived:
+        build_purchase(
+            paginate=True,
+            material_filters={"archive": ["archived"]},
+            supplier_filters={"archive": ["archived"]},
+        )
+
+    assert len(archived) == len(current)
+
+
+def test_material_category_and_supplier_contact_filters_run_before_pagination():
     Material.objects.create(
         sku="CACAU",
         name="Cacau",
@@ -79,17 +131,17 @@ def test_material_category_and_supplier_status_filters_run_before_pagination():
         unit="kg",
         metadata={"purchase": {"category": "Farinhas"}},
     )
-    Supplier.objects.create(ref="ativo", name="Ativo", is_active=True)
-    Supplier.objects.create(ref="inativo", name="Inativo", is_active=False)
+    Supplier.objects.create(ref="com-contato", name="Com contato", email="compras@example.test")
+    Supplier.objects.create(ref="sem-contato", name="Sem contato")
 
     result = build_purchase(
         paginate=True,
         page_size=1,
         material_filters={"category": ["Chocolate"]},
-        supplier_filters={"status": ["inactive"]},
+        supplier_filters={"contact": ["without"]},
     )
 
     assert result.materials.total == 1
     assert result.materials.items[0].sku == "CACAU"
     assert result.suppliers.total == 1
-    assert result.suppliers.items[0].ref == "inativo"
+    assert result.suppliers.items[0].ref == "sem-contato"

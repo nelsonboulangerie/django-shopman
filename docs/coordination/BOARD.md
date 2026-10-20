@@ -47,7 +47,17 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 `ROUNDS/ARQUIVAR-A-core-produto.md`. Não fica linha ativa no quadro porque a frente já saiu da
 execução para a fila.
 
+**Turno Arquivar (20/10, Frente D):** Compras passou a separar insumos e fornecedores
+arquivados das listas correntes, com o filtro explícito **Arquivados**, no PR #1946. A
+frente saiu do quadro ao entrar na fila; prova e limites estão em
+`ROUNDS/D-arquivar-compras.md`.
+
 **Turno ARQUIVAR (20/10):** Frente E, receitas com `RecipeEntry.is_active`, na fila no PR #1944. Detalhe em `ROUNDS/E-arquivar-receita.md`.
+
+**Turno ARQUIVAR (20/10):** Frentes B+C, trava transversal e superfícies de produto arquivado,
+entregues e colocadas na fila no PR #1947. A loja, a busca, a matriz, os feeds, os canais e o B.I.
+agora respeitam o arquivamento; retração e reenvio foram provados por transporte simulado. Detalhe
+em `ROUNDS/ARQUIVAR-BC-superficies.md`.
 
 **Turno das observações do dono (02/10, sessão coordenacao-pedidos-4f89d4).** Mergeados: #1367 (R1,
 desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5), #1383 (T3),
@@ -85,6 +95,7 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 |---|---|---|---|
 | A1 | `npm audit` acusa `node-forge` | não há versão corrigida; o job não é obrigatório; o pacote não chega ao `.output` (D-027, reconfirmada pelo dono em 02/10) | sair o 1.4.1 |
 | A2 | Controles de data, o resto | PDV, Produção, B.I. e Compras entraram (#1371, #1372). Restam só os do Marketing (`CampaignForm`, `AnnouncementCard`, `GoogleBusinessPostOptions`, `MarketingOfferForm`), fora do go-live (D-017), e o aniversário do perfil na loja, que é superfície de cliente e não entra na D37 | o Marketing voltar ao escopo |
+| IFOOD-B | O vínculo dirige a identidade enviada ao iFood | #1905 ainda está aberto e vermelho no mesmo adapter; a ordem proíbe tocar ou abrir a frente sobre essa base | #1905 mergear; então criar `codex/ifood-vinculo-resolvedor` a partir do `main` atualizado |
 
 ## Armadilhas ativas (leia antes de mexer)
 

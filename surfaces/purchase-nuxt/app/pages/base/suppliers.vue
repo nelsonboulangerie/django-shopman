@@ -13,11 +13,11 @@ const {
   query,
   suppliers,
   supplierList,
+  materialList,
   supplierSummaries,
   supplierFilters,
   supplierForm,
   supplierFormSource,
-  metrics,
   selectSupplier,
   openSupplierCreate,
   saveSupplier,
@@ -83,7 +83,7 @@ const columns = computed(() => [
   { id: "preferred", header: "Preferidos", accessorFn: SORT_VALUE.preferred, meta: { supporting: true, class: yieldsToDetail.value } },
   { id: "reliability", header: "No prazo", accessorFn: SORT_VALUE.reliability, meta: { supporting: true } },
   { id: "lead", header: "Prazo de entrega", accessorFn: SORT_VALUE.lead, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "status", header: "Situação" },
+  { id: "status", header: "Cadastro" },
 ]);
 
 const displayed = computed<SupplierRow[]>(() => supplierSummaries.value);
@@ -131,7 +131,7 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
         />
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <PurchaseBaseSections :counts="{ materials: materialList.total, suppliers: supplierList.total }" />
       </template>
       <template #filter-panel>
         <OperatorFilterPanel
@@ -200,7 +200,10 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
               <span class="whitespace-nowrap tabular-nums">{{ row.original.supplier.leadTimeDays }} {{ row.original.supplier.leadTimeDays === 1 ? "dia" : "dias" }}</span>
             </template>
             <template #status-cell="{ row }">
-              <NuxtBadge :color="row.original.supplier.isActive ? 'success' : 'neutral'" :label="row.original.supplier.isActive ? 'Ativo' : 'Inativo'" />
+              <NuxtBadge
+                :color="row.original.supplier.isActive ? 'success' : 'neutral'"
+                :label="row.original.supplier.isActive ? 'Em uso' : 'Arquivado'"
+              />
             </template>
           </OperatorTable>
           <MoreBelow />
