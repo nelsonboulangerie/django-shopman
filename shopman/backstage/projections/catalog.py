@@ -923,7 +923,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     # fora de venda não entra: classificar o que não se vende não informa o B.I.
     vocation_pending = tuple(
         VocationPendingProjection(sku=sku, name=name)
-        for sku, name in Product.objects.filter(is_active=True, is_sellable=True)
+        for sku, name in Product.objects.active().filter(is_sellable=True)
         .exclude(sku__in=tagged_skus)
         .order_by("name", "sku")
         .values_list("sku", "name")

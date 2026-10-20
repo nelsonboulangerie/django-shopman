@@ -108,6 +108,23 @@ export interface CatalogCurrentBinding {
   snapshot_id: number;
 }
 
+/** CatalogRemoteCategory(ref: str, name: str, status: str, index: int, mapped_collections: int) */
+export interface CatalogRemoteCategory {
+  ref: string;
+  name: string;
+  status: string;
+  index: number;
+  mapped_collections: number;
+}
+
+/** CatalogCollectionCategory(ref: str, name: str, category_ref: str, category_name: str) */
+export interface CatalogCollectionCategory {
+  ref: string;
+  name: string;
+  category_ref: string;
+  category_name: string;
+}
+
 /** CatalogReviewItem(item_id: str, product_ref: str, category_ref: str, category_name: str, item_context_ref: str, name: str, description: str, image_path: str, status: str, price: str, external_code: str, diagnostic: str, notice: str, candidates: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], binding: shopman.backstage.projections.catalog_bindings.CatalogCurrentBinding | None, base_revision: str, can_bind: bool, needs_review: bool, blocked_reason: str, binding_action: shopman.shop.projections.types.Action) */
 export interface CatalogReviewItem {
   item_id: string;
@@ -132,7 +149,7 @@ export interface CatalogReviewItem {
   binding_action: Action;
 }
 
-/** CatalogBindingReviewProjection(channel_ref: str, channel_name: str, provider: str, snapshots: tuple[shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary, ...], selected_snapshot: shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary | None, products: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], items: tuple[shopman.backstage.projections.catalog_bindings.CatalogReviewItem, ...], expected_actor_id: int | None, notice: str, import_action: shopman.shop.projections.types.Action) */
+/** CatalogBindingReviewProjection(channel_ref: str, channel_name: str, provider: str, snapshots: tuple[shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary, ...], selected_snapshot: shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary | None, products: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], items: tuple[shopman.backstage.projections.catalog_bindings.CatalogReviewItem, ...], expected_actor_id: int | None, notice: str, import_action: shopman.shop.projections.types.Action, catalog_ref: str, categories: tuple[shopman.backstage.projections.catalog_bindings.CatalogRemoteCategory, ...], collections: tuple[shopman.backstage.projections.catalog_bindings.CatalogCollectionCategory, ...], categories_error: str, category_action: shopman.shop.projections.types.Action) */
 export interface CatalogBindingReviewProjection {
   channel_ref: string;
   channel_name: string;
@@ -144,6 +161,11 @@ export interface CatalogBindingReviewProjection {
   expected_actor_id: number | null;
   notice: string;
   import_action: Action;
+  catalog_ref: string;
+  categories: CatalogRemoteCategory[];
+  collections: CatalogCollectionCategory[];
+  categories_error: string;
+  category_action: Action;
 }
 
 /** FeedCollectionRef(ref: 'str', name: 'str', exists: 'bool') */

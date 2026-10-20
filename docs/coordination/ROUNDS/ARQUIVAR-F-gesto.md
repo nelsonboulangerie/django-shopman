@@ -3,7 +3,7 @@
 - **id:** ARQUIVAR-F
 - **branch:** `codex/arquivar-gesto`
 - **PR:** #1948
-- **estado:** draft publicado; aguarda #1945 e #1947 no `main`
+- **estado final:** na fila, #1948
 - **início:** 2026-10-20
 
 ## O que entrou
@@ -38,6 +38,9 @@
 - Navegador real com backend hermético: rota de arquivados, seleção e ação de desarquivar verificadas;
   nenhuma resposta 4xx/5xx e nenhum erro da aplicação. O único log de erro observado veio da extensão
   SingleFile do Chrome, fora da aplicação.
+- Pós-integração de #1945 e #1947: 37 testes Django passaram, com 2 ignorados; 47 testes Nuxt,
+  `nuxi typecheck`, ESLint e o gate de migrações passaram. O smoke final em Chrome confirmou o
+  produto arquivado, a seleção no tabelão e o botão **Desarquivar**, sem erro ou aviso no console.
 
 ## Capturas antes/depois
 

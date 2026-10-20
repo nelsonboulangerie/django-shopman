@@ -45,7 +45,12 @@ from .catalog import (
     CatalogSocialView,
     CatalogSyncStatusView,
 )
-from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
+from .catalog_bindings import (
+    CatalogBindingConfirmView,
+    CatalogBindingReviewView,
+    CatalogCategoryView,
+    CatalogSnapshotImportView,
+)
 from .channel_health import ChannelHealthView
 from .customer_groups import CustomerGroupDetailView, CustomerGroupListView, CustomerGroupMembersView
 from .customers import (
@@ -746,6 +751,11 @@ urlpatterns = [
         "catalog/channels/<str:ref>/bindings/",
         CatalogBindingConfirmView.as_view(),
         name="api-backstage-catalog-binding-confirm",
+    ),
+    path(
+        "catalog/channels/<str:ref>/categories/",
+        CatalogCategoryView.as_view(),
+        name="api-backstage-catalog-category",
     ),
     # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
     # se chama "merge", mas a ordem não deveria depender disso.

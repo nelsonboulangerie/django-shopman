@@ -32,8 +32,10 @@ from shopman.backstage.projections.catalog import (
 )
 from shopman.backstage.projections.catalog_bindings import (
     CatalogBindingReviewProjection,
+    CatalogCollectionCategory,
     CatalogCurrentBinding,
     CatalogProductOption,
+    CatalogRemoteCategory,
     CatalogReviewItem,
     CatalogSnapshotSummary,
 )
@@ -139,6 +141,8 @@ CONTRACT_DATACLASSES = (
     CatalogSnapshotSummary,
     CatalogProductOption,
     CatalogCurrentBinding,
+    CatalogRemoteCategory,
+    CatalogCollectionCategory,
     CatalogReviewItem,
     CatalogBindingReviewProjection,
     FeedCollectionRef,

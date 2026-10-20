@@ -137,6 +137,9 @@ _PURCHASE_REQUEST_FLOW_FIELDS = (
 # compatibilidade com flows já criados antes da padronização documentada.
 #: Evento-variante do ``order_dispatched`` com o link de rastreio do entregador.
 COURIER_DISPATCH_VARIANT = "order_dispatched_courier"
+#: Evento-variante do ``order_accepted`` quando o pedido é ENCOMENDA: o modelo
+#: ``pedido_encomenda_confirmada`` diz para quando ("confirmada para {{2}}").
+PREORDER_ACCEPTED_VARIANT = "order_accepted_preorder"
 
 _CUSTOMER = ("customer_name", "customer_name_greeting")
 _ORDER = ("order_ref_short",)
@@ -145,6 +148,11 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "order_received": (*_CUSTOMER, *_ORDER_BUTTON),
     "order_received_outside_hours": (*_CUSTOMER, *_ORDER_BUTTON),
     "order_accepted": (*_ORDER_BUTTON, "total", "order_total_display"),
+    # Variante do `order_accepted` na encomenda (`pedido_encomenda_confirmada`):
+    # `status_note` é a promessa sem ponto final ("retirada amanhã, a partir das 9h").
+    # Escolhida pelo adapter (`notification_manychat._preorder_accepted_variant`),
+    # nunca emitida como evento próprio.
+    PREORDER_ACCEPTED_VARIANT: (*_ORDER_BUTTON, "status_note", "total", "order_total_display"),
     "order_rejected": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "order_preparing": (*_ORDER_BUTTON, "status_note"),
     "order_ready_pickup": _ORDER_BUTTON,

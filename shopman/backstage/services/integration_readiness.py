@@ -330,8 +330,8 @@ def _sellable_products_without_ncm() -> int:
         from shopman.offerman.models import Product
 
         count = 0
-        for product in Product.objects.filter(
-            is_active=True, is_sellable=True, is_published=True
+        for product in Product.objects.active().filter(
+            is_sellable=True, is_published=True
         ).only("metadata"):
             fiscal = (product.metadata or {}).get("fiscal") or {}
             if not str(fiscal.get("ncm") or "").strip():

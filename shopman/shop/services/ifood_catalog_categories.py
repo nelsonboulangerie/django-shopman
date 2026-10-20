@@ -50,9 +50,14 @@ def _managed_config(channel: Channel) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def category_mapping(channel_ref: str, legacy_config: dict | None = None) -> tuple[dict[str, str], str]:
+def category_mapping(
+    channel_ref: str,
+    legacy_config: dict | None = None,
+    *,
+    channel: Channel | None = None,
+) -> tuple[dict[str, str], str]:
     """Retorna mapa/default administráveis, com fallback para settings antigos."""
-    managed = _managed_config(_channel(channel_ref))
+    managed = _managed_config(channel or _channel(channel_ref))
     managed_map = managed.get("category_map")
     legacy_config = legacy_config if isinstance(legacy_config, dict) else {}
     legacy_map = legacy_config.get("catalog_category_map")

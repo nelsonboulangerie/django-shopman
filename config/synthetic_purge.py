@@ -225,6 +225,7 @@ POLICY: dict[str, Rule] = {
     "shop.CatalogSnapshot": _keep("vínculo do catálogo com o iFood"),
     "shop.CatalogBinding": _keep("vínculo do catálogo com o iFood"),
     "shop.CatalogSyncState": _keep("vínculo do catálogo com o iFood"),
+    "shop.CatalogImageUpload": _purge("cache do imagePath do catálogo iFood; derivado do merchant remoto"),
     "shop.IFoodStoreStatus": _keep("estado da loja no iFood"),
     "shop.OperatorPasskey": _keep("passkey dos operadores"),
     "shop.PushSubscription": _keep("aviso no dispositivo do operador"),

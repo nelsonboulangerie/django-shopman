@@ -48933,8 +48933,30 @@
    "channel_ref": "ifood",
    "channel_name": "iFood",
    "provider": "ifood",
-   "snapshots": [],
-   "selected_snapshot": null,
+   "snapshots": [
+    {
+     "id": 1,
+     "account_ref": "merchant-test",
+     "catalog_ref": "catalog-test",
+     "context": "DEFAULT",
+     "captured_at": "2026-10-19T18:00:00+00:00",
+     "imported_at": "2026-10-19T18:01:00+00:00",
+     "sha256": "visual-fixture",
+     "source": "visual_fixture",
+     "item_count": 0
+    }
+   ],
+   "selected_snapshot": {
+    "id": 1,
+    "account_ref": "merchant-test",
+    "catalog_ref": "catalog-test",
+    "context": "DEFAULT",
+    "captured_at": "2026-10-19T18:00:00+00:00",
+    "imported_at": "2026-10-19T18:01:00+00:00",
+    "sha256": "visual-fixture",
+    "source": "visual_fixture",
+    "item_count": 0
+   },
    "products": [
     {
      "sku": "AGUA-GAS-PRATA-310",
@@ -49476,6 +49498,68 @@
     "payload_schema": {
      "expected_actor_id": 1,
      "base_revision": "32e0467e44afe721036a06f527d3c73101cd8f5fd10c92e194c01eecacb80477"
+    },
+    "idempotency": "required",
+    "confirmation": {}
+   },
+   "catalog_ref": "catalog-test",
+   "categories": [
+    {
+     "ref": "breakfast",
+     "name": "Café da manhã",
+     "status": "AVAILABLE",
+     "index": 0,
+     "mapped_collections": 2
+    },
+    {
+     "ref": "breads",
+     "name": "Pães artesanais",
+     "status": "AVAILABLE",
+     "index": 1,
+     "mapped_collections": 1
+    },
+    {
+     "ref": "drinks",
+     "name": "Bebidas",
+     "status": "UNAVAILABLE",
+     "index": 2,
+     "mapped_collections": 0
+    }
+   ],
+   "collections": [
+    {
+     "ref": "paes",
+     "name": "Pães",
+     "category_ref": "breads",
+     "category_name": "Pães artesanais"
+    },
+    {
+     "ref": "cafeteria",
+     "name": "Cafeteria",
+     "category_ref": "breakfast",
+     "category_name": "Café da manhã"
+    },
+    {
+     "ref": "bebidas",
+     "name": "Bebidas frias",
+     "category_ref": "",
+     "category_name": ""
+    }
+   ],
+   "categories_error": "",
+   "category_action": {
+    "ref": "catalog.category.change",
+    "kind": "mutation",
+    "label": "Aplicar alteração de categoria",
+    "priority": "secondary",
+    "enabled": true,
+    "reason": "",
+    "href": "/api/v1/backstage/catalog/channels/ifood/categories/",
+    "method": "POST",
+    "payload_schema": {
+     "expected_actor_id": 1,
+     "snapshot_id": 1,
+     "catalog_ref": "catalog-test"
     },
     "idempotency": "required",
     "confirmation": {}

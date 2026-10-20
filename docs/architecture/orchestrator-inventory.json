@@ -304,14 +304,19 @@
             "IFoodCatalogWriteBlocked",
             "IFoodCategoryError",
             "IFoodConfirmationError",
+            "IFoodImageError",
             "IFoodRateLimitError",
+            "_IMAGE_PATHS",
+            "_MAX_IMAGE_BYTES",
             "_UUID_NS",
             "_base_url",
             "_check_rate_limit",
             "_confirm_item_price",
             "_confirm_item_status",
+            "_download_image",
             "_get_config",
             "_headers",
+            "_image_path",
             "_item_payload",
             "_item_uuid",
             "_patch_item_price",
@@ -319,7 +324,10 @@
             "_read_item",
             "_resolve_category_id",
             "_set_item_status",
+            "_storage_image",
+            "_upload_image",
             "_upsert_item",
+            "_validated_image",
             "logger"
           ]
         }
@@ -1026,6 +1034,7 @@
           "symbols": [
             "COURIER_TRACKING_TEMPLATE_NAME",
             "MESSAGE_TEMPLATES",
+            "PREORDER_ACCEPTED_TEMPLATE_NAME",
             "TEXT_MAX_CHARS",
             "_ACCESS_TOKEN_IN_QUERY",
             "_FIELD_DENYLIST",
@@ -1041,6 +1050,7 @@
             "_message_buttons",
             "_message_contents",
             "_plain_text_button_fallback",
+            "_preorder_accepted_variant",
             "_prepare_call",
             "_provider_error_code",
             "_push_custom_fields",
@@ -2587,6 +2597,8 @@
             "STAGING_AUTOPILOT",
             "STOCK_ALERT_DELIVER",
             "STOCK_ALERT_DELIVERY_RECEIPT_SCOPE",
+            "STOCK_CONSUME_MADE_TO_ORDER",
+            "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION",
             "logger"
           ]
         }
@@ -2857,6 +2869,7 @@
             "_register_ifood_status_callbacks",
             "_register_kds_alerts",
             "_register_loyalty_handler",
+            "_register_made_to_order_handlers",
             "_register_mock_pix_handler",
             "_register_notification_handlers",
             "_register_payment_refund_handler",
@@ -3494,6 +3507,29 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/handlers/made_to_order.py",
+      "touchpoints": [
+        "handler"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.made-to-order-handlers"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_order_for",
             "logger"
           ]
         }
@@ -5662,6 +5698,7 @@
         {
           "responsibility": "configuração",
           "symbols": [
+            "CatalogImageUpload",
             "CatalogSyncState",
             "SyncStatus"
           ]
@@ -9941,6 +9978,36 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/made_to_order.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.made-to-order-consumption"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_Q",
+            "_alert_ambiguous",
+            "_alert_shortfall",
+            "_consumable_quants",
+            "_fmt",
+            "_issue_sale",
+            "_sale_moves",
+            "_settlement_moves",
             "logger"
           ]
         }

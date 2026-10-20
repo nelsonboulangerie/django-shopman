@@ -21,6 +21,7 @@ const {
   message,
   importSnapshot,
   bind,
+  changeCategory,
 } = useCatalogBindings(channel);
 const fileName = ref("");
 const rawJson = ref("");
@@ -113,14 +114,18 @@ useHead({ title: "Revisão de vínculos" });
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
 // desce para a faixa de texto abaixo da linha. Do `sm` para cima, tudo como está.
 const phoneHeaderActions = computed(() => [
-  { label: "Atualizar revisão", icon: "i-lucide-refresh-cw", onSelect: () => void refresh() },
+  {
+    label: "Atualizar revisão",
+    icon: "i-lucide-refresh-cw",
+    onSelect: () => void refresh(),
+  },
 ]);
 </script>
 
 <template>
   <main class="flex min-h-0 min-w-0 flex-1 flex-col">
     <OperatorPageHeader
-      :title="`${board?.channel_name || channel} · Revisão de vínculos`"
+      :title="`${board?.channel_name || channel} · Catálogo`"
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       desk-only-filters
@@ -156,9 +161,9 @@ const phoneHeaderActions = computed(() => [
     </OperatorPageHeader>
     <div class="min-h-0 min-w-0 flex-1 space-y-4 overflow-auto p-4 sm:p-6">
       <p class="max-w-4xl text-sm text-muted-foreground">
-        Confira a identidade dos anúncios antes de associá-los ao cadastro. Os
-        dados locais ainda precisam de revisão. Este fluxo não envia alterações
-        à plataforma.
+        Organize as categorias e confira a identidade dos anúncios. Alterações
+        de categoria exigem confirmação do iFood; os vínculos de produto abaixo
+        continuam locais.
       </p>
       <NuxtAlert
         v-if="message"
@@ -178,12 +183,14 @@ const phoneHeaderActions = computed(() => [
             ? 'Exibindo a última leitura disponível; a gravação está bloqueada.'
             : 'Tente novamente para consultar os inventários.'
         "
-        :actions="alertActions('error', [
-          {
-            label: 'Tentar de novo',
-            onClick: () => refresh(),
-          },
-        ])"
+        :actions="
+          alertActions('error', [
+            {
+              label: 'Tentar de novo',
+              onClick: () => refresh(),
+            },
+          ])
+        "
       />
       <NuxtSkeleton
         v-if="pending && !board"
@@ -191,6 +198,12 @@ const phoneHeaderActions = computed(() => [
         aria-label="Carregando inventários"
       />
       <template v-if="board">
+        <CatalogCategoryManager
+          :board="board"
+          :busy="busy"
+          :stale="stale"
+          :change="changeCategory"
+        />
         <NuxtCollapsible>
           <NuxtButton
             icon="i-lucide-upload"
