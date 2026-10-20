@@ -1,13 +1,101 @@
 <script setup lang="ts">
 // Base · Fornecedores: a tabela da suíte com os fornecedores, quantos insumos cada um
 // cobre e a pontualidade. O fornecedor aberto é a rota filha (`/base/suppliers/<ref>`).
-import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
+import { navigateTo } from "#imports";
+import {
+  SUPPLIERS_TRAIL,
+  baseSectionPath,
+  supplierPath,
+} from "~/presentation/purchaseSections";
 import { plural, supplierDimensions } from "~/presentation/purchaseUi";
 import type { Supplier } from "~/types/purchase";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
-type SupplierRow = { supplier: Supplier; materialsCovered: number; preferredCount: number };
+type SupplierRow = {
+  supplier: Supplier;
+  materialsCovered: number;
+  preferredCount: number;
+};
 
+const selection = ref<Record<string, boolean>>({});
+const bulkPending = ref(false);
+const bulkIntention = ref<{ fingerprint: string; key: string } | null>(null);
+const bulkError = ref("");
+const bulkUndo = ref<{
+  undo: string;
+  until: string;
+  serverNow: string;
+  count: number;
+} | null>(null);
+const confirmBulk = useConfirm();
+const selectedCount = computed(
+  () => Object.values(selection.value).filter(Boolean).length,
+);
+async function applyBulk(active?: boolean) {
+  if (bulkPending.value) return;
+  const rows = displayed.value
+    .filter((row) => selection.value[row.supplier.ref])
+    .map(({ supplier }) => ({
+      ref: supplier.ref,
+      revision: supplier.revision,
+    }));
+  if (
+    active !== undefined &&
+    !(await confirmBulk({
+      title: `${active ? "Desarquivar" : "Arquivar"} ${plural(rows.length, "fornecedor", "fornecedores")}?`,
+      description: active
+        ? "Os fornecedores voltam à lista de compras."
+        : "Os fornecedores saem da lista de compras. O histórico fica guardado.",
+      confirmLabel: active ? "Desarquivar" : "Arquivar",
+      cancelLabel: "Manter fornecedores",
+      tone: active ? "primary" : "danger",
+    }))
+  )
+    return;
+  bulkPending.value = true;
+  bulkError.value = "";
+  try {
+    const body =
+      active === undefined
+        ? { undo: bulkUndo.value?.undo }
+        : { rows, isActive: active };
+    const fingerprint = JSON.stringify(body);
+    if (bulkIntention.value?.fingerprint !== fingerprint)
+      bulkIntention.value = { fingerprint, key: crypto.randomUUID() };
+    const response = await $fetch<{
+      resource: {
+        undo?: string;
+        until?: string;
+        serverNow?: string;
+        count: number;
+      };
+    }>("/api/v1/backstage/purchase/suppliers/batch/", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Idempotency-Key": bulkIntention.value!.key },
+      body,
+    });
+    bulkIntention.value = null;
+    const receipt = response.resource;
+    bulkUndo.value =
+      receipt.undo && receipt.until && receipt.serverNow
+        ? {
+            undo: receipt.undo,
+            until: receipt.until,
+            serverNow: receipt.serverNow,
+            count: receipt.count,
+          }
+        : null;
+    selection.value = {};
+    await refresh();
+  } catch (error) {
+    bulkError.value =
+      (error as { data?: { detail?: string } }).data?.detail ||
+      "Não foi possível confirmar a alteração. Tente de novo.";
+  } finally {
+    bulkPending.value = false;
+  }
+}
 const route = useRoute();
 const {
   query,
@@ -27,20 +115,36 @@ const {
   refresh,
 } = usePurchaseDesk();
 
-const openRef = computed(() => (typeof route.params.ref === "string" ? route.params.ref : ""));
-watch(openRef, (ref) => {
-  if (ref) selectSupplier(ref);
-}, { immediate: true });
+const openRef = computed(() =>
+  typeof route.params.ref === "string" ? route.params.ref : "",
+);
+watch(
+  openRef,
+  (ref) => {
+    if (ref) selectSupplier(ref);
+  },
+  { immediate: true },
+);
 
 const search = query;
 const sorting = ref<{ id: string; desc: boolean }[]>([]);
-watch(sorting, (value) => {
-  const sort = value[0];
-  const order = sort?.id === "name" ? (sort.desc ? "-name" : "name") : "name";
-  void navigateTo({ query: { ...route.query, order, page: "1" } }, { replace: true });
-}, { deep: true });
+watch(
+  sorting,
+  (value) => {
+    const sort = value[0];
+    const order = sort?.id === "name" ? (sort.desc ? "-name" : "name") : "name";
+    void navigateTo(
+      { query: { ...route.query, order, page: "1" } },
+      { replace: true },
+    );
+  },
+  { deep: true },
+);
 function goToPage(page: number) {
-  void navigateTo({ query: { ...route.query, page: String(page) } }, { replace: true });
+  void navigateTo(
+    { query: { ...route.query, page: String(page) } },
+    { replace: true },
+  );
 }
 
 // O painel de filtros da suíte: Situação e "tem contato comercial?" — a pergunta
@@ -51,11 +155,15 @@ const quickItems = computed(() => [
     key: "without-contact",
     label: "Sem contato comercial",
     icon: "i-lucide-user-x",
-    count: suppliers.value.filter((supplier) => !supplier.orderContactName).length,
+    count: suppliers.value.filter((supplier) => !supplier.orderContactName)
+      .length,
   },
 ]);
 const quickModel = computed<string[]>({
-  get: () => (supplierFilters.value.contact?.includes("without") ? ["without-contact"] : []),
+  get: () =>
+    supplierFilters.value.contact?.includes("without")
+      ? ["without-contact"]
+      : [],
   set: (keys) => {
     const next = { ...supplierFilters.value };
     delete next.contact;
@@ -76,13 +184,36 @@ const SORT_VALUE: Record<string, (row: SupplierRow) => number | string> = {
   lead: (row) => row.supplier.leadTimeDays,
 };
 // Com o fornecedor aberto ao lado, a tabela solta as colunas de apoio antes de rolar.
-const yieldsToDetail = computed(() => (openRef.value ? { th: "max-2xl:hidden", td: "max-2xl:hidden" } : undefined));
+const yieldsToDetail = computed(() =>
+  openRef.value ? { th: "max-2xl:hidden", td: "max-2xl:hidden" } : undefined,
+);
 const columns = computed(() => [
-  { id: "name", header: "Fornecedor", accessorFn: SORT_VALUE.name, enableSorting: true, enableHiding: false },
+  {
+    id: "name",
+    header: "Fornecedor",
+    accessorFn: SORT_VALUE.name,
+    enableSorting: true,
+    enableHiding: false,
+  },
   { id: "materials", header: "Insumos", accessorFn: SORT_VALUE.materials },
-  { id: "preferred", header: "Preferidos", accessorFn: SORT_VALUE.preferred, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "reliability", header: "No prazo", accessorFn: SORT_VALUE.reliability, meta: { supporting: true } },
-  { id: "lead", header: "Prazo de entrega", accessorFn: SORT_VALUE.lead, meta: { supporting: true, class: yieldsToDetail.value } },
+  {
+    id: "preferred",
+    header: "Preferidos",
+    accessorFn: SORT_VALUE.preferred,
+    meta: { supporting: true, class: yieldsToDetail.value },
+  },
+  {
+    id: "reliability",
+    header: "No prazo",
+    accessorFn: SORT_VALUE.reliability,
+    meta: { supporting: true },
+  },
+  {
+    id: "lead",
+    header: "Prazo de entrega",
+    accessorFn: SORT_VALUE.lead,
+    meta: { supporting: true, class: yieldsToDetail.value },
+  },
   { id: "status", header: "Cadastro" },
 ]);
 
@@ -90,13 +221,32 @@ const displayed = computed<SupplierRow[]>(() => supplierSummaries.value);
 const { remember } = useRecordTrail(SUPPLIERS_TRAIL);
 watch(
   displayed,
-  (list) => remember(list.map((row) => row.supplier.ref), { from: baseSectionPath("suppliers"), label: "Fornecedores" }),
+  (list) =>
+    remember(
+      list.map((row) => row.supplier.ref),
+      { from: baseSectionPath("suppliers"), label: "Fornecedores" },
+    ),
   { immediate: true },
 );
 
+watch(
+  () => [route.query, displayed.value.map((row) => row.supplier.ref).join(",")],
+  () => {
+    selection.value = {};
+  },
+);
 const headerActions = [
-  { label: "Novo fornecedor", icon: "i-lucide-plus", onSelect: () => openSupplierCreate() },
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
+  {
+    label: "Novo fornecedor",
+    icon: "i-lucide-plus",
+    onSelect: () => openSupplierCreate(),
+  },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => void refresh(),
+  },
 ];
 
 async function onSubmitSupplier(payload: Record<string, unknown>) {
@@ -105,7 +255,9 @@ async function onSubmitSupplier(payload: Record<string, unknown>) {
 }
 
 const supplierSavedVersion = ref(0);
-async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierContact>[0]) {
+async function onSaveSupplierContact(
+  payload: Parameters<typeof saveSupplierContact>[0],
+) {
   if (await saveSupplierContact(payload)) supplierSavedVersion.value += 1;
 }
 </script>
@@ -119,6 +271,20 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
       :active-filters="activeFilters"
       desk-only-filters
     >
+      <template v-if="selectedCount || bulkUndo" #selection>
+        <PurchaseSupplierBulkBar
+          :count="selectedCount"
+          :pending="bulkPending"
+          :undo="bulkUndo"
+          @clear="
+            selection = {};
+            bulkUndo = null;
+          "
+          @archive="applyBulk"
+          @undo="applyBulk()"
+          @expire="bulkUndo = null"
+        />
+      </template>
       <template #status>
         <PurchaseReadStatus />
       </template>
@@ -131,7 +297,12 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
         />
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: materialList.total, suppliers: supplierList.total }" />
+        <PurchaseBaseSections
+          :counts="{
+            materials: materialList.total,
+            suppliers: supplierList.total,
+          }"
+        />
       </template>
       <template #filter-panel>
         <OperatorFilterPanel
@@ -153,28 +324,53 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
         <OperatorTableView table-key="purchase-suppliers" />
       </template>
       <template #filters-end>
-        <span class="text-xs text-muted tabular-nums">{{ plural(supplierList.total, "fornecedor", "fornecedores") }}</span>
+        <span class="text-xs text-muted tabular-nums">{{
+          plural(supplierList.total, "fornecedor", "fornecedores")
+        }}</span>
       </template>
     </OperatorPageHeader>
 
     <div class="flex min-h-0 flex-1">
-      <section class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6" data-base-suppliers>
+      <section
+        class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6"
+        data-base-suppliers
+      >
+        <NuxtAlert
+          v-if="bulkError"
+          color="error"
+          title="Confira a alteração dos fornecedores"
+          :description="bulkError"
+          close
+          class="mb-4"
+          @update:open="bulkError = ''"
+        />
         <PurchaseLoadState>
           <OperatorTable
             v-model:sorting="sorting"
+            v-model:row-selection="selection"
+            selectable
             :data="displayed"
             :columns="columns"
             :row-key="(row: SupplierRow) => row.supplier.ref"
             :row-label="(row: SupplierRow) => row.supplier.displayName"
-            :on-select="(row: SupplierRow) => navigateTo(supplierPath(row.supplier.ref))"
+            :on-select="
+              (row: SupplierRow) => navigateTo(supplierPath(row.supplier.ref))
+            "
             :active-key="openRef"
             view-key="purchase-suppliers"
             caption="Fornecedores da Base"
             empty-icon="i-lucide-truck"
-            :empty-title="!suppliers.length ? 'Nenhum fornecedor cadastrado ainda.' : `Nenhum fornecedor com “${search.trim()}”.`"
+            :empty-title="
+              !suppliers.length
+                ? 'Nenhum fornecedor cadastrado ainda.'
+                : `Nenhum fornecedor com “${search.trim()}”.`
+            "
             data-base-suppliers-table
           >
-            <template v-if="supplierList.page > 1 || supplierList.has_next" #footer>
+            <template
+              v-if="supplierList.page > 1 || supplierList.has_next"
+              #footer
+            >
               <NuxtPagination
                 :page="supplierList.page"
                 :total="supplierList.total"
@@ -184,20 +380,35 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
               />
             </template>
             <template #name-cell="{ row }">
-              <span class="block font-semibold">{{ row.original.supplier.displayName }}</span>
-              <span class="block font-mono text-xs text-muted">{{ row.original.supplier.ref }}</span>
+              <span class="block font-semibold">{{
+                row.original.supplier.displayName
+              }}</span>
+              <span class="block font-mono text-xs text-muted">{{
+                row.original.supplier.ref
+              }}</span>
             </template>
             <template #materials-cell="{ row }">
-              <span class="tabular-nums">{{ row.original.materialsCovered }}</span>
+              <span class="tabular-nums">{{
+                row.original.materialsCovered
+              }}</span>
             </template>
             <template #preferred-cell="{ row }">
-              <span class="tabular-nums">{{ row.original.preferredCount }}</span>
+              <span class="tabular-nums">{{
+                row.original.preferredCount
+              }}</span>
             </template>
             <template #reliability-cell="{ row }">
-              <span class="tabular-nums">{{ row.original.supplier.reliabilityPercent }}%</span>
+              <span class="tabular-nums"
+                >{{ row.original.supplier.reliabilityPercent }}%</span
+              >
             </template>
             <template #lead-cell="{ row }">
-              <span class="whitespace-nowrap tabular-nums">{{ row.original.supplier.leadTimeDays }} {{ row.original.supplier.leadTimeDays === 1 ? "dia" : "dias" }}</span>
+              <span class="whitespace-nowrap tabular-nums"
+                >{{ row.original.supplier.leadTimeDays }}
+                {{
+                  row.original.supplier.leadTimeDays === 1 ? "dia" : "dias"
+                }}</span
+              >
             </template>
             <template #status-cell="{ row }">
               <NuxtBadge
@@ -214,6 +425,21 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
            de lado abaixo do `xl`. -->
       <NuxtPage />
     </div>
+
+    <PurchaseSupplierBulkBar
+      v-if="selectedCount || bulkUndo"
+      placement="base"
+      :count="selectedCount"
+      :pending="bulkPending"
+      :undo="bulkUndo"
+      @clear="
+        selection = {};
+        bulkUndo = null;
+      "
+      @archive="applyBulk"
+      @undo="applyBulk()"
+      @expire="bulkUndo = null"
+    />
 
     <PurchaseSupplierFormPanel
       :open="supplierForm.open"
