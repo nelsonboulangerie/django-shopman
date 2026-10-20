@@ -29,10 +29,12 @@
   linha, produto ausente, preservação de publicado/vendável e desfazer.
 - Consultas do lote: 2 produtos e 10 produtos usam a mesma contagem. São 6 consultas com o
   `ContentType` aquecido e no máximo 7 na primeira auditoria.
-- Nuxt: 21 testes de componentes e 26 do composable passaram. A confirmação e o desfazer usam as
-  peças reais do kit; o contrato HTTP, a intenção e a releitura canônica também são exercitados.
+- Nuxt direcionado: 21 testes de componentes e 26 do composable passaram. A confirmação e o
+  desfazer usam as peças reais do kit; o contrato HTTP, a intenção e a releitura canônica também
+  são exercitados. A suíte completa do Orders passou com 83 arquivos e 814 testes.
 - `nuxi typecheck`, ESLint e Ruff passaram sem erro. `make admin` passou: 300 testes, a fronteira
-  Admin e o gate Unfold canônico.
+  Admin e o gate Unfold canônico. `makemigrations --check --dry-run` confirmou que não há mudança
+  de modelo sem migração.
 - Navegador real com backend hermético: rota de arquivados, seleção e ação de desarquivar verificadas;
   nenhuma resposta 4xx/5xx e nenhum erro da aplicação. O único log de erro observado veio da extensão
   SingleFile do Chrome, fora da aplicação.
