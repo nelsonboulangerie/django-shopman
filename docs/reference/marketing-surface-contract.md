@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-10-04
+- **Última verificação:** 2026-10-19
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -203,6 +203,22 @@ canônico e sempre leva `base_updated_at`. Action ausente/desatualizada ou reló
 leitura ausente falham fechado, sem chamada de rede; `409` recarrega a projeção e não
 aplica estado otimista. Enquanto um PATCH está em voo, outro gesto de liga/desliga é
 bloqueado para não duplicar a intenção.
+
+**Campanha exclusiva de faixa de preço.** No passo "Público e momento", com WhatsApp
+escolhido, o gestor marca as faixas de preço (grupos de clientes, `guestman.PriceTier`) que
+têm a campanha como exclusiva. O CRUD recebe `exclusive_price_tiers` (`POST`/`PATCH
+marketing/rules/`; ausente no `PATCH` = não mexe) e grava `campaign:<pk>` em
+`PriceTierAdvantage(kind="exclusive_notifications").config.campaign_refs` pela porta única
+`shop/services/campaign_exclusivity.py` (dono da chave, ver
+[data-schemas.md](data-schemas.md#guestmanpricetieradvantageconfig)); apagar a campanha retira
+a referência. A projeção da campanha devolve `exclusive_price_tiers`. Campanha exclusiva só
+alcança membros das faixas que a declaram, qualquer que seja o público: o resolvedor recebe
+`campaign_id` na contagem do disparo (`POST marketing/audience/count/` com `campaign_id`), no
+disparo, na aprovação, no planejamento e no envio das ondas, e quem sai conta em
+`excluded_by_reason.outside_exclusive_groups`. Vantagem desligada no Gestor tira os membros
+daquela faixa; a campanha nunca vira campanha para todos. Exclusiva sai só por mensagem
+direta: o CRUD recusa postagem pública no mesmo salvamento e a aprovação recusa com
+`exclusive_campaign_public_post`.
 
 “Preparar disparo” obedece separadamente à Action `fire_campaign`: recurso, versão,
 href, método, idempotência e exigência de token precisam coincidir. O primeiro POST

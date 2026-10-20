@@ -38,13 +38,17 @@ def test_pause_during_remote_upsert_leaves_durable_followup(settings):
         assert url.startswith("https://ifood.invalid/")
         if method.upper() == "PATCH":
             remote["status"] = kwargs["json"]["status"]
+            if remote["status"] == "AVAILABLE":
+                assert Directive.objects.filter(topic=CATALOG_PROJECT_SKU, status="running").count() == 1
+                cell.is_sellable = False
+                cell.save(update_fields=["is_sellable"])
             return Mock(status_code=200, raise_for_status=lambda: None)
-        assert method.upper() == "PUT"
-        remote.update(kwargs["json"]["item"])
-        assert Directive.objects.filter(topic=CATALOG_PROJECT_SKU, status="running").count() == 1
-        cell.is_sellable = False
-        cell.save(update_fields=["is_sellable"])
-        return Mock(status_code=200, raise_for_status=lambda: None)
+        assert method.upper() == "GET"
+        return Mock(
+            status_code=200,
+            raise_for_status=lambda: None,
+            json=lambda: {"item": {"status": remote["status"]}},
+        )
 
     with override_settings(
         OFFERMAN={**settings.OFFERMAN, "PROJECTION_BACKENDS": backend_map},
@@ -131,6 +135,12 @@ def test_postgres_serializes_http_reaper_and_atomic_operator_edit(settings, reap
 
     def http(_session, method, url, **kwargs):
         assert url.startswith("https://ifood.invalid/")
+        if method.upper() == "GET":
+            return Mock(
+                status_code=200,
+                raise_for_status=lambda: None,
+                json=lambda: {"item": {"status": remote["status"]}},
+            )
         status = kwargs["json"].get("item", kwargs["json"])["status"]
         calls.append(status)
         if len(calls) == 1:
@@ -220,10 +230,24 @@ def test_new_sender_finishes_before_old_dispatcher_marks_done(settings):
     cell = ListingItem.objects.create(listing=listing, product=product, price_q=1000, is_published=True, is_sellable=True)
     handler = CatalogProjectHandler()
     sent_prices = []
+    remote = {}
 
     def http(_session, method, url, **kwargs):
         assert url.startswith("https://ifood.invalid/")
-        sent_prices.append(kwargs["json"]["item"]["price"]["value"])
+        if method.upper() == "GET":
+            return Mock(
+                status_code=200,
+                raise_for_status=lambda: None,
+                json=lambda: {"item": {"price": {"value": remote["price"]}}},
+            )
+        payload = kwargs["json"]
+        value = (
+            payload["item"]["price"]["value"]
+            if method.upper() == "PUT"
+            else payload["price"]["value"]
+        )
+        remote["price"] = value
+        sent_prices.append(value)
         return Mock(status_code=200, raise_for_status=lambda: None)
 
     with override_settings(

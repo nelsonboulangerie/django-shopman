@@ -95,6 +95,7 @@ class CatalogProjectHandler:
 
         item = _get_projected_item(sku, listing_ref)
         retracting = not (item is not None and item.is_published and item.is_sellable)
+        trigger = message.payload.get("trigger", "manual_resync")
 
         # Publish rules gate an UPSERT (not a retract): don't push an item the
         # channel_ref would reject (imageless) or that has no stock yet (→ pending,
@@ -107,7 +108,20 @@ class CatalogProjectHandler:
                 return
 
         try:
-            if not retracting:
+            if (
+                item is not None
+                and trigger in {"availability_changed", "stock_changed"}
+                and hasattr(backend, "set_availability")
+            ):
+                result = backend.set_availability(item, channel=listing_ref)
+                retracting = not (item.is_published and item.is_sellable)
+            elif (
+                not retracting
+                and trigger in {"price_changed", "operator_price_intention"}
+                and hasattr(backend, "update_price")
+            ):
+                result = backend.update_price(item, channel=listing_ref)
+            elif not retracting:
                 result = backend.project([item], channel=listing_ref)
             else:
                 result = backend.retract([sku], channel=listing_ref)
@@ -296,7 +310,7 @@ def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> D
 
     created = create_deduped(
         CATALOG_PROJECT_SKU,
-        payload={"sku": sku, "listing_ref": listing_ref},
+        payload={"sku": sku, "listing_ref": listing_ref, "trigger": trigger},
         dedupe_key=f"{dedupe_key}:{uuid4().hex}",
     )
     if created is None:

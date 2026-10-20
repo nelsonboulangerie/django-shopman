@@ -726,15 +726,12 @@ class TestShopProductionAdmin:
         assert form.fields["defaults_production_order_match"].initial == "manual"
         assert "herda 240" in form.fields["defaults_production_default_max_started_minutes"].help_text.lower()
 
-    def test_form_saves_every_block_and_preserves_unknown_keys(self, shop):
+    def test_form_saves_every_block_and_preserves_other_domains(self, shop):
         from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
 
         shop.defaults = {
             "another_domain": {"keep": True},
-            "production": {
-                "future_block": {"keep": True},
-                "alerts": {"future_key": "kept"},
-            },
+            "production": {"alerts": {"low_yield_threshold": "0.60"}},
         }
         shop.save(update_fields=["defaults"])
         form_class = _section_form(_PRODUCTION_FIELDSETS)
@@ -762,14 +759,12 @@ class TestShopProductionAdmin:
         saved = form.save()
         production = saved.defaults["production"]
         assert saved.defaults["another_domain"] == {"keep": True}
-        assert production["future_block"] == {"keep": True}
         assert production["suggestion"] == {
             "seasons": {"hot": [1, 2], "mild": [3, 4], "cold": [6, 7]},
             "high_demand_multiplier": "1.25",
             "safety_stock_percent": "0.10",
         }
         assert production["alerts"] == {
-            "future_key": "kept",
             "low_yield_threshold": "0.75",
             "default_max_started_minutes": 180,
             "late_check_cadence_minutes": 0,
@@ -785,13 +780,13 @@ class TestShopProductionAdmin:
         }
         assert production["order_match"] == "earliest_target"
 
-    def test_blank_fields_remove_only_known_overrides(self, shop):
+    def test_blank_fields_remove_the_overrides(self, shop):
         from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
         from shopman.shop.production_config import ProductionConfig
 
         shop.defaults = {
             "production": {
-                "alerts": {"low_yield_threshold": "0.50", "future_key": "kept"},
+                "alerts": {"low_yield_threshold": "0.50"},
                 "notifications": {"enabled": True, "severities": ["critical"]},
                 "order_match": "manual",
             }
@@ -800,13 +795,23 @@ class TestShopProductionAdmin:
         form = _section_form(_PRODUCTION_FIELDSETS)(data={}, instance=shop)
 
         assert form.is_valid(), form.errors
-        production = form.save().defaults["production"]
-        assert production == {"alerts": {"future_key": "kept"}}
-        resolved = ProductionConfig.from_dict(production)
+        assert "production" not in form.save().defaults
+        resolved = ProductionConfig.from_dict({})
         resolved.validate()
         assert resolved.alerts.low_yield_threshold == "0.80"
         assert resolved.notifications.enabled is False
         assert resolved.order_match == "first_planned"
+
+    def test_unknown_key_already_stored_is_refused_by_name(self, shop):
+        """Chave que o bloco não declara não passa calada pelo form: o gestor lê o nome."""
+        from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
+
+        shop.defaults = {"production": {"alerts": {"low_yeld_threshold": "0.70"}}}
+        shop.save(update_fields=["defaults"])
+        form = _section_form(_PRODUCTION_FIELDSETS)(data={}, instance=shop)
+
+        assert not form.is_valid()
+        assert "low_yeld_threshold" in str(form.non_field_errors())
 
     def test_cross_block_validation_rejects_overlapping_seasons(self, shop):
         from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form

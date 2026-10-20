@@ -102,7 +102,9 @@ from shopman.shop.models import (
     Promotion,
     Trigger,
 )
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services import campaign as campaign_service
+from shopman.shop.services import campaign_exclusivity
 from shopman.shop.services.marketing_commands import (
     MarketingCommandConflict,
     MarketingCommandRejected,
@@ -1694,11 +1696,14 @@ class CampaignListView(_CampaignBase):
         fields, error = _rule_fields(request.data, partial=False)
         if error:
             return Response(error, status=400)
+        exclusive_tiers = fields.pop("exclusive_price_tiers", [])
         rule = Campaign(**fields)
-        error = _pairing_error(rule)
+        error = _pairing_error(rule) or _exclusive_platform_error(rule, exclusive_tiers)
         if error:
             return Response(error, status=400)
-        rule.save()
+        with transaction.atomic():
+            rule.save()
+            _save_exclusive_tiers(rule, exclusive_tiers)
         return Response(
             {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
             status=201,
@@ -1793,7 +1798,7 @@ class PreviewView(_CampaignBase):
         return Response(preview)
 
 
-class AudienceCountView(_CampaignBase):
+class AudienceCountView(ServerTimingMixin, _CampaignBase):
     """POST marketing/audience/count/ → quantas pessoas este público alcança.
 
     ⚠️ A tela deixava escolher público às cegas: o tamanho só aparecia depois do envio,
@@ -1807,6 +1812,9 @@ class AudienceCountView(_CampaignBase):
 
     permission_map = {"POST": "shop.preview_marketing_audience"}
     throttle_classes = [MarketingAudienceUserThrottle, MarketingAudienceShopThrottle]
+    #: A contagem é a ida que o gestor espera a cada clique no público; o header diz
+    #: quanto foi SQL (inclusive a filiação da campanha exclusiva) e quanto foi o resto.
+    server_timing_methods = ("POST",)
 
     def post(self, request):
         from shopman.shop.services.audience import PUBLIC_RULE_KEYS
@@ -1828,11 +1836,27 @@ class AudienceCountView(_CampaignBase):
                 },
                 status=422,
             )
+        # A campanha que vai enviar, quando a contagem é do disparo dela: campanha
+        # exclusiva de grupo só alcança membros, e a tela tem de contar o que sai.
+        raw_campaign_id = payload.get("campaign_id")
+        campaign_id = None
+        if raw_campaign_id not in (None, ""):
+            if isinstance(raw_campaign_id, bool) or not str(raw_campaign_id).isdigit():
+                return Response(
+                    {
+                        "code": "invalid_campaign",
+                        "detail": "A campanha da contagem é inválida.",
+                        "field_errors": {"campaign_id": ["Use o número da campanha."]},
+                    },
+                    status=422,
+                )
+            campaign_id = int(raw_campaign_id)
         return Response(
             projection_data(
                 marketing_projection.build_audience_count(
                     rules,
                     sku=str(payload.get("sku") or ""),
+                    campaign_id=campaign_id,
                 )
             )
         )
@@ -2144,6 +2168,7 @@ class CampaignDetailView(_CampaignBase):
             fields, error = _rule_fields(request.data, partial=True)
             if error:
                 return Response(error, status=400)
+            exclusive_tiers = fields.pop("exclusive_price_tiers", None)
             if "audience_rules" in fields:
                 fields["audience_rules"] = _merge_public_audience_rules(
                     rule.audience_rules,
@@ -2151,18 +2176,28 @@ class CampaignDetailView(_CampaignBase):
                 )
             for name, value in fields.items():
                 setattr(rule, name, value)
-            error = _pairing_error(rule)
+            error = _pairing_error(rule) or _exclusive_platform_error(
+                rule,
+                exclusive_tiers
+                if exclusive_tiers is not None
+                else campaign_exclusivity.for_campaign(rule.pk).declared,
+            )
             if error:
                 return Response(error, status=400)
             rule.version += 1
             rule.save()
+            if exclusive_tiers is not None:
+                _save_exclusive_tiers(rule, exclusive_tiers)
         return Response({"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))})
 
     def delete(self, request, pk: int):
         rule = _rule_or_none(pk)
         if rule is None:
             return Response({"detail": "Campanha não encontrada."}, status=404)
-        rule.delete()
+        with transaction.atomic():
+            # A referência morre junto: grupo nenhum fica apontando para campanha apagada.
+            campaign_exclusivity.set_exclusive_tiers(rule.pk, [])
+            rule.delete()
         return Response({"ok": True, "pk": pk})
 
 
@@ -2255,6 +2290,32 @@ def _offer_exists(ref: str) -> bool:
     return True
 
 
+def _exclusive_platform_error(rule: Campaign, exclusive_tiers) -> dict | None:
+    """Aviso exclusivo de grupo sai só por mensagem direta.
+
+    Postagem pública (Instagram, Facebook, Google) é vista por qualquer pessoa: uma
+    campanha exclusiva publicada no mural deixa de ser exclusiva. A recusa aponta o
+    campo do grupo, porque é ele que muda o sentido das plataformas escolhidas.
+    """
+    if not exclusive_tiers:
+        return None
+    public = [
+        platform
+        for platform in (rule.platforms or ())
+        if platform in campaign_service.POSTING_PLATFORMS
+    ]
+    if not public:
+        return None
+    return {
+        "detail": "Campanha exclusiva de grupo sai só pelo WhatsApp. Desmarque as postagens públicas.",
+        "field": "exclusive_price_tiers",
+    }
+
+
+def _save_exclusive_tiers(rule: Campaign, exclusive_tiers) -> None:
+    campaign_exclusivity.set_exclusive_tiers(rule.pk, exclusive_tiers)
+
+
 def _pairing_error(rule: Campaign) -> dict | None:
     """A validação de gatilho×agendamento do model, no dialeto de erro da API.
 
@@ -2279,6 +2340,7 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         return {}, {"detail": "Payload da regra inválido.", "field": "payload"}
     allowed = {
         "audience_rules",
+        "exclusive_price_tiers",
         "expires_after_minutes",
         "is_active",
         "name",
@@ -2360,6 +2422,14 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
                         "fields": not_integer,
                     }
             fields[name] = value
+
+    if not partial or "exclusive_price_tiers" in data:
+        try:
+            fields["exclusive_price_tiers"] = campaign_exclusivity.clean_tier_refs(
+                data.get("exclusive_price_tiers")
+            )
+        except campaign_exclusivity.CampaignExclusivityError as exc:
+            return {}, {"detail": exc.detail, "field": "exclusive_price_tiers"}
 
     if not partial or "promotion_ref" in data:
         offer_ref = str(data.get("promotion_ref") or "").strip()

@@ -303,15 +303,20 @@
             "IFoodCatalogProjection",
             "IFoodCatalogWriteBlocked",
             "IFoodCategoryError",
+            "IFoodConfirmationError",
             "IFoodRateLimitError",
             "_UUID_NS",
             "_base_url",
             "_check_rate_limit",
+            "_confirm_item_price",
+            "_confirm_item_status",
             "_get_config",
             "_headers",
             "_item_payload",
             "_item_uuid",
+            "_patch_item_price",
             "_product_uuid",
+            "_read_item",
             "_resolve_category_id",
             "_set_item_status",
             "_upsert_item",
@@ -6455,6 +6460,7 @@
           "responsibility": "contrato",
           "symbols": [
             "ProductionConfig",
+            "_TOP_LEVEL_KEYS",
             "_decimal_or_none",
             "_is_int",
             "_require_decimal_or_none",
@@ -7972,6 +7978,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/campaign_exclusivity.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-campaign-exclusivity"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/campaign_identity.py",
       "touchpoints": [
         "service"
@@ -9307,6 +9327,38 @@
             "_object",
             "canonical_uuid",
             "capture_catalog"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/ifood_catalog_categories.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "IFoodCategoryConflict",
+            "IFoodCategoryOperationError",
+            "_adapter_contract",
+            "_channel",
+            "_managed_config",
+            "_request",
+            "category_mapping",
+            "create_category",
+            "list_categories",
+            "rename_category",
+            "reorder_category",
+            "resolve_category_ref",
+            "set_category_status",
+            "set_collection_category"
           ]
         }
       ]
