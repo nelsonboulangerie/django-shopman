@@ -11529,6 +11529,7 @@
             "refund_arrival_note",
             "_returned_money_note",
             "_commitment_phrase",
+            "_commitment_note",
             "_commitment_suffix",
             "_eta_clock",
             "_qualify_template"
@@ -17032,6 +17033,7 @@
             "MARKETING_FLOW_FIELDS",
             "_PURCHASE_REQUEST_FLOW_FIELDS",
             "COURIER_DISPATCH_VARIANT",
+            "PREORDER_ACCEPTED_VARIANT",
             "_CUSTOMER",
             "_ORDER",
             "_ORDER_BUTTON",
