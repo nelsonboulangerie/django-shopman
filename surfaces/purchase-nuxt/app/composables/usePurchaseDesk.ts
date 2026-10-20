@@ -178,8 +178,8 @@ export function usePurchaseDesk() {
   const minStockLineErrors = useState<Record<string, string>>("purchase-min-stock-errors", () => ({}));
   const costGrid = usePurchaseGridFields(batchInputs, "cost");
   const minimumGrid = usePurchaseGridFields(minStockInputs, "minimum");
-  const costGridErrors = costGrid.errors;
-  const minimumGridErrors = minimumGrid.errors;
+  const costGridErrors = computed(() => costGrid.errorsFor(batchRows.value));
+  const minimumGridErrors = computed(() => minimumGrid.errorsFor(filteredMaterials.value));
   const canUndoCost = costGrid.canUndo;
   const canUndoMinimum = minimumGrid.canUndo;
   const undoCost = () => { costGrid.undo(); batchLineErrors.value = {}; };
@@ -506,7 +506,7 @@ export function usePurchaseDesk() {
       const response = await api.setMinStock({ minimums });
       if (response.purchase) applyProjection(response.purchase);
       if (response.message) useSonner.success(response.message);
-      clearMinStock();
+      minimumGrid.clear(minimums.map((row) => row.materialSku));
       await refresh();
     } catch (err) {
       minStockLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
@@ -601,7 +601,9 @@ export function usePurchaseDesk() {
       const response = await api.upsertCostBatch(payload);
       if (response.purchase) applyProjection(response.purchase);
       if (response.message) useSonner.success(response.message);
-      clearCostBatch();
+      const saved = new Set(payload.costs.map((row) => row.materialSku));
+      costGrid.clear([...saved]);
+      batchConversionIds.value = Object.fromEntries(Object.entries(batchConversionIds.value).filter(([sku]) => !saved.has(sku)));
       await refresh();
     } catch (err) {
       batchLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
