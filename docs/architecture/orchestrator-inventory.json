@@ -2568,6 +2568,8 @@
             "STAGING_AUTOPILOT",
             "STOCK_ALERT_DELIVER",
             "STOCK_ALERT_DELIVERY_RECEIPT_SCOPE",
+            "STOCK_CONSUME_MADE_TO_ORDER",
+            "STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION",
             "logger"
           ]
         }
@@ -2838,6 +2840,7 @@
             "_register_ifood_status_callbacks",
             "_register_kds_alerts",
             "_register_loyalty_handler",
+            "_register_made_to_order_handlers",
             "_register_mock_pix_handler",
             "_register_notification_handlers",
             "_register_payment_refund_handler",
@@ -3475,6 +3478,29 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/handlers/made_to_order.py",
+      "touchpoints": [
+        "handler"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.made-to-order-handlers"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_order_for",
             "logger"
           ]
         }
@@ -9922,6 +9948,34 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/made_to_order.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "stock.made-to-order-consumption"
+      ],
+      "responsibilities": [
+        "composição",
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "_Q",
+            "_alert_ambiguous",
+            "_alert_shortfall",
+            "_fmt",
+            "_sale_moves",
+            "_settlement_moves",
             "logger"
           ]
         }

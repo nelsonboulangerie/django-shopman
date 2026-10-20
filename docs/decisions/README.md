@@ -61,5 +61,5 @@ altera o status da sucessora nem cria uma relação circular.
 | [037](adr-037-decision-ownership.md) | Titularidade das decisões | Aceito | Suite | 2026-10-16 | Fronteiras |
 | [038](adr-038-operator-surface-security-envelope.md) | Envelope de segurança compartilhado das surfaces de operador | Aceito | Operator Kit | 2026-09-09 | Segurança de superfície |
 | [039](adr-039-persistent-stock-alert-occurrences.md) | “Avise-me” é assinatura persistente com ocorrências distintas | Aceito | Storefront e Orquestrador | 2026-09-11 | Comunicação |
-| [040](adr-040-baixa-de-insumo-na-venda-do-feito-na-hora.md) | Baixa de insumo na venda do item feito na hora | Proposto | Orquestrador | 2026-10-19 | Estoque |
+| [040](adr-040-baixa-de-insumo-na-venda-do-feito-na-hora.md) | Baixa de insumo na venda do item feito na hora | Aceito | Orquestrador | 2026-10-19 | Estoque |
 | [041](adr-041-topologia-das-superficies-apps-federados.md) | Topologia das superfícies: apps federados sob uma layer e uma Central | Proposto | Superfícies | 2026-10-19 | Topologia |

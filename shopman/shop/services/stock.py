@@ -408,6 +408,14 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
         logger.info("stock.fulfill: pedido de teste order=%s — baixa suprimida", order.ref)
         return
 
+    # O insumo do item feito na hora (café, chá, croque) sai no MESMO ponto em
+    # que o pedido baixa o próprio SKU, mas por directive: a venda nunca espera
+    # nem cai pelo insumo (ADR-040). Antes do ``hold_ids``: o espresso não tem
+    # ledger e não reserva, e é dele que mais sai café em grão.
+    from shopman.shop.services import made_to_order
+
+    made_to_order.schedule_consumption(order)
+
     hold_ids = (order.data or {}).get("hold_ids", [])
     if not hold_ids:
         return
