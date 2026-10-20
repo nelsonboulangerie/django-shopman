@@ -1,7 +1,7 @@
 # ONDA4-3: tabelão de insumos
 
 Ordem: `ORDERS/next-onda4.md`, frente 3. Base: `65b658d31`.
-Branch: `codex/tabelao-insumos`. Estado: validação final antes do PR.
+Branch: `codex/tabelao-insumos`. PR: #1959. Estado: pronto, solicitado auto-merge após os checks.
 
 ## Entrega
 
@@ -26,8 +26,9 @@ Os dois POSTs agora expõem o Server-Timing canônico.
 - Frontend: componentes exercitam colagem TSV, decimal pt-BR, erro por insumo,
   zero de mínimo e Desfazer. A suíte do Compras passou: 18 arquivos, 188 testes.
 - Typecheck e lint do Compras passaram. Ruff dos arquivos Python passou.
-- Navegador Chromium, build de produção e backend hermético: duas rotas, claro
+- Navegador Chromium, build de produção e backend hermético (4 testes antes, 4 depois passaram): duas rotas, claro
   e escuro. O teste exige a classe correta do tema e nenhuma resposta 4xx/5xx.
+  Exatamente um POST com dois insumos foi conferido para cada lote.
   Capturas abertas pelo agente, não apenas gravadas.
 
 ## Desempenho medido

@@ -118,5 +118,5 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
 
 **ONDA4-3 (20/10):** tabelão de insumos com colagem de coluna, erro por insumo e Desfazer,
-leituras de validação em lote e mínimos atômicos. Em validação final no branch
+leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-merge solicitado após os checks. Branch
 `codex/tabelao-insumos`. Registro: `ROUNDS/ONDA4-3-tabelao-insumos.md`.
