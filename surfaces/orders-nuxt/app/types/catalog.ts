@@ -43,6 +43,8 @@ export interface SurfaceProjection {
 }
 
 export interface SurfaceCellProjection {
+  valid_from?: string;
+  valid_until?: string;
   pause_audit?: string;
   action?: Action | null;
   surface_ref: string;
@@ -118,10 +120,19 @@ export interface CatalogMatrixProjection {
   has_next: boolean;
   order: CatalogOrder;
   query: string;
+  date_from?: string;
+  date_to?: string;
 }
 
 export type CatalogOrder =
-  "name" | "-name" | "sku" | "-sku" | "price" | "-price" | "updated";
+  | "name"
+  | "-name"
+  | "sku"
+  | "-sku"
+  | "price"
+  | "-price"
+  | "updated"
+  | "validity";
 
 export interface VocationPending {
   sku: string;

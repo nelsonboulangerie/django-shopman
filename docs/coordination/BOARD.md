@@ -29,8 +29,10 @@ PR** (escreva o registro com "na fila #N").
 **ONDA4-5 (20/10):** import/export da Base de insumos e fornecedores entregue no PR #1964 (`codex/import-export-base`), empilhado sobre #1957. Prévia sem escrita, revisão/ator, erro por registro, aplicação e auditoria atômicas; exportação completa pelo kit. Quinze testes API e oito de navegador aprovados; 300 → 22 consultas para dez cadastros, e custo fixo 5/22/5 (fornecedor) e 6/23/5 (insumo) para prévia/aplicação/export com 2 ou 40 registros. Registro em `ROUNDS/ONDA4-5-import-export-base.md`.
 
 **ONDA4-4 (20/10):** lote de fornecedores entregue no PR #1957 (`codex/lote-fornecedores`), com confirmação, Desfazer revisado e auditoria atômica. Sete testes API, dois de componente e quatro de navegador aprovados. Medição: 188 → 30 consultas para dez fornecedores; 2/40 fornecedores mantêm 28 consultas. Registro em `ROUNDS/ONDA4-4-lote-fornecedores.md`.
+**Turno ONDA4 (20/10), frente2:** preço com vigência entregue no PR #1958, com fila solicitada. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
 
 ## Em execução agora
+
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
@@ -41,6 +43,7 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 | §7.2-4 | Clientes: duplicar cadastro e etiquetar em lote | EM_PR | `claude/cadastro-clientes` / #1815 | 2026-10-15 12:5x |
 | §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
 | WATCHMAN | Saúde, autocura e desempenho (Codex, outro agente) | EM_PR | `codex/watchman-*` / #1809, #1813 | 2026-10-15 11:5x |
+| IFOOD-E | Ensaio de catálogo na loja de teste | EM_PR | `codex/ifood-ensaio` / #1929; turno 5b interrompido na conferência de `originalValue`; item restaurado, demais passos não executados. Evidência: `ROUNDS/IFOOD-E-ensaio-teste.md` | 2026-10-20 20:59 UTC |
 
 **SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
 
@@ -84,7 +87,7 @@ desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5
 | id | o que trava | onde |
 |---|---|---|
 | SESS-N1 | `GET /api/sessions` faz N+1 em `Session.items`: página cheia de 25 = **26 consultas**. O prefetch já é previsto pelo modelo, então `prefetch_related("session_items")` no `SessionViewSet.get_queryset` cai para **2**. Confirmado ausente em `origin/main` `48eb028c2`. Follow-up de uma linha, mas muda comportamento observável; o agente do #1810 o deixou fora do escopo de propósito | `HANDOFF-DSH-2026-10-15.md`, "Defeito conhecido" |
-| ManyChat | Faltam 4 modelos (`pontos_fidelidade`, `pedido_entregue_v2`, `fila_vaga_disponivel_v2`, `produto_chegou_v2`); `pagamento_falhou` foi enviado e está em análise na Meta. Depois, os flows de `pedido_em_preparo` e `reembolso_processado` (aprovados). A ligação evento → flow é linha no `MANYCHAT_FLOW_MAP` (`config/settings.py`) num PR, **não** o Admin. Trava: o Chrome visível, janela sem nada por cima, na aba "Criar modelo" do grupo do Claude, por ~20 min | `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
+| ManyChat | `pedido_encomenda_confirmada` aprovado e ligado em 20/10 (`order_accepted_preorder`, PR da branch `claude/liga-encomenda-confirmada`). Faltam 4 modelos (`pontos_fidelidade`, `pedido_entregue_v2`, `fila_vaga_disponivel_v2`, `produto_chegou_v2`); `pagamento_falhou` foi enviado e está em análise na Meta. Depois, os flows de `pedido_em_preparo` e `reembolso_processado` (aprovados). A ligação evento → flow é linha no `MANYCHAT_FLOW_MAP` (`config/settings.py`) num PR, **não** o Admin. Trava: o Chrome visível, janela sem nada por cima, na aba "Criar modelo" do grupo do Claude, por ~20 min | `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
 | Entrega | `fulfillment.courier="auto"`: chama a TaOn de verdade. Não reconferido no vivo em 02/10 | HANDOFF §0.5 |
 | Link | gerar UM link de pagamento no PDV para provar que sai. Não reconferido no vivo em 02/10 | HANDOFF §0.3 |
 | Pix | o ensaio do Pix real antes da virada | D-016 |
