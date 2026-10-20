@@ -1974,7 +1974,7 @@ def _queue_notify(announcement: Announcement) -> int:
     rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
     sku = (announcement.trigger_context or {}).get("sku", "")
 
-    resolved = audience_service.resolve(rules, sku=sku, campaign_id=announcement.rule_id)
+    resolved = audience_service.resolve(rules, sku=sku, announcement=announcement)
     if resolved.degraded_sources:
         raise CampaignError(
             "Não foi possível revalidar toda a audiência. O envio permanece bloqueado."

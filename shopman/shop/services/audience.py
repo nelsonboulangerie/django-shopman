@@ -303,6 +303,7 @@ def resolve(
     sku: str = "",
     now: datetime | None = None,
     campaign_id: int | None = None,
+    announcement=None,
 ) -> AudienceResult:
     """Resolver a audiência segundo as regras da Campaign.
 
@@ -330,7 +331,11 @@ def resolve(
             (``services/campaign_exclusivity``) só alcança membros dos grupos que a
             declaram, qualquer que seja o público das regras; quem fica de fora conta em
             ``excluded_by_reason["outside_exclusive_groups"]``. Sem campanha (contagem
-            avulsa, anúncio cuja campanha foi apagada) nada é restringido.
+            avulsa) nada é restringido.
+        announcement: o anúncio que vai enviar (aprovação, planejamento e ondas). A
+            exclusividade é a dele (``campaign_exclusivity.for_announcement``): a da
+            campanha viva ou, se a campanha foi apagada, a que o anúncio HERDOU dela.
+            Anúncio de campanha exclusiva apagada nunca vira envio para todos.
 
     Returns:
         ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém passa no
@@ -444,10 +449,10 @@ def resolve(
 
     outside_exclusive = 0
     exclusive_groups = 0
-    if campaign_id:
+    if campaign_id or announcement is not None:
         try:
             by_phone, outside_exclusive, exclusive_groups = _keep_exclusive_members(
-                by_phone, campaign_id
+                by_phone, campaign_id=campaign_id, announcement=announcement
             )
         except Exception:
             # Falha fechada: sem saber quem é membro, ninguém recebe, e a fonte
@@ -530,7 +535,7 @@ def _match_mode(rules: dict) -> str:
 
 
 def _keep_exclusive_members(
-    by_phone: dict[str, Recipient], campaign_id: int
+    by_phone: dict[str, Recipient], *, campaign_id: int | None = None, announcement=None
 ) -> tuple[dict[str, Recipient], int, int]:
     """Campanha exclusiva: manter só membros ativos dos grupos que a declaram.
 
@@ -544,7 +549,11 @@ def _keep_exclusive_members(
     """
     from shopman.shop.services import campaign_exclusivity
 
-    exclusivity = campaign_exclusivity.for_campaign(campaign_id)
+    exclusivity = (
+        campaign_exclusivity.for_announcement(announcement)
+        if announcement is not None
+        else campaign_exclusivity.for_campaign(campaign_id)
+    )
     if not exclusivity.is_exclusive:
         return by_phone, 0, 0
     refs = sorted({r.customer_ref for r in by_phone.values() if r.customer_ref})
@@ -586,6 +595,7 @@ def select_wave(
     now=None,
     available_wave_keys=None,
     campaign_id: int | None = None,
+    announcement=None,
 ) -> tuple[Recipient, ...]:
     """Os destinatários de uma onda, resolvidos agora.
 
@@ -593,7 +603,7 @@ def select_wave(
     novas, o conjunto inteiro aprovado em ``available_wave_keys``. Isso mantém
     ``all@H`` estável quando H chega. Onda legada que sumiu devolve tupla vazia.
     """
-    result = resolve(rules, sku=sku, campaign_id=campaign_id)
+    result = resolve(rules, sku=sku, campaign_id=campaign_id, announcement=announcement)
     if available_wave_keys is None and "@" not in str(wave_key or ""):
         return {
             "vip": result.vip,

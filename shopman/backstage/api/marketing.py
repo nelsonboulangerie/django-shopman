@@ -2195,8 +2195,9 @@ class CampaignDetailView(_CampaignBase):
         if rule is None:
             return Response({"detail": "Campanha não encontrada."}, status=404)
         with transaction.atomic():
-            # A referência morre junto: grupo nenhum fica apontando para campanha apagada.
-            campaign_exclusivity.set_exclusive_tiers(rule.pk, [])
+            # A referência morre junto (grupo nenhum aponta para campanha apagada), e os
+            # anúncios dela herdam os grupos: nunca viram envio para todos.
+            campaign_exclusivity.forget_campaign(rule.pk)
             rule.delete()
         return Response({"ok": True, "pk": pk})
 

@@ -211,10 +211,14 @@ marketing/rules/`; ausente no `PATCH` = não mexe) e grava `campaign:<pk>` em
 `PriceTierAdvantage(kind="exclusive_notifications").config.campaign_refs` pela porta única
 `shop/services/campaign_exclusivity.py` (dono da chave, ver
 [data-schemas.md](data-schemas.md#guestmanpricetieradvantageconfig)); apagar a campanha retira
-a referência. A projeção da campanha devolve `exclusive_price_tiers`. Campanha exclusiva só
+a referência, e antes disso os anúncios dela herdam os grupos
+(`Announcement.trigger_context.exclusive_price_tiers`, `campaign_exclusivity.forget_campaign`,
+também no `pre_delete` de `Campaign`): o anúncio de campanha exclusiva apagada nunca vira envio
+para todos. A projeção da campanha devolve `exclusive_price_tiers`. Campanha exclusiva só
 alcança membros das faixas que a declaram, qualquer que seja o público: o resolvedor recebe
-`campaign_id` na contagem do disparo (`POST marketing/audience/count/` com `campaign_id`), no
-disparo, na aprovação, no planejamento e no envio das ondas, e quem sai conta em
+`campaign_id` na contagem do disparo (`POST marketing/audience/count/` com `campaign_id`) e no
+disparo, e o anúncio (`announcement`, exclusividade viva ou herdada) na aprovação, no
+planejamento e no envio das ondas, e quem sai conta em
 `excluded_by_reason.outside_exclusive_groups`. Vantagem desligada no Gestor tira os membros
 daquela faixa; a campanha nunca vira campanha para todos. Exclusiva sai só por mensagem
 direta: o CRUD recusa postagem pública no mesmo salvamento e a aprovação recusa com
