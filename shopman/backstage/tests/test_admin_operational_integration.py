@@ -226,7 +226,7 @@ class AdminNavigationTests(TestCase):
             "Regras de preço",
             "Promoções",
             "Cupons",
-            "Faixas de preço",
+            "Grupos de clientes",
             "Zonas de entrega",
             "Faixas de distância",
             "Textos da interface",

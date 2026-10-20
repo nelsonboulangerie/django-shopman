@@ -340,10 +340,10 @@ class CampaignOptionsProjection:
     provider_capabilities: tuple[ProviderCapabilityProjection, ...]
     templates: tuple[AnnouncementTemplateProjection, ...]
     variables: tuple[str, ...]
-    #: As faixas de preço (`PriceTier`) — varejo, atacado, staff.
+    #: Os grupos de clientes (`PriceTier`): varejo, atacado, staff.
     price_tiers: tuple[ChoiceProjection, ...] = ()
     #: As etiquetas que o operador criou (`CustomerTag`). É o único público que ele monta
-    #: sozinho: RFM e churn são calculados, faixa é comercial, aniversário é cadastral.
+    #: sozinho: RFM e churn são calculados, grupo é comercial, aniversário é cadastral.
     tags: tuple[ChoiceProjection, ...] = ()
     rfm_segments: tuple[ChoiceProjection, ...] = ()
     #: Produtos publicáveis para preencher uma ocorrência disparada manualmente.
@@ -367,7 +367,7 @@ class CampaignOptionsProjection:
 #: dicionário: primeiro quem foi escolhido, depois quem se qualificou.
 _AUDIENCE_PART_LABELS: tuple[tuple[str, str], ...] = (
     ("chosen_count", "Escolhidos um a um"),
-    ("price_tiers_count", "Faixa de preço"),
+    ("price_tiers_count", "Grupo"),
     ("tags_count", "Etiquetas"),
     ("rfm_count", "Comportamento de compra"),
     ("churn_risk_count", "Estão sumindo"),
