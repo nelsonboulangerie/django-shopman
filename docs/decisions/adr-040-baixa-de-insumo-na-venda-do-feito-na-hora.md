@@ -188,9 +188,21 @@ Leitura do `MAKE` por origem: fornada = `reason` "Consumo de produção"; venda 
   `Move.metadata` existia, mas o único jeito de o `issue` gravá-lo era nenhum, e sem ele
   o `MAKE` da venda e o da fornada são indistinguíveis no ledger (o `reason` é texto
   livre). O `receive` já aceitava `**metadata`.
-- Fora daqui, de propósito: o insumo dos **adicionais** escolhidos no produto
-  (`meta["options"]`, "+ Ovo frito") ainda não baixa; a devolução de mercadoria
-  (`on_returned`) não devolve insumo, porque o item devolvido já foi preparado.
+- **Adicionais escolhidos no produto** (`items[].meta.options`, "+ Ovo frito"; extensão
+  de 20/10/2026): a mesma directive baixa o insumo que o cadastro da opção declara
+  (`consumes`, congelado na linha no momento da venda por
+  `product_options.resolve_selection`): `qty do insumo × qty da opção × qty da linha`,
+  na unidade-base do insumo (conversão definicional `g` → `kg` quando a grafia difere).
+  Mesmo ledger (`MAKE`, `source=sale`, com `option_group`/`option_ref` no lugar de
+  `recipe_ref`), mesmo alerta de falta sem travar ("o adicional Ovo frito de CQMO
+  pede…"), mesma regra de cancelamento pelo preparo (o `sold_sku` é o item que levou o
+  adicional, e a proporção é a do item). A marca é o próprio `consumes`: ao contrário
+  da ficha, o adicional baixa mesmo quando o item não tem ficha `made_to_order` (o
+  Frappé, por exemplo), porque nenhuma fornada conhece a escolha do cliente e o
+  `consumes` só existe se alguém o cadastrou na aba Escolhas. Opção sem `ref` (iFood)
+  não é da casa e não baixa.
+- Fora daqui, de propósito: a devolução de mercadoria (`on_returned`) não devolve
+  insumo, porque o item devolvido já foi preparado.
 
 ## Consequências
 
