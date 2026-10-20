@@ -253,6 +253,118 @@ def set_cells(cells: list[dict], *, actor: str = "") -> dict:
         raise CatalogError(errors[0]["detail"] if errors else "Nenhuma célula foi aplicada.")
     return {"applied": applied, "conflicts": conflicts, "errors": errors}
 
+
+@transaction.atomic
+def set_products_active(products: list[dict], *, is_active: bool, actor) -> dict:
+    """Arquiva/desarquiva produtos numa escrita, com recibo e auditoria por linha.
+
+    ``base_is_active`` protege o gesto contra uma tela velha. O lote inteiro é
+    travado e escrito em massa; falha ou conflito de uma linha aparece no recibo
+    sem esconder o resultado das demais. A reconciliação continua no sinal
+    canônico ``product_updated`` e só começa depois do commit local.
+    """
+    from datetime import timedelta
+
+    from django.contrib.admin.models import CHANGE, LogEntry
+    from django.utils import timezone
+    from shopman.offerman.models import Product
+    from shopman.offerman.signals import product_updated
+    from simple_history.utils import bulk_update_with_history
+
+    if not isinstance(products, list) or not products:
+        raise CatalogError("Informe os produtos do lote.")
+    if len(products) > MAX_CATALOG_BATCH:
+        raise CatalogError(f"Envie no máximo {MAX_CATALOG_BATCH} produtos por lote.")
+    if not isinstance(is_active, bool):
+        raise CatalogError("Diga se os produtos ficam arquivados ou ativos.")
+
+    requested: list[tuple[int, str, bool | None]] = []
+    seen: set[str] = set()
+    errors: list[dict] = []
+    for index, row in enumerate(products):
+        sku = str(row.get("sku") or "").strip() if isinstance(row, dict) else ""
+        base = row.get("base_is_active") if isinstance(row, dict) else None
+        if not sku or not isinstance(base, bool):
+            errors.append({"index": index, "sku": sku, "detail": "Atualize a linha antes de confirmar."})
+            continue
+        if sku in seen:
+            errors.append({"index": index, "sku": sku, "detail": "Produto repetido no lote."})
+            continue
+        seen.add(sku)
+        requested.append((index, sku, base))
+
+    locked = list(
+        Product.objects.select_for_update()
+        .filter(sku__in=[sku for _index, sku, _base in requested])
+        .order_by("pk")
+    )
+    by_sku = {product.sku: product for product in locked}
+    changed = []
+    applied: list[dict] = []
+    conflicts: list[dict] = []
+    for index, sku, base in requested:
+        product = by_sku.get(sku)
+        if product is None:
+            errors.append({"index": index, "sku": sku, "detail": "Produto não encontrado."})
+            continue
+        if product.is_active is not base:
+            conflicts.append({
+                "index": index,
+                "sku": sku,
+                "detail": "O estado do produto mudou. Atualize o catálogo antes de repetir.",
+                "is_active": product.is_active,
+            })
+            continue
+        before = product.is_active
+        product.is_active = is_active
+        did_change = before != is_active
+        if did_change:
+            changed.append(product)
+        applied.append({
+            "index": index,
+            "sku": sku,
+            "name": product.name,
+            "before_is_active": before,
+            "is_active": is_active,
+            "changed": did_change,
+        })
+
+    if changed:
+        verb = "unarchive" if is_active else "archive"
+        reason = f"catalog.{verb}:{getattr(actor, 'username', '') or 'operator'}"[:100]
+        bulk_update_with_history(
+            changed,
+            Product,
+            ["is_active"],
+            default_user=actor if getattr(actor, "pk", None) else None,
+            default_change_reason=reason,
+        )
+        if getattr(actor, "pk", None):
+            LogEntry.objects.log_actions(
+                user_id=actor.pk,
+                queryset=changed,
+                action_flag=CHANGE,
+                change_message=json.dumps({
+                    "action": f"catalog.{verb}",
+                    "skus": [product.sku for product in changed],
+                }),
+            )
+        transaction.on_commit(
+            lambda rows=tuple(changed): [
+                product_updated.send(sender=Product, instance=product, sku=product.sku)
+                for product in rows
+            ]
+        )
+
+    now = timezone.now()
+    return {
+        "applied": sorted(applied, key=lambda row: row["index"]),
+        "conflicts": sorted(conflicts, key=lambda row: row["index"]),
+        "errors": sorted(errors, key=lambda row: row["index"]),
+        "server_now": now.isoformat(),
+        "undo_until": (now + timedelta(seconds=10)).isoformat(),
+    }
+
 def set_product(sku: str, *, is_published: bool | None = None, is_sellable: bool | None = None, actor: str = ""):
     """Compatibility facade; global flags use the canonical partial product writer."""
     from shopman.offerman.models import Product
@@ -649,6 +761,7 @@ def _detail_payload(product) -> dict:
         "storage_tip": product.storage_tip,
         "production_cycle_hours": product.production_cycle_hours,
         "is_batch_produced": product.is_batch_produced,
+        "is_active": product.is_active,
         "is_published": product.is_published,
         "is_sellable": product.is_sellable,
         "ingredients_text": product.ingredients_text,

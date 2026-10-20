@@ -41,6 +41,7 @@ import type {
   ImportPreview,
   ProductDetailPatch,
   ProductDetailProjection,
+  ProductArchiveReceipt,
   ProductDraft,
   SkuRoles,
   SurfaceCellProjection,
@@ -103,6 +104,7 @@ const {
   enhancePhoto,
   uploadPhoto,
   saveCells,
+  setProductsActive,
   previewImport,
   applyImport,
 } = useCatalogMatrix(collectionRef, {
@@ -245,7 +247,9 @@ const catalogCountLine = computed(() => {
 });
 // A página já chega recortada pelo servidor. Nada é filtrado de novo aqui:
 // faceta que só alcança a página mente no total e no has_next.
-const searched = computed<CatalogRowProjection[]>(() => matrix.value?.rows ?? []);
+const searched = computed<CatalogRowProjection[]>(
+  () => matrix.value?.rows ?? [],
+);
 // Conjunto novo (busca, coleção ou faceta) volta para a primeira página.
 watch(searchTerm, () => {
   catalogPage.value = 1;
@@ -1101,6 +1105,7 @@ function closeDetail() {
   detailSku.value = null;
   detail.value = null;
   detailDirty.value = false;
+  detailArchiveReceipt.value = null;
 }
 async function saveDetail(patch: ProductDetailPatch) {
   if (!detailSku.value) return;
@@ -1108,6 +1113,24 @@ async function saveDetail(patch: ProductDetailPatch) {
   const request = detailRequest;
   const ok = await saveProductDetail(sku, patch);
   if (ok && sku === detailSku.value && request === detailRequest) closeDetail();
+}
+
+const detailArchiveReceipt = ref<ProductArchiveReceipt | null>(null);
+async function setDetailActive(active: boolean) {
+  const current = detail.value;
+  if (!current) return;
+  const undo = Boolean(
+    detailArchiveReceipt.value?.applied.some(
+      (row) => row.sku === current.sku && row.before_is_active === active,
+    ),
+  );
+  const receipt = await setProductsActive(
+    [{ sku: current.sku, base_is_active: current.is_active }],
+    active,
+  );
+  if (!receipt?.applied.length) return;
+  detail.value = { ...current, is_active: active };
+  detailArchiveReceipt.value = undo ? null : receipt;
 }
 
 async function togglePurchasable(enabled: boolean) {
@@ -1248,15 +1271,34 @@ async function applyImportCsv() {
 }
 // Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
 const bulkGridOpen = ref(false);
+const bulkArchiveReceipt = ref<ProductArchiveReceipt | null>(null);
 // (c) "Só compro (insumo)": não cria Product; conduz ao cadastro de compra.
 function goPurchase() {
   createOpen.value = false;
-  window.open(`${adminBaseUrl}/admin/buyman/material/add/`, "_blank", "noopener");
+  window.open(
+    `${adminBaseUrl}/admin/buyman/material/add/`,
+    "_blank",
+    "noopener",
+  );
 }
 
 async function saveBulkCells(cells: BulkCell[]) {
   const result = await saveCells(cells);
   if (result) bulkGridOpen.value = false;
+}
+
+async function setBulkActive(
+  products: { sku: string; base_is_active: boolean }[],
+  active: boolean,
+) {
+  const undo = Boolean(
+    bulkArchiveReceipt.value?.applied.length &&
+    bulkArchiveReceipt.value.applied.every(
+      (row) => row.before_is_active === active,
+    ),
+  );
+  const receipt = await setProductsActive(products, active);
+  if (receipt) bulkArchiveReceipt.value = undo ? null : receipt;
 }
 async function saveNewProduct(payload: CreateProductPayload) {
   createError.value = "";
@@ -1699,6 +1741,7 @@ useHead({ title: "Catálogo" });
            rolagem por dentro do cartão (`fill`). -->
       <OperatorTable
         v-model:row-selection="catalogRowSelection"
+        v-model:sorting="catalogSorting"
         :data="displayRows"
         :columns="catalogColumns"
         :row-key="(row: CatalogRowProjection) => row.sku"
@@ -1723,7 +1766,6 @@ useHead({ title: "Catálogo" });
         view-key="orders-catalog"
         caption="Produtos e disponibilidade por canal"
         data-catalog-matrix
-        v-model:sorting="catalogSorting"
         @retry="refresh()"
       >
         <template v-if="Object.keys(filters).length" #empty-actions>
@@ -2146,7 +2188,9 @@ useHead({ title: "Catálogo" });
 
       <!-- Paginação do SERVIDOR (fatia B): a matriz não vem inteira. -->
       <div
-        v-if="(matrix?.total ?? 0) > (matrix?.page_size ?? 50) || catalogPage > 1"
+        v-if="
+          (matrix?.total ?? 0) > (matrix?.page_size ?? 50) || catalogPage > 1
+        "
         class="flex flex-wrap items-center justify-between gap-2"
         data-catalog-pagination
       >
@@ -2209,6 +2253,8 @@ useHead({ title: "Catálogo" });
       :busy="detailSku !== null && isBusy(detailKey(detailSku))"
       :roles="detailRoles"
       :purchase-busy="detailSku !== null && isBusy(`purchase@${detailSku}`)"
+      :archive-busy="isBusy('catalog:products-active')"
+      :archive-undo="detailArchiveReceipt"
       :assist="detailAssist.assist"
       :assist-busy="detailAssist.assistBusy"
       :initial-tab="detailTab"
@@ -2227,6 +2273,7 @@ useHead({ title: "Catálogo" });
       @save="saveDetail"
       @set-purchasable="togglePurchasable"
       @pause-channel="pauseDetailChannel"
+      @set-active="setDetailActive"
     />
 
     <!-- criar do zero e duplicar (7.2, onda 1) — o rascunho do GTIN é revisado aqui. -->
@@ -2261,12 +2308,18 @@ useHead({ title: "Catálogo" });
       :surfaces="surfaces"
       :busy="isBusy('catalog:cells')"
       :error="errorMsg"
+      :archive-busy="isBusy('catalog:products-active')"
+      :archive-receipt="bulkArchiveReceipt"
       @update:open="
         (value) => {
-          if (!value) bulkGridOpen = false;
+          if (!value) {
+            bulkGridOpen = false;
+            bulkArchiveReceipt = null;
+          }
         }
       "
       @save="saveBulkCells"
+      @archive="setBulkActive"
     />
 
     <!-- import CSV pt-BR: prévia sem gravar, erro por linha, apply numa ida. -->
@@ -2275,7 +2328,11 @@ useHead({ title: "Catálogo" });
       :preview="importPreviewForKit"
       :columns="importColumns"
       :row-key="(row) => String(row.sku)"
-      :total-labels="{ new: 'novo(s)', update: 'atualizado(s)', skip: 'sem mudança' }"
+      :total-labels="{
+        new: 'novo(s)',
+        update: 'atualizado(s)',
+        skip: 'sem mudança',
+      }"
       description="O arquivo tem as colunas do export. Use ponto e vírgula e vírgula decimal."
       :preview-busy="importPreviewBusy"
       :busy="isBusy('catalog:product-import')"

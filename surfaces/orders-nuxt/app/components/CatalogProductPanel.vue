@@ -15,6 +15,7 @@ import type {
   ProductDetailPatch,
   ProductEditConflict,
   ProductDetailProjection,
+  ProductArchiveReceipt,
   SkuRoles,
 } from "~/types/catalog";
 import { vocationLabel, vocationOptions } from "~/presentation/vocation";
@@ -39,6 +40,8 @@ const props = defineProps<{
   // Selos do SKU e o gesto "Permitir compra" — fora do rascunho: valem na hora.
   roles?: SkuRoles | null;
   purchaseBusy?: boolean;
+  archiveBusy?: boolean;
+  archiveUndo?: ProductArchiveReceipt | null;
   // O interruptor de cada canal na tabela (G22): pausado à mão, gesto liberado e
   // ocupado. O "Pausar" da linha é o MESMO gesto da célula da matriz.
   channelCells?: Record<
@@ -58,7 +61,35 @@ const emit = defineEmits<{
   "dirty-change": [dirty: boolean];
   "set-purchasable": [enabled: boolean];
   "pause-channel": [ref: string, pause: boolean];
+  "set-active": [active: boolean];
 }>();
+
+const confirmArchive = useConfirm();
+async function requestSetActive(active: boolean) {
+  const product = props.detail;
+  if (!product) return;
+  if (
+    !(await confirmArchive({
+      ...(active
+        ? {
+            tone: "primary" as const,
+            confirmLabel: "Desarquivar",
+            cancelLabel: "Manter arquivado",
+          }
+        : {
+            tone: "danger" as const,
+            confirmLabel: "Arquivar",
+            cancelLabel: "Manter produto",
+          }),
+      title: `${active ? "Desarquivar" : "Arquivar"} ${product.name}?`,
+      description: active
+        ? "O produto volta às listas e aos canais conforme os estados publicado e vendável que já tinha."
+        : "O produto sai do cardápio, dos canais e das listas. O histórico e os vínculos ficam guardados.",
+    }))
+  )
+    return;
+  emit("set-active", active);
+}
 
 // ⋯ do cabeçalho (v4): Ocultar/Exibir (entra no rascunho), Permitir compra (vale na
 // hora) e o Histórico de alterações.
@@ -698,6 +729,38 @@ const sectionClass =
     @update:open="requestClose"
   >
     <template #actions>
+      <NuxtBadge
+        v-if="detail && !detail.is_active"
+        label="Arquivado"
+        color="neutral"
+      />
+      <OperatorTimedButton
+        v-if="archiveUndo"
+        label="Desfazer"
+        short-label="Desfazer"
+        icon="i-lucide-undo-2"
+        color="error"
+        :until="archiveUndo.undo_until"
+        :server-now="archiveUndo.server_now"
+        :loading="archiveBusy"
+        data-product-archive-undo
+        @click="
+          emit('set-active', archiveUndo.applied[0]?.before_is_active ?? true)
+        "
+      />
+      <NuxtButton
+        v-else-if="detail"
+        type="button"
+        :label="detail.is_active ? 'Arquivar' : 'Desarquivar'"
+        :icon="
+          detail.is_active ? 'i-lucide-archive' : 'i-lucide-archive-restore'
+        "
+        :color="detail.is_active ? 'error' : 'primary'"
+        variant="solid"
+        :loading="archiveBusy"
+        data-product-archive
+        @click="requestSetActive(!detail.is_active)"
+      />
       <OperatorMoreMenu
         v-model:open="headerMenuOpen"
         :items="panelMenuItems"

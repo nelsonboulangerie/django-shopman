@@ -47,6 +47,11 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 `ROUNDS/ARQUIVAR-A-core-produto.md`. Não fica linha ativa no quadro porque a frente já saiu da
 execução para a fila.
 
+**Turno ARQUIVAR, Frente F:** o gesto confirmado de Arquivar/Desarquivar, individual e em lote,
+foi entregue e colocado na fila no #1948 (`codex/arquivar-gesto`), com as dependências #1945 e
+#1947 integradas. Prova funcional, desempenho, D1 a D12 e capturas em
+`ROUNDS/ARQUIVAR-F-gesto.md`.
+
 **Turno Arquivar (20/10, Frente D):** Compras passou a separar insumos e fornecedores
 arquivados das listas correntes, com o filtro explícito **Arquivados**, no PR #1946. A
 frente saiu do quadro ao entrar na fila; prova e limites estão em

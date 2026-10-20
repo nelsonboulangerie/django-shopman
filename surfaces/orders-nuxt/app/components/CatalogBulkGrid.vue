@@ -5,6 +5,7 @@
 import type {
   BulkCell,
   CatalogRowProjection,
+  ProductArchiveReceipt,
   SurfaceProjection,
 } from "~/types/catalog";
 import {
@@ -20,25 +21,53 @@ const props = defineProps<{
   surfaces: SurfaceProjection[];
   busy?: boolean;
   error?: string;
+  archiveBusy?: boolean;
+  archiveReceipt?: ProductArchiveReceipt | null;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
   save: [cells: BulkCell[]];
+  archive: [
+    products: { sku: string; base_is_active: boolean }[],
+    active: boolean,
+  ];
 }>();
 
+const confirmArchive = useConfirm();
+
 const edit = useGridEdit<string | boolean>();
+const rowSelection = ref<Record<string, boolean>>({});
+const selectedRows = computed(() =>
+  props.rows.filter((row) => rowSelection.value[row.sku]),
+);
+const selectedState = computed(() => {
+  const states = new Set(selectedRows.value.map((row) => row.is_active));
+  return states.size === 1 ? selectedRows.value[0]?.is_active : undefined;
+});
+const archiveReceiptDescription = computed(() => {
+  const receipt = props.archiveReceipt;
+  if (!receipt) return "";
+  const lines = receipt.applied.map(
+    (row) => `${row.name}: ${row.is_active ? "desarquivado" : "arquivado"}`,
+  );
+  lines.push(...receipt.conflicts.map((row) => `${row.sku}: ${row.detail}`));
+  lines.push(...receipt.errors.map((row) => `${row.sku}: ${row.detail}`));
+  return lines.join(" · ");
+});
 
 watch(
   () => props.open,
   (open) => {
     if (open) edit.clear();
+    if (open) rowSelection.value = {};
   },
 );
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
 
-const columnId = (ref: string) => `surface_${ref.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+const columnId = (ref: string) =>
+  `surface_${ref.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 const bulkColumns = computed(() => [
   { id: "product", header: "Produto", enableHiding: false },
   ...props.surfaces.map((surface) => ({
@@ -122,8 +151,10 @@ function save() {
   for (const { key, value } of edit.changes.value) {
     const [sku, surfaceRef, field] = splitEditKey(key);
     const identity = [sku, surfaceRef].join("|");
-    const entry: BulkCell =
-      byCell.get(identity) ?? { sku, surface_ref: surfaceRef };
+    const entry: BulkCell = byCell.get(identity) ?? {
+      sku,
+      surface_ref: surfaceRef,
+    };
     if (field === "price") {
       const cents = parseMoneyCell(String(value));
       if (cents === null) {
@@ -144,16 +175,59 @@ function save() {
       (item) => item.surface_ref === entry.surface_ref,
     );
     const schema = cell?.action?.payload_schema as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     return {
       ...entry,
       base_revisions: schema?.base_revisions as
-        | Record<string, string>
-        | undefined,
+        Record<string, string> | undefined,
     };
   });
   emit("save", cells);
+}
+
+async function setSelectedActive(active: boolean) {
+  if (!selectedRows.value.length || selectedState.value === undefined) return;
+  if (
+    !(await confirmArchive({
+      ...(active
+        ? {
+            tone: "primary" as const,
+            confirmLabel: "Desarquivar produtos",
+            cancelLabel: "Manter arquivados",
+          }
+        : {
+            tone: "danger" as const,
+            confirmLabel: "Arquivar produtos",
+            cancelLabel: "Manter produtos",
+          }),
+      title: `${active ? "Desarquivar" : "Arquivar"} ${selectedRows.value.length} produto${selectedRows.value.length === 1 ? "" : "s"}?`,
+      description: active
+        ? "Os produtos voltam às listas e aos canais conforme os estados publicado e vendável que já tinham."
+        : "Os produtos saem do cardápio, dos canais e das listas. O histórico e os vínculos ficam guardados.",
+    }))
+  )
+    return;
+  emit(
+    "archive",
+    selectedRows.value.map((row) => ({
+      sku: row.sku,
+      base_is_active: row.is_active,
+    })),
+    active,
+  );
+}
+
+function undoArchive() {
+  const receipt = props.archiveReceipt;
+  if (!receipt?.applied.length) return;
+  emit(
+    "archive",
+    receipt.applied.map((row) => ({
+      sku: row.sku,
+      base_is_active: row.is_active,
+    })),
+    receipt.applied[0]?.before_is_active ?? true,
+  );
 }
 </script>
 
@@ -161,9 +235,7 @@ function save() {
   <NuxtSlideover
     :open="open"
     title="Tabelão"
-    :description="
-      'Edite preço e publicação por canal. Cole uma coluna de preços, desfaça e salve tudo numa ida.'
-    "
+    :description="'Edite preço e publicação por canal. Cole uma coluna de preços, desfaça e salve tudo numa ida.'"
     side="right"
     class="sm:max-w-4xl"
     @update:open="(value: boolean) => emit('update:open', value)"
@@ -178,16 +250,31 @@ function save() {
           :description="error"
         />
         <NuxtAlert
+          v-if="archiveReceiptDescription"
+          :color="
+            archiveReceipt?.conflicts.length || archiveReceipt?.errors.length
+              ? 'warning'
+              : 'success'
+          "
+          variant="subtle"
+          title="Recibo do arquivamento"
+          :description="archiveReceiptDescription"
+          data-archive-receipt
+        />
+        <NuxtAlert
           color="info"
           variant="subtle"
           icon="i-lucide-clipboard-paste"
           description="Toque num preço e cole a coluna da planilha. Preço vazio volta ao valor atual; nada é gravado antes de salvar."
         />
         <OperatorTable
+          v-model:row-selection="rowSelection"
           :data="rows"
           :columns="bulkColumns"
           :row-key="(row: CatalogRowProjection) => row.sku"
           caption="Tabelão de preços e publicação por canal"
+          selectable
+          :row-label="(row: CatalogRowProjection) => row.name"
           data-bulk-grid
         >
           <template #product-cell="{ row: tableRow }">
@@ -248,12 +335,42 @@ function save() {
     <template #footer>
       <div class="flex items-center justify-between gap-2">
         <p class="text-xs text-muted-foreground">
+          <template v-if="selectedRows.length">
+            {{ selectedRows.length }} selecionado{{
+              selectedRows.length === 1 ? "" : "s"
+            }}
+            ·
+          </template>
           <span class="tabular-nums">{{ edit.dirty.value }}</span>
-          alteração{{ edit.dirty.value === 1 ? "" : "ões" }} não salva{{
-            edit.dirty.value === 1 ? "" : "s"
-          }}
+          {{ edit.dirty.value === 1 ? "alteração não salva" : "alterações não salvas" }}
         </p>
         <div class="flex items-center gap-1.5">
+          <OperatorTimedButton
+            v-if="archiveReceipt?.applied.length"
+            label="Desfazer"
+            short-label="Desfazer"
+            icon="i-lucide-undo-2"
+            color="error"
+            :until="archiveReceipt.undo_until"
+            :server-now="archiveReceipt.server_now"
+            :loading="archiveBusy"
+            data-bulk-archive-undo
+            @click="undoArchive"
+          />
+          <NuxtButton
+            v-else-if="selectedRows.length"
+            :label="selectedState === false ? 'Desarquivar' : 'Arquivar'"
+            :icon="
+              selectedState === false
+                ? 'i-lucide-archive-restore'
+                : 'i-lucide-archive'
+            "
+            :color="selectedState === false ? 'primary' : 'error'"
+            :disabled="selectedState === undefined"
+            :loading="archiveBusy"
+            data-bulk-archive
+            @click="setSelectedActive(selectedState === false)"
+          />
           <NuxtButton
             color="neutral"
             variant="ghost"

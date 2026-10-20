@@ -917,7 +917,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "sku", "name", "short_description", "long_description", "keywords",
         "base_price_q", "unit", "unit_weight_g", "availability_policy",
         "shelf_life_days", "storage_tip", "production_cycle_hours",
-        "is_batch_produced", "is_published", "is_sellable", "ingredients_text",
+        "is_active", "is_batch_produced", "is_published", "is_sellable", "ingredients_text",
         "image_url", "primary_collection", "primary_collection_name",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
