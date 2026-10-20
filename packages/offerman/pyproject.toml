@@ -19,6 +19,14 @@ api = [
     "djangorestframework>=3.17,<4.0",
     "django-filter>=25.2,<26.0",
 ]
+# Adaptadores que o offerman oferece aos protocolos de outros cores
+# (`adapters/sku_validator.py` para o stockman, `adapters/product_info.py` para o craftsman).
+stockman = [
+    "shopman-stockman>=0.3.0",
+]
+craftsman = [
+    "shopman-craftsman>=0.3.0",
+]
 import_export = [
     "django-import-export>=4.4,<5.0",
 ]
@@ -32,6 +40,9 @@ dev = [
     "djangorestframework>=3.17,<4.0",
     "django-filter>=25.2,<26.0",
     "django-import-export>=4.4,<5.0",
+    "django-unfold>=0.107,<0.108",
+    "shopman-stockman>=0.3.0",
+    "shopman-craftsman>=0.3.0",
 ]
 
 [tool.setuptools.packages.find]

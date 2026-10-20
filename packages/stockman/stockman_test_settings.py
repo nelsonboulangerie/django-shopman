@@ -11,8 +11,6 @@ DEBUG = True
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
-    "taggit",
-    "simple_history",
     "rest_framework",
     "shopman.stockman",
     "shopman.stockman.contrib.alerts",
