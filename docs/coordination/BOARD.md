@@ -122,3 +122,5 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 **ONDA4-1 (20/10):** vínculos de produto publicados no PR **#1960** (`codex/produto-vinculos`): coleções e
 canais no painel, reutilizando as intenções/revisões/recibos do detalhe e da célula. Registro e
 provas em `ROUNDS/ONDA4-1-produto-vinculos.md`. Nenhuma área reservada à outra coordenação foi editada.
+
+**ONDA4-6 (20/10):** componentes do combo implementados no PR **#1961**, draft empilhado no #1960. Escrita canônica com revisão/unidade, ciclo e outbox atômico; editor inline, busca e Desfazer. Provas, desempenho e D1-D12 em `ROUNDS/ONDA4-F6-produto-combo.md`. Aguarda integração das frentes 1/2 para base main e fila.
