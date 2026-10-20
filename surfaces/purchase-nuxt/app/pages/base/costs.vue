@@ -238,7 +238,7 @@ async function onPrefer(cost: SupplierMaterialCost) {
                   <template v-if="!batchSupplierRef">Escolha o fornecedor para lançar.</template>
                   <template v-else><span class="font-semibold tabular-nums">{{ plural(batchFilledCount, "valor preenchido", "valores preenchidos") }}</span></template>
                 </p>
-                <div class="flex gap-2">
+                <div class="flex max-w-full flex-wrap justify-end gap-2">
                   <NuxtButton label="Desfazer" icon="i-lucide-undo-2" color="neutral" variant="outline" :disabled="!canUndoCost || actionPending" @click="undoCost()" />
                   <NuxtButton label="Limpar" color="neutral" variant="outline" :disabled="!batchFilledCount || actionPending" @click="clearCostBatch()" />
                   <NuxtButton

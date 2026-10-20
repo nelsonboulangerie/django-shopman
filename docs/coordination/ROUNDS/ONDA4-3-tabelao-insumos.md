@@ -86,3 +86,24 @@ por SKU. Import/export é a frente 5. Custos e mínimos são lotes independentes
 conforme os dois endpoints existentes. As escritas e validações de domínio por custo
 continuam crescendo com a quantidade de entidades; o guarda de N+1 cobre a leitura
 prévia, inclusive conversões. Não foi usado banco vivo nem regenerado baseline.
+
+
+## Rechecagem CI: ações de custos no celular
+
+A primeira CI do #1959 falhou no job purchase-nuxt, run `39498186916`,
+job `118888846480`: **245 passed, 2 failed**. As duas falhas foram
+`purchase.spec.ts` em `mobile-standard` e `mobile-narrow`: o terceiro botão do
+rodapé empurrou **Salvar como padrão** para fora do viewport e cortou seu foco.
+No celular de 320 px, o log mediu x=221, largura=179 px.
+
+A fila real foi consultada por GraphQL (`mergeQueueEntry: null`). O auto-merge
+foi desligado antes de editar o mesmo branch. A correção é local: somente o grupo
+de ações do rodapé de costs.vue passou a usar `max-w-full`, `flex-wrap` e
+alinhamento à direita. Nenhum componente compartilhado foi alterado.
+
+Reprodução local no build anterior: as mesmas duas falhas do scanner. Build
+corrigido: **6 passed** (os dois casos originais e quatro casos novos com dois
+valores colados, claro/escuro nas duas larguras). As quatro capturas corrigidas
+foram abertas, com a ação Salvar trazida à vista para a conferência do rodapé.
+Arquivos `before-fix-costs-mobile-*-light.png` e
+`after-fix-costs-mobile-*-{light,dark}.png` no diretório da evidência.
