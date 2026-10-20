@@ -2,10 +2,12 @@
 
 - **id:** IFOOD-E
 - **sessão:** frente 6, turno 5b e retomada autorizada em 20/10/2026 (Codex)
-- **branch:** `codex/ifood-ensaio-completo` (seguimento de `codex/ifood-ensaio`)
+- **branch de encerramento:** `codex/ifood-e-encerramento`
+- **branches do ensaio:** `codex/ifood-ensaio` e `codex/ifood-ensaio-completo`
 - **PR anterior:** #1929 (evidência da primeira interrupção)
 - **PR de seguimento:** #1962
-- **estado:** EM_PR; ensaio completo confirmado na retomada, restauração exata concluída
+- **encerramento documental:** #1965
+- **estado:** FEITO; ensaio e restauração exata confirmados, registros #1929 e #1962 mergeados
 - **execução final:** 2026-10-20 21:16:14–21:17:22 UTC (18:16:14–18:17:22 em São Paulo)
 - **execução inicial:** 2026-10-20 20:59:46–20:59:49 UTC
 - **ordem:** `ORDERS/next-ensaio.md`, autorização expressa para um merchant e um SKU
@@ -192,3 +194,76 @@ fora do Git; credenciais originais do dono mantidas no `.env` ignorado.
 As intercorrências de descrição e restauração permanecem registradas. O ensaio cobre somente
 esse item sem promoção e esse contexto; não demonstra concorrência PostgreSQL, promoção ativa,
 catálogo de produção ou tipos PIZZA. Não houve alteração de implementação do adapter.
+
+
+## Encerramento e acompanhamento dos merges
+
+O dono pediu acompanhar #1929 e #1962 até o merge, resolver falhas e encerrar a frente.
+Os dois merges foram confirmados pela API do GitHub. O encerramento documental é entregue
+no PR #1965, branch `codex/ifood-e-encerramento`, com a frente fora da tabela ativa do BOARD.
+O acompanhamento continua até o merge do próprio encerramento, sem repetir o ensaio remoto.
+
+| PR | Entrega | Merge confirmado |
+|---|---|---|
+| #1929 | Registro da primeira interrupção e restauração | **mergeado em 2026-10-20 22:15:23 UTC**, commit `b0db4409a5a09b44ebbd0db38be009761fd25e41` |
+| #1962 | Contrato conferido, roteiro completo e restauração exata | **mergeado em 2026-10-20 22:45:21 UTC**, commit `b660c511bc444acd56d535107113acfe9c58ff25` |
+
+Conferência inicial do acompanhamento em 20/10/2026: ambos abertos, mergeáveis e com
+merge automático habilitado; nenhuma falha nos checks naquele momento. #1929 ainda aguardava
+`Backstage rest`; #1962 tinha testes em execução e aguardando capacidade dos runners.
+Os horários e commits efetivamente observados estão na tabela acima.
+
+### Sobreposição de outra sessão
+
+O inventário encontrou #1963 (`claude/ensaio-pedidos-execucao-a13c08`), que parte do registro
+#1929 e altera os mesmos documentos, além do payload de preço para enviar também
+`originalValue=value`. O PR relata o adendo de coordenação e uma tentativa adicional, com
+preço/alterações rápidas/descrição confirmados e interrupção na categoria PIZZA, seguida de
+restauração. Isso não invalida o contrato oficial nem a evidência da execução completa de #1962.
+
+O encerramento preserva os históricos e registra essa sobreposição para não reintroduzir a
+alegação de que categoria DEFAULT e foto ainda não foram provadas. Não houve
+nova execução ou escrita remota no iFood durante este acompanhamento. Nenhum PR de outra sessão
+foi fechado, alterado ou reenfileirado por este trabalho.
+
+
+### Atualização após o merge de #1929
+
+A API confirmou o merge de #1929 às 22:15:23 UTC em 20/10/2026 (19:15:23 em São Paulo),
+commit `b0db4409a5a09b44ebbd0db38be009761fd25e41`.
+
+#1962 havia sido removido da fila pelo bot às 22:06:21 e 22:09:20 UTC, motivo
+`invalid_merge_commit`, apesar de seus checks verdes. Não houve reenfileiramento repetido
+sem mudança de base. Depois do merge de #1929, `origin/main` foi integrado no branch do
+#1962, fora da fila, sem conflitos de conteúdo. Novo head:
+`da3998ff1fbd4aaaeae5929660d38aa37c3280f5`. `git diff --check origin/main...HEAD` passou;
+o diff funcional continua limitado aos três documentos do ensaio. O PR voltou à fila
+(posição 4 na conferência), e seu novo head inicia as verificações correspondentes.
+Naquela conferência, o branch do encerramento também recebeu essa base e #1965 permaneceu
+draft até o merge de #1962.
+
+O inventário encontrou ainda o seguimento #1966, da mesma outra sessão de #1963, com prova
+adicional de categoria DEFAULT, foto e restauração. Esses registros devem permanecer como
+histórico complementar ao ensaio completo de #1962, sem substituir ou apagar sua evidência.
+
+
+### Encerramento após o merge de #1962
+
+Em 20/10/2026, a API confirmou #1962 mergeado às **22:45:21 UTC** (19:45:21 em São Paulo),
+commit `b660c511bc444acd56d535107113acfe9c58ff25`. O `origin/main` foi integrado no branch de
+encerramento sem conflitos, preservando os demais registros do BOARD. O diff de encerramento
+fica restrito ao BOARD e a este ROUNDS. A frente sai da tabela ativa conforme a regra do BOARD;
+a prova completa e suas intercorrências continuam no histórico acima.
+
+O grupo de merge de #1962 apresentou falha apenas em `Supply chain — marketing`, run
+`39507322469`, job `118920058999`: três advisories high de `@modelcontextprotocol/server`
+(`GHSA-jm63-cq47-j5jp`, `GHSA-46jr-4wx8-v453`, `GHSA-rvq5-wwqv-78pq`). A correção já pertence
+à frente #1967; não foi duplicada nem foi criada exceção de auditoria. Esse check não impediu
+o merge de #1962 depois da aprovação dos checks exigidos. Não foi ocultada a falha nem alterada
+a configuração dos gates. A pendência de segurança continua acompanhada no PR próprio.
+
+**Entrega final:** registros #1929 e #1962 no main; encerramento documental entregue à fila
+no #1965. Não há nova escrita no iFood, credencial copiada ou mudança no adapter neste
+acompanhamento. A sobreposição de #1963/#1966 fica documentada, com a integração desses PRs
+sob responsabilidade de sua frente. Os checks de documentação e os inventários de coordenação
+são conferidos antes de publicar este encerramento; pendências alheias não fazem parte dele.
