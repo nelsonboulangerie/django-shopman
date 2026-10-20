@@ -859,6 +859,9 @@ MANYCHAT_FLOW_MAP = {
     # Variante do `order_dispatched` com o botão de rastreio do entregador
     # (`pedido_saiu_entrega_rastreio`): chave "order_dispatched_courier", ligada só
     # depois de aprovado o template. Sem ela o aviso sai pelo `pedido_saiu_entrega`.
+    # Variante do `order_accepted` na encomenda, com a data (`pedido_encomenda_confirmada`,
+    # submetido à Meta em 20/10/2026): chave "order_accepted_preorder", ligada só depois
+    # de aprovado. Sem ela a encomenda sai pelo `pedido_confirmado`, sem a data.
 }
 try:
     MANYCHAT_API_TIMEOUT = int(os.environ.get("MANYCHAT_API_TIMEOUT", "15"))

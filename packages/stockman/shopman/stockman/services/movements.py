@@ -100,9 +100,13 @@ class StockMovements:
 
     @classmethod
     def issue(cls, quantity, quant,
-              user=None, reason='Saída', kind=Move.Kind.ADJUST):
+              user=None, reason='Saída', kind=Move.Kind.ADJUST, metadata=None):
         """
         Stock exit.
+
+        ``metadata`` (opcional) vai para ``Move.metadata``: é como quem chama
+        separa saídas do MESMO ``kind`` por origem (ex.: o ``MAKE`` da venda do
+        feito na hora, ``{"source": "sale"}``, do ``MAKE`` da fornada). ADR-040.
 
         Raises:
             StockError('INSUFFICIENT_QUANTITY'): If quantity > quant.available
@@ -131,7 +135,8 @@ class StockMovements:
                 delta=-quantity,
                 reason=reason,
                 kind=kind,
-                user=user
+                user=user,
+                metadata=dict(metadata or {}),
             )
             logger.info(
                 "stock.issue",

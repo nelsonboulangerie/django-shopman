@@ -671,6 +671,10 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # chega — release é no-op em hold FULFILLED. Devolver ao ledger, senão o
     # sistema fica abaixo do físico a cada erro de digitação cancelado.
     stock.revert_fulfilled(order)
+    # O insumo do feito na hora: o que a cozinha não começou volta ao estoque, o
+    # que ela preparou é perda (dono, 20/10/2026; ADR-040). Directive: o acerto
+    # lê os tickets do KDS e nunca segura o cancelamento.
+    stock.settle_made_to_order_cancellation(order)
     _release_coupon_use(order)
     _settle_cancelled_payment(order)
     fiscal.cancel(order)

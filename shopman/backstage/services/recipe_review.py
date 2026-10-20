@@ -216,7 +216,7 @@ def _dough_of(version: RecipeVersion, dough_names: dict[str, str]) -> tuple[str,
 def review_queue(*, sold: dict[str, Decimal] | None = None) -> list[QueueItem]:
     """As receitas com versão em uso ainda não conferida, do que mais sai para o que menos sai."""
     entries = list(
-        RecipeEntry.objects.filter(is_archived=False, current_version__isnull=False)
+        RecipeEntry.objects.filter(is_active=True, current_version__isnull=False)
         .select_related("current_version")
         .order_by("name", "ref")
     )

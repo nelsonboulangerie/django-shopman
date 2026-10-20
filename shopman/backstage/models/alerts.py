@@ -205,6 +205,13 @@ class OperatorAlert(models.Model):
         # pede (sem pré-checagem, ou divergência de concorrência). A fornada não
         # falha, mas o livro de insumo ficou acima do real e precisa gritar.
         ("production_stock_shortfall", "Produção baixou menos insumo que a ficha"),
+        # O mesmo buraco pela VENDA do feito na hora (ADR-040): café, chá e
+        # croque baixam o insumo da ficha quando vendidos. Faltar insumo não
+        # trava a venda, mas o saldo dele ficou acima do real e precisa gritar.
+        # E a ficha que a baixa não sabe escolher: duas marcadas para o mesmo
+        # produto, e a venda não desconta nada dele até sobrar uma.
+        ("stock_sale_ingredient_short", "Venda baixou menos insumo que a ficha"),
+        ("stock_sale_recipe_ambiguous", "Duas fichas feitas na hora para o mesmo produto"),
         # As três faltas de fornada que não são de insumo: a planejada que nunca
         # começou, a começada que nunca fechou (estoque preso em produção) e a
         # fechada sem gravar os lotes — sem lote, some o desconto de validade e
@@ -345,6 +352,8 @@ class OperatorAlert(models.Model):
         "production_low_yield",
         "production_stock_short",
         "production_stock_shortfall",
+        "stock_sale_ingredient_short",
+        "stock_sale_recipe_ambiguous",
         "production_forgotten",
         "production_unfinished",
         "production_batch_traceability",

@@ -2955,8 +2955,8 @@ class Command(BaseCommand):
         # Frappé e adicionais com preço no Croque Monsieur. Dado, não código
         # (``metadata["option_groups"]``, aba Escolhas do Admin; formato em
         # ``shopman/shop/product_options.py``). Cada opção declara o insumo que
-        # gasta (``consumes``, na unidade-base do insumo); é registro gravado
-        # na linha, sem baixa de estoque na venda. Frutas vermelhas fica sem
+        # gasta (``consumes``, na unidade-base do insumo), congelado na linha;
+        # a venda baixa esse insumo (ADR-040). Frutas vermelhas fica sem
         # insumo declarado: o cadastro de compra não tem polpa/fruta hoje.
         option_groups = {
             "FRAP": [
@@ -4681,11 +4681,12 @@ class Command(BaseCommand):
             # parmesão ralado fino. ⚠️ A fatia é ~60 g (dono, 24/09) — A CONFIRMAR
             # na balança.
             #
-            # ⚠️ O consumo automático na VENDA destes itens NÃO EXISTE ainda: a
-            # ficha nasce pronta para ele, e o insumo entra pela compra e nunca
-            # sai. Dono do assunto: docs/plans/WP-BAIXA-DE-INSUMO-NA-VENDA.md.
-            # (Este comentário dizia "Fase 2 do Buyman", que é outra coisa — no
-            # plano do Buyman, Fase 2 é o Pedido de Compra.)
+            # A VENDA destes itens baixa o insumo da ficha (ADR-040, dono
+            # 20/10/2026): `made_to_order: True` é a marca explícita que separa
+            # "montada na venda" de "ficha desligada" (as duas são inativas).
+            # Um nível só: o bechamel sai como bechamel. Cancelado antes de
+            # preparar devolve; depois de preparado é perda.
+            # `shop/services/made_to_order.py`.
             {
                 # Ficha da casa: pão, prato, cebolas assadas, requeijão e o
                 # queijo de acabamento — o parmesão «Precioso», da região, no
@@ -4695,6 +4696,7 @@ class Command(BaseCommand):
                 "output_sku": "QJQT",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("FORMA", Decimal("110")),
                     ("REQUEIJAO-CORTE", Decimal("40")),
@@ -4710,6 +4712,7 @@ class Command(BaseCommand):
                 "output_sku": "CQMO",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4725,6 +4728,7 @@ class Command(BaseCommand):
                 "output_sku": "CQMA",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4740,6 +4744,7 @@ class Command(BaseCommand):
                 "output_sku": "CQCOM",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4759,6 +4764,7 @@ class Command(BaseCommand):
                 "output_sku": "JB",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("BGL", Decimal("230")),     # a baguete lanche assada
                     ("PRESUNTO-CASA", Decimal("85")),
@@ -4778,6 +4784,7 @@ class Command(BaseCommand):
                 "output_sku": "PERDU",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("BRNT", Decimal("26")),
                     ("CREME-LEITE-OVOS", Decimal("65")),
@@ -4794,6 +4801,7 @@ class Command(BaseCommand):
                 "output_sku": "SP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [("CAFE-ORFEU-CLASSICO", Decimal("18"))],
             },
             {
@@ -4802,6 +4810,7 @@ class Command(BaseCommand):
                 "output_sku": "SPMC",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("21"))
@@ -4813,6 +4822,7 @@ class Command(BaseCommand):
                 "output_sku": "CAP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("155"))
@@ -4824,6 +4834,7 @@ class Command(BaseCommand):
                 "output_sku": "CAPMO",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("155")),
@@ -4836,6 +4847,7 @@ class Command(BaseCommand):
                 "output_sku": "MOCHA",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("185")),
@@ -4848,6 +4860,7 @@ class Command(BaseCommand):
                 "output_sku": "CAFL",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("227"))
@@ -4859,6 +4872,7 @@ class Command(BaseCommand):
                 "output_sku": "CHOQ",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("LEITE-INTEGRAL-A", Decimal("227")),
                     ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("30"))
@@ -4870,6 +4884,7 @@ class Command(BaseCommand):
                 "output_sku": "CHCAM",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CHA-CAMILLE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4881,6 +4896,7 @@ class Command(BaseCommand):
                 "output_sku": "CHROU",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CHA-ROUGE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4892,6 +4908,7 @@ class Command(BaseCommand):
                 "output_sku": "CHSOP",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CHA-SOPHIE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4903,6 +4920,7 @@ class Command(BaseCommand):
                 "output_sku": "CHBLU",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CHA-BLEU", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4914,6 +4932,7 @@ class Command(BaseCommand):
                 "output_sku": "CHHIB",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CHA-HIBISCO", Decimal("8")),
                     ("ACUCAR-CRISTAL", Decimal("15")),
@@ -4926,6 +4945,7 @@ class Command(BaseCommand):
                 "output_sku": "SFTCH",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CHA-CHAI", Decimal("8")),
                     ("LIMAO-SICILIANO", Decimal("20")),
@@ -4941,6 +4961,7 @@ class Command(BaseCommand):
                 "output_sku": "VIEN",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("52")),
@@ -4955,6 +4976,7 @@ class Command(BaseCommand):
                 "output_sku": "CTFV",
                 "batch_size": Decimal("1"),
                 "is_active": False,
+                "made_to_order": True,
                 "items": [
                     ("CHA-FRUTAS-VERMELHAS", Decimal("8")),
                     # ⅓ da lata de 350 ml por bebida (dono, 23/09) ≈ 115 g.
@@ -5412,6 +5434,9 @@ class Command(BaseCommand):
                     # toda ficha ativa, e croque não entra em plano de forno.
                     "is_active": rd.get("is_active", True),
                     "meta": {
+                        # Montada na venda (ADR-040): a venda baixa o insumo
+                        # desta ficha. Só nas fichas de montagem e bebida.
+                        **({"made_to_order": True} if rd.get("made_to_order") else {}),
                         "capacity_per_day": PROVISIONAL_CAPACITY_PER_DAY[rd["ref"]],
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
                         "requires_batch_tracking": shelf_life_days is not None,

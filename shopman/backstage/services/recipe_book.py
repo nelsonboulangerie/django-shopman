@@ -236,11 +236,11 @@ def _patch_entry_locked(entry: RecipeEntry, data: dict) -> RecipeEntry:
         entry.output_sku = _text(data, "output_sku")
     if "notes" in data:
         entry.notes = _text(data, "notes")
-    if "is_archived" in data:
-        value = data.get("is_archived")
+    if "is_active" in data:
+        value = data.get("is_active")
         if not isinstance(value, bool):
-            raise _fail("Arquivar aceita apenas sim ou não.", field="is_archived")
-        entry.is_archived = value
+            raise _fail("Arquivar ou desarquivar aceita apenas sim ou não.", field="is_active")
+        entry.is_active = value
     if external_references.FIELD in data:
         references = external_references.validate(data.get(external_references.FIELD))
         meta = dict(entry.meta or {})
