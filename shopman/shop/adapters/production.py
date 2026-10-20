@@ -70,6 +70,17 @@ def get_made_to_order_skus(skus: list[str]) -> set[str]:
     }
 
 
+def get_batch_produced_skus(skus: list[str]) -> set[str]:
+    """Os SKUs cuja ficha vigente é "Em lote" (``Recipe.production_mode``).
+
+    Na hora e revenda (sem ficha vigente) ficam de fora.
+    """
+    from shopman.craftsman.models import ProductionMode
+    from shopman.craftsman.services import production_modes_for_output_skus
+
+    return {sku for sku, mode in production_modes_for_output_skus(skus).items() if mode == ProductionMode.BATCH}
+
+
 def get_finished_work_orders(skus: list[str], cutoff_date) -> list[tuple]:
     """Retorna [(output_sku, finished_at)] de WorkOrders concluídas no período."""
     from shopman.craftsman.models import WorkOrder

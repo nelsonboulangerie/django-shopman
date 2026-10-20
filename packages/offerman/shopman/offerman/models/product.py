@@ -187,13 +187,6 @@ class Product(models.Model):
         help_text=_("URL da imagem principal do produto (ex: Unsplash, Cloudinary, S3)"),
     )
 
-    # Batch production flag
-    is_batch_produced = models.BooleanField(
-        _("produção em lote"),
-        default=False,
-        help_text=_("Produzido em lotes (para Craftsman)"),
-    )
-
     # Metadata
     metadata = models.JSONField(
         _("metadados"),

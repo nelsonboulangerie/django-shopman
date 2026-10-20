@@ -91,7 +91,6 @@ product:
   availability_policy:  "stock_only" | "planned_ok" | "demand_ok"
   is_published:         bool              # Visível no catálogo
   is_sellable:          bool              # Elegível para venda (false = insumo)
-  is_batch_produced:    bool              # Produzido em lote (Crafting)
   image_url:            url
   metadata:             json              # Extensível (ex: allows_next_day_sale)
 ```

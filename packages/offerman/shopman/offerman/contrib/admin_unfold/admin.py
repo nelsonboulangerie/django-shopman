@@ -428,7 +428,6 @@ class ProductAdmin(_ProductImportExportBase):
                     "storage_tip",
                     "is_perishable_readonly",
                     "production_cycle_hours",
-                    "is_batch_produced",
                     "allows_next_day_sale",
                     "made_to_order",
                     "ready_from",

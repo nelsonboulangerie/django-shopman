@@ -282,7 +282,6 @@ const draft = reactive({
   shelf_life_days: "" as number | "",
   storage_tip: "",
   production_cycle_hours: "" as number | "",
-  is_batch_produced: false,
   is_published: true,
   is_sellable: true,
   allows_next_day_sale: false,
@@ -326,7 +325,6 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.production_cycle_hours = numOrBlank(
     detail?.production_cycle_hours ?? null,
   );
-  draft.is_batch_produced = detail?.is_batch_produced ?? false;
   draft.is_published = detail?.is_published ?? true;
   draft.is_sellable = detail?.is_sellable ?? true;
   draft.allows_next_day_sale = detail?.allows_next_day_sale ?? false;
@@ -491,7 +489,6 @@ function buildPatch(): ProductDetailPatch {
     nullableInt(draft.production_cycle_hours),
     current.production_cycle_hours,
   );
-  put("is_batch_produced", draft.is_batch_produced, current.is_batch_produced);
   put("is_published", draft.is_published, current.is_published);
   put("is_sellable", draft.is_sellable, current.is_sellable);
   put(
@@ -652,7 +649,6 @@ const conflictLabels: Record<string, string> = {
   shelf_life_days: "Validade",
   storage_tip: "Conservação",
   production_cycle_hours: "Tempo de produção",
-  is_batch_produced: "Produção em lote",
   is_published: "Publicado",
   is_sellable: "Disponível para venda",
   allows_next_day_sale: "Venda no dia seguinte",
@@ -1166,11 +1162,6 @@ const sectionClass =
                   placeholder="Ex.: 4"
                 />
               </NuxtFormField>
-
-              <NuxtCheckbox
-                v-model="draft.is_batch_produced"
-                label="Produzido em lote"
-              />
 
               <NuxtCheckbox
                 v-model="draft.allows_next_day_sale"

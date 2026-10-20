@@ -1430,6 +1430,7 @@
           "symbols": [
             "CanonicalProductionCommands",
             "count_adjusted_events",
+            "get_batch_produced_skus",
             "get_finished_work_orders",
             "get_made_to_order_skus",
             "get_work_order",
