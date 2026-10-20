@@ -106,6 +106,10 @@ class ProductDetailView(ServerTimingMixin, APIView):
     def get(self, request, sku: str):
         if catalog_service.get_published_product(sku) is None:
             return Response({"detail": "Produto não encontrado."}, status=404)
+        # Rota pública e anônima: o produto que só existe em coleção exclusiva de grupo
+        # não existe aqui, como na lista.
+        if catalog_service.group_exclusive_skus([sku]):
+            return Response({"detail": "Produto não encontrado."}, status=404)
 
         items = build_catalog_items_for_skus(
             [sku],

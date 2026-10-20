@@ -35,6 +35,18 @@ class CollectionAccess:
     def is_hidden(self, collection_ref: str | None) -> bool:
         return bool(collection_ref) and collection_ref in self.hidden
 
+    def hides_product(self, collection_refs: Iterable[str]) -> bool:
+        """O produto destas coleções é do grupo para este cliente?
+
+        Só quando TODAS as coleções dele estão escondidas: o que também está numa
+        coleção comum continua por ela, e o que não está em coleção nenhuma não é
+        de grupo nenhum. É a mesma regra da subconsulta do cardápio
+        (``exclusive_only_product_ids``), para um produto só: a página do produto
+        e a sacola respondem o mesmo que o cardápio.
+        """
+        refs = {str(ref) for ref in collection_refs if ref}
+        return bool(refs) and refs <= self.hidden
+
 
 def collection_access(
     rows: Iterable[tuple[str, Mapping[str, Any] | None]],
