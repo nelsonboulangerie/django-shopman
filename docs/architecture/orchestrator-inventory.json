@@ -1183,6 +1183,25 @@
       ]
     },
     {
+      "path": "shopman/shop/adapters/payman_refund.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "GatewayRefundBackend"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/adapters/payment_efi.py",
       "touchpoints": [
         "adapter"
@@ -11479,6 +11498,7 @@
             "_existing_active_intent",
             "_existing_tender_intent_ref",
             "_extract_qr_data",
+            "_gateway_answer_text",
             "_gateway_for_adapter",
             "_gateway_recheck_is_due",
             "_held_refund_balance",
@@ -11489,6 +11509,7 @@
             "_methods_of",
             "_notify_payment_failed",
             "_notify_refund",
+            "_order_for_intent",
             "_payman_captured_balance_q",
             "_payman_intent",
             "_payman_intent_captured",

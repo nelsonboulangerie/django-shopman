@@ -54,7 +54,11 @@ def _staff(username: str, *perms: str) -> User:
 
 
 def _intent_capturado(amount_q: int = 10000) -> PaymentIntent:
-    intent = PaymentService.create_intent(f"ORD-GATE{PaymentIntent.objects.count()}", amount_q, "pix")
+    # Gateway de teste (``payment_mock``): o estorno do Admin devolve pelo gateway
+    # da cobrança, e uma cobrança sem gateway seria recusada antes do portão.
+    intent = PaymentService.create_intent(
+        f"ORD-GATE{PaymentIntent.objects.count()}", amount_q, "pix", gateway="mock"
+    )
     PaymentService.authorize(intent.ref)
     PaymentService.capture(intent.ref)
     return PaymentService.get(intent.ref)
@@ -133,7 +137,7 @@ def test_POST_confirmado_estorna(client):
 
     resposta = client.post(
         f"/admin/payman/paymentintent/{intent.pk}/refund/",
-        {"_form_submitted": "true", "confirm": "on"},
+        {"_form_submitted": "true", "confirm": "on", "refund_key": "0" * 32},
     )
 
     assert resposta.status_code in (200, 302)

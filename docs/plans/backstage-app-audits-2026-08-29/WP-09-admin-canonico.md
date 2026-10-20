@@ -53,7 +53,14 @@ Estado (19/10/2026, frente 11):
 - [x] Segunda confirmacao: as duas acoes (`refund` total e `refund-amount`) sao dialog actions oficiais do Unfold com `BaseDialogForm` e marca obrigatoria "Confirmo o estorno, que nao tem desfazer". A pagina propria `payment_refund.html` saiu; o valor e o disponivel vivem no dialogo.
 - [x] Estorno em lote (`refund_selected`) removido: acao de lote do Django roda sem dialogo (laudo 01/09, 06-admin P0-1, opcao b).
 - [ ] Motivo, step-up 2FA e dossie: nao feitos.
-- [ ] A acao do Admin so grava o estorno no livro (`PaymentService.refund`), sem chamar o gateway (verify-02-06 §6). A copy do dialogo agora diz isso; ligar ao gateway ou restringir a estorno sem gateway e decisao pendente.
+- [x] Estorno do Admin devolve o dinheiro pelo gateway (decisao do dono, 20/10/2026; verify-02-06 §6). As duas acoes chamam `PAYMAN["REFUND_BACKEND"]` (contrato `shopman.payman.protocols.RefundBackend`, lido em `shopman.payman.conf`), apontado para `shopman.shop.adapters.payman_refund.GatewayRefundBackend`, que delega a `services.payment.refund_intent_at_gateway`: o mesmo adapter da rota gravada na cobranca (`_adapter_for_persisted_intent`, Efi ou Stripe) que o estorno do pedido usa. O Core nao importa o shop; sem backend configurado o Admin recusa em vez de gravar so no livro.
+  - Parcial: Efi (devolucao Pix com `valor`) e Stripe (`Refund` com `amount`) aceitam; o "Estornar um valor" passa o valor, o total passa o disponivel (capturado menos estornos e chargebacks).
+  - Idempotencia: cada dialogo aberto carrega `refund_key` (uuid, campo oculto); a chave `admin-refund:<ref>:<refund_key>` vai ao gateway (chave do `Refund.create` na Stripe; `dev_id` deterministico na Efi) e o Payman deduplica pelo id da devolucao. Duplo clique = uma devolucao.
+  - Falha: recusa do gateway volta com a mensagem dele dentro de uma frase em portugues, e nada e gravado; timeout/5xx da Efi (ambiguo) nao grava, abre alerta `payment_refund_failed` critico e manda conferir o painel antes de tentar de novo; dinheiro que saiu sem registro (drift) e dito como tal ("Nao estorne de novo").
+  - Cobranca sem gateway (dinheiro, maquininha, externa, Pix/cartao atestado no balcao, em conta) e recusada com o caminho certo (gaveta do PDV; "Estornei na maquininha"): o Admin nao afirma devolucao que nao fez.
+  - Auditoria: o motivo da transacao de estorno (imutavel) e "Estorno no Admin por <usuario>", e a acao grava `LogEntry` do Django. O cliente recebe o aviso `payment_refunded` do pedido, como no estorno do pedido.
+  - Copy do dialogo: o dinheiro volta ao cliente pelo mesmo meio; Pix em instantes, cartao em alguns dias conforme o banco do cartao.
+  - Testes: `shopman/backstage/tests/test_payman_admin_refund.py` (dubles da Stripe e da Efi: sucesso, falha, timeout, duplo clique, parcial, sem gateway, sem backend, auditoria).
 
 ### P1 - Gate nao cobre claramente fallback `packages/*/admin.py`
 
