@@ -21,7 +21,7 @@ registros/1 MB por importação. Campos ausentes preservam os dados existentes.
 
 ## Evidência
 
-- `test_purchase_csv.py`: **14 passed**: prévia/aplicação/reenvio para ambas as
+- `test_purchase_csv.py`: **15 passed**: prévia/aplicação/reenvio para ambas as
   entidades, vírgula decimal, export, erro por registro sem escrita parcial,
   revisão obsoleta/CSV alterado, preservação de metadata, SKU/unidade, duplicata,
   permissão/cabeçalho, corpos JSON que não são objeto e rollback da escrita se a auditoria falhar.
@@ -36,9 +36,9 @@ registros/1 MB por importação. Campos ausentes preservam os dados existentes.
 - Antes, dez cadastros individuais: **300 consultas**, Server-Timing agregado
   `projection;dur=64.75`, `db;dur=5.50`. Depois, uma aplicação: **22 consultas**,
   `projection;dur=3.87`, `db;dur=0.36` (ms, SQLite local).
-- Dois/quarenta registros: prévia/aplicação/exportação **5/22/5 consultas em ambos**.
+- Dois/quarenta fornecedores: prévia/aplicação/exportação **5/22/5 consultas em ambos**. Dois/quarenta insumos: **6/23/5 em ambos**, incluindo o mapa de unidade do catálogo.
   Server-Timing de aplicação: `projection;dur=2.75/6.79`, `db;dur=0.25/0.58`.
-  O teste reprova crescimento com os registros.
+  O teste de ambas as entidades reprova crescimento com os registros.
 - Capturas: `surfaces/purchase-nuxt/test-results/visual/`
   `base-csv-onda4-5-CSV-{materials,suppliers}-{light,dark}-{desktop,mobile}/`
   `onda4-5-{materials,suppliers}-{antes,depois,export}-{light,dark}-{desktop,mobile}.png`.
@@ -62,4 +62,4 @@ D12: capturas antes/depois/export de ambas as entidades nos dois temas e tamanho
 Sem alteração de Core ou migração. As duplicatas históricas de prefixo 0023 a 0039
 em shop já estavam na base; esta frente não criou nenhuma.
 
-Validação após empilhar a frente 4: **21 testes API passaram** (14 CSV + 7 lote de fornecedores), **6 testes de componente passaram** (4 CSV + 2 lote), typecheck e oito cenários Chromium passaram novamente.
+Validação: **15 testes CSV passaram**, além dos **7 testes de lote de fornecedores** já aprovados na rodada empilhada, **6 testes de componente passaram** (4 CSV + 2 lote), typecheck e oito cenários Chromium passaram novamente.

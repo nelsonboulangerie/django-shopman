@@ -132,20 +132,33 @@ def test_permission_and_headers(client, purchase_operator):
     assert apply(client, "materials", "SKU;Nome;Unidade\nA;A;kg", "forged").status_code == 409
 
 
-def test_queries_do_not_grow_with_import_or_export_rows(client, purchase_operator):
+@pytest.mark.parametrize("entity", ["materials", "suppliers"])
+def test_queries_do_not_grow_with_import_or_export_rows(client, purchase_operator, entity):
     client.force_login(purchase_operator)
     counts = []
     for count, prefix in ((2, "a"), (40, "b")):
-        text = "Referência;Razão social\n" + "\n".join(f"{prefix}{i};Fornecedor {i}" for i in range(count))
+        text = (
+            ("SKU;Nome;Unidade\n" + "\n".join(f"{prefix}{i};Insumo {i};kg" for i in range(count)))
+            if entity == "materials"
+            else ("Referência;Razão social\n" + "\n".join(f"{prefix}{i};Fornecedor {i}" for i in range(count)))
+        )
         with CaptureQueriesContext(connection) as preview_queries:
-            result = post(client, "suppliers", {"preview": True, "csv": text})
+            result = post(client, entity, {"preview": True, "csv": text})
         with CaptureQueriesContext(connection) as apply_queries:
-            saved = apply(client, "suppliers", text, result.json()["preview"]["base_revision"])
+            saved = apply(client, entity, text, result.json()["preview"]["base_revision"])
         with CaptureQueriesContext(connection) as export_queries:
-            exported = client.get("/api/v1/backstage/purchase/suppliers/csv/")
+            exported = client.get(f"/api/v1/backstage/purchase/{entity}/csv/")
         assert result.status_code == saved.status_code == exported.status_code == 200, saved.content
         counts.append((len(preview_queries), len(apply_queries), len(export_queries)))
-        print("CSV_PERF", count, counts[-1], result["Server-Timing"], saved["Server-Timing"], exported["Server-Timing"])
+        print(
+            "CSV_PERF",
+            entity,
+            count,
+            counts[-1],
+            result["Server-Timing"],
+            saved["Server-Timing"],
+            exported["Server-Timing"],
+        )
     assert all(after <= before for before, after in zip(counts[0], counts[1], strict=True))
 
 
