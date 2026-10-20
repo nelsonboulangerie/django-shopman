@@ -235,14 +235,40 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 - Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
-> ℹ️ **A data da encomenda não está neste template.** O texto do SMS, do e-mail e do
-> WhatsApp dentro da janela diz "confirmado para retirada amanhã, a partir das 9h"
-> (`{commitment_suffix}`, auto-suprimível, regra 9); o template aprovado, não. Levar a data
-> ao WhatsApp fora da janela pede um template-variante com a data fixa como variável.
+> ℹ️ **Só o pedido do dia sai por este modelo** quando a variante da encomenda está
+> ligada. O texto do SMS, do e-mail e do WhatsApp dentro da janela diz "confirmado para
+> retirada amanhã, a partir das 9h" (`{commitment_suffix}`, auto-suprimível, regra 9); este
+> modelo não tem a data. A encomenda fora da janela sai pelo
+> `pedido_encomenda_confirmada` (abaixo); enquanto ele está em análise na Meta, ela
+> continua saindo por aqui, sem a data.
 >
 > ⚠️ **Sem cumprimento e sem `customer_name`** — a numeração andou, `{{1}}` é o código do
 > pedido. Este texto passou por três versões em dois dias (24/09 sem agradecimento, 25/09
 > com "Oi, Ana!" e "Obrigado por nos prestigiar", e a revisão final); esta é a que vale.
+
+### `pedido_encomenda_confirmada` — evento `order_accepted_preorder` 🆕 · ⏳ SUBMETIDO à Meta em 20/10/2026, em análise
+Variante do `order_accepted` com a data combinada. Não é evento emitido: o adapter
+(`notification_manychat._preorder_accepted_variant`) a escolhe quando o pedido é
+encomenda (`is_preorder` ou data depois de hoje, a mesma condição do texto livre) e o
+flow dela está ligado. Pedido do dia segue no `pedido_confirmado`.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Sua encomenda {{1}} está confirmada para {{2}}. O total é {{3}}. Vamos preparar com todo carinho. ✨`
+- Vars: `{{1}}`=`A47` (`order_ref_short`, `cuf_15003507`) · `{{2}}`=`retirada amanhã, a partir das 9h` (`status_note`, `cuf_15003511`, SEM ponto final) · `{{3}}`=`R$ 38,00` (`order_total_display`, `cuf_15003510`, o antigo `total`)
+- Botão URL: `Acompanhar pedido` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (`order_ref`, `cuf_15003508`)
+
+> ℹ️ **`{{2}}` sai da mesma frase do texto livre.** `services/notification._commitment_note`
+> monta "retirada amanhã, a partir das 9h" / "entrega no sábado, 24/10, …"; o texto livre
+> usa a mesma frase com " para " na frente (`_commitment_suffix`). Uma fonte só. No pedido
+> do dia a frase é vazia, e é isso que mantém o `pedido_confirmado` (a Meta não aceita
+> variável vazia, regra 9).
+>
+> ⚠️ **Ligar depois de aprovado, e só depois.** Enquanto não houver flow para
+> `order_accepted_preorder`, a encomenda sai pelo `pedido_confirmado`, sem a data, e o
+> adapter registra `manychat.preorder_accepted_flow_pending` (info). O gesto é um só:
+> criar no ManyChat o flow "Aviso: encomenda confirmada" com o modelo aprovado e pôr o
+> namespace dele em `MANYCHAT_FLOW_MAP["order_accepted_preorder"]` (`config/settings.py`,
+> push no `main` é o deploy), como foi com `pedido_nova_data` e `pedido_atualizado`. O
+> `NotificationTemplate` do evento `order_accepted_preorder`, se existir, tem precedência.
 
 ### `pedido_em_preparo` — evento `order_preparing`
 - Corpo: `Estamos preparando seu pedido {{1}} com todo carinho. {{2}}. Qualquer dúvida, estamos à disposição.`
@@ -648,7 +674,8 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 |---|---|---|
 | `order_received` | `pedido_recebido` | Utility |
 | `order_received_outside_hours` | `pedido_recebido_fora_horario` | Utility 🆕 |
-| `order_accepted` | `pedido_confirmado` | Utility |
+| `order_accepted` (pedido do dia) | `pedido_confirmado` | Utility |
+| `order_accepted` na encomenda (`order_accepted_preorder`) | `pedido_encomenda_confirmada` | Utility 🆕 (submetido 20/10/2026, em análise; até ligar, sai o `pedido_confirmado`) |
 | `order_rejected` | `pedido_nao_confirmado` | Utility |
 | `order_preparing` | `pedido_em_preparo` | Utility |
 | `order_ready_pickup` | `pedido_pronto_retirada` | Utility |
@@ -706,14 +733,14 @@ nome**, senão a variável sai em branco e nada falha.
 
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
-| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
+| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_encomenda_confirmada`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco; a variante da encomenda nasceu sem) |
 | Pedido, no corpo | `order_ref_short` | todos os de pedido (o final do ref: `A17`) |
 | Ref do pedido | `order_ref` | **todo botão de URL** — nunca no corpo |
-| Total | **`order_total_display`** (nome atual no código; conferir no ManyChat) | `pedido_confirmado`, `link_pagamento_enviado` |
+| Total | **`order_total_display`** (nome atual no código; conferir no ManyChat) | `pedido_confirmado`, `pedido_encomenda_confirmada`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
 | Resto do link do entregador | `courier_tracking_path` (**a criar**) | `pedido_saiu_entrega_rastreio`, primeiro botão |
-| Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
+| Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado`, `pedido_encomenda_confirmada` (a data, sem ponto final; só existe na encomenda) |
 | Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
 | Frase de disponibilidade | `availability_note` | `saiu_do_forno` |
 | Nome da loja | `shop_name` | `pedido_compra` |

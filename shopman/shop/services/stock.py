@@ -408,6 +408,14 @@ def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
         logger.info("stock.fulfill: pedido de teste order=%s — baixa suprimida", order.ref)
         return
 
+    # O insumo do item feito na hora (café, chá, croque) sai no MESMO ponto em
+    # que o pedido baixa o próprio SKU, mas por directive: a venda nunca espera
+    # nem cai pelo insumo (ADR-040). Antes do ``hold_ids``: o espresso não tem
+    # ledger e não reserva, e é dele que mais sai café em grão.
+    from shopman.shop.services import made_to_order
+
+    made_to_order.schedule_consumption(order)
+
     hold_ids = (order.data or {}).get("hold_ids", [])
     if not hold_ids:
         return
@@ -513,6 +521,18 @@ def revert_fulfilled(order) -> None:
         data["reverted_hold_ids"] = list(already | set(reverted))
         order.data = data
         order.save(update_fields=["data", "updated_at"])
+
+
+def settle_made_to_order_cancellation(order) -> None:
+    """Agenda o acerto do insumo do item feito na hora no cancelamento (ADR-040).
+
+    O que a cozinha não começou volta ao estoque; o que ela preparou é perda. O
+    acerto roda por directive (``services/made_to_order``) e só existe quando a
+    venda agendou baixa de insumo.
+    """
+    from shopman.shop.services import made_to_order
+
+    made_to_order.schedule_cancellation_settlement(order)
 
 
 def revert(order) -> None:

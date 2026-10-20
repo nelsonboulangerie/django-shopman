@@ -101,7 +101,7 @@ function card(ref_: string, over: Partial<RecipeEntryCardProjection> = {}): Reci
     rating_display: "",
     rating_count: 0,
     draft_count: 0,
-    is_archived: false,
+    is_active: true,
     has_ficha: true,
     is_favorite: false,
     updated_at_display: "",
@@ -237,7 +237,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       output_sku: "",
       output_name: "",
       ficha_ref: "",
-      is_archived: false,
+      is_active: true,
       is_favorite: false,
       notes: "",
       current_version_number: null,
@@ -310,6 +310,23 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
 
     expect(wrapper.find('[data-overlay="NuxtModal"]').exists()).toBe(false);
     expect(wrapper.find('input[aria-label="SKU do produto"]').exists()).toBe(true);
+  });
+
+  it("shows the archived state and names the return gesture Desarquivar", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({ is_active: false });
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Arquivada");
+    const unarchive = wrapper.findAll("button").find((button) => button.text() === "Desarquivar");
+    expect(unarchive).toBeTruthy();
+    await unarchive!.trigger("click");
+    await nextTick();
+
+    const dialog = wrapper.find('[data-overlay="NuxtModal"]');
+    expect(dialog.text()).toContain("Desarquivar a receita");
+    expect(dialog.text()).toContain("Ela volta ao inventário e pode receber versões de novo.");
   });
 });
 

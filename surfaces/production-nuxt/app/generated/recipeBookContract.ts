@@ -17,7 +17,7 @@ export interface RecipeEntryCardProjection {
   anchor_kind: string;
   hydration_display: string;
   updated_at_display: string;
-  is_archived: boolean;
+  is_active: boolean;
   is_favorite: boolean;
   rating_display: string;
   rating_count: number;
@@ -336,7 +336,7 @@ export interface RecipeEntryDetailProjection {
   output_sku: string;
   output_name: string;
   notes: string;
-  is_archived: boolean;
+  is_active: boolean;
   current_version_number: number | null;
   ficha_ref: string;
   execution_in_sync: boolean;

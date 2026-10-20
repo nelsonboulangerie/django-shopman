@@ -55,6 +55,7 @@ from shopman.backstage.services.exceptions import (
     RecipeVersionNotFound,
 )
 from shopman.backstage.services.recipe_capture import RecipeCaptureError, RecipeCaptureNotConfigured
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services.remote_mutations import (
     RemoteMutationConflict,
     RemoteMutationInProgress,
@@ -198,7 +199,7 @@ class RecipeBookAccessView(_RecipeBookBase):
         responses={201: OpenApiResponse(description="The entry with its versions.")},
     ),
 )
-class RecipeBookListView(_RecipeBookBase):
+class RecipeBookListView(ServerTimingMixin, _RecipeBookBase):
     def get(self, request):
         kind = str(request.query_params.get("kind") or "").strip()
         if kind and kind not in _KINDS:

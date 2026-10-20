@@ -164,7 +164,7 @@ def create_version(entry, *, formula: dict, yield_quantity, yield_unit: str, ori
     """
     from shopman.craftsman.models import RecipeVersion
 
-    if entry.is_archived:
+    if not entry.is_active:
         raise RecipeBookError("ENTRY_ARCHIVED", ref=entry.ref)
     validate_formula(formula)
     quantity = _yield_quantity(yield_quantity)
@@ -234,7 +234,7 @@ def publish_version(version, *, actor: str = "", default_item_meta: dict[str, di
     if version.status != RecipeVersion.Status.DRAFT:
         raise RecipeBookError("VERSION_NOT_DRAFT", version_ref=version.version_ref, status=version.status)
     entry = version.entry
-    if entry.is_archived:
+    if not entry.is_active:
         raise RecipeBookError("ENTRY_ARCHIVED", ref=entry.ref)
     if not str(entry.output_sku or "").strip():
         raise RecipeBookError("ENTRY_WITHOUT_SKU", ref=entry.ref)
