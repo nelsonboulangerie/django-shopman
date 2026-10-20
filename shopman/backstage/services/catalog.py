@@ -1140,7 +1140,7 @@ def _check_product_revisions(product, patch: dict, expected: dict) -> None:
         raise error
 
 @transaction.atomic
-def _apply_product_collections(product, rows):
+def _apply_product_collections(product, rows, *, expected_revision=None):
     """Curadoria manual com revisão do conjunto, sem publicar em nenhum canal."""
     from shopman.offerman.models import Collection, CollectionItem
 
@@ -1149,8 +1149,12 @@ def _apply_product_collections(product, rows):
     refs = [row.get("ref") for row in rows]
     if any(not isinstance(ref, str) or not ref for ref in refs) or len(set(refs)) != len(refs):
         raise CatalogError("Escolha cada coleção uma única vez.")
-    groups = {group.ref: group for group in Collection.objects.select_for_update().filter(ref__in=refs).order_by("pk")}
-    if set(groups) != set(refs) or any(group.is_smart for group in groups.values()):
+    from django.db.models import Q
+
+    previous_groups = CollectionItem.objects.filter(product=product).values("collection_id")
+    groups = {group.ref: group for group in Collection.objects.select_for_update().filter(
+        Q(ref__in=refs) | Q(pk__in=previous_groups)).order_by("pk")}
+    if not set(refs).issubset(groups) or any(groups[ref].is_smart for ref in refs):
         raise CatalogError("Escolha coleções manuais existentes. Coleções automáticas seguem suas regras.")
     flags = [_as_flag(row.get("is_primary", False), "Coleção primária") for row in rows]
     if sum(flags) > 1:
@@ -1158,7 +1162,16 @@ def _apply_product_collections(product, rows):
     orders = [_as_nullable_int(row.get("sort_order", index), "Ordem") for index, row in enumerate(rows)]
     if any(value is None or value < 0 or value > 2147483647 for value in orders):
         raise CatalogError("A ordem deve ser um inteiro a partir de zero.")
-    current = {item.collection.ref: item for item in CollectionItem.objects.select_for_update().filter(product=product).select_related("collection")}
+    current = {item.collection.ref: item for item in CollectionItem.objects.select_for_update(of=("self",)).filter(product=product).select_related("collection").order_by("sort_order", "pk")}
+    if expected_revision is not None:
+        observed = [{"ref": item.collection.ref, "is_primary": item.is_primary, "sort_order": item.sort_order} for item in current.values()]
+        revision = product_field_revisions({"sku": product.sku, "collections": observed})["collections"]
+        if expected_revision != revision:
+            from shopman.backstage.services.exceptions import CatalogConflict
+
+            error = CatalogConflict("As coleções mudaram durante a edição. Confira os valores atuais.")
+            error.fields = ["collections"]
+            raise error
     # Limpa a primária antes da troca para respeitar a constraint condicional.
     CollectionItem.objects.filter(product=product, is_primary=True).update(is_primary=False)
     CollectionItem.objects.filter(product=product).exclude(collection__ref__in=refs).delete()
@@ -1409,7 +1422,7 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     if expected_revisions is not None:
         _check_product_revisions(product, data, expected_revisions)
     if "collections" in data:
-        _apply_product_collections(product, data["collections"])
+        _apply_product_collections(product, data["collections"], expected_revision=(expected_revisions or {}).get("collections"))
         data = {key: value for key, value in data.items() if key != "collections"}
         if not data:
             return _detail_payload(product)

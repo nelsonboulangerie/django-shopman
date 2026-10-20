@@ -24,6 +24,9 @@ Ordem: `ORDERS/next-onda4.md`, frente 1. Base `65b658d31`. Branch
 ## Verificação
 
 - Regressão ampliada final: **118 passed, 3 skipped** (locks concorrentes exigem PostgreSQL).
+- Rechecagem final de curadoria sob os locks compartilhados com a ordenação: **9 passed**.
+  Inclui intercalação entre a checagem inicial e a aquisição do lock, sem sobrescrever
+  a ordenação concorrente. Grupos antigos/novos são bloqueados juntos em ordem de PK.
 - Backend direcionado: **10 passed**, incluindo intenção obrigatória, replay, conflito,
   troca de primária, retirada, rollback se recibo falha, mínimo inválido e colisão de patamar.
 - Componentes: **26 passed**. Composable: **27 passed**, incluindo revisão seletiva.

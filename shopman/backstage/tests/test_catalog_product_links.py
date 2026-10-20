@@ -154,3 +154,21 @@ def test_minimum_cannot_replace_another_tier(client, operator, catalog):
     assert response.status_code == 400
     item.refresh_from_db()
     assert item.min_qty == 1
+
+
+
+def test_collection_revision_is_checked_again_after_curation_locks(client, operator, catalog, monkeypatch):
+    from shopman.backstage.services import catalog as service
+
+    CollectionItem.objects.create(collection=catalog["coll"], product=catalog["pao"], sort_order=0)
+    observed = read(client, operator)
+    original = service._apply_product_collections
+    def interleaved(product, rows, **kwargs):
+        # Simula a ordenação canônica concluída entre a checagem inicial do
+        # produto e a aquisição dos locks da curadoria.
+        CollectionItem.objects.filter(product=product).update(sort_order=9)
+        return original(product, rows, **kwargs)
+    monkeypatch.setattr(service, "_apply_product_collections", interleaved)
+    result = write(client, observed, {"collections": [{"ref": "doces", "sort_order": 3, "is_primary": True}]})
+    assert result.status_code == 409
+    assert result.json()["conflicting_fields"] == ["collections"]
