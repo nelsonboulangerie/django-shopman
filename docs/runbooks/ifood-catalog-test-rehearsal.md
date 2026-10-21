@@ -68,15 +68,20 @@ Se surgir 409, 429, timeout, leitura divergente ou estado desconhecido, preserve
 não repita manualmente com outra chave.
 
 1. **Pausar:** pause o item pelo controle canônico. Confirme `UNAVAILABLE` no GET remoto e confirme
-   que preço, descrição, categoria, índice, turnos, `imagePath` e contextos não mudaram.
+   que preço, descrição, categoria, índice, turnos, `imagePath` e identidade dos contextos não
+   mudaram. O status do contexto DEFAULT deve acompanhar a intenção, sem criar outro contexto.
 2. **Retomar:** retome o mesmo item. Confirme `AVAILABLE` e os mesmos campos preservados.
 3. **Preço:** com o item **retomado** (pausado, o handler recolhe o item e não manda preço),
    aplique um preço temporário inequivocamente diferente. Confirme o valor no GET remoto
-   e prove que o PATCH não enviou texto, categoria, índice, turnos, imagem ou contextos.
+   no item e no contexto DEFAULT. Prove que o
+   PATCH não enviou texto, categoria, índice, turnos, imagem ou contextos.
 4. **Alterações rápidas:** ainda com o envio observado, aplique dois preços em sequência e depois
    pausa/retomada em sequência. O estado final remoto deve ser exatamente a última intenção; não
    pode surgir anúncio paralelo.
-5. **Descrição:** altere somente a descrição pelo cadastro canônico. Confirme o texto remoto e
+5. **Descrição:** altere somente a descrição pelo cadastro canônico, usando uma frase sem marca
+   ou caixa mista, por exemplo `Descrição temporária para ensaio autorizado em 20/10/2026.`
+   A primeira retomada observou normalização remota de `iFood` para `ifood`; registre a
+   ocorrência, restaure e não atribua essa transformação ao adapter. Confirme o texto remoto e
    confira que o envio estrutural preservou preço, status, categoria, índice, turnos, `imagePath`,
    complementos e contextos.
 6. **Categoria:** mova explicitamente o item para a categoria de teste. Confirme o `categoryId`
@@ -95,6 +100,10 @@ de autorização, token, segredo ou resposta integral com dados desnecessários.
    ordem, usando novas intenções explícitas. O adapter nunca apaga foto (PUT sem
    `imagePath` preserva a que existe); restaure com um `PUT items` explícito com
    `imagePath: ""`, que limpa a foto (provado em 20/10, 21:27:38 UTC).
+   Não ecoe cegamente o GET flat no PUT: na retomada de 20/10, um PUT com os overrides de
+   contexto lidos respondeu 200, mas não restaurou a categoria. Use o contrato de PUT do
+   adapter com categoria explícita e confirme por GET. Em seguida, os PATCHes de preço e
+   status devem restaurar também o contexto DEFAULT; status raiz correto não basta.
 2. Faça outra captura completa em arquivo novo. Compare item, produto, categoria, complementos,
    índice, turnos e contextos com o baseline.
 3. A restauração só termina quando a leitura remota coincide e não há diretiva pendente para o SKU.

@@ -72,3 +72,17 @@ describe("useGridEdit", () => {
     expect(edit.canUndo.value).toBe(false);
   });
 });
+
+it("confirma só as células gravadas e preserva o rascunho e o desfazer das outras", () => {
+  const edit = useGridEdit<string>();
+  edit.set("hidden", "inválido");
+  edit.set("saved", "2,50");
+  edit.set("hidden", "a corrigir");
+  edit.clear(["saved"]);
+  expect(edit.draft.value).toEqual({ hidden: "a corrigir" });
+  edit.undo();
+  expect(edit.draft.value).toEqual({ hidden: "inválido" });
+  edit.undo();
+  expect(edit.draft.value).toEqual({});
+  expect(edit.canUndo.value).toBe(false);
+});

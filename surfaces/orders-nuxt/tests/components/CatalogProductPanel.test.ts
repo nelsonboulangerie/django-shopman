@@ -104,6 +104,26 @@ describe("rascunho do produto", () => {
     expect(w.emitted("save")).toBeUndefined();
   });
 
+  it("conflito de coleções mostra nome, primária e ordem sem serialização técnica", async () => {
+    const w = panel();
+    await w.setProps({
+      conflict: {
+        product: {
+          ...detail,
+          collections: [{ ref: "sweet", is_primary: true, sort_order: 4 }],
+          collection_choices: [
+            { ref: "sweet", name: "Doces", is_active: true },
+          ],
+        },
+        conflicting_fields: ["collections"],
+      },
+    });
+    expect(w.text()).toContain(
+      "Coleções. Valor atual: Doces (primária), ordem 4",
+    );
+    expect(w.text()).not.toContain("[object Object]");
+  });
+
   it("fechar um rascunho requer descarte explícito e não salva", async () => {
     const w = panel();
     await w.find('input[type="text"]').setValue("Meu rascunho");
@@ -243,7 +263,8 @@ describe("Modo de produção (ADR-040)", () => {
           mode: "made_to_order",
           mode_label: "Na hora",
           station: "Cafés",
-          summary: "Feito na hora na estação Cafés: os insumos baixam a cada venda.",
+          summary:
+            "Feito na hora na estação Cafés: os insumos baixam a cada venda.",
           recipe_ref: "espresso",
           recipe_name: "Espresso",
           url: "https://prod.example.test/recipes/sheets?open=espresso",
@@ -251,10 +272,14 @@ describe("Modo de produção (ADR-040)", () => {
       },
     });
     const block = w.get('[data-testid="production-mode"]');
-    expect(block.text()).toContain("Feito na hora na estação Cafés: os insumos baixam a cada venda.");
+    expect(block.text()).toContain(
+      "Feito na hora na estação Cafés: os insumos baixam a cada venda.",
+    );
     expect(block.text()).not.toContain("—");
     const link = block.get("a");
-    expect(link.attributes("href")).toBe("https://prod.example.test/recipes/sheets?open=espresso");
+    expect(link.attributes("href")).toBe(
+      "https://prod.example.test/recipes/sheets?open=espresso",
+    );
     expect(link.text()).toContain("Abrir a receita Espresso na Produção");
     expect(block.find("input").exists()).toBe(false);
     expect(block.find('[role="checkbox"]').exists()).toBe(false);
@@ -277,7 +302,9 @@ describe("Modo de produção (ADR-040)", () => {
       },
     });
     const block = w.get('[data-testid="production-mode"]');
-    expect(block.text()).toContain("Produzido em lote: planejado e estocado pela Produção.");
+    expect(block.text()).toContain(
+      "Produzido em lote: planejado e estocado pela Produção.",
+    );
     expect(block.find("a").exists()).toBe(false);
   });
 

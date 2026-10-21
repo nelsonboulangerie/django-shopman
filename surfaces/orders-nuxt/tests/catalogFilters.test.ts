@@ -41,9 +41,10 @@ const facets: CatalogFacets = {
 };
 
 describe("serverCatalogDimensions", () => {
-  it("oferece as 8 dimensões (coleção fica de fora — é o eixo das pills)", () => {
+  it("oferece as 9 dimensões (coleção fica de fora — é o eixo das pills)", () => {
     const ids = serverCatalogDimensions(surfaces, facets).map((d) => d.id);
     expect(ids).toEqual([
+      "validity",
       FILTER_SYNC,
       FILTER_SURFACE,
       FILTER_ARCHIVED,
@@ -61,6 +62,7 @@ describe("serverCatalogDimensions", () => {
       facets,
     ).map((d) => d.id);
     expect(ids).toEqual([
+      "validity",
       FILTER_SURFACE,
       FILTER_ARCHIVED,
       FILTER_PUBLISHED,
@@ -99,6 +101,11 @@ describe("serverCatalogDimensions", () => {
 });
 
 describe("filtersFromQuery", () => {
+  it("Qualquer data é uma opção explícita da vigência", () => {
+    expect(filtersFromQuery({ validity: "any" })).toEqual({ validity: ["any"] });
+    expect(serverCatalogDimensions([], facets).find((dimension) => dimension.id === "validity")?.options)
+      .toEqual([{ value: "any", label: "Qualquer data" }]);
+  });
   it("lê o recorte do checklist do canal (surface + sync)", () => {
     expect(filtersFromQuery({ surface: "ifood", sync: "error" })).toEqual({
       [FILTER_SURFACE]: ["ifood"],

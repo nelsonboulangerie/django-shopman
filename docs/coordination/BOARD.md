@@ -26,6 +26,26 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
+## Onda 4: conferência final
+
+Conferência solicitada pelo dono, fora das reivindicações ativas. Todas as frentes
+da ordem `ORDERS/next-onda4.md` foram mergeadas; commits e horários em UTC estão no
+[registro de encerramento](ROUNDS/ONDA4-ENCERRAMENTO.md).
+
+| Frente | Estado final | PR | Registro |
+|---|---|---|---|
+| 1. Vínculos do produto | MERGED | [#1960](https://github.com/nelsonboulangerie/django-shopman/pull/1960) | [ROUNDS](ROUNDS/ONDA4-1-produto-vinculos.md) |
+| 2. Preço com vigência | MERGED | [#1958](https://github.com/nelsonboulangerie/django-shopman/pull/1958) | [ROUNDS](ROUNDS/ONDA4-F2-preco-vigencia.md) |
+| 3. Tabelão de insumos | MERGED | [#1959](https://github.com/nelsonboulangerie/django-shopman/pull/1959) | [ROUNDS](ROUNDS/ONDA4-3-tabelao-insumos.md) |
+| 4. Lote de fornecedores | MERGED | [#1957](https://github.com/nelsonboulangerie/django-shopman/pull/1957) | [ROUNDS](ROUNDS/ONDA4-4-lote-fornecedores.md) |
+| 5. Import/export da Base | MERGED | [#1964](https://github.com/nelsonboulangerie/django-shopman/pull/1964) | [ROUNDS](ROUNDS/ONDA4-5-import-export-base.md) |
+| 6. Componentes de combo | MERGED | [#1961](https://github.com/nelsonboulangerie/django-shopman/pull/1961) | [ROUNDS](ROUNDS/ONDA4-F6-produto-combo.md) |
+
+Também mergeados: [segurança #1967](ROUNDS/ONDA4-SEC-mcp-server-audit.md) e
+[rascunhos filtrados #1968](ROUNDS/ONDA4-3F-rascunhos-filtrados.md). Não há frente
+ativa ou decisão pendente desta ordem. As provas, medições e capturas permanecem
+nos registros individuais; as frentes de outras coordenações continuam abaixo.
+
 ## Em execução agora
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
@@ -37,9 +57,11 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 | §7.2-4 | Clientes: duplicar cadastro e etiquetar em lote | EM_PR | `claude/cadastro-clientes` / #1815 | 2026-10-15 12:5x |
 | §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
 | WATCHMAN | Saúde, autocura e desempenho (Codex, outro agente) | EM_PR | `codex/watchman-*` / #1809, #1813 | 2026-10-15 11:5x |
-| IFOOD-E | Ensaio de catálogo na loja de teste | EM_PR | #1929 (5b) + #1963 (5c: preço com `originalValue`) + `claude/ifood-ensaio-5d` (5d): **roteiro inteiro fechado**: pausa, retomada, preço, rápidas, descrição, categoria (para `Categoria Bebida`) e foto provados por leitura remota; item restaurado ao baseline. Evidência: `ROUNDS/IFOOD-E-ensaio-teste.md` | 2026-10-20 21:28 UTC |
-
 **SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
+
+**IFOOD-E (20/10):** frente encerrada, com ensaio completo e restauração exata. Registros
+mergeados em #1929 e #1962. O encerramento #1965 retira a frente da tabela ativa; evidência,
+horários e commits em `ROUNDS/IFOOD-E-ensaio-teste.md`.
 
 **Turno de 15/10 (coordenação DSH):** mergeados #1810 (`GET /api/sessions` responde 200) e #1814 (card de desconto por tipo no B.I.). Higiene de disco: 185 worktrees removidas, 34 GB para ~140 GB livres. Reconciliação com o Codex: o núcleo das ondas 3, 4 e 5 do §7.2 já entrou por #1802 a #1806. Detalhe em `HANDOFF-DSH-2026-10-15.md`.
 
@@ -81,7 +103,7 @@ desencalhado), #1380 (T1), #1381 (T2). Na fila: #1379 (T0 + brief T6), #1382 (T5
 | id | o que trava | onde |
 |---|---|---|
 | SESS-N1 | `GET /api/sessions` faz N+1 em `Session.items`: página cheia de 25 = **26 consultas**. O prefetch já é previsto pelo modelo, então `prefetch_related("session_items")` no `SessionViewSet.get_queryset` cai para **2**. Confirmado ausente em `origin/main` `48eb028c2`. Follow-up de uma linha, mas muda comportamento observável; o agente do #1810 o deixou fora do escopo de propósito | `HANDOFF-DSH-2026-10-15.md`, "Defeito conhecido" |
-| ManyChat | Faltam 4 modelos (`pontos_fidelidade`, `pedido_entregue_v2`, `fila_vaga_disponivel_v2`, `produto_chegou_v2`); `pagamento_falhou` foi enviado e está em análise na Meta. Depois, os flows de `pedido_em_preparo` e `reembolso_processado` (aprovados). A ligação evento → flow é linha no `MANYCHAT_FLOW_MAP` (`config/settings.py`) num PR, **não** o Admin. Trava: o Chrome visível, janela sem nada por cima, na aba "Criar modelo" do grupo do Claude, por ~20 min | `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
+| ManyChat | `pedido_encomenda_confirmada` aprovado e ligado em 20/10 (`order_accepted_preorder`, PR da branch `claude/liga-encomenda-confirmada`). Faltam 4 modelos (`pontos_fidelidade`, `pedido_entregue_v2`, `fila_vaga_disponivel_v2`, `produto_chegou_v2`); `pagamento_falhou` foi enviado e está em análise na Meta. Depois, os flows de `pedido_em_preparo` e `reembolso_processado` (aprovados). A ligação evento → flow é linha no `MANYCHAT_FLOW_MAP` (`config/settings.py`) num PR, **não** o Admin. Trava: o Chrome visível, janela sem nada por cima, na aba "Criar modelo" do grupo do Claude, por ~20 min | `docs/reports/go-live-acceleration-20261002/MANYCHAT-ESTADO-0210.md` |
 | Entrega | `fulfillment.courier="auto"`: chama a TaOn de verdade. Não reconferido no vivo em 02/10 | HANDOFF §0.5 |
 | Link | gerar UM link de pagamento no PDV para provar que sai. Não reconferido no vivo em 02/10 | HANDOFF §0.3 |
 | Pix | o ensaio do Pix real antes da virada | D-016 |

@@ -114,7 +114,7 @@ def _is_display_surface(surface_ref: str) -> bool:
     ).exists()
 
 
-def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None) -> dict[str, str]:
+def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None, missing=False, unit="") -> dict[str, str]:
     """A cell's relevant canonical target and independent field values."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
@@ -123,11 +123,14 @@ def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None)
         context = {"display_id": display.pk, "collections": config.get("collections") or []}
         values = {"is_sellable": sku not in (config.get("paused_skus") or [])}
     elif item is not None:
-        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty)}
-        values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q")}
+        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty), "unit": item.product.unit}
+        values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q", "min_qty")}
+    elif missing:
+        context = {"membership": "absent", "unit": unit}
+        values = dict.fromkeys(("is_published", "is_sellable", "price_q", "min_qty"))
     else:
         return {}
-    return {field: mutation_fingerprint({"version": 1, "sku": sku, "surface": surface_ref, "target": context, "field": field, "value": value})
+    return {field: mutation_fingerprint({"version": 1, "sku": sku, "surface": surface_ref, "target": context, "field": field, "value": str(value) if field == "min_qty" else value})
         for field, value in values.items()}
 
 
@@ -152,6 +155,7 @@ def set_cell(
     is_published: bool | None = None,
     is_sellable: bool | None = None,
     price_q: int | None = None,
+    min_qty: str | None = None,
     actor: str = "",
     expected_revisions: dict | None = None,
 ):
@@ -169,6 +173,16 @@ def set_cell(
         patch["price_q"] = _as_nullable_int(price_q, "price_q")
         if patch["price_q"] is None or patch["price_q"] < 0:
             raise CatalogError("Preço não pode ser negativo.")
+    if min_qty is not None:
+        from decimal import Decimal, InvalidOperation
+
+        try:
+            quantity = Decimal(str(min_qty))
+            if not quantity.is_finite() or quantity <= 0 or quantity >= Decimal("10000000") or quantity.as_tuple().exponent < -3:
+                raise ValueError
+        except (InvalidOperation, ValueError, TypeError):
+            raise CatalogError("A quantidade mínima deve ser positiva, com até três casas decimais.") from None
+        patch["min_qty"] = quantity
     if not patch:
         raise CatalogError("Informe o campo que deseja alterar na célula.")
     channel = Channel.objects.select_for_update().filter(ref=surface_ref).first()
@@ -197,15 +211,34 @@ def set_cell(
     _refuse_mirror_surface(surface_ref)
     listing = Listing.objects.select_for_update().filter(ref=surface_ref).first()
     item = ListingItem.objects.select_for_update().filter(listing=listing, product=product).order_by("min_qty", "pk").first()
-    if item is None:
-        raise CatalogError(f"Produto '{sku}' não está na superfície '{surface_ref}'.")
+    creating = item is None
+    if creating:
+        if expected_revisions is None:
+            raise CatalogError("Atualize o canal antes de incluir o produto.")
+        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True, unit=product.unit), expected_revisions, {})
+        if listing is None:
+            listing = Listing.objects.create(ref=surface_ref, name=channel.name)
+        item = ListingItem(listing=listing, product=product, price_q=product.base_price_q,
+            is_published=False, is_sellable=False)
     item.product, item.listing = product, listing
-    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
-        {field: getattr(item, field) for field in ("price_q", "is_published", "is_sellable")})
+    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True, unit=product.unit) if creating else cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
+        {field: str(getattr(item, field)) if field == "min_qty" else getattr(item, field) for field in ("price_q", "is_published", "is_sellable", "min_qty")})
+    if "min_qty" in patch and ListingItem.objects.filter(listing=listing, product=product, min_qty=patch["min_qty"]).exclude(pk=item.pk).exists():
+        raise CatalogError("Já existe um preço para esta quantidade mínima no canal.")
+    old_min_qty = item.min_qty
     for field, value in patch.items():
         setattr(item, field, value)
     # Preserve the canonical save/history/signals, limiting the write to the patch.
-    item.save(update_fields=list(patch))
+    item.save(**({} if creating else {"update_fields": list(patch)}))
+    if creating or item.min_qty != old_min_qty:
+        from shopman.offerman.conf import get_projection_backend
+
+        from shopman.shop.handlers.catalog_projection import enqueue_project
+
+        _realign_mirrors([surface_ref])
+
+        if get_projection_backend(surface_ref) is not None:
+            enqueue_project(sku, surface_ref, trigger="manual_resync")
     return item
 
 
@@ -237,7 +270,7 @@ def set_cells(cells: list[dict], *, actor: str = "") -> dict:
             continue
         sku = str(cell.get("sku") or "")
         surface_ref = str(cell.get("surface_ref") or "")
-        patch = {field: cell[field] for field in ("is_published", "is_sellable", "price_q") if field in cell}
+        patch = {field: cell[field] for field in ("is_published", "is_sellable", "price_q", "min_qty") if field in cell}
         revisions = cell.get("base_revisions") if isinstance(cell.get("base_revisions"), dict) else None
         try:
             item = set_cell(sku, surface_ref, actor=actor, expected_revisions=revisions, **patch)
@@ -609,8 +642,8 @@ def bulk_price_collection(
 # campos escalares, tabela nutricional, rotulagem (alérgenos/restrições), atributos
 # sociais e classificação fiscal. Escreve com ``save()`` (nunca ``update()``) para
 # preservar o gatilho de re-projeção (``Product._PROJECTABLE_FIELDS``) e valida com
-# ``full_clean()``. Fora do escopo: componentes de bundle, pertencimento a coleções
-# e listings — seguem no Admin.
+# ``full_clean()``. Coleções e listings têm editores no bloco Vínculos;
+# componentes de combo são tratados pelo detalhe do produto.
 #
 # Os três blocos que moram em JSONField têm dono de schema próprio, e é o dono que
 # valida e serializa (nunca escrevemos as sub-chaves na mão):
@@ -664,6 +697,7 @@ _DETAIL_EDITABLE_FIELDS = frozenset({
     "made_to_order",
     "ready_from",
     "vocation",
+    "collections",
 })
 
 
@@ -745,7 +779,10 @@ def _gtin_rejected_payload(metadata: dict) -> dict | None:
 
 def _detail_payload(product) -> dict:
     """Projection do detalhe: campos editáveis + contexto somente-leitura."""
-    primary = next((ci for ci in product.collection_items.all() if ci.is_primary), None)
+    from shopman.offerman.models import Collection
+
+    memberships = list(product.collection_items.select_related("collection").order_by("sort_order", "pk"))
+    primary = next((ci for ci in memberships if ci.is_primary), None)
     metadata = product.metadata or {}
     return {
         "sku": product.sku,
@@ -788,6 +825,11 @@ def _detail_payload(product) -> dict:
         # Só ``confirmed`` é editável (o gesto "Manter sem GTIN na nota"); o
         # resto é o registro da recusa. Corrigir ``social.gtin`` apaga a marca.
         "gtin_rejected": _gtin_rejected_payload(metadata),
+        "components": [{"sku": row.component.sku, "name": row.component.name,
+            "unit": row.component.unit, "qty": str(row.qty)}
+            for row in product.components.select_related("component").order_by("component__name", "component__sku")],
+        "collections": [{"ref": ci.collection.ref, "is_primary": ci.is_primary, "sort_order": ci.sort_order} for ci in memberships],
+        "collection_choices": list(Collection.objects.filter(rule={}).order_by("sort_order", "name").values("ref", "name", "is_active")),
         "primary_collection": primary.collection.ref if primary else "",
         "primary_collection_name": primary.collection.name if primary else "",
         # somente-leitura: o painel avisa que o dado veio da FICHA e que editar
@@ -1059,7 +1101,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "production", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
+    readonly = {"collection_choices", "listing_links", "sku", "production", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
@@ -1067,7 +1109,12 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
             continue
         if path.startswith("gtin_rejected.") and path != "gtin_rejected.confirmed":
             continue
+        if path == "components":
+            # O rótulo vem do componente; a unidade faz parte da quantidade.
+            value = sorted(({"sku": row["sku"], "qty": row["qty"], "unit": row["unit"]} for row in value), key=lambda row: row["sku"])
         state = {"version": 1, "sku": detail["sku"], "field": path, "value": value}
+        if path == "components":
+            state["parent_unit"] = detail["unit"]
         root = path.split(".", 1)[0]
         if root in {"nutrition_facts", *_DETAIL_ATTR_LIST_FIELDS, *_DETAIL_ATTR_TEXT_FIELDS}:
             state["source"] = (detail.get("field_sources") or {}).get(root, "")
@@ -1099,6 +1146,100 @@ def _check_product_revisions(product, patch: dict, expected: dict) -> None:
         error = CatalogConflict("O produto mudou nos campos editados. Confira os valores atuais; seu rascunho foi preservado.")
         error.fields = changed
         raise error
+
+@transaction.atomic
+def _apply_product_collections(product, rows, *, expected_revision=None):
+    """Curadoria manual com revisão do conjunto, sem publicar em nenhum canal."""
+    from shopman.offerman.models import Collection, CollectionItem
+
+    if not isinstance(rows, list) or len(rows) > 200 or any(not isinstance(row, dict) for row in rows):
+        raise CatalogError("Informe até 200 coleções.")
+    refs = [row.get("ref") for row in rows]
+    if any(not isinstance(ref, str) or not ref for ref in refs) or len(set(refs)) != len(refs):
+        raise CatalogError("Escolha cada coleção uma única vez.")
+    from django.db.models import Q
+
+    previous_groups = CollectionItem.objects.filter(product=product).values("collection_id")
+    groups = {group.ref: group for group in Collection.objects.select_for_update().filter(
+        Q(ref__in=refs) | Q(pk__in=previous_groups)).order_by("pk")}
+    if not set(refs).issubset(groups) or any(groups[ref].is_smart for ref in refs):
+        raise CatalogError("Escolha coleções manuais existentes. Coleções automáticas seguem suas regras.")
+    flags = [_as_flag(row.get("is_primary", False), "Coleção primária") for row in rows]
+    if sum(flags) > 1:
+        raise CatalogError("Escolha uma única coleção primária.")
+    orders = [_as_nullable_int(row.get("sort_order", index), "Ordem") for index, row in enumerate(rows)]
+    if any(value is None or value < 0 or value > 2147483647 for value in orders):
+        raise CatalogError("A ordem deve ser um inteiro a partir de zero.")
+    current = {item.collection.ref: item for item in CollectionItem.objects.select_for_update(of=("self",)).filter(product=product).select_related("collection").order_by("sort_order", "pk")}
+    if expected_revision is not None:
+        observed = [{"ref": item.collection.ref, "is_primary": item.is_primary, "sort_order": item.sort_order} for item in current.values()]
+        revision = product_field_revisions({"sku": product.sku, "collections": observed})["collections"]
+        if expected_revision != revision:
+            from shopman.backstage.services.exceptions import CatalogConflict
+
+            error = CatalogConflict("As coleções mudaram durante a edição. Confira os valores atuais.")
+            error.fields = ["collections"]
+            raise error
+    # Limpa a primária antes da troca para respeitar a constraint condicional.
+    CollectionItem.objects.filter(product=product, is_primary=True).update(is_primary=False)
+    CollectionItem.objects.filter(product=product).exclude(collection__ref__in=refs).delete()
+    for row, primary, order in zip(rows, flags, orders, strict=True):
+        item = current.get(row["ref"]) or CollectionItem(product=product, collection=groups[row["ref"]])
+        item.is_primary, item.sort_order = primary, order
+        item.save()
+
+
+
+def _apply_product_components(product, rows):
+    """Composição atômica; a validação de ciclo e profundidade é do Core."""
+    from decimal import Decimal, InvalidOperation
+
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product, ProductComponent
+    from shopman.offerman.signals import product_updated
+
+    if not isinstance(rows, list) or len(rows) > 200 or any(not isinstance(row, dict) for row in rows):
+        raise CatalogError("Informe até 200 componentes.")
+    skus = [row.get("sku") for row in rows]
+    if any(not isinstance(sku, str) or not sku for sku in skus) or len(set(skus)) != len(skus):
+        raise CatalogError("Escolha cada produto componente uma única vez.")
+    products = {p.sku: p for p in Product.objects.filter(sku__in=skus)}
+    if set(products) != set(skus):
+        raise CatalogError("Um dos produtos componentes não existe mais. Escolha outro produto.")
+    parsed = []
+    for row in rows:
+        raw = row.get("qty")
+        try:
+            if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+                raise ValueError
+            qty = Decimal(raw)
+            if not qty.is_finite() or qty <= 0 or qty > Decimal("9999999.999") or qty != qty.quantize(Decimal("0.001")):
+                raise ValueError
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise CatalogError("Informe uma quantidade positiva com até três casas decimais por componente.") from exc
+        parsed.append((products[row["sku"]], qty))
+    ProductComponent.objects.filter(parent=product).delete()
+    for component, qty in parsed:
+        try:
+            ProductComponent.objects.create(parent=product, component=component, qty=qty)
+        except ValidationError as exc:
+            messages = " ".join(exc.messages)
+            if component.pk == product.pk:
+                detail = "O produto não pode compor a si mesmo."
+            elif "Circular" in messages:
+                detail = "A composição criaria um ciclo entre produtos. Escolha outro componente."
+            elif "Max bundle depth" in messages:
+                detail = "A composição ultrapassa o limite de níveis de combos. Escolha um produto com menos níveis."
+            else:
+                detail = "Não foi possível incluir o componente. Confira o produto e a quantidade."
+            raise CatalogError(detail) from exc
+    from shopman.shop.handlers._sse_emitters import emit_catalog_changed
+
+    # O sinal grava a outbox na mesma transação; o emissor SSE agenda o push
+    # para depois do commit. Falha de outbox não pode confirmar a composição.
+    product_updated.send(sender=Product, instance=product, sku=product.sku)
+    emit_catalog_changed()
+
 
 def get_product_detail(sku: str) -> dict:
     """Todos os campos editáveis de um produto (para o painel do Gestor)."""
@@ -1335,11 +1476,25 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     from django.core.exceptions import ValidationError
     from shopman.offerman.models import Product
 
+    if "components" in data:
+        # Serializa alterações cruzadas do grafo antes do lock do produto atual.
+        # Ordem única evita A→B e B→A bloquearem uma à outra em ordem inversa.
+        list(Product.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
     product = Product.objects.select_for_update().filter(sku=sku).first()
     if product is None:
         raise CatalogError(f"Produto '{sku}' não encontrado.")
     if expected_revisions is not None:
         _check_product_revisions(product, data, expected_revisions)
+    if "components" in data:
+        _apply_product_components(product, data["components"])
+        data = {key: value for key, value in data.items() if key != "components"}
+        if not data:
+            return _detail_payload(product)
+    if "collections" in data:
+        _apply_product_collections(product, data["collections"], expected_revision=(expected_revisions or {}).get("collections"))
+        data = {key: value for key, value in data.items() if key != "collections"}
+        if not data:
+            return _detail_payload(product)
     # A vocação mora fora do produto (``ProductConsumptionTag``): grava à parte,
     # na mesma transação, e sozinha não regrava nem revalida o produto.
     if "vocation" in data:

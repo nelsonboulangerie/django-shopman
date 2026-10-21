@@ -1,3 +1,4 @@
+import { ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
@@ -45,6 +46,34 @@ describe("useCatalogMatrix — leitura + célula", () => {
       },
     };
     env.fetchMock.mockResolvedValue({ outcome: "applied" });
+  });
+
+  it("envia a janela ao servidor e descarta resposta do período anterior", () => {
+    const period = ref({ date_from: "2026-10-20", date_to: "2026-10-22" });
+    env.fetchData.value = {
+      matrix: {
+        rows: [],
+        date_from: "2026-10-10",
+        date_to: "2026-10-12",
+        order: "validity",
+      },
+    };
+    const m = useCatalogMatrix(undefined, { period, order: ref("validity") });
+    const [, options] = env.useFetchMock.mock.calls[0]!;
+    expect(options.query.date_from.value).toBe("2026-10-20");
+    expect(options.query.date_to.value).toBe("2026-10-22");
+    expect(m.matrix.value).toBeNull();
+    expect(options.key.value).toContain("2026-10-20:2026-10-22");
+    period.value = { date_from: "2026-11-01", date_to: "2026-11-30" };
+    expect(options.query.date_from.value).toBe("2026-11-01");
+  });
+
+  it("Qualquer data retira as duas pontas da consulta", () => {
+    const filters = ref({ validity: ["any"] });
+    useCatalogMatrix(undefined, { filters, period: ref({ date_from: "2026-10-20", date_to: "2026-10-22" }) });
+    const [, options] = env.useFetchMock.mock.calls[0]!;
+    expect(options.query.date_from.value).toBeUndefined();
+    expect(options.query.date_to.value).toBeUndefined();
   });
 
   it("deriva matrix da projection", () => {
@@ -287,6 +316,79 @@ describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
     });
     expect(env.refresh).toHaveBeenCalledTimes(1);
     expect(m.socialKey("PAO")).toBe("social@PAO");
+  });
+
+  it("releitura de vínculos preserva revisão dos campos com rascunho", async () => {
+    const action = (name: string, collections: string) => ({
+      ...cellAction,
+      method: "PATCH",
+      payload_schema: {
+        ...cellAction.payload_schema,
+        base_revisions: { name, collections },
+      },
+    });
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO", name: "Original" },
+      action: action("name-before", "collections-before"),
+    });
+    const m = useCatalogMatrix();
+    await m.fetchProductDetail("PAO");
+    // Nome mudou por terceiro enquanto o operador tinha um rascunho da Geral.
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO", name: "Terceiro" },
+      action: action("name-after", "collections-after"),
+    });
+    await m.fetchProductDetail("PAO", ["collections"]);
+    expect(await m.saveProductDetail("PAO", { name: "Meu rascunho" })).toBe(
+      true,
+    );
+    expect(env.fetchMock.mock.calls[2]![1].body.base_revisions).toEqual({
+      name: "name-before",
+      collections: "collections-after",
+    });
+    // Uma releitura após célula não renova nenhuma revisão do rascunho global.
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO" },
+      action: action("name-later", "collections-later"),
+    });
+    await m.fetchProductDetail("PAO", []);
+    await m.saveProductDetail("PAO", { storage_tip: "Guardar fechado" });
+    expect(env.fetchMock.mock.calls[4]![1].body.base_revisions).toEqual({
+      name: "name-before",
+      collections: "collections-after",
+    });
+  });
+
+  it("revisar conflito de coleção não aceita revisão nova de nome não revisado", async () => {
+    const action = (name: string, collections: string) => ({
+      ...cellAction,
+      method: "PATCH",
+      payload_schema: {
+        ...cellAction.payload_schema,
+        base_revisions: { name, collections },
+      },
+    });
+    env.fetchMock.mockResolvedValueOnce({
+      product: { sku: "PAO" },
+      action: action("old-name", "old-collections"),
+    });
+    const m = useCatalogMatrix();
+    await m.fetchProductDetail("PAO");
+    env.fetchMock.mockRejectedValueOnce({
+      status: 409,
+      data: {
+        product: { sku: "PAO", name: "Terceiro" },
+        action: action("new-name", "new-collections"),
+        conflicting_fields: ["collections"],
+      },
+    });
+    expect(await m.saveProductDetail("PAO", { collections: [] })).toBe(false);
+    m.acknowledgeProductConflict("PAO", true);
+    await m.saveProductDetail("PAO", { name: "Meu rascunho" });
+    expect(env.fetchMock.mock.calls[2]![1].body.base_revisions).toEqual({
+      name: "old-name",
+      collections: "new-collections",
+    });
   });
 
   it("saveSocial em erro de validação acende errorMsg + false", async () => {

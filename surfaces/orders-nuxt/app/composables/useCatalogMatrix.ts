@@ -36,6 +36,7 @@ import type {
 } from "~/types/catalog";
 
 export interface CellPatch {
+  min_qty?: string;
   is_published?: boolean;
   is_sellable?: boolean;
   price_q?: number;
@@ -47,6 +48,7 @@ export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 export interface CatalogListOptions {
   /** Busca textual (nome/SKU) — filtrada no BANCO. */
   search?: Ref<string>;
+  period?: Readonly<Ref<{ date_from: string; date_to: string }>>;
   /** Página corrente (1-based). */
   page?: Ref<number>;
   /** Linhas por página (o servidor tem teto). */
@@ -70,10 +72,35 @@ export function useCatalogMatrix(
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
   function acknowledgeProductConflict(
     sku: string,
+    keepDraft = false,
   ): ProductDetailProjection | null {
     const conflict = productConflicts.value[sku];
     if (!conflict?.action) return null;
-    detailActions.set(sku, conflict.action);
+    const previous = detailActions.get(sku);
+    if (keepDraft && previous) {
+      const fresh = conflict.action.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      const prior = previous.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      detailActions.set(sku, {
+        ...previous,
+        payload_schema: {
+          ...previous.payload_schema,
+          base_revisions: {
+            ...prior,
+            ...Object.fromEntries(
+              conflict.conflicting_fields
+                .filter((field) => field in fresh)
+                .map((field) => [field, fresh[field]]),
+            ),
+          },
+        },
+      });
+    } else detailActions.set(sku, conflict.action);
     Reflect.deleteProperty(productConflicts.value, sku);
     clearError();
     return conflict.product;
@@ -87,6 +114,9 @@ export function useCatalogMatrix(
   const pageSize = list.pageSize ?? ref(50);
   const order = list.order ?? ref("name");
   const activeFilters = list.filters ?? ref<Record<string, string[]>>({});
+  const anyDate = computed(() => activeFilters.value.validity?.includes("any") ?? false);
+  const dateFrom = computed(() => anyDate.value ? undefined : list.period?.value.date_from || undefined);
+  const dateTo = computed(() => anyDate.value ? undefined : list.period?.value.date_to || undefined);
   // TODAS as facetas da FilterBar viram parâmetro do servidor. As listas vão
   // separadas por vírgula ou vazias (vazio = sem recorte, o servidor ignora).
   const facet = (id: string) =>
@@ -118,6 +148,9 @@ export function useCatalogMatrix(
         collection.value,
         search.value,
         order.value,
+        dateFrom.value,
+        dateTo.value,
+        anyDate.value,
         page.value,
         pageSize.value,
         archived.value,
@@ -135,6 +168,8 @@ export function useCatalogMatrix(
       collection,
       q: search,
       order,
+      date_from: dateFrom,
+      date_to: dateTo,
       page,
       page_size: pageSize,
       archived,
@@ -155,7 +190,9 @@ export function useCatalogMatrix(
     (value?.collection_ref ?? "") === collection.value &&
     (value?.matrix?.query ?? "") === search.value &&
     (value?.matrix?.page ?? 1) === page.value &&
-    (value?.matrix?.order ?? "name") === order.value;
+    (value?.matrix?.order ?? "name") === order.value &&
+    (!dateFrom.value || value?.matrix?.date_from === dateFrom.value) &&
+    (!dateTo.value || value?.matrix?.date_to === dateTo.value);
   const readMetadata = useReadMetadata(
     computed(() => (matchesScope(data.value) ? data.value : null)),
     error,
@@ -529,14 +566,41 @@ export function useCatalogMatrix(
 
   async function fetchProductDetail(
     sku: string,
+    revisionFields?: string[],
   ): Promise<ProductDetailProjection | null> {
     clearError();
     try {
       const res = await $fetch<ProductDetailResponse>(
         `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`,
       );
-      if (res?.action) detailActions.set(sku, res.action);
-      Reflect.deleteProperty(productConflicts.value, sku);
+      if (res?.action) {
+        const previous = detailActions.get(sku);
+        if (revisionFields && previous) {
+          const fresh = res.action.payload_schema.base_revisions as Record<
+            string,
+            string
+          >;
+          const prior = previous.payload_schema.base_revisions as Record<
+            string,
+            string
+          >;
+          detailActions.set(sku, {
+            ...previous,
+            payload_schema: {
+              ...previous.payload_schema,
+              base_revisions: {
+                ...prior,
+                ...Object.fromEntries(
+                  revisionFields
+                    .filter((field) => field in fresh)
+                    .map((field) => [field, fresh[field]]),
+                ),
+              },
+            },
+          });
+        } else detailActions.set(sku, res.action);
+      }
+      if (!revisionFields) Reflect.deleteProperty(productConflicts.value, sku);
       return res?.product ?? null;
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, "Falha ao carregar o produto.");

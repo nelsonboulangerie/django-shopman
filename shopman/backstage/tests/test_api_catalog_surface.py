@@ -186,10 +186,11 @@ def test_cell_price(client, operator, catalog):
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 720
 
 
-def test_cell_unknown_returns_400(client, operator, catalog):
+def test_cell_missing_without_membership_revision_conflicts(client, operator, catalog):
     client.force_login(operator)
     resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "ifood", "is_sellable": False})
-    assert resp.status_code == 400  # BOLO não está na superfície ifood
+    assert resp.status_code == 409  # A intenção da matriz não autoriza criar um vínculo ausente.
+    assert not ListingItem.objects.filter(product__sku="BOLO", listing__ref="ifood").exists()
 
 
 def test_cell_negative_price_rejected(client, operator, catalog):
@@ -842,7 +843,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     assert set(matrix) == {
         "surfaces", "rows", "collections", "vocation_pending",
         # Paginação/filtro/ordenação no servidor (onda 1, fatia B).
-        "total", "page", "page_size", "has_next", "order", "query",
+        "total", "page", "page_size", "has_next", "order", "query", "date_from", "date_to",
         # Contagens por opção das facetas de multi-escolha (onda 1, fatia B).
         "facets",
     }
@@ -871,6 +872,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     assert set(cell) == {
         "surface_ref", "in_listing", "is_published", "is_sellable", "available",
         "price_q", "price_display", "sync_status", "sync_error", "synced_at", "action", "pause_audit",
+        "valid_from", "valid_until",
     }
 
     assert set(row["social"]) == {
@@ -919,6 +921,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "shelf_life_days", "storage_tip", "production_cycle_hours",
         "is_active", "is_published", "is_sellable", "ingredients_text",
         "image_url", "primary_collection", "primary_collection_name",
+        "collections", "collection_choices", "listing_links", "components",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
         "allows_next_day_sale", "made_to_order", "ready_from",

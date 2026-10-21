@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -24,6 +25,7 @@ from shopman.backstage.services.exceptions import (
     AiAssistNotConfigured,
     CatalogError,
 )
+from shopman.shop.observability import ServerTimingMixin
 
 
 def _actor(request) -> str:
@@ -37,14 +39,25 @@ class _CatalogBase(OperationalObservationMixin, APIView):
     required_permission = "shop.manage_catalog"
 
 
+class _CatalogPeriodSerializer(serializers.Serializer):
+    date_from = serializers.DateField(required=False)
+    date_to = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        if attrs.get("date_from") and attrs.get("date_to") and attrs["date_to"] < attrs["date_from"]:
+            raise serializers.ValidationError({"date_to": ["A data final deve ser igual ou posterior à inicial."]})
+        return attrs
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="Catalog matrix (produto × superfície)",
+        parameters=[_CatalogPeriodSerializer],
         responses={200: OpenApiResponse(description="Matriz de catálogo por superfície.")},
     ),
 )
-class CatalogMatrixView(_CatalogBase):
+class CatalogMatrixView(ServerTimingMixin, _CatalogBase):
     def get(self, request):
         from shopman.backstage.projections.catalog import (
             build_catalog_matrix,
@@ -53,6 +66,8 @@ class CatalogMatrixView(_CatalogBase):
         )
 
         params = request.query_params
+        period = _CatalogPeriodSerializer(data=params)
+        period.is_valid(raise_exception=True)
         collection_ref = (params.get("collection") or "").strip()
         query = (params.get("q") or "").strip()
         order = (params.get("order") or "name").strip()
@@ -69,7 +84,7 @@ class CatalogMatrixView(_CatalogBase):
             filters["surface"] = surface
         matrix = build_catalog_matrix(collection_ref, user=request.user, query=query, order=order,
             page=as_int(params, "page", default=1) or 1,
-            page_size=as_int(params, "page_size", default=50) or 50, filters=filters)
+            page_size=as_int(params, "page_size", default=50) or 50, filters=filters, **period.validated_data)
         actions = (*curation_actions(collection_ref, request.user), product_create_action(request.user))
         return Response(read_data(matrix=projection_data(matrix), collection_ref=collection_ref,
             actions=[projection_data(action) for action in actions]))
@@ -116,7 +131,7 @@ class CatalogCellView(_CatalogBase):
             return Response({"detail": "Atualize a célula: a gravação exige intenção e revisão."}, status=400)
         if data.get("expected_actor_id") != request.user.pk:
             return Response({"detail": "A identificação mudou. Confira a célula."}, status=409)
-        patch = {field: data[field] for field in ("is_published", "is_sellable", "price_q") if field in data}
+        patch = {field: data[field] for field in ("is_published", "is_sellable", "price_q", "min_qty") if field in data}
         if "price_q" in patch:
             patch["price_q"] = as_int(data, "price_q", default=None)
         ref = mutation_fingerprint({"sku": sku, "surface": surface_ref})
@@ -130,7 +145,7 @@ class CatalogCellView(_CatalogBase):
             except (CatalogError, ValidationError) as exc:
                 return {"outcome": "not_applied", "detail": str(exc)}, 400
             return {"ok": True, "outcome": "applied", "intention": key, "sku": sku, "surface_ref": surface_ref,
-                "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q}, 200
+                "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q, "min_qty": str(getattr(item, "min_qty", ""))}, 200
 
         try:
             result = run_idempotent_mutation(scope=scope, key=key,
@@ -265,7 +280,22 @@ class CatalogProductArchiveView(_CatalogBase):
         except RemoteMutationInProgress:
             return Response({"outcome": "unknown", "detail": "Gesto em processamento; consulte esta intenção."}, status=202)
 
-class CatalogProductDetailView(_CatalogBase):
+class CatalogProductOptionsView(ServerTimingMixin, _CatalogBase):
+    """Busca leve de produtos para compor um combo, sem montar a matriz."""
+
+    def get(self, request):
+        from django.db.models import Q
+        from shopman.offerman.models import Product
+
+        term = str(request.query_params.get("q") or "").strip()[:200]
+        products = Product.objects.filter(is_active=True)
+        if term:
+            products = products.filter(Q(name__icontains=term) | Q(sku__icontains=term))
+        rows = list(products.order_by("name", "sku").values("sku", "name", "unit")[:21])
+        return Response({"products": rows[:20], "has_next": len(rows) > 20})
+
+
+class CatalogProductDetailView(ServerTimingMixin, _CatalogBase):
     """Partial product edits have leaf revisions and an atomic local receipt."""
 
     def _scope(self, request, sku):
@@ -277,6 +307,26 @@ class CatalogProductDetailView(_CatalogBase):
         from shopman.backstage.projections.catalog import product_detail_action
 
         product = catalog_service.get_product_detail(sku)
+        from shopman.offerman.models import ListingItem
+
+        from shopman.backstage.projections.catalog import cell_action
+        from shopman.shop.models import Channel
+        from shopman.shop.services import listing_mirror
+
+        items = {item.listing.ref: item for item in ListingItem.objects.filter(product__sku=sku).select_related("listing", "product").order_by("-min_qty", "-pk")}
+        links = []
+        for channel in Channel.objects.filter(commerce_policy=Channel.CommercePolicy.ORDER).order_by("display_order", "pk"):
+            item = items.get(channel.ref)
+            action = projection_data(cell_action(sku, channel.ref, request.user, item=item, unit=product["unit"]))
+            source = listing_mirror.source_ref_from_config(channel.config)
+            if source:
+                action["enabled"] = False
+                action["reason"] = "Este canal acompanha o catálogo de outro canal. Edite o canal de origem."
+            links.append({"surface_ref": channel.ref, "name": channel.name, "in_listing": item is not None,
+                "price_q": item.price_q if item else product["base_price_q"], "min_qty": str(item.min_qty) if item else "1",
+                "is_published": item.is_published if item else False, "is_sellable": item.is_sellable if item else False,
+                "action": action})
+        product["listing_links"] = links
         return {"product": product, "action": projection_data(product_detail_action(sku, product, request.user))}
 
     def get(self, request, sku: str):

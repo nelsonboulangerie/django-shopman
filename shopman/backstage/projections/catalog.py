@@ -12,6 +12,7 @@ Read-only. Frozen dataclasses convertidos por ``backstage.api.projections.projec
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import date
 
 from shopman.utils.monetary import format_money
 
@@ -75,11 +76,11 @@ def resync_action(product, targets: list[str], user):
             "expected_actor_id": getattr(user, "pk", None), "base_revision": resync_revision(product, targets), "targets": sorted(targets)})
 
 
-def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True):
+def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True, unit=""):
     from shopman.backstage.services.catalog import cell_field_revisions
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display)
+    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display, missing=available and item is None and display is None, unit=unit)
     allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
     reason = "" if allowed and available else "O produto não pertence a esta superfície." if not available else "Sem permissão para editar o catálogo."
     return Action(ref="edit-cell", kind="mutation", label="Alterar célula", enabled=allowed and available,
@@ -206,6 +207,8 @@ class SurfaceCellProjection:
     # Estado de sync por (produto × plataforma) — CatalogSyncState (Arc C). Só faz
     # sentido em superfície que é alvo de projeção (canal com backend na registry);
     # vazio quando nunca houve push ou a superfície não projeta (feed de pull).
+    valid_from: str = ""
+    valid_until: str = ""
     sync_status: str = ""  # synced | pending | error | retracted | skipped | "" (nunca)
     sync_error: str = ""  # última mensagem de erro (quando status=error)
     synced_at: str = ""  # ISO do último push OK (synced/retracted)
@@ -316,6 +319,8 @@ class CatalogMatrixProjection:
     has_next: bool = False
     order: str = "name"
     query: str = ""
+    date_from: str = ""
+    date_to: str = ""
 
 
 # ── builders ────────────────────────────────────────────────────────────────
@@ -607,6 +612,7 @@ _CATALOG_ORDERS: dict[str, tuple[str, ...]] = {
     "price": ("base_price_q", "name"),
     "-price": ("-base_price_q", "name"),
     "updated": ("-updated_at",),
+    "validity": ("_valid_from", "name", "sku"),
 }
 
 #: Teto de linhas por página. Acima disto a matriz volta a ser o que era.
@@ -615,7 +621,7 @@ MAX_CATALOG_PAGE_SIZE = 200
 
 def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = "",
     order: str = "name", page: int = 1, page_size: int = 50,
-    filters: dict | None = None) -> CatalogMatrixProjection:
+    filters: dict | None = None, date_from: date | None = None, date_to: date | None = None) -> CatalogMatrixProjection:
     """Monta a matriz produto × superfície com o eixo coleção, PAGINADA.
 
     ``collection_ref`` (opcional) recorta os produtos daquela coleção, inclusive
@@ -644,7 +650,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     from shopman.offerman.models import Collection, Product
 
     surfaces, cells_index = _build_surfaces()
-    from django.db.models import Max, Q, Subquery
+    from django.db.models import Max, Min, Q, Subquery
     from django.utils import timezone
     from shopman.offerman.models import ListingItem
     from shopman.offerman.smart_collection import resolve_products
@@ -706,6 +712,28 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         if feed_members:
             clauses |= Q(sku__in=feed_members)
         products = products.filter(clauses).distinct()
+    # A janela casa com ALGUM canal selecionado, com limites inclusivos. As
+    # duas pontas devem pertencer à MESMA listing, não a canais diferentes.
+    validity_items = ListingItem.objects.filter(listing__ref__in=[
+        surface.ref for surface in surfaces if surface.transactional
+        and (not surface_refs or surface.ref in surface_refs)
+    ])
+    if date_from is not None or date_to is not None:
+        if date_from is not None:
+            validity_items = validity_items.filter(
+                Q(listing__valid_until__isnull=True) | Q(listing__valid_until__gte=date_from))
+        if date_to is not None:
+            validity_items = validity_items.filter(
+                Q(listing__valid_from__isnull=True) | Q(listing__valid_from__lte=date_to))
+        # Feed não tem preço próprio: seu recorte de curadoria continua válido
+        # quando o operador o seleciona, inclusive junto de um canal de venda.
+        selected_feed_skus = set().union(*(
+            display_index[ref]["members"] for ref in surface_refs if ref in display_index
+        ))
+        products = products.filter(Q(pk__in=validity_items.values("product_id")) | Q(sku__in=selected_feed_skus))
+    if order == "validity":
+        products = products.annotate(_valid_from=Min("listing_items__listing__valid_from",
+            filter=Q(listing_items__pk__in=validity_items.values("pk"))))
     # ── facetas de envio/estoque/PIM, EM LOTE ──────────────────────────────
     # Os candidatos são quem passou por coleção, busca, filtros simples e
     # superfície. Sobre eles, a leitura de cada faceta sai de uma vez (estoque,
@@ -866,6 +894,8 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
                     available=available,
                     price_q=item.price_q,
                     price_display=_money(item.price_q),
+                    valid_from=item.listing.valid_from.isoformat() if item.listing.valid_from else "",
+                    valid_until=item.listing.valid_until.isoformat() if item.listing.valid_until else "",
                     pause_audit=pause_audit.get(item.pk, "") if not item.is_sellable else "",
                     action=cell_action(product.sku, surface.ref, user, item=item),
                     sync_status=sync_status,
@@ -950,4 +980,6 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         vocation_pending=vocation_pending,
         total=total, page=current, page_size=size, has_next=start + len(products) < total,
         order=order_key, query=term,
+        date_from=date_from.isoformat() if date_from else "",
+        date_to=date_to.isoformat() if date_to else "",
     )

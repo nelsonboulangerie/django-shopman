@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from django.urls import path
 
+from shopman.backstage.api.purchase_csv import PurchaseCsvView
+from shopman.backstage.api.purchase_supplier_bulk import PurchaseSupplierBulkView
 from shopman.shop.eventstream import events as eventstream_view
 
 from .alerts import AlertAckView, AlertListView
@@ -35,6 +37,7 @@ from .catalog import (
     CatalogProductDraftView,
     CatalogProductDuplicateView,
     CatalogProductImportView,
+    CatalogProductOptionsView,
     CatalogProductPhotoUploadView,
     CatalogProductPhotoView,
     CatalogProductPurchaseView,
@@ -643,6 +646,7 @@ urlpatterns = [
     ),
     # Cadastro da Base. A ordem importa: `min-stock` e os subgestos de um SKU
     # vêm antes do detalhe, senão "min-stock" casaria com <material_sku>.
+    path("purchase/<str:entity>/csv/", PurchaseCsvView.as_view(), name="api-backstage-purchase-csv"),
     path("purchase/materials/", PurchaseMaterialView.as_view(), name="api-backstage-purchase-materials"),
     path(
         "purchase/materials/<str:material_sku>/duplicate/",
@@ -654,6 +658,7 @@ urlpatterns = [
         PurchaseMaterialDetailView.as_view(),
         name="api-backstage-purchase-material",
     ),
+    path("purchase/suppliers/batch/", PurchaseSupplierBulkView.as_view(), name="api-backstage-purchase-supplier-bulk"),
     path("purchase/suppliers/", PurchaseSupplierView.as_view(), name="api-backstage-purchase-suppliers"),
     path(
         "purchase/suppliers/<str:ref>/duplicate/",
@@ -796,6 +801,7 @@ urlpatterns = [
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/cells/", CatalogCellsView.as_view(), name="api-backstage-catalog-cells"),
     path("catalog/products/archive/", CatalogProductArchiveView.as_view(), name="api-backstage-catalog-products-archive"),
+    path("catalog/products/options/", CatalogProductOptionsView.as_view(), name="api-backstage-catalog-products-options"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
     # ⚠️ ANTES de `catalog/product/<str:sku>/`: `create` e `duplicate` casariam com `<str:sku>`.
     path("catalog/product/create/", CatalogProductCreateView.as_view(), name="api-backstage-catalog-product-create"),

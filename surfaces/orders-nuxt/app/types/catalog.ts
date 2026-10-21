@@ -43,6 +43,8 @@ export interface SurfaceProjection {
 }
 
 export interface SurfaceCellProjection {
+  valid_from?: string;
+  valid_until?: string;
   pause_audit?: string;
   action?: Action | null;
   surface_ref: string;
@@ -118,10 +120,19 @@ export interface CatalogMatrixProjection {
   has_next: boolean;
   order: CatalogOrder;
   query: string;
+  date_from?: string;
+  date_to?: string;
 }
 
 export type CatalogOrder =
-  "name" | "-name" | "sku" | "-sku" | "price" | "-price" | "updated";
+  | "name"
+  | "-name"
+  | "sku"
+  | "-sku"
+  | "price"
+  | "-price"
+  | "updated"
+  | "validity";
 
 export interface VocationPending {
   sku: string;
@@ -183,8 +194,40 @@ export interface FiscalProfileChoice {
 // Detalhe de UM produto — tudo que o painel de produto edita
 // (GET/PATCH /api/v1/backstage/catalog/product/<sku>/). Espelha
 // `backstage.services.catalog._detail_payload`. Fora daqui (segue no Admin):
-// componentes de bundle, coleções e listings.
+// Vínculos e composição usam o mesmo escritor versionado do detalhe.
+export interface ProductCollectionLink {
+  ref: string;
+  is_primary: boolean;
+  sort_order: number;
+}
+export interface ProductListingLink {
+  in_listing?: boolean;
+  surface_ref: string;
+  name: string;
+  price_q: number;
+  min_qty: string;
+  is_published: boolean;
+  is_sellable: boolean;
+  action: Action;
+}
+
+export interface ProductComponentInput {
+  sku: string;
+  qty: string;
+}
+export interface ProductComponentLink extends ProductComponentInput {
+  name: string;
+  unit: string;
+}
 export interface ProductDetailProjection {
+  components?: ProductComponentLink[];
+  collections?: ProductCollectionLink[];
+  readonly collection_choices?: {
+    ref: string;
+    name: string;
+    is_active: boolean;
+  }[];
+  readonly listing_links?: ProductListingLink[];
   readonly sku: string;
   name: string;
   short_description: string;
@@ -309,6 +352,9 @@ export type ProductDetailPatch = Partial<
   Omit<
     ProductDetailProjection,
     | "sku"
+    | "components"
+    | "collection_choices"
+    | "listing_links"
     | "primary_collection"
     | "primary_collection_name"
     | "field_sources"
@@ -327,6 +373,7 @@ export type ProductDetailPatch = Partial<
     | "nutrition_facts"
   >
 > & {
+  components?: ProductComponentInput[];
   gtin_rejected?: { confirmed: true };
   social?: Partial<Omit<ProductSocial, "has_data">>;
   fiscal?: Partial<ProductFiscal>;
