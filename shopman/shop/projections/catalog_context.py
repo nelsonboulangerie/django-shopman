@@ -263,11 +263,12 @@ def related_skus(sku: str, *, limit: int = 6) -> list[str]:
         return []
 
     candidates = CatalogService.search(keywords=list(own_keywords), limit=limit * 4)
+    attach_tag_names(candidates)
     scored: list[tuple[int, str]] = []
     for candidate in candidates:
         if candidate.sku == sku:
             continue
-        shared = len(own_keywords & {str(name) for name in candidate.keywords.names()})
+        shared = len(own_keywords & {str(name) for name in product_tags(candidate)})
         if shared:
             scored.append((shared, candidate.sku))
     scored.sort(key=lambda pair: pair[0], reverse=True)

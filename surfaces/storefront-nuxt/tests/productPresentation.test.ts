@@ -38,7 +38,7 @@ describe('product presentation', () => {
 
   it('limits cross sell and never suggests the product itself', () => {
     const item = (sku: string) => ({ sku } as CatalogItemProjection)
-    const product = { sku: 'A', cross_sell: [item('A'), item('B'), item('C'), item('D'), item('E'), item('F')] }
+    const product = { sku: 'A', items: [item('A'), item('B'), item('C'), item('D'), item('E'), item('F')] }
     const result = crossSellItems(product)
     expect(result.map(i => i.sku)).toEqual(['B', 'C', 'D', 'E'])
   })

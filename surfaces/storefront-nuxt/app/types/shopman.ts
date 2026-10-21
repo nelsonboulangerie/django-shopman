@@ -219,8 +219,6 @@ export interface ProductDetailProjection {
   mpn: string
   item_condition: string
   breadcrumb_category: CategoryProjection | null
-  cross_sell: CatalogItemProjection[]
-  cross_sell_heading: string
   // Apresentação da coleção primária (Collection.metadata): cor hex da paleta NB
   // e nome de ícone Lucide — vestem o hero-fallback da PDP sem foto.
   category_color: string | null
@@ -1405,4 +1403,14 @@ export interface LegalProjection {
   version: string
   updated_at: string
   processors: LegalProcessorProjection[]
+}
+
+export interface ProductRecommendationsProjection {
+  sku: string
+  items: CatalogItemProjection[]
+  heading: string
+}
+
+export interface ProductRecommendationsResponse {
+  recommendations: ProductRecommendationsProjection
 }

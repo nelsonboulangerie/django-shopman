@@ -1,4 +1,4 @@
-import type { CatalogItemProjection, ProductDetailProjection, ProductNutritionProjection } from '~/types/shopman'
+import type { CatalogItemProjection, ProductDetailProjection, ProductRecommendationsProjection, ProductNutritionProjection } from '~/types/shopman'
 
 // Transforms puros da PDP: descrição sem eco, tabela nutricional com %VD e
 // a lista "Veja também" (cross_sell por keywords compartilhadas).
@@ -42,8 +42,8 @@ export function galleryImages (product: Pick<ProductDetailProjection, 'image_url
   return unique.length > 1 ? unique : []
 }
 
-export function crossSellItems (product: Pick<ProductDetailProjection, 'cross_sell' | 'sku'>, limit = 4): CatalogItemProjection[] {
-  return (product.cross_sell || [])
+export function crossSellItems (product: Pick<ProductRecommendationsProjection, 'items' | 'sku'>, limit = 4): CatalogItemProjection[] {
+  return (product.items || [])
     .filter(item => item.sku !== product.sku)
     .slice(0, limit)
 }

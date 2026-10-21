@@ -48,6 +48,7 @@ from shopman.storefront.presentation import (
     notify_subscribed_skus,
     present_cart_date_mismatch,
 )
+from shopman.storefront.presentation.product_detail import build_product_recommendations
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
     CartMutationNotFound,
@@ -669,6 +670,19 @@ class StorefrontProductView(ServerTimingMixin, APIView):
             "product": projection_data(product),
             "cart": _cart_payload(request),
         })
+
+
+class StorefrontProductRecommendationsView(ServerTimingMixin, APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, sku: str):
+        recommendations = build_product_recommendations(
+            sku=sku, channel_ref=STOREFRONT_CHANNEL_REF, request=request,
+        )
+        if recommendations is None:
+            return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"recommendations": projection_data(recommendations)})
 
 
 @extend_schema_view(
