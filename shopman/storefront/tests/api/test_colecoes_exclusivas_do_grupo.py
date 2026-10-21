@@ -189,21 +189,22 @@ def _cart_skus(client: Client) -> set[str]:
     return {line["sku"] for line in (body.get("cart") or body)["items"]}
 
 
-def test_pagina_do_produto_exclusivo_e_404_para_quem_nao_e_do_grupo(cardapio):
+@pytest.mark.parametrize("suffix", ["", "recommendations/"])
+def test_pagina_do_produto_exclusivo_e_404_para_quem_nao_e_do_grupo(cardapio, suffix):
     ana, beto = cardapio
-    assert Client().get("/api/v1/storefront/products/BRIGADEIRO/").status_code == 404
+    assert Client().get(f"/api/v1/storefront/products/BRIGADEIRO/{suffix}").status_code == 404
     assert Client().get("/api/v1/catalog/products/BRIGADEIRO/").status_code == 404
 
     outsider = Client()
     _login_as_customer(outsider, beto)
-    assert outsider.get("/api/v1/storefront/products/BRIGADEIRO/").status_code == 404
+    assert outsider.get(f"/api/v1/storefront/products/BRIGADEIRO/{suffix}").status_code == 404
 
     member = Client()
     _login_as_customer(member, ana)
-    assert member.get("/api/v1/storefront/products/BRIGADEIRO/").status_code == 200
+    assert member.get(f"/api/v1/storefront/products/BRIGADEIRO/{suffix}").status_code == 200
 
     # Produto comum segue aberto a todos.
-    assert Client().get("/api/v1/storefront/products/PAO-FRANCES/").status_code == 200
+    assert Client().get(f"/api/v1/storefront/products/PAO-FRANCES/{suffix}").status_code == 200
 
 
 def test_produto_tambem_numa_colecao_comum_abre_pelo_link(cardapio):

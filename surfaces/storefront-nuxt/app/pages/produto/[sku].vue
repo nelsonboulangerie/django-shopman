@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
-import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
+import { detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -112,7 +112,6 @@ function goToSlide (index: number) {
   sliderEl.value?.scrollTo({ left: slideIndex.value * (sliderEl.value?.clientWidth || 0) })
 }
 const nutrition = computed(() => nutritionTable(product.value?.nutrition || null))
-const crossSell = computed(() => product.value ? crossSellItems(product.value) : [])
 
 const canonicalUrl = computed(() => `${requestUrl.origin}${route.path}`)
 // A coleção do produto entra na trilha só quando tem página própria
@@ -421,18 +420,7 @@ useHead({
           </div>
         </article>
 
-        <section v-if="crossSell.length" class="mt-8" data-product-cross-sell>
-          <h2 class="shop-heading">{{ product?.cross_sell_heading || 'Você também pode gostar' }}</h2>
-          <div class="mt-1 grid grid-cols-1 gap-x-8 md:grid-cols-2">
-            <ProductListItem
-              v-for="item in crossSell"
-              :key="item.sku"
-              :item="item"
-              framed
-              class="border-b last:border-b-0 md:[&:nth-last-child(2)]:border-b-0"
-            />
-          </div>
-        </section>
+        <ProductRecommendations :sku="sku" />
 
         <div
           class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
