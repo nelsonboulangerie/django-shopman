@@ -35,8 +35,7 @@ def test_o_codigo_que_voltou_nao_e_desviado():
     """`FENDU` virou `FE` em agosto e `FE` voltou a `FENDU` em setembro.
 
     No papel é um ciclo. Contra o catálogo não há dúvida: para-se no que
-    existe — e é isso que impede um 301 de mandar a página boa do `FENDU`
-    para o `FE`, que é 404.
+    existe, para ligar o histórico ao SKU atual sem inventar outro destino.
     """
     assert current_sku("FENDU", {"FENDU"}) == "FENDU"
     assert current_sku("FE", {"FENDU"}) == "FENDU"
