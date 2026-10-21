@@ -1,15 +1,19 @@
 # ONDA4-3: tabelão de insumos
 
 Ordem: `ORDERS/next-onda4.md`, frente 3. Base: `65b658d31`.
-Branch: `codex/tabelao-insumos`. PR: #1959. Estado: pronto, solicitado auto-merge após os checks.
+Branch: `codex/tabelao-insumos`. PR: #1959.
+Estado final: MERGED em 2026-10-20 22:36:10 UTC.
+Commit de merge: `0cdc545781440dc0e32e56d40037c1b524eae538`.
 
 ## Entrega
 
 Custos e mínimos aceitam colar uma coluna na célula inicial, seguindo a ordem visível,
 com vírgula decimal em TSV/CSV da casa. Campos vazios não substituem os valores já
 rascunhados. A pilha do `useGridEdit` desfaz cada célula por vez, incluindo digitação
-sobre valor colado. Limpar e salvar esvaziam a pilha. Valores inválidos aparecem junto
-ao insumo e impedem a gravação, tanto na ação da mesa quanto na barra do celular.
+sobre valor colado. O [seguimento #1968](ONDA4-3F-rascunhos-filtrados.md) mantém os
+rascunhos e o histórico de Desfazer das linhas ocultas após salvar o recorte visível.
+Valores inválidos aparecem junto ao insumo e impedem a gravação das linhas visíveis,
+tanto na ação da mesa quanto na barra do celular.
 O envio continua nos endpoints canônicos de lote, uma requisição por operação.
 
 Leitura de insumos, fornecedores e conversões na validação de custo é em lote.

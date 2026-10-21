@@ -4,7 +4,8 @@
 - **Branch:** `codex/preco-vigencia`.
 - **Ordem:** `ORDERS/next-onda4.md`, frente 2.
 - **PR:** [#1958](https://github.com/nelsonboulangerie/django-shopman/pull/1958).
-- **Estado:** entrega concluída, fila solicitada após o push final.
+- **Estado final:** MERGED em 2026-10-20 22:26:48 UTC.
+- **Commit de merge:** `3d0a10a57fdc69a539c3a881111d97037bca4d78`.
 
 ## Entrega
 
@@ -89,4 +90,4 @@ hermético ainda não devolvia a janela e a ordenação consultadas e o cenário
 vigência dependia de uma variável externa. O log do job foi lido. O mock agora ecoa
 o recorte em todos os cenários e o teste liga/desliga seu cenário próprio. Os
 casos Arquivados, vigência e carga no celular foram reconferidos localmente.
-A esteira será reexecutada pelo push final.
+O push final reexecutou a esteira, e o #1958 foi mergeado após a validação da fila.

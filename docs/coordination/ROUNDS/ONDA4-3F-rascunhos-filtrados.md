@@ -2,7 +2,8 @@
 
 Seguimento concreto do #1959, autorizado pela coordenação. Branch
 `codex/tabelao-insumos-hidden-errors`, iniciado em `32a2cdbbd`.
-Estado: PR #1968 draft empilhado no #1959, aguardando o merge do pai para seguir a esteira.
+Estado final: MERGED no #1968 em 2026-10-20 23:39:58 UTC.
+Commit de merge: `2df08fa98b0b6aa82ac3506787bbe8ed24b23cc2`.
 
 ## Problema e correção
 
@@ -50,4 +51,4 @@ D12: seis capturas antes/depois claro/escuro abertas e conferidas.
 
 ## Esteira após o pai
 
-O pai #1959 mergeou em 20/10 às 22:36 UTC (0cdc54578). Este seguimento #1968 foi integrado ao main, deixou de ser draft empilhado e segue para a fila. A reivindicação saiu do BOARD; o histórico permanece neste registro.
+O pai #1959 mergeou em 20/10 às 22:36 UTC (0cdc54578). Este seguimento #1968 foi integrado ao main, deixou de ser draft empilhado e foi mergeado após a validação da fila. A reivindicação saiu do BOARD; o histórico permanece neste registro.

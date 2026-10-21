@@ -26,14 +26,27 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
-**ONDA4-5 (20/10):** import/export da Base de insumos e fornecedores entregue no PR #1964 (`codex/import-export-base`), empilhado sobre #1957. Prévia sem escrita, revisão/ator, erro por registro, aplicação e auditoria atômicas; exportação completa pelo kit. Quinze testes API e oito de navegador aprovados; 300 → 22 consultas para dez cadastros, e custo fixo 5/22/5 (fornecedor) e 6/23/5 (insumo) para prévia/aplicação/export com 2 ou 40 registros. Registro em `ROUNDS/ONDA4-5-import-export-base.md`.
+## Onda 4: conferência final
 
-**ONDA4-4 (20/10):** lote de fornecedores entregue no PR #1957 (`codex/lote-fornecedores`), com confirmação, Desfazer revisado e auditoria atômica. Sete testes API, dois de componente e quatro de navegador aprovados. Medição: 188 → 30 consultas para dez fornecedores; 2/40 fornecedores mantêm 28 consultas. Registro em `ROUNDS/ONDA4-4-lote-fornecedores.md`.
-**Turno ONDA4 (20/10), frente2:** preço com vigência entregue no PR #1958, com fila solicitada. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
+Conferência solicitada pelo dono, fora das reivindicações ativas. Todas as frentes
+da ordem `ORDERS/next-onda4.md` foram mergeadas; commits e horários em UTC estão no
+[registro de encerramento](ROUNDS/ONDA4-ENCERRAMENTO.md).
+
+| Frente | Estado final | PR | Registro |
+|---|---|---|---|
+| 1. Vínculos do produto | MERGED | [#1960](https://github.com/nelsonboulangerie/django-shopman/pull/1960) | [ROUNDS](ROUNDS/ONDA4-1-produto-vinculos.md) |
+| 2. Preço com vigência | MERGED | [#1958](https://github.com/nelsonboulangerie/django-shopman/pull/1958) | [ROUNDS](ROUNDS/ONDA4-F2-preco-vigencia.md) |
+| 3. Tabelão de insumos | MERGED | [#1959](https://github.com/nelsonboulangerie/django-shopman/pull/1959) | [ROUNDS](ROUNDS/ONDA4-3-tabelao-insumos.md) |
+| 4. Lote de fornecedores | MERGED | [#1957](https://github.com/nelsonboulangerie/django-shopman/pull/1957) | [ROUNDS](ROUNDS/ONDA4-4-lote-fornecedores.md) |
+| 5. Import/export da Base | MERGED | [#1964](https://github.com/nelsonboulangerie/django-shopman/pull/1964) | [ROUNDS](ROUNDS/ONDA4-5-import-export-base.md) |
+| 6. Componentes de combo | MERGED | [#1961](https://github.com/nelsonboulangerie/django-shopman/pull/1961) | [ROUNDS](ROUNDS/ONDA4-F6-produto-combo.md) |
+
+Também mergeados: [segurança #1967](ROUNDS/ONDA4-SEC-mcp-server-audit.md) e
+[rascunhos filtrados #1968](ROUNDS/ONDA4-3F-rascunhos-filtrados.md). Não há frente
+ativa ou decisão pendente desta ordem. As provas, medições e capturas permanecem
+nos registros individuais; as frentes de outras coordenações continuam abaixo.
 
 ## Em execução agora
-
-**ONDA4-F6 (20/10):** componentes de combo em execução no branch `codex/produto-combo`, empilhado na frente1. Registro: `ROUNDS/ONDA4-F6-produto-combo.md`.
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
@@ -127,14 +140,4 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
    apague: o `make coordination` o mostra como "conteúdo já no main".
 5. O `make coordination` só mede CI e auto-merge **com `gh` autenticado**. Sem `gh` ele diz isso numa
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
-
-**ONDA4-1 (20/10):** vínculos de produto publicados no PR **#1960** (`codex/produto-vinculos`): coleções e
-canais no painel, reutilizando as intenções/revisões/recibos do detalhe e da célula. Registro e
-provas em `ROUNDS/ONDA4-1-produto-vinculos.md`. Nenhuma área reservada à outra coordenação foi editada.
-
-**ONDA4-6 (20/10):** componentes do combo implementados no PR **#1961**, empilhado no #1960. Escrita canônica com revisão/unidade, ciclo e outbox atômico; editor inline, busca e Desfazer. Provas, desempenho e D1-D12 em `ROUNDS/ONDA4-F6-produto-combo.md`. Main da frente 2 integrado; aguarda merge da frente 1 para base main e fila.
-**ONDA4-3 (20/10):** tabelão de insumos com colagem de coluna, erro por insumo e Desfazer,
-leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-merge solicitado após os checks. Branch
-`codex/tabelao-insumos`. A falha CI de overflow no rodapé de custos do celular foi
-reproduzida e corrigida localmente (6 casos visuais passaram). Registro: `ROUNDS/ONDA4-3-tabelao-insumos.md`.
 

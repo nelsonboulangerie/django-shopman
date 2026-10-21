@@ -1,5 +1,8 @@
 # ONDA4-1: vínculos do produto
 
+Estado final: MERGED no #1960 em 2026-10-20 23:32:08 UTC.
+Commit de merge: `c1db8e8e3e67cc86cad536d639ee40b422cf18e1`.
+
 Ordem: `ORDERS/next-onda4.md`, frente 1. Base `65b658d31`. Branch
 `codex/produto-vinculos`, worktree própria `produto-vinculos`.
 
@@ -78,9 +81,9 @@ O custo novo de leitura é fixo: teste aumenta de zero para **30 coleções e ma
 
 ## Estado da esteira
 
-PR **#1960** publicado. Implementação e verificação local concluídas; acompanha CI e fila pelo PR.
+PR **#1960** mergeado após a aprovação dos checks obrigatórios da fila.
 
 
 ## Integração para a fila (20/10)
 
-Na fila #1960 após integrar o main com #1958 e #1959. O conflito era apenas no BOARD; os vínculos e a matriz foram mesclados sem conflito de código. A linha da frente sai do BOARD conforme a regra do cabeçalho.
+O #1960 entrou na fila após integrar o main com #1958 e #1959 e foi mergeado no commit acima. O conflito era apenas no BOARD; os vínculos e a matriz foram mesclados sem conflito de código. A reivindicação ativa da frente foi retirada conforme a regra do cabeçalho.
