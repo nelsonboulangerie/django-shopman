@@ -2268,7 +2268,6 @@
           "shop.view_qualitydefect",
           "shop.view_qualitygrade",
           "shop.view_reports",
-          "shop.view_retiredproduct",
           "shop.view_ruleconfig",
           "shop.view_shop",
           "shop.view_shopappearance",

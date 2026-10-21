@@ -2,8 +2,7 @@
 
 A Cloudflare na frente do ``api.`` ignora ``Vary: Cookie``: uma resposta
 ``public`` é servida a QUALQUER requisição da mesma URL, com ou sem cookie
-(medido em 30/09/2026: ``sku-redirects/`` sai ``public`` com ``Vary: Cookie`` e
-dá HIT). Por isso a mesma URL não pode ser pública para o anônimo e privada para
+Por isso a mesma URL não pode ser pública para o anônimo e privada para
 o cliente: o corpo de um iria para o outro.
 
 A saída é por URL, não por cabeçalho:

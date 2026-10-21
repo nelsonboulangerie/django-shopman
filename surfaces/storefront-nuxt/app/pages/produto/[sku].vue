@@ -27,33 +27,15 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
 )
 usePageContentPending(pending)
 
-async function missingProductError (missingSku: string) {
-  const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), missingSku)
-  if (retired) {
-    return createError({
-      statusCode: 410,
-      statusMessage: 'Este item saiu do cardápio',
-      fatal: true,
-      data: retired
-    })
-  }
-  return createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
-}
-
-// SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
-// não uma página-fantasma 200 indexável. No cliente a busca é lazy para montar
-// a rota imediatamente; o watcher preserva a mesma semântica quando ela termina.
-// Antes do 404, verificamos se este código já foi um produto nosso (410).
+// Pré-go-live não há redirecionamento de SKU antigo.
 if (import.meta.server && error.value?.statusCode === 404) {
-  throw await missingProductError(sku.value)
+  throw createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
 }
-
 if (import.meta.client) {
-  watch(error, async (failure) => {
-    if (failure?.statusCode !== 404) return
-    const missingSku = sku.value
-    const pageError = await missingProductError(missingSku)
-    if (sku.value === missingSku) showError(pageError)
+  watch(error, (failure) => {
+    if (failure?.statusCode === 404) {
+      showError(createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true }))
+    }
   })
 }
 // Backend fora do ar: 503, nunca 200 com a casca vazia — ver `useContentGuard`.

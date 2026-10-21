@@ -5970,25 +5970,6 @@
       ]
     },
     {
-      "path": "shopman/shop/models/retired_product.py",
-      "touchpoints": [
-        "model"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "configuração"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "configuração",
-          "symbols": [
-            "RetiredProduct"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/models/rules.py",
       "touchpoints": [
         "model"
@@ -12478,25 +12459,6 @@
       ]
     },
     {
-      "path": "shopman/shop/services/retired_urls.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "record"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/services/sessions.py",
       "touchpoints": [
         "service"
@@ -12533,9 +12495,7 @@
           "responsibility": "leitura",
           "symbols": [
             "current_sku",
-            "live_product_skus",
-            "rename_map",
-            "retired_skus"
+            "rename_map"
           ]
         }
       ]

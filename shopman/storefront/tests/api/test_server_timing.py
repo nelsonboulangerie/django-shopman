@@ -45,7 +45,6 @@ INSTRUMENTED_READS = (
     "/api/v1/storefront/shell/",
     "/api/v1/storefront/site/",
     "/api/v1/storefront/legal/",
-    "/api/v1/storefront/sku-redirects/",
     "/api/v1/storefront/products/PAO-FRANCES/",
     "/api/v1/storefront/cart/",
     "/api/v1/storefront/checkout/",
