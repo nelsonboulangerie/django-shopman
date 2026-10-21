@@ -1,6 +1,6 @@
 # Planos Ativos
 
-> Atualizado em 2026-10-19.
+> Atualizado em 2026-10-21.
 
 Este diretório deve conter apenas plano vivo, spec ativa ou backlog explícito.
 Planos concluídos ficam em [`completed/`](completed/). Material histórico incerto
@@ -22,7 +22,7 @@ as tabelas abaixo são a classificação semântica explícita.
 
 | Plano | Estado |
 |-------|--------|
-| [`GO-LIVE-READINESS-PLAN.md`](GO-LIVE-READINESS-PLAN.md) | **Fonte única do estado de go-live**, auditada em 2026-09-29. Deployment técnico e smoke do SHA `ab148fbd85` verificados; perfil comercial, drift de spec, readiness read-only, domínio/fases/escopo, QA física, backup/restore e GO/NO-GO continuam bloqueados ou desconhecidos. |
+| [`GO-LIVE-READINESS-PLAN.md`](GO-LIVE-READINESS-PLAN.md) | **Fonte única do estado de go-live**, reauditada em 2026-10-21 na baseline `4541f0a8a040`: deploy, smoke, health, ready, drift e backup verificados; `production-readiness` tem 5 OK e 3 FAIL por perfil staging/mock, dinheiro/fiscal sem prova de produção e chaves de corte ausentes. Os demais gates externos e operacionais permanecem explícitos na matriz. |
 | [`GO-LIVE-CREDENTIALS-MATRIX.md`](GO-LIVE-CREDENTIALS-MATRIX.md) | Contrato de nomes e maturidade: separa credencial declarada, adapter, boot gate, sandbox/homologação e produção; não contém valores nem presume escopo v1. |
 | [`PRODUCT-V1-SCOPE-BACKLOG.md`](PRODUCT-V1-SCOPE-BACKLOG.md) | Índice-mestre de escopo do v1; gate de produto do go-live. |
 
@@ -34,8 +34,8 @@ as tabelas abaixo são a classificação semântica explícita.
 | [`SUITE-UX-PLAN.md`](SUITE-UX-PLAN.md) | Medição das três varreduras de 22/09 (navegação e cabeçalhos · primitivas · fronteira e copy) e o redesenho da suíte em 9 WPs. Diagnóstico: nenhum app está mal desenhado, **o que não existe é o entre** — o token de 44px é respeitado 214× no Gestor e **zero** em cinco apps. WP-UX-1 (barra de seções canônica) entregue; WP-UX-3, 4 e 7 em PR; 5 decisões de vocabulário e produto esperando o dono na §4. |
 | [`WP-TELAS-DE-PAREDE.md`](WP-TELAS-DE-PAREDE.md) | Exploração (18/09), nada implementado — **as 5 decisões do dono já estão tomadas**. Inventário achou **5** superfícies passivas; a mais madura (menuboard) não estava na lista. Telas **não** tem domínio próprio (ADR-018): é capability de rota + seção do Hub + sujeito `display` de device trust. Pareamento por código vence encurtador; `TrustedDevice.DISPLAY` já existe. Decidido: seção "Telas" · **zero 301, nenhum legado** · letreiro ganha SSE (sobe p/ Fase 3) · tabela `Screen` em `shop/models/` · device trust de tela **eterno**, com revogação visível como contrapartida. 4 fases, nenhuma bloqueada. |
 | [`FISCALMAN-PLAN.md`](FISCALMAN-PLAN.md) | S0–S4 concluídos e verdes; resta S5 (NF-e mod. 55/resale) + contador valida NCM/CSC/IBPT. |
-| [`IFOOD-DIRECT-INTEGRATION-PLAN.md`](IFOOD-DIRECT-INTEGRATION-PLAN.md) | Integração direta (polling) em staging; homologação de produção pendente. |
-| [`DELIVERY-EXTERNAL-LOGISTICS-PLAN.md`](DELIVERY-EXTERNAL-LOGISTICS-PLAN.md) | Machine (courier) construída (PR #43); falta no código conferir a assinatura `Signature-V2` do webhook (`shop/webhooks/machine.py`, hoje só o token da URL); fora do código, credenciais centrais e homologação. |
+| [`IFOOD-DIRECT-INTEGRATION-PLAN.md`](IFOOD-DIRECT-INTEGRATION-PLAN.md) | Integração direta entregue; ensaio autorizado na loja de teste concluído em 20/10 com restauração exata (#1929, #1962). Credenciais e homologação comercial de produção continuam externas e pendentes. |
+| [`DELIVERY-EXTERNAL-LOGISTICS-PLAN.md`](DELIVERY-EXTERNAL-LOGISTICS-PLAN.md) | Machine (courier) construída e `Signature-V2` verificada no webhook; fora do código, credenciais centrais e homologação continuam pendentes. |
 | [`DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md`](DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md) | Cascata de geocoding entregue; pendente robustez multi-provedor + feedback omotenashi. |
 | [`OPERATION-DOMAIN-PLAN.md`](OPERATION-DOMAIN-PLAN.md) | Baseline de modelos/Admin implementado; próxima camada (superfície de execução, BI) aberta. |
 | [`OPERATION-RUNBOOKS-PLAN.md`](OPERATION-RUNBOOKS-PLAN.md) | Baseline de runbooks/diagnose concluído; snapshot/smoke real de gateway bloqueado por credenciais. |
