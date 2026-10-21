@@ -526,7 +526,8 @@ class TestCrossSell:
         assert len(result) == 6
         assert product.sku not in [p.sku for p in result]
 
-    def test_reuses_selected_products_with_identical_cards(self, listing, product, monkeypatch):
+    @pytest.mark.parametrize("hidden_count", [0, 1, 3])
+    def test_reuses_selected_products_with_identical_cards(self, listing, product, monkeypatch, hidden_count):
         from shopman.offerman.service import CatalogService
 
         from shopman.shop.projections import catalog_context
@@ -552,7 +553,10 @@ class TestCrossSell:
         ]
         scored.sort(key=lambda pair: pair[0], reverse=True)
         expected_skus = [sku for score, sku in scored[:6] if score]
-        expected = projection_data(build_catalog_items_for_skus(expected_skus, channel_ref="web"))
+        ListingItem.objects.filter(
+            listing=listing, product__sku__in=expected_skus[:hidden_count],
+        ).update(is_published=False)
+        expected = projection_data(build_catalog_items_for_skus(expected_skus, channel_ref="web")[:4])
 
         def reread(*args, **kwargs):
             raise AssertionError("Recomendações não devem reler os produtos selecionados")
@@ -560,7 +564,7 @@ class TestCrossSell:
         monkeypatch.setattr(catalog_context, "products_by_sku", reread)
         actual = build_product_recommendations(sku=product.sku, channel_ref="web")
         assert actual is not None
-        assert [item.sku for item in actual.items] == expected_skus
+        assert [item.sku for item in actual.items] == [item["sku"] for item in expected]
         assert projection_data(actual.items) == expected
 
     def test_api_separates_detail_from_recommendations(self, client, listing, product, croissant):

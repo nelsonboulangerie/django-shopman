@@ -431,6 +431,7 @@ def build_catalog_items_for_products(
     *,
     channel_ref: str,
     request: HttpRequest | None = None,
+    limit: int | None = None,
 ) -> tuple[CatalogItemProjection, ...]:
     """Cards de produtos já lidos, na ordem da seleção, pelo portão do canal.
 
@@ -442,6 +443,8 @@ def build_catalog_items_for_products(
         return ()
     visible = catalog_context.visible_skus_in_channel([p.sku for p in products], channel_ref)
     ordered = [p for p in products if visible is None or p.sku in visible]
+    if limit is not None:
+        ordered = ordered[:limit]
     if not ordered:
         return ()
     return _build_cards(ordered, channel_ref=channel_ref, request=request)

@@ -751,7 +751,9 @@ def build_product_recommendations(
         sku=sku,
         items=build_catalog_items_for_products(
             catalog_context.related_products(product, limit=6),
-            channel_ref=channel_ref, request=request,
+            # A loja exibe quatro cards. O corte vem DEPOIS da seleção dos seis
+            # e do portão do canal, exatamente como a apresentação no cliente.
+            channel_ref=channel_ref, request=request, limit=4,
         ),
         heading=_cross_sell_heading(),
     )
