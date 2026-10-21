@@ -79,7 +79,6 @@ from .surface import (
     StorefrontPublicShellView,
     StorefrontShellView,
     StorefrontSiteView,
-    StorefrontSkuRedirectsView,
 )
 from .telemetry import AddressEventView, ClientErrorView
 from .tracking import (
@@ -124,7 +123,6 @@ urlpatterns = [
         name="api-storefront-public-catalog-collection",
     ),
     path("storefront/products/<str:sku>/", StorefrontProductView.as_view(), name="api-storefront-product"),
-    path("storefront/sku-redirects/", StorefrontSkuRedirectsView.as_view(), name="api-storefront-sku-redirects"),
     path("storefront/cart/", StorefrontCartView.as_view(), name="api-storefront-cart"),
     path("storefront/client-error/", ClientErrorView.as_view(), name="api-storefront-client-error"),
     path("storefront/address-event/", AddressEventView.as_view(), name="api-storefront-address-event"),

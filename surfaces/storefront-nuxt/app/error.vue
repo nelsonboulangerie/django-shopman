@@ -23,28 +23,13 @@ watch(() => shellState.value, value => session.setFromHome(value?.shell), { imme
 useShopTheme(session.shop)
 
 const is404 = computed(() => props.error?.statusCode === 404)
-// 410: o item existia e saiu do cardápio. A tela diz isso, e oferece a
-// prateleira de onde ele saiu quando ainda há uma com produto (ver
-// `useRetiredProduct`); sem ela, o caminho é o cardápio.
-const isGone = computed(() => props.error?.statusCode === 410)
-const goneCollection = computed(() => {
-  const data = props.error?.data as { collection?: string, collection_name?: string } | undefined
-  const ref = String(data?.collection || '')
-  return ref ? { ref, name: String(data?.collection_name || '') } : null
-})
 const whatsappUrl = computed(() => session.publicConfig.value?.whatsapp_url || '')
 
 const kicker = computed(() => (is404.value ? 'Erro 404' : ''))
 const title = computed(() => {
-  if (isGone.value) return 'Este item saiu do cardápio'
   return is404.value ? 'Não encontramos esta página' : 'Tivemos um problema por aqui'
 })
 const message = computed(() => {
-  if (isGone.value) {
-    return goneCollection.value
-      ? `Ele não faz mais parte do cardápio da casa. Veja o que temos hoje em ${goneCollection.value.name}.`
-      : 'Ele não faz mais parte do cardápio da casa. Veja o que temos hoje no cardápio.'
-  }
   return is404.value
     ? 'O item pode ter saído do cardápio ou o endereço está incorreto. Vamos levar você de volta ao cardápio.'
     : 'Tente de novo em alguns segundos. Se precisar fechar um pedido agora, fale conosco no WhatsApp.'
@@ -56,11 +41,6 @@ useSeoMeta({ robots: 'noindex, follow', title: () => title.value })
 
 function goMenu () {
   clearError({ redirect: '/menu' })
-}
-
-function goCollection () {
-  const collection = goneCollection.value
-  if (collection) clearError({ redirect: `/colecao/${encodeURIComponent(collection.ref)}` })
 }
 
 function goHome () {
@@ -82,14 +62,7 @@ function retry () {
       <p class="shop-muted">{{ message }}</p>
     </div>
     <div class="error-screen-actions flex flex-col gap-3 sm:flex-row">
-      <template v-if="isGone">
-        <UiButton v-if="goneCollection" icon="lucide:utensils" @click="goCollection">
-          Ver {{ goneCollection.name }}
-        </UiButton>
-        <UiButton v-else icon="lucide:utensils" @click="goMenu">Ver o cardápio</UiButton>
-        <UiButton variant="outline" icon="lucide:house" @click="goHome">Página inicial</UiButton>
-      </template>
-      <template v-else-if="is404">
+      <template v-if="is404">
         <UiButton icon="lucide:utensils" @click="goMenu">Voltar ao cardápio</UiButton>
         <UiButton variant="outline" icon="lucide:house" @click="goHome">Página inicial</UiButton>
       </template>
@@ -109,7 +82,7 @@ function retry () {
     </div>
 
     <UiButton
-      v-if="(is404 || isGone) && whatsappUrl"
+      v-if="is404 && whatsappUrl"
       variant="link"
       size="sm"
       :href="whatsappUrl"
