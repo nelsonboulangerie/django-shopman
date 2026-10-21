@@ -1,7 +1,11 @@
 # ONDA4-5: importar e exportar a Base
 
+Estado final: MERGED no #1964 em 2026-10-21 00:02:27 UTC.
+Commit de merge: `921d70c3275872b87a238199f9ddfd2e8beae760`.
+
 Ordem: `ORDERS/next-onda4.md`, frente 5. Branch `codex/import-export-base`. PR [#1964](https://github.com/nelsonboulangerie/django-shopman/pull/1964).
-PR empilhado sobre `codex/lote-fornecedores` (#1957) até a base chegar ao main.
+O PR foi preparado sobre `codex/lote-fornecedores` (#1957), depois direcionado ao
+main e validado na fila após o merge do pai.
 
 Os menus da Base de Insumos e Fornecedores abrem as peças existentes
 `OperatorCsvImport` e `OperatorCsvExportButton`. A exportação inclui todos os
@@ -39,8 +43,7 @@ registros/1 MB por importação. Campos ausentes preservam os dados existentes.
 - Dois/quarenta fornecedores: prévia/aplicação/exportação **5/22/5 consultas em ambos**. Dois/quarenta insumos: **6/23/5 em ambos**, incluindo o mapa de unidade do catálogo.
   Server-Timing de aplicação: `projection;dur=2.75/6.79`, `db;dur=0.25/0.58`.
   O teste de ambas as entidades reprova crescimento com os registros.
-- Capturas: `surfaces/purchase-nuxt/test-results/visual/`
-  `base-csv-onda4-5-CSV-{materials,suppliers}-{light,dark}-{desktop,mobile}/`
+- Capturas versionadas em `docs/coordination/EVIDENCE/onda4-base/`:
   `onda4-5-{materials,suppliers}-{antes,depois,export}-{light,dark}-{desktop,mobile}.png`.
   Capturas estáveis, animações concluídas, abertas e inspecionadas. Sem baseline novo.
 

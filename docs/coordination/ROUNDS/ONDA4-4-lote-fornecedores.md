@@ -28,8 +28,7 @@ Nenhuma migração, alteração de Core ou área reservada da ordem.
   `projection;dur=24.08`, `db;dur=2.21` (milissegundos, SQLite local).
 - Escalabilidade: dois e quarenta fornecedores dão **28 consultas em ambos**;
   `projection;dur=15.70/22.72`, `db;dur=5.46/3.34`. O teste reprova crescimento.
-- Capturas abertas e inspecionadas: `surfaces/purchase-nuxt/test-results/visual/`
-  `supplier-bulk-lote-fornecedores-onda4-4-{light,dark}-{desktop,mobile}/`
+- Capturas abertas, inspecionadas e versionadas em `docs/coordination/EVIDENCE/onda4-base/`:
   `onda4-4-fornecedores-{antes,depois}-{light,dark}-{desktop,mobile}.png`.
   Sem baseline novo; teste reproduz as oito capturas.
 - Sem migração nova. A checagem de prefixos retorna duplicatas históricas

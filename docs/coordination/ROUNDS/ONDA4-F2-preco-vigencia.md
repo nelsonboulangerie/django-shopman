@@ -90,4 +90,4 @@ hermético ainda não devolvia a janela e a ordenação consultadas e o cenário
 vigência dependia de uma variável externa. O log do job foi lido. O mock agora ecoa
 o recorte em todos os cenários e o teste liga/desliga seu cenário próprio. Os
 casos Arquivados, vigência e carga no celular foram reconferidos localmente.
-A esteira será reexecutada pelo push final.
+O push final reexecutou a esteira, e o #1958 foi mergeado após a validação da fila.

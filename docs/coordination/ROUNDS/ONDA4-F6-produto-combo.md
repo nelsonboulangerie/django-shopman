@@ -1,7 +1,9 @@
 # ONDA4-F6: componentes de combo
 
 - Data: 2026-10-20. Branch: `codex/produto-combo`.
-- PR: #1961, pronto para revisão, empilhado no #1960. Main das frentes 2 e 3 integrado via head 81fa9f9f7 do pai. Aguarda merge da frente 1 para retarget ao main e fila.
+- PR: #1961. Estado final: MERGED em 2026-10-21 00:02:27 UTC.
+- Commit de merge: `53c574ff7ac4a8e2f0e22bbdaa7a97e42cc57f63`.
+- O PR foi preparado sobre #1960, integrou as frentes 2 e 3 via head `81fa9f9f7` do pai e seguiu para main e fila após o merge da frente 1.
 - Ordem: `ORDERS/next-onda4.md`, frente 6.
 
 O painel Vínculos lista componentes e quantidades por unidade do combo. O editor inline usa Aplicar/Cancelar, busca em modal e confirmação ao retirar, com Desfazer por 10 segundos. O aviso explica que a alteração muda o estoque necessário nas próximas vendas. O rascunho da aba Geral é preservado ao salvar composição.
