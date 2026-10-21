@@ -96,6 +96,7 @@ async function applyBulk(active?: boolean) {
     bulkPending.value = false;
   }
 }
+const csvTools = ref<{ openImport: () => void; openExport: () => void } | null>(null);
 const route = useRoute();
 const {
   query,
@@ -236,6 +237,8 @@ watch(
   },
 );
 const headerActions = [
+  { label: "Importar CSV", icon: "i-lucide-upload", onSelect: () => csvTools.value?.openImport() },
+  { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => csvTools.value?.openExport() },
   {
     label: "Novo fornecedor",
     icon: "i-lucide-plus",
@@ -453,5 +456,6 @@ async function onSaveSupplierContact(
       @save="onSubmitSupplier"
       @save-contact="onSaveSupplierContact"
     />
+    <PurchaseCsvTools ref="csvTools" entity="suppliers" @applied="refresh()" />
   </main>
 </template>

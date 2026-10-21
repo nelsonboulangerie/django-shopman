@@ -26,11 +26,14 @@ carregava quatro linhas `EM_EXECUCAO`/`EM_PR` do suite-ux que **já estavam merg
 `make coordination` acusa linha `EM_PR` cujo PR já saiu: ao mergear, **tire a linha no mesmo
 PR** (escreva o registro com "na fila #N").
 
+**ONDA4-5 (20/10):** import/export da Base de insumos e fornecedores entregue no PR #1964 (`codex/import-export-base`), empilhado sobre #1957. Prévia sem escrita, revisão/ator, erro por registro, aplicação e auditoria atômicas; exportação completa pelo kit. Quinze testes API e oito de navegador aprovados; 300 → 22 consultas para dez cadastros, e custo fixo 5/22/5 (fornecedor) e 6/23/5 (insumo) para prévia/aplicação/export com 2 ou 40 registros. Registro em `ROUNDS/ONDA4-5-import-export-base.md`.
+
 **ONDA4-4 (20/10):** lote de fornecedores entregue no PR #1957 (`codex/lote-fornecedores`), com confirmação, Desfazer revisado e auditoria atômica. Sete testes API, dois de componente e quatro de navegador aprovados. Medição: 188 → 30 consultas para dez fornecedores; 2/40 fornecedores mantêm 28 consultas. Registro em `ROUNDS/ONDA4-4-lote-fornecedores.md`.
 **Turno ONDA4 (20/10), frente2:** preço com vigência entregue no PR #1958, com fila solicitada. Registro: `ROUNDS/ONDA4-F2-preco-vigencia.md`.
 
 ## Em execução agora
 
+**ONDA4-F6 (20/10):** componentes de combo em execução no branch `codex/produto-combo`, empilhado na frente1. Registro: `ROUNDS/ONDA4-F6-produto-combo.md`.
 
 Frentes do turno de 15/10. Todas são de **outras sessões**; esta coordenação acompanha por PR
 e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
@@ -41,9 +44,12 @@ e não tem agente próprio em voo. Antes de pegar qualquer uma, confira o PR.
 | §7.2-4 | Clientes: duplicar cadastro e etiquetar em lote | EM_PR | `claude/cadastro-clientes` / #1815 | 2026-10-15 12:5x |
 | §7.2-3 | Produção: cadastro direto da ficha de execução no Nuxt | EM_PR | `claude/cadastro-receitas` / #1816 | 2026-10-15 12:5x |
 | WATCHMAN | Saúde, autocura e desempenho (Codex, outro agente) | EM_PR | `codex/watchman-*` / #1809, #1813 | 2026-10-15 11:5x |
-| IFOOD-E | Ensaio de catálogo na loja de teste | EM_PR | `codex/ifood-ensaio-completo` / #1962 (seguimento de #1929); contrato de `originalValue` conferido, roteiro completo confirmado e restauração exata. Evidência: `ROUNDS/IFOOD-E-ensaio-teste.md` | 2026-10-20 21:17 UTC |
 
 **SUITE-UX (03/10, sessão suite-ux):** mergeados #1398 (plano), #1404 (UX-R2), #1405 (UX-N1), #1406 (UX-G1), #1407 (UX-V1), #1408 (UX-P1), #1409 (UX-C1). **Fechado em 15/10:** UX-P2 #1419, UX-M1 #1420, UX-H1 (`claude/ux-h1-central-fila`) e UX-G2 (`claude/ux-g2-pronto-automatico-desfazer`) — conferidos: os quatro branches estão contidos no `main`. Registros em `ROUNDS/UX-*.md`.
+
+**IFOOD-E (20/10):** frente encerrada, com ensaio completo e restauração exata. Registros
+mergeados em #1929 e #1962. O encerramento #1965 retira a frente da tabela ativa; evidência,
+horários e commits em `ROUNDS/IFOOD-E-ensaio-teste.md`.
 
 **Turno de 15/10 (coordenação DSH):** mergeados #1810 (`GET /api/sessions` responde 200) e #1814 (card de desconto por tipo no B.I.). Higiene de disco: 185 worktrees removidas, 34 GB para ~140 GB livres. Reconciliação com o Codex: o núcleo das ondas 3, 4 e 5 do §7.2 já entrou por #1802 a #1806. Detalhe em `HANDOFF-DSH-2026-10-15.md`.
 
@@ -122,6 +128,11 @@ O texto completo de cada decisão está em `PENDING-DECISIONS.md`. **Não dupliq
 5. O `make coordination` só mede CI e auto-merge **com `gh` autenticado**. Sem `gh` ele diz isso numa
    linha, e o `OK` do fim não cobre PR vermelho parado (o #1367 ficou 6 h vermelho com o resumo `OK`).
 
+**ONDA4-1 (20/10):** vínculos de produto publicados no PR **#1960** (`codex/produto-vinculos`): coleções e
+canais no painel, reutilizando as intenções/revisões/recibos do detalhe e da célula. Registro e
+provas em `ROUNDS/ONDA4-1-produto-vinculos.md`. Nenhuma área reservada à outra coordenação foi editada.
+
+**ONDA4-6 (20/10):** componentes do combo implementados no PR **#1961**, empilhado no #1960. Escrita canônica com revisão/unidade, ciclo e outbox atômico; editor inline, busca e Desfazer. Provas, desempenho e D1-D12 em `ROUNDS/ONDA4-F6-produto-combo.md`. Main da frente 2 integrado; aguarda merge da frente 1 para base main e fila.
 **ONDA4-3 (20/10):** tabelão de insumos com colagem de coluna, erro por insumo e Desfazer,
 leituras de validação em lote e mínimos atômicos. PR #1959 pronto, com auto-merge solicitado após os checks. Branch
 `codex/tabelao-insumos`. A falha CI de overflow no rodapé de custos do celular foi

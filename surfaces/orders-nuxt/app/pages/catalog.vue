@@ -1125,6 +1125,20 @@ function closeDetail() {
   detailDirty.value = false;
   detailArchiveReceipt.value = null;
 }
+async function saveDetailComponents(rows: NonNullable<ProductDetailPatch["components"]>) {
+  if (!detailSku.value) return false;
+  const sku = detailSku.value;
+  const ok = await saveProductDetail(sku, { components: rows });
+  if (ok && detailSku.value === sku) {
+    const fresh = await fetchProductDetail(sku, ["components"]);
+    if (fresh && detail.value) Object.assign(detail.value, { components: fresh.components });
+  }
+  return ok;
+}
+async function searchDetailComponents(query: string) {
+  const response = await $fetch<{ products: { sku: string; name: string; unit: string }[] }>("/api/v1/backstage/catalog/products/options/", { query: { q: query } });
+  return response.products;
+}
 async function saveDetailCollections(
   rows: NonNullable<ProductDetailProjection["collections"]>,
 ) {
@@ -2314,6 +2328,8 @@ useHead({ title: "Catálogo" });
     <!-- painel de produto (edição completa, incluindo dados sociais e fiscais) —
          slide-over à direita -->
     <CatalogProductPanel
+      :save-components="saveDetailComponents"
+      :search-components="searchDetailComponents"
       :save-collections="saveDetailCollections"
       :save-listing="saveDetailListing"
       :open="detailSku !== null"
