@@ -452,6 +452,12 @@ def test_curation_reuses_weighted_distribution_but_reads_current_aliases(django_
     assert curation_pending(rule).value == 0.0
     ProductAlias.objects.filter(pk=alias.pk).delete()
     assert curation_pending(rule).value == 90.0
+    # Finalização da importação muda a identidade da distribuição.
+    batch.finished_at = timezone.now()
+    batch.save(update_fields=["finished_at"])
+    with CaptureQueriesContext(connection) as queries:
+        assert curation_pending(rule).value == 90.0
+    assert any("backstage_historicalsaleitem" in q["sql"] for q in queries)
     # Novo lote: a distribuição anterior nunca é reaproveitada.
     ImportBatch.objects.create(source="yooga", status="done")
     assert curation_pending(rule).value is None

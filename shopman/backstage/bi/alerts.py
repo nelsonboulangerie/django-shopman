@@ -439,7 +439,8 @@ def _curation_item_counts(batch) -> list[tuple[str, str, int]]:
     """
     from shopman.backstage.models import HistoricalSaleItem
 
-    key = f"bi:curation-items:v1:{batch.pk}:{batch.imported_at.isoformat()}:{batch.finished_at}:{batch.items_created}"
+    finished = batch.finished_at.isoformat() if batch.finished_at else "unfinished"
+    key = f"bi:curation-items:v1:{batch.pk}:{batch.imported_at.isoformat()}:{finished}:{batch.items_created}"
     try:
         counts = cache.get(key)
     except Exception:
