@@ -16,10 +16,10 @@ ensaio. Não substitua nenhum deles por recurso de outra loja:
    `16baacff-c490-5805-872a-44210ae4d721`;
 4. categoria inicial e de restauração `Categoria Item Normal`
    (`1d097d39-0ce0-47a6-ad6b-1ab9f4d9692a`);
-5. categoria temporária do movimento `Categoria Bebida`, template `DEFAULT`
-   (`e4f00b97-ad97-4fe2-aad6-7c2026815e6c`). A captura da retomada confirmou que o alvo
-   originalmente anotado, `Categoria Pizza`, tem template `PIZZA`. Para este item `DEFAULT`,
-   o ensaio usa outra categoria já existente do mesmo template, sem criar ou editar categorias.
+5. categoria temporária do movimento `Categoria Bebida`
+   (`e4f00b97-ad97-4fe2-aad6-7c2026815e6c`, template `DEFAULT`). A `Categoria Pizza`
+   (`1470ab8d-bf8c-4ac6-9b87-9394b25c559a`) **não serve**: tem template `PIZZA`, e o iFood
+   recusa com `400` um item `DEFAULT` nela (provado em 20/10, 21:18:32 UTC).
 
 As credenciais do app de teste já estão no `.env` local ignorado pelo Git, e o `client_id` confere
 com o app documentado `NB Teste (C)`. Carregue-as diretamente desse arquivo no runtime isolado; não
@@ -30,25 +30,13 @@ copie valores para terminal gravado, arquivo novo, banco, log, captura, document
 As frentes de categoria, identidade, PATCH, foto e tela precisam estar mergeadas. No turno 5b de
 20/10/2026, #1927, #1928, #1905, #1931, #1947 e #1948 já estavam no `main` (`65b658d31`).
 
-A primeira execução desse turno parou ao exigir a preservação de `originalValue` no PATCH de
-preço. O contrato oficial foi conferido na retomada autorizada pelo dono em 20/10/2026:
-
-- [Fundamentals, Price](https://developer.ifood.com.br/en-US/docs/food/guides/modules/catalog/fundamentals):
-  `value` é o preço cobrado; `originalValue` é opcional e serve para exibir desconto.
-- [Endpoints, Update item price](https://developer.ifood.com.br/en-US/docs/food/guides/modules/catalog/endpoints):
-  o exemplo do PATCH envia `price: {"value":26.00}`, sem `originalValue`.
-
-**Critério deste ensaio sem promoção:** confirmar o valor cobrado no item e no contexto DEFAULT.
-A ausência de `originalValue`, ou sua igualdade com `value`, representa preço sem desconto e não
-é falha. Não aceitar `originalValue` diferente do preço cobrado, pois isso introduziria uma
-promoção não solicitada. Essa equivalência também se aplica à comparação de preço nas etapas
-estruturais; todos os outros campos continuam sendo comparados. Não extrapolar esse critério
-para um item com promoção ativa, que exige intenção e conferência próprias.
-
-O adapter já envia e confirma `price.value`, de acordo com o contrato. A primeira interrupção
-foi causada pelo critério adicional do ensaio. A restauração final continua exigindo igualdade
-exata com o baseline, inclusive presença e valor de `originalValue`. Histórico e recibos em
-`docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md`.
+A primeira execução (turno 5b) parou na conferência do preço: o PATCH só com `value` fez o
+iFood apagar `originalValue`. O critério foi fechado pela coordenação (o item fica idêntico ao
+baseline, exceto o campo pretendido) e o adapter passou a mandar `value` e `originalValue`.
+A segunda execução (turno 5c) provou preço, alterações rápidas e descrição, e parou no
+movimento de categoria por causa do destino `PIZZA`. A terceira (turno 5d) provou categoria
+(para `Categoria Bebida`) e foto, e restaurou tudo. **O roteiro inteiro fechou em 20/10/2026,
+21:28 UTC.** Recibos em `docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md`.
 
 ## Preparação segura
 
@@ -83,8 +71,9 @@ não repita manualmente com outra chave.
    que preço, descrição, categoria, índice, turnos, `imagePath` e identidade dos contextos não
    mudaram. O status do contexto DEFAULT deve acompanhar a intenção, sem criar outro contexto.
 2. **Retomar:** retome o mesmo item. Confirme `AVAILABLE` e os mesmos campos preservados.
-3. **Preço:** aplique um preço temporário inequivocamente diferente. Confirme o valor no GET remoto
-   no item e no contexto DEFAULT, aplicando o critério de preço sem promoção acima. Prove que o
+3. **Preço:** com o item **retomado** (pausado, o handler recolhe o item e não manda preço),
+   aplique um preço temporário inequivocamente diferente. Confirme o valor no GET remoto
+   no item e no contexto DEFAULT. Prove que o
    PATCH não enviou texto, categoria, índice, turnos, imagem ou contextos.
 4. **Alterações rápidas:** ainda com o envio observado, aplique dois preços em sequência e depois
    pausa/retomada em sequência. O estado final remoto deve ser exatamente a última intenção; não
@@ -97,6 +86,7 @@ não repita manualmente com outra chave.
    complementos e contextos.
 6. **Categoria:** mova explicitamente o item para a categoria de teste. Confirme o `categoryId`
    vinculado, sem criar categoria homônima nem trocar `itemId`/`productId`.
+   O `PUT items` é eventualmente consistente: espere ~3 s e leia de novo antes de concluir.
 7. **Foto:** envie a foto descartável pelo fluxo próprio. Confirme o `imagePath` novo na leitura
    remota e confirme que nenhum teste ou captura buscou a URL pública da imagem.
 
@@ -107,7 +97,9 @@ de autorização, token, segredo ou resposta integral com dados desnecessários.
 ## Restauração
 
 1. Restaure foto, categoria, descrição, preço e status para os valores exatos do baseline, nessa
-   ordem, usando novas intenções explícitas. Foto vazia exige `imagePath=""` explícito.
+   ordem, usando novas intenções explícitas. O adapter nunca apaga foto (PUT sem
+   `imagePath` preserva a que existe); restaure com um `PUT items` explícito com
+   `imagePath: ""`, que limpa a foto (provado em 20/10, 21:27:38 UTC).
    Não ecoe cegamente o GET flat no PUT: na retomada de 20/10, um PUT com os overrides de
    contexto lidos respondeu 200, mas não restaurou a categoria. Use o contrato de PUT do
    adapter com categoria explícita e confirme por GET. Em seguida, os PATCHes de preço e

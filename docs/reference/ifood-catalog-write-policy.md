@@ -41,6 +41,29 @@ essa chamada. A validação é repetida antes de cada PUT/PATCH; uma chamada já
 não é cancelada retroativamente. Para ensaio de catálogo, não habilitar envio do
 catálogo local de exemplo para o merchant de produção.
 
+## Forma do item: o que o ensaio de 20/10 provou na loja de teste
+
+Invariante: uma escrita muda só o campo pretendido; o resto do item remoto fica igual.
+Três fatos medidos no merchant de teste (`ROUNDS/IFOOD-E-ensaio-teste.md`):
+
+- **Preço manda `value` e `originalValue` com o mesmo número.** O `PATCH items/price`
+  só com `value` faz o iFood apagar `originalValue` do item e do contexto (20/10,
+  20:59:48 UTC). Mandando os dois (como o upsert já fazia), o iFood guarda os dois
+  (20/10, 21:17:49 UTC). Com valores iguais não há riscado de desconto, então o
+  campo nunca anuncia promoção. Teste de payload em
+  `shopman/storefront/tests/test_catalog_projection_ifood.py`.
+- **A categoria tem template, e o item precisa caber nele.** Categoria `PIZZA` recusa
+  item `DEFAULT`: o `PUT items` respondeu `400` e nada mudou no remoto. O mapa de
+  categorias só deve apontar coleção de item comum para categoria `DEFAULT`.
+- **O `PUT items` é eventualmente consistente.** Em um dos dois PUT aceitos, a leitura
+  ~0,3 s depois ainda mostrou o valor anterior; a seguinte, ~3 s depois, mostrou o novo.
+  Os `PATCH` de preço e status confirmaram na primeira leitura. Conferência remota
+  de upsert precisa de espera e nova leitura, nunca de uma leitura só.
+- **Foto: o upsert sem `imagePath` preserva a foto; com `imagePath: ""` a remove.** O
+  adapter só manda `imagePath` quando há foto, então tirar a foto do produto aqui não a
+  tira do iFood. A leitura devolve o caminho com o prefixo
+  `https://static-images.ifood.com.br/pratos/`, e o envio usa o caminho relativo.
+
 ## Estoque: o item esgotado sai indisponível
 
 Desde a UX-R2 (decisão do dono, 03/10/2026) o status enviado não olha só

@@ -3,12 +3,16 @@
 - **id:** IFOOD-E
 - **sessão:** frente 6, turno 5b e retomada autorizada em 20/10/2026 (Codex)
 - **branch de encerramento:** `codex/ifood-e-encerramento`
-- **branches do ensaio:** `codex/ifood-ensaio` e `codex/ifood-ensaio-completo`
+- **branches do ensaio:** `codex/ifood-ensaio`, `codex/ifood-ensaio-completo`,
+  `claude/ensaio-pedidos-execucao-a13c08` e `claude/ifood-ensaio-5d`
 - **PR anterior:** #1929 (evidência da primeira interrupção)
 - **PR de seguimento:** #1962
 - **encerramento documental:** #1965
-- **estado:** FEITO; ensaio e restauração exata confirmados, registros #1929 e #1962 mergeados
+- **estado:** FEITO; duas execuções completas confirmaram o roteiro e a restauração exata.
+  Os registros #1929, #1962 e #1965 estão no `main`; #1966 preserva a prova complementar
+  dos turnos 5c/5d e a correção de `originalValue`
 - **execução final:** 2026-10-20 21:16:14–21:17:22 UTC (18:16:14–18:17:22 em São Paulo)
+- **execução complementar:** 2026-10-20 21:17:34–21:28:16 UTC
 - **execução inicial:** 2026-10-20 20:59:46–20:59:49 UTC
 - **ordem:** `ORDERS/next-ensaio.md`, autorização expressa para um merchant e um SKU
 
@@ -92,6 +96,133 @@ Verificação documental: `git diff --check` sem erros. Não houve alteração d
 nem execução de testes simulados como substituto da evidência remota acima.
 
 ## Encaminhamento da primeira execução
+
+O ensaio completo continua sem aprovação. Antes de um novo ensaio, definir se a conferência do
+preço deve preservar `originalValue` ou acompanhar o contrato atual que confirma `price.value`.
+Este PR publica a evidência e a interrupção segura; não declara descrição, categoria ou foto
+validadas remotamente. Nenhuma nova sessão ou PR duplicado foi aberto.
+
+---
+
+# Turno 5c — 20/10/2026, 21:15–21:20 UTC (Claude, `claude/ensaio-pedidos-execucao-a13c08`)
+
+Segue o adendo do `originalValue` da ordem `next-ensaio.md`: corrigir, provar por payload,
+repetir do preço em diante e restaurar.
+
+## Correção
+
+`_patch_item_price` passou a mandar `price = {"value": v, "originalValue": v}`, como o
+upsert. Teste de payload: `test_adapter_price_change_uses_specific_patch_and_confirms_read`
+exige os dois campos. `test_catalog_projection_ifood.py` + `test_ifood_lifecycle_e2e.py`:
+52 passed.
+
+## Runtime
+
+Settings próprios fora do Git (importam `config.settings`), SQLite privado `0700`, cache
+em memória, `MEDIA_ROOT` privado. Do `.env` do dono só `IFOOD_CLIENT_ID`,
+`IFOOD_CLIENT_SECRET` e `IFOOD_MERCHANT_ID` (conferido igual ao merchant de teste), em
+memória. Política só no processo:
+`{"environment":"test","merchant_allowlist":["f36a17d0-e10b-4fdd-a16d-c8ffd866e59b"]}`.
+Backend registrado só ali. Trava no transporte: escrita fora de `/merchants/f36a17d0…`, de
+`itemId` diferente de `37c7f299…` ou GET fora do iFood aborta antes do HTTP.
+
+Fluxo canônico: edição local (`ListingItem`, `Product`, mapa de categorias) → sinal →
+`catalog.project_sku` → handler → adapter, com despacho no commit. Dry-run: **1** item,
+`SHOPMAN-TEST-ADAPTER`. Identidade derivada = `37c7f299…`/`16baacff…` da captura.
+Baseline (GET flat 21:15:20 UTC) igual ao do turno 5b.
+
+## Recibos
+
+UTC, endpoints relativos a `/catalog/v2.0/merchants/f36a17d0-e10b-4fdd-a16d-c8ffd866e59b`,
+sem `Retry-After` em nenhum.
+
+| Passo | Escrita | Leitura flat | Resultado |
+|---|---|---|---|
+| (preço com item pausado) | 21:17:34.702 `PATCH /items/status` `UNAVAILABLE`, 200 | 21:17:35.570 | Sem diferença. Pausado, o handler **recolhe** em vez de mandar preço (por desenho). Diretiva 2, `retracted`. |
+| Retomar | 21:17:47.274 `PATCH /items/status` `AVAILABLE`, 200 | 21:17:48.161 | Só o status (item e contexto). Diretiva 3, `synced`. |
+| **Preço** | 21:17:49.961 `PATCH /items/price` `{"value":20.93,"originalValue":20.93}`, 200 | 21:18:00.166 | `value` **e** `originalValue` = 20.93 no item e no contexto; nada mais mudou. Diretiva 4, `synced`. **A divergência do 5b está resolvida: enviado, o iFood guarda o `originalValue`.** |
+| Rápidas, 2 preços | 21:18:09.557 e 21:18:10.163 `PATCH /items/price` `22.49/22.49`, 200 | 21:18:10.995 | 21,37 e 22,49 na mesma transação: duas diretivas (5, 6), as duas leram o estado na hora e mandaram 22,49. Convergiu para a última intenção. |
+| Rápidas, retomar→pausar→retomar | 21:18:13.076 `PATCH /items/status` `AVAILABLE`, 200 | 21:18:14.894 | Três saves viraram **uma** diretiva (7), que mandou o estado final. Sem anúncio paralelo. |
+| **Descrição** | 21:18:23.818 `PUT /items`, 200 | 21:18:25.014 | Só `products[0].description`. `serving`, `tags`, `weight`, `imagePath`, `index`, contexto preservados. Diretiva 8, `synced`. |
+| **Categoria** | 21:18:32.980 `PUT /items` com `categoryId=1470ab8d…` (Pizza), **400** | 21:18:33.879 | **Falhou. Nada mudou no remoto.** Diretiva 9 ficou na fila de retentativa e foi neutralizada à mão (`failed`), sem nova tentativa. |
+
+Causa, só por leitura (captura inicial): `Categoria Pizza` tem `template: PIZZA`; o item é
+`DEFAULT`. O destino do roteiro estava errado, não o adapter. A única outra categoria
+`DEFAULT` do catálogo é `Categoria Bebida` (`e4f00b97-ad97-4fe2-aad6-7c2026815e6c`); o
+roteiro agora aponta para ela. Conforme o item 4 da ordem, não troquei o destino no meio do
+ensaio: parei e restaurei. **Não executados: categoria (com destino válido) e foto.**
+
+## Restauração
+
+| Passo | Escrita | Leitura flat | Resultado |
+|---|---|---|---|
+| Mapa local de volta para `Categoria Item Normal` | nenhuma | 21:19:09.842 | — |
+| Descrição | 21:19:11.798 `PUT /items`, 200 | 21:19:12.445 | Leitura ~0,3 s depois **ainda com o texto temporário**; a de 21:19:14.519 já com o original. O PUT é eventualmente consistente. |
+| Preço | 21:19:14.246 `PATCH /items/price` `19.9/19.9`, 200 | 21:19:15.109 | Preço do baseline, com `originalValue`. |
+| Status | 21:19:16.885 `PATCH /items/status` `UNAVAILABLE`, 200 | 21:19:17.905 | **Zero diferenças contra o baseline.** |
+
+Captura integral final às 21:19:40 UTC: `merchant_id`, `catalog_id`, `context`,
+`categories` e `category_items` iguais à captura inicial; GET flat de 21:19:42 com zero
+diferenças. Zero diretivas `queued`/`running`. SQLite e mídia privados apagados; processo
+encerrado; credenciais não alteradas. Capturas e recibos ficaram fora do Git, `0600`.
+
+## O que o ensaio ensinou (registrado em `docs/reference/ifood-catalog-write-policy.md`)
+
+1. Preço manda `value` e `originalValue` (corrigido neste PR).
+2. Categoria remota tem template; item `DEFAULT` só cabe em categoria `DEFAULT`.
+3. `PUT /items` é eventualmente consistente; `PATCH` de preço/status confirmou na primeira leitura.
+
+Pendências com nome, fora deste PR: o erro `400` chega ao recibo sem o corpo da resposta do
+iFood (`raise_for_status` descarta o motivo), e o handler trata `400` como transitório e
+retentaria 5 vezes. Nenhum dos dois mudou o resultado do ensaio.
+
+## Continuidade
+
+Próximo ensaio: do movimento de categoria em diante (para `Categoria Bebida`), depois foto e
+restauração completa, incluindo provar que `PUT items` com `imagePath: ""` limpa a foto. A
+frente só fecha quando esse trecho fechar.
+
+---
+
+# Turno 5d — 20/10/2026, 21:26–21:28 UTC (Claude, `claude/ifood-ensaio-5d`)
+
+Ordem do dono no chat: repetir da categoria em diante, para `Categoria Bebida`, depois a foto,
+e restaurar tudo. Mesmo runtime isolado do 5c, recriado do zero (SQLite novo, mesma política,
+mesmas credenciais só em memória). A trava de transporte passou a recusar também `PUT items`
+para categoria fora de `Categoria Item Normal`/`Categoria Bebida`. Cada leitura flat espera 3 s
+depois da diretiva (o `PUT items` é eventualmente consistente).
+
+Baseline (GET flat 21:26 UTC) igual ao do 5c; captura inicial nova; dry-run com **1** item.
+
+| Passo | Escrita (UTC) | Leitura flat | Resultado |
+|---|---|---|---|
+| Retomar (pré-condição) | 21:27:04.926 `PATCH /items/status` `AVAILABLE`, 200 | 21:27:08.712 | Só o status. Diretiva 2, `synced`. |
+| **Categoria → Bebida** | 21:27:11.580 `PUT /items`, `categoryId=e4f00b97…`, 200 | 21:27:15.158 | Só `item.categoryId` mudou. Mesmo `itemId`/`productId`; nenhuma categoria criada (captura final). Diretiva 3, `manual_resync`, `synced`. |
+| **Foto** | 21:27:24.370 `POST /image/upload`, **201**; 21:27:24.774 `PUT /items` com `imagePath`, 200 | 21:27:29.011 | Só `products[0].imagePath` mudou, para `https://static-images.ifood.com.br/pratos/f36a17d0…/202610201827_zet66chxk4c.png`. Foto PNG descartável lida do storage local; nenhum GET à URL pública (a trava recusaria). Diretiva 4, `product_updated`, `synced`. |
+
+Restauração, na ordem do roteiro:
+
+| Passo | Escrita (UTC) | Leitura flat | Resultado |
+|---|---|---|---|
+| Foto | 21:27:38.092 `PUT /items` explícito com `imagePath: ""`, 200 | 21:27:41.896 | `imagePath` voltou a `""`. **Provado: PUT com `imagePath` vazio limpa a foto.** |
+| Categoria | 21:27:52.954 `PUT /items` (mapa de volta + reenvio canônico), 200 | 21:27:56.526 | `categoryId` de volta a `Categoria Item Normal`. Diretiva 5, `synced`. |
+| Status | 21:27:58.719 `PATCH /items/status` `UNAVAILABLE`, 200 | 21:28:02.886 | **Zero diferenças contra o baseline.** Diretiva 6, `retracted`. |
+
+Captura integral final às 21:28:13 UTC: `merchant_id`, `catalog_id`, `context`, `categories`
+e `category_items` iguais à captura inicial; GET flat de 21:28:16 com zero diferenças. Zero
+diretivas `queued`/`running` (2 a 6 `done`). SQLite e mídia privados apagados; credenciais não
+alteradas. A imagem enviada continua no armazenamento de imagens do iFood, sem item ligado a
+ela; o catálogo não tem endpoint de apagar imagem.
+
+## Fechamento do roteiro
+
+As sete intenções foram confirmadas por leitura remota, somando os turnos 5b (pausa e
+retomada), 5c (preço, alterações rápidas, descrição) e 5d (categoria, foto). Nenhum campo
+alheio mudou, nenhuma identidade paralela surgiu, e o item voltou ao baseline nas três vezes.
+## Execução paralela consolidada no `main`
+
+Em paralelo aos turnos 5c/5d acima, outra sessão retomou o roteiro a partir da mesma primeira
+execução. O registro abaixo preserva essa evidência independente e a cronologia dos merges.
 
 A primeira execução não aprovou o ensaio completo. O dono pediu conferir o contrato de
 `originalValue`, corrigir o critério ou o adapter conforme a evidência e retomar o roteiro.
