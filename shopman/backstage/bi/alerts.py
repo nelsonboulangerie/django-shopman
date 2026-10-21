@@ -18,7 +18,9 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from django.core.cache import cache
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -376,7 +378,7 @@ def cash_variance_by_drawer(rule, *, today: date) -> Reading:
 
 def curation_pending(rule) -> Reading:
     """No último lote concluído da origem, a fatia de linhas sem de-para de produto confirmado."""
-    from shopman.backstage.models import HistoricalSaleItem, ImportBatch, ProductAlias
+    from shopman.backstage.models import ImportBatch, ProductAlias
 
     batch = (
         ImportBatch.objects.filter(source=rule.source, status=ImportBatch.Status.DONE)
@@ -394,13 +396,14 @@ def curation_pending(rule) -> Reading:
         ProductAlias.objects.confirmed().filter(source=rule.source, external_sku="")
         .values_list("external_name", flat=True)
     )
-    total = 0
-    pending = 0
-    for sku, name in HistoricalSaleItem.objects.filter(sale__batch=batch).order_by().values_list("sku", "product_name"):
-        total += 1
-        key_ok = (sku in confirmed_skus) if sku else ((name or "") in confirmed_names)
-        if not key_ok:
-            pending += 1
+    # O lote concluído é imutável. Reutilizamos só a distribuição de linhas,
+    # nunca a leitura do alarme: confirmar um alias ou mudar a régua vale já.
+    counts = _curation_item_counts(batch)
+    total = sum(count for _sku, _name, count in counts)
+    pending = sum(
+        count for sku, name, count in counts
+        if not ((sku in confirmed_skus) if sku else ((name or "") in confirmed_names))
+    )
     if not total:
         return Reading(value=None, baseline=None, fired=False,
                        message=f"lote #{batch.pk} de '{rule.source}' não tem linhas de item")
@@ -425,3 +428,36 @@ _WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domin
 
 def _weekday_name(day: date) -> str:
     return _WEEKDAYS[day.weekday()]
+
+
+def _curation_item_counts(batch) -> list[tuple[str, str, int]]:
+    """Uma distribuição por lote concluído, com peso de LINHAS, não de SKUs.
+
+    A identidade inclui o término/contagens da importação. Rebuild cria outro
+    lote; um novo lote muda a chave. O TTL limita retenção no Valkey existente.
+    Em transação não publicamos dados que ainda podem sofrer rollback.
+    """
+    from shopman.backstage.models import HistoricalSaleItem
+
+    key = f"bi:curation-items:v1:{batch.pk}:{batch.imported_at.isoformat()}:{batch.finished_at}:{batch.items_created}"
+    try:
+        counts = cache.get(key)
+    except Exception:
+        logger.warning("bi.curation: cache indisponível; lendo distribuição no banco", exc_info=True)
+        counts = None
+    if counts is not None:
+        return counts
+    counts = list(
+        HistoricalSaleItem.objects.filter(sale__batch=batch).order_by()
+        .values("sku", "product_name").annotate(lines=Count("pk"))
+        .values_list("sku", "product_name", "lines")
+    )
+
+    def publish():
+        try:
+            cache.set(key, counts, timeout=24 * 60 * 60)
+        except Exception:
+            logger.warning("bi.curation: distribuição calculada sem cache", exc_info=True)
+
+    transaction.on_commit(publish)
+    return counts

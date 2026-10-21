@@ -413,3 +413,80 @@ def test_admin_hides_cash_audit_detail_from_non_auditors(client):
     client.force_login(manager)
     assert "caixa-ana" in client.get(reverse("admin:backstage_bialertrule_changelist")).content.decode()
     assert "caixa-ana" in client.get(reverse("admin:backstage_bialertevent_changelist")).content.decode()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_curation_reuses_weighted_distribution_but_reads_current_aliases(django_assert_num_queries):
+    from django.core.cache import cache
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+    from shopman.offerman.models import Product
+
+    from shopman.backstage.bi.alerts import curation_pending
+    from shopman.backstage.models import HistoricalSaleItem, ProductAlias
+
+    cache.clear()
+    rule = _rule("weighted-curation", BIAlertRule.Metric.CURATION_PENDING, source="yooga", threshold_percent=20)
+    batch = ImportBatch.objects.create(source="yooga", status="done")
+    sale = HistoricalSale.objects.create(batch=batch, source="yooga", external_id=991,
+                                        occurred_at=timezone.now(), total_q=1000)
+    HistoricalSaleItem.objects.bulk_create([
+        HistoricalSaleItem(sale=sale, seq=i, sku="CT" if i < 10 else "", product_name="Croissant" if i < 10 else "Sem SKU",
+                           qty=1, unit_price_q=100, line_total_q=100)
+        for i in range(1, 11)
+    ])
+    product = Product.objects.create(sku="CRO", name="Croissant")
+    alias = ProductAlias.objects.create(source="yooga", external_sku="CT", product=product, status="confirmed")
+    first = curation_pending(rule)
+    assert first.value == 10.0 and first.fired is False
+    with CaptureQueriesContext(connection) as queries:
+        assert curation_pending(rule) == first
+    assert not any("backstage_historicalsaleitem" in q["sql"] for q in queries)
+    # A confirmação é lida a cada avaliação, inclusive por update em massa.
+    ProductAlias.objects.filter(pk=alias.pk).update(status="proposed")
+    assert curation_pending(rule).value == 100.0
+    ProductAlias.objects.filter(pk=alias.pk).update(status="confirmed")
+    rule.threshold_percent = 5
+    assert curation_pending(rule).fired is True
+    ProductAlias.objects.create(source="yooga", external_sku="", external_name="Sem SKU", product=product, status="confirmed")
+    assert curation_pending(rule).value == 0.0
+    ProductAlias.objects.filter(pk=alias.pk).delete()
+    assert curation_pending(rule).value == 90.0
+    # Novo lote: a distribuição anterior nunca é reaproveitada.
+    ImportBatch.objects.create(source="yooga", status="done")
+    assert curation_pending(rule).value is None
+    cache.clear()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_curation_cache_failure_falls_back_to_database(monkeypatch):
+    from django.core.cache import cache
+
+    from shopman.backstage.bi.alerts import curation_pending
+
+    rule = _rule("no-cache-curation", BIAlertRule.Metric.CURATION_PENDING, source="yooga", threshold_percent=20)
+    ImportBatch.objects.create(source="yooga", status="done")
+    def unavailable(*args, **kwargs):
+        raise ConnectionError("cache unavailable")
+    monkeypatch.setattr(cache, "get", unavailable)
+    monkeypatch.setattr(cache, "set", unavailable)
+    assert curation_pending(rule).value is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_curation_does_not_publish_rolled_back_distribution():
+    from django.core.cache import cache
+    from django.db import transaction
+
+    from shopman.backstage.bi.alerts import _curation_item_counts
+
+    cache.clear()
+    batch = ImportBatch.objects.create(source="yooga", status="done")
+    with transaction.atomic():
+        assert _curation_item_counts(batch) == []
+        transaction.set_rollback(True)
+    from unittest.mock import patch
+    with patch.object(cache, "set", wraps=cache.set) as publish:
+        assert _curation_item_counts(batch) == []
+        publish.assert_called_once()
+    cache.clear()
