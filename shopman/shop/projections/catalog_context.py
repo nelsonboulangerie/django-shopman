@@ -244,8 +244,8 @@ def keywords_by_sku(skus: list[str]) -> dict[str, list[str]]:
     return result
 
 
-def related_skus(sku: str, *, limit: int = 6) -> list[str]:
-    """SKUs for lateral discovery ("Você também pode gostar"), keyword-scored.
+def related_products(product, *, limit: int = 6) -> list[Any]:
+    """Products for lateral discovery ("Você também pode gostar"), keyword-scored.
 
     This is **cross-sell**, NOT substitution: it does not restrict to the same
     collection (lateral = across categories) and is shown regardless of the
@@ -255,24 +255,25 @@ def related_skus(sku: str, *, limit: int = 6) -> list[str]:
     """
     from shopman.offerman.service import CatalogService
 
-    product = CatalogService.get(sku)
-    if product is None:
-        return []
     own_keywords = {str(name) for name in product.keywords.names()}
     if not own_keywords:
         return []
 
     candidates = CatalogService.search(keywords=list(own_keywords), limit=limit * 4)
     attach_tag_names(candidates)
-    scored: list[tuple[int, str]] = []
+    scored: list[tuple[int, Any]] = []
     for candidate in candidates:
-        if candidate.sku == sku:
+        if candidate.sku == product.sku:
             continue
         shared = len(own_keywords & {str(name) for name in product_tags(candidate)})
         if shared:
-            scored.append((shared, candidate.sku))
+            scored.append((shared, candidate))
     scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [candidate_sku for _, candidate_sku in scored[:limit]]
+    selected = [candidate for _, candidate in scored[:limit]]
+    # Os cards reutilizam os produtos e as tags desta seleção. Só os escolhidos
+    # carregam componentes; não há uma segunda busca do mesmo cadastro por SKU.
+    models.prefetch_related_objects(selected, "components")
+    return selected
 
 
 def image_urls_by_sku(skus) -> dict[str, str | None]:

@@ -40,7 +40,7 @@ from .catalog import (
     _cart_qty_by_sku,
     _favorite_skus,
     _resolve_availability,
-    build_catalog_items_for_skus,
+    build_catalog_items_for_products,
     notify_subscribed_skus,
     pause_and_notifiability,
 )
@@ -749,8 +749,8 @@ def build_product_recommendations(
         return None
     return ProductRecommendationsProjection(
         sku=sku,
-        items=build_catalog_items_for_skus(
-            catalog_context.related_skus(sku, limit=6),
+        items=build_catalog_items_for_products(
+            catalog_context.related_products(product, limit=6),
             channel_ref=channel_ref, request=request,
         ),
         heading=_cross_sell_heading(),

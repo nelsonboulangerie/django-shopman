@@ -420,15 +420,28 @@ def build_catalog_items_for_skus(
         return ()
 
     products_by_sku = catalog_context.products_by_sku(skus, only_published=True)
-    # Mesmo portão do cardápio: oculto no canal não vira card. Sem isto, favoritos
-    # e cross-sell montavam card de SKU que nunca foi para esta vitrine — com
-    # preço e "Adicionar" ativo — e o toque caía na PDP em 404.
-    visible = catalog_context.visible_skus_in_channel(skus, channel_ref)
-    ordered = [
-        products_by_sku[sku]
-        for sku in skus
-        if sku in products_by_sku and (visible is None or sku in visible)
-    ]
+    return build_catalog_items_for_products(
+        [products_by_sku[sku] for sku in skus if sku in products_by_sku],
+        channel_ref=channel_ref, request=request,
+    )
+
+
+def build_catalog_items_for_products(
+    products: list[Any],
+    *,
+    channel_ref: str,
+    request: HttpRequest | None = None,
+) -> tuple[CatalogItemProjection, ...]:
+    """Cards de produtos já lidos, na ordem da seleção, pelo portão do canal.
+
+    O chamador usa os leitores de catálogo, que trazem tags e componentes em
+    lote. Recomendações não descartam esses objetos para relê-los por SKU.
+    Preços, disponibilidade e estado do visitante continuam lidos neste request.
+    """
+    if not products:
+        return ()
+    visible = catalog_context.visible_skus_in_channel([p.sku for p in products], channel_ref)
+    ordered = [p for p in products if visible is None or p.sku in visible]
     if not ordered:
         return ()
     return _build_cards(ordered, channel_ref=channel_ref, request=request)
