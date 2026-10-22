@@ -154,6 +154,7 @@ function card(ref_: string, over: Partial<RecipeEntryCardProjection> = {}): Reci
 }
 
 const entries = ref<RecipeEntryCardProjection[]>([]);
+const canEditRecipes = ref(true);
 
 function installGlobals() {
   vi.stubGlobal("computed", computed);
@@ -174,7 +175,7 @@ function installGlobals() {
       { value: "bread", label: "Pão" },
       { value: "cream", label: "Creme" },
     ]),
-    canEdit: computed(() => true),
+    canEdit: computed(() => canEditRecipes.value),
     forbidden: computed(() => false),
     pending: ref(false),
     error: ref(null),
@@ -191,6 +192,7 @@ beforeEach(() => {
   routeQuery = {};
   routeParams = {};
   entries.value = [];
+  canEditRecipes.value = true;
   installGlobals();
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -251,6 +253,30 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     expect(star.exists()).toBe(true);
     expect(star.attributes("aria-label")).toContain("Receita pao-a");
     expect(star.element.closest("a")).toBeNull();
+  });
+
+  it("offers an explicit edit route outside the card link", async () => {
+    entries.value = [card("pao-a")];
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    const edit = wrapper.findAll("a").find((link) => link.text() === "Editar receita");
+    expect(edit?.attributes("href")).toBe("/recipes/pao-a/edit");
+    expect(edit?.element.parentElement?.closest("a")).toBeNull();
+  });
+
+  it("does not offer editing without permission or for an archived recipe", async () => {
+    entries.value = [card("arquivada", { is_active: false })];
+    let wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar receita")).toBe(false);
+
+    wrapper.unmount();
+    entries.value = [card("ativa")];
+    canEditRecipes.value = false;
+    wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar receita")).toBe(false);
   });
 
   it("uses the suite filter panel and screen state instead of parallel list controls", async () => {

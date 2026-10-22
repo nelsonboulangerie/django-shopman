@@ -373,14 +373,14 @@ const touch = useTouchPointer();
       >
         <Icon name="lucide:pencil-line" class="size-8" />
         <p class="text-base font-medium text-foreground">
-          {{ requestedNotDraft ? "Essa versão já foi publicada e não se edita." : "Sem rascunho para editar." }}
+          {{ requestedNotDraft ? "A versão publicada está protegida." : "Esta receita está pronta para editar." }}
         </p>
-        <p class="text-sm">Uma nova versão copia a mais recente em rascunho; a publicada continua intacta.</p>
+        <p class="text-sm">A versão publicada continuará intacta. Suas alterações serão salvas em um novo rascunho.</p>
         <NuxtButton
           v-if="entry.is_active"
           class="mt-1"
-          icon="i-lucide-copy-plus"
-          label="Nova versão"
+          icon="i-lucide-pencil-line"
+          :label="entry.versions.length ? 'Começar edição' : 'Começar receita'"
           :disabled="busy"
           @click="startDraft"
         />

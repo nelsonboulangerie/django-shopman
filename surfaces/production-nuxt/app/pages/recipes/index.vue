@@ -314,12 +314,17 @@ watch(
       </OperatorScreenState>
 
       <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        <!-- A estrela fica FORA do link (botão dentro de <a> não é HTML válido) e por cima do canto do cartão. -->
-        <div v-for="entry in visible" :key="entry.ref" class="relative">
+        <!-- As ações ficam FORA do link principal: nenhum controle interativo aninhado em <a>. -->
+        <div
+          v-for="entry in visible"
+          :key="entry.ref"
+          class="relative grid h-full grid-rows-[1fr_auto] overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/40 focus-within:border-primary/40"
+          :class="!entry.is_active ? 'opacity-70' : ''"
+          data-recipe-card
+        >
           <NuxtLink
             :to="`/recipes/${entry.ref}`"
-            class="grid h-full min-w-0 grid-cols-1 gap-2 rounded-xl border border-border bg-card p-3 transition hover:border-primary/40 hover:bg-accent/30"
-            :class="!entry.is_active ? 'opacity-70' : ''"
+            class="grid min-w-0 grid-cols-1 content-start gap-2 p-3 transition hover:bg-accent/30"
           >
             <div class="flex items-start justify-between gap-2 pr-10">
               <div class="min-w-0">
@@ -381,6 +386,16 @@ watch(
               Atualizada {{ entry.updated_at_display }}
             </p>
           </NuxtLink>
+          <div v-if="canEdit && entry.is_active" class="flex justify-end border-t border-border px-2 py-1.5">
+            <NuxtButton
+              :to="`/recipes/${entry.ref}/edit`"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-pencil-line"
+              label="Editar receita"
+              data-recipe-edit
+            />
+          </div>
           <NuxtButton
             color="neutral"
             variant="ghost"
