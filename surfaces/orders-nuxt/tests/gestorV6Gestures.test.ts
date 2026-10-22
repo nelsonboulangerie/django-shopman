@@ -95,6 +95,8 @@ describe("G19: Exportar do ⋯", () => {
           base_price_display: "R$ 18,00",
           primary_collection_name: "Rústicos",
           base_price_q: 1800,
+          is_published: true,
+          is_sellable: false,
           cells: [],
         } as never,
       ],
@@ -104,7 +106,9 @@ describe("G19: Exportar do ⋯", () => {
     // colunas, BOM, e o preço como número em reais com vírgula, para a planilha somar.
     expect(csv.startsWith("﻿")).toBe(true);
     const [header, line] = csv.slice(1).split("\n");
-    expect(header).toBe("Produto;SKU;Preço (R$);Coleção;Loja online");
-    expect(line).toBe("Baguete;BGG;18,00;Rústicos;");
+    expect(header).toBe(
+      "SKU;Produto;Preço (R$);Publicado;À venda;Coleção (informativa);Canal: Loja online",
+    );
+    expect(line).toBe("BGG;Baguete;18,00;Sim;Não;Rústicos;");
   });
 });
