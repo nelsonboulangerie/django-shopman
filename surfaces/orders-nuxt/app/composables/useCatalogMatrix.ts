@@ -967,11 +967,14 @@ export function useCatalogMatrix(
       await refreshAfterCommit();
       const body = result as unknown as BulkCellsResponse;
       const changed = body.applied?.length ?? 0;
-      if (body.conflicts?.length || body.errors?.length) {
-        errorMsg.value =
-          "Lote aplicado em parte. Confira as linhas marcadas antes de repetir.";
+      const failed =
+        (body.conflicts?.length ?? 0) + (body.errors?.length ?? 0);
+      if (failed) {
+        errorMsg.value = `${changed} ${changed === 1 ? "célula foi salva" : "células foram salvas"}. ${failed} ${failed === 1 ? "célula não foi salva" : "células não foram salvas"}; corrija as marcações no tabelão e salve novamente.`;
       } else {
-        useSonner.success(`${changed} célula(s) atualizada(s).`);
+        useSonner.success(
+          `${changed} ${changed === 1 ? "célula atualizada" : "células atualizadas"}.`,
+        );
       }
       return body;
     } catch (error) {

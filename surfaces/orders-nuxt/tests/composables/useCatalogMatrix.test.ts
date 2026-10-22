@@ -234,6 +234,70 @@ describe("useCatalogMatrix — lote + reordenação", () => {
   });
 });
 
+describe("useCatalogMatrix — recibo do tabelão", () => {
+  beforeEach(() => env.reset());
+
+  it("descreve com precisão o sucesso parcial", async () => {
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      applied: [
+        {
+          index: 0,
+          sku: "PAO",
+          surface_ref: "web",
+          price_q: 750,
+          is_published: true,
+          is_sellable: true,
+        },
+      ],
+      conflicts: [
+        {
+          index: 1,
+          sku: "BOLO",
+          surface_ref: "web",
+          detail: "O preço mudou.",
+          conflicting_fields: ["price_q"],
+        },
+      ],
+      errors: [],
+    });
+    const matrix = useCatalogMatrix();
+
+    const result = await matrix.saveCells([
+      { sku: "PAO", surface_ref: "web", price_q: 750 },
+      { sku: "BOLO", surface_ref: "web", price_q: 825 },
+    ]);
+
+    expect(result?.applied).toHaveLength(1);
+    expect(matrix.errorMsg.value).toBe(
+      "1 célula foi salva. 1 célula não foi salva; corrija as marcações no tabelão e salve novamente.",
+    );
+    expect(env.sonner.success).not.toHaveBeenCalled();
+  });
+
+  it("confirma o lote completo com plural correto", async () => {
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      applied: [
+        { index: 0, sku: "PAO", surface_ref: "web" },
+        { index: 1, sku: "BOLO", surface_ref: "web" },
+      ],
+      conflicts: [],
+      errors: [],
+    });
+    const matrix = useCatalogMatrix();
+
+    await matrix.saveCells([
+      { sku: "PAO", surface_ref: "web", price_q: 750 },
+      { sku: "BOLO", surface_ref: "web", price_q: 825 },
+    ]);
+
+    expect(env.sonner.success).toHaveBeenCalledWith("2 células atualizadas.");
+  });
+});
+
 describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
   beforeEach(() => {
     env.reset();
