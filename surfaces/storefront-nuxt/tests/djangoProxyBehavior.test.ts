@@ -140,6 +140,27 @@ describe('proxyDjangoPath — transporte do BFF', () => {
       expect(calls[0]!.options.headers.cookie).toContain('sessionid=s1')
     })
 
+    it('para a gêmea do rail não vai NENHUM cookie, nem o csrftoken', async () => {
+      // A gêmea recusa credencial no Django; se o BFF mandasse o csrftoken o
+      // request viraria 400 e o rail ficaria vazio para todo visitante novo.
+      const path = '/api/v1/storefront/products/PAO-FRANCES/recommendations/'
+      const { event } = makeEvent({
+        path,
+        headers: { cookie: 'csrftoken=tok-123; _ga=x; _fbp=y', authorization: 'Bearer x' }
+      })
+
+      await proxyDjangoPath(event, path)
+
+      const { url, options } = calls[0]!
+      expect(url).toBe(`${DJANGO}/api/v1/storefront/public/products/PAO-FRANCES/recommendations/`)
+      expect(options.headers.cookie).toBeUndefined()
+      // O csrftoken viaja em cabeçalho próprio quando o cookie é lido: nenhum dos dois.
+      expect(options.headers['x-csrftoken']).toBeUndefined()
+      expect(options.headers['x-csrf-token']).toBeUndefined()
+      expect(options.headers.authorization).toBeUndefined()
+      expect(JSON.stringify(options.headers)).not.toContain('tok-123')
+    })
+
     it('mutação nunca vai para a gêmea', () => {
       expect(publicTwinPath('POST', '/api/v1/storefront/home/', undefined, false)).toBeNull()
       expect(publicTwinPath('GET', '/api/v1/storefront/home/', undefined, false)).toBe('/api/v1/storefront/public/home/')

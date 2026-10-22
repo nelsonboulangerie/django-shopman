@@ -12,10 +12,27 @@ const { data, status, error, execute, clear } = useFetch<ProductRecommendationsR
   { server: false, immediate: false, watch: false, credentials: 'include' }
 )
 const items = computed(() => data.value ? crossSellItems(data.value.recommendations) : [])
-// Só depois que o servidor respondeu (ou falhou) a seção pode encolher: antes
-// disso o placeholder está reservando a altura do rail.
+// Só depois que o servidor respondeu (ou falhou) o placeholder sai de cena.
 const settled = computed(() => status.value === 'success' || status.value === 'error')
 const loading = computed(() => status.value === 'pending')
+
+// A altura que o placeholder ocupava fica no contêiner para sempre.
+//
+// Reservar e depois devolver a altura não resolve: a reserva tem o TAMANHO DO
+// TETO do rail (CROSS_SELL_LIMIT cards), e a resposta pode trazer menos. Com 1
+// card, a seção encolhia ~590 px e PUXAVA para cima (para dentro da viewport)
+// tudo o que estava abaixo dela, footer incluído. O CLS conta os dois sentidos,
+// então o critério não é "não crescer": é "nada abaixo se mover". O contêiner
+// mantém a altura reservada enquanto existir, mesmo vazio.
+//
+// Medido antes de trocar o DOM: o watcher roda com flush 'pre', então o
+// placeholder ainda está montado e a altura é a real do breakpoint atual.
+const reservedHeight = ref<number | null>(null)
+watch(settled, (isSettled, wasSettled) => {
+  if (!isSettled || wasSettled) return
+  const measured = Math.round(target.value?.getBoundingClientRect().height ?? 0)
+  if (measured > 0) reservedHeight.value = measured
+})
 useIntersectionObserver(target, ([entry]) => {
   visible.value = !!entry?.isIntersecting
   if (visible.value && status.value === 'idle') void execute()
@@ -27,7 +44,12 @@ watch(() => props.sku, () => {
 </script>
 
 <template>
-  <div ref="target" class="mt-8" data-product-recommendations>
+  <div
+    ref="target"
+    class="mt-8"
+    :style="reservedHeight ? { minHeight: `${reservedHeight}px` } : undefined"
+    data-product-recommendations
+  >
     <section v-if="items.length" data-product-cross-sell>
       <h2 class="shop-heading">{{ data?.recommendations.heading }}</h2>
       <div class="mt-1 grid grid-cols-1 gap-x-8 md:grid-cols-2">
@@ -41,12 +63,10 @@ watch(() => props.sku, () => {
       <p>Não foi possível carregar as sugestões.</p>
       <UiButton variant="link" @click="execute()">Tentar novamente</UiButton>
     </div>
-    <!-- A reserva de altura. O rail tem no máximo CROSS_SELL_LIMIT cards, e o
-         placeholder desenha exatamente esse máximo (mesma grade, mesma moldura,
-         mesmas linhas de texto), então a seção pronta nunca é mais alta do que
-         o que já estava reservado: o que está abaixo dela não é empurrado quando
-         a resposta chega. O min-h-px reservava 1 px e a seção crescia ~500 px no
-         meio da rolagem (CLS 0,76 medido em 390x844, 22/10/2026). -->
+    <!-- A reserva. Desenha o TETO do rail: mesma grade, mesma moldura, mesmas
+         linhas de texto que um card cheio, com CROSS_SELL_LIMIT cards. Existe
+         desde o SSR (não a partir da resposta), senão a reserva chegaria tarde
+         demais e moveria a página na cara do usuário. -->
     <div
       v-else-if="!settled"
       data-product-recommendations-skeleton

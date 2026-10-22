@@ -150,7 +150,11 @@ describe('recomendações por proximidade da seção', () => {
     wrapper.unmount()
   })
 
-  it('some com a reserva quando o servidor responde sem sugestões', async () => {
+  it('mantém a altura reservada quando a resposta não traz sugestões', async () => {
+    // O caso que o CLS cobra: a reserva é do TAMANHO DO TETO do rail, e uma
+    // resposta com menos cards encolheria a seção. Encolher puxa para cima o que
+    // está abaixo (footer incluído), e isso também é layout shift. O piso fica.
+    const restoreRect = stubRailHeight(751)
     status.value = 'pending'
     const wrapper = await mountSuspended(ProductRecommendations, { props: { sku: 'A' } })
 
@@ -158,10 +162,42 @@ describe('recomendações por proximidade da seção', () => {
     status.value = 'success'
     await nextTick()
 
-    // Sem itens, reservar altura viraria buraco: a seção encolhe de propósito.
     expect(wrapper.find('[data-product-recommendations-skeleton]').exists()).toBe(false)
     expect(wrapper.find('[data-product-cross-sell]').exists()).toBe(false)
+    expect(wrapper.attributes('style')).toContain('min-height: 751px')
 
     wrapper.unmount()
+    restoreRect()
+  })
+
+  it('congela a altura do placeholder antes de trocar o DOM pela seção', async () => {
+    const restoreRect = stubRailHeight(751)
+    status.value = 'pending'
+    const wrapper = await mountSuspended(ProductRecommendations, { props: { sku: 'A' } })
+    expect(wrapper.attributes('style') ?? '').not.toContain('min-height')
+
+    data.value = withItems(['CROISSANT', 'BAGUETE'])
+    status.value = 'success'
+    await nextTick()
+
+    // Dois cards ocupam ~320 px num piso de 751: sem o piso, o footer subiria.
+    expect(wrapper.find('[data-product-cross-sell]').exists()).toBe(true)
+    expect(wrapper.attributes('style')).toContain('min-height: 751px')
+
+    wrapper.unmount()
+    restoreRect()
   })
 })
+
+// O jsdom não tem layout: sem este stub a altura medida é 0 e o piso nunca é
+// gravado. O valor é o que o Playwright mediu na PDP real em 390x844.
+function stubRailHeight (height: number): () => void {
+  const original = Element.prototype.getBoundingClientRect
+  const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    if (this.hasAttribute?.('data-product-recommendations')) {
+      return { height, width: 390, top: 0, left: 0, bottom: height, right: 390, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    }
+    return original.call(this)
+  })
+  return () => spy.mockRestore()
+}
