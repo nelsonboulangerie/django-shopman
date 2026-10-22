@@ -45,18 +45,18 @@ const emit = defineEmits<{
   reset: [];
 }>();
 
-const fileName = ref("");
-const fileInput = ref<HTMLInputElement | null>(null);
-const fileStateId = useId();
+const selectedFile = ref<File | null>(null);
+const fileName = computed(() => selectedFile.value?.name ?? "");
 
 const fileActionLabel = computed(() => {
   if (props.previewBusy) return "Lendo arquivo CSV";
   return fileName.value ? "Trocar arquivo CSV" : "Escolher arquivo CSV";
 });
 
-const fileActionShortLabel = computed(() => {
-  if (props.previewBusy) return "Lendo CSV";
-  return fileName.value ? "Trocar CSV" : "Escolher CSV";
+const fileDescription = computed(() => {
+  if (props.previewBusy) return "Aguarde enquanto a prévia é preparada.";
+  if (fileName.value) return "Solte outro arquivo aqui ou escolha no dispositivo.";
+  return "Solte o arquivo aqui ou escolha no dispositivo.";
 });
 
 const fileState = computed(() =>
@@ -64,24 +64,12 @@ const fileState = computed(() =>
 );
 
 function reset() {
-  fileName.value = "";
-  if (fileInput.value) fileInput.value.value = "";
+  selectedFile.value = null;
   emit("reset");
 }
 
-function openFilePicker() {
-  if (!fileInput.value || props.previewBusy) return;
-  // Sem limpar, o navegador não dispara `change` quando o operador escolhe de
-  // novo o mesmo arquivo depois de corrigi-lo.
-  fileInput.value.value = "";
-  fileInput.value.click();
-}
-
-function onFile(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+function onFile(file: File | null | undefined) {
   if (!file) return;
-  fileName.value = file.name;
   const reader = new FileReader();
   reader.onload = () => emit("preview", String(reader.result ?? ""));
   reader.readAsText(file, "utf-8");
@@ -116,34 +104,24 @@ const rowsWithError = computed(() => {
       <div class="flex flex-col gap-4">
         <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" />
         <NuxtFormField label="Arquivo CSV" hint="Separador ponto e vírgula; vírgula decimal.">
-          <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-            <input
-              ref="fileInput"
-              class="hidden"
-              type="file"
-              accept=".csv,text/csv"
-              :disabled="previewBusy"
-              tabindex="-1"
-              aria-hidden="true"
-              data-import-input
-              @change="onFile"
-            >
-            <OperatorButton
+          <div data-import-picker>
+            <NuxtFileUpload
+              v-model="selectedFile"
               :label="fileActionLabel"
-              :short-label="fileActionShortLabel"
-              icon="i-lucide-file-up"
-              color="neutral"
-              variant="outline"
-              :loading="previewBusy"
+              :description="fileDescription"
+              accept=".csv,text/csv"
+              layout="list"
+              position="outside"
+              reset
+              :file-image="false"
               :disabled="previewBusy"
-              :aria-describedby="fileStateId"
-              :aria-invalid="error ? 'true' : undefined"
-              data-import-pick
-              @click="openFilePicker"
+              :highlight="Boolean(error)"
+              :color="error ? 'error' : 'primary'"
+              class="w-full"
+              @update:model-value="onFile"
             />
             <p
-              :id="fileStateId"
-              class="min-w-0 break-all text-sm text-muted-foreground"
+              class="sr-only"
               aria-live="polite"
               data-import-file-state
             >

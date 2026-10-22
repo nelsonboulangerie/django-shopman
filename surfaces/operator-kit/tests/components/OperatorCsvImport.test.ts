@@ -73,18 +73,15 @@ describe("OperatorCsvImport", () => {
         preview: null,
       },
     });
-    const input = document.querySelector<HTMLInputElement>("[data-import-input]")!;
-    const trigger = document.querySelector<HTMLButtonElement>("[data-import-pick]")!;
+    const input = document.querySelector<HTMLInputElement>('[data-import-picker] input[type="file"]')!;
+    const trigger = document.querySelector<HTMLElement>('[data-import-picker] [data-slot="base"]')!;
     const state = document.querySelector<HTMLElement>("[data-import-file-state]")!;
-    const click = vi.spyOn(input, "click").mockImplementation(() => undefined);
 
     expect(trigger.textContent).toContain("Escolher arquivo CSV");
     expect(state.textContent?.trim()).toBe("Nenhum arquivo selecionado.");
-    expect(trigger.getAttribute("aria-describedby")).toBe(state.id);
+    expect(trigger.getAttribute("role")).toBe("button");
+    expect(trigger.getAttribute("tabindex")).toBe("0");
     expect(document.body.textContent).not.toMatch(/Choose File|No file chosen/);
-
-    trigger.click();
-    expect(click).toHaveBeenCalledOnce();
 
     const file = new File(["sku;nome\nP001;Pão"], "catalogo.csv", { type: "text/csv" });
     Object.defineProperty(input, "files", { configurable: true, value: [file] });
@@ -107,8 +104,8 @@ describe("OperatorCsvImport", () => {
         preview: null,
       },
     });
-    const input = document.querySelector<HTMLInputElement>("[data-import-input]")!;
-    const trigger = document.querySelector<HTMLButtonElement>("[data-import-pick]")!;
+    const input = document.querySelector<HTMLInputElement>('[data-import-picker] input[type="file"]')!;
+    const trigger = document.querySelector<HTMLElement>('[data-import-picker] [data-slot="base"]')!;
     const click = vi.spyOn(input, "click").mockImplementation(() => undefined);
     Object.defineProperty(input, "value", { configurable: true, writable: true, value: "catalogo.csv" });
 
