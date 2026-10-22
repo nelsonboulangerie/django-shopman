@@ -61,7 +61,11 @@ from shopman.storefront.services.cart_mutations import (
 
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
-from .public_cache import PublicEdgeCacheMixin, PublicReadMixin
+from .public_cache import (
+    RECOMMENDATIONS_EDGE_CACHE_CONTROL,
+    PublicEdgeCacheMixin,
+    PublicReadMixin,
+)
 from .serializers import (
     AddCartLineSerializer,
     CartLineNotesSerializer,
@@ -594,6 +598,27 @@ class StorefrontProductRecommendationsView(ServerTimingMixin, APIView):
         if recommendations is None:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
         return Response({"recommendations": projection_data(recommendations)})
+
+
+class StorefrontPublicProductRecommendationsView(
+    PublicEdgeCacheMixin, StorefrontProductRecommendationsView
+):
+    """GET /api/v1/storefront/public/products/{sku}/recommendations/ — cacheável.
+
+    A gêmea existe porque este é o ÚNICO request que a PDP faz depois do SSR, e
+    ele pagava TTFB inteiro (~0,72 s medidos) para o mesmo corpo que todo visitante
+    anônimo recebe: o rail mostra o que se parece com o produto, e para quem não
+    tem sessão o corpo é idêntico por construção. Sem cookie, a borda serve a
+    seção por 60 s (``RECOMMENDATIONS_EDGE_CACHE_CONTROL``).
+
+    O que é pessoal (favorito, quantidade na sacola) não se perde: o request
+    anônimo já vem com ``is_favorite=false`` e ``qty_in_cart=0``, e o cliente
+    sobrescreve os dois a partir do estado que recebeu no shell. Quem tem sessão
+    continua na rota privada de sempre: o BFF só manda para a gêmea o GET sem
+    cookie de sessão (``djangoProxy.ts``).
+    """
+
+    edge_cache_control = RECOMMENDATIONS_EDGE_CACHE_CONTROL
 
 
 @extend_schema_view(

@@ -18,19 +18,39 @@ from django.conf import settings
 from django.test import Client
 from shopman.guestman.models import Customer, PriceTier
 
-from shopman.storefront.api.public_cache import PUBLIC_EDGE_CACHE_CONTROL
+from shopman.storefront.api.public_cache import (
+    PUBLIC_EDGE_CACHE_CONTROL,
+    RECOMMENDATIONS_EDGE_CACHE_CONTROL,
+)
 from shopman.storefront.services import favorites
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
+
+# O rail de sugestões é o único request que a PDP faz DEPOIS do SSR, e o corpo do
+# anônimo é o mesmo para todo mundo: é ele que mais paga o TTFB do Django.
+RECOMMENDATIONS_TWIN = "/api/v1/storefront/public/products/PAO-FRANCES/recommendations/"
+RECOMMENDATIONS_PRIVATE = "/api/v1/storefront/products/PAO-FRANCES/recommendations/"
 
 PUBLIC_TWINS = {
     "/api/v1/storefront/public/home/": "/api/v1/storefront/home/",
     "/api/v1/storefront/public/shell/": "/api/v1/storefront/shell/",
     "/api/v1/storefront/public/catalog/": "/api/v1/storefront/catalog/",
     "/api/v1/storefront/public/catalog/paes/": "/api/v1/storefront/catalog/paes/",
+    RECOMMENDATIONS_TWIN: RECOMMENDATIONS_PRIVATE,
 }
 PUBLIC_IN_PLACE = ("/api/v1/storefront/site/", "/api/v1/storefront/legal/")
+# A gêmea do rail tem TTL próprio: a lista muda com o catálogo, não com a venda.
+RECOMMENDATIONS_TWINS = (RECOMMENDATIONS_TWIN,)
+
+
+def _cache_control(path: str) -> str:
+    """O TTL é da ROTA: estrutura em 30 s, sugestões da PDP em 60 s."""
+    return (
+        RECOMMENDATIONS_EDGE_CACHE_CONTROL
+        if path in RECOMMENDATIONS_TWINS
+        else PUBLIC_EDGE_CACHE_CONTROL
+    )
 
 
 def _customer_client() -> tuple[Client, Customer]:
@@ -75,7 +95,7 @@ def test_public_read_is_edge_cacheable_and_opens_no_session(client, path):
     response = client.get(path)
 
     assert response.status_code == 200, response.content[:300]
-    assert response["Cache-Control"] == PUBLIC_EDGE_CACHE_CONTROL
+    assert response["Cache-Control"] == _cache_control(path)
     assert not response.cookies, "resposta cacheável não pode definir cookie"
 
 
@@ -98,6 +118,29 @@ def test_public_twin_refuses_anything_that_could_personalize(client, path, crede
     assert response.status_code == 400
     assert response["Cache-Control"] == "private, no-store"
     assert set(response.json()) <= {"detail", "field", "errors"}
+
+
+def test_recommendations_twin_serves_the_rail_for_one_minute(client):
+    """s-maxage=60 + stale-while-revalidate=60: um minuto de borda, zero de navegador."""
+    _seed_surface()
+
+    response = client.get(RECOMMENDATIONS_TWIN)
+
+    assert response.status_code == 200
+    assert response["Cache-Control"] == RECOMMENDATIONS_EDGE_CACHE_CONTROL
+    assert "max-age=0" in response["Cache-Control"], "quem cacheia é a borda, não o navegador"
+    assert "s-maxage=60" in response["Cache-Control"]
+    assert "stale-while-revalidate=60" in response["Cache-Control"]
+
+
+def test_recommendations_twin_does_not_cache_a_missing_product(client):
+    """404 não vira resposta pública: cachear o erro esconderia o produto por 1 minuto."""
+    _seed_surface()
+
+    response = client.get("/api/v1/storefront/public/products/NAO-EXISTE/recommendations/")
+
+    assert response.status_code == 404
+    assert response["Cache-Control"] == "private, no-store"
 
 
 def test_customer_session_never_reaches_the_cacheable_body():
@@ -173,6 +216,8 @@ def test_bff_routing_depends_on_the_session_cookie_name():
         "/api/v1/storefront/menu/",
         "/api/v1/storefront/catalog/",
         "/api/v1/storefront/products/PAO-FRANCES/",
+        "/api/v1/storefront/products/PAO-FRANCES/recommendations/",
+        RECOMMENDATIONS_TWIN,
         "/api/v1/storefront/checkout/",
     ],
 )

@@ -269,6 +269,58 @@ def test_api_cart_sku_qty_stock_error_returns_rich_payload(client):
     assert data["substitutes"][0]["name"] == "Pão alternativo"
 
 
+def test_api_storefront_recommendations_has_a_query_budget(client, django_assert_num_queries):
+    """Orçamento do ENDPOINT: middleware, auth e portão do canal entram na conta.
+
+    A projeção já tem orçamento próprio (related_products, 4 consultas em
+    test_projections_product_detail.py). Aqui o que se trava é o custo que a PDP
+    paga depois do SSR, que é o número que aparece no TTFB da seção.
+    """
+    _seed_surface()
+    _seed_cross_sell()
+
+    with django_assert_num_queries(28):
+        response = client.get("/api/v1/storefront/products/PAO-FRANCES/recommendations/")
+
+    assert response.status_code == 200
+    # Com seis candidatos e quatro cards, o custo é o MESMO de dois cards: as
+    # leituras de catálogo, estoque e preço são por lote ("IN (...)"), não por
+    # item. É isso que o orçamento trava.
+    assert len(response.json()["recommendations"]["items"]) == 4
+
+
+def test_api_public_recommendations_twin_costs_no_extra_query(client, django_assert_num_queries):
+    """A gêmea não acrescenta consulta: ela só recusa credencial e carimba cache."""
+    _seed_surface()
+    _seed_cross_sell()
+
+    with django_assert_num_queries(28):
+        response = client.get("/api/v1/storefront/public/products/PAO-FRANCES/recommendations/")
+
+    assert response.status_code == 200
+
+
+def _seed_cross_sell() -> None:
+    """Seis candidatos que dividem a palavra-chave: mais que os quatro cards do rail.
+
+    O orçamento só vale alguma coisa se o cenário for o pior caso do endpoint, e o
+    pior caso é a lista cheia: é com candidato sobrando que um N+1 apareceria.
+    """
+    listing = Listing.objects.get(ref="web")
+    for index in range(6):
+        sku = f"SUGESTAO-{index}"
+        candidate = Product.objects.create(
+            sku=sku, name=f"Sugestão {index}", base_price_q=700 + index,
+            is_published=True, is_sellable=True,
+        )
+        candidate.keywords.add("pao")
+        ListingItem.objects.create(
+            listing=listing, product=candidate, price_q=700 + index,
+            is_published=True, is_sellable=True,
+        )
+    Product.objects.get(sku="PAO-FRANCES").keywords.add("pao")
+
+
 def _seed_surface(*, stock_qty: Decimal | None = None) -> Product:
     Shop.objects.create(
         name="Demo Bakery",
