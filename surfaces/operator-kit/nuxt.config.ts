@@ -129,6 +129,15 @@ export default defineNuxtConfig({
     transpile: ["vaul-vue"],
   },
 
+  // O artefato Nitro precisa carregar as dependências usadas pelo layer. Se elas
+  // ficam externas, o build aponta para o node_modules do operator-kit no runner
+  // ou produz uma cópia incompleta dentro de .output/server/node_modules.
+  nitro: {
+    externals: {
+      inline: ["@iconify/utils", "tailwind-variants"],
+    },
+  },
+
   runtimeConfig: {
     // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o IP
     // do operador um salto mais fundo no X-Forwarded-For (server/utils/djangoProxy.ts).
