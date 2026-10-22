@@ -82,7 +82,10 @@ describe('proxyDjangoPath — transporte do BFF', () => {
       ['/api/v1/storefront/home', `${DJANGO}/api/v1/storefront/public/home/`],
       ['/api/v1/storefront/shell/', `${DJANGO}/api/v1/storefront/public/shell/`],
       ['/api/v1/storefront/catalog', `${DJANGO}/api/v1/storefront/public/catalog/`],
-      ['/api/v1/storefront/catalog/paes/', `${DJANGO}/api/v1/storefront/public/catalog/paes/`]
+      ['/api/v1/storefront/catalog/paes/', `${DJANGO}/api/v1/storefront/public/catalog/paes/`],
+      // O rail de sugestões da PDP é o único request que a página faz depois do
+      // SSR: vai para a gêmea de 60 s, e sem o cookie do visitante.
+      ['/api/v1/storefront/products/PAO-FRANCES/recommendations/', `${DJANGO}/api/v1/storefront/public/products/PAO-FRANCES/recommendations/`]
     ])('GET sem sessão de %s vai para a gêmea, sem cookie nenhum', async (path, expected) => {
       const { event } = makeEvent({ path, headers: { cookie: 'csrftoken=tok; _ga=x' } })
 
@@ -109,7 +112,10 @@ describe('proxyDjangoPath — transporte do BFF', () => {
         '/api/v1/storefront/home/?channel=whatsapp',
         '/api/v1/storefront/menu/',
         '/api/v1/storefront/cart/',
-        '/api/v1/storefront/products/PAO/'
+        // A PDP em si NÃO tem gêmea: o corpo dela carrega a sacola de quem está
+        // comprando (ver shopman/storefront/api/surface.py). O rail tem.
+        '/api/v1/storefront/products/PAO/',
+        '/api/v1/storefront/products/PAO/recommendations/?channel=whatsapp'
       ]) {
         const { event } = makeEvent({ path })
         await proxyDjangoPath(event, path.split('?')[0]!)
@@ -119,14 +125,40 @@ describe('proxyDjangoPath — transporte do BFF', () => {
         `${DJANGO}/api/v1/storefront/home/?channel=whatsapp`,
         `${DJANGO}/api/v1/storefront/menu/`,
         `${DJANGO}/api/v1/storefront/cart/`,
-        `${DJANGO}/api/v1/storefront/products/PAO/`
+        `${DJANGO}/api/v1/storefront/products/PAO/`,
+        `${DJANGO}/api/v1/storefront/products/PAO/recommendations/?channel=whatsapp`
       ])
+    })
+
+    it('o rail de sugestões com sessão fica na rota privada, com o cookie', async () => {
+      const path = '/api/v1/storefront/products/PAO-FRANCES/recommendations/'
+      const { event } = makeEvent({ path, headers: { cookie: 'sessionid=s1' } })
+
+      await proxyDjangoPath(event, path)
+
+      expect(calls[0]!.url).toBe(`${DJANGO}${path}`)
+      expect(calls[0]!.options.headers.cookie).toContain('sessionid=s1')
     })
 
     it('mutação nunca vai para a gêmea', () => {
       expect(publicTwinPath('POST', '/api/v1/storefront/home/', undefined, false)).toBeNull()
       expect(publicTwinPath('GET', '/api/v1/storefront/home/', undefined, false)).toBe('/api/v1/storefront/public/home/')
       expect(publicTwinPath('GET', '/api/v1/storefront/home/', 'xsessionid=1', false)).toBe('/api/v1/storefront/public/home/')
+    })
+
+    it('o cookie de sessão é o que decide a gêmea do rail, e só ele', () => {
+      const rail = '/api/v1/storefront/products/PAO-FRANCES/recommendations/'
+      const twin = '/api/v1/storefront/public/products/PAO-FRANCES/recommendations/'
+
+      expect(publicTwinPath('GET', rail, 'csrftoken=tok; _ga=x', false)).toBe(twin)
+      expect(publicTwinPath('GET', rail, undefined, false)).toBe(twin)
+      expect(publicTwinPath('GET', rail, 'sessionid=s1', false)).toBeNull()
+      expect(publicTwinPath('GET', rail, 'xsessionid=1', false)).toBe(twin)
+      expect(publicTwinPath('GET', rail, undefined, true)).toBeNull()
+      expect(publicTwinPath('HEAD', rail, undefined, false)).toBe(twin)
+      expect(publicTwinPath('POST', rail, undefined, false)).toBeNull()
+      // A PDP não tem gêmea: o corpo dela carrega a sacola.
+      expect(publicTwinPath('GET', '/api/v1/storefront/products/PAO-FRANCES/', undefined, false)).toBeNull()
     })
   })
 
