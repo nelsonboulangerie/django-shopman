@@ -2612,6 +2612,12 @@ def apply_resync_intention(data: dict) -> dict:
 # roda em ``dry_run`` — o erro é POR LINHA e nada é gravado antes de confirmar.
 
 _IMPORT_FLAGS = ("is_published", "is_sellable")
+_PRODUCT_IMPORT_SALT = "catalog.product-import.v1"
+_IMPORT_HEADERS = {
+    "SKU": "sku", "Produto": "name", "Preço (R$)": "base_price_q",
+    "Publicado": "is_published", "À venda": "is_sellable",
+}
+_IMPORT_INFORMATIONAL_HEADERS = {"Coleção (informativa)"}
 _IMPORT_BOOL_TOKENS = {
     "sim": "1", "s": "1", "verdadeiro": "1", "true": "1",
     "não": "0", "nao": "0", "n": "0", "falso": "0", "false": "0",
@@ -2649,16 +2655,24 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
     first = text.splitlines()[0]
     delimiter = ";" if first.count(";") >= first.count(",") and ";" in first else ","
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    headers = [str(field).strip() for field in (reader.fieldnames or [])]
-    if "sku" not in headers:
-        raise CatalogError("O CSV precisa da coluna sku (o mesmo modelo do export).")
+    source_headers = [str(field).strip() for field in (reader.fieldnames or [])]
+    if len(source_headers) != len(set(source_headers)):
+        raise CatalogError("O cabeçalho do CSV tem colunas repetidas.")
+    unknown = [header for header in source_headers if header not in _IMPORT_HEADERS
+               and header not in _IMPORT_INFORMATIONAL_HEADERS and not header.startswith("Canal: ")]
+    if unknown:
+        raise CatalogError(f"O CSV tem colunas desconhecidas: {', '.join(unknown)}. Use o arquivo exportado pelo Catálogo.")
+    if "SKU" not in source_headers:
+        raise CatalogError("O CSV precisa da coluna SKU. Use o arquivo exportado pelo Catálogo.")
+    headers = [_IMPORT_HEADERS[header] for header in source_headers if header in _IMPORT_HEADERS]
     dataset = tablib.Dataset()
     dataset.headers = headers
     parsed = []
     for raw in reader:
-        row = {str(key).strip(): (value if value is not None else "") for key, value in raw.items() if key}
-        if not any(str(value).strip() for value in row.values()):
+        source_row = {str(key).strip(): (value if value is not None else "") for key, value in raw.items() if key}
+        if not any(str(value).strip() for value in source_row.values()):
             continue
+        row = {_IMPORT_HEADERS[source]: source_row.get(source, "") for source in source_headers if source in _IMPORT_HEADERS}
         if "base_price_q" in row:
             row["base_price_q"] = _import_price_q(row["base_price_q"])
         for flag in _IMPORT_FLAGS:
@@ -2695,6 +2709,20 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
     return payload
 
 
+def _product_import_state(csv_text, *, lock: bool = False) -> list[list]:
+    """Estado importável dos produtos-alvo, incluindo a ausência do SKU."""
+    from shopman.offerman.models import Product
+
+    preview = _run_product_import(csv_text, dry_run=True)
+    skus = sorted({change["sku"] for change in preview["changes"] if change["sku"]})
+    queryset = Product.objects.filter(sku__in=skus).order_by("sku")
+    if lock:
+        queryset = queryset.select_for_update()
+    existing = {product.sku: product for product in queryset}
+    fields = ("name", "base_price_q", "unit", "availability_policy", "is_published", "is_sellable", "shelf_life_days")
+    return [[sku, *([getattr(existing[sku], field) for field in fields] if sku in existing else [None])] for sku in skus]
+
+
 def _import_changes(parsed: list[dict]) -> list[dict]:
     from shopman.offerman.models import Product
 
@@ -2720,19 +2748,44 @@ def _import_changes(parsed: list[dict]) -> list[dict]:
 
 def preview_product_import(data: dict, *, actor_id: int) -> dict:
     """Prévia do CSV: valida linha a linha e mostra o que muda. Não grava nada."""
+    from django.core import signing
+
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     csv_text = data.get("csv") if isinstance(data, dict) else None
     result = _run_product_import(csv_text, dry_run=True)
-    # A revisão da prévia é o que a confirmação carrega: o apply não inventa uma.
-    result["base_revision"] = mutation_fingerprint(
-        {"operation": "catalog.product-import", "csv": str(csv_text or "")}
+    result["base_revision"] = signing.dumps(
+        {"actor": actor_id, "csv": mutation_fingerprint(str(csv_text or "")), "state": _product_import_state(csv_text)},
+        salt=_PRODUCT_IMPORT_SALT,
+        compress=True,
     )
     return result
 
 
 @transaction.atomic
 def apply_product_import(data: dict, *, actor_id: int) -> dict:
-    """Aplica o CSV pelo MESMO recurso do Admin; o erro é por linha."""
-    result = _run_product_import(data.get("csv") if isinstance(data, dict) else None, dry_run=False)
+    """Aplica o CSV validado sem sobrescrever uma prévia obsoleta."""
+    from django.core import signing
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    csv_text = data.get("csv") if isinstance(data, dict) else None
+    try:
+        receipt = signing.loads(data.get("base_revision", ""), salt=_PRODUCT_IMPORT_SALT, max_age=1800)
+    except (signing.BadSignature, TypeError):
+        raise CatalogConflict("Refaça a prévia antes de importar.") from None
+    expected = {"actor": actor_id, "csv": mutation_fingerprint(str(csv_text or "")), "state": _product_import_state(csv_text, lock=True)}
+    if receipt != expected:
+        raise CatalogConflict("O catálogo mudou desde a prévia. Refaça a prévia antes de importar.")
+    validation = _run_product_import(csv_text, dry_run=True)
+    if validation["errors"]:
+        first = validation["errors"][0]
+        detail = f"Nenhum produto foi importado. Confira a linha {first['row']}: {first['detail']}"
+        return {"ok": False, "outcome": "not_applied", "detail": detail, **validation}
+    result = _run_product_import(csv_text, dry_run=False)
+    if result["errors"]:
+        first = result["errors"][0]
+        detail = f"Nenhum produto foi importado. Confira a linha {first['row']}: {first['detail']}"
+        return {"ok": False, "outcome": "not_applied", "detail": detail, **result}
     return {"ok": True, "outcome": "applied", **result}

@@ -298,6 +298,60 @@ describe("useCatalogMatrix — recibo do tabelão", () => {
   });
 });
 
+describe("useCatalogMatrix — importação CSV", () => {
+  beforeEach(() => env.reset());
+
+  const preview = {
+    dry_run: true,
+    rows: 1,
+    totals: { new: 1 },
+    errors: [],
+    changes: [],
+    base_revision: "preview-assinada",
+  };
+
+  it("só confirma sucesso quando o recibo declara aplicação", async () => {
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      dry_run: false,
+      rows: 1,
+      totals: { new: 1 },
+      errors: [],
+    });
+    const matrix = useCatalogMatrix();
+
+    expect(await matrix.applyImport("csv", preview)).toMatchObject({
+      ok: true,
+      outcome: "applied",
+    });
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+    expect(env.sonner.success).toHaveBeenCalledWith("Importação aplicada.");
+  });
+
+  it("mantém o fluxo aberto quando o recibo não aplicou as linhas", async () => {
+    env.fetchMock.mockRejectedValueOnce({
+      status: 422,
+      data: {
+        ok: false,
+        outcome: "not_applied",
+        detail:
+          "Nenhum produto foi importado. Confira a linha 2: Preço inválido",
+        dry_run: true,
+        rows: 1,
+        totals: { invalid: 1 },
+        errors: [{ row: 2, detail: "Preço inválido" }],
+      },
+    });
+    const matrix = useCatalogMatrix();
+
+    expect(await matrix.applyImport("csv", preview)).toBeNull();
+    expect(env.refresh).not.toHaveBeenCalled();
+    expect(matrix.errorMsg.value).toContain("linha 2: Preço inválido");
+    expect(env.sonner.success).not.toHaveBeenCalled();
+  });
+});
+
 describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
   beforeEach(() => {
     env.reset();

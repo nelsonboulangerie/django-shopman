@@ -25,6 +25,7 @@ import type {
   DuplicatePayload,
   DuplicateSnapshot,
   ImportPreview,
+  ImportReceipt,
   PhotoEnhanceResponse,
   ProductDetailPatch,
   ProductArchiveReceipt,
@@ -1069,7 +1070,7 @@ export function useCatalogMatrix(
   async function applyImport(
     csv: string,
     preview: ImportPreview,
-  ): Promise<ImportPreview | null> {
+  ): Promise<ImportReceipt | null> {
     const key = "catalog:product-import";
     if (busy.value.has(key) || !canWrite()) return null;
     clearError();
@@ -1088,20 +1089,36 @@ export function useCatalogMatrix(
       },
     } as unknown as Action;
     try {
-      await intentions.executePath(
+      const receipt = (await intentions.executePath(
         key,
         "/api/v1/backstage/catalog/product/import/",
         action,
         { csv } as unknown as Record<string, unknown>,
-      );
+      )) as unknown as ImportReceipt;
+      if (
+        receipt.ok !== true ||
+        receipt.outcome !== "applied" ||
+        receipt.errors.length > 0
+      ) {
+        const first = receipt.errors[0];
+        errorMsg.value = first
+          ? `Nenhum produto foi importado. Confira a linha ${first.row}: ${first.detail}`
+          : "Nenhum produto foi importado. Revise a prévia e tente novamente.";
+        useSonner.error(errorMsg.value);
+        return null;
+      }
       await refreshAfterCommit();
       useSonner.success("Importação aplicada.");
-      return preview;
+      return receipt;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(
-        error,
-        "Não foi possível aplicar o CSV.",
-      );
+      const refusedDetail =
+        error instanceof Error &&
+        error.message.startsWith("Nenhum produto foi importado.")
+          ? error.message
+          : "";
+      errorMsg.value =
+        refusedDetail ||
+        httpErrorMessage(error, "Não foi possível aplicar o CSV.");
       useSonner.error(errorMsg.value);
       return null;
     } finally {

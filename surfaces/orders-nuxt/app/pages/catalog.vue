@@ -802,7 +802,7 @@ const headerMenuItems = computed(() => [
       onSelect: () => refresh(),
     },
     {
-      label: "Exportar CSV",
+      label: "Exportar esta página em CSV",
       icon: "i-lucide-download",
       onSelect: exportCatalog,
     },
@@ -2427,7 +2427,7 @@ useHead({ title: "Catálogo" });
         update: 'atualizado(s)',
         skip: 'sem mudança',
       }"
-      description="O arquivo tem as colunas do export. Use ponto e vírgula e vírgula decimal."
+      description="Exporte esta página, edite Produto, Preço, Publicado ou À venda e importe o mesmo arquivo. Coleção e canais servem apenas como referência."
       :preview-busy="importPreviewBusy"
       :busy="isBusy('catalog:product-import')"
       :error="errorMsg"

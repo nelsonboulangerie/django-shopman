@@ -350,8 +350,8 @@ export function letterTile(name: string): { letter: string } {
 }
 
 // ── Exportar (⋯ do cabeçalho, v3) ────────────────────────────────────────────
-// O recorte da tela como está: produto, SKU, preço, coleção e o estado em cada coluna
-// visível ("à venda", "pausado"…), na ordem da matriz.
+// O recorte da página atual. As cinco primeiras colunas formam o contrato editável
+// da importação; coleção e canais são contexto explícito, não comandos de escrita.
 export function catalogCsv(
   rows: CatalogRowProjection[],
   surfaces: SurfaceProjection[],
@@ -359,13 +359,23 @@ export function catalogCsv(
   // Escrito pelo kit (`readingCsvText`): ";" entre colunas e BOM, como a planilha em
   // português lê; o preço sai como número em reais ("18,00"), para a planilha somar.
   return readingCsvText({
-    header: ["Produto", "SKU", "Preço (R$)", "Coleção", ...surfaces.map((s) => s.name)],
+    header: [
+      "SKU",
+      "Produto",
+      "Preço (R$)",
+      "Publicado",
+      "À venda",
+      "Coleção (informativa)",
+      ...surfaces.map((s) => `Canal: ${s.name}`),
+    ],
     rows: rows.map((row) => {
       const bySurface = new Map(row.cells.map((cell) => [cell.surface_ref, cell]));
       return [
-        row.name,
         row.sku,
+        row.name,
         readingCsvMoney(row.base_price_q / 100),
+        row.is_published ? "Sim" : "Não",
+        row.is_sellable ? "Sim" : "Não",
         row.primary_collection_name ?? "",
         ...surfaces.map((s) => {
           const cell = bySurface.get(s.ref);
