@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
+import type { QuickFilterItem } from "../../../../operator-kit/app/presentation/quickFilters";
+import type { ActiveFilters, FilterDimension } from "../../../../operator-kit/app/types/filters";
 // Inventário de receitas (/recipes) — a lista do conhecimento da casa. Busca,
 // chips por tipo, os dois toggles que importam ("sem SKU" = receita ainda só
 // conhecimento; "com rascunho" = alguém começou e não publicou) e as arquivadas
@@ -67,6 +69,7 @@ const hasFilters = computed(
     onlyWithDraft.value ||
     onlyFavorites.value ||
     onlyUnreviewed.value ||
+    archived.value ||
     mode.value !== PRODUCTION_MODE_ALL,
 );
 const stale = computed(() => isStale({ error: !!error.value, hasData: entries.value.length > 0 }));
@@ -78,22 +81,82 @@ function clearFilters() {
   onlyWithDraft.value = false;
   onlyFavorites.value = false;
   onlyUnreviewed.value = false;
+  archived.value = false;
   mode.value = PRODUCTION_MODE_ALL;
   page.value = 1;
 }
-const ALL_KINDS = "__all__";
-const kindItems = computed(() => [{ value: ALL_KINDS, label: "Todas" }, ...kinds.value]);
-const kindChoice = computed({
-  get: () => kind.value || ALL_KINDS,
-  set: (value: string) => {
-    kind.value = value === ALL_KINDS ? "" : value;
-  },
-});
 const sortItems = [
   { value: "updated", label: "Atualizadas recentemente" },
   { value: "name", label: "Nome" },
   { value: "kind", label: "Tipo e nome" },
 ];
+const quickItems = [
+  { key: "favorites", label: "Favoritas", icon: "i-lucide-star" },
+  { key: "unreviewed", label: "Não conferidas", icon: "i-lucide-badge-alert" },
+  { key: "without_sku", label: "Sem SKU", icon: "i-lucide-tag" },
+  { key: "with_draft", label: "Com rascunho", icon: "i-lucide-file-pen-line" },
+] satisfies QuickFilterItem[];
+const quickSelection = computed<string[]>({
+  get: () => [
+    ...(onlyFavorites.value ? ["favorites"] : []),
+    ...(onlyUnreviewed.value ? ["unreviewed"] : []),
+    ...(onlyWithoutSku.value ? ["without_sku"] : []),
+    ...(onlyWithDraft.value ? ["with_draft"] : []),
+  ],
+  set: (next) => {
+    onlyFavorites.value = next.includes("favorites");
+    onlyUnreviewed.value = next.includes("unreviewed");
+    onlyWithoutSku.value = next.includes("without_sku");
+    onlyWithDraft.value = next.includes("with_draft");
+  },
+});
+const panelDimensions = computed<FilterDimension[]>(() => [
+  { id: "kind", label: "Tipo de receita", type: "single-select", options: kinds.value },
+  {
+    id: "mode",
+    label: "Modo de produção",
+    type: "single-select",
+    options: modeItems.filter((option) => option.value !== PRODUCTION_MODE_ALL),
+  },
+  { id: "archived", label: "Arquivadas", type: "boolean", options: [] },
+]);
+const panelFilters = computed<ActiveFilters>({
+  get: () => ({
+    ...(kind.value ? { kind: [kind.value] } : {}),
+    ...(mode.value !== PRODUCTION_MODE_ALL ? { mode: [mode.value] } : {}),
+    ...(archived.value ? { archived: ["true"] } : {}),
+  }),
+  set: (next) => {
+    kind.value = next.kind?.[0] ?? "";
+    mode.value = next.mode?.[0] ?? PRODUCTION_MODE_ALL;
+    archived.value = next.archived?.[0] === "true";
+  },
+});
+const activeFilters = computed(() => {
+  const filters = quickItems
+    .filter((item) => quickSelection.value.includes(item.key))
+    .map((item) => ({
+      key: item.key,
+      label: item.label,
+      remove: () => { quickSelection.value = quickSelection.value.filter((key) => key !== item.key); },
+    }));
+  if (kind.value) filters.push({
+    key: "kind",
+    label: `Tipo: ${kinds.value.find((option) => option.value === kind.value)?.label ?? kind.value}`,
+    remove: () => { kind.value = ""; },
+  });
+  if (mode.value !== PRODUCTION_MODE_ALL) filters.push({
+    key: "mode",
+    label: modeItems.find((option) => option.value === mode.value)?.label ?? mode.value,
+    remove: () => { mode.value = PRODUCTION_MODE_ALL; },
+  });
+  if (archived.value) filters.push({
+    key: "archived",
+    label: "Inclui arquivadas",
+    remove: () => { archived.value = false; },
+  });
+  return filters;
+});
 watch([query, kind, archived, onlyWithoutSku, onlyWithDraft, onlyFavorites, onlyUnreviewed, mode, sort], () => {
   page.value = 1;
 });
@@ -112,6 +175,7 @@ const trailFrom = computed(() => {
   if (onlyWithDraft.value) params.set("with_draft", "1");
   if (onlyFavorites.value) params.set("favorites", "1");
   if (onlyUnreviewed.value) params.set("unreviewed", "1");
+  if (archived.value) params.set("archived", "1");
   if (mode.value !== PRODUCTION_MODE_ALL) params.set("mode", mode.value);
   if (sort.value !== "updated") params.set("sort", sort.value);
   if (page.value > 1) params.set("page", String(page.value));
@@ -134,6 +198,8 @@ watch(
       search-label="Buscar receita por nome, ref ou SKU"
       :pending="pending"
       :primary="canEdit ? { label: 'Nova receita', icon: 'i-lucide-plus', to: '/recipes/new' } : undefined"
+      :active-filters="activeFilters"
+      :clear-filters="clearFilters"
       @refresh="refresh()"
     >
       <template #actions>
@@ -144,6 +210,45 @@ watch(
           icon="i-lucide-clipboard-list"
           label="Fichas de execução"
         />
+      </template>
+      <template #filters-primary>
+        <OperatorQuickFilters
+          v-model="quickSelection"
+          :items="quickItems"
+          multiple
+          label="Recortes das receitas"
+          data-recipe-quick-filters
+        />
+      </template>
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          :chips="false"
+          data-recipe-filter-panel
+        />
+      </template>
+      <template #filters>
+        <NuxtButton
+          to="/recipes/review"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-badge-check"
+          label="Conferência"
+        />
+        <NuxtSelect
+          v-model="sort"
+          :items="sortItems"
+          value-key="value"
+          label-key="label"
+          class="w-56"
+          aria-label="Ordenar receitas"
+        />
+      </template>
+      <template #filters-end>
+        <p v-if="total" class="text-xs text-muted-foreground tabular-nums">
+          {{ total === 1 ? "1 receita" : `${total} receitas` }}
+        </p>
       </template>
     </RecipeHeader>
 
@@ -163,50 +268,6 @@ watch(
     </section>
 
     <section v-else class="min-h-0 flex-1 overflow-auto p-3 md:p-4">
-      <div class="mb-3 flex flex-wrap items-center gap-3">
-        <!-- O tipo é escolha de uma lista que cresce com o cadastro: `NuxtSelect`. -->
-        <NuxtSelect
-          v-if="kinds.length"
-          v-model="kindChoice"
-          :items="kindItems"
-          value-key="value"
-          class="w-48"
-          aria-label="Tipo de receita"
-        />
-        <NuxtSelect
-          v-model="mode"
-          :items="modeItems"
-          value-key="value"
-          label-key="label"
-          class="w-44"
-          aria-label="Modo de produção"
-        />
-        <NuxtSelect
-          v-model="sort"
-          :items="sortItems"
-          value-key="value"
-          label-key="label"
-          class="w-56"
-          aria-label="Ordenar receitas"
-        />
-
-        <NuxtButton
-          to="/recipes/review"
-          color="primary"
-          variant="ghost"
-          icon="i-lucide-badge-check"
-          label="Conferência"
-        />
-
-        <div class="ml-auto flex flex-wrap items-center gap-3">
-          <NuxtCheckbox v-model="onlyFavorites" label="Favoritas" />
-          <NuxtCheckbox v-model="onlyUnreviewed" label="Não conferidas" />
-          <NuxtCheckbox v-model="onlyWithoutSku" label="Sem SKU" />
-          <NuxtCheckbox v-model="onlyWithDraft" label="Com rascunho" />
-          <NuxtCheckbox v-model="archived" label="Arquivadas" />
-        </div>
-      </div>
-
       <NuxtAlert
         v-if="stale"
         class="mb-3"
@@ -219,44 +280,38 @@ watch(
         aria-live="polite"
       />
 
-      <p v-if="pending && !entries.length" class="text-sm text-muted-foreground">Carregando…</p>
+      <OperatorScreenState v-if="pending && !entries.length" state="loading" what="as receitas" />
 
-      <div
+      <OperatorScreenState
         v-else-if="error && !entries.length"
-        class="grid place-items-center gap-2 rounded-md border border-dashed border-destructive/30 py-16 text-center text-muted-foreground"
-      >
-        <Icon name="lucide:cloud-off" class="size-8 text-destructive/70" />
-        <p class="text-base font-medium text-foreground">Não foi possível carregar as receitas.</p>
-        <NuxtButton
-          class="mt-1"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-refresh-cw"
-          label="Tentar de novo"
-          @click="refresh()"
-        />
-      </div>
+        state="error"
+        what="as receitas"
+        @retry="refresh()"
+      />
 
-      <div
+      <OperatorScreenState
         v-else-if="!entries.length && !hasFilters"
-        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
+        state="empty"
+        title="Nenhuma receita cadastrada."
+        description="Cadastre a primeira receita para guardar fórmulas, versões e fichas de execução."
+        icon="i-lucide-book-open"
       >
-        <Icon name="lucide:book-open" class="size-8" />
-        <p class="text-base font-medium">Nenhuma receita ainda.</p>
-        <p class="text-sm">As fichas que já existem entram sozinhas; as novas nascem de uma anotação, uma foto ou à mão.</p>
-        <NuxtLink v-if="canEdit" to="/recipes/new" class="mt-1 text-sm text-primary underline-offset-2 hover:underline"
-          >Nova receita</NuxtLink
-        >
-      </div>
+        <template v-if="canEdit" #actions>
+          <NuxtButton to="/recipes/new" icon="i-lucide-plus" label="Nova receita" />
+        </template>
+      </OperatorScreenState>
 
-      <div
+      <OperatorScreenState
         v-else-if="!visible.length"
-        class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
+        state="empty"
+        title="Nenhuma receita corresponde aos filtros."
+        description="Retire um recorte ou faça outra busca."
+        icon="i-lucide-search"
       >
-        <Icon name="lucide:search" class="size-8" />
-        <p class="text-base font-medium">Nenhuma receita com esses filtros.</p>
-        <NuxtButton color="primary" variant="ghost" label="Limpar filtros" @click="clearFilters" />
-      </div>
+        <template #actions>
+          <NuxtButton color="neutral" variant="outline" label="Limpar filtros" @click="clearFilters" />
+        </template>
+      </OperatorScreenState>
 
       <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         <!-- A estrela fica FORA do link (botão dentro de <a> não é HTML válido) e por cima do canto do cartão. -->
