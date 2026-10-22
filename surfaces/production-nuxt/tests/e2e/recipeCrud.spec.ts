@@ -9,6 +9,29 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies(cookies);
 });
 
+test("editar receita é um gesto visível desde o inventário", async ({ page }, testInfo) => {
+  test.skip(
+    !["chromium-desktop", "chromium-mobile-manager"].includes(testInfo.project.name),
+    "Matriz focada nos dois extremos responsivos do cadastro.",
+  );
+
+  await page.goto("/recipes");
+  await page.waitForLoadState("networkidle");
+  const card = page.locator("[data-recipe-card]").filter({ hasText: "Pão francês" });
+  const edit = card.getByRole("link", { name: "Editar receita" });
+  await expect(edit).toBeVisible();
+  await edit.click();
+
+  await expect(page).toHaveURL(/\/recipes\/pao-frances\/edit$/);
+  await expect(page.getByText("Esta receita está pronta para editar.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Começar edição" })).toBeVisible();
+
+  await testInfo.attach(`receita-editar-${testInfo.project.name}`, {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
+});
+
 test("cadastros de receita cabem, explicam o efeito e preservam a revisão", async ({ page }, testInfo) => {
   test.skip(
     !["chromium-desktop", "chromium-mobile-manager"].includes(testInfo.project.name),
