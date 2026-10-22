@@ -789,9 +789,11 @@ describe("Gestor canônico em Nuxt UI", () => {
       expect(source).not.toContain("#header");
       expect(source).not.toContain("#footer");
     }
-    // O painel do produto tem um #footer legítimo: o do sheet, não de cartão.
+    // O painel do produto delega gaveta, rodapé e descarte ao casco canônico.
     expect(productPanel).not.toContain("#header");
-    expect(productPanel.match(/<template #footer>/g)?.length).toBe(1);
+    expect(productPanel).toContain("<OperatorFormShell");
+    expect(productPanel).toContain("<OperatorFormSection");
+    expect(productPanel).not.toContain("<template #footer>");
     expect(courier).not.toContain("#header");
     expect(courier).not.toContain("#footer");
     expect(catalog).not.toContain('<NuxtCard v-if="loading"');
