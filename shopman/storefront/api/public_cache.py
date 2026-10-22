@@ -33,6 +33,14 @@ from rest_framework.exceptions import ParseError
 PUBLIC_EDGE_CACHE_CONTROL = (
     "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=120"
 )
+# As sugestões da PDP são a lista de "quem se parece com este produto", resolvida
+# por palavras-chave: muda quando o catálogo muda, não a cada venda. 60 s na borda
+# (mais 60 s servindo o velho enquanto revalida) é o mesmo trade-off da home, com
+# o dobro da janela porque o rail não é o que decide a compra: preço e estoque de
+# verdade são recalculados em ``cart/`` e ``checkout/`` a cada gesto.
+RECOMMENDATIONS_EDGE_CACHE_CONTROL = (
+    "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=120"
+)
 PRIVATE_NO_STORE = "private, no-store"
 
 _CREDENTIAL_HEADERS = (
@@ -48,14 +56,14 @@ def carries_credentials(request) -> bool:
     return any(request.headers.get(name) for name in _CREDENTIAL_HEADERS) or bool(request.GET)
 
 
-def mark_public(response):
+def mark_public(response, cache_control: str = PUBLIC_EDGE_CACHE_CONTROL):
     """Carimba cache de borda, e falha fechado se a resposta não for pública.
 
     Só 200 vira público. Resposta que define cookie é, por definição, de alguém:
     volta a ser privada em vez de ir para a borda.
     """
     if response.status_code == status.HTTP_200_OK and not response.cookies:
-        response["Cache-Control"] = PUBLIC_EDGE_CACHE_CONTROL
+        response["Cache-Control"] = cache_control
     else:
         response["Cache-Control"] = PRIVATE_NO_STORE
     return response
@@ -64,10 +72,14 @@ def mark_public(response):
 class PublicReadMixin:
     """Rota que não lê o request: pública na própria URL."""
 
+    # O TTL é da rota, não do mixin: leitura de estrutura (home, catálogo) e rail
+    # de sugestões envelhecem em ritmos diferentes.
+    edge_cache_control: str = PUBLIC_EDGE_CACHE_CONTROL
+
     def dispatch(self, request, *args, **kwargs):
         response = super().dispatch(request, *args, **kwargs)
         if request.method in ("GET", "HEAD"):
-            return mark_public(response)
+            return mark_public(response, self.edge_cache_control)
         return response
 
 
