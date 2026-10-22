@@ -31,11 +31,11 @@ const OperatorTableStub = defineComponent({
     rowSelection: { type: Object, default: () => ({}) },
   },
   emits: ["update:rowSelection"],
-  setup(props, { emit }) {
+  setup(props, { emit, slots }) {
     return () =>
       h(
         "div",
-        props.data.map((item: any) =>
+        props.data.flatMap((item: any) => [
           h(
             "button",
             {
@@ -48,7 +48,8 @@ const OperatorTableStub = defineComponent({
             },
             item.sku,
           ),
-        ),
+          slots["surface_web-cell"]?.({ row: { original: item } }),
+        ]),
       );
   },
 });
@@ -73,6 +74,84 @@ function grid(rows = [row("A"), row("B")]) {
     global: { stubs: { OperatorTable: OperatorTableStub } },
   });
 }
+
+describe("edição no tabelão", () => {
+  it("cola preços pt-BR como uma coluna e preserva os centavos", async () => {
+    const wrapper = grid();
+    const inputs = wrapper.findAll("[data-cell$='|web|price']");
+    await inputs[0]!.trigger("paste", {
+      clipboardData: { getData: () => "7,50\n8,25" },
+    });
+    await wrapper.get("[data-bulk-save]").trigger("click");
+
+    expect(wrapper.emitted("save")).toEqual([
+      [
+        [
+          {
+            sku: "A",
+            surface_ref: "web",
+            price_q: 750,
+            base_revisions: undefined,
+          },
+          {
+            sku: "B",
+            surface_ref: "web",
+            price_q: 825,
+            base_revisions: undefined,
+          },
+        ],
+      ],
+    ]);
+  });
+
+  it("limpa só o que foi aplicado e mantém o conflito editável e marcado", async () => {
+    const wrapper = grid();
+    const inputs = wrapper.findAll("[data-cell$='|web|price']");
+    await inputs[0]!.setValue("7,50");
+    await inputs[1]!.setValue("8,25");
+    await wrapper.get("[data-bulk-save]").trigger("click");
+    await wrapper.setProps({
+      receipt: {
+        ok: true,
+        outcome: "applied",
+        applied: [
+          {
+            index: 0,
+            sku: "A",
+            surface_ref: "web",
+            price_q: 750,
+            is_published: false,
+            is_sellable: false,
+          },
+        ],
+        conflicts: [
+          {
+            index: 1,
+            sku: "B",
+            surface_ref: "web",
+            detail: "O preço mudou desde a leitura.",
+            conflicting_fields: ["price_q"],
+          },
+        ],
+        errors: [],
+      },
+    });
+
+    expect(wrapper.get("[data-cell='A|web|price']").attributes("value")).toBe("");
+    expect(wrapper.get("[data-cell='B|web|price']").attributes("value")).toBe(
+      "8,25",
+    );
+    expect(wrapper.get("[data-cell-error='B|web']").text()).toBe(
+      "Preço: O preço mudou desde a leitura.",
+    );
+    expect(wrapper.get("[data-cell='B|web|price']").attributes("aria-invalid")).toBe(
+      "true",
+    );
+    expect(wrapper.get("[data-bulk-save]").text()).toContain(
+      "Salvar 1 alteração",
+    );
+  });
+});
 
 describe("arquivamento no tabelão", () => {
   it("seleciona produtos e emite um único lote, sem campo is_active", async () => {

@@ -4,6 +4,7 @@
 // ida pelo POST catalog/cells/. Presentacional: o pai é dono do save.
 import type {
   BulkCell,
+  BulkCellsResponse,
   CatalogRowProjection,
   ProductArchiveReceipt,
   SurfaceProjection,
@@ -21,6 +22,7 @@ const props = defineProps<{
   surfaces: SurfaceProjection[];
   busy?: boolean;
   error?: string;
+  receipt?: BulkCellsResponse | null;
   archiveBusy?: boolean;
   archiveReceipt?: ProductArchiveReceipt | null;
 }>();
@@ -37,6 +39,7 @@ const emit = defineEmits<{
 const confirmArchive = useConfirm();
 
 const edit = useGridEdit<string | boolean>();
+const pendingCells = ref<BulkCell[]>([]);
 const rowSelection = ref<Record<string, boolean>>({});
 const selectedRows = computed(() =>
   props.rows.filter((row) => rowSelection.value[row.sku]),
@@ -82,6 +85,70 @@ function cellFor(row: CatalogRowProjection, surfaceRef: string) {
 
 function priceKey(sku: string, surfaceRef: string) {
   return editKey(sku, surfaceRef, "price");
+}
+
+watch(
+  () => props.receipt,
+  (receipt) => {
+    if (!receipt) return;
+    const confirmed: string[] = [];
+    for (const applied of receipt.applied) {
+      const submitted = pendingCells.value[applied.index];
+      if (
+        !submitted ||
+        submitted.sku !== applied.sku ||
+        submitted.surface_ref !== applied.surface_ref
+      )
+        continue;
+      if ("price_q" in submitted)
+        confirmed.push(priceKey(submitted.sku, submitted.surface_ref));
+      if ("is_published" in submitted)
+        confirmed.push(
+          editKey(submitted.sku, submitted.surface_ref, "published"),
+        );
+      if ("is_sellable" in submitted)
+        confirmed.push(
+          editKey(submitted.sku, submitted.surface_ref, "sellable"),
+        );
+    }
+    edit.clear(confirmed);
+  },
+);
+
+const cellFailures = computed(() => {
+  const failures = new Map<string, string>();
+  if (!props.receipt) return failures;
+  for (const failure of [
+    ...props.receipt.conflicts,
+    ...props.receipt.errors,
+  ]) {
+    const conflictingFields = (
+      failure as { conflicting_fields?: string[] }
+    ).conflicting_fields;
+    const fields =
+      conflictingFields?.length
+        ? `${conflictingFields
+            .map((field) =>
+              field === "price_q"
+                ? "Preço"
+                : field === "is_published"
+                  ? "Exibido"
+                  : field === "is_sellable"
+                    ? "Vendável"
+                    : field,
+            )
+            .join(", ")}: `
+        : "";
+    failures.set(
+      editKey(failure.sku, failure.surface_ref, "cell"),
+      `${fields}${failure.detail}`,
+    );
+  }
+  return failures;
+});
+
+function cellFailure(sku: string, surfaceRef: string): string {
+  return cellFailures.value.get(editKey(sku, surfaceRef, "cell")) ?? "";
 }
 
 function priceText(row: CatalogRowProjection, surfaceRef: string): string {
@@ -182,6 +249,7 @@ function save() {
         Record<string, string> | undefined,
     };
   });
+  pendingCells.value = cells;
   emit("save", cells);
 }
 
@@ -298,6 +366,7 @@ function undoArchive() {
                   :model-value="priceText(row, surface.ref)"
                   inputmode="decimal"
                   :aria-label="`Preço de ${row.name} em ${surface.name}`"
+                  :aria-invalid="Boolean(cellFailure(row.sku, surface.ref))"
                   :data-cell="`${row.sku}|${surface.ref}|price`"
                   @update:model-value="
                     (value: string | number) =>
@@ -326,6 +395,14 @@ function undoArchive() {
                     "
                   />
                 </div>
+                <NuxtAlert
+                  v-if="cellFailure(row.sku, surface.ref)"
+                  color="error"
+                  variant="subtle"
+                  icon="i-lucide-circle-alert"
+                  :description="cellFailure(row.sku, surface.ref)"
+                  :data-cell-error="`${row.sku}|${surface.ref}`"
+                />
               </div>
             </template>
           </template>
@@ -388,7 +465,7 @@ function undoArchive() {
             @click="edit.clear()"
           />
           <NuxtButton
-            :label="`Salvar ${edit.dirty.value} alteração(ões)`"
+            :label="`Salvar ${edit.dirty.value} ${edit.dirty.value === 1 ? 'alteração' : 'alterações'}`"
             :loading="busy"
             :disabled="!edit.dirty.value"
             data-bulk-save
