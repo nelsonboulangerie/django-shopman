@@ -24,6 +24,8 @@ import type {
 import { vocationLabel, vocationOptions } from "~/presentation/vocation";
 import { useIntersectionObserver } from "@vueuse/core";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
+import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 
 const props = defineProps<{
   saveComponents?: (rows: ProductComponentInput[]) => Promise<boolean>;
@@ -617,6 +619,17 @@ const canSave = computed(
     !formInvalid.value &&
     patchSize.value > 0,
 );
+const panelBusy = computed(
+  () => props.busy || linksSaving.value || componentsSaving.value,
+);
+const panelDirty = computed(
+  () => patchSize.value > 0 || linksDirty.value || componentsDirty.value,
+);
+const saveLabel = computed(() =>
+  patchSize.value
+    ? `${patchSize.value} ${patchSize.value === 1 ? "campo alterado" : "campos alterados"} · Salvar`
+    : "Salvar",
+);
 
 function onSave() {
   if (!canSave.value) return;
@@ -654,21 +667,6 @@ function keepWithoutGtin() {
   emit("save", { ...buildPatch(), gtin_rejected: { confirmed: true } });
 }
 
-const discardRequested = ref(false);
-function requestClose(open: boolean) {
-  if (!open && (props.busy || linksSaving.value || componentsSaving.value)) return;
-  if (!open && (patchSize.value || linksDirty.value || componentsDirty.value)) {
-    discardRequested.value = true;
-    return;
-  }
-  emit("update:open", open);
-}
-watch(
-  () => props.open,
-  () => {
-    discardRequested.value = false;
-  },
-);
 const conflictLabels: Record<string, string> = {
   collections: "Coleções",
   name: "Nome",
@@ -770,12 +768,28 @@ const sectionClass =
 </script>
 
 <template>
-  <NuxtSlideover
+  <OperatorFormShell
     :open="open"
     :title="detail?.name || 'Produto'"
     :description="`${sku}${detail ? ` · R$ ${centsToText(detail.base_price_q)}${detail.unit === 'kg' ? '/kg' : ''}` : ''}${detail?.primary_collection_name ? ` · ${detail.primary_collection_name}` : ''}${roleBadges.length ? ` · ${roleBadges.join(' · ')}` : ''}`"
-    side="right"
-    @update:open="requestClose"
+    size="wide"
+    :dirty="panelDirty"
+    :dirty-count="patchSize"
+    :busy="panelBusy"
+    :save-label="saveLabel"
+    :save-disabled="!canSave"
+    :save-attrs="{ 'data-panel-save': '', 'data-panel-changes': '' }"
+    :discard-attrs="{ 'data-panel-discard': '' }"
+    :active-section="tab"
+    :confirm-discard="{
+      title: 'Há alterações não salvas neste produto',
+      description: 'As alterações feitas neste produto serão perdidas.',
+      confirmLabel: 'Descartar e fechar',
+      cancelLabel: 'Continuar editando',
+    }"
+    action-label="Ações do produto"
+    @update:open="emit('update:open', $event)"
+    @save="onSave"
   >
     <template #actions>
       <NuxtBadge
@@ -817,8 +831,7 @@ const sectionClass =
         data-panel-more
       />
     </template>
-    <template #body>
-      <div class="flex flex-col gap-4">
+    <template #default>
         <NuxtAlert
           v-if="conflict"
           color="warning"
@@ -853,27 +866,6 @@ const sectionClass =
           icon="i-lucide-triangle-alert"
           :description="error"
         />
-        <NuxtAlert
-          v-if="discardRequested"
-          color="warning"
-          variant="subtle"
-          title="Há alterações não salvas neste produto"
-          :actions="
-            alertActions('warning', [
-              {
-                label: 'Continuar editando',
-                onClick: () => {
-                  discardRequested = false;
-                },
-              },
-              {
-                label: 'Descartar e fechar',
-                onClick: () => emit('update:open', false),
-              },
-            ])
-          "
-        />
-
         <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
            porque cinco rótulos não cabem na largura do slide-over. -->
         <!-- as seis abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
@@ -900,30 +892,34 @@ const sectionClass =
           />
 
           <template v-else>
-            <CatalogProductLinks
-              v-if="saveCollections && saveListing"
+            <OperatorFormSection
               v-show="tab === 'links'"
-              :detail="detail"
-              :busy="busy || componentsDirty || componentsSaving"
-              :save-collections="saveCollections"
-              :save-listing="saveListing"
-              @dirty-change="linksDirty = $event"
-              @saving-change="linksSaving = $event"
-            />
-            <CatalogProductComponents
-              v-if="saveComponents && searchComponents"
-              v-show="tab === 'links'"
-              :sku="detail.sku"
-              :unit="detail.unit"
-              :components="detail.components ?? []"
-              :busy="busy || linksDirty || linksSaving"
-              :save="saveComponents"
-              :search="searchComponents"
-              @dirty-change="componentsDirty = $event"
-              @saving-change="componentsSaving = $event"
-            />
+              section-key="links"
+              class="!gap-4"
+            >
+              <CatalogProductLinks
+                v-if="saveCollections && saveListing"
+                :detail="detail"
+                :busy="busy || componentsDirty || componentsSaving"
+                :save-collections="saveCollections"
+                :save-listing="saveListing"
+                @dirty-change="linksDirty = $event"
+                @saving-change="linksSaving = $event"
+              />
+              <CatalogProductComponents
+                v-if="saveComponents && searchComponents"
+                :sku="detail.sku"
+                :unit="detail.unit"
+                :components="detail.components ?? []"
+                :busy="busy || linksDirty || linksSaving"
+                :save="saveComponents"
+                :search="searchComponents"
+                @dirty-change="componentsDirty = $event"
+                @saving-change="componentsSaving = $event"
+              />
+            </OperatorFormSection>
             <!-- Geral -->
-            <div v-show="tab === 'geral'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'geral'" section-key="geral" class="!gap-4">
               <!-- A Geral começa pelo nome no cardápio (v4); a disponibilidade vem logo abaixo. -->
               <NuxtFormField label="Nome no cardápio">
                 <NuxtInput
@@ -1144,10 +1140,10 @@ const sectionClass =
                 alt="Prévia da imagem do produto"
                 class="h-32 w-32 rounded-lg border border-border object-cover"
               />
-            </div>
+            </OperatorFormSection>
 
             <!-- Preço e config -->
-            <div v-show="tab === 'config'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'config'" section-key="config" class="!gap-4">
               <!-- Vendido por peso: a unidade de venda vira kg e o MESMO campo de
                  preço passa a ser o preço do quilo. O preço final sai da balança
                  do balcão, então o item não vai para canal remoto. -->
@@ -1358,10 +1354,10 @@ const sectionClass =
                   />
                 </div>
               </NuxtCard>
-            </div>
+            </OperatorFormSection>
 
             <!-- Ingredientes e nutrição -->
-            <div v-show="tab === 'rotulagem'" class="space-y-5">
+            <OperatorFormSection v-show="tab === 'rotulagem'" section-key="rotulagem" class="!gap-5">
               <CatalogAiSuggest
                 :sku="sku"
                 field="ingredients_text"
@@ -1508,10 +1504,10 @@ const sectionClass =
                   </p>
                 </div>
               </NuxtCard>
-            </div>
+            </OperatorFormSection>
 
             <!-- Redes sociais (PIM) -->
-            <div v-show="tab === 'social'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'social'" section-key="social" class="!gap-4">
               <NuxtAlert
                 color="info"
                 variant="subtle"
@@ -1673,10 +1669,10 @@ const sectionClass =
                   placeholder="Texto sugerido para posts e feeds."
                 ></NuxtTextarea>
               </CatalogAiSuggest>
-            </div>
+            </OperatorFormSection>
 
             <!-- Fiscal (NFC-e) -->
-            <div v-show="tab === 'fiscal'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'fiscal'" section-key="fiscal" class="!gap-4">
               <NuxtAlert
                 color="info"
                 variant="subtle"
@@ -1761,14 +1757,12 @@ const sectionClass =
                   :description="warning"
                 />
               </NuxtFormField>
-            </div>
+            </OperatorFormSection>
           </template>
         </div>
 
-        <!-- Rodapé (v4): o que ainda está abaixo na Geral, Descartar e "N campo alterado · Salvar". -->
-      </div>
     </template>
-    <template #footer>
+    <template #lead>
       <NuxtButton
         v-if="tab === 'geral' && detail && !belowVisible"
         type="button"
@@ -1779,29 +1773,6 @@ const sectionClass =
         data-panel-below
         @click="showBelow"
       />
-      <span v-else class="me-auto" />
-      <NuxtButton
-        type="button"
-        label="Descartar"
-        color="neutral"
-        variant="ghost"
-        data-panel-discard
-        @click="requestClose(false)"
-      />
-      <NuxtButton
-        type="button"
-        :label="
-          patchSize
-            ? `${patchSize} ${patchSize === 1 ? 'campo alterado' : 'campos alterados'} · Salvar`
-            : 'Salvar'
-        "
-        :disabled="!canSave"
-        color="primary"
-        :loading="busy"
-        data-panel-save
-        data-panel-changes
-        @click="onSave"
-      />
     </template>
-  </NuxtSlideover>
+  </OperatorFormShell>
 </template>

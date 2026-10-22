@@ -1818,6 +1818,7 @@ todo cadastro precisa e que antes cada tela escrevia por conta própria.
   @update:open="open = $event"
   @save="submit"
 >
+  <template #actions><!-- ações contextuais do cabeçalho (ex.: "Arquivar") --></template>
   <template #lead><!-- ação extra antes do descarte (ex.: "Trocar intenção") --></template>
 
   <OperatorFormSection section-key="identity" title="Identificação">
@@ -1847,6 +1848,9 @@ Contrato:
   `size="standard"` (`sm:max-w-lg`) para gestos curtos como uma duplicação de dois
   campos. Título, descrição, corpo com o slot padrão e barra de ação vêm juntos. Quem chama
   continua dono do formulário e do salvamento: o casco só conduz.
+- **Ações contextuais continuam no cabeçalho.** O slot `actions` é encaminhado ao
+  cabeçalho da gaveta para gestos sobre o registro inteiro, como arquivar e abrir o
+  histórico. Salvar e descartar continuam exclusivamente na barra da base.
 - **Seções com nome.** Cada `OperatorFormSection` é um bloco `data-focus-target` com
   `tabindex="-1"`; o título e a descrição são opcionais, e quem chama decide o chrome
   (um `NuxtCard` em volta, ou os campos direto na superfície do painel). O controle que
@@ -1868,8 +1872,8 @@ Contrato:
   `window.confirm`.
 - **Nada de salvar no escuro.** `save-disabled` com `save-disabled-reason` diz o que
   falta ("Informe o código e o nome para salvar."); o botão continua no lugar.
-- Consumidor: o criar/duplicar produto do Gestor
-  (`orders-nuxt/app/components/CatalogProductCreatePanel.vue`). O próximo é a criação
+- Consumidores: criar/duplicar e editar produto no Gestor
+  (`CatalogProductCreatePanel.vue` e `CatalogProductPanel.vue`). O próximo é a criação
   de receita da Produção (`recipes/new`), quando a porta Manual virar o formulário
   canônico.
 - Testes: `tests/formShell.test.ts` (a conta pura), `tests/composables/useDirtyForm.test.ts`

@@ -64,6 +64,7 @@ const Host = defineComponent({
                   () => slots.price?.(),
                 ),
               ]),
+            actions: () => h("button", { "data-testid": "header-action" }, "Arquivar"),
             lead: slots.lead,
           },
         ),
@@ -82,6 +83,12 @@ const box = () =>
   document.body.querySelector<HTMLElement>("[data-operator-confirm]")?.closest<HTMLElement>('[role="dialog"]') ?? null;
 
 describe("OperatorFormShell", () => {
+  it("encaminha as ações contextuais para o cabeçalho da gaveta", async () => {
+    mounted = await mountSuspended(Host, { attachTo: document.body });
+    await settle();
+    expect(document.querySelector('[data-testid="header-action"]')?.textContent).toBe("Arquivar");
+  });
+
   it("marca as seções como alvo do próximo foco e leva a página quando a chave muda", async () => {
     mounted = await mountSuspended(Host, { attachTo: document.body, props: { activeSection: "identity" } });
     await settle();
