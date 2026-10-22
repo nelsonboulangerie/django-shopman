@@ -46,10 +46,35 @@ const emit = defineEmits<{
 }>();
 
 const fileName = ref("");
+const fileInput = ref<HTMLInputElement | null>(null);
+const fileStateId = useId();
+
+const fileActionLabel = computed(() => {
+  if (props.previewBusy) return "Lendo arquivo CSV";
+  return fileName.value ? "Trocar arquivo CSV" : "Escolher arquivo CSV";
+});
+
+const fileActionShortLabel = computed(() => {
+  if (props.previewBusy) return "Lendo CSV";
+  return fileName.value ? "Trocar CSV" : "Escolher CSV";
+});
+
+const fileState = computed(() =>
+  fileName.value ? `Arquivo selecionado: ${fileName.value}` : "Nenhum arquivo selecionado.",
+);
 
 function reset() {
   fileName.value = "";
+  if (fileInput.value) fileInput.value.value = "";
   emit("reset");
+}
+
+function openFilePicker() {
+  if (!fileInput.value || props.previewBusy) return;
+  // Sem limpar, o navegador não dispara `change` quando o operador escolhe de
+  // novo o mesmo arquivo depois de corrigi-lo.
+  fileInput.value.value = "";
+  fileInput.value.click();
 }
 
 function onFile(event: Event) {
@@ -67,6 +92,15 @@ const totalLine = computed(() =>
     .map(([key, value]) => `${value} ${props.totalLabels[key] ?? key}`)
     .join(" · "),
 );
+
+const rowsRead = computed(() =>
+  props.preview?.rows === 1 ? "1 linha lida" : `${props.preview?.rows ?? 0} linhas lidas`,
+);
+
+const rowsWithError = computed(() => {
+  const count = props.preview?.errors.length ?? 0;
+  return count === 1 ? "1 linha com erro" : `${count} linhas com erro`;
+});
 </script>
 
 <template>
@@ -82,22 +116,54 @@ const totalLine = computed(() =>
       <div class="flex flex-col gap-4">
         <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" />
         <NuxtFormField label="Arquivo CSV" hint="Separador ponto e vírgula; vírgula decimal.">
-          <NuxtInput type="file" accept=".csv,text/csv" :disabled="previewBusy" data-import-pick @change="onFile" />
+          <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+            <input
+              ref="fileInput"
+              class="hidden"
+              type="file"
+              accept=".csv,text/csv"
+              :disabled="previewBusy"
+              tabindex="-1"
+              aria-hidden="true"
+              data-import-input
+              @change="onFile"
+            >
+            <OperatorButton
+              :label="fileActionLabel"
+              :short-label="fileActionShortLabel"
+              icon="i-lucide-file-up"
+              color="neutral"
+              variant="outline"
+              :loading="previewBusy"
+              :disabled="previewBusy"
+              :aria-describedby="fileStateId"
+              :aria-invalid="error ? 'true' : undefined"
+              data-import-pick
+              @click="openFilePicker"
+            />
+            <p
+              :id="fileStateId"
+              class="min-w-0 break-all text-sm text-muted-foreground"
+              aria-live="polite"
+              data-import-file-state
+            >
+              {{ fileState }}
+            </p>
+          </div>
         </NuxtFormField>
-        <p v-if="fileName" class="text-sm text-muted-foreground">{{ fileName }}</p>
 
         <NuxtCard v-if="preview" variant="outline">
           <div class="flex flex-col gap-3">
             <div>
               <p class="text-sm font-medium">Prévia</p>
-              <p class="text-xs text-muted-foreground">{{ totalLine }} · {{ preview.rows }} linha(s) lida(s)</p>
+              <p class="text-xs text-muted-foreground">{{ totalLine }} · {{ rowsRead }}</p>
             </div>
             <NuxtAlert
               v-if="preview.errors.length"
               color="warning"
               variant="subtle"
               icon="i-lucide-triangle-alert"
-              :title="`${preview.errors.length} linha(s) com erro`"
+              :title="rowsWithError"
               description="Corrija o arquivo e leia de novo. Nada foi gravado."
             />
             <ul v-if="preview.errors.length" class="ml-4 list-disc text-xs text-muted-foreground">
