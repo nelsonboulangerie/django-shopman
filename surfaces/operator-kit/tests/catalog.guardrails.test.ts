@@ -183,4 +183,8 @@ describe("catálogo vivo", () => {
   it("mantém uma instância dos runtimes globais entre a layer e o app", () => {
     expect(config).toContain('dedupe: ["reka-ui", "vue-sonner"]');
   });
+
+  it("entrega um artefato Nitro autocontido para os consumidores", () => {
+    expect(config).toContain('inline: ["@iconify/utils", "tailwind-variants"]');
+  });
 });
