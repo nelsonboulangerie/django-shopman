@@ -41,7 +41,7 @@
     "@iconify-json/tabler": "1.2.42",
     "@internationalized/date": "3.12.4",
     "@nuxt/kit": "4.6.2",
-    "@nuxt/ui": "^4.11.3",
+    "@nuxt/ui": "^4.12.0",
     "@unovis/ts": "^1.7.1",
     "@unovis/vue": "^1.7.1",
     "@vite-pwa/nuxt": "1.1.1",
