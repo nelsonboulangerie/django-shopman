@@ -31,6 +31,10 @@ const OperatorPageHeaderStub = defineComponent({
         h("div", { "data-header-status": "" }, slots.status?.()),
         slots.search?.(),
         slots.actions?.(),
+        slots["filters-primary"]?.(),
+        slots["filter-panel"]?.(),
+        slots.filters?.(),
+        slots["filters-end"]?.(),
       ]);
   },
 });
@@ -46,6 +50,43 @@ const OperatorRecordNavStub = defineComponent({
   },
   setup(props) {
     return () => h("nav", { "data-record-nav": props.trail }, `${props.previousLabel} | ${props.nextLabel}`);
+  },
+});
+
+const OperatorQuickFiltersStub = defineComponent({
+  name: "OperatorQuickFilters",
+  props: { modelValue: Array, items: Array },
+  emits: ["update:modelValue"],
+  setup(props, { emit }) {
+    return () => h("div", { role: "toolbar" }, (props.items as { key: string; label: string }[]).map((item) =>
+      h("button", {
+        "data-quick-filter-item": item.key,
+        "aria-pressed": (props.modelValue as string[]).includes(item.key),
+        onClick: () => emit("update:modelValue", [...(props.modelValue as string[]), item.key]),
+      }, item.label),
+    ));
+  },
+});
+
+const OperatorScreenStateStub = defineComponent({
+  name: "OperatorScreenState",
+  props: { state: String, title: String },
+  setup(props, { slots }) {
+    return () => h("section", { "data-screen-state": props.state }, [props.title, slots.actions?.()]);
+  },
+});
+
+const OperatorFilterPanelStub = defineComponent({
+  name: "OperatorFilterPanel",
+  props: { dimensions: Array, modelValue: Object },
+  emits: ["update:modelValue"],
+  setup(props, { emit }) {
+    return () => h("div", { "data-filter-panel": (props.dimensions as { id: string }[]).map((item) => item.id).join(",") }, [
+      h("button", {
+        "data-filter-archived": "",
+        onClick: () => emit("update:modelValue", { ...(props.modelValue as object), archived: ["true"] }),
+      }, "Incluir arquivadas"),
+    ]);
   },
 });
 
@@ -76,6 +117,9 @@ const stubs = {
   NuxtCard: passthrough("NuxtCard"),
   OperatorPageHeader: OperatorPageHeaderStub,
   OperatorSuiteSearch: true,
+  OperatorQuickFilters: OperatorQuickFiltersStub,
+  OperatorFilterPanel: OperatorFilterPanelStub,
+  OperatorScreenState: OperatorScreenStateStub,
   OperatorRecordNav: OperatorRecordNavStub,
   OperatorFormShell: OperatorFormShellStub,
   OperatorFormSection: passthrough("OperatorFormSection"),
@@ -175,12 +219,27 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     const wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
 
-    const favorites = wrapper.findAll('[role="checkbox"]').find((box) => box.attributes("aria-label") === "Favoritas");
-    expect(favorites).toBeTruthy();
-    await favorites!.trigger("click");
+    const favorites = wrapper.find('[data-quick-filter-item="favorites"]');
+    expect(favorites.exists()).toBe(true);
+    await favorites.trigger("click");
     await nextTick();
 
     expect(remember).toHaveBeenLastCalledWith(["pao-a"], { from: "/recipes?favorites=1", label: "Favoritas" });
+  });
+
+  it("combines multiple quick filters without losing the active cut", async () => {
+    entries.value = [card("sem-sku", { is_favorite: true, output_sku: "" }), card("com-sku", { is_favorite: true })];
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    await wrapper.find('[data-quick-filter-item="favorites"]').trigger("click");
+    await wrapper.find('[data-quick-filter-item="without_sku"]').trigger("click");
+    await nextTick();
+
+    expect(remember).toHaveBeenLastCalledWith(["sem-sku"], {
+      from: "/recipes?without_sku=1&favorites=1",
+      label: "Favoritas",
+    });
   });
 
   it("the star is a pressed-state toggle button, not a native control in the card link", async () => {
@@ -192,6 +251,26 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     expect(star.exists()).toBe(true);
     expect(star.attributes("aria-label")).toContain("Receita pao-a");
     expect(star.element.closest("a")).toBeNull();
+  });
+
+  it("uses the suite filter panel and screen state instead of parallel list controls", async () => {
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-filter-panel='kind,mode,archived']").exists()).toBe(true);
+    expect(wrapper.find('[data-screen-state="empty"]').text()).toContain("Nenhuma receita cadastrada");
+    expect(wrapper.findAll('[role="checkbox"]')).toHaveLength(0);
+  });
+
+  it("treats archived as an active filter when the list is empty", async () => {
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    await wrapper.find("[data-filter-archived]").trigger("click");
+    await nextTick();
+
+    expect(wrapper.find('[data-screen-state="empty"]').text()).toContain("corresponde aos filtros");
+    expect(remember).toHaveBeenLastCalledWith([], { from: "/recipes?archived=1", label: "Receitas" });
   });
 });
 
