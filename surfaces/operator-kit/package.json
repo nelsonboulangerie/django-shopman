@@ -40,7 +40,7 @@
     "@iconify-json/lucide": "1.2.143",
     "@iconify-json/tabler": "1.2.42",
     "@internationalized/date": "3.12.4",
-    "@nuxt/kit": "4.5.2",
+    "@nuxt/kit": "4.6.2",
     "@nuxt/ui": "^4.11.3",
     "@unovis/ts": "^1.7.1",
     "@unovis/vue": "^1.7.1",
@@ -51,7 +51,7 @@
     "vue-sonner": "^2.0.9"
   },
   "overrides": {
-    "@nuxt/schema": "4.5.2",
+    "@nuxt/schema": "4.6.2",
     "esbuild": "^0.28.1",
     "svgo": "^4.1.0"
   }

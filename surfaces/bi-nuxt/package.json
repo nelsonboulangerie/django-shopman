@@ -56,8 +56,8 @@
     "vue-tsc": "^3.3.12"
   },
   "overrides": {
-    "@nuxt/kit": "4.5.2",
-    "@nuxt/schema": "4.5.2",
+    "@nuxt/kit": "4.6.2",
+    "@nuxt/schema": "4.6.2",
     "esbuild": "^0.28.2",
     "js-yaml": "^4.3.2",
     "svgo": "^4.1.0"
