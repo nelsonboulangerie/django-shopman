@@ -33,6 +33,7 @@ import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bu
 import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/filterBar";
 import type {
   AssistableField,
+  BulkCellsResponse,
   CatalogRowProjection,
   BulkCell,
   CatalogOrder,
@@ -1341,6 +1342,7 @@ async function applyImportCsv() {
 }
 // Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
 const bulkGridOpen = ref(false);
+const bulkCellsReceipt = ref<BulkCellsResponse | null>(null);
 const bulkArchiveReceipt = ref<ProductArchiveReceipt | null>(null);
 // (c) "Só compro (insumo)": não cria Product; conduz ao cadastro de compra.
 function goPurchase() {
@@ -1353,8 +1355,12 @@ function goPurchase() {
 }
 
 async function saveBulkCells(cells: BulkCell[]) {
+  bulkCellsReceipt.value = null;
   const result = await saveCells(cells);
-  if (result) bulkGridOpen.value = false;
+  if (!result) return;
+  bulkCellsReceipt.value = result;
+  if (!result.conflicts.length && !result.errors.length)
+    bulkGridOpen.value = false;
 }
 
 async function setBulkActive(
@@ -2394,12 +2400,14 @@ useHead({ title: "Catálogo" });
       :surfaces="surfaces"
       :busy="isBusy('catalog:cells')"
       :error="errorMsg"
+      :receipt="bulkCellsReceipt"
       :archive-busy="isBusy('catalog:products-active')"
       :archive-receipt="bulkArchiveReceipt"
       @update:open="
         (value) => {
           if (!value) {
             bulkGridOpen = false;
+            bulkCellsReceipt = null;
             bulkArchiveReceipt = null;
           }
         }

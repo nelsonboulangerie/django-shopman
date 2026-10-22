@@ -9,14 +9,25 @@ export function parseGrid(text: string): string[][] {
     .replace(/\r\n?/g, "\n")
     .replace(/\n+$/, "");
   if (!clean) return [];
+  // Uma coluna de preços em pt-BR também contém vírgulas. Sem distinguir esse
+  // caso, "7,50\n8,25" vira duas colunas e quem consome a primeira grava 7 e 8.
+  const decimalCommaColumn = clean.split("\n").every((line) =>
+    /^\s*(?:R\$\s*)?-?\d+(?:\.\d{3})*,\d{1,2}\s*$/.test(line),
+  );
   const separator = clean.includes("\t")
     ? "\t"
     : clean.includes(";")
       ? ";"
-      : ",";
+      : decimalCommaColumn
+        ? null
+        : ",";
   return clean
     .split("\n")
-    .map((line) => line.split(separator).map((cell) => cell.trim()));
+    .map((line) =>
+      separator
+        ? line.split(separator).map((cell) => cell.trim())
+        : [line.trim()],
+    );
 }
 
 /** Preço em pt-BR ("1.234,50") ou simples ("12.50") em centavos; null se inválido. */
