@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
+import type { OperatorActionBarAction } from "../../../../../operator-kit/app/presentation/actionBar";
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
 // editável (nome, insumo com busca, quantidade, unidade, papel), partes, etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
 // botão "Padronizar para 1000 g" mostra o antes/depois e deixa desfazer; a receita
 // como foi informada (`origin`) fica visível como referência histórica. "Salvar
 // rascunho" grava; "Salvar e publicar" grava e publica, voltando à receita.
-import type { AnchorKind, Formula, FormulaUnit, IngredientOptionProjection, IngredientRole, PartKind, RecipeKind, RecipeVersionProjection } from "~/types/recipeBook";
+import type { AnchorKind, Formula, FormulaUnit, IngredientOptionProjection, IngredientRole, PartKind, RecipeKind, RecipeStepInput, RecipeVersionProjection } from "~/types/recipeBook";
 import {
   ANCHOR_OPTIONS,
   HOUSE_BASIS_G,
@@ -30,8 +31,6 @@ import {
   removePart,
   setAnchor,
   stepsForPayload,
-  stepsFromText,
-  stepsToText,
   totalMassOf,
   unmatchedItems,
   updateItem,
@@ -58,7 +57,7 @@ const draft = computed<RecipeVersionProjection | null>(() => {
 const formula = ref<Formula>(emptyFormula());
 const yieldQuantity = ref("");
 const yieldUnit = ref("g");
-const stepsText = ref("");
+const steps = ref<RecipeStepInput[]>([]);
 const notes = ref("");
 const label = ref("");
 const seededNumber = ref<number | null>(null);
@@ -79,7 +78,7 @@ watch(
     formula.value = formulaFromServed(version.formula);
     yieldQuantity.value = version.yield_quantity;
     yieldUnit.value = version.yield_unit || "g";
-    stepsText.value = stepsToText(version.steps);
+    steps.value = stepsForPayload(version.steps);
     notes.value = version.notes;
     label.value = version.label;
     seededNumber.value = version.number;
@@ -112,7 +111,7 @@ const anchorIsFlour = computed(() => formula.value.anchor.kind === "flour");
 // de massa total num creme, 1000 g do ingrediente-âncora numa ganache.
 const anchorNoun = computed(() => {
   if (formula.value.anchor.kind === "flour") return "de farinha";
-  if (formula.value.anchor.kind === "ingredient") return "do ingrediente âncora";
+  if (formula.value.anchor.kind === "ingredient") return "do ingrediente-base";
   return "de massa total";
 });
 const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.items).length : 0));
@@ -184,11 +183,12 @@ const roles = [...ROLE_OPTIONS];
 const anchors = [...ANCHOR_OPTIONS];
 const partKinds = [...PART_KIND_OPTIONS];
 const kinds = [...KIND_OPTIONS];
-const executionModeLabel = computed(() => {
-  const execution = entry.value?.execution;
-  if (!execution) return "";
-  return execution.production_mode_options.find((option) => option.value === execution.production_mode)?.label || execution.production_mode;
-});
+const editorTab = ref("technical");
+const editorTabs = [
+  { label: "Ficha técnica", value: "technical" },
+  { label: "Modo de preparo", value: "preparation" },
+  { label: "Produção", value: "production" },
+];
 
 // ── Partes ──────────────────────────────────────────────────────────────────
 function addNewPart() {
@@ -218,6 +218,39 @@ function partMatchedName(index: number): string {
   const part = formula.value.parts[index];
   if (!part?.sku) return "";
   return lens.value?.parts.find((row) => row.sku === part.sku)?.name || part.sku;
+}
+
+// ── Modo de preparo estruturado ────────────────────────────────────────────
+function addStep() {
+  steps.value = [...steps.value, { name: "" }];
+}
+function updateStep(index: number, patch: Partial<RecipeStepInput>) {
+  steps.value = steps.value.map((step, current) => current === index ? { ...step, ...patch } : step);
+}
+function removeStep(index: number) {
+  steps.value = steps.value.filter((_, current) => current !== index);
+}
+function moveStep(index: number, delta: number) {
+  const target = index + delta;
+  if (target < 0 || target >= steps.value.length) return;
+  const next = [...steps.value];
+  const [moved] = next.splice(index, 1);
+  if (!moved) return;
+  next.splice(target, 0, moved);
+  steps.value = next;
+}
+function stepMinutes(step: RecipeStepInput): string {
+  return step.target_seconds ? String(step.target_seconds / 60) : "";
+}
+function onStepMinutes(index: number, event: Event) {
+  const raw = (event.target as HTMLInputElement).value.replace(",", ".");
+  const minutes = Number(raw);
+  updateStep(index, { target_seconds: raw && Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : null });
+}
+function onStepTemperature(index: number, event: Event) {
+  const raw = (event.target as HTMLInputElement).value.replace(",", ".");
+  const celsius = Number(raw);
+  updateStep(index, { temperature_celsius: raw && Number.isFinite(celsius) ? celsius : null });
 }
 
 // ── Padronizar para 1000 g (antes/depois + desfazer) ────────────────────────
@@ -252,8 +285,6 @@ const originOpen = ref(false);
 
 // ── Salvar / publicar ───────────────────────────────────────────────────────
 const saveError = ref("");
-const executionOpen = ref(false);
-
 function editorSnapshot(): string {
   return JSON.stringify({
     name: entryName.value,
@@ -263,7 +294,7 @@ function editorSnapshot(): string {
     formula: formula.value,
     yieldQuantity: yieldQuantity.value,
     yieldUnit: yieldUnit.value,
-    stepsText: stepsText.value,
+    steps: steps.value,
     notes: notes.value,
     label: label.value,
   });
@@ -284,7 +315,9 @@ watch(
   { immediate: true },
 );
 
-const hasUnsavedChanges = computed(() => !!editorBaseline.value && editorSnapshot() !== editorBaseline.value);
+const executionDirty = ref(false);
+const recipeHasUnsavedChanges = computed(() => !!editorBaseline.value && editorSnapshot() !== editorBaseline.value);
+const hasUnsavedChanges = computed(() => recipeHasUnsavedChanges.value || executionDirty.value);
 const confirmDiscard = useConfirm();
 
 async function confirmLeave(): Promise<boolean> {
@@ -312,8 +345,7 @@ function draftPatch() {
     formula: formula.value,
     yield_quantity: yieldQuantity.value.trim(),
     yield_unit: yieldUnit.value,
-    // O textarea edita nomes; o que a etapa de mesmo nome já tinha segue junto.
-    steps: stepsFromText(stepsText.value, draft.value?.steps ?? []),
+    steps: steps.value,
     notes: notes.value,
     label: label.value.trim(),
   };
@@ -327,6 +359,11 @@ async function save(): Promise<boolean> {
     return false;
   }
   entryName.value = cleanName;
+  if (steps.value.some((step) => !step.name.trim())) {
+    editorTab.value = "preparation";
+    saveError.value = "Dê um nome a cada etapa do modo de preparo.";
+    return false;
+  }
   const cleanOutputSku = entryOutputSku.value.trim().toUpperCase();
   entryOutputSku.value = cleanOutputSku;
   const entryChanged =
@@ -361,7 +398,6 @@ async function save(): Promise<boolean> {
 async function saveExecutionForm(payload: Parameters<typeof saveExecution>[0]) {
   const result = await saveExecution(payload);
   if (!result.ok) return;
-  executionOpen.value = false;
   useSonner.success("Configuração da produção salva.");
 }
 async function saveAndPublish() {
@@ -439,6 +475,29 @@ watch(
 );
 
 const touch = useTouchPointer();
+
+const publishDisabledReason = computed(() => {
+  if (!entryOutputSku.value.trim()) return "Associe um produto à receita antes de publicar.";
+  if (unmatchedCount.value) return "Associe todos os ingredientes aos respectivos insumos antes de publicar.";
+  return "";
+});
+const mobilePublishAction = computed<OperatorActionBarAction>(() => ({
+  label: "Salvar e publicar",
+  shortLabel: "Publicar",
+  icon: "i-lucide-check",
+  loading: busy.value,
+  disabled: busy.value || !!publishDisabledReason.value,
+  reason: publishDisabledReason.value,
+  onSelect: () => void saveAndPublish(),
+}));
+const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
+  label: "Salvar rascunho",
+  shortLabel: "Salvar",
+  icon: "i-lucide-save",
+  loading: busy.value,
+  disabled: busy.value,
+  onSelect: () => void save(),
+}));
 </script>
 
 <template>
@@ -450,7 +509,7 @@ const touch = useTouchPointer();
       hide-refresh
     >
       <template #actions>
-        <template v-if="draft && canEdit">
+        <div v-if="draft && canEdit" class="hidden items-center gap-2 lg:flex">
           <NuxtButton
             color="neutral"
             variant="outline"
@@ -470,7 +529,7 @@ const touch = useTouchPointer();
           >
             <span class="hidden sm:inline">Salvar e publicar</span>
           </NuxtButton>
-        </template>
+        </div>
       </template>
     </RecipeHeader>
 
@@ -529,93 +588,108 @@ const touch = useTouchPointer();
         />
       </div>
 
-      <div v-else-if="entry && draft" class="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
+      <div
+        v-else-if="entry && draft"
+        class="mx-auto grid w-full max-w-6xl gap-4"
+        :class="editorTab === 'technical' ? 'xl:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]' : ''"
+      >
+        <NuxtTabs
+          v-model="editorTab"
+          :items="editorTabs"
+          :content="false"
+          variant="pill"
+          class="w-full xl:col-span-full"
+          aria-label="Seções da receita"
+        />
+        <NuxtAlert
+          v-if="saveError"
+          class="xl:col-span-full"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="saveError"
+          :actions="alertActions('error', [{ label: 'Salvar de novo', disabled: busy, onClick: () => save() }])"
+        />
         <!-- ── Editor ──────────────────────────────────────────────────── -->
         <div class="grid min-w-0 content-start gap-4">
-          <NuxtAlert
-            v-if="saveError"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            :title="saveError"
-            :actions="alertActions('error', [{ label: 'Salvar de novo', disabled: busy, onClick: () => save() }])"
-          />
-
-          <section class="grid gap-3 rounded-md border bg-card p-3">
+          <section v-if="editorTab === 'technical'" class="grid gap-3 rounded-md border bg-card p-3">
             <h2 class="text-sm font-semibold">Informações da receita</h2>
             <div class="grid gap-3 sm:grid-cols-2">
               <NuxtFormField label="Nome da receita" required>
-                <NuxtInput v-model="entryName" class="w-full" />
+                <NuxtInput v-model="entryName" class="w-full" :ui="{ base: 'bg-muted' }" />
               </NuxtFormField>
               <NuxtFormField label="Tipo">
-                <NuxtSelect v-model="entryKind" :items="kinds" value-key="value" label-key="label" class="w-full" />
+                <NuxtSelect v-model="entryKind" :items="kinds" value-key="value" label-key="label" class="w-full" :ui="{ base: 'bg-muted' }" />
               </NuxtFormField>
               <NuxtFormField
                 label="Produto associado (SKU)"
                 description="Obrigatório para publicar e usar esta receita na produção."
                 required
               >
-                <NuxtInput v-model="entryOutputSku" class="w-full uppercase" placeholder="Ex.: PAO-FRANCES" />
+                <NuxtInput v-model="entryOutputSku" class="w-full uppercase" placeholder="Ex.: PAO-FRANCES" :ui="{ base: 'bg-muted' }" />
               </NuxtFormField>
               <NuxtFormField label="Observações gerais">
-                <NuxtTextarea v-model="entryNotes" :rows="3" class="w-full" />
+                <NuxtTextarea v-model="entryNotes" :rows="3" class="w-full" :ui="{ base: 'bg-muted' }" />
               </NuxtFormField>
             </div>
           </section>
 
-          <!-- Rendimento, âncora, o que mudou -->
-          <section class="grid gap-3 rounded-md border bg-card p-3">
-            <h2 class="text-sm font-semibold">Rendimento</h2>
-            <div class="grid gap-3 sm:grid-cols-[auto_auto_1fr]">
+          <section v-if="editorTab === 'technical'" class="grid gap-3 rounded-md border bg-card p-3">
+            <div>
+              <h2 class="text-sm font-semibold">Resultado da receita</h2>
+              <p class="text-xs text-muted-foreground">Quantidade obtida ao executar esta fórmula uma vez.</p>
+            </div>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
-                <NuxtInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-20" />
-                <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" />
+                <NuxtInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-24" :ui="{ base: 'bg-muted' }" />
+                <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" :ui="{ base: 'bg-muted' }" />
               </span>
             </label>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Âncora (100%)
-              <span class="flex items-center gap-1">
-                <NuxtSelect
-                  :model-value="formula.anchor.kind"
-                  :items="anchors"
-                  value-key="value"
-                  class="w-44"
-                  aria-label="Âncora (100%)"
-                  @update:model-value="onAnchorKind"
-                />
-                <NuxtSelectMenu
-                  v-if="formula.anchor.kind === 'ingredient'"
-                  :model-value="formula.anchor.sku || undefined"
-                  :items="anchorCandidates"
-                  value-key="value"
-                  placeholder="Escolha o ingrediente"
-                  class="w-48"
-                  :search-input="{ autofocus: !touch, placeholder: 'Buscar ingrediente' }"
-                  aria-label="Ingrediente-âncora"
-                  @update:model-value="onAnchorSku"
-                />
-              </span>
-            </label>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              O que mudou (rótulo curto)
-              <NuxtInput v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" class="w-full" />
-            </label>
-            </div>
           </section>
 
           <!-- Ingredientes -->
-          <div class="rounded-md border">
+          <section v-if="editorTab === 'technical'" class="overflow-hidden rounded-md border bg-card">
+            <div class="grid gap-3 border-b p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <div>
+                <h2 class="text-sm font-semibold">Ingredientes</h2>
+                <p class="text-xs text-muted-foreground">A composição completa da receita, incluindo outras receitas usadas como ingredientes.</p>
+              </div>
+              <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+                Base do cálculo (100%)
+                <span class="flex flex-wrap items-center gap-1">
+                  <NuxtSelect
+                    :model-value="formula.anchor.kind"
+                    :items="anchors"
+                    value-key="value"
+                    class="w-44"
+                    aria-label="Base do cálculo (100%)"
+                    :ui="{ base: 'bg-muted' }"
+                    @update:model-value="onAnchorKind"
+                  />
+                  <NuxtSelectMenu
+                    v-if="formula.anchor.kind === 'ingredient'"
+                    :model-value="formula.anchor.sku || undefined"
+                    :items="anchorCandidates"
+                    value-key="value"
+                    placeholder="Escolha o ingrediente"
+                    class="w-48"
+                    :search-input="{ autofocus: !touch, placeholder: 'Buscar ingrediente' }"
+                    aria-label="Ingrediente usado como base do cálculo"
+                    @update:model-value="onAnchorSku"
+                  />
+                </span>
+              </label>
+            </div>
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ingredientes</p>
+              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Insumos</p>
               <span class="text-xs tabular-nums text-muted-foreground">
-                âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
+                base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
               </span>
               <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Ingrediente" @click="add" />
             </div>
             <p v-if="!formula.items.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
-              Adicione os ingredientes da receita, inclusive os usados nos pré-preparos.
+              Adicione os insumos usados diretamente nesta receita.
             </p>
             <ol v-else class="divide-y">
               <li
@@ -626,7 +700,7 @@ const touch = useTouchPointer();
               >
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Nome
-                  <NuxtInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" class="w-full" @input="onItemName(index, $event)" />
+                  <NuxtInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" class="w-full" :ui="{ base: 'bg-muted' }" @input="onItemName(index, $event)" />
                 </label>
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Insumo
@@ -644,7 +718,7 @@ const touch = useTouchPointer();
                     type="text"
                     inputmode="decimal"
                     class="w-24"
-                    :ui="{ base: 'text-right tabular-nums' }"
+                    :ui="{ base: 'bg-muted text-right tabular-nums' }"
                     @input="onItemQuantity(index, $event)"
                   />
                 </label>
@@ -654,6 +728,7 @@ const touch = useTouchPointer();
                     :model-value="item.unit"
                     :items="units"
                     class="w-24"
+                    :ui="{ base: 'bg-muted' }"
                     :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
                     @update:model-value="(unit: string) => onItemUnit(index, unit)"
                   />
@@ -665,12 +740,13 @@ const touch = useTouchPointer();
                     :items="roles"
                     value-key="value"
                     class="w-36"
+                    :ui="{ base: 'bg-muted' }"
                     :aria-label="`Papel de ${item.name || 'ingrediente'}`"
                     @update:model-value="(role: string) => onItemRole(index, role)"
                   />
                 </label>
                 <div class="flex items-end gap-1">
-                  <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a âncora (prévia local)'">
+                  <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a base do cálculo (prévia local)'">
                     {{ pctOf(item, localAnchorTotal) ? `${pctOf(item, localAnchorTotal)}%` : "" }}
                   </span>
                   <!-- A microbarra da linha: ordenar e remover, ícones `ghost`. -->
@@ -685,33 +761,33 @@ const touch = useTouchPointer();
                     type="text"
                     inputmode="decimal"
                     class="w-28"
+                    :ui="{ base: 'bg-muted' }"
                     @input="onItemGramsPerUnit(index, $event)"
                   />
                 </label>
               </li>
             </ol>
-          </div>
-
-          <!-- Pré-preparos -->
-          <div class="rounded-md border">
-            <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pré-preparos</p>
-              <span class="text-xs text-muted-foreground">levain, autólise, grãos hidratados ou massa velha usados nesta receita</span>
-              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Pré-preparo" @click="addNewPart" />
+            <div class="flex flex-wrap items-center gap-2 border-y bg-muted/40 px-3 py-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Receitas usadas como ingrediente</p>
+                <p class="text-xs text-muted-foreground">Levain, poolish e outras bases conservam a própria receita e entram nesta composição.</p>
+              </div>
+              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Receita da casa" @click="addNewPart" />
             </div>
             <p v-if="!formula.parts.length" class="px-3 py-4 text-center text-sm text-muted-foreground">
-              Nenhum pré-preparo separado. Todos os ingredientes entram diretamente no modo de preparo.
+              Nenhuma outra receita compõe esta fórmula.
             </p>
             <ol v-else class="divide-y">
               <li v-for="(part, index) in formula.parts" :key="index" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Tipo
+                  Função
                   <NuxtSelect
                     :model-value="part.kind"
                     :items="partKinds"
                     value-key="value"
                     class="w-44"
-                    aria-label="Tipo da parte"
+                    aria-label="Função da receita usada como ingrediente"
+                    :ui="{ base: 'bg-muted' }"
                     @update:model-value="(kind: string) => onPartKind(index, kind)"
                   />
                 </label>
@@ -719,12 +795,12 @@ const touch = useTouchPointer();
                   <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">A própria base da véspera; declara só o teto.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Teto (%)
-                    <NuxtInput :model-value="String(part.cap_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'cap_pct', $event)" />
+                    <NuxtInput :model-value="String(part.cap_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'cap_pct', $event)" />
                   </label>
                 </template>
                 <template v-else>
                   <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Receita da parte (SKU)
+                    Receita associada
                     <IngredientPicker
                       :model-value="part.sku ?? ''"
                       :matched-name="partMatchedName(index)"
@@ -735,17 +811,18 @@ const touch = useTouchPointer();
                   </div>
                   <label v-if="anchorIsFlour" class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Farinha (%)
-                    <NuxtInput :model-value="String(part.flour_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'flour_pct', $event)" />
+                    <NuxtInput :model-value="String(part.flour_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'flour_pct', $event)" />
                   </label>
                   <label v-else class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <span class="flex items-center gap-1">
-                      <NuxtInput :model-value="String(part.quantity ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'text-right' }" @input="onPartNumber(index, 'quantity', $event)" />
+                      <NuxtInput :model-value="String(part.quantity ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'quantity', $event)" />
                       <NuxtSelect
                         :model-value="part.unit ?? 'g'"
                         :items="units"
                         class="w-24"
                         aria-label="Unidade da parte"
+                        :ui="{ base: 'bg-muted' }"
                         @update:model-value="(unit: string) => onPartUnit(index, unit)"
                       />
                     </span>
@@ -758,60 +835,101 @@ const touch = useTouchPointer();
                 </div>
               </li>
             </ol>
-          </div>
-
-          <!-- Modo de preparo e notas -->
-          <section class="grid gap-3 rounded-md border bg-card p-3">
-            <h2 class="text-sm font-semibold">Modo de preparo</h2>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Etapas (uma por linha)
-              <NuxtTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" class="w-full" />
-            </label>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Notas desta versão
-              <NuxtTextarea v-model="notes" :rows="3" class="w-full" />
-            </label>
           </section>
 
-          <section class="grid gap-3 rounded-md border bg-card p-3">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="grid gap-1">
-                <h2 class="text-sm font-semibold">Configuração da produção</h2>
-                <p class="text-sm text-muted-foreground">Regras de planejamento, lote e validade desta receita.</p>
+          <section v-if="editorTab === 'preparation'" class="overflow-hidden rounded-md border bg-card">
+            <div class="flex flex-wrap items-start gap-3 border-b p-3">
+              <div>
+                <h2 class="text-sm font-semibold">Modo de preparo</h2>
+                <p class="text-xs text-muted-foreground">Registre cada etapa com instrução, tempo, temperatura e ponto de referência.</p>
               </div>
-              <NuxtButton
-                v-if="entry.execution?.exists"
-                color="neutral"
-                variant="outline"
-                icon="i-lucide-settings-2"
-                label="Editar configuração"
-                @click="executionOpen = true"
-              />
+              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Etapa" @click="addStep" />
             </div>
-            <dl v-if="entry.execution?.exists" class="grid gap-2 text-sm sm:grid-cols-3">
-              <div>
-                <dt class="text-xs text-muted-foreground">Modo de produção</dt>
-                <dd class="font-medium">{{ executionModeLabel }}</dd>
-              </div>
-              <div>
-                <dt class="text-xs text-muted-foreground">Capacidade por dia</dt>
-                <dd class="font-medium">{{ entry.execution.capacity_per_day || "Sem limite definido" }}</dd>
-              </div>
-              <div>
-                <dt class="text-xs text-muted-foreground">Validade</dt>
-                <dd class="font-medium">
-                  {{ entry.execution.shelf_life_days == null ? "Não informada" : `${entry.execution.shelf_life_days} ${entry.execution.shelf_life_days === 1 ? "dia" : "dias"}` }}
-                </dd>
-              </div>
-            </dl>
-            <p v-else class="text-sm text-muted-foreground">
-              Publique a primeira versão para configurar como esta receita entra no planejamento e na produção.
+            <p v-if="!steps.length" class="px-3 py-8 text-center text-sm text-muted-foreground">
+              Nenhuma etapa informada. Adicione a primeira etapa do preparo.
             </p>
+            <ol v-else class="divide-y">
+              <li v-for="(step, index) in steps" :key="index" class="grid gap-3 p-3 sm:grid-cols-2">
+                <div class="flex items-end gap-2 sm:col-span-2">
+                  <NuxtFormField :label="`Etapa ${index + 1}`" required class="min-w-0 flex-1">
+                    <NuxtInput
+                      :model-value="step.name"
+                      class="w-full"
+                      placeholder="Ex.: Misturar, sovar, fermentar"
+                      :ui="{ base: 'bg-muted' }"
+                      @update:model-value="updateStep(index, { name: String($event) })"
+                    />
+                  </NuxtFormField>
+                  <div class="flex shrink-0 items-center">
+                    <NuxtButton icon="i-lucide-chevron-up" color="neutral" variant="ghost" square aria-label="Subir etapa" :disabled="index === 0" @click="moveStep(index, -1)" />
+                    <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer etapa" :disabled="index === steps.length - 1" @click="moveStep(index, 1)" />
+                    <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover etapa" @click="removeStep(index)" />
+                  </div>
+                </div>
+                <NuxtFormField label="Instruções" class="sm:col-span-2">
+                  <NuxtTextarea
+                    :model-value="step.instructions ?? ''"
+                    :rows="3"
+                    class="w-full"
+                    placeholder="Descreva o gesto e o ponto esperado."
+                    :ui="{ base: 'bg-muted' }"
+                    @update:model-value="updateStep(index, { instructions: String($event) })"
+                  />
+                </NuxtFormField>
+                <NuxtFormField label="Tempo previsto (min)">
+                  <NuxtInput :model-value="stepMinutes(step)" inputmode="decimal" class="w-full" :ui="{ base: 'bg-muted' }" @input="onStepMinutes(index, $event)" />
+                </NuxtFormField>
+                <NuxtFormField label="Temperatura (°C)">
+                  <NuxtInput :model-value="String(step.temperature_celsius ?? '')" inputmode="decimal" class="w-full" :ui="{ base: 'bg-muted' }" @input="onStepTemperature(index, $event)" />
+                </NuxtFormField>
+                <NuxtFormField label="Ponto de referência ou cuidado" class="sm:col-span-2">
+                  <NuxtTextarea
+                    :model-value="step.note ?? ''"
+                    :rows="2"
+                    class="w-full"
+                    placeholder="Ex.: parar ao atingir o ponto de véu."
+                    :ui="{ base: 'bg-muted' }"
+                    @update:model-value="updateStep(index, { note: String($event) })"
+                  />
+                </NuxtFormField>
+              </li>
+            </ol>
+          </section>
+
+          <section v-if="editorTab === 'preparation'" class="grid gap-3 rounded-md border bg-card p-3">
+            <div>
+              <h2 class="text-sm font-semibold">Registro desta versão</h2>
+              <p class="text-xs text-muted-foreground">Contexto para quem consultar o histórico da receita.</p>
+            </div>
+            <NuxtFormField label="Resumo da alteração" description="Um rótulo curto para reconhecer esta versão no histórico.">
+              <NuxtInput v-model="label" type="text" placeholder="Ex.: hidratação ajustada para 75%" class="w-full" :ui="{ base: 'bg-muted' }" />
+            </NuxtFormField>
+            <NuxtFormField label="Notas da versão">
+              <NuxtTextarea v-model="notes" :rows="3" class="w-full" :ui="{ base: 'bg-muted' }" />
+            </NuxtFormField>
+          </section>
+
+          <section v-if="editorTab === 'production'" class="grid gap-3">
+            <div>
+              <h2 class="text-base font-semibold">Configuração da produção</h2>
+              <p class="text-sm text-muted-foreground">Regras de planejamento, lote e validade desta receita.</p>
+            </div>
+            <RecipeExecutionFormPanel
+              v-if="entry.execution?.exists"
+              v-model:dirty="executionDirty"
+              :execution="entry.execution"
+              :busy="busy"
+              @save="saveExecutionForm"
+            />
+            <div v-else class="grid place-items-center gap-2 rounded-md border border-dashed bg-card px-4 py-10 text-center">
+              <Icon name="lucide:info" class="size-6 text-muted-foreground" />
+              <p class="text-sm font-medium">Publique a primeira versão para configurar a produção.</p>
+            </div>
           </section>
         </div>
 
         <!-- ── Resumo da fórmula ───────────────────────────────────────── -->
-        <aside class="grid min-w-0 content-start gap-3 xl:sticky xl:top-0 xl:self-start">
+        <aside v-if="editorTab === 'technical'" class="grid min-w-0 content-start gap-3 xl:sticky xl:top-0 xl:self-start">
           <div class="flex flex-wrap items-center gap-2">
             <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Resumo da fórmula</p>
             <Icon v-if="lensPending" name="lucide:loader-circle" class="size-4 animate-spin text-muted-foreground" />
@@ -829,9 +947,9 @@ const touch = useTouchPointer();
           <div v-if="before" class="grid gap-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
             <p class="font-medium">Padronizada para {{ gramsLabel(HOUSE_BASIS_G) }} {{ anchorNoun }}</p>
             <p class="tabular-nums text-muted-foreground">
-              Antes: âncora {{ gramsLabel(before.anchorTotal) }} · massa {{ gramsLabel(before.total) }}
+              Antes: base {{ gramsLabel(before.anchorTotal) }} · massa {{ gramsLabel(before.total) }}
               <br />
-              Depois: âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
+              Depois: base {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
             </p>
             <NuxtButton class="justify-self-start" color="primary" variant="ghost" label="Desfazer" @click="undoStandardize" />
           </div>
@@ -858,12 +976,12 @@ const touch = useTouchPointer();
       </div>
     </section>
 
-    <RecipeExecutionFormPanel
-      v-if="entry?.execution"
-      v-model:open="executionOpen"
-      :execution="entry.execution"
-      :busy="busy"
-      @save="saveExecutionForm"
+    <OperatorActionBar
+      v-if="draft && canEdit && editorTab !== 'production'"
+      :action="mobilePublishAction"
+      :secondary="mobileSaveAction"
+      :context-label="hasUnsavedChanges ? 'Alterações ainda não salvas' : `Rascunho da versão ${draft.number}`"
+      label="Salvar receita"
     />
   </main>
 </template>

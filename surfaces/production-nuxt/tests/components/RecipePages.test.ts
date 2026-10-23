@@ -516,7 +516,7 @@ describe("Receitas: cadastros turbinados", () => {
       revision: "2026-10-14T02:03:04+00:00",
     };
     const wrapper = mount(RecipeExecutionFormPanel, {
-      props: { open: true, execution },
+      props: { execution },
       global: { stubs },
     });
     await nextTick();
@@ -525,7 +525,7 @@ describe("Receitas: cadastros turbinados", () => {
     await inputs[2].setValue("4");
     await nextTick();
     expect(wrapper.find('[role="checkbox"][aria-label="Prazo revisado pelo responsável"]').attributes("aria-checked")).toBe("false");
-    await wrapper.findAll("button").find((button) => button.text() === "Salvar")!.trigger("click");
+    await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("save")?.[0]?.[0]).toMatchObject({
       shelfLifeDays: 4,
@@ -549,15 +549,15 @@ describe("Receitas: cadastros turbinados", () => {
       revision: "rev-1",
     };
     const wrapper = mount(RecipeExecutionFormPanel, {
-      props: { open: true, execution },
+      props: { execution },
       global: { stubs },
     });
     await nextTick();
     await wrapper.findAll("input")[2].setValue("1.5");
     await nextTick();
 
-    const shell = wrapper.findComponent(OperatorFormShellStub);
-    expect(shell.props("saveDisabled")).toBe(true);
-    expect(shell.props("saveDisabledReason")).toContain("número inteiro");
+    const saveButton = wrapper.findAll("button").find((button) => button.text() === "Salvar configuração")!;
+    expect(saveButton.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("número inteiro");
   });
 });
