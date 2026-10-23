@@ -1,10 +1,12 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopman-cashman"
 version = "0.1.0"
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md"]
 description = "Shopman Cashman — Terminals, cash shifts and the immutable cash ledger"
 requires-python = ">=3.12"
 dependencies = [
