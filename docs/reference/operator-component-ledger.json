@@ -2092,35 +2092,6 @@
           "status": "pending"
         },
         {
-          "id": "recipe-sheets",
-          "source_files": [
-            "app/pages/recipes/sheets/index.vue"
-          ],
-          "routes": [
-            "/recipes/sheets"
-          ],
-          "variants": [
-            "list",
-            "empty",
-            "create",
-            "edit",
-            "duplicate",
-            "forbidden",
-            "stale"
-          ],
-          "families": [
-            "action",
-            "field",
-            "selection",
-            "overlay",
-            "navigation",
-            "data-display",
-            "feedback",
-            "search"
-          ],
-          "status": "pending"
-        },
-        {
           "id": "reports",
           "source_files": [
             "app/pages/reports.vue"
@@ -2141,29 +2112,6 @@
             "data-display",
             "feedback",
             "date-time"
-          ],
-          "status": "pending"
-        },
-        {
-          "id": "settings",
-          "source_files": [
-            "app/pages/settings.vue"
-          ],
-          "routes": [
-            "/settings"
-          ],
-          "variants": [
-            "station",
-            "labels",
-            "defaults"
-          ],
-          "families": [
-            "action",
-            "field",
-            "selection",
-            "overlay",
-            "navigation",
-            "feedback"
           ],
           "status": "pending"
         },
