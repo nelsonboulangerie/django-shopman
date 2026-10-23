@@ -721,3 +721,91 @@ def test_interval_respects_floor_of_30_seconds(requested, effective):
         call_command("maintenance_worker", "--interval", str(requested), stdout=StringIO())
 
     sleep.assert_called_once_with(effective)
+
+
+# ── (d) Tarefa pendurada não congela o ciclo; processo pendurado morre ───────
+#
+# O5 do laudo de 23/10: ~45 comandos em série, sem prazo. Uma tarefa pendurada
+# (HTTP sem timeout, lock no banco) segurava o ciclo inteiro e o heartbeat junto.
+
+
+def test_hung_task_is_interrupted_logged_and_the_cycle_goes_on(caplog, monkeypatch):
+    import time as real_time
+
+    from shopman.shop.management.commands import maintenance_worker as worker
+
+    monkeypatch.setattr(worker, "COMMAND_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(worker, "COMMAND_TIMEOUTS", {})
+    pendurado = MAINTENANCE_COMMANDS[0]
+    chamados = []
+
+    def fake(command, *args, **kwargs):
+        chamados.append(command)
+        if command == pendurado:
+            # Engolir `Exception` não salva a tarefa do prazo: ele é BaseException.
+            try:
+                real_time.sleep(30)
+            except Exception:
+                pass
+
+    started = real_time.monotonic()
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.call_command", side_effect=fake),
+        _capture_worker_logs(caplog),
+    ):
+        _run_once()
+    elapsed = real_time.monotonic() - started
+
+    assert elapsed < 10, elapsed
+    assert len(chamados) == len(MAINTENANCE_COMMANDS)
+    estouros = [r for r in caplog.records if "estourou o prazo" in r.getMessage()]
+    assert len(estouros) == 1
+    assert estouros[0].levelno == logging.ERROR
+    assert pendurado in estouros[0].getMessage()
+
+
+def test_time_limit_restores_a_timer_that_was_already_armed():
+    import signal
+
+    from shopman.shop.management.commands.maintenance_worker import _time_limit
+
+    disparos = []
+    anterior = signal.signal(signal.SIGALRM, lambda *a: disparos.append(1))
+    try:
+        signal.setitimer(signal.ITIMER_REAL, 50)
+        with _time_limit(5):
+            pass
+        restante, _ = signal.getitimer(signal.ITIMER_REAL)
+        assert 40 < restante <= 50
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, anterior)
+    assert disparos == []
+
+
+def test_loop_runs_under_a_watchdog_fed_before_each_task_and_stopped_on_exit():
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.Watchdog") as watchdog_cls,
+        patch("shopman.shop.management.commands.maintenance_worker.call_command"),
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.time.sleep",
+            side_effect=_StopLoop(),
+        ),
+        pytest.raises(_StopLoop),
+    ):
+        call_command("maintenance_worker", stdout=StringIO())
+
+    watchdog = watchdog_cls.return_value.start.return_value
+    # Um sinal na abertura do ciclo, um por tarefa e um antes de dormir.
+    assert watchdog.feed.call_count == len(MAINTENANCE_COMMANDS) + 2
+    watchdog.stop.assert_called_once()
+
+
+def test_once_runs_without_a_watchdog():
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.Watchdog") as watchdog_cls,
+        patch("shopman.shop.management.commands.maintenance_worker.call_command"),
+    ):
+        _run_once()
+
+    watchdog_cls.assert_not_called()

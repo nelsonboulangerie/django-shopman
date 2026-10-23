@@ -165,3 +165,230 @@ class ProcessDirectivesHonorsHandlerRetryWindowTests(TestCase):
         self.assertEqual(mid.status, "queued")
         self.assertEqual(last.status, "failed")
         self.assertEqual(self.handler.terminal_calls, [last.pk])
+
+
+# ── Reaper × worker: o desfecho só é gravado por quem ainda tem o claim ──────
+
+
+class ReapedMidRunHandler:
+    """Simula o reaper (ou outro worker) tomando a diretiva durante o handle."""
+
+    topic = "reaped.topic"
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+        self.reap_pks: list[int] | None = None  # None = a própria diretiva
+        self.reclaim = False
+        self.raise_exc: BaseException | None = None
+        self.terminal_calls: list[int] = []
+
+    def handle(self, *, message: Directive, ctx: dict) -> None:
+        from datetime import timedelta
+
+        from django.db.models import F
+        from django.utils import timezone
+        from shopman.orderman.management.commands.process_directives import _reap_stuck_directives
+
+        self.calls.append(message.pk)
+        targets = [message.pk] if self.reap_pks is None else self.reap_pks
+        Directive.objects.filter(pk__in=targets).update(
+            started_at=timezone.now() - timedelta(minutes=30)
+        )
+        _reap_stuck_directives(timeout_minutes=10, max_attempts=5)
+        if self.reclaim:
+            # Outro processo reivindica a diretiva recolocada na fila.
+            Directive.objects.filter(pk__in=targets).update(
+                status="running", attempts=F("attempts") + 1, started_at=timezone.now()
+            )
+        if self.raise_exc is not None:
+            raise self.raise_exc
+
+    def on_terminal_failure(self, *, message: Directive) -> None:
+        self.terminal_calls.append(message.pk)
+
+
+class ProcessDirectivesClaimCompareAndSetTests(TestCase):
+    """P2 do laudo de pedido/estoque (23/10): o reaper fazia a diretiva rodar duas vezes.
+
+    O worker antigo, ao terminar depois do reaper, marcava `done` a execução de outro
+    (ou devolvia à fila o que já tinha sido recolocado). O desfecho agora é um
+    compare-and-set na ficha `(attempts, started_at)` do claim.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        registry.clear()
+        self.handler = ReapedMidRunHandler()
+        registry.register_directive_handler(self.handler)
+
+    def tearDown(self) -> None:
+        registry.clear()
+        super().tearDown()
+
+    def _queued(self, **kwargs) -> Directive:
+        defaults = {"topic": "reaped.topic", "payload": {}, "status": "queued"}
+        defaults.update(kwargs)
+        return Directive.objects.bulk_create([Directive(**defaults)])[0]
+
+    def test_reaper_revokes_the_claim(self) -> None:
+        directive = self._queued()
+
+        call_command("process_directives")
+
+        directive.refresh_from_db()
+        self.assertEqual(directive.status, "queued")
+        self.assertIsNone(directive.started_at)
+        self.assertIn("reaped", directive.last_error)
+
+    def test_old_worker_does_not_mark_done_a_directive_reaped_mid_run(self) -> None:
+        directive = self._queued()
+
+        call_command("process_directives")
+
+        directive.refresh_from_db()
+        # Ficou como o reaper deixou: na fila, para UMA nova execução.
+        self.assertEqual(directive.status, "queued")
+        self.assertEqual(directive.attempts, 1)
+        self.assertEqual(self.handler.calls, [directive.pk])
+
+    def test_old_worker_does_not_finish_the_run_of_the_worker_that_reclaimed(self) -> None:
+        self.handler.reclaim = True
+        directive = self._queued()
+
+        call_command("process_directives")
+
+        directive.refresh_from_db()
+        # A execução do outro processo segue dele: nem `done` nem devolvida à fila.
+        self.assertEqual(directive.status, "running")
+        self.assertEqual(directive.attempts, 2)
+
+    def test_old_worker_failure_does_not_overwrite_the_reaper(self) -> None:
+        self.handler.raise_exc = RuntimeError("timeout do provedor")
+        directive = self._queued(attempts=1)
+
+        call_command("process_directives")
+
+        directive.refresh_from_db()
+        # Sem o CAS, o worker antigo regravaria `transient` com o backoff dele.
+        self.assertEqual(directive.status, "queued")
+        self.assertEqual(directive.error_code, "")
+        self.assertIn("reaped", directive.last_error)
+        self.assertEqual(self.handler.terminal_calls, [])
+
+    def test_directive_reaped_while_waiting_in_the_batch_is_skipped(self) -> None:
+        first, second = self._queued(), self._queued()
+        self.handler.reap_pks = [second.pk]
+
+        call_command("process_directives")
+
+        # A segunda foi tomada pelo reaper enquanto a primeira rodava: o worker
+        # antigo não a executa (quem a roda é o próximo claim).
+        self.assertEqual(self.handler.calls, [first.pk])
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, "done")
+        self.assertEqual(second.status, "queued")
+
+    def test_unrelated_success_still_completes(self) -> None:
+        registry.clear()
+        handler = DummyDirectiveHandler()
+        registry.register_directive_handler(handler)
+        directive = self._queued(topic="dummy.topic")
+
+        call_command("process_directives")
+
+        directive.refresh_from_db()
+        self.assertEqual(directive.status, "done")
+        self.assertEqual(directive.error_code, "")
+
+
+# ── Watchdog: processo pendurado morre para a plataforma reiniciar ───────────
+
+
+class WatchdogTests(TestCase):
+    """O5 do laudo (23/10): worker pendurado (sem cair) não se recuperava."""
+
+    def _watchdog(self, exits):
+        from shopman.orderman.management.commands.process_directives import Watchdog
+
+        return Watchdog("teste", poll_seconds=0.01, exit_func=exits.append)
+
+    def test_expired_deadline_exits_with_nonzero_code(self) -> None:
+        import time
+
+        from shopman.orderman.management.commands.process_directives import WATCHDOG_EXIT_CODE
+
+        exits: list[int] = []
+        watchdog = self._watchdog(exits)
+        watchdog.feed(0.05)
+        watchdog.start()
+        try:
+            deadline = time.monotonic() + 2.0
+            while not exits and time.monotonic() < deadline:
+                time.sleep(0.01)
+        finally:
+            watchdog.stop()
+        self.assertEqual(exits, [WATCHDOG_EXIT_CODE])
+        self.assertNotEqual(WATCHDOG_EXIT_CODE, 0)
+
+    def test_fed_watchdog_stays_quiet(self) -> None:
+        import time
+
+        exits: list[int] = []
+        watchdog = self._watchdog(exits)
+        watchdog.feed(0.3)
+        watchdog.start()
+        try:
+            for _ in range(10):
+                watchdog.feed(0.3)
+                time.sleep(0.03)
+        finally:
+            watchdog.stop()
+        self.assertEqual(exits, [])
+
+    def test_hung_main_thread_process_is_killed(self) -> None:
+        """Prova real: o processo com a thread principal presa sai sozinho, com código ≠ 0."""
+        import os
+        import subprocess
+        import sys
+        import textwrap
+
+        from shopman.orderman.management.commands.process_directives import WATCHDOG_EXIT_CODE
+
+        script = textwrap.dedent(
+            """
+            import time
+            import django
+            django.setup()
+            from shopman.orderman.management.commands.process_directives import Watchdog
+            watchdog = Watchdog("pendurado", poll_seconds=0.05)
+            watchdog.feed(0.2)
+            watchdog.start()
+            time.sleep(60)  # a thread principal nunca mais dá sinal de vida
+            """
+        )
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
+        result = subprocess.run(
+            [sys.executable, "-c", script], env=env, capture_output=True, timeout=45,
+        )
+        self.assertEqual(result.returncode, WATCHDOG_EXIT_CODE, result.stderr.decode()[-2000:])
+
+    def test_watch_mode_starts_and_stops_the_watchdog(self) -> None:
+        from unittest.mock import patch
+
+        registry.clear()
+        registry.register_directive_handler(DummyDirectiveHandler())
+        module = "shopman.orderman.management.commands.process_directives"
+        try:
+            with (
+                patch(f"{module}.Watchdog") as watchdog_cls,
+                patch(f"{module}.time.sleep", side_effect=KeyboardInterrupt),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                call_command("process_directives", "--watch", "--watchdog-seconds", "90")
+        finally:
+            registry.clear()
+
+        instance = watchdog_cls.return_value.start.return_value
+        instance.feed.assert_called_with(90)
+        instance.stop.assert_called_once()
