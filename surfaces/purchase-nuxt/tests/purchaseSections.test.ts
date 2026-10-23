@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { activeSectionKey } from "../../operator-kit/app/presentation/appBar";
 import { quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
-import { baseSectionOf, baseSectionPath, purchaseSections } from "../app/presentation/purchaseSections";
+import { PURCHASE_BASE_RECORD_SECTIONS, baseSectionOf, baseSectionPath, purchaseSections } from "../app/presentation/purchaseSections";
 
 describe("seções do Compras no shell da suíte", () => {
   const sections = purchaseSections({ urgentMaterials: 2, receivePending: 3 });
@@ -38,5 +38,12 @@ describe("seções do Compras no shell da suíte", () => {
     expect(baseSectionOf("/base/materials/FAR-T65")).toBe("materials");
     expect(baseSectionOf("/buy")).toBeNull();
     expect(baseSectionPath("count")).toBe("/base/count");
+  });
+
+  it("a troca de cadastro contém só objetos estáveis; custos e contagem são tarefas", () => {
+    expect(PURCHASE_BASE_RECORD_SECTIONS.map((section) => [section.key, section.label])).toEqual([
+      ["materials", "Insumos"],
+      ["suppliers", "Fornecedores"],
+    ]);
   });
 });

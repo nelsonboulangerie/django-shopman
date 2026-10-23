@@ -16,12 +16,44 @@ export interface PurchaseSectionsInput {
   receivePending: number;
 }
 
-export const PURCHASE_BASE_SECTIONS: ReadonlyArray<{ key: PurchaseBaseView; label: string; icon: string; to: string }> = [
-  { key: "materials", label: "Insumos", icon: "i-lucide-package-search", to: "/base/materials" },
-  { key: "suppliers", label: "Fornecedores", icon: "i-lucide-truck", to: "/base/suppliers" },
-  { key: "costs", label: "Custos", icon: "i-lucide-calculator", to: "/base/costs" },
-  { key: "count", label: "Contagem", icon: "i-lucide-clipboard-check", to: "/base/count" },
+export const PURCHASE_BASE_SECTIONS: ReadonlyArray<{
+  key: PurchaseBaseView;
+  label: string;
+  icon: string;
+  to: string;
+  /** Só objetos estáveis entram na troca de cadastro. Tarefas têm entrada própria. */
+  record?: boolean;
+}> = [
+  {
+    key: "materials",
+    label: "Insumos",
+    icon: "i-lucide-package-search",
+    to: "/base/materials",
+    record: true,
+  },
+  {
+    key: "suppliers",
+    label: "Fornecedores",
+    icon: "i-lucide-truck",
+    to: "/base/suppliers",
+    record: true,
+  },
+  {
+    key: "costs",
+    label: "Lançar custos",
+    icon: "i-lucide-calculator",
+    to: "/base/costs",
+  },
+  {
+    key: "count",
+    label: "Contar estoque",
+    icon: "i-lucide-clipboard-check",
+    to: "/base/count",
+  },
 ];
+
+/** As duas coleções irmãs da Base. Custos e Contagem são tarefas, não abas. */
+export const PURCHASE_BASE_RECORD_SECTIONS = PURCHASE_BASE_SECTIONS.filter((section) => section.record);
 
 /** O endereço de uma sub-seção da Base. */
 export function baseSectionPath(key: PurchaseBaseView): string {
@@ -57,7 +89,13 @@ export function urgentLabel(count: number): string {
 
 export function purchaseSections({ urgentMaterials, receivePending }: PurchaseSectionsInput): OperatorSection[] {
   return [
-    { key: "panel", label: "Painel", icon: "lucide:layout-dashboard", to: "/", quick: true },
+    {
+      key: "panel",
+      label: "Painel",
+      icon: "lucide:layout-dashboard",
+      to: "/",
+      quick: true,
+    },
     {
       key: "buy",
       label: "Comprar",
@@ -74,6 +112,13 @@ export function purchaseSections({ urgentMaterials, receivePending }: PurchaseSe
       quick: true,
       badge: receivePending > 0 ? String(receivePending) : undefined,
     },
-    { key: "base", label: "Base", icon: "lucide:database", to: "/base/materials", match: ["/base"], quick: true },
+    {
+      key: "base",
+      label: "Base",
+      icon: "lucide:database",
+      to: "/base/materials",
+      match: ["/base"],
+      quick: true,
+    },
   ];
 }

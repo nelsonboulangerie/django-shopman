@@ -14,6 +14,13 @@ const CASES = [
   { id: "materials-list", route: "/base/materials", ready: "[data-base-table]", click: "", open: "" },
   { id: "suppliers-list", route: "/base/suppliers", ready: "[data-base-suppliers-table]", click: "", open: "" },
   {
+    id: "material-detail",
+    route: "/base/materials/FAR-T65",
+    ready: "[data-material-sheet]",
+    click: "",
+    open: "",
+  },
+  {
     id: "material-edit",
     route: "/base/materials/FAR-T65",
     ready: "[data-material-panel]",
@@ -26,6 +33,13 @@ const CASES = [
     ready: "[data-material-panel]",
     click: 'button[aria-label="Duplicar o insumo"]',
     open: "[data-material-form]",
+  },
+  {
+    id: "supplier-detail",
+    route: "/base/suppliers/MOINHO-PARANA",
+    ready: "[data-supplier-sheet]",
+    click: "",
+    open: "",
   },
   {
     id: "supplier-edit",

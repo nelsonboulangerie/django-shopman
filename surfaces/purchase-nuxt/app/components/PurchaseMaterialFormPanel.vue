@@ -5,15 +5,7 @@
 // Aplicar e Cancelar (D9): eles voltam pela projeção, não por estado paralelo.
 import { nextTick } from "vue";
 
-import type {
-  ConversionKind,
-  Material,
-  MaterialConversion,
-  MaterialUnit,
-  PurchaseFormMode,
-  Supplier,
-  SupplierMaterialCost,
-} from "~/types/purchase";
+import type { ConversionKind, Material, MaterialConversion, MaterialUnit, PurchaseFormMode, Supplier, SupplierMaterialCost } from "~/types/purchase";
 import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
 import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm";
@@ -112,8 +104,7 @@ const description = computed(() => {
   return "Cria o cadastro de compra do insumo. Fornecedor, custo e conversão entram depois.";
 });
 const saveLabel = computed(() => (isDuplicate.value ? "Duplicar insumo" : isEdit.value ? "Salvar insumo" : "Criar insumo"));
-const duplicateNote =
-  "A cópia traz nome, unidade, validade e categoria. Não traz código de barras, mínimo, custo nem conversão: o novo SKU começa limpo.";
+const duplicateNote = "A cópia traz nome, unidade, validade e categoria. Não traz código de barras, mínimo, custo nem conversão: o novo SKU começa limpo.";
 
 function suggestSku(sku: string): string {
   return sku + "-COPIA";
@@ -192,9 +183,7 @@ const shelfLifeNumber = computed(() => {
   return Number.isInteger(value) && value >= 0 && value <= 36500 ? value : null;
 });
 const shelfLifeInvalid = computed(() => form.shelfLifeDaysText.trim() !== "" && shelfLifeNumber.value === null);
-const sameSourceSku = computed(
-  () => isDuplicate.value && Boolean(props.source) && form.sku.trim().toLowerCase() === props.source!.sku.trim().toLowerCase(),
-);
+const sameSourceSku = computed(() => isDuplicate.value && Boolean(props.source) && form.sku.trim().toLowerCase() === props.source!.sku.trim().toLowerCase());
 const valid = computed(() => {
   if (!isEdit.value && !form.sku.trim()) return false;
   if (!form.name.trim()) return false;
@@ -292,14 +281,8 @@ function toggleConversion(row: MaterialConversion) {
 // ── Custos ───────────────────────────────────────────────────────────────────
 const materialCosts = computed(() => props.costs.filter((row) => row.materialSku === props.source?.sku));
 const supplierOptions = computed(() => props.suppliers.map((row) => ({ value: row.ref, label: row.displayName })));
-const costConversions = computed(() =>
-  materialConversions.value
-    .filter((row) => row.isActive && (!row.supplierRef || row.supplierRef === cost.supplierRef))
-    .map((row) => ({ value: row.id, label: row.label })),
-);
-const costValid = computed(
-  () => cost.supplierRef !== "" && parseMoneyInput(cost.costInput) > 0,
-);
+const costConversions = computed(() => materialConversions.value.filter((row) => row.isActive && (!row.supplierRef || row.supplierRef === cost.supplierRef)).map((row) => ({ value: row.id, label: row.label })));
+const costValid = computed(() => cost.supplierRef !== "" && parseMoneyInput(cost.costInput) > 0);
 const costDisabledReason = computed(() => {
   if (!cost.supplierRef) return "Escolha o fornecedor do custo.";
   if (!(parseMoneyInput(cost.costInput) > 0)) return "Informe o valor pago na unidade de compra.";
@@ -388,28 +371,14 @@ watch(
     @update:open="(value: boolean) => emit('update:open', value)"
     @save="submit"
   >
-    <div class="flex flex-col gap-4" data-material-form>
+    <div class="-m-4 flex min-h-full flex-col gap-4 bg-background p-4" data-material-form data-crud-form-surface>
       <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" />
-      <NuxtAlert
-        v-if="isDuplicate"
-        color="info"
-        variant="subtle"
-        icon="i-lucide-copy"
-        title="O que a cópia traz"
-        :description="duplicateNote"
-      />
+      <NuxtAlert v-if="isDuplicate" color="info" variant="subtle" icon="i-lucide-copy" title="O que a cópia traz" :description="duplicateNote" />
 
-      <OperatorFormSection section-key="identity" title="Identificação" description="Como o insumo se chama e em que unidade se conta.">
+      <OperatorFormSection class="rounded-md border bg-card p-4" section-key="identity" title="Identificação" description="Como o insumo se chama e em que unidade se conta.">
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="SKU" required>
-            <NuxtInput
-              v-model="form.sku"
-              :disabled="isEdit"
-              placeholder="FARINHA-T65"
-              class="w-full"
-              data-testid="material-sku"
-              data-focus-control
-            />
+            <NuxtInput v-model="form.sku" :disabled="isEdit" placeholder="FARINHA-T65" class="w-full" data-testid="material-sku" data-focus-control />
           </NuxtFormField>
           <NuxtFormField label="Nome" required>
             <NuxtInput v-model="form.name" class="w-full" placeholder="Farinha de trigo tipo 65" data-testid="material-name" />
@@ -422,23 +391,11 @@ watch(
           </NuxtFormField>
         </div>
         <div v-if="!isDuplicate && categories.length" class="flex flex-wrap gap-1.5">
-          <NuxtButton
-            v-for="category in categories.slice(0, 8)"
-            :key="category"
-            :label="category"
-            color="neutral"
-            variant="outline"
-            @click="form.category = category"
-          />
+          <NuxtButton v-for="category in categories.slice(0, 8)" :key="category" :label="category" color="neutral" variant="outline" @click="form.category = category" />
         </div>
       </OperatorFormSection>
 
-      <OperatorFormSection
-        v-if="!isDuplicate"
-        section-key="shelf"
-        title="Validade e situação"
-        description="A validade padrão do que chega. Vazio = não perecível."
-      >
+      <OperatorFormSection v-if="!isDuplicate" class="rounded-md border bg-card p-4" section-key="shelf" title="Validade e situação" description="A validade padrão do que chega. Vazio = não perecível.">
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="Validade (dias)">
             <NuxtInput v-model="form.shelfLifeDaysText" class="w-full" inputmode="numeric" placeholder="Vazio = não perecível" data-testid="material-shelf-life" />
@@ -449,12 +406,7 @@ watch(
         </div>
       </OperatorFormSection>
 
-      <OperatorFormSection
-        v-if="isEdit && source"
-        section-key="conversions"
-        title="Conversões"
-        description="Como a embalagem comprada vira a unidade-base do insumo."
-      >
+      <OperatorFormSection v-if="isEdit && source" class="rounded-md border bg-card p-4" section-key="conversions" title="Conversões" description="Como a embalagem comprada vira a unidade-base do insumo.">
         <ul v-if="materialConversions.length" class="flex flex-col divide-y divide-default">
           <li v-for="row in materialConversions" :key="row.id" class="flex items-start justify-between gap-2 py-2">
             <span class="min-w-0">
@@ -467,18 +419,13 @@ watch(
             </span>
             <span class="flex shrink-0 gap-1">
               <NuxtButton label="Editar" color="neutral" variant="ghost" @click="editConversion(row)" />
-              <NuxtButton
-                :label="row.isActive ? 'Desativar' : 'Reativar'"
-                color="neutral"
-                variant="ghost"
-                @click="toggleConversion(row)"
-              />
+              <NuxtButton :label="row.isActive ? 'Desativar' : 'Reativar'" color="neutral" variant="ghost" @click="toggleConversion(row)" />
             </span>
           </li>
         </ul>
         <p v-else class="text-xs text-muted">Nenhuma conversão declarada. Sem ela, a compra é contada na unidade-base.</p>
 
-        <form v-if="conversion.open" class="mt-2 flex flex-col gap-3 rounded-lg bg-elevated/60 p-3" data-testid="conversion-form" @submit.prevent="submitConversion()">
+        <form v-if="conversion.open" class="mt-2 flex flex-col gap-3 border-t pt-3" data-testid="conversion-form" @submit.prevent="submitConversion()">
           <div class="grid gap-3 sm:grid-cols-2">
             <NuxtFormField label="Rótulo" required description="Como o operador chama: saco 25 kg, cartela.">
               <NuxtInput v-model="conversion.label" class="w-full" data-testid="conversion-label" />
@@ -494,35 +441,15 @@ watch(
             </NuxtFormField>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <NuxtButton
-              type="submit"
-              :label="conversion.id ? 'Salvar conversão' : 'Adicionar conversão'"
-              :disabled="!conversionValid || busy"
-              data-testid="conversion-submit"
-            />
+            <NuxtButton type="submit" :label="conversion.id ? 'Salvar conversão' : 'Adicionar conversão'" :disabled="!conversionValid || busy" data-testid="conversion-submit" />
             <NuxtButton label="Cancelar" color="neutral" variant="outline" @click="resetConversion()" />
             <span v-if="conversionDisabledReason" class="text-xs text-muted">{{ conversionDisabledReason }}</span>
           </div>
         </form>
-        <NuxtButton
-          v-else
-          label="Adicionar conversão"
-          icon="i-lucide-plus"
-          color="neutral"
-          variant="outline"
-          class="self-start"
-          :disabled="busy"
-          data-testid="conversion-add"
-          @click="newConversion()"
-        />
+        <NuxtButton v-else label="Adicionar conversão" icon="i-lucide-plus" color="neutral" variant="outline" class="self-start" :disabled="busy" data-testid="conversion-add" @click="newConversion()" />
       </OperatorFormSection>
 
-      <OperatorFormSection
-        v-if="isEdit && source"
-        section-key="costs"
-        title="Custos"
-        description="Quanto cada fornecedor cobra pela unidade de compra."
-      >
+      <OperatorFormSection v-if="isEdit && source" class="rounded-md border bg-card p-4" section-key="costs" title="Custos" description="Quanto cada fornecedor cobra pela unidade de compra.">
         <ul v-if="materialCosts.length" class="flex flex-col divide-y divide-default">
           <li v-for="row in materialCosts" :key="row.id" class="flex items-start justify-between gap-2 py-2">
             <span class="min-w-0">
@@ -534,21 +461,14 @@ watch(
             </span>
             <span class="flex shrink-0 items-center gap-1">
               <NuxtBadge v-if="row.isPreferred" color="success" label="Preferencial" />
-              <NuxtButton
-                v-else
-                label="Tornar preferencial"
-                color="neutral"
-                variant="ghost"
-                :disabled="busy"
-                @click="makePreferred(row)"
-              />
+              <NuxtButton v-else label="Tornar preferencial" color="neutral" variant="ghost" :disabled="busy" @click="makePreferred(row)" />
               <NuxtButton label="Editar" color="neutral" variant="ghost" @click="editCost(row)" />
             </span>
           </li>
         </ul>
         <p v-else class="text-xs text-muted">Nenhum custo lançado. Sem custo preferencial o insumo fica fora do pedido de compra.</p>
 
-        <form v-if="cost.open" class="mt-2 flex flex-col gap-3 rounded-lg bg-elevated/60 p-3" data-testid="cost-form" @submit.prevent="submitCost()">
+        <form v-if="cost.open" class="mt-2 flex flex-col gap-3 border-t pt-3" data-testid="cost-form" @submit.prevent="submitCost()">
           <div class="grid gap-3 sm:grid-cols-2">
             <NuxtFormField label="Fornecedor" required>
               <NuxtSelect v-model="cost.supplierRef" :items="supplierOptions" class="w-full" data-testid="cost-supplier" />
@@ -569,17 +489,7 @@ watch(
             <span v-if="costDisabledReason" class="text-xs text-muted">{{ costDisabledReason }}</span>
           </div>
         </form>
-        <NuxtButton
-          v-else
-          label="Adicionar custo"
-          icon="i-lucide-plus"
-          color="neutral"
-          variant="outline"
-          class="self-start"
-          :disabled="busy || !suppliers.length"
-          data-testid="cost-add"
-          @click="newCost()"
-        />
+        <NuxtButton v-else label="Adicionar custo" icon="i-lucide-plus" color="neutral" variant="outline" class="self-start" :disabled="busy || !suppliers.length" data-testid="cost-add" @click="newCost()" />
       </OperatorFormSection>
     </div>
   </OperatorFormShell>

@@ -6,15 +6,7 @@
 import type { EnrichedMaterial } from "~/types/purchase";
 import { coverageLabel, formatMoney, formatQty, formatStockOnHand, skuRoleBadges } from "~/presentation/purchase";
 import { MATERIALS_TRAIL, baseSectionPath, materialPath, urgentLabel } from "~/presentation/purchaseSections";
-import {
-  MATERIAL_ATTENTION_TONES,
-  TONE_BADGE,
-  TONE_LABEL,
-  TONE_RANK,
-  isAttentionRecorte,
-  materialDimensions,
-  plural,
-} from "~/presentation/purchaseUi";
+import { MATERIAL_ATTENTION_TONES, TONE_BADGE, TONE_LABEL, TONE_RANK, isAttentionRecorte, materialDimensions, plural } from "~/presentation/purchaseUi";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
 const csvTools = ref<{ openImport: () => void; openExport: () => void } | null>(null);
@@ -57,20 +49,28 @@ const {
 } = usePurchaseDesk();
 
 const openSku = computed(() => (typeof route.params.sku === "string" ? route.params.sku : ""));
-watch(openSku, (sku) => {
-  if (sku) selectMaterial(sku);
-}, { immediate: true });
+watch(
+  openSku,
+  (sku) => {
+    if (sku) selectMaterial(sku);
+  },
+  { immediate: true },
+);
 
 function openMaterial(material: EnrichedMaterial) {
   void navigateTo(materialPath(material.sku));
 }
 
 const sorting = ref<{ id: string; desc: boolean }[]>([]);
-watch(sorting, (value) => {
-  const sort = value[0];
-  const order = sort?.id === "name" ? (sort.desc ? "-name" : "name") : "name";
-  void navigateTo({ query: { ...route.query, order, page: "1" } }, { replace: true });
-}, { deep: true });
+watch(
+  sorting,
+  (value) => {
+    const sort = value[0];
+    const order = sort?.id === "name" ? (sort.desc ? "-name" : "name") : "name";
+    void navigateTo({ query: { ...route.query, order, page: "1" } }, { replace: true });
+  },
+  { deep: true },
+);
 function goToPage(page: number) {
   void navigateTo({ query: { ...route.query, page: String(page) } }, { replace: true });
 }
@@ -85,12 +85,33 @@ const SORT_VALUE: Record<string, (material: EnrichedMaterial) => number | string
 // rolar de lado (regra de precedência da fase 2).
 const yieldsToDetail = computed(() => (openSku.value ? { th: "max-2xl:hidden", td: "max-2xl:hidden" } : undefined));
 const columns = computed(() => [
-  { id: "name", header: "Insumo", accessorFn: SORT_VALUE.name, enableSorting: true, enableHiding: false },
+  {
+    id: "name",
+    header: "Insumo",
+    accessorFn: SORT_VALUE.name,
+    enableSorting: true,
+    enableHiding: false,
+  },
   { id: "stock", header: "Estoque", accessorFn: SORT_VALUE.stock },
-  { id: "coverage", header: "Cobertura", accessorFn: SORT_VALUE.coverage, meta: { supporting: true, class: yieldsToDetail.value } },
+  {
+    id: "coverage",
+    header: "Cobertura",
+    accessorFn: SORT_VALUE.coverage,
+    meta: { supporting: true, class: yieldsToDetail.value },
+  },
   { id: "minimum", header: "Mínimo", enableHiding: false },
-  { id: "cost", header: "Custo-base", accessorFn: SORT_VALUE.cost, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "tone", header: "Situação", accessorFn: SORT_VALUE.tone, meta: { supporting: true } },
+  {
+    id: "cost",
+    header: "Custo-base",
+    accessorFn: SORT_VALUE.cost,
+    meta: { supporting: true, class: yieldsToDetail.value },
+  },
+  {
+    id: "tone",
+    header: "Situação",
+    accessorFn: SORT_VALUE.tone,
+    meta: { supporting: true },
+  },
 ]);
 
 // A ordem que a tabela mostra: é a trilha do "‹ 3 de 18 ›" do insumo aberto.
@@ -98,7 +119,11 @@ const displayed = computed(() => filteredMaterials.value);
 const { remember } = useRecordTrail(MATERIALS_TRAIL);
 watch(
   displayed,
-  (list) => remember(list.map((material) => material.sku), { from: baseSectionPath("materials"), label: "Insumos" }),
+  (list) =>
+    remember(
+      list.map((material) => material.sku),
+      { from: baseSectionPath("materials"), label: "Insumos" },
+    ),
   { immediate: true },
 );
 
@@ -169,11 +194,32 @@ const alerts = computed(() => {
 });
 
 const headerActions = [
-  { label: "Importar CSV", icon: "i-lucide-upload", onSelect: () => csvTools.value?.openImport() },
-  { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => csvTools.value?.openExport() },
-  { label: "Novo insumo", icon: "i-lucide-plus", onSelect: () => openMaterialCreate() },
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
-  { label: "Contagem de estoque", icon: "i-lucide-clipboard-check", to: baseSectionPath("count") },
+  {
+    label: "Importar CSV",
+    icon: "i-lucide-upload",
+    onSelect: () => csvTools.value?.openImport(),
+  },
+  {
+    label: "Exportar CSV",
+    icon: "i-lucide-download",
+    onSelect: () => csvTools.value?.openExport(),
+  },
+  {
+    label: "Novo insumo",
+    icon: "i-lucide-plus",
+    onSelect: () => openMaterialCreate(),
+  },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => void refresh(),
+  },
+  {
+    label: "Contagem de estoque",
+    icon: "i-lucide-clipboard-check",
+    to: baseSectionPath("count"),
+  },
 ];
 
 async function onSubmitMaterial(payload: Record<string, unknown>) {
@@ -198,75 +244,55 @@ async function onSaveMinStock() {
     saving.value = false;
   }
 }
-const saveLabel = computed(() =>
-  `Salvar ${plural(minStockFilledCount.value, "mínimo", "mínimos")}`,
-);
+const saveLabel = computed(() => `Salvar ${plural(minStockFilledCount.value, "mínimo", "mínimos")}`);
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
     <OperatorPageHeader
-      title="Base"
+      :title="openSku ? 'Insumo' : 'Base'"
       :actions="headerActions"
       actions-label="Mais ações da Base"
-      :alerts="alerts"
+      :alerts="openSku ? [] : alerts"
       :active-filters="activeFilters"
       desk-only-filters
     >
-      <template #status>
+      <template v-if="!openSku" #status>
         <PurchaseReadStatus />
       </template>
-      <template #search>
-        <OperatorSuiteSearch
-          v-model="query"
-          screen-label="filtrando os insumos"
-          placeholder="Buscar insumo ou SKU"
-          aria-label="Buscar insumo ou SKU"
-        />
+      <template v-if="!openSku" #search>
+        <OperatorSuiteSearch v-model="query" screen-label="filtrando os insumos" placeholder="Buscar insumo ou SKU" aria-label="Buscar insumo ou SKU" />
       </template>
       <template #actions>
         <div v-if="minStockFilledCount" class="flex items-center gap-2 max-lg:hidden" data-min-stock-save>
           <NuxtButton label="Limpar" color="neutral" variant="outline" :disabled="actionPending" @click="clearMinStock()" />
-          <NuxtButton
-            icon="i-lucide-check"
-            :label="saveLabel"
-            :loading="saving"
-            :disabled="readonlyFallback || actionPending || Object.keys(minimumGridErrors).length > 0"
-            @click="onSaveMinStock()"
-          />
+          <NuxtButton icon="i-lucide-check" :label="saveLabel" :loading="saving" :disabled="readonlyFallback || actionPending || Object.keys(minimumGridErrors).length > 0" @click="onSaveMinStock()" />
         </div>
       </template>
-      <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: materialList.total, suppliers: supplierList.total }" />
-      </template>
-      <template #filter-panel>
-        <OperatorFilterPanel
-          v-model="materialFilters"
-          :dimensions="dimensions"
-          surface="purchase"
-          screen="materials"
-          data-base-filters
+      <template v-if="!openSku" #filters-primary>
+        <PurchaseBaseSections
+          :counts="{
+            materials: materialList.total,
+            suppliers: supplierList.total,
+          }"
         />
+      </template>
+      <template v-if="!openSku" #filter-panel>
+        <OperatorFilterPanel v-model="materialFilters" :dimensions="dimensions" surface="purchase" screen="materials" data-base-filters />
       </template>
       <!-- Na mesa: os filtros rápidos e a forma da tabela. No celular, os rápidos moram no
            painel (Situação) e a forma sai (as colunas de apoio já somem). -->
-      <template #filters>
-        <OperatorQuickFilters
-          v-model="quickModel"
-          :items="quickItems"
-          multiple
-          label="Insumos que pedem atenção"
-          data-base-attention
-        />
+      <template v-if="!openSku" #filters>
+        <OperatorQuickFilters v-model="quickModel" :items="quickItems" multiple label="Insumos que pedem atenção" data-base-attention />
         <OperatorTableView table-key="purchase-materials" />
       </template>
-      <template #filters-end>
+      <template v-if="!openSku" #filters-end>
         <span class="text-xs text-muted tabular-nums">{{ plural(materialList.total, "insumo", "insumos") }}</span>
       </template>
     </OperatorPageHeader>
 
     <div class="flex min-h-0 flex-1">
-      <section class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6" data-base-materials>
+      <section class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6" :class="openSku ? 'max-xl:hidden' : ''" data-base-materials>
         <PurchaseLoadState>
           <div class="mb-3 flex flex-wrap items-center gap-2">
             <p class="text-sm text-muted">Cole uma coluna da planilha no primeiro mínimo. Desfazer volta uma edição por vez.</p>
@@ -287,13 +313,7 @@ const saveLabel = computed(() =>
             data-base-table
           >
             <template v-if="materialList.page > 1 || materialList.has_next" #footer>
-              <NuxtPagination
-                :page="materialList.page"
-                :total="materialList.total"
-                :items-per-page="materialList.page_size"
-                aria-label="Páginas de insumos"
-                @update:page="goToPage"
-              />
+              <NuxtPagination :page="materialList.page" :total="materialList.total" :items-per-page="materialList.page_size" aria-label="Páginas de insumos" @update:page="goToPage" />
             </template>
             <template #name-cell="{ row }">
               <span class="block min-w-24 font-semibold sm:min-w-36">{{ row.original.name }}</span>
@@ -322,8 +342,8 @@ const saveLabel = computed(() =>
                   :model-value="minStockInputs[row.original.sku] ?? ''"
                   :placeholder="row.original.minStockDeclared ? row.original.minStock.toLocaleString('pt-BR') : 'nenhum'"
                   :aria-label="`Mínimo de ${row.original.name}`"
-                  :color="(minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku]) ? 'error' : 'primary'"
-                  :highlight="Boolean((minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku]) || minStockInputs[row.original.sku])"
+                  :color="minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku] ? 'error' : 'primary'"
+                  :highlight="Boolean(minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku] || minStockInputs[row.original.sku])"
                   class="w-full [&_input]:text-end [&_input]:tabular-nums"
                   @paste="pasteMinimum($event, row.original.sku)"
                   @update:model-value="(value: string | number) => setMinStockInput(row.original.sku, String(value ?? ''))"
@@ -333,10 +353,11 @@ const saveLabel = computed(() =>
                   </template>
                 </NuxtInput>
                 <p v-if="!row.original.minStockDeclared && row.original.minStock" class="mt-0.5 text-xs text-muted">
-                  pelo consumo: {{ formatQty(row.original.minStock, row.original.unit) }}
+                  pelo consumo:
+                  {{ formatQty(row.original.minStock, row.original.unit) }}
                 </p>
-                <p v-if="(minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku])" class="mt-0.5 text-xs font-semibold text-error">
-                  {{ (minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku]) }}
+                <p v-if="minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku]" class="mt-0.5 text-xs font-semibold text-error">
+                  {{ minimumGridErrors[row.original.sku] || minStockLineErrors[row.original.sku] }}
                 </p>
               </div>
             </template>
@@ -353,14 +374,20 @@ const saveLabel = computed(() =>
         </PurchaseLoadState>
       </section>
 
-      <!-- O insumo aberto (rota filha): ao lado da tabela na mesa larga, numa folha de
-           lado abaixo do `xl`. -->
+      <!-- O insumo aberto (rota filha): ao lado da tabela na mesa larga e como página
+           abaixo do `xl`. -->
       <NuxtPage />
     </div>
 
     <OperatorActionBar
       v-if="minStockFilledCount"
-      :action="{ label: saveLabel, icon: 'i-lucide-check', loading: saving, disabled: readonlyFallback || actionPending || Object.keys(minimumGridErrors).length > 0, onSelect: () => void onSaveMinStock() }"
+      :action="{
+        label: saveLabel,
+        icon: 'i-lucide-check',
+        loading: saving,
+        disabled: readonlyFallback || actionPending || Object.keys(minimumGridErrors).length > 0,
+        onSelect: () => void onSaveMinStock(),
+      }"
       :secondary="{ label: 'Limpar', onSelect: () => clearMinStock() }"
       context-label="Zero apaga o mínimo do insumo"
     />

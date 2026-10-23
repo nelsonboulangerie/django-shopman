@@ -11,7 +11,6 @@ const {
   suppliers,
   conversions,
   costs,
-  metrics,
   batchSupplierRef,
   batchInputs,
   batchConversionIds,
@@ -44,21 +43,32 @@ const {
 } = usePurchaseDesk();
 
 const headerActions = [
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => void refresh(),
+  },
 ];
 
 // Fornecedor inativo não recebe custo preferencial (a casa recusa): não oferecer é
 // melhor que recusar.
-const activeSupplierItems = computed(() =>
-  suppliers.value.filter((supplier) => supplier.isActive).map((supplier) => ({ label: supplier.displayName, value: supplier.ref })),
+const activeSupplierItems = computed(() => suppliers.value.filter((supplier) => supplier.isActive).map((supplier) => ({ label: supplier.displayName, value: supplier.ref })));
+const supplierItems = computed(() =>
+  suppliers.value.map((supplier) => ({
+    label: supplier.displayName,
+    value: supplier.ref,
+  })),
 );
-const supplierItems = computed(() => suppliers.value.map((supplier) => ({ label: supplier.displayName, value: supplier.ref })));
-const materialItems = computed(() => materials.value.map((material) => ({ label: material.name, value: material.sku })));
+const materialItems = computed(() =>
+  materials.value.map((material) => ({
+    label: material.name,
+    value: material.sku,
+  })),
+);
 // O nome escolhido pode passar da largura do campo: a reticência leva o completo na
 // dica (o rótulo que cabe, dono 10/10/2026).
-const noteMaterialName = computed(
-  () => materials.value.find((material) => material.sku === noteMaterialSku.value)?.name || undefined,
-);
+const noteMaterialName = computed(() => materials.value.find((material) => material.sku === noteMaterialSku.value)?.name || undefined);
 // `NuxtSelect` não aceita valor vazio num item: a unidade-base vai como sentinela e
 // volta vazia para o rascunho (sem conversão).
 const BASE_UNIT = "__base__";
@@ -68,12 +78,18 @@ const noteConversionModel = computed({
 });
 const noteConversionItems = computed(() => [
   { label: "Unidade-base", value: BASE_UNIT },
-  ...availableNoteConversions.value.map((conversion) => ({ label: conversion.label, value: conversion.id })),
+  ...availableNoteConversions.value.map((conversion) => ({
+    label: conversion.label,
+    value: conversion.id,
+  })),
 ]);
 function batchConversionItems(row: EnrichedMaterial) {
   return [
     { label: `Unidade-base (${row.unit})`, value: BASE_UNIT },
-    ...batchConversionsFor(row.sku).map((conversion) => ({ label: conversion.label, value: conversion.id })),
+    ...batchConversionsFor(row.sku).map((conversion) => ({
+      label: conversion.label,
+      value: conversion.id,
+    })),
   ];
 }
 
@@ -137,20 +153,15 @@ async function onPrefer(cost: SupplierMaterialCost) {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Base" :actions="headerActions" actions-label="Mais ações da Base">
+    <OperatorPageHeader title="Lançar custos" :actions="headerActions" actions-label="Mais ações de custos">
       <template #status>
         <PurchaseReadStatus />
       </template>
       <template #search>
-        <OperatorSuiteSearch
-          v-model="batchQuery"
-          screen-label="filtrando a tabela do fornecedor"
-          placeholder="Buscar insumo na tabela"
-          aria-label="Buscar insumo na tabela do fornecedor"
-        />
+        <OperatorSuiteSearch v-model="batchQuery" screen-label="filtrando a tabela do fornecedor" placeholder="Buscar insumo na tabela" aria-label="Buscar insumo na tabela do fornecedor" />
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <NuxtButton to="/base/materials" label="Voltar aos insumos" icon="i-lucide-arrow-left" color="neutral" variant="outline" />
       </template>
     </OperatorPageHeader>
 
@@ -168,7 +179,10 @@ async function onPrefer(cost: SupplierMaterialCost) {
                 :items="activeSupplierItems"
                 value-key="value"
                 placeholder="Escolher o fornecedor"
-                :search-input="{ autofocus: !touch, placeholder: 'Buscar fornecedor' }"
+                :search-input="{
+                  autofocus: !touch,
+                  placeholder: 'Buscar fornecedor',
+                }"
                 class="w-full"
                 data-cost-batch-supplier
               />
@@ -197,8 +211,10 @@ async function onPrefer(cost: SupplierMaterialCost) {
           >
             <template #material-cell="{ row }">
               <span class="block font-semibold">{{ row.original.name }}</span>
-              <span class="block text-xs text-muted"><span class="font-mono">{{ row.original.sku }}</span> · {{ row.original.unit }}</span>
-              <span v-if="(costGridErrors[row.original.sku] || batchLineErrors[row.original.sku])" class="block text-xs font-semibold text-error">{{ (costGridErrors[row.original.sku] || batchLineErrors[row.original.sku]) }}</span>
+              <span class="block text-xs text-muted"
+                ><span class="font-mono">{{ row.original.sku }}</span> · {{ row.original.unit }}</span
+              >
+              <span v-if="costGridErrors[row.original.sku] || batchLineErrors[row.original.sku]" class="block text-xs font-semibold text-error">{{ costGridErrors[row.original.sku] || batchLineErrors[row.original.sku] }}</span>
               <!-- Celular: a unidade de compra desce para baixo do nome (a coluna some). -->
               <NuxtSelect
                 :model-value="batchConversionIds[row.original.sku] || BASE_UNIT"
@@ -225,8 +241,8 @@ async function onPrefer(cost: SupplierMaterialCost) {
                 placeholder="0,00"
                 :aria-label="`Valor de ${row.original.name}`"
                 :model-value="batchInputs[row.original.sku] ?? ''"
-                :color="(costGridErrors[row.original.sku] || batchLineErrors[row.original.sku]) ? 'error' : 'primary'"
-                :highlight="Boolean((costGridErrors[row.original.sku] || batchLineErrors[row.original.sku]) || batchInputs[row.original.sku])"
+                :color="costGridErrors[row.original.sku] || batchLineErrors[row.original.sku] ? 'error' : 'primary'"
+                :highlight="Boolean(costGridErrors[row.original.sku] || batchLineErrors[row.original.sku] || batchInputs[row.original.sku])"
                 class="w-24 sm:w-28 [&_input]:text-end [&_input]:tabular-nums"
                 @paste="pasteCost($event, row.original.sku)"
                 @update:model-value="(value: string | number) => setBatchInput(row.original.sku, String(value ?? ''))"
@@ -236,7 +252,9 @@ async function onPrefer(cost: SupplierMaterialCost) {
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <p class="text-sm">
                   <template v-if="!batchSupplierRef">Escolha o fornecedor para lançar.</template>
-                  <template v-else><span class="font-semibold tabular-nums">{{ plural(batchFilledCount, "valor preenchido", "valores preenchidos") }}</span></template>
+                  <template v-else
+                    ><span class="font-semibold tabular-nums">{{ plural(batchFilledCount, "valor preenchido", "valores preenchidos") }}</span></template
+                  >
                 </p>
                 <div class="flex max-w-full flex-wrap justify-end gap-2">
                   <NuxtButton label="Desfazer" icon="i-lucide-undo-2" color="neutral" variant="outline" :disabled="!canUndoCost || actionPending" @click="undoCost()" />
@@ -267,7 +285,10 @@ async function onPrefer(cost: SupplierMaterialCost) {
                     :title="noteMaterialName"
                     value-key="value"
                     placeholder="Escolher o insumo"
-                    :search-input="{ autofocus: !touch, placeholder: 'Buscar insumo' }"
+                    :search-input="{
+                      autofocus: !touch,
+                      placeholder: 'Buscar insumo',
+                    }"
                     class="w-full"
                   />
                 </NuxtFormField>
@@ -277,7 +298,10 @@ async function onPrefer(cost: SupplierMaterialCost) {
                     :items="supplierItems"
                     value-key="value"
                     placeholder="Escolher o fornecedor"
-                    :search-input="{ autofocus: !touch, placeholder: 'Buscar fornecedor' }"
+                    :search-input="{
+                      autofocus: !touch,
+                      placeholder: 'Buscar fornecedor',
+                    }"
                     class="w-full"
                   />
                 </NuxtFormField>
@@ -297,22 +321,8 @@ async function onPrefer(cost: SupplierMaterialCost) {
                 <!-- O rótulo que cabe (dono, 10/10/2026): na coluna estreita os dois
                      viram "Salvar" e "Padrão", e no limite só o ícone, com o nome na dica. -->
                 <OperatorFitGroup :actions="quoteActions" class="grid w-full grid-cols-2 gap-2">
-                  <OperatorButton
-                    v-bind="quoteActions[0]"
-                    color="neutral"
-                    variant="outline"
-                    block
-                    :loading="savingQuote === 'plain'"
-                    :disabled="readonlyFallback || quoteDisabled || actionPending"
-                    @click="onSaveQuote(false)"
-                  />
-                  <OperatorButton
-                    v-bind="quoteActions[1]"
-                    block
-                    :loading="savingQuote === 'preferred'"
-                    :disabled="readonlyFallback || quoteDisabled || actionPending"
-                    @click="onSaveQuote(true)"
-                  />
+                  <OperatorButton v-bind="quoteActions[0]" color="neutral" variant="outline" block :loading="savingQuote === 'plain'" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="onSaveQuote(false)" />
+                  <OperatorButton v-bind="quoteActions[1]" block :loading="savingQuote === 'preferred'" :disabled="readonlyFallback || quoteDisabled || actionPending" @click="onSaveQuote(true)" />
                 </OperatorFitGroup>
               </div>
             </NuxtCard>
@@ -338,25 +348,22 @@ async function onPrefer(cost: SupplierMaterialCost) {
               </template>
               <template #purchase-cell="{ row }">
                 <span class="whitespace-nowrap tabular-nums">
-                  {{ formatMoney(row.original.costQ) }} / {{ purchaseUnitLabel(row.original, materials.find((material) => material.sku === row.original.materialSku), conversions) }}
+                  {{ formatMoney(row.original.costQ) }} /
+                  {{
+                    purchaseUnitLabel(
+                      row.original,
+                      materials.find((material) => material.sku === row.original.materialSku),
+                      conversions,
+                    )
+                  }}
                 </span>
               </template>
               <template #base-cell="{ row }">
-                <span class="whitespace-nowrap font-semibold tabular-nums">
-                  <span v-if="isApproximateCost(row.original, conversions)">≈ </span>{{ formatMoney(costPerBaseUnitQ(row.original, conversions)) }}
-                </span>
+                <span class="whitespace-nowrap font-semibold tabular-nums"> <span v-if="isApproximateCost(row.original, conversions)">≈ </span>{{ formatMoney(costPerBaseUnitQ(row.original, conversions)) }} </span>
               </template>
               <template #preferred-cell="{ row }">
                 <NuxtBadge v-if="row.original.isPreferred" color="success" icon="i-lucide-check" label="Padrão" />
-                <NuxtButton
-                  v-else
-                  label="Usar como padrão"
-                  color="neutral"
-                  variant="outline"
-                  :loading="preferringId === row.original.id"
-                  :disabled="readonlyFallback || actionPending"
-                  @click="onPrefer(row.original)"
-                />
+                <NuxtButton v-else label="Usar como padrão" color="neutral" variant="outline" :loading="preferringId === row.original.id" :disabled="readonlyFallback || actionPending" @click="onPrefer(row.original)" />
               </template>
             </OperatorTable>
           </section>
