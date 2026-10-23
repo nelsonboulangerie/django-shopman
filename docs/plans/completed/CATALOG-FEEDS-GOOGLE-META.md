@@ -24,7 +24,24 @@
 3. **Google Merchant Center**: Produtos → Fontes → busca agendada → `https://<dom>/feed/<ref>.xml`.
 4. **Meta Commerce Manager**: Catálogo → Fontes → feed agendado → `https://<dom>/feed/<ref>.xml?platform=meta`.
 
-## Spec verificada — Google (fontes primárias `support.google.com/merchants`)
+## Ocultar × Pausar no feed (23/10/2026)
+
+O Catálogo do Gestor tem dois gestos por produto e por superfície, e os dois valem
+também na coluna do feed (célula e barra de seleção):
+
+| Gesto no Catálogo | Onde grava | Google Merchant | Meta | Menuboard |
+|---|---|---|---|---|
+| **Pausar** (à mostra, sem compra) | `display.paused_skus` ou `Product.is_sellable=false` | `g:availability out_of_stock` | `g:availability out of stock` ("esgotado" na loja, fora dos anúncios) | item apagado |
+| **Ocultar** (some do canal) | `display.hidden_skus` ou `Product.is_published=false` | item fica no XML com `g:excluded_destination` repetido: Shopping_ads, Display_ads, Local_inventory_ads, Free_listings, Free_local_listings, Youtube_affiliate, Youtube_merchandise | `<status>archived</status>` (sem prefixo `g:`, campo fora da spec Google) | item sai da tela |
+
+Ocultar vence Pausar. O item oculto **continua no XML** de propósito: tirá-lo apaga o
+produto na plataforma, e mostrar de novo viraria cadastro novo, com nova revisão. O
+`g:pause` do Google não serve para isso: com `all` ele arquiva o produto depois de 14
+dias. Fontes: support.google.com/merchants/answer/6324486 (excluded_destination),
+/answer/11909930 (pause), developers.facebook.com/docs/marketing-api/catalog/reference
+(`status` active|archived; atributo fora da spec Google vai sem prefixo).
+
+ (fontes primárias `support.google.com/merchants`)
 - Formato: RSS 2.0, `xmlns:g="http://base.google.com/ns/1.0"`, `channel` → `item` com `g:`.
 - Obrigatórios: `g:id`, `g:title` (≤150), `g:description` (≤5000), `g:link`, `g:image_link`,
   `g:availability` (`in_stock`|`out_of_stock`), `g:price` (`12.00 BRL`, ponto decimal).

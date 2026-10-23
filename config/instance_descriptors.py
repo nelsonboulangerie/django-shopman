@@ -68,6 +68,7 @@ OPERATIONAL_STATE: dict[str, tuple[tuple[str, ...], ...]] = {
         ("config", "overrides", "activation"),
         # Exceção por SKU num canal de exibição (pausa local, ``services/feeds``).
         ("config", "overrides", "display", "paused_skus"),
+        ("config", "overrides", "display", "hidden_skus"),
     ),
 }
 

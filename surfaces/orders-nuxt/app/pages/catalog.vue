@@ -560,7 +560,7 @@ watchEffect(() => {
   if (!bulkSurface.value && surfaces.value.length)
     bulkSurface.value = surfaces.value[0]!.ref;
 });
-// Feed só pausa/reativa em lote — sem publicar/reprecificar (não transaciona).
+// Feed pausa e oculta em lote como o canal, mas não reprecifica (não transaciona).
 const bulkSurfaceIsFeed = computed(() => {
   const s = surfaceByRef.value.get(bulkSurface.value);
   return !!s && !s.transactional;
@@ -651,8 +651,8 @@ function publicationState(value: Record<string, boolean>) {
 const priceOpen = ref(false);
 // A barra de seleção (OperatorBulkBar): "N selecionados | Canal | Pausar/Ativar |
 // Ocultar/Exibir | Preço | ×" (dono, 09/10/2026). Os pares opostos são um grupo só,
-// com o mesmo peso. Feed só pausa e reativa (não transaciona): sem Ocultar/Exibir nem
-// Preço. A barra existe em dois lugares (toolbar na mesa, base abaixo do `lg`); o
+// com o mesmo peso. Feed pausa e oculta como o canal, mas não transaciona: sem Preço.
+// A barra existe em dois lugares (toolbar na mesa, base abaixo do `lg`); o
 // painel do preço abre só no da largura da vez, senão abririam os dois.
 const { belowLg: bulkAtBase } = useScreen();
 const [DefineBulkPrice, ReuseBulkPrice] = createReusableTemplate();
@@ -674,23 +674,23 @@ function bulkItems(placement: "toolbar" | "base"): OperatorBulkItem[] {
         onSelect: () => bulk({ is_sellable: true }),
       },
     ],
+    [
+      {
+        label: "Ocultar",
+        icon: "i-lucide-eye-off",
+        disabled: busy,
+        onSelect: () => bulk({ is_published: false }),
+      },
+      {
+        label: "Exibir",
+        icon: "i-lucide-eye",
+        disabled: busy,
+        onSelect: () => bulk({ is_published: true }),
+      },
+    ],
     ...(bulkSurfaceIsFeed.value
       ? []
       : [
-          [
-            {
-              label: "Ocultar",
-              icon: "i-lucide-eye-off",
-              disabled: busy,
-              onSelect: () => bulk({ is_published: false }),
-            },
-            {
-              label: "Exibir",
-              icon: "i-lucide-eye",
-              disabled: busy,
-              onSelect: () => bulk({ is_published: true }),
-            },
-          ],
           {
             label: "Preço…",
             icon: "i-lucide-tag",
@@ -2112,7 +2112,7 @@ useHead({ title: "Catálogo" });
                   >{{ cell.pause_audit }}</span
                 >
 
-                <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
+                <!-- Feed não vende: sem divisória nem preço. Ocultar fica na barra de seleção. -->
                 <template v-if="isCellTransactional(cell)">
                   <!-- divisória: deixa claro que toggle e preço são controles distintos -->
                   <NuxtSeparator orientation="vertical" class="h-5" />

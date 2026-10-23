@@ -32,6 +32,28 @@ _AVAILABILITY = {
     "meta_catalog": {True: "in stock", False: "out of stock"},
 }
 
+# Os dois gestos do Catálogo chegam diferentes às plataformas (verificado em 23/10/2026):
+#
+# - **Pausar** (segue à mostra, sem compra) é ``availability`` fora de estoque. A Meta
+#   mostra "esgotado" na loja e tira dos anúncios; o Google para de anunciar.
+# - **Ocultar** (some do canal) mantém o item no XML, porque tirar o item apaga o
+#   produto na plataforma e religar viraria cadastro novo, com nova revisão. No
+#   Google, ``excluded_destination`` repetido para cada destino
+#   (support.google.com/merchants/answer/6324486); ``pause`` não serve, porque o
+#   ``all`` arquiva o produto depois de 14 dias (answer/11909930). Na Meta,
+#   ``status=archived`` ("Only active items can be seen by people in your ads,
+#   shops"), campo fora da especificação do Google e por isso sem o prefixo ``g:``
+#   (developers.facebook.com/docs/marketing-api/catalog/reference).
+_GOOGLE_DESTINATIONS = (
+    "Shopping_ads",
+    "Display_ads",
+    "Local_inventory_ads",
+    "Free_listings",
+    "Free_local_listings",
+    "Youtube_affiliate",
+    "Youtube_merchandise",
+)
+
 
 class ProductFeedError(Exception):
     pass
@@ -88,6 +110,7 @@ def build_feed_items(ref: str) -> list[dict]:
     display = (channel.config or {}).get("display") or {}
     collection_refs = list(display.get("collections") or [])
     paused = set(display.get("paused_skus") or [])  # pausa LOCAL (a global é do produto)
+    hidden = set(display.get("hidden_skus") or [])  # ocultação LOCAL (a global é do produto)
     avail = _AVAILABILITY[fmt]
     base = _storefront_base()
 
@@ -126,9 +149,11 @@ def build_feed_items(ref: str) -> list[dict]:
             # plataforma busca o feed, pela mesma regra que recusa o pedido no
             # canal para onde o clique leva (``services/external_availability``).
             # A pausa vence: pausado segue fora com estoque cheio.
+            # Oculto (aqui ou no produto) vence pausado: sai de todos os destinos.
+            is_hidden = not product.is_published or product.sku in hidden
             available = (
                 switched_on
-                and product.is_published
+                and not is_hidden
                 and product.is_sellable
                 and product.sku not in paused
                 and external_availability.in_stock(product.sku, channel_ref=channel.ref)
@@ -148,6 +173,8 @@ def build_feed_items(ref: str) -> list[dict]:
                 "price": f"{prices.get(product.sku, product.base_price_q) / 100:.2f} BRL",
                 "product_type": coll.name,
                 "custom_label_0": coll.ref,
+                "excluded_destinations": _GOOGLE_DESTINATIONS if is_hidden and fmt == "google_merchant" else (),
+                "status": "archived" if is_hidden and fmt == "meta_catalog" else "",
             })
     return items
 
