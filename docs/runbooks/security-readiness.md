@@ -21,15 +21,23 @@ Evidencia registrada: o run `25386566534` do PR #3 passou em 2026-05-05 com
 `Quality + deploy contract`, `Docker deploy image` e
 `PostgreSQL + Redis runtime stress gate` verdes.
 
-Para ensaio de app containerizado sem comandos Docker manuais:
+Para ensaio de app containerizado **nesta maquina**, sem comandos Docker manuais:
 
 ```bash
 make deploy-check
 make deploy-up
 ```
 
-Esses targets usam `Dockerfile` e profiles do `docker-compose.yml` para build,
-release one-shot, web ASGI/Daphne e directive worker.
+Esses targets sao **locais**: usam `Dockerfile` e profiles do
+`docker-compose.yml` desta maquina para build, release one-shot, web
+ASGI/Daphne e directive worker, com o `.env` local. Nao medem nem mudam o app
+vivo `shopman-nelson`. No vivo, o job `release` de cada deployment ja roda
+`check --deploy`, `migration_safety` e `migrate`, e a prontidao se mede no alvo:
+
+```bash
+make production-readiness target=1 context=shopman-do-app-admin
+make deploy-check target=1   # imprime o equivalente no vivo, sem executar
+```
 
 `manage.py check --deploy` já bloqueia:
 
@@ -170,7 +178,7 @@ Ainda fora do escopo desta fase, mas precisa estar decidido antes de produção:
 - Backup e restore testado para PostgreSQL (camadas e comandos: [backup-and-restore.md](../guides/backup-and-restore.md); o ensaio de restore do cluster tem procedimento, custo e conferências em [backup-e-restore.md §3](backup-e-restore.md) — falta executá-lo, e ele exige credencial do dono).
 - Redis provisionado e validado para cache, rate limit e SSE multi-worker.
 - `make test-runtime` executado em PostgreSQL + Redis, sem skips.
-- `make deploy-release` executado com `.env` real do ambiente.
+- No ambiente vivo: job `release` do deployment verde (`doctl apps logs <app> release --type deploy`) e `make production-readiness target=1` sem FAIL. O `make deploy-release` e local e nao prova o vivo.
 - Estratégia de coleta de logs.
 - Monitoramento de webhooks falhos.
 - Processo para rotacionar `DJANGO_SECRET_KEY` e tokens externos.

@@ -239,8 +239,12 @@ está **inerte no ar** — ver seção 4.
 Classifique a mudança e siga o [rollback de deploy](rollback-de-deploy.md).
 Para o caso destrutivo, o caminho é o da seção 3 com um detalhe que muda tudo:
 **você não restaura por cima**. Você cria o cluster restaurado, valida, e só
-então reaponta o app (`DATABASE_URL` / bloco `databases:` do spec) para ele.
-Enquanto valida, congele novos deploys e preserve o cluster atual — ele é a
+então reaponta o app (`DATABASE_URL` / bloco `databases:` do spec) para ele,
+pelo [cutover §0b](go-live-cutover.md#0b-ensaio-de-reapontar-o-app-para-o-banco-restaurado):
+depois de reapontar, esvazie o Valkey (o cache não tem backup e guarda o estado
+do banco de antes) e troque o `cluster_name` também no spec versionado
+`.do/app.alpha-subdomains.yaml`, ou o drift acusa e o próximo spec aplicado do
+arquivo volta o app para o cluster antigo. Enquanto valida, congele novos deploys e preserve o cluster atual — ele é a
 evidência do que aconteceu, e destruí-lo destrói os backups dele junto.
 
 ---
