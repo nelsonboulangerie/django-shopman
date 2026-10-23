@@ -260,8 +260,9 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     const wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
 
-    const edit = wrapper.findAll("a").find((link) => link.text() === "Editar receita");
+    const edit = wrapper.findAll("a").find((link) => link.text() === "Editar");
     expect(edit?.attributes("href")).toBe("/recipes/pao-a/edit");
+    expect(edit?.attributes("aria-label")).toBe("Editar Receita pao-a");
     expect(edit?.element.parentElement?.closest("a")).toBeNull();
   });
 
@@ -269,14 +270,14 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     entries.value = [card("arquivada", { is_active: false })];
     let wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
-    expect(wrapper.findAll("a").some((link) => link.text() === "Editar receita")).toBe(false);
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
 
     wrapper.unmount();
     entries.value = [card("ativa")];
     canEditRecipes.value = false;
     wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
-    expect(wrapper.findAll("a").some((link) => link.text() === "Editar receita")).toBe(false);
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
   });
 
   it("uses the suite filter panel and screen state instead of parallel list controls", async () => {

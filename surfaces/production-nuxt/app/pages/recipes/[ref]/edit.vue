@@ -49,14 +49,9 @@ useHead({ title: computed(() => `Editar · ${entry.value?.name || "Receita"}`) }
 const requestedNumber = computed(() => Number(route.query.v) || null);
 const draft = computed<RecipeVersionProjection | null>(() => {
   const requested = versionByNumber(requestedNumber.value);
-  if (requested) return requested.status === "draft" ? requested : null;
+  if (requested?.status === "draft") return requested;
   return latestDraft.value;
 });
-const requestedNotDraft = computed(() => {
-  const requested = versionByNumber(requestedNumber.value);
-  return !!requested && requested.status !== "draft";
-});
-
 // Estado local, semeado UMA vez quando o rascunho chega (o refresh depois de salvar
 // não pode sobrescrever o que o padeiro está digitando).
 const formula = ref<Formula>(emptyFormula());
@@ -267,8 +262,12 @@ async function saveAndPublish() {
   }
 }
 
-// Sem rascunho: oferece criar um (cópia da atual) sem sair da tela.
+// Entrar no editor já é a intenção explícita de editar. Se ainda não existe um
+// rascunho, cria a cópia de trabalho automaticamente e mantém a publicada intacta.
+const draftStartAttempted = ref(false);
+const draftStartError = ref("");
 async function startDraft() {
+  draftStartError.value = "";
   const base = entry.value?.versions[0];
   const result = await createVersion(
     base
@@ -292,8 +291,37 @@ async function startDraft() {
           label: "",
         },
   );
-  if (result.ok && result.version) await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`, { replace: true });
+  if (result.ok && result.version) {
+    await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`, { replace: true });
+    return;
+  }
+  draftStartError.value = result.message || "Não foi possível preparar a edição.";
 }
+
+async function ensureDraft() {
+  if (draftStartAttempted.value || pending.value || !entry.value?.is_active || !canEdit.value) return;
+  if (draft.value) {
+    if (requestedNumber.value !== draft.value.number) {
+      await navigateTo(`/recipes/${entryRef}/edit?v=${draft.value.number}`, { replace: true });
+    }
+    return;
+  }
+  draftStartAttempted.value = true;
+  await startDraft();
+}
+
+function retryStartDraft() {
+  draftStartAttempted.value = false;
+  void ensureDraft();
+}
+
+watch(
+  [entry, canEdit, draft, pending],
+  () => {
+    if (!import.meta.server) void ensureDraft();
+  },
+  { immediate: true },
+);
 
 const touch = useTouchPointer();
 </script>
@@ -371,18 +399,18 @@ const touch = useTouchPointer();
         v-else-if="entry && !draft"
         class="grid place-items-center gap-2 rounded-md border border-dashed py-16 text-center text-muted-foreground"
       >
-        <Icon name="lucide:pencil-line" class="size-8" />
-        <p class="text-base font-medium text-foreground">
-          {{ requestedNotDraft ? "A versão publicada está protegida." : "Esta receita está pronta para editar." }}
-        </p>
-        <p class="text-sm">A versão publicada continuará intacta. Suas alterações serão salvas em um novo rascunho.</p>
+        <Icon :name="draftStartError ? 'lucide:circle-alert' : 'lucide:loader-circle'" :class="['size-8', { 'animate-spin': !draftStartError }]" />
+        <p class="text-base font-medium text-foreground">{{ draftStartError ? "Não foi possível abrir a edição." : "Preparando edição…" }}</p>
+        <p class="text-sm">A versão publicada permanece intacta enquanto você edita.</p>
         <NuxtButton
-          v-if="entry.is_active"
+          v-if="draftStartError && entry.is_active"
           class="mt-1"
-          icon="i-lucide-pencil-line"
-          :label="entry.versions.length ? 'Começar edição' : 'Começar receita'"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          label="Tentar novamente"
           :disabled="busy"
-          @click="startDraft"
+          @click="retryStartDraft"
         />
       </div>
 
