@@ -1284,6 +1284,15 @@ def record_card_machine_refund(order, *, actor, approved_by=None) -> int:
     return recorded
 
 
+def _lock_payment_intents(intent_refs) -> None:
+    """Trava (``select_for_update``) os intents, em ordem de ``ref``, até o fim do atomic."""
+    from shopman.payman.models import PaymentIntent
+
+    refs = sorted({ref for ref in intent_refs if ref})
+    if refs:
+        list(PaymentIntent.objects.select_for_update().filter(ref__in=refs).order_by("ref").values_list("pk", flat=True))
+
+
 #: O motivo como o Payman o grava (``PaymentTransaction``), por :func:`refund_reason`.
 _PAYMAN_REFUND_REASONS = {
     "cancelled": "order_cancelled",
@@ -1328,6 +1337,12 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
     # devolve só o que passou do total — nunca o dinheiro do que ela ainda vale.
     limit_q = None if str(order.status) in _REFUND_ALL_STATUSES else overpaid_q(order)
     with db_transaction.atomic():
+        # Trava os intents em dinheiro ANTES de ler saldo e contador: dois
+        # "Devolvi em dinheiro" simultâneos (dois dispositivos, duplo toque com
+        # chaves de pedido diferentes) liam o mesmo saldo e o mesmo contador, e o
+        # segundo gravava uma segunda saída na gaveta para um estorno só no
+        # Payman. Ordem fixa por ``ref`` para nenhuma dupla travar em cruz.
+        _lock_payment_intents(cash_intents)
         refunded_q = 0
         refunded_refs = []
         for intent_ref in cash_intents:
@@ -1341,12 +1356,25 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
             # duas calaria a segunda. A primeira mantém a chave histórica.
             prior = PaymentTransaction.objects.filter(intent__ref=intent_ref, type="refund").count()
             gateway_id = f"cash-refund:{order.ref}:{intent_ref}" + (f":{prior + 1}" if prior else "")
-            PaymentService.refund(
+            known_refund_ids = set(
+                PaymentTransaction.objects.filter(intent__ref=intent_ref, type="refund").values_list("pk", flat=True)
+            )
+            txn = PaymentService.refund(
                 intent_ref,
                 amount_q=balance_q,
                 reason=_PAYMAN_REFUND_REASONS.get(refund_reason(order), "order_cancelled"),
                 gateway_id=gateway_id,
             )
+            # O Payman devolve a transação EXISTENTE quando a chave se repete: é
+            # um estorno que já tem linha no livro-caixa. Lançar de novo seria
+            # dinheiro saindo da gaveta duas vezes no papel e uma na mão.
+            if txn.pk in known_refund_ids:
+                logger.warning(
+                    "payment.refund_cash: refund %s already recorded for intent %s; no second ledger line",
+                    gateway_id,
+                    intent_ref,
+                )
+                continue
             refunded_q += balance_q
             refunded_refs.append(intent_ref)
         if refunded_q <= 0:

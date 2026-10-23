@@ -34,11 +34,57 @@ const podeSimular = computed(() => canSimulatePayment({
   mock_payment_enabled: props.mockEnabled,
 }))
 
-async function copyPix () {
-  if (!props.promise.pix_copy_paste || !import.meta.client) return
-  await navigator.clipboard.writeText(props.promise.pix_copy_paste)
-  useSonner.success(props.copy.pix_copied)
+// Copia e cola (laudo 23/10, U4). A Clipboard API falha de verdade: navegador
+// embutido do Instagram/WhatsApp, permissão negada, página fora de HTTPS. Antes a
+// falha virava exceção solta e o cliente tocava num botão que não fazia nada, com
+// o código cortado por reticências. Agora o código aparece INTEIRO num campo
+// somente leitura; copiar tenta a API, depois o copiar do próprio navegador sobre
+// o texto selecionado, e se nada der o código fica selecionado com a instrução.
+type CopyState = 'idle' | 'copied' | 'failed'
+const copyState = ref<CopyState>('idle')
+const pixField = ref<{ $el?: HTMLTextAreaElement } | null>(null)
+let copiedTimer: ReturnType<typeof setTimeout> | null = null
+
+function selectPixCode (): HTMLTextAreaElement | null {
+  const el = pixField.value?.$el
+  if (!el || typeof el.select !== 'function') return null
+  el.focus()
+  el.select()
+  el.setSelectionRange?.(0, el.value.length)
+  return el
 }
+
+async function writeToClipboard (text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // segue para o copiar do navegador
+  }
+  try {
+    return selectPixCode() !== null && document.execCommand('copy')
+  } catch {
+    return false
+  }
+}
+
+async function copyPix () {
+  const code = props.promise.pix_copy_paste
+  if (!code || !import.meta.client) return
+  if (copiedTimer) clearTimeout(copiedTimer)
+  if (await writeToClipboard(code)) {
+    copyState.value = 'copied'
+    useSonner.success(props.copy.pix_copied)
+    copiedTimer = setTimeout(() => { copyState.value = 'idle' }, 4000)
+    return
+  }
+  copyState.value = 'failed'
+  selectPixCode()
+}
+
+onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer) })
 </script>
 
 <template>
@@ -85,19 +131,32 @@ async function copyPix () {
 
         <div v-if="promise.pix_copy_paste" class="shop-stack-tight">
           <p class="shop-meta">{{ copy.pix_copy_label }}</p>
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <p
-              class="min-w-0 flex-1 cursor-pointer truncate rounded-lg border bg-muted px-3 py-2 font-mono text-xs"
-              role="button"
-              tabindex="0"
-              aria-label="Copiar código Pix"
-              :title="promise.pix_copy_paste"
-              @click="copyPix"
-              @keydown.enter.prevent="copyPix"
-              @keydown.space.prevent="copyPix"
-            >{{ promise.pix_copy_paste }}</p>
-            <UiButton variant="outline" icon="lucide:copy" class="shrink-0" @click="copyPix">{{ copy.pix_copy_btn }}</UiButton>
-          </div>
+          <!-- O código inteiro, sempre: é o plano B quando copiar não funciona. -->
+          <UiTextarea
+            id="pix-copy-paste"
+            ref="pixField"
+            :model-value="promise.pix_copy_paste"
+            readonly
+            :rows="4"
+            spellcheck="false"
+            aria-label="Código Pix copia e cola"
+            class="min-h-0 resize-none break-all bg-muted font-mono text-xs leading-relaxed md:text-xs"
+            data-pix-copy-field
+            @focus="selectPixCode"
+          />
+          <UiButton
+            variant="outline"
+            :icon="copyState === 'copied' ? 'lucide:check' : 'lucide:copy'"
+            class="w-full sm:w-auto sm:self-start"
+            data-pix-copy-button
+            @click="copyPix"
+          >
+            {{ copyState === 'copied' ? 'Copiado' : copy.pix_copy_btn }}
+          </UiButton>
+          <p v-if="copyState === 'failed'" class="shop-meta text-foreground" role="status" data-pix-copy-fallback>
+            Não deu para copiar por aqui. O código acima já está selecionado: toque e segure nele e escolha Copiar.
+          </p>
+          <p v-else class="sr-only" role="status">{{ copyState === 'copied' ? copy.pix_copied : '' }}</p>
         </div>
 
         <p class="shop-meta">{{ copy.pix_auto_update_note }}</p>

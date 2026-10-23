@@ -43,6 +43,11 @@ export interface CloseGuardInput {
   browserFailure: string;
   /** Base do Gestor (`runtimeConfig.public.ordersUrl`). Vazio = sem link. */
   ordersUrl?: string;
+  /**
+   * O fechamento sem resposta pode ser REENVIADO igual (o corpo e a chave estão
+   * guardados): "Conferir agora" pergunta ao servidor pela mesma venda.
+   */
+  replayable?: boolean;
 }
 
 /** Um destino em OUTRO app — o `href` já pronto e o que o botão diz. */
@@ -57,6 +62,13 @@ export interface CloseGuardNotice {
   body: string;
   /** Liberar só faz sentido quando ninguém está cobrando agora. */
   canRelease: boolean;
+  /**
+   * "Conferir agora": reenvia o MESMO fechamento com a MESMA chave. O servidor
+   * devolve o pedido se ele nasceu, ou fecha agora se não nasceu; nunca cobra duas
+   * vezes. É a primeira saída do aviso; a conferência manual fica para quando
+   * nem assim o resultado aparece.
+   */
+  canRecheck: boolean;
   /**
    * A saída para o Gestor, quando conferir lá é o próximo passo.
    *
@@ -91,21 +103,28 @@ export function closeGuardNotice(input: CloseGuardInput): CloseGuardNotice | nul
         title: "Outra aba deste PDV está finalizando uma venda",
         body: "Aguarde o resultado naquela aba. Esta aba volta a cobrar sozinha quando aquela venda terminar.",
         canRelease: false,
+        canRecheck: false,
       };
     case "interrupted":
       return {
         situation,
         title: "A última venda foi interrompida antes da resposta",
-        body: "A página fechou ou recarregou enquanto a venda era finalizada, e não sabemos se o pedido e o pagamento foram criados. Confira antes de cobrar de novo.",
+        body: input.replayable
+          ? "A página fechou ou recarregou enquanto a venda era finalizada. Conferir agora pergunta por esta mesma venda, sem cobrar de novo."
+          : "A página fechou ou recarregou enquanto a venda era finalizada, e não sabemos se o pedido e o pagamento foram criados. Confira antes de cobrar de novo.",
         canRelease: true,
+        canRecheck: Boolean(input.replayable),
         link: ordersLink,
       };
     case "uncertain":
       return {
         situation,
         title: "Resultado da cobrança não confirmado",
-        body: "Antes de cobrar novamente, confira se o pedido e o pagamento foram criados. Este bloqueio permanece mesmo se a página for recarregada.",
+        body: input.replayable
+          ? "A venda ficou sem resposta. Conferir agora pergunta por esta mesma venda, sem cobrar de novo."
+          : "Antes de cobrar novamente, confira se o pedido e o pagamento foram criados. Este bloqueio permanece mesmo se a página for recarregada.",
         canRelease: true,
+        canRecheck: Boolean(input.replayable),
         link: ordersLink,
       };
     case "browser_unavailable":
@@ -114,6 +133,7 @@ export function closeGuardNotice(input: CloseGuardInput): CloseGuardNotice | nul
         title: "Cobrança bloqueada neste navegador",
         body: input.browserFailure,
         canRelease: true,
+        canRecheck: false,
       };
   }
 }

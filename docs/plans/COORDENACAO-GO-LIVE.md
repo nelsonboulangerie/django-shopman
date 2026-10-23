@@ -2,7 +2,7 @@
 
 > Documento vivo. Quem assume a coordenação lê isto inteiro, depois o `CLAUDE.md`,
 > e atualiza a seção "Estado" ao encerrar o turno. Vale para Claude, Codex,
-> DeepSeek ou humano. Atualizado em 21/10/2026.
+> DeepSeek ou humano. Atualizado em 23/10/2026.
 
 ## 1. O papel
 
@@ -145,6 +145,28 @@ Estado de 14/10/2026 (tarde), ainda válido:
 - Alterações no alpha que esperam: pedido mínimo de entrega está em 0 desde a prova
   da TaOn de 13/10 e **volta a R$ 25** (Admin, "Pedidos e entrega") quando a prova
   terminar.
+
+### Decisões do dono de 23/10/2026 (não reabrir)
+
+Tomadas depois do laudo adversarial de 23/10 (`docs/reports/2026-10-23-laudo-adversarial-go-live.md`).
+
+- **Licença:** `FSL-1.1-ALv2` em todo o repositório, já, antes do go-live; licenciante
+  Pablo Valentini. Marca, fotos, textos legais e dados da Nelson ficam fora (`NOTICE.md`).
+  Motivo: o dono quer poder vender o Shopman hospedado; licença se afrouxa depois, nunca se aperta.
+- **Doorman, a escada sem fricção:** (1) T5 do laudo já; (2) dispositivo confiável renova a
+  cada uso e vence depois de **180 dias** sem uso (hoje 30 dias fixos); (3) ligar a entrada por
+  passkey (hoje só existe o cadastro); (4) a resposta do WhatsApp traz o botão "Voltar à loja": no
+  celular a entrada acontece no navegador que o botão abre e nunca é liberada para outra aba; no
+  computador o botão nomeia o que libera ("Liberar o Chrome no Windows"); (5) SMS com a última
+  linha `@www.nelsonboulangerie.com.br #<código>` (preenchimento automático preso ao domínio).
+- **Versão visível:** fases R0 e R1 do `WP-RELEASE-01` entram antes do go-live (endereço de
+  versão por app, versão na tela, sonda que confere o commit do `main`).
+- **Repositório:** dividir depois do go-live, produto público e operação da Nelson privada. Fechar
+  o repositório inteiro está fora: a CI pública é gratuita e privada custaria milhares de dólares por mês.
+- **Banco:** sem nó de reserva por ora; reavaliar quando a loja online pesar no faturamento.
+- **Multi-loja:** alvo é um schema do Postgres por loja (o singleton `Shop` vira singleton por
+  schema, Core intacto). Agora só a trava barata: nenhuma configuração ou credencial nova de uma loja
+  entra por variável de ambiente ou `settings`.
 
 ## 7. Frentes pedidas pelo dono em 14/10: especificação preservada
 
@@ -329,6 +351,11 @@ Focus) e hardware · QA física por papel · impressão, gaveta e som · reapont
 para banco restaurado · dados reais do Dia 1 · GO/NO-GO.
 
 ### Código antes do go-live
+
+> **Atualização de 23/10/2026:** o [laudo adversarial de 23/10](../reports/2026-10-23-laudo-adversarial-go-live.md)
+> contesta o parágrafo abaixo: 0 P0 de código, mas 19 P1 com prova e 1 bloqueio a
+> provar em homologação (cartão na NFC-e). As tarefas T1 a T12 (Onda 1) são a fila de
+> código antes do go-live; T13 a T15 vêm depois; P1 a P8 são o produto adotável.
 
 **Nenhum bloqueio de código conhecido nesta reauditoria.** A lista de 19/10 foi
 fechada por entregas já no `main`: drift Watchman e fallbacks (#1894, #1898, #1906,

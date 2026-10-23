@@ -1589,3 +1589,179 @@ class EfiPixWebhookMoneyTests(WebhookTestBase):
             type="payment_reconciliation_failed", order_ref=order.ref,
         )
         self.assertIn("cobrança já encerrada (cancelada)", alert.message)
+
+
+# ══════════════════════════════════════════════════════════════
+# Laudo 23/10: M2 (webhook depois do prazo) e M5 (corrida do estorno)
+# ══════════════════════════════════════════════════════════════
+
+
+def _expire(intent) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    intent.expires_at = timezone.now() - timedelta(minutes=5)
+    intent.save(update_fields=["expires_at"])
+
+
+def _alarms() -> list[str]:
+    return list(
+        OperatorAlert.objects.filter(
+            type__in=("payment_reconciliation_failed", "payment_ledger_drift"),
+        ).values_list("type", flat=True)
+    )
+
+
+@override_settings(SHOPMAN_STRIPE=STRIPE_SETTINGS)
+class StripeLateWebhookTests(WebhookTestBase):
+    """M2: o cliente pagou dentro do prazo e o aviso chegou depois dele."""
+
+    def _succeeded_event(self, intent, *, pi_id: str):
+        event = MagicMock()
+        event.type = "payment_intent.succeeded"
+        stripe_intent = MagicMock()
+        stripe_intent.id = pi_id
+        stripe_intent.metadata = {"shopman_ref": intent.ref}
+        stripe_intent.amount_received = intent.amount_q
+        stripe_intent.latest_charge = "ch_late"
+        event.data.object = stripe_intent
+        return event
+
+    def _handle(self, event) -> dict:
+        from shopman.shop.adapters import payment_stripe
+
+        with patch("shopman.shop.adapters.payment_stripe._late_after_counter_takeover", return_value=False):
+            return payment_stripe.handle_webhook_event(event)
+
+    def test_payment_succeeded_after_expiry_settles_without_alarm(self) -> None:
+        order = _create_order_with_payment("web", "card")
+        intent = _create_card_intent(order, stripe_pi_id="pi_late")
+        _expire(intent)
+
+        self._handle(self._succeeded_event(intent, pi_id="pi_late"))
+
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "captured")
+        self.assertEqual(PaymentService.captured_total(intent.ref), intent.amount_q)
+        capture = PaymentTransaction.objects.get(intent=intent, type=PaymentTransaction.Type.CAPTURE)
+        self.assertEqual(capture.gateway_id, "ch_late")
+        self.assertEqual(_alarms(), [])
+
+    def test_payment_succeeded_after_expiry_without_session_event_promotes_the_id(self) -> None:
+        order = _create_order_with_payment("web", "card")
+        intent = _create_card_intent(order, stripe_pi_id="cs_session_lost")
+        _expire(intent)
+
+        self._handle(self._succeeded_event(intent, pi_id="pi_after_lost_session"))
+
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "captured")
+        self.assertEqual(intent.gateway_id, "pi_after_lost_session")
+        self.assertEqual(_alarms(), [])
+
+    def test_checkout_completed_after_expiry_authorizes_without_alarm(self) -> None:
+        order = _create_order_with_payment("web", "card")
+        intent = _create_card_intent(order, stripe_pi_id="cs_late_checkout")
+        _expire(intent)
+        event = MagicMock()
+        event.type = "checkout.session.completed"
+        session = MagicMock()
+        session.payment_intent = "pi_late_checkout"
+        session.metadata = {"shopman_ref": intent.ref}
+        event.data.object = session
+
+        self._handle(event)
+
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, "authorized")
+        self.assertEqual(intent.gateway_id, "pi_late_checkout")
+        self.assertEqual(_alarms(), [])
+
+    def test_late_payment_for_cancelled_intent_still_alarms(self) -> None:
+        """Divergência de verdade continua gritando: o intent já morreu aqui."""
+        order = _create_order_with_payment("web", "card")
+        intent = _create_card_intent(order, stripe_pi_id="pi_cancelled")
+        PaymentService.cancel(intent.ref)
+
+        self._handle(self._succeeded_event(intent, pi_id="pi_cancelled"))
+
+        self.assertEqual(_alarms(), ["payment_reconciliation_failed"])
+
+
+@override_settings(SHOPMAN_STRIPE=STRIPE_SETTINGS)
+class StripeRefundRaceTests(WebhookTestBase):
+    """M5: o `charge.refunded` chega antes da resposta do `Refund.create`."""
+
+    def _captured(self, pi_id: str):
+        order = _create_order_with_payment("web", "card")
+        intent = _create_card_intent(order, stripe_pi_id=pi_id)
+        PaymentService.authorize(intent.ref, gateway_id=pi_id)
+        PaymentService.capture(intent.ref, gateway_id="ch_race")
+        return intent
+
+    def _refund_with_webhook_first(self, intent, *, amount_q: int, refunded_total_q: int, refund_id: str):
+        import time
+
+        from shopman.shop.adapters import payment_stripe
+
+        def refund_create(**params):
+            created = int(time.time())
+            # O webhook chega e reconcilia ANTES de o `Refund.create` responder.
+            PaymentService.reconcile_gateway_status(
+                intent.ref,
+                gateway_status="refunded",
+                amount_q=intent.amount_q,
+                captured_q=intent.amount_q,
+                refunded_q=refunded_total_q,
+                gateway_id=intent.gateway_id,
+                refund_gateway_id="ch_race",
+            )
+            stripe_refund = MagicMock()
+            stripe_refund.id = refund_id
+            stripe_refund.amount = amount_q
+            stripe_refund.charge = "ch_race"
+            stripe_refund.created = created
+            return stripe_refund
+
+        mock_stripe = MagicMock()
+        mock_stripe.Refund.create.side_effect = refund_create
+        with patch("shopman.shop.adapters.payment_stripe._get_stripe", return_value=mock_stripe):
+            return payment_stripe.refund(intent.ref, amount_q=amount_q, reason="cancelamento")
+
+    def test_full_refund_recorded_by_webhook_first_is_not_drift(self) -> None:
+        intent = self._captured("pi_race_full")
+
+        result = self._refund_with_webhook_first(intent, amount_q=1000, refunded_total_q=1000, refund_id="re_full")
+
+        self.assertTrue(result.success)
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 1000)
+        self.assertEqual(PaymentTransaction.objects.filter(intent=intent, type="refund").count(), 1)
+        self.assertEqual(_alarms(), [])
+
+    def test_partial_refund_recorded_by_webhook_first_is_not_counted_twice(self) -> None:
+        intent = self._captured("pi_race_partial")
+
+        result = self._refund_with_webhook_first(intent, amount_q=400, refunded_total_q=400, refund_id="re_partial")
+
+        self.assertTrue(result.success)
+        self.assertEqual(PaymentService.refunded_total(intent.ref), 400)
+        self.assertEqual(_alarms(), [])
+
+    def test_refund_that_payman_cannot_hold_still_alarms(self) -> None:
+        """Sem linha do webhook que corresponda, o dinheiro saiu e o livro não sabe: grita."""
+        from shopman.shop.adapters import payment_stripe
+
+        intent = self._captured("pi_race_drift")
+        PaymentService.refund(intent.ref, amount_q=1000, gateway_id="re_other")
+        stripe_refund = MagicMock()
+        stripe_refund.id = "re_new"
+        stripe_refund.amount = 1000
+        stripe_refund.charge = "ch_race"
+        stripe_refund.created = 0
+        mock_stripe = MagicMock()
+        mock_stripe.Refund.create.return_value = stripe_refund
+        with patch("shopman.shop.adapters.payment_stripe._get_stripe", return_value=mock_stripe):
+            payment_stripe.refund(intent.ref, amount_q=1000)
+
+        self.assertEqual(_alarms(), ["payment_ledger_drift"])

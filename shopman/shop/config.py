@@ -367,7 +367,9 @@ class ChannelConfig:
         prices_from: str = ""
         # Ref do canal transacional cujo preço é anunciado.
         paused_skus: list[str] = field(default_factory=list)
-        # Exceções por SKU: tirado deste canal sem sair da coleção.
+        # Pausa por SKU: segue à mostra neste canal, como indisponível.
+        hidden_skus: list[str] = field(default_factory=list)
+        # Ocultação por SKU: some deste canal sem sair da coleção. Vence a pausa.
         rotate_seconds: int = 0
         # Menuboard: segundos entre a troca de páginas. 0 = sem rotação (tudo
         # numa tela, comportamento clássico). Quando > 0, mínimo de 5s — abaixo

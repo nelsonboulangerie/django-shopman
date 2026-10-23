@@ -63,7 +63,10 @@ logger = logging.getLogger(__name__)
 # A confirmação marca a sessão por uma janela curta; delete/export checam essa marca.
 STEP_UP_SESSION_KEY = "account_step_up"
 STEP_UP_MAX_AGE_SECONDS = 600  # 10 minutos
-STEP_UP_PURPOSES = frozenset({"export", "delete"})
+# ``phone`` e ``email``: trocar um contato da conta é tomada de conta se feito por quem só
+# conhece o número (link encaminhado). O código vai para o número ATUAL antes, e a marca
+# vale para UMA troca: confirmada a mudança, ela é consumida.
+STEP_UP_PURPOSES = frozenset({"export", "delete", "phone", "email"})
 
 
 def _mark_step_up(request, *, customer_uuid, purpose: str) -> None:
@@ -94,11 +97,36 @@ def _step_up_authorized_at(request, *, customer_uuid, purpose: str):
     return accepted_at if 0 <= age <= STEP_UP_MAX_AGE_SECONDS else None
 
 
+def _consume_step_up(request, *, purpose: str) -> None:
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    raw = session.get(STEP_UP_SESSION_KEY)
+    if isinstance(raw, dict) and raw.get("purpose") == purpose:
+        session.pop(STEP_UP_SESSION_KEY, None)
+
+
 def _step_up_required_response() -> Response:
+    detail = "Confirme sua identidade para continuar."
     return Response(
-        {"detail": "Confirme sua identidade para continuar.", "code": "step_up_required"},
+        {"detail": detail, "field": None, "errors": {}, "code": "step_up_required"},
         status=status.HTTP_403_FORBIDDEN,
     )
+
+
+def _contact_change_refused(request, customer, *, purpose: str) -> Response | None:
+    """A cerca da troca de contato: sessão forte E código recente no número ATUAL.
+
+    Sessão que só conhece o número (link encaminhado) nunca troca contato: a troca de
+    telefone apontaria a conta para o número de quem recebeu o link, e o próximo código
+    chegaria na mão dele. O step-up manda o código para o número de hoje, que é de quem
+    a conta é; confirmado, a sessão fica forte e a marca vale 10 minutos.
+    """
+    if knows_only_the_number(request):
+        return _step_up_required_response()
+    if _step_up_authorized_at(request, customer_uuid=customer.uuid, purpose=purpose) is None:
+        return _step_up_required_response()
+    return None
 
 
 def _privacy_receipt_unavailable_response(*, operation: str) -> Response:
@@ -488,6 +516,16 @@ class ProfileView(ServerTimingMixin, APIView):
 
         last_name = clean_name(payload["last_name"]) if "last_name" in payload else UNSET
         email = clean_text(payload["email"]) if "email" in payload else UNSET
+        # Trocar (ou apagar) o e-mail é trocar um contato da conta: a mesma cerca do
+        # telefone. Mandar o MESMO e-mail de volta (o formulário manda todos os campos)
+        # não é troca e não pede código.
+        email_changes = email is not UNSET and (
+            str(email or "").strip().lower() != str(getattr(customer, "email", "") or "").strip().lower()
+        )
+        if email_changes:
+            refused = _contact_change_refused(request, customer, purpose="email")
+            if refused is not None:
+                return refused
 
         birthday = UNSET
         if "birthday" in payload:
@@ -522,6 +560,8 @@ class ProfileView(ServerTimingMixin, APIView):
                 status=400,
             )
 
+        if email_changes:
+            _consume_step_up(request, purpose="email")
         return Response(
             CustomerProfileSerializer({
                 "ref": updated.ref,
@@ -1331,6 +1371,9 @@ class PhoneChangeRequestView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _contact_change_refused(request, customer, purpose="phone")
+        if refused is not None:
+            return refused
 
         payload = request.data if hasattr(request, "data") else {}
         try:
@@ -1397,6 +1440,12 @@ class PhoneChangeConfirmView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        # A mesma cerca do pedido: o código do número novo prova o número novo, não a
+        # conta. Sem isto, quem só conhece o número pediria o código pelo login e
+        # confirmaria aqui.
+        refused = _contact_change_refused(request, customer, purpose="phone")
+        if refused is not None:
+            return refused
 
         payload = request.data if hasattr(request, "data") else {}
         try:
@@ -1427,6 +1476,7 @@ class PhoneChangeConfirmView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        _consume_step_up(request, purpose="phone")
         return Response({"ok": True, "phone": phone})
 
 

@@ -63,3 +63,4 @@ altera o status da sucessora nem cria uma relação circular.
 | [039](adr-039-persistent-stock-alert-occurrences.md) | “Avise-me” é assinatura persistente com ocorrências distintas | Aceito | Storefront e Orquestrador | 2026-09-11 | Comunicação |
 | [040](adr-040-baixa-de-insumo-na-venda-do-feito-na-hora.md) | Baixa de insumo na venda do item feito na hora | Aceito | Orquestrador | 2026-10-19 | Estoque |
 | [041](adr-041-topologia-das-superficies-apps-federados.md) | Topologia das superfícies: apps federados sob uma layer e uma Central | Aceito | Superfícies | 2026-10-20 | Topologia |
+| [042](adr-042-schema-por-loja-e-trava-de-configuracao.md) | Multi-loja: um schema do Postgres por loja, e a configuração da loja não cresce por env | Aceito | Orquestrador | 2026-10-23 | Multi-loja |

@@ -7,6 +7,7 @@ import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentat
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
+import { startCheckoutRecovery, type CheckoutRecoveryLoop } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
 import { markJustPlaced } from '~/utils/justPlaced'
@@ -126,6 +127,13 @@ watch(useLoyalty, async (enabled) => {
 const submitting = ref(false)
 const confirmedTrackingUrl = ref('')
 const confirmationUnknown = ref(false)
+// "Não sabemos se o pedido entrou": enquanto a tela confere sozinha (U6), o envio
+// fica travado; no teto da conferência, ele volta, e a copy diz isso.
+const checkingOrder = ref(false)
+let recoveryLoop: CheckoutRecoveryLoop | null = null
+const UNCERTAIN_CHECKING = 'Estamos conferindo com o sistema se o pedido entrou. Não envie de novo: assim que soubermos, esta tela abre o acompanhamento.'
+const UNCERTAIN_NOT_FOUND = 'Conferimos e o pedido não apareceu. Pode confirmar de novo: o mesmo pedido não entra duas vezes.'
+const uncertainTitle = computed(() => checkingOrder.value ? 'Não sabemos ainda se o pedido entrou' : 'O pedido não apareceu')
 const serverError = ref('')
 const fieldErrors = ref<Record<string, string>>({})
 
@@ -433,7 +441,7 @@ const pixProviderTestMessage = computed(() => {
   )
 })
 const submitDisabled = computed(() =>
-  !action.value?.enabled || !!cart.value?.is_empty || submitting.value || pixProviderTestExceeded.value
+  !action.value?.enabled || !!cart.value?.is_empty || submitting.value || checkingOrder.value || pixProviderTestExceeded.value
 )
 // Retirada mostra os turnos de retirada; entrega, a grade de entrega (a mesma da
 // concierge). O resto da tela trata as duas do mesmo jeito.
@@ -1218,7 +1226,35 @@ onMounted(() => {
     if (value.is_empty) void recoverCheckout()
   }, { immediate: true })
 })
-onBeforeUnmount(() => { if (import.meta.client) window.removeEventListener('storage', onDraftRemoved) })
+onBeforeUnmount(() => {
+  stopUncertainCheck()
+  if (import.meta.client) window.removeEventListener('storage', onDraftRemoved)
+})
+
+function stopUncertainCheck () {
+  recoveryLoop?.cancel()
+  recoveryLoop = null
+  checkingOrder.value = false
+}
+
+// Confere de novo, com espera crescente, até o pedido aparecer ou o teto chegar.
+// Achou: `recoverCheckout` já leva ao acompanhamento. Não achou: a tela devolve o
+// envio ao cliente (mesma tentativa, sem pedido em dobro).
+function startUncertainCheck () {
+  stopUncertainCheck()
+  confirmationUnknown.value = true
+  checkingOrder.value = true
+  serverError.value = UNCERTAIN_CHECKING
+  const key = attemptKey.value
+  const loop = startCheckoutRecovery(() => recoverCheckout(key))
+  recoveryLoop = loop
+  void loop.done.then((found) => {
+    if (recoveryLoop !== loop) return
+    recoveryLoop = null
+    checkingOrder.value = false
+    if (!found && !confirmedTrackingUrl.value) serverError.value = UNCERTAIN_NOT_FOUND
+  })
+}
 
 async function submitCheckout () {
   // O botão já fica ocupado, mas Enter/programmatic submit não dependem da UI.
@@ -1231,6 +1267,7 @@ async function submitCheckout () {
     await refresh()
     return
   }
+  stopUncertainCheck()
   submitting.value = true
   confirmationUnknown.value = false
   serverError.value = ''
@@ -1283,17 +1320,21 @@ async function submitCheckout () {
     const failure = httpError(e)
     if (!failure.status || failure.status >= 500) {
       if (await recoverCheckout(attemptKey.value)) return
-      confirmationUnknown.value = true
       // "Mantenha esta tentativa" mandava o cliente cuidar do `attemptKey` — objeto que
       // ele nunca viu e não pode manter nem largar, no pior instante do fluxo. O que ele
       // precisa saber é o que aconteceu, o que NÃO aconteceu, e o que fazer.
-      serverError.value = 'Estamos conferindo com o sistema. Não envie de novo: se o pedido entrou, você seria cobrado duas vezes. Esta tela se resolve sozinha em instantes.'
+      startUncertainCheck()
       if (import.meta.client) useSonner.info(serverError.value)
       return
     }
     const data = failure.data || {}
     confirmationUnknown.value = data.error_code === 'mutation_in_progress'
     if (data.error_code === 'idempotency_conflict' && await recoverCheckout(attemptKey.value)) return
+    // O Django ainda está gravando esta mesma tentativa: conferir até terminar.
+    if (data.error_code === 'mutation_in_progress') {
+      startUncertainCheck()
+      return
+    }
     if (failure.status < 500 && data.error_code !== 'mutation_in_progress') attemptKey.value = createCheckoutAttemptKey()
     const field = typeof data.field === 'string' ? data.field : ''
     serverError.value = errorDetail(e, 'Não foi possível confirmar o pedido.')
@@ -1485,7 +1526,7 @@ useSeoMeta({
           </UiAlert>
 
           <UiAlert v-else-if="serverError && !confirmOpen" :variant="confirmedTrackingUrl || confirmationUnknown ? 'warning' : 'destructive'">
-            <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Não sabemos ainda se o pedido entrou' : 'Confira os dados' }}</UiAlertTitle>
+            <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? uncertainTitle : 'Confira os dados' }}</UiAlertTitle>
             <UiAlertDescription>{{ serverError }}</UiAlertDescription>
             <UiButton v-if="confirmedTrackingUrl" :to="confirmedTrackingUrl">Acompanhar pedido</UiButton>
             <UiButton v-else-if="confirmationUnknown" variant="outline" to="/conta/pedidos">Ver meus pedidos</UiButton>
@@ -1538,7 +1579,7 @@ useSeoMeta({
                   <div v-if="!showNameInput" class="flex items-center gap-3 py-3 first:pt-0">
                     <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
                     <p class="min-w-0 flex-1 truncate text-sm font-semibold">{{ state.name }}</p>
-                    <UiButton variant="link" size="sm" class="h-auto p-0" @click="startEditName">Editar</UiButton>
+                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" data-checkout-contact-edit @click="startEditName">Editar</UiButton>
                   </div>
                   <div class="flex items-center gap-3 py-3 first:pt-0">
                     <Icon name="lucide:phone" class="size-4 shrink-0 text-muted-foreground" />
@@ -1548,7 +1589,7 @@ useSeoMeta({
                       </p>
                       <UiFieldError v-if="fieldErrors.phone" class="mt-1" :errors="fieldErrors.phone" />
                     </div>
-                    <UiButton variant="link" size="sm" class="h-auto p-0" @click="changePhoneOpen = true">
+                    <UiButton variant="link" size="sm" class="-my-3 -mr-3 h-11 min-w-11 px-3" data-checkout-contact-edit @click="changePhoneOpen = true">
                       Trocar
                     </UiButton>
                   </div>
@@ -2238,7 +2279,7 @@ useSeoMeta({
                  mínimo (Total + 1 ação) e sempre visível — nada vaza da tela. -->
             <div class="px-4 py-4">
               <UiAlert v-if="serverError" :variant="confirmedTrackingUrl || confirmationUnknown ? 'warning' : 'destructive'" class="mb-4">
-                <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? 'Não sabemos ainda se o pedido entrou' : 'Confira os dados' }}</UiAlertTitle>
+                <UiAlertTitle>{{ confirmedTrackingUrl ? 'Pedido confirmado' : confirmationUnknown ? uncertainTitle : 'Confira os dados' }}</UiAlertTitle>
                 <UiAlertDescription>{{ serverError }}</UiAlertDescription>
             <UiButton v-if="confirmedTrackingUrl" :to="confirmedTrackingUrl">Acompanhar pedido</UiButton>
             <UiButton v-else-if="confirmationUnknown" variant="outline" to="/conta/pedidos">Ver meus pedidos</UiButton>

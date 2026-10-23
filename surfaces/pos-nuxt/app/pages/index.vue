@@ -119,6 +119,8 @@ const {
   closeGuardNotice,
   restoreUncertainClose,
   acknowledgeUncertainClose,
+  recheckUncertainClose,
+  closeRecheckBusy,
   pendingPixOrderRefs,
   restorePendingPix,
   pixStatus,
@@ -372,6 +374,12 @@ function checkRecentSalesFromGuard() {
 watch(closeGuardNotice, (notice) => {
   if (!notice) uncertainCloseRecoveryOpen.value = false;
 });
+// "Conferir agora": reenvia a mesma venda com a mesma chave. Resolveu, o aviso some
+// sozinho; não resolveu, abre a caixa com a conferência manual.
+async function recheckFromGuard() {
+  const outcome = await recheckUncertainClose();
+  if (outcome === "unknown") openUncertainCloseRecovery();
+}
 async function confirmUncertainCloseRecovery() {
   if (!uncertainCloseReviewed.value || uncertainCloseRecoveryBusy.value) return;
   uncertainCloseRecoveryBusy.value = true;
@@ -846,9 +854,11 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       color: "error",
       title: guard.title,
       description: guard.body,
-      action: hasExits
-        ? { label: "Conferir a venda", onSelect: () => openUncertainCloseRecovery() }
-        : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
+      action: guard.canRecheck
+        ? { label: closeRecheckBusy.value ? "Conferindo…" : "Conferir agora", onSelect: () => void recheckFromGuard() }
+        : hasExits
+          ? { label: "Conferir a venda", onSelect: () => openUncertainCloseRecovery() }
+          : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
     });
   }
   // Depois da trava contra cobrança dupla, que é a mais grave.
@@ -1718,6 +1728,16 @@ onBeforeUnmount(() => {
       <template #body>
         <div class="grid gap-3">
           <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <NuxtButton
+              v-if="closeGuardNotice?.canRecheck"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-refresh-cw"
+              :label="closeRecheckBusy ? 'Conferindo…' : 'Conferir agora'"
+              :disabled="closeRecheckBusy"
+              data-close-guard-recheck
+              @click="recheckFromGuard"
+            />
             <NuxtButton
               color="neutral"
               variant="outline"

@@ -134,3 +134,86 @@ def test_sessao_de_caixa_mostra_o_motivo_da_devolucao(balcao):
     (linha,) = _pending_cash_refunds(balcao.shift)
     assert linha.reason == "partial_return"
     assert linha.reason_label == "Devolução de parte da venda"
+
+
+# ── M1 (laudo 23/10): dois "Devolvi em dinheiro" ao mesmo tempo ────────────
+
+
+def _vender_cancelada(balcao, ref: str) -> Order:
+    order = balcao.vender(
+        client_request_id=ref,
+        items=[{"sku": "POS-ITEM", "name": "Item de balcão", "qty": 1, "unit_price_q": 1200}],
+        payment_method="cash",
+        tendered_q=1200,
+    )
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+    order.refresh_from_db()
+    return order
+
+
+def test_devolvi_em_dinheiro_trava_os_intents_antes_de_ler_o_saldo(balcao, monkeypatch):
+    order = _vender_cancelada(balcao, "m1-lock")
+    calls: list[str] = []
+    real_lock = payment_service._lock_payment_intents
+    real_balance = payment_service._payman_refundable_amount
+
+    def lock(refs):
+        calls.append("lock")
+        return real_lock(refs)
+
+    def balance(ref):
+        calls.append("balance")
+        return real_balance(ref)
+
+    monkeypatch.setattr(payment_service, "_lock_payment_intents", lock)
+    monkeypatch.setattr(payment_service, "_payman_refundable_amount", balance)
+
+    devolvido = payment_service.refund_cash(order, shift=balcao.shift, actor=balcao.operator, approved_by=balcao.manager)
+
+    assert devolvido == 1200
+    assert calls[0] == "lock"
+    assert "balance" in calls[1:]
+
+
+def test_segundo_devolvi_em_dinheiro_com_leitura_velha_nao_grava_segunda_saida(balcao, monkeypatch):
+    """Duas requisições com chaves diferentes (dois dispositivos, duplo toque).
+
+    A segunda leu saldo e contador antes da primeira gravar. O Payman reconhece o
+    estorno pela chave e devolve a transação existente; o livro-caixa não ganha a
+    segunda linha, e o fechamento cego não acusa sobra falsa.
+    """
+    import shopman.payman.models as payman_models
+
+    order = _vender_cancelada(balcao, "m1-race-1")
+    first = payment_service.refund_cash(order, shift=balcao.shift, actor=balcao.operator, approved_by=balcao.manager)
+    assert first == 1200
+
+    # Leitura velha: saldo cheio e nenhum estorno anterior.
+    monkeypatch.setattr(payment_service, "_payman_refundable_amount", lambda ref: 1200)
+    real_filter = payman_models.PaymentTransaction.objects.filter
+
+    class _StaleCount:
+        def __init__(self, qs):
+            self.qs = qs
+
+        def count(self):
+            return 0
+
+        def values_list(self, *args, **kwargs):
+            return self.qs.values_list(*args, **kwargs)
+
+    def stale_filter(*args, **kwargs):
+        qs = real_filter(*args, **kwargs)
+        if kwargs.get("type") == "refund" and "intent__ref" in kwargs:
+            return _StaleCount(qs)
+        return qs
+
+    monkeypatch.setattr(payman_models.PaymentTransaction.objects, "filter", stale_filter)
+    second = payment_service.refund_cash(order, shift=balcao.shift, actor=balcao.operator, approved_by=balcao.manager)
+    monkeypatch.undo()
+
+    assert second == 0
+    assert PaymentTransaction.objects.filter(intent__order_ref=order.ref, type="refund").count() == 1
+    lines = list(Entry.objects.filter(kind=Entry.Kind.REFUND, order_ref=order.ref).values_list("amount_q", flat=True))
+    assert lines == [-1200]
+    assert order.events.filter(type="cash_refund_recorded").count() == 1

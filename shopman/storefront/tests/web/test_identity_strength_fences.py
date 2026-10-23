@@ -459,3 +459,158 @@ def test_a_saved_address_with_coordinates_does_not_break_the_checkout(
     structured = order.data.get("delivery_address_structured") or {}
     assert isinstance(structured.get("latitude"), float)
     assert order.data["delivery_address"] == saved.formatted_address
+
+
+# ── A escada de identidade: o número sozinho não sobe degrau ─────────
+#
+# Laudo adversarial de 23/10 (S1, S2): a sessão que só conhece o número (link encaminhado)
+# confiava o navegador por 30 dias e virava forte, e pedia a troca do telefone sem prova
+# nenhuma. As duas viravam tomada permanente da conta.
+
+
+def _post(client, url, payload):
+    return client.post(url, data=json.dumps(payload), content_type="application/json")
+
+
+def _step_up(client, monkeypatch, purpose):
+    from shopman.shop.services import auth as auth_service
+
+    monkeypatch.setattr(
+        auth_service, "verify_for_login",
+        lambda **kw: type("R", (), {"success": True})(),
+    )
+    response = _post(client, "/api/v1/account/step-up/", {"code": "123456", "purpose": purpose})
+    assert response.status_code == 200, response.content
+
+
+def _fake_phone_request(monkeypatch):
+    from shopman.shop.services import account as account_service
+
+    calls = []
+
+    def fake(customer, raw_phone, *, ip_address=None):
+        calls.append(raw_phone)
+        return raw_phone, type("R", (), {"success": True, "expires_at": ""})()
+
+    monkeypatch.setattr(account_service, "request_phone_change", fake)
+    return calls
+
+
+def test_a_link_session_cannot_remember_the_device(client, person):
+    from shopman.doorman.models import TrustedDevice
+
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+
+    response = _post(client, "/api/v1/auth/trust-device/", {"trust": True})
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["detail"]
+    assert "field" in body and "errors" in body
+    assert body["error_code"] == "identity_confirmation_required"
+    assert "doorman_dt" not in response.cookies
+    assert not TrustedDevice.objects.filter(subject_id=str(person.uuid)).exists()
+
+
+def test_a_known_device_still_remembers_itself(client, person):
+    _sign_in(client, person)
+
+    response = _post(client, "/api/v1/auth/trust-device/", {"trust": True})
+
+    assert response.status_code == 200, response.content
+    assert response.json()["trusted"] is True
+
+
+def test_a_link_session_cannot_change_the_phone(client, person, monkeypatch):
+    calls = _fake_phone_request(monkeypatch)
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+
+    pedido = _post(client, "/api/v1/account/phone/request/", {"phone": "+5543988887777"})
+    confirmacao = _post(
+        client, "/api/v1/account/phone/confirm/", {"phone": "+5543988887777", "code": "123456"},
+    )
+
+    assert pedido.status_code == 403
+    assert pedido.json()["code"] == "step_up_required"
+    assert confirmacao.status_code == 403
+    assert calls == []
+    person.refresh_from_db()
+    assert person.phone == "+5543999998001"
+
+
+def test_a_strong_session_still_asks_for_the_code_on_the_current_number(client, person, monkeypatch):
+    calls = _fake_phone_request(monkeypatch)
+    _sign_in(client, person)
+
+    response = _post(client, "/api/v1/account/phone/request/", {"phone": "+5543988887777"})
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "step_up_required"
+    assert calls == []
+
+
+def test_the_code_on_the_current_number_opens_the_phone_change(client, person, monkeypatch):
+    from shopman.storefront.identity import IDENTITY_DEVICE
+
+    calls = _fake_phone_request(monkeypatch)
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+    _step_up(client, monkeypatch, "phone")
+    assert client.session[IDENTITY_SESSION_KEY] == IDENTITY_DEVICE
+
+    response = _post(client, "/api/v1/account/phone/request/", {"phone": "+5543988887777"})
+
+    assert response.status_code == 200, response.content
+    assert len(calls) == 1
+
+
+def test_a_code_for_another_purpose_does_not_open_the_phone_change(client, person, monkeypatch):
+    calls = _fake_phone_request(monkeypatch)
+    _sign_in(client, person)
+    _step_up(client, monkeypatch, "export")
+
+    response = _post(client, "/api/v1/account/phone/request/", {"phone": "+5543988887777"})
+
+    assert response.status_code == 403
+    assert calls == []
+
+
+def _patch_profile(client, **fields):
+    return client.patch(
+        "/api/v1/account/profile/",
+        data=json.dumps({"first_name": "Ana", **fields}),
+        content_type="application/json",
+    )
+
+
+def test_a_link_session_cannot_change_the_email(client, person):
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+
+    response = _patch_profile(client, email="intruso@example.com")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "step_up_required"
+    person.refresh_from_db()
+    assert not person.email
+
+
+def test_saving_the_profile_with_the_same_email_needs_no_code(client, person):
+    _sign_in(client, person, strength=IDENTITY_NUMBER)
+
+    response = _patch_profile(client, email="", last_name="Ferreira")
+
+    assert response.status_code == 200, response.content
+
+
+def test_the_code_on_the_current_number_changes_the_email_once(client, person, monkeypatch):
+    _sign_in(client, person)
+    _step_up(client, monkeypatch, "email")
+
+    primeira = _patch_profile(client, email="ana@example.com")
+    segunda = _patch_profile(client, email="outra@example.com")
+
+    assert primeira.status_code == 200, primeira.content
+    assert primeira.json()["email"] == "ana@example.com"
+    # A marca vale para UMA troca: a segunda pede o código de novo.
+    assert segunda.status_code == 403
+    person.refresh_from_db()
+    assert person.email == "ana@example.com"

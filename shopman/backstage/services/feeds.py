@@ -1,5 +1,5 @@
 """
-Mutações dos canais de EXIBIÇÃO para o Gestor — coleções, rotação e pausa por item.
+Mutações dos canais de EXIBIÇÃO para o Gestor — coleções, rotação, pausa e ocultação por item.
 
 Ligar/desligar o canal (de venda OU de exibição) é o toggle "Ativo", que mora em
 ``shopman.shop.services.channel_switch``.
@@ -45,10 +45,6 @@ def _save_display(channel, display: dict) -> None:
     channel.config = {**(channel.config or {}), "display": display}
     # `Channel` não tem timestamps (o `Feed` tinha) — só o campo que muda.
     channel.save(update_fields=["config"])
-
-
-def _paused(channel) -> set[str]:
-    return {str(s) for s in (_display(channel).get("paused_skus") or [])}
 
 
 class FeedConflict(CatalogError):
@@ -170,44 +166,16 @@ def set_automatic(ref: str, *, enabled: bool, idle_messages: list[str], expected
         _notify(ref)
 
 
-@transaction.atomic
-def set_item_paused(ref: str, sku: str, *, paused: bool) -> bool:
-    """Pausa/reativa UM item neste feed (equivalente a pausar num canal).
-
-    Grava em ``config.display.paused_skus``. Retorna o estado final ``paused``. A
-    pausa global do produto continua gateando por cima.
-    """
-    sku = str(sku).strip()
-    if not sku:
-        raise CatalogError("sku é obrigatório.")
-    sc = _display_channel(ref)
-
-    current = _paused(sc)
-    if paused and sku not in current:
-        current.add(sku)
-    elif not paused and sku in current:
-        current.discard(sku)
-    else:
-        return paused  # sem mudança
-
-    display = _display(sc)
-    display["paused_skus"] = sorted(current)
-    _save_display(sc, display)
-    _notify(ref)
-    return paused
-
-
-@transaction.atomic
-def set_items_paused(ref: str, skus: list[str], *, paused: bool) -> int:
-    """Pausa/reativa em lote vários itens neste feed. Retorna quantos mudaram."""
+def _set_skus(ref: str, key: str, skus: list[str], *, on: bool) -> int:
+    """Liga/desliga SKUs numa lista de ``config.display`` (``paused_skus``/``hidden_skus``)."""
     cleaned = [str(s).strip() for s in skus if str(s).strip()]
     if not cleaned:
         return 0
     sc = _display_channel(ref)
 
-    current = _paused(sc)
+    current = {str(s) for s in (_display(sc).get(key) or [])}
     before = set(current)
-    if paused:
+    if on:
         current.update(cleaned)
     else:
         current.difference_update(cleaned)
@@ -215,7 +183,45 @@ def set_items_paused(ref: str, skus: list[str], *, paused: bool) -> int:
         return 0
 
     display = _display(sc)
-    display["paused_skus"] = sorted(current)
+    display[key] = sorted(current)
     _save_display(sc, display)
     _notify(ref)
     return len(current ^ before)
+
+
+@transaction.atomic
+def set_item_paused(ref: str, sku: str, *, paused: bool) -> bool:
+    """Pausa/reativa UM item neste feed (equivalente a pausar num canal).
+
+    Grava em ``config.display.paused_skus``. Retorna o estado final ``paused``. A
+    pausa global do produto continua gateando por cima.
+    """
+    if not str(sku).strip():
+        raise CatalogError("sku é obrigatório.")
+    _set_skus(ref, "paused_skus", [sku], on=paused)
+    return paused
+
+
+@transaction.atomic
+def set_items_paused(ref: str, skus: list[str], *, paused: bool) -> int:
+    """Pausa/reativa em lote vários itens neste feed. Retorna quantos mudaram."""
+    return _set_skus(ref, "paused_skus", skus, on=paused)
+
+
+@transaction.atomic
+def set_item_hidden(ref: str, sku: str, *, hidden: bool) -> bool:
+    """Oculta/exibe UM item neste feed (equivalente a ocultar num canal).
+
+    Grava em ``config.display.hidden_skus``. Oculto vence pausado: no quadro o item
+    sai da tela, no feed de plataforma ele fica fora de todos os destinos.
+    """
+    if not str(sku).strip():
+        raise CatalogError("sku é obrigatório.")
+    _set_skus(ref, "hidden_skus", [sku], on=hidden)
+    return hidden
+
+
+@transaction.atomic
+def set_items_hidden(ref: str, skus: list[str], *, hidden: bool) -> int:
+    """Oculta/exibe em lote vários itens neste feed. Retorna quantos mudaram."""
+    return _set_skus(ref, "hidden_skus", skus, on=hidden)

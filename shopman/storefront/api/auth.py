@@ -611,6 +611,21 @@ class TrustDeviceView(APIView):
         customer_info = getattr(request, "customer", None)
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=status.HTTP_401_UNAUTHORIZED)
+        if knows_only_the_number(request):
+            # Confiar o aparelho é PROMOVER: o cookie de 30 dias faz o próximo navegador
+            # entrar forte (`device`), e forte libera passkey. Quem só provou o número (link
+            # encaminhado) não promove a si mesmo; confirma o código antes, e é o step-up que
+            # confia o aparelho.
+            detail = "Confirme que é você com um código no seu número para lembrar este aparelho."
+            return Response(
+                {
+                    "detail": detail,
+                    "field": None,
+                    "errors": {},
+                    "error_code": "identity_confirmation_required",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         payload = request.data if hasattr(request, "data") else {}
         trust_value = payload.get("trust", False)

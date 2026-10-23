@@ -6,26 +6,42 @@
  * ou desistência). Recarregar a página não esquece nenhum: a lista mora no
  * `localStorage` da estação e volta ao abrir a tela.
  *
- * Só refs e a hora da cobrança: nada de cliente, valor ou QR. A verdade continua
- * no servidor (`pos/payment/<ref>/status/`); isto aqui é a lista do que perguntar.
+ * Só refs, a hora da cobrança e o prazo do Pix: nada de cliente, valor ou QR. A
+ * verdade continua no servidor (`pos/payment/<ref>/status/`, que já diz
+ * `is_terminal` quando o prazo venceu); isto aqui é a lista do que perguntar.
+ *
+ * O PRAZO é o do servidor: o `payment.expires_at` que o fechamento devolve, o
+ * mesmo que o gateway carrega. Antes o PDV desistia sozinho aos 10 min, e o Pix de
+ * prazo maior (o QR ainda válido, o cliente ainda pagando) virava "não confirmamos"
+ * na tela. A desistência local só existe para quando o servidor some: o prazo do
+ * Pix mais uma folga para o aviso do banco chegar.
  */
 
 export const PENDING_PIX_STORAGE_KEY = "shopman:pos:pending-pix";
 
-/** O mesmo teto do acompanhamento na tela de resultado: 240 × 2,5 s. */
-export const PENDING_PIX_MAX_AGE_MS = 10 * 60 * 1000;
+/**
+ * Teto quando o servidor NÃO mandou o prazo (o gateway não devolveu `expires_at`):
+ * a única constante que sobra, e só para o Pix sem prazo dito.
+ */
+export const PENDING_PIX_FALLBACK_MAX_AGE_MS = 10 * 60 * 1000;
+/** Depois do prazo, quanto ainda se espera o aviso do banco (webhook) chegar. */
+export const PENDING_PIX_GRACE_MS = 60 * 1000;
 
 export interface PendingPix {
   orderRef: string;
-  /** ISO da cobrança: a desistência conta a partir daqui, mesmo depois de recarregar. */
+  /** ISO da cobrança. */
   since: string;
+  /** ISO do prazo do Pix, como o servidor disse (`payment.expires_at`). */
+  expiresAt?: string;
 }
 
 function isPendingPix(value: unknown): value is PendingPix {
   if (!value || typeof value !== "object") return false;
   const entry = value as Record<string, unknown>;
   return typeof entry.orderRef === "string" && entry.orderRef !== ""
-    && typeof entry.since === "string" && !Number.isNaN(Date.parse(entry.since));
+    && typeof entry.since === "string" && !Number.isNaN(Date.parse(entry.since))
+    && (entry.expiresAt === undefined
+      || (typeof entry.expiresAt === "string" && !Number.isNaN(Date.parse(entry.expiresAt))));
 }
 
 export function readPendingPix(): PendingPix[] {
@@ -58,7 +74,17 @@ export function writePendingPix(entries: PendingPix[]): void {
   }
 }
 
-/** Passou do teto: a próxima resposta sem confirmação vira desistência dita. */
+/**
+ * Quando o PDV desiste de perguntar: o prazo do servidor mais a folga do aviso do
+ * banco; sem prazo dito, o teto de reserva a partir da cobrança.
+ */
+export function pendingPixDeadlineMs(entry: Pick<PendingPix, "since" | "expiresAt">): number {
+  const expires = entry.expiresAt ? Date.parse(entry.expiresAt) : Number.NaN;
+  if (!Number.isNaN(expires)) return expires + PENDING_PIX_GRACE_MS;
+  return Date.parse(entry.since) + PENDING_PIX_FALLBACK_MAX_AGE_MS;
+}
+
+/** Passou do prazo: a próxima resposta sem confirmação vira desistência dita. */
 export function pendingPixExpired(entry: PendingPix, now: number): boolean {
-  return now - Date.parse(entry.since) >= PENDING_PIX_MAX_AGE_MS;
+  return now >= pendingPixDeadlineMs(entry);
 }

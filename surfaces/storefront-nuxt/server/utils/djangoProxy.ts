@@ -16,6 +16,35 @@ import { resolveDjangoBaseUrl } from './djangoBaseUrl'
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+// Prazo do Django (laudo 23/10, U2/T9). Sem prazo, um upstream que aceita a
+// conexão e não responde (deploy no meio, worker preso) segurava a requisição do
+// cliente até o ingress cortar, e o que chegava ao navegador era um erro genérico
+// sem dizer de quem era a culpa. Com o prazo, o BFF responde ele mesmo, com um
+// `error_code` que a tela distingue de uma recusa do Django: 504
+// `upstream_timeout` (o Django pode ter feito o pedido, a tela deve conferir) e
+// 502 `upstream_unreachable` (a conexão nem abriu). O checkout trata os dois como
+// "não sabemos se entrou" e confere pelo `checkout/recover/`.
+//
+// 25 s cabe o checkout mais lento medido (gera o Pix no gateway dentro do
+// pedido) e fica abaixo do corte do ingress, para que a resposta seja nossa.
+export const UPSTREAM_TIMEOUT_MS = 25_000
+// A semente de CSRF é um meio: se ela demora, a mutação segue sem token.
+export const CSRF_SEED_TIMEOUT_MS = 5_000
+
+export const UPSTREAM_TIMEOUT_DETAIL = 'A loja demorou para responder. Confira antes de tentar de novo.'
+export const UPSTREAM_UNREACHABLE_DETAIL = 'Não foi possível falar com a loja agora. Tente de novo em instantes.'
+
+/** O `$fetch` desistiu pelo prazo (AbortSignal.timeout) ou outra coisa? */
+export function isUpstreamTimeout (error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; depth < 4 && current; depth++) {
+    const name = (current as { name?: unknown }).name
+    if (name === 'TimeoutError' || name === 'AbortError') return true
+    current = (current as { cause?: unknown }).cause
+  }
+  return false
+}
+
 function shouldSanitizeHtmlError (status: number, contentType: string | null, path: string): boolean {
   return status >= 400 && /^text\/html\b/i.test(contentType || '') && path.startsWith('/api/')
 }
@@ -70,7 +99,8 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
       accept: 'application/json',
       ...(cookie ? { cookie } : {})
     },
-    ignoreResponseError: true
+    ignoreResponseError: true,
+    signal: AbortSignal.timeout(CSRF_SEED_TIMEOUT_MS)
   }).catch((error: unknown) => {
     console.warn('[bff] semente de CSRF falhou; a mutação segue sem token', error)
     return null
@@ -261,12 +291,26 @@ export async function proxyDjangoPath (event: H3Event, fullPath: string) {
     ? undefined
     : await readRawBody(event, false)
 
-  const response = await $fetch.raw(target, {
-    method,
-    headers,
-    body,
-    ignoreResponseError: true
-  })
+  let response
+  try {
+    response = await $fetch.raw(target, {
+      method,
+      headers,
+      body,
+      ignoreResponseError: true,
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+    })
+  } catch (error) {
+    // Sem resposta do Django: quem responde é o BFF, e diz qual dos dois casos foi.
+    const timedOut = isUpstreamTimeout(error)
+    console.warn('[bff] upstream sem resposta', { path: normalizedPath, method, timedOut })
+    setResponseHeader(event, 'server-timing', `bff;dur=${Math.max(0, performance.now() - bffStarted).toFixed(2)}`)
+    setResponseStatus(event, timedOut ? 504 : 502)
+    setResponseHeader(event, 'content-type', 'application/json; charset=utf-8')
+    return timedOut
+      ? { detail: UPSTREAM_TIMEOUT_DETAIL, error_code: 'upstream_timeout' }
+      : { detail: UPSTREAM_UNREACHABLE_DETAIL, error_code: 'upstream_unreachable' }
+  }
 
   // Sanidade de contrato: o Django carimba /api/v1/ com X-API-Version; major
   // divergente vira warning estruturado no Nitro (server/utils/apiVersion.ts,

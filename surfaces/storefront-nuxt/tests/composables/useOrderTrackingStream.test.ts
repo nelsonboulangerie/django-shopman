@@ -2,7 +2,7 @@
 // same-origin no BFF e chama onPush a cada evento. Testado isoladamente
 // (connect/close manuais — fora de componente, os hooks de ciclo de vida não
 // registram) com um EventSource fake.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mockNuxtImport } from '@nuxt/test-utils/runtime'
 
 mockNuxtImport('useShopmanApiPath', () => () => (path: string) => path)
@@ -13,6 +13,8 @@ class FakeEventSource {
   withCredentials: boolean
   listeners: Record<string, Array<() => void>> = {}
   onerror: ((e?: unknown) => void) | null = null
+  onopen: ((e?: unknown) => void) | null = null
+  readyState = 0
   closed = false
 
   constructor (url: string, init?: { withCredentials?: boolean }) {
@@ -29,7 +31,12 @@ class FakeEventSource {
     ;(this.listeners[name] || []).forEach(h => h())
   }
 
-  close () { this.closed = true }
+  close () { this.closed = true; this.readyState = 2 }
+
+  open () { this.readyState = 1; this.onopen?.() }
+
+  // O navegador desistiu: status não-200 na (re)conexão, como o 502 de deploy.
+  fail () { this.readyState = 2; this.onerror?.() }
 }
 
 async function loadComposable () {
@@ -109,5 +116,106 @@ describe('useOrderTrackingStream', () => {
     const { connect, close } = useOrderTrackingStream(() => 'ORD-1', () => {})
     expect(() => connect()).not.toThrow()
     expect(() => close()).not.toThrow()
+  })
+
+  describe('reconexão (laudo 23/10, U3)', () => {
+    beforeEach(() => { vi.useFakeTimers() })
+    afterEach(() => { vi.useRealTimers() })
+
+    it('depois de um 502 que fecha o stream, abre um EventSource novo com backoff', async () => {
+      const useOrderTrackingStream = await loadComposable()
+      const { connect, close } = useOrderTrackingStream(() => 'ORD-1', () => {})
+      connect()
+      FakeEventSource.instances[0]!.open()
+      FakeEventSource.instances[0]!.fail()
+
+      expect(FakeEventSource.instances).toHaveLength(1)
+      vi.advanceTimersByTime(1_999)
+      expect(FakeEventSource.instances).toHaveLength(1)
+      vi.advanceTimersByTime(1)
+      expect(FakeEventSource.instances).toHaveLength(2)
+
+      // Caiu de novo sem abrir: a espera dobra.
+      FakeEventSource.instances[1]!.fail()
+      vi.advanceTimersByTime(3_999)
+      expect(FakeEventSource.instances).toHaveLength(2)
+      vi.advanceTimersByTime(1)
+      expect(FakeEventSource.instances).toHaveLength(3)
+      close()
+    })
+
+    it('ao reabrir, refaz o fetch canônico (onPush) para cobrir o que passou', async () => {
+      const useOrderTrackingStream = await loadComposable()
+      const onPush = vi.fn()
+      const { connect, close } = useOrderTrackingStream(() => 'ORD-1', onPush)
+      connect()
+      FakeEventSource.instances[0]!.open()
+      expect(onPush).not.toHaveBeenCalled() // a primeira abertura não é reconexão
+
+      FakeEventSource.instances[0]!.fail()
+      vi.advanceTimersByTime(2_000)
+      FakeEventSource.instances[1]!.open()
+      expect(onPush).toHaveBeenCalledTimes(1)
+      close()
+    })
+
+    it('o teto da espera é 60 s', async () => {
+      const useOrderTrackingStream = await loadComposable()
+      const { connect, close } = useOrderTrackingStream(() => 'ORD-1', () => {})
+      connect()
+      FakeEventSource.instances[0]!.open()
+      for (let i = 0; i < 8; i++) {
+        FakeEventSource.instances.at(-1)!.fail()
+        vi.advanceTimersByTime(60_000)
+      }
+      const before = FakeEventSource.instances.length
+      FakeEventSource.instances.at(-1)!.fail()
+      vi.advanceTimersByTime(59_999)
+      expect(FakeEventSource.instances).toHaveLength(before)
+      vi.advanceTimersByTime(1)
+      expect(FakeEventSource.instances).toHaveLength(before + 1)
+      close()
+    })
+
+    it('canal que nunca abriu (convidado, 404) desiste e deixa o poll', async () => {
+      const useOrderTrackingStream = await loadComposable()
+      const { connect, close } = useOrderTrackingStream(() => 'ORD-1', () => {})
+      connect()
+      for (let i = 0; i < 10; i++) {
+        FakeEventSource.instances.at(-1)!.fail()
+        vi.advanceTimersByTime(60_000)
+      }
+      // 1 inicial + 5 novas tentativas, e para.
+      expect(FakeEventSource.instances).toHaveLength(6)
+      close()
+    })
+
+    it('stream-error do Django vira backoff, não o laço de 3 s do navegador', async () => {
+      const useOrderTrackingStream = await loadComposable()
+      const { connect, close } = useOrderTrackingStream(() => 'ORD-1', () => {})
+      connect()
+      const first = FakeEventSource.instances[0]!
+      first.open()
+      first.emit('stream-error')
+      expect(first.closed).toBe(true)
+      vi.advanceTimersByTime(2_000)
+      expect(FakeEventSource.instances).toHaveLength(2)
+      close()
+    })
+
+    it('reconnectNow() não espera o backoff e close() cancela a espera', async () => {
+      const useOrderTrackingStream = await loadComposable()
+      const { connect, close, reconnectNow } = useOrderTrackingStream(() => 'ORD-1', () => {})
+      connect()
+      FakeEventSource.instances[0]!.open()
+      FakeEventSource.instances[0]!.fail()
+      reconnectNow()
+      expect(FakeEventSource.instances).toHaveLength(2)
+
+      FakeEventSource.instances[1]!.fail()
+      close()
+      vi.advanceTimersByTime(120_000)
+      expect(FakeEventSource.instances).toHaveLength(2)
+    })
   })
 })

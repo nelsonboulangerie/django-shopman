@@ -1,9 +1,9 @@
 # Django Shopman
 
 ![Python](https://img.shields.io/badge/python-≥3.12-blue)
-![Django](https://img.shields.io/badge/django-6.0-green)
-![License](https://img.shields.io/badge/license-MIT-yellow)
-![Release](https://img.shields.io/github/v/release/pablondrina/django-shopman?include_prereleases&label=release)
+![Django](https://img.shields.io/badge/django-6.1-green)
+![License](https://img.shields.io/badge/license-FSL--1.1--ALv2-yellow)
+![Release](https://img.shields.io/github/v/release/nelsonboulangerie/django-shopman?include_prereleases&label=release)
 ![Tests](https://img.shields.io/badge/tests-~5.000-brightgreen)
 
 Django Shopman é um framework de commerce operations para pequenos negócios com operação física e remota — padarias, confeitarias, cafés, food service. Não é um e-commerce genérico; é uma base opinativa e modular para casos operacionais densos: catálogo com produção própria, estoque vivo, múltiplos canais (balcão, web, WhatsApp, marketplace), KDS, e gestão integrada.
@@ -53,7 +53,7 @@ sessão e os BFFs dependem disso).
 
 ```bash
 # 1. Clonar, subir Postgres+Redis via docker, instalar deps
-git clone https://github.com/pablondrina/django-shopman.git
+git clone https://github.com/nelsonboulangerie/django-shopman.git
 cd django-shopman
 cp .env.example .env
 make up           # docker compose: postgres:16-alpine + redis:7-alpine
@@ -223,11 +223,18 @@ make deploy-down      # para containers do deploy local
 | Requisito | Versão |
 |-----------|--------|
 | Python | ≥ 3.12 |
-| Django | ≥ 6.0, < 6.1 |
+| Django | ≥ 6.1, < 6.2 |
 | Node.js | 22.x (apps Nuxt e buildpack DO) |
 | Banco de dados | PostgreSQL 16+ em dev canônico/staging/prod; SQLite só fallback local |
 | Cache/realtime | Redis 7+ em dev canônico/staging/prod; LocMem só fallback local |
 
 ## Licença
 
-MIT — Pablo Valentini
+[Functional Source License 1.1, licença futura Apache 2.0](LICENSE.md) (`FSL-1.1-ALv2`), Pablo Valentini.
+
+Qualquer empresa pode usar, alterar e redistribuir o Shopman no próprio negócio. O que a
+licença não permite é oferecê-lo a terceiros como produto ou serviço concorrente. Dois anos
+depois de publicada, cada versão passa a valer também sob a Apache License 2.0.
+
+A marca, as fotos, os textos legais e os dados da Nelson Boulangerie ficam fora da licença:
+ver [NOTICE.md](NOTICE.md).

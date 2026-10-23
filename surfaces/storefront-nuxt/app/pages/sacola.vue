@@ -210,9 +210,10 @@ useSeoMeta({
                     <h3 class="shop-item-title line-clamp-2 min-w-0 flex-1">{{ line.name }}</h3>
                     <UiButton
                       variant="ghost"
-                      size="icon-sm"
+                      size="icon"
                       icon="lucide:trash-2"
-                      class="-mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-destructive"
+                      class="-my-3 -mr-3 size-11 shrink-0 text-muted-foreground hover:text-destructive"
+                      data-cart-remove-line
                       :aria-label="`Remover ${line.name}`"
                       :loading="removingLine(line.line_id)"
                       @click="removeLine(line)"
