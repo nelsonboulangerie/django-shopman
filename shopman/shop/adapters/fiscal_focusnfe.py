@@ -314,8 +314,8 @@ def _build_nfce_payload(
         "valor_produtos": _money_q(product_total_q),
         "valor_total": _money_q(note_total_q),
         "items": mapped_items,
-        "formas_pagamento": _payment_forms(payment),
     }
+    payload.update(_payment_group(payment))
     if home_delivery is not None:
         # Entrega a domicílio: indPres=4, frete no item (I15) e no total (W08).
         # A modalidade do frete (X02) diz QUEM transportou, e são dois casos —
@@ -703,6 +703,67 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
     return mapped
 
 
+# Grupo do pagamento (``pag``/``detPag``) na API da Focus, conferido na
+# referência canônica deles (https://campos.focusnfe.com.br/nfe/FormaPagamentoXML.html
+# e NotaFiscalXML.html, 23/10/2026): ``forma_pagamento`` (tPag),
+# ``descricao_pagamento`` (xPag, 2 a 60 caracteres, só no 99),
+# ``valor_pagamento`` (vPag), ``tipo_integracao`` (tpIntegra),
+# ``cnpj_credenciadora`` (CNPJ), ``bandeira_operadora`` (tBand),
+# ``numero_autorizacao`` (cAut) e, no nível da NOTA, ``valor_troco`` (vTroco).
+CARD_CODES = frozenset({"03", "04"})
+# tpIntegra 2: "pagamento não integrado com o sistema de automação" (maquininha
+# avulsa). O 1 (integrado, TEF ou comércio eletrônico) obriga CNPJ da
+# credenciadora e número da autorização, e nenhum dos dois é gravado no pedido
+# hoje; declarar 1 sem eles é rejeição certa. Sem o grupo de cartão, a SEFAZ
+# recusa toda nota de 03/04 (rejeição 391).
+CARD_NOT_INTEGRATED = "2"
+
+# xPag do 99: o leiaute exige a descrição quando a forma é "outros". A frase diz
+# o que se sabe do pagamento, sem afirmar o que não se sabe.
+_OTHER_DESCRIPTIONS = {
+    "external": "Pagamento pelo intermediador da venda",
+    "card": "Cartão sem tipo informado pelo gateway",
+    "link": "Cartão sem tipo informado pelo gateway",
+}
+_PREPAID_DESCRIPTION = "Cartão pré-pago"
+
+
+def _payment_group(payment: dict) -> dict:
+    """``formas_pagamento`` e, quando houve troco em dinheiro, ``valor_troco``."""
+    payment = dict(payment or {})
+    forms = _payment_forms(payment)
+    group: dict = {"formas_pagamento": forms}
+    change_q = _declarable_change_q(payment, forms)
+    if change_q:
+        # vPag do dinheiro volta a ser o que veio na mão; a nota fecha por
+        # Σ vPag − vTroco = vNF. O valor_total continua o líquido.
+        cash = next(form for form in reversed(forms) if form["forma_pagamento"] == "01")
+        cash["valor_pagamento"] = _money_q(_money_to_q(cash["valor_pagamento"]) + change_q)
+        group["valor_troco"] = _money_q(change_q)
+    return group
+
+
+def _declarable_change_q(payment: dict, forms: list[dict]) -> int:
+    """Troco que a nota pode declarar, em centavos; 0 quando não fecha.
+
+    ``change_q`` e ``tendered_q`` são do PDV e do acerto de entrega
+    (``docs/reference/data-schemas.md``): o dinheiro que veio na mão e o que
+    voltou. Só se declara troco quando as três contas batem (dinheiro líquido da
+    nota + troco = dinheiro entregue). Sem essa prova, o vPag líquido sem
+    vTroco continua sendo uma nota válida, e inventar troco não é.
+    """
+    change_q = max(0, int(payment.get("change_q") or 0))
+    tendered_q = max(0, int(payment.get("tendered_q") or 0))
+    if not change_q or not tendered_q:
+        return 0
+    cash_q = sum(
+        _money_to_q(form["valor_pagamento"]) for form in forms if form["forma_pagamento"] == "01"
+    )
+    if not cash_q or cash_q + change_q != tendered_q:
+        return 0
+    return change_q
+
+
 def _payment_forms(payment: dict) -> list[dict]:
     payment = dict(payment or {})
     amount_q = int(payment.get("amount_q") or 0)
@@ -713,22 +774,37 @@ def _payment_forms(payment: dict) -> list[dict]:
             tender_amount_q = int(tender.get("amount_q") or 0)
             if tender_amount_q <= 0:
                 continue
-            forms.append({
-                "forma_pagamento": _payment_code(
-                    tender.get("method") or payment.get("method"),
-                    tender.get("card_funding") or payment.get("card_funding"),
-                ),
-                "valor_pagamento": _money_q(tender_amount_q),
-            })
+            forms.append(_payment_form(
+                tender.get("method") or payment.get("method"),
+                tender.get("card_funding") or payment.get("card_funding"),
+                tender_amount_q,
+            ))
         if forms:
             return forms
 
     if amount_q <= 0:
         raise FocusNFePayloadError("Pagamento fiscal exige payment.amount_q > 0.")
-    return [{
-        "forma_pagamento": _payment_code(payment.get("method"), payment.get("card_funding")),
-        "valor_pagamento": _money_q(amount_q),
-    }]
+    return [_payment_form(payment.get("method"), payment.get("card_funding"), amount_q)]
+
+
+def _payment_form(method: object, card_funding: object, amount_q: int) -> dict:
+    code = _payment_code(method, card_funding)
+    form = {"forma_pagamento": code, "valor_pagamento": _money_q(amount_q)}
+    if code in CARD_CODES:
+        form["tipo_integracao"] = CARD_NOT_INTEGRATED
+    elif code == "99":
+        form["descricao_pagamento"] = _other_description(method, card_funding)
+    return form
+
+
+def _other_description(method: object, card_funding: object) -> str:
+    value = str(method or "").strip().lower()
+    if value in _CARD_BY_GATEWAY and str(card_funding or "").strip().lower() == "prepaid":
+        return _PREPAID_DESCRIPTION
+    if value in _OTHER_DESCRIPTIONS:
+        return _OTHER_DESCRIPTIONS[value]
+    label = str(method or "").strip()
+    return f"Outro meio: {label}"[:60] if label else "Outro meio de pagamento"
 
 
 def _payment_total_q(payment: dict) -> int:

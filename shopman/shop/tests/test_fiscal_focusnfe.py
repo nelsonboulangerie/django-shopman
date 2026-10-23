@@ -551,3 +551,125 @@ def test_payment_code_conta_na_casa_e_credito_loja_e_link_fica_em_outros():
     assert _payment_code("credit", "debit") == "03"
     assert _payment_code("pix") == "17"
     assert _payment_code("cash") == "01"
+
+
+# ── Formas de pagamento (F2 do laudo de 23/10/2026) ─────────────────────────
+# Nomes dos campos conferidos em https://campos.focusnfe.com.br/nfe/FormaPagamentoXML.html
+# (tipo_integracao, descricao_pagamento) e NotaFiscalXML.html (valor_troco).
+
+
+def _emit_capturing(payment: dict, total_q: int = 1500) -> dict:
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    captured = {}
+
+    def fake_request(method, path, payload, config):
+        captured["payload"] = payload
+        return {"status": "autorizado", "chave_nfe": "K"}
+
+    with override_settings(SHOPMAN_FOCUS_NFE=_settings()), patch(
+        "shopman.shop.adapters.fiscal_focusnfe._request", side_effect=fake_request
+    ):
+        result = FocusNFeBackend().emit(
+            reference="ORD-PAG",
+            items=[{
+                "sku": "SKU-1", "name": "Pao", "qty": "1", "unit": "un",
+                "unit_price_q": total_q, "total_q": total_q, "fiscal": FISCAL_STANDARD,
+            }],
+            customer={},
+            payment=payment,
+        )
+    assert result.success is True, result.error_message
+    return captured["payload"]
+
+
+@pytest.mark.parametrize(("method", "funding", "code"), [
+    ("credit", None, "03"),
+    ("debit", None, "04"),
+    ("card", "credit", "03"),
+    ("link", "debit", "04"),
+])
+def test_cartao_credito_e_debito_levam_o_grupo_de_cartao_nao_integrado(method, funding, code):
+    """Sem o grupo de cartão a SEFAZ recusa a nota de 03/04 (rejeição 391)."""
+    payment = {"method": method, "amount_q": 1500}
+    if funding:
+        payment["card_funding"] = funding
+    payload = _emit_capturing(payment)
+
+    assert payload["formas_pagamento"] == [{
+        "forma_pagamento": code,
+        "valor_pagamento": "15.00",
+        "tipo_integracao": "2",
+    }]
+    assert "valor_troco" not in payload
+
+
+def test_pix_segue_17_sem_grupo_de_cartao_nem_descricao():
+    payload = _emit_capturing({"method": "pix", "amount_q": 1500})
+
+    assert payload["formas_pagamento"] == [{"forma_pagamento": "17", "valor_pagamento": "15.00"}]
+
+
+@pytest.mark.parametrize(("payment", "description"), [
+    ({"method": "external"}, "Pagamento pelo intermediador da venda"),
+    ({"method": "card"}, "Cartão sem tipo informado pelo gateway"),
+    ({"method": "link", "card_funding": "unknown"}, "Cartão sem tipo informado pelo gateway"),
+    ({"method": "card", "card_funding": "prepaid"}, "Cartão pré-pago"),
+    ({"method": "voucher_x"}, "Outro meio: voucher_x"),
+])
+def test_outros_99_sempre_leva_descricao_do_meio(payment, description):
+    """O leiaute exige xPag quando tPag = 99 (todo pedido do iFood cai aqui)."""
+    payload = _emit_capturing({**payment, "amount_q": 1500})
+
+    form = payload["formas_pagamento"][0]
+    assert form["forma_pagamento"] == "99"
+    assert form["descricao_pagamento"] == description
+    assert 2 <= len(form["descricao_pagamento"]) <= 60
+    assert "tipo_integracao" not in form
+
+
+def test_dinheiro_com_troco_declara_o_entregue_e_o_troco():
+    """Σ vPag − vTroco = vNF: o dinheiro entregue e o troco que voltou."""
+    payload = _emit_capturing({
+        "method": "cash", "amount_q": 1500, "tendered_q": 2000, "change_q": 500,
+    })
+
+    assert payload["formas_pagamento"] == [{"forma_pagamento": "01", "valor_pagamento": "20.00"}]
+    assert payload["valor_troco"] == "5.00"
+    assert payload["valor_total"] == "15.00"
+    assert "valor_desconto" not in payload
+
+
+def test_venda_mista_com_troco_soma_o_troco_so_na_linha_de_dinheiro():
+    # Crédito 10,00 + dinheiro 5,00 entregue numa venda de 13,00: o serviço
+    # fiscal já tirou o troco da linha de dinheiro (3,00 líquido).
+    payload = _emit_capturing({
+        "method": "mixed", "amount_q": 1300, "tendered_q": 500, "change_q": 200,
+        "tenders": [
+            {"method": "credit", "amount_q": 1000},
+            {"method": "cash", "amount_q": 300},
+        ],
+    }, total_q=1300)
+
+    assert payload["formas_pagamento"] == [
+        {"forma_pagamento": "03", "valor_pagamento": "10.00", "tipo_integracao": "2"},
+        {"forma_pagamento": "01", "valor_pagamento": "5.00"},
+    ]
+    assert payload["valor_troco"] == "2.00"
+    assert payload["valor_total"] == "13.00"
+
+
+@pytest.mark.parametrize("payment", [
+    {"method": "cash", "amount_q": 1500},
+    {"method": "cash", "amount_q": 1500, "tendered_q": 1500, "change_q": 0},
+    # Troco que não fecha com o entregue não se inventa: vPag líquido é válido.
+    {"method": "cash", "amount_q": 1500, "tendered_q": 3000, "change_q": 500},
+    {"method": "cash", "amount_q": 1500, "change_q": 500},
+    # Troco sem dinheiro na nota não é troco.
+    {"method": "pix", "amount_q": 1500, "tendered_q": 2000, "change_q": 500},
+])
+def test_sem_troco_provado_a_nota_declara_o_liquido(payment):
+    payload = _emit_capturing(payment)
+
+    assert payload["formas_pagamento"][0]["valor_pagamento"] == "15.00"
+    assert "valor_troco" not in payload
