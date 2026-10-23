@@ -2,7 +2,7 @@
 
 > Documento vivo. Quem assume a coordenação lê isto inteiro, depois o `CLAUDE.md`,
 > e atualiza a seção "Estado" ao encerrar o turno. Vale para Claude, Codex,
-> DeepSeek ou humano. Atualizado em 21/10/2026.
+> DeepSeek ou humano. Atualizado em 23/10/2026.
 
 ## 1. O papel
 
@@ -351,6 +351,11 @@ Focus) e hardware · QA física por papel · impressão, gaveta e som · reapont
 para banco restaurado · dados reais do Dia 1 · GO/NO-GO.
 
 ### Código antes do go-live
+
+> **Atualização de 23/10/2026:** o [laudo adversarial de 23/10](../reports/2026-10-23-laudo-adversarial-go-live.md)
+> contesta o parágrafo abaixo: 0 P0 de código, mas 19 P1 com prova e 1 bloqueio a
+> provar em homologação (cartão na NFC-e). As tarefas T1 a T12 (Onda 1) são a fila de
+> código antes do go-live; T13 a T15 vêm depois; P1 a P8 são o produto adotável.
 
 **Nenhum bloqueio de código conhecido nesta reauditoria.** A lista de 19/10 foi
 fechada por entregas já no `main`: drift Watchman e fallbacks (#1894, #1898, #1906,
