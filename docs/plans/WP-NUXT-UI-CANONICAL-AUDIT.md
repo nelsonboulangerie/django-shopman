@@ -1,7 +1,7 @@
 # WP destacado: anatomia canônica do Nuxt UI
 
-**Estado:** diagnóstico transversal; correções compartilhadas pequenas aplicadas localmente  
-**Origem:** prévia do CRUD humano do Compras, 23/10/2026  
+**Estado:** executado localmente; aguardando aprovação da prévia antes de publicar
+**Origem:** prévia do CRUD humano do Compras, 23/10/2026
 **Alcance:** superfícies Nuxt de operador; Storefront fica fora
 
 ## O que significa canônico
@@ -58,39 +58,39 @@ Para Insumos, a melhor forma é a primeira: a linha inteira abre a ficha. Ela j�
 seleção oficial da tabela, portanto não precisa de um botão “Abrir” repetido em cada
 linha. Ações secundárias futuras devem permanecer controles independentes.
 
-## Inventário inicial
+## Resultado da execução
 
-A varredura encontrou alertas em 106 arquivos Vue de operador. Além dos quatro pontos
-compartilhados corrigidos, ainda existem dois alertas que forçam horizontalidade:
+A varredura cobriu 106 arquivos Vue de operador. Os sete alertas que forçavam a
+orientação horizontal foram corrigidos: quatro componentes compartilhados do kit,
+`OperatorStationSetup`, `VolumeCheckBar` de Pedidos e a falha de exploração do B.I.
+A orientação oficial organiza mensagem, ações e fechar sem disputa de largura.
 
-- Pedidos: `VolumeCheckBar.vue`;
-- B.I.: `pages/explore.vue`.
+O PDV teve os 69 usos de `UiButton`, distribuídos em 15 arquivos, migrados para
+`NuxtButton`. Os dois usos de `UiTextarea` foram migrados para `NuxtTextarea`. Os dois
+adaptadores sem consumidor foram removidos, portanto não existe mais uma API paralela
+para ações comuns ou texto longo.
 
-Eles devem ser avaliados no turno dos respectivos apps, pois a barra de aferição de
-volume e o erro de exploração têm contextos diferentes.
+O `UiNativeSelect`, já aposentado e sem uso de produção, também foi removido junto com
+o CSS específico e o teste do adaptador. Escolhas novas usam `NuxtSelect` ou
+`NuxtSelectMenu`.
 
-O PDV mantém 69 usos de `UiButton` em 15 arquivos. O componente encaminha para
-`NuxtButton`, mas traduz uma API legada e conserva tamanhos próprios. É dívida de
-compatibilidade, não motivo para substituição cega. `UiTextarea` ainda aparece em dois
-formulários do PDV e deve entrar na mesma revisão.
+Os botões comuns de `OperatorPushSettings` agora são `NuxtButton`. Botões nativos de
+numpad, seletor de dia e controles de trilho permanecem porque são partes de widgets
+compostos, não substitutos locais para uma ação comum.
 
-Também merecem prova de uso antes de manutenção ou remoção os adaptadores sem uso de
-produção encontrado nesta varredura: `UiNativeSelect`, `UiIconButton`, `UiSearchInput`,
-`UiToggleChip` e `UiStepper`.
+`UiStepper` permanece porque acrescenta navegação responsiva e vocabulário de estado ao
+`NuxtStepper`. `UiIconButton`, `UiSearchInput` e `UiToggleChip` permanecem como contratos
+especializados do catálogo, com foco, semântica e comportamento próprios. Eles não são
+adaptadores de compatibilidade para uma peça oficial equivalente.
 
-Botões nativos não são automaticamente um erro. Numpad, seletor de dia, controles de
-trilho e outras peças compostas têm semântica própria. Já os botões manuais de
-`OperatorPushSettings` são candidatos fortes a `NuxtButton`, porque representam ações
-comuns, não um widget especializado.
+## Travas e validação
 
-## Ordem de execução
+- a trava transversal reprova qualquer `NuxtAlert` que volte a forçar orientação
+  horizontal;
+- a trava de acessibilidade passou a inspecionar `NuxtButton` diretamente;
+- o conjunto mínimo impede reintroduzir tamanhos, cores ou variantes fora do contrato;
+- testes, lint, tipos e builds dos apps atingidos são a evidência de equivalência;
+- a prévia permanece somente local até a aprovação visual.
 
-1. Fechar e validar as correções compartilhadas já pequenas.
-2. No turno de cada app, revisar os pontos daquele app e comparar a prévia antes/depois.
-3. Migrar adaptadores legados por família, com prova de equivalência de foco, tamanho de
-   toque e estados. Não fazer busca e troca global.
-4. Validar primeiro em 320×568, depois 390×844, tablet e mesa, nos temas claro e escuro.
-5. Mostrar a prévia local para aprovação antes de qualquer push ou PR.
-
-Este WP registra um padrão e uma fila de diagnóstico. Ele não autoriza mudar todos os
-apps de uma vez.
+Este WP não é mais uma fila de diagnóstico. A implementação está no branch local e não
+será enviada nem transformada em PR antes da aprovação da prévia.

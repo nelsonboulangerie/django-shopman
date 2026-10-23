@@ -119,33 +119,33 @@ const windowPending = computed(() => !props.scheduleWindow?.trim() && !props.sch
     <div v-show="current === 'customer'" data-order-step="customer" :data-focus-target="focusKey('customer')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('customer') ? 'border-success/40' : 'border-primary bg-primary/5'">
       <h2 class="font-medium">Quem é o cliente?</h2>
       <p class="text-sm text-muted-foreground">{{ isReady('customer') ? customerName : "Quem vai receber ou buscar. É o contato se algo mudar até a data." }}</p>
-      <UiButton data-focus-control class="justify-self-start" :variant="isReady('customer') ? 'outline' : 'default'" :disabled="loading" @click="act('customer')">{{ isReady('customer') ? "Trocar cliente" : "Identificar cliente" }}</UiButton>
+      <NuxtButton data-focus-control class="justify-self-start" :color="isReady('customer') ? 'neutral' : 'primary'" :variant="isReady('customer') ? 'outline' : 'solid'" :disabled="loading" @click="act('customer')">{{ isReady('customer') ? "Trocar cliente" : "Identificar cliente" }}</NuxtButton>
     </div>
 
     <div v-show="current === 'fulfillment'" data-order-step="fulfillment" :data-focus-target="focusKey('fulfillment')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('fulfillment') ? 'border-success/40' : 'border-primary bg-primary/5'">
       <h2 class="font-medium">Entrega ou retirada?</h2>
       <p class="text-sm text-muted-foreground">{{ isReady('fulfillment') ? fulfillmentLabel : "Escolha como o cliente vai receber." }}</p>
-      <UiButton data-focus-control class="justify-self-start" :variant="isReady('fulfillment') ? 'outline' : 'default'" :disabled="loading" @click="act('fulfillment')">{{ isReady('fulfillment') ? "Trocar entrega ou retirada" : "Escolher entrega ou retirada" }}</UiButton>
+      <NuxtButton data-focus-control class="justify-self-start" :color="isReady('fulfillment') ? 'neutral' : 'primary'" :variant="isReady('fulfillment') ? 'outline' : 'solid'" :disabled="loading" @click="act('fulfillment')">{{ isReady('fulfillment') ? "Trocar entrega ou retirada" : "Escolher entrega ou retirada" }}</NuxtButton>
     </div>
 
     <div v-show="current === 'address'" data-order-step="address" :data-focus-target="focusKey('address')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('address') ? 'border-success/40' : 'border-primary bg-primary/5'">
       <h2 class="font-medium">Onde entregar?</h2>
       <p class="text-sm text-muted-foreground">{{ isReady('address') ? fulfillmentLabel : "Falta o endereço de entrega." }}</p>
-      <UiButton data-focus-control class="justify-self-start" :variant="isReady('address') ? 'outline' : 'default'" :disabled="loading" @click="act('address')">{{ isReady('address') ? "Trocar endereço" : "Informar endereço" }}</UiButton>
+      <NuxtButton data-focus-control class="justify-self-start" :color="isReady('address') ? 'neutral' : 'primary'" :variant="isReady('address') ? 'outline' : 'solid'" :disabled="loading" @click="act('address')">{{ isReady('address') ? "Trocar endereço" : "Informar endereço" }}</NuxtButton>
     </div>
 
     <div v-show="current === 'schedule'" data-order-step="schedule" :data-focus-target="focusKey('schedule')" class="grid scroll-mt-4 gap-3 rounded-lg border p-4 outline-none" :class="isReady('schedule') ? 'border-success/40' : 'border-primary bg-primary/5'">
       <h2 class="font-medium">Para quando?</h2>
       <p class="text-sm text-muted-foreground">{{ isReady('schedule') ? scheduleLabel : "Combine o dia e o horário: é o que a casa promete ao cliente." }}</p>
       <p v-if="isReady('schedule') && windowPending" data-schedule-window-pending class="text-sm text-muted-foreground">Horário a combinar.</p>
-      <UiButton data-focus-control class="justify-self-start" :variant="isReady('schedule') ? 'outline' : 'default'" :disabled="loading" @click="act('schedule')">{{ isReady('schedule') ? "Trocar data e horário" : "Escolher data e horário" }}</UiButton>
+      <NuxtButton data-focus-control class="justify-self-start" :color="isReady('schedule') ? 'neutral' : 'primary'" :variant="isReady('schedule') ? 'outline' : 'solid'" :disabled="loading" @click="act('schedule')">{{ isReady('schedule') ? "Trocar data e horário" : "Escolher data e horário" }}</NuxtButton>
     </div>
 
     <div class="flex flex-wrap items-center gap-2 border-t pt-4">
-      <UiButton v-if="currentIndex > 0" variant="outline" :disabled="loading" @click="goToStep(currentIndex - 1)">Voltar</UiButton>
+      <NuxtButton v-if="currentIndex > 0" variant="outline" :disabled="loading" @click="goToStep(currentIndex - 1)">Voltar</NuxtButton>
       <span class="min-w-0 flex-1 text-center text-xs text-muted-foreground" role="status">Etapa {{ currentIndex + 1 }} de {{ steps.length }}: {{ currentStep.label }}</span>
-      <UiButton v-if="!isLast" :disabled="loading || !currentStep.ready" @click="goToStep(currentIndex + 1)">Continuar</UiButton>
-      <UiButton v-else :disabled="loading || !allReady" @click="emit('complete')">Montar encomenda <Icon name="lucide:arrow-right" class="ml-2 size-4" /></UiButton>
+      <NuxtButton v-if="!isLast" :disabled="loading || !currentStep.ready" @click="goToStep(currentIndex + 1)">Continuar</NuxtButton>
+      <NuxtButton v-else :disabled="loading || !allReady" @click="emit('complete')">Montar encomenda <Icon name="lucide:arrow-right" class="ml-2 size-4" /></NuxtButton>
     </div>
   </section>
 </template>

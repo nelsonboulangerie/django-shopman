@@ -26,7 +26,7 @@
 /* O Tailwind v4 auto-detecta fontes só a partir da raiz do app; o `operator-kit`
    (Nuxt layer irmão, via `extends`) fica fora dela. Sem este `@source`, classes
    usadas SÓ nos componentes do kit (OperatorRail/RailItem/RailToggle/
-   OfflineBanner/UiNativeSelect) somem silenciosamente — o CSS compila, a tela é
+   OfflineBanner) somem silenciosamente — o CSS compila, a tela é
    que quebra. O caminho é relativo A ESTE arquivo: daqui, `../..` é a raiz
    `operator-kit/app`. */
 @source "../..";
@@ -122,8 +122,8 @@
      tint levíssimo). NÃO usar ring nem fill-sólido para indicar seleção. (ring é
      reservado a foco de teclado; o token outline-ring já cobre.)
 
-   CANTOS — rounded-md padrão (sóbrio/ERP; botões/cards/inputs/tiles, incl. a base
-     do UiButton/UiInput/UiCard); rounded-full só em pílulas/avatars/badges. Sem
+   CANTOS — rounded-md padrão (sóbrio/ERP; botões/cards/inputs/tiles);
+     rounded-full só em pílulas/avatars/badges. Sem
      rounded-lg/xl/2xl avulsos.
    ─────────────────────────────────────────────────────────────────────────── */
 

@@ -1,7 +1,7 @@
 # WP destacado: lista compacta e foco sequencial no operador
 
-**Estado:** levantamento inicial, sem autorização para aplicação em massa  
-**Origem:** prévia do CRUD humano do Compras, 23/10/2026  
+**Estado:** levantamento inicial, sem autorização para aplicação em massa
+**Origem:** prévia do CRUD humano do Compras, 23/10/2026
 **Alcance:** superfícies Nuxt de operador; Storefront fica fora
 
 ## A hipótese

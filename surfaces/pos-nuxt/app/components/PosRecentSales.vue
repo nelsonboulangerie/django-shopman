@@ -350,9 +350,9 @@ function fiscalChipClass(status: string): string {
           <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Balcão</p>
           <h2 class="text-lg font-semibold text-foreground">Últimas vendas</h2>
         </div>
-        <UiButton type="button" variant="outline" size="sm" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
+        <NuxtButton type="button" color="neutral" variant="outline" size="md" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
           <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
-        </UiButton>
+        </NuxtButton>
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -397,37 +397,37 @@ function fiscalChipClass(status: string): string {
               <!-- Recibo não fiscal: qualquer venda reimprime, a qualquer hora.
                    Só aparece onde há agente; a bobina é o único transporte da
                    reimpressão (o diálogo do navegador só existe na venda viva). -->
-              <UiButton
+              <NuxtButton
                 v-if="canPrintOnAgent"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 @click="printReceipt(sale)"
               >
                 <Icon name="lucide:printer" class="size-3.5" />
                 Recibo
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.can_print_danfe"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 @click="printDanfe(sale)"
               >
                 <Icon name="lucide:receipt-text" class="size-3.5" />
                 DANFE
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.payment_delivery?.action"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 data-action="send-payment-notice"
                 @click="sendPaymentNotice(sale)"
               >
                 <Icon name="lucide:send" class="size-3.5" />
                 {{ sale.payment_delivery.action_label }}
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.can_resend_email"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 @click="openEmailPrompt(sale)"
               >
@@ -436,10 +436,10 @@ function fiscalChipClass(status: string): string {
                      "Enviar" que aparece ali dentro — dizia "Enviar e-mail" e
                      não enviava nada. -->
                 {{ sale.email_sent ? "E-mail da nota (já enviada)" : "E-mail da nota" }}
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.can_requeue_fiscal"
-                type="button" variant="outline" size="xs"
+                type="button" color="neutral" variant="outline" size="md"
                 class="gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
                 :disabled="busyRef === sale.order_ref"
                 @click="requeueFiscal(sale)"
@@ -449,12 +449,12 @@ function fiscalChipClass(status: string): string {
                      MESMO nome do gesto no Gestor de pedidos (`requeue-fiscal`):
                      um gesto, um nome, em toda superfície de operador. -->
                 Reprocessar NFC-e
-              </UiButton>
+              </NuxtButton>
               <!-- Emissão avulsa: a regra da casa não emitiu. Botão NEUTRO — não
                    há nada errado com a venda; o gerente é pedido no toque. -->
-              <UiButton
+              <NuxtButton
                 v-if="sale.can_emit_fiscal"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref || emitBusy"
                 data-action="emit-fiscal"
                 @click="openEmitFiscal(sale)"
@@ -466,19 +466,19 @@ function fiscalChipClass(status: string): string {
                      autorização" (a mesma tela já pede a autorização do
                      GERENTE: a palavra teria dois sentidos no mesmo toque). -->
                 Estabelecer emissão…
-              </UiButton>
+              </NuxtButton>
               <!-- Desfazer dentro da janela: exceção auditada, sempre com o
                    desafio gerencial do mesmo diálogo da tela de venda. -->
-              <UiButton
+              <NuxtButton
                 v-if="sale.can_cancel"
-                type="button" variant="outline" size="xs"
+                type="button" color="neutral" variant="outline" size="md"
                 class="gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
                 :disabled="busyRef === sale.order_ref || cancelBusy"
                 @click="openCancel(sale)"
               >
                 <Icon name="lucide:undo-2" class="size-3.5" />
                 Cancelar venda
-              </UiButton>
+              </NuxtButton>
             </div>
 
             <!-- Consulta pública da nota (Focus/SEFAZ): os links já viajavam na
@@ -504,13 +504,13 @@ function fiscalChipClass(status: string): string {
                 class="h-8 text-sm"
                 @keydown.enter.prevent="resendEmail(sale)"
               />
-              <UiButton
-                type="button" size="sm"
+              <NuxtButton
+                type="button" size="md"
                 :disabled="!emailDraft.trim() || busyRef === sale.order_ref"
                 @click="resendEmail(sale)"
               >
                 Enviar
-              </UiButton>
+              </NuxtButton>
             </div>
           </li>
         </ul>

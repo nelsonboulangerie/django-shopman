@@ -97,27 +97,33 @@ async function updateCategorySelection(next: string[]): Promise<void> {
             data-push-reload
             @click="reloadPage"
           />
-          <button
+          <NuxtButton
             v-if="canActivate"
             type="button"
             data-activate-push
-            class="inline-flex min-h-control items-center font-semibold text-foreground underline decoration-border underline-offset-4 disabled:opacity-60"
+            color="neutral"
+            variant="ghost"
+            size="md"
+            class="min-h-control font-semibold"
             :disabled="loading"
             @click="activate"
           >
             {{ loading ? 'Ativando…' : 'Ativar neste dispositivo' }}
-          </button>
-          <button
+          </NuxtButton>
+          <NuxtButton
             v-else-if="hasDetails"
             type="button"
             data-push-details-toggle
-            class="inline-flex min-h-control items-center font-semibold text-foreground underline decoration-border underline-offset-4"
+            color="neutral"
+            variant="ghost"
+            size="md"
+            class="min-h-control font-semibold"
             :aria-expanded="detailsOpen"
             aria-controls="push-settings-details"
             @click="detailsOpen = !detailsOpen"
           >
             {{ detailsOpen ? 'Fechar' : currentDevice ? 'Escolher o que chega' : 'Ver dispositivos' }}
-          </button>
+          </NuxtButton>
           <template #fallback>
             <span class="min-w-0">Avisos neste dispositivo</span>
           </template>
@@ -147,16 +153,19 @@ async function updateCategorySelection(next: string[]): Promise<void> {
           @click="reloadPage"
         />
       </div>
-      <button
+      <NuxtButton
         v-else-if="supported && !active"
         type="button"
         data-activate-push
-        class="mt-4 inline-flex h-11 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-60"
+        class="mt-4"
+        color="primary"
+        variant="solid"
+        size="md"
         :disabled="loading"
         @click="activate"
       >
         {{ loading ? 'Ativando…' : 'Ativar avisos' }}
-      </button>
+      </NuxtButton>
       <p v-else-if="unavailableReason === 'deploy'" role="status" data-push-unavailable="deploy" class="mt-4 text-sm text-muted-foreground">
         O envio de avisos ainda não foi configurado nesta instalação. Peça a quem cuida do
         sistema para ligá-lo. Enquanto isso, nenhum dispositivo recebe aviso.
@@ -199,9 +208,17 @@ async function updateCategorySelection(next: string[]): Promise<void> {
               <span class="block truncate font-medium">{{ device.device_label }}</span>
               <span class="block text-xs text-muted-foreground">{{ surfaceLabel(device.surface_ref) }}</span>
             </span>
-            <button type="button" class="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:underline" @click="removeDevice(device)">
+            <NuxtButton
+              type="button"
+              color="neutral"
+              variant="ghost"
+              size="md"
+              class="shrink-0"
+              data-remove-push-device
+              @click="removeDevice(device)"
+            >
               Remover
-            </button>
+            </NuxtButton>
           </li>
         </ul>
       </div>

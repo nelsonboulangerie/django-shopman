@@ -465,16 +465,16 @@ const newCustomerNote = computed(() => {
                 <p v-if="customerDecision?.current" class="text-xs text-muted-foreground">Cliente do pedido: {{ customerDecision.current.name }}</p>
               </div>
               <div class="grid gap-2">
-                <UiButton v-for="(action, index) in receiptActions" :key="action.ref" type="button" variant="secondary" class="min-h-12 h-auto justify-between whitespace-normal py-3 text-left" :disabled="lookupBusy" :aria-keyshortcuts="String(index + 1)" @click="activateReceiptAction(index)">
+                <NuxtButton v-for="(action, index) in receiptActions" :key="action.ref" type="button" color="neutral" variant="outline" class="min-h-12 h-auto justify-between whitespace-normal py-3 text-left" :disabled="lookupBusy" :aria-keyshortcuts="String(index + 1)" @click="activateReceiptAction(index)">
                   {{ action.label }} <kbd aria-hidden="true" class="text-xs opacity-70">{{ index + 1 }}</kbd>
-                </UiButton>
+                </NuxtButton>
               </div>
             </template>
             <template v-else>
               <p class="text-xs text-muted-foreground">{{ selectedReceiptOwner === '__create__' ? 'Os dados serão salvos em um novo cadastro.' : selectedReceiptOwner.startsWith('__save') ? 'Os dados do cadastro serão alterados.' : receiptNewFieldsLabel ? `Salvar ${receiptNewFieldsLabel} no cadastro escolhido. Preços e benefícios serão revisados.` : 'Preços e benefícios serão revisados.' }}</p>
               <div class="grid gap-2">
-                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="$emit('decisionConfirm', selectedReceiptOwner)">Confirmar cliente</UiButton>
-                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</UiButton>
+                <NuxtButton type="button" color="neutral" variant="outline" class="min-h-12" :disabled="lookupBusy" @click="$emit('decisionConfirm', selectedReceiptOwner)">Confirmar cliente</NuxtButton>
+                <NuxtButton type="button" color="neutral" variant="outline" class="min-h-12" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</NuxtButton>
               </div>
             </template>
             <p class="text-xs text-muted-foreground">{{ confirmingAttend ? '' : '1–' + receiptActions.length + ' escolher · ' }}Tab / ↑ ↓ navegar<br>Enter acionar · Esc voltar</p>
@@ -503,7 +503,7 @@ const newCustomerNote = computed(() => {
             >
               <p class="text-sm font-medium">{{ decisionCopy.release.prompt }}</p>
               <div class="grid gap-2 sm:grid-cols-2">
-                <UiButton
+                <NuxtButton
                   type="button"
                   :disabled="customerReleaseBusy"
                   class="h-8 justify-center gap-2"
@@ -515,16 +515,16 @@ const newCustomerNote = computed(() => {
                     :class="customerReleaseBusy ? 'animate-spin' : ''"
                   />
                   <span class="min-w-0">Sim, liberar</span>
-                </UiButton>
-                <UiButton
+                </NuxtButton>
+                <NuxtButton
                   type="button"
-                  variant="outline"
+                  color="neutral" variant="outline"
                   class="h-8 justify-center gap-2"
                   @click="confirmingRelease = null"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
                   <span class="min-w-0">Não liberar</span>
-                </UiButton>
+                </NuxtButton>
               </div>
             </div>
 
@@ -536,23 +536,23 @@ const newCustomerNote = computed(() => {
             >
               <p class="text-sm font-medium">{{ decisionCopy.confirmPrompt }}</p>
               <div class="grid gap-2 sm:grid-cols-2">
-                <UiButton
+                <NuxtButton
                   type="button"
                   class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false; $emit('decisionConfirm')"
                 >
                   <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                   <span class="min-w-0">Sim, tenho certeza</span>
-                </UiButton>
-                <UiButton
+                </NuxtButton>
+                <NuxtButton
                   type="button"
-                  variant="outline"
+                  color="neutral" variant="outline"
                   class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
                   <span class="min-w-0">Voltar</span>
-                </UiButton>
+                </NuxtButton>
               </div>
             </div>
 
@@ -584,10 +584,10 @@ const newCustomerNote = computed(() => {
                      busca. A linha ficava com um botão desabilitado e nada
                      mais — o nome de quem segura o contato, e zero saída.
                      Liberar é a saída que o merge não dá. -->
-                <UiButton
+                <NuxtButton
                   v-if="row.owner_inactive && decisionCopy.release"
                   type="button"
-                  size="sm"
+                  size="md"
                   :disabled="customerReleaseBusy"
                   class="h-9 shrink-0 gap-2"
                   @click="askRelease(candidateValue(row, customerDecision.field))"
@@ -598,16 +598,16 @@ const newCustomerNote = computed(() => {
                     :class="customerReleaseBusy ? 'animate-spin' : ''"
                   />
                   {{ decisionCopy.release.label }}
-                </UiButton>
+                </NuxtButton>
                 <!-- Linha SEM ROSTO: um dado guardado sozinho, não uma pessoa.
                      "Atender este" aqui trocaria o cliente do pedido por uma
                      ficha vazia e perderia quem está na comanda — o erro crasso
                      que a lista deixava a um toque de distância. O que se faz
                      com um dado solto é entregá-lo a quem é dele. -->
-                <UiButton
+                <NuxtButton
                   v-else-if="row.owner_unnamed && !row.is_current && customerDecision.current"
                   type="button"
-                  size="sm"
+                  size="md"
                   :disabled="customerMergeBusy"
                   class="h-9 shrink-0 gap-2"
                   @click="$emit('decisionMerge', row)"
@@ -618,19 +618,20 @@ const newCustomerNote = computed(() => {
                     :class="customerMergeBusy ? 'animate-spin' : ''"
                   />
                   É de {{ firstNameOf(customerDecision.current.name) }}
-                </UiButton>
-                <UiButton
+                </NuxtButton>
+                <NuxtButton
                   v-else
                   type="button"
-                  size="sm"
-                  :variant="row.is_current ? 'outline' : 'default'"
+                  size="md"
+                  :color="row.is_current ? 'neutral' : 'primary'"
+                  :variant="row.is_current ? 'outline' : 'solid'"
                   :disabled="row.owner_inactive || row.owner_unnamed"
                   class="h-9 shrink-0 gap-2"
                   @click="$emit('decisionPick', row)"
                 >
                   <Icon name="lucide:user-round-check" class="size-4 shrink-0" />
                   Atender este
-                </UiButton>
+                </NuxtButton>
               </li>
             </ul>
 
@@ -638,7 +639,7 @@ const newCustomerNote = computed(() => {
                  ação PRINCIPAL desse caso: atender não existe (o dono não
                  aparece na busca) e unificar o Core recusa. Na lista ela mora
                  na linha; aqui, em cima do par que fica. -->
-            <UiButton
+            <NuxtButton
               v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list' && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerReleaseBusy"
@@ -651,7 +652,7 @@ const newCustomerNote = computed(() => {
                 :class="customerReleaseBusy ? 'animate-spin' : ''"
               />
               <span class="min-w-0 truncate">{{ decisionCopy.release.label }}</span>
-            </UiButton>
+            </NuxtButton>
 
             <!-- O par que fica, e a unificação. A ORDEM é a hierarquia.
                  Quando o par já tem um caminho para a frente ("Atender
@@ -666,7 +667,7 @@ const newCustomerNote = computed(() => {
                  leitor de tela anuncia. Um único botão reposicionado por classe
                  ficaria certo aos olhos e primeiro no teclado, justo no painel
                  em que o primeiro do teclado é o gesto grande. -->
-            <UiButton
+            <NuxtButton
               v-if="decisionCopy.merge && !decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerMergeBusy"
@@ -679,14 +680,14 @@ const newCustomerNote = computed(() => {
                 :class="customerMergeBusy ? 'animate-spin' : ''"
               />
               <span class="min-w-0 truncate">{{ decisionCopy.merge.label }}</span>
-            </UiButton>
+            </NuxtButton>
 
             <div
               v-if="confirmingRelease === null && !confirmingAttend"
               class="grid gap-2"
               :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''"
             >
-              <UiButton
+              <NuxtButton
                 v-if="isReceiptDecision"
                 ref="receiptActionRef"
                 type="button"
@@ -696,31 +697,32 @@ const newCustomerNote = computed(() => {
               >
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="decisionCopy.confirmLabel"
                 type="button"
                 :disabled="lookupBusy"
-                :variant="isReceiptDecision ? 'outline' : 'default'"
+                :color="isReceiptDecision ? 'neutral' : 'primary'"
+                :variant="isReceiptDecision ? 'outline' : 'solid'"
                 class="h-8 justify-center gap-2"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
-              </UiButton>
-              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-8 justify-center gap-2" @click="cancelDecision">
+              </NuxtButton>
+              <NuxtButton v-if="!isReceiptDecision" type="button" color="neutral" variant="outline" class="h-8 justify-center gap-2" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
-              </UiButton>
+              </NuxtButton>
             </div>
 
             <!-- A TERCEIRA saída: os dois cadastros são a MESMA pessoa. Aqui o
                  par já tem um caminho para a frente ("Atender Bruno"), então
                  unificar vem por último e discreta — não é o caminho comum. -->
-            <UiButton
+            <NuxtButton
               v-if="decisionCopy.merge && decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
-              variant="ghost"
+              color="neutral" variant="ghost"
               :disabled="customerMergeBusy"
               class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
@@ -731,7 +733,7 @@ const newCustomerNote = computed(() => {
                 :class="customerMergeBusy ? 'animate-spin' : ''"
               />
               <span class="min-w-0 truncate">{{ decisionCopy.merge.label }}</span>
-            </UiButton>
+            </NuxtButton>
           </div>
 
           <!-- 2 · the picker, SEMPRE no topo: prominent search + rich results
@@ -788,10 +790,10 @@ const newCustomerNote = computed(() => {
                   Preencha o que souber; só o nome já basta.
                 </p>
               </div>
-              <UiButton v-if="hasCustomer" type="button" variant="outline" size="sm" class="shrink-0 text-destructive" @click="$emit('clear')">
+              <NuxtButton v-if="hasCustomer" type="button" color="neutral" variant="outline" size="md" class="shrink-0 text-destructive" @click="$emit('clear')">
                 <Icon name="lucide:user-x" class="size-4" />
                 Remover cliente
-              </UiButton>
+              </NuxtButton>
             </div>
             <!-- Guestman memory (warmer than Odoo's raw "All Orders"): favourite +
                  last order, one tap to apply. -->
@@ -799,12 +801,12 @@ const newCustomerNote = computed(() => {
               <span v-if="memory.total_orders" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 {{ memory.total_orders }} {{ memory.total_orders === 1 ? "pedido" : "pedidos" }}
               </span>
-              <UiButton v-if="memory.favorite_item?.sku" type="button" variant="outline" size="xs" @click="$emit('applyCustomerFavorite')">
+              <NuxtButton v-if="memory.favorite_item?.sku" type="button" color="neutral" variant="outline" size="md" @click="$emit('applyCustomerFavorite')">
                 <Icon name="lucide:heart" class="size-3.5" /> Favorito
-              </UiButton>
-              <UiButton v-if="memory.last_order_items?.length" type="button" variant="outline" size="xs" @click="$emit('repeatCustomerLastOrder')">
+              </NuxtButton>
+              <NuxtButton v-if="memory.last_order_items?.length" type="button" color="neutral" variant="outline" size="md" @click="$emit('repeatCustomerLastOrder')">
                 <Icon name="lucide:rotate-ccw" class="size-3.5" /> Último pedido
-              </UiButton>
+              </NuxtButton>
             </div>
 
             <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
@@ -897,7 +899,7 @@ const newCustomerNote = computed(() => {
                 </label>
                 <label class="grid gap-1 text-sm">
                   <span class="text-xs font-medium text-muted-foreground">Observações do balcão</span>
-                  <UiTextarea v-model="profileDraft.notes" :rows="2" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
+                  <NuxtTextarea v-model="profileDraft.notes" :rows="2" class="w-full" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
                 </label>
               </template>
               <p v-else class="text-xs text-muted-foreground">Restrições e observações ficam disponíveis depois de cadastrar.</p>

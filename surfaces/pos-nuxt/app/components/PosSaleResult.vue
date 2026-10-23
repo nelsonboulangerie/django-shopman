@@ -274,10 +274,10 @@ function onPrimary() {
       <!-- CTA dominante -->
       <!-- Na encomenda o CTA é a próxima encomenda; o F2 (volta às comandas)
            desce para as terciárias, com a tecla à vista. -->
-      <UiButton size="lg" class="h-14 min-w-64 gap-2 text-base" data-sale-result-next @click="onPrimary">
+      <NuxtButton size="xl" class="h-14 min-w-64 gap-2 text-base" data-sale-result-next @click="onPrimary">
         {{ ctaLabel }}
         <OperatorKbd v-if="!isOrder" variant="inverse" aria-hidden="true">F2</OperatorKbd>
-      </UiButton>
+      </NuxtButton>
       <p v-if="countdown > 0" class="text-xs text-muted-foreground" role="status">
         Nova venda em {{ countdown }}s · toque em qualquer lugar para ficar
       </p>
@@ -293,26 +293,26 @@ function onPrimary() {
            terciárias. -->
       <div class="flex flex-wrap items-center justify-center gap-2">
         <!-- ENCOMENDA: a Via Pedido vem primeiro, é o papel que segue com ela. -->
-        <UiButton
+        <NuxtButton
           v-if="isOrder"
-          variant="outline" size="sm" class="gap-1.5"
+          color="neutral" variant="outline" size="md" class="gap-1.5"
           :disabled="printingTicket"
           data-sale-result-ticket
           @click="emit('printTicket')"
         >
           <Icon name="lucide:printer" class="size-4" />
           {{ orderTicketLabel(Boolean(printingTicket)) }}
-        </UiButton>
-        <UiButton variant="outline" size="sm" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
+        </NuxtButton>
+        <NuxtButton color="neutral" variant="outline" size="md" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
           <Icon name="lucide:printer" class="size-4" />
           Via Recibo
-        </UiButton>
+        </NuxtButton>
         <!-- A DANFE só é botão vivo quando a nota EXISTE. Na fila, o botão
              fica desabilitado e a impressão automática o promove quando o 409
              da bobina vira 200; aguardando pagamento, a frase diz o quando. -->
-        <UiButton
+        <NuxtButton
           v-if="danfe?.kind === 'print' || danfe?.kind === 'queued'"
-          variant="outline" size="sm" class="gap-1.5"
+          color="neutral" variant="outline" size="md" class="gap-1.5"
           :disabled="printingDanfe || danfe.kind === 'queued'"
           :aria-busy="danfe.kind === 'queued' ? 'true' : undefined"
           data-danfe-action
@@ -320,7 +320,7 @@ function onPrimary() {
         >
           <Icon :name="danfe.kind === 'queued' ? 'lucide:loader-circle' : 'lucide:printer'" class="size-4" :class="danfe.kind === 'queued' ? 'animate-spin' : ''" />
           {{ danfe.label }}
-        </UiButton>
+        </NuxtButton>
         <p
           v-else-if="danfe?.kind === 'awaiting_payment' || danfe?.kind === 'awaiting_handoff'"
           class="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground"
@@ -333,10 +333,10 @@ function onPrimary() {
 
       <!-- Terciárias: discretas, alinhadas num único grupo -->
       <div class="flex flex-wrap items-center justify-center gap-2">
-        <UiButton
+        <NuxtButton
           v-if="isOrder"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           data-sale-result-to-tabs
           @click="onNewSale"
@@ -344,40 +344,40 @@ function onPrimary() {
           <Icon name="lucide:layout-grid" class="size-4" />
           Voltar às comandas
           <OperatorKbd aria-hidden="true">F2</OperatorKbd>
-        </UiButton>
-        <UiButton
+        </NuxtButton>
+        <NuxtButton
           v-if="result.salesMode === 'order'"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           :href="result.nextUrl"
         >
           <Icon name="lucide:external-link" class="size-4" />
           Abrir no gestor
-        </UiButton>
-        <UiButton
+        </NuxtButton>
+        <NuxtButton
           v-if="danfe?.kind === 'print' && danfeScreenUrl"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           :href="danfeScreenUrl"
           target="_blank" rel="noopener"
         >
           <Icon name="lucide:eye" class="size-4" />
           Ver a nota
-        </UiButton>
+        </NuxtButton>
         <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a
              confirmação destrutiva com desafio de PIN gerencial. -->
-        <UiButton
+        <NuxtButton
           v-if="canCancel && !offline"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-destructive"
           @click="emit('cancelSale')"
         >
           <Icon name="lucide:undo-2" class="size-4" />
           Cancelar venda
-        </UiButton>
+        </NuxtButton>
       </div>
     </div>
   </section>

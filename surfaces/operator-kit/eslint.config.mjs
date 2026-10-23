@@ -69,7 +69,7 @@ export default [
   {
     // O bloco `app/components/Ui/**` da base afrouxa `any`/`v-html` para as primitivas
     // VENDADAS do ui-thing/reka-ui, que nos apps moram nesse diretório. No kit os
-    // `Ui*.vue` são planos (`app/components/UiNativeSelect.vue`) — o glob da base nem
+    // `Ui*.vue` são planos — o glob da base nem
     // os alcança — e, o que decide a questão, são ESCRITOS AQUI: não são superfície
     // pública de lib de terceiro a re-tipar. A permissão NÃO se estende a eles.
     //

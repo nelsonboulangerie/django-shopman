@@ -349,7 +349,6 @@ const errorActions = computed(() => [
         icon="i-lucide-circle-alert"
         :title="errorDetail || 'Não deu para carregar o cruzamento.'"
         :actions="alertActions('error', errorActions)"
-        orientation="horizontal"
         role="alert"
         data-bi-explore-error
       />

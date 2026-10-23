@@ -368,10 +368,10 @@ function onSearchEscape() {
         data-pos-hidden-unavailable-empty
       >
         <p>Nenhum produto disponível encontrado. {{ hiddenUnavailableLabel(hiddenCount) }}.</p>
-        <UiButton variant="outline" @click="setHideUnavailable(false)">
+        <NuxtButton color="neutral" variant="outline" @click="setHideUnavailable(false)">
           <Icon name="lucide:eye" class="size-4" />
           Mostrar indisponíveis
-        </UiButton>
+        </NuxtButton>
       </div>
       <div v-else-if="!filteredProducts.length" class="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
         Nenhum produto encontrado.

@@ -979,7 +979,7 @@ async function confirmClose() {
                       @keydown.enter="submitSettle"
                     />
                   </NuxtFormField>
-                  <!-- Lista curta e fixa: `NuxtSelect` (o `UiNativeSelect` aposentou). -->
+                  <!-- Lista curta e fixa: `NuxtSelect`. -->
                   <NuxtFormField label="Como">
                     <NuxtSelect
                       v-model="settleMethod"

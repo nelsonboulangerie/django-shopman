@@ -229,17 +229,17 @@ onBeforeUnmount(() => {
       <p class="text-center text-xs text-muted-foreground">
         {{ hint === "valid" ? "Nenhum cadastro com este CPF." : "Nenhum cadastro encontrado." }}
       </p>
-      <UiButton
+      <NuxtButton
         v-if="emptyStateLabel"
         type="button"
-        variant="outline"
+        color="neutral" variant="outline"
         class="h-8 w-full justify-center gap-2 whitespace-normal text-sm"
         @click="run(pendingAction)"
       >
         <Icon name="lucide:user-round-plus" class="size-4 shrink-0" />
         <span class="min-w-0">{{ emptyStateLabel }}</span>
         <OperatorKbd aria-hidden="true">Enter</OperatorKbd>
-      </UiButton>
+      </NuxtButton>
       <p v-if="emptyStateCaveat" class="flex items-start gap-1.5 text-center text-xs text-muted-foreground">
         <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
         <span class="min-w-0 text-left">{{ emptyStateCaveat }}</span>

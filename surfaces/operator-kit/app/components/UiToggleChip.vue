@@ -20,8 +20,8 @@
 // CHROME: filtra uma lista, não carrega valor de formulário, não tem ARIA de escolha, e
 // acende em `bg-primary` sólido. Este é CONTROLE: contribui para o que vai ser enviado,
 // tem `aria-checked`, e acende em contorno + tint levíssimo, que é o padrão único de
-// seleção da escala de design. Mesma forma, trabalhos diferentes — como `UiButton` e
-// `UiIconButton`. Se você está filtrando uma lista, o outro é o certo.
+// seleção da escala de design. Mesma forma, trabalhos diferentes. Se você está
+// filtrando uma lista, o outro é o certo.
 import { computed, useTemplateRef } from "vue";
 
 const props = withDefaults(
@@ -63,7 +63,7 @@ defineExpose({ focus: () => control.value?.focus() });
       // ⚠️ Seleção é contorno + tint levíssimo, o padrão ÚNICO da escala de design
       // (ver `operator-base.css`). Nada de preencher sólido nem de `ring`: `ring` é
       // reservado a foco de teclado, e preenchimento sólido é do botão primário — é o
-      // que separa este chip do `UiFilterChip`.
+// que separa este chip do `UiFilterChip` e de um `NuxtButton`.
       modelValue
         ? 'border-primary bg-primary/10 text-foreground'
         : 'border-border text-muted-foreground hover:bg-muted'
