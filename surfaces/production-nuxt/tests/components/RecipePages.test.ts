@@ -90,6 +90,19 @@ const OperatorFilterPanelStub = defineComponent({
   },
 });
 
+const OperatorMoreMenuStub = defineComponent({
+  name: "OperatorMoreMenu",
+  props: { items: Array, label: String },
+  setup(props) {
+    return () => h("div", [
+      h("button", props.label || "Mais ações"),
+      ...(props.items as { label: string; onSelect?: () => void }[]).map((item) =>
+        h("button", { onClick: item.onSelect }, item.label),
+      ),
+    ]);
+  },
+});
+
 const passthrough = (name: string) =>
   defineComponent({ name, setup: (_, { slots }) => () => h("div", { "data-stub": name }, slots.default?.()) });
 
@@ -124,6 +137,7 @@ const stubs = {
   OperatorFormShell: OperatorFormShellStub,
   OperatorFormSection: passthrough("OperatorFormSection"),
   OperatorTable: true,
+  OperatorMoreMenu: OperatorMoreMenuStub,
   // O cabeçalho é o de verdade: é ele que repassa o `#status` ao `OperatorPageHeader`.
   RecipeHeader,
   FormulaLens: true,

@@ -350,9 +350,7 @@ const publishDiff = computed(() => [
                 <Icon name="lucide:star" class="size-4" :class="entry.is_favorite ? 'fill-current' : ''" />
               </template>
             </NuxtButton>
-            <NuxtDropdownMenu v-if="canEdit" :items="secondaryActions">
-              <NuxtButton color="neutral" variant="outline" icon="i-lucide-ellipsis" label="Mais ações" />
-            </NuxtDropdownMenu>
+            <OperatorMoreMenu v-if="canEdit" :items="secondaryActions" label="Mais ações" />
           </div>
         </NuxtCard>
 

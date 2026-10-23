@@ -113,7 +113,6 @@ const STATUS_CHARS = 10; // CONFIRMADO
       <div class="board-labels flex flex-wrap items-center gap-x-3 gap-y-2">
         <NuxtButton
           to="/"
-          size="lg"
           color="neutral"
           variant="ghost"
           icon="i-lucide-arrow-left"
