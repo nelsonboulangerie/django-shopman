@@ -105,6 +105,15 @@ jobs:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_instance_descriptors.py -q
           python scripts/check_canonical_docs.py
 
+      # Trava barata de multi-loja (ADR-042): o alvo é um schema do Postgres por
+      # loja, e até lá nenhuma configuração ou credencial NOVA de uma loja entra
+      # por env ou `settings`. Conta por arquivo as leituras de hoje contra a
+      # baseline versionada; crescer reprova, diminuir passa. Stdlib-only.
+      - name: "ADR-042: configuração de loja não cresce por env/settings"
+        run: |
+          .venv/bin/python scripts/check_tenant_config.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_tenant_config.py -q
+
       # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode
       # ADICIONAR arquivos em */migrations/ e (2) todo marcador DEPRECATED
       # precisa do prazo "remove by YYYY-MM-DD" válido e não vencido. Pré-tag:

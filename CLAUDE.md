@@ -349,6 +349,13 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   [docs/reference/suite-vocabulary.md](docs/reference/suite-vocabulary.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Copy sem travessão**: nenhum texto visível ao usuário usa travessão, especialmente o travessão longo (`—`). Reescreva com ponto, vírgula, dois-pontos ou parênteses, conforme o sentido. A regra vale para defaults, fallbacks, seeds, migrações de dados, notificações e textos configuráveis.
+- **Configuração de loja não entra por env nem por `settings`** (decisão do dono, 23/10/2026;
+  [ADR-042](docs/decisions/adr-042-schema-por-loja-e-trava-de-configuracao.md)): o alvo é um
+  schema do Postgres por loja, com a `Shop` singleton por schema. Configuração ou credencial
+  NOVA de uma loja mora na `Shop`, no descritor de instância (`config/instances/`) ou no cofre
+  futuro. Trava: `scripts/check_tenant_config.py` (job "Quality + deploy contract") conta por
+  arquivo as leituras de `settings.SHOPMAN_*|EFI*|FOCUS*|STRIPE*|…` e de `os.environ` contra
+  `scripts/tenant-config-baseline.json`; crescer reprova, diminuir pede `--update`.
 - **Uma versão só por pacote compartilhado nas superfícies** (decisão do dono, 18/09/2026):
   as estáveis mais recentes, e a MESMA em todos os apps de `surfaces/`. Trava em
   `scripts/check_surface_versions.py` (`make test-surface-versions`, job no
