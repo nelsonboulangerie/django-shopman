@@ -35,7 +35,7 @@ describe("OperatorPushInvite", () => {
     const wrapper = await mountSuspended(OperatorPushInvite);
     expect(holder.state.activate).not.toHaveBeenCalled();
     const alert = wrapper.get("[data-operator-push-invite]");
-    expect(alert.attributes("data-orientation")).toBe("horizontal");
+    expect(alert.attributes("data-orientation")).toBe("vertical");
     expect(alert.classes()).toContain(
       "bg-[color-mix(in_srgb,var(--info)_10%,var(--card))]",
     );

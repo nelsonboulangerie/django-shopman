@@ -37,7 +37,6 @@ const actions = computed(() => [
     v-if="pwa.needRefresh.value"
     color="info"
     variant="subtle"
-    orientation="horizontal"
     icon="i-lucide-refresh-cw"
     title="Nova versão disponível"
     description="A tela será recarregada para aplicar as melhorias mais recentes."

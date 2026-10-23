@@ -55,6 +55,10 @@ levantamento próprio em
 Ele deve ser consultado durante o diagnóstico de cada app, mas não autoriza aplicação
 mecânica: ação operacional, estabilidade da ordem e risco de rascunho decidem a forma.
 
+A revisão de anatomia, interação e dívida de compatibilidade com Nuxt UI está em
+[WP-NUXT-UI-CANONICAL-AUDIT](../../plans/WP-NUXT-UI-CANONICAL-AUDIT.md). Ela define
+o contrato compartilhado, mas mantém qualquer migração específica no turno do app dono.
+
 ## WP 1: Compras
 
 Decisão de informação:

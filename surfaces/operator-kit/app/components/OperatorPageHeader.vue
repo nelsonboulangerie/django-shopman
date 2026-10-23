@@ -635,7 +635,8 @@ function clearAll() {
     <slot name="below" />
 
     <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
-         N". Lugar declarado: a tela não monta faixa de aviso própria. -->
+         N". A orientação vertical canônica mantém a ação sob o texto e o fechar no
+         canto superior direito. Lugar declarado: a tela não monta faixa própria. -->
     <div
       v-if="visibleAlerts.length"
       class="flex flex-col gap-2 px-4 py-2 sm:px-6"
@@ -651,7 +652,6 @@ function clearAll() {
         :description="alert.description"
         :actions="alertActions(alert.color, headerAlertActions(alert))"
         close
-        orientation="horizontal"
         :role="alert.color === 'error' ? 'alert' : 'status'"
         data-page-header-alert
         @update:open="(open: boolean) => { if (!open) dismissAlert(alert); }"

@@ -46,6 +46,7 @@ describe("OperatorScreenState", () => {
     });
     expect(state().getAttribute("data-operator-screen-state")).toBe("error");
     expect(state().getAttribute("role")).toBe("alert");
+    expect(state().getAttribute("data-orientation")).toBe("vertical");
     expect(state().textContent).toContain("Não foi possível carregar a fila");
     const retry = [...state().querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Tentar de novo"),
@@ -97,6 +98,7 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
     });
     const shown = () => document.querySelectorAll("[data-page-header-alert]");
     expect(shown()).toHaveLength(1);
+    expect(shown()[0]!.getAttribute("data-orientation")).toBe("vertical");
     expect(shown()[0]!.textContent).toContain("2 pedidos passaram do horário");
     const more = document.querySelector<HTMLButtonElement>("[data-page-header-alerts-more]")!;
     expect(more.textContent?.trim()).toBe("e mais 2 avisos");
