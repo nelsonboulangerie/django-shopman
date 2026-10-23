@@ -168,18 +168,39 @@ class PinCredential(models.Model):
         return False
 
     def _record_failure(self) -> None:
-        """Record a failed attempt; lock out when the limit is reached."""
+        """Record a failed attempt; lock out when the limit is reached.
+
+        A trava é progressiva. O contador só zera num acerto (ou no desbloqueio do
+        gerente), então a trava que vence não devolve uma rodada inteira: cada
+        falha depois dela trava de novo, com a janela dobrada, até o teto
+        ``PIN_LOCKOUT_MAX_MINUTES``. A rodada é ``attempts - max_attempts``.
+        """
         from datetime import timedelta
 
         from django.db.models import F
 
-        from ..conf import doorman_settings
-
         PinCredential.objects.filter(pk=self.pk).update(attempts=F("attempts") + 1)
         self.refresh_from_db(fields=["attempts"])
         if self.attempts >= self.max_attempts:
-            self.locked_until = timezone.now() + timedelta(minutes=doorman_settings.PIN_LOCKOUT_MINUTES)
+            minutes = self.lockout_minutes_for(self.attempts - self.max_attempts)
+            self.locked_until = timezone.now() + timedelta(minutes=minutes)
             self.save(update_fields=["locked_until"])
+
+    @staticmethod
+    def lockout_minutes_for(extra_failures: int) -> int:
+        """Minutos de trava depois de ``extra_failures`` falhas além do limite.
+
+        0 → ``PIN_LOCKOUT_MINUTES``; cada falha a mais dobra; nunca passa do teto.
+        """
+        from ..conf import doorman_settings
+
+        base = doorman_settings.PIN_LOCKOUT_MINUTES
+        ceiling = max(base, doorman_settings.PIN_LOCKOUT_MAX_MINUTES)
+        if base <= 0:
+            return 0
+        # Expoente limitado: sem isso, uma conta com milhares de falhas faria uma
+        # potência de 2 gigante só para ser cortada pelo teto logo em seguida.
+        return min(ceiling, base * (2 ** min(max(0, extra_failures), 16)))
 
     def unlock(self) -> None:
         """Clear the lockout and reset attempts (e.g. manager override)."""

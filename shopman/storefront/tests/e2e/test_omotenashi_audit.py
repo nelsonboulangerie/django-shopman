@@ -277,8 +277,10 @@ def test_08_payment_failure_offers_retry_copy(client):
     assert "novamente" in err_message.message.lower() or "tente" in err_message.message.lower()
 
 
-def test_09_coupon_errors_are_specific_not_generic(client):
-    """✅ Coupon rejection is specific: expired / exhausted / not-found each get a distinct code."""
+def test_09_coupon_rejection_is_one_clear_answer(client):
+    """✅ Cupom recusado tem UMA resposta, clara: expirado, esgotado e inexistente
+    falam igual. Respostas distintas eram um oráculo para varrer a base de cupons
+    (laudo S8, 23/10)."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -308,14 +310,9 @@ def test_09_coupon_errors_are_specific_not_generic(client):
     for code in ("EXPIRADO", "ESGOTADO", "NAOEXISTE"):
         status, body = J.apply_coupon(client, code)
         assert status == 400, body
-        seen[code] = body["error_code"]
-        assert body["detail"]  # every rejection carries a human reason
+        seen[code] = (body["error_code"], body["detail"])
 
-    assert seen["EXPIRADO"] == "coupon_expired"
-    assert seen["ESGOTADO"] == "coupon_exhausted"
-    assert seen["NAOEXISTE"] == "invalid_coupon"
-    # Genuinely distinct — not one generic "cupom inválido" for all three.
-    assert len(set(seen.values())) == 3
+    assert set(seen.values()) == {("coupon_rejected", "Não foi possível usar este cupom nesta compra.")}
 
 
 def test_10_delivery_zone_error_routes_to_address_field(client):

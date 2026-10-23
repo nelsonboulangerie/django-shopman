@@ -394,11 +394,25 @@ def document_from_xml(document: DanfeDocument, root) -> DanfeDocument:
     )
 
 
+#: Quem abre a nota de um pedido: quem cuida dos pedidos (Gestor) ou quem
+#: opera o caixa (o PDV linka esta tela ao lado da via impressa). A mesma
+#: régua das duas rotas de DANFE em ESC/POS do backstage. Só ``is_staff`` não
+#: basta: deixava qualquer pessoa com acesso ao Admin ler nome, CPF e itens de
+#: qualquer pedido (laudo S7, 23/10).
+DANFE_PERMISSIONS = ("shop.manage_orders", "cashman.operate_pos")
+
+
+def can_view_danfe(user) -> bool:
+    return bool(user and user.is_authenticated and user.is_staff) and any(
+        user.has_perm(perm) for perm in DANFE_PERMISSIONS
+    )
+
+
 class DanfeView(LoginRequiredMixin, View):
-    """A nota de um pedido aberta na tela (staff). Consulta, não impressão."""
+    """A nota de um pedido aberta na tela (operador). Consulta, não impressão."""
 
     def get(self, request, ref: str):
-        if not request.user.is_staff:
+        if not can_view_danfe(request.user):
             raise Http404()
 
         danfe = build_danfe(ref)
