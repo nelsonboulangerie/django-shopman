@@ -541,13 +541,17 @@ class StockHolds:
         o dono passa a ser o pedido e o ciclo termina por fulfill/release,
         nunca por relógio.
 
+        Hold já vencido (``expires_at`` no passado) não se estende: ele deixou
+        de proteger o estoque no instante em que venceu, e outra reserva pode
+        já ter ocupado o saldo. Estendê-lo o ressuscitaria por cima dela
+        (dois donos para o mesmo pão).
+
         Returns:
-            True se o hold foi atualizado, False se não encontrado/terminal.
+            True se o hold foi atualizado, False se não encontrado, vencido ou
+            terminal.
         """
         pk = _parse_hold_id(hold_id)
-        updated = Hold.objects.filter(pk=pk, status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED]).update(
-            expires_at=expires_at
-        )
+        updated = Hold.objects.filter(pk=pk).active().update(expires_at=expires_at)
         return bool(updated)
 
     @staticmethod

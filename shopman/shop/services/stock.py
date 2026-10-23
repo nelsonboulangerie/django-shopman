@@ -32,6 +32,7 @@ from decimal import Decimal
 from django.utils import timezone
 
 from shopman.shop.adapters import get_adapter
+from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.services import lead_time as lead_time_service
 from shopman.shop.services.order_helpers import get_commitment_date, is_test_order
 
@@ -239,7 +240,7 @@ def hold(order, *, require_all: bool = False) -> None:
             else:
                 adopted_pairs, unmet_qty = [], comp_qty
             for hid, hqty in adopted_pairs:
-                if not _retag_hold_for_order(hid, order.ref):
+                if not _retag_hold_for_order(hid, order.ref, target_date=target_date):
                     # A reserva deixou de valer entre a leitura da sacola e a
                     # adoção: venceu, ou cedeu a uma venda de balcão no mesmo
                     # instante (``reserve_ceding_cart_holds``). Registrá-la
@@ -287,7 +288,7 @@ def hold(order, *, require_all: bool = False) -> None:
                 "reference": f"order:{order.ref}",
                 "target_date": target_date,
                 "channel_ref": getattr(order, "channel_ref", None),
-                "ttl_minutes": _ORDER_HOLD_BACKSTOP_HOURS * 60,
+                "ttl_minutes": _order_hold_ttl_minutes(target_date),
                 "apply_safety_margin": False,
                 "priority": _ORDER_HOLD_PRIORITY,
             }
@@ -297,6 +298,24 @@ def hold(order, *, require_all: bool = False) -> None:
                 allow_demand=comp_allow_demand,
                 **order_hold_kwargs,
             )
+            if not result.get("success") and require_all and (
+                result.get("error_code") == ReserveRefusal.INSUFFICIENT_SUPPLY
+            ):
+                # O Stockman ancora cada reserva em UM saldo; o estoque
+                # dividido (vitrine + depósito, lote de ontem + de hoje) cobre
+                # o pedido somando saldos. Reparte, tudo ou nada: se a soma
+                # não cobre, solta os pedaços e a recusa segue como sempre.
+                parts = _hold_across_quants_or_nothing(
+                    adapter, comp_sku, unmet_qty, order_hold_kwargs,
+                )
+                if parts:
+                    for part_id, part_qty in parts:
+                        hold_ids.append({
+                            "sku": comp_sku,
+                            "hold_id": part_id,
+                            "qty": float(part_qty),
+                        })
+                    continue
             if not result.get("success"):
                 logger.warning(
                     "stock.hold: create_hold failed sku=%s qty=%s code=%s",
@@ -383,6 +402,23 @@ def hold(order, *, require_all: bool = False) -> None:
     order.save(update_fields=["data", "updated_at"])
 
     logger.info("stock.hold: %d holds for order %s", len(hold_ids), order.ref)
+
+
+def _hold_across_quants_or_nothing(adapter, sku: str, qty: Decimal, hold_kwargs: dict) -> list[tuple[str, Decimal]]:
+    """Reserva ``qty`` repartida entre saldos, ou nada.
+
+    O mesmo corte do ``availability._reserve_across_quants`` (o maior livre de
+    cada saldo elegível, via ``create_holds_up_to``), para o gate de commit:
+    os pedaços só valem juntos. Se não cobrem ``qty``, são soltos e a lista
+    volta vazia; quem chamou recusa como sempre.
+    """
+    parts = adapter.create_holds_up_to(sku=sku, qty=qty, **hold_kwargs)
+    covered = sum((part_qty for _hold_id, part_qty in parts), Decimal("0"))
+    if covered >= qty:
+        return parts
+    if parts:
+        adapter.release_holds([hold_id for hold_id, _part_qty in parts])
+    return []
 
 
 def fulfill(order, *, pending_materialization_ok: bool = False) -> None:
@@ -639,11 +675,12 @@ def reconcile_to_items(order, *, items: list[dict], reference: str, require_all:
     order_fulfilled = any(
         adapter.hold_state(entry["hold_id"]) == "fulfilled" for entry in entries if entry.get("hold_id")
     )
+    commitment_date = get_commitment_date(order)
     hold_kwargs = {
         "reference": f"order:{order.ref}",
-        "target_date": get_commitment_date(order),
+        "target_date": commitment_date,
         "channel_ref": getattr(order, "channel_ref", None),
-        "ttl_minutes": _ORDER_HOLD_BACKSTOP_HOURS * 60,
+        "ttl_minutes": _order_hold_ttl_minutes(commitment_date),
         "apply_safety_margin": False,
         "priority": _ORDER_HOLD_PRIORITY,
     }
@@ -1044,7 +1081,9 @@ def _adopt_holds_for_qty(
 
 
 # TTL de backstop do hold adotado por um pedido: longo o bastante para o PIX
-# mais lento (e a confirmação do operador) NÃO expirar a reserva, mas finito —
+# mais lento (e a confirmação do operador) NÃO expirar a reserva, mas finito.
+# Encomenda conta a partir do dia do compromisso (``_order_hold_backstop``),
+# não do commit. Finito porque
 # um pedido que trava sem fulfill/release (worker morto, canal manual
 # abandonado) não pode reter estoque para sempre. release_expired reclama depois.
 _ORDER_HOLD_BACKSTOP_HOURS = 48
@@ -1056,7 +1095,33 @@ _ORDER_HOLD_BACKSTOP_HOURS = 48
 _ORDER_HOLD_PRIORITY = 0
 
 
-def _retag_hold_for_order(hold_id: str, order_ref: str) -> bool:
+def _order_hold_backstop(target_date=None):
+    """Prazo-limite da reserva de um pedido, medido a partir do COMPROMISSO.
+
+    Pedido do dia (ou sem data): ``agora + 48 h``. Encomenda para D+N: o
+    relógio começa no início do dia do compromisso, não no commit. Medido do
+    commit, a encomenda de sexta feita na segunda perdia a reserva de estoque
+    físico na quarta; o ``release_expired`` a soltava, o item voltava à
+    vitrine e, no dia, o ``fulfill`` falhava com o pão já vendido a outro.
+    """
+    from datetime import datetime, time, timedelta
+
+    now = timezone.now()
+    start = now
+    if target_date is not None and target_date > timezone.localdate():
+        start = max(now, timezone.make_aware(datetime.combine(target_date, time.min)))
+    return start + timedelta(hours=_ORDER_HOLD_BACKSTOP_HOURS)
+
+
+def _order_hold_ttl_minutes(target_date=None) -> int:
+    """O backstop de :func:`_order_hold_backstop` em minutos, para ``create_hold``."""
+    import math
+
+    remaining = _order_hold_backstop(target_date) - timezone.now()
+    return math.ceil(remaining.total_seconds() / 60)
+
+
+def _retag_hold_for_order(hold_id: str, order_ref: str, *, target_date=None) -> bool:
     """Update Hold.metadata.reference from session_key to order ref.
 
     Devolve ``False`` quando o hold já não está ativo (venceu ou cedeu) — o
@@ -1077,15 +1142,12 @@ def _retag_hold_for_order(hold_id: str, order_ref: str) -> bool:
     planejado indefinido segue indefinido; o backstop dele é a própria
     fornada, e quem libera vaga sem fornada é o sweep.
     """
-    from datetime import timedelta
-
     adapter = get_adapter("stock")
     if not adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY):
         return False
     if _is_fermata_hold(hold_id):
         return True
-    backstop = timezone.now() + timedelta(hours=_ORDER_HOLD_BACKSTOP_HOURS)
-    adapter.extend_hold(hold_id, expires_at=backstop)
+    adapter.extend_hold(hold_id, expires_at=_order_hold_backstop(target_date))
     return True
 
 
