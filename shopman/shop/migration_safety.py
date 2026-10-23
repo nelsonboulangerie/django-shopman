@@ -253,7 +253,11 @@ def alter_field_changes_schema(operation, app_label: str, state) -> bool:
         return _column_signature(old_field, operation.name) != _column_signature(
             operation.field, operation.name
         )
-    except Exception:  # noqa: BLE001 — régua que não lê conta como destrutiva
+    except Exception as exc:  # noqa: BLE001 — régua que não lê conta como destrutiva
+        logger.warning(
+            "migration_safety: AlterField %s.%s ilegível, conta como destrutivo: %s",
+            operation.model_name_lower, operation.name, exc,
+        )
         return True
 
 
