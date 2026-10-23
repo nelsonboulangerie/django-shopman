@@ -1,6 +1,10 @@
 import { toValue } from "vue";
 
 import { shouldConnectSse, shouldPollTick, type PosRealtimeState } from "~/presentation/events";
+import {
+  openResilientEventSource,
+  type ResilientEventSource,
+} from "../../../operator-kit/app/utils/resilientEventSource";
 
 export interface PosEventChannel {
   /** Rota SSE same-origin do BFF (`server/routes/sse/*`). */
@@ -40,9 +44,12 @@ export const POS_ORDER_CHANNELS: readonly PosEventChannel[] = [
  * canal dos pedidos (`POS_ORDER_CHANNELS`) com a mesma mecânica.
  *
  * Fallback: poll calmo (60s) só enquanto o SSE não está vivo — se o stream
- * conecta, o tick não refaz nada. Tablet que dormiu/voltou à aba refaz na hora
- * e tenta reconectar o stream (um 403 na conexão fecha o EventSource de vez;
- * sem esta retomada, a estação ficaria no poll para sempre).
+ * conecta, o tick não refaz nada. Cada stream se recria sozinho com backoff
+ * (`openResilientEventSource`): o 502 de todo deploy deixava o EventSource cru
+ * CLOSED e a estação no poll até alguém recarregar. Ao REABRIR, o canal refaz o
+ * fetch canônico (o que mudou enquanto o push esteve fora não chegou por ele).
+ * Tablet que dormiu/voltou à aba refaz na hora e tenta reconectar sem esperar
+ * o backoff.
  */
 export function usePosEvents(
   /** `channel` diz qual stream avisou; sem ele (poll, volta à aba) é a releitura inteira. */
@@ -55,7 +62,11 @@ export function usePosEvents(
   const config = useRuntimeConfig();
   const realtime = ref<PosRealtimeState>("polling");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let sources: EventSource[] = [];
+  let sources: ResilientEventSource[] = [];
+  /** Quais canais estão de pé agora. Um stream vivo já tira a tela do poll; o
+   *  outro caindo não a devolve para lá, senão o canal saudável passaria a
+   *  refazer fetch de graça. */
+  const live = new Set<string>();
 
   const channels = opts?.channels ?? POS_TERMINAL_CHANNELS;
 
@@ -63,25 +74,30 @@ export function usePosEvents(
     if (!isEnabled() || sources.length) return;
     realtime.value = "connecting";
     for (const channel of channels) {
-      try {
-        const source = new EventSource(ssePath(channel.path, config.app.baseURL), { withCredentials: true });
-        // django-eventstream empurra eventos nomeados; qualquer um = refetch.
-        const onEvent = () => onPush(channel);
-        ["message", channel.event].forEach((name) => source.addEventListener(name, onEvent));
-        // Um stream vivo já tira a tela do poll; o outro caindo não a devolve
-        // para lá, senão o canal saudável passaria a refazer fetch de graça.
-        source.onopen = () => { realtime.value = "live"; };
-        source.onerror = () => { if (!sources.some((s) => s.readyState === EventSource.OPEN)) realtime.value = "polling"; };
-        sources.push(source);
-      } catch {
-        realtime.value = "polling";
-      }
+      sources.push(
+        openResilientEventSource({
+          url: ssePath(channel.path, config.app.baseURL),
+          // django-eventstream empurra eventos nomeados; qualquer um = refetch.
+          events: [channel.event],
+          onEvent: () => onPush(channel),
+          onOpen: (reconnected) => {
+            live.add(channel.path);
+            realtime.value = "live";
+            if (reconnected) onPush(channel);
+          },
+          onDown: () => {
+            live.delete(channel.path);
+            if (!live.size) realtime.value = "polling";
+          },
+        }),
+      );
     }
   }
 
   function closeSse() {
     sources.forEach((source) => source.close());
     sources = [];
+    live.clear();
     // Sem stream de pe, o tick de poll volta a ser o dono do refresh.
     realtime.value = "polling";
   }
@@ -93,12 +109,10 @@ export function usePosEvents(
     }
     if (document.visibilityState !== "visible") return;
     onPush();
-    // Stream fechado de vez (ex.: conexão recusada antes do login)? Tenta de
-    // novo — a sessão pode ter nascido desde então.
-    if (sources.length && sources.every((s) => s.readyState === EventSource.CLOSED)) {
-      closeSse();
-    }
-    connectSse();
+    // Stream esperando o backoff (ex.: recusado antes do login)? Tenta já: a
+    // sessão pode ter nascido desde então.
+    if (sources.length) sources.forEach((source) => source.reconnectNow());
+    else connectSse();
   };
 
   onMounted(() => {

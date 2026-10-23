@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
+import { FakeEventSource } from "../../../operator-kit/tests/support/fakeEventSource";
+import { ssePath } from "../../../operator-kit/app/utils/ssePath";
 import { useAlerts } from "../../app/composables/useAlerts";
 import type { AlertProjection } from "../../app/types/orders";
 
@@ -180,5 +182,60 @@ describe("useAlerts: o Aceitar do pedido parado", () => {
 
     expect(await a.accept(semGesto)).toBe(false);
     expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// U3 do laudo de 23/10: o sino ficava só no poll de 60 s depois do 502 de deploy.
+describe("useAlerts: tempo real que reconecta", () => {
+  it("depois do 502 recria o stream com backoff e refaz o fetch ao reabrir", async () => {
+    env.reset();
+    vi.useFakeTimers();
+    FakeEventSource.instances = [];
+    let mounted!: () => void;
+    let unmount!: () => void;
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal("ssePath", ssePath);
+    vi.stubGlobal("onMounted", (fn: () => void) => { mounted = fn; });
+    vi.stubGlobal("onBeforeUnmount", (fn: () => void) => { unmount = fn; });
+    const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal("document", { ...listeners, visibilityState: "visible" });
+    vi.stubGlobal("window", listeners);
+    try {
+      useAlerts();
+      mounted();
+      const first = FakeEventSource.instances[0]!;
+      expect(first.url).toBe("/sse/alerts");
+      first.open();
+      // Primeira abertura: a leitura acabou de acontecer, nada a refazer.
+      expect(env.refresh).not.toHaveBeenCalled();
+      first.emit("backstage-alerts-update");
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+
+      first.failForGood();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      // A reabertura também cai com 502: a espera dobra.
+      FakeEventSource.instances[1]!.failForGood();
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(FakeEventSource.instances).toHaveLength(3);
+
+      env.refresh.mockClear();
+      FakeEventSource.instances[2]!.open();
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+
+      // O poll de 60 s continua de pé, com ou sem push.
+      env.refresh.mockClear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+
+      unmount();
+      expect(FakeEventSource.alive()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+      vi.stubGlobal("onMounted", () => {});
+      vi.stubGlobal("onBeforeUnmount", () => {});
+    }
   });
 });
