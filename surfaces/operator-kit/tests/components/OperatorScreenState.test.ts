@@ -113,4 +113,33 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
     });
     expect(document.querySelector("[data-page-header-alerts]")).toBeNull();
   });
+
+  it("dispensa sem resolver: libera a tela agora e volta numa nova montagem", async () => {
+    const props = {
+      title: "Pedidos",
+      search: false,
+      inbox: false,
+      alerts: [{ id: "late", color: "warning" as const, title: "2 pedidos passaram do horário" }],
+    };
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props,
+    });
+
+    const close = document.querySelector<HTMLButtonElement>('[data-slot="close"]')!;
+    expect(close).toBeDefined();
+    close.click();
+    await nextTick();
+    expect(document.querySelector("[data-page-header-alerts]")).toBeNull();
+
+    mounted.unmount();
+    document.body.innerHTML = "";
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props,
+    });
+    expect(document.querySelector("[data-page-header-alert]")?.textContent).toContain(
+      "2 pedidos passaram do horário",
+    );
+  });
 });
