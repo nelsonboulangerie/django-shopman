@@ -70,6 +70,9 @@ interface HarnessOptions {
  * expostas para o teste dirigir a Projection.
  */
 export function makeSale(opts: HarnessOptions = {}) {
+  // O "servidor ao alcance" do kit é estado do módulo (um por aba): o teste que
+  // simula o link caído não pode deixar o próximo começando sem conexão.
+  resetReachability();
   const posValue: Ref<POSProjection | null> = ref(
     opts.projection === undefined ? makeProjection() : opts.projection,
   );

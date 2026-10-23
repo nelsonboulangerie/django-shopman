@@ -94,7 +94,7 @@ import { applyLineAuthors } from "~/presentation/lineAuthorship";
 import { orderUrl } from "~/presentation/crossAppLinks";
 import type { OrderSetupIssue } from "~/presentation/orderSetup";
 import { toast } from "vue-sonner";
-import { pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
+import { pendingPixDeadlineMs, pendingPixExpired, readPendingPix, writePendingPix, type PendingPix } from "~/utils/pendingPixStore";
 import { sourceReleasedMessage } from "~/presentation/moveLines";
 import { tabTitleView } from "~/presentation/tabTitle";
 import {
@@ -116,6 +116,13 @@ interface CloseGuardMarker {
   owner_id: string;
   state: CloseGuardState;
   recorded_at: string;
+  /**
+   * O corpo EXATO do fechamento que ficou sem resposta. É o que "Conferir agora"
+   * reenvia: o mesmo corpo com o mesmo `client_request_id`, e o servidor (que é
+   * idempotente por essa chave) devolve o pedido se ele nasceu, ou fecha agora se
+   * não nasceu. Sem ele (marcador antigo) só resta a conferência manual.
+   */
+  body?: Record<string, unknown>;
 }
 
 interface CloseGuardRead {
@@ -137,6 +144,7 @@ function readCloseOutcomeUncertain(): CloseGuardRead {
       owner_id: typeof parsed.owner_id === "string" ? parsed.owner_id : "",
       state: parsed.state === "pending" ? "pending" : "uncertain",
       recorded_at: typeof parsed.recorded_at === "string" ? parsed.recorded_at : "",
+      ...(isReplayableCloseBody(parsed.body, parsed.client_request_id) ? { body: parsed.body } : {}),
     };
     return { marker, storageAvailable: true };
   } catch {
@@ -144,6 +152,13 @@ function readCloseOutcomeUncertain(): CloseGuardRead {
     // cobrança anterior terminou. A estação só volta após reconciliação.
     return { marker: null, storageAvailable: false };
   }
+}
+
+/** Só se reenvia o corpo que carrega a MESMA chave do marcador. */
+function isReplayableCloseBody(body: unknown, clientRequestId: unknown): body is Record<string, unknown> {
+  return Boolean(body) && typeof body === "object" && !Array.isArray(body)
+    && typeof clientRequestId === "string" && clientRequestId !== ""
+    && (body as Record<string, unknown>).client_request_id === clientRequestId;
 }
 
 function persistCloseGuard(marker: CloseGuardMarker): boolean {
@@ -198,7 +213,7 @@ interface PosSaleDeps {
   action: {
     call: <T = unknown>(
       path: string,
-      options?: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown> },
+      options?: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown>; timeoutMs?: number },
     ) => Promise<T>;
   };
   apiPath: (path: string) => string;
@@ -247,8 +262,21 @@ export function usePosSale(deps: PosSaleDeps) {
   // A VENDA SEM CONEXÃO (WP-PDV-SEM-CONEXAO): a fila local que guarda a venda de
   // balcão feita sem rede e a reenvia, idempotente, quando a conexão volta.
   const offlineSales = usePosOfflineSales();
-  /** Sem rede AGORA, pelo navegador (o mesmo sinal do aviso de conexão). */
-  const offlineNow = () => import.meta.client && globalThis.navigator?.onLine === false;
+  /**
+   * Sem conexão AGORA: o navegador fora da rede OU o servidor fora do alcance
+   * (wi-fi de pé, link caído). O mesmo sinal da faixa "Sem conexão" do kit.
+   */
+  const connectivity = useConnectivity();
+  const reachability = connectivity.reachability;
+  const offlineNow = () => import.meta.client
+    && (globalThis.navigator?.onLine === false || !reachability.reachable.value);
+  /**
+   * A falha foi de TRANSPORTE (sem resposta, tempo esgotado, BFF sem o Django)?
+   * Relata ao `useReachability` (o balcão passa ao modo sem conexão) e responde.
+   * Antes só `navigator.onLine === false` contava: com o wi-fi de pé e o link
+   * caído, toda venda caía em "resultado incerto" e travava o balcão.
+   */
+  const linkLost = (error: unknown) => import.meta.client && reachability.noteFailure(error);
   /**
    * Quando a tela leu os preços pela última vez: a nota do total sem conexão.
    * `useState`, e não `ref`: nasce na renderização do servidor e viaja no HTML.
@@ -363,16 +391,18 @@ export function usePosSale(deps: PosSaleDeps) {
     closeOutcomeUncertain.value = !guard.storageAvailable || Boolean(guard.marker);
     closeGuardPending.value = guard.marker?.state === "pending";
     closeGuardFailureMessage.value = guard.storageAvailable ? "" : closeGuardUnavailableMessage;
+    closeRecheckAvailable.value = Boolean(guard.marker?.body);
     if (!guard.storageAvailable) serverError.value = closeGuardUnavailableMessage;
     return probeCloseLockHolder();
   }
 
-  function establishCloseGuard(): CloseGuardMarker | null {
+  function establishCloseGuard(body: Record<string, unknown>): CloseGuardMarker | null {
     const marker: CloseGuardMarker = {
       client_request_id: cart.clientRequestId,
       owner_id: newClientRequestId(),
       state: "pending",
       recorded_at: new Date().toISOString(),
+      ...(isReplayableCloseBody(body, cart.clientRequestId) ? { body } : {}),
     };
     closeOutcomeUncertain.value = true;
     closeGuardPending.value = true;
@@ -402,6 +432,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function markOwnedCloseGuardUncertain(marker: CloseGuardMarker) {
     transitionOwnedCloseGuard(marker, "uncertain");
+    closeRecheckAvailable.value = Boolean(marker.body);
     closeOutcomeUncertain.value = true;
     closeGuardPending.value = false;
     closeGuardFailureMessage.value = "";
@@ -452,6 +483,115 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  // CONFERIR AGORA: a venda que ficou sem resposta (tempo esgotado, servidor fora,
+  // 5xx) não espera a conferência manual. O PDV reenvia o MESMO corpo com a MESMA
+  // chave (`client_request_id`), e o servidor, idempotente por ela, devolve o
+  // pedido se ele nasceu ou fecha agora se não nasceu: nunca cobra duas vezes.
+  // Só a resposta que PROVA o pedido (`ok + order_ref`) solta a trava; qualquer
+  // outra coisa a mantém, e o operador segue com a conferência manual.
+  const closeRecheckBusy = ref(false);
+  const closeRecheckAvailable = ref(false);
+  function syncCloseRecheckAvailable() {
+    closeRecheckAvailable.value = Boolean(readCloseOutcomeUncertain().marker?.body);
+  }
+  watch(closeOutcomeUncertain, (blocked) => {
+    if (!import.meta.client) return;
+    if (blocked) syncCloseRecheckAvailable();
+    else closeRecheckAvailable.value = false;
+  });
+  const closeRecheckStillUnknownMessage = "A venda ainda não teve resposta. Ela segue protegida contra cobrança dupla, e conferimos de novo quando a conexão voltar.";
+  // O reenvio voltou com outra coisa que não o pedido: a resposta do servidor
+  // descreve a tentativa NOVA, não a primeira, e por isso não se mostra crua.
+  const closeRecheckNotConfirmedMessage = "A conferência não confirmou o pedido. Confira no Gestor se ele foi criado antes de cobrar de novo.";
+
+  /** O servidor mandou uma frase (detail ou error.message) junto da falha? */
+  function serverSaidSomething(error: unknown): boolean {
+    const data = httpError(error).data as { detail?: unknown; error?: { message?: unknown } } | null;
+    return (typeof data?.detail === "string" && data.detail !== "")
+      || (typeof data?.error?.message === "string" && data.error.message !== "");
+  }
+
+  async function recheckUncertainClose(): Promise<"resolved" | "unknown" | "unavailable"> {
+    if (closeRecheckBusy.value || closeInFlight.value) return "unavailable";
+    const lockManager = globalThis.navigator?.locks;
+    if (!lockManager?.request) {
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return "unavailable";
+    }
+    closeRecheckBusy.value = true;
+    try {
+      return await lockManager.request(CLOSE_GUARD_LOCK_NAME, { ifAvailable: true }, async (lock) => {
+        if (!lock) {
+          closeGuardHeldElsewhere.value = true;
+          serverError.value = closeGuardActiveMessage;
+          return "unavailable" as const;
+        }
+        closeGuardHeldElsewhere.value = false;
+        const current = readCloseOutcomeUncertain();
+        const marker = current.marker;
+        if (!current.storageAvailable || !marker?.body) {
+          closeRecheckAvailable.value = false;
+          return "unavailable" as const;
+        }
+        let raw: unknown;
+        try {
+          raw = await action.call<unknown>(
+            actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
+            { body: marker.body, timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS },
+          );
+        } catch (error) {
+          // A reenvio não prova nada além do "ok": nem um 4xx (a regra pode ter
+          // mudado depois que a primeira tentativa fechou). A trava fica.
+          if (linkLost(error)) {
+            serverError.value = closeRecheckStillUnknownMessage;
+          } else {
+            serverError.value = closeRecheckNotConfirmedMessage;
+          }
+          closeOutcomeUncertain.value = true;
+          return "unknown" as const;
+        }
+        const response = raw && typeof raw === "object" ? raw as Partial<POSCloseSaleResponse> : null;
+        const orderRef = typeof response?.order_ref === "string" ? response.order_ref.trim() : "";
+        if (!response || response.ok !== true || !orderRef) {
+          serverError.value = closeOutcomeUncertainMessage;
+          closeOutcomeUncertain.value = true;
+          return "unknown" as const;
+        }
+        if (!clearPersistedCloseOutcomeUncertain()) {
+          toast.warning(`Pedido ${orderRef} confirmado, mas o navegador não conseguiu liberar a proteção local. A próxima cobrança ficará bloqueada até o armazenamento ser corrigido.`);
+          return "resolved" as const;
+        }
+        closeOutcomeUncertain.value = false;
+        closeGuardPending.value = false;
+        closeGuardFailureMessage.value = "";
+        closeRecheckAvailable.value = false;
+        serverError.value = "";
+        // A venda ainda está na tela (o carrinho não foi zerado): a tela de
+        // resultado sobe como no caminho feliz. Recarregou e o carrinho é outro:
+        // o pedido é dito, e a venda da tela segue intacta.
+        if (cart.items.length && cart.clientRequestId === marker.client_request_id && review.value) {
+          await completeSale(response, orderRef);
+        } else {
+          toast.success(`Venda confirmada: pedido ${orderRef}.`);
+          void refresh();
+        }
+        return "resolved" as const;
+      });
+    } catch {
+      serverError.value = closeGuardCoordinationUnavailableMessage;
+      return "unavailable";
+    } finally {
+      closeRecheckBusy.value = false;
+    }
+  }
+  // A volta da conexão confere sozinha: quem ficou sem resposta por causa do
+  // link não precisa de toque nenhum.
+  if (import.meta.client) {
+    connectivity.onReconnect(async () => {
+      if (closeOutcomeUncertain.value && readCloseOutcomeUncertain().marker?.body) await recheckUncertainClose();
+    });
+  }
+
   // PIX no PDV: o proof mostra o QR e "aguarde confirmação", mas sem polling o
   // operador nunca via a confirmação chegar (tinha de ir ao gestor). Aqui pollamos
   // o status por-order (endpoint gateado por operate_pos). O estado é explícito
@@ -478,9 +618,10 @@ export function usePosSale(deps: PosSaleDeps) {
     pendingPix.value = entries;
     writePendingPix(entries);
   }
-  function trackPendingPix(orderRef: string) {
+  function trackPendingPix(orderRef: string, expiresAt?: string) {
     if (pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
-    savePendingPix([...pendingPix.value, { orderRef, since: new Date().toISOString() }]);
+    const validExpiry = expiresAt && !Number.isNaN(Date.parse(expiresAt)) ? { expiresAt } : {};
+    savePendingPix([...pendingPix.value, { orderRef, since: new Date().toISOString(), ...validExpiry }]);
   }
   function forgetPendingPix(orderRef: string) {
     if (!pendingPix.value.some((entry) => entry.orderRef === orderRef)) return;
@@ -516,7 +657,7 @@ export function usePosSale(deps: PosSaleDeps) {
       try {
         const response = await $fetch<{ payment_delivery?: POSPaymentDeliveryProjection }>(
           apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
-          { credentials: "include" },
+          { credentials: "include", signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS) },
         );
         if (generation !== deliveryPollGeneration || result.value?.orderRef !== orderRef) return;
         applyPaymentDelivery(orderRef, response.payment_delivery);
@@ -536,19 +677,22 @@ export function usePosSale(deps: PosSaleDeps) {
     stopPixPolling();
     pixOrderRef.value = orderRef;
     pixStatus.value = "polling";
-    let attempts = 0;
     let inFlight = false;
     const generation = pixPollGeneration;
+    // O prazo é o do servidor (`payment.expires_at`, guardado com o Pix pendente):
+    // quem decide que o Pix venceu é o status (`is_terminal`); a desistência local
+    // só vale quando o servidor nem responde, e espera o prazo mais a folga.
+    const tracked = pendingPix.value.find((entry) => entry.orderRef === orderRef);
+    const deadlineMs = pendingPixDeadlineMs(tracked ?? { since: new Date().toISOString() });
     pixPollTimer = setInterval(async () => {
       if (generation !== pixPollGeneration) return;
-      if (attempts >= 240) { pixStatus.value = "expired"; return stopPixPolling(generation); } // ~10 min a 2,5s → desiste
+      if (Date.now() >= deadlineMs) { pixStatus.value = "expired"; return stopPixPolling(generation); }
       if (inFlight) return;
-      attempts += 1;
       inFlight = true;
       try {
         const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean; payment_delivery?: POSPaymentDeliveryProjection }>(
           apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(orderRef)}/status/`),
-          { credentials: "include" },
+          { credentials: "include", signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS) },
         );
         if (generation !== pixPollGeneration || pixOrderRef.value !== orderRef) return;
         applyPaymentDelivery(orderRef, status.payment_delivery);
@@ -563,7 +707,7 @@ export function usePosSale(deps: PosSaleDeps) {
           stopPixPolling(generation);
         }
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(generation); } // cancelado/expirado
-      // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
+      // A desistência é que fala alto: passou do prazo → `pixStatus = "expired"`
       // e o toast do watcher. A tentativa isolada, não.
       } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
       finally { inFlight = false; }
@@ -598,7 +742,7 @@ export function usePosSale(deps: PosSaleDeps) {
         try {
           const status = await $fetch<{ is_paid?: boolean; is_terminal?: boolean }>(
             apiPath(`/api/v1/backstage/pos/payment/${encodeURIComponent(entry.orderRef)}/status/`),
-            { credentials: "include" },
+            { credentials: "include", signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS) },
           );
           if (status?.is_paid) resolveBackgroundPix(entry.orderRef, "paid");
           else if (status?.is_terminal || pendingPixExpired(entry, Date.now())) resolveBackgroundPix(entry.orderRef, "expired");
@@ -961,7 +1105,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (skus) query.set("skus", skus);
       const response = await $fetch<POSScheduleResponse>(
         apiPath(`/api/v1/backstage/pos/schedule/?${query.toString()}`),
-        { method: "GET", credentials: "include", headers: requestHeaders },
+        { method: "GET", credentials: "include", headers: requestHeaders, signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS) },
       );
       // Resposta velha chegando depois da nova reescreveria as janelas do dia
       // ERRADO — o operador troca de data mais rápido que a rede responde.
@@ -2182,6 +2326,7 @@ export function usePosSale(deps: PosSaleDeps) {
         method: "GET",
         credentials: "include",
         headers: requestHeaders,
+        signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
       });
       if (requestId !== customerLookupRequest || cart.customerRef.trim() !== customerRef || cart.customerPhone.trim() !== phone || cart.tabSessionKey !== tabSessionKey) return null;
       customerLookup.value = response.customer;
@@ -2525,7 +2670,7 @@ export function usePosSale(deps: PosSaleDeps) {
           const path = concreteActionHref(actions.value, "customer_lookup",
             "/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}", { phone: "", ref: targetRef });
           response = await $fetch<POSCustomerLookupResponse>(apiPath(path), {
-            method: "GET", credentials: "include", headers: requestHeaders,
+            method: "GET", credentials: "include", headers: requestHeaders, signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
           });
           if (customerDecision.value !== decision || pendingReceiptDecision.value !== pending || !receiptDecisionMatches()
             || session !== cart.tabSessionKey || !response.customer || response.customer.ref !== targetRef) return;
@@ -2815,6 +2960,7 @@ export function usePosSale(deps: PosSaleDeps) {
         method: "GET",
         credentials: "include",
         headers: requestHeaders,
+        signal: timeoutSignal(POS_REQUEST_TIMEOUT_MS),
       });
       customerSearchResults.value = response.results || [];
     } catch {
@@ -3124,8 +3270,8 @@ export function usePosSale(deps: PosSaleDeps) {
       // revisão que a mudança já agendou.
       if (generation !== reviewGeneration) return null;
       if (handleReceiptIdentityFailure(error, "review")) return null;
-      // A rede caiu com a revisão em voo: o total sai da última leitura.
-      if (!httpError(error).status && offlineNow()) {
+      // A rede (ou o link) caiu com a revisão em voo: o total sai da última leitura.
+      if (linkLost(error)) {
         const local = localReview();
         review.value = local;
         reviewedGeneration = generation;
@@ -3175,6 +3321,12 @@ export function usePosSale(deps: PosSaleDeps) {
       if (generation !== reviewGeneration) queueReview(0);
     } catch (error) {
       if (handleReceiptIdentityFailure(error, "review")) return;
+      // O link caiu ao salvar a comanda: o Pagamento abre com o total da última
+      // leitura, como sem rede (a revisão responde local a partir daqui).
+      if (linkLost(error)) {
+        await reviewSale();
+        return;
+      }
       // O checkout não abriu de verdade: volta à venda com o motivo no toast.
       checkoutMode.value = false;
       serverError.value = `${httpErrorMessage(error, "A cobrança não abriu.")} A venda voltou para a tela com os itens intactos. Tente de novo.`;
@@ -3268,13 +3420,14 @@ export function usePosSale(deps: PosSaleDeps) {
             : closeGuardUnavailableMessage;
           return { kind: "blocked" };
         }
-        const marker = establishCloseGuard();
+        const closeBody = withExpectedTotal(buildCurrentIntent(), expectedTotalQ);
+        const marker = establishCloseGuard(closeBody);
         if (!marker) return { kind: "blocked" };
         closeInFlight.value = true;
         try {
           const rawResponse = await action.call<unknown>(
             actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
-            { body: withExpectedTotal(buildCurrentIntent(), expectedTotalQ) },
+            { body: closeBody, timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS },
           );
           const response = rawResponse && typeof rawResponse === "object"
             ? rawResponse as Partial<POSCloseSaleResponse>
@@ -3299,12 +3452,14 @@ export function usePosSale(deps: PosSaleDeps) {
           const outcomeUnknown = Boolean(failure?.order_created)
             || failure?.code === "sale_payment_outcome_unknown";
           // A rede caiu no meio do fechamento de uma venda que pode esperar
-          // (dinheiro ou maquininha, sem comanda): ela vai para a fila com a
-          // MESMA chave. Se o servidor chegou a fechar, o reenvio devolve o mesmo
-          // pedido (`client_request_id`); se não chegou, fecha agora. Por isso o
+          // (dinheiro ou maquininha): ela vai para a fila com a MESMA chave. Se
+          // o servidor chegou a fechar, o reenvio devolve o mesmo pedido
+          // (`client_request_id`); se não chegou, fecha agora. Por isso o
           // marcador de resultado incerto pode sair: a dúvida passa para a fila,
-          // que a resolve sozinha, em vez de travar o balcão.
-          if (!errorInfo.status && offlineNow() && !currentOfflineBlockers().length) {
+          // que a resolve sozinha, em vez de travar o balcão. "Caiu" é falha de
+          // TRANSPORTE (sem resposta, tempo esgotado, BFF sem o Django), com o
+          // wi-fi de pé ou não: o navegador não sabe do link.
+          if (linkLost(error) && !currentOfflineBlockers().length) {
             releaseOwnedCloseGuard(marker);
             return { kind: "queue" };
           }
@@ -3453,6 +3608,10 @@ export function usePosSale(deps: PosSaleDeps) {
         customerFocusNonce.value += 1;
       } else if (failure?.order_created && failure.order_ref) {
         serverError.value = [failure.message || `Venda ${failure.order_ref} criada.`, failure.recovery].filter(Boolean).join(" ");
+      } else if (closeOutcomeUncertain.value && closeRecheckAvailable.value && !serverSaidSomething(error)) {
+        // Sem frase do servidor, o aviso da trava já diz o que houve e leva o
+        // "Conferir agora": o toast repetiria o fato com outra instrução.
+        serverError.value = "";
       } else {
         serverError.value = httpErrorMessage(error, "Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
       }
@@ -3553,7 +3712,7 @@ export function usePosSale(deps: PosSaleDeps) {
         // A venda nova não derruba as anteriores: um Pix ainda aberto segue na
         // lista e no acompanhamento de fundo até resolver.
         if (proof?.isPix && proof?.hasProof) {
-          trackPendingPix(orderRef);
+          trackPendingPix(orderRef, response.payment?.expires_at);
           startPixPolling(orderRef);
         } else {
           stopPixPolling();
@@ -4143,9 +4302,12 @@ export function usePosSale(deps: PosSaleDeps) {
       browserFailure: closeGuardFailureMessage.value,
       // "Confira no Gestor" sem link é menção, não ação: o aviso leva à fila.
       ordersUrl: ordersUrl.value,
+      replayable: closeRecheckAvailable.value,
     })),
     restoreUncertainClose,
     acknowledgeUncertainClose,
+    recheckUncertainClose,
+    closeRecheckBusy,
     pendingPixOrderRefs,
     restorePendingPix,
     checkoutMode,
