@@ -302,7 +302,7 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
 });
 
 describe("Receita: anterior e próxima no cabeçalho", () => {
-  function installEntry(over: Record<string, unknown> = {}) {
+  function installEntry(over: Record<string, unknown> = {}, canEdit = true) {
     const version = {
       id: 1,
       number: 1,
@@ -354,7 +354,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     });
     vi.stubGlobal("useRecipeEntry", () => ({
       entry,
-      canEdit: computed(() => true),
+      canEdit: computed(() => canEdit),
       versions: computed(() => [version]),
       currentVersion: computed(() => null),
       versionByNumber: () => null,
@@ -396,6 +396,32 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     expect(nav.props("current")).toBe("pao-b");
     expect((nav.props("to") as (id: string) => string)("pao-c")).toBe("/recipes/pao-c");
     expect(nav.text()).toBe("Receita anterior | Próxima receita");
+  });
+
+  it("offers one direct Editar action in the detail header", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry();
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    const edit = wrapper.findAll("a").find((link) => link.text() === "Editar");
+    expect(edit?.attributes("href")).toBe("/recipes/pao-b/edit");
+    expect(wrapper.text()).not.toContain("Editar rascunho");
+    expect(wrapper.text()).not.toContain("Nova versão");
+  });
+
+  it("does not offer editing without permission or for an archived recipe", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({}, false);
+    let wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
+
+    wrapper.unmount();
+    installEntry({ is_active: false });
+    wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
   });
 
   it("publishing without SKU says why and leads to the fix", async () => {

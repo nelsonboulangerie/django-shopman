@@ -2,8 +2,8 @@
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 // A receita (/recipes/[ref]) — a lente da versão selecionada (âncora e base,
 // tabela g/%, métricas com faixa de referência, partes, mistura final, BOM), a
-// linha do tempo das versões e as ações: nova versão (copia a selecionada em
-// rascunho), editar rascunho, publicar (diálogo com o que muda contra a atual),
+// linha do tempo das versões e as ações: editar (abre ou prepara o rascunho),
+// publicar (diálogo com o que muda contra a atual),
 // comparar, associar SKU, arquivar. Ler é do gate do app; mexer pede `can_edit`.
 // A estrela (favorita) é preferência do operador: basta ler. A nota da versão
 // (0 a 5 por critério do Admin) também; as referências (livros, vídeos, artigos)
@@ -14,12 +14,10 @@ import {
   KIND_OPTIONS,
   comparePath,
   favoriteActionHint,
-  formulaFromServed,
   needsReview,
   provenanceIcon,
   reviewSignature,
   statusBadgeColor,
-  stepsForPayload,
   toneClass,
   unmatchedItems,
   versionRefLabel,
@@ -44,7 +42,6 @@ const {
   patchEntry,
   saveExecution,
   duplicate,
-  createVersion,
   publish,
   saveReferences,
   rateVersion,
@@ -87,6 +84,15 @@ const subtitle = computed(() => {
 });
 const stale = computed(() => isStale({ error: !!error.value, hasData: !!entry.value }));
 const isCurrent = computed(() => !!selected.value && selected.value.number === entry.value?.current_version_number);
+const editAction = computed(() =>
+  canEdit.value && entry.value?.is_active
+    ? {
+        label: "Editar",
+        icon: "i-lucide-pencil-line",
+        to: `/recipes/${entryRef}/edit`,
+      }
+    : undefined,
+);
 const executionSummary = computed(() => {
   const execution = entry.value?.execution;
   if (!execution?.exists) return "";
@@ -97,25 +103,8 @@ const executionSummary = computed(() => {
   ].join(" · ");
 });
 
-// ── Nova versão: copia a selecionada em rascunho e abre o editor ────────────
-async function newVersion() {
-  const base = selected.value;
-  if (!base) return;
-  const result = await createVersion({
-    ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
-    from_version: base.number,
-    formula: formulaFromServed(base.formula),
-    yield_quantity: base.yield_quantity,
-    yield_unit: base.yield_unit,
-    steps: stepsForPayload(base.steps),
-    notes: base.notes,
-    label: "",
-  });
-  if (result.ok && result.version) await navigateTo(`/recipes/${entryRef}/edit?v=${result.version.number}`);
-}
-
-function editDraft() {
-  if (selected.value?.status === "draft") navigateTo(`/recipes/${entryRef}/edit?v=${selected.value.number}`);
+function editRecipe() {
+  navigateTo(`/recipes/${entryRef}/edit`);
 }
 
 function compareWith() {
@@ -267,7 +256,7 @@ function skuFromPublish() {
 }
 function editorFromPublish() {
   publishOpen.value = false;
-  editDraft();
+  editRecipe();
 }
 
 // O selo do estado da versão: rascunho avisa, publicada é ok, o resto é neutro.
@@ -303,7 +292,14 @@ const publishDiff = computed(() => [
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <RecipeHeader :title="entry?.name || 'Receita'" :subtitle="subtitle" back="/recipes" :pending="pending" @refresh="refresh()">
+    <RecipeHeader
+      :title="entry?.name || 'Receita'"
+      :subtitle="subtitle"
+      back="/recipes"
+      :pending="pending"
+      :primary="editAction"
+      @refresh="refresh()"
+    >
       <!-- Anterior e próxima dentro da lista de onde a pessoa veio (com o recorte dela).
            Aberta por link, sem trilha: o par não aparece. -->
       <template #status>
@@ -505,25 +501,9 @@ const publishDiff = computed(() => [
                 <div v-if="canEdit && entry.is_active" class="ml-auto flex flex-wrap items-center gap-1.5">
                   <NuxtButton
                     v-if="selected.status === 'draft'"
-                    color="neutral"
-                    variant="outline"
-                    icon="i-lucide-pencil-line"
-                    label="Editar rascunho"
-                    @click="editDraft"
-                  />
-                  <NuxtButton
-                    v-if="selected.status === 'draft'"
                     icon="i-lucide-check"
                     label="Publicar"
                     @click="openPublish"
-                  />
-                  <NuxtButton
-                    color="neutral"
-                    variant="outline"
-                    icon="i-lucide-copy-plus"
-                    label="Nova versão"
-                    :disabled="busy"
-                    @click="newVersion"
                   />
                   <NuxtButton
                     color="neutral"
