@@ -206,11 +206,15 @@ def revoke_site_release(ref: str) -> bool:
     passkeys criadas depois daquele login. A dona volta a entrar com um código, que só
     chega no número dela.
     """
+    from datetime import datetime
     from importlib import import_module
 
     from django.conf import settings
-    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice
     from shopman.doorman.services.link_state import pop_release, pop_revocation
+
+    from shopman.shop.services import customer_sign_in
+    from shopman.shop.services import devices as device_service
 
     record = pop_revocation(ref)
     if record is None:
@@ -229,47 +233,26 @@ def revoke_site_release(ref: str) -> bool:
         if device is not None:
             device.revoke()
 
+    # Todas as sessões e dispositivos lembrados do cliente; passkeys desde o login. Sem
+    # hora de login (a liberação ainda não tinha sido trocada quando a dona tocou), nenhuma
+    # passkey nasceu daquele acesso, e as dela ficam.
     customer_id = str(record.get("customer_id") or "")
-    counts = _revoke_everything_opened_since(
-        customer_id, logged_in_at=str(record.get("logged_in_at") or ""),
-    ) if customer_id else {"sessions": 0, "devices": 0, "passkeys": 0}
+    sessions = devices = passkeys = 0
+    if customer_id:
+        link = CustomerUser.objects.filter(customer_id=customer_id).select_related("user").first()
+        if link is not None:
+            sessions = customer_sign_in.revoke_other_sessions(user=link.user, current_session_key="")
+        devices = device_service.revoke_all(customer_id=customer_id)
+        try:
+            since = datetime.fromisoformat(str(record.get("logged_in_at") or ""))
+        except ValueError:
+            since = None
+        if since is not None:
+            passkeys, _ = Passkey.objects.filter(customer_id=customer_id, created_at__gte=since).delete()
 
     logger.warning(
         "access_link.site_release_revoked tinha_sessao=%s tinha_dispositivo=%s "
         "sessoes=%s dispositivos=%s passkeys=%s",
-        bool(session_key), bool(device_id),
-        counts["sessions"], counts["devices"], counts["passkeys"],
+        bool(session_key), bool(device_id), sessions, devices, passkeys,
     )
     return True
-
-
-def _revoke_everything_opened_since(customer_id: str, *, logged_in_at: str) -> dict[str, int]:
-    """Todas as sessões e dispositivos lembrados do cliente; passkeys desde o login.
-
-    Sem hora de login (a liberação ainda não tinha sido trocada quando a dona tocou),
-    nenhuma passkey nasceu daquele acesso, e as dela ficam.
-    """
-    from datetime import datetime
-
-    from shopman.doorman.models import CustomerUser, Passkey
-
-    from shopman.shop.services import customer_sign_in
-    from shopman.shop.services import devices as device_service
-
-    sessions = 0
-    link = CustomerUser.objects.filter(customer_id=customer_id).select_related("user").first()
-    if link is not None:
-        sessions = customer_sign_in.revoke_other_sessions(user=link.user, current_session_key="")
-
-    devices = device_service.revoke_all(customer_id=customer_id)
-
-    passkeys = 0
-    since = None
-    try:
-        since = datetime.fromisoformat(logged_in_at) if logged_in_at else None
-    except ValueError:
-        since = None
-    if since is not None:
-        passkeys, _ = Passkey.objects.filter(customer_id=customer_id, created_at__gte=since).delete()
-
-    return {"sessions": sessions, "devices": devices, "passkeys": passkeys}
