@@ -222,6 +222,43 @@ class TestNaoFuiEu:
         assert not _logado(browser)
         assert TrustedDevice.objects.filter(subject_id=joyce.uuid, is_active=True).count() == 0
 
+    def test_derruba_tudo_o_que_a_janela_abriu_e_poupa_a_passkey_antiga(self, joyce, notify):
+        """Quem entrou no lugar dela pode, antes do toque, abrir outra sessão, confiar outro
+        navegador e cadastrar uma passkey. Cada um desses sobrevive sozinho se o "Não foi
+        você?" derrubar só a sessão e o dispositivo da liberação."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice
+
+        antiga = Passkey.objects.create(
+            customer_id=joyce.uuid, credential_id="cred-antiga", public_key="pk",
+        )
+        Passkey.objects.filter(pk=antiga.pk).update(created_at=timezone.now() - timedelta(days=30))
+
+        browser = _navegador()
+        started = _aperta_o_botao(browser)
+        _mensagem_chega(started["code"])
+        assert browser.post(CLAIM).json()["status"] == "done"
+
+        # O que o intruso abriu na janela, por fora da liberação.
+        outra_aba = _navegador()
+        outra_aba.force_login(CustomerUser.objects.get(customer_id=joyce.uuid).user)
+        assert _logado(outra_aba)
+        TrustedDevice.create_for("customer", str(joyce.uuid), user_agent=IPHONE)
+        Passkey.objects.create(customer_id=joyce.uuid, credential_id="cred-intruso", public_key="pk")
+
+        dono = Client()
+        response = dono.post(REVOKE, data=json.dumps({"ref": self._ref(notify)}), content_type="application/json")
+        assert response.status_code == 200
+
+        assert not _logado(browser)
+        assert not _logado(outra_aba)
+        assert TrustedDevice.objects.filter(subject_id=str(joyce.uuid), is_active=True).count() == 0
+        assert list(
+            Passkey.objects.filter(customer_id=joyce.uuid).values_list("credential_id", flat=True)
+        ) == ["cred-antiga"]
+
     def test_referencia_desconhecida_ou_repetida(self, joyce, notify):
         browser = _navegador()
         started = _aperta_o_botao(browser)

@@ -77,7 +77,21 @@ def _entrar_por_otp(client: Client, phone: str) -> dict:
     return client.get("/api/v1/auth/session/").json()
 
 
-def _trocar_numero(client: Client, phone: str) -> None:
+def _confirmar_no_numero_atual(client: Client, atual: str) -> None:
+    """O step-up da troca: o código vai para o número de HOJE, e só então a troca abre."""
+    pedido = _pedir_codigo_de_login(client, atual)
+    assert pedido.status_code == 200, pedido.content
+    confirmado = client.post(
+        "/api/v1/account/step-up/",
+        data={"code": _last_code(), "purpose": "phone"},
+        content_type="application/json",
+        **_csrf(client),
+    )
+    assert confirmado.status_code == 200, confirmado.content
+
+
+def _trocar_numero(client: Client, phone: str, *, atual: str) -> None:
+    _confirmar_no_numero_atual(client, atual)
     pedido = client.post(
         "/api/v1/account/phone/request/",
         data={"phone": phone},
@@ -106,7 +120,7 @@ def test_numero_antigo_nao_abre_a_conta_depois_da_troca_e_o_novo_abre(client: Cl
         customer=customer, identifier_value=NUMERO_ANTIGO
     ).exists()
 
-    _trocar_numero(client, NUMERO_NOVO)
+    _trocar_numero(client, NUMERO_NOVO, atual=NUMERO_ANTIGO)
     client.logout()
 
     assert not CustomerIdentifier.objects.filter(identifier_value=NUMERO_ANTIGO).exists()
@@ -159,6 +173,9 @@ def test_email_antigo_nao_abre_a_conta_depois_da_troca_e_o_novo_abre(client: Cli
 
     user, _ = get_or_create_user_for_customer(primeira)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    from shopman.storefront.tests.identity_fakes import grant_recent_step_up
+
+    grant_recent_step_up(client, customer.uuid, "email")
     troca = client.patch(
         "/api/v1/account/profile/",
         data=json.dumps({"first_name": "Ana", "email": EMAIL_NOVO}),

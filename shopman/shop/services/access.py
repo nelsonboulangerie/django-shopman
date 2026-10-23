@@ -173,6 +173,7 @@ def pop_site_release(request) -> dict | None:
 def record_site_release_login(revoke_ref: str, *, request, response) -> None:
     """Depois da troca: guarda a sessão e o dispositivo nascidos dela, para o
     "Não foi você?" da mensagem poder derrubar os dois."""
+    from django.utils import timezone
     from shopman.doorman.conf import get_doorman_settings
     from shopman.doorman.models import TrustedDevice
     from shopman.doorman.services.link_state import get_revocation, store_revocation
@@ -180,6 +181,9 @@ def record_site_release_login(revoke_ref: str, *, request, response) -> None:
     record = get_revocation(revoke_ref)
     if record is None:
         return
+    # A hora do login marca a janela: passkey criada depois dela pode ser de quem
+    # entrou no lugar da dona, e o "Não foi você?" a derruba junto.
+    record["logged_in_at"] = timezone.now().isoformat()
     record["session_key"] = getattr(getattr(request, "session", None), "session_key", "") or ""
     cookie = response.cookies.get(get_doorman_settings().DEVICE_TRUST_COOKIE_NAME)
     if cookie is not None and cookie.value:
@@ -190,16 +194,27 @@ def record_site_release_login(revoke_ref: str, *, request, response) -> None:
 
 
 def revoke_site_release(ref: str) -> bool:
-    """"Não foi você?": cancela a liberação pendente ou derruba o acesso que ela abriu.
+    """"Não foi você?": cancela a liberação pendente e derruba TUDO o que ela pode ter aberto.
 
     Quem tem a referência é quem recebeu a mensagem — o dono do número. Idempotente
     do ponto de vista dele: a segunda vez só não encontra mais nada.
+
+    Derrubar só a sessão e o dispositivo nascidos da liberação não basta: na janela entre
+    o login e o toque, quem entrou pode ter aberto outra sessão, confiado outro navegador
+    ou cadastrado uma passkey, e cada um desses sobrevive sozinho. Por isso o toque
+    encerra todas as sessões e todos os dispositivos lembrados da conta, e apaga as
+    passkeys criadas depois daquele login. A dona volta a entrar com um código, que só
+    chega no número dela.
     """
+    from datetime import datetime
     from importlib import import_module
 
     from django.conf import settings
-    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice
     from shopman.doorman.services.link_state import pop_release, pop_revocation
+
+    from shopman.shop.services import customer_sign_in
+    from shopman.shop.services import devices as device_service
 
     record = pop_revocation(ref)
     if record is None:
@@ -218,8 +233,26 @@ def revoke_site_release(ref: str) -> bool:
         if device is not None:
             device.revoke()
 
+    # Todas as sessões e dispositivos lembrados do cliente; passkeys desde o login. Sem
+    # hora de login (a liberação ainda não tinha sido trocada quando a dona tocou), nenhuma
+    # passkey nasceu daquele acesso, e as dela ficam.
+    customer_id = str(record.get("customer_id") or "")
+    sessions = devices = passkeys = 0
+    if customer_id:
+        link = CustomerUser.objects.filter(customer_id=customer_id).select_related("user").first()
+        if link is not None:
+            sessions = customer_sign_in.revoke_other_sessions(user=link.user, current_session_key="")
+        devices = device_service.revoke_all(customer_id=customer_id)
+        try:
+            since = datetime.fromisoformat(str(record.get("logged_in_at") or ""))
+        except ValueError:
+            since = None
+        if since is not None:
+            passkeys, _ = Passkey.objects.filter(customer_id=customer_id, created_at__gte=since).delete()
+
     logger.warning(
-        "access_link.site_release_revoked tinha_sessao=%s tinha_dispositivo=%s",
-        bool(session_key), bool(device_id),
+        "access_link.site_release_revoked tinha_sessao=%s tinha_dispositivo=%s "
+        "sessoes=%s dispositivos=%s passkeys=%s",
+        bool(session_key), bool(device_id), sessions, devices, passkeys,
     )
     return True

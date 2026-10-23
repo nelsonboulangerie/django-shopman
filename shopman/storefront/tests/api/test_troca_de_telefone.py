@@ -66,6 +66,9 @@ def _login_as_customer(client: Client, customer: Customer):
     )
     user, _ = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    from shopman.storefront.tests.identity_fakes import grant_recent_step_up
+
+    grant_recent_step_up(client, customer.uuid, "phone")
     return user
 
 
