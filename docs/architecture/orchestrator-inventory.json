@@ -13210,6 +13210,7 @@
             "ProductFeedError",
             "ProductFeedView",
             "_AVAILABILITY",
+            "_GOOGLE_DESTINATIONS",
             "_resolve_feed_channel",
             "_storefront_base",
             "build_feed_items"

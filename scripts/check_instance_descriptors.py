@@ -39,7 +39,7 @@ SECRET_VALUE_RES = (
 )
 # Estado operacional do canal: é do operador, não se versiona
 # (``OPERATIONAL_STATE`` em ``config/instance_descriptors.py``).
-CHANNEL_OPERATIONAL_PATHS = (("activation",), ("display", "paused_skus"))
+CHANNEL_OPERATIONAL_PATHS = (("activation",), ("display", "paused_skus"), ("display", "hidden_skus"))
 OPERATIONAL_KEYS = {"orders", "payments", "ledger_entries", "stock_balances", "sessions", "audit_events"}
 
 

@@ -19,6 +19,8 @@
 {% if item.google_product_category %}<g:google_product_category>{{ item.google_product_category }}</g:google_product_category>{% endif %}
 <g:product_type>{{ item.product_type }}</g:product_type>
 <g:custom_label_0>{{ item.custom_label_0 }}</g:custom_label_0>
+{% for destination in item.excluded_destinations %}<g:excluded_destination>{{ destination }}</g:excluded_destination>{% endfor %}
+{% if item.status %}<status>{{ item.status }}</status>{% endif %}
 </item>
 {% endfor %}</channel>
 </rss>{% endspaceless %}

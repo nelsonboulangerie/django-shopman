@@ -56,6 +56,24 @@ def test_local_pause_drops_item_on_this_channel(menuboard):
     assert board.available_count == 1  # só o bolo; PAO segue globalmente vendável
 
 
+def test_local_hide_removes_item_from_this_channel(menuboard):
+    """Ocultar por-canal (display.hidden_skus) tira o item da tela DESTE quadro."""
+    from shopman.shop.models import Channel
+    channel = Channel.objects.get(ref="tv-balcao")
+    channel.config = {**channel.config, "display": {**channel.config["display"], "hidden_skus": ["PAO"]}}
+    channel.save(update_fields=["config"])
+    board = build_menuboard("tv-balcao")
+    assert "PAO" not in {i.sku for g in board.groups for i in g.items}
+    assert board.available_count == 1
+
+
+def test_hidden_product_leaves_the_board(menuboard):
+    menuboard["pao"].is_published = False
+    menuboard["pao"].save()
+    board = build_menuboard("tv-balcao")
+    assert "PAO" not in {i.sku for g in board.groups for i in g.items}
+
+
 def test_smart_collection_section(db):
     display_channel("tv", "TV", collections=["caros"], prices_from="pdv")
     Collection.objects.create(

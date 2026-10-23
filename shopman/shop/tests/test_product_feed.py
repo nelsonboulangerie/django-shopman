@@ -126,6 +126,67 @@ def test_local_pause_is_out_of_stock(client, feed):
     assert item_meta.find(f"{G}availability").text == "in stock"
 
 
+GOOGLE_DESTINATIONS = [
+    "Shopping_ads", "Display_ads", "Local_inventory_ads", "Free_listings",
+    "Free_local_listings", "Youtube_affiliate", "Youtube_merchandise",
+]
+
+
+def _set_display(ref: str, **values):
+    from shopman.shop.models import Channel
+    channel = Channel.objects.get(ref=ref)
+    channel.config = {**channel.config, "display": {**channel.config["display"], **values}}
+    channel.save(update_fields=["config"])
+
+
+def test_paused_item_stays_in_every_destination(client, feed):
+    """Pausar = visível, sem compra: fora de estoque, nenhum destino excluído."""
+    _set_display("google", paused_skus=["BAGUETE"])
+    _set_display("meta", paused_skus=["BAGUETE"])
+    google = _items(client.get("/feed/google.xml").content)[0]
+    assert google.findall(f"{G}excluded_destination") == []
+    meta = _items(client.get("/feed/meta.xml").content)[0]
+    assert meta.find("status") is None
+    assert meta.find(f"{G}availability").text == "out of stock"
+
+
+def test_local_hide_excludes_every_google_destination(client, feed):
+    """Ocultar = some do canal, mas o item fica no XML (tirar apagaria o produto no Merchant)."""
+    _set_display("google", hidden_skus=["BAGUETE"])
+    item = _items(client.get("/feed/google.xml").content)[0]
+    assert [e.text for e in item.findall(f"{G}excluded_destination")] == GOOGLE_DESTINATIONS
+    assert item.find(f"{G}availability").text == "out_of_stock"
+    assert item.find("status") is None  # campo da Meta não vaza no Google
+    # o feed Meta (sem ocultação local) segue ativo
+    meta = _items(client.get("/feed/meta.xml").content)[0]
+    assert meta.find("status") is None
+    assert meta.find(f"{G}availability").text == "in stock"
+
+
+def test_local_hide_archives_the_meta_item(client, feed):
+    _set_display("meta", hidden_skus=["BAGUETE"])
+    item = _items(client.get("/feed/meta.xml").content)[0]
+    assert item.find("status").text == "archived"  # sem prefixo g: (fora da spec Google)
+    assert item.findall(f"{G}excluded_destination") == []
+
+
+@pytest.mark.parametrize("channel", ["google", "meta"])
+def test_hidden_product_is_hidden_on_every_feed(client, feed, channel):
+    feed["com_foto"].is_published = False
+    feed["com_foto"].save()
+    item = _items(client.get(f"/feed/{channel}.xml").content)[0]
+    if channel == "google":
+        assert len(item.findall(f"{G}excluded_destination")) == len(GOOGLE_DESTINATIONS)
+    else:
+        assert item.find("status").text == "archived"
+
+
+def test_hide_wins_over_pause(client, feed):
+    _set_display("google", paused_skus=["BAGUETE"], hidden_skus=["BAGUETE"])
+    item = _items(client.get("/feed/google.xml").content)[0]
+    assert len(item.findall(f"{G}excluded_destination")) == len(GOOGLE_DESTINATIONS)
+
+
 def test_smart_collection_feed(client, db, settings):
     settings.SHOPMAN_STOREFRONT_BASE_URL = LOJA
     display_channel("caros", "Caros", collections=["regra"], fmt="google_merchant", prices_from="web")
