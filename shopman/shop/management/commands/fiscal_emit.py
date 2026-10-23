@@ -38,6 +38,17 @@ class Command(BaseCommand):
                 "(+ FOCUS_NFE_TOKEN e FOCUS_NFE_CNPJ_EMITENTE ou Shop.document)."
             )
 
+        # O comando roda o handler fora da fila e marca a intenção fiscal à
+        # força: só serve para ensaio. Contra a Focus de produção ele emitiria
+        # nota de verdade, com valor fiscal, sobre um pedido escolhido a esmo.
+        # Backend que não declara o ambiente conta como produção (falha fechado).
+        if getattr(backend, "is_homologation", False) is not True:
+            raise CommandError(
+                "O backend fiscal não está em homologação: fiscal_emit só emite nota de "
+                "ensaio, sem valor fiscal. Aponte a Focus NFe para a homologação "
+                "antes de rodar. Em produção a nota sai pela fila, no fluxo do pedido."
+            )
+
         order = self._pick_order(Order, options["order_ref"])
         self.stdout.write(f"  📄 Pedido {order.ref} · total {order.total_q} · {order.items.count()} item(ns)")
 
