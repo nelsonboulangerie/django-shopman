@@ -768,3 +768,84 @@ def test_efi_token_refresh_is_single_flight_for_concurrent_callers(tmp_path):
         assert second.result(timeout=2) == "shared-sandbox-token"
 
     assert calls == 1
+
+
+# ── M3 (laudo 23/10): a devolução vai para o Pix que pagou ───────────────
+
+
+def _captured_pix(order_ref: str, *, e2e_id: str = "") -> object:
+    from shopman.payman import PaymentService
+
+    intent = PaymentService.create_intent(
+        order_ref=order_ref,
+        amount_q=500,
+        method="pix",
+        gateway="efi",
+        gateway_id=f"TXID-{order_ref}",
+        gateway_data={"provider_environment": "sandbox"},
+    )
+    PaymentService.authorize(
+        intent.ref, gateway_id=intent.gateway_id, gateway_data={"e2e_id": e2e_id} if e2e_id else None,
+    )
+    PaymentService.capture(intent.ref, gateway_id=intent.gateway_id)
+    return intent
+
+
+@pytest.mark.django_db
+def test_efi_refund_uses_the_e2e_id_recorded_on_the_intent():
+    from shopman.payman import PaymentService
+
+    intent = _captured_pix("ORDER-E2E-RECORDED", e2e_id="E2E-QUE-PAGOU")
+    calls = []
+
+    def remote_request(method, path, payload=None):
+        calls.append((method, path, payload))
+        return {"id": "D-1", "valor": payload["valor"]}
+
+    with patch.object(payment_efi, "_request", side_effect=remote_request):
+        result = payment_efi.refund(intent.ref, idempotency_key="refund-e2e")
+
+    assert result.success, result.message
+    assert [(m, p.split("/devolucao/")[0]) for m, p, _ in calls] == [("PUT", "/v2/pix/E2E-QUE-PAGOU")]
+    assert calls[0][2] == {"valor": "5.00"}
+    assert PaymentService.refunded_total(intent.ref) == 500
+
+
+@pytest.mark.django_db
+def test_efi_refund_after_charge_removed_still_returns_the_pix():
+    """Cobrança removida depois do cancelamento, Pix já pago: a devolução sai pelo e2e."""
+    intent = _captured_pix("ORDER-E2E-REMOVED", e2e_id="E2E-TARDIO")
+    calls = []
+
+    def remote_request(method, path, payload=None):
+        calls.append((method, path))
+        if method == "GET":
+            return {"status": "REMOVIDA_PELO_USUARIO_RECEBEDOR", "pix": []}
+        return {"id": "D-2", "valor": payload["valor"]}
+
+    with patch.object(payment_efi, "_request", side_effect=remote_request):
+        result = payment_efi.refund(intent.ref, amount_q=300, idempotency_key="refund-removed")
+
+    assert result.success, result.message
+    assert result.amount_q == 300
+    assert all(method == "PUT" for method, _ in calls)
+    assert calls[0][1].startswith("/v2/pix/E2E-TARDIO/devolucao/")
+
+
+@pytest.mark.django_db
+def test_efi_refund_without_recorded_e2e_falls_back_to_the_charge():
+    intent = _captured_pix("ORDER-E2E-FALLBACK")
+    calls = []
+
+    def remote_request(method, path, payload=None):
+        calls.append((method, path))
+        if method == "GET":
+            return {"status": "CONCLUIDA", "pix": [{"endToEndId": "E2E-DA-COB"}], "valor": {"original": "5.00"}}
+        return {"id": "D-3", "valor": payload["valor"]}
+
+    with patch.object(payment_efi, "_request", side_effect=remote_request):
+        result = payment_efi.refund(intent.ref, idempotency_key="refund-fallback")
+
+    assert result.success, result.message
+    assert calls[0] == ("GET", f"/v2/cob/{intent.gateway_id}")
+    assert calls[1][1].startswith("/v2/pix/E2E-DA-COB/devolucao/")

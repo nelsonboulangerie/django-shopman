@@ -607,7 +607,14 @@ def _payment_method_totals(closing_date: date) -> dict:
     day_intents = exclude_provider_simulated(
         PaymentIntent.objects.filter(status__in=settled, captured_at__date=closing_date)
     )
-    captured = day_intents.values("method").annotate(total=Sum("amount_q"))
+    # O que entrou é o CAPTURADO (transações de captura), não o ``amount_q`` do
+    # intent: captura parcial (cartão capturado a menos, encomenda editada antes
+    # da captura) inflava o mix acima do que o banco liquidou.
+    captured = (
+        PaymentTransaction.objects.filter(intent__in=day_intents, type=PaymentTransaction.Type.CAPTURE)
+        .values("intent__method")
+        .annotate(total=Sum("amount_q"))
+    )
     refunded = (
         PaymentTransaction.objects.filter(intent__in=day_intents, type=PaymentTransaction.Type.REFUND)
         .values("intent__method")
@@ -615,7 +622,7 @@ def _payment_method_totals(closing_date: date) -> dict:
     )
     totals: dict[str, int] = {}
     for row in captured:
-        totals[str(row["method"])] = int(row["total"] or 0)
+        totals[str(row["intent__method"])] = int(row["total"] or 0)
     for row in refunded:
         method = str(row["intent__method"])
         totals[method] = totals.get(method, 0) - int(row["total"] or 0)
