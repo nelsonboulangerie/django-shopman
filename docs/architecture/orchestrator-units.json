@@ -8158,7 +8158,9 @@
           "path": "shopman/shop/services/critical_alerts.py",
           "symbols": [
             "enqueue",
-            "deliver"
+            "deliver",
+            "deliver_now",
+            "deliver_pending"
           ]
         }
       ],
