@@ -47,6 +47,14 @@ Antes de começar o próximo, a ordem abaixo deve ser conferida novamente contra
 não entram como apps operacionais desta fila. O Storefront também fica fora por ter voz e
 arquitetura próprias.
 
+## WP transversal destacado
+
+O padrão móvel de lista compacta, registro em foco e trilha anterior/próximo ganhou um
+levantamento próprio em
+[WP-OPERATOR-MOBILE-FOCUS-TRAIL](../../plans/WP-OPERATOR-MOBILE-FOCUS-TRAIL.md).
+Ele deve ser consultado durante o diagnóstico de cada app, mas não autoriza aplicação
+mecânica: ação operacional, estabilidade da ordem e risco de rascunho decidem a forma.
+
 ## WP 1: Compras
 
 Decisão de informação:
