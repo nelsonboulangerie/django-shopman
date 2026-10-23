@@ -90,6 +90,19 @@ const OperatorFilterPanelStub = defineComponent({
   },
 });
 
+const OperatorMoreMenuStub = defineComponent({
+  name: "OperatorMoreMenu",
+  props: { items: Array, label: String },
+  setup(props) {
+    return () => h("div", [
+      h("button", props.label || "Mais ações"),
+      ...(props.items as { label: string; onSelect?: () => void }[]).map((item) =>
+        h("button", { onClick: item.onSelect }, item.label),
+      ),
+    ]);
+  },
+});
+
 const passthrough = (name: string) =>
   defineComponent({ name, setup: (_, { slots }) => () => h("div", { "data-stub": name }, slots.default?.()) });
 
@@ -124,6 +137,7 @@ const stubs = {
   OperatorFormShell: OperatorFormShellStub,
   OperatorFormSection: passthrough("OperatorFormSection"),
   OperatorTable: true,
+  OperatorMoreMenu: OperatorMoreMenuStub,
   // O cabeçalho é o de verdade: é ele que repassa o `#status` ao `OperatorPageHeader`.
   RecipeHeader,
   FormulaLens: true,
@@ -441,7 +455,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     await nextTick();
 
     expect(wrapper.find('[data-overlay="NuxtModal"]').exists()).toBe(false);
-    expect(wrapper.find('input[aria-label="SKU do produto"]').exists()).toBe(true);
+    expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit");
   });
 
   it("shows the archived state and names the return gesture Desarquivar", async () => {
@@ -451,14 +465,14 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Arquivada");
-    const unarchive = wrapper.findAll("button").find((button) => button.text() === "Desarquivar");
+    const unarchive = wrapper.findAll("button").find((button) => button.text() === "Desarquivar receita");
     expect(unarchive).toBeTruthy();
     await unarchive!.trigger("click");
     await nextTick();
 
     const dialog = wrapper.find('[data-overlay="NuxtModal"]');
     expect(dialog.text()).toContain("Desarquivar a receita");
-    expect(dialog.text()).toContain("Ela volta ao inventário e pode receber versões de novo.");
+    expect(dialog.text()).toContain("Ela volta à lista de receitas e pode receber versões de novo.");
   });
 });
 
@@ -502,7 +516,7 @@ describe("Receitas: cadastros turbinados", () => {
       revision: "2026-10-14T02:03:04+00:00",
     };
     const wrapper = mount(RecipeExecutionFormPanel, {
-      props: { open: true, execution },
+      props: { execution },
       global: { stubs },
     });
     await nextTick();
@@ -511,7 +525,7 @@ describe("Receitas: cadastros turbinados", () => {
     await inputs[2].setValue("4");
     await nextTick();
     expect(wrapper.find('[role="checkbox"][aria-label="Prazo revisado pelo responsável"]').attributes("aria-checked")).toBe("false");
-    await wrapper.findAll("button").find((button) => button.text() === "Salvar")!.trigger("click");
+    await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("save")?.[0]?.[0]).toMatchObject({
       shelfLifeDays: 4,
@@ -535,15 +549,15 @@ describe("Receitas: cadastros turbinados", () => {
       revision: "rev-1",
     };
     const wrapper = mount(RecipeExecutionFormPanel, {
-      props: { open: true, execution },
+      props: { execution },
       global: { stubs },
     });
     await nextTick();
     await wrapper.findAll("input")[2].setValue("1.5");
     await nextTick();
 
-    const shell = wrapper.findComponent(OperatorFormShellStub);
-    expect(shell.props("saveDisabled")).toBe(true);
-    expect(shell.props("saveDisabledReason")).toContain("número inteiro");
+    const saveButton = wrapper.findAll("button").find((button) => button.text() === "Salvar configuração")!;
+    expect(saveButton.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("número inteiro");
   });
 });

@@ -34,14 +34,13 @@ describe("seções da Produção no rail", () => {
     expect(layout.more).toBe(true);
   });
 
-  it("depois do ciclo, um traço, Timers e Ajustes (v4 plano-porque, R02); nada no pé", () => {
+  it("depois do ciclo, um traço, Timers e as ferramentas diretas; nada no pé", () => {
     const sections = productionSections({ canViewRecipes: true, canViewReports: true });
-    expect(sections.map((section) => section.key)).toEqual(["plan", "mise-en-place", "open", "close", "quality", "timers", "settings"]);
+    expect(sections.map((section) => section.key)).toEqual(["plan", "mise-en-place", "open", "close", "quality", "timers", "recipes", "reports", "board"]);
     expect(sections.some((section) => section.foot)).toBe(false);
     expect(sections.find((s) => s.key === "timers")?.divider).toBe(true);
-    // Receitas, Relatórios e o Letreiro moram em Ajustes: a seção acende lá.
-    expect(activeSectionKey("/recipes/abc", sections)).toBe("settings");
-    expect(activeSectionKey("/board", sections)).toBe("settings");
+    expect(activeSectionKey("/recipes/abc", sections)).toBe("recipes");
+    expect(activeSectionKey("/board", sections)).toBe("board");
   });
 
   it("o selo de Timers conta os ativos e o ponto avisa quando um toca", () => {
@@ -67,11 +66,11 @@ describe("seções da Produção no rail", () => {
     expect(quality.badge).toBe("8");
   });
 
-  it("a rota acende a seção certa; Receitas acende Ajustes, onde ela mora", () => {
+  it("a rota acende a seção direta correspondente", () => {
     const sections = productionSections({ canViewRecipes: true });
     expect(activeSectionKey("/", sections)).toBe("open");
     expect(activeSectionKey("/close", sections)).toBe("close");
-    expect(activeSectionKey("/recipes/PAO/edit", sections)).toBe("settings");
+    expect(activeSectionKey("/recipes/PAO/edit", sections)).toBe("recipes");
     expect(activeSectionKey("/timers/", sections)).toBe("timers");
   });
 });

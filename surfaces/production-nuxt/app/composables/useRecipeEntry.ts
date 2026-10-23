@@ -94,7 +94,7 @@ export function useRecipeEntry(entryRef: string) {
   const saveExecution = (patch: ExecutionPatch) =>
     act(
       () => $fetch<RecipeEntryResponse>(`${base}execution/`, { method: "PATCH", body: patch }),
-      "Não foi possível salvar a operação da ficha.",
+      "Não foi possível salvar a configuração da produção.",
     );
 
   async function duplicate(payload: RecipeDuplicatePayload, idempotencyKey: string): Promise<EntryActionResult> {
@@ -172,7 +172,7 @@ export function useRecipeEntry(entryRef: string) {
       "Não foi possível salvar a nota.",
     );
 
-  /** "Está certa": assina a conferência da versão em uso (WP-RECEITAS-DA-CASA F1). */
+  /** Registra a conferência da versão em uso (WP-RECEITAS-DA-CASA F1). */
   const confirmVersion = (number: number) =>
     act(
       () => $fetch<RecipeEntryResponse>(`${base}versions/${number}/review/`, { method: "POST" }),

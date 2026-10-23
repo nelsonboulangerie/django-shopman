@@ -1,6 +1,6 @@
 // A fila do padeiro (/recipes/review, WP-RECEITAS-DA-CASA F2): as receitas cuja
 // versão em uso ninguém da casa conferiu, do que mais sai para o que menos sai.
-// GET /api/v1/backstage/recipes/review/; "Está certa" é POST
+// GET /api/v1/backstage/recipes/review/; a conferência é POST em
 // recipes/<ref>/versions/<n>/review/ e tira a receita da fila no lugar.
 import type { RecipeReviewQueueResponse } from "~/types/recipeBook";
 
