@@ -3,15 +3,14 @@ import { alertActions } from "../../../../../operator-kit/app/utils/alertActions
 // A receita (/recipes/[ref]) — a lente da versão selecionada (âncora e base,
 // tabela g/%, métricas com faixa de referência, partes, mistura final, BOM), a
 // linha do tempo das versões e as ações: editar (abre ou prepara o rascunho),
-// publicar (diálogo com o que muda contra a atual),
-// comparar, associar SKU, arquivar. Ler é do gate do app; mexer pede `can_edit`.
+// publicar (diálogo com o que muda contra a atual), comparar, duplicar e arquivar.
+// Ler é do gate do app; mexer pede `can_edit`.
 // A estrela (favorita) é preferência do operador: basta ler. A nota da versão
 // (0 a 5 por critério do Admin) também; as referências (livros, vídeos, artigos)
 // são da receita e pedem `can_edit` para mudar.
 import type { RecipeVersionProjection } from "~/types/recipeBook";
 import { isStale } from "~/presentation/production";
 import {
-  KIND_OPTIONS,
   comparePath,
   favoriteActionHint,
   needsReview,
@@ -40,7 +39,6 @@ const {
   refresh,
   busy,
   patchEntry,
-  saveExecution,
   duplicate,
   publish,
   saveReferences,
@@ -99,7 +97,9 @@ const executionSummary = computed(() => {
   return [
     execution.max_started_minutes ? `${execution.max_started_minutes} min até atraso` : "tempo padrão da loja",
     execution.capacity_per_day ? `${execution.capacity_per_day} por dia` : "capacidade sem teto próprio",
-    execution.shelf_life_days == null ? "validade não declarada" : `${execution.shelf_life_days} dias de validade`,
+    execution.shelf_life_days == null
+      ? "validade não declarada"
+      : `${execution.shelf_life_days} ${execution.shelf_life_days === 1 ? "dia" : "dias"} de validade`,
   ].join(" · ");
 });
 
@@ -142,60 +142,8 @@ async function confirmPublish() {
   }
 }
 
-// ── Associar SKU: edição inline; a validação do SKU é do backend ────────────
-const skuEditing = ref(false);
-const skuInput = ref("");
-const skuError = ref("");
-function startSku() {
-  skuInput.value = entry.value?.output_sku ?? "";
-  skuError.value = "";
-  skuEditing.value = true;
-}
-async function saveSku() {
-  const result = await patchEntry({
-    output_sku: skuInput.value.trim().toUpperCase(),
-    ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
-  });
-  if (result.ok) {
-    skuEditing.value = false;
-    skuError.value = "";
-  } else if (result.field === "output_sku" || result.message) {
-    skuError.value = result.message ?? "SKU inválido.";
-  }
-}
-
-// ── Dados da receita (nome, tipo, notas) ────────────────────────────────────
-const detailsOpen = ref(false);
-const detailsName = ref("");
-const detailsKind = ref("other");
-const detailsNotes = ref("");
-const detailsError = ref("");
-function openDetails() {
-  detailsName.value = entry.value?.name ?? "";
-  detailsKind.value = entry.value?.kind ?? "other";
-  detailsNotes.value = entry.value?.notes ?? "";
-  detailsError.value = "";
-  detailsOpen.value = true;
-}
-async function saveDetails() {
-  const name = detailsName.value.trim();
-  if (!name) {
-    detailsError.value = "Dê um nome à receita.";
-    return;
-  }
-  const result = await patchEntry({
-    name,
-    kind: detailsKind.value,
-    notes: detailsNotes.value,
-    ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
-  });
-  if (result.ok) detailsOpen.value = false;
-  else detailsError.value = result.message ?? "";
-}
-
-// ── Cadastro turbo: copiar a receita inteira e ajustar a operação da ficha ─
+// ── Cadastro turbo: copiar a receita inteira ───────────────────────────────
 const duplicateOpen = ref(false);
-const executionOpen = ref(false);
 const duplicateKey = ref("");
 
 function newMutationKey() {
@@ -217,14 +165,6 @@ async function saveDuplicate(payload: Parameters<typeof duplicate>[0]) {
   }
 }
 
-async function saveExecutionForm(payload: Parameters<typeof saveExecution>[0]) {
-  const result = await saveExecution(payload);
-  if (result.ok) {
-    executionOpen.value = false;
-    useSonner.success("Operação da ficha salva.");
-  }
-}
-
 // ── Arquivar / desarquivar (destrutivo pede confirmação) ────────────────────
 const archiveOpen = ref(false);
 async function confirmArchive() {
@@ -240,27 +180,41 @@ async function confirmArchive() {
 }
 const archiveDescription = computed(() =>
   entry.value && !entry.value.is_active
-    ? "Ela volta ao inventário e pode receber versões de novo."
-    : 'Ela sai do inventário (fica em "Arquivadas") e não recebe novas versões. A ficha de execução publicada não muda.',
+    ? "Ela volta à lista de receitas e pode receber versões de novo."
+    : 'Ela sai da lista principal (fica em "Arquivadas") e não recebe novas versões. A versão em uso na produção não muda.',
 );
 const publishDescription = computed(() => {
-  const ficha = entry.value?.ficha_ref || entryRef;
   return currentVersion.value && currentVersion.value.number !== selected.value?.number
-    ? `A versão ${currentVersion.value.number} passa a substituída e a ficha de execução ${ficha} é reescrita com esta fórmula.`
-    : `Esta é a primeira versão publicada: a ficha de execução ${ficha} nasce dela.`;
+    ? `A versão ${currentVersion.value.number} será substituída. Os ingredientes, o rendimento e o modo de preparo desta versão passam a valer na produção.`
+    : "Os ingredientes, o rendimento e o modo de preparo desta versão passam a valer na produção.";
 });
 // Os dois motivos que seguram a publicação, cada um com a ação que o resolve.
 function skuFromPublish() {
   publishOpen.value = false;
-  startSku();
+  editRecipe();
 }
 function editorFromPublish() {
   publishOpen.value = false;
   editRecipe();
 }
 
+const secondaryActions = computed(() => [
+  {
+    label: "Duplicar receita",
+    icon: "i-lucide-copy-plus",
+    disabled: !versions.value.length,
+    onSelect: openDuplicate,
+  },
+  {
+    label: entry.value?.is_active ? "Arquivar receita" : "Desarquivar receita",
+    icon: entry.value?.is_active ? "i-lucide-archive" : "i-lucide-archive-restore",
+    onSelect: () => {
+      archiveOpen.value = true;
+    },
+  },
+]);
+
 // O selo do estado da versão: rascunho avisa, publicada é ok, o resto é neutro.
-const kinds: { value: string; label: string }[] = [...KIND_OPTIONS];
 const PUBLISH_NUM = { class: { th: "text-right", td: "text-right tabular-nums" } };
 const PUBLISH_DIFF_COLUMNS = [
   { id: "name", header: "O que muda", enableHiding: false },
@@ -327,7 +281,7 @@ const publishDiff = computed(() => [
         <Icon name="lucide:book-x" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Receita não encontrada</p>
         <p class="text-sm text-muted-foreground">Não existe receita com a ref <span class="font-mono">{{ entryRef }}</span>.</p>
-        <NuxtLink to="/recipes" class="mt-1 text-sm text-primary underline-offset-2 hover:underline">Voltar ao inventário</NuxtLink>
+        <NuxtLink to="/recipes" class="mt-1 text-sm text-primary underline-offset-2 hover:underline">Voltar às receitas</NuxtLink>
       </div>
     </section>
 
@@ -363,47 +317,21 @@ const publishDiff = computed(() => [
           aria-live="polite"
         />
 
-        <!-- ── Cabeçalho da receita: tipo, SKU, ficha, arquivada ─────────── -->
+        <!-- ── Cabeçalho da ficha técnica ───────────────────────────────── -->
         <NuxtCard class="mb-4" :ui="{ body: 'flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm sm:p-3' }">
+          <span class="font-semibold">Ficha técnica</span>
           <NuxtBadge color="neutral" :label="entry.kind_label" />
           <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
+          <NuxtBadge v-if="currentVersion && entry.execution?.exists" color="success" label="Em uso na produção" />
 
           <div class="flex min-w-0 items-center gap-1.5">
             <Icon name="lucide:tag" class="size-4 shrink-0 text-muted-foreground" />
-            <template v-if="!skuEditing">
-              <span v-if="entry.output_sku" class="truncate">
-                {{ entry.output_name || entry.output_sku }}
-                <span class="ml-1 font-mono text-xs text-muted-foreground">{{ entry.output_sku }}</span>
-              </span>
-              <span v-else class="text-warning">Sem SKU</span>
-              <NuxtButton
-                v-if="canEdit && entry.is_active"
-                color="primary"
-                variant="ghost"
-                :label="entry.output_sku ? 'Trocar' : 'Associar SKU'"
-                @click="startSku"
-              />
-            </template>
-            <form v-else class="flex flex-wrap items-center gap-1.5" @submit.prevent="saveSku">
-              <NuxtInput
-                v-model="skuInput"
-                type="text"
-                autofocus
-                placeholder="SKU do produto"
-                class="w-40"
-                :ui="{ base: 'font-mono uppercase' }"
-                :aria-invalid="skuError ? 'true' : undefined"
-                aria-label="SKU do produto"
-              />
-              <NuxtButton type="submit" label="Salvar" :disabled="busy" />
-              <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="skuEditing = false" />
-              <span v-if="skuError" class="basis-full text-xs text-destructive">{{ skuError }}</span>
-            </form>
+            <span v-if="entry.output_sku" class="truncate">
+              {{ entry.output_name || entry.output_sku }}
+              <span class="ml-1 font-mono text-xs text-muted-foreground">{{ entry.output_sku }}</span>
+            </span>
+            <span v-else class="text-warning">Sem produto associado</span>
           </div>
-
-          <span v-if="entry.ficha_ref" class="text-muted-foreground">
-            Ficha técnica <span class="font-mono text-xs">{{ entry.ficha_ref }}</span>
-          </span>
 
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
             <NuxtButton
@@ -422,61 +350,18 @@ const publishDiff = computed(() => [
                 <Icon name="lucide:star" class="size-4" :class="entry.is_favorite ? 'fill-current' : ''" />
               </template>
             </NuxtButton>
-            <NuxtButton
-              v-if="canEdit"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-copy-plus"
-              label="Duplicar"
-              :disabled="!versions.length"
-              @click="openDuplicate"
-            />
-            <NuxtButton
-              v-if="canEdit && entry.ficha_ref"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-clipboard-list"
-              label="Abrir ficha"
-              :to="'/recipes/sheets?open=' + entry.ficha_ref"
-            />
-            <NuxtButton
-              v-if="canEdit && entry.execution?.exists"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-settings-2"
-              label="Operação"
-              @click="executionOpen = true"
-            />
-            <NuxtButton
-              v-if="canEdit"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-pencil"
-              label="Dados"
-              @click="openDetails"
-            />
-            <NuxtButton
-              v-if="canEdit"
-              color="neutral"
-              variant="outline"
-              :icon="!entry.is_active ? 'i-lucide-archive-restore' : 'i-lucide-archive'"
-              :label="!entry.is_active ? 'Desarquivar' : 'Arquivar'"
-              @click="archiveOpen = true"
-            />
+            <NuxtDropdownMenu v-if="canEdit" :items="secondaryActions">
+              <NuxtButton color="neutral" variant="outline" icon="i-lucide-ellipsis" label="Mais ações" />
+            </NuxtDropdownMenu>
           </div>
         </NuxtCard>
 
         <p v-if="entry.notes" class="mb-4 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{{ entry.notes }}</p>
 
-        <NuxtAlert
-          v-if="entry.execution?.exists"
-          class="mb-4"
-          color="info"
-          variant="subtle"
-          icon="i-lucide-clipboard-check"
-          title="Ficha de execução ativa"
-          :description="executionSummary"
-        />
+        <NuxtCard v-if="entry.execution?.exists" class="mb-4">
+          <h2 class="text-sm font-semibold">Configuração da produção</h2>
+          <p class="mt-1 text-sm text-muted-foreground">{{ executionSummary }}</p>
+        </NuxtCard>
 
         <div class="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
           <!-- ── A lente da versão selecionada ───────────────────────────── -->
@@ -537,21 +422,14 @@ const publishDiff = computed(() => [
                 <span v-else-if="selected.review_by_name" class="text-muted-foreground">
                   {{ reviewSignature(selected.review_by_name, selected.review_at_display) }}
                 </span>
-                <NuxtButton
-                  v-if="canEdit && isCurrent && entry.is_active && needsReview(selected.review_status)"
-                  class="ml-auto"
-                  icon="i-lucide-check"
-                  label="Está certa"
-                  :loading="busy"
-                  @click="confirmSelected"
-                />
               </div>
 
+              <h3 class="mb-2 text-sm font-semibold">Ingredientes</h3>
               <FormulaLens :lens="selected.lens" />
 
-              <NuxtCard v-if="selected.steps.length" class="mt-4">
-                <p class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">Etapas</p>
-                <ol class="list-decimal space-y-1 pl-5 text-sm">
+              <NuxtCard class="mt-4">
+                <h3 class="mb-2 text-sm font-semibold">Modo de preparo</h3>
+                <ol v-if="selected.steps.length" class="list-decimal space-y-1 pl-5 text-sm">
                   <li v-for="(step, index) in selected.steps" :key="index">
                     <span class="font-medium">{{ step.name }}</span>
                     <span v-if="step.target_display" class="text-muted-foreground"> · {{ step.target_display }}</span>
@@ -560,8 +438,19 @@ const publishDiff = computed(() => [
                     <p v-if="step.note" class="whitespace-pre-line text-xs text-muted-foreground">{{ step.note }}</p>
                   </li>
                 </ol>
+                <p v-else class="text-sm text-muted-foreground">Modo de preparo ainda não informado.</p>
               </NuxtCard>
               <p v-if="selected.notes" class="mt-3 whitespace-pre-line text-sm text-muted-foreground">{{ selected.notes }}</p>
+              <NuxtAlert
+                v-if="canEdit && isCurrent && entry.is_active && needsReview(selected.review_status)"
+                class="mt-4"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-clipboard-check"
+                title="Conferência pendente"
+                description="Confira ingredientes, rendimento e modo de preparo. Ao confirmar, você registra que esta versão representa a receita da casa."
+                :actions="alertActions('warning', [{ label: 'Marcar como conferida', icon: 'i-lucide-check', onClick: confirmSelected }])"
+              />
             </template>
           </div>
 
@@ -642,7 +531,7 @@ const publishDiff = computed(() => [
             variant="subtle"
             icon="i-lucide-unlink"
             :title="unmatched.length === 1 ? '1 ingrediente ainda sem insumo' : `${unmatched.length} ingredientes ainda sem insumo`"
-            :description="`${unmatched.map((item) => item.name).join(', ')}. Case todos no editor.`"
+            :description="`${unmatched.map((item) => item.name).join(', ')}. Associe cada um a um insumo no editor.`"
             :actions="alertActions('warning', [{ label: 'Abrir o editor', onClick: editorFromPublish }])"
           />
 
@@ -682,35 +571,6 @@ const publishDiff = computed(() => [
       </template>
     </NuxtModal>
 
-    <!-- ── Dados da receita ──────────────────────────────────────────────── -->
-    <NuxtModal
-      v-model:open="detailsOpen"
-      title="Dados da receita"
-      description="Nome, tipo (define as referências) e notas gerais."
-      :ui="{ content: 'sm:max-w-md' }"
-    >
-      <template #body>
-        <div class="grid gap-3">
-          <NuxtFormField label="Nome">
-            <NuxtInput v-model="detailsName" type="text" class="w-full" />
-          </NuxtFormField>
-          <NuxtFormField label="Tipo">
-            <NuxtSelect v-model="detailsKind" :items="kinds" value-key="value" class="w-full" aria-label="Tipo" />
-          </NuxtFormField>
-          <NuxtFormField label="Notas">
-            <NuxtTextarea v-model="detailsNotes" :rows="3" class="w-full" />
-          </NuxtFormField>
-          <p v-if="detailsError" class="text-sm text-destructive">{{ detailsError }}</p>
-        </div>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <NuxtButton color="neutral" variant="outline" label="Cancelar" @click="detailsOpen = false" />
-          <NuxtButton label="Salvar" :disabled="busy" @click="saveDetails" />
-        </div>
-      </template>
-    </NuxtModal>
-
     <!-- ── Arquivar / desarquivar ───────────────────────────────────────── -->
     <NuxtModal
       v-model:open="archiveOpen"
@@ -739,11 +599,5 @@ const publishDiff = computed(() => [
       @save="saveDuplicate"
     />
 
-    <RecipeExecutionFormPanel
-      v-model:open="executionOpen"
-      :execution="entry?.execution ?? null"
-      :busy="busy"
-      @save="saveExecutionForm"
-    />
   </main>
 </template>

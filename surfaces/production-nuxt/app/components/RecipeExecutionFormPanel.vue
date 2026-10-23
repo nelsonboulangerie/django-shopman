@@ -94,13 +94,13 @@ const productionModeOptions = computed(() => props.execution?.production_mode_op
 <template>
   <OperatorFormShell
     :open="open"
-    title="Operação da ficha"
+    title="Configuração da produção"
     size="wide"
     description="Como a receita se comporta no planejamento e no chão de produção."
     :dirty="dirty"
     :dirty-count="changedKeys.length"
     :busy="busy"
-    save-label="Salvar operação"
+    save-label="Salvar configuração"
     save-icon="i-lucide-save"
     :save-disabled="!valid"
     :save-disabled-reason="disabledReason"

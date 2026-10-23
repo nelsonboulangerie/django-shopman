@@ -6,10 +6,11 @@ import { alertActions } from "../../../../../operator-kit/app/utils/alertActions
 // botão "Padronizar para 1000 g" mostra o antes/depois e deixa desfazer; a receita
 // como foi informada (`origin`) fica visível como referência histórica. "Salvar
 // rascunho" grava; "Salvar e publicar" grava e publica, voltando à receita.
-import type { AnchorKind, Formula, FormulaUnit, IngredientOptionProjection, IngredientRole, PartKind, RecipeVersionProjection } from "~/types/recipeBook";
+import type { AnchorKind, Formula, FormulaUnit, IngredientOptionProjection, IngredientRole, PartKind, RecipeKind, RecipeVersionProjection } from "~/types/recipeBook";
 import {
   ANCHOR_OPTIONS,
   HOUSE_BASIS_G,
+  KIND_OPTIONS,
   PART_KIND_OPTIONS,
   ROLE_OPTIONS,
   UNIT_OPTIONS,
@@ -40,7 +41,7 @@ import {
 const route = useRoute();
 const entryRef = String(route.params.ref ?? "");
 
-const { entry, canEdit, latestDraft, versionByNumber, notFound, forbidden, pending, error, refresh, busy, createVersion, updateDraft, publish } =
+const { entry, canEdit, latestDraft, versionByNumber, notFound, forbidden, pending, error, refresh, busy, patchEntry, saveExecution, createVersion, updateDraft, publish } =
   useRecipeEntry(entryRef);
 
 useHead({ title: computed(() => `Editar · ${entry.value?.name || "Receita"}`) });
@@ -61,6 +62,11 @@ const stepsText = ref("");
 const notes = ref("");
 const label = ref("");
 const seededNumber = ref<number | null>(null);
+const entryName = ref("");
+const entryKind = ref<RecipeKind>("other");
+const entryOutputSku = ref("");
+const entryNotes = ref("");
+const entrySeeded = ref(false);
 // O "antes" da padronização (desfazer). Declarado ANTES do watch abaixo: com o
 // rascunho já carregado no servidor, o watch imediato roda durante o setup e
 // tocava em `before` antes da inicialização (500 na página inteira).
@@ -78,6 +84,19 @@ watch(
     label.value = version.label;
     seededNumber.value = version.number;
     before.value = null;
+  },
+  { immediate: true },
+);
+
+watch(
+  entry,
+  (current) => {
+    if (!current || entrySeeded.value) return;
+    entryName.value = current.name;
+    entryKind.value = current.kind as RecipeKind;
+    entryOutputSku.value = current.output_sku;
+    entryNotes.value = current.notes;
+    entrySeeded.value = true;
   },
   { immediate: true },
 );
@@ -164,6 +183,12 @@ const units = [...UNIT_OPTIONS];
 const roles = [...ROLE_OPTIONS];
 const anchors = [...ANCHOR_OPTIONS];
 const partKinds = [...PART_KIND_OPTIONS];
+const kinds = [...KIND_OPTIONS];
+const executionModeLabel = computed(() => {
+  const execution = entry.value?.execution;
+  if (!execution) return "";
+  return execution.production_mode_options.find((option) => option.value === execution.production_mode)?.label || execution.production_mode;
+});
 
 // ── Partes ──────────────────────────────────────────────────────────────────
 function addNewPart() {
@@ -227,6 +252,61 @@ const originOpen = ref(false);
 
 // ── Salvar / publicar ───────────────────────────────────────────────────────
 const saveError = ref("");
+const executionOpen = ref(false);
+
+function editorSnapshot(): string {
+  return JSON.stringify({
+    name: entryName.value,
+    kind: entryKind.value,
+    outputSku: entryOutputSku.value,
+    entryNotes: entryNotes.value,
+    formula: formula.value,
+    yieldQuantity: yieldQuantity.value,
+    yieldUnit: yieldUnit.value,
+    stepsText: stepsText.value,
+    notes: notes.value,
+    label: label.value,
+  });
+}
+
+const editorBaseline = ref("");
+function captureEditor() {
+  editorBaseline.value = editorSnapshot();
+}
+
+watch(
+  [entry, draft],
+  async ([currentEntry, currentDraft]) => {
+    if (!currentEntry || !currentDraft || editorBaseline.value) return;
+    await nextTick();
+    captureEditor();
+  },
+  { immediate: true },
+);
+
+const hasUnsavedChanges = computed(() => !!editorBaseline.value && editorSnapshot() !== editorBaseline.value);
+const confirmDiscard = useConfirm();
+
+async function confirmLeave(): Promise<boolean> {
+  if (!hasUnsavedChanges.value) return true;
+  return confirmDiscard({
+    title: "Sair sem salvar a receita?",
+    description: "As alterações feitas nesta ficha técnica serão perdidas.",
+    confirmLabel: "Sair sem salvar",
+  });
+}
+
+onBeforeRouteLeave(async () => confirmLeave());
+
+function warnBeforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedChanges.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+onMounted(() => window.addEventListener("beforeunload", warnBeforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", warnBeforeUnload));
+
 function draftPatch() {
   return {
     formula: formula.value,
@@ -241,13 +321,48 @@ function draftPatch() {
 async function save(): Promise<boolean> {
   if (!draft.value) return false;
   saveError.value = "";
+  const cleanName = entryName.value.trim();
+  if (!cleanName) {
+    saveError.value = "Informe o nome da receita.";
+    return false;
+  }
+  entryName.value = cleanName;
+  const cleanOutputSku = entryOutputSku.value.trim().toUpperCase();
+  entryOutputSku.value = cleanOutputSku;
+  const entryChanged =
+    cleanName !== entry.value?.name ||
+    entryKind.value !== entry.value?.kind ||
+    cleanOutputSku !== entry.value?.output_sku ||
+    entryNotes.value !== entry.value?.notes;
+  if (entryChanged) {
+    const entryResult = await patchEntry({
+      name: cleanName,
+      kind: entryKind.value,
+      output_sku: cleanOutputSku,
+      notes: entryNotes.value,
+      ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
+    });
+    if (!entryResult.ok) {
+      saveError.value = entryResult.message ?? "Não foi possível salvar as informações da receita.";
+      return false;
+    }
+  }
   const result = await updateDraft(draft.value.number, draftPatch());
   if (result.ok) {
     useSonner.success("Rascunho salvo.");
+    await nextTick();
+    captureEditor();
     return true;
   }
   saveError.value = result.message ?? "";
   return false;
+}
+
+async function saveExecutionForm(payload: Parameters<typeof saveExecution>[0]) {
+  const result = await saveExecution(payload);
+  if (!result.ok) return;
+  executionOpen.value = false;
+  useSonner.success("Configuração da produção salva.");
 }
 async function saveAndPublish() {
   if (!draft.value) return;
@@ -349,8 +464,8 @@ const touch = useTouchPointer();
           <NuxtButton
             icon="i-lucide-check"
             aria-label="Salvar e publicar"
-            :disabled="busy || unmatchedCount > 0 || !entry?.output_sku"
-            :title="!entry?.output_sku ? 'Associe um SKU na receita antes de publicar' : unmatchedCount ? 'Case todos os ingredientes antes de publicar' : ''"
+            :disabled="busy || unmatchedCount > 0 || !entryOutputSku.trim()"
+            :title="!entryOutputSku.trim() ? 'Associe um produto à receita antes de publicar' : unmatchedCount ? 'Associe todos os ingredientes aos respectivos insumos antes de publicar' : ''"
             @click="saveAndPublish"
           >
             <span class="hidden sm:inline">Salvar e publicar</span>
@@ -372,7 +487,7 @@ const touch = useTouchPointer();
       <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:book-x" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Receita não encontrada</p>
-        <NuxtLink to="/recipes" class="mt-1 text-sm text-primary underline-offset-2 hover:underline">Voltar ao inventário</NuxtLink>
+        <NuxtLink to="/recipes" class="mt-1 text-sm text-primary underline-offset-2 hover:underline">Voltar às receitas</NuxtLink>
       </div>
     </section>
 
@@ -426,8 +541,32 @@ const touch = useTouchPointer();
             :actions="alertActions('error', [{ label: 'Salvar de novo', disabled: busy, onClick: () => save() }])"
           />
 
+          <section class="grid gap-3 rounded-md border bg-card p-3">
+            <h2 class="text-sm font-semibold">Informações da receita</h2>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <NuxtFormField label="Nome da receita" required>
+                <NuxtInput v-model="entryName" class="w-full" />
+              </NuxtFormField>
+              <NuxtFormField label="Tipo">
+                <NuxtSelect v-model="entryKind" :items="kinds" value-key="value" label-key="label" class="w-full" />
+              </NuxtFormField>
+              <NuxtFormField
+                label="Produto associado (SKU)"
+                description="Obrigatório para publicar e usar esta receita na produção."
+                required
+              >
+                <NuxtInput v-model="entryOutputSku" class="w-full uppercase" placeholder="Ex.: PAO-FRANCES" />
+              </NuxtFormField>
+              <NuxtFormField label="Observações gerais">
+                <NuxtTextarea v-model="entryNotes" :rows="3" class="w-full" />
+              </NuxtFormField>
+            </div>
+          </section>
+
           <!-- Rendimento, âncora, o que mudou -->
-          <div class="grid gap-3 rounded-md border bg-card p-3 sm:grid-cols-[auto_auto_1fr]">
+          <section class="grid gap-3 rounded-md border bg-card p-3">
+            <h2 class="text-sm font-semibold">Rendimento</h2>
+            <div class="grid gap-3 sm:grid-cols-[auto_auto_1fr]">
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Rendimento
               <span class="flex items-center gap-1">
@@ -463,19 +602,20 @@ const touch = useTouchPointer();
               O que mudou (rótulo curto)
               <NuxtInput v-model="label" type="text" placeholder="Ex.: hidratação 72 → 75" class="w-full" />
             </label>
-          </div>
+            </div>
+          </section>
 
           <!-- Ingredientes -->
           <div class="rounded-md border">
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ingredientes (receita base)</p>
+              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ingredientes</p>
               <span class="text-xs tabular-nums text-muted-foreground">
                 âncora {{ gramsLabel(localAnchorTotal) }} · massa {{ gramsLabel(localTotal) }}
               </span>
               <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Ingrediente" @click="add" />
             </div>
             <p v-if="!formula.items.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
-              Nenhum ingrediente ainda. Toda a farinha entra aqui, inclusive a do levain e da autólise.
+              Adicione os ingredientes da receita, inclusive os usados nos pré-preparos.
             </p>
             <ol v-else class="divide-y">
               <li
@@ -519,7 +659,7 @@ const touch = useTouchPointer();
                   />
                 </label>
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Papel
+                  Função no cálculo
                   <NuxtSelect
                     :model-value="item.role"
                     :items="roles"
@@ -552,14 +692,16 @@ const touch = useTouchPointer();
             </ol>
           </div>
 
-          <!-- Partes -->
+          <!-- Pré-preparos -->
           <div class="rounded-md border">
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Partes</p>
-              <span class="text-xs text-muted-foreground">quanto da base passa por levain, autólise, embebido ou massa velha</span>
-              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Parte" @click="addNewPart" />
+              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pré-preparos</p>
+              <span class="text-xs text-muted-foreground">levain, autólise, grãos hidratados ou massa velha usados nesta receita</span>
+              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Pré-preparo" @click="addNewPart" />
             </div>
-            <p v-if="!formula.parts.length" class="px-3 py-4 text-center text-sm text-muted-foreground">Sem partes: tudo vai direto na mistura.</p>
+            <p v-if="!formula.parts.length" class="px-3 py-4 text-center text-sm text-muted-foreground">
+              Nenhum pré-preparo separado. Todos os ingredientes entram diretamente no modo de preparo.
+            </p>
             <ol v-else class="divide-y">
               <li v-for="(part, index) in formula.parts" :key="index" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
@@ -618,8 +760,9 @@ const touch = useTouchPointer();
             </ol>
           </div>
 
-          <!-- Etapas e notas -->
-          <div class="grid gap-3 rounded-md border bg-card p-3">
+          <!-- Modo de preparo e notas -->
+          <section class="grid gap-3 rounded-md border bg-card p-3">
+            <h2 class="text-sm font-semibold">Modo de preparo</h2>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
               Etapas (uma por linha)
               <NuxtTextarea v-model="stepsText" :rows="6" placeholder="Autólise 40 min&#10;Sova até o ponto de véu&#10;…" class="w-full" />
@@ -628,13 +771,49 @@ const touch = useTouchPointer();
               Notas desta versão
               <NuxtTextarea v-model="notes" :rows="3" class="w-full" />
             </label>
-          </div>
+          </section>
+
+          <section class="grid gap-3 rounded-md border bg-card p-3">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="grid gap-1">
+                <h2 class="text-sm font-semibold">Configuração da produção</h2>
+                <p class="text-sm text-muted-foreground">Regras de planejamento, lote e validade desta receita.</p>
+              </div>
+              <NuxtButton
+                v-if="entry.execution?.exists"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-settings-2"
+                label="Editar configuração"
+                @click="executionOpen = true"
+              />
+            </div>
+            <dl v-if="entry.execution?.exists" class="grid gap-2 text-sm sm:grid-cols-3">
+              <div>
+                <dt class="text-xs text-muted-foreground">Modo de produção</dt>
+                <dd class="font-medium">{{ executionModeLabel }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-muted-foreground">Capacidade por dia</dt>
+                <dd class="font-medium">{{ entry.execution.capacity_per_day || "Sem limite definido" }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-muted-foreground">Validade</dt>
+                <dd class="font-medium">
+                  {{ entry.execution.shelf_life_days == null ? "Não informada" : `${entry.execution.shelf_life_days} ${entry.execution.shelf_life_days === 1 ? "dia" : "dias"}` }}
+                </dd>
+              </div>
+            </dl>
+            <p v-else class="text-sm text-muted-foreground">
+              Publique a primeira versão para configurar como esta receita entra no planejamento e na produção.
+            </p>
+          </section>
         </div>
 
-        <!-- ── Prévia da lente ─────────────────────────────────────────── -->
+        <!-- ── Resumo da fórmula ───────────────────────────────────────── -->
         <aside class="grid min-w-0 content-start gap-3 xl:sticky xl:top-0 xl:self-start">
           <div class="flex flex-wrap items-center gap-2">
-            <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Prévia da lente</p>
+            <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Resumo da fórmula</p>
             <Icon v-if="lensPending" name="lucide:loader-circle" class="size-4 animate-spin text-muted-foreground" />
             <NuxtButton
               class="ml-auto"
@@ -678,5 +857,13 @@ const touch = useTouchPointer();
         </aside>
       </div>
     </section>
+
+    <RecipeExecutionFormPanel
+      v-if="entry?.execution"
+      v-model:open="executionOpen"
+      :execution="entry.execution"
+      :busy="busy"
+      @save="saveExecutionForm"
+    />
   </main>
 </template>

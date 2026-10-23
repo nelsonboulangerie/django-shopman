@@ -441,7 +441,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     await nextTick();
 
     expect(wrapper.find('[data-overlay="NuxtModal"]').exists()).toBe(false);
-    expect(wrapper.find('input[aria-label="SKU do produto"]').exists()).toBe(true);
+    expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit");
   });
 
   it("shows the archived state and names the return gesture Desarquivar", async () => {
@@ -451,14 +451,14 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Arquivada");
-    const unarchive = wrapper.findAll("button").find((button) => button.text() === "Desarquivar");
+    const unarchive = wrapper.findAll("button").find((button) => button.text() === "Desarquivar receita");
     expect(unarchive).toBeTruthy();
     await unarchive!.trigger("click");
     await nextTick();
 
     const dialog = wrapper.find('[data-overlay="NuxtModal"]');
     expect(dialog.text()).toContain("Desarquivar a receita");
-    expect(dialog.text()).toContain("Ela volta ao inventário e pode receber versões de novo.");
+    expect(dialog.text()).toContain("Ela volta à lista de receitas e pode receber versões de novo.");
   });
 });
 

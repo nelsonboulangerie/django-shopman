@@ -30,7 +30,7 @@ describe("useRecipeReview", () => {
     expect(canEdit.value).toBe(true);
   });
 
-  it("'Está certa' assina a versão e tira a receita da fila no lugar", async () => {
+  it("registrar a conferência assina a versão e tira a receita da fila no lugar", async () => {
     env.fetchData.value = queue();
     const { items, queue: projection, confirm } = useRecipeReview();
     env.fetchMock.mockResolvedValueOnce({ ok: true });
