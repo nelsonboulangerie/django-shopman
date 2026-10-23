@@ -12,6 +12,13 @@ ciclo do maintenance_worker e vira OperatorAlert (debounce 15min) quando:
                      de chave é "desconhecido" — em dev/CI o cache locmem é
                      por processo e o batimento de outro processo é invisível).
 
+Os dois alertas que falam DA fila (backlog e worker parado) saem por e-mail
+SÍNCRONO, aqui mesmo (``critical_alerts.deliver_now``): o aviso de que o worker
+parou não pode depender do worker para sair. O debounce é o mesmo do alerta e
+do e-mail; o e-mail que falhou de forma transitória é retentado no ciclo
+seguinte (``critical_alerts.deliver_pending``). O failed spike e os demais
+alertas seguem o caminho de sempre (Directive pela fila).
+
 Thresholds via settings (defaults na ADR): SHOPMAN_DIRECTIVE_FAILED_ALERT_THRESHOLD,
 SHOPMAN_DIRECTIVE_FAILED_WINDOW_MINUTES, SHOPMAN_DIRECTIVE_BACKLOG_ALERT_THRESHOLD,
 SHOPMAN_DIRECTIVE_BACKLOG_AGE_MINUTES, SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES.
@@ -30,6 +37,9 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+#: Alertas cujo e-mail não pode esperar a fila de directives.
+QUEUE_HEALTH_ALERT_TYPES = ("directive_backlog", "directive_worker_stale")
 
 
 class Command(BaseCommand):
@@ -72,6 +82,13 @@ class Command(BaseCommand):
 
         self._check_worker_heartbeat(now, heartbeat_stale)
 
+        from shopman.shop.services import critical_alerts
+
+        try:
+            critical_alerts.deliver_pending(QUEUE_HEALTH_ALERT_TYPES)
+        except Exception:
+            logger.exception("directive_health.deliver_pending_failed")
+
         self.stdout.write(
             f"directive_health: failed_recent={failed_recent} backlog_overdue={backlog_overdue}"
         )
@@ -94,7 +111,7 @@ class Command(BaseCommand):
     def _alert_backlog(self, count: int, age_minutes: int) -> None:
         from shopman.shop.services.observability import create_operator_alert
 
-        create_operator_alert(
+        alert = create_operator_alert(
             type="directive_backlog",
             severity="error",
             message=(
@@ -104,6 +121,7 @@ class Command(BaseCommand):
             ),
             dedupe_key="directive_backlog",
         )
+        self._page_now(alert)
 
     def _check_worker_heartbeat(self, now, stale_minutes: int) -> None:
         from shopman.orderman import worker_heartbeat
@@ -122,7 +140,7 @@ class Command(BaseCommand):
         if age < timedelta(minutes=max(1, stale_minutes)):
             return
 
-        create_operator_alert(
+        alert = create_operator_alert(
             type="directive_worker_stale",
             severity="critical",
             message=(
@@ -132,3 +150,16 @@ class Command(BaseCommand):
             ),
             dedupe_key="directive_worker_stale:process_directives",
         )
+        self._page_now(alert)
+
+    def _page_now(self, alert) -> None:
+        """E-mail do alerta da fila, enviado aqui e não pela fila."""
+        if alert is None:  # debounced: o e-mail da janela já saiu (ou está saindo)
+            return
+        from shopman.shop.services import critical_alerts
+
+        try:
+            critical_alerts.deliver_now(alert)
+        except Exception:
+            # O alerta já está na tela; o e-mail que não saiu grita no log.
+            logger.exception("directive_health.page_now_failed: %s", alert.type)

@@ -194,11 +194,27 @@ Esta é a parte que nenhum código faz por você, e é a parte que salva o dia.
    SHOPMAN_MIGRATION_BACKUP_REF=PITR 2026-09-23T14:05:00Z, shopman-staging-postgres
    ```
 
-O conteúdo é texto livre e legível por gente — a trava não valida formato, ela
-exige que **exista e diga alguma coisa** (`-`, `n/a`, `TBD` e vazio não contam).
+O conteúdo é texto legível por gente, com uma exigência: ele **carrega o
+instante em ISO 8601 com fuso** (`2026-09-23T14:05:00Z` ou
+`2026-09-23T11:05:00-03:00`). `-`, `n/a`, `TBD` e vazio não contam, e texto sem
+instante com fuso também não.
+
+**A declaração vence.** Ela vale por **24 horas** contadas do instante que
+carrega (`SHOPMAN_MIGRATION_BACKUP_MAX_AGE_HOURS` muda a janela). A variável
+fica no spec depois do deploy; sem prazo, a declaração de hoje desarmaria a
+trava para toda migração destrutiva dos meses seguintes. Instante mais de 15
+minutos no futuro também não vale: o ponto de restauração é um instante *antes*
+do deploy, não um jeito de a declaração nunca vencer.
+
+Vencida (ou sem instante, ou no futuro), a trava volta a armar e o log do
+release diz o motivo e o valor lido. O que fazer: anotar um ponto de
+restauração novo (passos 1 e 2), trocar o valor da variável e dar redeploy.
+Depois do deploy, pode apagar a variável: a próxima migração destrutiva pede
+uma declaração nova de qualquer forma.
+
 O ponto não é agradar um parser; é que, às 3h da manhã, o instante de
 restauração esteja escrito em algum lugar que não seja a memória de quem deu o
-deploy.
+deploy, e que seja o instante **deste** deploy.
 
 ### 2.3 A trava que recusa o deploy
 
@@ -214,8 +230,11 @@ lê o mesmo plano que o `migrate` vai executar e recusa o deploy — saída
 diferente de zero, `PRE_DEPLOY` vermelho, versão nova não sobe — em duas
 situações:
 
-- migração destrutiva pendente **e** `SHOPMAN_MIGRATION_BACKUP_REF` vazia, com a
-  política do ADR-015 armada;
+- migração destrutiva pendente **e** `SHOPMAN_MIGRATION_BACKUP_REF` vazia,
+  sem instante, vencida ou no futuro, com a política do ADR-015 armada.
+  `AlterField` só conta como destrutivo quando muda o que chega ao banco (tipo,
+  tamanho, nulidade, coluna...); mudar `choices`, `help_text` ou
+  `verbose_name` não gera SQL e não segura o deploy;
 - não deu para ler o plano de migração. Um portão que não enxerga recusa, em vez
   de dizer "pode passar".
 
