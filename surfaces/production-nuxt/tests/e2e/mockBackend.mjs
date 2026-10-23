@@ -537,6 +537,7 @@ const RECIPE_BOOK = {
   },
   access: RECIPE_ACCESS,
 };
+const RECIPE_DRAFTS = new Set();
 
 function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
   return {
@@ -620,6 +621,7 @@ function recipeVersion(number, status, statusLabel) {
 }
 
 function recipeDetail(card) {
+  const draft = RECIPE_DRAFTS.has(card.ref) ? recipeVersion(3, "draft", "Rascunho") : null;
   return {
     entry: {
       ref: card.ref,
@@ -654,7 +656,7 @@ function recipeDetail(card) {
       },
       is_favorite: card.is_favorite,
       versions: card.current_version_number
-        ? [recipeVersion(2, "published", "Publicada"), recipeVersion(1, "superseded", "Substituída")]
+        ? [...(draft ? [draft] : []), recipeVersion(2, "published", "Publicada"), recipeVersion(1, "superseded", "Substituída")]
         : [recipeVersion(1, "draft", "Rascunho")],
       usage: {
         date_from: "2026-06-06",
@@ -942,6 +944,13 @@ const server = createServer((req, res) => {
       return json(res, 405, { detail: "Método não suportado no mock." });
     });
     return;
+  }
+  const createRecipeVersion = populated && req.method === "POST" && url.match(/\/recipes\/([\w-]+)\/versions\/?(\?|$)/);
+  if (createRecipeVersion) {
+    const card = RECIPE_CARDS.find((entry) => entry.ref === createRecipeVersion[1]);
+    if (!card) return json(res, 404, { detail: "Receita não encontrada." });
+    RECIPE_DRAFTS.add(card.ref);
+    return json(res, 200, { outcome: "applied", version: recipeVersion(3, "draft", "Rascunho") });
   }
   const populatedBody = populated ? populatedResponse(url) : null;
   if (populatedBody) return json(res, 200, populatedBody);

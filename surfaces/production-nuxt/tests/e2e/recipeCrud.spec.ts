@@ -18,13 +18,13 @@ test("editar receita é um gesto visível desde o inventário", async ({ page },
   await page.goto("/recipes");
   await page.waitForLoadState("networkidle");
   const card = page.locator("[data-recipe-card]").filter({ hasText: "Pão francês" });
-  const edit = card.getByRole("link", { name: "Editar receita" });
+  const edit = card.getByRole("link", { name: "Editar Pão francês" });
   await expect(edit).toBeVisible();
   await edit.click();
 
-  await expect(page).toHaveURL(/\/recipes\/pao-frances\/edit$/);
-  await expect(page.getByText("Esta receita está pronta para editar.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Começar edição" })).toBeVisible();
+  await expect(page).toHaveURL(/\/recipes\/pao-frances\/edit\?v=3$/);
+  await expect(page.locator("[data-page-header-eyebrow]:visible, [data-page-header-eyebrow-phone]:visible")).toContainText("Rascunho · Versão 3");
+  await expect(page.getByRole("button", { name: "Salvar rascunho" })).toBeVisible();
 
   await testInfo.attach(`receita-editar-${testInfo.project.name}`, {
     body: await page.screenshot({ fullPage: true }),

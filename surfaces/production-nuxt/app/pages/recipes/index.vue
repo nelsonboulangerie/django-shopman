@@ -392,7 +392,8 @@ watch(
               color="neutral"
               variant="ghost"
               icon="i-lucide-pencil-line"
-              label="Editar receita"
+              label="Editar"
+              :aria-label="`Editar ${entry.name}`"
               data-recipe-edit
             />
           </div>
