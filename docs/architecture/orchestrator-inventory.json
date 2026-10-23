@@ -4780,13 +4780,18 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "COMMAND_TIMEOUTS",
+            "COMMAND_TIMEOUT_SECONDS",
             "Command",
+            "CommandTimedOut",
             "DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO",
             "MAINTENANCE_COMMANDS",
             "MAINTENANCE_WORKER",
             "MARKETING_DELIVERY_BATCH",
             "MARKETING_DELIVERY_LEASE_SECONDS",
             "MARKETING_DELIVERY_WORKER_ID",
+            "WATCHDOG_GRACE_SECONDS",
+            "_time_limit",
             "logger"
           ]
         }

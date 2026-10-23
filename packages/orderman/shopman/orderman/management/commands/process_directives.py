@@ -95,7 +95,7 @@ class Watchdog:
                 for handler in logging.getLogger().handlers:
                     try:
                         handler.flush()
-                    except Exception:
+                    except Exception:  # silêncio-deliberado: o critical já foi emitido; flush falho não pode impedir a saída
                         pass
                 self._exit(self.exit_code)
                 return
