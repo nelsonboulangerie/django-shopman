@@ -54,6 +54,52 @@ export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
   "server-timing",
 ] as const;
 
+/**
+ * Quanto o BFF espera o Django. O cliente do PDV (`usePosAction`) espera um pouco
+ * mais, para que o "não respondeu" chegue com o código do BFF, e não como silêncio.
+ */
+export const DJANGO_UPSTREAM_TIMEOUT_MS = 25_000;
+
+export type UpstreamFailureCode =
+  | "upstream_unreachable"
+  | "upstream_timeout"
+  | "upstream_unavailable";
+
+const UPSTREAM_FAILURE: Record<UpstreamFailureCode, { status: number; detail: string }> = {
+  // Não houve conexão: o pedido não chegou ao Django.
+  upstream_unreachable: { status: 502, detail: "Sem conexão agora. Confira a internet da loja e tente de novo." },
+  // A conexão abriu e a resposta não veio a tempo: o pedido pode ter chegado.
+  upstream_timeout: { status: 504, detail: "A resposta demorou demais. Confira se a operação aconteceu antes de repetir." },
+  // A borda da plataforma respondeu no lugar do Django (deploy ou reinício).
+  upstream_unavailable: { status: 503, detail: "Atualização em andamento. Tente de novo em instantes." },
+};
+
+export function isTimeoutError(error: unknown): boolean {
+  const record = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+  const names = [record?.name, (record?.cause as Record<string, unknown> | undefined)?.name];
+  return names.some((name) => name === "TimeoutError" || name === "AbortError");
+}
+
+/**
+ * 502/503/504 que NÃO veio do Django: sem `X-API-Version` (que o Django carimba em
+ * toda resposta de `/api/v1/`) e sem JSON. O 503 do próprio Django (manutenção,
+ * por exemplo) passa como veio.
+ */
+export function isEdgeGatewayFailure(status: number, headers: Headers): boolean {
+  if (status !== 502 && status !== 503 && status !== 504) return false;
+  if (headers.get("x-api-version")) return false;
+  return !(headers.get("content-type") || "").includes("application/json");
+}
+
+/** A resposta do BFF quando o Django não respondeu: dialeto do PDV, código próprio. */
+export function respondUpstreamFailure(event: H3Event, code: UpstreamFailureCode) {
+  const { status, detail } = UPSTREAM_FAILURE[code];
+  setResponseStatus(event, status);
+  setResponseHeader(event, "content-type", "application/json");
+  applyPrivateNoStore(event);
+  return { detail, field: null, errors: {}, error: { code, message: detail } };
+}
+
 export function isSafeDjangoLocation(location: string): boolean {
   return (
     location.startsWith("/") &&
@@ -124,6 +170,7 @@ async function ensureDjangoCsrfCookie(
       ...(cookie ? { cookie } : {}),
     },
     ignoreResponseError: true,
+    signal: AbortSignal.timeout(DJANGO_UPSTREAM_TIMEOUT_MS),
   });
 
   let mergedCookie = cookie;
@@ -293,7 +340,14 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   else if (clientCsrfHeader) headers["x-csrftoken"] = clientCsrfHeader;
 
   if (isUnsafeMethod && !headers["x-csrftoken"]) {
-    const csrf = await ensureDjangoCsrfCookie(event, djangoBaseUrl, cookie);
+    const csrfOutcome = await ensureDjangoCsrfCookie(event, djangoBaseUrl, cookie).then(
+      (csrf) => ({ csrf, failure: null as unknown }),
+      (failure: unknown) => ({ csrf: null, failure }),
+    );
+    if (!csrfOutcome.csrf) {
+      return respondUpstreamFailure(event, isTimeoutError(csrfOutcome.failure) ? "upstream_timeout" : "upstream_unreachable");
+    }
+    const csrf = csrfOutcome.csrf;
     cookie = csrf.cookie;
     if (cookie) headers.cookie = cookie;
     if (csrf.token) headers["x-csrftoken"] = csrf.token;
@@ -303,13 +357,33 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
     ? undefined
     : await readRawBody(event, false);
 
-  const response = await $fetch.raw(target, {
-    method,
-    headers,
-    body,
-    ignoreResponseError: true,
-    redirect: "manual",
-  });
+  const outcome = await $fetch
+    .raw(target, {
+      method,
+      headers,
+      body,
+      ignoreResponseError: true,
+      redirect: "manual",
+      // Sem prazo, um Django que não responde pendurava o operador até o TCP
+      // desistir (minutos). O cliente do PDV espera um pouco mais que isto, para
+      // a resposta que chega ser a do BFF, com o código que diz o que houve.
+      signal: AbortSignal.timeout(DJANGO_UPSTREAM_TIMEOUT_MS),
+    })
+    .then(
+      (answer) => ({ answer, failure: null as unknown }),
+      (failure: unknown) => ({ answer: null, failure }),
+    );
+  if (!outcome.answer) {
+    return respondUpstreamFailure(event, isTimeoutError(outcome.failure) ? "upstream_timeout" : "upstream_unreachable");
+  }
+  const response = outcome.answer;
+
+  // 502/503/504 em HTML da borda da plataforma quando o contêiner do Django está
+  // fora (deploy, reinício): não é resposta do Django. O navegador precisa saber
+  // que é o caminho, não um erro da operação.
+  if (isEdgeGatewayFailure(response.status, response.headers)) {
+    return respondUpstreamFailure(event, "upstream_unavailable");
+  }
 
   // Sanidade de contrato: o Django carimba /api/v1/ com X-API-Version; major
   // divergente vira warning estruturado no Nitro (apiVersion.ts ao lado,
