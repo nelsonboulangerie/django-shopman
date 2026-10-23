@@ -300,7 +300,16 @@ class NFCeEmitHandler:
             )
 
     def _adopt_existing(self, order, order_ref: str) -> bool:
-        """Consulta o Focus pelo ref; se autorizada, adota a nota existente."""
+        """Consulta o Focus pelo ref; se autorizada, adota a nota existente.
+
+        ``True`` quando adotou. Consulta que ainda não sabe (nota em
+        processamento na SEFAZ, Focus fora, 5xx, rate limit) levanta
+        ``DirectiveTransientError``: a nota pode existir, e re-POSTar a mesma
+        referência só colhe o 422 de "referência já utilizada", que virava
+        falha terminal e deixava o pedido sem chave. ``False`` só quando a
+        consulta respondeu que não há nota autorizada (não encontrada ou
+        rejeitada): aí reenviar a referência é seguro.
+        """
         query = getattr(self.backend, "query_status", None)
         if query is None:
             return False
@@ -310,6 +319,11 @@ class NFCeEmitHandler:
             self._after_authorized(order)
             logger.info("fiscal.emit: nota existente adotada via consulta order=%s", order_ref)
             return True
+        if _is_transient(status.error_code):
+            raise DirectiveTransientError(
+                f"NFC-e do pedido {order_ref} sem resposta definitiva na consulta "
+                f"({status.error_code}): consultar de novo antes de reenviar."
+            )
         return False
 
     def _adopt_for_cancellation(self, order, order_ref: str) -> bool:
@@ -549,9 +563,7 @@ class NFCeCancelHandler:
         result = self.backend.cancel(reference=order_ref, reason=reason)
 
         if result.success:
-            order.data["nfce_cancelled"] = True
-            order.data["nfce_cancellation_protocol"] = result.protocol_number
-            order.save(update_fields=["data", "updated_at"])
+            self._record_cancelled(order, result)
             return
 
         if _is_transient(result.error_code):
@@ -563,6 +575,27 @@ class NFCeCancelHandler:
         # PRECISA saber (fora da janela da SEFAZ o caminho é outro documento).
         self._alert_cancel_failed(order, result)
         raise DirectiveTerminalError(f"NFC-e cancellation failed: {result.error_message}")
+
+    @staticmethod
+    def _record_cancelled(order, result) -> None:
+        """Grava o cancelamento relendo a linha SOB LOCK.
+
+        O ``order`` foi lido antes da chamada à Focus, que leva segundos; no
+        meio, pagamento (estorno), PDV e lifecycle escrevem no mesmo
+        ``order.data``. Salvar o dicionário velho apagava o que eles gravaram.
+        Mesmo padrão do ``NFCeEmitHandler._record``.
+        """
+        from django.db import transaction
+        from shopman.orderman.models import Order
+
+        with transaction.atomic():
+            locked = Order.objects.select_for_update().get(pk=order.pk)
+            data = dict(locked.data or {})
+            data["nfce_cancelled"] = True
+            data["nfce_cancellation_protocol"] = result.protocol_number
+            locked.data = data
+            locked.save(update_fields=["data", "updated_at"])
+        order.data = data
 
     @staticmethod
     def _alert_cancel_failed(order, result) -> None:
