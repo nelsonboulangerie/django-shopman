@@ -34,8 +34,6 @@ def test_bump_resurrects_expired_hold_and_overholds():
 
     # A volta e mexe na sacola (ou o checkout chama bump): hold vencido revive
     bumped = availability.bump_session_hold_expiry("SESS-A")
-    print("bumped", bumped)
     quant.refresh_from_db()
     active = list(Hold.objects.filter(sku=SKU).active().values_list("metadata__reference", "quantity"))
-    print("active holds", active, "quantity", quant._quantity, "available", quant.available)
     assert quant.available == Decimal("-2")  # 4 reservados sobre 2 físicos

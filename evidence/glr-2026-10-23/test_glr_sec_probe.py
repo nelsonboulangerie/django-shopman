@@ -31,19 +31,16 @@ def person(db):
 def test_weak_session_passkeys_refused(client, person):
     _sign_in(client, person, IDENTITY_NUMBER)
     r = client.get("/api/v1/account/passkeys/")
-    print("passkeys", r.status_code)
     assert r.status_code == 403
 
 def test_weak_session_can_request_phone_change(client, person):
     _sign_in(client, person, IDENTITY_NUMBER)
     r = client.post("/api/v1/account/phone/request/", {"phone": "+5543988887777"}, content_type="application/json")
-    print("phone/request", r.status_code, r.content[:300])
     assert r.status_code == 200
 
 def test_weak_session_can_trust_device(client, person):
     _sign_in(client, person, IDENTITY_NUMBER)
     r = client.post("/api/v1/auth/trust-device/", {"trust": True}, content_type="application/json")
-    print("trust-device", r.status_code, r.content[:200], list(r.cookies.keys()))
     assert r.status_code == 200 and r.json()["trusted"] is True
     # novo navegador com o cookie de confiança: entra forte
     dt = r.cookies["doorman_dt"].value
@@ -52,11 +49,10 @@ def test_weak_session_can_trust_device(client, person):
     fresh.cookies["doorman_dt"] = dt
     client = fresh
     r2 = client.post("/api/v1/auth/device-check/", {"phone": "+5543999998001"}, content_type="application/json")
-    print("device-check", r2.status_code, r2.content[:300])
-    print("strength", client.session.get(IDENTITY_SESSION_KEY))
+    assert r2.status_code == 200 and r2.json().get("trusted") is True
     r3 = client.get("/api/v1/account/passkeys/")
-    print("passkeys after", r3.status_code)
+    assert r3.status_code == 200
 
 def test_schema_public(client):
     r = client.get("/api/schema/")
-    print("schema", r.status_code, len(r.content))
+    assert r.status_code == 200 and len(r.content) > 100_000

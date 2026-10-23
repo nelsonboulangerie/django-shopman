@@ -33,6 +33,5 @@ def test_stale_balance_second_refund_cash_writes_second_ledger_line(monkeypatch)
     monkeypatch.undo()
     refunds = PaymentTransaction.objects.filter(intent__order_ref=order.ref, type="refund").count()
     lines = list(Entry.objects.filter(kind=Entry.Kind.REFUND, order_ref=order.ref).values_list("amount_q", flat=True))
-    print("second=", second, "payman_refunds=", refunds, "ledger_lines=", lines)
     assert refunds == 1
     assert lines == [-1200, -1200]

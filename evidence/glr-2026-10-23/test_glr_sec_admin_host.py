@@ -13,11 +13,14 @@ pytestmark = [pytest.mark.django_db]
 )
 def test_admin_on_api_host(client, django_user_model):
     django_user_model.objects.create_superuser("root", "r@x.com", "S3nha-forte-123")
+    domains = {}
     for host in ("admin.boulangerie.com.br", "api.boulangerie.com.br"):
         c = client.__class__()
         r = c.get("/admin/login/", HTTP_HOST=host, secure=True)
-        print(host, "GET", r.status_code)
+        assert r.status_code == 200
         csrftoken = r.cookies.get("csrftoken").value if r.cookies.get("csrftoken") else ""
         r = c.post("/admin/login/", {"username": "root", "password": "S3nha-forte-123", "csrfmiddlewaretoken": csrftoken, "next": "/admin/"}, HTTP_HOST=host, secure=True, HTTP_REFERER=f"https://{host}/admin/login/")
         sc = r.cookies.get("sessionid")
-        print(host, "POST", r.status_code, r.get("Location"), "sessionid domain=", sc["domain"] if sc else None)
+        domains[host] = sc["domain"] if sc else None
+    assert domains["admin.boulangerie.com.br"] == ""
+    assert domains["api.boulangerie.com.br"] == ".boulangerie.com.br"

@@ -38,7 +38,6 @@ def test_commit_refuses_when_stock_split_across_quants():
     stock.receive(quantity=Decimal("2"), sku=SKU, position=dep, target_date=date.today(), reason="fornada")
 
     chk = availability.check(SKU, Decimal("3"), channel_ref="web")
-    print("check", chk["ok"], chk["available_qty"])
     # sacola expirou (ou pedido sem sacola): o gate de commit cria o resto num quant só
     assert chk["ok"] and chk["available_qty"] >= 3
     from shopman.orderman.exceptions import ValidationError

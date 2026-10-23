@@ -35,12 +35,12 @@ def test_preorder_hold_on_physical_stock_expires_before_date():
     stock_service.hold(order, require_all=True)
     entry = order.data["hold_ids"][0]
     h = Hold.objects.get(pk=int(entry["hold_id"].split(":")[1]))
-    print("hold", h.hold_id, "quant", h.quant_id, "target", h.target_date, "expires", h.expires_at)
     assert h.quant_id is not None and h.expires_at is not None
     assert h.expires_at < timezone.make_aware(timezone.datetime.combine(target, timezone.datetime.min.time()))
     # 49h depois: o release_expired solta, e a geleia volta a ser vendável
     Hold.objects.filter(pk=h.pk).update(expires_at=timezone.now() - timedelta(minutes=1))
-    print("released", StockHolds.release_expired())
-    h.refresh_from_db(); print("status", h.status)
+    assert StockHolds.release_expired() >= 1
+    h.refresh_from_db()
     from shopman.shop.adapters import stock as ad
-    print("fulfill on date:", ad.fulfill_hold(h.hold_id, qty=Decimal("1")))
+    result = ad.fulfill_hold(h.hold_id, qty=Decimal("1"))
+    assert result["success"] is False and result["error_code"] == "INVALID_STATUS"

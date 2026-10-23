@@ -46,6 +46,5 @@ def test_cancel_handler_overwrites_concurrent_order_data(order, fiscal_backend_c
         d = Directive.objects.create(topic="fiscal.cancel_nfce", payload={"order_ref": order.ref, "reason": "cancelado pelo operador x"})
         NFCeCancelHandler(Concurrent()).handle(message=d, ctx={})
     o = Order.objects.get(pk=order.pk)
-    print("after:", o.data.get("payment"), o.data.get("nfce_cancelled"))
     assert o.data.get("nfce_cancelled") is True
     assert "payment" not in o.data  # escrita concorrente perdida
