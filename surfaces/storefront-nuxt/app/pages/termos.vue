@@ -27,6 +27,11 @@
 // pode conferir o vício e sanear, nunca negar troca/restituição; crédito só se o
 // cliente preferir. "De preferência no mesmo dia" é pedido, não prazo: o prazo legal
 // para reclamar de vício aparente em produto não durável é de 30 dias (art. 26, I).
+//
+// 23/10/2026, decisão do dono: item entregue LACRADO e intacto volta em 7 dias. O
+// art. 49 do CDC não tem exceção escrita para perecível (a da Lei 14.010/2020 venceu
+// em 30/10/2020); a leitura firmada, a mesma do iFood, aceita o arrependimento do
+// produto intacto. É também o que o Merchant Center declara como política de devolução.
 import type { LegalProjection } from '~/types/shopman'
 
 const session = useShopSession()
@@ -157,6 +162,11 @@ useSeoMeta({
         <strong>Depois que o preparo começa:</strong> o pedido é alimento perecível, feito para
         você, e não volta para a prateleira. A partir daí não há desistência sem motivo; produto
         com problema segue a regra abaixo.
+      </p>
+      <p>
+        <strong>Item com a embalagem lacrada:</strong> se o lacre e a embalagem estiverem intactos,
+        você pode devolver o item na loja em até 7 dias do recebimento, sem custo, e o valor dele
+        volta inteiro. Embalagem aberta ou produto consumido não têm devolução sem motivo.
       </p>
       <p>
         <strong>Produto errado ou com problema:</strong> avise pelo WhatsApp do pedido, de
