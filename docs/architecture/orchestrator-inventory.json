@@ -4149,6 +4149,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command",
+            "QUEUE_HEALTH_ALERT_TYPES",
             "logger"
           ]
         }
@@ -5551,6 +5552,9 @@
           "symbols": [
             "ADDITIVE_LIST_LIMIT",
             "BACKUP_REF_ENV",
+            "BACKUP_REF_FUTURE_SKEW",
+            "BACKUP_REF_MAX_AGE_ENV",
+            "BACKUP_REF_MAX_AGE_HOURS_DEFAULT",
             "DESTRUCTIVE_OPERATION_NAMES",
             "GO_LIVE_TAG",
             "HOWTO",
@@ -5558,10 +5562,16 @@
             "SafetyReport",
             "_EMPTY_BACKUP_REFS",
             "_FALSE_VALUES",
+            "_ISO_INSTANT_RE",
             "_TRUE_VALUES",
+            "_column_signature",
             "_env",
             "_env_bool",
             "_git_tag_present",
+            "alter_field_changes_schema",
+            "backup_ref_instant",
+            "backup_ref_max_age_hours",
+            "backup_ref_problem",
             "backup_reference",
             "build_report",
             "collect_pending",
@@ -8548,7 +8558,10 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "INLINE_RETRY_SECONDS",
             "_debounce_key",
+            "_existing_task",
+            "_run_inline",
             "logger"
           ]
         }
