@@ -58,7 +58,7 @@ dependencies = [
     "rapidfuzz>=3.0,<4.0",
     "qrcode[pil]>=7.4,<8.0",
     "requests>=2.31,<3.0",
-    "stripe>=14,<16",
+    "stripe>=14,<17",
     "whitenoise>=6.11,<7.0",
     # Arquivos de usuário (foto da receita, anexos) no Cloudflare R2, que fala S3. Só é
     # importado com SHOPMAN_MEDIA_STORAGE=r2; desligado, o disco local segue. Ver
