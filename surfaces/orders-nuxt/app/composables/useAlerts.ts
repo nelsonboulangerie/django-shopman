@@ -8,6 +8,10 @@ import { useOperatorResourceKey } from "./useOperatorResourceKey";
 // marketing e B.I. ficam no Admin, onde alguém pode agir.
 import type { AlertProjection, AlertsResponse, OrderDetailResponse } from "~/types/orders";
 import { useOrderIntention } from "./useOrderIntention";
+import {
+  openResilientEventSource,
+  type ResilientEventSource,
+} from "../../../operator-kit/app/utils/resilientEventSource";
 
 function newAckKey(): string {
   const uuid = globalThis.crypto?.randomUUID?.();
@@ -33,32 +37,41 @@ export function useAlerts() {
   const criticalCount = computed(() => data.value?.counts?.critical ?? 0);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let source: EventSource | null = null;
+  let source: ResilientEventSource | null = null;
 
   function connectSse() {
     if (source) return;
-    const url = ssePath("/sse/alerts", config.app.baseURL);
-    try {
-      source = new EventSource(url, { withCredentials: true });
-      // O corpo é sinal mínimo (id/tipo/severidade); quem recebe refaz o fetch.
-      ["message", "backstage-alerts-update"].forEach((name) =>
-        source!.addEventListener(name, () => refresh()),
-      );
-    } catch {
-      source = null; // sem SSE o poll de 60s segura sozinho
-    }
+    // O stream se recria sozinho, com backoff, depois do 502 de deploy (o
+    // EventSource cru ficava CLOSED e o sino, só no poll de 60 s). O corpo é
+    // sinal mínimo (id/tipo/severidade); quem recebe refaz o fetch. Ao reabrir,
+    // refaz também: o alerta que nasceu com o push fora não veio por ele.
+    source = openResilientEventSource({
+      url: ssePath("/sse/alerts", config.app.baseURL),
+      events: ["backstage-alerts-update"],
+      onEvent: () => refresh(),
+      onOpen: (reconnected) => {
+        if (reconnected) refresh();
+      },
+    });
   }
+
+  // Aba ou rede de volta: tenta o stream já, sem esperar o backoff.
+  const onVisible = () => {
+    if (document.visibilityState === "visible") source?.reconnectNow();
+  };
 
   onMounted(() => {
     pollTimer = setInterval(() => refresh(), 60_000);
     connectSse();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
   });
   onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer);
-    if (source) {
-      source.close();
-      source = null;
-    }
+    source?.close();
+    source = null;
+    document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("online", onVisible);
   });
 
   /** O alerta ainda não foi marcado como visto (o servidor oferece o gesto). */
