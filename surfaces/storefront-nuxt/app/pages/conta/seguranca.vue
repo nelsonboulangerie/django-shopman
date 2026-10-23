@@ -31,7 +31,9 @@ const revokeDevicePending = ref(false)
 const accessIssue = ref('')
 const accessPending = ref('')
 
-// Step-up: reconfirma identidade por OTP antes de excluir/exportar (mesmo logado).
+// Step-up: reconfirma identidade por OTP antes de excluir/exportar e de mudar o número
+// (mesmo logado). O código vai sempre para o número ATUAL da conta.
+type StepUpPurpose = 'export' | 'delete' | 'phone'
 const stepUpOpen = ref(false)
 const stepUpCode = ref<number[]>([])
 const stepUpPending = ref(false)
@@ -39,7 +41,7 @@ const stepUpSendPending = ref(false)
 const stepUpSent = ref(false)
 const stepUpIssue = ref('')
 let pendingStepUpAction: null | (() => void | Promise<void>) = null
-let pendingStepUpPurpose: 'export' | 'delete' = 'export'
+const pendingStepUpPurpose = ref<StepUpPurpose>('export')
 // A marca do step-up vale 10 minutos, e quem volta depois disso encontra um 403. UMA
 // retomada por gesto: se o servidor recusar a identidade logo após a pessoa confirmar o
 // código, o problema é outro e a tela tem de DIZER, em vez de pedir código para sempre.
@@ -437,9 +439,9 @@ async function revokeOtherAccesses () {
   }
 }
 
-async function requireStepUp (purpose: 'export' | 'delete', action: () => void | Promise<void>) {
+async function requireStepUp (purpose: StepUpPurpose, action: () => void | Promise<void>) {
   pendingStepUpAction = action
-  pendingStepUpPurpose = purpose
+  pendingStepUpPurpose.value = purpose
   stepUpCode.value = []
   stepUpIssue.value = ''
   stepUpSent.value = false
@@ -475,7 +477,7 @@ async function confirmStepUp () {
       method: 'POST',
       headers: await csrfHeaders(),
       credentials: 'include',
-      body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose }
+      body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose.value }
     })
     stepUpOpen.value = false
     const action = pendingStepUpAction
@@ -495,8 +497,9 @@ async function confirmStepUp () {
 // OUTRA conta e deixa o histórico para trás. Isto aqui é a que faltava — a conta
 // continua a mesma, o número é que muda.
 //
-// O código vai para o número NOVO, e não para o atual: é a posse dele que falta
-// provar. A sessão já responde pela conta.
+// São dois códigos, um para cada número. Primeiro o ATUAL (step-up): prova que quem
+// pede a troca é a dona da conta, e não alguém que recebeu um link encaminhado. Depois
+// o NOVO: prova que o número que ela quer adotar atende na mão dela.
 type PhoneChangeStep = 'number' | 'code'
 
 const phoneChangeOpen = ref(false)
@@ -510,6 +513,11 @@ const phoneChangeCodeStr = computed(() => phoneChangeCode.value.join('').slice(0
 const currentPhoneDisplay = computed(() => displayE164Phone(session.customerPhone.value || ''))
 
 function openPhoneChange () {
+  stepUpResumed = false
+  void requireStepUp('phone', showPhoneChange)
+}
+
+function showPhoneChange () {
   phoneChangeStep.value = 'number'
   phoneChangeInput.value = ''
   phoneChangeTarget.value = ''
@@ -538,6 +546,7 @@ async function sendPhoneChangeCode () {
     phoneChangeCode.value = []
     phoneChangeStep.value = 'code'
   } catch (e) {
+    if (await resumePhoneChangeAfterStepUp(e, sendPhoneChangeCode)) return
     // A recusa RICA (número de outra conta) vem com saídas — e nunca com o nome
     // de quem tem o número. Cair no genérico aqui apagaria o motivo.
     phoneChangeIssue.value = profileIssueFrom(
@@ -567,6 +576,7 @@ async function confirmPhoneChange () {
     session.setIdentity({ phone: body?.phone || phoneChangeTarget.value })
     if (import.meta.client) useSonner.success('Pronto: sua conta agora atende neste número.')
   } catch (e) {
+    if (await resumePhoneChangeAfterStepUp(e, confirmPhoneChange)) return
     phoneChangeIssue.value = profileIssueFrom(
       httpError(e).data,
       'Não foi possível confirmar o código. Tente novamente.'
@@ -575,6 +585,21 @@ async function confirmPhoneChange () {
   } finally {
     phoneChangePending.value = false
   }
+}
+
+/** A confirmação no número atual vale 10 minutos. Se venceu no meio da troca, a tela pede
+ * o código de novo e RETOMA o passo em que estava, uma vez só por gesto. */
+async function resumePhoneChangeAfterStepUp (e: unknown, resume: () => Promise<void>): Promise<boolean> {
+  const data = httpError(e).data as { code?: unknown } | null | undefined
+  if (data?.code !== 'step_up_required' || stepUpResumed) return false
+  stepUpResumed = true
+  phoneChangeOpen.value = false
+  phoneChangePending.value = false
+  await requireStepUp('phone', async () => {
+    phoneChangeOpen.value = true
+    await resume()
+  })
+  return true
 }
 
 // Exportar dados exige step-up antes do download (GET passa pela marca de sessão).
@@ -1059,7 +1084,13 @@ useSeoMeta({ title: 'Segurança e dados' })
           <UiDialogHeader>
             <UiDialogTitle>Confirme sua identidade</UiDialogTitle>
             <UiDialogDescription>
-              Enviamos um código para o seu telefone. Digite-o para continuar com esta ação.
+              <template v-if="pendingStepUpPurpose === 'phone'">
+                Antes de mudar o número, confirme que a conta é sua: enviamos um código para o
+                número atual, {{ currentPhoneDisplay }}. Depois, você informa o número novo.
+              </template>
+              <template v-else>
+                Enviamos um código para o seu telefone. Digite-o para continuar com esta ação.
+              </template>
             </UiDialogDescription>
           </UiDialogHeader>
           <UiAlert v-if="stepUpIssue" variant="destructive">

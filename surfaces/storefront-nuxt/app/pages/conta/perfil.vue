@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AccountProfile, Action } from '~/types/shopman'
 import { profileActionIsExternal, profileIssueFrom } from '~/presentation/account'
-import { displayE164Phone } from '~/utils/authPhone'
+import { authPhonePayload, displayE164Phone } from '~/utils/authPhone'
 
 definePageMeta({ middleware: 'account' })
 
@@ -102,11 +102,91 @@ function cancelEdit () {
   isEditing.value = false
 }
 
+// ── Trocar o e-mail pede o código no número atual ───────────────────
+//
+// E-mail é contato da conta, como o telefone: trocá-lo sem prova deixaria quem recebeu um
+// link encaminhado apontar a conta para um endereço dele. Antes de salvar um e-mail
+// DIFERENTE, a tela manda um código para o número de hoje; com ele confirmado, o
+// servidor aceita UMA troca nos próximos 10 minutos. Salvar o mesmo e-mail não pede nada.
+const stepUpOpen = ref(false)
+const stepUpCode = ref<number[]>([])
+const stepUpPending = ref(false)
+const stepUpSendPending = ref(false)
+const stepUpSent = ref(false)
+const stepUpIssue = ref('')
+const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
+// Uma retomada por gesto: se o servidor recusar logo depois do código, a tela DIZ o motivo
+// em vez de pedir código para sempre.
+let stepUpResumed = false
+
+function emailChanges (): boolean {
+  const current = (profile.value?.email || '').trim().toLowerCase()
+  return profileForm.email.trim().toLowerCase() !== current
+}
+
+async function sendStepUpCode () {
+  if (stepUpSendPending.value) return
+  stepUpSendPending.value = true
+  stepUpIssue.value = ''
+  try {
+    await $fetch(apiPath('/api/auth/request-code/'), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: authPhonePayload(profile.value?.phone || session.customerPhone.value || '', 'BR')
+    })
+    stepUpSent.value = true
+  } catch (e) {
+    stepUpIssue.value = errorDetail(e, 'Não foi possível enviar o código agora.')
+  } finally {
+    stepUpSendPending.value = false
+  }
+}
+
+async function requireStepUp () {
+  stepUpCode.value = []
+  stepUpIssue.value = ''
+  stepUpSent.value = false
+  stepUpOpen.value = true
+  await sendStepUpCode()
+}
+
+async function confirmStepUp () {
+  if (stepUpPending.value || stepUpCodeStr.value.length !== 6) return
+  stepUpPending.value = true
+  stepUpIssue.value = ''
+  try {
+    await $fetch(apiPath('/api/v1/account/step-up/'), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: { code: stepUpCodeStr.value, purpose: 'email' }
+    })
+    stepUpOpen.value = false
+    await submitProfile()
+  } catch (e) {
+    stepUpIssue.value = errorDetail(e, 'Código inválido ou expirado.')
+    stepUpCode.value = []
+  } finally {
+    stepUpPending.value = false
+  }
+}
+
 async function saveProfile () {
   if (profilePendingSave.value) return
   clearProfileIssue()
   profileSaved.value = false
   if (!validateProfile()) return
+  stepUpResumed = false
+  if (emailChanges()) {
+    await requireStepUp()
+    return
+  }
+  await submitProfile()
+}
+
+async function submitProfile () {
+  if (profilePendingSave.value) return
   profilePendingSave.value = true
   try {
     const response = await $fetch<AccountProfile>(apiPath('/api/v1/account/profile/'), {
@@ -126,6 +206,14 @@ async function saveProfile () {
     isEditing.value = false  // volta pra leitura já com os dados novos
     if (import.meta.client) useSonner.success('Perfil salvo.')
   } catch (e) {
+    const data = httpError(e).data as { code?: unknown } | null | undefined
+    if (data?.code === 'step_up_required' && !stepUpResumed) {
+      // A confirmação venceu (10 minutos) ou já foi usada: pede o código de novo e retoma.
+      stepUpResumed = true
+      profilePendingSave.value = false
+      await requireStepUp()
+      return
+    }
     // O servidor NOMEIA a recusa que tem motivo (e-mail já usado em outra conta)
     // e manda junto as saídas. Antes tudo virava a mesma frase genérica e o
     // cliente ficava sem saber sequer qual campo revisar.
@@ -287,6 +375,49 @@ useSeoMeta({ title: 'Perfil' })
           <UiButton type="submit" size="lg" :loading="profilePendingSave" icon="lucide:check">Salvar perfil</UiButton>
         </div>
       </form>
+
+      <!-- Trocar o e-mail: o código vai para o número ATUAL antes de salvar -->
+      <UiDialog v-model:open="stepUpOpen">
+        <UiDialogContent>
+          <UiDialogHeader>
+            <UiDialogTitle>Confirme sua identidade</UiDialogTitle>
+            <UiDialogDescription>
+              Antes de trocar o e-mail, confirme que a conta é sua: enviamos um código para o
+              número atual, {{ phoneDisplayLabel }}. O e-mail novo é salvo assim que você confirmar.
+            </UiDialogDescription>
+          </UiDialogHeader>
+          <UiAlert v-if="stepUpIssue" variant="destructive">
+            <UiAlertTitle>Não foi possível confirmar</UiAlertTitle>
+            <UiAlertDescription>{{ stepUpIssue }}</UiAlertDescription>
+          </UiAlert>
+          <div class="space-y-2">
+            <UiPinInput
+              v-model="stepUpCode"
+              :input-count="6"
+              type="number"
+              otp
+              :aria-invalid="!!stepUpIssue"
+              class="justify-between sm:justify-start"
+            />
+            <UiButton
+              variant="link"
+              size="sm"
+              class="px-0"
+              :loading="stepUpSendPending"
+              :disabled="stepUpSendPending"
+              @click="sendStepUpCode"
+            >
+              {{ stepUpSent ? 'Reenviar código' : 'Enviar código' }}
+            </UiButton>
+          </div>
+          <UiDialogFooter>
+            <UiButton variant="ghost" :disabled="stepUpPending" @click="stepUpOpen = false">Cancelar</UiButton>
+            <UiButton :loading="stepUpPending" :disabled="stepUpPending || stepUpCodeStr.length !== 6" @click="confirmStepUp">
+              Confirmar e salvar
+            </UiButton>
+          </UiDialogFooter>
+        </UiDialogContent>
+      </UiDialog>
     </div>
   </main>
 </template>
