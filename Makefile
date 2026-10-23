@@ -594,21 +594,73 @@ db-shell: ## psql no Postgres do docker
 	$(COMPOSE) exec postgres sh -c 'psql -U "$${POSTGRES_USER:-shopman}" -d "$${POSTGRES_DB:-shopman}"'
 
 # ── Diagnóstico operacional ─────────────────────────────────────────
+#
+# ⚠️ LOCAIS. `diagnose-*` mede o banco, o cache e os settings do PROCESSO que roda
+# o make: o `.env` desta máquina (ou o `DATABASE_URL` exportado). Não fala com o
+# app vivo, e o script não está na imagem (o Dockerfile não copia `scripts/`).
+# Com `target=1` o alvo NÃO executa nada: imprime o equivalente no app vivo
+# (`shopman-nelson`, contexto `context=`, padrão `shopman-do-app-admin`).
+# Ver docs/runbooks/directive-worker-parado.md e vizinhos.
+LIVE_APP_ID := 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+LIVE_CONTEXT = $(or $(context),shopman-do-app-admin)
+LIVE_API_URL := https://api.boulangerie.com.br
+LIVE_DOCTL = doctl --context $(LIVE_CONTEXT) apps
+LIVE_HEADER = ── equivalente no app VIVO shopman-nelson (só impresso: NADA foi executado) ──
+LIVE_DIRECT_DB = DJANGO_DEBUG=true DATABASE_URL="<conexão DIRETA, porta 25060, banco shopman; NUNCA o pool 25061>"
 
-diagnose-runtime: ## Diagnostica DB, Redis/cache, migrations e SSE/eventstream
+diagnose-runtime: ## [LOCAL] DB, Redis/cache, migrations e SSE do .env desta máquina (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/      # database, cache, migrations, queue' \
+	  'curl -s $(LIVE_API_URL)/health/database/' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-operator --type run --tail 200'
+else
 	$(PYTHON) scripts/diagnose_operational.py runtime
+endif
 
-diagnose-worker: ## Diagnostica backlog, retries, stuck e failures de directives
+diagnose-worker: ## [LOCAL] backlog, retries, stuck e failures de directives (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/      # checks.queue: queue_lag quando o worker parou' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run_restarted --tail 200' \
+	  '# diagnóstico completo, só leitura, desta máquina contra o banco vivo:' \
+	  '$(LIVE_DIRECT_DB) make diagnose-worker'
+else
 	$(PYTHON) scripts/diagnose_operational.py worker
+endif
 
-diagnose-payments: ## Diagnostica divergencias entre pedidos, intents e transacoes
+diagnose-payments: ## [LOCAL] divergências entre pedidos, intents e transações (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) console $(LIVE_APP_ID) web-operator' \
+	  '  python manage.py reconcile_payments --since=4h --dry-run      # leitura' \
+	  '  python manage.py reconcile_financial_day --dry-run            # leitura' \
+	  '# sem --dry-run muda o vivo: só com a palavra do incident commander (Pablo)' \
+	  '$(LIVE_DIRECT_DB) make diagnose-payments    # só leitura, desta máquina'
+else
 	$(PYTHON) scripts/diagnose_operational.py payments
+endif
 
-diagnose-webhooks: ## Diagnostica idempotencia, falhas e alertas de webhooks
+diagnose-webhooks: ## [LOCAL] idempotência, falhas e alertas de webhooks (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-operator --type run --tail 500 | grep -i webhook' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) ifood-poll-worker --type run --tail 200' \
+	  '$(LIVE_DIRECT_DB) make diagnose-webhooks    # só leitura, desta máquina'
+else
 	$(PYTHON) scripts/diagnose_operational.py webhooks
+endif
 
-diagnose-health: ## Diagnostica health/readiness, checks Django e configuracao critica
+diagnose-health: ## [LOCAL] health/readiness, checks Django e configuração crítica (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'make production-readiness target=1 context=$(LIVE_CONTEXT)    # spec vivo + /health/ + /ready/' \
+	  'make deploy-spec-drift context=$(LIVE_CONTEXT)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/'
+else
 	$(PYTHON) scripts/diagnose_operational.py health
+endif
 
 audit-branches: ## Lista branches remotos à frente do main e separa entregues de ⚠️ não mergeados
 	@bash scripts/audit-branches.sh
@@ -682,44 +734,107 @@ admin-csp-gate: ## Gate local/CI: Admin com DEBUG=false + Playwright caçando vi
 		SHOPMAN_CSP_PORT="$(or $(port),$(PORT),8001)" \
 		bash scripts/run_admin_csp_gate.sh $(args)
 
-# ── Deploy wrappers (Docker fica encapsulado aqui) ───────────────────
+# ── Deploy wrappers LOCAIS (Docker fica encapsulado aqui) ───────────
+#
+# ⚠️ LOCAIS. `deploy-*` builda e sobe a pilha no docker DESTA máquina (compose,
+# com o `.env` local). Não fala com a DigitalOcean: `make deploy-up` no meio de um
+# incidente NÃO reinicia o app vivo, e `make deploy-logs`/`deploy-ps` mostram os
+# containers locais. O deploy do app vivo é `push no main` (Deploy Images cria UM
+# deployment). Com `target=1` o alvo NÃO executa nada: imprime o equivalente no
+# app vivo e diz quem age. Ver docs/guides/deploy.md e docs/runbooks/.
 
-deploy-env-check: ## Falha se .env ainda estiver em modo dev para deploy
+deploy-env-check: ## [LOCAL docker] Falha se o .env desta máquina ainda estiver em modo dev
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'make production-readiness target=1 context=$(LIVE_CONTEXT)    # lê o env efetivo de cada componente do spec vivo'
+else
 	@test -f .env || (echo "Crie .env a partir de .env.example antes do deploy." >&2; exit 1)
 	@! grep -Eiq '^DJANGO_DEBUG=(true|1|yes)$$' .env || (echo "DJANGO_DEBUG precisa ser false para deploy." >&2; exit 1)
 	@! grep -Eq '^DJANGO_SECRET_KEY=(change-me-in-production|dev-secret-key-not-for-production)$$' .env || (echo "DJANGO_SECRET_KEY precisa ser um segredo forte para deploy." >&2; exit 1)
 	@! grep -Eq '^DJANGO_ALLOWED_HOSTS=\*$$' .env || (echo "DJANGO_ALLOWED_HOSTS precisa ser explicito para deploy." >&2; exit 1)
 	@echo "✓ .env de deploy passou nos guardrails locais"
+endif
 
-deploy-check: deploy-env-check ## Preflight de deploy no ambiente atual
+deploy-check: $(if $(target),,deploy-env-check) ## [LOCAL docker] Preflight de deploy com o .env desta máquina (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# no vivo, o job release de cada deployment já roda check --deploy, migration_safety e migrate' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) release --type deploy --tail 200' \
+	  'make production-readiness target=1 context=$(LIVE_CONTEXT)'
+else
 	$(PYTHON) manage.py check --deploy
 	$(PYTHON) manage.py makemigrations --check --dry-run
 	$(PYTHON) manage.py collectstatic --noinput --dry-run -v 0
 	@echo "✓ Deploy preflight passou"
+endif
 
-deploy-build: deploy-env-check ## Builda a imagem app/worker via compose profile
+deploy-build: $(if $(target),,deploy-env-check) ## [LOCAL docker] Builda a imagem app/worker via compose profile desta máquina
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# a imagem do vivo nasce no GitHub Actions (workflow Deploy Images), nunca nesta máquina' \
+	  'gh run list --workflow "Deploy Images" --limit 5'
+else
 	$(APP_COMPOSE) build web directive-worker
+endif
 
-deploy-release: deploy-env-check ## Roda check --deploy, migrations e collectstatic em container one-shot
+deploy-release: $(if $(target),,deploy-env-check) ## [LOCAL docker] check --deploy, migrations e collectstatic em container one-shot desta máquina
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) release --type deploy --tail 200' \
+	  '$(LIVE_DOCTL) list-deployments $(LIVE_APP_ID)'
+else
 	$(COMPOSE) up -d postgres redis
 	@echo "Aguardando Postgres..."
 	@until $(COMPOSE) exec -T postgres sh -c 'pg_isready -U "$${POSTGRES_USER:-shopman}" -d "$${POSTGRES_DB:-shopman}"' >/dev/null 2>&1; do sleep 1; done
 	$(RELEASE_COMPOSE) build release
 	$(RELEASE_COMPOSE) run --rm release
 	@echo "✓ Release checks/migrations/static concluídos"
+endif
 
-deploy-up: deploy-build deploy-release ## Sobe web + directive worker sem exigir comandos Docker manuais
+deploy-up: $(if $(target),,deploy-build deploy-release) ## [LOCAL docker] Sobe web + worker NESTA máquina, não reinicia o vivo (target=1 imprime o restart no vivo e quem age)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# reiniciar o vivo MUDA o ambiente: quem age é o incident commander (Pablo),' \
+	  '# ou um agente com a palavra dele dada no momento, para este restart.' \
+	  '# Painel: App Platform > shopman-nelson > componente (ex.: directive-worker) > Actions > Restart' \
+	  '$(LIVE_DOCTL) restart $(LIVE_APP_ID) --components directive-worker' \
+	  '# depois, conferir: $(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run --tail 100'
+else
 	$(APP_COMPOSE) up -d web directive-worker
 	@echo "✓ Shopman app rodando em http://localhost:$${PORT:-8000}"
+endif
 
-deploy-down: ## Para app, worker, Postgres e Redis
+deploy-down: ## [LOCAL docker] Para app, worker, Postgres e Redis desta máquina
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# não há equivalente: o app vivo não se derruba por comando.' \
+	  '# Fechar a loja ou parar um componente é decisão do dono (go-live-cutover.md, Dia D · dados).'
+else
 	$(COMPOSE) down
+endif
 
-deploy-logs: ## Logs de app/worker
+deploy-logs: ## [LOCAL docker] Logs dos containers desta máquina (target=1 imprime o doctl apps logs do vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-operator --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-storefront --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) maintenance-worker --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) ifood-poll-worker --type run --tail 200' \
+	  '# acompanhar ao vivo: acrescente -f; reinício recente: --type run_restarted'
+else
 	$(APP_COMPOSE) logs -f web directive-worker
+endif
 
-deploy-ps: ## Status dos containers
+deploy-ps: ## [LOCAL docker] Status dos containers desta máquina (target=1 imprime o estado do app vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) get $(LIVE_APP_ID)                 # fase e deployment ativo' \
+	  '$(LIVE_DOCTL) list-deployments $(LIVE_APP_ID)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/'
+else
 	$(APP_COMPOSE) ps
+endif
 
 # ── Server ────────────────────────────────────────────────────────────
 
