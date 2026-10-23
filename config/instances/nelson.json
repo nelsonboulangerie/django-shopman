@@ -2145,6 +2145,7 @@
           "cashman.manage_operators",
           "cashman.operate_pos",
           "cashman.view_terminal",
+          "craftsman.change_recipe",
           "craftsman.view_recipe",
           "craftsman.view_recipeentry",
           "craftsman.view_recipeitem",

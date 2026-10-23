@@ -44,7 +44,7 @@ por default.
 |-------|-----------|----------------|
 | **Caixa** | `cashman.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
 | **Cozinha** | `backstage.operate_kds`, `shop.manage_production` | Cozinheiro / preparador |
-| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi` | Gerente de turno |
+| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi` | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
 | **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent` | Quem vê dinheiro e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
