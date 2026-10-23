@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-shopman"
 version = "0.1.0"
 description = "Django Shopman — omnichannel commerce framework for Django"
-license = "MIT"
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md", "NOTICE.md"]
 authors = [
     {name = "Pablo Valentini", email = "pablondrina@gmail.com"}
 ]

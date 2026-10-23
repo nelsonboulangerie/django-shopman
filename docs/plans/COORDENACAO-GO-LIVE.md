@@ -146,6 +146,28 @@ Estado de 14/10/2026 (tarde), ainda válido:
   da TaOn de 13/10 e **volta a R$ 25** (Admin, "Pedidos e entrega") quando a prova
   terminar.
 
+### Decisões do dono de 23/10/2026 (não reabrir)
+
+Tomadas depois do laudo adversarial de 23/10 (`docs/reports/2026-10-23-laudo-adversarial-go-live.md`).
+
+- **Licença:** `FSL-1.1-ALv2` em todo o repositório, já, antes do go-live; licenciante
+  Pablo Valentini. Marca, fotos, textos legais e dados da Nelson ficam fora (`NOTICE.md`).
+  Motivo: o dono quer poder vender o Shopman hospedado; licença se afrouxa depois, nunca se aperta.
+- **Doorman, a escada sem fricção:** (1) T5 do laudo já; (2) dispositivo confiável renova a
+  cada uso e vence depois de **180 dias** sem uso (hoje 30 dias fixos); (3) ligar a entrada por
+  passkey (hoje só existe o cadastro); (4) a resposta do WhatsApp traz o botão "Voltar à loja": no
+  celular a entrada acontece no navegador que o botão abre e nunca é liberada para outra aba; no
+  computador o botão nomeia o que libera ("Liberar o Chrome no Windows"); (5) SMS com a última
+  linha `@www.nelsonboulangerie.com.br #<código>` (preenchimento automático preso ao domínio).
+- **Versão visível:** fases R0 e R1 do `WP-RELEASE-01` entram antes do go-live (endereço de
+  versão por app, versão na tela, sonda que confere o commit do `main`).
+- **Repositório:** dividir depois do go-live, produto público e operação da Nelson privada. Fechar
+  o repositório inteiro está fora: a CI pública é gratuita e privada custaria milhares de dólares por mês.
+- **Banco:** sem nó de reserva por ora; reavaliar quando a loja online pesar no faturamento.
+- **Multi-loja:** alvo é um schema do Postgres por loja (o singleton `Shop` vira singleton por
+  schema, Core intacto). Agora só a trava barata: nenhuma configuração ou credencial nova de uma loja
+  entra por variável de ambiente ou `settings`.
+
 ## 7. Frentes pedidas pelo dono em 14/10: especificação preservada
 
 As três frentes abaixo já foram implementadas no `main`; o texto detalhado fica como
