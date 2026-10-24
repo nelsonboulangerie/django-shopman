@@ -33,13 +33,20 @@ PAYMENT_METHOD_CODES = {
     "credit": "03",
     "debit_card": "04",
     "debit": "04",
-    "store_credit": "05",
-    # Conta na casa (fiado do balcão): a nota sai antes de o dinheiro entrar,
-    # e a forma que a SEFAZ conhece para isso é "crédito loja". Confirmação
-    # do contador pendente (17/09/2026); até lá caía em "99 outros".
+    # 21 "Crédito em Loja": saldo que o cliente JÁ TEM na casa (pago antes, vale
+    # de devolução). Tabela de meios de pagamento da NT 2023.004 / IT 2024.002,
+    # válida desde 01/07/2024.
+    "store_credit": "21",
+    # Conta na casa (fiado do balcão): a nota sai antes de o dinheiro entrar. Na
+    # mesma tabela, 05 é "Cartão da Loja (Private Label)", descrito como "cartão
+    # da loja, na forma de crediário etc.": o crediário próprio é o fiado. O 21
+    # não serve: ele é crédito pago ANTES, o contrário da conta na casa.
     "account": "05",
     "house_account": "05",
     "boleto": "15",
+    # 17 "PIX Dinâmico" (QR com txid, gerado pela cobrança Efí). O Pix atestado
+    # no balcão ("Recebi o Pix", QR fixo ou chave da loja) é 20 "PIX Estático":
+    # ver ``_payment_form``.
     "pix": "17",
     "external": "99",
 }
@@ -710,12 +717,16 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
 # ``valor_pagamento`` (vPag), ``tipo_integracao`` (tpIntegra),
 # ``cnpj_credenciadora`` (CNPJ), ``bandeira_operadora`` (tBand),
 # ``numero_autorizacao`` (cAut) e, no nível da NOTA, ``valor_troco`` (vTroco).
-CARD_CODES = frozenset({"03", "04"})
-# tpIntegra 2: "pagamento não integrado com o sistema de automação" (maquininha
-# avulsa). O 1 (integrado, TEF ou comércio eletrônico) obriga CNPJ da
-# credenciadora e número da autorização, e nenhum dos dois é gravado no pedido
-# hoje; declarar 1 sem eles é rejeição certa. Sem o grupo de cartão, a SEFAZ
-# recusa toda nota de 03/04 (rejeição 391).
+# Formas que exigem o grupo de cartão (``card``) na NFC-e: a regra YA04-10
+# (rejeição 391) vale para cartão de crédito, de débito E Pix (03, 04, 17 e 20).
+# Sem o grupo, a SEFAZ recusa a nota.
+CARD_CODES = frozenset({"03", "04", "17", "20"})
+# tpIntegra 2: "pagamento não integrado com o sistema de automação". O 1
+# (integrado: TEF ou comércio eletrônico) obriga CNPJ da instituição de
+# pagamento e o código de autorização (cAut, obrigatório em todas as UFs desde a
+# NT 2025.001), e o pedido ainda não grava o cAut do cartão da loja online. O 2
+# passa na regra da 391 sem mais campos; migrar a loja online para o 1 é passo
+# seguinte (docs/runbooks/nfce-formas-de-pagamento-homologacao.md, "tpIntegra").
 CARD_NOT_INTEGRATED = "2"
 
 # xPag do 99: o leiaute exige a descrição quando a forma é "outros". A frase diz
@@ -778,6 +789,7 @@ def _payment_forms(payment: dict) -> list[dict]:
                 tender.get("method") or payment.get("method"),
                 tender.get("card_funding") or payment.get("card_funding"),
                 tender_amount_q,
+                pix_attested=bool(tender.get("pix_confirmed_by")),
             ))
         if forms:
             return forms
@@ -787,8 +799,13 @@ def _payment_forms(payment: dict) -> list[dict]:
     return [_payment_form(payment.get("method"), payment.get("card_funding"), amount_q)]
 
 
-def _payment_form(method: object, card_funding: object, amount_q: int) -> dict:
+def _payment_form(
+    method: object, card_funding: object, amount_q: int, *, pix_attested: bool = False,
+) -> dict:
     code = _payment_code(method, card_funding)
+    if code == "17" and pix_attested:
+        # Atestado por gente no balcão: o Pix não passou por cobrança com txid.
+        code = "20"
     form = {"forma_pagamento": code, "valor_pagamento": _money_q(amount_q)}
     if code in CARD_CODES:
         form["tipo_integracao"] = CARD_NOT_INTEGRATED
