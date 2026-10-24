@@ -40,7 +40,8 @@ _STORE = {"account_id": "5881119366", "data_source_id": "999", "content_language
 _SETTINGS = {
     "service_account_json": json.dumps({
         "client_email": "shopman@projeto.iam.gserviceaccount.com",
-        "private_key": "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n",
+        # A assinatura do JWT é mockada nos testes: a chave nunca é lida.
+        "private_key": "chave-de-teste",
         "token_uri": "https://oauth2.mock.test/token",
     }),
     "api_base": "https://merchant.mock.test",
