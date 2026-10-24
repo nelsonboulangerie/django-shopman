@@ -90,9 +90,21 @@ def set_collections(ref: str, collection_refs: list[str], *, expected_revision=N
     ordered = [r for r in cleaned if not (r in seen or seen.add(r))]
     display = _display(sc)
     if ordered != list(display.get("collections") or []):
+        before = _composition_skus(ref)
         display["collections"] = ordered
         _save_display(sc, display)
         _notify(ref)
+        # Quem entrou e quem saiu: o que ficou também, porque o custom_label pode mudar.
+        _project(ref, before | _composition_skus(ref))
+
+
+def _composition_skus(ref: str) -> set[str]:
+    """SKUs do catálogo de plataforma; quadro (menuboard) não tem catálogo externo."""
+    from shopman.shop.services import display_catalog
+
+    if not display_catalog.is_platform_channel(ref):
+        return set()
+    return set(display_catalog.composition_skus(ref))
 
 
 def _nonneg_int(value, label: str) -> int:
@@ -186,7 +198,15 @@ def _set_skus(ref: str, key: str, skus: list[str], *, on: bool) -> int:
     display[key] = sorted(current)
     _save_display(sc, display)
     _notify(ref)
+    _project(ref, current ^ before)
     return len(current ^ before)
+
+
+def _project(ref: str, skus) -> None:
+    """A plataforma (Google, Meta) recebe na hora o que mudou neste canal."""
+    from shopman.shop.handlers.catalog_projection import enqueue_display_skus
+
+    enqueue_display_skus(ref, skus)
 
 
 @transaction.atomic

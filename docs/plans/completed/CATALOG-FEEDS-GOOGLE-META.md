@@ -1,5 +1,9 @@
 # Feeds de catálogo — Google Merchant & Meta (Frente 5)
 
+> ⚠️ **Sucedido em 24/10/2026** por [CATALOG-PUSH-GOOGLE-META-PLAN](../CATALOG-PUSH-GOOGLE-META-PLAN.md):
+> o envio pela API vira o escritor único de cada plataforma, e o feed XML sai quando os
+> dois envios estiverem no ar. A decisão de cada item mora em `services/display_catalog.py`.
+
 > Superfícies **FEED** (`capability="feed"`) do hub cross-channel. Um feed é uma
 > superfície alimentada por uma coleção (manual ou smart) que expõe um **feed RSS
 > 2.0 público** que Google Merchant Center e Meta Commerce Manager buscam por
@@ -92,4 +96,5 @@ tipo de catálogo. (Ver relatórios de pesquisa 2026-07-01.)
 
 ## Estado
 Feed pull ✅ (platform-aware Google+Meta; 6 testes; verificado ao vivo com o catálogo Nelson).
-Push ⏳ (Pablo: credenciais Google Cloud/Merchant + Meta Business/System User).
+Push: implementado (Google pela Merchant API, Meta alinhada ao Ocultar = `archived`); ligar
+depende das credenciais. Ver [CATALOG-PUSH-GOOGLE-META-PLAN](../CATALOG-PUSH-GOOGLE-META-PLAN.md).

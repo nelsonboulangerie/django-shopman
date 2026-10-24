@@ -76,6 +76,7 @@ DigitalOcean ou do Sentry.
 | [`capture_ifood_catalog`](#capture_ifood_catalog) | shop | Diagnóstico | Captura catálogo por GET em arquivo privado, sem escrita remota |
 | [`prepare_ifood_catalog_review`](#prepare_ifood_catalog_review) | shop | Diagnóstico | Prepara revisão de snapshot completo, sem HTTP ou gravações |
 | [`reconcile_ifood_catalog`](#reconcile_ifood_catalog) | shop | Diagnóstico | Compara inventário local iFood com SKUs, sem HTTP ou gravações |
+| [`sync_platform_catalogs`](#sync_platform_catalogs) | shop | Manutenção | Reenvia ao Google e à Meta o catálogo vencido (24h) e retira o que saiu do canal; roda no `maintenance_worker` |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`reconcile_user_notifications`](#reconcile_user_notifications) | backstage | Operação | Fecha o alerta pessoal cuja causa acabou e que o produtor não fechou; roda no `maintenance_worker` |
@@ -1225,6 +1226,28 @@ mas a origem e completude do snapshot dependem de quem o forneceu. Erros de
 arquivo, formato, escopo e banco usam `CommandError` sem conteúdo sensível.
 
 Veja [regras e interpretação da saída](../guides/IFOOD-CATALOG-RECONCILIATION.md).
+
+---
+
+### sync_platform_catalogs
+
+**App:** shop · **Categoria:** Manutenção (rede de segurança do envio ao Google e à Meta)
+**Arquivo:** `shopman/shop/management/commands/sync_platform_catalogs.py`
+
+O envio ao Google (Merchant API) e à Meta (`items_batch`) acontece na hora de cada
+mudança. Este comando é a reconciliação: reenvia o SKU cujo último envio passou de
+`--min-interval-hours` (24h; o Google expira produto sem reenvio em 30 dias) e retira
+o que saiu da composição do canal. Só age nos canais com envio ligado
+(`GOOGLE_MERCHANT_PROJECTION`, `META_CATALOG_PROJECTION`). Roda no `maintenance_worker`.
+
+```bash
+.venv/bin/python manage.py sync_platform_catalogs                    # o que venceu
+.venv/bin/python manage.py sync_platform_catalogs --force            # tudo, agora
+.venv/bin/python manage.py sync_platform_catalogs --dry-run --channel google-shopping
+```
+
+`--dry-run` mostra o que seria enviado, sem credencial e sem enfileirar. Plano:
+[CATALOG-PUSH-GOOGLE-META-PLAN](../plans/CATALOG-PUSH-GOOGLE-META-PLAN.md).
 
 ---
 

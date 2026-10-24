@@ -356,13 +356,50 @@
             "_chunk",
             "_endpoint",
             "_get_config",
-            "_item_data",
             "_post_batch",
-            "_product_link",
             "build_batch_requests",
             "build_retract_requests",
+            "item_data",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/adapters/catalog_projection_google.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "GoogleMerchantProjection",
+            "GoogleMerchantRateLimitError",
+            "_CONDITIONS",
+            "_SCOPE",
+            "_TOKEN_MARGIN_SECONDS",
+            "_access_token",
+            "_account",
+            "_base",
+            "_check",
+            "_configured",
+            "_data_source",
+            "_feed_label",
+            "_get_config",
+            "_language",
+            "_service_account",
+            "_timeout",
+            "_token_cache",
+            "_token_lock",
+            "build_product_input",
             "logger",
-            "stock_for"
+            "product_input_id"
           ]
         }
       ]
@@ -5354,7 +5391,7 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/sync_catalog_meta.py",
+      "path": "shopman/shop/management/commands/sync_platform_catalogs.py",
       "touchpoints": [
         "outro"
       ],
@@ -5367,7 +5404,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "Command"
+            "Command",
+            "DEFAULT_MIN_INTERVAL_HOURS",
+            "RETRY_AFTER_FAILURE_HOURS"
           ]
         }
       ]
@@ -9010,6 +9049,36 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/display_catalog.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DisplayCatalogError",
+            "DisplayItem",
+            "FEED_FORMATS",
+            "GOOGLE_DESTINATIONS",
+            "_composition",
+            "channels_priced_from",
+            "composition_skus",
+            "display_item",
+            "display_items",
+            "is_platform_channel",
+            "resolve_channel",
+            "storefront_base"
           ]
         }
       ]
@@ -13231,12 +13300,8 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "ProductFeedError",
             "ProductFeedView",
             "_AVAILABILITY",
-            "_GOOGLE_DESTINATIONS",
-            "_resolve_feed_channel",
-            "_storefront_base",
             "build_feed_items"
           ]
         }
