@@ -93,6 +93,10 @@ MAINTENANCE_COMMANDS = (
     # Logo depois de liberar reservas: reserva que expira sai por update em
     # massa, sem signal, então é aqui que a volta do produto é percebida.
     "reconcile_shelf_outages",
+    # Rede de segurança do envio ao Google e à Meta: reenvia o SKU cujo último
+    # envio passou de 24h (o Google expira produto sem reenvio em 30 dias) e retira
+    # o que saiu do canal. Sem envio ligado, volta calado; a cadência é do comando.
+    "sync_platform_catalogs",
     # O expediente do dia que terminou vira denominador congelado: sem isso,
     # mexer no horário da loja reescreveria as métricas do passado.
     "stamp_business_days",

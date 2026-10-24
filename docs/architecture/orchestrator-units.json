@@ -1352,7 +1352,8 @@
             "_sender_lock",
             "_record_outcome",
             "_channel_or_feed_active",
-            "_get_projected_item"
+            "_get_projected_item",
+            "display_projected_item"
           ]
         }
       ],
@@ -1363,12 +1364,16 @@
         "offerman",
         "orderman"
       ],
-      "ports": [],
+      "ports": [
+        "shopman.offerman.protocols.projection"
+      ],
       "events": [],
       "directives": [
         "CATALOG_PROJECT_SKU"
       ],
-      "config_surface": [],
+      "config_surface": [
+        "SHOPMAN_STOREFRONT_BASE_URL"
+      ],
       "tests": [
         "shopman/shop/tests/test_handler_entrypoints.py::test_catalog_project_handler_skips_when_no_backend_is_configured"
       ],
@@ -1396,6 +1401,7 @@
             "on_price_changed",
             "on_availability_changed",
             "enqueue_project",
+            "enqueue_display_skus",
             "_enqueue_project"
           ]
         }

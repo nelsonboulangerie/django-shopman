@@ -1436,7 +1436,8 @@ Só faz sentido em canal com `commerce_policy=display` (menuboard/feed — ADR-0
 | `items_per_page` | `int` | `0` | Menuboard: teto de itens por página. `0` = tudo numa página. Anda junto com `rotate_seconds`: ambos > 0 ou ambos 0 |
 
 Lido por: `projections/menuboard.py` (`build_menuboard`), `services/display_prices.py`,
-`views/product_feed.py`, `backstage/projections/feeds.py`, `backstage/services/feeds.py`.
+`services/display_catalog.py` (a decisão de cada item que o feed e os envios ao Google e
+à Meta traduzem), `backstage/projections/feeds.py`, `backstage/services/feeds.py`.
 
 > **Estado operacional, não configuração.** `display.paused_skus`, `display.hidden_skus` e `activation`
 > (abaixo) são do operador: o descritor de Instância não os declara, o
@@ -1613,6 +1614,20 @@ Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketin
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
 | `marketing.whatsapp_minimum_audience` | `int` (≥ 1) | `resolve_marketing_policy` → `approve_command` (`shop/services/marketing_approval.py`) | Mínimo de pessoas elegíveis para aprovar campanha **geral** por WhatsApp (impede mirar uma pessoa). **Ausente = 1** (decisão do dono, 2026-09-17). Não vale no modo `canary`. Editado na página "Integrações" do ShopAdmin; em branco remove a chave. Valor gravado fora do contrato (0, negativo, texto, booleano) cai no padrão com `logger.warning`. |
+
+### Google Merchant — `Shop.defaults["google_merchant"]`
+
+Conta e fonte de dados do envio do catálogo ao Google pela Merchant API
+(`shop/adapters/catalog_projection_google.py`, plano
+`docs/plans/CATALOG-PUSH-GOOGLE-META-PLAN.md`). Dado da loja, não do deployment (ADR-042):
+o segredo (JSON da service account) fica em `GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON`.
+
+| Chave | Tipo | Lido por | Descrição |
+|-------|------|----------|-----------|
+| `google_merchant.account_id` | `string` | `catalog_projection_google._get_config` | Id da conta do Merchant Center. Ausente = envio inerte |
+| `google_merchant.data_source_id` | `string` | idem | Id da fonte de dados primária do tipo API. Ausente = envio inerte |
+| `google_merchant.content_language` | `string` | idem | ISO 639-1 dos produtos. Ausente = `pt` |
+| `google_merchant.feed_label` | `string` | idem | Rótulo do feed na conta. Ausente = `BR` |
 
 ### Capacidade dos apps de operação — `Shop.defaults["operator_capacity"]`
 
