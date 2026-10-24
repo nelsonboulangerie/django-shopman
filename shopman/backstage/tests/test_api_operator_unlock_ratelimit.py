@@ -84,3 +84,38 @@ class OperatorUnlockRateLimitTests(TestCase):
             for _ in range(5):
                 self.assertEqual(self._try(alvo, "0000").status_code, 403)
         self.assertEqual(self._try(alvos[6], "0000").status_code, 429)
+
+    # ── Laudo S6 (23/10): crachá por estação; crachá perdido e troca de PIN com freio ──
+
+    def test_badge_bucket_is_per_station_not_global(self):
+        """Um dispositivo esgotando o balde do crachá não tranca o crachá da loja inteira."""
+        from django.test import Client
+
+        for _ in range(5):
+            self.assertEqual(self.client.post(UNLOCK, {"badge": "ffffffffffff", "perm": POS_PERM}).status_code, 403)
+        self.assertEqual(self.client.post(UNLOCK, {"badge": "ffffffffffff", "perm": POS_PERM}).status_code, 429)
+
+        cred = PinCredential.objects.get(user=self.ana)
+        cred.set_badge("abcdef012345")
+        outro_balcao = Client()
+        trust_station(outro_balcao, "pdv-2")
+        resp = outro_balcao.post(UNLOCK, {"badge": "abcdef012345", "perm": POS_PERM})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_badge_lost_is_rate_limited_per_target(self):
+        url = "/api/v1/backstage/operator/badge/lost/"
+        body = {"operator_id": self.ana.pk, "pin": "0000", "confirm": "true"}
+        for _ in range(5):
+            self.assertEqual(self.client.post(url, body).status_code, 403)
+        resp = self.client.post(url, body)
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp.json()["error"]["code"], "operator_pin_rate_limited")
+
+    def test_pin_change_is_rate_limited_per_target(self):
+        url = "/api/v1/backstage/operator/pin/change/"
+        body = {"operator_id": self.ana.pk, "current_pin": "0000", "new_pin": "4321"}
+        for _ in range(5):
+            self.assertNotEqual(self.client.post(url, body).status_code, 429)
+        resp = self.client.post(url, body)
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp.json()["error"]["code"], "operator_pin_rate_limited")
