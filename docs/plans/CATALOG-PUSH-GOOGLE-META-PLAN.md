@@ -53,9 +53,11 @@ que saiu do canal.
 4. No Merchant Center, **Fontes de dados**: criar uma fonte primária do tipo **API**
    (Brasil, português) e anotar o id. Depois **apagar a fonte do arquivo**
    (`/feed/google-shopping.xml`), para a API ser a única.
-5. No Admin, `Shop.defaults["google_merchant"]` (dado da loja, ADR-042):
-   `{"account_id": "5881119366", "data_source_id": "<id da fonte API>"}`
-   (opcionais: `content_language`, padrão `pt`; `feed_label`, padrão `BR`).
+5. No Admin, página **Integrações**, botão **"Google Merchant Center"** no alto da
+   página: conta `5881119366`, o id da fonte de dados API, idioma `pt` e rótulo `BR`
+   (os dois últimos já vêm preenchidos). Grava em `Shop.defaults["google_merchant"]`
+   (dado da loja, ADR-042), e a página mostra a conta gravada no quadro
+   "Google Merchant Center".
 6. No spec da DigitalOcean: `GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON` (tipo **SECRET**, o
    JSON inteiro) e `GOOGLE_MERCHANT_PROJECTION=1`.
 7. `sync_platform_catalogs --dry-run --channel google-shopping` para conferir;
