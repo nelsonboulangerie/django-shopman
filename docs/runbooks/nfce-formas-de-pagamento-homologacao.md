@@ -19,7 +19,10 @@ Fonte: referência canônica da Focus NFe,
 |---|---|---|
 | Cartão de crédito (balcão `credit`, Stripe com `card_funding=credit`) | `03` | `tipo_integracao: "2"` (tpIntegra, maquininha não integrada) |
 | Cartão de débito (balcão `debit`, Stripe com `card_funding=debit`) | `04` | `tipo_integracao: "2"` |
-| Pix | `17` | nenhum |
+| Pix da cobrança (QR com txid gerado pela Efí, no PDV ou na loja online) | `17` (PIX Dinâmico) | `tipo_integracao: "2"` |
+| Pix atestado no balcão ("Recebi o Pix", QR fixo ou chave da loja) | `20` (PIX Estático) | `tipo_integracao: "2"` |
+| Conta na casa (`account`, fiado) | `05` (Cartão da Loja, crediário) | nenhum |
+| Saldo do cliente na casa (`store_credit`) | `21` (Crédito em Loja) | nenhum |
 | Outros (iFood `external`, Stripe `prepaid`/`unknown`) | `99` | `descricao_pagamento` (xPag, 2 a 60 caracteres) |
 | Dinheiro com troco | `01` | `valor_pagamento` = o que veio na mão; `valor_troco` (vTroco) no nível da nota |
 
@@ -46,30 +49,51 @@ sem `valor_troco`, que também é válido.
 ```
 
 O comando roda o handler de emissão contra a homologação e grava chave, protocolo e
-DANFE no pedido. Repita para as cinco: `03`, `04`, `17`, `99` e `01` com troco.
+DANFE no pedido. Repita para as seis: `03`, `04`, `17`, `20`, `99` e `01` com troco (o `20` sai de uma venda mista no PDV com "Recebi o Pix").
 
 ## O que conferir em cada nota
 
 No XML autorizado (link `caminho_xml_nota_fiscal` da resposta da Focus):
 
 1. **Status autorizado**, com protocolo. Rejeição é o achado: anote código e motivo.
-2. `03`/`04`: dentro de `<detPag>`, o grupo `<card>` com `<tpIntegra>2</tpIntegra>`.
-   A rejeição que este grupo evita é a **391** (dados do cartão não informados).
+2. `03`/`04`/`17`/`20`: dentro de `<detPag>`, o grupo `<card>` com `<tpIntegra>2</tpIntegra>`.
+   A rejeição que este grupo evita é a **391** (regra YA04-10), que na NFC-e vale para
+   cartão E Pix.
 3. `99`: `<xPag>` presente, com a frase do adapter.
-4. `17`: só `<tPag>17</tPag>` e `<vPag>`.
-5. Dinheiro com troco: `<vPag>` do dinheiro igual ao entregue, `<vTroco>` igual ao troco,
+4. Dinheiro com troco: `<vPag>` do dinheiro igual ao entregue, `<vTroco>` igual ao troco,
    e `Σ vPag − vTroco = vNF`.
-6. DANFE: a forma de pagamento impressa bate com a do balcão.
+5. DANFE: a forma de pagamento impressa bate com a do balcão.
 
 Guarde o XML e a resposta de cada nota como evidência no PR que fechar o F2.
 
-## Perguntas que não são deste runbook
+## Decisões (24/10/2026)
 
-- **Pix do balcão: 17 (dinâmico) ou 20 (estático)?** O QR impresso do balcão é estático;
-  o código manda `17` para todo Pix. Pergunta ao contador; o código não muda sem ele.
-- **Conta na casa: 05 ou 21?** A tabela da Focus diz `05` = "Cartão da Loja (Private
-  Label)" e `21` = "Crédito em Loja". O código manda `05`, decisão pendente do contador
-  desde 17/09/2026.
-- **Cartão da loja online (Stripe) como tpIntegra 1?** Comércio eletrônico é "integrado",
-  mas o `1` obriga CNPJ da credenciadora e número de autorização, que o pedido não guarda
-  hoje. Até haver os dois, sai `2`.
+O dono pediu que a casa decidisse pela norma, sem esperar o contador. Cada código abaixo
+vem da tabela de meios de pagamento da NT 2023.004, atualizada pelo Informe Técnico
+2024.002 (válida desde 01/07/2024), e da regra YA04-10 da NT 2025.001.
+
+- **Pix: 17 ou 20 conforme a origem.** `17` "PIX Dinâmico" é o Pix com QR ou URL
+  dinâmicos, isto é, a cobrança com txid que a Efí gera. `20` "PIX Estático" é o "PIX
+  realizado com QR Code estático ou por meio de transferência", que é o "Recebi o Pix"
+  atestado pelo operador (`tenders[].pix_confirmed_by`).
+- **Pix leva o grupo de cartão.** A regra YA04-10 (rejeição 391) exige o grupo `card` na
+  NFC-e para `03`, `04`, `17` e `20`. Antes desta decisão o Pix saía sem o grupo, o que
+  seria recusado em produção.
+- **Conta na casa: 05.** A tabela descreve o `05` como "Cartão da loja, na forma de
+  crediário etc.", que é o fiado. O `21` é "Crédito em loja decorrente de valor pago
+  anteriormente, de devolução de mercadoria", o contrário da conta na casa; ele fica para
+  o saldo que o cliente já tem (`store_credit`).
+- **tpIntegra: 2 em todas as formas, por ora.** O `1` (integrado: TEF ou comércio
+  eletrônico) descreve com mais rigor a loja online e o Pix da cobrança Efí, mas obriga o
+  CNPJ da instituição de pagamento e o código de autorização (`cAut`, obrigatório em
+  todas as UFs desde a NT 2025.001). O pedido ainda não grava o `authorization_code` da
+  Stripe. O `2` passa na regra 391 sem esses campos.
+
+### tpIntegra
+
+Passo seguinte, depois do go-live: gravar o `authorization_code` do cartão Stripe
+(`charge.payment_method_details.card.authorization_code`, API 2024-09-30 ou mais nova) e
+usar o `e2e_id` do Pix Efí como `cAut`, com o CNPJ da instituição (Efí S.A., 09.089.356/0001-18;
+o da Stripe a conferir), e então mandar `tipo_integracao: "1"` nessas duas formas. Se a
+SEFAZ do Paraná exigir vinculação do pagamento eletrônico antes disso, este passo sobe de
+prioridade.

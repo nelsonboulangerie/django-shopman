@@ -86,6 +86,7 @@ def test_focus_nfe_emit_maps_nfce_payload_to_homologation_endpoint():
     assert captured["payload"]["formas_pagamento"] == [{
         "forma_pagamento": "17",
         "valor_pagamento": "10.00",
+        "tipo_integracao": "2",
     }]
 
 
@@ -339,7 +340,7 @@ def test_focus_nfe_home_delivery_freight_with_identified_recipient():
     assert payload["items"][0]["valor_frete"] == "6.00"
     assert payload["cnpj_transportador"] == "12345678000199"
     assert payload["cep_destinatario"] == "86010000"
-    assert payload["formas_pagamento"] == [{"forma_pagamento": "17", "valor_pagamento": "16.00"}]
+    assert payload["formas_pagamento"] == [{"forma_pagamento": "17", "valor_pagamento": "16.00", "tipo_integracao": "2"}]
 
 
 def test_map_item_vuncom_times_qty_equals_vprod_after_distributed_discount():
@@ -604,10 +605,59 @@ def test_cartao_credito_e_debito_levam_o_grupo_de_cartao_nao_integrado(method, f
     assert "valor_troco" not in payload
 
 
-def test_pix_segue_17_sem_grupo_de_cartao_nem_descricao():
+def test_pix_da_cobranca_sai_17_com_grupo_de_cartao():
+    """A regra YA04-10 (rejeição 391) vale também para Pix: 17 sem o grupo é recusado."""
     payload = _emit_capturing({"method": "pix", "amount_q": 1500})
 
-    assert payload["formas_pagamento"] == [{"forma_pagamento": "17", "valor_pagamento": "15.00"}]
+    assert payload["formas_pagamento"] == [{
+        "forma_pagamento": "17",
+        "valor_pagamento": "15.00",
+        "tipo_integracao": "2",
+    }]
+
+
+def test_pix_atestado_no_balcao_sai_20_estatico_com_grupo_de_cartao():
+    """ "Recebi o Pix" (QR fixo ou chave da loja) não teve cobrança com txid: é 20."""
+    payload = _emit_capturing({
+        "method": "mixed",
+        "amount_q": 1500,
+        "tenders": [
+            {"method": "cash", "amount_q": 500},
+            {"method": "pix", "amount_q": 1000, "pix_confirmed_by": "ana", "pix_confirmed_at": "2026-10-24T10:00:00-03:00"},
+        ],
+    })
+
+    assert payload["formas_pagamento"] == [
+        {"forma_pagamento": "01", "valor_pagamento": "5.00"},
+        {"forma_pagamento": "20", "valor_pagamento": "10.00", "tipo_integracao": "2"},
+    ]
+
+
+def test_pix_numa_venda_mista_sem_atestado_segue_17():
+    payload = _emit_capturing({
+        "method": "mixed",
+        "amount_q": 1500,
+        "tenders": [{"method": "cash", "amount_q": 500}, {"method": "pix", "amount_q": 1000}],
+    })
+
+    assert payload["formas_pagamento"][1] == {
+        "forma_pagamento": "17", "valor_pagamento": "10.00", "tipo_integracao": "2",
+    }
+
+
+@pytest.mark.parametrize(("method", "code"), [
+    ("account", "05"),
+    ("house_account", "05"),
+    ("store_credit", "21"),
+])
+def test_conta_na_casa_e_crediario_05_e_saldo_na_casa_21(method, code):
+    """05 "Cartão da Loja (Private Label)", na forma de crediário: o fiado.
+    21 "Crédito em Loja": saldo pago antes ou vale de devolução."""
+    payload = _emit_capturing({"method": method, "amount_q": 1500})
+
+    form = payload["formas_pagamento"][0]
+    assert form["forma_pagamento"] == code
+    assert "tipo_integracao" not in form
 
 
 @pytest.mark.parametrize(("payment", "description"), [
