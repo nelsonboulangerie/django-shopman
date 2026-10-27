@@ -22,9 +22,13 @@ const emit = defineEmits<{
   select: [option: IngredientOptionProjection];
 }>();
 
-const { options, pending, search, reset } = useIngredientSearch();
+const { options, pending, run, search, reset } = useIngredientSearch();
 const term = ref("");
+const open = ref(false);
 watch(term, (value) => search(value));
+watch(open, (isOpen) => {
+  if (isOpen && !props.candidates?.length && !options.value.length && !pending.value) void run("");
+});
 
 interface PickerItem {
   value: string;
@@ -34,7 +38,7 @@ interface PickerItem {
 }
 
 const items = computed<PickerItem[]>(() => {
-  const list = term.value.trim() ? options.value : (props.candidates ?? []);
+  const list = term.value.trim() ? options.value : (props.candidates?.length ? props.candidates : options.value);
   const rows: PickerItem[] = list.map((option) => ({
     value: option.sku,
     label: option.name,
@@ -54,6 +58,7 @@ const items = computed<PickerItem[]>(() => {
 });
 
 function onUpdate(value: string | null | undefined) {
+  const option = value ? items.value.find((row) => row.value === value)?.option : null;
   term.value = "";
   reset();
   if (!value) {
@@ -61,7 +66,6 @@ function onUpdate(value: string | null | undefined) {
     return;
   }
   emit("update:modelValue", value);
-  const option = items.value.find((row) => row.value === value)?.option;
   if (option) emit("select", option);
 }
 
@@ -70,6 +74,7 @@ const touch = useTouchPointer();
 
 <template>
   <NuxtSelectMenu
+    v-model:open="open"
     v-model:search-term="term"
     :model-value="modelValue || undefined"
     :items="items"

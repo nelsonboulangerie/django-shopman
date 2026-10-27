@@ -59,6 +59,13 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByLabel("Ingrediente", { exact: true })).toBeVisible();
   await expect(page.getByText("Ingrediente cadastrado", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(1);
+  await page.getByLabel("Ingrediente", { exact: true }).click();
+  await expect(page.getByRole("option", { name: /Farinha T65/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Levain/ })).toBeVisible();
+  await page.getByPlaceholder("Buscar ingrediente", { exact: true }).fill("lev");
+  await page.getByRole("option", { name: /Levain/ }).click();
+  await expect(page.getByLabel("Função da receita usada como ingrediente")).toBeVisible();
+  await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(1);
   await expect(page.getByText("Receitas usadas como ingrediente", { exact: true })).toHaveCount(0);
 
   await page.getByRole("tab", { name: "Modo de preparo" }).click();

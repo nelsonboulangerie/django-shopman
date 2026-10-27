@@ -822,6 +822,19 @@ const SHEETS = [
   sheetDetail("molho-bechamel", "Molho bechamel", "MOLHO-BECHAMEL", { mode: "batch", unit: "kg", items: [sheetItem("LEITE-INTEGRAL", "Leite integral", "0.9", "kg")] }),
 ];
 
+const RECIPE_INGREDIENTS = [
+  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", is_part: false, entry_ref: "" },
+  { sku: "AGUA", name: "Água", unit: "kg", role: "liquid", is_part: false, entry_ref: "" },
+  { sku: "SAL", name: "Sal", unit: "kg", role: "salt", is_part: false, entry_ref: "" },
+  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", is_part: true, entry_ref: "levain" },
+];
+
+function recipeIngredients(url) {
+  const term = new URL(url, "http://mock").searchParams.get("q")?.trim().toLocaleLowerCase("pt-BR") ?? "";
+  const options = RECIPE_INGREDIENTS.filter((item) => !term || item.name.toLocaleLowerCase("pt-BR").includes(term) || item.sku.toLocaleLowerCase("pt-BR").includes(term));
+  return { options };
+}
+
 function sheetCard(sheet) {
   return {
     ref: sheet.ref,
@@ -872,6 +885,7 @@ function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
   if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
   if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
+  if (/\/recipes\/ingredients\/?(\?|$)/.test(url)) return recipeIngredients(url);
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
   const card = detail && RECIPE_CARDS.find((entry) => entry.ref === detail[1]);
   if (card) return recipeDetail(card);
