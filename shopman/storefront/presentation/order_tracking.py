@@ -62,6 +62,8 @@ EVENT_LABELS: dict[str, str | None] = {
     "return_initiated": "Devolução solicitada",
     "refund_processed": "Reembolso processado",
     "customer_cancellation_requested": "Cancelamento solicitado",
+    "customer_contact_requested": "Contato solicitado",
+    "customer_contact_resolved": "Atendimento concluído",
     "fiscal_cancelled": "Nota fiscal cancelada",
     "fulfillment.dispatched": "Saiu para entrega",
     "fulfillment.delivered": "Pedido entregue",
@@ -185,6 +187,13 @@ class OrderTrackingCopyProjection:
     rating_thanks: str
     rating_thanks_title: str
     rating_thanks_celebrate: str
+    rating_contact_title: str
+    rating_contact_message: str
+    rating_contact_done: str
+    rating_google_title: str
+    rating_google_message: str
+    rating_google_cta: str
+    rating_google_copied: str
     page_meta_description: str
     delivery_heading: str
     stale_cta: str
@@ -254,6 +263,14 @@ class CancellationRequestProjection:
     requested_at_display: str
     title: str
     message: str
+
+
+@dataclass(frozen=True)
+class RatingFollowupProjection:
+    comment: str
+    google_review_url: str
+    contact_offered: bool
+    contact_requested: bool
 
 
 @dataclass(frozen=True)
@@ -331,6 +348,7 @@ class OrderTrackingProjection:
     cancellation_note: str = ""
     refund_status_label: str | None = None
     cancellation_request: CancellationRequestProjection | None = None
+    rating_followup: RatingFollowupProjection | None = None
     fiscal_note: FiscalNoteProjection | None = None
 
 
@@ -417,6 +435,16 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
                 ),
             )
             if data.cancellation_request
+            else None
+        ),
+        rating_followup=(
+            RatingFollowupProjection(
+                comment=data.rating_followup.comment,
+                google_review_url=data.rating_followup.google_review_url,
+                contact_offered=data.rating_followup.contact_offered,
+                contact_requested=data.rating_followup.contact_requested,
+            )
+            if data.rating_followup
             else None
         ),
         payment_expires_at=data.payment_expires_at,
@@ -1434,6 +1462,28 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         rating_thanks_celebrate=copy.message(
             "TRACKING_RATING_THANKS_CELEBRATE",
             "Ficamos muito felizes que você gostou. Esperamos você de novo em breve.",
+        ),
+        rating_contact_title=copy.title(
+            "TRACKING_RATING_CONTACT_TITLE",
+            "Sentimos muito que não foi como você esperava",
+        ),
+        rating_contact_message=copy.message(
+            "TRACKING_RATING_CONTACT_MESSAGE",
+            "Quer que a gente fale com você? Alguém da casa te chama no WhatsApp para entender o que houve.",
+        ),
+        rating_contact_done=copy.message(
+            "TRACKING_RATING_CONTACT_DONE",
+            "Combinado. Alguém da casa vai te chamar no WhatsApp.",
+        ),
+        rating_google_title=copy.title("TRACKING_RATING_GOOGLE_TITLE", "Quer contar no Google também?"),
+        rating_google_message=copy.message(
+            "TRACKING_RATING_GOOGLE_MESSAGE",
+            "Sua opinião ajuda outras pessoas a conhecer a casa.",
+        ),
+        rating_google_cta=copy.title("TRACKING_RATING_GOOGLE_CTA", "Avaliar no Google"),
+        rating_google_copied=copy.message(
+            "TRACKING_RATING_GOOGLE_COPIED",
+            "Ao tocar, seu comentário é copiado. No Google, é só colar.",
         ),
         page_meta_description=copy.message("TRACKING_PAGE_META_DESCRIPTION", "Acompanhe seu pedido"),
         delivery_heading=copy.title("TRACKING_DELIVERY_HEADING", "Entrega"),

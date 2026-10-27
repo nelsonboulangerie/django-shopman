@@ -68,6 +68,11 @@ const rateAction = computed(() => tracking.value?.actions.find(action => action.
 // Estado de agradecimento (título/mensagem + se cabe confete) montado a partir da
 // copy e da nota escolhida. A copy é omotenashi (configurável), nunca inventada aqui.
 const ratingThanks = computed(() => ratingThanksView(tracking.value?.copy, rating.value))
+// Depois de avaliar: a ouvidoria (nota até 3, o servidor decide) e o convite do
+// Google, que vale para TODA nota (a política do Google proíbe convidar só quem
+// gostou). Quem não gostou vê a ouvidoria primeiro; o convite continua abaixo.
+const ratingFollowup = computed(() => tracking.value?.rating_followup || null)
+const contactAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_contact' && action.enabled) || null)
 const reorderAction = computed(() => tracking.value?.actions.find(action => action.ref === 'reorder' && action.enabled) || null)
 // O bloco de pagamento inline (PAYMENT-TRACKING-MERGE) desenha o botão do cartão
 // e o copia-e-cola do Pix; não os repetimos no painel de status.
@@ -294,7 +299,7 @@ async function refreshAfterConfirmedAction () {
   if (import.meta.client) useSonner.info('Ação confirmada. A atualização do acompanhamento está pendente.')
 }
 
-async function postAction (action: Action, body: Record<string, unknown> = {}) {
+async function postAction (action: Action, body: Record<string, unknown> = {}, { silent = false } = {}) {
   actionPending.value = { ...actionPending.value, [action.ref]: true }
   try {
     const headers = await csrfHeaders()
@@ -307,7 +312,7 @@ async function postAction (action: Action, body: Record<string, unknown> = {}) {
       credentials: 'include',
       body
     })
-    if (import.meta.client) useSonner.success(actionSuccessMessage(action))
+    if (import.meta.client && !silent) useSonner.success(actionSuccessMessage(action))
     await refreshAfterConfirmedAction()
     return true
   } catch (e) {
@@ -346,6 +351,22 @@ async function submitRating () {
   } finally {
     actionPending.value = omitKey(actionPending.value, action.ref)
   }
+}
+
+async function requestContact () {
+  const action = contactAction.value
+  if (!action) return
+  // Sem toast: o próprio bloco vira "Combinado", e o toast repetiria a frase.
+  await postAction(action, {}, { silent: true })
+}
+
+// O formulário do Google não aceita texto pronto: no mesmo toque que abre o
+// Google, o comentário vai para a área de transferência, e lá é só colar. O
+// cliente revê e publica (ou não) pela própria mão.
+function copyCommentForGoogle () {
+  const text = ratingFollowup.value?.comment?.trim()
+  if (!text || !import.meta.client) return
+  navigator.clipboard?.writeText(text).catch(() => {})
 }
 
 function closeRatingSheet () {
@@ -1011,6 +1032,51 @@ useSeoMeta({
               <Icon name="lucide:circle-check" class="size-9" />
             </span>
             <UiStarRating :model-value="rating" :max="5" size="lg" readonly class="justify-center" />
+            <div v-if="ratingFollowup" class="flex w-full flex-col gap-3 text-left">
+              <div
+                v-if="contactAction || ratingFollowup.contact_requested"
+                class="space-y-2 rounded-lg border border-border p-4"
+                data-rating-contact
+              >
+                <p class="font-semibold">{{ tracking.copy.rating_contact_title }}</p>
+                <p v-if="ratingFollowup.contact_requested" class="text-sm text-muted-foreground" role="status">
+                  {{ tracking.copy.rating_contact_done }}
+                </p>
+                <template v-else-if="contactAction">
+                  <p class="text-sm text-muted-foreground">{{ tracking.copy.rating_contact_message }}</p>
+                  <UiButton
+                    class="w-full"
+                    icon="lucide:message-circle"
+                    :loading="!!actionPending[contactAction.ref]"
+                    @click="requestContact"
+                  >
+                    {{ contactAction.label }}
+                  </UiButton>
+                </template>
+              </div>
+              <div
+                v-if="ratingFollowup.google_review_url"
+                class="space-y-2 rounded-lg border border-border p-4"
+                data-rating-google
+              >
+                <p class="font-semibold">{{ tracking.copy.rating_google_title }}</p>
+                <p class="text-sm text-muted-foreground">{{ tracking.copy.rating_google_message }}</p>
+                <UiButton
+                  :href="ratingFollowup.google_review_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="w-full"
+                  variant="secondary"
+                  icon="lucide:star"
+                  @click="copyCommentForGoogle"
+                >
+                  {{ tracking.copy.rating_google_cta }}
+                </UiButton>
+                <p v-if="ratingFollowup.comment" class="text-xs text-muted-foreground">
+                  {{ tracking.copy.rating_google_copied }}
+                </p>
+              </div>
+            </div>
           </div>
           <div v-else class="shop-stack-block px-4 py-4">
             <UiStarRating v-model="rating" :max="5" size="lg" class="justify-center" />

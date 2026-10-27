@@ -84,12 +84,20 @@ const {
   courierDispatch,
   courierDispatchAgain,
   courierReminderDismiss,
+  resolveContactRequest,
   courierCancel,
   courierQuote,
   managerChallenge,
   authorize,
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
+
+// Ouvidoria: o cliente avaliou mal e pediu que a loja fale com ele. O caso fica
+// aberto no pedido até alguém marcar "Resolvido", com uma frase do que foi feito.
+const contactResolveOpen = ref(false);
+async function onResolveContact(choice: { reason: string }) {
+  if (await resolveContactRequest(choice.reason)) contactResolveOpen.value = false;
+}
 
 // A Via Pedido (P2-19): o mesmo papel do PDV, pela impressora desta estação.
 const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
@@ -1039,6 +1047,24 @@ const outside = useOutsideStore(
         data-outside-band
       />
       <NuxtAlert
+        v-if="order?.contact_request"
+        id="customer-contact"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-message-circle-heart"
+        :title="`Ouvidoria aberta: nota ${order.contact_request.rating} de 5`"
+        :description="order.contact_request.comment
+          ? `O cliente pediu que a loja fale com ele (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
+          : `O cliente pediu que a loja fale com ele (${order.contact_request.requested_at_display}). Não deixou comentário.`"
+        :actions="alertActions('warning', [
+          {
+            label: 'Resolvido',
+            onClick: () => { contactResolveOpen = true; },
+          },
+        ])"
+        data-contact-request
+      />
+      <NuxtAlert
         v-if="order && cardAuth"
         :color="cardAuth.tone"
         variant="subtle"
@@ -1327,6 +1353,18 @@ const outside = useOutsideStore(
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons,
          the canonical cancel list, or store presets + free text for reject) -->
+    <OperatorReasonDialog
+      v-model:open="contactResolveOpen"
+      title="Ouvidoria resolvida"
+      description="Conte em uma frase o que foi feito. Fica no histórico do pedido; o cliente não lê."
+      confirm-label="Marcar resolvido"
+      reason-label="O que foi feito"
+      placeholder="Ex.: falei com o cliente no WhatsApp, pedi desculpas e combinamos a troca."
+      :maxlength="500"
+      required
+      :busy="busy"
+      @confirm="onResolveContact"
+    />
     <OrderReasonDialog
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"

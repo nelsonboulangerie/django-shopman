@@ -356,6 +356,13 @@ class CancellationRequestProjectionSerializer(serializers.Serializer):
     message = serializers.CharField()
 
 
+class RatingFollowupProjectionSerializer(serializers.Serializer):
+    comment = serializers.CharField(allow_blank=True)
+    google_review_url = serializers.CharField(allow_blank=True)
+    contact_offered = serializers.BooleanField()
+    contact_requested = serializers.BooleanField()
+
+
 class CancellationRequestInputSerializer(serializers.Serializer):
     reason = serializers.CharField(
         allow_blank=True,
@@ -405,6 +412,13 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_thanks = serializers.CharField()
     rating_thanks_title = serializers.CharField()
     rating_thanks_celebrate = serializers.CharField()
+    rating_contact_title = serializers.CharField()
+    rating_contact_message = serializers.CharField()
+    rating_contact_done = serializers.CharField()
+    rating_google_title = serializers.CharField()
+    rating_google_message = serializers.CharField()
+    rating_google_cta = serializers.CharField()
+    rating_google_copied = serializers.CharField()
     page_meta_description = serializers.CharField()
     delivery_heading = serializers.CharField()
     stale_cta = serializers.CharField()
@@ -469,6 +483,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     cancellation_note = serializers.CharField(allow_blank=True, required=False)
     refund_status_label = serializers.CharField(allow_null=True, required=False)
     cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
+    rating_followup = RatingFollowupProjectionSerializer(allow_null=True, required=False)
     # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
     # pede e-mail). ``None`` enquanto não há nota.
     fiscal_note = FiscalNoteSerializer(allow_null=True, required=False)
