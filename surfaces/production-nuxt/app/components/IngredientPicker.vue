@@ -81,7 +81,7 @@ const touch = useTouchPointer();
     :placeholder="placeholder || 'Buscar ingrediente…'"
     :search-input="{ autofocus: !touch, placeholder: 'Buscar ingrediente' }"
     class="w-full min-w-0"
-    aria-label="Ingrediente cadastrado"
+    aria-label="Ingrediente"
     @update:model-value="onUpdate"
   >
     <template #item-label="{ item }">

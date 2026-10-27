@@ -2,7 +2,7 @@
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 import type { OperatorActionBarAction } from "../../../../../operator-kit/app/presentation/actionBar";
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
-// editável (nome, insumo com busca, quantidade, unidade, papel), partes, etapas e
+// editável (ingrediente com busca, quantidade, unidade, papel), partes, etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
 // botão "Padronizar para 1000 g" mostra o antes/depois e deixa desfazer; a receita
 // como foi informada (`origin`) fica visível como referência histórica. "Salvar
@@ -117,9 +117,6 @@ const anchorNoun = computed(() => {
 const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.items).length : 0));
 
 // ── Itens ───────────────────────────────────────────────────────────────────
-function onItemName(index: number, event: Event) {
-  formula.value = updateItem(formula.value, index, { name: (event.target as HTMLInputElement).value });
-}
 function onItemQuantity(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
   formula.value = updateItem(formula.value, index, { quantity: Number(raw) || 0 });
@@ -135,7 +132,7 @@ function onItemGramsPerUnit(index: number, event: Event) {
   formula.value = updateItem(formula.value, index, { grams_per_unit: raw ? Number(raw) || null : null });
 }
 function onItemSku(index: number, sku: string) {
-  formula.value = updateItem(formula.value, index, { sku });
+  formula.value = updateItem(formula.value, index, sku ? { sku } : { sku: "", name: "" });
 }
 function onItemSelect(index: number, option: IngredientOptionProjection) {
   const item = formula.value.items[index];
@@ -707,15 +704,11 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               <li
                 v-for="(item, index) in formula.items"
                 :key="`item-${index}`"
-                class="grid gap-2 p-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1.4fr)_auto_auto_auto_auto]"
+                class="grid gap-2 p-3 sm:grid-cols-[minmax(0,1.8fr)_auto_auto_auto_auto]"
                 :class="item.role === 'flour' && anchorIsFlour ? 'bg-primary/5' : ''"
               >
-                <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Ingrediente
-                  <NuxtInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" class="w-full" :ui="{ base: 'bg-muted' }" @input="onItemName(index, $event)" />
-                </label>
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Ingrediente cadastrado
+                  Ingrediente
                   <IngredientPicker
                     :model-value="item.sku"
                     :matched-name="itemMatchedName(index)"
@@ -766,7 +759,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer" :disabled="index === formula.items.length - 1" @click="move(index, 1)" />
                   <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="remove(index)" />
                 </div>
-                <label v-if="item.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-6">
+                <label v-if="item.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-5">
                   Gramas por unidade (sem isso a contagem fica fora da conta)
                   <NuxtInput
                     :model-value="String(item.grams_per_unit ?? '')"
@@ -804,7 +797,6 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     <IngredientPicker
                       :model-value="part.sku ?? ''"
                       :matched-name="partMatchedName(index)"
-                      placeholder="Buscar levain, poolish…"
                       @update:model-value="onPartSku(index, $event)"
                       @select="onPartSelect(index, $event)"
                     />
