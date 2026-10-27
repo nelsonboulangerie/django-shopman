@@ -7025,6 +7025,7 @@
             "TrackingPickupData",
             "TrackingProgressStepData",
             "TrackingPromiseData",
+            "TrackingRatingFollowupData",
             "TrackingStatusData",
             "TrackingTimelineEventData",
             "_COURIER_ENDED_STATUSES",
@@ -7071,6 +7072,7 @@
             "_progress_timestamp",
             "_promise",
             "_qr_image_src",
+            "_rating_followup",
             "_refund_status_key",
             "_reorder_action",
             "_shop_has_specific_address",
@@ -7349,6 +7351,20 @@
       "unit_ids": [
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/rating_contact.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "rating.contact-offer"
       ],
       "responsibilities": [
         "decisão"
@@ -8289,6 +8305,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/services/customer_contact.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-customer-contact"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
     },
     {
       "path": "shopman/shop/policies/catalog_identity.py",

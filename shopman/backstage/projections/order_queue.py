@@ -553,6 +553,19 @@ class CustomerProfileProjection:
 
 
 @dataclass(frozen=True)
+class ContactRequestProjection:
+    """Ouvidoria aberta: o cliente avaliou mal e pediu que a loja fale com ele.
+
+    Só existe enquanto o caso está aberto; o "Resolvido" (com a nota do que foi
+    feito) o fecha. Ver ``shop/services/customer_contact.py``.
+    """
+
+    rating: int
+    comment: str
+    requested_at_display: str
+
+
+@dataclass(frozen=True)
 class OperatorOrderProjection:
     """O detalhe de um pedido — o MESMO contrato para o Gestor e o PDV (``context``)."""
 
@@ -701,6 +714,7 @@ class OperatorOrderProjection:
     # servidor resolve a assinatura por ``username``. Exclui quem opera: a
     # segunda assinatura existe para haver duas pessoas.
     managers: tuple[dict[str, str], ...] = ()
+    contact_request: ContactRequestProjection | None = None
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
@@ -993,6 +1007,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         managers=_approver_options(user),
+        contact_request=_contact_request(order),
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
@@ -2728,6 +2743,19 @@ def _fiscal_states_for(orders) -> _FiscalEvidence:
         ).values_list("order_ref", flat=True)
     )
     return _FiscalEvidence(result, failed)
+
+
+def _contact_request(order: Order) -> ContactRequestProjection | None:
+    from shopman.shop.services import customer_contact
+
+    request = customer_contact.open_request(order)
+    if request is None:
+        return None
+    return ContactRequestProjection(
+        rating=request.rating,
+        comment=request.comment,
+        requested_at_display=_format_datetime(request.requested_at),
+    )
 
 
 def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:

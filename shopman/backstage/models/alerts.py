@@ -242,6 +242,9 @@ class OperatorAlert(models.Model):
         # movimento. O sistema resolve sozinho quando o uso volta a ficar folgado.
         ("operator_capacity_critical", "Apps de operação no limite da capacidade"),
         ("low_rating", "Avaliação baixa recebida"),
+        # Ouvidoria: quem deu nota até 3 pediu que a loja fale com ele. Fecha no
+        # "Resolvido" do pedido, com a nota do que foi feito (customer_contact).
+        ("customer_contact_requested", "Cliente pediu contato após avaliar"),
         ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),
         # A venda foi criada e cobrada, mas o turno fechou entre o commit do
@@ -385,6 +388,7 @@ class OperatorAlert(models.Model):
         "pos_offline_sale_adjusted",
         "stale_new_order",
         "customer_cancellation_requested",
+        "customer_contact_requested",
         "lifecycle_phase_stuck",
         "handoff_refused",
         "order_production_quality_risk",
