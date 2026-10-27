@@ -1,11 +1,14 @@
 """URL configuration for the Shopman project."""
 
+import functools
 import logging
 
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.http import Http404, HttpResponse
+from django.middleware.csrf import get_token
+from django.urls import URLPattern, URLResolver, include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from shopman.doorman.views.access_link import AccessLinkCreateView, AccessLinkExchangeView
 
@@ -123,6 +126,52 @@ urlpatterns = [
     path("", include("shopman.backstage.urls")),
 ]
 
+
+# ── O Admin só responde no host do Admin ───────────────────────────
+#
+# Um Django serve todos os hosts. Sem esta trava, `/admin/` respondia também em
+# `api.`, e lá a sessão do login sai com `Domain=.boulangerie.com.br` (o
+# `OperatorSessionDomainMiddleware` reescreve o cookie no host da API): a sessão
+# de superusuário viajava para os nove subdomínios de operador (laudo S4, 23/10).
+#
+# Com `SHOPMAN_ADMIN_HOST` configurado, toda rota `admin/…` fora dele é 404. A
+# única exceção é `GET /admin/login/`, que o BFF dos apps de operador usa para
+# inicializar o cookie de CSRF (`operator-kit/server/utils/djangoProxy.ts`): fora
+# do host do Admin ele devolve só o cookie (204), sem formulário e sem aceitar
+# POST. Sem a setting (dev local), nada muda.
+_CSRF_BOOTSTRAP_PATH = "/admin/login/"
+
+
+def _is_admin_host(request) -> bool:
+    canonical = (getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip().lower()
+    if not canonical:
+        return True
+    return request.get_host().split(":")[0].lower() == canonical
+
+
+def _admin_host_only(view):
+    @functools.wraps(view)
+    def guarded(request, *args, **kwargs):
+        if _is_admin_host(request):
+            return view(request, *args, **kwargs)
+        if request.method in ("GET", "HEAD") and request.path_info == _CSRF_BOOTSTRAP_PATH:
+            get_token(request)
+            return HttpResponse(status=204)
+        raise Http404
+
+    return guarded
+
+
+def _confine_to_admin_host(patterns):
+    for pattern in patterns:
+        if isinstance(pattern, URLResolver):
+            _confine_to_admin_host(pattern.url_patterns)
+        elif isinstance(pattern, URLPattern):
+            pattern.callback = _admin_host_only(pattern.callback)
+
+
+_confine_to_admin_host(p for p in urlpatterns if str(p.pattern).startswith("admin/"))
+
 # ── Core APIs ──────────────────────────────────────────────────────
 #
 # Os ViewSets de CRUD dos pacotes do kernel (orderman, offerman, stockman,
@@ -187,7 +236,7 @@ urlpatterns += _include_optional("api/v1/backstage/", "shopman.backstage.api.url
 # Menuboard — superfície display pública (quadro-negro numa TV), tempo real via SSE.
 urlpatterns += _include_optional("", "shopman.shop.menuboard_urls")
 
-# Fiscal — DANFE NFC-e (cupom de operador, imprimível). Gated a staff na view.
+# Fiscal — DANFE NFC-e (cupom de operador, imprimível). Gated por permissão de pedidos ou de caixa na view.
 urlpatterns += _include_optional("", "shopman.shop.fiscal_urls")
 
 # ── Media files (dev only) ────────────────────────────────────────

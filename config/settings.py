@@ -1515,6 +1515,11 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API do Django Shopman — commerce suite modular.",
     "VERSION": "0.1.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # O schema é o mapa das ~470 rotas, com corpo e resposta de cada uma: só staff
+    # lê (laudo S5, 23/10). Anônimo e cliente logado recebem 403. Nenhuma
+    # superfície busca `/api/schema/` em execução (os contratos saem dos
+    # comandos `export_*_schema`, direto das projections).
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
     "ENUM_NAME_OVERRIDES": {
         "GuestmanCustomerTypeEnum": [
             ("individual", "Pessoa Física"),
@@ -2335,8 +2340,9 @@ LOGIN_URL = "/admin/login/"
 
 #: Host canônico do Admin. Nele, a raiz redireciona para `/admin/` — o host já
 #: diz o que é, e obrigar a repetir a palavra no caminho é redundância.
-#: ⚠️ NÃO fechar o `/admin/` dos outros hosts: o BFF dos apps de operador
-#: inicializa o CSRF batendo em `/admin/login/` na API. Ver docs/reference.
+#: Fora dele, toda rota `admin/…` é 404 (laudo S4, `config/urls.py`); só o
+#: `GET /admin/login/` responde, e só com o cookie de CSRF, porque o BFF dos apps
+#: de operador inicializa o CSRF batendo nele na API.
 #:
 #: Normalizado porque é usado de duas formas incompatíveis com lixo: comparado
 #: com `request.get_host()` (que nunca traz esquema) e concatenado em
