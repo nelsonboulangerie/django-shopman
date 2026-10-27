@@ -718,9 +718,11 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
 # ``cnpj_credenciadora`` (CNPJ), ``bandeira_operadora`` (tBand),
 # ``numero_autorizacao`` (cAut) e, no nível da NOTA, ``valor_troco`` (vTroco).
 # Formas que exigem o grupo de cartão (``card``) na NFC-e: a regra YA04-10
-# (rejeição 391) vale para cartão de crédito, de débito E Pix (03, 04, 17 e 20).
-# Sem o grupo, a SEFAZ recusa a nota.
-CARD_CODES = frozenset({"03", "04", "17", "20"})
+# (rejeição 391) vale para cartão de crédito, de débito e Pix dinâmico (03, 04
+# e 17). O Pix estático (20) é o contrário: a SEFAZ do Paraná RECUSA o grupo
+# nele (rejeição 963, "Tipo de pagamento não aceita o grupo de cartões ou
+# boletos"), medido em homologação em 27/10/2026 na venda PDV-261027-N09.
+CARD_CODES = frozenset({"03", "04", "17"})
 # tpIntegra 2: "pagamento não integrado com o sistema de automação". O 1
 # (integrado: TEF ou comércio eletrônico) obriga CNPJ da instituição de
 # pagamento e o código de autorização (cAut, obrigatório em todas as UFs desde a
