@@ -92,7 +92,7 @@ const {
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
 
-// Ouvidoria: o cliente avaliou mal e pediu que a loja fale com ele. O caso fica
+// Ouvidoria: o cliente avaliou mal e pediu para falar com o responsável. O caso fica
 // aberto no pedido até alguém marcar "Resolvido", com uma frase do que foi feito.
 const contactResolveOpen = ref(false);
 async function onResolveContact(choice: { reason: string }) {
@@ -1054,8 +1054,8 @@ const outside = useOutsideStore(
         icon="i-lucide-message-circle-heart"
         :title="`Ouvidoria aberta: nota ${order.contact_request.rating} de 5`"
         :description="order.contact_request.comment
-          ? `O cliente pediu que a loja fale com ele (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
-          : `O cliente pediu que a loja fale com ele (${order.contact_request.requested_at_display}). Não deixou comentário.`"
+          ? `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
+          : `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Não deixou comentário.`"
         :actions="alertActions('warning', [
           {
             label: 'Resolvido',

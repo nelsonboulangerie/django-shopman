@@ -242,7 +242,7 @@ class OperatorAlert(models.Model):
         # movimento. O sistema resolve sozinho quando o uso volta a ficar folgado.
         ("operator_capacity_critical", "Apps de operação no limite da capacidade"),
         ("low_rating", "Avaliação baixa recebida"),
-        # Ouvidoria: quem deu nota até 3 pediu que a loja fale com ele. Fecha no
+        # Ouvidoria: quem deu nota até 3 pediu para falar com o responsável. Fecha no
         # "Resolvido" do pedido, com a nota do que foi feito (customer_contact).
         ("customer_contact_requested", "Cliente pediu contato após avaliar"),
         ("cash_change_requested", "Troco solicitado no PDV"),
