@@ -386,7 +386,7 @@ export interface EquipmentOutProjection {
   identified: boolean;
 }
 
-/** Ouvidoria aberta: o cliente avaliou mal e pediu que a loja fale com ele. */
+/** Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável. */
 export interface ContactRequestProjection {
   rating: number;
   comment: string;

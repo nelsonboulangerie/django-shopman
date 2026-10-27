@@ -554,7 +554,7 @@ class CustomerProfileProjection:
 
 @dataclass(frozen=True)
 class ContactRequestProjection:
-    """Ouvidoria aberta: o cliente avaliou mal e pediu que a loja fale com ele.
+    """Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável.
 
     Só existe enquanto o caso está aberto; o "Resolvido" (com a nota do que foi
     feito) o fecha. Ver ``shop/services/customer_contact.py``.
@@ -2993,6 +2993,8 @@ _EVENT_LABELS = {
     "ifood_accept_confirmed": "O iFood confirmou o pedido",
     "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
+    "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
+    "customer_contact_resolved": "Ouvidoria resolvida",
 }
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge

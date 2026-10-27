@@ -92,7 +92,7 @@ const {
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
 
-// Ouvidoria: o cliente avaliou mal e pediu que a loja fale com ele. O caso fica
+// Ouvidoria: o cliente avaliou mal e pediu para falar com o responsável. O caso fica
 // aberto no pedido até alguém marcar "Resolvido", com uma frase do que foi feito.
 const contactResolveOpen = ref(false);
 async function onResolveContact(choice: { reason: string }) {
@@ -1052,10 +1052,9 @@ const outside = useOutsideStore(
         color="warning"
         variant="subtle"
         icon="i-lucide-message-circle-heart"
-        :title="`Ouvidoria aberta: nota ${order.contact_request.rating} de 5`"
         :description="order.contact_request.comment
-          ? `O cliente pediu que a loja fale com ele (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
-          : `O cliente pediu que a loja fale com ele (${order.contact_request.requested_at_display}). Não deixou comentário.`"
+          ? `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
+          : `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Não deixou comentário.`"
         :actions="alertActions('warning', [
           {
             label: 'Resolvido',
@@ -1063,7 +1062,21 @@ const outside = useOutsideStore(
           },
         ])"
         data-contact-request
-      />
+      >
+        <!-- As estrelas dizem a nota de relance; o texto continua para o leitor de tela.
+             Glifo e não ícone: o modo CSS dos ícones é máscara, e máscara não preenche. -->
+        <template #title>
+          Ouvidoria aberta
+          <span class="ms-1 tracking-wider" aria-hidden="true">
+            <span
+              v-for="n in 5"
+              :key="n"
+              :class="n <= order.contact_request.rating ? 'text-warning' : 'text-muted opacity-50'"
+            >★</span>
+          </span>
+          <span class="sr-only">: nota {{ order.contact_request.rating }} de 5</span>
+        </template>
+      </NuxtAlert>
       <NuxtAlert
         v-if="order && cardAuth"
         :color="cardAuth.tone"
