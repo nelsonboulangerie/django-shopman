@@ -517,6 +517,30 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_RATING_SUBMIT_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar avaliação")},
     },
+    "TRACKING_RATING_CONTACT_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Quero que falem comigo")},
+    },
+    "TRACKING_RATING_CONTACT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Sentimos muito que não foi como você esperava")},
+    },
+    "TRACKING_RATING_CONTACT_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Quer que a gente fale com você? Alguém da casa te chama no WhatsApp para entender o que houve.")},
+    },
+    "TRACKING_RATING_CONTACT_DONE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado. Alguém da casa vai te chamar no WhatsApp.")},
+    },
+    "TRACKING_RATING_GOOGLE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Quer contar no Google também?")},
+    },
+    "TRACKING_RATING_GOOGLE_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua opinião ajuda outras pessoas a conhecer a casa.")},
+    },
+    "TRACKING_RATING_GOOGLE_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Avaliar no Google")},
+    },
+    "TRACKING_RATING_GOOGLE_COPIED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Ao tocar, seu comentário é copiado. No Google, é só colar.")},
+    },
     "TRACKING_SUPPORT_WHATSAPP_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Oi! Posso ajudar com o pedido {order_ref}?")},
     },

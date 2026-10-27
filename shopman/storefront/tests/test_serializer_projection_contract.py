@@ -48,6 +48,7 @@ from shopman.storefront.presentation.order_tracking import (
     OrderTrackingProjection,
     OrderTrackingPromiseProjection,
     PickupInfoProjection,
+    RatingFollowupProjection,
 )
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
@@ -70,6 +71,11 @@ MIRROR_CONTRACTS = [
     (
         api_serializers.CancellationRequestProjectionSerializer,
         CancellationRequestProjection,
+        set(),
+    ),
+    (
+        api_serializers.RatingFollowupProjectionSerializer,
+        RatingFollowupProjection,
         set(),
     ),
     (api_serializers.FiscalNoteSerializer, FiscalNoteProjection, set()),
