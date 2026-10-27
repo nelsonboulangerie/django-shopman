@@ -1,14 +1,14 @@
 <script setup lang="ts">
-// Casar um ingrediente com um insumo do sistema. É escolha numa lista longa, com
+// Casar uma linha da BOM com um ingrediente do sistema. É escolha numa lista longa, com
 // busca: `NuxtSelectMenu`. A busca vai ao servidor (GET recipes/ingredients/?q=, com
 // debounce no composable), então o filtro local fica desligado (`ignore-filter`);
 // quando a captura já trouxe candidatos, eles aparecem antes de qualquer digitação.
-// O valor é o SKU escolhido; "" = ainda sem insumo (permitido em rascunho, §3), e o
-// "limpar" do campo desfaz o insumo.
+// O resultado pode ser comprado ou produzido por outra receita. A origem não muda
+// o gesto do operador: ele busca e escolhe um ingrediente.
 import type { IngredientOptionProjection } from "~/types/recipeBook";
 
 const props = defineProps<{
-  /** SKU casado ("" = sem insumo). */
+  /** SKU casado ("" = sem ingrediente). */
   modelValue: string;
   /** Nome exibido para o SKU casado (o campo mostra nome, não código). */
   matchedName?: string;
@@ -41,7 +41,7 @@ const items = computed<PickerItem[]>(() => {
     description: option.sku,
     option,
   }));
-  // O insumo já casado continua na lista, para o campo mostrar o nome dele.
+  // O ingrediente já casado continua na lista, para o campo mostrar o nome dele.
   if (props.modelValue && !rows.some((row) => row.value === props.modelValue)) {
     rows.unshift({
       value: props.modelValue,
@@ -78,20 +78,20 @@ const touch = useTouchPointer();
     :loading="pending"
     :clear="!disabled"
     :disabled="disabled"
-    :placeholder="placeholder || 'Buscar insumo…'"
-    :search-input="{ autofocus: !touch, placeholder: 'Buscar insumo' }"
+    :placeholder="placeholder || 'Buscar ingrediente…'"
+    :search-input="{ autofocus: !touch, placeholder: 'Buscar ingrediente' }"
     class="w-full min-w-0"
-    aria-label="Insumo"
+    aria-label="Ingrediente cadastrado"
     @update:model-value="onUpdate"
   >
     <template #item-label="{ item }">
       <span class="flex min-w-0 items-center gap-2">
         <span class="truncate">{{ item.label }}</span>
-        <NuxtBadge v-if="item.option?.is_part" color="neutral" label="Parte" />
+        <NuxtBadge v-if="item.option?.is_part" color="neutral" label="Receita" />
       </span>
     </template>
     <template #empty>
-      {{ pending ? "Buscando…" : "Nenhum insumo encontrado." }}
+      {{ pending ? "Buscando…" : "Nenhum ingrediente encontrado." }}
     </template>
   </NuxtSelectMenu>
 </template>

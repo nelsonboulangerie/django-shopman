@@ -140,6 +140,20 @@ function onItemSku(index: number, sku: string) {
 function onItemSelect(index: number, option: IngredientOptionProjection) {
   const item = formula.value.items[index];
   if (!item) return;
+  // A BOM tem um único tipo de linha: ingrediente. A origem do item escolhido
+  // decide apenas qual estrutura o motor recebe. Não obriga o operador a saber,
+  // antes de buscar, se o ingrediente é comprado ou produzido pela casa.
+  if (option.is_part) {
+    const part = {
+      ...emptyPart("preferment"),
+      sku: option.sku,
+      entry_ref: option.entry_ref,
+      quantity: anchorIsFlour.value ? null : item.quantity || null,
+      unit: item.unit,
+    };
+    formula.value = addPart(removeItem(formula.value, index), part);
+    return;
+  }
   const patch: Partial<typeof item> = { sku: option.sku };
   if (!item.name.trim()) patch.name = option.name;
   if (item.role === "other" && ROLE_OPTIONS.some((role) => role.value === option.role)) {
@@ -152,7 +166,7 @@ function itemMatchedName(index: number): string {
   if (!item?.sku) return "";
   return lens.value?.items.find((row) => row.sku === item.sku)?.name || item.name || item.sku;
 }
-function add() {
+function addIngredient() {
   formula.value = addItem(formula.value, emptyItem({ role: formula.value.items.length ? "other" : "flour" }));
 }
 function remove(index: number) {
@@ -191,9 +205,6 @@ const editorTabs = [
 ];
 
 // ── Partes ──────────────────────────────────────────────────────────────────
-function addNewPart() {
-  formula.value = addPart(formula.value, emptyPart("preferment"));
-}
 function onPartKind(index: number, kind: string) {
   const next = kind as PartKind;
   formula.value = updatePart(formula.value, index, next === "old_dough" ? { kind: next, cap_pct: 20 } : { kind: next, cap_pct: null });
@@ -653,7 +664,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
             <div class="grid gap-3 border-b p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
               <div>
                 <h2 class="text-sm font-semibold">Ingredientes</h2>
-                <p class="text-xs text-muted-foreground">Cada item do BOM pode ser um insumo comprado ou outra receita da casa.</p>
+                <p class="text-xs text-muted-foreground">Cada ingrediente pode ser comprado ou produzido pela casa a partir de outra receita.</p>
               </div>
               <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                 Base do cálculo (100%)
@@ -686,12 +697,11 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
               </span>
               <div class="ml-auto flex flex-wrap items-center gap-2">
-                <NuxtButton color="neutral" variant="outline" icon="i-lucide-plus" label="Adicionar insumo" @click="add" />
-                <NuxtButton color="neutral" variant="outline" icon="i-lucide-plus" label="Adicionar receita" @click="addNewPart" />
+                <NuxtButton color="neutral" variant="outline" icon="i-lucide-plus" label="Adicionar ingrediente" @click="addIngredient" />
               </div>
             </div>
             <p v-if="!formula.items.length && !formula.parts.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
-              Adicione um insumo comprado ou uma receita da casa.
+              Adicione o primeiro ingrediente da receita.
             </p>
             <ol v-else class="divide-y" data-testid="recipe-bom-items">
               <li
@@ -705,7 +715,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   <NuxtInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" class="w-full" :ui="{ base: 'bg-muted' }" @input="onItemName(index, $event)" />
                 </label>
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Cadastro do insumo
+                  Ingrediente cadastrado
                   <IngredientPicker
                     :model-value="item.sku"
                     :matched-name="itemMatchedName(index)"
@@ -790,7 +800,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 </template>
                 <template v-else>
                   <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Ingrediente com receita própria
+                    Ingrediente
                     <IngredientPicker
                       :model-value="part.sku ?? ''"
                       :matched-name="partMatchedName(index)"
