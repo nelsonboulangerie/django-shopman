@@ -1056,6 +1056,13 @@ const outside = useOutsideStore(
           ? `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
           : `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Não deixou comentário.`"
         :actions="alertActions('warning', [
+          // O aviso manda chamar o cliente: o botão já leva à conversa.
+          order.customer_whatsapp_url && {
+            label: 'Chamar no WhatsApp',
+            icon: 'i-lucide-message-circle',
+            to: order.customer_whatsapp_url,
+            target: '_blank',
+          },
           {
             label: 'Resolvido',
             onClick: () => { contactResolveOpen = true; },
