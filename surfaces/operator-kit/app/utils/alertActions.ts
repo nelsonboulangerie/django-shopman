@@ -27,9 +27,11 @@ export function alertActions(
   const tone = color ?? "primary";
   return actions
     .filter((action): action is AlertActionInput => Boolean(action))
-    .map(({ secondary, ...action }, index) => ({
+    .map(({ secondary, class: extra, ...action }, index) => ({
       size: "md",
       ...action,
+      // Empilhado (aviso estreito, ver o `alert` do app.config), o rótulo fica no meio.
+      class: ["@max-md:justify-center", extra],
       color: tone,
       variant: (secondary ?? index > 0) ? "outline" : "solid",
     }));

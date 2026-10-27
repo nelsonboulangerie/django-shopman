@@ -87,7 +87,13 @@ function alertColors(theme: Theme): Record<string, { text: string; background: s
 
 describe("aviso: a descrição é AA", () => {
   it("o tema leva a descrição à cor plena em todo aviso", () => {
-    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{\s*description:\s*"opacity-100"\s*\}/);
+    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*description:\s*"opacity-100"/);
+  });
+
+  it("botões que empilham ocupam a largura do aviso (dono, 27/10/2026)", () => {
+    // A régua é a largura do próprio aviso (container query), não a da tela.
+    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*root:\s*"@container"/);
+    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*actions:\s*"@max-md:flex-col @max-md:items-stretch"/);
   });
 
   it("o primary subtle escreve com a tinta do tema", () => {
