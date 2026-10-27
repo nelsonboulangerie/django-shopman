@@ -101,7 +101,7 @@ def contact_offered(order: Order) -> bool:
 
 def operational_message(*, order_ref: str, rating: int) -> str:
     return (
-        f"O cliente do pedido {order_ref} deu nota {rating}/5 e pediu que a loja fale com ele. "
+        f"O cliente do pedido {order_ref} deu nota {rating}/5 e pediu para falar com o responsável. "
         "Abra o pedido para ler o comentário, chame no WhatsApp e marque Resolvido com o que foi feito."
     )
 

@@ -811,7 +811,7 @@ def _build_order_actions(
             _action(
                 ref="request_contact",
                 kind="mutation",
-                label=_copy_title("TRACKING_RATING_CONTACT_CTA", "Quero que falem comigo"),
+                label=_copy_title("TRACKING_RATING_CONTACT_CTA", "Quero falar com o responsável"),
                 priority="primary",
                 href=f"/api/v1/orders/{order.ref}/contact-request/",
                 method="POST",

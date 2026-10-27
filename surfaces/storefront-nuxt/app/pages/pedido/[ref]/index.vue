@@ -73,6 +73,13 @@ const ratingThanks = computed(() => ratingThanksView(tracking.value?.copy, ratin
 // gostou). Quem não gostou vê a ouvidoria primeiro; o convite continua abaixo.
 const ratingFollowup = computed(() => tracking.value?.rating_followup || null)
 const contactAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_contact' && action.enabled) || null)
+// Mesmo convite para toda nota (política do Google); só o tom muda: quem gostou
+// ouve "coisa boa é pra compartilhar", quem não gostou não ouve festa.
+const googleInviteTitle = computed(() => {
+  const copy = tracking.value?.copy
+  const lowRating = !!contactAction.value || !!ratingFollowup.value?.contact_requested
+  return (lowRating ? copy?.rating_google_title : copy?.rating_google_share_title) || ''
+})
 const reorderAction = computed(() => tracking.value?.actions.find(action => action.ref === 'reorder' && action.enabled) || null)
 // O bloco de pagamento inline (PAYMENT-TRACKING-MERGE) desenha o botão do cartão
 // e o copia-e-cola do Pix; não os repetimos no painel de status.
@@ -1059,7 +1066,7 @@ useSeoMeta({
                 class="space-y-2 rounded-lg border border-border p-4"
                 data-rating-google
               >
-                <p class="font-semibold">{{ tracking.copy.rating_google_title }}</p>
+                <p class="font-semibold">{{ googleInviteTitle }}</p>
                 <p class="text-sm text-muted-foreground">{{ tracking.copy.rating_google_message }}</p>
                 <UiButton
                   :href="ratingFollowup.google_review_url"

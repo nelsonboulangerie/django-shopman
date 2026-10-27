@@ -1136,6 +1136,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_RATING_GOOGLE_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_RATING_GOOGLE_SHARE_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_RATING_GOOGLE_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),

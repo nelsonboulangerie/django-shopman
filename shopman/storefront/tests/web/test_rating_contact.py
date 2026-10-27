@@ -75,6 +75,7 @@ def test_low_rating_offers_contact_and_google_invite(client, delivered, shop_wit
     )
     action = next(a for a in payload["actions"] if a["ref"] == "request_contact")
     assert action["href"] == f"/api/v1/orders/{delivered.ref}/contact-request/"
+    assert action["label"] == "Quero falar com o responsável"
 
 
 def test_good_rating_gets_the_same_google_invite_and_no_contact(client, delivered, shop_with_place):
@@ -84,6 +85,9 @@ def test_good_rating_gets_the_same_google_invite_and_no_contact(client, delivere
     assert followup["contact_offered"] is False
     assert followup["google_review_url"].endswith("placeid=ChIJ-casa")
     assert not any(a["ref"] == "request_contact" for a in payload["actions"])
+    # O tom muda com a nota; o convite, não.
+    assert payload["copy"]["rating_google_share_title"] == "Coisa boa é pra compartilhar"
+    assert payload["copy"]["rating_google_title"] == "Quer contar no Google também?"
 
 
 def test_without_place_id_there_is_no_google_invite(client, delivered):

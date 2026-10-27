@@ -191,6 +191,7 @@ class OrderTrackingCopyProjection:
     rating_contact_message: str
     rating_contact_done: str
     rating_google_title: str
+    rating_google_share_title: str
     rating_google_message: str
     rating_google_cta: str
     rating_google_copied: str
@@ -1469,13 +1470,14 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         ),
         rating_contact_message=copy.message(
             "TRACKING_RATING_CONTACT_MESSAGE",
-            "Quer que a gente fale com você? Alguém da casa te chama no WhatsApp para entender o que houve.",
+            "O responsável pela casa te chama no WhatsApp para entender o que houve.",
         ),
         rating_contact_done=copy.message(
             "TRACKING_RATING_CONTACT_DONE",
-            "Combinado. Alguém da casa vai te chamar no WhatsApp.",
+            "Combinado. O responsável pela casa vai te chamar no WhatsApp.",
         ),
         rating_google_title=copy.title("TRACKING_RATING_GOOGLE_TITLE", "Quer contar no Google também?"),
+        rating_google_share_title=copy.title("TRACKING_RATING_GOOGLE_SHARE_TITLE", "Coisa boa é pra compartilhar"),
         rating_google_message=copy.message(
             "TRACKING_RATING_GOOGLE_MESSAGE",
             "Sua opinião ajuda outras pessoas a conhecer a casa.",
@@ -1483,7 +1485,7 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         rating_google_cta=copy.title("TRACKING_RATING_GOOGLE_CTA", "Avaliar no Google"),
         rating_google_copied=copy.message(
             "TRACKING_RATING_GOOGLE_COPIED",
-            "Ao tocar, seu comentário é copiado. No Google, é só colar.",
+            "Ao tocar, copiamos seu comentário. No Google, toque no campo de texto e cole.",
         ),
         page_meta_description=copy.message("TRACKING_PAGE_META_DESCRIPTION", "Acompanhe seu pedido"),
         delivery_heading=copy.title("TRACKING_DELIVERY_HEADING", "Entrega"),

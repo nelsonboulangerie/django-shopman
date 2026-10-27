@@ -416,6 +416,7 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_contact_message = serializers.CharField()
     rating_contact_done = serializers.CharField()
     rating_google_title = serializers.CharField()
+    rating_google_share_title = serializers.CharField()
     rating_google_message = serializers.CharField()
     rating_google_cta = serializers.CharField()
     rating_google_copied = serializers.CharField()

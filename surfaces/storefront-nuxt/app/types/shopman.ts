@@ -1063,6 +1063,7 @@ export interface TrackingCopyProjection {
   rating_contact_message: string
   rating_contact_done: string
   rating_google_title: string
+  rating_google_share_title: string
   rating_google_message: string
   rating_google_cta: string
   rating_google_copied: string
