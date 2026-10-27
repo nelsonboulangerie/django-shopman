@@ -141,7 +141,7 @@ class TrackingRatingFollowupData:
     """What follows the customer's rating: the ombudsman offer and the Google invite.
 
     ``google_review_url`` vale para TODA nota (a política do Google proíbe convidar
-    só quem gostou); ``contact_offered`` só até ``customer_contact.CONTACT_MAX_RATING``.
+    só quem gostou); ``contact_offered`` segue ``policies/rating_contact.py``.
     ``comment`` é o que o cliente escreveu, para a tela copiar no gesto do convite.
     """
 
@@ -599,7 +599,7 @@ def _rating_followup(order) -> TrackingRatingFollowupData | None:
     return TrackingRatingFollowupData(
         comment=str(rating.get("comment") or ""),
         google_review_url=customer_contact.google_review_url(),
-        contact_offered=customer_contact.can_offer(order),
+        contact_offered=customer_contact.contact_offered(order),
         contact_requested=customer_contact.current(order) is not None,
     )
 

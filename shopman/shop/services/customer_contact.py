@@ -1,7 +1,7 @@
 """Ouvidoria da avaliação: o cliente que não gostou pede que a casa fale com ele.
 
-Depois de avaliar, quem deu nota até ``CONTACT_MAX_RATING`` vê a oferta de contato;
-aceita, ela vira um caso no app de Pedidos (evento no pedido + aviso ``orders``) que
+Depois de avaliar, quem deu nota baixa vê a oferta de contato (a régua mora em
+``policies/rating_contact.py``); aceita, ela vira um caso no app de Pedidos (evento no pedido + aviso ``orders``) que
 só fecha quando alguém da equipe marca "Resolvido", com uma nota do que foi feito.
 
 O convite para publicar a opinião no Google é outra coisa e vale para TODA nota
@@ -27,14 +27,11 @@ from django.db import transaction
 from shopman.orderman.models import Order
 
 from shopman.shop.adapters import alert as alert_adapter
+from shopman.shop.policies import rating_contact
 
 REQUESTED_EVENT = "customer_contact_requested"
 RESOLVED_EVENT = "customer_contact_resolved"
 ALERT_TYPE = "customer_contact_requested"
-
-#: Nota 3 costuma ser "não foi ruim, mas algo incomodou": é aí que um contato
-#: mais salva cliente (dono, 27/10/2026). O aviso urgente ``low_rating`` segue em 2.
-CONTACT_MAX_RATING = 3
 
 GOOGLE_REVIEW_URL = "https://search.google.com/local/writereview?placeid={place_id}"
 
@@ -94,12 +91,12 @@ def open_request(order: Order) -> ContactRequest | None:
     return request if request is not None and not request.resolved else None
 
 
-def can_offer(order: Order) -> bool:
-    """A avaliação pede a oferta de contato, e ela ainda não foi aceita."""
-    rating = _rating(order)
-    if not rating or int(rating["rating"]) > CONTACT_MAX_RATING:
-        return False
-    return current(order) is None
+def contact_offered(order: Order) -> bool:
+    """A avaliação deste pedido oferece o contato, e ele ainda não foi aceito."""
+    return rating_contact.can_request_contact(
+        _rating(order).get("rating"),
+        already_requested=current(order) is not None,
+    )
 
 
 def operational_message(*, order_ref: str, rating: int) -> str:
@@ -116,7 +113,7 @@ def request_contact(order: Order) -> ContactRequest:
     existing = current(locked)
     if existing is not None:
         return existing
-    if not can_offer(locked):
+    if not contact_offered(locked):
         raise ContactRequestUnavailable
     rating = _rating(locked)
     score = int(rating["rating"])
