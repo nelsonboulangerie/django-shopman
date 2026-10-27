@@ -30,8 +30,8 @@ export function alertActions(
     .map(({ secondary, class: extra, ...action }, index) => ({
       size: "md",
       ...action,
-      // Empilhado (aviso estreito, ver o `alert` do app.config), o rótulo fica no meio.
-      class: ["@max-md:justify-center", extra],
+      // Empilhado (celular, ver o `alert` do app.config), o rótulo fica no meio.
+      class: ["max-sm:justify-center", extra],
       color: tone,
       variant: (secondary ?? index > 0) ? "outline" : "solid",
     }));

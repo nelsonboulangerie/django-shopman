@@ -144,15 +144,15 @@ export default defineAppConfig({
     // sobre latão a 10%, 4,35:1) e usa a tinta `--primary-ink`, como o Badge e o
     // Button `soft`. A trava é `tests/alertContrast.test.ts`.
     //
-    // Botões que empilham ocupam a largura toda (dono, 27/10/2026). A régua é a largura
-    // do PRÓPRIO aviso (container query), não a da tela: aviso estreito numa coluna do
-    // desktop empilha igual ao do celular. Abaixo de 28rem os botões vão um por linha,
-    // esticados; acima, seguem lado a lado no tamanho do texto.
+    // Botões que empilham ocupam a largura toda (dono, 27/10/2026): no celular os botões
+    // do aviso vão um por linha, esticados; da tela `sm` para cima, seguem lado a lado no
+    // tamanho do texto. A régua é a tela e não o aviso: `@container` no aviso fixa a
+    // largura dele, e o aviso dentro de um popover (o "Por que espera" do quadro do
+    // Gestor) encolhia a zero e sumia.
     alert: {
       slots: {
-        root: "@container",
         description: "opacity-100",
-        actions: "@max-md:flex-col @max-md:items-stretch",
+        actions: "max-sm:flex-col max-sm:items-stretch",
       },
       compoundVariants: [
         {

@@ -91,9 +91,9 @@ describe("aviso: a descrição é AA", () => {
   });
 
   it("botões que empilham ocupam a largura do aviso (dono, 27/10/2026)", () => {
-    // A régua é a largura do próprio aviso (container query), não a da tela.
-    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*root:\s*"@container"/);
-    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*actions:\s*"@max-md:flex-col @max-md:items-stretch"/);
+    // A régua é a tela: `@container` no aviso o encolhe a zero dentro de um popover.
+    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*actions:\s*"max-sm:flex-col max-sm:items-stretch"/);
+    expect(appConfig).not.toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*@container/);
   });
 
   it("o primary subtle escreve com a tinta do tema", () => {
