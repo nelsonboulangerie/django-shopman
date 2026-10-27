@@ -1317,6 +1317,7 @@ onBeforeUnmount(() => {
               :has-fired-items="cart.items.some((item) => item.fired)"
               :customer-required="customerRequiredForSchedule"
               :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
+              :hide-title="editing"
               :schedule-conflict="scheduleChipConflict"
               :schedule-conflict-reason="scheduleConflictReason"
               :loading="busy"

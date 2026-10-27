@@ -69,6 +69,9 @@ const props = defineProps<{
   /** O cliente não troca aqui (edição de encomenda): o chip só LÊ, e esta é a
    *  frase do porquê, que sobe no toque em vez de abrir o modal. */
   customerLockedReason?: string;
+  /** Sem o título da comanda na barra (edição de encomenda): o cabeçalho da tela
+   *  já diz "Editando a encomenda PDV-…", e repetir a ref aqui espremia os chips. */
+  hideTitle?: boolean;
   loading: boolean;
 }>();
 
@@ -215,7 +218,8 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       </NuxtButton>
     </div>
     <!-- tab number (renameable) -->
-    <div v-if="renaming" class="relative flex items-center gap-1" data-pos-tab-rename>
+    <template v-if="hideTitle" />
+    <div v-else-if="renaming" class="relative flex items-center gap-1" data-pos-tab-rename>
       <!-- As mesas do Salão (vínculo OPCIONAL): um toque dá o nome e liga a mesa.
            Quem prefere escrever escreve; balcão segue sem mesa. -->
       <div
@@ -273,7 +277,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       @click="startRename"
     >
       <span class="flex min-w-0 flex-col text-left leading-none">
-        <h1 class="op-heading tabular-nums [overflow-wrap:anywhere]">{{ title.title }}</h1>
+        <h1 class="truncate op-heading tabular-nums" :title="title.title">{{ title.title }}</h1>
         <span v-if="title.ref || openedAt" class="mt-0.5 op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
       </span>
       <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
@@ -281,7 +285,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
     </NuxtButton>
     <span v-else-if="hasOpenTab" class="inline-flex max-w-56 shrink-0 items-center gap-1.5 px-2" data-pos-tab-title>
       <span class="flex min-w-0 flex-col leading-none">
-        <h1 class="op-heading tabular-nums [overflow-wrap:anywhere]">{{ title.title }}</h1>
+        <h1 class="truncate op-heading tabular-nums" :title="title.title">{{ title.title }}</h1>
         <span v-if="title.ref || openedAt" class="mt-0.5 op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
       </span>
       <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
@@ -319,7 +323,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       :size="controlSize"
       :color="customerRequired ? 'primary' : 'neutral'"
       variant="outline"
-      class="h-auto min-h-8 min-w-0 shrink gap-2 py-1"
+      class="h-auto min-h-8 min-w-0 shrink gap-2 py-1 @min-[36rem]:min-w-28"
       :class="customerRequired ? 'motion-safe:animate-pulse' : ''"
       aria-haspopup="dialog"
       :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : 'Cliente (F6)')"
@@ -330,7 +334,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         class="size-4 shrink-0"
         :class="customerRequired ? '' : 'text-muted-foreground'"
       />
-      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-44 text-left leading-tight font-semibold [overflow-wrap:anywhere] max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-44 truncate text-left leading-tight font-semibold max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
       <span v-else class="whitespace-nowrap max-sm:sr-only" :class="customerRequired ? '' : 'text-muted-foreground'"><span class="hidden @min-[50rem]:inline">Identificar cliente</span><span class="@min-[50rem]:hidden">Cliente</span></span>
       <OperatorKbd
         v-if="!coarsePointer"

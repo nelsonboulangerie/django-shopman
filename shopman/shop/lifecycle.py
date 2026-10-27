@@ -804,16 +804,8 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
       explicitly confirms or cancels. No timeout.
     """
     mode = config.confirmation.mode
-    if mode == "immediate":
-        from shopman.shop.services.pos_sales_mode import is_pos_order_mode
-
-        # O canal PDV compartilha dois contratos: Balcão documenta uma entrega
-        # imediata; Encomenda registra uma solicitação que ainda precisa do aceite
-        # humano. A marca está no snapshot desde o commit, então a distinção não
-        # depende da escrita operacional posterior em Order.data.
-        if is_pos_order_mode(order):
-            mode = "manual"
-
+    # A encomenda do PDV segue o canal (``immediate``), como o Balcão: quem a
+    # registrou É o operador, e não há a quem pedir aceite (dono, 27/10/2026).
     if mode == "immediate":
         ensure_confirmable(order)
         from shopman.orderman.exceptions import InvalidTransition
