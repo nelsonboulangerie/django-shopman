@@ -636,11 +636,11 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
 
           <section v-if="editorTab === 'technical'" class="grid gap-3 rounded-md border bg-card p-3">
             <div>
-              <h2 class="text-sm font-semibold">Resultado da receita</h2>
+              <h2 class="text-sm font-semibold">Rendimento</h2>
               <p class="text-xs text-muted-foreground">Quantidade obtida ao executar esta fórmula uma vez.</p>
             </div>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Rendimento
+              Quantidade obtida
               <span class="flex items-center gap-1">
                 <NuxtInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-24" :ui="{ base: 'bg-muted' }" />
                 <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" :ui="{ base: 'bg-muted' }" />
@@ -653,7 +653,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
             <div class="grid gap-3 border-b p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
               <div>
                 <h2 class="text-sm font-semibold">Ingredientes</h2>
-                <p class="text-xs text-muted-foreground">A composição completa da receita, incluindo outras receitas usadas como ingredientes.</p>
+                <p class="text-xs text-muted-foreground">Cada item do BOM pode ser um insumo comprado ou outra receita da casa.</p>
               </div>
               <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                 Base do cálculo (100%)
@@ -682,28 +682,30 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               </label>
             </div>
             <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
-              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Insumos</p>
               <span class="text-xs tabular-nums text-muted-foreground">
                 base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
               </span>
-              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Ingrediente" @click="add" />
+              <div class="ml-auto flex flex-wrap items-center gap-2">
+                <NuxtButton color="neutral" variant="outline" icon="i-lucide-plus" label="Adicionar insumo" @click="add" />
+                <NuxtButton color="neutral" variant="outline" icon="i-lucide-plus" label="Adicionar receita" @click="addNewPart" />
+              </div>
             </div>
-            <p v-if="!formula.items.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
-              Adicione os insumos usados diretamente nesta receita.
+            <p v-if="!formula.items.length && !formula.parts.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
+              Adicione um insumo comprado ou uma receita da casa.
             </p>
-            <ol v-else class="divide-y">
+            <ol v-else class="divide-y" data-testid="recipe-bom-items">
               <li
                 v-for="(item, index) in formula.items"
-                :key="index"
+                :key="`item-${index}`"
                 class="grid gap-2 p-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1.4fr)_auto_auto_auto_auto]"
                 :class="item.role === 'flour' && anchorIsFlour ? 'bg-primary/5' : ''"
               >
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Nome
+                  Ingrediente
                   <NuxtInput :model-value="item.name" type="text" placeholder="Ex.: Farinha T65" class="w-full" :ui="{ base: 'bg-muted' }" @input="onItemName(index, $event)" />
                 </label>
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Insumo
+                  Cadastro do insumo
                   <IngredientPicker
                     :model-value="item.sku"
                     :matched-name="itemMatchedName(index)"
@@ -766,19 +768,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   />
                 </label>
               </li>
-            </ol>
-            <div class="flex flex-wrap items-center gap-2 border-y bg-muted/40 px-3 py-2">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Receitas usadas como ingrediente</p>
-                <p class="text-xs text-muted-foreground">Levain, poolish e outras bases conservam a própria receita e entram nesta composição.</p>
-              </div>
-              <NuxtButton class="ml-auto" color="neutral" variant="outline" icon="i-lucide-plus" label="Receita da casa" @click="addNewPart" />
-            </div>
-            <p v-if="!formula.parts.length" class="px-3 py-4 text-center text-sm text-muted-foreground">
-              Nenhuma outra receita compõe esta fórmula.
-            </p>
-            <ol v-else class="divide-y">
-              <li v-for="(part, index) in formula.parts" :key="index" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
+              <li v-for="(part, index) in formula.parts" :key="`recipe-${index}`" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Função
                   <NuxtSelect
@@ -792,7 +782,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   />
                 </label>
                 <template v-if="part.kind === 'old_dough'">
-                  <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">A própria base da véspera; declara só o teto.</p>
+                  <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">Massa da própria receita, reservada da produção anterior.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Teto (%)
                     <NuxtInput :model-value="String(part.cap_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'cap_pct', $event)" />
@@ -800,7 +790,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 </template>
                 <template v-else>
                   <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Receita associada
+                    Ingrediente com receita própria
                     <IngredientPicker
                       :model-value="part.sku ?? ''"
                       :matched-name="partMatchedName(index)"
@@ -831,7 +821,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 </template>
                 <div class="flex items-end">
                   <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->
-                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover parte" @click="dropPart(index)" />
+                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="dropPart(index)" />
                 </div>
               </li>
             </ol>

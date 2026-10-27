@@ -45,7 +45,16 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
 
   await page.getByRole("link", { name: "Editar", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Informações da receita" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rendimento", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Resultado da receita" })).toHaveCount(0);
   await expect(page.getByLabel("Produto associado (SKU)")).toHaveValue("PAO-FRANCES");
+
+  await page.getByRole("button", { name: "Adicionar insumo" }).click();
+  await page.getByRole("button", { name: "Adicionar receita" }).click();
+  await expect(page.getByLabel("Ingrediente", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(2);
+  await expect(page.getByLabel("Função da receita usada como ingrediente")).toHaveCount(1);
+  await expect(page.getByText("Receitas usadas como ingrediente", { exact: true })).toHaveCount(0);
 
   await page.getByRole("tab", { name: "Modo de preparo" }).click();
   await expect(page.getByRole("heading", { name: "Modo de preparo" })).toBeVisible();
