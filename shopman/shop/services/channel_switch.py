@@ -571,7 +571,9 @@ def _apply_effects(channel, *, is_active: bool, changed: bool, actor) -> None:
         from shopman.shop.services import ifood_merchant
 
         ifood_merchant.enqueue_sync("channel_switch")
-    if changed and is_active:
+    from shopman.shop.services import display_catalog
+
+    if changed and (is_active or display_catalog.is_platform_channel(channel.ref)):
         _resync_projection(channel.ref)
 
 
@@ -647,6 +649,10 @@ def _resync_projection(ref: str) -> None:
     Enquanto desligado, a projeção para esse canal é descartada
     (``catalog_projection._channel_or_feed_active``): o que mudou no meio não
     chegou lá, e religar sem reenviar reabriria a loja com preço velho.
+
+    Canal de plataforma (Google, Meta) é diferente: desligado, o item segue na
+    plataforma como fora de estoque (``display_catalog``). Por isso ele reenvia nas
+    duas viradas, e o catálogo dele é a composição de coleções, não uma listagem.
     """
     from shopman.offerman.conf import get_projection_backend_channels
 
@@ -655,12 +661,16 @@ def _resync_projection(ref: str) -> None:
     from shopman.offerman.models import ListingItem
 
     from shopman.shop.handlers.catalog_projection import enqueue_project
+    from shopman.shop.services import display_catalog
 
-    skus = (
-        ListingItem.objects.filter(listing__ref=ref)
-        .values_list("product__sku", flat=True)
-        .distinct()
-    )
+    if display_catalog.is_platform_channel(ref):
+        skus = display_catalog.composition_skus(ref)
+    else:
+        skus = (
+            ListingItem.objects.filter(listing__ref=ref)
+            .values_list("product__sku", flat=True)
+            .distinct()
+        )
     for sku in skus:
         enqueue_project(sku, ref, trigger="channel_on")
 

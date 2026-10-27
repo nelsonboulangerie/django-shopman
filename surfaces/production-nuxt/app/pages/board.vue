@@ -111,6 +111,14 @@ const STATUS_CHARS = 10; // CONFIRMADO
   <main class="board flex min-h-screen flex-col">
     <header class="flex flex-col gap-2 px-4 pb-2 pt-4 md:px-8">
       <div class="board-labels flex flex-wrap items-center gap-x-3 gap-y-2">
+        <NuxtButton
+          to="/"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          label="Voltar à produção"
+          class="board-key"
+        />
         <span>{{ fullDateLabel(selectedDate) }}</span>
         <span
           v-if="stale"

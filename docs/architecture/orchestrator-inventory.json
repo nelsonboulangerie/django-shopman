@@ -356,13 +356,50 @@
             "_chunk",
             "_endpoint",
             "_get_config",
-            "_item_data",
             "_post_batch",
-            "_product_link",
             "build_batch_requests",
             "build_retract_requests",
+            "item_data",
+            "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/adapters/catalog_projection_google.py",
+      "touchpoints": [
+        "adapter"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "GoogleMerchantProjection",
+            "GoogleMerchantRateLimitError",
+            "_CONDITIONS",
+            "_SCOPE",
+            "_TOKEN_MARGIN_SECONDS",
+            "_access_token",
+            "_account",
+            "_base",
+            "_check",
+            "_configured",
+            "_data_source",
+            "_feed_label",
+            "_get_config",
+            "_language",
+            "_service_account",
+            "_timeout",
+            "_token_cache",
+            "_token_lock",
+            "build_product_input",
             "logger",
-            "stock_for"
+            "product_input_id"
           ]
         }
       ]
@@ -624,6 +661,8 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "CARD_CODES",
+            "CARD_NOT_INTEGRATED",
             "FocusNFeBackend",
             "FocusNFePayloadError",
             "HOMOLOGATION_URL",
@@ -634,6 +673,8 @@
             "PRODUCTION_URL",
             "_CARD_BY_GATEWAY",
             "_FUNDING_CODES",
+            "_OTHER_DESCRIPTIONS",
+            "_PREPAID_DESCRIPTION",
             "_REQUIRED_TAX_FIELDS",
             "_apportion_over_items",
             "_assert_nfce_indpres",
@@ -642,6 +683,7 @@
             "_cancellation_error_result",
             "_customer_fields",
             "_decimal",
+            "_declarable_change_q",
             "_delivery_freight_mode",
             "_denied_error_code",
             "_digits",
@@ -665,8 +707,11 @@
             "_nfce_completa",
             "_nfce_path",
             "_norm",
+            "_other_description",
             "_payment_code",
+            "_payment_form",
             "_payment_forms",
+            "_payment_group",
             "_payment_total_q",
             "_request",
             "_response_error_message",
@@ -2023,6 +2068,10 @@
             "DEFAULTS_PICKUP_SLOT_ROWS",
             "DEFAULTS_PURCHASE_FIELDS",
             "DEFAULTS_RULE_Q_FIELDS",
+            "GOOGLE_MERCHANT_DEFAULT_FEED_LABEL",
+            "GOOGLE_MERCHANT_DEFAULT_LANGUAGE",
+            "GOOGLE_MERCHANT_KEY",
+            "GoogleMerchantForm",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
             "NotificationTemplateAdmin",
@@ -4141,6 +4190,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "Command",
+            "QUEUE_HEALTH_ALERT_TYPES",
             "logger"
           ]
         }
@@ -5345,7 +5395,7 @@
       ]
     },
     {
-      "path": "shopman/shop/management/commands/sync_catalog_meta.py",
+      "path": "shopman/shop/management/commands/sync_platform_catalogs.py",
       "touchpoints": [
         "outro"
       ],
@@ -5358,7 +5408,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "Command"
+            "Command",
+            "DEFAULT_MIN_INTERVAL_HOURS",
+            "RETRY_AFTER_FAILURE_HOURS"
           ]
         }
       ]
@@ -5543,6 +5595,9 @@
           "symbols": [
             "ADDITIVE_LIST_LIMIT",
             "BACKUP_REF_ENV",
+            "BACKUP_REF_FUTURE_SKEW",
+            "BACKUP_REF_MAX_AGE_ENV",
+            "BACKUP_REF_MAX_AGE_HOURS_DEFAULT",
             "DESTRUCTIVE_OPERATION_NAMES",
             "GO_LIVE_TAG",
             "HOWTO",
@@ -5550,10 +5605,16 @@
             "SafetyReport",
             "_EMPTY_BACKUP_REFS",
             "_FALSE_VALUES",
+            "_ISO_INSTANT_RE",
             "_TRUE_VALUES",
+            "_column_signature",
             "_env",
             "_env_bool",
             "_git_tag_present",
+            "alter_field_changes_schema",
+            "backup_ref_instant",
+            "backup_ref_max_age_hours",
+            "backup_ref_problem",
             "backup_reference",
             "build_report",
             "collect_pending",
@@ -6964,6 +7025,7 @@
             "TrackingPickupData",
             "TrackingProgressStepData",
             "TrackingPromiseData",
+            "TrackingRatingFollowupData",
             "TrackingStatusData",
             "TrackingTimelineEventData",
             "_COURIER_ENDED_STATUSES",
@@ -7010,6 +7072,7 @@
             "_progress_timestamp",
             "_promise",
             "_qr_image_src",
+            "_rating_followup",
             "_refund_status_key",
             "_reorder_action",
             "_shop_has_specific_address",
@@ -7288,6 +7351,20 @@
       "unit_ids": [
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/rating_contact.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "rating.contact-offer"
       ],
       "responsibilities": [
         "decisão"
@@ -8230,6 +8307,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/customer_contact.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-customer-contact"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/catalog_identity.py",
       "touchpoints": [
         "outro"
@@ -8540,7 +8631,10 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "INLINE_RETRY_SECONDS",
             "_debounce_key",
+            "_existing_task",
+            "_run_inline",
             "logger"
           ]
         }
@@ -8989,6 +9083,36 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/display_catalog.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "DisplayCatalogError",
+            "DisplayItem",
+            "FEED_FORMATS",
+            "GOOGLE_DESTINATIONS",
+            "_composition",
+            "channels_priced_from",
+            "composition_skus",
+            "display_item",
+            "display_items",
+            "is_platform_channel",
+            "resolve_channel",
+            "storefront_base"
           ]
         }
       ]
@@ -12628,11 +12752,14 @@
             "_channel_allows_untracked",
             "_component_quantities",
             "_expand_if_bundle",
+            "_hold_across_quants_or_nothing",
             "_is_fermata_hold",
             "_is_untracked",
             "_items_to_hold",
             "_lead_time_error",
             "_load_session_holds",
+            "_order_hold_backstop",
+            "_order_hold_ttl_minutes",
             "_reconcile_decrease",
             "_reconcile_increase",
             "_retag_hold_for_order",
@@ -13207,12 +13334,8 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
-            "ProductFeedError",
             "ProductFeedView",
             "_AVAILABILITY",
-            "_GOOGLE_DESTINATIONS",
-            "_resolve_feed_channel",
-            "_storefront_base",
             "build_feed_items"
           ]
         }

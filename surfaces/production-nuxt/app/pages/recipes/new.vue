@@ -221,7 +221,7 @@ const touch = useTouchPointer();
           Criar receitas pede a permissão de gestão da produção. Peça a liberação a quem administra a loja.
         </p>
         <NuxtLink to="/recipes" class="mt-1 text-sm text-primary underline-offset-2 hover:underline"
-          >Voltar ao inventário</NuxtLink
+          >Voltar às receitas</NuxtLink
         >
       </div>
     </section>

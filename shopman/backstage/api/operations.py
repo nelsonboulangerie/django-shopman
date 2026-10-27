@@ -4023,6 +4023,42 @@ class OrderCourierReminderDismissView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Close the customer's contact request (ombudsman) with what the team did",
+        responses={
+            200: OpenApiResponse(description="Contact request resolved."),
+            400: OpenApiResponse(description="Missing note."),
+            409: OpenApiResponse(description="No open contact request."),
+        },
+    ),
+)
+class OrderCustomerContactResolveView(_OrderActionBase):
+    """"Resolvido" da ouvidoria: fecha o caso com a nota do que foi feito."""
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import customer_contact
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        note = str(request.data.get("note") or "").strip()
+        if not note:
+            return Response(
+                {"detail": "Conte em uma frase o que foi feito.", "field": "note"},
+                status=400,
+            )
+        try:
+            customer_contact.resolve(order, note=note, actor=_actor(request))
+        except customer_contact.ContactRequestNotOpen:
+            return Response(
+                {"detail": "Este pedido não tem pedido de contato em aberto.", "code": "contact_request_not_open"},
+                status=409,
+            )
+        return Response({"ok": True, "ref": order.ref})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Cancel the active external courier ride",
         responses={200: OpenApiResponse(description="Courier cancellation queued; remote outcome pending.")},
     ),

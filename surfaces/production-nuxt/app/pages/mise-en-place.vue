@@ -220,14 +220,14 @@ function refreshAll() {
           class="flex items-center gap-1.5 text-xs text-muted-foreground"
         >
           <Icon name="lucide:info" class="size-4 shrink-0" />
-          Checklist local {{ stationRef ? "desta estação" : "deste dispositivo" }} · não é registro de auditoria
+          As marcações ficam somente {{ stationRef ? "nesta estação" : "neste dispositivo" }}.
         </span>
 
         <div class="ml-auto flex flex-wrap items-center gap-3">
           <NuxtCheckbox
             v-if="mode === 'insumos'"
             v-model="expand"
-            label="Explodir até matéria-prima"
+            label="Mostrar ingredientes dos pré-preparos"
           />
           <template v-if="mode === 'preparos' && visibleTickets.length">
             <NuxtButton
@@ -239,8 +239,8 @@ function refreshAll() {
               color="neutral"
               variant="outline"
               icon="i-lucide-tag"
-              label="Identificação interna"
-              title="Identificação interna: nome, data prevista e validade configurada"
+              label="Etiquetas dos preparos"
+              title="Etiquetas com nome, data prevista e validade configurada"
               @click="openLabelsPreview('preparo')"
             />
           </template>

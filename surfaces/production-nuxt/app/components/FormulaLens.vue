@@ -63,7 +63,7 @@ const BOM_COLUMNS = [
       class="grid place-items-center gap-1 rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground"
     >
       <Icon name="lucide:scale" class="size-6" />
-      <p>Sem prévia ainda. Adicione ingredientes para a lente calcular.</p>
+      <p>Adicione ingredientes para ver o resumo da fórmula.</p>
     </div>
 
     <template v-else>
@@ -128,7 +128,7 @@ const BOM_COLUMNS = [
           >
         </template>
         <template #pct-cell="{ row }">
-          <span class="font-semibold">{{ row.original.pct_display || "—" }}</span>
+          <span class="font-semibold">{{ row.original.pct_display || "Não informado" }}</span>
         </template>
       </OperatorTable>
       <p v-if="unmatched.length" class="text-xs text-muted-foreground">
@@ -192,19 +192,19 @@ const BOM_COLUMNS = [
         >
           <template #name-cell="{ row }">{{ row.original.name || row.original.sku }}</template>
           <template #pct-cell="{ row }">
-            <span class="text-muted-foreground">{{ row.original.pct_display || "—" }}</span>
+            <span class="text-muted-foreground">{{ row.original.pct_display || "Não informado" }}</span>
           </template>
         </OperatorTable>
       </div>
 
-      <!-- BOM: o que a ficha de execução recebe -->
+      <!-- BOM interna: os insumos efetivamente consumidos na produção. -->
       <div v-if="showBom" class="grid gap-2">
-        <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ficha técnica (BOM)</h4>
+        <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Consumo de insumos</h4>
         <OperatorTable
           :data="lens.bom"
           :columns="BOM_COLUMNS"
           :row-key="(row) => `bom-${row.sku || row.name}`"
-          caption="O que a ficha de execução recebe"
+          caption="Insumos consumidos na produção"
         >
           <template #name-cell="{ row }">
             <span>{{ row.original.name || row.original.sku }}</span>

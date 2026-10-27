@@ -1352,7 +1352,8 @@
             "_sender_lock",
             "_record_outcome",
             "_channel_or_feed_active",
-            "_get_projected_item"
+            "_get_projected_item",
+            "display_projected_item"
           ]
         }
       ],
@@ -1363,12 +1364,16 @@
         "offerman",
         "orderman"
       ],
-      "ports": [],
+      "ports": [
+        "shopman.offerman.protocols.projection"
+      ],
       "events": [],
       "directives": [
         "CATALOG_PROJECT_SKU"
       ],
-      "config_surface": [],
+      "config_surface": [
+        "SHOPMAN_STOREFRONT_BASE_URL"
+      ],
       "tests": [
         "shopman/shop/tests/test_handler_entrypoints.py::test_catalog_project_handler_skips_when_no_backend_is_configured"
       ],
@@ -1396,6 +1401,7 @@
             "on_price_changed",
             "on_availability_changed",
             "enqueue_project",
+            "enqueue_display_skus",
             "_enqueue_project"
           ]
         }
@@ -6835,6 +6841,89 @@
       ]
     },
     {
+      "id": "shop.services-customer-contact",
+      "question": "Ouvidoria da avaliação: o cliente que avaliou mal pede que a loja fale com ele?",
+      "owner": "order.rating.contact",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.customer_contact:request_contact",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/customer_contact.py",
+          "symbols": [
+            "REQUESTED_EVENT",
+            "RESOLVED_EVENT",
+            "ALERT_TYPE",
+            "GOOGLE_REVIEW_URL",
+            "ContactRequestUnavailable",
+            "ContactRequestNotOpen",
+            "ContactRequest",
+            "google_review_url",
+            "current",
+            "open_request",
+            "operational_message",
+            "request_contact",
+            "resolve",
+            "_rating",
+            "contact_offered"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_rating_contact_resolve.py::test_resolve_closes_the_case_and_the_alert"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.customer_contact:request_contact"
+      ]
+    },
+    {
+      "id": "rating.contact-offer",
+      "question": "Esta avaliação oferece o contato da ouvidoria?",
+      "owner": "order.rating.contact-offer",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.rating_contact:can_request_contact",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/rating_contact.py",
+          "symbols": [
+            "CONTACT_MAX_RATING",
+            "can_request_contact"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_rating_contact_policy.py::test_rating_contact_truth_table"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.rating_contact:can_request_contact"
+      ]
+    },
+    {
       "id": "shop.services-card-authorization",
       "question": "Cartão autorizado esperando aceite: o prazo que o Stripe dá e quem o vigia?",
       "owner": "payment.card-authorization-deadline",
@@ -8158,7 +8247,9 @@
           "path": "shopman/shop/services/critical_alerts.py",
           "symbols": [
             "enqueue",
-            "deliver"
+            "deliver",
+            "deliver_now",
+            "deliver_pending"
           ]
         }
       ],

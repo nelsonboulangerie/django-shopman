@@ -180,6 +180,7 @@ from .operations import (
     OrderCourierDispatchView,
     OrderCourierQuoteView,
     OrderCourierReminderDismissView,
+    OrderCustomerContactResolveView,
     OrderDanfeEscposView,
     OrderDetailView,
     OrderEditPreviewView,
@@ -947,6 +948,11 @@ urlpatterns = [
     path("orders/<str:ref>/assign/", OrderAssignView.as_view(), name="api-backstage-order-assign"),
     path("orders/<str:ref>/unassign/", OrderUnassignView.as_view(), name="api-backstage-order-unassign"),
     path("orders/<str:ref>/comment/", OrderCommentView.as_view(), name="api-backstage-order-comment"),
+    path(
+        "orders/<str:ref>/customer-contact/resolve/",
+        OrderCustomerContactResolveView.as_view(),
+        name="api-backstage-order-customer-contact-resolve",
+    ),
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),

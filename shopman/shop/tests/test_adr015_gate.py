@@ -475,3 +475,63 @@ def test_append_only_reprova_quando_a_base_nao_resolve(monkeypatch, capsys, tmp_
     saida = capsys.readouterr().out
     assert "FAIL" in saida
     assert "base do diff não resolvida" in saida
+
+
+# ---------------------------------------------------------------------------
+# Prazo vencido não é bomba-relógio (laudo O8)
+# ---------------------------------------------------------------------------
+#
+# O calendário sozinho não pode deixar todo PR vermelho: o hotfix num arquivo
+# alheio precisa passar. Reprova o PR que toca o arquivo do marcador vencido;
+# os outros recebem aviso. E o aviso chega antes do prazo.
+
+
+def test_vencido_so_reprova_quem_toca_o_arquivo():
+    violations = [("app/compat.py:1", "prazo vencido em 2026-01-01")]
+    blocking, warning = check_adr015.split_by_diff(violations, {"app/compat.py"})
+    assert blocking == violations and warning == []
+    blocking, warning = check_adr015.split_by_diff(violations, {"app/hotfix.py"})
+    assert blocking == [] and warning == violations
+
+
+def test_base_desconhecida_reprova_o_vencido():
+    violations = [("app/compat.py:1", "prazo vencido em 2026-01-01")]
+    assert check_adr015.split_by_diff(violations, None) == (violations, [])
+
+
+def test_prazo_perto_avisa(tagged_repo):
+    (tagged_repo / "app" / "compat.py").write_text(
+        "SOON = 1  # DEPRECATED(remove by 2026-09-01)\n"
+        "LATER = 1  # DEPRECATED(remove by 2026-12-31)\n"
+    )
+    _git(tagged_repo, "add", "app/compat.py")
+    _git(tagged_repo, "commit", "--quiet", "-m", "compat")
+    due = check_adr015.deprecated_due_soon(tagged_repo, today=_TODAY, warn_days=14)
+    assert [loc for loc, _ in due] == ["app/compat.py:1"]
+
+
+def _hotfix_scenario(repo: Path, *, touch_compat: bool) -> str:
+    (repo / "app" / "compat.py").write_text("OLD = 1  # DEPRECATED(remove by 2026-01-01)\n")
+    (repo / "app" / "views.py").write_text("X = 1\n")
+    _git(repo, "add", "app/compat.py", "app/views.py")
+    _git(repo, "commit", "--quiet", "-m", "alias com prazo")
+    base = _git(repo, "rev-parse", "HEAD").strip()
+    target = repo / "app" / ("compat.py" if touch_compat else "views.py")
+    target.write_text(target.read_text() + "Y = 2\n")
+    _git(repo, "add", str(target.relative_to(repo)))
+    _git(repo, "commit", "--quiet", "-m", "hotfix")
+    return base
+
+
+@pytest.mark.parametrize("touch_compat,expected", [(False, 0), (True, 1)])
+def test_main_reprova_so_o_pr_que_toca_o_vencido(tagged_repo, monkeypatch, capsys, touch_compat, expected):
+    base = _hotfix_scenario(tagged_repo, touch_compat=touch_compat)
+    monkeypatch.setenv("SHOPMAN_ADR015_FORCE", "1")
+    monkeypatch.setattr(check_adr015, "resolve_diff_base", lambda *a, **k: (base, "teste"))
+    monkeypatch.chdir(tagged_repo)
+
+    assert check_adr015.main([]) == expected
+    saida = capsys.readouterr().out
+    assert "app/compat.py:1" in saida
+    assert ("[FAIL] adr015.deprecated_deadline" in saida) is touch_compat
+    assert ("[WARN] adr015.deprecated_deadline" in saida) is not touch_compat

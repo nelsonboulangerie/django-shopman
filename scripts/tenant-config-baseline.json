@@ -153,6 +153,9 @@
     "shopman/shop/adapters/baskets.py": {
       "settings": 1
     },
+    "shopman/shop/adapters/catalog_projection_google.py": {
+      "settings": 1
+    },
     "shopman/shop/adapters/catalog_projection_ifood.py": {
       "settings": 2
     },
@@ -281,9 +284,6 @@
     },
     "shopman/shop/management/commands/run_marketing_publication_canary.py": {
       "settings": 3
-    },
-    "shopman/shop/management/commands/sync_catalog_meta.py": {
-      "settings": 1
     },
     "shopman/shop/menuboard_access.py": {
       "settings": 1

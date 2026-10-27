@@ -2,8 +2,8 @@
 // Cabeçalho das telas de receitas: o mesmo `OperatorPageHeader` do kit das outras
 // telas da Produção, com o selo "Receitas" ao lado do título, o voltar (`#lead`), a
 // busca e a ação primária da tela. Atualizar mora no ⋯ "Mais ações" (dados). SEM o
-// progresso do dia: o inventário de receitas não é etapa do lote, é conhecimento da
-// casa. Receitas mora em Ajustes. O `#status` repassa o "onde estou" da tela (o
+// progresso do dia: receitas não são etapa do lote, são conhecimento da casa.
+// O `#status` repassa o "onde estou" da tela (o
 // anterior e próxima da receita, `OperatorRecordNav`) ao mesmo slot do cabeçalho.
 import type { OperatorActiveFilter, OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
@@ -28,9 +28,10 @@ const props = defineProps<{
 const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
 
-const eyebrow = computed(() =>
-  props.subtitle ? `Receitas · ${props.subtitle}` : "Receitas",
-);
+const eyebrow = computed(() => {
+  if (props.subtitle) return `Receitas · ${props.subtitle}`;
+  return props.title === "Receitas" ? undefined : "Receitas";
+});
 const refreshAction = computed<OperatorHeaderAction[]>(() =>
   props.hideRefresh
     ? []

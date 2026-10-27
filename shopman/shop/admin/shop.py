@@ -254,6 +254,80 @@ class CalendarRemovalForm(BaseDialogForm):
     )
 
 
+#: Chave de ``Shop.defaults`` com a conta do envio do catálogo ao Google (Merchant API).
+GOOGLE_MERCHANT_KEY = "google_merchant"
+GOOGLE_MERCHANT_DEFAULT_LANGUAGE = "pt"
+GOOGLE_MERCHANT_DEFAULT_FEED_LABEL = "BR"
+
+
+class GoogleMerchantForm(BaseDialogForm):
+    """Conta e fonte de dados do Merchant Center, gravadas em ``Shop.defaults``.
+
+    São dado da loja (ADR-042): o segredo da service account fica no deployment.
+    O formulário abre com o que já está gravado.
+    """
+
+    account_id = forms.CharField(
+        label="Conta do Merchant Center",
+        max_length=20,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="O número da conta, no canto superior direito do Merchant Center.",
+    )
+    data_source_id = forms.CharField(
+        label="Fonte de dados (API)",
+        max_length=20,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="O número da fonte de dados do tipo API, em Configurações, Fontes de dados.",
+    )
+    content_language = forms.CharField(
+        label="Idioma dos produtos",
+        max_length=2,
+        initial=GOOGLE_MERCHANT_DEFAULT_LANGUAGE,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="Código de duas letras. Para o Brasil, pt.",
+    )
+    feed_label = forms.CharField(
+        label="Rótulo do feed",
+        max_length=20,
+        initial=GOOGLE_MERCHANT_DEFAULT_FEED_LABEL,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="O mesmo rótulo da fonte de dados. Para o Brasil, BR.",
+    )
+
+    def __init__(self, request, object_id=None, *args, **kwargs):
+        super().__init__(request, object_id, *args, **kwargs)
+        shop = Shop.objects.filter(pk=object_id).first() if object_id else None
+        current = _shop_defaults(shop).get(GOOGLE_MERCHANT_KEY) if shop else None
+        if isinstance(current, dict):
+            for name in ("account_id", "data_source_id", "content_language", "feed_label"):
+                if current.get(name):
+                    self.fields[name].initial = str(current[name])
+
+    def _digits(self, name: str) -> str:
+        value = (self.cleaned_data.get(name) or "").strip()
+        if not value.isdigit():
+            raise forms.ValidationError("Use só os números, sem espaço nem traço.")
+        return value
+
+    def clean_account_id(self) -> str:
+        return self._digits("account_id")
+
+    def clean_data_source_id(self) -> str:
+        return self._digits("data_source_id")
+
+    def clean_content_language(self) -> str:
+        value = (self.cleaned_data.get("content_language") or "").strip().lower()
+        if len(value) != 2 or not value.isalpha():
+            raise forms.ValidationError("Use o código de duas letras do idioma, por exemplo pt.")
+        return value
+
+    def clean_feed_label(self) -> str:
+        value = (self.cleaned_data.get("feed_label") or "").strip().upper()
+        if not value or not all(char.isalnum() or char in "-_" for char in value):
+            raise forms.ValidationError("Use letras, números, hífen ou sublinhado, por exemplo BR.")
+        return value
+
+
 #: No Admin, cada motivo é uma linha; o grupo vem antes, separado por esta barra.
 CANCELLATION_PRESET_GROUP_SEPARATOR = "|"
 
@@ -2730,6 +2804,17 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
+        "Google Merchant Center",
+        {
+            "fields": ("google_merchant_display",),
+            "description": (
+                "A conta para onde o catálogo do canal do Google é enviado. Para mudar, use "
+                "o botão “Google Merchant Center” no alto da página. A chave de acesso "
+                "(service account) fica no deployment, não aqui."
+            ),
+        },
+    ),
+    (
         "Canais do sistema (deployment)",
         {
             "fields": ("channel_refs_display",),
@@ -3158,7 +3243,57 @@ class ShopPosAdmin(_ShopSingletonAdmin):
 class ShopIntegrationsAdmin(_ShopSingletonAdmin):
     form = _section_form(_INTEGRATIONS_FIELDSETS)
     fieldsets = _INTEGRATIONS_FIELDSETS
-    readonly_fields = ("channel_refs_display", "marketing_ceremony_display")
+    readonly_fields = ("channel_refs_display", "marketing_ceremony_display", "google_merchant_display")
+    actions_detail = ("set_google_merchant",)
+
+    @admin.display(description="Conta gravada")
+    def google_merchant_display(self, obj):
+        current = _shop_defaults(obj).get(GOOGLE_MERCHANT_KEY) if obj else None
+        if not isinstance(current, dict) or not current.get("account_id"):
+            return "Nenhuma conta gravada. O envio ao Google fica parado até ela existir."
+        rows = [
+            ["Conta do Merchant Center", str(current.get("account_id") or "")],
+            ["Fonte de dados (API)", str(current.get("data_source_id") or "")],
+            ["Idioma dos produtos", str(current.get("content_language") or GOOGLE_MERCHANT_DEFAULT_LANGUAGE)],
+            ["Rótulo do feed", str(current.get("feed_label") or GOOGLE_MERCHANT_DEFAULT_FEED_LABEL)],
+        ]
+        return unfold_component(
+            "unfold/components/table.html",
+            table={"headers": ["Campo", "Valor"], "rows": rows},
+        )
+
+    @action(
+        description="Google Merchant Center",
+        url_path="google-merchant",
+        icon="storefront",
+        permissions=["change"],
+        dialog={
+            "title": "Google Merchant Center",
+            "description": (
+                "A conta e a fonte de dados para onde o catálogo do canal do Google é enviado. "
+                "O que já está gravado aparece preenchido."
+            ),
+            "form_class": GoogleMerchantForm,
+            "form_submit_text": "Salvar conta",
+        },
+    )
+    def set_google_merchant(self, request, form, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Loja não encontrada.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopintegrations_changelist"))
+        defaults = dict(_shop_defaults(obj))
+        current = defaults.get(GOOGLE_MERCHANT_KEY)
+        merged = dict(current) if isinstance(current, dict) else {}
+        merged.update({
+            name: form.cleaned_data[name]
+            for name in ("account_id", "data_source_id", "content_language", "feed_label")
+        })
+        defaults[GOOGLE_MERCHANT_KEY] = merged
+        obj.defaults = defaults
+        obj.save(update_fields=["defaults"])
+        self.message_user(request, "Conta do Google Merchant Center salva.", level=messages.SUCCESS)
+        return HttpResponseRedirect(reverse("admin:shop_shopintegrations_change", args=[obj.pk]))
 
     @admin.display(description="A conta, com os números de hoje")
     def marketing_ceremony_display(self, obj):

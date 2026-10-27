@@ -197,7 +197,7 @@ describe("Preparação — preview e identificação", () => {
       .trigger("click");
 
     expect(wrapper.text()).toContain(
-      "Checklist local desta estação · não é registro de auditoria",
+      "As marcações ficam somente nesta estação.",
     );
   });
 
@@ -310,7 +310,7 @@ describe("Preparação — preview e identificação", () => {
 
     await wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Identificação interna"))!
+      .find((button) => button.text().includes("Etiquetas dos preparos"))!
       .trigger("click");
     preview = wrapper.get('[data-testid="print-preview"]');
     expect(preview.attributes("data-mode")).toBe("preparo");

@@ -1059,6 +1059,14 @@ export interface TrackingCopyProjection {
   rating_thanks: string
   rating_thanks_title: string
   rating_thanks_celebrate: string
+  rating_contact_title: string
+  rating_contact_message: string
+  rating_contact_done: string
+  rating_google_title: string
+  rating_google_share_title: string
+  rating_google_message: string
+  rating_google_cta: string
+  rating_google_copied: string
   page_meta_description: string
   delivery_heading: string
   // Copy estática do bloco de pagamento inline (Pix/cartão).
@@ -1142,6 +1150,15 @@ export interface TrackingResponse {
     requested_at_display: string
     title: string
     message: string
+  } | null
+  // Depois de avaliar: a ouvidoria (nota até 3) e o convite do Google (toda nota;
+  // a política do Google proíbe convidar só quem gostou). `comment` é o que o
+  // cliente escreveu, copiado no toque do convite. Ausente/`null` antes de avaliar.
+  rating_followup?: {
+    comment: string
+    google_review_url: string
+    contact_offered: boolean
+    contact_requested: boolean
   } | null
   // A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
   // pede e-mail). Ausente/`null` enquanto não há nota.

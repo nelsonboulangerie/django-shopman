@@ -403,7 +403,7 @@ def test_link_pendente_expira_a_sessao_e_o_balcao_recebe_no_debito(balcao):
 
     # A nota fiscal lê o meio EFETIVO: débito do balcão, não o link cancelado.
     forms = fiscal_focusnfe._payment_forms(fiscal._fiscal_payment(order, order.data))
-    assert forms == [{"forma_pagamento": "04", "valor_pagamento": "36.00"}]
+    assert forms == [{"forma_pagamento": "04", "valor_pagamento": "36.00", "tipo_integracao": "2"}]
 
 
 @override_settings(SHOPMAN_PAYMENT_ADAPTERS=ADAPTERS, SHOPMAN_STRIPE=STRIPE_SETTINGS)

@@ -2,7 +2,7 @@
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 import type { QuickFilterItem } from "../../../../operator-kit/app/presentation/quickFilters";
 import type { ActiveFilters, FilterDimension } from "../../../../operator-kit/app/types/filters";
-// Inventário de receitas (/recipes) — a lista do conhecimento da casa. Busca,
+// Receitas (/recipes) — as fichas técnicas que guardam o conhecimento da casa. Busca,
 // chips por tipo, os dois toggles que importam ("sem SKU" = receita ainda só
 // conhecimento; "com rascunho" = alguém começou e não publicou) e as arquivadas
 // fora da vista por padrão. O cartão diz o que o gestor procura de relance: tipo,
@@ -193,7 +193,7 @@ watch(
   <main class="flex min-h-0 flex-1 flex-col">
     <RecipeHeader
       v-model:query="query"
-      title="Inventário"
+      title="Receitas"
       searchable
       search-label="Buscar receita por nome, ref ou SKU"
       :pending="pending"
@@ -202,15 +202,6 @@ watch(
       :clear-filters="clearFilters"
       @refresh="refresh()"
     >
-      <template #actions>
-        <NuxtButton
-          to="/recipes/sheets"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-clipboard-list"
-          label="Fichas de execução"
-        />
-      </template>
       <template #filters-primary>
         <OperatorQuickFilters
           v-model="quickSelection"
@@ -234,7 +225,7 @@ watch(
           color="neutral"
           variant="outline"
           icon="i-lucide-badge-check"
-          label="Conferência"
+          label="Receitas a conferir"
         />
         <NuxtSelect
           v-model="sort"
@@ -258,7 +249,7 @@ watch(
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Área da produção</p>
         <p class="text-sm text-muted-foreground">
-          O inventário de receitas pede uma permissão que este operador não tem. Peça a liberação a quem administra
+          As receitas pedem uma permissão que este operador não tem. Peça a liberação a quem administra
           a loja.
         </p>
         <NuxtLink to="/" class="mt-1 text-sm text-primary underline-offset-2 hover:underline"
@@ -293,7 +284,7 @@ watch(
         v-else-if="!entries.length && !hasFilters"
         state="empty"
         title="Nenhuma receita cadastrada."
-        description="Cadastre a primeira receita para guardar fórmulas, versões e fichas de execução."
+        description="Cadastre a primeira ficha técnica com ingredientes, rendimento e modo de preparo."
         icon="i-lucide-book-open"
       >
         <template v-if="canEdit" #actions>
@@ -373,7 +364,7 @@ watch(
                 :label="entry.production_mode_label"
               />
               <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
-              <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Sem ficha" />
+              <NuxtBadge v-if="!entry.has_ficha && entry.output_sku" color="neutral" label="Ainda não publicada" />
               <NuxtBadge
                 v-if="needsReview(entry.review_status)"
                 :color="entry.review_status === 'changed' ? 'warning' : 'neutral'"

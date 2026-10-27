@@ -530,6 +530,80 @@ class TestShopAdminCalendar:
         assert production_suggestion["safety_stock_percent"] == "0.15"
 
 
+class TestShopAdminGoogleMerchant:
+    """A conta do envio ao Google entra pelo Admin, num diálogo, sem JSON cru."""
+
+    _DATA = {
+        "_form_submitted": "1",
+        "account_id": "5881119366",
+        "data_source_id": "10786369877",
+        "content_language": "pt",
+        "feed_label": "br",
+    }
+
+    def test_integrations_page_shows_action_and_current_values(self, db, admin_user, shop):
+        from shopman.shop.models import ShopIntegrations
+
+        shop.defaults = {"google_merchant": {"account_id": "5881119366", "data_source_id": "999"}}
+        shop.save(update_fields=["defaults"])
+        client = Client()
+        client.force_login(admin_user)
+        response = client.get(reverse("admin:shop_shopintegrations_change", args=[shop.pk]))
+
+        assert response.status_code == 200
+        assert b"google-merchant" in response.content
+        assert b"5881119366" in response.content
+        assert admin.site._registry[ShopIntegrations].actions_detail == ("set_google_merchant",)
+
+    def test_form_requires_numeric_ids(self, rf, shop):
+        from shopman.shop.admin.shop import GoogleMerchantForm
+
+        form = GoogleMerchantForm(
+            rf.post("/"), shop.pk, data={**self._DATA, "account_id": "58-811", "data_source_id": ""},
+        )
+        assert not form.is_valid()
+        assert set(form.errors) == {"account_id", "data_source_id"}
+
+    def test_form_opens_with_saved_values(self, rf, shop):
+        from shopman.shop.admin.shop import GoogleMerchantForm
+
+        shop.defaults = {"google_merchant": {"account_id": "123", "data_source_id": "456"}}
+        shop.save(update_fields=["defaults"])
+        form = GoogleMerchantForm(rf.get("/"), shop.pk)
+        assert form.fields["account_id"].initial == "123"
+        assert form.fields["data_source_id"].initial == "456"
+        assert form.fields["content_language"].initial == "pt"
+        assert form.fields["feed_label"].initial == "BR"
+
+    def test_action_merges_into_defaults(self, rf, admin_user, shop, monkeypatch):
+        from shopman.shop.adapters.catalog_projection_google import _get_config
+        from shopman.shop.models import ShopIntegrations
+
+        shop.defaults = {"google_merchant": {"extra": "fica"}, "keep": {"yes": True}}
+        shop.save(update_fields=["defaults"])
+        request = rf.post("/", data=self._DATA)
+        request.user = admin_user
+        model_admin = admin.site._registry[ShopIntegrations]
+        monkeypatch.setattr(model_admin, "message_user", lambda *args, **kwargs: None)
+
+        response = model_admin.set_google_merchant(request, object_id=str(shop.pk))
+
+        assert response.status_code == 302
+        shop.refresh_from_db()
+        assert shop.defaults["keep"] == {"yes": True}
+        assert shop.defaults["google_merchant"] == {
+            "extra": "fica",
+            "account_id": "5881119366",
+            "data_source_id": "10786369877",
+            "content_language": "pt",
+            "feed_label": "BR",
+        }
+        # É exatamente o que o envio ao Google lê.
+        config = _get_config()
+        assert config["account_id"] == "5881119366"
+        assert config["data_source_id"] == "10786369877"
+
+
 class TestAddressMapConfirmationAdminToggle:
     FIELD = "defaults_storefront_address_map_confirmation_enabled"
 

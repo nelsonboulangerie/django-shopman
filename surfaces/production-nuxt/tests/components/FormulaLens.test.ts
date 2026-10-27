@@ -151,7 +151,7 @@ describe("FormulaLens", () => {
     expect(full.text()).toContain("Partes");
     expect(full.text()).toContain("20% da farinha");
     expect(full.text()).toContain("Mistura final");
-    expect(full.text()).toContain("Ficha técnica (BOM)");
+    expect(full.text()).toContain("Consumo de insumos");
 
     const compact = mountLens({ lens: served, compact: true });
     expect(compact.text()).toContain("Partes");
@@ -176,7 +176,7 @@ describe("FormulaLens", () => {
   });
 
   it("never renders a blank screen: empty, pending and error states are explicit", () => {
-    expect(mountLens({ lens: null }).text()).toContain("Sem prévia ainda");
+    expect(mountLens({ lens: null }).text()).toContain("Adicione ingredientes para ver o resumo da fórmula.");
     expect(mountLens({ lens: null, pending: true }).text()).toContain("Calculando…");
     expect(mountLens({ lens: lens(), error: "Não foi possível calcular a prévia." }).text()).toContain("Não foi possível calcular a prévia.");
     expect(mountLens({ lens: lens({ items: [] }) }).text()).toContain("Nenhum ingrediente ainda.");

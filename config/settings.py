@@ -1002,10 +1002,6 @@ SHOPMAN_META = {
     "api_version": os.environ.get("META_API_VERSION", "v21.0").strip(),
     "api_base": os.environ.get("META_API_BASE", "https://graph.facebook.com"),
     "currency": os.environ.get("META_CURRENCY", "BRL").strip(),
-    # Base pública da loja p/ montar o `link` de cada item (Meta exige link no create).
-    "store_url": os.environ.get("META_STORE_URL", "").strip(),
-    # Marca padrão quando o produto não tem `brand` no PIM.
-    "default_brand": os.environ.get("META_DEFAULT_BRAND", "").strip(),
     "batch_size": int(os.environ.get("META_BATCH_SIZE", "5000")),
     "timeout": int(os.environ.get("META_TIMEOUT", "30")),
 }
@@ -1133,6 +1129,19 @@ if os.environ.get("IFOOD_CATALOG_PROJECTION", "").strip().lower() in ("1", "true
 # (token + catalog_id) p/ ir live.
 if os.environ.get("META_CATALOG_PROJECTION", "").strip().lower() in ("1", "true", "yes"):
     _CATALOG_PROJECTION_BACKENDS["meta-catalog"] = "shopman.shop.adapters.catalog_projection_meta.MetaCatalogProjection"
+
+# Google Merchant — o canal de plataforma do Google (`google-shopping`) pela Merchant
+# API, off by default. Escritor único do catálogo na conta: a fonte de dados é do tipo
+# API, sem o arquivo do feed ao lado (docs/plans/CATALOG-PUSH-GOOGLE-META-PLAN.md).
+# Conta e fonte de dados são dado da loja (`Shop.defaults["google_merchant"]`, ADR-042);
+# aqui fica só o segredo (sem cofre por loja ainda) e o técnico.
+SHOPMAN_GOOGLE_MERCHANT = {
+    "service_account_json": os.environ.get("GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON", "").strip(),
+    "api_base": os.environ.get("GOOGLE_MERCHANT_API_BASE", "https://merchantapi.googleapis.com"),
+    "timeout": _env_int("GOOGLE_MERCHANT_TIMEOUT", 30),
+}
+if os.environ.get("GOOGLE_MERCHANT_PROJECTION", "").strip().lower() in ("1", "true", "yes"):
+    _CATALOG_PROJECTION_BACKENDS["google-shopping"] = "shopman.shop.adapters.catalog_projection_google.GoogleMerchantProjection"
 
 # ── SMS (Comtele — OTP por SMS) ─────────────────────────────────────
 # WhatsApp OTP não é viável (ManyChat não tem categoria Authentication; o número único da marca

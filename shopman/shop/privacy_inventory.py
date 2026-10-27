@@ -166,6 +166,7 @@ PROCESSORS: tuple[Processor, ...] = (
 ADAPTERS_SEM_DADO_DE_CLIENTE: dict[str, str] = {
     "catalog_projection_ifood": "publica o CARDÁPIO no iFood; nenhum dado de cliente",
     "catalog_projection_meta": "publica o CARDÁPIO na Meta; nenhum dado de cliente",
+    "catalog_projection_google": "publica o CARDÁPIO no Google; nenhum dado de cliente",
     "marketing_delivery_meta": "publica anúncio PÚBLICO; não recebe destinatário",
     "marketing_delivery_facebook": "publica anúncio PÚBLICO; não recebe destinatário",
     "marketing_delivery_instagram": "publica anúncio PÚBLICO; não recebe destinatário",

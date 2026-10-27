@@ -49,6 +49,7 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 - [Alpha tecnico pronto-para-virar](alpha-technical-readiness.md)
 - [Alpha DigitalOcean - handoff operacional](alpha-digitalocean-handoff.md)
 - [Ativar Focus NFe (NFC-e): homologação → produção](ativar-focus-nfe.md)
+- [Formas de pagamento da NFC-e: prova em homologação (03, 04, 17, 99, troco)](nfce-formas-de-pagamento-homologacao.md)
 - [Pré-flight de go-live (switches antes do alpha/produção)](go-live-preflight.md)
 
 ## Procedimentos
