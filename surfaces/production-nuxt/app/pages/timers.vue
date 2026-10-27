@@ -77,6 +77,8 @@ useHead({ title: "Timers" });
     <ProductionHeader
       v-model:query="query"
       title="Timers"
+      search-placeholder="Buscar timer"
+      search-label="filtrando os timers"
       :count="activeCount"
       count-label="ativos"
       :pending="pending"

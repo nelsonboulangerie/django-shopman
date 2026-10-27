@@ -40,22 +40,33 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
 
   await page.goto("/recipes/pao-frances");
   await page.waitForLoadState("networkidle");
-  await expect(page.getByText("Ficha de execução ativa")).toBeVisible();
+  await expect(page.getByText("Ficha técnica", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Configuração da produção" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Operação" }).click();
-  await expect(page.getByRole("heading", { name: "Operação da ficha" })).toBeVisible();
-  await expect(page.getByText("Como a receita se comporta no planejamento e no chão de produção.")).toBeVisible();
+  await page.getByRole("link", { name: "Editar", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Informações da receita" })).toBeVisible();
+  await expect(page.getByLabel("Produto associado (SKU)")).toHaveValue("PAO-FRANCES");
+
+  await page.getByRole("tab", { name: "Modo de preparo" }).click();
+  await expect(page.getByRole("heading", { name: "Modo de preparo" })).toBeVisible();
+  await expect(page.getByText("Registre cada etapa com instrução, tempo, temperatura e ponto de referência.")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Produção" }).click();
+  await expect(page.getByRole("heading", { name: "Configuração da produção" })).toBeVisible();
+  await expect(page.getByText("Como a receita ocupa a produção e quando um lote exige atenção.")).toBeVisible();
   await expect(page.getByLabel("Validade (dias)")).toHaveValue("3");
   await expect(page.getByRole("checkbox", { name: "Prazo revisado pelo responsável" })).toBeChecked();
 
   await page.getByLabel("Validade (dias)").fill("4");
   await expect(page.getByRole("checkbox", { name: "Prazo revisado pelo responsável" })).not.toBeChecked();
   await expect(page.getByText("Alterar os dias exige uma nova confirmação.")).toBeVisible();
-  await page.getByRole("button", { name: "Fechar" }).click();
-  await expect(page.getByRole("heading", { name: "Descartar o que você preencheu?" })).toBeVisible();
-  await page.getByRole("button", { name: "Descartar e sair" }).click();
+  await expect(page.getByRole("button", { name: "Salvar configuração" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Duplicar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Sair sem salvar a receita?" })).toBeVisible();
+  await page.getByRole("button", { name: "Sair sem salvar" }).click();
+  await page.getByRole("button", { name: "Mais ações", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Duplicar receita", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Duplicar receita" })).toBeVisible();
   await expect(page.getByText("A cópia nasce como rascunho")).toBeVisible();
   await expect(page.getByText("Não cria ficha ativa nem herda capacidade, validade ou histórico de produção.")).toBeVisible();
