@@ -640,7 +640,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               <p class="text-xs text-muted-foreground">Quantidade obtida ao executar esta fórmula uma vez.</p>
             </div>
             <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Quantidade obtida
+              Quantidade
               <span class="flex items-center gap-1">
                 <NuxtInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-24" :ui="{ base: 'bg-muted' }" />
                 <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" :ui="{ base: 'bg-muted' }" />

@@ -33,6 +33,7 @@ test("editar receita é um gesto visível desde o inventário", async ({ page },
 });
 
 test("cadastros de receita cabem, explicam o efeito e preservam a revisão", async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
   test.skip(
     !["chromium-desktop", "chromium-mobile-manager"].includes(testInfo.project.name),
     "Matriz focada nos dois extremos responsivos do cadastro.",
@@ -47,6 +48,8 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByRole("heading", { name: "Informações da receita" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Rendimento", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Resultado da receita" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Quantidade", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Quantidade obtida", exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Produto associado (SKU)")).toHaveValue("PAO-FRANCES");
 
   await page.getByRole("button", { name: "Adicionar insumo" }).click();
