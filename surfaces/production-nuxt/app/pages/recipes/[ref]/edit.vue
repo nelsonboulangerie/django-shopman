@@ -27,6 +27,8 @@ import {
   moveItem,
   originLines,
   pctOf,
+  partReferenceCode,
+  referenceGuidance,
   removeItem,
   removePart,
   roleLabel,
@@ -103,6 +105,7 @@ watch(
 
 const kind = computed(() => entry.value?.kind ?? "other");
 const { lens, pending: lensPending, error: lensError, standardizing, standardize } = useFormulaLens(formula, kind);
+const { ranges: referenceRanges } = useRecipeReference(entryKind);
 
 // ── Feedback imediato (a conta oficial é a lente) ───────────────────────────
 const localAnchorTotal = computed(() => anchorTotalOf(formula.value));
@@ -306,7 +309,10 @@ function onPartSelect(index: number, option: IngredientOptionProjection) {
 }
 function onPartNumber(index: number, field: "flour_pct" | "quantity" | "cap_pct", event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
-  formula.value = updatePart(formula.value, index, { [field]: raw ? Number(raw) || null : null });
+  const value = raw ? Number(raw) || null : null;
+  formula.value = updatePart(formula.value, index, {
+    [field]: value == null ? null : normalizedQuantity(value, "kg"),
+  });
 }
 function onPartQuantity(index: number, value: number | null | undefined) {
   const part = formula.value.parts[index];
@@ -328,6 +334,12 @@ function partMatchedName(index: number): string {
   const part = formula.value.parts[index];
   if (!part?.sku) return "";
   return lens.value?.parts.find((row) => row.sku === part.sku)?.name || part.sku;
+}
+function partGuidance(index: number): string {
+  const part = formula.value.parts[index];
+  if (!part) return "";
+  const code = partReferenceCode(part, partMatchedName(index));
+  return referenceGuidance(referenceRanges.value.find((range) => range.code === code));
 }
 
 // ── Modo de preparo estruturado ────────────────────────────────────────────
@@ -922,28 +934,47 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   />
                 </label>
               </li>
-              <li v-for="(part, index) in formula.parts" :key="`recipe-${index}`" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
+              <li
+                v-for="(part, index) in formula.parts"
+                :key="`recipe-${index}`"
+                class="grid gap-3 p-3 sm:grid-cols-[minmax(10rem,0.9fr)_minmax(0,1.4fr)_minmax(13rem,1fr)_auto]"
+              >
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Uso na receita
                   <NuxtSelect
                     :model-value="part.kind"
                     :items="partKinds"
                     value-key="value"
-                    class="w-44"
+                    class="w-full"
                     aria-label="Uso da receita como ingrediente"
                     :ui="{ base: 'bg-muted' }"
                     @update:model-value="(kind: string) => onPartKind(index, kind)"
                   />
                 </label>
                 <template v-if="part.kind === 'old_dough'">
-                  <p class="self-end pb-2 text-sm text-muted-foreground sm:col-span-2">Massa da própria receita, reservada da produção anterior.</p>
+                  <p class="self-end pb-2 text-sm text-muted-foreground">Massa da própria receita, reservada da produção anterior.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Teto (%)
-                    <NuxtInput :model-value="String(part.cap_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'cap_pct', $event)" />
+                    Limite de substituição
+                    <NuxtInput
+                      :model-value="String(part.cap_pct ?? '')"
+                      type="number"
+                      inputmode="decimal"
+                      min="0.001"
+                      max="99.999"
+                      step="0.1"
+                      placeholder="0"
+                      class="w-full sm:w-40"
+                      :ui="{ base: 'bg-muted tabular-nums text-right' }"
+                      aria-label="Limite percentual de substituição por massa velha"
+                      @input="onPartNumber(index, 'cap_pct', $event)"
+                    >
+                      <template #trailing><span class="text-sm text-muted-foreground">%</span></template>
+                    </NuxtInput>
+                    <span v-if="partGuidance(index)" class="font-normal text-muted-foreground">{{ partGuidance(index) }}</span>
                   </label>
                 </template>
                 <template v-else>
-                  <div class="grid gap-1 text-xs font-medium text-muted-foreground">
+                  <div class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                     Ingrediente
                     <IngredientPicker
                       :model-value="part.sku ?? ''"
@@ -963,13 +994,14 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       max="100"
                       step="0.1"
                       placeholder="0"
-                      class="w-full sm:w-40"
+                      class="w-full"
                       :ui="{ base: 'bg-muted tabular-nums text-right' }"
                       aria-label="Percentual da base de cálculo nesta preparação"
                       @input="onPartNumber(index, 'flour_pct', $event)"
                     >
                       <template #trailing><span class="text-sm text-muted-foreground">%</span></template>
                     </NuxtInput>
+                    <span v-if="partGuidance(index)" class="font-normal text-muted-foreground">{{ partGuidance(index) }}</span>
                   </label>
                   <label v-else :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
@@ -997,7 +1029,6 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       />
                     </span>
                   </label>
-                  <span v-if="anchorIsFlour && part.kind !== 'component'" class="hidden sm:block" />
                 </template>
                 <div class="flex items-end">
                   <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->

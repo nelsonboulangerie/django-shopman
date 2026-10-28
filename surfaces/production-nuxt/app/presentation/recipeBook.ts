@@ -18,6 +18,7 @@ import type {
   RecipeCaptureDraftProjection,
   RecipeEntryCardProjection,
   RecipeKind,
+  ReferenceRangeProjection,
   RecipeStepInput,
   RecipeStepProjection,
   VersionStatus,
@@ -68,6 +69,29 @@ export const PART_KIND_OPTIONS: readonly { value: PartKind; label: string }[] = 
 
 export function partKindLabel(kind: string): string {
   return PART_KIND_OPTIONS.find((entry) => entry.value === kind)?.label ?? kind;
+}
+
+/** Chave da referência técnica da preparação, espelhando a lente do servidor. */
+export function partReferenceCode(part: FormulaPart, displayName = ""): string {
+  if (part.kind !== "preferment") return `part_flour_pct:${part.kind}`;
+  const text = `${displayName} ${part.entry_ref ?? ""} ${part.sku ?? ""}`.toLocaleLowerCase("pt-BR");
+  if (text.includes("poolish")) return "part_flour_pct:poolish";
+  if (text.includes("biga")) return "part_flour_pct:biga";
+  return "part_flour_pct:levain";
+}
+
+/** Orientação curta, sempre consultiva: faixa literária nunca vira bloqueio. */
+export function referenceGuidance(range: ReferenceRangeProjection | null | undefined): string {
+  if (!range) return "";
+  const band = range.low_display && range.high_display
+    ? `Referência técnica: ${range.low_display} a ${range.high_display}.`
+    : range.high_display
+      ? `Referência técnica: até ${range.high_display}.`
+      : "";
+  const review = range.max_display && range.max_display !== range.high_display
+    ? ` Acima de ${range.max_display}, revise a fórmula.`
+    : "";
+  return `${band}${review}`.trim();
 }
 
 export const ANCHOR_OPTIONS: readonly { value: AnchorKind; label: string }[] = [

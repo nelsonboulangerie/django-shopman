@@ -830,6 +830,21 @@ const RECIPE_INGREDIENTS = [
   { sku: "CREME-CONFEITEIRO", name: "Creme confeiteiro", unit: "g", role: "dairy", is_part: true, entry_ref: "creme-confeiteiro", suggested_part_kind: "component" },
 ];
 
+const RECIPE_REFERENCE = {
+  reference: {
+    kind: "bread",
+    kind_label: "Pão",
+    ranges: [
+      { code: "part_flour_pct:levain", label: "Farinha na parte: Levain", low_display: "15%", high_display: "30%", max_display: "40%", note: "Farinha pré-fermentada no levain." },
+      { code: "part_flour_pct:poolish", label: "Farinha na parte: Poolish", low_display: "20%", high_display: "40%", max_display: "50%", note: "" },
+      { code: "part_flour_pct:biga", label: "Farinha na parte: Biga", low_display: "30%", high_display: "50%", max_display: "60%", note: "" },
+      { code: "part_flour_pct:soaker", label: "Farinha na parte: Grãos hidratados", low_display: "10%", high_display: "20%", max_display: "30%", note: "" },
+      { code: "part_flour_pct:autolyse", label: "Farinha na parte: Autólise", low_display: "0%", high_display: "100%", max_display: "100%", note: "" },
+      { code: "part_flour_pct:old_dough", label: "Farinha na parte: Massa velha", low_display: "15%", high_display: "25%", max_display: "30%", note: "" },
+    ],
+  },
+};
+
 function recipeIngredients(url) {
   const term = new URL(url, "http://mock").searchParams.get("q")?.trim().toLocaleLowerCase("pt-BR") ?? "";
   const options = RECIPE_INGREDIENTS.filter((item) => !term || item.name.toLocaleLowerCase("pt-BR").includes(term) || item.sku.toLocaleLowerCase("pt-BR").includes(term));
@@ -887,6 +902,7 @@ function populatedResponse(url) {
   if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
   if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
   if (/\/recipes\/ingredients\/?(\?|$)/.test(url)) return recipeIngredients(url);
+  if (/\/recipes\/reference\/?(\?|$)/.test(url)) return RECIPE_REFERENCE;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
   const card = detail && RECIPE_CARDS.find((entry) => entry.ref === detail[1]);
   if (card) return recipeDetail(card);

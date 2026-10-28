@@ -28,6 +28,8 @@ import {
   kindLabel,
   moveItem,
   originLines,
+  partReferenceCode,
+  referenceGuidance,
   outputMediaType,
   parseVersionRef,
   partKindLabel,
@@ -247,6 +249,16 @@ describe("emptyFormula and immutable edits", () => {
     expect(removePart(set, 0).parts).toHaveLength(0);
     expect(emptyPart()).toMatchObject({ kind: "component", quantity: null, unit: "g" });
     expect(emptyPart("old_dough")).toEqual({ kind: "old_dough", cap_pct: 20 });
+  });
+
+  it("guides formula preparations without turning literature into validation", () => {
+    expect(partReferenceCode({ kind: "preferment", sku: "LEVAIN" }, "Levain")).toBe("part_flour_pct:levain");
+    expect(partReferenceCode({ kind: "preferment", sku: "POOLISH" }, "Poolish")).toBe("part_flour_pct:poolish");
+    expect(partReferenceCode({ kind: "old_dough", cap_pct: 20 })).toBe("part_flour_pct:old_dough");
+    expect(referenceGuidance({
+      code: "part_flour_pct:levain", label: "Levain", low_display: "15%", high_display: "30%",
+      max_display: "40%", note: "",
+    })).toBe("Referência técnica: 15% a 30%. Acima de 40%, revise a fórmula.");
   });
 
   it("setAnchor keeps the sku only for the ingredient anchor", () => {
