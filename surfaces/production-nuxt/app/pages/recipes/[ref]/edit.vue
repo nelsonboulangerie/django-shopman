@@ -129,7 +129,8 @@ const massFactor: Partial<Record<FormulaUnit, number>> = { g: 1, kg: 1000 };
 const volumeFactor: Partial<Record<FormulaUnit, number>> = { ml: 1, L: 1000 };
 const roleEditorIndex = ref<number | null>(null);
 const newIngredientIndex = ref<number | null>(null);
-useNextFocus(() => newIngredientIndex.value === null ? null : `ingredient-${newIngredientIndex.value}`);
+const ingredientFocusKey = ref<string | null>(null);
+useNextFocus(ingredientFocusKey);
 const yieldQuantityNumber = computed<number | null>({
   get: () => {
     const value = Number(String(yieldQuantity.value).replace(",", "."));
@@ -204,6 +205,7 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
   // decide apenas qual estrutura o motor recebe. Não obriga o operador a saber,
   // antes de buscar, se o ingrediente é comprado ou produzido pela casa.
   if (option.is_part) {
+    const partIndex = formula.value.parts.length;
     const partUnit = formulaDefaultUnit(option.unit);
     const partQuantity = convertedQuantity(item.quantity, item.unit, partUnit) ?? item.quantity;
     const part = {
@@ -215,6 +217,7 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
     };
     formula.value = addPart(removeItem(formula.value, index), part);
     newIngredientIndex.value = null;
+    ingredientFocusKey.value = `part-${partIndex}-amount`;
     return;
   }
   const patch: Partial<typeof item> = { sku: option.sku, name: option.name };
@@ -225,6 +228,7 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
   formula.value = updateItem(formula.value, index, patch);
   roleEditorIndex.value = null;
   newIngredientIndex.value = null;
+  ingredientFocusKey.value = `ingredient-${index}-quantity`;
 }
 function itemMatchedName(index: number): string {
   const item = formula.value.items[index];
@@ -232,18 +236,22 @@ function itemMatchedName(index: number): string {
   return lens.value?.items.find((row) => row.sku === item.sku)?.name || item.name || item.sku;
 }
 function addIngredient() {
-  newIngredientIndex.value = formula.value.items.length;
+  const index = formula.value.items.length;
+  newIngredientIndex.value = index;
   formula.value = addItem(formula.value, emptyItem());
+  ingredientFocusKey.value = `ingredient-${index}-picker`;
 }
 function remove(index: number) {
   formula.value = removeItem(formula.value, index);
   roleEditorIndex.value = null;
   newIngredientIndex.value = null;
+  ingredientFocusKey.value = null;
 }
 function move(index: number, delta: number) {
   formula.value = moveItem(formula.value, index, index + delta);
   roleEditorIndex.value = null;
   newIngredientIndex.value = null;
+  ingredientFocusKey.value = null;
 }
 
 // ── Âncora ──────────────────────────────────────────────────────────────────
@@ -802,7 +810,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               <li
                 v-for="(item, index) in formula.items"
                 :key="`item-${index}`"
-                :data-focus-target="`ingredient-${index}`"
+                :data-focus-target="`ingredient-${index}-picker`"
                 class="grid scroll-mt-20 gap-3 p-3 outline-none sm:grid-cols-[minmax(0,1fr)_auto]"
                 :class="item.role === 'flour' && anchorIsFlour ? 'bg-primary/5' : ''"
               >
@@ -818,7 +826,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   />
                 </div>
                 <div class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
-                  <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+                  <label :data-focus-target="`ingredient-${index}-quantity`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <NuxtInputNumber
                       :key="`quantity-${item.sku || index}-${item.unit}`"
@@ -830,6 +838,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       class="w-full"
                       :ui="{ base: 'bg-muted tabular-nums' }"
                       aria-label="Quantidade"
+                      data-focus-control
                       @update:model-value="(value: number | null | undefined) => onItemQuantity(index, value)"
                     />
                   </label>
@@ -922,14 +931,14 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       @select="onPartSelect(index, $event)"
                     />
                   </div>
-                  <label v-if="anchorIsFlour" class="grid gap-1 text-xs font-medium text-muted-foreground">
+                  <label v-if="anchorIsFlour" :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Farinha (%)
-                    <NuxtInput :model-value="String(part.flour_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'flour_pct', $event)" />
+                    <NuxtInput data-focus-control :model-value="String(part.flour_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'flour_pct', $event)" />
                   </label>
-                  <label v-else class="grid gap-1 text-xs font-medium text-muted-foreground">
+                  <label v-else :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <span class="flex items-center gap-1">
-                      <NuxtInput :model-value="String(part.quantity ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'quantity', $event)" />
+                      <NuxtInput data-focus-control :model-value="String(part.quantity ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'quantity', $event)" />
                       <NuxtSelect
                         :model-value="part.unit ?? 'g'"
                         :items="units"
