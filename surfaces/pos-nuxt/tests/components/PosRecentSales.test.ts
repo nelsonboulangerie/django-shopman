@@ -34,6 +34,12 @@ function sale(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// A lista tem DOIS diálogos de gerente (cancelar a venda e emitir a nota), os dois
+// o `OperatorManagerAuth` canônico. O da emissão se acha pelo ato que ele assina.
+function emitFiscalAuth(w: Awaited<ReturnType<typeof mountSuspended>>) {
+  return w.findAllComponents({ name: "OperatorManagerAuth" }).find((c) => c.props("action") === "emit_fiscal")!;
+}
+
 async function montar(sales: Record<string, unknown>[]) {
   fetchMock.mockResolvedValue({ sales });
   // A lista carrega ao ABRIR (watcher de `open`), como na tela.
@@ -113,7 +119,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
   it("o toque pede o gerente; a assinatura vai no corpo do POST", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
     expect(emitButton()?.textContent?.trim()).toBe("Estabelecer emissão…");
-    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    const auth = emitFiscalAuth(w);
     expect(auth.props("open")).toBe(false);
 
     emitButton()!.click();
@@ -134,7 +140,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("PIN recusado fica no diálogo, que continua aberto", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    const auth = emitFiscalAuth(w);
     emitButton()!.click();
     await vi.waitFor(() => expect(auth.props("open")).toBe(true));
 
@@ -149,7 +155,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("recusa de negócio (venda antiga) fecha o diálogo e diz o porquê", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    const auth = emitFiscalAuth(w);
     emitButton()!.click();
     await vi.waitFor(() => expect(auth.props("open")).toBe(true));
 
