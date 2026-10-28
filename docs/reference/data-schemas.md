@@ -1628,6 +1628,7 @@ o segredo (JSON da service account, em base64) fica em `GOOGLE_MERCHANT_SERVICE_
 | `google_merchant.data_source_id` | `string` | idem | Id da fonte de dados primária do tipo API. Ausente = envio inerte |
 | `google_merchant.content_language` | `string` | idem | ISO 639-1 dos produtos. Ausente = `pt` |
 | `google_merchant.feed_label` | `string` | idem | Rótulo do feed na conta. Ausente = `BR` |
+| `google_merchant.registration` | `dict` | `ShopIntegrationsAdmin.google_merchant_display` | `{gcp_ids, at}`: o último registro bem-sucedido do projeto do Google Cloud na conta (ação "Registrar o envio no Google", `catalog_projection_google.register_gcp`). Só leitura da tela; o envio não depende dela |
 
 ### Capacidade dos apps de operação — `Shop.defaults["operator_capacity"]`
 

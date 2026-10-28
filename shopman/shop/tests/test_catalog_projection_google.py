@@ -290,6 +290,107 @@ class TestBackend:
         assert exc.value.retry_after == 17
 
 
+# ── registro do projeto no Merchant Center (developerRegistration) ───────────
+
+
+class TestDeveloperRegistration:
+    """Sem o registro, toda chamada da Merchant API volta 401."""
+
+    def _post(self, status, body=None):
+        def fake_post(url, params=None, json=None, headers=None, timeout=None, data=None):
+            if "oauth2" in url:
+                return _Resp(200, {"access_token": "tok", "expires_in": 3600})
+            fake_post.calls.append((url, json, headers))
+            resp = _Resp(status, body)
+            resp.content = b"x" if body else b""
+            resp.text = ""
+            return resp
+
+        fake_post.calls = []
+        return fake_post
+
+    def test_registers_the_project_and_returns_gcp_ids(self, token):
+        fake = self._post(200, {"name": "accounts/5881119366/developerRegistration", "gcpIds": ["123456789"]})
+        with mock.patch.object(google.requests, "post", fake):
+            result = google.register_gcp()
+        assert result.ok is True and result.gcp_ids == ("123456789",)
+        url, body, headers = fake.calls[0]
+        assert url == "https://merchant.mock.test/accounts/v1/accounts/5881119366/developerRegistration:registerGcp"
+        assert body == {}
+        assert headers["Authorization"] == "Bearer tok"
+
+    def test_repeating_is_safe(self, token):
+        fake = self._post(200, {"gcpIds": ["123456789"]})
+        with mock.patch.object(google.requests, "post", fake):
+            first, second = google.register_gcp(), google.register_gcp()
+        assert first == second and first.ok
+
+    def test_google_error_message_is_shown_with_the_access_hint(self, token):
+        fake = self._post(403, {"error": {
+            "code": 403, "message": "The caller does not have permission", "status": "PERMISSION_DENIED",
+        }})
+        with mock.patch.object(google.requests, "post", fake):
+            result = google.register_gcp()
+        assert result.ok is False
+        assert "The caller does not have permission (PERMISSION_DENIED)" in result.error
+        assert "acesso de Administrador" in result.error
+
+    def test_without_account_or_key_nothing_is_called(self, settings, loja):
+        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
+        with mock.patch.object(google.requests, "post") as post:
+            result = google.register_gcp()
+        assert result.ok is False and "chave da service account" in result.error
+        post.assert_not_called()
+
+    def test_admin_action_registers_and_shows_the_project(self, token, rf, monkeypatch):
+        from django.contrib import admin
+        from django.contrib.auth.models import User
+
+        from shopman.shop.models import Shop, ShopIntegrations
+
+        user = User.objects.create_superuser("gerente", "g@loja.test", "x")
+        shop = Shop.objects.get()
+        request = rf.post("/", data={"_form_submitted": "1"})
+        request.user = user
+        model_admin = admin.site._registry[ShopIntegrations]
+        said = []
+        monkeypatch.setattr(model_admin, "message_user", lambda request, message, **kw: said.append(message))
+        fake = self._post(200, {"gcpIds": ["123456789"]})
+
+        with mock.patch.object(google.requests, "post", fake):
+            response = model_admin.register_google_merchant(request, object_id=str(shop.pk))
+
+        assert response.status_code == 302
+        assert said == ["Envio registrado no Google. Projeto vinculado: 123456789."]
+        shop.refresh_from_db()
+        assert shop.defaults["google_merchant"]["registration"]["gcp_ids"] == ["123456789"]
+        assert shop.defaults["google_merchant"]["account_id"] == "5881119366"
+        assert "123456789" in str(model_admin.google_merchant_display(shop))
+
+    def test_admin_action_shows_google_error_and_keeps_defaults(self, token, rf, monkeypatch):
+        from django.contrib import admin
+        from django.contrib.auth.models import User
+
+        from shopman.shop.models import Shop, ShopIntegrations
+
+        user = User.objects.create_superuser("gerente", "g@loja.test", "x")
+        shop = Shop.objects.get()
+        before = dict(shop.defaults)
+        request = rf.post("/", data={"_form_submitted": "1"})
+        request.user = user
+        model_admin = admin.site._registry[ShopIntegrations]
+        said = []
+        monkeypatch.setattr(model_admin, "message_user", lambda request, message, **kw: said.append(message))
+        fake = self._post(401, {"error": {"message": "Request had invalid authentication", "status": "UNAUTHENTICATED"}})
+
+        with mock.patch.object(google.requests, "post", fake):
+            model_admin.register_google_merchant(request, object_id=str(shop.pk))
+
+        assert said and said[0].startswith("O Google não registrou o envio: Request had invalid authentication")
+        shop.refresh_from_db()
+        assert shop.defaults == before
+
+
 # ── gatilhos e handler ────────────────────────────────────────────────────────
 
 
