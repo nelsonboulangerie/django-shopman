@@ -616,8 +616,11 @@ def test_pix_da_cobranca_sai_17_com_grupo_de_cartao():
     }]
 
 
-def test_pix_atestado_no_balcao_sai_20_estatico_com_grupo_de_cartao():
-    """ "Recebi o Pix" (QR fixo ou chave da loja) não teve cobrança com txid: é 20."""
+def test_pix_atestado_no_balcao_sai_20_estatico_sem_grupo_de_cartao():
+    """ "Recebi o Pix" (QR fixo ou chave da loja) não teve cobrança com txid: é 20.
+
+    Sem o grupo ``card``: a SEFAZ recusa o grupo no 20 (rejeição 963, medida em
+    homologação em 27/10/2026)."""
     payload = _emit_capturing({
         "method": "mixed",
         "amount_q": 1500,
@@ -629,7 +632,7 @@ def test_pix_atestado_no_balcao_sai_20_estatico_com_grupo_de_cartao():
 
     assert payload["formas_pagamento"] == [
         {"forma_pagamento": "01", "valor_pagamento": "5.00"},
-        {"forma_pagamento": "20", "valor_pagamento": "10.00", "tipo_integracao": "2"},
+        {"forma_pagamento": "20", "valor_pagamento": "10.00"},
     ]
 
 
