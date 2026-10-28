@@ -29,6 +29,7 @@ import {
   pctOf,
   removeItem,
   removePart,
+  roleLabel,
   setAnchor,
   stepsForPayload,
   totalMassOf,
@@ -117,14 +118,41 @@ const anchorNoun = computed(() => {
 const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.items).length : 0));
 
 // ── Itens ───────────────────────────────────────────────────────────────────
+const quantityRules: Record<FormulaUnit, { step: number; min: number; maximumFractionDigits: number }> = {
+  g: { step: 1, min: 0.001, maximumFractionDigits: 3 },
+  kg: { step: 0.001, min: 0.001, maximumFractionDigits: 3 },
+  ml: { step: 1, min: 0.001, maximumFractionDigits: 3 },
+  L: { step: 0.001, min: 0.001, maximumFractionDigits: 3 },
+  un: { step: 1, min: 1, maximumFractionDigits: 0 },
+};
+const massFactor: Partial<Record<FormulaUnit, number>> = { g: 1, kg: 1000 };
+const volumeFactor: Partial<Record<FormulaUnit, number>> = { ml: 1, L: 1000 };
+const roleEditorIndex = ref<number | null>(null);
+
+function quantityRule(unit: FormulaUnit) {
+  return quantityRules[unit];
+}
+function convertedQuantity(quantity: number, from: FormulaUnit, to: FormulaUnit): number | null {
+  const factors = massFactor[from] && massFactor[to] ? massFactor : volumeFactor[from] && volumeFactor[to] ? volumeFactor : null;
+  if (!factors) return from === to ? quantity : null;
+  return Number((quantity * (factors[from] ?? 1) / (factors[to] ?? 1)).toFixed(3));
+}
 function onItemQuantity(index: number, value: number | null | undefined) {
   formula.value = updateItem(formula.value, index, { quantity: value ?? 0 });
 }
 function onItemUnit(index: number, unit: string) {
-  formula.value = updateItem(formula.value, index, { unit: unit as FormulaUnit });
+  const item = formula.value.items[index];
+  if (!item) return;
+  const next = unit as FormulaUnit;
+  const converted = convertedQuantity(item.quantity, item.unit, next);
+  formula.value = updateItem(formula.value, index, { unit: next, quantity: converted ?? item.quantity });
+  if (converted === null && item.quantity > 0) {
+    useSonner.info("Quantidade mantida. Massa, volume e unidade não têm conversão automática entre si.");
+  }
 }
 function onItemRole(index: number, role: string) {
   formula.value = updateItem(formula.value, index, { role: role as IngredientRole });
+  roleEditorIndex.value = null;
 }
 function onItemGramsPerUnit(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
@@ -140,22 +168,27 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
   // decide apenas qual estrutura o motor recebe. Não obriga o operador a saber,
   // antes de buscar, se o ingrediente é comprado ou produzido pela casa.
   if (option.is_part) {
+    const partUnit = UNIT_OPTIONS.includes(option.unit as FormulaUnit) ? option.unit as FormulaUnit : item.unit;
+    const partQuantity = convertedQuantity(item.quantity, item.unit, partUnit) ?? item.quantity;
     const part = {
       ...emptyPart("preferment"),
       sku: option.sku,
       entry_ref: option.entry_ref,
-      quantity: anchorIsFlour.value ? null : item.quantity || null,
-      unit: item.unit,
+      quantity: anchorIsFlour.value ? null : partQuantity || null,
+      unit: partUnit,
     };
     formula.value = addPart(removeItem(formula.value, index), part);
     return;
   }
-  const patch: Partial<typeof item> = { sku: option.sku };
-  if (!item.name.trim()) patch.name = option.name;
-  if (item.role === "other" && ROLE_OPTIONS.some((role) => role.value === option.role)) {
-    patch.role = option.role as IngredientRole;
+  const patch: Partial<typeof item> = { sku: option.sku, name: option.name };
+  if (ROLE_OPTIONS.some((role) => role.value === option.role)) patch.role = option.role as IngredientRole;
+  if (UNIT_OPTIONS.includes(option.unit as FormulaUnit)) {
+    const nextUnit = option.unit as FormulaUnit;
+    patch.quantity = convertedQuantity(item.quantity, item.unit, nextUnit) ?? item.quantity;
+    patch.unit = nextUnit;
   }
   formula.value = updateItem(formula.value, index, patch);
+  roleEditorIndex.value = null;
 }
 function itemMatchedName(index: number): string {
   const item = formula.value.items[index];
@@ -163,13 +196,15 @@ function itemMatchedName(index: number): string {
   return lens.value?.items.find((row) => row.sku === item.sku)?.name || item.name || item.sku;
 }
 function addIngredient() {
-  formula.value = addItem(formula.value, emptyItem({ role: formula.value.items.length ? "other" : "flour" }));
+  formula.value = addItem(formula.value, emptyItem());
 }
 function remove(index: number) {
   formula.value = removeItem(formula.value, index);
+  roleEditorIndex.value = null;
 }
 function move(index: number, delta: number) {
   formula.value = moveItem(formula.value, index, index + delta);
+  roleEditorIndex.value = null;
 }
 
 // ── Âncora ──────────────────────────────────────────────────────────────────
@@ -720,9 +755,9 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     Quantidade
                     <NuxtInputNumber
                       :model-value="item.quantity || null"
-                      :min="0"
-                      :step="0.001"
-                      :format-options="{ maximumFractionDigits: 3 }"
+                      :min="quantityRule(item.unit).min"
+                      :step="quantityRule(item.unit).step"
+                      :format-options="{ maximumFractionDigits: quantityRule(item.unit).maximumFractionDigits }"
                       locale="pt-BR"
                       class="w-full"
                       :ui="{ base: 'bg-muted tabular-nums' }"
@@ -751,15 +786,29 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer" :disabled="index === formula.items.length - 1" @click="move(index, 1)" />
                   <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="remove(index)" />
                 </div>
-                <label class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-2">
-                  Categoria do ingrediente
+                <div v-if="item.sku && roleEditorIndex !== index" class="flex min-w-0 items-center gap-2 sm:col-span-2">
+                  <span class="text-xs text-muted-foreground">Papel na fórmula:</span>
+                  <NuxtBadge color="neutral" variant="soft" :label="roleLabel(item.role)" />
+                  <NuxtButton
+                    class="ml-auto"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    label="Alterar"
+                    :aria-label="`Alterar papel na fórmula de ${item.name || 'ingrediente'}`"
+                    @click="roleEditorIndex = index"
+                  />
+                </div>
+                <label v-else-if="item.sku" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-2">
+                  Papel na fórmula
+                  <span class="font-normal">Define como este ingrediente participa dos percentuais e conversões.</span>
                   <NuxtSelect
                     :model-value="item.role"
                     :items="roles"
                     value-key="value"
                     class="w-full"
                     :ui="{ base: 'bg-muted' }"
-                    :aria-label="`Categoria de ${item.name || 'ingrediente'}`"
+                    :aria-label="`Papel na fórmula de ${item.name || 'ingrediente'}`"
                     @update:model-value="(role: string) => onItemRole(index, role)"
                   />
                 </label>
