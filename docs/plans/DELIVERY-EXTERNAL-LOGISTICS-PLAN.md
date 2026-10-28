@@ -173,7 +173,7 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    `MACHINE_RETORNO` morreu. Pedido com maquininha ou troco não se chama sozinho no pronto
    automático: quem escolhe a maquininha é o operador.
 6. Corrida com várias paradas (Pablo, 2026-10-28): o Gestor oferece "Juntar N entregas" com
-   duas ou mais entregas prontas sem corrida, sem maquininha e sem troco da gaveta; uma
+   duas ou mais entregas prontas sem corrida; uma
    solicitação só na TaOn, uma parada por pedido, na ordem do percurso (vizinho mais
    próximo a partir da loja; a API não ordena), até 4 pedidos. A leitura da corrida é uma
    só e vale para todos; cancelar um pedido não cancela a corrida dos outros (aviso para
@@ -181,6 +181,19 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    valores de `stops[].status`, então cada pedido só vira "entregue" no `F` da corrida
    inteira (com retorno, depois da volta à loja); o agrupamento automático da própria
    TaOn (status `U`) segue valendo para corridas chamadas uma a uma.
+7. A corrida conjunta é uma saída (Pablo, 2026-10-28: "na realidade vai acontecer"): pedido
+   com maquininha ou troco entra nela. A escolha pergunta o troco de cada pedido que pede
+   (sai da gaveta pedido a pedido, `courier_out`) e UMA maquininha para a corrida: o
+   primeiro pedido de cartão a reserva e os outros entram nela (`dispatch.trip_ref` = o
+   pedido da primeira escolha, o mesmo da saída do Gestor). O "Voltou" fecha todos os
+   pedidos dela. Tudo na transação do pedido de corrida: recusa de um pedido não tira nada
+   da gaveta.
+8. Custo de entrega no B.I. (Pablo, 2026-10-28): a seção "Entregas" soma o `final_value_q`
+   de cada corrida UMA vez (`id_mch`; numa corrida com várias paradas cada pedido guarda o
+   valor inteiro), com a cotação quando a corrida terminou sem valor final, e põe ao lado o
+   frete que os clientes pagaram nos pedidos levados (linha `__DELIVERY_FEE__`, sem os
+   cancelados). A corrida arquivada em `attempts` guarda o custo, para não sumir no
+   re-despacho. Não é lançamento contábil: é leitura, calculada na hora.
 
 ## Referências
 - [STOREFRONT-GAPS-ACTION-PLAN](completed/STOREFRONT-GAPS-ACTION-PLAN.md) — WP-11 (entrega), slice 3 (teleporte)

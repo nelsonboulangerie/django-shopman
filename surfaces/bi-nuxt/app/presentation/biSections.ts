@@ -7,17 +7,42 @@ export const BI_SECTIONS: readonly OperatorSection[] = [
   { key: "production", label: "Produção", icon: "lucide:chef-hat", to: "/" },
   { key: "sales", label: "Vendas", icon: "lucide:banknote", to: "/sales" },
   { key: "cash", label: "Caixa", icon: "lucide:wallet", to: "/cash" },
-  { key: "customers", label: "Clientes", icon: "lucide:users", to: "/customers" },
+  {
+    key: "customers",
+    label: "Clientes",
+    icon: "lucide:users",
+    to: "/customers",
+  },
+  // O custo da TaOn (corridas da casa) ao lado do frete que os clientes pagaram.
+  { key: "delivery", label: "Entregas", icon: "lucide:bike", to: "/delivery" },
   { key: "profiles", label: "Perfis", icon: "lucide:id-card", to: "/profiles" },
-  { key: "explore", label: "Explorar", icon: "lucide:telescope", to: "/explore" },
+  {
+    key: "explore",
+    label: "Explorar",
+    icon: "lucide:telescope",
+    to: "/explore",
+  },
   // As outras olham o que aconteceu; esta projeta.
-  { key: "forecast", label: "Projeção", icon: "lucide:trending-up", to: "/forecast" },
+  {
+    key: "forecast",
+    label: "Projeção",
+    icon: "lucide:trending-up",
+    to: "/forecast",
+  },
   // Última: a IA propõe cenários sobre os agregados; o gestor decide.
-  { key: "scenarios", label: "Cenários", icon: "lucide:flask-conical", to: "/scenarios" },
+  {
+    key: "scenarios",
+    label: "Cenários",
+    icon: "lucide:flask-conical",
+    to: "/scenarios",
+  },
 ];
 
 /** As seções com a janela de análise (`period=…&from=…`) na query de cada link. */
 export function biSections(windowQuery: string): OperatorSection[] {
   if (!windowQuery) return [...BI_SECTIONS];
-  return BI_SECTIONS.map((section) => ({ ...section, to: `${section.to}?${windowQuery}` }));
+  return BI_SECTIONS.map((section) => ({
+    ...section,
+    to: `${section.to}?${windowQuery}`,
+  }));
 }

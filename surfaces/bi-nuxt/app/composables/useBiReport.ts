@@ -1,4 +1,4 @@
-// Um fetch por relatório de B.I. (production/sales/cash/customers), com a
+// Um fetch por relatório de B.I. (production/sales/cash/customers/delivery-cost), com a
 // janela compartilhada na query. Leitura calma: sem poll — o gestor recarrega
 // ou troca a janela; análise não é telemetria de turno (ADR-016 não se aplica
 // a tendência). `extra` leva os recortes próprios da tela (o canal e a base de
@@ -7,7 +7,7 @@ import type { Ref } from "vue";
 import type { BIReading } from "~/types/bi";
 
 export function useBiReport<T>(
-  kind: "production" | "sales" | "cash" | "customers",
+  kind: "production" | "sales" | "cash" | "customers" | "delivery-cost",
   extra?: Ref<Record<string, string>>,
 ) {
   const { range } = useBiWindow();
@@ -23,7 +23,9 @@ export function useBiReport<T>(
   );
 
   const report = computed(() => data.value?.bi ?? null);
-  const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
+  const freshness = computed(() => ({
+    generated_at: data.value?.generated_at ?? null,
+  }));
 
   return { report, freshness, pending, error, refresh, data };
 }

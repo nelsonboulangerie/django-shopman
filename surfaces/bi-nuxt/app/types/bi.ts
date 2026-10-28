@@ -11,6 +11,8 @@ export type {
   BICustomerSegmentRow,
   BICustomersReport,
   BICustomersWeekRow,
+  BIDeliveryCostDay,
+  BIDeliveryCostReport,
   BIForecastReport,
   BIOvenTimeRow,
   BIOverShortHour,
