@@ -52,6 +52,7 @@ import json
 import logging
 import threading
 import time
+from dataclasses import dataclass
 
 import jwt
 import requests
@@ -200,6 +201,65 @@ def build_product_input(item: display_catalog.DisplayItem, cfg: dict) -> dict:
         "feedLabel": _feed_label(cfg),
         "productAttributes": attributes,
     }
+
+
+@dataclass(frozen=True)
+class DeveloperRegistration:
+    """Resultado do registro do projeto do Google Cloud na conta do Merchant Center."""
+
+    ok: bool
+    gcp_ids: tuple[str, ...] = ()
+    error: str = ""
+
+
+def register_gcp(cfg: dict | None = None) -> DeveloperRegistration:
+    """Registra, uma vez, o projeto do Google Cloud da service account na conta.
+
+    Sem esse registro, toda chamada da Merchant API responde 401
+    (developers.google.com/merchant/api/guides/quickstart/registration). Quem chama
+    é a própria service account, e ela precisa de acesso de Administrador na conta.
+    Chamar de novo é seguro: o registro é do par conta e projeto, e o Google
+    devolve o mesmo vínculo; projeto já registrado em OUTRA conta volta como erro
+    (``ALREADY_REGISTERED``), com a mensagem dele.
+    """
+    cfg = _get_config() if cfg is None else cfg
+    if not (cfg.get("account_id") and _service_account(cfg)):
+        return DeveloperRegistration(
+            ok=False,
+            error="Grave a conta do Merchant Center e configure a chave da service account antes de registrar.",
+        )
+    try:
+        token = _access_token(cfg)
+        resp = requests.post(
+            f"{_base(cfg)}/accounts/v1/{_account(cfg)}/developerRegistration:registerGcp",
+            json={},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=_timeout(cfg),
+        )
+    except requests.RequestException as exc:
+        logger.warning("catalog_projection_google.register_gcp sem resposta", exc_info=True)
+        return DeveloperRegistration(ok=False, error=f"A chamada ao Google falhou (chave recusada ou sem resposta): {exc}")
+    if resp.status_code >= 400:
+        return DeveloperRegistration(ok=False, error=_google_error(resp))
+    body = resp.json() if resp.content else {}
+    return DeveloperRegistration(ok=True, gcp_ids=tuple(str(gcp) for gcp in body.get("gcpIds") or ()))
+
+
+def _google_error(resp: requests.Response) -> str:
+    """A mensagem do Google, com o motivo provável quando é falta de acesso."""
+    try:
+        error = (resp.json() or {}).get("error") or {}
+    except ValueError:
+        error = {}
+    message = str(error.get("message") or resp.text[:300] or f"HTTP {resp.status_code}")
+    status = str(error.get("status") or "")
+    detail = f"{message} ({status})" if status else message
+    if resp.status_code in (401, 403):
+        return (
+            f"{detail}. Confira se a service account está em Pessoas e acesso do Merchant "
+            "Center com acesso de Administrador."
+        )
+    return detail
 
 
 def _check(resp: requests.Response, *, missing_ok: bool = False) -> None:

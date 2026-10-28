@@ -379,6 +379,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "DeveloperRegistration",
             "GoogleMerchantProjection",
             "GoogleMerchantRateLimitError",
             "_CONDITIONS",
@@ -392,6 +393,7 @@
             "_data_source",
             "_feed_label",
             "_get_config",
+            "_google_error",
             "_language",
             "_service_account",
             "_timeout",
@@ -399,7 +401,8 @@
             "_token_lock",
             "build_product_input",
             "logger",
-            "product_input_id"
+            "product_input_id",
+            "register_gcp"
           ]
         }
       ]
@@ -2072,6 +2075,7 @@
             "GOOGLE_MERCHANT_DEFAULT_LANGUAGE",
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
+            "GoogleMerchantRegistrationForm",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
             "NotificationTemplateAdmin",
