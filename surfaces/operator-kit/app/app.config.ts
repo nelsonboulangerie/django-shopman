@@ -152,7 +152,8 @@ export default defineAppConfig({
     alert: {
       slots: {
         description: "opacity-100",
-        actions: "max-sm:flex-col max-sm:items-stretch",
+        root: "max-sm:flex-wrap max-sm:items-start",
+        actions: "max-sm:basis-full max-sm:flex-col max-sm:items-stretch",
       },
       compoundVariants: [
         {

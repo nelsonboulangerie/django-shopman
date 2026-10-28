@@ -51,6 +51,10 @@ describe("OperatorScreenState", () => {
       button.textContent?.includes("Tentar de novo"),
     )!;
     expect(retry).toBeDefined();
+    expect(state().className).toContain("max-sm:flex-wrap");
+    expect(state().querySelector<HTMLElement>('[data-slot="actions"]')?.className).toContain(
+      "max-sm:basis-full",
+    );
     retry.click();
     expect(mounted.emitted("retry")).toHaveLength(1);
   });
