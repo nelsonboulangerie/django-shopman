@@ -268,7 +268,10 @@ const anchorCandidates = computed(() =>
 );
 // Listas curtas e fixas da ficha: `NuxtSelect` (o `[...]` tira o readonly do tipo).
 const yieldUnits = [...YIELD_UNIT_OPTIONS];
-const units = [...UNIT_OPTIONS];
+const quantityExpressionOptions = [
+  ...UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit })),
+  { value: "ratio", label: "Percentual da base" },
+];
 const roles = [...ROLE_OPTIONS];
 const anchors = [...ANCHOR_OPTIONS];
 const kinds = [...KIND_OPTIONS];
@@ -281,9 +284,9 @@ const editorTabs = [
 
 // ── Quantidade e composição ─────────────────────────────────────────────────
 const quantityPresets = [
-  { value: "exact", label: "Exata" },
-  { value: "minimum", label: "Mínima" },
-  { value: "maximum", label: "Máxima" },
+  { value: "exact", label: "Exato" },
+  { value: "minimum", label: "Mínimo" },
+  { value: "maximum", label: "Máximo" },
   { value: "range", label: "Faixa" },
 ];
 const compositionOptions = [
@@ -298,12 +301,25 @@ function onQuantityPreset(index: number, preset: string) {
     quantity: withQuantityPreset(item.quantity, preset as "exact" | "minimum" | "maximum" | "range"),
   });
 }
-function onQuantityKind(index: number, kind: string) {
+function onQuantityExpression(index: number, expression: string) {
   const item = formula.value.ingredients[index];
   if (!item) return;
-  const quantity: FormulaQuantity = kind === "ratio"
+  if (expression !== "ratio" && item.quantity.kind === "fixed") {
+    onItemUnit(index, expression);
+    return;
+  }
+  const nextUnit = expression as FormulaUnit;
+  const quantity: FormulaQuantity = expression === "ratio"
     ? { ...item.quantity, kind: "ratio", unit: undefined, basis: { kind: formula.value.anchor.kind, sku: formula.value.anchor.sku } }
-    : { ...item.quantity, kind: "fixed", unit: item.quantity.unit ?? "g", basis: undefined };
+    : {
+        ...item.quantity,
+        kind: "fixed",
+        unit: nextUnit,
+        basis: undefined,
+        target: normalizeQuantity(item.quantity.target, nextUnit),
+        minimum: item.quantity.minimum == null ? null : normalizeQuantity(item.quantity.minimum, nextUnit),
+        maximum: item.quantity.maximum == null ? null : normalizeQuantity(item.quantity.maximum, nextUnit),
+      };
   formula.value = updateItem(formula.value, index, { quantity });
 }
 function onQuantityBasis(index: number, kind: string) {
@@ -344,13 +360,13 @@ function onDefaultPreset(preset: string) {
     quantity: withQuantityPreset(ingredientDefaults.value.quantity, preset as "exact" | "minimum" | "maximum" | "range"),
   };
 }
-function onDefaultKind(kind: string) {
+function onDefaultExpression(expression: string) {
   if (!ingredientDefaults.value) return;
   ingredientDefaults.value = {
     ...ingredientDefaults.value,
-    quantity: kind === "ratio"
+    quantity: expression === "ratio"
       ? { ...ingredientDefaults.value.quantity, kind: "ratio", unit: undefined, basis: { kind: "total" } }
-      : { ...ingredientDefaults.value.quantity, kind: "fixed", unit: "g", basis: undefined },
+      : { ...ingredientDefaults.value.quantity, kind: "fixed", unit: expression as FormulaUnit, basis: undefined },
   };
 }
 function onDefaultBound(field: "minimum" | "target" | "maximum", value: number | null | undefined) {
@@ -366,13 +382,6 @@ function onDefaultTarget(value: number | null | undefined) {
   ingredientDefaults.value = {
     ...ingredientDefaults.value,
     quantity: withQuantityPreset({ ...quantity, target: value ?? 0 }, quantityPreset(quantity)),
-  };
-}
-function onDefaultUnit(unit: string) {
-  if (!ingredientDefaults.value) return;
-  ingredientDefaults.value = {
-    ...ingredientDefaults.value,
-    quantity: { ...ingredientDefaults.value.quantity, unit: unit as FormulaUnit },
   };
 }
 function onDefaultBasis(kind: string) {
@@ -822,83 +831,89 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 <NuxtButton class="w-full justify-center sm:w-auto" color="neutral" variant="outline" label="Definir padrão" @click="startIngredientDefaults" />
               </div>
               <template v-else>
-                <div class="grid gap-2 sm:grid-cols-2">
-                  <NuxtFormField label="Quantidade">
+                <NuxtFormField label="Critério">
+                  <NuxtSelect
+                    :model-value="quantityPreset(ingredientDefaults.quantity)"
+                    :items="quantityPresets"
+                    value-key="value"
+                    class="w-full"
+                    :ui="{ base: 'bg-muted' }"
+                    @update:model-value="onDefaultPreset"
+                  />
+                </NuxtFormField>
+                <template v-if="quantityPreset(ingredientDefaults.quantity) === 'range'">
+                  <div class="grid grid-cols-3 gap-2">
+                    <NuxtFormField v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" :label="field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo'">
+                      <NuxtInputNumber
+                        :model-value="ingredientDefaults.quantity[field]"
+                        :min="0"
+                        :step="ingredientDefaults.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(ingredientDefaults.quantity.unit ?? 'g').step"
+                        locale="pt-BR"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted tabular-nums' }"
+                        @update:model-value="(value: number | null | undefined) => onDefaultBound(field, value)"
+                      />
+                    </NuxtFormField>
+                  </div>
+                  <NuxtFormField label="Unidade ou base">
                     <NuxtSelect
-                      :model-value="quantityPreset(ingredientDefaults.quantity)"
-                      :items="quantityPresets"
+                      :model-value="ingredientDefaults.quantity.kind === 'ratio' ? 'ratio' : ingredientDefaults.quantity.unit ?? 'g'"
+                      :items="quantityExpressionOptions"
                       value-key="value"
                       class="w-full"
                       :ui="{ base: 'bg-muted' }"
-                      @update:model-value="onDefaultPreset"
+                      @update:model-value="onDefaultExpression"
                     />
                   </NuxtFormField>
-                  <NuxtFormField label="Cálculo da quantidade">
-                    <NuxtSelect
-                      :model-value="ingredientDefaults.quantity.kind"
-                      :items="[{ value: 'fixed', label: 'Valor e unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
-                      value-key="value"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted' }"
-                      @update:model-value="onDefaultKind"
-                    />
-                  </NuxtFormField>
-                </div>
-                <div v-if="quantityPreset(ingredientDefaults.quantity) === 'range'" class="grid grid-cols-3 gap-2">
-                  <NuxtFormField v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" :label="field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo'">
-                    <NuxtInputNumber
-                      :model-value="ingredientDefaults.quantity[field]"
-                      :min="0"
-                      :step="ingredientDefaults.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(ingredientDefaults.quantity.unit ?? 'g').step"
-                      locale="pt-BR"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted tabular-nums' }"
-                      @update:model-value="(value: number | null | undefined) => onDefaultBound(field, value)"
-                    />
-                  </NuxtFormField>
-                </div>
-                <div v-else class="grid grid-cols-[minmax(0,1fr)_minmax(7rem,0.65fr)] gap-2">
-                  <NuxtFormField :label="quantityPreset(ingredientDefaults.quantity) === 'minimum' ? 'A partir de' : quantityPreset(ingredientDefaults.quantity) === 'maximum' ? 'Até' : 'Quantidade'">
-                    <NuxtInputNumber
-                      :model-value="ingredientDefaults.quantity.target"
-                      :min="0"
-                      :step="ingredientDefaults.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(ingredientDefaults.quantity.unit ?? 'g').step"
-                      locale="pt-BR"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted tabular-nums' }"
-                      @update:model-value="onDefaultTarget"
-                    />
-                  </NuxtFormField>
-                  <NuxtFormField :label="ingredientDefaults.quantity.kind === 'ratio' ? 'Base' : 'Unidade'">
-                    <NuxtSelect
-                      v-if="ingredientDefaults.quantity.kind === 'fixed'"
-                      :model-value="ingredientDefaults.quantity.unit ?? 'g'"
-                      :items="units"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted' }"
-                      @update:model-value="onDefaultUnit"
-                    />
-                    <NuxtSelect
-                      v-else
-                      :model-value="ingredientDefaults.quantity.basis?.kind ?? 'total'"
-                      :items="anchors"
-                      value-key="value"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted' }"
-                      @update:model-value="onDefaultBasis"
-                    />
-                    <NuxtSelectMenu
-                      v-if="ingredientDefaults.quantity.kind === 'ratio' && ingredientDefaults.quantity.basis?.kind === 'ingredient'"
-                      :model-value="ingredientDefaults.quantity.basis.sku || undefined"
-                      :items="anchorCandidates"
-                      value-key="value"
-                      placeholder="Escolha o ingrediente"
-                      class="mt-2 w-full"
-                      aria-label="Ingrediente padrão usado como base percentual"
-                      @update:model-value="onDefaultBasisSku"
-                    />
-                  </NuxtFormField>
-                </div>
+                </template>
+                <OperatorFieldRow v-else :priority="ingredientDefaults.quantity.kind === 'ratio' ? 'context' : 'value'">
+                  <template #value>
+                    <NuxtFormField label="Quantidade">
+                      <NuxtInputNumber
+                        :model-value="ingredientDefaults.quantity.target"
+                        :min="0"
+                        :step="ingredientDefaults.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(ingredientDefaults.quantity.unit ?? 'g').step"
+                        locale="pt-BR"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted tabular-nums' }"
+                        @update:model-value="onDefaultTarget"
+                      />
+                    </NuxtFormField>
+                  </template>
+                  <template #context>
+                    <NuxtFormField label="Unidade ou base">
+                      <NuxtSelect
+                        :model-value="ingredientDefaults.quantity.kind === 'ratio' ? 'ratio' : ingredientDefaults.quantity.unit ?? 'g'"
+                        :items="quantityExpressionOptions"
+                        value-key="value"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted' }"
+                        @update:model-value="onDefaultExpression"
+                      />
+                    </NuxtFormField>
+                  </template>
+                </OperatorFieldRow>
+                <NuxtFormField v-if="ingredientDefaults.quantity.kind === 'ratio'" label="Base">
+                  <NuxtSelect
+                    :model-value="ingredientDefaults.quantity.basis?.kind ?? 'total'"
+                    :items="anchors"
+                    value-key="value"
+                    class="w-full"
+                    :ui="{ base: 'bg-muted' }"
+                    @update:model-value="onDefaultBasis"
+                  />
+                </NuxtFormField>
+                <NuxtFormField v-if="ingredientDefaults.quantity.kind === 'ratio' && ingredientDefaults.quantity.basis?.kind === 'ingredient'" label="Ingrediente da base">
+                  <NuxtSelectMenu
+                    :model-value="ingredientDefaults.quantity.basis.sku || undefined"
+                    :items="anchorCandidates"
+                    value-key="value"
+                    placeholder="Escolha o ingrediente"
+                    class="w-full"
+                    aria-label="Ingrediente padrão usado como base percentual"
+                    @update:model-value="onDefaultBasisSku"
+                  />
+                </NuxtFormField>
                 <NuxtFormField label="Composição" description="Adicional aumenta a fórmula. Inclusa redistribui ingredientes já previstos nela.">
                   <NuxtSelect v-model="ingredientDefaults.composition" :items="compositionOptions" value-key="value" class="w-full" :ui="{ base: 'bg-muted' }" />
                 </NuxtFormField>
@@ -1012,82 +1027,95 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   <NuxtBadge color="neutral" label="Receita" />
                   <span>Receita do ingrediente: {{ item.recipe_version_ref }}</span>
                 </div>
-                <div class="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                <fieldset class="grid min-w-0 gap-3 rounded-md border p-3" data-ingredient-quantity-group>
+                  <legend class="px-1 text-sm font-semibold">Quantidade do ingrediente</legend>
+                  <p class="text-xs text-muted-foreground">Quanto entra e como afeta a fórmula.</p>
+
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Quantidade
+                    Critério
                     <NuxtSelect
                       :model-value="quantityPreset(item.quantity)"
                       :items="quantityPresets"
                       value-key="value"
                       class="w-full"
                       :ui="{ base: 'bg-muted' }"
-                      :aria-label="`Regra de quantidade de ${item.name || 'ingrediente'}`"
+                      :aria-label="`Critério da quantidade de ${item.name || 'ingrediente'}`"
                       @update:model-value="(preset: string) => onQuantityPreset(index, preset)"
                     />
                   </label>
-                  <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Cálculo da quantidade
-                    <NuxtSelect
-                      :model-value="item.quantity.kind"
-                      :items="[{ value: 'fixed', label: 'Valor e unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
-                      value-key="value"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted' }"
-                      @update:model-value="(kind: string) => onQuantityKind(index, kind)"
-                    />
-                  </label>
-                </div>
-                <div v-if="quantityPreset(item.quantity) === 'range'" class="grid grid-cols-3 gap-2">
-                  <label v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    {{ field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo' }}
-                    <NuxtInputNumber
-                      :model-value="item.quantity[field]"
-                      :min="item.quantity.kind === 'ratio' ? 0.1 : quantityRule(item.quantity.unit ?? 'g').min"
-                      :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
-                      locale="pt-BR"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted tabular-nums' }"
-                      @update:model-value="(value: number | null | undefined) => onQuantityBound(index, field, value)"
-                    />
-                  </label>
-                </div>
-                <OperatorFieldRow
-                  v-else
-                  :priority="item.quantity.kind === 'ratio' ? 'context' : 'value'"
-                  data-ingredient-quantity-grid
-                >
-                  <template #value>
-                    <label :data-focus-target="`ingredient-${index}-quantity`" class="grid min-w-0 scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
-                      {{ quantityPreset(item.quantity) === 'minimum' ? 'A partir de' : quantityPreset(item.quantity) === 'maximum' ? 'Até' : 'Quantidade' }}
-                      <NuxtInputNumber
-                        :key="`quantity-${item.sku || index}-${item.quantity.kind}-${item.quantity.unit || 'ratio'}`"
-                        :model-value="item.quantity.target || null"
-                        :min="item.quantity.kind === 'ratio' ? percentageRule.min : quantityRule(item.quantity.unit ?? 'g').min"
-                        :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
-                        :format-options="{ maximumFractionDigits: item.quantity.kind === 'ratio' ? percentageRule.maximumFractionDigits : quantityRule(item.quantity.unit ?? 'g').maximumFractionDigits }"
-                        locale="pt-BR"
-                        class="w-full"
-                        :ui="{ base: 'bg-muted tabular-nums' }"
-                        aria-label="Quantidade"
-                        data-focus-control
-                        @update:model-value="(value: number | null | undefined) => onItemQuantity(index, value)"
+
+                  <OperatorFieldRow
+                    v-if="quantityPreset(item.quantity) !== 'range'"
+                    :priority="item.quantity.kind === 'ratio' ? 'context' : 'value'"
+                    data-ingredient-quantity-grid
+                  >
+                    <template #value>
+                      <label :data-focus-target="`ingredient-${index}-quantity`" class="grid min-w-0 scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                        Quantidade
+                        <NuxtInputNumber
+                          :key="`quantity-${item.sku || index}-${item.quantity.kind}-${item.quantity.unit || 'ratio'}`"
+                          :model-value="item.quantity.target || null"
+                          :min="item.quantity.kind === 'ratio' ? percentageRule.min : quantityRule(item.quantity.unit ?? 'g').min"
+                          :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
+                          :format-options="{ maximumFractionDigits: item.quantity.kind === 'ratio' ? percentageRule.maximumFractionDigits : quantityRule(item.quantity.unit ?? 'g').maximumFractionDigits }"
+                          locale="pt-BR"
+                          class="w-full"
+                          :ui="{ base: 'bg-muted tabular-nums' }"
+                          aria-label="Quantidade"
+                          data-focus-control
+                          @update:model-value="(value: number | null | undefined) => onItemQuantity(index, value)"
+                        />
+                      </label>
+                    </template>
+                    <template #context>
+                      <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
+                        Unidade ou base
+                        <NuxtSelect
+                          :model-value="item.quantity.kind === 'ratio' ? 'ratio' : item.quantity.unit ?? 'g'"
+                          :items="quantityExpressionOptions"
+                          value-key="value"
+                          class="min-w-0 w-full"
+                          :ui="{ base: 'bg-muted' }"
+                          :aria-label="`Unidade ou base da quantidade de ${item.name || 'ingrediente'}`"
+                          @update:model-value="(expression: string) => onQuantityExpression(index, expression)"
+                        />
+                      </label>
+                    </template>
+                  </OperatorFieldRow>
+
+                  <template v-else>
+                    <div class="grid grid-cols-3 gap-2">
+                      <label v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
+                        {{ field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo' }}
+                        <NuxtInputNumber
+                          :model-value="item.quantity[field]"
+                          :min="item.quantity.kind === 'ratio' ? 0.1 : quantityRule(item.quantity.unit ?? 'g').min"
+                          :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
+                          locale="pt-BR"
+                          class="w-full"
+                          :ui="{ base: 'bg-muted tabular-nums' }"
+                          @update:model-value="(value: number | null | undefined) => onQuantityBound(index, field, value)"
+                        />
+                      </label>
+                    </div>
+                    <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
+                      Unidade ou base
+                      <NuxtSelect
+                        :model-value="item.quantity.kind === 'ratio' ? 'ratio' : item.quantity.unit ?? 'g'"
+                        :items="quantityExpressionOptions"
+                        value-key="value"
+                        class="min-w-0 w-full"
+                        :ui="{ base: 'bg-muted' }"
+                        :aria-label="`Unidade ou base da quantidade de ${item.name || 'ingrediente'}`"
+                        @update:model-value="(expression: string) => onQuantityExpression(index, expression)"
                       />
                     </label>
                   </template>
-                  <template #context>
+
+                  <template v-if="item.quantity.kind === 'ratio'">
                     <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
-                      {{ item.quantity.kind === 'ratio' ? 'Base' : 'Unidade' }}
+                      Base
                       <NuxtSelect
-                        v-if="item.quantity.kind === 'fixed'"
-                        :model-value="item.quantity.unit ?? 'g'"
-                        :items="units"
-                        class="w-full"
-                        :ui="{ base: 'bg-muted' }"
-                        :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
-                        @update:model-value="(unit: string) => onItemUnit(index, unit)"
-                      />
-                      <NuxtSelect
-                        v-else
                         :model-value="item.quantity.basis?.kind ?? 'total'"
                         :items="anchors"
                         value-key="value"
@@ -1097,9 +1125,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                         @update:model-value="(kind: string) => onQuantityBasis(index, kind)"
                       />
                     </label>
-                  </template>
-                  <template v-if="item.quantity.kind === 'ratio' && item.quantity.basis?.kind === 'ingredient'" #detail>
-                    <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
+                    <label v-if="item.quantity.basis?.kind === 'ingredient'" class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                       Ingrediente da base
                       <NuxtSelectMenu
                         :model-value="item.quantity.basis.sku || undefined"
@@ -1112,19 +1138,20 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       />
                     </label>
                   </template>
-                </OperatorFieldRow>
-                <div v-if="item.recipe_version_ref" class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Composição
-                  <NuxtSelect
-                    :model-value="item.composition"
-                    :items="compositionOptions"
-                    value-key="value"
-                    class="w-full"
-                    :ui="{ base: 'bg-muted' }"
-                    @update:model-value="(composition: string) => onComposition(index, composition)"
-                  />
-                  <span class="font-normal">Adicional aumenta a fórmula. Inclusa redistribui ingredientes já previstos nela.</span>
-                </div>
+
+                  <label v-if="item.recipe_version_ref" class="grid gap-1 border-t pt-3 text-xs font-medium text-muted-foreground">
+                    Composição
+                    <NuxtSelect
+                      :model-value="item.composition"
+                      :items="compositionOptions"
+                      value-key="value"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted' }"
+                      @update:model-value="(composition: string) => onComposition(index, composition)"
+                    />
+                    <span class="font-normal">Adicional aumenta a fórmula. Inclusa redistribui ingredientes já previstos nela.</span>
+                  </label>
+                </fieldset>
                 <div class="flex items-center justify-end gap-1 border-t pt-2">
                   <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a base do cálculo (prévia local)'">
                     {{ pctOf(item, localAnchorTotal) ? `${pctOf(item, localAnchorTotal)}%` : "" }}
