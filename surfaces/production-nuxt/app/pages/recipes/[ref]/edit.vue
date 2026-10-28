@@ -833,10 +833,10 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       @update:model-value="onDefaultPreset"
                     />
                   </NuxtFormField>
-                  <NuxtFormField label="Forma de informar">
+                  <NuxtFormField label="Cálculo da quantidade">
                     <NuxtSelect
                       :model-value="ingredientDefaults.quantity.kind"
-                      :items="[{ value: 'fixed', label: 'Peso ou unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
+                      :items="[{ value: 'fixed', label: 'Valor e unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
                       value-key="value"
                       class="w-full"
                       :ui="{ base: 'bg-muted' }"
@@ -1026,10 +1026,10 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     />
                   </label>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Forma de informar
+                    Cálculo da quantidade
                     <NuxtSelect
                       :model-value="item.quantity.kind"
-                      :items="[{ value: 'fixed', label: 'Peso ou unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
+                      :items="[{ value: 'fixed', label: 'Valor e unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
                       value-key="value"
                       class="w-full"
                       :ui="{ base: 'bg-muted' }"
@@ -1051,43 +1051,43 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     />
                   </label>
                 </div>
-                <div
+                <OperatorFieldRow
                   v-else
-                  class="grid gap-2"
-                  :class="item.quantity.kind === 'ratio'
-                    ? 'grid-cols-[minmax(7rem,2fr)_minmax(0,3fr)]'
-                    : 'grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)]'"
+                  :priority="item.quantity.kind === 'ratio' ? 'context' : 'value'"
                   data-ingredient-quantity-grid
                 >
-                  <label :data-focus-target="`ingredient-${index}-quantity`" class="grid min-w-0 scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
-                    {{ quantityPreset(item.quantity) === 'minimum' ? 'A partir de' : quantityPreset(item.quantity) === 'maximum' ? 'Até' : 'Quantidade' }}
-                    <NuxtInputNumber
-                      :key="`quantity-${item.sku || index}-${item.quantity.kind}-${item.quantity.unit || 'ratio'}`"
-                      :model-value="item.quantity.target || null"
-                      :min="item.quantity.kind === 'ratio' ? percentageRule.min : quantityRule(item.quantity.unit ?? 'g').min"
-                      :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
-                      :format-options="{ maximumFractionDigits: item.quantity.kind === 'ratio' ? percentageRule.maximumFractionDigits : quantityRule(item.quantity.unit ?? 'g').maximumFractionDigits }"
-                      locale="pt-BR"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted tabular-nums' }"
-                      aria-label="Quantidade"
-                      data-focus-control
-                      @update:model-value="(value: number | null | undefined) => onItemQuantity(index, value)"
-                    />
-                  </label>
-                  <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
-                    {{ item.quantity.kind === 'ratio' ? 'Base' : 'Unidade' }}
-                    <NuxtSelect
-                      v-if="item.quantity.kind === 'fixed'"
-                      :model-value="item.quantity.unit ?? 'g'"
-                      :items="units"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted' }"
-                      :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
-                      @update:model-value="(unit: string) => onItemUnit(index, unit)"
-                    />
-                    <span v-else class="grid min-w-0 gap-2">
+                  <template #value>
+                    <label :data-focus-target="`ingredient-${index}-quantity`" class="grid min-w-0 scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                      {{ quantityPreset(item.quantity) === 'minimum' ? 'A partir de' : quantityPreset(item.quantity) === 'maximum' ? 'Até' : 'Quantidade' }}
+                      <NuxtInputNumber
+                        :key="`quantity-${item.sku || index}-${item.quantity.kind}-${item.quantity.unit || 'ratio'}`"
+                        :model-value="item.quantity.target || null"
+                        :min="item.quantity.kind === 'ratio' ? percentageRule.min : quantityRule(item.quantity.unit ?? 'g').min"
+                        :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
+                        :format-options="{ maximumFractionDigits: item.quantity.kind === 'ratio' ? percentageRule.maximumFractionDigits : quantityRule(item.quantity.unit ?? 'g').maximumFractionDigits }"
+                        locale="pt-BR"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted tabular-nums' }"
+                        aria-label="Quantidade"
+                        data-focus-control
+                        @update:model-value="(value: number | null | undefined) => onItemQuantity(index, value)"
+                      />
+                    </label>
+                  </template>
+                  <template #context>
+                    <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
+                      {{ item.quantity.kind === 'ratio' ? 'Base' : 'Unidade' }}
                       <NuxtSelect
+                        v-if="item.quantity.kind === 'fixed'"
+                        :model-value="item.quantity.unit ?? 'g'"
+                        :items="units"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted' }"
+                        :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
+                        @update:model-value="(unit: string) => onItemUnit(index, unit)"
+                      />
+                      <NuxtSelect
+                        v-else
                         :model-value="item.quantity.basis?.kind ?? 'total'"
                         :items="anchors"
                         value-key="value"
@@ -1096,8 +1096,12 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                         :aria-label="`Base percentual de ${item.name || 'ingrediente'}`"
                         @update:model-value="(kind: string) => onQuantityBasis(index, kind)"
                       />
+                    </label>
+                  </template>
+                  <template v-if="item.quantity.kind === 'ratio' && item.quantity.basis?.kind === 'ingredient'" #detail>
+                    <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
+                      Ingrediente da base
                       <NuxtSelectMenu
-                        v-if="item.quantity.basis?.kind === 'ingredient'"
                         :model-value="item.quantity.basis.sku || undefined"
                         :items="anchorCandidates"
                         value-key="value"
@@ -1106,9 +1110,9 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                         aria-label="Ingrediente usado como base percentual"
                         @update:model-value="(sku: string) => onQuantityBasisSku(index, sku)"
                       />
-                    </span>
-                  </label>
-                </div>
+                    </label>
+                  </template>
+                </OperatorFieldRow>
                 <div v-if="item.recipe_version_ref" class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Composição
                   <NuxtSelect
