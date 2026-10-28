@@ -28,6 +28,7 @@ import type {
   EquipmentOptionProjection,
 } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
+import { useRideQuote } from "~/composables/useRideQuote";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 
@@ -282,10 +283,36 @@ const confirmLabel = computed(() =>
 // A cotação antes da corrida: valor, tempo e distância numa linha forte, com o
 // "Chamar entregador" logo abaixo como a ação do momento. Com corrida aberta, o
 // valor volta ao cabeçalho (é o custo dela, não uma proposta).
+// Com outras entregas marcadas, o cartão cota a CORRIDA inteira (mesma ordem e
+// retorno da chamada); sem elas, a entrega deste pedido.
+const rideRefs = computed(() =>
+  together.value.length ? [props.orderRef, ...together.value] : [],
+);
+const rideQuote = useRideQuote(rideRefs);
+const quoteTitle = computed(() =>
+  together.value.length
+    ? `Cotação da corrida com ${together.value.length + 1} paradas`
+    : "Cotação da entrega",
+);
+const quoteValue = computed(() => {
+  if (!together.value.length)
+    return props.quoting
+      ? "Cotando a entrega…"
+      : props.courier.estimate_display;
+  if (rideQuote.pending.value) return "Cotando a corrida…";
+  return rideQuote.quote.value?.display ?? "";
+});
+const quoteNote = computed(() => {
+  if (!together.value.length) return "";
+  if (rideQuote.quote.value) return `Ordem: ${rideQuote.quote.value.route}`;
+  return rideQuote.failure.value;
+});
 const showQuote = computed(
   () =>
     !hasRide.value &&
-    (props.quoting || Boolean(props.courier.estimate_display)),
+    (together.value.length > 0 ||
+      props.quoting ||
+      Boolean(props.courier.estimate_display)),
 );
 const quoteActions = computed(() => [
   {
@@ -546,16 +573,24 @@ const vehicle = computed(() =>
         v-if="showQuote"
         variant="soft"
         data-courier-quote
-        :aria-busy="quoting || undefined"
+        :aria-busy="quoting || rideQuote.pending.value || undefined"
       >
         <div class="flex flex-col items-center gap-1 text-center">
-          <p class="text-xs text-muted-foreground">Cotação da entrega</p>
+          <p class="text-xs text-muted-foreground">{{ quoteTitle }}</p>
           <p
+            v-if="quoteValue"
             class="text-lg font-semibold tabular-nums"
             role="status"
             data-courier-quote-value
           >
-            {{ quoting ? "Cotando a entrega…" : courier.estimate_display }}
+            {{ quoteValue }}
+          </p>
+          <p
+            v-if="quoteNote"
+            class="text-sm text-muted-foreground"
+            data-courier-ride-quote-note
+          >
+            {{ quoteNote }}
           </p>
         </div>
       </NuxtCard>
@@ -576,10 +611,7 @@ const vehicle = computed(() =>
           >
             {{
               together.length
-                ? courierRideQuestion(
-                    [orderRef, ...together],
-                    Boolean(courier.estimate_display),
-                  )
+                ? courierRideQuestion([orderRef, ...together])
                 : dispatchQuestion
             }}
           </p>

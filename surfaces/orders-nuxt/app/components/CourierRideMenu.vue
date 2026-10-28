@@ -17,6 +17,7 @@ import {
   type RideChoice,
 } from "~/presentation/board";
 import { freeMachines } from "../../../operator-kit/app/presentation/custody";
+import { useRideQuote } from "~/composables/useRideQuote";
 
 const props = defineProps<{ choices: RideChoice[] }>();
 const emit = defineEmits<{ done: [] }>();
@@ -36,6 +37,18 @@ watch(open, (isOpen) => {
   picked.value = [];
   changeOut.value = rideChangeDefaults(props.choices);
   machineRef.value = undefined;
+});
+
+// A cotação da corrida com as entregas marcadas (a mesma que a chamada vai abrir).
+const pickedRefs = computed(() => (open.value ? [...picked.value] : []));
+const rideQuote = useRideQuote(pickedRefs);
+const quoteLine = computed(() => {
+  if (picked.value.length < 2) return "";
+  if (rideQuote.pending.value) return "Cotando a corrida…";
+  const quote = rideQuote.quote.value;
+  return quote
+    ? `Cotação: ${quote.display}. Ordem: ${quote.route}.`
+    : rideQuote.failure.value;
 });
 
 const chosen = computed(() =>
@@ -135,6 +148,15 @@ const code = (ref_: string) => splitRef(ref_).code;
           class="op-micro text-muted-foreground"
         >
           Uma corrida leva até {{ MAX_RIDE_STOPS }} pedidos.
+        </p>
+
+        <p
+          v-if="quoteLine"
+          class="op-body font-medium tabular-nums"
+          role="status"
+          data-courier-ride-quote
+        >
+          {{ quoteLine }}
         </p>
 
         <!-- troco que o entregador leva da gaveta, por pedido que pede -->

@@ -339,6 +339,74 @@ def build_machine_payload(*orders) -> dict:
 # ── Cotação ─────────────────────────────────────────────────────────
 
 
+def _shop_point(shop) -> dict:
+    """A loja como ponto da cotação: coordenada e o endereço que a API exige."""
+    return {
+        "lat": str(shop.latitude),
+        "lng": str(shop.longitude),
+        "street": " ".join(p for p in (shop.route, shop.street_number) if p).strip() or shop.formatted_address,
+        "neighborhood": shop.neighborhood,
+        "city": shop.city,
+        "state": shop.state_code,
+    }
+
+
+def _handoff_point(handoff: dict) -> dict:
+    """Um endereço de entrega como ponto da cotação."""
+    return {
+        "lat": str(handoff["latitude"]),
+        "lng": str(handoff["longitude"]),
+        "street": " ".join(p for p in (handoff["route"], handoff["street_number"]) if p).strip()
+        or handoff["formatted_address"],
+        "neighborhood": handoff["neighborhood"],
+        "city": handoff["city"],
+        "state": handoff["state_code"],
+    }
+
+
+def estimate_for_ride(orders) -> dict | None:
+    """Cotação de UMA corrida com várias paradas, antes de chamar.
+
+    A mesma corrida que :func:`build_machine_payload` vai abrir: as paradas na
+    ordem do percurso (:func:`_route`), a última como destino e as outras em
+    ``stops``, e o retorno se qualquer pedido traz algo de volta. Custo interno
+    (o frete dos clientes não muda). Best-effort: sem adapter, loja ou pedido
+    sem coordenada, ou a TaOn fora → None. Cache de 10 min pelo percurso.
+    ``stops`` no resultado é a ordem das paradas (refs), para a tela dizer.
+    """
+    from shopman.shop.models import Shop
+    from shopman.shop.services.dispatch_handoff import build_dispatch_payload
+
+    adapter = get_adapter("courier")
+    shop = Shop.load()
+    if adapter is None or shop is None or None in (shop.latitude, shop.longitude) or len(orders) < 2:
+        return None
+    if any(get_fulfillment_type(order) != "delivery" for order in orders):
+        return None
+    handoffs = [(order, build_dispatch_payload(order)) for order in orders]
+    if any(handoff["latitude"] is None or handoff["longitude"] is None for _, handoff in handoffs):
+        return None
+    route = _route((float(shop.latitude), float(shop.longitude)), handoffs)
+    with_return = any(needs_return(order) for order in orders)
+    path = ":".join(f"{float(h['latitude']):.4f},{float(h['longitude']):.4f}" for _, h in route)
+    cache_key = f"courier:est-ride:{path}:{'r' if with_return else 'i'}"
+    estimate = cache.get(cache_key)
+    if estimate is None:
+        points = [_handoff_point(handoff) for _, handoff in route]
+        try:
+            result = adapter.estimate(pickup=_shop_point(shop), dropoff=points[-1], with_return=with_return,
+                                      stops=points[:-1])
+        except CourierError as exc:
+            logger.warning("courier.estimate_ride_failed orders=%s: %s", ",".join(o.ref for o in orders), exc)
+            return None
+        if result is None:
+            return None
+        estimate = {"value_q": result.value_q, "minutes": result.minutes, "km": result.km,
+                    "with_return": with_return}
+        cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
+    return {**estimate, "stops": [order.ref for order, _ in route]}
+
+
 def estimate_for_order(order, *, store: bool = False) -> dict | None:
     """Cotação da corrida (custo interno — o preço ao cliente segue nas faixas/zonas).
 
@@ -367,26 +435,8 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         from shopman.shop.services.dispatch_handoff import build_dispatch_payload
 
         handoff = build_dispatch_payload(order)
-        pickup = {
-            "lat": str(shop.latitude),
-            "lng": str(shop.longitude),
-            "street": " ".join(p for p in (shop.route, shop.street_number) if p).strip()
-            or shop.formatted_address,
-            "neighborhood": shop.neighborhood,
-            "city": shop.city,
-            "state": shop.state_code,
-        }
-        dropoff = {
-            "lat": str(lat),
-            "lng": str(lng),
-            "street": " ".join(p for p in (handoff["route"], handoff["street_number"]) if p).strip()
-            or handoff["formatted_address"],
-            "neighborhood": handoff["neighborhood"],
-            "city": handoff["city"],
-            "state": handoff["state_code"],
-        }
         try:
-            result = adapter.estimate(pickup=pickup, dropoff=dropoff, with_return=with_return)
+            result = adapter.estimate(pickup=_shop_point(shop), dropoff=_handoff_point(handoff), with_return=with_return)
         except CourierError as exc:
             logger.warning("courier.estimate_failed order=%s: %s", order.ref, exc)
             return None

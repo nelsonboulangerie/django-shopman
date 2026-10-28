@@ -1532,17 +1532,8 @@ export function rideOfferLine(
   );
 }
 
-/**
- * A pergunta da chamada quando outros pedidos vão junto: quem a corrida leva,
- * quem paga e, com cotação na tela, que ela é só do primeiro pedido.
- */
-export function courierRideQuestion(
-  refs: readonly string[],
-  hasQuote: boolean,
-): string {
+/** A pergunta da chamada quando outros pedidos vão junto: quem a corrida leva e quem paga. */
+export function courierRideQuestion(refs: readonly string[]): string {
   const codes = refs.map((ref) => splitRef(ref).code);
-  const quote = hasQuote
-    ? ` A cotação acima é só do pedido ${codes[0]}: com mais paradas, a corrida custa mais.`
-    : "";
-  return `Uma corrida da TaOn leva os pedidos ${joinRefs(codes)}, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.${quote}`;
+  return `Uma corrida da TaOn leva os pedidos ${joinRefs(codes)}, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.`;
 }

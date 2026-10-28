@@ -1334,17 +1334,7 @@ def _courier_block(order: Order) -> dict | None:
         order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
-        estimate_display = ""
-        if estimate.get("value_q") is not None:
-            parts = [_money(int(estimate["value_q"]))]
-            if estimate.get("minutes"):
-                parts.append(f"{int(estimate['minutes'])} min")
-            if estimate.get("km"):
-                parts.append(f"{float(estimate['km']):.1f} km".replace(".", ","))
-            if estimate.get("with_return"):
-                # A corrida volta à loja (cobrança na porta ou maquininha): o custo é de ida e volta.
-                parts.append("ida e volta")
-            estimate_display = " · ".join(parts)
+        estimate_display = courier_estimate_display(estimate)
 
         position = None
         if active and block.get("id_mch"):
@@ -2284,6 +2274,22 @@ def _trip_fields(order: Order) -> dict:
         else:
             lines.append(f"{_money(back.change_q)} de troco" if back.change_q else f"{_money(back.cash_q)} em dinheiro")
     return {"trip_with": others, "courier_return_orders": back.orders, "courier_return_lines": tuple(lines)}
+
+
+def courier_estimate_display(estimate: dict | None) -> str:
+    """"R$ 14,90 · 18 min · 4,2 km · ida e volta": a cotação numa linha ("" sem valor)."""
+    estimate = estimate or {}
+    if estimate.get("value_q") is None:
+        return ""
+    parts = [_money(int(estimate["value_q"]))]
+    if estimate.get("minutes"):
+        parts.append(f"{int(estimate['minutes'])} min")
+    if estimate.get("km"):
+        parts.append(f"{float(estimate['km']):.1f} km".replace(".", ","))
+    if estimate.get("with_return"):
+        # A corrida volta à loja (cobrança na porta ou maquininha): o custo é de ida e volta.
+        parts.append("ida e volta")
+    return " · ".join(parts)
 
 
 def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:

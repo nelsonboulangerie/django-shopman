@@ -134,3 +134,26 @@ def test_cancelling_one_order_never_cancels_the_ride_of_the_others(shop):
     assert not Directive.objects.filter(topic="courier.cancel").exists()
     alert = OperatorAlert.objects.get(order_ref="CR-A")
     assert "tirar a parada" in alert.message
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_quote_follows_the_route_the_ride_will_take(shop):
+    far = _at("CR-A", -23.30, -51.16)
+    near = _at("CR-B", -23.335, -51.158, payment={"method": "cash", "collection": "on_delivery"})
+
+    quote = courier.estimate_for_ride([far, near])
+
+    # A mesma ordem da corrida aberta, uma parada no meio e o retorno do dinheiro.
+    assert quote["stops"] == ["CR-B", "CR-A"]
+    assert quote["with_return"] is True
+    assert quote["value_q"] == 1250 + 400
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_quote_needs_every_address_on_the_map(shop):
+    a = _at("CR-A", -23.30, -51.16)
+    b = _at("CR-B", -23.335, -51.158)
+    address = dict(b.data["delivery_address_structured"], latitude=None, longitude=None)
+    b.data = {**b.data, "delivery_address_structured": address}
+    b.save(update_fields=["data"])
+    assert courier.estimate_for_ride([a, b]) is None

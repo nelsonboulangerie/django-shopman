@@ -118,6 +118,23 @@ def test_estimate_with_return_asks_the_round_trip_price():
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_estimate_with_stops_sends_them_before_the_destination():
+    """A corrida com várias paradas: as do meio vão em ``latlng_paradas``, a última é o destino."""
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_ok({"estimativa_valor": 26.0, "estimativa_km": 7.1}),
+    ) as mock_request:
+        result = courier_machine.estimate(
+            pickup={"lat": "-23.34", "lng": "-51.15"}, dropoff={"lat": "-23.25", "lng": "-51.17"},
+            stops=[{"lat": "-23.33", "lng": "-51.15"}, {"lat": "-23.30", "lng": "-51.16"}],
+        )
+    params = mock_request.call_args.kwargs["params"]
+    assert params["latlng_paradas"] == "-23.33,-51.15|-23.30,-51.16"
+    assert (params["lat_desejado"], params["lng_desejado"]) == ("-23.25", "-51.17")
+    assert result.value_q == 2600
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
 def test_estimate_without_coordinates_returns_none_without_network():
     with patch(
         "shopman.shop.adapters.courier_machine.requests.request",

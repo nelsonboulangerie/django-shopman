@@ -1029,11 +1029,8 @@ describe("quem pode ir junto na corrida", () => {
 });
 
 describe("a pergunta da corrida com várias paradas", () => {
-  it("diz quem vai, quem paga e de quem é a cotação", () => {
-    expect(courierRideQuestion(["WEB-A47", "WEB-B12"], true)).toBe(
-      "Uma corrida da TaOn leva os pedidos A47 e B12, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda. A cotação acima é só do pedido A47: com mais paradas, a corrida custa mais.",
-    );
-    expect(courierRideQuestion(["WEB-A47", "WEB-B12", "WEB-C03"], false)).toBe(
+  it("diz quem vai e quem paga", () => {
+    expect(courierRideQuestion(["WEB-A47", "WEB-B12", "WEB-C03"])).toBe(
       "Uma corrida da TaOn leva os pedidos A47, B12 e C03, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.",
     );
   });

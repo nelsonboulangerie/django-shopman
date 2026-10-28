@@ -4248,6 +4248,41 @@ class OrderCourierRideView(APIView):
         return Response({"directive_id": task.pk, "status": task.status, "refs": refs})
 
 
+class OrderCourierRideQuoteView(APIView):
+    """Quanto custa a corrida com estas paradas, antes de chamar.
+
+    ``?refs=A&refs=B``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``. A mesma
+    corrida que a chamada vai abrir (ordem do percurso, retorno), cotada na TaOn.
+    ``estimate`` nulo com ``detail`` quando não dá para cotar (pedido sem
+    endereço com coordenada, TaOn fora): a chamada continua possível.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.projections.order_queue import courier_estimate_display
+        from shopman.shop.services import courier
+        from shopman.shop.services.operator_orders import short_ref
+
+        refs = list(dict.fromkeys(ref.strip()[:64] for ref in request.GET.getlist("refs") if ref.strip()))
+        if not 2 <= len(refs) <= courier.MAX_RIDE_STOPS:
+            return Response({"detail": f"Escolha de 2 a {courier.MAX_RIDE_STOPS} pedidos.", "field": "refs"},
+                            status=400)
+        by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
+        if len(by_ref) != len(refs):
+            return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+        estimate = courier.estimate_for_ride([by_ref[ref] for ref in refs])
+        if estimate is None:
+            return Response({"estimate": None,
+                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+        order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
+        return Response({"estimate": {**estimate, "display": courier_estimate_display(estimate),
+                                      "route": order_line}})
+
+
 def _operator_identity(request) -> tuple[int, str]:
     """A quem creditar a retirada de um pedido — que é quem está logado.
 

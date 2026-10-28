@@ -517,3 +517,13 @@ def test_maquininha_da_corrida_nunca_fica_com_o_pedido_em_dinheiro(client, opera
     machines[0].refresh_from_db()
     assert machines[0].current_order_id == Order.objects.get(ref="RIDE-A").pk
     assert "equipment" not in Order.objects.get(ref="RIDE-B").data["dispatch"]
+
+
+def test_cotacao_da_corrida_conjunta_diz_valor_ordem_e_retorno(client, operator):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="pix", collection="")
+    url = reverse("api-backstage-order-courier-ride-quote")
+    body = client.get(url, {"refs": ["RIDE-A", "RIDE-B"]}).json()["estimate"]
+    assert body["display"] == "R$ 16,50 · 24 min · 5,7 km · ida e volta"
+    assert body["route"] == "A → B"
+    assert client.get(url, {"refs": ["RIDE-A"]}).status_code == 400

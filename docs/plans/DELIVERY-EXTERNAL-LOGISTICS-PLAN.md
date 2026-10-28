@@ -195,8 +195,12 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    trabalho, N/C pela leitura) devolve o troco e a maquininha de TODOS os pedidos e avisa;
    "Chamar de novo" chama a mesma corrida. Pedido cancelado antes da coleta devolve o troco
    dele e a maquininha compartilhada segue com a corrida (o vínculo passa a outro pedido).
-   ⚠️ Pendente: cotação da corrida com várias paradas (`/estimarSolicitacao` com
-   `latlng_paradas`); hoje a tela diz que a cotação é só do primeiro pedido.
+   Cotação da corrida com várias paradas (`courier.estimate_for_ride`): a mesma corrida que a
+   chamada abre (ordem do percurso, retorno), com a última parada no destino e as do meio em
+   `latlng_paradas`. Marcada outra entrega, o cartão de cotação passa a cotar a corrida
+   inteira e diz a ordem ("Ordem: C03 → A47"); o "Juntar entregas" do quadro faz o mesmo.
+   ⚠️ Homologar com a TaOn: o separador entre latitude e longitude em `latlng_paradas` não
+   está na documentação (usamos "lat,lng|lat,lng").
 8. Custo de entrega no B.I. (Pablo, 2026-10-28): a seção "Entregas" soma o `final_value_q`
    de cada corrida UMA vez (`id_mch`; numa corrida com várias paradas cada pedido guarda o
    valor inteiro), com a cotação quando a corrida terminou sem valor final, e põe ao lado o
