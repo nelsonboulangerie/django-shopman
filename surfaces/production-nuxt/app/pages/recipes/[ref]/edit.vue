@@ -2,42 +2,42 @@
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 import type { OperatorActionBarAction } from "../../../../../operator-kit/app/presentation/actionBar";
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
-// editável (ingrediente com busca, quantidade, unidade, papel), partes, etapas e
+// editável (ingrediente com busca, quantidade, unidade, papel), preps, etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
 // botão "Padronizar para 1000 g" mostra o antes/depois e deixa desfazer; a receita
 // como foi informada (`origin`) fica visível como referência histórica. "Salvar
 // rascunho" grava; "Salvar e publicar" grava e publica, voltando à receita.
-import type { AnchorKind, Formula, FormulaUnit, IngredientOptionProjection, IngredientRole, PartKind, RecipeKind, RecipeStepInput, RecipeVersionProjection } from "~/types/recipeBook";
+import type { AnchorKind, Formula, FormulaUnit, IngredientOptionProjection, IngredientRole, PrepKind, RecipeKind, RecipeStepInput, RecipeVersionProjection } from "~/types/recipeBook";
 import {
   ANCHOR_OPTIONS,
   HOUSE_BASIS_G,
   KIND_OPTIONS,
-  PART_KIND_OPTIONS,
+  PREP_KIND_OPTIONS,
   ROLE_OPTIONS,
   UNIT_OPTIONS,
   YIELD_UNIT_OPTIONS,
   addItem,
-  addPart,
+  addPrep,
   anchorTotalOf,
   emptyFormula,
   emptyItem,
-  emptyPart,
+  emptyPrep,
   formulaFromServed,
   gramsLabel,
   moveItem,
   originLines,
   pctOf,
-  partReferenceCode,
+  prepReferenceCode,
   referenceGuidance,
   removeItem,
-  removePart,
+  removePrep,
   roleLabel,
   setAnchor,
   stepsForPayload,
   totalMassOf,
   unmatchedItems,
   updateItem,
-  updatePart,
+  updatePrep,
 } from "~/presentation/recipeBook";
 
 const route = useRoute();
@@ -210,21 +210,21 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
   // A BOM tem um único tipo de linha: ingrediente. A origem do item escolhido
   // decide apenas qual estrutura o motor recebe. Não obriga o operador a saber,
   // antes de buscar, se o ingrediente é comprado ou produzido pela casa.
-  if (option.is_part) {
-    const partIndex = formula.value.parts.length;
-    const partKind = (option.suggested_part_kind || "component") as PartKind;
-    const partUnit = formulaDefaultUnit(option.unit);
-    const partQuantity = convertedQuantity(item.quantity, item.unit, partUnit) ?? item.quantity;
-    const part = {
-      ...emptyPart(partKind),
+  if (option.has_recipe && option.suggested_prep_kind) {
+    const prepIndex = formula.value.preps.length;
+    const prepKind = option.suggested_prep_kind as PrepKind;
+    const prepUnit = formulaDefaultUnit(option.unit);
+    const prepQuantity = convertedQuantity(item.quantity, item.unit, prepUnit) ?? item.quantity;
+    const prep = {
+      ...emptyPrep(prepKind),
       sku: option.sku,
       entry_ref: option.entry_ref,
-      quantity: anchorIsFlour.value && partKind !== "component" ? null : partQuantity || null,
-      unit: partUnit,
+      quantity: anchorIsFlour.value ? null : prepQuantity || null,
+      unit: prepUnit,
     };
-    formula.value = addPart(removeItem(formula.value, index), part);
+    formula.value = addPrep(removeItem(formula.value, index), prep);
     newIngredientIndex.value = null;
-    ingredientFocusKey.value = `part-${partIndex}-amount`;
+    ingredientFocusKey.value = `prep-${prepIndex}-amount`;
     return;
   }
   const patch: Partial<typeof item> = { sku: option.sku, name: option.name };
@@ -280,7 +280,7 @@ const yieldUnits = [...YIELD_UNIT_OPTIONS];
 const units = [...UNIT_OPTIONS];
 const roles = [...ROLE_OPTIONS];
 const anchors = [...ANCHOR_OPTIONS];
-const partKinds = [...PART_KIND_OPTIONS];
+const prepKinds = [...PREP_KIND_OPTIONS];
 const kinds = [...KIND_OPTIONS];
 const editorTab = ref("technical");
 const editorTabs = [
@@ -289,57 +289,57 @@ const editorTabs = [
   { label: "Produção", value: "production" },
 ];
 
-// ── Partes ──────────────────────────────────────────────────────────────────
-function onPartKind(index: number, kind: string) {
-  const next = kind as PartKind;
+// ── Preps ───────────────────────────────────────────────────────────────────
+function onPrepKind(index: number, kind: string) {
+  const next = kind as PrepKind;
   if (next === "old_dough") {
-    formula.value = updatePart(formula.value, index, { kind: next, cap_pct: 20, flour_pct: null, quantity: null });
+    formula.value = updatePrep(formula.value, index, { kind: next, cap_pct: 20, flour_pct: null, quantity: null });
     return;
   }
-  formula.value = updatePart(
+  formula.value = updatePrep(
     formula.value,
     index,
-    next === "component" || !anchorIsFlour.value
+    !anchorIsFlour.value
       ? { kind: next, cap_pct: null, flour_pct: null }
       : { kind: next, cap_pct: null, quantity: null },
   );
 }
-function onPartSku(index: number, sku: string) {
-  formula.value = updatePart(formula.value, index, { sku });
+function onPrepSku(index: number, sku: string) {
+  formula.value = updatePrep(formula.value, index, { sku });
 }
-function onPartSelect(index: number, option: IngredientOptionProjection) {
-  formula.value = updatePart(formula.value, index, { sku: option.sku, entry_ref: option.entry_ref });
+function onPrepSelect(index: number, option: IngredientOptionProjection) {
+  formula.value = updatePrep(formula.value, index, { sku: option.sku, entry_ref: option.entry_ref });
 }
-function onPartPercentage(index: number, field: "flour_pct" | "cap_pct", value: number | null | undefined) {
-  formula.value = updatePart(formula.value, index, {
+function onPrepPercentage(index: number, field: "flour_pct" | "cap_pct", value: number | null | undefined) {
+  formula.value = updatePrep(formula.value, index, {
     [field]: value == null ? null : value,
   });
 }
-function onPartQuantity(index: number, value: number | null | undefined) {
-  const part = formula.value.parts[index];
-  const unit = (part?.unit ?? "g") as FormulaUnit;
-  formula.value = updatePart(formula.value, index, { quantity: value == null ? null : normalizedQuantity(value, unit) });
+function onPrepQuantity(index: number, value: number | null | undefined) {
+  const prep = formula.value.preps[index];
+  const unit = (prep?.unit ?? "g") as FormulaUnit;
+  formula.value = updatePrep(formula.value, index, { quantity: value == null ? null : normalizedQuantity(value, unit) });
 }
-function onPartUnit(index: number, unit: string) {
-  const part = formula.value.parts[index];
-  if (!part) return;
+function onPrepUnit(index: number, unit: string) {
+  const prep = formula.value.preps[index];
+  if (!prep) return;
   const next = unit as FormulaUnit;
-  const current = part.quantity ?? null;
-  const converted = current == null ? null : convertedQuantity(current, part.unit ?? "g", next);
-  formula.value = updatePart(formula.value, index, { unit: next, quantity: converted ?? current });
+  const current = prep.quantity ?? null;
+  const converted = current == null ? null : convertedQuantity(current, prep.unit ?? "g", next);
+  formula.value = updatePrep(formula.value, index, { unit: next, quantity: converted ?? current });
 }
-function dropPart(index: number) {
-  formula.value = removePart(formula.value, index);
+function dropPrep(index: number) {
+  formula.value = removePrep(formula.value, index);
 }
-function partMatchedName(index: number): string {
-  const part = formula.value.parts[index];
-  if (!part?.sku) return "";
-  return lens.value?.parts.find((row) => row.sku === part.sku)?.name || part.sku;
+function prepMatchedName(index: number): string {
+  const prep = formula.value.preps[index];
+  if (!prep?.sku) return "";
+  return lens.value?.preps.find((row) => row.sku === prep.sku)?.name || prep.sku;
 }
-function partGuidance(index: number): string {
-  const part = formula.value.parts[index];
-  if (!part) return "";
-  const code = partReferenceCode(part, partMatchedName(index));
+function prepGuidance(index: number): string {
+  const prep = formula.value.preps[index];
+  if (!prep) return "";
+  const code = prepReferenceCode(prep, prepMatchedName(index));
   return referenceGuidance(referenceRanges.value.find((range) => range.code === code));
 }
 
@@ -829,7 +829,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
               </span>
             </div>
-            <div v-if="!formula.items.length && !formula.parts.length" class="grid gap-3 px-3 py-6 text-center">
+            <div v-if="!formula.items.length && !formula.preps.length" class="grid gap-3 px-3 py-6 text-center">
               <p class="text-sm text-muted-foreground">Adicione o primeiro ingrediente da receita.</p>
               <NuxtButton
                 class="w-full justify-center sm:mx-auto sm:w-auto"
@@ -936,29 +936,29 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 </label>
               </li>
               <li
-                v-for="(part, index) in formula.parts"
+                v-for="(prep, index) in formula.preps"
                 :key="`recipe-${index}`"
                 class="grid gap-3 p-3 sm:grid-cols-[minmax(10rem,0.9fr)_minmax(0,1.4fr)_minmax(13rem,1fr)_auto]"
               >
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Uso na receita
                   <NuxtSelect
-                    :model-value="part.kind"
-                    :items="partKinds"
+                    :model-value="prep.kind"
+                    :items="prepKinds"
                     value-key="value"
                     class="w-full"
                     aria-label="Uso da receita como ingrediente"
                     :ui="{ base: 'bg-muted' }"
-                    @update:model-value="(kind: string) => onPartKind(index, kind)"
+                    @update:model-value="(kind: string) => onPrepKind(index, kind)"
                   />
                 </label>
-                <template v-if="part.kind === 'old_dough'">
+                <template v-if="prep.kind === 'old_dough'">
                   <p class="self-end pb-2 text-sm text-muted-foreground">Massa da própria receita, reservada da produção anterior.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Limite de substituição
                     <span class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:w-48">
                       <NuxtInputNumber
-                        :model-value="part.cap_pct ?? null"
+                        :model-value="prep.cap_pct ?? null"
                         :min="percentageRule.min"
                         :max="99.9"
                         :step="percentageRule.step"
@@ -967,29 +967,29 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                         class="w-full"
                         :ui="{ base: 'bg-muted tabular-nums' }"
                         aria-label="Limite percentual de substituição por massa velha"
-                        @update:model-value="(value: number | null | undefined) => onPartPercentage(index, 'cap_pct', value)"
+                        @update:model-value="(value: number | null | undefined) => onPrepPercentage(index, 'cap_pct', value)"
                       />
                       <span class="text-sm text-muted-foreground">%</span>
                     </span>
-                    <span v-if="partGuidance(index)" class="font-normal text-muted-foreground">{{ partGuidance(index) }}</span>
+                    <span v-if="prepGuidance(index)" class="font-normal text-muted-foreground">{{ prepGuidance(index) }}</span>
                   </label>
                 </template>
                 <template v-else>
                   <div class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                     Ingrediente
                     <IngredientPicker
-                      :model-value="part.sku ?? ''"
-                      :matched-name="partMatchedName(index)"
-                      @update:model-value="onPartSku(index, $event)"
-                      @select="onPartSelect(index, $event)"
+                      :model-value="prep.sku ?? ''"
+                      :matched-name="prepMatchedName(index)"
+                      @update:model-value="onPrepSku(index, $event)"
+                      @select="onPrepSelect(index, $event)"
                     />
                   </div>
-                  <label v-if="anchorIsFlour && part.kind !== 'component'" :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                  <label v-if="anchorIsFlour" :data-focus-target="`prep-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Base de cálculo nesta preparação
                     <span class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                       <NuxtInputNumber
                         data-focus-control
-                        :model-value="part.flour_pct ?? null"
+                        :model-value="prep.flour_pct ?? null"
                         :min="percentageRule.min"
                         :max="100"
                         :step="percentageRule.step"
@@ -998,42 +998,42 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                         class="w-full"
                         :ui="{ base: 'bg-muted tabular-nums' }"
                         aria-label="Percentual da base de cálculo nesta preparação"
-                        @update:model-value="(value: number | null | undefined) => onPartPercentage(index, 'flour_pct', value)"
+                        @update:model-value="(value: number | null | undefined) => onPrepPercentage(index, 'flour_pct', value)"
                       />
                       <span class="text-sm text-muted-foreground">%</span>
                     </span>
-                    <span v-if="partGuidance(index)" class="font-normal text-muted-foreground">{{ partGuidance(index) }}</span>
+                    <span v-if="prepGuidance(index)" class="font-normal text-muted-foreground">{{ prepGuidance(index) }}</span>
                   </label>
-                  <label v-else :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                  <label v-else :data-focus-target="`prep-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <span class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
                       <NuxtInputNumber
                         data-focus-control
-                        :key="`part-quantity-${part.sku || index}-${part.unit}`"
-                        :model-value="part.quantity ?? null"
-                        :min="quantityRule((part.unit ?? 'g') as FormulaUnit).min"
-                        :step="quantityRule((part.unit ?? 'g') as FormulaUnit).step"
-                        :format-options="{ maximumFractionDigits: quantityRule((part.unit ?? 'g') as FormulaUnit).maximumFractionDigits }"
+                        :key="`prep-quantity-${prep.sku || index}-${prep.unit}`"
+                        :model-value="prep.quantity ?? null"
+                        :min="quantityRule((prep.unit ?? 'g') as FormulaUnit).min"
+                        :step="quantityRule((prep.unit ?? 'g') as FormulaUnit).step"
+                        :format-options="{ maximumFractionDigits: quantityRule((prep.unit ?? 'g') as FormulaUnit).maximumFractionDigits }"
                         locale="pt-BR"
                         class="w-full"
                         :ui="{ base: 'bg-muted tabular-nums' }"
                         aria-label="Quantidade da receita usada como ingrediente"
-                        @update:model-value="(value: number | null | undefined) => onPartQuantity(index, value)"
+                        @update:model-value="(value: number | null | undefined) => onPrepQuantity(index, value)"
                       />
                       <NuxtSelect
-                        :model-value="part.unit ?? 'g'"
+                        :model-value="prep.unit ?? 'g'"
                         :items="units"
                         class="w-full"
-                        aria-label="Unidade da parte"
+                        aria-label="Unidade da prep"
                         :ui="{ base: 'bg-muted' }"
-                        @update:model-value="(unit: string) => onPartUnit(index, unit)"
+                        @update:model-value="(unit: string) => onPrepUnit(index, unit)"
                       />
                     </span>
                   </label>
                 </template>
                 <div class="flex items-end">
                   <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->
-                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="dropPart(index)" />
+                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="dropPrep(index)" />
                 </div>
               </li>
             </ol>

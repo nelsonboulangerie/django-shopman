@@ -1,4 +1,4 @@
-"""A matemática pura da fórmula: porcentagem do padeiro, partes e mistura final.
+"""A matemática pura da fórmula: porcentagem do padeiro, preps e mistura final.
 
 Sem banco: ``contrib/formula/percentages.py`` recebe a fórmula (§3 do plano) e
 responde só com ``Decimal``. O exemplo que atravessa a suíte é a Tradição do
@@ -17,7 +17,7 @@ from shopman.craftsman.contrib.formula.percentages import (
     derive_bom,
     item_grams,
     looks_like_flour,
-    part_kind_from_name,
+    prep_kind_from_name,
     reference_for,
     scale,
     standardize,
@@ -39,11 +39,11 @@ PASTA = {
         {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 600, "unit": "g"},
     ],
 }
-PART_FORMULAS = {"LEVAIN": LEVAIN, "PASTA-AUTOLIZADA": PASTA}
+PREP_FORMULAS = {"LEVAIN": LEVAIN, "PASTA-AUTOLIZADA": PASTA}
 
 
-def tradicao(parts=None, **overrides):
-    """A base da Tradição em 1000 g de farinha; as partes vêm de fora."""
+def tradicao(preps=None, **overrides):
+    """A base da Tradição em 1000 g de farinha; as preps vêm de fora."""
     formula = {
         "anchor": {"kind": "flour"},
         "basis_g": 1000,
@@ -53,7 +53,7 @@ def tradicao(parts=None, **overrides):
             {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "g"},
             {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
         ],
-        "parts": parts or [],
+        "preps": preps or [],
     }
     formula.update(overrides)
     return formula
@@ -133,10 +133,10 @@ class TestClassifyIngredient:
         assert not looks_like_flour("Leite integral", "LEITE-INTEGRAL-A")
 
     def test_only_unambiguous_preparations_receive_bakery_math(self):
-        assert part_kind_from_name("Levain") == "preferment"
-        assert part_kind_from_name("Pasta autolisada") == "autolyse"
-        assert part_kind_from_name("Tangzhong") == "soaker"
-        assert part_kind_from_name("Creme confeiteiro") == "component"
+        assert prep_kind_from_name("Levain") == "preferment"
+        assert prep_kind_from_name("Pasta autolisada") == "autolyse"
+        assert prep_kind_from_name("Tangzhong") == "soaker"
+        assert prep_kind_from_name("Creme confeiteiro") == ""
 
 
 # ── Física do item ───────────────────────────────────────────────────────────
@@ -173,62 +173,39 @@ class TestAnalyze:
     def test_levain_at_twenty_percent_is_four_hundred_grams(self):
         """Levain 50/50 com 20% da farinha: 200 g de farinha ÷ 0,5 = 400 g de levain."""
         analysis = analyze(
-            tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
-            PART_FORMULAS,
+            tradicao(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
+            PREP_FORMULAS,
         )
-        levain = analysis.parts[0]
+        levain = analysis.preps[0]
         assert levain.quantity_g == Decimal("400")
         assert levain.flour_g == Decimal("200")
         assert levain.flour_pct == Decimal("20")
         assert analysis.prefermented_flour_pct == Decimal("20")
 
-    def test_generic_recipe_component_is_a_quantity_line_not_a_flour_partition(self):
-        """Recheio é uma sub-BOM: entra pronto e não subtrai insumos da massa."""
-        filling = {
-            "anchor": {"kind": "total"},
-            "items": [
-                {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 800, "unit": "g"},
-                {"sku": "ACUCAR", "name": "Açúcar", "role": "sugar", "quantity": 200, "unit": "g"},
-            ],
-        }
-        analysis = analyze(
-            tradicao(parts=[{
-                "sku": "CREME-CONFEITEIRO", "entry_ref": "creme-confeiteiro",
-                "kind": "component", "quantity": 300, "unit": "g",
-            }]),
-            {"CREME-CONFEITEIRO": filling},
-        )
-
-        assert analysis.parts[0].quantity_g == Decimal("300")
-        assert analysis.parts[0].flour_pct is None
-        assert by_sku(analysis.final_mix)["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("1000")
-        assert not any(w.code == "PART_EXCEEDS_BASE" for w in analysis.warnings)
-        assert {line["sku"] for line in analysis.bom} >= {"CREME-CONFEITEIRO", "FARINHA-ANACONDA-PREMIUM"}
-
     def test_a_quantity_that_says_the_same_as_the_percentage_wins_exactly(self):
         """flour_pct tem 3 casas; a quantidade declarada é a mesma declaração com mais casas."""
         same = analyze(
-            tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20, "quantity": "400.02", "unit": "g"}]),
-            PART_FORMULAS,
+            tradicao(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20, "quantity": "400.02", "unit": "g"}]),
+            PREP_FORMULAS,
         )
-        assert same.parts[0].quantity_g == Decimal("400.02")
+        assert same.preps[0].quantity_g == Decimal("400.02")
 
         edited = analyze(
-            tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20, "quantity": 500, "unit": "g"}]),
-            PART_FORMULAS,
+            tradicao(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20, "quantity": 500, "unit": "g"}]),
+            PREP_FORMULAS,
         )
-        assert edited.parts[0].quantity_g == Decimal("400")
+        assert edited.preps[0].quantity_g == Decimal("400")
 
     def test_final_mix_and_bom_of_the_tradition(self):
-        """Base − partes = o que falta pôr na masseira; BOM = mistura final + partes prontas."""
+        """Base − preps = o que falta pôr na masseira; BOM = mistura final + preps prontas."""
         analysis = analyze(
-            tradicao(parts=[
+            tradicao(preps=[
                 {"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20},
                 {"sku": "PASTA-AUTOLIZADA", "kind": "autolyse", "flour_pct": 60},
             ]),
-            PART_FORMULAS,
+            PREP_FORMULAS,
         )
-        pasta = analysis.parts[1]
+        pasta = analysis.preps[1]
         assert pasta.quantity_g == Decimal("960")  # 600 g de farinha + 360 g de água
 
         final_mix = by_sku(analysis.final_mix)
@@ -249,11 +226,11 @@ class TestAnalyze:
 
     def test_old_dough_shrinks_everything_by_one_minus_cap(self):
         analysis = analyze(
-            tradicao(parts=[
+            tradicao(preps=[
                 {"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20},
                 {"kind": "old_dough", "cap_pct": 20},
             ]),
-            PART_FORMULAS,
+            PREP_FORMULAS,
         )
         assert analysis.old_dough_cap_pct == Decimal("20")
         nominal = by_sku(analysis.final_mix)
@@ -271,23 +248,23 @@ class TestAnalyze:
         # Fora do consumo: os não opcionais continuam somando a base inteira.
         assert sum(line["quantity"] for line in analysis.bom if not line["is_optional"]) == Decimal("1720")
 
-    def test_part_without_formula_stays_in_the_base(self):
-        analysis = analyze(tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]))
-        assert [w.code for w in analysis.warnings] == ["PART_WITHOUT_FORMULA"]
-        assert analysis.parts[0].has_formula is False
+    def test_prep_without_formula_stays_in_the_base(self):
+        analysis = analyze(tradicao(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]))
+        assert [w.code for w in analysis.warnings] == ["PREP_WITHOUT_FORMULA"]
+        assert analysis.preps[0].has_formula is False
         assert by_sku(analysis.final_mix)["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("1000")
         assert "LEVAIN" not in {line["sku"] for line in analysis.bom}
 
-    def test_part_bigger_than_the_base_is_flagged_and_zeroed(self):
+    def test_prep_bigger_than_the_base_is_flagged_and_zeroed(self):
         analysis = analyze(
-            tradicao(parts=[{"sku": "PASTA-AUTOLIZADA", "kind": "autolyse", "quantity": 2000, "unit": "g"}]),
+            tradicao(preps=[{"sku": "PASTA-AUTOLIZADA", "kind": "autolyse", "quantity": 2000, "unit": "g"}]),
             {"PASTA-AUTOLIZADA": {**PASTA, "items": [
                 *PASTA["items"],
                 {"sku": "MEL", "name": "Mel", "role": "sugar", "quantity": 10, "unit": "g"},
             ]}},
         )
         codes = [w.code for w in analysis.warnings]
-        assert "PART_EXCEEDS_BASE" in codes
+        assert "PREP_EXCEEDS_BASE" in codes
         assert by_sku(analysis.final_mix)["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("0")
         assert "FARINHA-ANACONDA-PREMIUM" not in {line["sku"] for line in analysis.bom}
 
@@ -331,14 +308,14 @@ class TestAnalyze:
         assert analysis.salt_pct is None
 
     def test_derive_bom_is_the_bom_of_the_analysis(self):
-        formula = tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}])
-        assert derive_bom(formula, PART_FORMULAS) == list(analyze(formula, PART_FORMULAS).bom)
+        formula = tradicao(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}])
+        assert derive_bom(formula, PREP_FORMULAS) == list(analyze(formula, PREP_FORMULAS).bom)
 
 
 
-def bassinage(first=650, second=50, parts=None):
+def bassinage(first=650, second=50, preps=None):
     """A Tradição com a água em duas linhas do MESMO SKU: a da massa e a da bassinage."""
-    formula = tradicao(parts=parts)
+    formula = tradicao(preps=preps)
     formula["items"][1] = {"sku": "AGUA-FILTRADA", "name": "Água da massa", "role": "liquid", "quantity": first, "unit": "g"}
     formula["items"].append(
         {"sku": "AGUA-FILTRADA", "name": "Água da bassinage", "role": "liquid", "quantity": second, "unit": "g"},
@@ -361,28 +338,28 @@ class TestOMesmoInsumoEmDuasLinhas:
         assert sum(line["quantity"] for line in analysis.bom) == analysis.total_mass_g == Decimal("1720")
         assert analysis.hydration_pct == Decimal("70")
 
-    def test_the_part_takes_its_water_from_the_first_line(self):
+    def test_the_prep_takes_its_water_from_the_first_line(self):
         """O levain leva 200 g de água: saem da água da massa, a bassinage fica inteira."""
-        analysis = analyze(bassinage(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]), PART_FORMULAS)
+        analysis = analyze(bassinage(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]), PREP_FORMULAS)
         assert [row.grams for row in analysis.final_mix if row.sku == "AGUA-FILTRADA"] == [Decimal("450"), Decimal("50")]
         assert sum(line["quantity"] for line in analysis.bom) == Decimal("1720")
         assert analysis.warnings == ()
 
     def test_what_the_first_line_lacks_comes_from_the_next(self):
         analysis = analyze(
-            bassinage(first=100, second=600, parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
-            PART_FORMULAS,
+            bassinage(first=100, second=600, preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
+            PREP_FORMULAS,
         )
         assert [row.grams for row in analysis.final_mix if row.sku == "AGUA-FILTRADA"] == [Decimal("0"), Decimal("500")]
         assert [line["quantity"] for line in analysis.bom if line["sku"] == "AGUA-FILTRADA"] == [Decimal("500")]
         assert analysis.warnings == ()
 
-    def test_the_part_bigger_than_both_lines_together_is_flagged(self):
+    def test_the_prep_bigger_than_both_lines_together_is_flagged(self):
         analysis = analyze(
-            bassinage(first=100, second=50, parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
-            PART_FORMULAS,
+            bassinage(first=100, second=50, preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
+            PREP_FORMULAS,
         )
-        assert "PART_EXCEEDS_BASE" in [w.code for w in analysis.warnings]
+        assert "PREP_EXCEEDS_BASE" in [w.code for w in analysis.warnings]
         assert "AGUA-FILTRADA" not in {line["sku"] for line in analysis.bom}
 
     def test_each_line_comes_back_in_its_own_unit(self):
@@ -401,15 +378,15 @@ class TestStandardize:
         informed = tradicao(basis_g=None, standardized=False)
         for item in informed["items"]:
             item["quantity"] = Decimal(item["quantity"]) * 5
-        informed["parts"] = [{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20, "quantity": 2000, "unit": "g"}]
+        informed["preps"] = [{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20, "quantity": 2000, "unit": "g"}]
 
         standard = standardize(informed)
         quantities = {item["sku"]: item["quantity"] for item in standard["items"]}
         assert quantities == {"FARINHA-ANACONDA-PREMIUM": "1000", "AGUA-FILTRADA": "700", "SAL-REFINADO": "20"}
         assert standard["basis_g"] == "1000"
         assert standard["standardized"] is True
-        assert standard["parts"][0]["quantity"] == "400"
-        assert standard["parts"][0]["flour_pct"] == 20
+        assert standard["preps"][0]["quantity"] == "400"
+        assert standard["preps"][0]["flour_pct"] == 20
         # A informada não foi tocada.
         assert informed["items"][0]["quantity"] == Decimal("5000")
 
@@ -433,21 +410,21 @@ class TestStandardize:
 class TestReferences:
     def test_the_tradition_is_inside_the_book(self):
         analysis = analyze(
-            tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
-            PART_FORMULAS,
+            tradicao(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
+            PREP_FORMULAS,
         )
         assert check_references(analysis, "bread") == []
 
     def test_out_of_range_and_above_max_are_told_calmly(self):
-        formula = tradicao(parts=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 35}])
+        formula = tradicao(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 35}])
         formula["items"][1]["quantity"] = 900  # 90% de hidratação
         formula["items"][2]["quantity"] = 30  # 3% de sal
-        warnings = {w.metric: w for w in check_references(analyze(formula, PART_FORMULAS), "bread")}
+        warnings = {w.metric: w for w in check_references(analyze(formula, PREP_FORMULAS), "bread")}
         assert warnings["hydration_pct"].code == "REFERENCE_OUT_OF_RANGE"
         assert warnings["hydration_pct"].value == Decimal("90")
         assert warnings["hydration_pct"].high == REFERENCE_RANGES["hydration_pct"]["bread"]["high"]
         assert warnings["salt_pct"].code == "REFERENCE_ABOVE_MAX"
-        assert warnings["part_flour_pct"].code == "REFERENCE_OUT_OF_RANGE"  # levain 15 a 30
+        assert warnings["prep_flour_pct"].code == "REFERENCE_OUT_OF_RANGE"  # levain 15 a 30
         assert "fora da faixa" in warnings["hydration_pct"].message
 
     def test_absent_ingredient_is_not_a_warning(self):
@@ -483,7 +460,7 @@ class TestReferences:
 
 class TestValidateFormula:
     def test_a_good_formula_passes(self):
-        validate_formula(tradicao(parts=[
+        validate_formula(tradicao(preps=[
             {"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20},
             {"kind": "old_dough", "cap_pct": 20},
         ]))
@@ -498,11 +475,11 @@ class TestValidateFormula:
             (lambda f: f["items"][1].update(quantity=0), "items[1].quantity"),
             (lambda f: f["items"][2].update(unit="saco"), "items[2].unit"),
             (lambda f: f["items"].append({"sku": "", "name": "", "quantity": 1, "unit": "g"}), "items[3].name"),
-            (lambda f: f.update(parts=[{"kind": "sponge", "sku": "X"}]), "parts[0].kind"),
-            (lambda f: f.update(parts=[{"kind": "preferment", "sku": "X"}]), "parts[0].flour_pct"),
-            (lambda f: f.update(parts=[{"kind": "preferment", "sku": "X", "flour_pct": 120}]), "parts[0].flour_pct"),
-            (lambda f: f.update(parts=[{"kind": "old_dough", "cap_pct": 100}]), "parts[0].cap_pct"),
-            (lambda f: f.update(parts=[{"kind": "preferment", "sku": "X", "quantity": 1, "unit": "L"}]), "parts[0].unit"),
+            (lambda f: f.update(preps=[{"kind": "sponge", "sku": "X"}]), "preps[0].kind"),
+            (lambda f: f.update(preps=[{"kind": "preferment", "sku": "X"}]), "preps[0].flour_pct"),
+            (lambda f: f.update(preps=[{"kind": "preferment", "sku": "X", "flour_pct": 120}]), "preps[0].flour_pct"),
+            (lambda f: f.update(preps=[{"kind": "old_dough", "cap_pct": 100}]), "preps[0].cap_pct"),
+            (lambda f: f.update(preps=[{"kind": "preferment", "sku": "X", "quantity": 1, "unit": "L"}]), "preps[0].unit"),
         ],
     )
     def test_the_field_that_offends_is_named(self, mutate, field):
@@ -517,16 +494,6 @@ class TestValidateFormula:
         formula = tradicao()
         formula["items"][1].update(unit="l", quantity="0.7")
         validate_formula(formula)
-
-    def test_generic_recipe_component_requires_a_quantity(self):
-        formula = tradicao(parts=[{"kind": "component", "sku": "CREME-CONFEITEIRO"}])
-        with pytest.raises(RecipeBookError) as exc:
-            validate_formula(formula)
-        assert exc.value.data["field"] == "parts[0].quantity"
-
-        formula["parts"][0].update(quantity=300, unit="g")
-        validate_formula(formula)
-
 
 class TestOQualificadorNaoRoubaOPapel:
     """"Manteiga sem sal" é gordura, e "chocolate ao leite" é inclusão (não líquido).

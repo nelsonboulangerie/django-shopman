@@ -128,8 +128,8 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await page.getByRole("button", { name: "Adicionar ingrediente", exact: true }).click();
   await page.getByPlaceholder("Buscar ingrediente", { exact: true }).fill("creme");
   await page.getByRole("option", { name: /Creme confeiteiro/ }).click();
-  await expect(page.getByLabel("Uso da receita como ingrediente").last()).toContainText("Ingrediente preparado");
-  await expect(page.getByLabel("Quantidade da receita usada como ingrediente", { exact: true })).toBeFocused();
+  await expect(page.getByLabel("Quantidade", { exact: true }).last()).toBeFocused();
+  await expect(page.getByLabel("Uso da receita como ingrediente")).toHaveCount(1);
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(3);
 
   await page.getByRole("tab", { name: "Modo de preparo" }).click();

@@ -3,7 +3,7 @@
 A conta é do Craftsman e tem teste lá; aqui se prova o que a superfície lê:
 "850 g" e "1,2 kg", "85%" e "85,5%", o tom de cada métrica (calmo por padrão,
 ``warning`` fora da faixa, ``muted`` quando não se aplica), a mistura final e
-o BOM com as partes, os avisos, a hidratação no cartão só com âncora de
+o BOM com as preps, os avisos, a hidratação no cartão só com âncora de
 farinha, o rascunho da captura casado com os insumos e a régua de acesso.
 """
 
@@ -37,7 +37,7 @@ from shopman.backstage.tests.production_grants import grant_production_operator
 pytestmark = pytest.mark.django_db
 
 
-def flour_formula(*, water=700, salt=20, parts=None, extra=()):
+def flour_formula(*, water=700, salt=20, preps=None, extra=()):
     return {
         "anchor": {"kind": "flour"},
         "basis_g": None,
@@ -48,7 +48,7 @@ def flour_formula(*, water=700, salt=20, parts=None, extra=()):
             {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": salt, "unit": "g"},
             *extra,
         ],
-        "parts": parts or [],
+        "preps": preps or [],
     }
 
 
@@ -63,7 +63,7 @@ def published_levain():
                 {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
                 {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
             ],
-            "parts": [],
+            "preps": [],
         },
         yield_quantity=1000, yield_unit="g",
     )
@@ -117,7 +117,7 @@ def test_wire_formula_makes_basis_numeric():
 
 def test_bakery_lens_items_metrics_and_tones(published_levain):
     lens = build_formula_lens(
-        flour_formula(parts=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
+        flour_formula(preps=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
         "bread",
     )
     assert lens.is_bakery is True
@@ -140,12 +140,12 @@ def test_bakery_lens_items_metrics_and_tones(published_levain):
         ("FARINHA-ANACONDA-PREMIUM", "800 g", "Farinha"), ("AGUA-FILTRADA", "500 g", "Líquido"),
         ("SAL-REFINADO", "20 g", "Sal"), ("LEVAIN", "400 g", "Pré-fermento"),
     ]
-    (part,) = lens.parts
-    assert part.kind_label == "Pré-fermento"
-    assert part.flour_pct_display == "20%"
-    assert part.quantity_display == "400 g"
-    assert part.has_formula is True
-    assert part.entry_ref == "creme-levain"
+    (prep,) = lens.preps
+    assert prep.kind_label == "Pré-fermento"
+    assert prep.flour_pct_display == "20%"
+    assert prep.quantity_display == "400 g"
+    assert prep.has_formula is True
+    assert prep.entry_ref == "creme-levain"
 
     tones = {metric.code: metric.tone for metric in lens.metrics}
     assert tones == {
@@ -172,7 +172,7 @@ def test_out_of_range_is_a_calm_warning_never_a_block():
 def test_analysis_warnings_and_their_tone():
     lens = build_formula_lens(
         flour_formula(
-            parts=[{"sku": "POOLISH", "kind": "preferment", "flour_pct": 30}],
+            preps=[{"sku": "POOLISH", "kind": "preferment", "flour_pct": 30}],
             extra=(
                 {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 100, "unit": "ml"},
                 {"sku": "OVOS", "name": "Ovos", "role": "egg", "quantity": 2, "unit": "un"},
@@ -181,12 +181,12 @@ def test_analysis_warnings_and_their_tone():
         "bread",
     )
     warnings = {warning.code: warning for warning in lens.warnings}
-    assert warnings["PART_WITHOUT_FORMULA"].tone == "warning"
+    assert warnings["PREP_WITHOUT_FORMULA"].tone == "warning"
     assert warnings["LIQUID_DENSITY_ASSUMED"].tone == "muted"
     assert warnings["COUNT_WITHOUT_GRAMS_PER_UNIT"].tone == "warning"
-    (part,) = lens.parts
-    assert part.has_formula is False
-    assert part.flour_pct_display == "30%"
+    (prep,) = lens.preps
+    assert prep.has_formula is False
+    assert prep.flour_pct_display == "30%"
     eggs = next(item for item in lens.items if item.sku == "OVOS")
     assert (eggs.quantity_display, eggs.quantity_g, eggs.pct_display) == ("2 un", "", "")
 
@@ -198,7 +198,7 @@ def test_non_flour_anchor_mutes_the_bakery_metrics():
             {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "dairy", "quantity": 1, "unit": "kg"},
             {"sku": "ACUCAR-CRISTAL", "name": "Açúcar", "role": "sugar", "quantity": 250, "unit": "g"},
         ],
-        "parts": [],
+        "preps": [],
     }
     lens = build_formula_lens(cream, "cream")
     assert lens.is_bakery is False
@@ -217,7 +217,7 @@ def test_ingredient_anchor_names_the_ingredient():
             {"sku": "CHOCOLATE", "name": "Chocolate 70%", "role": "inclusion", "quantity": 200, "unit": "g"},
             {"sku": "CREME", "name": "Creme de leite", "role": "dairy", "quantity": 200, "unit": "g"},
         ],
-        "parts": [],
+        "preps": [],
     }
     lens = build_formula_lens(ganache, "filling")
     assert lens.anchor_label == "Um ingrediente (Chocolate 70%)"
@@ -226,11 +226,11 @@ def test_ingredient_anchor_names_the_ingredient():
 
 
 def test_old_dough_shows_its_cap_and_stays_out_of_the_consumption():
-    lens = build_formula_lens(flour_formula(parts=[{"kind": "old_dough", "cap_pct": 20}]), "bread")
-    (part,) = lens.parts
-    assert part.kind_label == "Massa velha"
-    assert part.cap_pct_display == "20%"
-    assert part.has_formula is False
+    lens = build_formula_lens(flour_formula(preps=[{"kind": "old_dough", "cap_pct": 20}]), "bread")
+    (prep,) = lens.preps
+    assert prep.kind_label == "Massa velha"
+    assert prep.cap_pct_display == "20%"
+    assert prep.has_formula is False
     old_dough = lens.bom[-1]
     assert old_dough.role_label == "Massa velha"
     assert old_dough.matched is False
@@ -257,14 +257,14 @@ def test_card_hydration_only_with_a_flour_anchor():
         formula={
             "anchor": {"kind": "total"},
             "items": [{"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "dairy", "quantity": 1, "unit": "kg"}],
-            "parts": [],
+            "preps": [],
         },
         yield_quantity=1, yield_unit="kg",
     ))
     craftsman.create_version(cream, formula={
         "anchor": {"kind": "total"},
         "items": [{"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "dairy", "quantity": 2, "unit": "kg"}],
-        "parts": [],
+        "preps": [],
     }, yield_quantity=2, yield_unit="kg")
     Material.objects.create(sku="CREME-CONF", name="Creme de confeiteiro pronto", unit="kg")
 
@@ -364,7 +364,7 @@ def test_reference_for_kind():
     assert bread.kind_label == "Pão"
     codes = [entry.code for entry in bread.ranges]
     assert codes[:4] == ["hydration_pct", "salt_pct", "yeast_pct", "prefermented_flour_pct"]
-    assert "part_flour_pct:old_dough" in codes
+    assert "prep_flour_pct:old_dough" in codes
     other = build_recipe_reference("")
     assert other.kind == "other"
     assert [entry.code for entry in other.ranges] == ["salt_pct", "yeast_pct"]
@@ -373,13 +373,13 @@ def test_reference_for_kind():
 # ── Insumos e captura ────────────────────────────────────────────────────────
 
 
-def test_ingredient_options_prefer_the_part_over_a_material_with_the_same_sku(published_levain):
+def test_ingredient_options_prefer_the_prep_over_a_material_with_the_same_sku(published_levain):
     Material.objects.create(sku="LEVAIN", name="Levain (insumo)", unit="kg")
     Material.objects.create(sku="FARINHA-ANACONDA-PREMIUM", name="Farinha de trigo T55", unit="kg")
     options = build_ingredient_options("")
     levain = [option for option in options if option.sku == "LEVAIN"]
     assert len(levain) == 1
-    assert levain[0].is_part is True
+    assert levain[0].has_recipe is True
     assert levain[0].name == "Levain"
     assert [option.sku for option in options] == ["LEVAIN", "FARINHA-ANACONDA-PREMIUM"]
 
@@ -406,7 +406,7 @@ def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_
     assert flour.candidates[0].sku == "FARINHA-NOVARA-T55"
     assert (water.sku, water.role) == ("AGUA-FILTRADA", "liquid")
     assert (levain.sku, levain.role) == ("LEVAIN", "other")
-    assert any(candidate.is_part and candidate.entry_ref == "creme-levain" for candidate in levain.candidates)
+    assert any(candidate.has_recipe and candidate.entry_ref == "creme-levain" for candidate in levain.candidates)
     assert (pepper.sku, pepper.quantity, pepper.match_confidence) == ("", "", "")
 
     assert draft.formula["anchor"] == {"kind": "flour"}
@@ -465,7 +465,7 @@ def test_a_cream_with_a_flour_anchor_is_not_a_bakery_lens():
             {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 1000, "unit": "g"},
             {"sku": "ACUCAR-CRISTAL", "name": "Açúcar", "role": "sugar", "quantity": 250, "unit": "g"},
         ],
-        "parts": [],
+        "preps": [],
     }
     assert projections.build_formula_lens(formula, "bread").is_bakery is True
     lens = projections.build_formula_lens(formula, "cream")
@@ -485,7 +485,7 @@ def test_sem_partes_a_mistura_final_e_a_ficha_sao_a_propria_base():
 
 def test_com_parte_pronta_as_duas_passam_a_dizer_outra_coisa(published_levain):
     lens = build_formula_lens(
-        flour_formula(parts=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
+        flour_formula(preps=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
         "bread",
     )
     assert lens.final_mix_differs is True
@@ -494,6 +494,6 @@ def test_com_parte_pronta_as_duas_passam_a_dizer_outra_coisa(published_levain):
 
 def test_massa_velha_muda_a_ficha_mas_nao_a_mistura_final():
     """Massa velha é teto, não composição: ela não tira da base, mas entra na ficha como linha opcional."""
-    lens = build_formula_lens(flour_formula(parts=[{"kind": "old_dough", "cap_pct": 20}]), "bread")
+    lens = build_formula_lens(flour_formula(preps=[{"kind": "old_dough", "cap_pct": 20}]), "bread")
     assert lens.final_mix_differs is False
     assert lens.bom_differs is True

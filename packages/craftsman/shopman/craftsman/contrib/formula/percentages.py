@@ -8,8 +8,8 @@ Módulo sem Django. Recebe a ``formula`` de uma ``RecipeVersion`` (schema na
 * :func:`item_grams` — quanto pesa um item da fórmula, em grama, ou ``None``
   quando a física não deixa saber (contagem sem ``grams_per_unit``);
 * :func:`analyze` — âncora, porcentagens, hidratação, sal, fermento, farinha
-  pré-fermentada, **mistura final** (base menos o que já está nas partes) e o
-  **BOM de consumo** (mistura final + partes prontas), com avisos;
+  pré-fermentada, **mistura final** (base menos o que já está nas preps) e o
+  **BOM de consumo** (mistura final + preps prontas), com avisos;
 * :func:`standardize` / :func:`scale` — a fórmula inteira reescrita para a
   âncora somar ``basis_g`` (padrão da casa: 1000 g de farinhas), ou escalada por
   um fator;
@@ -35,7 +35,7 @@ from shopman.craftsman.exceptions import RecipeBookError
 
 ROLES = ("flour", "liquid", "salt", "yeast", "fat", "sugar", "egg", "dairy", "inclusion", "other")
 ANCHOR_KINDS = ("flour", "total", "ingredient")
-PART_KINDS = ("component", "preferment", "autolyse", "soaker", "old_dough")
+PREP_KINDS = ("preferment", "autolyse", "soaker", "old_dough")
 UNITS = ("g", "kg", "mg", "ml", "L", "un")
 
 _ZERO = Decimal("0")
@@ -210,12 +210,12 @@ def looks_like_flour(name: str, sku: str = "") -> bool:
     return classify_ingredient(name, sku) == "flour"
 
 
-def part_kind_from_name(*names: str) -> str:
-    """Sugere o uso de uma receita intermediária pelo nome, ref e SKU.
+def prep_kind_from_name(*names: str) -> str:
+    """Sugere uma prep apenas quando nome, ref ou SKU são inequívocos.
 
-    A inferência só reconhece preparações com vocabulário inequívoco. Todo o
-    restante é ``component``: uma linha normal de BOM, medida por quantidade.
-    Assim um recheio nunca vira pré-fermento apenas por também ter receita.
+    Vazio significa ingrediente preparado comum: creme, recheio e cobertura
+    continuam em ``items`` como qualquer outro ingrediente da BOM. Só uma prep
+    redistribui ingredientes já declarados na fórmula global.
     """
     text = normalize_text(" ".join(str(n or "") for n in names))
     if any(word in text for word in _AUTOLYSE_NAMES):
@@ -224,15 +224,15 @@ def part_kind_from_name(*names: str) -> str:
         return "soaker"
     if any(word in text for word in _PREFERMENT_NAMES):
         return "preferment"
-    return "component"
+    return ""
 
 
-def part_reference_key(part: dict) -> str:
-    """Chave da faixa de referência de uma parte (levain, poolish, biga, ...)."""
-    kind = str(part.get("kind") or "preferment")
+def prep_reference_key(prep: dict) -> str:
+    """Chave da faixa de referência de uma prep (levain, poolish, biga, ...)."""
+    kind = str(prep.get("kind") or "preferment")
     if kind != "preferment":
         return kind
-    text = normalize_text(f"{part.get('name', '')} {part.get('entry_ref', '')} {part.get('sku', '')}")
+    text = normalize_text(f"{prep.get('name', '')} {prep.get('entry_ref', '')} {prep.get('sku', '')}")
     if "poolish" in text:
         return "poolish"
     if "biga" in text:
@@ -341,8 +341,8 @@ class FormulaItemAnalysis:
 
 
 @dataclass(frozen=True)
-class FormulaPartAnalysis:
-    """Uma parte resolvida: quanto pesa e quanta farinha da base leva."""
+class FormulaPrepAnalysis:
+    """Uma prep resolvida: quanto pesa e quanta farinha da base leva."""
 
     sku: str
     entry_ref: str
@@ -375,7 +375,7 @@ class FormulaAnalysis:
     final_mix: tuple[FormulaItemAnalysis, ...]
     final_mix_at_cap: tuple[FormulaItemAnalysis, ...]
     bom: tuple[dict, ...]
-    parts: tuple[FormulaPartAnalysis, ...]
+    preps: tuple[FormulaPrepAnalysis, ...]
     old_dough_cap_pct: Decimal | None
     warnings: tuple[FormulaWarning, ...] = field(default_factory=tuple)
 
@@ -460,23 +460,23 @@ def _to_analysis_item(item: dict, anchor: Decimal | None, *, grams: Decimal | No
     )
 
 
-def _part_composition(part_formula: dict) -> tuple[list[dict], Decimal, Decimal]:
-    """Itens da parte com grama, total em grama e farinha em grama."""
+def _prep_composition(prep_formula: dict) -> tuple[list[dict], Decimal, Decimal]:
+    """Itens da prep com grama, total em grama e farinha em grama."""
     ignored: list[FormulaWarning] = []
-    items = [it for it in _read_items(list(part_formula.get("items") or []), ignored) if it["grams"] is not None]
+    items = [it for it in _read_items(list(prep_formula.get("items") or []), ignored) if it["grams"] is not None]
     total = sum((it["grams"] for it in items), _ZERO)
     flour = _role_total(items, "flour")
     return items, total, flour
 
 
-def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> FormulaAnalysis:
+def analyze(formula: dict, prep_formulas: dict[str, dict] | None = None) -> FormulaAnalysis:
     """Lê a fórmula: âncora, porcentagens, métricas, mistura final e BOM.
 
-    ``part_formulas`` mapeia o ``sku`` de cada parte para a ``formula`` da
-    versão atual da receita da parte (o serviço monta com ``part_formulas_for``).
-    Parte sem fórmula fica na base e sai com aviso ``PART_WITHOUT_FORMULA``.
+    ``prep_formulas`` mapeia o ``sku`` de cada prep para a ``formula`` da
+    versão atual da receita da prep (o serviço monta com ``prep_formulas_for``).
+    Prep sem fórmula fica na base e sai com aviso ``PREP_WITHOUT_FORMULA``.
     """
-    part_formulas = part_formulas or {}
+    prep_formulas = prep_formulas or {}
     warnings: list[FormulaWarning] = []
     base = _read_items(list(formula.get("items") or []), warnings)
     anchor = formula.get("anchor") or {}
@@ -503,61 +503,48 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
 
     items = tuple(_to_analysis_item(it, anchor_total) for it in base)
 
-    # Mistura final: começa igual à base e vai perdendo o que as partes levam.
-    # As partes descontam por INSUMO: o mesmo SKU em duas linhas (a água da massa
+    # Mistura final: começa igual à base e vai perdendo o que as preps levam.
+    # As preps descontam por INSUMO: o mesmo SKU em duas linhas (a água da massa
     # e a da bassinage) é um estoque só para o levain tirar a água dele.
     remaining = _grams_by_key(base)
     base_by_key = {it["key"]: it for it in base}
-    parts: list[FormulaPartAnalysis] = []
+    preps: list[FormulaPrepAnalysis] = []
     prefermented_flour = _ZERO
     old_dough_cap: Decimal | None = None
 
-    for index, raw_part in enumerate(list(formula.get("parts") or [])):
-        kind = str(raw_part.get("kind") or "preferment")
+    for index, raw_prep in enumerate(list(formula.get("preps") or [])):
+        kind = str(raw_prep.get("kind") or "preferment")
         if kind == "old_dough":
-            old_dough_cap = to_decimal(raw_part.get("cap_pct"))
-            parts.append(FormulaPartAnalysis(
-                sku="", entry_ref="", kind=kind, name=str(raw_part.get("name") or "Massa velha"),
+            old_dough_cap = to_decimal(raw_prep.get("cap_pct"))
+            preps.append(FormulaPrepAnalysis(
+                sku="", entry_ref="", kind=kind, name=str(raw_prep.get("name") or "Massa velha"),
                 quantity_g=None, unit="g", flour_pct=None, flour_g=_ZERO, cap_pct=old_dough_cap,
                 has_formula=False,
             ))
             continue
 
-        sku = str(raw_part.get("sku") or "")
-        name = str(raw_part.get("name") or sku)
-        unit = normalize_unit(raw_part.get("unit") or "g")
-        declared_pct = to_decimal(raw_part.get("flour_pct"))
-        declared_quantity = to_decimal(raw_part.get("quantity"))
-        part_formula = part_formulas.get(sku)
+        sku = str(raw_prep.get("sku") or "")
+        name = str(raw_prep.get("name") or sku)
+        unit = normalize_unit(raw_prep.get("unit") or "g")
+        declared_pct = to_decimal(raw_prep.get("flour_pct"))
+        declared_quantity = to_decimal(raw_prep.get("quantity"))
+        prep_formula = prep_formulas.get(sku)
 
-        if not part_formula:
+        if not prep_formula:
             warnings.append(FormulaWarning(
-                "PART_WITHOUT_FORMULA",
-                f"{name}: a parte não tem fórmula conhecida e ficou na base.",
-                metric=f"parts[{index}]",
+                "PREP_WITHOUT_FORMULA",
+                f"{name}: a prep não tem fórmula conhecida e ficou na base.",
+                metric=f"preps[{index}]",
             ))
-            parts.append(FormulaPartAnalysis(
-                sku=sku, entry_ref=str(raw_part.get("entry_ref") or ""), kind=kind, name=name,
+            preps.append(FormulaPrepAnalysis(
+                sku=sku, entry_ref=str(raw_prep.get("entry_ref") or ""), kind=kind, name=name,
                 quantity_g=None if declared_quantity is None else _grams_of(declared_quantity, unit),
                 unit=unit, flour_pct=declared_pct, flour_g=_ZERO, cap_pct=None, has_formula=False,
             ))
             continue
 
-        # Receita intermediária comum (recheio, creme, cobertura...): é uma
-        # linha hierárquica da BOM. Não reparte os insumos da fórmula-mãe e não
-        # participa da matemática de farinha; só declara quanto do item pronto
-        # esta receita consome.
-        if kind == "component":
-            quantity_g = None if declared_quantity is None else _grams_of(declared_quantity, unit)
-            parts.append(FormulaPartAnalysis(
-                sku=sku, entry_ref=str(raw_part.get("entry_ref") or ""), kind=kind, name=name,
-                quantity_g=None if quantity_g is None else quantize(quantity_g), unit=unit,
-                flour_pct=None, flour_g=_ZERO, cap_pct=None, has_formula=True,
-            ))
-            continue
-
-        composition, part_total, part_flour = _part_composition(part_formula)
-        flour_fraction = (part_flour / part_total) if part_total > 0 else _ZERO
+        composition, prep_total, prep_flour = _prep_composition(prep_formula)
+        flour_fraction = (prep_flour / prep_total) if prep_total > 0 else _ZERO
 
         quantity_g: Decimal | None = None
         if anchor_kind == "flour" and declared_pct is not None and anchor_total:
@@ -570,44 +557,44 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
                     quantity_g = declared_g
             else:
                 warnings.append(FormulaWarning(
-                    "PART_WITHOUT_FLOUR",
-                    f"{name}: a parte não tem farinha; o tamanho veio da quantidade declarada.",
-                    metric=f"parts[{index}]",
+                    "PREP_WITHOUT_FLOUR",
+                    f"{name}: a prep não tem farinha; o tamanho veio da quantidade declarada.",
+                    metric=f"preps[{index}]",
                 ))
         if quantity_g is None and declared_quantity is not None:
             quantity_g = _grams_of(declared_quantity, unit)
-        if quantity_g is None or part_total <= 0:
+        if quantity_g is None or prep_total <= 0:
             warnings.append(FormulaWarning(
-                "PART_WITHOUT_SIZE",
-                f"{name}: sem porcentagem de farinha nem quantidade; a parte ficou na base.",
-                metric=f"parts[{index}]",
+                "PREP_WITHOUT_SIZE",
+                f"{name}: sem porcentagem de farinha nem quantidade; a prep ficou na base.",
+                metric=f"preps[{index}]",
             ))
-            parts.append(FormulaPartAnalysis(
-                sku=sku, entry_ref=str(raw_part.get("entry_ref") or ""), kind=kind, name=name,
+            preps.append(FormulaPrepAnalysis(
+                sku=sku, entry_ref=str(raw_prep.get("entry_ref") or ""), kind=kind, name=name,
                 quantity_g=None, unit=unit, flour_pct=declared_pct, flour_g=_ZERO, cap_pct=None,
                 has_formula=True,
             ))
             continue
 
         contents: list[FormulaItemAnalysis] = []
-        part_flour_g = _ZERO
+        prep_flour_g = _ZERO
         for component in composition:
-            contained = component["grams"] / part_total * quantity_g
+            contained = component["grams"] / prep_total * quantity_g
             key = component["key"]
             if component["role"] == "flour":
-                part_flour_g += contained
+                prep_flour_g += contained
             available = remaining.get(key)
             if key not in base_by_key or available is None:
                 warnings.append(FormulaWarning(
-                    "PART_EXCEEDS_BASE",
+                    "PREP_EXCEEDS_BASE",
                     f"{name} leva {component.get('name') or component.get('sku')}, que a base não declara.",
-                    metric=f"parts[{index}]",
+                    metric=f"preps[{index}]",
                 ))
             elif contained > available + Decimal("0.0005"):
                 warnings.append(FormulaWarning(
-                    "PART_EXCEEDS_BASE",
+                    "PREP_EXCEEDS_BASE",
                     f"{name} leva mais {component.get('name') or component.get('sku')} do que a base tem.",
-                    metric=f"parts[{index}]",
+                    metric=f"preps[{index}]",
                     value=quantize(contained), high=quantize(available),
                 ))
                 remaining[key] = _ZERO
@@ -618,15 +605,15 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
             ))
 
         if kind == "preferment":
-            prefermented_flour += part_flour_g
-        parts.append(FormulaPartAnalysis(
-            sku=sku, entry_ref=str(raw_part.get("entry_ref") or ""), kind=kind, name=name,
+            prefermented_flour += prep_flour_g
+        preps.append(FormulaPrepAnalysis(
+            sku=sku, entry_ref=str(raw_prep.get("entry_ref") or ""), kind=kind, name=name,
             quantity_g=quantize(quantity_g), unit=unit,
-            flour_pct=_pct(part_flour_g, anchor_total) if anchor_kind == "flour" else declared_pct,
-            flour_g=quantize(part_flour_g), cap_pct=None, has_formula=True, contents=tuple(contents),
+            flour_pct=_pct(prep_flour_g, anchor_total) if anchor_kind == "flour" else declared_pct,
+            flour_g=quantize(prep_flour_g), cap_pct=None, has_formula=True, contents=tuple(contents),
         ))
 
-    # O que sobrou de cada item depois das partes; resíduo de arredondamento
+    # O que sobrou de cada item depois das preps; resíduo de arredondamento
     # (inclusive o "-0" do Decimal) vira zero, não linha negativa na tela.
     remaining = _remaining_by_line(base, {
         key: (_ZERO if grams is not None and abs(grams) < _BOM_RESIDUE_G else grams)
@@ -642,7 +629,7 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
         for it in base
     )
 
-    bom = tuple(_bom_items(base, remaining, parts, total_mass, old_dough_cap))
+    bom = tuple(_bom_items(base, remaining, preps, total_mass, old_dough_cap))
 
     metrics_on = anchor_kind == "flour" and anchor_total is not None and anchor_total > 0
     return FormulaAnalysis(
@@ -660,7 +647,7 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
         final_mix=final_mix,
         final_mix_at_cap=final_mix_at_cap,
         bom=bom,
-        parts=tuple(parts),
+        preps=tuple(preps),
         old_dough_cap_pct=old_dough_cap,
         warnings=tuple(warnings),
     )
@@ -681,7 +668,7 @@ def _grams_by_key(base: list[dict]) -> dict[str, Decimal | None]:
 def _remaining_by_line(base: list[dict], remaining_by_key: dict[str, Decimal | None]) -> dict[int, Decimal | None]:
     """O que sobrou do insumo, de volta a cada LINHA da fórmula.
 
-    O que as partes levaram de um insumo sai das linhas dele na ordem da
+    O que as preps levaram de um insumo sai das linhas dele na ordem da
     fórmula, a primeira primeiro: o levain tira a água da água da massa, e a
     bassinage (escrita depois) fica inteira. Linha sem peso (contagem sem
     grama por unidade) fica ``None``, como sempre ficou.
@@ -724,7 +711,7 @@ def _note_meta(note: Any) -> dict:
     return {"note": text} if text else {}
 
 
-def _bom_items(base: list[dict], remaining: dict, parts: list[FormulaPartAnalysis],
+def _bom_items(base: list[dict], remaining: dict, preps: list[FormulaPrepAnalysis],
                total_mass: Decimal, old_dough_cap: Decimal | None) -> list[dict]:
     bom: list[dict] = []
     for item in base:
@@ -748,18 +735,18 @@ def _bom_items(base: list[dict], remaining: dict, parts: list[FormulaPartAnalysi
             # chega à ficha: sem isso ela morria no ato de publicar.
             "meta": _note_meta(item.get("note")),
         })
-    for part in parts:
-        if part.kind == "old_dough":
+    for prep in preps:
+        if prep.kind == "old_dough":
             continue
-        if not part.has_formula or part.quantity_g is None:
+        if not prep.has_formula or prep.quantity_g is None:
             continue
-        factor = _GRAMS_PER_UNIT.get(part.unit, Decimal(1))
+        factor = _GRAMS_PER_UNIT.get(prep.unit, Decimal(1))
         bom.append({
-            "sku": part.sku,
-            "name": part.name,
-            "role": part.kind,
-            "quantity": quantize(part.quantity_g / factor),
-            "unit": part.unit if part.unit in _GRAMS_PER_UNIT else "g",
+            "sku": prep.sku,
+            "name": prep.name,
+            "role": prep.kind,
+            "quantity": quantize(prep.quantity_g / factor),
+            "unit": prep.unit if prep.unit in _GRAMS_PER_UNIT else "g",
             "is_optional": False,
             "meta": {},
         })
@@ -776,14 +763,14 @@ def _bom_items(base: list[dict], remaining: dict, parts: list[FormulaPartAnalysi
     return bom
 
 
-def derive_bom(formula: dict, part_formulas: dict[str, dict] | None = None) -> list[dict]:
+def derive_bom(formula: dict, prep_formulas: dict[str, dict] | None = None) -> list[dict]:
     """Itens prontos para virar ``RecipeItem``: ``{sku, name, role, quantity, unit, is_optional, meta}``.
 
     A massa velha sai com ``is_optional=True`` e ``meta={"role": "old_dough",
     "cap_pct": ...}`` e ``sku=""``: quem publica troca o SKU pelo da própria
     receita. Avisos moram em :func:`analyze`; aqui só a lista.
     """
-    return list(analyze(formula, part_formulas).bom)
+    return list(analyze(formula, prep_formulas).bom)
 
 
 # ── Escala e padronização ────────────────────────────────────────────────────
@@ -794,16 +781,16 @@ def scale(formula: dict, factor: Decimal | int | str) -> dict:
     ratio = to_decimal(factor)
     if ratio is None or ratio <= 0:
         raise RecipeBookError("FORMULA_INVALID", field="factor", message="O fator de escala precisa ser positivo.")
-    scaled = {**formula, "items": [], "parts": [], "basis_g": None, "standardized": False}
+    scaled = {**formula, "items": [], "preps": [], "basis_g": None, "standardized": False}
     for item in list(formula.get("items") or []):
         quantity = to_decimal(item.get("quantity")) or _ZERO
         scaled["items"].append({**item, "quantity": number_text(quantity * ratio)})
-    for part in list(formula.get("parts") or []):
-        copy = dict(part)
-        quantity = to_decimal(part.get("quantity"))
+    for prep in list(formula.get("preps") or []):
+        copy = dict(prep)
+        quantity = to_decimal(prep.get("quantity"))
         if quantity is not None:
             copy["quantity"] = number_text(quantity * ratio)
-        scaled["parts"].append(copy)
+        scaled["preps"].append(copy)
     return scaled
 
 
@@ -841,7 +828,7 @@ def _range(low, high, maximum=None, note="") -> dict:
 
 
 #: Faixas por métrica; dentro, por ``kind`` da receita (``"*"`` vale para todas)
-#: ou, em ``part_flour_pct``, por tipo de parte. Fonte: Hamelman *Bread*, Suas
+#: ou, em ``prep_flour_pct``, por tipo de prep. Fonte: Hamelman *Bread*, Suas
 #: *Advanced Bread and Pastry*, convenção BBGA. Referência, não regra.
 REFERENCE_RANGES: dict[str, dict[str, dict]] = {
     "salt_pct": {
@@ -871,7 +858,7 @@ REFERENCE_RANGES: dict[str, dict[str, dict]] = {
         "viennoiserie": _range("40", "60", None, "Brioche."),
         "sweet_dough": _range("10", "40", None, "Massa doce."),
     },
-    "part_flour_pct": {
+    "prep_flour_pct": {
         "levain": _range("15", "30", "40", "Farinha pré-fermentada no levain."),
         "poolish": _range("20", "40", "50", "Farinha pré-fermentada no poolish."),
         "biga": _range("30", "50", "60", "Farinha pré-fermentada na biga."),
@@ -929,7 +916,7 @@ def _check_value(code_prefix: str, label: str, metric: str, value: Decimal | Non
 
 
 def check_references(analysis: FormulaAnalysis, kind: str) -> list[FormulaWarning]:
-    """Compara as métricas (e a farinha de cada parte) com a literatura. Nunca bloqueia."""
+    """Compara as métricas (e a farinha de cada prep) com a literatura. Nunca bloqueia."""
     out: list[FormulaWarning] = []
     if analysis.anchor_kind != "flour" or kind in REFERENCE_EXCLUDED_KINDS:
         return out
@@ -939,14 +926,14 @@ def check_references(analysis: FormulaAnalysis, kind: str) -> list[FormulaWarnin
         if value == _ZERO and metric not in _ALWAYS_CHECKED:
             continue
         _check_value("REFERENCE", _METRIC_LABELS[metric], metric, value, reference_for(metric, kind), out)
-    for part in analysis.parts:
-        if part.kind == "old_dough":
-            _check_value("REFERENCE", f"Massa velha ({part.name})", "part_flour_pct", part.cap_pct,
-                         REFERENCE_RANGES["part_flour_pct"].get("old_dough"), out)
+    for prep in analysis.preps:
+        if prep.kind == "old_dough":
+            _check_value("REFERENCE", f"Massa velha ({prep.name})", "prep_flour_pct", prep.cap_pct,
+                         REFERENCE_RANGES["prep_flour_pct"].get("old_dough"), out)
             continue
-        key = part_reference_key({"kind": part.kind, "name": part.name, "entry_ref": part.entry_ref, "sku": part.sku})
-        _check_value("REFERENCE", f"Farinha na parte {part.name}", "part_flour_pct", part.flour_pct,
-                     REFERENCE_RANGES["part_flour_pct"].get(key), out)
+        key = prep_reference_key({"kind": prep.kind, "name": prep.name, "entry_ref": prep.entry_ref, "sku": prep.sku})
+        _check_value("REFERENCE", f"Farinha na prep {prep.name}", "prep_flour_pct", prep.flour_pct,
+                     REFERENCE_RANGES["prep_flour_pct"].get(key), out)
     return out
 
 
@@ -1011,42 +998,40 @@ def validate_formula(formula: Any) -> None:
         if item.get("note") is not None and not isinstance(item.get("note"), str):
             raise _invalid(f"{path}.note", "A anotação do ingrediente precisa ser texto.")
 
-    parts = formula.get("parts", [])
-    if parts is None:
-        parts = []
-    if not isinstance(parts, list):
-        raise _invalid("parts", "As partes precisam ser uma lista.")
+    preps = formula.get("preps", [])
+    if preps is None:
+        preps = []
+    if not isinstance(preps, list):
+        raise _invalid("preps", "As preps precisam ser uma lista.")
     old_dough_seen = False
-    for index, part in enumerate(parts):
-        path = f"parts[{index}]"
-        if not isinstance(part, dict):
-            raise _invalid(path, "Cada parte precisa ser um objeto.")
-        kind = part.get("kind")
-        if kind not in PART_KINDS:
-            raise _invalid(f"{path}.kind", f"Tipo de parte desconhecido; use um de: {', '.join(PART_KINDS)}.")
+    for index, prep in enumerate(preps):
+        path = f"preps[{index}]"
+        if not isinstance(prep, dict):
+            raise _invalid(path, "Cada prep precisa ser um objeto.")
+        kind = prep.get("kind")
+        if kind not in PREP_KINDS:
+            raise _invalid(f"{path}.kind", f"Tipo de prep desconhecido; use um de: {', '.join(PREP_KINDS)}.")
         if kind == "old_dough":
             if old_dough_seen:
                 raise _invalid(f"{path}.kind", "Só pode haver uma massa velha na fórmula.")
             old_dough_seen = True
-            cap = _require_positive(part.get("cap_pct"), f"{path}.cap_pct")
+            cap = _require_positive(prep.get("cap_pct"), f"{path}.cap_pct")
             if cap >= 100:
                 raise _invalid(f"{path}.cap_pct", "O teto da massa velha precisa ser menor que 100%.")
             continue
-        sku = part.get("sku", "")
+        sku = prep.get("sku", "")
         if not isinstance(sku, str):
-            raise _invalid(f"{path}.sku", "O SKU da parte precisa ser texto.")
-        flour_pct = part.get("flour_pct")
-        quantity = part.get("quantity")
-        if kind == "component" and quantity in (None, ""):
-            raise _invalid(f"{path}.quantity", "Informe a quantidade desta receita usada como ingrediente.")
+            raise _invalid(f"{path}.sku", "O SKU da prep precisa ser texto.")
+        flour_pct = prep.get("flour_pct")
+        quantity = prep.get("quantity")
         if flour_pct in (None, "") and quantity in (None, ""):
-            raise _invalid(f"{path}.flour_pct", "A parte precisa de flour_pct ou de quantity.")
+            raise _invalid(f"{path}.flour_pct", "A prep precisa de flour_pct ou de quantity.")
         if flour_pct not in (None, ""):
             pct = _require_positive(flour_pct, f"{path}.flour_pct")
             if pct > 100:
-                raise _invalid(f"{path}.flour_pct", "A farinha da parte não pode passar de 100% da farinha total.")
+                raise _invalid(f"{path}.flour_pct", "A farinha da prep não pode passar de 100% da farinha total.")
         if quantity not in (None, ""):
             _require_positive(quantity, f"{path}.quantity")
-        unit = normalize_unit(part.get("unit") or "g")
+        unit = normalize_unit(prep.get("unit") or "g")
         if unit not in _GRAMS_PER_UNIT:
-            raise _invalid(f"{path}.unit", "A parte é medida em massa (g ou kg).")
+            raise _invalid(f"{path}.unit", "A prep é medida em massa (g ou kg).")

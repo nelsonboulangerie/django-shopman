@@ -63,7 +63,7 @@ def spec(tmp_path, *, tradicao_water="1.5"):
                     {"name": "Água", "quantity": tradicao_water, "unit": "kg", "sku": "AGUA-FILTRADA"},
                     {"name": "Sal", "quantity": "0.04", "unit": "kg", "sku": "SAL-REFINADO"},
                     {"name": "LEVAIN", "quantity": "0.3", "unit": "kg",
-                     "part": {"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment"}},
+                     "prep": {"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment"}},
                 ],
                 "total": {"quantity": str(Decimal("2.34") + Decimal(tradicao_water)), "unit": "kg"},
                 "autolyse": {"sku": "PASTA-AUTOLIZADA", "entry_ref": "massa-pasta-autolizada"},

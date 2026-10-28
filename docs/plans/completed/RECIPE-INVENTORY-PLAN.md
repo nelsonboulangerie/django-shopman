@@ -8,7 +8,7 @@
 > referência** sem tirar dele a decisão.
 >
 > Referência de domínio: `~/Downloads/HANDOFF-receitas-panificacao.md` (modelo BBGA/Hamelman
-> decidido pelo dono: receita base → partes → mistura final calculada). Este plano é a
+> decidido pelo dono: receita base → preps → mistura final calculada). Este plano é a
 > implementação; a decisão de arquitetura mora na [ADR-027](../../decisions/adr-027-recipe-book-authoring-vs-execution.md).
 
 ## 0. A decisão em uma frase
@@ -24,7 +24,7 @@ relatórios, códigos cegos, seed e `WorkOrder.recipe` não mudam de significado
 
 **Nem um nem outro: a lente vem do conteúdo.** Uma receita que tem farinha ganha a lente de
 padaria (porcentagem do padeiro sobre as farinhas, hidratação, sal, farinha pré-fermentada,
-partes e mistura final). Uma receita sem farinha ganha a mesma tela com âncora diferente
+preps e mistura final). Uma receita sem farinha ganha a mesma tela com âncora diferente
 (massa total = 100%, ou um ingrediente-âncora escolhido — o leite de um creme, o chocolate de
 uma ganache). Não há botão "modo padaria" para esquecer ligado, nem tela paralela para
 divergir. O que muda é:
@@ -36,8 +36,8 @@ divergir. O que muda é:
   creme e fala em % da massa total), editável. O padrão da casa (1000 g) vale para qualquer
   âncora: 1000 g de farinha no pão, 1000 g de massa total no creme, 1000 g do
   ingrediente-âncora numa ganache;
-- **os painéis** que aparecem: métricas de padaria só com âncora `flour`; "partes" só quando
-  há parte; "mistura final" só quando alguma parte tem fórmula conhecida;
+- **os painéis** que aparecem: métricas de padaria só com âncora `flour`; "preps" só quando
+  há prep; "mistura final" só quando alguma prep tem fórmula conhecida;
 - **as referências** (`kind` da receita): pão, viennoiserie, massa doce, recheio, creme,
   molho, bebida, outra — cada uma com a sua tabela de valores da literatura.
 
@@ -85,7 +85,7 @@ Regras:
   `version_ref` (uma linha em `scheduling.py`) para o B.I. cruzar fornada × versão.
 - **Bootstrap idempotente** das fichas que já existem: `bootstrap_recipe_book` cria uma entry
   por `Recipe` (ref igual) com a versão 1 publicada, `source.kind="ficha"`, e a fórmula na
-  forma base (partes dissolvidas — §4). O seed chama isso no fim de `_seed_recipes`.
+  forma base (preps dissolvidas — §4). O seed chama isso no fim de `_seed_recipes`.
 
 ## 3. Schema de `RecipeVersion.formula`
 
@@ -100,7 +100,7 @@ Regras:
     {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "g"},
     {"sku": "OVOS", "name": "Ovos", "role": "egg", "quantity": 3, "unit": "un", "grams_per_unit": 55}
   ],
-  "parts": [
+  "preps": [
     {"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20, "quantity": 400, "unit": "g"},
     {"sku": "PASTA-AUTOLIZADA", "entry_ref": "massa-pasta-autolizada", "kind": "autolyse", "flour_pct": 60, "quantity": 960, "unit": "g"},
     {"kind": "old_dough", "cap_pct": 20}
@@ -111,13 +111,17 @@ Regras:
 - `items` é a **receita base**: a fórmula total, com TODA a farinha (a do levain, da
   autólise e do yudane inclusive). `sku=""` = ingrediente ainda não casado com insumo do
   sistema (permitido em rascunho; **publicar exige todo `sku` preenchido**).
+- Um item pode ter receita própria (creme, recheio, cobertura) sem virar prep: ele é um
+  ingrediente pronto da receita-mãe, medido por quantidade, e a BOM multinível explode
+  sua composição quando necessário. Só entra em `preps` o que redistribui ingredientes
+  que já estão declarados na fórmula global.
 - `role` ∈ `flour | liquid | salt | yeast | fat | sugar | egg | dairy | inclusion | other`
   — sugerido por heurística multilíngue (`classify_ingredient`), editável. É o `role` que
   alimenta hidratação (`liquid`/flour), sal, fermento, e a âncora `flour`.
 - `unit` ∈ `g | kg | ml | L | un`. Massa vira grama. Volume vira grama pela
   `density_g_per_ml` do item (ou 1,0 para `role=liquid` sem densidade, com aviso).
   Contagem só entra na conta com `grams_per_unit`; sem ele, fica fora com aviso.
-- `parts` descreve **quanto da base passa por uma parte**. Uma parte com `sku` precisa de
+- `preps` descreve **quanto da base passa por uma prep**. Uma prep com `sku` precisa de
   uma `RecipeEntry` com versão atual (a composição vem de lá, proporcionalmente). Com
   âncora `flour`, o padeiro declara `flour_pct` (farinha pré-fermentada, % da farinha
   total) e `quantity` é derivada; sem âncora `flour`, declara `quantity`.
@@ -132,16 +136,16 @@ Regras:
 
 ## 4. Matemática (Craftsman `contrib/formula/percentages.py`, pura)
 
-`analyze(formula, part_formulas) -> FormulaAnalysis`:
+`analyze(formula, prep_formulas) -> FormulaAnalysis`:
 
 - `anchor_total_g`, `total_mass_g`, `items` com `pct` (= g ÷ âncora × 100);
 - métricas (só com âncora `flour`): `hydration_pct`, `salt_pct`, `yeast_pct`,
   `prefermented_flour_pct`, `fat_pct`, `sugar_pct`, `egg_pct`;
-- `final_mix` = base − conteúdo das partes com fórmula (composição proporcional da versão
-  atual da parte) — **nunca digitada, calculada**;
-- `bom` = `final_mix` + as partes como itens (`LEVAIN 400 g`) — é isto que a ficha de
+- `final_mix` = base − conteúdo das preps com fórmula (composição proporcional da versão
+  atual da prep) — **nunca digitada, calculada**;
+- `bom` = `final_mix` + as preps como itens (`LEVAIN 400 g`) — é isto que a ficha de
   execução recebe. É a defesa contra a dupla contagem da farinha (handoff §3);
-- `warnings`: parte sem fórmula, parte maior que a base, contagem sem `grams_per_unit`,
+- `warnings`: prep sem fórmula, prep maior que a base, contagem sem `grams_per_unit`,
   volume sem densidade, valor fora da referência.
 
 `standardize(formula, basis_g=1000)`, `scale(formula, factor)`, `classify_ingredient(name, sku)`,
@@ -169,12 +173,12 @@ update_draft(version, *, formula=None, yield_quantity=None, yield_unit=None, ste
 publish_version(version, *, actor="") -> Recipe
 diff_versions(a, b) -> FormulaDiff
 bootstrap_entry_from_recipe(recipe) -> RecipeEntry | None                         # idempotente
-part_formulas_for(formula) -> dict[str, dict]                                     # sku → formula da versão atual
+prep_formulas_for(formula) -> dict[str, dict]                                     # sku → formula da versão atual
 ```
 
 Erros: `RecipeBookError(CraftError)` com códigos `FORMULA_INVALID` (campo em `field`),
-`ENTRY_WITHOUT_SKU`, `ITEM_WITHOUT_SKU`, `VERSION_NOT_DRAFT`, `PART_WITHOUT_FORMULA`,
-`PART_EXCEEDS_BASE`, `ENTRY_ARCHIVED`.
+`ENTRY_WITHOUT_SKU`, `ITEM_WITHOUT_SKU`, `VERSION_NOT_DRAFT`, `PREP_WITHOUT_FORMULA`,
+`PREP_EXCEEDS_BASE`, `ENTRY_ARCHIVED`.
 
 ## 6. Orquestração (backstage)
 
@@ -204,11 +208,11 @@ RecipeBookListProjection: entries: tuple[RecipeEntryCardProjection, ...], kinds:
 RecipeBookAccessProjection: can_view: bool, can_edit: bool, capture_available: bool
 
 FormulaItemProjection: sku, name, role, role_label, quantity_display, quantity_g: str, unit, pct_display, is_anchor: bool, matched: bool
-FormulaPartProjection: sku, entry_ref, name, kind, kind_label, flour_pct_display, quantity_display, cap_pct_display, has_formula: bool
+FormulaPrepProjection: sku, entry_ref, name, kind, kind_label, flour_pct_display, quantity_display, cap_pct_display, has_formula: bool
 FormulaMetricProjection: code, label, value_display, low_display, high_display, max_display, tone, note
 FormulaWarningProjection: code, message, tone
 FormulaLensProjection: is_bakery: bool, anchor_kind, anchor_label, basis_display, standardized: bool,
-    anchor_total_display, total_mass_display, items, final_mix, bom, parts, metrics, warnings
+    anchor_total_display, total_mass_display, items, final_mix, bom, preps, metrics, warnings
 RecipeVersionProjection: id, number, status, status_label, label, yield_quantity: str, yield_unit, yield_display,
     source_kind, source_label, created_by, created_at_display, published_at_display, notes, steps: tuple[str, ...],
     lens: FormulaLensProjection, formula: dict, origin: dict
@@ -219,7 +223,7 @@ RecipeCompareMetricProjection: label, a_display, b_display, delta_display, tone
 RecipeCompareProjection: a_title, b_title, rows, metrics
 ReferenceRangeProjection: code, label, low_display, high_display, max_display, note
 RecipeReferenceProjection: kind, kind_label, ranges
-IngredientOptionProjection: sku, name, unit, role, is_part: bool, entry_ref
+IngredientOptionProjection: sku, name, unit, role, has_recipe: bool, entry_ref
 CaptureItemProjection: name, original_text, quantity: str, unit, role, sku, match_confidence: str, candidates: tuple[IngredientOptionProjection, ...]
 RecipeCaptureDraftProjection: name, kind, language, yield_quantity: str, yield_unit, items, steps: tuple[str, ...], notes, formula: dict
 ```
@@ -260,10 +264,10 @@ Produção"). Sem permissão nova, sem migração de permissão. Erros no dialet
   As duas primeiras chamam `capture` e caem no editor com o rascunho preenchido e os
   ingredientes casados (com candidatos para escolher).
 - `/recipes/[ref]` — a receita: lente (âncora, tabela com g e %, métricas com faixa de
-  referência, partes, mistura final, BOM), linha do tempo das versões, "Nova versão",
+  referência, preps, mistura final, BOM), linha do tempo das versões, "Nova versão",
   "Publicar" (com o diff para a versão atual), "Comparar com…", "Associar SKU".
 - `/recipes/[ref]/edit` — o editor: tabela editável (nome, insumo, quantidade, unidade,
-  papel), partes, rendimento, passos; **prévia da lente** por `recipes/lens/` com debounce;
+  papel), preps, rendimento, passos; **prévia da lente** por `recipes/lens/` com debounce;
   botão **Padronizar para 1000 g de farinha** (mostra o antes/depois e guarda `origin`).
 - `/recipes/compare` — duas versões lado a lado (mesma receita ou receitas diferentes),
   deltas por ingrediente e por métrica.
@@ -281,7 +285,7 @@ Produção"). Sem permissão nova, sem migração de permissão. Erros no dialet
 | R5 cofre (`export_backup`/`import_backup`) | `shopman/shop/backup` | ✅ abas `recipe_entries` e `recipe_versions` (01/10/2026); `is_current` restaura a `current_version` |
 
 Decisões tomadas na integração (03/09): fermento natural (cultura) não é `yeast` (fica fora da
-faixa de fermento biológico); `prefermented_flour_pct` soma só partes `preferment` (autólise
+faixa de fermento biológico); `prefermented_flour_pct` soma só preps `preferment` (autólise
 e yudane não fermentam); água pesada em grama publica contra insumo em litro pela densidade
 (1,0 é física; outro líquido precisa de densidade declarada na linha, no `RecipeItem.meta` ou
 no `Material.metadata`); publicar leva o perfil do insumo (`Material.metadata`) para a linha

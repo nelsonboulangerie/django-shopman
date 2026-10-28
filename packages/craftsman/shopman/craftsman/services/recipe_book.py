@@ -22,12 +22,12 @@ from django.db import models, transaction
 from django.utils import timezone
 from shopman.craftsman.contrib.formula.percentages import (
     ANCHOR_KINDS,
-    PART_KINDS,
+    PREP_KINDS,
     REFERENCE_RANGES,
     ROLES,
     FormulaAnalysis,
     FormulaItemAnalysis,
-    FormulaPartAnalysis,
+    FormulaPrepAnalysis,
     FormulaWarning,
     analyze,
     check_references,
@@ -37,7 +37,7 @@ from shopman.craftsman.contrib.formula.percentages import (
     looks_like_flour,
     normalize_text,
     number_text,
-    part_kind_from_name,
+    prep_kind_from_name,
     quantize,
     reference_for,
     scale,
@@ -50,7 +50,7 @@ from shopman.craftsman.exceptions import RecipeBookError
 __all__ = [
     "ANCHOR_KINDS",
     "BAKERY_KINDS",
-    "PART_KINDS",
+    "PREP_KINDS",
     "REFERENCE_RANGES",
     "ROLES",
     "FormulaAnalysis",
@@ -58,7 +58,7 @@ __all__ = [
     "FormulaDiffMetric",
     "FormulaDiffRow",
     "FormulaItemAnalysis",
-    "FormulaPartAnalysis",
+    "FormulaPrepAnalysis",
     "FormulaWarning",
     "RecipeBookError",
     "analyze",
@@ -73,8 +73,8 @@ __all__ = [
     "execution_in_sync",
     "item_grams",
     "looks_like_flour",
-    "part_formulas_for",
-    "part_kind_from_name",
+    "prep_formulas_for",
+    "prep_kind_from_name",
     "publish_version",
     "reference_for",
     "scale",
@@ -87,7 +87,7 @@ __all__ = [
 _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _MASS_UNITS = ("kg", "g", "mg")
-_MAX_PART_DEPTH = 5
+_MAX_PREP_DEPTH = 5
 
 
 # ── Diff ─────────────────────────────────────────────────────────────────────
@@ -221,8 +221,8 @@ def publish_version(version, *, actor: str = "", default_item_meta: dict[str, di
     """Publica a versão: escreve a ficha de execução e vira a atual da receita.
 
     Recusa (``RecipeBookError``): versão que não é rascunho, receita arquivada
-    ou sem SKU, ingrediente ou parte sem SKU, parte sem fórmula conhecida e
-    parte maior que a base. A unidade de cada item ainda passa pelo
+    ou sem SKU, ingrediente ou prep sem SKU, prep sem fórmula conhecida e
+    prep maior que a base. A unidade de cada item ainda passa pelo
     ``RecipeItem.clean`` (a unidade do SKU no catálogo fala lá) e a ficha pelo
     invariante de massa do ``Recipe.save``.
 
@@ -245,13 +245,13 @@ def publish_version(version, *, actor: str = "", default_item_meta: dict[str, di
     for index, item in enumerate(formula.get("items") or []):
         if not str(item.get("sku") or "").strip():
             raise RecipeBookError("ITEM_WITHOUT_SKU", field=f"items[{index}].sku", name=item.get("name", ""))
-    for index, part in enumerate(formula.get("parts") or []):
-        if part.get("kind") != "old_dough" and not str(part.get("sku") or "").strip():
-            raise RecipeBookError("ITEM_WITHOUT_SKU", field=f"parts[{index}].sku", name=part.get("name", ""))
+    for index, prep in enumerate(formula.get("preps") or []):
+        if prep.get("kind") != "old_dough" and not str(prep.get("sku") or "").strip():
+            raise RecipeBookError("ITEM_WITHOUT_SKU", field=f"preps[{index}].sku", name=prep.get("name", ""))
 
-    analysis = analyze(formula, part_formulas_for(formula))
+    analysis = analyze(formula, prep_formulas_for(formula))
     for warning in analysis.warnings:
-        if warning.code in ("PART_WITHOUT_FORMULA", "PART_EXCEEDS_BASE"):
+        if warning.code in ("PREP_WITHOUT_FORMULA", "PREP_EXCEEDS_BASE"):
             raise RecipeBookError(warning.code, field=warning.metric, message=warning.message)
 
     now = timezone.now()
@@ -422,14 +422,14 @@ def _first_validation_message(exc: ValidationError) -> tuple[str, str]:
 
 
 def _formula_field_for_sku(formula: dict, sku: str, attribute: str = "") -> str:
-    """O caminho na fórmula (``items[2].unit``, ``parts[0]``) do SKU que a ficha recusou."""
+    """O caminho na fórmula (``items[2].unit``, ``preps[0]``) do SKU que a ficha recusou."""
     suffix = f".{attribute}" if attribute else ""
     for index, item in enumerate(list((formula or {}).get("items") or [])):
         if str(item.get("sku") or "").strip() == sku:
             return f"items[{index}]{suffix}"
-    for index, part in enumerate(list((formula or {}).get("parts") or [])):
-        if str(part.get("sku") or "").strip() == sku:
-            return f"parts[{index}]{suffix}"
+    for index, prep in enumerate(list((formula or {}).get("preps") or [])):
+        if str(prep.get("sku") or "").strip() == sku:
+            return f"preps[{index}]{suffix}"
     return "items"
 
 
@@ -516,22 +516,22 @@ def _merge_bom_lines(bom, entry, version) -> list[dict]:
     return list(merged.values())
 
 
-# ── Partes ───────────────────────────────────────────────────────────────────
+# ── Preps ───────────────────────────────────────────────────────────────────
 
 
-def part_formulas_for(formula: dict) -> dict[str, dict]:
-    """``sku`` de cada parte → fórmula da versão atual da receita da parte."""
+def prep_formulas_for(formula: dict) -> dict[str, dict]:
+    """``sku`` de cada prep → fórmula da versão atual da receita da prep."""
     from shopman.craftsman.models import RecipeEntry
 
     out: dict[str, dict] = {}
-    for part in list((formula or {}).get("parts") or []):
-        if part.get("kind") == "old_dough":
+    for prep in list((formula or {}).get("preps") or []):
+        if prep.get("kind") == "old_dough":
             continue
-        sku = str(part.get("sku") or "").strip()
+        sku = str(prep.get("sku") or "").strip()
         if not sku:
             continue
         entry = None
-        entry_ref = str(part.get("entry_ref") or "").strip()
+        entry_ref = str(prep.get("entry_ref") or "").strip()
         if entry_ref:
             entry = RecipeEntry.objects.filter(ref=entry_ref).select_related("current_version").first()
         if entry is None or entry.current_version is None:
@@ -556,7 +556,7 @@ def diff_versions(a, b) -> FormulaDiff:
     compara em grama e em % do padeiro. Senão, compara por % da massa total.
     """
     formula_a, formula_b = dict(a.formula or {}), dict(b.formula or {})
-    parts_a, parts_b = part_formulas_for(formula_a), part_formulas_for(formula_b)
+    preps_a, preps_b = prep_formulas_for(formula_a), prep_formulas_for(formula_b)
     both_flour = all(
         (f.get("anchor") or {}).get("kind") == "flour" and (analyze(f).anchor_total_g or _ZERO) > 0
         for f in (formula_a, formula_b)
@@ -567,8 +567,8 @@ def diff_versions(a, b) -> FormulaDiff:
         basis = "flour_1000"
     else:
         basis = "total_pct"
-    analysis_a = analyze(formula_a, parts_a)
-    analysis_b = analyze(formula_b, parts_b)
+    analysis_a = analyze(formula_a, preps_a)
+    analysis_b = analyze(formula_b, preps_b)
 
     def rows_of(analysis: FormulaAnalysis) -> dict[str, tuple[FormulaItemAnalysis, Decimal | None]]:
         out: dict[str, tuple[FormulaItemAnalysis, Decimal | None]] = {}
@@ -651,11 +651,11 @@ def bootstrap_entry_from_recipe(recipe):
     ponto. Dissolver a massa ali dentro inventava uma fórmula que a ficha nunca
     declarou: a baguete aparecia com a composição da Massa Tradição como se
     fosse dela, com "farinha pré-fermentada 100%" e avisos de padaria que eram
-    puro artefato da dissolução. Parte é FRAÇÃO da fórmula; a 100% ela não é
-    parte, é o insumo — e uma peça, por natureza, é feita **de** massa, não
+    puro artefato da dissolução. Prep é FRAÇÃO da fórmula; a 100% ela não é
+    prep, é o insumo — e uma peça, por natureza, é feita **de** massa, não
     **com** farinha. A lente de padaria mora na fórmula (que é onde a farinha
     está); a peça fala em processo. Fórmula que rende massa continua dissolvendo
-    normalmente: ali a parte é fração de verdade (a Massa Tradição leva 84% de
+    normalmente: ali a prep é fração de verdade (a Massa Tradição leva 84% de
     pasta autolizada e 15% de levain).
     """
     from shopman.craftsman.models import RecipeEntry, RecipeVersion
@@ -673,19 +673,20 @@ def bootstrap_entry_from_recipe(recipe):
 
     with transaction.atomic():
         base: dict[tuple[str, str], dict] = {}
-        parts: list[dict] = []
+        preps: list[dict] = []
         origin_items: list[dict] = []
         for item in recipe.items.filter(is_optional=False).order_by("sort_order"):
             origin_items.append({"sku": item.input_sku, "quantity": str(item.quantity), "unit": item.unit})
             sub = None if rende_peca else _active_mass_recipe_for(item.input_sku, exclude_pk=recipe.pk)
             grams = _mass_grams(item.quantity, item.unit)
-            if sub is not None and grams is not None:
-                part_entry = bootstrap_entry_from_recipe(sub)
+            prep_kind = prep_kind_from_name(sub.name, sub.ref, sub.output_sku) if sub is not None else ""
+            if sub is not None and grams is not None and prep_kind:
+                prep_entry = bootstrap_entry_from_recipe(sub)
                 flour_g = _dissolve(sub, grams, base, depth=1)
-                parts.append({
+                preps.append({
                     "sku": item.input_sku,
-                    "entry_ref": part_entry.ref if part_entry is not None else sub.ref,
-                    "kind": part_kind_from_name(sub.name, sub.ref, sub.output_sku),
+                    "entry_ref": prep_entry.ref if prep_entry is not None else sub.ref,
+                    "kind": prep_kind,
                     "name": sub.name,
                     "quantity": number_text(grams),
                     "unit": "g",
@@ -699,16 +700,16 @@ def bootstrap_entry_from_recipe(recipe):
         flour_total = sum((g for g in (item_grams(it) for it in items if it["role"] == "flour") if g is not None), _ZERO)
         mass_total = sum((g for g in (item_grams(it) for it in items) if g is not None), _ZERO)
         anchor_kind = suggest_anchor_kind(flour_total, mass_total, _entry_kind(recipe.ref, recipe.name))
-        for part in parts:
-            flour_g = part.pop("_flour_g")
+        for prep in preps:
+            flour_g = prep.pop("_flour_g")
             if anchor_kind == "flour" and flour_g > 0:
-                part["flour_pct"] = number_text(flour_g / flour_total * _HUNDRED)
+                prep["flour_pct"] = number_text(flour_g / flour_total * _HUNDRED)
         formula = {
             "anchor": {"kind": anchor_kind},
             "basis_g": None,
             "standardized": False,
             "items": items,
-            "parts": parts,
+            "preps": preps,
         }
         validate_formula(formula)
 
@@ -742,7 +743,7 @@ def bootstrap_entry_from_recipe(recipe):
 
 
 def _active_mass_recipe_for(sku: str, *, exclude_pk=None):
-    """A ficha ativa que produz ``sku`` em massa, ou ``None``: é o que faz de um item uma parte."""
+    """A ficha ativa que produz ``sku`` em massa, ou ``None``: é o que faz de um item uma prep."""
     from shopman.craftsman.models import Recipe
     from shopman.utils import units
 
@@ -758,11 +759,11 @@ def _active_mass_recipe_for(sku: str, *, exclude_pk=None):
 
 
 def _dissolve(sub, grams: Decimal, base: dict, *, depth: int) -> Decimal:
-    """Soma na base a composição de ``grams`` da parte, proporcional aos insumos dela.
+    """Soma na base a composição de ``grams`` da prep, proporcional aos insumos dela.
 
     A proporção é a da composição (soma dos insumos), não do ``batch_size``: a
-    perda da ficha da parte é do forno e da bacia, não da fórmula. Devolve a
-    farinha (g) que a parte trouxe.
+    perda da ficha da prep é do forno e da bacia, não da fórmula. Devolve a
+    farinha (g) que a prep trouxe.
     """
     components = list(sub.items.filter(is_optional=False).order_by("sort_order"))
     weighed = []
@@ -775,7 +776,7 @@ def _dissolve(sub, grams: Decimal, base: dict, *, depth: int) -> Decimal:
     factor = grams / total
     flour_g = _ZERO
     for component, as_dict, component_grams in weighed:
-        nested = _active_mass_recipe_for(component.input_sku, exclude_pk=sub.pk) if depth < _MAX_PART_DEPTH else None
+        nested = _active_mass_recipe_for(component.input_sku, exclude_pk=sub.pk) if depth < _MAX_PREP_DEPTH else None
         if nested is not None and component_grams is not None:
             flour_g += _dissolve(nested, component_grams * factor, base, depth=depth + 1)
             continue

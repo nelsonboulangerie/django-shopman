@@ -57,8 +57,8 @@ def test_bootstrap_over_sheets_shaped_like_the_seed():
     (version,) = detail.versions
     assert version.source_kind == "ficha"
     assert tuple(step.name for step in version.steps) == ("Pesagem", "Mistura", "Fermentação")
-    assert {part.entry_ref for part in version.lens.parts} == {"creme-levain", "massa-pasta-autolizada"}
-    assert all(part.has_formula for part in version.lens.parts)
+    assert {prep.entry_ref for prep in version.lens.preps} == {"creme-levain", "massa-pasta-autolizada"}
+    assert all(prep.has_formula for prep in version.lens.preps)
     assert {item.sku for item in version.lens.bom} == {"PASTA-AUTOLIZADA", "LEVAIN", "SAL-REFINADO"}
 
     # Idempotente: rodar de novo não duplica nem toca a ficha.
@@ -88,7 +88,7 @@ def test_a_piece_reaches_the_screen_as_the_sheet_declares_it():
     assert version.yield_unit == "un"
     assert version.lens.is_bakery is False
     assert version.lens.anchor_kind == "total"
-    assert version.lens.parts == ()
+    assert version.lens.preps == ()
     assert version.lens.warnings == ()
     assert [(item.sku, item.quantity_g) for item in version.lens.items] == [("MASSA-TRADICAO", "280")]
     assert [item.sku for item in version.lens.bom] == ["MASSA-TRADICAO"]
@@ -98,7 +98,7 @@ def test_a_piece_reaches_the_screen_as_the_sheet_declares_it():
     cards = {card.ref: card for card in build_recipe_book().entries}
     assert cards["baguete"].hydration_display == ""
     assert cards["baguete"].anchor_kind == "total"
-    # E a fórmula continua com a lente: ali a parte é fração de verdade.
+    # E a fórmula continua com a lente: ali a prep é fração de verdade.
     assert cards["massa-tradicao"].anchor_kind == "flour"
     assert cards["massa-tradicao"].hydration_display != ""
 
@@ -135,7 +135,7 @@ def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):
         (versao,) = build_recipe_entry(ref).versions
         assert versao.yield_quantity == "1", f"{ref} não rende uma unidade"
         assert versao.lens.is_bakery is False, f"{ref} acusa lente de padaria"
-        assert versao.lens.parts == (), f"{ref} ganhou parte fabricada"
+        assert versao.lens.preps == (), f"{ref} ganhou prep fabricada"
         assert versao.lens.warnings == (), f"{ref}: {versao.lens.warnings}"
     massa = build_recipe_entry("massa-tradicao")
     assert massa.versions[0].lens.is_bakery is True

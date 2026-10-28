@@ -628,7 +628,7 @@ def material_profiles_for(formula: dict) -> dict[str, dict]:
 
     skus = {
         str(line.get("sku") or "").strip()
-        for line in [*list(formula.get("items") or []), *list(formula.get("parts") or [])]
+        for line in [*list(formula.get("items") or []), *list(formula.get("preps") or [])]
         if str(line.get("sku") or "").strip()
     }
     if not skus:

@@ -30,7 +30,7 @@ FORMULA = {
         {"sku": "FARINHA-T55", "name": "Farinha", "role": "flour", "quantity": 1000, "unit": "g"},
         {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 650, "unit": "g"},
     ],
-    "parts": [],
+    "preps": [],
 }
 
 
@@ -124,7 +124,7 @@ def _peca(ref, name, sku, dough_sku):
     formula = {
         "anchor": {"kind": "total"},
         "items": [{"sku": dough_sku, "name": "massa", "role": "other", "quantity": 80, "unit": "g"}],
-        "parts": [],
+        "preps": [],
     }
     return _publicar(ref, name, sku, formula=formula, yield_quantity="1", yield_unit="un")
 

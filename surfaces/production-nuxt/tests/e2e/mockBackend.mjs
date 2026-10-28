@@ -571,7 +571,7 @@ const LENS = {
   final_mix_differs: false,
   bom: [],
   bom_differs: false,
-  parts: [],
+  preps: [],
   metrics: [
     {
       code: "hydration",
@@ -823,11 +823,11 @@ const SHEETS = [
 ];
 
 const RECIPE_INGREDIENTS = [
-  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", is_part: false, entry_ref: "", suggested_part_kind: "" },
-  { sku: "AGUA", name: "Água", unit: "kg", role: "liquid", is_part: false, entry_ref: "" },
-  { sku: "SAL", name: "Sal", unit: "kg", role: "salt", is_part: false, entry_ref: "" },
-  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", is_part: true, entry_ref: "levain", suggested_part_kind: "preferment" },
-  { sku: "CREME-CONFEITEIRO", name: "Creme confeiteiro", unit: "g", role: "dairy", is_part: true, entry_ref: "creme-confeiteiro", suggested_part_kind: "component" },
+  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", has_recipe: false, entry_ref: "", suggested_prep_kind: "" },
+  { sku: "AGUA", name: "Água", unit: "kg", role: "liquid", has_recipe: false, entry_ref: "" },
+  { sku: "SAL", name: "Sal", unit: "kg", role: "salt", has_recipe: false, entry_ref: "" },
+  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", has_recipe: true, entry_ref: "levain", suggested_prep_kind: "preferment" },
+  { sku: "CREME-CONFEITEIRO", name: "Creme confeiteiro", unit: "g", role: "dairy", has_recipe: true, entry_ref: "creme-confeiteiro", suggested_prep_kind: "" },
 ];
 
 const RECIPE_REFERENCE = {
@@ -835,12 +835,12 @@ const RECIPE_REFERENCE = {
     kind: "bread",
     kind_label: "Pão",
     ranges: [
-      { code: "part_flour_pct:levain", label: "Farinha na parte: Levain", low_display: "15%", high_display: "30%", max_display: "40%", note: "Farinha pré-fermentada no levain." },
-      { code: "part_flour_pct:poolish", label: "Farinha na parte: Poolish", low_display: "20%", high_display: "40%", max_display: "50%", note: "" },
-      { code: "part_flour_pct:biga", label: "Farinha na parte: Biga", low_display: "30%", high_display: "50%", max_display: "60%", note: "" },
-      { code: "part_flour_pct:soaker", label: "Farinha na parte: Grãos hidratados", low_display: "10%", high_display: "20%", max_display: "30%", note: "" },
-      { code: "part_flour_pct:autolyse", label: "Farinha na parte: Autólise", low_display: "0%", high_display: "100%", max_display: "100%", note: "" },
-      { code: "part_flour_pct:old_dough", label: "Farinha na parte: Massa velha", low_display: "15%", high_display: "25%", max_display: "30%", note: "" },
+      { code: "prep_flour_pct:levain", label: "Farinha na prep: Levain", low_display: "15%", high_display: "30%", max_display: "40%", note: "Farinha pré-fermentada no levain." },
+      { code: "prep_flour_pct:poolish", label: "Farinha na prep: Poolish", low_display: "20%", high_display: "40%", max_display: "50%", note: "" },
+      { code: "prep_flour_pct:biga", label: "Farinha na prep: Biga", low_display: "30%", high_display: "50%", max_display: "60%", note: "" },
+      { code: "prep_flour_pct:soaker", label: "Farinha na prep: Grãos hidratados", low_display: "10%", high_display: "20%", max_display: "30%", note: "" },
+      { code: "prep_flour_pct:autolyse", label: "Farinha na prep: Autólise", low_display: "0%", high_display: "100%", max_display: "100%", note: "" },
+      { code: "prep_flour_pct:old_dough", label: "Farinha na prep: Massa velha", low_display: "15%", high_display: "25%", max_display: "30%", note: "" },
     ],
   },
 };

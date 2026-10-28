@@ -3,7 +3,7 @@
 RECIPE-MODELING-BRIEF §0, item 2: a lista de pesagem lia ficha × coeficiente, e
 ``final_mix``/``final_mix_at_cap`` só existiam na lente do inventário.
 
-Medido em 19/10/2026: a ficha publicada JÁ é a mistura final + as partes prontas
+Medido em 19/10/2026: a ficha publicada JÁ é a mistura final + as preps prontas
 (``_bom_items``), então a pesagem sem massa velha bate com ``final_mix`` por
 construção, e o primeiro teste trava isso. O que não chegava era a massa velha:
 ela é linha opcional (fora do consumo), a pesagem a descartava, e o padeiro que
@@ -31,11 +31,11 @@ LEVAIN_FORMULA = {
         {"sku": "FARINHA-T55", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
         {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
     ],
-    "parts": [],
+    "preps": [],
 }
 
 
-def _formula(parts):
+def _formula(preps):
     return {
         "anchor": {"kind": "flour"},
         "basis_g": 1000,
@@ -45,7 +45,7 @@ def _formula(parts):
             {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "g"},
             {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
         ],
-        "parts": parts,
+        "preps": preps,
     }
 
 
@@ -55,9 +55,9 @@ def _publicar_levain():
     recipe_book.publish_version(version)
 
 
-def _publicar_massa(parts):
+def _publicar_massa(preps):
     entry = recipe_book.create_entry(ref="massa-mf", name="Massa MF", kind="bread", output_sku="MASSA-MF")
-    formula = _formula(parts)
+    formula = _formula(preps)
     version = recipe_book.create_version(entry, formula=formula, yield_quantity="1720", yield_unit="g")
     recipe = recipe_book.publish_version(version)
     return recipe, formula
@@ -81,7 +81,7 @@ def test_sem_massa_velha_a_pesagem_e_a_mistura_final_mais_as_partes():
     craft.plan(recipe, Decimal("1720"), date=date.today())
 
     ticket = _ticket(recipe)
-    analysis = analyze(formula, recipe_book.part_formulas_for(formula))
+    analysis = analyze(formula, recipe_book.prep_formulas_for(formula))
     final_mix = {item.sku: item.grams for item in analysis.final_mix}
 
     pesos = {ing.sku: Decimal(ing.theoretical_g) for ing in ticket.ingredients}
@@ -89,12 +89,12 @@ def test_sem_massa_velha_a_pesagem_e_a_mistura_final_mais_as_partes():
     assert pesos["FARINHA-T55"] == final_mix["FARINHA-T55"] == Decimal("800")
     assert pesos["AGUA-FILTRADA"] == final_mix["AGUA-FILTRADA"] == Decimal("500")
     assert pesos["SAL-REFINADO"] == final_mix["SAL-REFINADO"]
-    # A parte pronta entra inteira, como linha de preparo.
+    # A prep pronta entra inteira, como linha de preparo.
     assert pesos["LEVAIN-MF"] == Decimal("400")
     assert next(i for i in ticket.ingredients if i.sku == "LEVAIN-MF").is_subrecipe
     assert ticket.old_dough is None
     assert ticket.output_quantity_display == "1720 g"
-    # O preparo da parte continua com o ticket dele, na quantidade que a massa pede.
+    # O preparo da prep continua com o ticket dele, na quantidade que a massa pede.
     pesagem = build_production_weighing(selected_date=date.today())
     levain = next(t for t in pesagem.tickets if t.recipe_ref == "levain-mf")
     assert {i.sku: Decimal(i.theoretical_g) for i in levain.ingredients} == {

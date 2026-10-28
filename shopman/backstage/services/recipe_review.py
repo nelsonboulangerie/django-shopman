@@ -200,13 +200,13 @@ def _consumers_by_input() -> dict[str, set[str]]:
 def _dough_of(version: RecipeVersion, dough_names: dict[str, str]) -> tuple[str, str]:
     """A massa da peça: o item da fórmula que é ele mesmo uma receita do inventário.
 
-    Só peça (rende unidade) tem massa a destacar. Na massa, a parte (levain,
+    Só peça (rende unidade) tem massa a destacar. Na massa, a prep (levain,
     autolisada) é fração da fórmula, não "a massa" dela.
     """
     if version.yield_unit != RecipeVersion.YieldUnit.UNIT:
         return "", ""
     formula = version.formula or {}
-    for line in [*(formula.get("parts") or []), *(formula.get("items") or [])]:
+    for line in [*(formula.get("preps") or []), *(formula.get("items") or [])]:
         sku = str(line.get("sku") or "")
         if sku and sku in dough_names and sku != version.entry.output_sku:
             return sku, dough_names[sku]

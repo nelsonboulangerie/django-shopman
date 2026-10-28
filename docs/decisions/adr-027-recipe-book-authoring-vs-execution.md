@@ -44,9 +44,12 @@ Duas opções foram consideradas:
    carimba `Recipe.meta["version_ref"]`. A ficha continua **uma por SKU e com `ref`
    estável**: nada que hoje aponta por `ref` precisa mudar.
 3. **A fórmula é base-first** (modelo do dono, BBGA/Hamelman): `formula.items` é a receita
-   total com toda a farinha, `formula.parts` diz quanto passa por levain/autólise/yudane,
+   total com toda a farinha, `formula.preps` diz quanto passa por levain/autólise/yudane,
    e a **mistura final e o BOM são derivados**, nunca digitados. É isso que evita a dupla
-   contagem da farinha quando a parte tem ordem de produção própria.
+   contagem da farinha quando a prep tem ordem de produção própria.
+   Ingrediente com receita própria não é automaticamente prep: creme, recheio e cobertura
+   continuam em `items`, pela quantidade pronta. `preps` é reservado à redistribuição da
+   fórmula global; massa velha é a substituição proporcional dessa fórmula.
 4. **A lente de padaria vem do conteúdo, não de um modo.** Não há "modo padaria": a
    receita que tem farinha ganha âncora `flour` e as métricas do padeiro; a que não tem
    ganha âncora `total` ou um ingrediente-âncora. Uma tela, painéis condicionais.

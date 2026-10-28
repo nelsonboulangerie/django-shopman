@@ -4,7 +4,7 @@ import {
   PRODUCTION_MODE_ALL,
   PRODUCTION_MODE_FILTER_OPTIONS,
   addItem,
-  addPart,
+  addPrep,
   anchorLabel,
   anchorTotalOf,
   bookQuery,
@@ -13,7 +13,7 @@ import {
   downscaleTarget,
   emptyFormula,
   emptyItem,
-  emptyPart,
+  emptyPrep,
   errorField,
   favoriteActionHint,
   favoriteToggleLabel,
@@ -28,14 +28,14 @@ import {
   kindLabel,
   moveItem,
   originLines,
-  partReferenceCode,
+  prepReferenceCode,
   referenceGuidance,
   outputMediaType,
   parseVersionRef,
-  partKindLabel,
+  prepKindLabel,
   pctOf,
   removeItem,
-  removePart,
+  removePrep,
   roleLabel,
   setAnchor,
   splitDataUrl,
@@ -50,7 +50,7 @@ import {
   totalMassOf,
   unmatchedItems,
   updateItem,
-  updatePart,
+  updatePrep,
   versionRefLabel,
 } from "../../app/presentation/recipeBook";
 import type {
@@ -73,7 +73,7 @@ function formula(over: Partial<Formula> = {}): Formula {
       emptyItem({ sku: "AGUA", name: "Água", role: "liquid", quantity: 0.7, unit: "kg" }),
       emptyItem({ sku: "SAL", name: "Sal", role: "salt", quantity: 20, unit: "g" }),
     ],
-    parts: [],
+    preps: [],
     ...over,
   };
 }
@@ -150,7 +150,7 @@ function lensItem(over: Partial<FormulaItemProjection> = {}): FormulaItemProject
 
 // ── Vocabulário e tom ───────────────────────────────────────────────────────
 describe("labels", () => {
-  it("translates roles, kinds, part kinds and anchors; unknown falls to a calm default", () => {
+  it("translates roles, kinds, prep kinds and anchors; unknown falls to a calm default", () => {
     expect(roleLabel("flour")).toBe("Farinha");
     expect(roleLabel("liquid")).toBe("Líquido");
     expect(roleLabel("weird")).toBe("Outro");
@@ -158,8 +158,8 @@ describe("labels", () => {
     expect(kindLabel("sweet_dough")).toBe("Massa doce");
     expect(kindLabel("cookie")).toBe("Biscoito");
     expect(kindLabel("nope")).toBe("Outra");
-    expect(partKindLabel("old_dough")).toBe("Massa velha");
-    expect(partKindLabel("custom")).toBe("custom");
+    expect(prepKindLabel("old_dough")).toBe("Massa velha");
+    expect(prepKindLabel("custom")).toBe("custom");
     expect(anchorLabel("flour")).toBe("Farinhas totais");
   });
 
@@ -201,7 +201,7 @@ describe("versionRefLabel / parseVersionRef", () => {
 // ── Fórmula: vazio e edição imutável ────────────────────────────────────────
 describe("emptyFormula and immutable edits", () => {
   it("starts empty with the requested anchor", () => {
-    expect(emptyFormula()).toEqual({ anchor: { kind: "flour" }, basis_g: null, standardized: false, items: [], parts: [] });
+    expect(emptyFormula()).toEqual({ anchor: { kind: "flour" }, basis_g: null, standardized: false, items: [], preps: [] });
     expect(emptyFormula("total").anchor).toEqual({ kind: "total" });
     expect(emptyFormula("ingredient", "LEITE").anchor).toEqual({ kind: "ingredient", sku: "LEITE" });
   });
@@ -238,25 +238,25 @@ describe("emptyFormula and immutable edits", () => {
     expect(moveItem(base, 0, 3).items.map((item) => item.name)).toEqual(["farinha de centeio", "Água", "Sal", "Farinha T65"]);
   });
 
-  it("parts follow the same immutable discipline", () => {
+  it("preps follow the same immutable discipline", () => {
     const base = formula();
-    const withPart = addPart(base, emptyPart("preferment"));
-    expect(withPart.parts).toHaveLength(1);
-    expect(base.parts).toHaveLength(0);
-    const set = updatePart(withPart, 0, { sku: "LEVAIN", flour_pct: 20 });
-    expect(set.parts[0]).toMatchObject({ kind: "preferment", sku: "LEVAIN", flour_pct: 20 });
-    expect(withPart.parts[0]?.sku).toBe("");
-    expect(removePart(set, 0).parts).toHaveLength(0);
-    expect(emptyPart()).toMatchObject({ kind: "component", quantity: null, unit: "g" });
-    expect(emptyPart("old_dough")).toEqual({ kind: "old_dough", cap_pct: 20 });
+    const withPrep = addPrep(base, emptyPrep("preferment"));
+    expect(withPrep.preps).toHaveLength(1);
+    expect(base.preps).toHaveLength(0);
+    const set = updatePrep(withPrep, 0, { sku: "LEVAIN", flour_pct: 20 });
+    expect(set.preps[0]).toMatchObject({ kind: "preferment", sku: "LEVAIN", flour_pct: 20 });
+    expect(withPrep.preps[0]?.sku).toBe("");
+    expect(removePrep(set, 0).preps).toHaveLength(0);
+    expect(emptyPrep()).toMatchObject({ kind: "preferment", quantity: null, unit: "g" });
+    expect(emptyPrep("old_dough")).toEqual({ kind: "old_dough", cap_pct: 20 });
   });
 
   it("guides formula preparations without turning literature into validation", () => {
-    expect(partReferenceCode({ kind: "preferment", sku: "LEVAIN" }, "Levain")).toBe("part_flour_pct:levain");
-    expect(partReferenceCode({ kind: "preferment", sku: "POOLISH" }, "Poolish")).toBe("part_flour_pct:poolish");
-    expect(partReferenceCode({ kind: "old_dough", cap_pct: 20 })).toBe("part_flour_pct:old_dough");
+    expect(prepReferenceCode({ kind: "preferment", sku: "LEVAIN" }, "Levain")).toBe("prep_flour_pct:levain");
+    expect(prepReferenceCode({ kind: "preferment", sku: "POOLISH" }, "Poolish")).toBe("prep_flour_pct:poolish");
+    expect(prepReferenceCode({ kind: "old_dough", cap_pct: 20 })).toBe("prep_flour_pct:old_dough");
     expect(referenceGuidance({
-      code: "part_flour_pct:levain", label: "Levain", low_display: "15%", high_display: "30%",
+      code: "prep_flour_pct:levain", label: "Levain", low_display: "15%", high_display: "30%",
       max_display: "40%", note: "",
     })).toBe("Referência técnica: 15% a 30%. Acima de 40%, revise a fórmula.");
   });
@@ -318,14 +318,14 @@ describe("formulaFromDraft", () => {
     expect(result.basis_g).toBeNull();
   });
 
-  it("prefers the anchor and parts the server assembled", () => {
+  it("prefers the anchor and preps the server assembled", () => {
     const result = formulaFromDraft(
       draft({
-        formula: { anchor: { kind: "ingredient", sku: "AGUA" }, parts: [{ kind: "old_dough", cap_pct: 15 }], basis_g: 1000, standardized: true },
+        formula: { anchor: { kind: "ingredient", sku: "AGUA" }, preps: [{ kind: "old_dough", cap_pct: 15 }], basis_g: 1000, standardized: true },
       }),
     );
     expect(result.anchor).toEqual({ kind: "ingredient", sku: "AGUA" });
-    expect(result.parts).toEqual([{ kind: "old_dough", cap_pct: 15 }]);
+    expect(result.preps).toEqual([{ kind: "old_dough", cap_pct: 15 }]);
     expect(result.basis_g).toBe(1000);
     expect(result.standardized).toBe(true);
   });
@@ -351,10 +351,10 @@ describe("formulaFromServed", () => {
       basis_g: 1000,
       standardized: true,
       items: [{ sku: "FARINHA-T65", name: "Farinha T65", role: "flour", quantity: "1000", unit: "g", grams_per_unit: null }],
-      parts: [{ sku: "LEVAIN", entry_ref: "levain", kind: "preferment", flour_pct: 20 }],
+      preps: [{ sku: "LEVAIN", entry_ref: "levain", kind: "preferment", flour_pct: 20 }],
     });
     expect(result.items[0]).toMatchObject({ sku: "FARINHA-T65", quantity: 1000, unit: "g", role: "flour" });
-    expect(result.parts[0]).toMatchObject({ sku: "LEVAIN", flour_pct: 20 });
+    expect(result.preps[0]).toMatchObject({ sku: "LEVAIN", flour_pct: 20 });
     expect(result.standardized).toBe(true);
   });
 

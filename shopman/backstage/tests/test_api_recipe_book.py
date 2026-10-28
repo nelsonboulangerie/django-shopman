@@ -76,7 +76,7 @@ def materials(db):
     return {sku: Material.objects.create(sku=sku, name=name, unit=unit) for sku, name, unit in rows}
 
 
-def flour_formula(*, water=700, flour=1000, parts=None):
+def flour_formula(*, water=700, flour=1000, preps=None):
     return {
         "anchor": {"kind": "flour"},
         "basis_g": None,
@@ -86,7 +86,7 @@ def flour_formula(*, water=700, flour=1000, parts=None):
             {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
             {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
         ],
-        "parts": parts or [],
+        "preps": preps or [],
     }
 
 
@@ -123,7 +123,7 @@ def published_levain(db):
                 {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
                 {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "ml"},
             ],
-            "parts": [],
+            "preps": [],
         },
         yield_quantity=1000, yield_unit="g",
     )
@@ -779,14 +779,14 @@ def test_publish_refuses_stale_version_and_entry_revisions(client, editor, entry
 
 def test_lens_preview(client, editor, published_levain):
     client.force_login(editor)
-    formula = flour_formula(parts=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}])
+    formula = flour_formula(preps=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}])
     response = _post(client, reverse("api-backstage-recipes-lens"), {"formula": formula, "kind": "bread"})
     assert response.status_code == 200, response.content
     lens = response.json()["lens"]
     assert lens["is_bakery"] is True
-    assert [p["quantity_display"] for p in lens["parts"]] == ["400 g"]
-    assert lens["parts"][0]["has_formula"] is True
-    assert lens["parts"][0]["kind_label"] == "Pré-fermento"
+    assert [p["quantity_display"] for p in lens["preps"]] == ["400 g"]
+    assert lens["preps"][0]["has_formula"] is True
+    assert lens["preps"][0]["kind_label"] == "Pré-fermento"
     assert {item["sku"]: item["quantity_display"] for item in lens["final_mix"]} == {
         "FARINHA-ANACONDA-PREMIUM": "800 g", "AGUA-FILTRADA": "500 g", "SAL-REFINADO": "20 g",
     }
@@ -823,7 +823,7 @@ def test_standardize_to_the_house_basis(client, editor):
     assert body["lens"]["standardized"] is True
     assert body["lens"]["anchor_total_display"] == "1 kg"
 
-    without_flour = {"anchor": {"kind": "flour"}, "items": [{"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 1, "unit": "kg"}], "parts": []}
+    without_flour = {"anchor": {"kind": "flour"}, "items": [{"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 1, "unit": "kg"}], "preps": []}
     refused = _post(client, reverse("api-backstage-recipes-standardize"), {"formula": without_flour})
     assert refused.status_code == 400
     assert refused.json()["field"] == "anchor"
@@ -871,11 +871,11 @@ def test_reference_by_kind(client, viewer):
     assert ranges["hydration_pct"]["low_display"] == "60%"
     assert ranges["hydration_pct"]["high_display"] == "85%"
     assert ranges["salt_pct"]["max_display"] == "2,5%"
-    assert ranges["part_flour_pct:levain"]["label"] == "Farinha na parte: Levain"
+    assert ranges["prep_flour_pct:levain"]["label"] == "Farinha na prep: Levain"
 
     cream = client.get(reverse("api-backstage-recipes-reference"), {"kind": "cream"}).json()["reference"]
     codes = {r["code"] for r in cream["ranges"]}
-    assert "salt_pct" in codes and "hydration_pct" not in codes and "part_flour_pct:levain" not in codes
+    assert "salt_pct" in codes and "hydration_pct" not in codes and "prep_flour_pct:levain" not in codes
 
     assert client.get(reverse("api-backstage-recipes-reference"), {"kind": "pizza"}).json()["field"] == "kind"
 
@@ -884,15 +884,15 @@ def test_ingredient_options_mix_materials_and_parts(client, viewer, materials, p
     client.force_login(viewer)
     url = reverse("api-backstage-recipes-ingredients")
     options = client.get(url, {"q": "lev"}).json()["options"]
-    part = next(option for option in options if option["sku"] == "LEVAIN")
-    assert part == {
-        "sku": "LEVAIN", "name": "Levain", "unit": "g", "role": "other", "is_part": True,
-        "entry_ref": "creme-levain", "suggested_part_kind": "preferment",
+    prep = next(option for option in options if option["sku"] == "LEVAIN")
+    assert prep == {
+        "sku": "LEVAIN", "name": "Levain", "unit": "g", "role": "other", "has_recipe": True,
+        "entry_ref": "creme-levain", "suggested_prep_kind": "preferment",
     }
 
     flours = client.get(url, {"q": "farinha"}).json()["options"]
     assert {option["sku"] for option in flours} >= {"FARINHA-ANACONDA-PREMIUM", "FARINHA-NOVARA-T55"}
-    assert all(option["is_part"] is False for option in flours)
+    assert all(option["has_recipe"] is False for option in flours)
 
     everything = client.get(url).json()["options"]
     assert [option["sku"] for option in everything][0] == "LEVAIN"
@@ -988,7 +988,7 @@ def test_capture_reads_a_french_note_and_matches_the_ingredients(client, editor,
     assert levain["sku"] == "LEVAIN"
     # Fermento natural não é fermento biológico: fica fora da métrica de fermento.
     assert levain["role"] == "other"
-    assert any(c["sku"] == "LEVAIN" and c["is_part"] and c["entry_ref"] == "creme-levain" for c in levain["candidates"])
+    assert any(c["sku"] == "LEVAIN" and c["has_recipe"] and c["entry_ref"] == "creme-levain" for c in levain["candidates"])
 
     seeds = items["Sementes de girassol"]
     assert seeds["sku"] == ""

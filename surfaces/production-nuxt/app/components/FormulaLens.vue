@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A lente de uma fórmula — a mesma tela para pão e para creme; o que muda é a
 // âncora e os painéis que aparecem (§1): métricas de padaria só com âncora
-// `flour`; partes só quando há parte; mistura final e BOM só quando o servidor os
+// `flour`; preps só quando existem; mistura final e BOM só quando o servidor os
 // devolveu. Tudo já vem formatado (ADR-014): este componente não faz conta. Os
 // avisos e o "fora da faixa" são tom calmo — referência, nunca bloqueio.
 import type { FormulaLensProjection } from "~/types/recipeBook";
@@ -17,7 +17,7 @@ const props = defineProps<{
 
 const unmatched = computed(() => (props.lens ? unmatchedItems(props.lens.items) : []));
 const showMetrics = computed(() => !!props.lens?.is_bakery && (props.lens?.metrics.length ?? 0) > 0);
-const showParts = computed(() => (props.lens?.parts.length ?? 0) > 0);
+const showPreps = computed(() => (props.lens?.preps.length ?? 0) > 0);
 const showFinalMix = computed(
   () => !props.compact && !!props.lens?.final_mix_differs && (props.lens?.final_mix.length ?? 0) > 0,
 );
@@ -156,25 +156,25 @@ const BOM_COLUMNS = [
         </div>
       </div>
 
-      <!-- Partes -->
-      <div v-if="showParts" class="overflow-hidden rounded-md border">
+      <!-- Preps -->
+      <div v-if="showPreps" class="overflow-hidden rounded-md border">
         <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Partes
+          Preps
         </p>
         <ul class="divide-y text-sm">
           <li
-            v-for="(part, index) in lens.parts"
-            :key="`${part.kind}-${part.sku}-${index}`"
+            v-for="(prep, index) in lens.preps"
+            :key="`${prep.kind}-${prep.sku}-${index}`"
             class="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2"
           >
-            <span class="font-medium">{{ part.name || part.kind_label }}</span>
-            <NuxtBadge color="neutral" :label="part.kind_label" />
-            <span v-if="part.flour_pct_display" class="tabular-nums text-muted-foreground">
-              {{ part.flour_pct_display }} da farinha
+            <span class="font-medium">{{ prep.name || prep.kind_label }}</span>
+            <NuxtBadge color="neutral" :label="prep.kind_label" />
+            <span v-if="prep.flour_pct_display" class="tabular-nums text-muted-foreground">
+              {{ prep.flour_pct_display }} da farinha
             </span>
-            <span v-if="part.quantity_display" class="tabular-nums text-muted-foreground">{{ part.quantity_display }}</span>
-            <span v-if="part.cap_pct_display" class="tabular-nums text-muted-foreground">teto {{ part.cap_pct_display }}</span>
-            <span v-if="part.sku && !part.has_formula" class="text-xs text-warning">
+            <span v-if="prep.quantity_display" class="tabular-nums text-muted-foreground">{{ prep.quantity_display }}</span>
+            <span v-if="prep.cap_pct_display" class="tabular-nums text-muted-foreground">teto {{ prep.cap_pct_display }}</span>
+            <span v-if="prep.sku && !prep.has_formula" class="text-xs text-warning">
               sem fórmula publicada
             </span>
           </li>

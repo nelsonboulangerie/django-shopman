@@ -10,11 +10,11 @@ import type {
   Formula,
   FormulaItem,
   FormulaItemProjection,
-  FormulaPart,
+  FormulaPrep,
   FormulaUnit,
   IngredientRole,
   LensTone,
-  PartKind,
+  PrepKind,
   RecipeCaptureDraftProjection,
   RecipeEntryCardProjection,
   RecipeKind,
@@ -59,25 +59,24 @@ export function kindLabel(kind: string): string {
   return KIND_OPTIONS.find((entry) => entry.value === kind)?.label ?? "Outra";
 }
 
-export const PART_KIND_OPTIONS: readonly { value: PartKind; label: string }[] = [
-  { value: "component", label: "Ingrediente preparado" },
+export const PREP_KIND_OPTIONS: readonly { value: PrepKind; label: string }[] = [
   { value: "preferment", label: "Pré-fermento" },
   { value: "autolyse", label: "Autólise" },
   { value: "soaker", label: "Grãos hidratados" },
   { value: "old_dough", label: "Massa velha" },
 ] as const;
 
-export function partKindLabel(kind: string): string {
-  return PART_KIND_OPTIONS.find((entry) => entry.value === kind)?.label ?? kind;
+export function prepKindLabel(kind: string): string {
+  return PREP_KIND_OPTIONS.find((entry) => entry.value === kind)?.label ?? kind;
 }
 
 /** Chave da referência técnica da preparação, espelhando a lente do servidor. */
-export function partReferenceCode(part: FormulaPart, displayName = ""): string {
-  if (part.kind !== "preferment") return `part_flour_pct:${part.kind}`;
-  const text = `${displayName} ${part.entry_ref ?? ""} ${part.sku ?? ""}`.toLocaleLowerCase("pt-BR");
-  if (text.includes("poolish")) return "part_flour_pct:poolish";
-  if (text.includes("biga")) return "part_flour_pct:biga";
-  return "part_flour_pct:levain";
+export function prepReferenceCode(prep: FormulaPrep, displayName = ""): string {
+  if (prep.kind !== "preferment") return `prep_flour_pct:${prep.kind}`;
+  const text = `${displayName} ${prep.entry_ref ?? ""} ${prep.sku ?? ""}`.toLocaleLowerCase("pt-BR");
+  if (text.includes("poolish")) return "prep_flour_pct:poolish";
+  if (text.includes("biga")) return "prep_flour_pct:biga";
+  return "prep_flour_pct:levain";
 }
 
 /** Orientação curta, sempre consultiva: faixa literária nunca vira bloqueio. */
@@ -173,7 +172,7 @@ export function emptyFormula(anchorKind: AnchorKind = "flour", anchorSku = ""): 
     basis_g: null,
     standardized: false,
     items: [],
-    parts: [],
+    preps: [],
   };
 }
 
@@ -181,7 +180,7 @@ export function emptyItem(over: Partial<FormulaItem> = {}): FormulaItem {
   return { sku: "", name: "", role: "other", quantity: 0, unit: "g", note: "", ...over };
 }
 
-export function emptyPart(kind: PartKind = "component"): FormulaPart {
+export function emptyPrep(kind: PrepKind = "preferment"): FormulaPrep {
   if (kind === "old_dough") return { kind, cap_pct: 20 };
   return { kind, sku: "", entry_ref: "", flour_pct: null, quantity: null, unit: "g" };
 }
@@ -212,21 +211,21 @@ export function moveItem(formula: Formula, from: number, to: number): Formula {
   return { ...formula, items };
 }
 
-export function addPart(formula: Formula, part: FormulaPart = emptyPart()): Formula {
-  return { ...formula, parts: [...formula.parts, part] };
+export function addPrep(formula: Formula, prep: FormulaPrep = emptyPrep()): Formula {
+  return { ...formula, preps: [...formula.preps, prep] };
 }
 
-export function updatePart(formula: Formula, index: number, patch: Partial<FormulaPart>): Formula {
-  if (index < 0 || index >= formula.parts.length) return formula;
+export function updatePrep(formula: Formula, index: number, patch: Partial<FormulaPrep>): Formula {
+  if (index < 0 || index >= formula.preps.length) return formula;
   return {
     ...formula,
-    parts: formula.parts.map((part, i) => (i === index ? { ...part, ...patch } : part)),
+    preps: formula.preps.map((prep, i) => (i === index ? { ...prep, ...patch } : prep)),
   };
 }
 
-export function removePart(formula: Formula, index: number): Formula {
-  if (index < 0 || index >= formula.parts.length) return formula;
-  return { ...formula, parts: formula.parts.filter((_, i) => i !== index) };
+export function removePrep(formula: Formula, index: number): Formula {
+  if (index < 0 || index >= formula.preps.length) return formula;
+  return { ...formula, preps: formula.preps.filter((_, i) => i !== index) };
 }
 
 export function setAnchor(formula: Formula, kind: AnchorKind, sku = ""): Formula {
@@ -343,7 +342,7 @@ export function itemFromCapture(item: CaptureItemProjection): FormulaItem {
 }
 
 /** O rascunho lido (anotação/foto) vira a fórmula editável: os itens vêm da
- *  lista casada (com o `sku` escolhido), a âncora e as partes do `formula` que o
+ *  lista casada (com o `sku` escolhido), a âncora e as preps do `formula` que o
  *  servidor montou quando existirem, senão sugeridas pelo conteúdo. */
 export function formulaFromDraft(draft: RecipeCaptureDraftProjection): Formula {
   const items = (draft.items ?? []).map(itemFromCapture);
@@ -356,14 +355,14 @@ export function formulaFromDraft(draft: RecipeCaptureDraftProjection): Formula {
         ? "flour"
         : "total";
   const anchorSku = typeof servedAnchor?.sku === "string" ? servedAnchor.sku : "";
-  const parts = Array.isArray(served?.parts) ? (served.parts as FormulaPart[]) : [];
+  const preps = Array.isArray(served?.preps) ? (served.preps as FormulaPrep[]) : [];
   const basis = served?.basis_g;
   return {
     anchor: anchorKind === "ingredient" ? { kind: "ingredient", sku: anchorSku } : { kind: anchorKind },
     basis_g: typeof basis === "number" ? basis : null,
     standardized: served?.standardized === true,
     items,
-    parts,
+    preps,
   };
 }
 
@@ -390,7 +389,7 @@ export function formulaFromServed(served: Record<string, unknown>): Formula {
     basis_g: typeof served.basis_g === "number" ? served.basis_g : null,
     standardized: served.standardized === true,
     items,
-    parts: Array.isArray(served.parts) ? (served.parts as FormulaPart[]) : [],
+    preps: Array.isArray(served.preps) ? (served.preps as FormulaPrep[]) : [],
   };
 }
 
@@ -596,7 +595,7 @@ export function comparePath(aRef: string, aNumber: number, bRef = "", bNumber = 
   return `/recipes/compare?${params.toString()}`;
 }
 
-// ── Foto: tamanho-alvo (a parte do canvas fica no composable) ───────────────
+// ── Foto: tamanho-alvo (a parte do canvas fica no composable) ──────────────
 
 export const MAX_IMAGE_EDGE = 1600;
 

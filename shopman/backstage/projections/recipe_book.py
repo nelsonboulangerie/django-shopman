@@ -2,7 +2,7 @@
 
 A camada de leitura que a superfície de Produção consome em ``/recipes``: o
 inventário (cartões), a receita com as suas versões, a **lente** sobre uma
-fórmula (porcentagem do padeiro, métricas com faixa de referência, partes,
+fórmula (porcentagem do padeiro, métricas com faixa de referência, preps,
 mistura final e BOM), a comparação entre duas versões, as referências da
 literatura por tipo, as opções de insumo e o rascunho lido de uma anotação ou
 foto.
@@ -33,7 +33,7 @@ from shopman.craftsman.services.recipe_book import (
     FormulaDiffMetric,
     FormulaDiffRow,
     FormulaItemAnalysis,
-    FormulaPartAnalysis,
+    FormulaPrepAnalysis,
     FormulaWarning,
     analyze,
     check_references,
@@ -41,8 +41,8 @@ from shopman.craftsman.services.recipe_book import (
     diff_versions,
     execution_in_sync,
     item_grams,
-    part_formulas_for,
-    part_kind_from_name,
+    prep_formulas_for,
+    prep_kind_from_name,
     reference_for,
     suggest_anchor_kind,
 )
@@ -80,8 +80,7 @@ ROLE_LABELS: dict[str, str] = {
     "other": "Outro",
 }
 
-PART_KIND_LABELS: dict[str, str] = {
-    "component": "Ingrediente preparado",
+PREP_KIND_LABELS: dict[str, str] = {
     "preferment": "Pré-fermento",
     "autolyse": "Autólise",
     "soaker": "Grãos hidratados",
@@ -108,10 +107,10 @@ METRIC_LABELS: dict[str, str] = {
 #: magra não leva açúcar. Só hidratação e sal em zero merecem atenção.
 _METRICS_MEANINGFUL_AT_ZERO = ("hydration_pct", "salt_pct")
 
-#: Tipos de receita que ganham as faixas de farinha por parte na tabela de referência.
-_KINDS_WITH_PARTS = ("bread", "viennoiserie", "sweet_dough")
+#: Tipos de receita que ganham as faixas de farinha por prep na tabela de referência.
+_KINDS_WITH_PREPS = ("bread", "viennoiserie", "sweet_dough")
 
-PART_REFERENCE_LABELS: dict[str, str] = {
+PREP_REFERENCE_LABELS: dict[str, str] = {
     "levain": "Levain",
     "poolish": "Poolish",
     "biga": "Biga",
@@ -224,8 +223,8 @@ class FormulaItemProjection:
 
 
 @dataclass(frozen=True)
-class FormulaPartProjection:
-    """A recipe ingredient: ordinary component or a preparation that partitions the base."""
+class FormulaPrepProjection:
+    """A preparation that partitions ingredients already declared in the global formula."""
 
     sku: str
     entry_ref: str
@@ -263,7 +262,7 @@ class FormulaWarningProjection:
 
 @dataclass(frozen=True)
 class FormulaLensProjection:
-    """The lens over a formula: anchor, items with percentages, metrics, parts, final mix, BOM."""
+    """The lens over a formula: anchor, items with percentages, metrics, preps, final mix, BOM."""
 
     is_bakery: bool
     anchor_kind: str
@@ -274,15 +273,15 @@ class FormulaLensProjection:
     total_mass_display: str
     items: tuple[FormulaItemProjection, ...]
     final_mix: tuple[FormulaItemProjection, ...]
-    #: A mistura final diz algo que a receita base já não disse? Sem partes ela é a
+    #: A mistura final diz algo que a receita base já não disse? Sem preps ela é a
     #: própria base, e mostrar a mesma tabela duas vezes só ensina o padeiro a
     #: parar de ler. A tela pergunta isto antes de desenhar o painel.
     final_mix_differs: bool
     bom: tuple[FormulaItemProjection, ...]
-    #: Idem para a ficha técnica: ela só difere da base quando há parte pronta
+    #: Idem para a ficha técnica: ela só difere da base quando há prep pronta
     #: (é aí que a farinha do levain sai da lista e entra como levain).
     bom_differs: bool
-    parts: tuple[FormulaPartProjection, ...]
+    preps: tuple[FormulaPrepProjection, ...]
     metrics: tuple[FormulaMetricProjection, ...]
     warnings: tuple[FormulaWarningProjection, ...]
 
@@ -684,9 +683,9 @@ class IngredientOptionProjection:
     name: str
     unit: str
     role: str
-    is_part: bool
+    has_recipe: bool
     entry_ref: str
-    suggested_part_kind: str
+    suggested_prep_kind: str
 
 
 @dataclass(frozen=True)
@@ -819,7 +818,7 @@ def _status_label(status: str) -> str:
 
 
 def _role_label(role: str) -> str:
-    return ROLE_LABELS.get(role) or PART_KIND_LABELS.get(role) or ROLE_LABELS["other"]
+    return ROLE_LABELS.get(role) or PREP_KIND_LABELS.get(role) or ROLE_LABELS["other"]
 
 
 def _kind_options() -> tuple[KindOptionProjection, ...]:
@@ -880,7 +879,7 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
     """
     formula = formula if isinstance(formula, dict) else {}
     kind = kind or RecipeEntry.Kind.OTHER
-    analysis = analyze(formula, part_formulas_for(formula))
+    analysis = analyze(formula, prep_formulas_for(formula))
     references = check_references(analysis, kind)
     anchor = formula.get("anchor") if isinstance(formula.get("anchor"), dict) else {}
     anchor_sku = str(anchor.get("sku") or "")
@@ -898,10 +897,10 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
         total_mass_display=_grams_display(analysis.total_mass_g),
         items=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.items),
         final_mix=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.final_mix),
-        final_mix_differs=_subtracting_parts(analysis),
+        final_mix_differs=_subtracting_preps(analysis),
         bom=tuple(_bom_item(line, analysis.anchor_total_g) for line in analysis.bom),
-        bom_differs=_subtracting_parts(analysis) or _capped_old_dough(analysis),
-        parts=tuple(_lens_part(part) for part in analysis.parts),
+        bom_differs=_subtracting_preps(analysis) or _capped_old_dough(analysis),
+        preps=tuple(_lens_prep(prep) for prep in analysis.preps),
         metrics=tuple(
             _metric(code, value, kind, flagged) for code, value in analysis.metrics().items()
         ),
@@ -909,18 +908,18 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
     )
 
 
-def _subtracting_parts(analysis: FormulaAnalysis) -> bool:
-    """Alguma parte de fato tira da base? É ela que faz a mistura final ser outra coisa.
+def _subtracting_preps(analysis: FormulaAnalysis) -> bool:
+    """Alguma prep de fato tira da base? É ela que faz a mistura final ser outra coisa.
 
-    Parte sem fórmula conhecida fica na base e não tira nada; massa velha é teto,
+    Prep sem fórmula conhecida fica na base e não tira nada; massa velha é teto,
     não composição. Nos dois casos a mistura final É a receita base.
     """
-    return any(part.has_formula and part.quantity_g for part in analysis.parts)
+    return any(prep.has_formula and prep.quantity_g for prep in analysis.preps)
 
 
 def _capped_old_dough(analysis: FormulaAnalysis) -> bool:
     """Há massa velha com teto? Ela não tira da base, mas entra na ficha como linha opcional."""
-    return any(part.kind == "old_dough" and part.cap_pct for part in analysis.parts)
+    return any(prep.kind == "old_dough" and prep.cap_pct for prep in analysis.preps)
 
 
 def _anchor_label(anchor_kind: str, anchor_sku: str, analysis: FormulaAnalysis) -> str:
@@ -976,17 +975,17 @@ def _bom_item(line: dict, anchor_total: Decimal | None) -> FormulaItemProjection
     )
 
 
-def _lens_part(part: FormulaPartAnalysis) -> FormulaPartProjection:
-    return FormulaPartProjection(
-        sku=part.sku,
-        entry_ref=part.entry_ref,
-        name=part.name,
-        kind=part.kind,
-        kind_label=PART_KIND_LABELS.get(part.kind, part.kind),
-        flour_pct_display=_pct_display(part.flour_pct),
-        quantity_display=_grams_display(part.quantity_g),
-        cap_pct_display=_pct_display(part.cap_pct),
-        has_formula=part.has_formula,
+def _lens_prep(prep: FormulaPrepAnalysis) -> FormulaPrepProjection:
+    return FormulaPrepProjection(
+        sku=prep.sku,
+        entry_ref=prep.entry_ref,
+        name=prep.name,
+        kind=prep.kind,
+        kind_label=PREP_KIND_LABELS.get(prep.kind, prep.kind),
+        flour_pct_display=_pct_display(prep.flour_pct),
+        quantity_display=_grams_display(prep.quantity_g),
+        cap_pct_display=_pct_display(prep.cap_pct),
+        has_formula=prep.has_formula,
     )
 
 
@@ -1127,7 +1126,7 @@ def _card(
     anchor_kind = str(anchor.get("kind") or "") if current is not None else ""
     hydration = ""
     if anchor_kind == "flour":
-        hydration = _pct_display(analyze(formula, part_formulas_for(formula)).hydration_pct)
+        hydration = _pct_display(analyze(formula, prep_formulas_for(formula)).hydration_pct)
     return RecipeEntryCardProjection(
         ref=entry.ref,
         name=entry.name,
@@ -1368,8 +1367,8 @@ def _seconds_display(seconds: int | None) -> str:
         return ""
     hours, rest = divmod(seconds, 3600)
     minutes, secs = divmod(rest, 60)
-    parts = [f"{hours} h" if hours else "", f"{minutes} min" if minutes else "", f"{secs} s" if secs else ""]
-    return " ".join(part for part in parts if part)
+    preps = [f"{hours} h" if hours else "", f"{minutes} min" if minutes else "", f"{secs} s" if secs else ""]
+    return " ".join(prep for prep in preps if prep)
 
 
 def _celsius_display(celsius: float | None) -> str:
@@ -1750,10 +1749,10 @@ def build_recipe_reference(kind: str) -> RecipeReferenceProjection:
         bounds = reference_for(code, kind)
         if bounds:
             ranges.append(_range(code, label, bounds))
-    if kind in _KINDS_WITH_PARTS:
-        for key, bounds in REFERENCE_RANGES["part_flour_pct"].items():
-            part_label = PART_REFERENCE_LABELS.get(key, key)
-            ranges.append(_range(f"part_flour_pct:{key}", f"Farinha na parte: {part_label}", bounds))
+    if kind in _KINDS_WITH_PREPS:
+        for key, bounds in REFERENCE_RANGES["prep_flour_pct"].items():
+            prep_label = PREP_REFERENCE_LABELS.get(key, key)
+            ranges.append(_range(f"prep_flour_pct:{key}", f"Farinha na prep: {prep_label}", bounds))
     return RecipeReferenceProjection(kind=kind, kind_label=_kind_label(kind), ranges=tuple(ranges))
 
 
@@ -1768,11 +1767,11 @@ def _range(code: str, label: str, bounds: dict) -> ReferenceRangeProjection:
     )
 
 
-# ── Insumos e partes ─────────────────────────────────────────────────────────
+# ── Ingredientes, inclusive os produzidos por outra receita ─────────────────
 
 
-def _part_entries() -> list[RecipeEntry]:
-    """As receitas com versão atual e SKU: são as partes que outra receita pode consumir."""
+def _recipe_ingredient_entries() -> list[RecipeEntry]:
+    """Receitas com versão atual e SKU que podem ser escolhidas como ingrediente."""
     return list(
         RecipeEntry.objects.filter(current_version__isnull=False, is_active=True)
         .exclude(output_sku="")
@@ -1781,7 +1780,7 @@ def _part_entries() -> list[RecipeEntry]:
     )
 
 
-def _part_candidate(entry: RecipeEntry) -> IngredientCandidate:
+def _recipe_ingredient_candidate(entry: RecipeEntry) -> IngredientCandidate:
     return IngredientCandidate(
         sku=entry.output_sku,
         name=entry.name,
@@ -1791,46 +1790,46 @@ def _part_candidate(entry: RecipeEntry) -> IngredientCandidate:
     )
 
 
-def _part_option(entry: RecipeEntry) -> IngredientOptionProjection:
-    candidate = _part_candidate(entry)
+def _recipe_ingredient_option(entry: RecipeEntry) -> IngredientOptionProjection:
+    candidate = _recipe_ingredient_candidate(entry)
     return IngredientOptionProjection(
         sku=candidate.sku,
         name=candidate.name,
         unit=candidate.unit,
         role=candidate.role,
-        is_part=True,
+        has_recipe=True,
         entry_ref=entry.ref,
-        suggested_part_kind=part_kind_from_name(entry.name, entry.ref, entry.output_sku),
+        suggested_prep_kind=prep_kind_from_name(entry.name, entry.ref, entry.output_sku),
     )
 
 
-def _material_option(candidate: IngredientCandidate, part_refs: dict[str, str]) -> IngredientOptionProjection:
-    entry_ref = part_refs.get(candidate.sku, "")
+def _material_option(candidate: IngredientCandidate, recipe_refs: dict[str, str]) -> IngredientOptionProjection:
+    entry_ref = recipe_refs.get(candidate.sku, "")
     return IngredientOptionProjection(
         sku=candidate.sku,
         name=candidate.name,
         unit=candidate.unit,
         role=candidate.role,
-        is_part=bool(entry_ref),
+        has_recipe=bool(entry_ref),
         entry_ref=entry_ref,
-        suggested_part_kind=part_kind_from_name(candidate.name, entry_ref, candidate.sku) if entry_ref else "",
+        suggested_prep_kind=prep_kind_from_name(candidate.name, entry_ref, candidate.sku) if entry_ref else "",
     )
 
 
 def build_ingredient_options(query: str = "") -> tuple[IngredientOptionProjection, ...]:
-    """Opções para casar um ingrediente: as partes (receitas com fórmula) e os insumos."""
+    """Opções unificadas: insumos comprados e ingredientes produzidos por receita."""
     term = (query or "").strip().lower()
-    parts = [
+    recipe_entries = [
         entry
-        for entry in _part_entries()
+        for entry in _recipe_ingredient_entries()
         if not term or term in entry.name.lower() or term in entry.output_sku.lower() or term in entry.ref.lower()
     ]
-    part_skus = {entry.output_sku for entry in parts}
-    options = [_part_option(entry) for entry in parts]
+    recipe_skus = {entry.output_sku for entry in recipe_entries}
+    options = [_recipe_ingredient_option(entry) for entry in recipe_entries]
     options.extend(
         _material_option(candidate, {})
         for candidate in search_ingredients(term)
-        if candidate.sku not in part_skus
+        if candidate.sku not in recipe_skus
     )
     return tuple(options)
 
@@ -1842,18 +1841,19 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
     """O rascunho lido, com cada ingrediente casado com um insumo (ou com candidatos).
 
     O casamento sugere; abaixo de ``DEFAULT_MIN_SCORE`` o ``sku`` fica vazio e a
-    tela pergunta. As partes (receitas com fórmula) entram como opções extras.
+    tela pergunta. Ingredientes com receita própria entram como opções extras;
+    apenas nomes inequívocos recebem uma sugestão de prep.
     A ``formula`` inicial já vem com a âncora sugerida pelo conteúdo e os itens
     de massa em grama; volume e contagem ficam como foram lidos.
     """
-    part_entries = _part_entries()
-    part_candidates = tuple(_part_candidate(entry) for entry in part_entries)
-    part_refs = {entry.output_sku: entry.ref for entry in part_entries}
+    recipe_entries = _recipe_ingredient_entries()
+    recipe_candidates = tuple(_recipe_ingredient_candidate(entry) for entry in recipe_entries)
+    recipe_refs = {entry.output_sku: entry.ref for entry in recipe_entries}
 
     items: list[CaptureItemProjection] = []
     formula_items: list[dict] = []
     for item in captured.items:
-        candidates = candidates_for(item.name, extra_options=part_candidates)
+        candidates = candidates_for(item.name, extra_options=recipe_candidates)
         best = candidates[0] if candidates and candidates[0].score >= DEFAULT_MIN_SCORE else None
         sku = best.sku if best is not None else ""
         role = item.role if item.role and item.role != "other" else classify_ingredient(item.name, sku)
@@ -1865,7 +1865,7 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
             role=role,
             sku=sku,
             match_confidence=f"{best.score}%" if best is not None else "",
-            candidates=tuple(_material_option(candidate, part_refs) for candidate in candidates),
+            candidates=tuple(_material_option(candidate, recipe_refs) for candidate in candidates),
         ))
         if item.quantity is not None and item.quantity > 0:
             quantity, unit = item.quantity, item.unit
@@ -1884,7 +1884,7 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
         "basis_g": None,
         "standardized": False,
         "items": formula_items,
-        "parts": [],
+        "preps": [],
     }
     return RecipeCaptureDraftProjection(
         name=captured.name,

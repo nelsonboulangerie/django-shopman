@@ -3851,7 +3851,7 @@ def _old_dough_cap_pct(recipe: Recipe) -> Decimal | None:
     """O teto de massa velha que a ficha publicou, em % da fórmula inteira.
 
     Mora na linha opcional que ``publish_version`` escreve a partir de
-    ``formula.parts[{kind: "old_dough", cap_pct}]``. Teto fora de (0, 100) não é
+    ``formula.preps[{kind: "old_dough", cap_pct}]``. Teto fora de (0, 100) não é
     teto: a ficha fica sem a variante, em vez de pesar zero ou negativo.
     """
     prefetched = getattr(recipe, "_prefetched_objects_cache", {}).get("items")

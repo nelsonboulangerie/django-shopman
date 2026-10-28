@@ -100,7 +100,7 @@ const touch = useTouchPointer();
     <template #item-label="{ item }">
       <span class="flex min-w-0 items-center gap-2">
         <span class="truncate">{{ item.label }}</span>
-        <NuxtBadge v-if="item.option?.is_part" color="neutral" label="Receita" />
+        <NuxtBadge v-if="item.option?.has_recipe" color="neutral" label="Receita" />
       </span>
     </template>
     <template #empty>

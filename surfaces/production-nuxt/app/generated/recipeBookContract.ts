@@ -68,8 +68,8 @@ export interface FormulaItemProjection {
   matched: boolean;
 }
 
-/** A recipe ingredient: ordinary component or a preparation that partitions the base. */
-export interface FormulaPartProjection {
+/** A preparation that partitions ingredients already declared in the global formula. */
+export interface FormulaPrepProjection {
   sku: string;
   entry_ref: string;
   name: string;
@@ -100,7 +100,7 @@ export interface FormulaWarningProjection {
   tone: string;
 }
 
-/** The lens over a formula: anchor, items with percentages, metrics, parts, final mix, BOM. */
+/** The lens over a formula: anchor, items with percentages, metrics, preps, final mix, BOM. */
 export interface FormulaLensProjection {
   is_bakery: boolean;
   anchor_kind: string;
@@ -114,7 +114,7 @@ export interface FormulaLensProjection {
   final_mix_differs: boolean;
   bom: FormulaItemProjection[];
   bom_differs: boolean;
-  parts: FormulaPartProjection[];
+  preps: FormulaPrepProjection[];
   metrics: FormulaMetricProjection[];
   warnings: FormulaWarningProjection[];
 }
@@ -413,9 +413,9 @@ export interface IngredientOptionProjection {
   name: string;
   unit: string;
   role: string;
-  is_part: boolean;
+  has_recipe: boolean;
   entry_ref: string;
-  suggested_part_kind: string;
+  suggested_prep_kind: string;
 }
 
 /** One ingredient read from a note or a photo, with its matched material. */

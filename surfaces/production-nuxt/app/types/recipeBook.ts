@@ -28,7 +28,7 @@ export type {
   FormulaItemProjection,
   FormulaLensProjection,
   FormulaMetricProjection,
-  FormulaPartProjection,
+  FormulaPrepProjection,
   FormulaWarningProjection,
   ExecutionSheetProjection,
   IngredientOptionProjection,
@@ -95,7 +95,7 @@ export type IngredientRole =
 
 export type FormulaUnit = "g" | "kg" | "ml" | "L" | "un";
 
-export type PartKind = "component" | "preferment" | "autolyse" | "soaker" | "old_dough";
+export type PrepKind = "preferment" | "autolyse" | "soaker" | "old_dough";
 
 export type YieldUnit = "kg" | "g" | "un" | "L" | "ml";
 
@@ -131,13 +131,13 @@ export interface FormulaItem {
   density_g_per_ml?: number | null;
 }
 
-export interface FormulaPart {
+export interface FormulaPrep {
   sku?: string;
   entry_ref?: string;
-  kind: PartKind;
-  /** Preparações de panificação: % da base de farinha que passa pela parte. */
+  kind: PrepKind;
+  /** Percentual da base de farinha que passa pela prep. */
   flour_pct?: number | null;
-  /** Componente comum, ou preparação sem base de farinha: quantidade declarada. */
+  /** Prep sem base de farinha: quantidade declarada. */
   quantity?: number | null;
   unit?: FormulaUnit;
   /** Só `old_dough`: teto da fórmula inteira. */
@@ -149,7 +149,7 @@ export interface Formula {
   basis_g: number | null;
   standardized: boolean;
   items: FormulaItem[];
-  parts: FormulaPart[];
+  preps: FormulaPrep[];
 }
 
 /**
