@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from base64 import b64encode
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.error import HTTPError, URLError
@@ -127,7 +128,7 @@ class FocusNFeBackend:
                 error_message=str(exc),
             )
 
-        return _document_result(response, config)
+        return _with_authorization_date(_document_result(response, config), config)
 
     def query_status(self, *, reference: str) -> FiscalDocumentResult:
         config = _get_config()
@@ -143,7 +144,7 @@ class FocusNFeBackend:
             response = _request("GET", _nfce_path(reference, config, consult=True), None, config)
         except (HTTPError, URLError, TimeoutError) as exc:
             return _document_error_result(exc)
-        return _document_result(response, config)
+        return _with_authorization_date(_document_result(response, config), config)
 
     def send_email(self, *, reference: str, emails: list[str]) -> tuple[bool, str]:
         """Pede ao Focus o envio da nota por e-mail (DANFE + XML).
@@ -892,6 +893,42 @@ def _shop_document() -> str:
     except Exception:
         logger.debug("focus_nfe_shop_document_lookup_failed", exc_info=True)
         return ""
+
+
+_DH_RECBTO = re.compile(r"<dhRecbto>([^<]+)</dhRecbto>")
+
+
+def _with_authorization_date(result: FiscalDocumentResult, config: dict) -> FiscalDocumentResult:
+    """Completa a hora da Autorização de Uso a partir do XML autorizado.
+
+    ⚠️ A resposta da Focus para NFC-e NÃO traz ``data_autorizacao`` nem
+    ``data_emissao`` (medido em homologação em 28/10/2026, nota 723 do alpha), e
+    o prazo de cancelamento do art. 35 conta dessa hora. Sem ela o
+    ``fiscal.cancellation_path`` não mede o prazo, o cancelamento fora da janela
+    ia à SEFAZ e voltava recusado ("autorizada há mais de 30 minutos"), em vez de
+    abrir a pendência da nota de estorno. A hora oficial é o ``dhRecbto`` do
+    protocolo, dentro do XML que a própria Focus publica.
+
+    Falha em ler o XML não derruba a emissão: a nota está autorizada, e a falta
+    da hora tem caminho próprio ("não deu para medir o prazo").
+    """
+    if not result.success or result.authorization_date or not result.xml_url:
+        return result
+    try:
+        with urlopen(
+            Request(result.xml_url, headers={"User-Agent": "django-shopman/focus-nfe"}),
+            timeout=int(config.get("timeout") or 30),
+        ) as response:
+            xml = response.read().decode("utf-8", errors="replace")
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        logger.warning("focus_nfe_authorization_date_unreadable xml_url=%s", result.xml_url, exc_info=True)
+        return result
+    match = _DH_RECBTO.search(xml)
+    if match is None:
+        logger.warning("focus_nfe_authorization_date_missing xml_url=%s", result.xml_url)
+        return result
+    result.authorization_date = match.group(1).strip()
+    return result
 
 
 def _document_result(response: dict, config: dict | None = None) -> FiscalDocumentResult:
