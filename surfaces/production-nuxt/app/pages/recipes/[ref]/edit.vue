@@ -270,7 +270,7 @@ const anchorCandidates = computed(() =>
 const yieldUnits = [...YIELD_UNIT_OPTIONS];
 const quantityExpressionOptions = [
   ...UNIT_OPTIONS.map((unit) => ({ value: unit, label: unit })),
-  { value: "ratio", label: "Percentual da base" },
+  { value: "ratio", label: "% da base" },
 ];
 const roles = [...ROLE_OPTIONS];
 const anchors = [...ANCHOR_OPTIONS];

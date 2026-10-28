@@ -131,7 +131,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   expect(expressionColumnBox).not.toBeNull();
   expect(expressionColumnBox!.width).toBeGreaterThan(quantityColumnBox!.width);
   expect(await quantityGroup.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await expect(page.getByLabel("Quantidade de Levain expressa em")).toContainText("Percentual da base");
+  await expect(page.getByLabel("Quantidade de Levain expressa em")).toContainText("% da base");
   await page.getByLabel("Base percentual de Levain").click();
   await page.getByRole("option", { name: "Um ingrediente", exact: true }).click();
   const basisDetailControl = page.getByLabel("Ingrediente usado como base percentual");
