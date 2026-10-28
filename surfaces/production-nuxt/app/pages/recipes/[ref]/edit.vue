@@ -128,6 +128,15 @@ const quantityRules: Record<FormulaUnit, { step: number; min: number; maximumFra
 const massFactor: Partial<Record<FormulaUnit, number>> = { g: 1, kg: 1000 };
 const volumeFactor: Partial<Record<FormulaUnit, number>> = { ml: 1, L: 1000 };
 const roleEditorIndex = ref<number | null>(null);
+const yieldQuantityNumber = computed<number | null>({
+  get: () => {
+    const value = Number(String(yieldQuantity.value).replace(",", "."));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  },
+  set: (value) => {
+    yieldQuantity.value = value == null ? "" : String(normalizedQuantity(value, yieldUnit.value as FormulaUnit));
+  },
+});
 
 function quantityRule(unit: FormulaUnit) {
   return quantityRules[unit];
@@ -156,6 +165,19 @@ function onItemUnit(index: number, unit: string) {
   if (converted === null && item.quantity > 0) {
     useSonner.info("Quantidade mantida. Massa, volume e unidade não têm conversão automática entre si.");
   }
+}
+function onYieldUnit(unit: string) {
+  const from = yieldUnit.value as FormulaUnit;
+  const next = unit as FormulaUnit;
+  const current = yieldQuantityNumber.value;
+  if (current != null) {
+    const converted = convertedQuantity(current, from, next);
+    yieldQuantity.value = String(converted ?? current);
+    if (converted === null) {
+      useSonner.info("Rendimento mantido. Massa, volume e unidade não têm conversão automática entre si.");
+    }
+  }
+  yieldUnit.value = next;
 }
 function onItemRole(index: number, role: string) {
   formula.value = updateItem(formula.value, index, { role: role as IngredientRole });
@@ -688,13 +710,33 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               <h2 class="text-sm font-semibold">Rendimento</h2>
               <p class="text-xs text-muted-foreground">Quantidade obtida ao executar esta fórmula uma vez.</p>
             </div>
-            <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-              Quantidade
-              <span class="flex items-center gap-1">
-                <NuxtInput v-model="yieldQuantity" type="text" inputmode="decimal" class="w-24" :ui="{ base: 'bg-muted' }" />
-                <NuxtSelect v-model="yieldUnit" :items="yieldUnits" class="w-24" aria-label="Unidade do rendimento" :ui="{ base: 'bg-muted' }" />
-              </span>
-            </label>
+            <div class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
+              <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+                Quantidade
+                <NuxtInputNumber
+                  :key="`yield-quantity-${yieldUnit}`"
+                  v-model="yieldQuantityNumber"
+                  :min="quantityRule(yieldUnit as FormulaUnit).min"
+                  :step="quantityRule(yieldUnit as FormulaUnit).step"
+                  :format-options="{ maximumFractionDigits: quantityRule(yieldUnit as FormulaUnit).maximumFractionDigits }"
+                  locale="pt-BR"
+                  class="w-full"
+                  :ui="{ base: 'bg-muted tabular-nums' }"
+                  aria-label="Quantidade do rendimento"
+                />
+              </label>
+              <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+                Unidade
+                <NuxtSelect
+                  :model-value="yieldUnit"
+                  :items="yieldUnits"
+                  class="w-full"
+                  aria-label="Unidade do rendimento"
+                  :ui="{ base: 'bg-muted' }"
+                  @update:model-value="onYieldUnit"
+                />
+              </label>
+            </div>
           </section>
 
           <!-- Ingredientes -->
@@ -706,12 +748,12 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               </div>
               <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                 Base do cálculo (100%)
-                <span class="flex flex-wrap items-center gap-1">
+                <span class="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
                   <NuxtSelect
                     :model-value="formula.anchor.kind"
                     :items="anchors"
                     value-key="value"
-                    class="w-44"
+                    class="w-full sm:w-44"
                     aria-label="Base do cálculo (100%)"
                     :ui="{ base: 'bg-muted' }"
                     @update:model-value="onAnchorKind"
@@ -722,7 +764,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     :items="anchorCandidates"
                     value-key="value"
                     placeholder="Escolha o ingrediente"
-                    class="w-48"
+                    class="w-full sm:w-48"
                     :search-input="{ autofocus: !touch, placeholder: 'Buscar ingrediente' }"
                     aria-label="Ingrediente usado como base do cálculo"
                     @update:model-value="onAnchorSku"
@@ -730,12 +772,12 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 </span>
               </label>
             </div>
-            <div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2">
+            <div class="grid gap-2 border-b bg-muted/40 px-3 py-2 sm:flex sm:flex-wrap sm:items-center">
               <span class="text-xs tabular-nums text-muted-foreground">
                 base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
               </span>
-              <div class="ml-auto flex flex-wrap items-center gap-2">
-                <NuxtButton color="neutral" variant="outline" icon="i-lucide-plus" label="Adicionar ingrediente" @click="addIngredient" />
+              <div class="w-full sm:ml-auto sm:w-auto">
+                <NuxtButton class="w-full justify-center sm:w-auto" color="primary" icon="i-lucide-plus" label="Adicionar ingrediente" @click="addIngredient" />
               </div>
             </div>
             <p v-if="!formula.items.length && !formula.parts.length" class="px-3 py-6 text-center text-sm text-muted-foreground">

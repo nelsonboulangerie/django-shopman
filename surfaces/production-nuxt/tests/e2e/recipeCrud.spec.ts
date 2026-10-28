@@ -48,14 +48,22 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByRole("heading", { name: "Informações da receita" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Rendimento", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Resultado da receita" })).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "Quantidade", exact: true })).toBeVisible();
+  const yieldQuantityControl = page.getByRole("spinbutton", { name: "Quantidade do rendimento", exact: true });
+  await expect(yieldQuantityControl).toBeVisible();
+  await expect(yieldQuantityControl).toHaveClass(/w-full/);
+  await expect(page.getByLabel("Unidade do rendimento")).toHaveClass(/w-full/);
   await expect(page.getByRole("textbox", { name: "Quantidade obtida", exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Produto associado (SKU)")).toHaveValue("PAO-FRANCES");
 
-  await expect(page.getByRole("button", { name: "Adicionar ingrediente", exact: true })).toBeVisible();
+  const addIngredientButton = page.getByRole("button", { name: "Adicionar ingrediente", exact: true });
+  await expect(addIngredientButton).toBeVisible();
+  await expect(addIngredientButton).toHaveClass(/w-full/);
+  await expect(addIngredientButton).toHaveClass(/sm:w-auto/);
+  await expect(page.getByLabel("Base do cálculo (100%)")).toHaveClass(/w-full/);
+  await expect(page.getByLabel("Base do cálculo (100%)")).toHaveClass(/sm:w-44/);
   await expect(page.getByRole("button", { name: "Adicionar insumo", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Adicionar receita", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Adicionar ingrediente", exact: true }).click();
+  await addIngredientButton.click();
   await expect(page.getByLabel("Ingrediente", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Quantidade", { exact: true })).toBeVisible();
   await expect(page.getByText("Qtd", { exact: true })).toHaveCount(0);
@@ -79,7 +87,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await page.getByLabel("Unidade de Farinha T65").click();
   await page.getByRole("option", { name: "g", exact: true }).click();
   await expect(ingredientQuantity).toHaveValue("2");
-  await page.getByRole("button", { name: "Incrementar", exact: true }).click();
+  await page.getByTestId("recipe-bom-items").getByRole("button", { name: "Incrementar", exact: true }).click();
   await expect(ingredientQuantity).toHaveValue("3");
   await page.getByRole("button", { name: "Alterar papel na fórmula de Farinha T65" }).click();
   await expect(page.getByLabel("Papel na fórmula de Farinha T65")).toBeVisible();
