@@ -89,7 +89,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByLabel("Quantidade", { exact: true })).toBeFocused();
   await expect(page.getByText("Papel na fórmula:", { exact: true })).toBeVisible();
   await expect(page.getByText("Farinha", { exact: true })).toBeVisible();
-  const flourExpression = page.getByLabel("Unidade ou base da quantidade de Farinha T65");
+  const flourExpression = page.getByLabel("Quantidade de Farinha T65 expressa em");
   await expect(flourExpression).toContainText("g");
   const ingredientQuantity = page.getByLabel("Quantidade", { exact: true });
   const fixedQuantityGrid = page.locator("[data-ingredient-quantity-grid]").first();
@@ -131,7 +131,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   expect(expressionColumnBox).not.toBeNull();
   expect(expressionColumnBox!.width).toBeGreaterThan(quantityColumnBox!.width);
   expect(await quantityGroup.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await expect(page.getByLabel("Unidade ou base da quantidade de Levain")).toContainText("Percentual da base");
+  await expect(page.getByLabel("Quantidade de Levain expressa em")).toContainText("Percentual da base");
   await page.getByLabel("Base percentual de Levain").click();
   await page.getByRole("option", { name: "Um ingrediente", exact: true }).click();
   const basisDetailControl = page.getByLabel("Ingrediente usado como base percentual");

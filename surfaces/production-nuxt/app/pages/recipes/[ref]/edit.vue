@@ -855,7 +855,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       />
                     </NuxtFormField>
                   </div>
-                  <NuxtFormField label="Unidade ou base">
+                  <NuxtFormField label="Expressa em">
                     <NuxtSelect
                       :model-value="ingredientDefaults.quantity.kind === 'ratio' ? 'ratio' : ingredientDefaults.quantity.unit ?? 'g'"
                       :items="quantityExpressionOptions"
@@ -881,7 +881,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     </NuxtFormField>
                   </template>
                   <template #context>
-                    <NuxtFormField label="Unidade ou base">
+                    <NuxtFormField label="Expressa em">
                       <NuxtSelect
                         :model-value="ingredientDefaults.quantity.kind === 'ratio' ? 'ratio' : ingredientDefaults.quantity.unit ?? 'g'"
                         :items="quantityExpressionOptions"
@@ -1069,14 +1069,14 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     </template>
                     <template #context>
                       <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
-                        Unidade ou base
+                        Expressa em
                         <NuxtSelect
                           :model-value="item.quantity.kind === 'ratio' ? 'ratio' : item.quantity.unit ?? 'g'"
                           :items="quantityExpressionOptions"
                           value-key="value"
                           class="min-w-0 w-full"
                           :ui="{ base: 'bg-muted' }"
-                          :aria-label="`Unidade ou base da quantidade de ${item.name || 'ingrediente'}`"
+                          :aria-label="`Quantidade de ${item.name || 'ingrediente'} expressa em`"
                           @update:model-value="(expression: string) => onQuantityExpression(index, expression)"
                         />
                       </label>
@@ -1099,14 +1099,14 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       </label>
                     </div>
                     <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
-                      Unidade ou base
+                      Expressa em
                       <NuxtSelect
                         :model-value="item.quantity.kind === 'ratio' ? 'ratio' : item.quantity.unit ?? 'g'"
                         :items="quantityExpressionOptions"
                         value-key="value"
                         class="min-w-0 w-full"
                         :ui="{ base: 'bg-muted' }"
-                        :aria-label="`Unidade ou base da quantidade de ${item.name || 'ingrediente'}`"
+                        :aria-label="`Quantidade de ${item.name || 'ingrediente'} expressa em`"
                         @update:model-value="(expression: string) => onQuantityExpression(index, expression)"
                       />
                     </label>
