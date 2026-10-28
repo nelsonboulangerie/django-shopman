@@ -58,8 +58,9 @@ que saiu do canal.
    (os dois últimos já vêm preenchidos). Grava em `Shop.defaults["google_merchant"]`
    (dado da loja, ADR-042), e a página mostra a conta gravada no quadro
    "Google Merchant Center".
-6. No spec da DigitalOcean: `GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON` (tipo **SECRET**, o
-   JSON inteiro) e `GOOGLE_MERCHANT_PROJECTION=1`.
+6. No spec da DigitalOcean: `GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64` (tipo **SECRET**, o
+   JSON da chave em base64, numa linha: `base64 -i chave.json`; o editor de variáveis da
+   DigitalOcean recusa o JSON cru) e `GOOGLE_MERCHANT_PROJECTION=1`.
 7. `sync_platform_catalogs --dry-run --channel google-shopping` para conferir;
    `sync_platform_catalogs --force` para o primeiro envio.
 

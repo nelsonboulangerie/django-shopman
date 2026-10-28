@@ -38,12 +38,12 @@ pytestmark = pytest.mark.django_db
 
 _STORE = {"account_id": "5881119366", "data_source_id": "999", "content_language": "pt", "feed_label": "BR"}
 _SETTINGS = {
-    "service_account_json": json.dumps({
+    "service_account_b64": base64.b64encode(json.dumps({
         "client_email": "shopman@projeto.iam.gserviceaccount.com",
         # A assinatura do JWT é mockada nos testes: a chave nunca é lida.
         "private_key": "chave-de-teste",
         "token_uri": "https://oauth2.mock.test/token",
-    }),
+    }).encode()).decode(),
     "api_base": "https://merchant.mock.test",
     "timeout": 5,
 }
@@ -232,12 +232,18 @@ class TestBackend:
         return display_projected_item("google", "PAO")
 
     def test_inert_without_configuration(self, settings, stocked):
-        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_json="")
+        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
         with mock.patch.object(google.requests, "post") as post:
             result = google.GoogleMerchantProjection().project([self._item()], channel="google")
         assert result.success is False
         assert "não configurado" in result.errors[0]
         post.assert_not_called()
+
+    def test_raw_json_secret_is_refused(self):
+        """O segredo é o JSON em base64; o JSON cru não passa, nem por engano."""
+        raw = base64.b64decode(_SETTINGS["service_account_b64"]).decode()
+        assert google._service_account({"service_account_b64": raw}) is None
+        assert google._service_account(_SETTINGS)["client_email"] == "shopman@projeto.iam.gserviceaccount.com"
 
     def test_project_inserts_into_the_api_data_source(self, token, stocked):
         calls = []
@@ -386,7 +392,7 @@ class TestDailySync:
         assert [(d.payload["sku"], d.payload["trigger"]) for d in _queued()] == [("SUMIU", "left_channel")]
 
     def test_dry_run_prints_the_api_payload_without_credentials(self, settings, stocked):
-        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_json="")
+        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
         out = StringIO()
         call_command("sync_platform_catalogs", "--dry-run", "--channel", "google", stdout=out)
         output = out.getvalue()

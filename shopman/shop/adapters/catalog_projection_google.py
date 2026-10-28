@@ -38,7 +38,9 @@ Onde mora a config (ADR-042): o que é DADO DA LOJA fica em
         content_language:  ISO 639-1 dos produtos (default ``pt``).
         feed_label:        rótulo do feed (default ``BR``).
     SHOPMAN_GOOGLE_MERCHANT:
-        service_account_json:  JSON da service account (segredo do deployment).
+        service_account_b64:   JSON da service account em base64 (segredo do deployment).
+                               Base64 porque o editor de variáveis da DigitalOcean
+                               recusa o JSON cru, com quebras de linha.
         api_base:              base da API (default ``https://merchantapi.googleapis.com``).
         timeout:               segundos por chamada (default 30).
 """
@@ -87,13 +89,13 @@ def _get_config() -> dict:
 
 
 def _service_account(cfg: dict) -> dict | None:
-    raw = str(cfg.get("service_account_json") or "").strip()
+    raw = str(cfg.get("service_account_b64") or "").strip()
     if not raw:
         return None
     try:
-        creds = json.loads(raw)
+        creds = json.loads(base64.b64decode(raw, validate=True))
     except ValueError:
-        logger.error("catalog_projection_google: service_account_json não é JSON válido")
+        logger.error("catalog_projection_google: service_account_b64 não é o JSON da chave em base64")
         return None
     if not all(creds.get(key) for key in ("client_email", "private_key", "token_uri")):
         return None
