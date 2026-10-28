@@ -639,6 +639,9 @@ def _stock_decision(_adapter, sku: str, qty_d: Decimal, info: dict, *, target_da
         "reason_code": decision.reason_code,
         "is_paused": decision.is_paused,
         "is_planned": decision.is_planned,
+        # O pronto de agora, separado do que a promessa soma (pronto + lote):
+        # quem precisa dizer "ainda não está pronto" compara com este.
+        "ready_qty": decision.available,
         "target_date": decision.target_date,
         "failed_sku": None,
         "source": "stock.promise_decision",

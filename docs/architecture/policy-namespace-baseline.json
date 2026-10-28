@@ -739,7 +739,6 @@
       "shopman/shop/services/pos_sales_mode.py:SALES_MODES",
       "shopman/shop/services/pos_sales_mode.py:_PAYMENT_METHOD_SALES_MODES",
       "shopman/shop/services/pos_sales_mode.py:is_pos_counter_order",
-      "shopman/shop/services/pos_sales_mode.py:is_pos_order_mode",
       "shopman/shop/services/pos_sales_mode.py:order_sales_mode",
       "shopman/shop/services/pos_sales_mode.py:payment_method_sales_modes",
       "shopman/shop/services/pos_sales_mode.py:sales_mode",

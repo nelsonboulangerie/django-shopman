@@ -135,6 +135,41 @@ def test_aviso_de_falta_sai_para_quem_falta_e_so_para_quem_falta(balcao):
     assert {msg.split(":", 1)[0] for msg in avisos} == com_falta
 
 
+@pytest.fixture
+def lote_de_hoje(balcao):
+    """Um item prometido só pelo lote de hoje, que ainda está na Produção."""
+    listing = Listing.objects.get(ref="pdv")
+    producao = Position.objects.create(
+        ref="producao", name="Produção", kind=PositionKind.PHYSICAL, is_saleable=False,
+    )
+    product = Product.objects.create(
+        sku="LOTE", name="Croissant", base_price_q=900, is_published=True, is_sellable=True,
+    )
+    ListingItem.objects.create(listing=listing, product=product, price_q=900)
+    stock.receive(
+        quantity=Decimal("20"), sku="LOTE", position=producao,
+        target_date=date.today(), reason="Produção planejada",
+    )
+
+
+def _avisos_de_lote(review) -> list[str]:
+    return [w["message"] for w in review.warnings if w["code"] == "item_not_ready"]
+
+
+def test_item_do_lote_diz_planejado_nao_pronto(lote_de_hoje):
+    """Prometido pelo lote, mas não pronto: a venda vale, e o operador vê em
+    que ponto da Produção o item está para combinar a espera (28/10/2026)."""
+    review = _review(["LOTE", "P00"])
+    assert _avisos_de_lote(review) == ["LOTE: Planejado, não pronto"]
+    # O que está pronto não ganha aviso, e o lote não é tratado como falta.
+    assert not [w for w in review.warnings if w["code"] == "item_low_stock"]
+
+
+def test_lote_aberto_diz_previsto_nao_pronto(lote_de_hoje, monkeypatch):
+    monkeypatch.setattr(pos_service, "_started_lot_qty", lambda skus, target: {"LOTE": Decimal("20")})
+    assert _avisos_de_lote(_review(["LOTE"])) == ["LOTE: Previsto, não pronto"]
+
+
 # ── O lote responde o MESMO que a pergunta linha a linha ─────────────────────
 
 

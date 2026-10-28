@@ -14727,7 +14727,6 @@
             "payment_method_sales_modes",
             "order_sales_mode",
             "is_pos_counter_order",
-            "is_pos_order_mode",
             "validate_sales_mode",
             "session_sales_payload",
             "SALES_MODES",

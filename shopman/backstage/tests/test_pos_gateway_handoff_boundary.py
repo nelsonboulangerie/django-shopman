@@ -189,11 +189,13 @@ def test_future_pickup_captures_without_note_and_emits_on_pickup(close_counter):
 
     tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
     order, _ = close_counter("pix", delivery_date=tomorrow, customer_name="Ana", customer_phone="43999990000")
-    assert order.status == Order.Status.NEW
+    # A encomenda do PDV nasce aceita: quem registrou é o operador (27/10/2026).
+    assert order.status == Order.Status.ACCEPTED
     assert not fiscal_rows(order).exists()
     assert payment.mock_confirm(order) is True
     order.refresh_from_db()
-    assert order.status == Order.Status.NEW
+    # Paga, segue aceita: o preparo abre no dia combinado.
+    assert order.status == Order.Status.ACCEPTED
     assert Quant.objects.get(sku="BREAD")._quantity == Decimal("10")
     assert not KDSTicket.objects.filter(session_key=order.session_key).exists()
     # Pago e sem nota: a nota espera a saída da mercadoria.
