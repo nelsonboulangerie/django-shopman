@@ -38,8 +38,8 @@ const props = withDefaults(
      * Lista vazia: ninguém para escolher. NUNCA vira campo de nome digitado.
      *
      * ⚠️ Existiu um campo de nome livre aqui, "porta de saída" da lista vazia
-     * (19/08). Ele virou o caminho normal sem ninguém notar: no alpha a Joyce é
-     * a única gerente com PIN, a lista tira quem está operando, e todo
+     * (19/08). Ele virou o caminho normal sem ninguém notar: no alpha a Joyce era
+     * a única gerente com PIN, a lista tirava quem está operando, e todo
      * cancelamento do Gestor pedia o nome DIGITADO (dono, 28/10/2026: "erro
      * crasso, já tínhamos resolvido"). Nome digitado não abre porta nenhuma: o
      * servidor só aceita quem tem PIN e permissão, e esses estão na lista. Sem

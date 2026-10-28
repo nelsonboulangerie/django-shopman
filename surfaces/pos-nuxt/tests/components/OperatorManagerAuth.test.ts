@@ -87,14 +87,14 @@ describe("OperatorManagerAuth — quem assina vem da lista", () => {
   });
 
   // Lista vazia NUNCA vira campo de nome digitado (dono, 28/10/2026). No alpha a
-  // Joyce é a única gerente com PIN e a lista tira quem opera: o campo livre
+  // Joyce era a única gerente com PIN e a lista tirava quem opera: o campo livre
   // tinha virado o caminho normal de todo cancelamento do Gestor.
-  it("lista vazia diz que não há outro gerente e não abre campo de nome", async () => {
+  it("lista vazia diz que não há gerente e não abre campo de nome", async () => {
     const wrapper = await open({ managers: [] });
 
     expect(document.querySelector("input")).toBeNull();
     expect(document.querySelector('button[aria-label="Confirmar"]')).toBeNull();
-    expect(document.body.textContent).toContain("Nenhum outro gerente com PIN");
+    expect(document.body.textContent).toContain("Nenhum gerente com PIN");
     expect(document.body.textContent).toContain("Passe o crachá no leitor.");
     expect(wrapper.emitted("authorize")).toBeUndefined();
   });

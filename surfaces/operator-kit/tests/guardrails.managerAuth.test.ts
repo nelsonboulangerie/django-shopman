@@ -10,8 +10,9 @@ import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 // gerente pedindo o nome DIGITADO ("erro crasso, já tínhamos resolvido"). Já
 // tinha sido resolvido em 21/09 (`cfb10c14a`, a lista de gerentes no Gestor), e
 // voltou porque a peça de identificação guardava um campo de nome livre como
-// "porta de saída" da lista vazia. No alpha a lista é vazia sempre que a Joyce
-// opera (é a única gerente com PIN, e a lista tira quem opera).
+// "porta de saída" da lista vazia. No alpha a lista era vazia sempre que a Joyce
+// operava (única gerente com PIN, e a lista tirava quem opera; desde 28/10 quem
+// opera aparece e assina com o próprio PIN).
 //
 // E havia uma segunda moldura em volta da mesma peça: o `PosCancelSaleDialog`
 // montava o próprio diálogo com o `OperatorIdentify`, repetindo a decisão do

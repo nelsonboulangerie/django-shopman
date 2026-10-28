@@ -18,7 +18,8 @@
 //
 // ⚠️ Lista vazia NÃO vira campo de nome digitado. Ele existiu como "porta de
 // saída" e virou o caminho normal (ver `OperatorIdentify`, `emptyTitle`). Sem
-// outro gerente com PIN, a tela diz isso e o crachá continua valendo.
+// gerente com PIN, a tela diz isso e o crachá continua valendo. O gerente que
+// está operando aparece na lista (em primeiro) e assina com o próprio PIN.
 //
 // ⚠️ Toda autorização de gerente da suíte passa por ESTE componente. Quem precisa
 // de contexto do ato (o motivo do cancelamento, o prazo) usa o slot `context`,
@@ -39,7 +40,7 @@ const props = defineProps<{
    * ⚠️ É a linha que separa autorizar de logar, e é texto — não cor. As duas
    * telas pedem PIN num teclado igual, e o operador pode ler "digite o PIN"
    * como "sua sessão vai trocar". Não vai: `validate_manager_override` resolve o
-   * gerente, confere a permissão, recusa autoassinatura e devolve o objeto —
+   * gerente, confere a permissão e o PIN e devolve o objeto —
    * nunca chama `login()`. Dizer isso na tela é mais barato que consertar a
    * confusão depois, e vale para qualquer autorização (desconto, sangria,
    * destrave), não só a da gaveta.
@@ -139,8 +140,8 @@ function onBadge(token: string) {
           :busy="busy"
           :error="error"
           :badge-enabled="open"
-          empty-title="Nenhum outro gerente com PIN"
-          empty-description="Quem opera não autoriza a própria exceção. Chame outro gerente com crachá, ou cadastre o PIN de mais um gerente no Admin."
+          empty-title="Nenhum gerente com PIN"
+          empty-description="Cadastre o PIN de um gerente no Admin, ou chame um gerente com crachá."
           prompt="Quem autoriza?"
           change-label="Trocar gerente"
           @pin="onPin"

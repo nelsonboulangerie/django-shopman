@@ -711,8 +711,8 @@ class OperatorOrderProjection:
     # lista do PDV (``pos._manager_cards``). Sem ela o diálogo canônico caía no
     # campo livre e o gerente tinha de DIGITAR o próprio nome no meio de um
     # cancelamento com o relógio do iFood correndo; nome digitado erra, e o
-    # servidor resolve a assinatura por ``username``. Exclui quem opera: a
-    # segunda assinatura existe para haver duas pessoas.
+    # servidor resolve a assinatura por ``username``. Quem opera vem em primeiro
+    # e assina com o próprio PIN (dono, 28/10/2026).
     managers: tuple[dict[str, str], ...] = ()
     contact_request: ContactRequestProjection | None = None
     ifood_cancellation_notice: str = ""

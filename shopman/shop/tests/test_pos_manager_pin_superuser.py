@@ -3,7 +3,7 @@
 O PIN é individual, em HMAC, com limite de tentativas e bloqueio: o dono que
 cadastrou o dele assina como qualquer gerente. O risco concreto era o PIN
 compartilhado do seed, e esse continua fechado no ``setup_operators``. Quem opera
-não se autoriza, superusuário ou não.
+assina a própria exceção com o PIN dele (dono, 28/10/2026), superusuário ou não.
 """
 
 from __future__ import annotations
@@ -37,31 +37,37 @@ def _dono():
 def test_superusuario_autoriza_por_pin_e_por_cracha():
     _dono()
 
-    assert _verify_manager_pin("admin", "1234", operator_username="pos:fran").username == "admin"
-    assert _verify_manager_badge(BADGE, operator_username="pos:fran").username == "admin"
+    assert _verify_manager_pin("admin", "1234").username == "admin"
+    assert _verify_manager_badge(BADGE).username == "admin"
 
 
 def test_superusuario_com_pin_errado_nao_autoriza():
     _dono()
 
-    assert _verify_manager_pin("admin", "0000", operator_username="pos:fran") is None
+    assert _verify_manager_pin("admin", "0000") is None
 
 
-def test_superusuario_nao_autoriza_a_propria_operacao():
+def test_superusuario_que_opera_assina_com_o_proprio_pin():
     _dono()
 
-    assert _verify_manager_pin("admin", "1234", operator_username="pos:admin") is None
-    assert _verify_manager_badge(BADGE, operator_username="pos:admin") is None
+    assert _verify_manager_pin("admin", "1234").username == "admin"
+    assert _verify_manager_badge(BADGE).username == "admin"
 
 
-def test_quem_autoriza_lista_o_superusuario_menos_quando_ele_opera():
+def test_quem_autoriza_lista_quem_opera_em_primeiro():
     from shopman.backstage.projections.pos import _manager_cards
 
     dono = _dono()
     fran = get_user_model().objects.create_user("fran", password="x", is_staff=True)
+    joyce = get_user_model().objects.create_user("joyce", password="x", is_staff=True)
+    joyce.user_permissions.add(
+        Permission.objects.get(content_type__app_label="cashman", codename="adjust_shift")
+    )
+    PinCredential.set_for(joyce, "4321")
 
-    assert [c["username"] for c in _manager_cards(fran)] == ["admin"]
-    assert _manager_cards(dono) == ()
+    assert [c["username"] for c in _manager_cards(fran)] == ["admin", "joyce"]
+    assert [c["username"] for c in _manager_cards(joyce)] == ["joyce", "admin"]
+    assert [c["username"] for c in _manager_cards(dono)] == ["admin", "joyce"]
 
 
 def test_gerente_de_verdade_continua_autorizando():
@@ -71,5 +77,5 @@ def test_gerente_de_verdade_continua_autorizando():
     )
     _com_pin_e_cracha(gerente)
 
-    assert _verify_manager_pin("joyce", "1234", operator_username="pos:fran").username == "joyce"
-    assert _verify_manager_badge(BADGE, operator_username="pos:fran").username == "joyce"
+    assert _verify_manager_pin("joyce", "1234").username == "joyce"
+    assert _verify_manager_badge(BADGE).username == "joyce"
