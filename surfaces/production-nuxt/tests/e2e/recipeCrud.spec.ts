@@ -57,8 +57,16 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByRole("button", { name: "Adicionar receita", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Adicionar ingrediente", exact: true }).click();
   await expect(page.getByLabel("Ingrediente", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Quantidade", { exact: true })).toBeVisible();
+  await expect(page.getByText("Qtd", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Un", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel(/Categoria de ingrediente/)).toHaveCount(1);
+  await expect(page.getByText("Função no cálculo", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Ingrediente cadastrado", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(1);
+  const standardizeButton = page.getByRole("button", { name: /Padronizar para/ });
+  await expect(standardizeButton).toHaveClass(/w-full/);
+  await expect(standardizeButton).toHaveClass(/sm:w-auto/);
   await page.getByLabel("Ingrediente", { exact: true }).click();
   await expect(page.getByRole("option", { name: /Farinha T65/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Levain/ })).toBeVisible();
