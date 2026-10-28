@@ -71,6 +71,46 @@ class TestPinCredential:
         assert cred.attempts == 0
         assert cred.verify("1234") is True
 
+    @override_settings(DOORMAN={"PIN_LOCKOUT_MINUTES": 5, "PIN_LOCKOUT_MAX_MINUTES": 60})
+    def test_lockout_doubles_each_failure_after_expiry_up_to_ceiling(self, operator):
+        """Trava fixa de 5 min deixava varrer os 10 mil PINs em semanas (laudo S6)."""
+        cred = PinCredential.set_for(operator, "1234")
+        windows = []
+        for _ in range(cred.max_attempts):
+            cred.verify("0000")
+        for _ in range(6):
+            cred.refresh_from_db()
+            windows.append(round((cred.locked_until - timezone.now()).total_seconds() / 60))
+            # A trava vence; a próxima falha trava de novo, com a janela dobrada.
+            cred.locked_until = timezone.now() - timedelta(seconds=1)
+            cred.save(update_fields=["locked_until"])
+            cred.verify("0000")
+        assert windows == [5, 10, 20, 40, 60, 60]
+
+    def test_failure_while_locked_does_not_extend_the_lock(self, operator):
+        cred = PinCredential.set_for(operator, "1234")
+        for _ in range(cred.max_attempts):
+            cred.verify("0000")
+        cred.refresh_from_db()
+        locked_until, attempts = cred.locked_until, cred.attempts
+        assert cred.verify("0000") is False
+        cred.refresh_from_db()
+        assert (cred.locked_until, cred.attempts) == (locked_until, attempts)
+
+    def test_success_after_lock_restarts_from_the_first_window(self, operator):
+        cred = PinCredential.set_for(operator, "1234")
+        for _ in range(cred.max_attempts + 2):
+            cred.locked_until = None
+            cred.save(update_fields=["locked_until"])
+            cred.verify("0000")
+        cred.locked_until = None
+        cred.save(update_fields=["locked_until"])
+        assert cred.verify("1234") is True
+        for _ in range(cred.max_attempts):
+            cred.verify("0000")
+        cred.refresh_from_db()
+        assert round((cred.locked_until - timezone.now()).total_seconds() / 60) == PinCredential.lockout_minutes_for(0)
+
     def test_expired_lockout_allows_verify(self, operator):
         cred = PinCredential.set_for(operator, "1234")
         cred.locked_until = timezone.now() - timedelta(minutes=1)
