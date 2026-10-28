@@ -141,12 +141,14 @@ def test_acima_do_limite_pede_o_gerente_e_a_review_diz_os_numeros(counter):
     }
 
 
-def test_o_operador_nao_assina_o_proprio_limite(counter):
+def test_o_operador_gerente_assina_o_proprio_limite_com_o_PIN(counter):
+    """Decisão do dono, 28/10/2026: o gerente que opera assina com o PIN dele."""
     _set_limit(counter["ana"], 500)
     _grant(counter["operator"], "adjust_shift")
     PinCredential.set_for(counter["operator"], "1111")
+    _close(counter, ref="c-1", qty=1, manager_approval={"username": "marina", "pin": "1111"})
     with pytest.raises(PosIntentError) as exc:
-        _close(counter, ref="c-1", qty=1, manager_approval={"username": "marina", "pin": "1111"})
+        _close(counter, ref="c-2", qty=1, manager_approval={"username": "marina", "pin": "2222"})
     assert exc.value.code == "manager_approval_invalid"
 
 

@@ -3158,7 +3158,7 @@ def _bare_username(value: str) -> str:
     return raw.split(":", 1)[1] if ":" in raw else raw
 
 
-def _verify_manager_pin(username: str, pin: str, *, operator_username: str = ""):
+def _verify_manager_pin(username: str, pin: str):
     """Resolve a manager by username and verify their override PIN.
 
     A short, rate-limited PIN challenge replaces account passwords in the sale
@@ -3166,13 +3166,14 @@ def _verify_manager_pin(username: str, pin: str, *, operator_username: str = "")
     and the same ``cashman.adjust_shift`` permission the override gates
     require. Returns the authorizing user, or ``None`` if the challenge fails.
 
-    ⚠️ ``operator_username`` é o que faz da segunda assinatura uma SEGUNDA
-    pessoa. Antes bastava ter ``is_staff`` + ``adjust_shift``, e o gerente que
-    também opera o balcão (a Joyce do seed tem os dois) se autorizava: escolhia
-    o próprio nome em "Quem autoriza?", digitava o próprio PIN e a exceção saía
-    com quem faz e quem autoriza sendo a mesma pessoa. Isso não é aprovação, é
-    um passo a mais no mesmo ato — e era exatamente a fraude que o fluxo de
-    exceção do caixa existe para impedir.
+    ⚠️ O gerente que está operando ASSINA a própria exceção, com o PIN dele
+    (decisão do dono, 28/10/2026). Até então a autoassinatura era recusada para
+    a segunda assinatura ser uma segunda pessoa, e o resultado no balcão real
+    foi o oposto do controle: com uma gerente só no turno (a Joyce), a lista
+    "Quem autoriza?" chegava vazia e nenhuma exceção saía. O PIN pedido de novo
+    é a prova que importa: quem estiver usando a sessão dela não o tem. O
+    rastro continua inteiro: o livro grava ``operator`` e ``approved_by``, e a
+    auditoria lê quando os dois são a mesma pessoa (o log marca ``self_signed``).
     """
     from django.contrib.auth import get_user_model
     from shopman.doorman.models import PinCredential
@@ -3184,10 +3185,6 @@ def _verify_manager_pin(username: str, pin: str, *, operator_username: str = "")
         return None
     if not user.has_perm("cashman.adjust_shift"):
         return None
-    operator = _bare_username(operator_username)
-    if operator and _bare_username(username) == operator:
-        logger.warning("pos_manager_self_approval_refused operator=%s", operator)
-        return None
     try:
         credential = user.pin_credential
     except PinCredential.DoesNotExist:
@@ -3195,7 +3192,7 @@ def _verify_manager_pin(username: str, pin: str, *, operator_username: str = "")
     return user if credential.verify(pin) else None
 
 
-def _verify_manager_badge(badge: str, *, operator_username: str = ""):
+def _verify_manager_badge(badge: str):
     """Resolve o gerente pelo CRACHÁ, com a mesma permissão que o PIN exige.
 
     A sangria e o pedido de troco são a hora em que o gerente mais aparece no
@@ -3215,12 +3212,8 @@ def _verify_manager_badge(badge: str, *, operator_username: str = ""):
     projeto, com teste que trava). É a mesma escolha que o `_verify_manager_pin`
     aqui do lado já fazia, pelo mesmo motivo.
 
-    ⚠️ ``operator_username`` recusa a autoassinatura, exatamente como no PIN. O
-    gerente que também opera o balcão (a Joyce do seed tem ``operate_pos`` E
-    ``adjust_shift``) encostaria o próprio crachá e a exceção sairia com quem faz
-    e quem autoriza sendo a mesma pessoa — o que não é aprovação, é um passo a
-    mais no mesmo ato. Se o crachá ficasse de fora, ele seria a porta por onde a
-    fraude voltaria.
+    ⚠️ O gerente que está operando assina com o próprio crachá, como com o
+    próprio PIN (decisão do dono, 28/10/2026; ver ``_verify_manager_pin``).
     """
     from shopman.doorman.models import PinCredential
 
@@ -3228,10 +3221,6 @@ def _verify_manager_badge(badge: str, *, operator_username: str = ""):
     if user is None or not user.is_active or not user.is_staff:
         return None
     if not user.has_perm("cashman.adjust_shift"):
-        return None
-    operator = _bare_username(operator_username)
-    if operator and _bare_username(user.get_username()) == operator:
-        logger.warning("pos_manager_self_approval_refused operator=%s via=badge", operator)
         return None
     return user
 
@@ -3302,8 +3291,7 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     que o carimbo saía, lendo ``manager_approval.username`` sem nenhuma verificação.
 
     Delega ao ``validate_manager_override``, que é a versão madura do MESMO desafio:
-    aceita crachá **ou** usuário+PIN, recusa autoassinatura nas duas portas e devolve o
-    usuário verificado. Eram dois validadores para uma regra só, e o de desconto era o
+    aceita crachá **ou** usuário+PIN e devolve o usuário verificado. Eram dois validadores para uma regra só, e o de desconto era o
     atrasado — pedia PIN mesmo de quem estava com o crachá na mão.
 
     ``None`` quando não houve motivo para desafio: sem desafio não há assinatura, e é
@@ -3380,15 +3368,9 @@ def validate_manager_override(
             focus="approval",
             recovery=recovery_required,
         )
-    # As duas portas recebem quem OPERA, e pelo mesmo motivo: a segunda
-    # assinatura existe para haver duas pessoas. Passar o operador só no PIN
-    # deixaria o crachá como a porta por onde o gerente-que-opera continua se
-    # autorizando — e a porta nova seria a fraude de novo.
-    approver = (
-        _verify_manager_badge(badge, operator_username=operator_username)
-        if badge
-        else _verify_manager_pin(username, pin, operator_username=operator_username)
-    )
+    # O gerente que opera pode assinar, com o PIN ou o crachá dele (dono,
+    # 28/10/2026; ver `_verify_manager_pin`).
+    approver = _verify_manager_badge(badge) if badge else _verify_manager_pin(username, pin)
     if approver is None:
         raise PosIntentError(
             code="manager_approval_invalid",
@@ -3402,11 +3384,12 @@ def validate_manager_override(
     # branco — justamente a informação pela qual ela existe. Mesmo erro que o
     # cancelamento tinha ao persistir a assinatura; este ficou no log e passou.
     logger.info(
-        "pos_manager_override action=%s operator=%s approved_by=%s via=%s",
+        "pos_manager_override action=%s operator=%s approved_by=%s via=%s self_signed=%s",
         action,
         operator_username,
         approver.get_username(),
         "badge" if badge else "pin",
+        _bare_username(operator_username) == approver.get_username(),
     )
     return approver
 
