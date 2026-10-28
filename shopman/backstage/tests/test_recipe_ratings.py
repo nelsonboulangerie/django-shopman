@@ -56,7 +56,7 @@ def criteria(db):
 
 def _version(entry: RecipeEntry, status: str) -> RecipeVersion:
     version = craftsman.create_version(
-        entry, formula={"anchor": {"kind": "total"}, "items": [], "preps": []}, yield_quantity=1, yield_unit="g",
+        entry, formula={"anchor": {"kind": "total"}, "ingredients": []}, yield_quantity=1, yield_unit="g",
     )
     if status != RecipeVersion.Status.DRAFT:
         RecipeVersion.objects.filter(pk=version.pk).update(status=status)

@@ -21,6 +21,22 @@ function kdsPayload(cards: unknown[] = [], overrides: Record<string, unknown> = 
           proof: "void-proof",
           expected_rev: 5,
         },
+        {
+          ref: "register_old_dough:7",
+          enabled: true,
+          method: "POST",
+          href: "/api/projected/old-dough/7/",
+          proof: "old-dough-proof",
+          expected_rev: 5,
+        },
+        {
+          ref: "authorize_formula_deviation:7",
+          enabled: true,
+          method: "POST",
+          href: "/api/projected/formula-deviation/7/",
+          proof: "deviation-proof",
+          expected_rev: 5,
+        },
       ],
       ...overrides,
     },
@@ -86,6 +102,91 @@ describe("useProductionKds — per-WO writes", () => {
           contract_version: 1,
           action_ref: "void:7",
           action_proof: "void-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("registra massa velha no href projetado com envelope e campos do lote", async () => {
+    env.fetchData.value = kdsPayload();
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      sku: "MASSA-VELHA-PAO-FRANCES",
+      name: "Massa Velha de Pão Francês",
+      batch_ref: "MV-42",
+      quantity_g: "1250",
+      expiry_date: "2099-01-04",
+      recipe_version_ref: "pao-frances:v3",
+      replayed: false,
+    });
+    const { registerOldDough } = useProductionKds();
+
+    const result = await registerOldDough(7, 5, {
+      quantity: "1.25",
+      unit: "kg",
+      expiryDate: "2099-01-04",
+      positionRef: "bancada-1",
+      note: "Aparas do turno",
+    });
+
+    expect(result.data?.batch_ref).toBe("MV-42");
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/projected/old-dough/7/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          quantity: "1.25",
+          unit: "kg",
+          expiry_date: "2099-01-04",
+          position_ref: "bancada-1",
+          note: "Aparas do turno",
+          expected_rev: 5,
+          action_ref: "register_old_dough:7",
+          action_proof: "old-dough-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("autoriza desvio no href projetado e preserva o impacto recalculado", async () => {
+    env.fetchData.value = kdsPayload();
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      ingredient_ref: "levain",
+      ingredient_sku: "LEVAIN",
+      ingredient_name: "Levain",
+      expected: { minimum: "20", target: "20", maximum: "20" },
+      actual: "18",
+      reason: "Fermentação ajustada",
+      impact: {
+        bom: [{ sku: "FARINHA", quantity: "910", unit: "g" }],
+        batch_ref: "",
+      },
+      work_order_rev: 6,
+      replayed: false,
+    });
+    const { authorizeFormulaDeviation } = useProductionKds();
+
+    const result = await authorizeFormulaDeviation(7, 5, {
+      ingredientRef: "levain",
+      actualQuantity: "18",
+      reason: "Fermentação ajustada",
+    });
+
+    expect(result.data?.impact.bom[0]?.quantity).toBe("910");
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/projected/formula-deviation/7/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          ingredient_ref: "levain",
+          actual_quantity: "18",
+          reason: "Fermentação ajustada",
+          expected_rev: 5,
+          action_ref: "authorize_formula_deviation:7",
+          action_proof: "deviation-proof",
           idempotency_key: expect.any(String),
         }),
       }),

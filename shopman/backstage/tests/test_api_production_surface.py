@@ -144,6 +144,8 @@ def test_every_mutation_endpoint_enforces_the_floor_gate(client, recipe):
     urls = [
         reverse("api-backstage-wo-plan"),
         reverse("api-backstage-wo-start", args=[wo.pk]),
+        reverse("api-backstage-wo-old-dough", args=[wo.pk]),
+        reverse("api-backstage-wo-formula-deviation", args=[wo.pk]),
         reverse("api-backstage-wo-finish", args=[wo.pk]),
         reverse("api-backstage-wo-quick-finish"),
         reverse("api-backstage-wo-void", args=[wo.pk]),
@@ -1066,6 +1068,46 @@ def test_board_returns_payload(client, recipe, production_operator):
         "source_alert_ref": None,
         "source_alert_effect": None,
     }
+
+
+@pytest.mark.django_db
+def test_kds_registers_old_dough_with_projected_proof_and_replays(
+    client,
+    recipe,
+    production_operator,
+):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    production_service.apply_start(
+        work_order_id=work_order.pk,
+        quantity="10",
+        actor="production:setup",
+        expected_rev=work_order.rev,
+        idempotency_key="old-dough-api-start",
+    )
+    client.force_login(production_operator)
+    kds = client.get(reverse("api-backstage-production-kds")).json()["kds"]
+    action = next(item for item in kds["actions"] if item["ref"] == f"register_old_dough:{work_order.pk}")
+    body = _projected_body(
+        kds,
+        action,
+        quantity="750",
+        unit="g",
+        expiry_date=(date.today() + timedelta(days=1)).isoformat(),
+        position_ref="forno",
+        note="Aparas limpas da divisão",
+        expected_rev=action["expected_rev"],
+        idempotency_key="old-dough-api-register",
+    )
+    url = reverse("api-backstage-wo-old-dough", args=[work_order.pk])
+
+    first = client.post(url, body, content_type="application/json")
+    replay = client.post(url, body, content_type="application/json")
+
+    assert first.status_code == 200
+    assert first.json()["name"] == "Massa velha de Pão de Produção"
+    assert first.json()["quantity_g"] == "750"
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
 
 
 @pytest.mark.django_db

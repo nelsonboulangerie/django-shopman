@@ -53,7 +53,6 @@ def test_every_projection_of_the_plan_is_exported() -> None:
         "RecipeBookListProjection",
         "RecipeBookAccessProjection",
         "FormulaItemProjection",
-        "FormulaPrepProjection",
         "FormulaMetricProjection",
         "FormulaWarningProjection",
         "FormulaLensProjection",

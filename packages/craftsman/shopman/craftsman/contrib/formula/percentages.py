@@ -7,9 +7,7 @@ Módulo sem Django. Recebe a ``formula`` de uma ``RecipeVersion`` (schema na
   um ingrediente pelo nome e pelo SKU, em pt/en/fr/ja, sem acento e sem caixa;
 * :func:`item_grams` — quanto pesa um item da fórmula, em grama, ou ``None``
   quando a física não deixa saber (contagem sem ``grams_per_unit``);
-* :func:`analyze` — âncora, porcentagens, hidratação, sal, fermento, farinha
-  pré-fermentada, **mistura final** (base menos o que já está nas preps) e o
-  **BOM de consumo** (mistura final + preps prontas), com avisos;
+* :func:`analyze` — âncora, porcentagens, mistura final e BOM imediata;
 * :func:`standardize` / :func:`scale` — a fórmula inteira reescrita para a
   âncora somar ``basis_g`` (padrão da casa: 1000 g de farinhas), ou escalada por
   um fator;
@@ -35,7 +33,9 @@ from shopman.craftsman.exceptions import RecipeBookError
 
 ROLES = ("flour", "liquid", "salt", "yeast", "fat", "sugar", "egg", "dairy", "inclusion", "other")
 ANCHOR_KINDS = ("flour", "total", "ingredient")
-PREP_KINDS = ("preferment", "autolyse", "soaker", "old_dough")
+COMPOSITIONS = ("additional", "included")
+QUANTITY_KINDS = ("fixed", "ratio")
+BASIS_KINDS = ("flour", "total", "ingredient")
 UNITS = ("g", "kg", "mg", "ml", "L", "un")
 
 _ZERO = Decimal("0")
@@ -127,11 +127,6 @@ _ROLE_KEYWORDS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ),
 )
 
-_PREFERMENT_NAMES = ("levain", "sourdough", "poolish", "biga", "fermento", "starter", "esponja", "sponge")
-_AUTOLYSE_NAMES = ("autolis", "autoliz", "autolys")
-_SOAKER_NAMES = ("yudane", "tangzhong", "escald", "soaker", "mingau")
-
-
 def normalize_text(value: Any) -> str:
     """Texto sem acento, em minúsculas, com espaços únicos. Kana e kanji ficam."""
     raw = str(value or "")
@@ -210,36 +205,6 @@ def looks_like_flour(name: str, sku: str = "") -> bool:
     return classify_ingredient(name, sku) == "flour"
 
 
-def prep_kind_from_name(*names: str) -> str:
-    """Sugere uma prep apenas quando nome, ref ou SKU são inequívocos.
-
-    Vazio significa ingrediente preparado comum: creme, recheio e cobertura
-    continuam em ``items`` como qualquer outro ingrediente da BOM. Só uma prep
-    redistribui ingredientes já declarados na fórmula global.
-    """
-    text = normalize_text(" ".join(str(n or "") for n in names))
-    if any(word in text for word in _AUTOLYSE_NAMES):
-        return "autolyse"
-    if any(word in text for word in _SOAKER_NAMES):
-        return "soaker"
-    if any(word in text for word in _PREFERMENT_NAMES):
-        return "preferment"
-    return ""
-
-
-def prep_reference_key(prep: dict) -> str:
-    """Chave da faixa de referência de uma prep (levain, poolish, biga, ...)."""
-    kind = str(prep.get("kind") or "preferment")
-    if kind != "preferment":
-        return kind
-    text = normalize_text(f"{prep.get('name', '')} {prep.get('entry_ref', '')} {prep.get('sku', '')}")
-    if "poolish" in text:
-        return "poolish"
-    if "biga" in text:
-        return "biga"
-    return "levain"
-
-
 # ── Números ──────────────────────────────────────────────────────────────────
 
 
@@ -284,16 +249,18 @@ def normalize_unit(value: Any) -> str:
 
 
 def item_grams(item: dict) -> Decimal | None:
-    """Massa do item em grama, ou ``None`` quando não dá para saber.
-
-    Massa converte pela física. Volume passa pela ``density_g_per_ml`` do item;
-    sem densidade, líquido (``role="liquid"``) assume 1,0 e o resto fica sem
-    resposta. Contagem só entra com ``grams_per_unit``.
-    """
-    quantity = to_decimal(item.get("quantity"))
+    """Massa-alvo do ingrediente em grama, quando a quantidade é fixa."""
+    spec = item.get("quantity")
+    if isinstance(spec, dict):
+        if spec.get("kind") != "fixed":
+            return None
+        quantity = to_decimal(spec.get("target"))
+        unit = normalize_unit(spec.get("unit") or "g")
+    else:
+        quantity = to_decimal(spec)
+        unit = normalize_unit(item.get("unit") or "g")
     if quantity is None:
         return None
-    unit = normalize_unit(item.get("unit") or "g")
     if unit in _GRAMS_PER_UNIT:
         return quantity * _GRAMS_PER_UNIT[unit]
     if unit in _ML_PER_UNIT:
@@ -329,7 +296,7 @@ class FormulaWarning:
 
 @dataclass(frozen=True)
 class FormulaItemAnalysis:
-    """Um ingrediente com o peso em grama e a porcentagem sobre a âncora."""
+    """Um ingrediente unificado, simples ou produzido por outra receita."""
 
     sku: str
     name: str
@@ -338,23 +305,28 @@ class FormulaItemAnalysis:
     unit: str
     grams: Decimal | None
     pct: Decimal | None
+    ingredient_ref: str = ""
+    quantity_kind: str = "fixed"
+    basis_kind: str = ""
+    basis_sku: str = ""
+    recipe_version_ref: str = ""
+    composition: str = "additional"
+    minimum: Decimal | None = None
+    target: Decimal | None = None
+    maximum: Decimal | None = None
+    contents: tuple[FormulaItemAnalysis, ...] = ()
 
 
 @dataclass(frozen=True)
-class FormulaPrepAnalysis:
-    """Uma prep resolvida: quanto pesa e quanta farinha da base leva."""
-
+class QuantityDeviation:
+    ingredient_ref: str
     sku: str
-    entry_ref: str
-    kind: str
     name: str
-    quantity_g: Decimal | None
-    unit: str
-    flour_pct: Decimal | None
-    flour_g: Decimal
-    cap_pct: Decimal | None
-    has_formula: bool
-    contents: tuple[FormulaItemAnalysis, ...] = ()
+    minimum: Decimal | None
+    target: Decimal
+    maximum: Decimal | None
+    actual: Decimal
+    within_bounds: bool
 
 
 @dataclass(frozen=True)
@@ -364,19 +336,16 @@ class FormulaAnalysis:
     anchor_kind: str
     anchor_total_g: Decimal | None
     total_mass_g: Decimal
-    items: tuple[FormulaItemAnalysis, ...]
+    ingredients: tuple[FormulaItemAnalysis, ...]
     hydration_pct: Decimal | None
     salt_pct: Decimal | None
     yeast_pct: Decimal | None
-    prefermented_flour_pct: Decimal | None
     fat_pct: Decimal | None
     sugar_pct: Decimal | None
     egg_pct: Decimal | None
     final_mix: tuple[FormulaItemAnalysis, ...]
-    final_mix_at_cap: tuple[FormulaItemAnalysis, ...]
     bom: tuple[dict, ...]
-    preps: tuple[FormulaPrepAnalysis, ...]
-    old_dough_cap_pct: Decimal | None
+    deviations: tuple[QuantityDeviation, ...] = ()
     warnings: tuple[FormulaWarning, ...] = field(default_factory=tuple)
 
     def metrics(self) -> dict[str, Decimal | None]:
@@ -384,7 +353,6 @@ class FormulaAnalysis:
             "hydration_pct": self.hydration_pct,
             "salt_pct": self.salt_pct,
             "yeast_pct": self.yeast_pct,
-            "prefermented_flour_pct": self.prefermented_flour_pct,
             "fat_pct": self.fat_pct,
             "sugar_pct": self.sugar_pct,
             "egg_pct": self.egg_pct,
@@ -405,14 +373,39 @@ def _pct(grams: Decimal | None, anchor: Decimal | None) -> Decimal | None:
     return quantize(grams / anchor * _HUNDRED)
 
 
-def _read_items(items: list[dict], warnings: list[FormulaWarning]) -> list[dict]:
-    """Itens da base com ``grams`` resolvidos e avisos de física."""
+def _quantity_spec(raw: dict) -> dict:
+    internal = raw.get("_quantity_spec")
+    if isinstance(internal, dict):
+        return internal
+    spec = raw.get("quantity")
+    return spec if isinstance(spec, dict) else {}
+
+
+def _fixed_as_item(raw: dict) -> dict:
+    spec = _quantity_spec(raw)
+    return {
+        **raw,
+        "_quantity_spec": spec,
+        "quantity": spec.get("target"),
+        "unit": spec.get("unit") or "g",
+    }
+
+
+def _read_fixed(ingredients: list[dict], warnings: list[FormulaWarning], actuals: dict[str, Any] | None = None) -> list[dict]:
+    """Ingredientes simples de quantidade fixa que definem a fórmula global."""
     read: list[dict] = []
-    for index, raw in enumerate(items):
-        quantity = to_decimal(raw.get("quantity")) or _ZERO
-        unit = normalize_unit(raw.get("unit") or "g")
+    for index, raw in enumerate(ingredients):
+        spec = _quantity_spec(raw)
+        if raw.get("recipe_version_ref") or spec.get("kind") != "fixed":
+            continue
+        fixed = _fixed_as_item(raw)
+        ingredient_ref = str(raw.get("ref") or "")
+        if actuals and ingredient_ref in actuals:
+            fixed["quantity"] = actuals[ingredient_ref]
+        quantity = to_decimal(fixed.get("quantity")) or _ZERO
+        unit = normalize_unit(fixed.get("unit") or "g")
         role = str(raw.get("role") or "") or classify_ingredient(raw.get("name", ""), raw.get("sku", ""))
-        item = {**raw, "quantity": quantity, "unit": unit, "role": role}
+        item = {**fixed, "quantity": quantity, "unit": unit, "role": role, "source_index": index, "_quantity_spec": spec}
         grams = item_grams(item)
         label = str(raw.get("name") or raw.get("sku") or f"item {index + 1}")
         if grams is None:
@@ -420,19 +413,19 @@ def _read_items(items: list[dict], warnings: list[FormulaWarning]) -> list[dict]
                 warnings.append(FormulaWarning(
                     "COUNT_WITHOUT_GRAMS_PER_UNIT",
                     f"{label}: contagem sem peso por unidade fica fora da conta.",
-                    metric=f"items[{index}]",
+                    metric=f"ingredients[{index}]",
                 ))
             elif unit in _ML_PER_UNIT:
                 warnings.append(FormulaWarning(
                     "VOLUME_WITHOUT_DENSITY",
                     f"{label}: volume sem densidade declarada fica fora da conta.",
-                    metric=f"items[{index}]",
+                    metric=f"ingredients[{index}]",
                 ))
         elif unit in _ML_PER_UNIT and to_decimal(raw.get("density_g_per_ml")) in (None, _ZERO) and role == "liquid":
             warnings.append(FormulaWarning(
                 "LIQUID_DENSITY_ASSUMED",
                 f"{label}: volume de líquido sem densidade; assumido 1,0 g/ml.",
-                metric=f"items[{index}]",
+                metric=f"ingredients[{index}]",
             ))
         item["grams"] = grams
         item["key"] = _item_key(raw)
@@ -449,6 +442,8 @@ def _to_analysis_item(item: dict, anchor: Decimal | None, *, grams: Decimal | No
                       quantity: Decimal | None = None) -> FormulaItemAnalysis:
     grams_value = item["grams"] if grams is None else grams
     quantity_value = item["quantity"] if quantity is None else quantity
+    spec = _quantity_spec(item)
+    basis = spec.get("basis") if isinstance(spec.get("basis"), dict) else {}
     return FormulaItemAnalysis(
         sku=str(item.get("sku") or ""),
         name=str(item.get("name") or item.get("sku") or ""),
@@ -457,28 +452,76 @@ def _to_analysis_item(item: dict, anchor: Decimal | None, *, grams: Decimal | No
         unit=item["unit"],
         grams=None if grams_value is None else quantize(grams_value),
         pct=_pct(grams_value, anchor),
+        ingredient_ref=str(item.get("ref") or ""),
+        quantity_kind=str(spec.get("kind") or "fixed"),
+        basis_kind=str(basis.get("kind") or ""),
+        basis_sku=str(basis.get("sku") or ""),
+        recipe_version_ref=str(item.get("recipe_version_ref") or ""),
+        composition=str(item.get("composition") or "additional"),
+        minimum=to_decimal(spec.get("minimum")),
+        target=to_decimal(spec.get("target")),
+        maximum=to_decimal(spec.get("maximum")),
+        contents=tuple(item.get("contents") or ()),
     )
 
 
-def _prep_composition(prep_formula: dict) -> tuple[list[dict], Decimal, Decimal]:
-    """Itens da prep com grama, total em grama e farinha em grama."""
-    ignored: list[FormulaWarning] = []
-    items = [it for it in _read_items(list(prep_formula.get("items") or []), ignored) if it["grams"] is not None]
-    total = sum((it["grams"] for it in items), _ZERO)
-    flour = _role_total(items, "flour")
-    return items, total, flour
+def _basis_grams(spec: dict, base: list[dict]) -> Decimal | None:
+    basis = spec.get("basis") or {}
+    kind = basis.get("kind")
+    if kind == "total":
+        return sum((it["grams"] for it in base if it["grams"] is not None), _ZERO)
+    if kind == "flour":
+        return _role_total(base, "flour")
+    if kind == "ingredient":
+        sku = str(basis.get("sku") or "")
+        return sum((it["grams"] for it in base if it["grams"] is not None and it.get("sku") == sku), _ZERO)
+    return None
 
 
-def analyze(formula: dict, prep_formulas: dict[str, dict] | None = None) -> FormulaAnalysis:
-    """Lê a fórmula: âncora, porcentagens, métricas, mistura final e BOM.
+def _resolve_target(raw: dict, base: list[dict], actual: Any = None) -> tuple[Decimal | None, str, Decimal | None]:
+    spec = _quantity_spec(raw)
+    target = to_decimal(spec.get("target") if actual is None else actual)
+    if target is None:
+        return None, "g", None
+    if spec.get("kind") == "ratio":
+        basis = _basis_grams(spec, base)
+        return (None if basis is None else basis * target / _HUNDRED), "g", basis
+    unit = normalize_unit(spec.get("unit") or "g")
+    fixed = {**raw, "quantity": target, "unit": unit}
+    return item_grams(fixed), unit, None
 
-    ``prep_formulas`` mapeia o ``sku`` de cada prep para a ``formula`` da
-    versão atual da receita da prep (o serviço monta com ``prep_formulas_for``).
-    Prep sem fórmula fica na base e sai com aviso ``PREP_WITHOUT_FORMULA``.
-    """
-    prep_formulas = prep_formulas or {}
+
+def _global_composition(formula: dict, formulas: dict[str, dict], stack: tuple[str, ...] = ()) -> list[dict]:
+    """Composição elementar da receita sem contar duas vezes ingredientes inclusos."""
     warnings: list[FormulaWarning] = []
-    base = _read_items(list(formula.get("items") or []), warnings)
+    declared = list(formula.get("ingredients") or [])
+    base = _read_fixed(declared, warnings)
+    out = [dict(it) for it in base if it["grams"] is not None]
+    for raw in declared:
+        ref = str(raw.get("recipe_version_ref") or "")
+        if not ref or raw.get("composition") != "additional" or ref in stack:
+            continue
+        child = formulas.get(ref)
+        target_g, _, _ = _resolve_target(raw, base)
+        if not child or target_g is None:
+            continue
+        child_items = _global_composition(child, formulas, (*stack, ref))
+        child_total = sum((it["grams"] for it in child_items if it["grams"] is not None), _ZERO)
+        if child_total <= 0:
+            continue
+        for component in child_items:
+            out.append({**component, "grams": component["grams"] / child_total * target_g})
+    return out
+
+
+def analyze(formula: dict, ingredient_formulas: dict[str, dict] | None = None, *,
+            actual_quantities: dict[str, Any] | None = None) -> FormulaAnalysis:
+    """Resolve a fórmula unificada no alvo, preservando fórmula global e BOM imediata."""
+    ingredient_formulas = ingredient_formulas or {}
+    warnings: list[FormulaWarning] = []
+    declared = list(formula.get("ingredients") or [])
+    actual_quantities = actual_quantities or {}
+    base = _read_fixed(declared, warnings, actual_quantities)
     anchor = formula.get("anchor") or {}
     anchor_kind = str(anchor.get("kind") or "total")
 
@@ -501,119 +544,62 @@ def analyze(formula: dict, prep_formulas: dict[str, dict] | None = None) -> Form
         warnings.append(FormulaWarning("ANCHOR_EMPTY", "A fórmula não tem farinha; a âncora soma zero.", metric="anchor"))
         anchor_total = None
 
-    items = tuple(_to_analysis_item(it, anchor_total) for it in base)
-
-    # Mistura final: começa igual à base e vai perdendo o que as preps levam.
-    # As preps descontam por INSUMO: o mesmo SKU em duas linhas (a água da massa
-    # e a da bassinage) é um estoque só para o levain tirar a água dele.
+    analyses: list[FormulaItemAnalysis] = [_to_analysis_item(it, anchor_total) for it in base]
     remaining = _grams_by_key(base)
     base_by_key = {it["key"]: it for it in base}
-    preps: list[FormulaPrepAnalysis] = []
-    prefermented_flour = _ZERO
-    old_dough_cap: Decimal | None = None
-
-    for index, raw_prep in enumerate(list(formula.get("preps") or [])):
-        kind = str(raw_prep.get("kind") or "preferment")
-        if kind == "old_dough":
-            old_dough_cap = to_decimal(raw_prep.get("cap_pct"))
-            preps.append(FormulaPrepAnalysis(
-                sku="", entry_ref="", kind=kind, name=str(raw_prep.get("name") or "Massa velha"),
-                quantity_g=None, unit="g", flour_pct=None, flour_g=_ZERO, cap_pct=old_dough_cap,
-                has_formula=False,
-            ))
+    recipe_rows: list[dict] = []
+    for index, raw in enumerate(declared):
+        ref = str(raw.get("recipe_version_ref") or "")
+        if not ref:
             continue
-
-        sku = str(raw_prep.get("sku") or "")
-        name = str(raw_prep.get("name") or sku)
-        unit = normalize_unit(raw_prep.get("unit") or "g")
-        declared_pct = to_decimal(raw_prep.get("flour_pct"))
-        declared_quantity = to_decimal(raw_prep.get("quantity"))
-        prep_formula = prep_formulas.get(sku)
-
-        if not prep_formula:
+        name = str(raw.get("name") or raw.get("sku") or "")
+        actual = actual_quantities.get(str(raw.get("ref") or ""))
+        target_g, unit, _ = _resolve_target(raw, base, actual)
+        child = ingredient_formulas.get(ref)
+        if not child:
             warnings.append(FormulaWarning(
-                "PREP_WITHOUT_FORMULA",
-                f"{name}: a prep não tem fórmula conhecida e ficou na base.",
-                metric=f"preps[{index}]",
+                "INGREDIENT_RECIPE_NOT_FOUND", f"{name}: a versão {ref} não foi encontrada.",
+                metric=f"ingredients[{index}].recipe_version_ref",
             ))
-            preps.append(FormulaPrepAnalysis(
-                sku=sku, entry_ref=str(raw_prep.get("entry_ref") or ""), kind=kind, name=name,
-                quantity_g=None if declared_quantity is None else _grams_of(declared_quantity, unit),
-                unit=unit, flour_pct=declared_pct, flour_g=_ZERO, cap_pct=None, has_formula=False,
-            ))
-            continue
-
-        composition, prep_total, prep_flour = _prep_composition(prep_formula)
-        flour_fraction = (prep_flour / prep_total) if prep_total > 0 else _ZERO
-
-        quantity_g: Decimal | None = None
-        if anchor_kind == "flour" and declared_pct is not None and anchor_total:
-            if flour_fraction > 0:
-                quantity_g = (declared_pct / _HUNDRED * anchor_total) / flour_fraction
-                declared_g = None if declared_quantity is None else _grams_of(declared_quantity, unit)
-                if declared_g and abs(quantity_g - declared_g) <= declared_g * _SAME_DECLARATION_TOLERANCE:
-                    # A quantidade declarada é a mesma declaração da porcentagem,
-                    # escrita com mais casas: ela vence, e a conta fecha exata.
-                    quantity_g = declared_g
-            else:
-                warnings.append(FormulaWarning(
-                    "PREP_WITHOUT_FLOUR",
-                    f"{name}: a prep não tem farinha; o tamanho veio da quantidade declarada.",
-                    metric=f"preps[{index}]",
-                ))
-        if quantity_g is None and declared_quantity is not None:
-            quantity_g = _grams_of(declared_quantity, unit)
-        if quantity_g is None or prep_total <= 0:
-            warnings.append(FormulaWarning(
-                "PREP_WITHOUT_SIZE",
-                f"{name}: sem porcentagem de farinha nem quantidade; a prep ficou na base.",
-                metric=f"preps[{index}]",
-            ))
-            preps.append(FormulaPrepAnalysis(
-                sku=sku, entry_ref=str(raw_prep.get("entry_ref") or ""), kind=kind, name=name,
-                quantity_g=None, unit=unit, flour_pct=declared_pct, flour_g=_ZERO, cap_pct=None,
-                has_formula=True,
-            ))
-            continue
-
+        child_items = _global_composition(child or {}, ingredient_formulas, (ref,))
+        child_total = sum((it["grams"] for it in child_items if it["grams"] is not None), _ZERO)
         contents: list[FormulaItemAnalysis] = []
-        prep_flour_g = _ZERO
-        for component in composition:
-            contained = component["grams"] / prep_total * quantity_g
+        for component in child_items:
+            if target_g is None or child_total <= 0:
+                break
+            contained = component["grams"] / child_total * target_g
             key = component["key"]
-            if component["role"] == "flour":
-                prep_flour_g += contained
-            available = remaining.get(key)
-            if key not in base_by_key or available is None:
-                warnings.append(FormulaWarning(
-                    "PREP_EXCEEDS_BASE",
-                    f"{name} leva {component.get('name') or component.get('sku')}, que a base não declara.",
-                    metric=f"preps[{index}]",
-                ))
-            elif contained > available + Decimal("0.0005"):
-                warnings.append(FormulaWarning(
-                    "PREP_EXCEEDS_BASE",
-                    f"{name} leva mais {component.get('name') or component.get('sku')} do que a base tem.",
-                    metric=f"preps[{index}]",
-                    value=quantize(contained), high=quantize(available),
-                ))
-                remaining[key] = _ZERO
-            else:
-                remaining[key] = available - contained
+            if raw.get("composition") == "included":
+                available = remaining.get(key)
+                if key not in base_by_key or available is None or contained > available + Decimal("0.0005"):
+                    warnings.append(FormulaWarning(
+                        "INCLUDED_COMPOSITION_EXCEEDS_FORMULA",
+                        f"{name} usa mais {component.get('name') or component.get('sku')} do que a fórmula contém.",
+                        metric=f"ingredients[{index}].composition",
+                        value=quantize(contained), high=None if available is None else quantize(available),
+                    ))
+                    if available is not None:
+                        remaining[key] = _ZERO
+                else:
+                    remaining[key] = available - contained
             contents.append(_to_analysis_item(
                 {**component, "unit": "g"}, anchor_total, grams=contained, quantity=contained,
             ))
-
-        if kind == "preferment":
-            prefermented_flour += prep_flour_g
-        preps.append(FormulaPrepAnalysis(
-            sku=sku, entry_ref=str(raw_prep.get("entry_ref") or ""), kind=kind, name=name,
-            quantity_g=quantize(quantity_g), unit=unit,
-            flour_pct=_pct(prep_flour_g, anchor_total) if anchor_kind == "flour" else declared_pct,
-            flour_g=quantize(prep_flour_g), cap_pct=None, has_formula=True, contents=tuple(contents),
+        factor = _GRAMS_PER_UNIT.get(unit, Decimal(1))
+        analysis_raw = {
+            **raw,
+            "_quantity_spec": _quantity_spec(raw),
+            "quantity": _quantity_spec(raw).get("target"),
+            "unit": unit,
+            "role": str(raw.get("role") or "other"), "grams": target_g, "contents": tuple(contents),
+        }
+        analyses.append(_to_analysis_item(
+            analysis_raw, anchor_total, grams=target_g,
+            quantity=None if target_g is None else target_g / factor,
         ))
+        recipe_rows.append({**analysis_raw, "target_g": target_g})
 
-    # O que sobrou de cada item depois das preps; resíduo de arredondamento
+    # O que sobrou de cada ingrediente depois das composições inclusas.
     # (inclusive o "-0" do Decimal) vira zero, não linha negativa na tela.
     remaining = _remaining_by_line(base, {
         key: (_ZERO if grams is not None and abs(grams) < _BOM_RESIDUE_G else grams)
@@ -623,34 +609,48 @@ def analyze(formula: dict, prep_formulas: dict[str, dict] | None = None) -> Form
         _final_mix_item(it, remaining[it["line"]], anchor_total)
         for it in base
     )
-    factor_at_cap = Decimal(1) - (old_dough_cap / _HUNDRED) if old_dough_cap else Decimal(1)
-    final_mix_at_cap = tuple(
-        _final_mix_item(it, None if remaining[it["line"]] is None else remaining[it["line"]] * factor_at_cap, anchor_total)
-        for it in base
-    )
-
-    bom = tuple(_bom_items(base, remaining, preps, total_mass, old_dough_cap))
+    bom = tuple(_bom_items(base, remaining, recipe_rows))
+    additional_mass = sum((row["target_g"] or _ZERO for row in recipe_rows if row.get("composition") == "additional"), _ZERO)
 
     metrics_on = anchor_kind == "flour" and anchor_total is not None and anchor_total > 0
+    deviations = tuple(_quantity_deviation(raw, actual_quantities[str(raw.get("ref") or "")])
+                       for raw in declared if str(raw.get("ref") or "") in actual_quantities)
     return FormulaAnalysis(
         anchor_kind=anchor_kind,
         anchor_total_g=None if anchor_total is None else quantize(anchor_total),
-        total_mass_g=quantize(total_mass),
-        items=items,
+        total_mass_g=quantize(total_mass + additional_mass),
+        ingredients=tuple(analyses),
         hydration_pct=_pct(_role_total(base, "liquid"), anchor_total) if metrics_on else None,
         salt_pct=_pct(_role_total(base, "salt"), anchor_total) if metrics_on else None,
         yeast_pct=_pct(_role_total(base, "yeast"), anchor_total) if metrics_on else None,
-        prefermented_flour_pct=_pct(prefermented_flour, anchor_total) if metrics_on else None,
         fat_pct=_pct(_role_total(base, "fat"), anchor_total) if metrics_on else None,
         sugar_pct=_pct(_role_total(base, "sugar"), anchor_total) if metrics_on else None,
         egg_pct=_pct(_role_total(base, "egg"), anchor_total) if metrics_on else None,
         final_mix=final_mix,
-        final_mix_at_cap=final_mix_at_cap,
         bom=bom,
-        preps=tuple(preps),
-        old_dough_cap_pct=old_dough_cap,
+        deviations=deviations,
         warnings=tuple(warnings),
     )
+
+
+def _quantity_deviation(raw: dict, actual_value: Any) -> QuantityDeviation:
+    spec = _quantity_spec(raw)
+    target = to_decimal(spec.get("target")) or _ZERO
+    actual = to_decimal(actual_value) or _ZERO
+    minimum = to_decimal(spec.get("minimum"))
+    maximum = to_decimal(spec.get("maximum"))
+    return QuantityDeviation(
+        ingredient_ref=str(raw.get("ref") or ""),
+        sku=str(raw.get("sku") or ""), name=str(raw.get("name") or raw.get("sku") or ""),
+        minimum=minimum, target=target, maximum=maximum, actual=actual,
+        within_bounds=(minimum is None or actual >= minimum) and (maximum is None or actual <= maximum),
+    )
+
+
+def resolve_execution(formula: dict, actual_quantities: dict[str, Any],
+                      ingredient_formulas: dict[str, dict] | None = None) -> FormulaAnalysis:
+    """Recalcula a fórmula pela quantidade real; desvios permanecem explícitos para autorização."""
+    return analyze(formula, ingredient_formulas, actual_quantities=actual_quantities)
 
 
 def _grams_by_key(base: list[dict]) -> dict[str, Decimal | None]:
@@ -668,7 +668,7 @@ def _grams_by_key(base: list[dict]) -> dict[str, Decimal | None]:
 def _remaining_by_line(base: list[dict], remaining_by_key: dict[str, Decimal | None]) -> dict[int, Decimal | None]:
     """O que sobrou do insumo, de volta a cada LINHA da fórmula.
 
-    O que as preps levaram de um insumo sai das linhas dele na ordem da
+    O que as composições inclusas levaram sai das linhas na ordem da
     fórmula, a primeira primeiro: o levain tira a água da água da massa, e a
     bassinage (escrita depois) fica inteira. Linha sem peso (contagem sem
     grama por unidade) fica ``None``, como sempre ficou.
@@ -711,8 +711,7 @@ def _note_meta(note: Any) -> dict:
     return {"note": text} if text else {}
 
 
-def _bom_items(base: list[dict], remaining: dict, preps: list[FormulaPrepAnalysis],
-               total_mass: Decimal, old_dough_cap: Decimal | None) -> list[dict]:
+def _bom_items(base: list[dict], remaining: dict, recipe_rows: list[dict]) -> list[dict]:
     bom: list[dict] = []
     for item in base:
         grams = remaining[item["line"]]
@@ -735,42 +734,27 @@ def _bom_items(base: list[dict], remaining: dict, preps: list[FormulaPrepAnalysi
             # chega à ficha: sem isso ela morria no ato de publicar.
             "meta": _note_meta(item.get("note")),
         })
-    for prep in preps:
-        if prep.kind == "old_dough":
+    for ingredient in recipe_rows:
+        target_g = ingredient.get("target_g")
+        if target_g is None:
             continue
-        if not prep.has_formula or prep.quantity_g is None:
-            continue
-        factor = _GRAMS_PER_UNIT.get(prep.unit, Decimal(1))
+        unit = ingredient.get("unit") or "g"
+        factor = _GRAMS_PER_UNIT.get(unit, Decimal(1))
         bom.append({
-            "sku": prep.sku,
-            "name": prep.name,
-            "role": prep.kind,
-            "quantity": quantize(prep.quantity_g / factor),
-            "unit": prep.unit if prep.unit in _GRAMS_PER_UNIT else "g",
+            "sku": str(ingredient.get("sku") or ""),
+            "name": str(ingredient.get("name") or ingredient.get("sku") or ""),
+            "role": str(ingredient.get("role") or "other"),
+            "quantity": quantize(target_g / factor),
+            "unit": unit if unit in _GRAMS_PER_UNIT else "g",
             "is_optional": False,
-            "meta": {},
-        })
-    if old_dough_cap:
-        bom.append({
-            "sku": "",
-            "name": "Massa velha",
-            "role": "old_dough",
-            "quantity": quantize(total_mass * old_dough_cap / _HUNDRED) or quantize(Decimal("0.001")),
-            "unit": "g",
-            "is_optional": True,
-            "meta": {"role": "old_dough", "cap_pct": number_text(old_dough_cap)},
+            "meta": {"recipe_version_ref": ingredient.get("recipe_version_ref"), "composition": ingredient.get("composition")},
         })
     return bom
 
 
-def derive_bom(formula: dict, prep_formulas: dict[str, dict] | None = None) -> list[dict]:
-    """Itens prontos para virar ``RecipeItem``: ``{sku, name, role, quantity, unit, is_optional, meta}``.
-
-    A massa velha sai com ``is_optional=True`` e ``meta={"role": "old_dough",
-    "cap_pct": ...}`` e ``sku=""``: quem publica troca o SKU pelo da própria
-    receita. Avisos moram em :func:`analyze`; aqui só a lista.
-    """
-    return list(analyze(formula, prep_formulas).bom)
+def derive_bom(formula: dict, ingredient_formulas: dict[str, dict] | None = None) -> list[dict]:
+    """BOM imediata: mistura direta restante mais ingredientes produzidos."""
+    return list(analyze(formula, ingredient_formulas).bom)
 
 
 # ── Escala e padronização ────────────────────────────────────────────────────
@@ -781,16 +765,15 @@ def scale(formula: dict, factor: Decimal | int | str) -> dict:
     ratio = to_decimal(factor)
     if ratio is None or ratio <= 0:
         raise RecipeBookError("FORMULA_INVALID", field="factor", message="O fator de escala precisa ser positivo.")
-    scaled = {**formula, "items": [], "preps": [], "basis_g": None, "standardized": False}
-    for item in list(formula.get("items") or []):
-        quantity = to_decimal(item.get("quantity")) or _ZERO
-        scaled["items"].append({**item, "quantity": number_text(quantity * ratio)})
-    for prep in list(formula.get("preps") or []):
-        copy = dict(prep)
-        quantity = to_decimal(prep.get("quantity"))
-        if quantity is not None:
-            copy["quantity"] = number_text(quantity * ratio)
-        scaled["preps"].append(copy)
+    scaled = {**formula, "ingredients": [], "basis_g": None, "standardized": False}
+    for ingredient in list(formula.get("ingredients") or []):
+        spec = dict(_quantity_spec(ingredient))
+        if spec.get("kind") == "fixed":
+            for key in ("minimum", "target", "maximum"):
+                value = to_decimal(spec.get(key))
+                if value is not None:
+                    spec[key] = number_text(value * ratio)
+        scaled["ingredients"].append({**ingredient, "quantity": spec})
     return scaled
 
 
@@ -827,8 +810,7 @@ def _range(low, high, maximum=None, note="") -> dict:
     }
 
 
-#: Faixas por métrica; dentro, por ``kind`` da receita (``"*"`` vale para todas)
-#: ou, em ``prep_flour_pct``, por tipo de prep. Fonte: Hamelman *Bread*, Suas
+#: Faixas por métrica; dentro, por ``kind`` da receita (``"*"`` vale para todas).
 #: *Advanced Bread and Pastry*, convenção BBGA. Referência, não regra.
 REFERENCE_RANGES: dict[str, dict[str, dict]] = {
     "salt_pct": {
@@ -842,10 +824,6 @@ REFERENCE_RANGES: dict[str, dict[str, dict]] = {
         "viennoiserie": _range("50", "60", None, "Croissant 50 a 58; brioche 50 a 60 contando todo o líquido."),
         "sweet_dough": _range("50", "65", None, "Massa doce enriquecida."),
     },
-    "prefermented_flour_pct": {
-        "bread": _range("15", "40", "60", "Levain 15 a 30; poolish 20 a 40; biga 30 a 50."),
-        "viennoiserie": _range("0", "30", "40", "Pré-fermento em massa enriquecida costuma ser menor."),
-    },
     "sugar_pct": {
         "viennoiserie": _range("10", "20", None, "Massa enriquecida."),
         "sweet_dough": _range("10", "20", None, "Massa enriquecida."),
@@ -858,14 +836,6 @@ REFERENCE_RANGES: dict[str, dict[str, dict]] = {
         "viennoiserie": _range("40", "60", None, "Brioche."),
         "sweet_dough": _range("10", "40", None, "Massa doce."),
     },
-    "prep_flour_pct": {
-        "levain": _range("15", "30", "40", "Farinha pré-fermentada no levain."),
-        "poolish": _range("20", "40", "50", "Farinha pré-fermentada no poolish."),
-        "biga": _range("30", "50", "60", "Farinha pré-fermentada na biga."),
-        "soaker": _range("10", "20", "30", "Yudane e tangzhong."),
-        "old_dough": _range("15", "25", "30", "Massa velha, sobre a fórmula inteira."),
-        "autolyse": _range("0", "100", "100", "Autólise pode levar toda a farinha."),
-    },
 }
 
 _ALWAYS_CHECKED = ("hydration_pct", "salt_pct")
@@ -874,7 +844,6 @@ _METRIC_LABELS = {
     "hydration_pct": "Hidratação",
     "salt_pct": "Sal",
     "yeast_pct": "Fermento",
-    "prefermented_flour_pct": "Farinha pré-fermentada",
     "fat_pct": "Gordura",
     "sugar_pct": "Açúcar",
     "egg_pct": "Ovos",
@@ -916,7 +885,7 @@ def _check_value(code_prefix: str, label: str, metric: str, value: Decimal | Non
 
 
 def check_references(analysis: FormulaAnalysis, kind: str) -> list[FormulaWarning]:
-    """Compara as métricas (e a farinha de cada prep) com a literatura. Nunca bloqueia."""
+    """Compara métricas globais com a literatura. Nunca bloqueia."""
     out: list[FormulaWarning] = []
     if analysis.anchor_kind != "flour" or kind in REFERENCE_EXCLUDED_KINDS:
         return out
@@ -926,14 +895,6 @@ def check_references(analysis: FormulaAnalysis, kind: str) -> list[FormulaWarnin
         if value == _ZERO and metric not in _ALWAYS_CHECKED:
             continue
         _check_value("REFERENCE", _METRIC_LABELS[metric], metric, value, reference_for(metric, kind), out)
-    for prep in analysis.preps:
-        if prep.kind == "old_dough":
-            _check_value("REFERENCE", f"Massa velha ({prep.name})", "prep_flour_pct", prep.cap_pct,
-                         REFERENCE_RANGES["prep_flour_pct"].get("old_dough"), out)
-            continue
-        key = prep_reference_key({"kind": prep.kind, "name": prep.name, "entry_ref": prep.entry_ref, "sku": prep.sku})
-        _check_value("REFERENCE", f"Farinha na prep {prep.name}", "prep_flour_pct", prep.flour_pct,
-                     REFERENCE_RANGES["prep_flour_pct"].get(key), out)
     return out
 
 
@@ -972,66 +933,69 @@ def validate_formula(formula: Any) -> None:
     if "standardized" in formula and not isinstance(formula.get("standardized"), bool):
         raise _invalid("standardized", "Precisa ser verdadeiro ou falso.")
 
-    items = formula.get("items")
-    if not isinstance(items, list):
-        raise _invalid("items", "Os ingredientes precisam ser uma lista.")
-    for index, item in enumerate(items):
-        path = f"items[{index}]"
-        if not isinstance(item, dict):
+    ingredients = formula.get("ingredients")
+    if not isinstance(ingredients, list):
+        raise _invalid("ingredients", "Os ingredientes precisam ser uma lista.")
+    seen_refs: set[str] = set()
+    for index, ingredient in enumerate(ingredients):
+        path = f"ingredients[{index}]"
+        if not isinstance(ingredient, dict):
             raise _invalid(path, "Cada ingrediente precisa ser um objeto.")
-        sku = item.get("sku", "")
-        name = item.get("name", "")
+        sku = ingredient.get("sku", "")
+        name = ingredient.get("name", "")
         if not isinstance(sku, str) or not isinstance(name, str):
             raise _invalid(f"{path}.name", "Nome e SKU precisam ser texto.")
         if not sku.strip() and not name.strip():
             raise _invalid(f"{path}.name", "Ingrediente sem nome e sem SKU.")
-        role = item.get("role")
+        ingredient_ref = ingredient.get("ref")
+        if not isinstance(ingredient_ref, str) or not ingredient_ref.strip():
+            raise _invalid(f"{path}.ref", "A participação precisa de uma referência estável.")
+        if ingredient_ref in seen_refs:
+            raise _invalid(f"{path}.ref", "A referência da participação precisa ser única na fórmula.")
+        seen_refs.add(ingredient_ref)
+        role = ingredient.get("role")
         if role is not None and role not in ROLES:
             raise _invalid(f"{path}.role", f"Papel desconhecido; use um de: {', '.join(ROLES)}.")
-        _require_positive(item.get("quantity"), f"{path}.quantity")
-        unit = normalize_unit(item.get("unit") or "g")
-        if unit not in UNITS:
-            raise _invalid(f"{path}.unit", f"Unidade desconhecida; use uma de: {', '.join(UNITS)}.")
-        for optional in ("grams_per_unit", "density_g_per_ml"):
-            if item.get(optional) not in (None, ""):
-                _require_positive(item.get(optional), f"{path}.{optional}")
-        if item.get("note") is not None and not isinstance(item.get("note"), str):
-            raise _invalid(f"{path}.note", "A anotação do ingrediente precisa ser texto.")
+        ref = ingredient.get("recipe_version_ref", "")
+        if not isinstance(ref, str):
+            raise _invalid(f"{path}.recipe_version_ref", "A versão da receita precisa ser uma referência textual.")
+        composition = ingredient.get("composition")
+        if composition not in COMPOSITIONS:
+            raise _invalid(f"{path}.composition", "Composição desconhecida; use additional ou included.")
+        if composition == "included" and not ref.strip():
+            raise _invalid(f"{path}.composition", "Composição inclusa exige a versão da receita do ingrediente.")
 
-    preps = formula.get("preps", [])
-    if preps is None:
-        preps = []
-    if not isinstance(preps, list):
-        raise _invalid("preps", "As preps precisam ser uma lista.")
-    old_dough_seen = False
-    for index, prep in enumerate(preps):
-        path = f"preps[{index}]"
-        if not isinstance(prep, dict):
-            raise _invalid(path, "Cada prep precisa ser um objeto.")
-        kind = prep.get("kind")
-        if kind not in PREP_KINDS:
-            raise _invalid(f"{path}.kind", f"Tipo de prep desconhecido; use um de: {', '.join(PREP_KINDS)}.")
-        if kind == "old_dough":
-            if old_dough_seen:
-                raise _invalid(f"{path}.kind", "Só pode haver uma massa velha na fórmula.")
-            old_dough_seen = True
-            cap = _require_positive(prep.get("cap_pct"), f"{path}.cap_pct")
-            if cap >= 100:
-                raise _invalid(f"{path}.cap_pct", "O teto da massa velha precisa ser menor que 100%.")
-            continue
-        sku = prep.get("sku", "")
-        if not isinstance(sku, str):
-            raise _invalid(f"{path}.sku", "O SKU da prep precisa ser texto.")
-        flour_pct = prep.get("flour_pct")
-        quantity = prep.get("quantity")
-        if flour_pct in (None, "") and quantity in (None, ""):
-            raise _invalid(f"{path}.flour_pct", "A prep precisa de flour_pct ou de quantity.")
-        if flour_pct not in (None, ""):
-            pct = _require_positive(flour_pct, f"{path}.flour_pct")
-            if pct > 100:
-                raise _invalid(f"{path}.flour_pct", "A farinha da prep não pode passar de 100% da farinha total.")
-        if quantity not in (None, ""):
-            _require_positive(quantity, f"{path}.quantity")
-        unit = normalize_unit(prep.get("unit") or "g")
-        if unit not in _GRAMS_PER_UNIT:
-            raise _invalid(f"{path}.unit", "A prep é medida em massa (g ou kg).")
+        spec = ingredient.get("quantity")
+        if not isinstance(spec, dict):
+            raise _invalid(f"{path}.quantity", "A quantidade precisa declarar kind, target e seus limites.")
+        kind = spec.get("kind")
+        if kind not in QUANTITY_KINDS:
+            raise _invalid(f"{path}.quantity.kind", "Use fixed ou ratio.")
+        target = _require_positive(spec.get("target"), f"{path}.quantity.target")
+        minimum = None
+        maximum = None
+        if spec.get("minimum") not in (None, ""):
+            minimum = _require_positive(spec.get("minimum"), f"{path}.quantity.minimum", allow_zero=True)
+            if minimum > target:
+                raise _invalid(f"{path}.quantity.minimum", "O mínimo não pode superar o alvo.")
+        if spec.get("maximum") not in (None, ""):
+            maximum = _require_positive(spec.get("maximum"), f"{path}.quantity.maximum")
+            if maximum < target:
+                raise _invalid(f"{path}.quantity.maximum", "O máximo não pode ficar abaixo do alvo.")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise _invalid(f"{path}.quantity", "O mínimo não pode superar o máximo.")
+        if kind == "fixed":
+            unit = normalize_unit(spec.get("unit") or "g")
+            if unit not in UNITS:
+                raise _invalid(f"{path}.quantity.unit", f"Unidade desconhecida; use uma de: {', '.join(UNITS)}.")
+        else:
+            basis = spec.get("basis")
+            if not isinstance(basis, dict) or basis.get("kind") not in BASIS_KINDS:
+                raise _invalid(f"{path}.quantity.basis", "A base precisa ser flour, total ou ingredient.")
+            if basis.get("kind") == "ingredient" and not str(basis.get("sku") or "").strip():
+                raise _invalid(f"{path}.quantity.basis.sku", "A base por ingrediente precisa do SKU.")
+        for optional in ("grams_per_unit", "density_g_per_ml"):
+            if ingredient.get(optional) not in (None, ""):
+                _require_positive(ingredient.get(optional), f"{path}.{optional}")
+        if ingredient.get("note") is not None and not isinstance(ingredient.get("note"), str):
+            raise _invalid(f"{path}.note", "A anotação do ingrediente precisa ser texto.")

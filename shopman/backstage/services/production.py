@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import logging
+import re
 import tempfile
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -1266,6 +1267,393 @@ def apply_start(
     except Exception as exc:
         translated = _operator_error(exc)
         raise translated from (None if translated is exc else exc)
+
+
+def _old_dough_sku(output_sku: str) -> str:
+    """Stable stock identity for dough recovered from one produced SKU."""
+    suffix = re.sub(r"[^A-Z0-9]+", "-", str(output_sku or "").upper()).strip("-")
+    if not suffix:
+        raise ProductionError("A ficha não informa o produto de origem da massa velha.")
+    return f"MASSA-VELHA-{suffix}"[:100]
+
+
+def _old_dough_name(work_order) -> str:
+    recipe_name = str(getattr(work_order.recipe, "name", "") or work_order.output_sku).strip()
+    return f"Massa velha de {recipe_name}"
+
+
+def _old_dough_composition_snapshot(work_order) -> tuple[str, dict]:
+    """Freeze the authored formula that produced the recovered physical lot.
+
+    The WorkOrder snapshot owns the version reference.  Looking up by that
+    frozen reference is deliberate: today's current recipe must never rewrite
+    yesterday's recovered dough.
+    """
+    snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
+    version_ref = str(snapshot.get("version_ref") or "").strip()
+    formula: dict = {}
+    if version_ref and "@" in version_ref:
+        from shopman.craftsman.models import RecipeVersion
+
+        entry_ref, number = version_ref.rsplit("@", 1)
+        if number.isdigit():
+            version = (
+                RecipeVersion.objects.filter(entry__ref=entry_ref, number=int(number))
+                .only("formula")
+                .first()
+            )
+            if version is not None:
+                formula = dict(version.formula or {})
+    return version_ref, formula
+
+
+def register_old_dough(
+    *,
+    work_order_id,
+    quantity,
+    unit: str,
+    expiry_date: date,
+    actor: str,
+    user=None,
+    position_ref: str = "",
+    note: str = "",
+    expected_rev: int | None = None,
+    idempotency_key: str,
+) -> dict:
+    """Register reusable old dough as a physical, traceable stock lot.
+
+    This is an inventory fact, not a formula kind.  The lot carries the exact
+    source WorkOrder, frozen recipe version and formula snapshot; later recipe
+    execution may consume it through its ordinary ingredient SKU.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder
+    from shopman.stockman.models import Batch, Move, Position, Quant
+    from shopman.stockman.services.movements import StockMovements
+
+    amount = _positive_quantity(quantity)
+    normalized_unit = str(unit or "g").strip()
+    if normalized_unit not in {"g", "kg"}:
+        raise ProductionError("A massa velha precisa ser registrada em g ou kg.")
+    quantity_g = amount * (Decimal("1000") if normalized_unit == "kg" else Decimal("1"))
+    if expiry_date < timezone.localdate():
+        raise ProductionError("A validade da massa velha não pode estar no passado.")
+    attempt = str(idempotency_key or "").strip()
+    if not attempt:
+        raise ProductionError("A tentativa precisa de uma chave de idempotência.")
+
+    with transaction.atomic():
+        work_order = (
+            WorkOrder.objects.select_for_update()
+            .select_related("recipe")
+            .filter(pk=work_order_id)
+            .first()
+        )
+        if work_order is None:
+            raise ProductionNotFound(
+                "Ordem de produção não encontrada.",
+                resource="work_order",
+                identifier=str(work_order_id),
+            )
+        if work_order.status not in {WorkOrder.Status.STARTED, WorkOrder.Status.FINISHED}:
+            raise ProductionConflict(
+                "Registre a massa velha durante ou depois da produção.",
+                data={"work_order": work_order.ref, "status": work_order.status},
+            )
+        if expected_rev is not None and work_order.rev != expected_rev:
+            raise ProductionConflict(
+                "O lote mudou em outra tela. Atualize o painel e tente de novo.",
+                data={
+                    "work_order": work_order.ref,
+                    "cause": "stale_revision",
+                    "expected_rev": expected_rev,
+                    "current_rev": work_order.rev,
+                },
+            )
+
+        digest = hashlib.sha256(f"{work_order.pk}:{attempt}".encode()).hexdigest()[:12].upper()
+        batch_ref = f"MV-{work_order.pk}-{digest}"[:50]
+        existing = Batch.objects.select_for_update().filter(ref=batch_ref).first()
+        if existing is not None:
+            frozen = existing.metadata or {}
+            if frozen.get("idempotency_key") != attempt:
+                raise ProductionConflict(
+                    "A referência do lote já pertence a outra tentativa.",
+                    data={"work_order": work_order.ref},
+                )
+            quant = Quant.objects.filter(sku=existing.sku, batch=existing.ref, target_date__isnull=True).first()
+            if quant is None:
+                raise ProductionError("O lote de massa velha existe sem saldo correspondente.")
+            return {
+                "sku": existing.sku,
+                "name": str(frozen.get("ingredient_name") or _old_dough_name(work_order)),
+                "batch_ref": existing.ref,
+                "quantity_g": _qty(quant.quantity),
+                "expiry_date": existing.expiry_date.isoformat() if existing.expiry_date else "",
+                "recipe_version_ref": str(frozen.get("recipe_version_ref") or ""),
+                "replayed": True,
+            }
+
+        requested_position = str(position_ref or work_order.position_ref or "").strip()
+        position = Position.objects.filter(ref=requested_position).first() if requested_position else None
+        if requested_position and position is None:
+            raise ProductionError("A posição informada não existe no estoque.")
+        if position is None:
+            position = Position.objects.filter(is_default=True).order_by("pk").first()
+
+        sku = _old_dough_sku(work_order.output_sku)
+        ingredient_name = _old_dough_name(work_order)
+        version_ref, formula = _old_dough_composition_snapshot(work_order)
+        metadata = {
+            "resource_kind": "old_dough",
+            "ingredient_name": ingredient_name,
+            "source_work_order_ref": work_order.ref,
+            "source_output_sku": work_order.output_sku,
+            "recipe_version_ref": version_ref,
+            "composition_snapshot": formula,
+            "quantity_g": _qty(quantity_g),
+            "registered_by": actor,
+            "registered_at": timezone.now().isoformat(),
+            "idempotency_key": attempt,
+            "note": str(note or "").strip(),
+        }
+        batch = Batch.objects.create(
+            ref=batch_ref,
+            sku=sku,
+            production_date=work_order.target_date or timezone.localdate(),
+            expiry_date=expiry_date,
+            notes=f"{ingredient_name}. Origem: {work_order.ref}.",
+            metadata=metadata,
+        )
+        quant = StockMovements.receive(
+            quantity=quantity_g,
+            sku=sku,
+            position=position,
+            batch=batch.ref,
+            user=user,
+            reason=f"Registrar massa velha de {work_order.ref}",
+            kind=Move.Kind.MAKE,
+            source="old_dough",
+            source_work_order_ref=work_order.ref,
+            recipe_version_ref=version_ref,
+            composition_snapshot=formula,
+            ingredient_name=ingredient_name,
+            idempotency_key=attempt,
+        )
+        return {
+            "sku": sku,
+            "name": ingredient_name,
+            "batch_ref": batch.ref,
+            "quantity_g": _qty(quant.quantity),
+            "expiry_date": expiry_date.isoformat(),
+            "recipe_version_ref": version_ref,
+            "replayed": False,
+        }
+
+
+def _execution_snapshot_items(bom: tuple[dict, ...], authored_items: list[dict], *, batch_ref: str = "") -> list[dict]:
+    """Translate the resolved immediate BOM back to Craftsman's frozen execution dialect."""
+    authored_by_sku = {str(item.get("input_sku") or ""): item for item in authored_items}
+    resolved: list[dict] = []
+    for line in bom:
+        sku = str(line.get("sku") or "")
+        original = authored_by_sku.get(sku, {})
+        net = Decimal(str(line.get("quantity") or "0"))
+        usable_factor = Decimal(str(original.get("usable_factor") or "1"))
+        if usable_factor <= 0 or usable_factor > 1:
+            usable_factor = Decimal("1")
+        meta = {**(original.get("meta") or {}), **(line.get("meta") or {})}
+        if batch_ref and sku.startswith("MASSA-VELHA-"):
+            meta["batch_ref"] = batch_ref
+        resolved.append(
+            {
+                "input_sku": sku,
+                "quantity": _qty(net),
+                "gross_quantity": _qty(net / usable_factor),
+                "usable_factor": _qty(usable_factor),
+                "unit": str(line.get("unit") or "g"),
+                "is_optional": bool(line.get("is_optional", False)),
+                "meta": meta,
+            }
+        )
+    return resolved
+
+
+def authorize_formula_deviation(
+    *,
+    work_order_id,
+    ingredient_ref: str,
+    actual_quantity,
+    reason: str,
+    actor: str,
+    expected_rev: int,
+    idempotency_key: str,
+    batch_ref: str = "",
+) -> dict:
+    """Authorize one execution-only quantity outside the recipe bounds.
+
+    The authored recipe stays untouched.  The WorkOrder keeps both its original
+    recipe snapshot and the effective BOM recalculated by Craftsman's canonical
+    formula engine.  The semantic event is the immutable authorization trail.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.recipe_book import ingredient_formulas_for, resolve_execution
+    from shopman.craftsman.services.scheduling import _next_seq
+    from shopman.stockman.models import Batch, Quant
+
+    stable_ref = str(ingredient_ref or "").strip()
+    normalized_reason = str(reason or "").strip()
+    attempt = str(idempotency_key or "").strip()
+    actual = _positive_quantity(actual_quantity, allow_zero=True)
+    if not stable_ref:
+        raise ProductionError("Selecione o ingrediente cujo desvio será autorizado.")
+    if not normalized_reason:
+        raise ProductionError("Justificativa é obrigatória para autorizar um desvio da receita.")
+    if not attempt:
+        raise ProductionError("A tentativa precisa de uma chave de idempotência.")
+
+    with transaction.atomic():
+        work_order = WorkOrder.objects.select_for_update().filter(pk=work_order_id).first()
+        if work_order is None:
+            raise ProductionNotFound(
+                "Ordem de produção não encontrada.", resource="work_order", identifier=str(work_order_id)
+            )
+        event_key = f"production.formula-deviation:{work_order.pk}:{attempt}"
+        replay = WorkOrderEvent.objects.filter(idempotency_key=event_key).first()
+        if replay is not None:
+            payload = replay.payload or {}
+            if (
+                replay.actor != actor
+                or payload.get("ingredient_ref") != stable_ref
+                or Decimal(str(payload.get("actual") or "0")) != actual
+                or payload.get("reason") != normalized_reason
+            ):
+                raise ProductionConflict(
+                    "Esta tentativa já foi usada para outro desvio.",
+                    data={"work_order": work_order.ref, "cause": "idempotency_conflict"},
+                )
+            return {**payload, "replayed": True}
+        if work_order.status not in {WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED}:
+            raise ProductionConflict(
+                "Somente uma produção planejada ou aberta pode receber um desvio.",
+                data={"work_order": work_order.ref, "status": work_order.status},
+            )
+        if work_order.rev != expected_rev:
+            raise ProductionConflict(
+                "O lote mudou em outra tela. Atualize o painel e tente de novo.",
+                data={
+                    "work_order": work_order.ref,
+                    "cause": "stale_revision",
+                    "expected_rev": expected_rev,
+                    "current_rev": work_order.rev,
+                },
+            )
+
+        version_ref, formula = _old_dough_composition_snapshot(work_order)
+        if not version_ref or not formula:
+            raise ProductionError("A ordem não possui uma versão de receita congelada para recalcular o desvio.")
+        authored_ingredient = next(
+            (item for item in formula.get("ingredients") or [] if str(item.get("ref") or "") == stable_ref),
+            None,
+        )
+        if authored_ingredient is None:
+            raise ProductionError("O ingrediente não pertence à versão congelada desta receita.")
+        sku = str(authored_ingredient.get("sku") or "")
+        ingredient_name = str(authored_ingredient.get("name") or sku)
+        actuals = {
+            str(key): value
+            for key, value in ((work_order.meta or {}).get("_ingredient_actuals") or {}).items()
+        }
+        actuals[stable_ref] = actual
+        ingredient_formulas = ingredient_formulas_for(formula)
+
+        selected_batch = None
+        if batch_ref:
+            selected_batch = Batch.objects.select_for_update().filter(ref=batch_ref, sku=sku).first()
+            if selected_batch is None:
+                raise ProductionError("O lote selecionado não pertence a este ingrediente.")
+            if selected_batch.is_expired:
+                raise ProductionError("Lote vencido não pode ser autorizado para produção.")
+            metadata = selected_batch.metadata or {}
+            if sku.startswith("MASSA-VELHA-") and metadata.get("resource_kind") != "old_dough":
+                raise ProductionError("O lote selecionado não é massa velha registrada.")
+            source_formula = metadata.get("composition_snapshot")
+            source_version = str(metadata.get("recipe_version_ref") or "")
+            if isinstance(source_formula, dict) and source_formula and source_version:
+                ingredient_formulas[source_version] = source_formula
+                ingredient_formulas[str(authored_ingredient.get("recipe_version_ref") or "")] = source_formula
+        elif sku.startswith("MASSA-VELHA-"):
+            raise ProductionError("Selecione o lote de massa velha realmente utilizado.")
+
+        analysis = resolve_execution(formula, actuals, ingredient_formulas)
+        deviation = next((item for item in analysis.deviations if item.ingredient_ref == stable_ref), None)
+        if deviation is None:
+            raise ProductionError("O ingrediente não pertence à versão congelada desta receita.")
+        if deviation.within_bounds:
+            raise ProductionError("A quantidade está dentro dos limites da receita e não exige autorização.")
+
+        resolved_ingredient = next((item for item in analysis.ingredients if item.sku == sku), None)
+        snapshot = dict((work_order.meta or {}).get("_recipe_snapshot") or {})
+        authored_items = list(snapshot.get("authored_items") or snapshot.get("items") or [])
+        if selected_batch is not None and resolved_ingredient is not None and resolved_ingredient.grams is not None:
+            coefficient = (work_order.started_qty or work_order.quantity) / Decimal(str(snapshot.get("batch_size") or 1))
+            needed = resolved_ingredient.grams * coefficient
+            available = sum(
+                (quant.available for quant in Quant.objects.filter(sku=sku, batch=selected_batch.ref)), Decimal("0")
+            )
+            if available < needed:
+                raise ProductionError(
+                    f"O lote selecionado tem {_qty(available)} g disponíveis; o desvio exige {_qty(needed)} g."
+                )
+
+        snapshot["authored_items"] = authored_items
+        snapshot["items"] = _execution_snapshot_items(
+            analysis.bom,
+            authored_items,
+            batch_ref=selected_batch.ref if selected_batch is not None else "",
+        )
+        work_order.meta = {
+            **(work_order.meta or {}),
+            "_recipe_snapshot": snapshot,
+            "_ingredient_actuals": {**actuals, stable_ref: _qty(actual)},
+        }
+        work_order.rev += 1
+        work_order.save(update_fields=["meta", "rev", "updated_at"])
+        impact = {
+            "bom": [
+                {
+                    "sku": str(line.get("sku") or ""),
+                    "quantity": _qty(Decimal(str(line.get("quantity") or "0"))),
+                    "unit": str(line.get("unit") or "g"),
+                }
+                for line in analysis.bom
+            ],
+            "batch_ref": selected_batch.ref if selected_batch is not None else "",
+        }
+        payload = {
+            "ingredient_ref": stable_ref,
+            "ingredient_sku": sku,
+            "ingredient_name": ingredient_name,
+            "expected": {
+                "minimum": None if deviation.minimum is None else _qty(deviation.minimum),
+                "target": _qty(deviation.target),
+                "maximum": None if deviation.maximum is None else _qty(deviation.maximum),
+            },
+            "actual": _qty(deviation.actual),
+            "reason": normalized_reason,
+            "impact": impact,
+            "work_order_rev": work_order.rev,
+        }
+        WorkOrderEvent.objects.create(
+            work_order=work_order,
+            seq=_next_seq(work_order),
+            kind=WorkOrderEvent.Kind.FORMULA_DEVIATION,
+            payload=payload,
+            actor=actor,
+            idempotency_key=event_key,
+        )
+        return {**payload, "replayed": False}
 
 
 # Teto de sanidade da duração armada: um timer de forno não passa de 24h.

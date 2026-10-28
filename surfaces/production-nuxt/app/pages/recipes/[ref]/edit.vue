@@ -2,43 +2,40 @@
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 import type { OperatorActionBarAction } from "../../../../../operator-kit/app/presentation/actionBar";
 // O editor do rascunho (/recipes/[ref]/edit?v=n). Rendimento, âncora, a tabela
-// editável (ingrediente com busca, quantidade, unidade, papel), preps, etapas e
+// editável (ingrediente com busca, quantidade, composição, papel), etapas e
 // notas; à direita a PRÉVIA DA LENTE, recalculada pelo servidor com debounce. O
 // botão "Padronizar para 1000 g" mostra o antes/depois e deixa desfazer; a receita
 // como foi informada (`origin`) fica visível como referência histórica. "Salvar
 // rascunho" grava; "Salvar e publicar" grava e publica, voltando à receita.
-import type { AnchorKind, Formula, FormulaUnit, IngredientOptionProjection, IngredientRole, PrepKind, RecipeKind, RecipeStepInput, RecipeVersionProjection } from "~/types/recipeBook";
+import type { AnchorKind, Formula, FormulaQuantity, FormulaUnit, IngredientDefaults, IngredientOptionProjection, IngredientRole, RecipeKind, RecipeStepInput, RecipeVersionProjection } from "~/types/recipeBook";
 import {
   ANCHOR_OPTIONS,
   HOUSE_BASIS_G,
   KIND_OPTIONS,
-  PREP_KIND_OPTIONS,
   ROLE_OPTIONS,
   UNIT_OPTIONS,
   YIELD_UNIT_OPTIONS,
   addItem,
-  addPrep,
   anchorTotalOf,
   emptyFormula,
   emptyItem,
-  emptyPrep,
+  exactQuantity,
   formulaFromServed,
   gramsLabel,
   moveItem,
   originLines,
   pctOf,
-  prepReferenceCode,
-  referenceGuidance,
+  quantityPreset,
   removeItem,
-  removePrep,
   roleLabel,
   setAnchor,
   stepsForPayload,
   totalMassOf,
   unmatchedItems,
   updateItem,
-  updatePrep,
+  withQuantityPreset,
 } from "~/presentation/recipeBook";
+import { convertQuantity, normalizeQuantity, quantityRule } from "~/utils/quantity";
 
 const route = useRoute();
 const entryRef = String(route.params.ref ?? "");
@@ -68,6 +65,7 @@ const entryName = ref("");
 const entryKind = ref<RecipeKind>("other");
 const entryOutputSku = ref("");
 const entryNotes = ref("");
+const ingredientDefaults = ref<IngredientDefaults | null>(null);
 const entrySeeded = ref(false);
 // O "antes" da padronização (desfazer). Declarado ANTES do watch abaixo: com o
 // rascunho já carregado no servidor, o watch imediato roda durante o setup e
@@ -98,6 +96,7 @@ watch(
     entryKind.value = current.kind as RecipeKind;
     entryOutputSku.value = current.output_sku;
     entryNotes.value = current.notes;
+    ingredientDefaults.value = ((current as typeof current & { ingredient_defaults?: IngredientDefaults | null }).ingredient_defaults) ?? null;
     entrySeeded.value = true;
   },
   { immediate: true },
@@ -105,12 +104,10 @@ watch(
 
 const kind = computed(() => entry.value?.kind ?? "other");
 const { lens, pending: lensPending, error: lensError, standardizing, standardize } = useFormulaLens(formula, kind);
-const { ranges: referenceRanges } = useRecipeReference(entryKind);
 
 // ── Feedback imediato (a conta oficial é a lente) ───────────────────────────
 const localAnchorTotal = computed(() => anchorTotalOf(formula.value));
 const localTotal = computed(() => totalMassOf(formula.value));
-const anchorIsFlour = computed(() => formula.value.anchor.kind === "flour");
 // O padrão da casa vale para qualquer âncora: 1000 g de farinha no pão, 1000 g
 // de massa total num creme, 1000 g do ingrediente-âncora numa ganache.
 const anchorNoun = computed(() => {
@@ -118,21 +115,12 @@ const anchorNoun = computed(() => {
   if (formula.value.anchor.kind === "ingredient") return "do ingrediente-base";
   return "de massa total";
 });
-const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.items).length : 0));
+const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.ingredients).length : 0));
 
 // ── Itens ───────────────────────────────────────────────────────────────────
-const quantityRules: Record<FormulaUnit, { step: number; min: number; maximumFractionDigits: number }> = {
-  g: { step: 1, min: 1, maximumFractionDigits: 0 },
-  kg: { step: 0.001, min: 0.001, maximumFractionDigits: 3 },
-  ml: { step: 1, min: 1, maximumFractionDigits: 0 },
-  L: { step: 0.001, min: 0.001, maximumFractionDigits: 3 },
-  un: { step: 1, min: 1, maximumFractionDigits: 0 },
-};
 // Percentuais informados pelo operador usam uma única régua. Aceitar milésimos
 // com botões de décimo preservava um resíduo invisível (0,201 → 0,301).
 const percentageRule = { step: 0.1, min: 0.1, maximumFractionDigits: 1 } as const;
-const massFactor: Partial<Record<FormulaUnit, number>> = { g: 1, kg: 1000 };
-const volumeFactor: Partial<Record<FormulaUnit, number>> = { ml: 1, L: 1000 };
 const roleEditorIndex = ref<number | null>(null);
 const newIngredientIndex = ref<number | null>(null);
 const ingredientFocusKey = ref<string | null>(null);
@@ -143,22 +131,12 @@ const yieldQuantityNumber = computed<number | null>({
     return Number.isFinite(value) && value > 0 ? value : null;
   },
   set: (value) => {
-    yieldQuantity.value = value == null ? "" : String(normalizedQuantity(value, yieldUnit.value as FormulaUnit));
+    yieldQuantity.value = value == null ? "" : String(normalizeQuantity(value, yieldUnit.value as FormulaUnit));
   },
 });
-
-function quantityRule(unit: FormulaUnit) {
-  return quantityRules[unit];
-}
-function normalizedQuantity(value: number, unit: FormulaUnit): number {
-  const precision = quantityRules[unit].maximumFractionDigits;
-  const factor = 10 ** precision;
+function normalizedPercentage(value: number): number {
+  const factor = 10 ** percentageRule.maximumFractionDigits;
   return Math.round((value + Number.EPSILON) * factor) / factor;
-}
-function convertedQuantity(quantity: number, from: FormulaUnit, to: FormulaUnit): number | null {
-  const factors = massFactor[from] && massFactor[to] ? massFactor : volumeFactor[from] && volumeFactor[to] ? volumeFactor : null;
-  if (!factors) return from === to ? quantity : null;
-  return Number((quantity * (factors[from] ?? 1) / (factors[to] ?? 1)).toFixed(3));
 }
 function formulaDefaultUnit(unit: string): FormulaUnit {
   if (unit === "kg" || unit === "g") return "g";
@@ -166,17 +144,37 @@ function formulaDefaultUnit(unit: string): FormulaUnit {
   return "un";
 }
 function onItemQuantity(index: number, value: number | null | undefined) {
-  const item = formula.value.items[index];
+  const item = formula.value.ingredients[index];
   if (!item) return;
-  formula.value = updateItem(formula.value, index, { quantity: value == null ? 0 : normalizedQuantity(value, item.unit) });
+  const unit = item.quantity.unit ?? "g";
+  const target = value == null
+    ? 0
+    : item.quantity.kind === "ratio"
+      ? normalizedPercentage(value)
+      : normalizeQuantity(value, unit);
+  const preset = quantityPreset(item.quantity);
+  formula.value = updateItem(formula.value, index, {
+    quantity: withQuantityPreset({ ...item.quantity, target }, preset),
+  });
 }
 function onItemUnit(index: number, unit: string) {
-  const item = formula.value.items[index];
+  const item = formula.value.ingredients[index];
   if (!item) return;
   const next = unit as FormulaUnit;
-  const converted = convertedQuantity(item.quantity, item.unit, next);
-  formula.value = updateItem(formula.value, index, { unit: next, quantity: converted ?? item.quantity });
-  if (converted === null && item.quantity > 0) {
+  const currentUnit = item.quantity.unit ?? "g";
+  const converted = convertQuantity(item.quantity.target, currentUnit, next);
+  const factor = converted == null || !item.quantity.target ? 1 : converted / item.quantity.target;
+  const scale = (value: number | null) => value == null ? null : normalizeQuantity(value * factor, next);
+  formula.value = updateItem(formula.value, index, {
+    quantity: {
+      ...item.quantity,
+      unit: next,
+      target: converted ?? item.quantity.target,
+      minimum: scale(item.quantity.minimum),
+      maximum: scale(item.quantity.maximum),
+    },
+  });
+  if (converted === null && item.quantity.target > 0) {
     useSonner.info("Quantidade mantida. Massa, volume e unidade não têm conversão automática entre si.");
   }
 }
@@ -185,7 +183,7 @@ function onYieldUnit(unit: string) {
   const next = unit as FormulaUnit;
   const current = yieldQuantityNumber.value;
   if (current != null) {
-    const converted = convertedQuantity(current, from, next);
+    const converted = convertQuantity(current, from, next);
     yieldQuantity.value = String(converted ?? current);
     if (converted === null) {
       useSonner.info("Rendimento mantido. Massa, volume e unidade não têm conversão automática entre si.");
@@ -205,45 +203,38 @@ function onItemSku(index: number, sku: string) {
   formula.value = updateItem(formula.value, index, sku ? { sku } : { sku: "", name: "" });
 }
 function onItemSelect(index: number, option: IngredientOptionProjection) {
-  const item = formula.value.items[index];
+  const item = formula.value.ingredients[index];
   if (!item) return;
   // A BOM tem um único tipo de linha: ingrediente. A origem do item escolhido
   // decide apenas qual estrutura o motor recebe. Não obriga o operador a saber,
-  // antes de buscar, se o ingrediente é comprado ou produzido pela casa.
-  if (option.has_recipe && option.suggested_prep_kind) {
-    const prepIndex = formula.value.preps.length;
-    const prepKind = option.suggested_prep_kind as PrepKind;
-    const prepUnit = formulaDefaultUnit(option.unit);
-    const prepQuantity = convertedQuantity(item.quantity, item.unit, prepUnit) ?? item.quantity;
-    const prep = {
-      ...emptyPrep(prepKind),
-      sku: option.sku,
-      entry_ref: option.entry_ref,
-      quantity: anchorIsFlour.value ? null : prepQuantity || null,
-      unit: prepUnit,
-    };
-    formula.value = addPrep(removeItem(formula.value, index), prep);
-    newIngredientIndex.value = null;
-    ingredientFocusKey.value = `prep-${prepIndex}-amount`;
-    return;
-  }
+  // antes de buscar, se o ingrediente é comprado ou preparado pela casa.
   const patch: Partial<typeof item> = { sku: option.sku, name: option.name };
   if (ROLE_OPTIONS.some((role) => role.value === option.role)) patch.role = option.role as IngredientRole;
   const nextUnit = formulaDefaultUnit(option.unit);
-  patch.quantity = convertedQuantity(item.quantity, item.unit, nextUnit) ?? item.quantity;
-  patch.unit = nextUnit;
+  const converted = convertQuantity(item.quantity.target, item.quantity.unit ?? "g", nextUnit);
+  patch.quantity = exactQuantity(converted ?? item.quantity.target, nextUnit);
+  if (option.has_recipe) {
+    patch.recipe_version_ref = option.recipe_version_ref || undefined;
+    patch.composition = option.default_composition === "included" ? "included" : "additional";
+    if (option.default_quantity) {
+      patch.quantity = JSON.parse(JSON.stringify(option.default_quantity)) as FormulaQuantity;
+    }
+  } else {
+    patch.recipe_version_ref = undefined;
+    patch.composition = "additional";
+  }
   formula.value = updateItem(formula.value, index, patch);
   roleEditorIndex.value = null;
   newIngredientIndex.value = null;
   ingredientFocusKey.value = `ingredient-${index}-quantity`;
 }
 function itemMatchedName(index: number): string {
-  const item = formula.value.items[index];
+  const item = formula.value.ingredients[index];
   if (!item?.sku) return "";
-  return lens.value?.items.find((row) => row.sku === item.sku)?.name || item.name || item.sku;
+  return lens.value?.ingredients.find((row) => row.ref === item.ref || row.sku === item.sku)?.name || item.name || item.sku;
 }
 function addIngredient() {
-  const index = formula.value.items.length;
+  const index = formula.value.ingredients.length;
   newIngredientIndex.value = index;
   formula.value = addItem(formula.value, emptyItem());
   ingredientFocusKey.value = `ingredient-${index}-picker`;
@@ -264,14 +255,14 @@ function move(index: number, delta: number) {
 // ── Âncora ──────────────────────────────────────────────────────────────────
 function onAnchorKind(kind: string) {
   const next = kind as AnchorKind;
-  const firstSku = formula.value.items.find((item) => item.sku)?.sku ?? "";
+  const firstSku = formula.value.ingredients.find((item) => item.sku)?.sku ?? "";
   formula.value = setAnchor(formula.value, next, next === "ingredient" ? firstSku : "");
 }
 function onAnchorSku(sku: string) {
   formula.value = setAnchor(formula.value, "ingredient", sku);
 }
 const anchorCandidates = computed(() =>
-  formula.value.items
+  formula.value.ingredients
     .filter((item) => item.sku)
     .map((item) => ({ value: item.sku, label: item.name || item.sku })),
 );
@@ -280,7 +271,6 @@ const yieldUnits = [...YIELD_UNIT_OPTIONS];
 const units = [...UNIT_OPTIONS];
 const roles = [...ROLE_OPTIONS];
 const anchors = [...ANCHOR_OPTIONS];
-const prepKinds = [...PREP_KIND_OPTIONS];
 const kinds = [...KIND_OPTIONS];
 const editorTab = ref("technical");
 const editorTabs = [
@@ -289,58 +279,115 @@ const editorTabs = [
   { label: "Produção", value: "production" },
 ];
 
-// ── Preps ───────────────────────────────────────────────────────────────────
-function onPrepKind(index: number, kind: string) {
-  const next = kind as PrepKind;
-  if (next === "old_dough") {
-    formula.value = updatePrep(formula.value, index, { kind: next, cap_pct: 20, flour_pct: null, quantity: null });
-    return;
-  }
-  formula.value = updatePrep(
-    formula.value,
-    index,
-    !anchorIsFlour.value
-      ? { kind: next, cap_pct: null, flour_pct: null }
-      : { kind: next, cap_pct: null, quantity: null },
-  );
-}
-function onPrepSku(index: number, sku: string) {
-  formula.value = updatePrep(formula.value, index, { sku });
-}
-function onPrepSelect(index: number, option: IngredientOptionProjection) {
-  formula.value = updatePrep(formula.value, index, { sku: option.sku, entry_ref: option.entry_ref });
-}
-function onPrepPercentage(index: number, field: "flour_pct" | "cap_pct", value: number | null | undefined) {
-  formula.value = updatePrep(formula.value, index, {
-    [field]: value == null ? null : value,
+// ── Quantidade e composição ─────────────────────────────────────────────────
+const quantityPresets = [
+  { value: "exact", label: "Exata" },
+  { value: "minimum", label: "Mínima" },
+  { value: "maximum", label: "Máxima" },
+  { value: "range", label: "Faixa" },
+];
+const compositionOptions = [
+  { value: "additional", label: "Adicional" },
+  { value: "included", label: "Inclusa" },
+];
+
+function onQuantityPreset(index: number, preset: string) {
+  const item = formula.value.ingredients[index];
+  if (!item) return;
+  formula.value = updateItem(formula.value, index, {
+    quantity: withQuantityPreset(item.quantity, preset as "exact" | "minimum" | "maximum" | "range"),
   });
 }
-function onPrepQuantity(index: number, value: number | null | undefined) {
-  const prep = formula.value.preps[index];
-  const unit = (prep?.unit ?? "g") as FormulaUnit;
-  formula.value = updatePrep(formula.value, index, { quantity: value == null ? null : normalizedQuantity(value, unit) });
+function onQuantityKind(index: number, kind: string) {
+  const item = formula.value.ingredients[index];
+  if (!item) return;
+  const quantity: FormulaQuantity = kind === "ratio"
+    ? { ...item.quantity, kind: "ratio", unit: undefined, basis: { kind: formula.value.anchor.kind, sku: formula.value.anchor.sku } }
+    : { ...item.quantity, kind: "fixed", unit: item.quantity.unit ?? "g", basis: undefined };
+  formula.value = updateItem(formula.value, index, { quantity });
 }
-function onPrepUnit(index: number, unit: string) {
-  const prep = formula.value.preps[index];
-  if (!prep) return;
-  const next = unit as FormulaUnit;
-  const current = prep.quantity ?? null;
-  const converted = current == null ? null : convertedQuantity(current, prep.unit ?? "g", next);
-  formula.value = updatePrep(formula.value, index, { unit: next, quantity: converted ?? current });
+function onQuantityBasis(index: number, kind: string) {
+  const item = formula.value.ingredients[index];
+  if (!item) return;
+  formula.value = updateItem(formula.value, index, {
+    quantity: { ...item.quantity, basis: { kind: kind as AnchorKind } },
+  });
 }
-function dropPrep(index: number) {
-  formula.value = removePrep(formula.value, index);
+function onQuantityBasisSku(index: number, sku: string) {
+  const item = formula.value.ingredients[index];
+  if (!item) return;
+  formula.value = updateItem(formula.value, index, {
+    quantity: { ...item.quantity, basis: { kind: "ingredient", sku } },
+  });
 }
-function prepMatchedName(index: number): string {
-  const prep = formula.value.preps[index];
-  if (!prep?.sku) return "";
-  return lens.value?.preps.find((row) => row.sku === prep.sku)?.name || prep.sku;
+function onQuantityBound(index: number, field: "minimum" | "target" | "maximum", value: number | null | undefined) {
+  const item = formula.value.ingredients[index];
+  if (!item) return;
+  formula.value = updateItem(formula.value, index, {
+    quantity: { ...item.quantity, [field]: value == null ? (field === "target" ? 0 : null) : value },
+  });
 }
-function prepGuidance(index: number): string {
-  const prep = formula.value.preps[index];
-  if (!prep) return "";
-  const code = prepReferenceCode(prep, prepMatchedName(index));
-  return referenceGuidance(referenceRanges.value.find((range) => range.code === code));
+function onComposition(index: number, composition: string) {
+  formula.value = updateItem(formula.value, index, { composition: composition === "included" ? "included" : "additional" });
+}
+
+function startIngredientDefaults() {
+  ingredientDefaults.value = {
+    quantity: exactQuantity(100, "g"),
+    composition: "additional",
+  };
+}
+function onDefaultPreset(preset: string) {
+  if (!ingredientDefaults.value) return;
+  ingredientDefaults.value = {
+    ...ingredientDefaults.value,
+    quantity: withQuantityPreset(ingredientDefaults.value.quantity, preset as "exact" | "minimum" | "maximum" | "range"),
+  };
+}
+function onDefaultKind(kind: string) {
+  if (!ingredientDefaults.value) return;
+  ingredientDefaults.value = {
+    ...ingredientDefaults.value,
+    quantity: kind === "ratio"
+      ? { ...ingredientDefaults.value.quantity, kind: "ratio", unit: undefined, basis: { kind: "total" } }
+      : { ...ingredientDefaults.value.quantity, kind: "fixed", unit: "g", basis: undefined },
+  };
+}
+function onDefaultBound(field: "minimum" | "target" | "maximum", value: number | null | undefined) {
+  if (!ingredientDefaults.value) return;
+  ingredientDefaults.value = {
+    ...ingredientDefaults.value,
+    quantity: { ...ingredientDefaults.value.quantity, [field]: value == null ? (field === "target" ? 0 : null) : value },
+  };
+}
+function onDefaultTarget(value: number | null | undefined) {
+  if (!ingredientDefaults.value) return;
+  const quantity = ingredientDefaults.value.quantity;
+  ingredientDefaults.value = {
+    ...ingredientDefaults.value,
+    quantity: withQuantityPreset({ ...quantity, target: value ?? 0 }, quantityPreset(quantity)),
+  };
+}
+function onDefaultUnit(unit: string) {
+  if (!ingredientDefaults.value) return;
+  ingredientDefaults.value = {
+    ...ingredientDefaults.value,
+    quantity: { ...ingredientDefaults.value.quantity, unit: unit as FormulaUnit },
+  };
+}
+function onDefaultBasis(kind: string) {
+  if (!ingredientDefaults.value) return;
+  ingredientDefaults.value = {
+    ...ingredientDefaults.value,
+    quantity: { ...ingredientDefaults.value.quantity, basis: { kind: kind as AnchorKind } },
+  };
+}
+function onDefaultBasisSku(sku: string) {
+  if (!ingredientDefaults.value) return;
+  ingredientDefaults.value = {
+    ...ingredientDefaults.value,
+    quantity: { ...ingredientDefaults.value.quantity, basis: { kind: "ingredient", sku } },
+  };
 }
 
 // ── Modo de preparo estruturado ────────────────────────────────────────────
@@ -414,6 +461,7 @@ function editorSnapshot(): string {
     kind: entryKind.value,
     outputSku: entryOutputSku.value,
     entryNotes: entryNotes.value,
+    ingredientDefaults: ingredientDefaults.value,
     formula: formula.value,
     yieldQuantity: yieldQuantity.value,
     yieldUnit: yieldUnit.value,
@@ -494,12 +542,15 @@ async function save(): Promise<boolean> {
     entryKind.value !== entry.value?.kind ||
     cleanOutputSku !== entry.value?.output_sku ||
     entryNotes.value !== entry.value?.notes;
-  if (entryChanged) {
+  const servedDefaults = ((entry.value as typeof entry.value & { ingredient_defaults?: IngredientDefaults | null })?.ingredient_defaults) ?? null;
+  const defaultsChanged = JSON.stringify(ingredientDefaults.value) !== JSON.stringify(servedDefaults);
+  if (entryChanged || defaultsChanged) {
     const entryResult = await patchEntry({
       name: cleanName,
       kind: entryKind.value,
       output_sku: cleanOutputSku,
       notes: entryNotes.value,
+      ingredient_defaults: ingredientDefaults.value,
       ...(entry.value?.revision ? { expectedRevision: entry.value.revision } : {}),
     });
     if (!entryResult.ok) {
@@ -757,6 +808,105 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
             </div>
           </section>
 
+          <details v-if="editorTab === 'technical'" class="group rounded-md border bg-card">
+            <summary class="flex cursor-pointer list-none items-center gap-3 p-3">
+              <div class="min-w-0 flex-1">
+                <h2 class="text-sm font-semibold">Padrão ao usar como ingrediente</h2>
+                <p class="text-xs text-muted-foreground">É apenas uma sugestão. Cada receita recebe uma cópia independente.</p>
+              </div>
+              <Icon name="lucide:chevron-down" class="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div class="grid gap-3 border-t p-3">
+              <div v-if="!ingredientDefaults" class="grid gap-3 text-sm text-muted-foreground">
+                <p>Nenhum padrão definido. Ao inserir esta receita como ingrediente, a quantidade será informada na receita de destino.</p>
+                <NuxtButton class="w-full justify-center sm:w-auto" color="neutral" variant="outline" label="Definir padrão" @click="startIngredientDefaults" />
+              </div>
+              <template v-else>
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <NuxtFormField label="Quantidade">
+                    <NuxtSelect
+                      :model-value="quantityPreset(ingredientDefaults.quantity)"
+                      :items="quantityPresets"
+                      value-key="value"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted' }"
+                      @update:model-value="onDefaultPreset"
+                    />
+                  </NuxtFormField>
+                  <NuxtFormField label="Forma de informar">
+                    <NuxtSelect
+                      :model-value="ingredientDefaults.quantity.kind"
+                      :items="[{ value: 'fixed', label: 'Peso ou unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
+                      value-key="value"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted' }"
+                      @update:model-value="onDefaultKind"
+                    />
+                  </NuxtFormField>
+                </div>
+                <div v-if="quantityPreset(ingredientDefaults.quantity) === 'range'" class="grid grid-cols-3 gap-2">
+                  <NuxtFormField v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" :label="field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo'">
+                    <NuxtInputNumber
+                      :model-value="ingredientDefaults.quantity[field]"
+                      :min="0"
+                      :step="ingredientDefaults.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(ingredientDefaults.quantity.unit ?? 'g').step"
+                      locale="pt-BR"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted tabular-nums' }"
+                      @update:model-value="(value: number | null | undefined) => onDefaultBound(field, value)"
+                    />
+                  </NuxtFormField>
+                </div>
+                <div v-else class="grid grid-cols-[minmax(0,1fr)_minmax(7rem,0.65fr)] gap-2">
+                  <NuxtFormField :label="quantityPreset(ingredientDefaults.quantity) === 'minimum' ? 'A partir de' : quantityPreset(ingredientDefaults.quantity) === 'maximum' ? 'Até' : 'Quantidade'">
+                    <NuxtInputNumber
+                      :model-value="ingredientDefaults.quantity.target"
+                      :min="0"
+                      :step="ingredientDefaults.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(ingredientDefaults.quantity.unit ?? 'g').step"
+                      locale="pt-BR"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted tabular-nums' }"
+                      @update:model-value="onDefaultTarget"
+                    />
+                  </NuxtFormField>
+                  <NuxtFormField :label="ingredientDefaults.quantity.kind === 'ratio' ? 'Base' : 'Unidade'">
+                    <NuxtSelect
+                      v-if="ingredientDefaults.quantity.kind === 'fixed'"
+                      :model-value="ingredientDefaults.quantity.unit ?? 'g'"
+                      :items="units"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted' }"
+                      @update:model-value="onDefaultUnit"
+                    />
+                    <NuxtSelect
+                      v-else
+                      :model-value="ingredientDefaults.quantity.basis?.kind ?? 'total'"
+                      :items="anchors"
+                      value-key="value"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted' }"
+                      @update:model-value="onDefaultBasis"
+                    />
+                    <NuxtSelectMenu
+                      v-if="ingredientDefaults.quantity.kind === 'ratio' && ingredientDefaults.quantity.basis?.kind === 'ingredient'"
+                      :model-value="ingredientDefaults.quantity.basis.sku || undefined"
+                      :items="anchorCandidates"
+                      value-key="value"
+                      placeholder="Escolha o ingrediente"
+                      class="mt-2 w-full"
+                      aria-label="Ingrediente padrão usado como base percentual"
+                      @update:model-value="onDefaultBasisSku"
+                    />
+                  </NuxtFormField>
+                </div>
+                <NuxtFormField label="Composição" description="Adicional aumenta a fórmula. Inclusa redistribui ingredientes já previstos nela.">
+                  <NuxtSelect v-model="ingredientDefaults.composition" :items="compositionOptions" value-key="value" class="w-full" :ui="{ base: 'bg-muted' }" />
+                </NuxtFormField>
+                <NuxtButton class="w-full justify-center sm:w-auto" color="neutral" variant="ghost" label="Remover padrão" @click="ingredientDefaults = null" />
+              </template>
+            </div>
+          </details>
+
           <section v-if="editorTab === 'technical'" class="grid gap-3 rounded-md border bg-card p-3">
             <div>
               <h2 class="text-sm font-semibold">Rendimento</h2>
@@ -796,7 +946,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
             <div class="grid gap-3 border-b p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
               <div>
                 <h2 class="text-sm font-semibold">Ingredientes</h2>
-                <p class="text-xs text-muted-foreground">Cada ingrediente pode ser comprado ou produzido pela casa a partir de outra receita.</p>
+                <p class="text-xs text-muted-foreground">Cada ingrediente pode ser comprado ou preparado pela casa a partir de outra receita.</p>
               </div>
               <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                 Base do cálculo (100%)
@@ -829,7 +979,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
               </span>
             </div>
-            <div v-if="!formula.items.length && !formula.preps.length" class="grid gap-3 px-3 py-6 text-center">
+            <div v-if="!formula.ingredients.length" class="grid gap-3 px-3 py-6 text-center">
               <p class="text-sm text-muted-foreground">Adicione o primeiro ingrediente da receita.</p>
               <NuxtButton
                 class="w-full justify-center sm:mx-auto sm:w-auto"
@@ -840,15 +990,14 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               />
             </div>
             <template v-else>
-            <ol class="divide-y" data-testid="recipe-bom-items">
+            <ol class="grid gap-3 bg-muted/30 p-3" data-testid="recipe-bom-items">
               <li
-                v-for="(item, index) in formula.items"
-                :key="`item-${index}`"
+                v-for="(item, index) in formula.ingredients"
+                :key="item.ref"
                 :data-focus-target="`ingredient-${index}-picker`"
-                class="grid scroll-mt-20 gap-3 p-3 outline-none sm:grid-cols-[minmax(0,1fr)_auto]"
-                :class="item.role === 'flour' && anchorIsFlour ? 'bg-primary/5' : ''"
+                class="grid scroll-mt-20 gap-3 rounded-md border bg-card p-3 outline-none"
               >
-                <div class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-2">
+                <div class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Ingrediente
                   <IngredientPicker
                     :model-value="item.sku"
@@ -859,15 +1008,58 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     @select="onItemSelect(index, $event)"
                   />
                 </div>
-                <div class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
-                  <label :data-focus-target="`ingredient-${index}-quantity`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                <div v-if="item.recipe_version_ref" class="flex items-center gap-2 text-xs text-muted-foreground">
+                  <NuxtBadge color="neutral" variant="soft" label="Receita" />
+                  <span>Receita do ingrediente: {{ item.recipe_version_ref }}</span>
+                </div>
+                <div class="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                  <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
+                    <NuxtSelect
+                      :model-value="quantityPreset(item.quantity)"
+                      :items="quantityPresets"
+                      value-key="value"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted' }"
+                      :aria-label="`Regra de quantidade de ${item.name || 'ingrediente'}`"
+                      @update:model-value="(preset: string) => onQuantityPreset(index, preset)"
+                    />
+                  </label>
+                  <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+                    Forma de informar
+                    <NuxtSelect
+                      :model-value="item.quantity.kind"
+                      :items="[{ value: 'fixed', label: 'Peso ou unidade' }, { value: 'ratio', label: 'Percentual da base' }]"
+                      value-key="value"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted' }"
+                      @update:model-value="(kind: string) => onQuantityKind(index, kind)"
+                    />
+                  </label>
+                </div>
+                <div v-if="quantityPreset(item.quantity) === 'range'" class="grid grid-cols-3 gap-2">
+                  <label v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" class="grid gap-1 text-xs font-medium text-muted-foreground">
+                    {{ field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo' }}
                     <NuxtInputNumber
-                      :key="`quantity-${item.sku || index}-${item.unit}`"
-                      :model-value="item.quantity || null"
-                      :min="quantityRule(item.unit).min"
-                      :step="quantityRule(item.unit).step"
-                      :format-options="{ maximumFractionDigits: quantityRule(item.unit).maximumFractionDigits }"
+                      :model-value="item.quantity[field]"
+                      :min="item.quantity.kind === 'ratio' ? 0.1 : quantityRule(item.quantity.unit ?? 'g').min"
+                      :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
+                      locale="pt-BR"
+                      class="w-full"
+                      :ui="{ base: 'bg-muted tabular-nums' }"
+                      @update:model-value="(value: number | null | undefined) => onQuantityBound(index, field, value)"
+                    />
+                  </label>
+                </div>
+                <div v-else class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
+                  <label :data-focus-target="`ingredient-${index}-quantity`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                    {{ quantityPreset(item.quantity) === 'minimum' ? 'A partir de' : quantityPreset(item.quantity) === 'maximum' ? 'Até' : 'Quantidade' }}
+                    <NuxtInputNumber
+                      :key="`quantity-${item.sku || index}-${item.quantity.kind}-${item.quantity.unit || 'ratio'}`"
+                      :model-value="item.quantity.target || null"
+                      :min="item.quantity.kind === 'ratio' ? percentageRule.min : quantityRule(item.quantity.unit ?? 'g').min"
+                      :step="item.quantity.kind === 'ratio' ? percentageRule.step : quantityRule(item.quantity.unit ?? 'g').step"
+                      :format-options="{ maximumFractionDigits: item.quantity.kind === 'ratio' ? percentageRule.maximumFractionDigits : quantityRule(item.quantity.unit ?? 'g').maximumFractionDigits }"
                       locale="pt-BR"
                       class="w-full"
                       :ui="{ base: 'bg-muted tabular-nums' }"
@@ -877,27 +1069,61 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     />
                   </label>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Unidade
+                    {{ item.quantity.kind === 'ratio' ? 'Base' : 'Unidade' }}
                     <NuxtSelect
-                      :model-value="item.unit"
+                      v-if="item.quantity.kind === 'fixed'"
+                      :model-value="item.quantity.unit ?? 'g'"
                       :items="units"
                       class="w-full"
                       :ui="{ base: 'bg-muted' }"
                       :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
                       @update:model-value="(unit: string) => onItemUnit(index, unit)"
                     />
+                    <span v-else class="grid gap-2">
+                      <NuxtSelect
+                        :model-value="item.quantity.basis?.kind ?? 'total'"
+                        :items="anchors"
+                        value-key="value"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted' }"
+                        :aria-label="`Base percentual de ${item.name || 'ingrediente'}`"
+                        @update:model-value="(kind: string) => onQuantityBasis(index, kind)"
+                      />
+                      <NuxtSelectMenu
+                        v-if="item.quantity.basis?.kind === 'ingredient'"
+                        :model-value="item.quantity.basis.sku || undefined"
+                        :items="anchorCandidates"
+                        value-key="value"
+                        placeholder="Escolha o ingrediente"
+                        class="w-full"
+                        aria-label="Ingrediente usado como base percentual"
+                        @update:model-value="(sku: string) => onQuantityBasisSku(index, sku)"
+                      />
+                    </span>
                   </label>
                 </div>
-                <div class="flex items-end justify-end gap-1">
+                <div v-if="item.recipe_version_ref" class="grid gap-1 text-xs font-medium text-muted-foreground">
+                  Composição
+                  <NuxtSelect
+                    :model-value="item.composition"
+                    :items="compositionOptions"
+                    value-key="value"
+                    class="w-full"
+                    :ui="{ base: 'bg-muted' }"
+                    @update:model-value="(composition: string) => onComposition(index, composition)"
+                  />
+                  <span class="font-normal">Adicional aumenta a fórmula. Inclusa redistribui ingredientes já previstos nela.</span>
+                </div>
+                <div class="flex items-center justify-end gap-1 border-t pt-2">
                   <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a base do cálculo (prévia local)'">
                     {{ pctOf(item, localAnchorTotal) ? `${pctOf(item, localAnchorTotal)}%` : "" }}
                   </span>
                   <!-- A microbarra da linha: ordenar e remover, ícones `ghost`. -->
                   <NuxtButton icon="i-lucide-chevron-up" color="neutral" variant="ghost" square aria-label="Subir" :disabled="index === 0" @click="move(index, -1)" />
-                  <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer" :disabled="index === formula.items.length - 1" @click="move(index, 1)" />
+                  <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer" :disabled="index === formula.ingredients.length - 1" @click="move(index, 1)" />
                   <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="remove(index)" />
                 </div>
-                <div v-if="item.sku && roleEditorIndex !== index" class="flex min-w-0 items-center gap-2 sm:col-span-2">
+                <div v-if="item.sku && roleEditorIndex !== index" class="flex min-w-0 items-center gap-2">
                   <span class="text-xs text-muted-foreground">Papel na fórmula:</span>
                   <NuxtBadge color="neutral" variant="soft" :label="roleLabel(item.role)" />
                   <NuxtButton
@@ -910,7 +1136,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     @click="roleEditorIndex = index"
                   />
                 </div>
-                <label v-else-if="item.sku" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-2">
+                <label v-else-if="item.sku" class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Papel na fórmula
                   <span class="font-normal">Define como este ingrediente participa dos percentuais e conversões.</span>
                   <NuxtSelect
@@ -923,7 +1149,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     @update:model-value="(role: string) => onItemRole(index, role)"
                   />
                 </label>
-                <label v-if="item.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-2">
+                <label v-if="item.quantity.kind === 'fixed' && item.quantity.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground">
                   Gramas por unidade (sem isso a contagem fica fora da conta)
                   <NuxtInput
                     :model-value="String(item.grams_per_unit ?? '')"
@@ -934,107 +1160,6 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     @input="onItemGramsPerUnit(index, $event)"
                   />
                 </label>
-              </li>
-              <li
-                v-for="(prep, index) in formula.preps"
-                :key="`recipe-${index}`"
-                class="grid gap-3 p-3 sm:grid-cols-[minmax(10rem,0.9fr)_minmax(0,1.4fr)_minmax(13rem,1fr)_auto]"
-              >
-                <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Uso na receita
-                  <NuxtSelect
-                    :model-value="prep.kind"
-                    :items="prepKinds"
-                    value-key="value"
-                    class="w-full"
-                    aria-label="Uso da receita como ingrediente"
-                    :ui="{ base: 'bg-muted' }"
-                    @update:model-value="(kind: string) => onPrepKind(index, kind)"
-                  />
-                </label>
-                <template v-if="prep.kind === 'old_dough'">
-                  <p class="self-end pb-2 text-sm text-muted-foreground">Massa da própria receita, reservada da produção anterior.</p>
-                  <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                    Limite de substituição
-                    <span class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:w-48">
-                      <NuxtInputNumber
-                        :model-value="prep.cap_pct ?? null"
-                        :min="percentageRule.min"
-                        :max="99.9"
-                        :step="percentageRule.step"
-                        :format-options="{ maximumFractionDigits: percentageRule.maximumFractionDigits }"
-                        locale="pt-BR"
-                        class="w-full"
-                        :ui="{ base: 'bg-muted tabular-nums' }"
-                        aria-label="Limite percentual de substituição por massa velha"
-                        @update:model-value="(value: number | null | undefined) => onPrepPercentage(index, 'cap_pct', value)"
-                      />
-                      <span class="text-sm text-muted-foreground">%</span>
-                    </span>
-                    <span v-if="prepGuidance(index)" class="font-normal text-muted-foreground">{{ prepGuidance(index) }}</span>
-                  </label>
-                </template>
-                <template v-else>
-                  <div class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
-                    Ingrediente
-                    <IngredientPicker
-                      :model-value="prep.sku ?? ''"
-                      :matched-name="prepMatchedName(index)"
-                      @update:model-value="onPrepSku(index, $event)"
-                      @select="onPrepSelect(index, $event)"
-                    />
-                  </div>
-                  <label v-if="anchorIsFlour" :data-focus-target="`prep-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
-                    Base de cálculo nesta preparação
-                    <span class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                      <NuxtInputNumber
-                        data-focus-control
-                        :model-value="prep.flour_pct ?? null"
-                        :min="percentageRule.min"
-                        :max="100"
-                        :step="percentageRule.step"
-                        :format-options="{ maximumFractionDigits: percentageRule.maximumFractionDigits }"
-                        locale="pt-BR"
-                        class="w-full"
-                        :ui="{ base: 'bg-muted tabular-nums' }"
-                        aria-label="Percentual da base de cálculo nesta preparação"
-                        @update:model-value="(value: number | null | undefined) => onPrepPercentage(index, 'flour_pct', value)"
-                      />
-                      <span class="text-sm text-muted-foreground">%</span>
-                    </span>
-                    <span v-if="prepGuidance(index)" class="font-normal text-muted-foreground">{{ prepGuidance(index) }}</span>
-                  </label>
-                  <label v-else :data-focus-target="`prep-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
-                    Quantidade
-                    <span class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
-                      <NuxtInputNumber
-                        data-focus-control
-                        :key="`prep-quantity-${prep.sku || index}-${prep.unit}`"
-                        :model-value="prep.quantity ?? null"
-                        :min="quantityRule((prep.unit ?? 'g') as FormulaUnit).min"
-                        :step="quantityRule((prep.unit ?? 'g') as FormulaUnit).step"
-                        :format-options="{ maximumFractionDigits: quantityRule((prep.unit ?? 'g') as FormulaUnit).maximumFractionDigits }"
-                        locale="pt-BR"
-                        class="w-full"
-                        :ui="{ base: 'bg-muted tabular-nums' }"
-                        aria-label="Quantidade da receita usada como ingrediente"
-                        @update:model-value="(value: number | null | undefined) => onPrepQuantity(index, value)"
-                      />
-                      <NuxtSelect
-                        :model-value="prep.unit ?? 'g'"
-                        :items="units"
-                        class="w-full"
-                        aria-label="Unidade da prep"
-                        :ui="{ base: 'bg-muted' }"
-                        @update:model-value="(unit: string) => onPrepUnit(index, unit)"
-                      />
-                    </span>
-                  </label>
-                </template>
-                <div class="flex items-end">
-                  <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->
-                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="dropPrep(index)" />
-                </div>
               </li>
             </ol>
             <div class="border-t p-3" data-testid="add-ingredient-footer">
@@ -1151,7 +1276,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               variant="outline"
               icon="i-lucide-scale"
               :label="standardizing ? 'Padronizando…' : `Padronizar para ${HOUSE_BASIS_G} g ${anchorNoun}`"
-              :disabled="standardizing || !formula.items.length"
+              :disabled="standardizing || !formula.ingredients.length"
               @click="standardizeToHouse"
             />
           </div>

@@ -19,7 +19,7 @@ from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from django.conf import settings
-from django.db.models import Count, Max, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem, WorkOrder, WorkOrderEvent
@@ -102,6 +102,8 @@ class ProductionActionProjection:
         "confirm_order",
         "allocate_blind_codes",
         "print_labels",
+        "register_old_dough",
+        "authorize_formula_deviation",
     ]
     label: str
     priority: int
@@ -392,32 +394,6 @@ class ProductionWeighingTableProjection:
 
 
 @dataclass(frozen=True)
-class ProductionWeighingOldDoughLineProjection:
-    """One ingredient of the final mix with old dough at the recipe's cap."""
-
-    sku: str
-    target_display: str
-    target_g: str | None
-
-
-@dataclass(frozen=True)
-class ProductionWeighingOldDoughProjection:
-    """A pesagem com massa velha no teto da ficha (``final_mix_at_cap``).
-
-    Massa velha é a própria massa da véspera, então ela entra como fatia da
-    fórmula inteira: cada linha da mistura final encolhe por ``(1 − teto)`` e a
-    massa velha cobre a diferença, com o mesmo peso total. A ficha publica o
-    teto como linha opcional (``meta.role == "old_dough"``); sem ela, ``None``.
-    """
-
-    cap_pct: str
-    cap_display: str
-    old_dough_display: str
-    old_dough_g: str | None
-    lines: tuple[ProductionWeighingOldDoughLineProjection, ...]
-
-
-@dataclass(frozen=True)
 class ProductionWeighingTicketProjection:
     """A printable weighing ticket for one recipe/base recipe."""
 
@@ -446,8 +422,6 @@ class ProductionWeighingTicketProjection:
     expiry_display: str  # Validade: dd/mm; vazio quando não há regra responsável.
     validity_configured: bool
     validity_source: str
-    # Mistura final com massa velha no teto; None quando a ficha não tem teto.
-    old_dough: ProductionWeighingOldDoughProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -825,6 +799,35 @@ def _kds_actions(
     for card in cards:
         actions.append(
             _production_action(
+                ref=f"register_old_dough:{card.pk}",
+                kind="register_old_dough",
+                label="Registrar massa velha",
+                priority=45,
+                enabled=access.can_start,
+                reason="Sem capacidade para registrar massa velha.",
+                href=f"/api/v1/backstage/production/{card.pk}/old-dough/",
+                payload_schema="ProductionOldDoughMutationRequest",
+                expected_rev=card.rev,
+            )
+        )
+        actions.append(
+            _production_action(
+                ref=f"authorize_formula_deviation:{card.pk}",
+                kind="authorize_formula_deviation",
+                label="Autorizar desvio",
+                priority=55,
+                enabled=access.can_override_shortage,
+                reason="Somente a gestão pode autorizar desvios da receita.",
+                href=f"/api/v1/backstage/production/{card.pk}/formula-deviation/",
+                payload_schema="ProductionFormulaDeviationMutationRequest",
+                expected_rev=card.rev,
+                confirmation_title="Autorizar este desvio da receita?",
+                confirmation_label="Autorizar e recalcular",
+                confirmation_reason_required=True,
+            )
+        )
+        actions.append(
+            _production_action(
                 ref=f"void:{card.pk}",
                 kind="void",
                 label="Cancelar lote",
@@ -1058,6 +1061,33 @@ class ProductionDashboardProjection:
 
 
 @dataclass(frozen=True)
+class ProductionAvailableBatchProjection:
+    """A physical, unexpired lot that can satisfy one formula ingredient."""
+
+    ref: str
+    quantity: str
+    unit: str
+    expiry_date: str
+
+
+@dataclass(frozen=True)
+class ProductionFormulaLimitProjection:
+    """One frozen recipe participation available for execution adjustment."""
+
+    ingredient_ref: str
+    sku: str
+    name: str
+    kind: str
+    minimum: str
+    target: str
+    maximum: str
+    unit: str
+    basis_label: str
+    actual: str
+    available_batches: tuple[ProductionAvailableBatchProjection, ...]
+
+
+@dataclass(frozen=True)
 class ProductionKDSCardProjection:
     """A started work order card for the production KDS."""
 
@@ -1077,6 +1107,7 @@ class ProductionKDSCardProjection:
     timer_tone: str
     can_finish: bool
     order_refs: tuple[str, ...]
+    formula_limits: tuple[ProductionFormulaLimitProjection, ...]
     # Pedidos que aguardam este lote (production_order_sync) — o cancelamento avisa.
 
 
@@ -1675,9 +1706,10 @@ def build_production_mise_en_place(
     passa por ``craft.needs()``. Contaminar o ledger com a margem inflaria a
     sugestão de compra todo dia, em silêncio.
 
-    E a sobra que a margem produz não é perda: é **massa velha de amanhã**, que
-    a casa já modela como teto (``old_dough`` / ``cap_pct``). O alvo não é
-    sobra zero — é sobra que caiba no teto do dia seguinte.
+    A sobra que a margem produz não vira estoque por suposição. O operador pesa
+    a quantidade aproveitável e usa **Registrar massa velha**, que cria um lote
+    com origem, validade e composição congelada. Uma receita futura pode
+    consumi-lo até o máximo que declarou.
     """
     selected_date = selected_date or timezone.localdate()
     access = access or _full_access()
@@ -1940,7 +1972,31 @@ def build_production_kds(
     if position_ref:
         qs = qs.filter(position_ref=position_ref)
 
-    cards = tuple(_build_production_kds_card(wo, access=access) for wo in qs)
+    work_orders = list(qs)
+    version_refs = {
+        str(((wo.meta or {}).get("_recipe_snapshot") or {}).get("version_ref") or "")
+        for wo in work_orders
+    }
+    formulas_by_ref = _formula_versions({ref for ref in version_refs if ref})
+    old_dough_skus = {
+        str(ingredient.get("sku") or "")
+        for formula in formulas_by_ref.values()
+        for ingredient in formula.get("ingredients") or []
+        if str(ingredient.get("sku") or "").startswith("MASSA-VELHA-")
+    }
+    batches_by_sku = _available_old_dough_batches(old_dough_skus)
+    cards = tuple(
+        _build_production_kds_card(
+            wo,
+            access=access,
+            formula=formulas_by_ref.get(
+                str(((wo.meta or {}).get("_recipe_snapshot") or {}).get("version_ref") or ""),
+                {},
+            ),
+            batches_by_sku=batches_by_sku,
+        )
+        for wo in work_orders
+    )
 
     return ProductionKDSProjection(
         selected_date=selected_date.isoformat(),
@@ -2895,6 +2951,8 @@ def _build_production_kds_card(
     wo: WorkOrder,
     *,
     access: ProductionSurfaceAccess,
+    formula: dict | None = None,
+    batches_by_sku: dict[str, tuple[ProductionAvailableBatchProjection, ...]] | None = None,
 ) -> ProductionKDSCardProjection:
     now = timezone.now()
     started_at = wo.started_at or wo.created_at
@@ -2928,7 +2986,114 @@ def _build_production_kds_card(
         timer_tone=timer_tone,
         can_finish=access.can_close_qc,
         order_refs=_linked_order_refs(wo),
+        formula_limits=_formula_limits(wo, formula or {}, batches_by_sku or {}),
     )
+
+
+def _formula_versions(version_refs: set[str]) -> dict[str, dict]:
+    """Load every frozen RecipeVersion needed by the KDS in one query."""
+    if not version_refs:
+        return {}
+    from shopman.craftsman.models import RecipeVersion
+
+    pairs: set[tuple[str, int]] = set()
+    for version_ref in version_refs:
+        if "@" not in version_ref:
+            continue
+        entry_ref, number = version_ref.rsplit("@", 1)
+        try:
+            pairs.add((entry_ref, int(number)))
+        except ValueError:
+            continue
+    if not pairs:
+        return {}
+    entry_refs = {entry_ref for entry_ref, _ in pairs}
+    versions = RecipeVersion.objects.filter(entry__ref__in=entry_refs).select_related("entry")
+    return {
+        version.version_ref: dict(version.formula or {})
+        for version in versions
+        if (version.entry.ref, version.number) in pairs
+    }
+
+
+def _available_old_dough_batches(
+    skus: set[str],
+) -> dict[str, tuple[ProductionAvailableBatchProjection, ...]]:
+    """Resolve every usable old-dough lot for the board in two bounded queries."""
+    if not skus:
+        return {}
+    from shopman.stockman.models import Batch, Quant
+
+    today = timezone.localdate()
+    quantities = {
+        (row["sku"], row["batch"]): Decimal(str(row["quantity"] or "0"))
+        for row in (
+            Quant.objects.filter(
+                sku__in=skus,
+                batch__gt="",
+                _quantity__gt=0,
+            )
+            .filter(Q(target_date__isnull=True) | Q(target_date__lte=today))
+            .values("sku", "batch")
+            .annotate(quantity=Sum("_quantity"))
+        )
+        if Decimal(str(row["quantity"] or "0")) > 0
+    }
+    if not quantities:
+        return {}
+    batches = Batch.objects.filter(
+        ref__in={batch_ref for _, batch_ref in quantities},
+        sku__in=skus,
+        metadata__resource_kind="old_dough",
+    ).filter(Q(expiry_date__isnull=True) | Q(expiry_date__gte=today)).order_by("expiry_date", "ref")
+    grouped: dict[str, list[ProductionAvailableBatchProjection]] = {}
+    for batch in batches:
+        grouped.setdefault(batch.sku, []).append(
+            ProductionAvailableBatchProjection(
+                ref=batch.ref,
+                quantity=_qty(quantities[(batch.sku, batch.ref)]),
+                unit="g",
+                expiry_date=batch.expiry_date.isoformat() if batch.expiry_date else "",
+            )
+        )
+    return {sku: tuple(rows) for sku, rows in grouped.items()}
+
+
+def _formula_limits(
+    wo: WorkOrder,
+    formula: dict,
+    batches_by_sku: dict[str, tuple[ProductionAvailableBatchProjection, ...]],
+) -> tuple[ProductionFormulaLimitProjection, ...]:
+    actuals = (wo.meta or {}).get("_ingredient_actuals") or {}
+    rows: list[ProductionFormulaLimitProjection] = []
+    for ingredient in formula.get("ingredients") or []:
+        quantity = ingredient.get("quantity") or {}
+        kind = str(quantity.get("kind") or "fixed")
+        basis = quantity.get("basis") or {}
+        basis_kind = str(basis.get("kind") or "")
+        basis_label = {
+            "flour": "Farinhas totais",
+            "total": "Fórmula",
+            "ingredient": str(basis.get("sku") or "Ingrediente-base"),
+        }.get(basis_kind, "")
+        ingredient_ref = str(ingredient.get("ref") or "")
+        sku = str(ingredient.get("sku") or "")
+        rows.append(
+            ProductionFormulaLimitProjection(
+                ingredient_ref=ingredient_ref,
+                sku=sku,
+                name=str(ingredient.get("name") or ingredient.get("sku") or ""),
+                kind=kind,
+                minimum="" if quantity.get("minimum") is None else _qty(Decimal(str(quantity["minimum"]))),
+                target=_qty(Decimal(str(quantity.get("target") or "0"))),
+                maximum="" if quantity.get("maximum") is None else _qty(Decimal(str(quantity["maximum"]))),
+                unit="%" if kind == "ratio" else str(quantity.get("unit") or "g"),
+                basis_label=basis_label,
+                actual="" if ingredient_ref not in actuals else _qty(Decimal(str(actuals[ingredient_ref]))),
+                available_batches=batches_by_sku.get(sku, ()),
+            )
+        )
+    return tuple(rows)
 
 
 def _linked_order_refs(wo: WorkOrder) -> tuple[str, ...]:
@@ -3829,7 +3994,6 @@ def _build_weighing_ticket(
         expiry_display=expiry.strftime("%d/%m") if expiry is not None else "",
         validity_configured=expiry is not None,
         validity_source=validity_source if expiry is not None else "",
-        old_dough=_weighing_old_dough(recipe, items, coefficient, theoretical_total_g),
     )
 
 
@@ -3845,70 +4009,6 @@ def _mass_output_unit(recipe: Recipe) -> str:
         return unit if units.dimension(unit) == units.MASS else ""
     except UnitError:
         return ""
-
-
-def _old_dough_cap_pct(recipe: Recipe) -> Decimal | None:
-    """O teto de massa velha que a ficha publicou, em % da fórmula inteira.
-
-    Mora na linha opcional que ``publish_version`` escreve a partir de
-    ``formula.preps[{kind: "old_dough", cap_pct}]``. Teto fora de (0, 100) não é
-    teto: a ficha fica sem a variante, em vez de pesar zero ou negativo.
-    """
-    prefetched = getattr(recipe, "_prefetched_objects_cache", {}).get("items")
-    items = prefetched if prefetched is not None else recipe.items.all()
-    for item in items:
-        meta = item.meta or {}
-        if not item.is_optional or meta.get("role") != "old_dough":
-            continue
-        try:
-            cap = Decimal(str(meta.get("cap_pct")))
-        except (ArithmeticError, ValueError):
-            logger.warning("production.weighing_invalid_old_dough_cap recipe=%s value=%r", recipe.ref, meta.get("cap_pct"))
-            continue
-        if cap.is_finite() and Decimal("0") < cap < Decimal("100"):
-            return cap
-    return None
-
-
-def _weighing_old_dough(
-    recipe: Recipe,
-    items: tuple[_RecipeItemData, ...],
-    coefficient: Decimal,
-    theoretical_total_g: Decimal | None,
-) -> ProductionWeighingOldDoughProjection | None:
-    """A mistura final no teto: cada linha × (1 − teto); a massa velha é o resto.
-
-    Mesma conta de ``final_mix_at_cap`` (``craftsman/contrib/formula``), aplicada
-    sobre a ficha congelada do preparo, que é a mistura final + as partes.
-    """
-    cap = _old_dough_cap_pct(recipe)
-    if cap is None:
-        return None
-    factor = Decimal("1") - cap / Decimal("100")
-    lines = []
-    for item in items:
-        display, facts = _weighing_measure(Decimal(str(item.quantity)) * coefficient * factor, item.unit)
-        lines.append(
-            ProductionWeighingOldDoughLineProjection(
-                sku=item.input_sku,
-                target_display=display,
-                target_g=_decimal_fact_string(facts[1]) if facts[1] is not None else None,
-            )
-        )
-    old_dough_g = None
-    old_dough_display = ""
-    if theoretical_total_g is not None and theoretical_total_g > 0:
-        old_display, old_facts = _weighing_measure(theoretical_total_g * cap / Decimal("100"), "g")
-        old_dough_display = old_display
-        old_dough_g = _decimal_fact_string(old_facts[1]) if old_facts[1] is not None else None
-    cap_text = format(cap.normalize(), "f")
-    return ProductionWeighingOldDoughProjection(
-        cap_pct=cap_text,
-        cap_display=f"{cap_text.replace('.', ',')}%",
-        old_dough_display=old_dough_display,
-        old_dough_g=old_dough_g,
-        lines=tuple(lines),
-    )
 
 
 def _recipe_items(recipe: Recipe) -> tuple[_RecipeItemData, ...]:

@@ -289,8 +289,11 @@ def test_entry_detail_exposes_the_usage_for_a_published_entry():
         entry,
         formula={
             "anchor": {"kind": "flour"},
-            "items": [{"sku": "FARINHA-O8", "name": "Farinha", "role": "flour", "quantity": 1000, "unit": "g"}],
-            "preps": [],
+            "ingredients": [{
+                "ref": "ingredient-flour", "sku": "FARINHA-O8", "name": "Farinha", "role": "flour",
+                "quantity": {"kind": "fixed", "minimum": 1000, "target": 1000, "maximum": 1000, "unit": "g"},
+                "composition": "additional",
+            }],
         },
         yield_quantity="1", yield_unit="kg",
     ))

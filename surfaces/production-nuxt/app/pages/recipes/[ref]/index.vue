@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { alertActions } from "../../../../../operator-kit/app/utils/alertActions";
 // A receita (/recipes/[ref]) — a lente da versão selecionada (âncora e base,
-// tabela g/%, métricas com faixa de referência, preps, mistura final, BOM), a
+// tabela g/%, métricas com faixa de referência, mistura final e BOM), a
 // linha do tempo das versões e as ações: editar (abre ou prepara o rascunho),
 // publicar (diálogo com o que muda contra a atual), comparar, duplicar e arquivar.
 // Ler é do gate do app; mexer pede `can_edit`.
@@ -75,10 +75,10 @@ function selectVersion(version: RecipeVersionProjection) {
 
 const subtitle = computed(() => {
   if (!entry.value) return "";
-  const preps = [entry.value.kind_label];
-  preps.push(entry.value.output_sku ? entry.value.output_name || entry.value.output_sku : "Sem SKU");
-  if (selected.value) preps.push(`Versão ${selected.value.number}`);
-  return preps.join(" · ");
+  const details = [entry.value.kind_label];
+  details.push(entry.value.output_sku ? entry.value.output_name || entry.value.output_sku : "Sem SKU");
+  if (selected.value) details.push(`Versão ${selected.value.number}`);
+  return details.join(" · ");
 });
 const stale = computed(() => isStale({ error: !!error.value, hasData: !!entry.value }));
 const isCurrent = computed(() => !!selected.value && selected.value.number === entry.value?.current_version_number);
@@ -118,7 +118,7 @@ const compareB = ref("");
 const publishCompare = useRecipeCompare(compareA, compareB);
 const changedRows = computed(() => publishCompare.rows.value.filter((row) => row.delta_display));
 const changedMetrics = computed(() => publishCompare.metrics.value.filter((metric) => metric.delta_display));
-const unmatched = computed(() => (selected.value ? unmatchedItems(selected.value.lens.items) : []));
+const unmatched = computed(() => (selected.value ? unmatchedItems(selected.value.lens.ingredients) : []));
 const publishBlocked = computed(() => !entry.value?.output_sku || unmatched.value.length > 0);
 
 function openPublish() {

@@ -1,5 +1,17 @@
 # RECIPE-INVENTORY-PLAN — inventário de receitas com versão, padrão da casa e lente de padaria
 
+> **Emenda de 28/10/2026:** a implementação final substitui `formula.items` +
+> `formula.preps` por uma coleção única `formula.ingredients`. “Prep” é somente o
+> jargão para ingrediente com `recipe_version_ref`, nunca tipo ou coleção. Cada
+> participação declara `quantity = {kind, minimum, target, maximum, unit|basis}` e
+> `composition = additional|included`. Exata, mínima, máxima e faixa são presets
+> derivados dos três valores, não modos persistidos. A receita do ingrediente oferece
+> padrões que são copiados para a receita-alvo, sem vínculo retroativo. Massa velha é
+> lote de estoque com origem, validade e fotografia da composição; não existe
+> `old_dough`, `cap_pct` ou `carryover` na fórmula. As seções abaixo que ainda descrevem
+> `items/preps` preservam o registro histórico do plano original; o contrato desta emenda
+> e do ADR-027 prevalece.
+
 > Aberto em 2026-09-03. Pedido do dono: gerenciar um **inventário de receitas** de forma
 > extremamente prática (entrada por anotação, por foto em qualquer língua, ou à mão),
 > converter qualquer receita para o **padrão da casa (1000 g de farinhas totais)** guardando

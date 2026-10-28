@@ -56,6 +56,7 @@ export interface RecipeBookAccessProjection {
 
 /** One ingredient line of a formula, with its share of the anchor. */
 export interface FormulaItemProjection {
+  ref: string;
   sku: string;
   name: string;
   role: string;
@@ -66,19 +67,10 @@ export interface FormulaItemProjection {
   pct_display: string;
   is_anchor: boolean;
   matched: boolean;
-}
-
-/** A preparation that partitions ingredients already declared in the global formula. */
-export interface FormulaPrepProjection {
-  sku: string;
-  entry_ref: string;
-  name: string;
-  kind: string;
-  kind_label: string;
-  flour_pct_display: string;
-  quantity_display: string;
-  cap_pct_display: string;
-  has_formula: boolean;
+  recipe_version_ref: string;
+  composition: string;
+  composition_label: string;
+  quantity_rule_display: string;
 }
 
 /** A bakery metric with its reference range and tone. */
@@ -100,7 +92,7 @@ export interface FormulaWarningProjection {
   tone: string;
 }
 
-/** The lens over a formula: anchor, items with percentages, metrics, preps, final mix, BOM. */
+/** The lens over a formula: anchor, unified ingredients, metrics, final mix and BOM. */
 export interface FormulaLensProjection {
   is_bakery: boolean;
   anchor_kind: string;
@@ -109,12 +101,11 @@ export interface FormulaLensProjection {
   standardized: boolean;
   anchor_total_display: string;
   total_mass_display: string;
-  items: FormulaItemProjection[];
+  ingredients: FormulaItemProjection[];
   final_mix: FormulaItemProjection[];
   final_mix_differs: boolean;
   bom: FormulaItemProjection[];
   bom_differs: boolean;
-  preps: FormulaPrepProjection[];
   metrics: FormulaMetricProjection[];
   warnings: FormulaWarningProjection[];
 }
@@ -349,6 +340,7 @@ export interface RecipeEntryDetailProjection {
   output_name: string;
   notes: string;
   is_active: boolean;
+  ingredient_defaults: Record<string, unknown> | null;
   current_version_number: number | null;
   ficha_ref: string;
   execution_in_sync: boolean;
@@ -414,8 +406,9 @@ export interface IngredientOptionProjection {
   unit: string;
   role: string;
   has_recipe: boolean;
-  entry_ref: string;
-  suggested_prep_kind: string;
+  recipe_version_ref: string;
+  default_quantity: Record<string, unknown> | null;
+  default_composition: string;
 }
 
 /** One ingredient read from a note or a photo, with its matched material. */

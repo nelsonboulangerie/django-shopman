@@ -54,10 +54,15 @@ import {
   type OperatorMoreMenuItem,
 } from "../../../operator-kit/app/presentation/moreMenu";
 import type {
+  ProductionKDSCardProjection,
   ProductionMatrixRowProjection,
   ProductionShortageError,
   WorkOrderCardProjection,
 } from "~/types/production";
+import type {
+  AuthorizeFormulaDeviationInput,
+  AuthorizeFormulaDeviationResponse,
+} from "~/composables/useProductionKds";
 import { defaultPlanningDate } from "~/composables/useProductionBoard";
 
 const props = defineProps<{
@@ -249,6 +254,9 @@ const startedRow = ref<ProductionMatrixRowProjection | null>(null);
 const selectedStartedPk = ref<number | null>(null);
 const voidReason = ref("");
 const voidConfirming = ref(false);
+const oldDoughOrder = ref<WorkOrderCardProjection | null>(null);
+const deviationCard = ref<ProductionKDSCardProjection | null>(null);
+const deviationResult = ref<AuthorizeFormulaDeviationResponse | null>(null);
 const commitmentsRow = ref<ProductionMatrixRowProjection | null>(null);
 const shortage = ref<ProductionShortageError | null>(null);
 // De onde veio a recusa: "Revisar quantidade" devolve o operador ao diálogo que
@@ -293,6 +301,24 @@ const selectedStartedOrder = computed<WorkOrderCardProjection | null>(
       (candidate) => candidate.pk === selectedStartedPk.value,
     ) ?? null,
 );
+const selectedOldDoughAction = computed(() => {
+  const workOrder = selectedStartedOrder.value;
+  return workOrder
+    ? kds.actionFor(`register_old_dough:${workOrder.pk}`)
+    : undefined;
+});
+const selectedStartedKdsCard = computed(() => {
+  const workOrder = selectedStartedOrder.value;
+  return workOrder
+    ? kds.cards.value.find((card) => card.pk === workOrder.pk)
+    : undefined;
+});
+const selectedDeviationAction = computed(() => {
+  const workOrder = selectedStartedOrder.value;
+  return workOrder
+    ? kds.actionFor(`authorize_formula_deviation:${workOrder.pk}`)
+    : undefined;
+});
 
 // Diferente do planejado? A tela diz, mas não pergunta: rendimento da massa
 // é número, e os dois números ficam na ordem.
@@ -653,6 +679,63 @@ async function confirmVoid() {
     refresh();
     useSonner.success(`Lote cancelado: ${rowLabel(row)}`);
   }
+}
+
+function openOldDoughRegistration() {
+  const workOrder = selectedStartedOrder.value;
+  if (!workOrder || !selectedOldDoughAction.value?.enabled) return;
+  oldDoughOrder.value = workOrder;
+  startedRow.value = null;
+  selectedStartedPk.value = null;
+}
+
+async function registerOldDough(input: {
+  quantity: string;
+  unit: "g" | "kg";
+  expiryDate: string;
+  positionRef?: string;
+  note?: string;
+}) {
+  const workOrder = oldDoughOrder.value;
+  if (!workOrder) return;
+  const result = await kds.registerOldDough(workOrder.pk, workOrder.rev, input);
+  if (!result.ok) return;
+  oldDoughOrder.value = null;
+  refresh();
+  useSonner.success(
+    result.data?.batch_ref
+      ? `Massa velha registrada: lote ${result.data.batch_ref}`
+      : "Massa velha registrada.",
+  );
+}
+
+function openFormulaDeviation() {
+  const card = selectedStartedKdsCard.value;
+  if (
+    !card ||
+    !card.formula_limits.length ||
+    !selectedDeviationAction.value?.enabled
+  )
+    return;
+  deviationCard.value = card;
+  deviationResult.value = null;
+  startedRow.value = null;
+  selectedStartedPk.value = null;
+}
+
+async function authorizeFormulaDeviation(input: AuthorizeFormulaDeviationInput) {
+  const card = deviationCard.value;
+  if (!card) return;
+  const result = await kds.authorizeFormulaDeviation(card.pk, card.rev, input);
+  if (!result.ok || !result.data) return;
+  deviationResult.value = result.data;
+  refresh();
+  useSonner.success("Desvio autorizado. A fórmula do lote foi recalculada.");
+}
+
+function closeFormulaDeviation() {
+  deviationCard.value = null;
+  deviationResult.value = null;
 }
 
 // ── ⋯ da linha aberta (R12) e "pressione e segure" no tablet deitado (R13) ──
@@ -2276,6 +2359,28 @@ const startedDescription = computed(() => {
       <template #footer>
         <div class="flex w-full flex-wrap gap-2">
           <NuxtButton
+            v-if="selectedStartedOrder && selectedOldDoughAction"
+            color="primary"
+            variant="outline"
+            icon="i-lucide-package-plus"
+            label="Registrar massa velha"
+            :disabled="!selectedOldDoughAction.enabled"
+            :title="selectedOldDoughAction.reason || undefined"
+            @click="openOldDoughRegistration"
+          />
+          <NuxtButton
+            v-if="
+              selectedStartedOrder &&
+              selectedDeviationAction?.enabled &&
+              selectedStartedKdsCard?.formula_limits.length
+            "
+            color="warning"
+            variant="outline"
+            icon="i-lucide-shield-check"
+            label="Autorizar desvio"
+            @click="openFormulaDeviation"
+          />
+          <NuxtButton
             v-if="selectedStartedOrder && !voidConfirming"
             color="error"
             variant="outline"
@@ -2302,6 +2407,33 @@ const startedDescription = computed(() => {
         </div>
       </template>
     </NuxtModal>
+
+    <RegisterOldDoughDialog
+      :open="oldDoughOrder != null"
+      :work-order-label="
+        oldDoughOrder
+          ? `${oldDoughOrder.recipe_name} · lote #${oldDoughOrder.ref}`
+          : 'Lote'
+      "
+      :position-ref="oldDoughOrder?.position_ref"
+      :busy="oldDoughOrder ? kds.isBusy(oldDoughOrder.pk) : false"
+      @update:open="(open: boolean) => { if (!open) oldDoughOrder = null }"
+      @submit="registerOldDough"
+    />
+
+    <AuthorizeFormulaDeviationDialog
+      :open="deviationCard != null"
+      :work-order-label="
+        deviationCard
+          ? `${deviationCard.recipe_name} · lote #${deviationCard.ref}`
+          : 'Lote'
+      "
+      :limits="deviationCard?.formula_limits ?? []"
+      :result="deviationResult"
+      :busy="deviationCard ? kds.isBusy(deviationCard.pk) : false"
+      @update:open="(open: boolean) => { if (!open) closeFormulaDeviation() }"
+      @submit="authorizeFormulaDeviation"
+    />
 
     <!-- pedidos vinculados -->
     <NuxtModal

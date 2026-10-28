@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
-from shopman.craftsman.models import Recipe, RecipeItem, RecipeVersion
+from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.craftsman.services import recipe_book as craftsman
 
 from shopman.backstage.projections.recipe_book import build_recipe_book, build_recipe_review_queue
@@ -26,11 +26,18 @@ pytestmark = pytest.mark.django_db
 
 FORMULA = {
     "anchor": {"kind": "flour"},
-    "items": [
-        {"sku": "FARINHA-T55", "name": "Farinha", "role": "flour", "quantity": 1000, "unit": "g"},
-        {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 650, "unit": "g"},
+    "ingredients": [
+        {
+            "ref": "ingredient-flour", "sku": "FARINHA-T55", "name": "Farinha", "role": "flour",
+            "quantity": {"kind": "fixed", "minimum": 1000, "target": 1000, "maximum": 1000, "unit": "g"},
+            "composition": "additional",
+        },
+        {
+            "ref": "ingredient-water", "sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid",
+            "quantity": {"kind": "fixed", "minimum": 650, "target": 650, "maximum": 650, "unit": "g"},
+            "composition": "additional",
+        },
     ],
-    "preps": [],
 }
 
 
@@ -111,7 +118,14 @@ def test_formula_mudada_depois_derruba_o_carimbo():
     _, version = _publicar("massa-m", "Massa M", "MASSA-M")
     recipe_review.confirm(version, actor="maysa")
     version.refresh_from_db()
-    version.formula = {**version.formula, "items": [{**version.formula["items"][0]}, {**version.formula["items"][1], "quantity": 700}]}
+    ingredients = version.formula["ingredients"]
+    version.formula = {
+        **version.formula,
+        "ingredients": [
+            {**ingredients[0]},
+            {**ingredients[1], "quantity": {**ingredients[1]["quantity"], "target": 700}},
+        ],
+    }
     version.save(update_fields=["formula"])
     assert recipe_review.review_of(version).status == "changed"
     assert recipe_review.review_of(version).label == "Mudou depois da conferência"
@@ -121,10 +135,15 @@ def test_formula_mudada_depois_derruba_o_carimbo():
 
 
 def _peca(ref, name, sku, dough_sku):
+    dough = RecipeEntry.objects.get(output_sku=dough_sku)
     formula = {
         "anchor": {"kind": "total"},
-        "items": [{"sku": dough_sku, "name": "massa", "role": "other", "quantity": 80, "unit": "g"}],
-        "preps": [],
+        "ingredients": [{
+            "ref": "ingredient-dough", "sku": dough_sku, "name": "massa", "role": "other",
+            "recipe_version_ref": dough.current_version.version_ref,
+            "quantity": {"kind": "fixed", "minimum": 80, "target": 80, "maximum": 80, "unit": "g"},
+            "composition": "additional",
+        }],
     }
     return _publicar(ref, name, sku, formula=formula, yield_quantity="1", yield_unit="un")
 

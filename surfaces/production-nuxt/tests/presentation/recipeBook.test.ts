@@ -4,7 +4,6 @@ import {
   PRODUCTION_MODE_ALL,
   PRODUCTION_MODE_FILTER_OPTIONS,
   addItem,
-  addPrep,
   anchorLabel,
   anchorTotalOf,
   bookQuery,
@@ -13,7 +12,7 @@ import {
   downscaleTarget,
   emptyFormula,
   emptyItem,
-  emptyPrep,
+  exactQuantity,
   errorField,
   favoriteActionHint,
   favoriteToggleLabel,
@@ -28,14 +27,11 @@ import {
   kindLabel,
   moveItem,
   originLines,
-  prepReferenceCode,
-  referenceGuidance,
+  quantityPreset,
   outputMediaType,
   parseVersionRef,
-  prepKindLabel,
   pctOf,
   removeItem,
-  removePrep,
   roleLabel,
   setAnchor,
   splitDataUrl,
@@ -50,7 +46,7 @@ import {
   totalMassOf,
   unmatchedItems,
   updateItem,
-  updatePrep,
+  withQuantityPreset,
   versionRefLabel,
 } from "../../app/presentation/recipeBook";
 import type {
@@ -67,13 +63,12 @@ function formula(over: Partial<Formula> = {}): Formula {
     anchor: { kind: "flour" },
     basis_g: null,
     standardized: false,
-    items: [
-      emptyItem({ sku: "FARINHA-T65", name: "Farinha T65", role: "flour", quantity: 900, unit: "g" }),
-      emptyItem({ sku: "", name: "farinha de centeio", role: "flour", quantity: 100, unit: "g" }),
-      emptyItem({ sku: "AGUA", name: "Água", role: "liquid", quantity: 0.7, unit: "kg" }),
-      emptyItem({ sku: "SAL", name: "Sal", role: "salt", quantity: 20, unit: "g" }),
+    ingredients: [
+      emptyItem({ sku: "FARINHA-T65", name: "Farinha T65", role: "flour", quantity: exactQuantity(900, "g") }),
+      emptyItem({ sku: "", name: "farinha de centeio", role: "flour", quantity: exactQuantity(100, "g") }),
+      emptyItem({ sku: "AGUA", name: "Água", role: "liquid", quantity: exactQuantity(0.7, "kg") }),
+      emptyItem({ sku: "SAL", name: "Sal", role: "salt", quantity: exactQuantity(20, "g") }),
     ],
-    preps: [],
     ...over,
   };
 }
@@ -134,6 +129,7 @@ function draft(over: Partial<RecipeCaptureDraftProjection> = {}): RecipeCaptureD
 
 function lensItem(over: Partial<FormulaItemProjection> = {}): FormulaItemProjection {
   return {
+    ref: "ingredient-flour",
     sku: "FARINHA-T65",
     name: "Farinha T65",
     role: "flour",
@@ -144,13 +140,17 @@ function lensItem(over: Partial<FormulaItemProjection> = {}): FormulaItemProject
     pct_display: "100%",
     is_anchor: true,
     matched: true,
+    recipe_version_ref: "",
+    composition: "additional",
+    composition_label: "Adicional",
+    quantity_rule_display: "Exata",
     ...over,
   };
 }
 
 // ── Vocabulário e tom ───────────────────────────────────────────────────────
 describe("labels", () => {
-  it("translates roles, kinds, prep kinds and anchors; unknown falls to a calm default", () => {
+  it("translates roles, kinds and anchors; unknown falls to a calm default", () => {
     expect(roleLabel("flour")).toBe("Farinha");
     expect(roleLabel("liquid")).toBe("Líquido");
     expect(roleLabel("weird")).toBe("Outro");
@@ -158,8 +158,6 @@ describe("labels", () => {
     expect(kindLabel("sweet_dough")).toBe("Massa doce");
     expect(kindLabel("cookie")).toBe("Biscoito");
     expect(kindLabel("nope")).toBe("Outra");
-    expect(prepKindLabel("old_dough")).toBe("Massa velha");
-    expect(prepKindLabel("custom")).toBe("custom");
     expect(anchorLabel("flour")).toBe("Farinhas totais");
   });
 
@@ -201,25 +199,25 @@ describe("versionRefLabel / parseVersionRef", () => {
 // ── Fórmula: vazio e edição imutável ────────────────────────────────────────
 describe("emptyFormula and immutable edits", () => {
   it("starts empty with the requested anchor", () => {
-    expect(emptyFormula()).toEqual({ anchor: { kind: "flour" }, basis_g: null, standardized: false, items: [], preps: [] });
+    expect(emptyFormula()).toEqual({ anchor: { kind: "flour" }, basis_g: null, standardized: false, ingredients: [] });
     expect(emptyFormula("total").anchor).toEqual({ kind: "total" });
     expect(emptyFormula("ingredient", "LEITE").anchor).toEqual({ kind: "ingredient", sku: "LEITE" });
   });
 
   it("addItem/updateItem/removeItem never mutate the input", () => {
     const base = formula();
-    const added = addItem(base, emptyItem({ name: "Levain", role: "other", quantity: 200 }));
-    expect(added.items).toHaveLength(5);
-    expect(base.items).toHaveLength(4);
+    const added = addItem(base, emptyItem({ name: "Levain", role: "other", quantity: exactQuantity(200) }));
+    expect(added.ingredients).toHaveLength(5);
+    expect(base.ingredients).toHaveLength(4);
 
     const updated = updateItem(base, 1, { sku: "FARINHA-CENTEIO" });
-    expect(updated.items[1]?.sku).toBe("FARINHA-CENTEIO");
-    expect(base.items[1]?.sku).toBe("");
-    expect(updated.items[0]).toBe(base.items[0]);
+    expect(updated.ingredients[1]?.sku).toBe("FARINHA-CENTEIO");
+    expect(base.ingredients[1]?.sku).toBe("");
+    expect(updated.ingredients[0]).toBe(base.ingredients[0]);
 
     const removed = removeItem(base, 0);
-    expect(removed.items.map((item) => item.name)).toEqual(["farinha de centeio", "Água", "Sal"]);
-    expect(base.items).toHaveLength(4);
+    expect(removed.ingredients.map((item) => item.name)).toEqual(["farinha de centeio", "Água", "Sal"]);
+    expect(base.ingredients).toHaveLength(4);
   });
 
   it("ignores out-of-range indexes (returns the same formula)", () => {
@@ -233,32 +231,17 @@ describe("emptyFormula and immutable edits", () => {
   it("moveItem reorders without losing anything", () => {
     const base = formula();
     const moved = moveItem(base, 3, 0);
-    expect(moved.items.map((item) => item.name)).toEqual(["Sal", "Farinha T65", "farinha de centeio", "Água"]);
-    expect(base.items[0]?.name).toBe("Farinha T65");
-    expect(moveItem(base, 0, 3).items.map((item) => item.name)).toEqual(["farinha de centeio", "Água", "Sal", "Farinha T65"]);
+    expect(moved.ingredients.map((item) => item.name)).toEqual(["Sal", "Farinha T65", "farinha de centeio", "Água"]);
+    expect(base.ingredients[0]?.name).toBe("Farinha T65");
+    expect(moveItem(base, 0, 3).ingredients.map((item) => item.name)).toEqual(["farinha de centeio", "Água", "Sal", "Farinha T65"]);
   });
 
-  it("preps follow the same immutable discipline", () => {
-    const base = formula();
-    const withPrep = addPrep(base, emptyPrep("preferment"));
-    expect(withPrep.preps).toHaveLength(1);
-    expect(base.preps).toHaveLength(0);
-    const set = updatePrep(withPrep, 0, { sku: "LEVAIN", flour_pct: 20 });
-    expect(set.preps[0]).toMatchObject({ kind: "preferment", sku: "LEVAIN", flour_pct: 20 });
-    expect(withPrep.preps[0]?.sku).toBe("");
-    expect(removePrep(set, 0).preps).toHaveLength(0);
-    expect(emptyPrep()).toMatchObject({ kind: "preferment", quantity: null, unit: "g" });
-    expect(emptyPrep("old_dough")).toEqual({ kind: "old_dough", cap_pct: 20 });
-  });
-
-  it("guides formula preparations without turning literature into validation", () => {
-    expect(prepReferenceCode({ kind: "preferment", sku: "LEVAIN" }, "Levain")).toBe("prep_flour_pct:levain");
-    expect(prepReferenceCode({ kind: "preferment", sku: "POOLISH" }, "Poolish")).toBe("prep_flour_pct:poolish");
-    expect(prepReferenceCode({ kind: "old_dough", cap_pct: 20 })).toBe("prep_flour_pct:old_dough");
-    expect(referenceGuidance({
-      code: "prep_flour_pct:levain", label: "Levain", low_display: "15%", high_display: "30%",
-      max_display: "40%", note: "",
-    })).toBe("Referência técnica: 15% a 30%. Acima de 40%, revise a fórmula.");
+  it("derives the four quantity presets from minimum, target and maximum", () => {
+    const exact = exactQuantity(20);
+    expect(quantityPreset(exact)).toBe("exact");
+    expect(quantityPreset(withQuantityPreset(exact, "minimum"))).toBe("minimum");
+    expect(quantityPreset(withQuantityPreset(exact, "maximum"))).toBe("maximum");
+    expect(quantityPreset(withQuantityPreset(exact, "range"))).toBe("range");
   });
 
   it("setAnchor keeps the sku only for the ingredient anchor", () => {
@@ -270,7 +253,7 @@ describe("emptyFormula and immutable edits", () => {
   it("suggests the flour anchor only when there is flour", () => {
     expect(formulaHasFlour(formula())).toBe(true);
     expect(suggestedAnchor(formula())).toBe("flour");
-    const cream = formula({ items: [emptyItem({ name: "Leite", role: "dairy", quantity: 500 })] });
+    const cream = formula({ ingredients: [emptyItem({ name: "Leite", role: "dairy", quantity: exactQuantity(500) })] });
     expect(formulaHasFlour(cream)).toBe(false);
     expect(suggestedAnchor(cream)).toBe("total");
   });
@@ -279,12 +262,12 @@ describe("emptyFormula and immutable edits", () => {
 // ── Feedback imediato ───────────────────────────────────────────────────────
 describe("local percentages (editor feedback only)", () => {
   it("converts units to grams like the server does (volume 1.0, count needs grams_per_unit)", () => {
-    expect(itemGrams(emptyItem({ quantity: 700, unit: "g" }))).toBe(700);
-    expect(itemGrams(emptyItem({ quantity: 0.7, unit: "kg" }))).toBeCloseTo(700);
-    expect(itemGrams(emptyItem({ quantity: 700, unit: "ml" }))).toBe(700);
-    expect(itemGrams(emptyItem({ quantity: 0.5, unit: "L", density_g_per_ml: 1.03 }))).toBeCloseTo(515);
-    expect(itemGrams(emptyItem({ quantity: 3, unit: "un" }))).toBe(0);
-    expect(itemGrams(emptyItem({ quantity: 3, unit: "un", grams_per_unit: 55 }))).toBe(165);
+    expect(itemGrams(emptyItem({ quantity: exactQuantity(700, "g") }))).toBe(700);
+    expect(itemGrams(emptyItem({ quantity: exactQuantity(0.7, "kg") }))).toBeCloseTo(700);
+    expect(itemGrams(emptyItem({ quantity: exactQuantity(700, "ml") }))).toBe(700);
+    expect(itemGrams(emptyItem({ quantity: exactQuantity(0.5, "L"), density_g_per_ml: 1.03 }))).toBeCloseTo(515);
+    expect(itemGrams(emptyItem({ quantity: exactQuantity(3, "un") }))).toBe(0);
+    expect(itemGrams(emptyItem({ quantity: exactQuantity(3, "un"), grams_per_unit: 55 }))).toBe(165);
   });
 
   it("anchorTotalOf follows the anchor kind", () => {
@@ -296,10 +279,10 @@ describe("local percentages (editor feedback only)", () => {
   });
 
   it("pctOf formats in pt-BR and stays silent without an anchor", () => {
-    const water = formula().items[2]!;
+    const water = formula().ingredients[2]!;
     expect(pctOf(water, 1000)).toBe("70,0");
     expect(pctOf(water, 0)).toBe("");
-    expect(pctOf(emptyItem({ quantity: 0 }), 1000)).toBe("");
+    expect(pctOf(emptyItem({ quantity: exactQuantity(0) }), 1000)).toBe("");
     expect(formatNumber(72.456, 1)).toBe("72,5");
     expect(gramsLabel(1719.6)).toBe("1720 g");
   });
@@ -310,22 +293,22 @@ describe("formulaFromDraft", () => {
   it("keeps the matched skus, parses quantities and infers the flour anchor", () => {
     const result = formulaFromDraft(draft());
     expect(result.anchor).toEqual({ kind: "flour" });
-    expect(result.items).toHaveLength(3);
-    expect(result.items[0]).toMatchObject({ sku: "FARINHA-T65", role: "flour", quantity: 1000, unit: "g", note: "farine T65" });
-    expect(result.items[1]).toMatchObject({ sku: "AGUA", unit: "ml", quantity: 700 });
-    expect(result.items[2]).toMatchObject({ sku: "", role: "salt" });
+    expect(result.ingredients).toHaveLength(3);
+    expect(result.ingredients[0]).toMatchObject({ sku: "FARINHA-T65", role: "flour", quantity: exactQuantity(1000), note: "farine T65" });
+    expect(result.ingredients[1]).toMatchObject({ sku: "AGUA", quantity: exactQuantity(700, "ml") });
+    expect(result.ingredients[2]).toMatchObject({ sku: "", role: "salt" });
     expect(result.standardized).toBe(false);
     expect(result.basis_g).toBeNull();
   });
 
-  it("prefers the anchor and preps the server assembled", () => {
+  it("prefers the anchor and unified ingredients the server assembled", () => {
     const result = formulaFromDraft(
       draft({
-        formula: { anchor: { kind: "ingredient", sku: "AGUA" }, preps: [{ kind: "old_dough", cap_pct: 15 }], basis_g: 1000, standardized: true },
+        formula: { anchor: { kind: "ingredient", sku: "AGUA" }, ingredients: [], basis_g: 1000, standardized: true },
       }),
     );
     expect(result.anchor).toEqual({ kind: "ingredient", sku: "AGUA" });
-    expect(result.preps).toEqual([{ kind: "old_dough", cap_pct: 15 }]);
+    expect(result.ingredients).toHaveLength(3);
     expect(result.basis_g).toBe(1000);
     expect(result.standardized).toBe(true);
   });
@@ -337,8 +320,7 @@ describe("formulaFromDraft", () => {
 
   it("itemFromCapture tolerates commas, unknown units and roles", () => {
     const item = itemFromCapture(captureItem({ quantity: "1,5", unit: "l", role: "mystery", original_text: "Farinha T65" }));
-    expect(item.quantity).toBe(1.5);
-    expect(item.unit).toBe("L");
+    expect(item.quantity).toEqual(exactQuantity(1.5, "L"));
     expect(item.role).toBe("other");
     expect(item.note).toBe("");
   });
@@ -350,11 +332,9 @@ describe("formulaFromServed", () => {
       anchor: { kind: "flour" },
       basis_g: 1000,
       standardized: true,
-      items: [{ sku: "FARINHA-T65", name: "Farinha T65", role: "flour", quantity: "1000", unit: "g", grams_per_unit: null }],
-      preps: [{ sku: "LEVAIN", entry_ref: "levain", kind: "preferment", flour_pct: 20 }],
+      ingredients: [{ sku: "FARINHA-T65", name: "Farinha T65", role: "flour", quantity: exactQuantity(1000), composition: "additional", grams_per_unit: null }],
     });
-    expect(result.items[0]).toMatchObject({ sku: "FARINHA-T65", quantity: 1000, unit: "g", role: "flour" });
-    expect(result.preps[0]).toMatchObject({ sku: "LEVAIN", flour_pct: 20 });
+    expect(result.ingredients[0]).toMatchObject({ sku: "FARINHA-T65", quantity: exactQuantity(1000), role: "flour" });
     expect(result.standardized).toBe(true);
   });
 

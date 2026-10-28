@@ -3,7 +3,7 @@
 // busca: `NuxtSelectMenu`. A busca vai ao servidor (GET recipes/ingredients/?q=, com
 // debounce no composable), então o filtro local fica desligado (`ignore-filter`);
 // quando a captura já trouxe candidatos, eles aparecem antes de qualquer digitação.
-// O resultado pode ser comprado ou produzido por outra receita. A origem não muda
+// O resultado pode ser comprado ou preparado por outra receita. A origem não muda
 // o gesto do operador: ele busca e escolhe um ingrediente.
 import type { IngredientOptionProjection } from "~/types/recipeBook";
 

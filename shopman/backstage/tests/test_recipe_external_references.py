@@ -98,7 +98,7 @@ def test_editor_adds_and_removes_references_and_the_rest_of_meta_survives(client
 def test_references_belong_to_the_entry_not_to_the_published_version(client, editor, entry):
     """Acrescentar fonte depois de publicar não toca a versão: a fonte é da receita inteira."""
     version = craftsman.create_version(
-        entry, formula={"anchor": {"kind": "total"}, "items": [], "preps": []}, yield_quantity=1, yield_unit="g",
+        entry, formula={"anchor": {"kind": "total"}, "ingredients": []}, yield_quantity=1, yield_unit="g",
     )
     RecipeVersion.objects.filter(pk=version.pk).update(status=RecipeVersion.Status.PUBLISHED)
     client.force_login(editor)

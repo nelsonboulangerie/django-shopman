@@ -14,6 +14,7 @@ import type {
   ProductionBoardProjection,
   ProductionDashboardProjection,
   ProductionForecastProjection as ProductionForecastContract,
+  ProductionFormulaLimitProjection as ProductionFormulaLimitContract,
   ProductionKDSCardProjection as ProductionKDSCardContract,
   ProductionKDSProjection as ProductionKDSContract,
   ProductionMiseEnPlaceProjection,
@@ -35,6 +36,7 @@ export type {
   OperatorProductivityRow,
   OrderCommitmentProjection,
   PositionOptionProjection,
+  ProductionActionProjection,
   ProductionBlindMapProjection,
   ProductionBlindMapRowProjection,
   ProductionBoardProjection,
@@ -64,10 +66,16 @@ export type {
 
 export type ProductionTimerStatusCode = "on_time" | "warning" | "late";
 
+export interface ProductionFormulaLimitProjection
+  extends ProductionFormulaLimitContract {
+  kind: "fixed" | "ratio";
+}
+
 // ── Live floor (KDS) ───────────────────────────────────────────────────────
 
 export interface ProductionKDSCardProjection extends ProductionKDSCardContract {
   timer_status_code: ProductionTimerStatusCode;
+  formula_limits: ProductionFormulaLimitProjection[];
 }
 
 export interface ProductionKDSProjection extends ProductionKDSContract {
@@ -164,11 +172,17 @@ export type WeighingIngredientProjection = Omit<
 };
 export type WeighingTicketProjection = Omit<
   ProductionWeighingTicketProjection,
-  "ingredients" | "ticket_ref" | "total_weight_display" | "old_dough"
+  "ingredients" | "ticket_ref" | "total_weight_display"
 > & {
   ingredients: WeighingIngredientProjection[];
   /** Mistura final com massa velha no teto; ausente quando a ficha não tem teto. */
-  old_dough?: ProductionWeighingTicketProjection["old_dough"];
+  old_dough?: {
+    cap_pct: string;
+    cap_display: string;
+    old_dough_display: string;
+    old_dough_g: string | null;
+    lines: Array<{ sku: string; target_display: string; target_g: string | null }>;
+  } | null;
   /** Identidade da ocorrência/preparo; recipe_ref é só fallback de transição. */
   ticket_ref?: string;
   /** Peso total pronto para a balança, emitido em gramas pelo backend novo. */

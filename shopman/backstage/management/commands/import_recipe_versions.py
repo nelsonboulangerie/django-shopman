@@ -7,17 +7,18 @@ planilha do dono, e passado por caminho. Para cada receita do arquivo:
   ``source = {"kind": "import", "text": <source_text>}``, ``origin`` = o bloco
   como está na planilha, ``formula`` em grama, rendimento = a linha Total
   convertida para grama, ``steps`` vazio e o ``label`` do arquivo;
-- uma linha que é prep (o levain) entra em ``preps``, e o que ela carrega
-  (farinha, água, cultura) entra na fórmula base pela composição da prep: a do
-  próprio arquivo quando a prep também é importada, senão a versão atual dela;
-- ``autolyse`` (opcional) passa TODA a farinha da mistura final pela prep
+- uma linha produzida por outra receita (o levain) entra em ``ingredients`` com
+  composição inclusa, e o que ela carrega (farinha, água, cultura) entra na
+  fórmula global pela composição congelada da receita do ingrediente: a do
+  próprio arquivo quando a receita também é importada, senão a versão atual dela;
+- ``autolyse`` (opcional) passa TODA a farinha da mistura final pela receita
   autolisada que já existe (ex.: Pasta Autolizada), e a água que a pasta leva sai
   da água da mistura final. Só quando a conta fecha exata (três casas, sem
   arredondar) e cabe na água da planilha; senão a receita fica em rascunho, sem
   publicar, e o motivo é dito.
 
 Sem ``--apply`` só mostra o plano. ``--apply`` grava os rascunhos; com
-``--publish`` também publica (``publish``), na ordem das dependências: a prep
+``--publish`` também publica (``publish``), na ordem das dependências: a receita do ingrediente
 antes de quem a consome. A versão publicada antes fica "Substituída".
 Idempotente: rascunho igual é reaproveitado, versão igual já publicada é pulada.
 
@@ -33,7 +34,7 @@ Formato do arquivo::
           "lines": [
             {"name": "<como a planilha escreve>", "quantity": "0.5", "unit": "kg", "sku": "FARINHA-NOVARA-T55"},
             {"name": "LEVAIN", "quantity": "0.1", "unit": "kg",
-             "prep": {"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment"}}
+             "recipe": {"sku": "LEVAIN", "entry_ref": "creme-levain"}}
           ],
           "total": {"quantity": "3", "unit": "kg"},
           "autolyse": {"sku": "PASTA-AUTOLIZADA", "entry_ref": "massa-pasta-autolizada"},
@@ -58,7 +59,6 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from shopman.craftsman.services.recipe_book import (
-    PREP_KINDS,
     analyze,
     classify_ingredient,
     item_grams,
@@ -80,7 +80,7 @@ class Plan:
     notes: str
     depends_on: list[str] = field(default_factory=list)
     hold: str = ""
-    prep_formulas: dict[str, dict] = field(default_factory=dict)
+    ingredient_formulas: dict[str, dict] = field(default_factory=dict)
 
 
 class Command(BaseCommand):
@@ -138,7 +138,8 @@ class Command(BaseCommand):
         current = entry.current_version
         self.stdout.write(f"\n{entry.ref} ({entry.output_sku}), atual: "
                           f"{current.version_ref + ' ' + repr(current.label) if current else 'nenhuma'}")
-        analysis = analyze(plan.formula, plan.prep_formulas)
+        _bind_recipe_versions(plan, plans)
+        analysis = analyze(plan.formula, plan.ingredient_formulas)
         for line in analysis.bom:
             self.stdout.write(f"    {line['sku']:<36} {number_text(line['quantity']):>10} {line['unit']}")
         self.stdout.write(f"    rendimento {number_text(plan.yield_g)} g")
@@ -172,7 +173,9 @@ class Command(BaseCommand):
         for dep in plan.depends_on:
             dep_entry = RecipeEntry.objects.select_related("current_version").get(ref=dep)
             if dep_entry.current_version is None or dep_entry.current_version.formula != plans[dep].formula:
-                self.stdout.write(self.style.WARNING(f"    não publica: a prep {dep} não está publicada com esta fórmula"))
+                self.stdout.write(self.style.WARNING(
+                    f"    não publica: a receita do ingrediente {dep} não está publicada com esta fórmula"
+                ))
                 return
         service.publish(draft, actor=options["actor"])
         draft.refresh_from_db()
@@ -183,8 +186,32 @@ def _next_number(entry) -> int:
     return (entry.versions.order_by("-number").values_list("number", flat=True).first() or 0) + 1
 
 
+def _bind_recipe_versions(plan: Plan, plans: dict[str, Plan]) -> None:
+    """Troca referências internas pela versão exata criada antes da consumidora."""
+    from shopman.craftsman.models import RecipeEntry
+
+    rebound: dict[str, dict] = {}
+    for ingredient in plan.formula.get("ingredients") or []:
+        entry_ref = str(ingredient.pop("_recipe_entry_ref", "") or "").strip()
+        if not entry_ref:
+            continue
+        entry = RecipeEntry.objects.prefetch_related("versions").get(ref=entry_ref)
+        expected = plans[entry_ref].formula if entry_ref in plans else _current_formula(entry_ref)
+        version = next(
+            (candidate for candidate in entry.versions.all().order_by("-number") if candidate.formula == expected),
+            None,
+        )
+        if version is None:
+            raise CommandError(f"A receita do ingrediente {entry_ref} ainda não tem a versão esperada.")
+        placeholder = str(ingredient.get("recipe_version_ref") or "")
+        ingredient["recipe_version_ref"] = version.version_ref
+        rebound[version.version_ref] = expected
+        plan.ingredient_formulas.pop(placeholder, None)
+    plan.ingredient_formulas.update(rebound)
+
+
 def _dependency_order(recipes: list[dict]) -> list[dict]:
-    """Quem é prep de outra receita do arquivo vem antes dela."""
+    """A receita de um ingrediente vem antes da receita que o utiliza."""
     by_ref = {str(r.get("entry_ref") or "").strip(): r for r in recipes}
     ordered: list[dict] = []
     seen: set[str] = set()
@@ -195,7 +222,7 @@ def _dependency_order(recipes: list[dict]) -> list[dict]:
         if ref in stack:
             raise CommandError(f"Dependência circular entre receitas: {' → '.join((*stack, ref))}.")
         for line in by_ref[ref].get("lines") or []:
-            dep = str((line.get("prep") or {}).get("entry_ref") or "").strip()
+            dep = str((line.get("recipe") or {}).get("entry_ref") or "").strip()
             if dep and dep in by_ref and dep != ref:
                 visit(dep, (*stack, ref))
         seen.add(ref)
@@ -228,20 +255,22 @@ def _current_formula(entry_ref: str) -> dict:
 
     entry = RecipeEntry.objects.select_related("current_version").filter(ref=entry_ref).first()
     if entry is None or entry.current_version is None:
-        raise CommandError(f"A prep {entry_ref} não tem versão publicada.")
+        raise CommandError(f"O ingrediente {entry_ref} não tem receita publicada.")
     return entry.current_version.formula or {}
 
 
 def _composition(formula: dict, where: str) -> list[tuple[str, str, Decimal]]:
-    """(sku, nome, grama) de cada item da fórmula; a prep precisa ser só insumo."""
-    if formula.get("preps"):
-        raise CommandError(f"{where}: a composição da prep tem sub-preps; este comando não desce mais um nível.")
+    """(sku, nome, grama) da composição elementar usada na fórmula global."""
     out = []
-    for item in formula.get("items") or []:
+    for item in formula.get("ingredients") or []:
+        if item.get("recipe_version_ref"):
+            raise CommandError(
+                f"{where}: a receita do ingrediente é multinível; este importador aceita um nível por vez."
+            )
         grams = item_grams(item)
         sku = str(item.get("sku") or "").strip()
         if grams is None or not sku:
-            raise CommandError(f"{where}: item sem SKU ou sem peso na composição da prep.")
+            raise CommandError(f"{where}: ingrediente sem SKU ou sem peso na composição.")
         out.append((sku, str(item.get("name") or sku), grams))
     return out
 
@@ -254,8 +283,8 @@ def _build_plan(recipe: dict, plans: dict[str, Plan]) -> Plan:
     entry = RecipeEntry.objects.get(ref=ref)
     base: dict[str, dict] = {}
     final_g: dict[str, Decimal] = {}
-    preps: list[dict] = []
-    prep_formulas: dict[str, dict] = {}
+    prepared: list[dict] = []
+    ingredient_formulas: dict[str, dict] = {}
     depends_on: list[str] = []
     origin_lines: list[dict] = []
 
@@ -271,25 +300,31 @@ def _build_plan(recipe: dict, plans: dict[str, Plan]) -> Plan:
         unit = str(line.get("unit") or "").strip()
         grams = _grams(line.get("quantity"), unit, where)
         origin_lines.append({"name": name, "quantity": str(line.get("quantity")), "unit": unit})
-        prep = line.get("prep")
-        if prep:
-            prep_sku = str(prep.get("sku") or "").strip()
-            prep_ref = str(prep.get("entry_ref") or "").strip()
-            kind = str(prep.get("kind") or "preferment")
-            if not prep_sku or not prep_ref or kind not in PREP_KINDS or kind == "old_dough":
-                raise CommandError(f"{where}: prep precisa de sku, entry_ref e kind válido.")
-            if prep_ref in plans:
-                prep_formula = plans[prep_ref].formula
-                depends_on.append(prep_ref)
+        recipe_source = line.get("recipe")
+        if recipe_source:
+            prepared_sku = str(recipe_source.get("sku") or "").strip()
+            prepared_ref = str(recipe_source.get("entry_ref") or "").strip()
+            if not prepared_sku or not prepared_ref:
+                raise CommandError(f"{where}: recipe precisa de sku e entry_ref.")
+            if prepared_ref in plans:
+                prepared_formula = plans[prepared_ref].formula
+                depends_on.append(prepared_ref)
             else:
-                prep_formula = _current_formula(prep_ref)
-            composition = _composition(prep_formula, where)
+                prepared_formula = _current_formula(prepared_ref)
+            composition = _composition(prepared_formula, where)
             total = sum((g for _, _, g in composition), _ZERO)
             for sku, comp_name, comp_g in composition:
                 add(sku, comp_name, comp_g / total * grams)
-            prep_formulas[prep_sku] = prep_formula
-            preps.append({"sku": prep_sku, "entry_ref": prep_ref, "kind": kind, "name": name,
-                          "quantity": number_text(grams), "unit": "g", "flour_pct": None})
+            placeholder = f"pending:{prepared_ref}"
+            ingredient_formulas[placeholder] = prepared_formula
+            value = number_text(grams)
+            prepared.append({
+                "sku": prepared_sku, "name": name, "role": "other",
+                "_recipe_entry_ref": prepared_ref, "recipe_version_ref": placeholder,
+                "composition": "included",
+                "quantity": {"kind": "fixed", "minimum": value, "target": value,
+                             "maximum": value, "unit": "g"},
+            })
             continue
         sku = str(line.get("sku") or "").strip()
         if not sku:
@@ -300,21 +335,34 @@ def _build_plan(recipe: dict, plans: dict[str, Plan]) -> Plan:
     hold = ""
     autolyse = recipe.get("autolyse")
     if autolyse:
-        hold = _autolyse(autolyse, ref, final_g, preps, prep_formulas)
+        hold = _autolyse(autolyse, ref, final_g, prepared, ingredient_formulas)
 
-    items = []
+    ingredients = []
     for line in base.values():
         role = classify_ingredient(line["name"], line["sku"])
-        items.append({"sku": line["sku"], "name": line["name"], "quantity": number_text(line["grams"]),
-                      "unit": "g", "role": role})
-    flour = sum((to_decimal(i["quantity"]) for i in items if i["role"] == "flour"), _ZERO)
-    mass = sum((to_decimal(i["quantity"]) for i in items), _ZERO)
+        value = number_text(line["grams"])
+        ingredients.append({
+            "sku": line["sku"], "name": line["name"], "role": role,
+            "recipe_version_ref": "", "composition": "additional",
+            "quantity": {"kind": "fixed", "minimum": value, "target": value,
+                         "maximum": value, "unit": "g"},
+        })
+    ingredients.extend(prepared)
+    for index, ingredient in enumerate(ingredients, start=1):
+        ingredient["ref"] = f"ingredient-{index}"
+    flour = sum(
+        (to_decimal(i["quantity"]["target"]) for i in ingredients if i["role"] == "flour"),
+        _ZERO,
+    )
+    mass = sum(
+        (to_decimal(i["quantity"]["target"]) for i in ingredients if not i.get("recipe_version_ref")),
+        _ZERO,
+    )
     formula = {
         "anchor": {"kind": suggest_anchor_kind(flour, mass, entry.kind)},
         "basis_g": None,
         "standardized": False,
-        "items": items,
-        "preps": preps,
+        "ingredients": ingredients,
     }
     total = recipe.get("total") or {}
     yield_g = _grams(total.get("quantity"), total.get("unit"), f"{ref}, total")
@@ -325,12 +373,12 @@ def _build_plan(recipe: dict, plans: dict[str, Plan]) -> Plan:
     }
     return Plan(entry_ref=ref, formula=formula, yield_g=yield_g, origin=origin,
                 notes=str(recipe.get("notes") or ""), depends_on=depends_on, hold=hold,
-                prep_formulas=prep_formulas)
+                ingredient_formulas=ingredient_formulas)
 
 
-def _autolyse(spec: dict, ref: str, final_g: dict[str, Decimal], preps: list[dict],
-              prep_formulas: dict[str, dict]) -> str:
-    """Passa toda a farinha da mistura final pela prep autolisada; devolve o motivo se não fecha exato."""
+def _autolyse(spec: dict, ref: str, final_g: dict[str, Decimal], prepared: list[dict],
+              ingredient_formulas: dict[str, dict]) -> str:
+    """Passa toda a farinha pela receita autolisada; devolve o motivo se não fecha exato."""
     sku = str(spec.get("sku") or "").strip()
     entry_ref = str(spec.get("entry_ref") or "").strip()
     if not sku or not entry_ref:
@@ -355,7 +403,13 @@ def _autolyse(spec: dict, ref: str, final_g: dict[str, Decimal], preps: list[dic
     from shopman.craftsman.models import RecipeEntry
 
     name = RecipeEntry.objects.filter(ref=entry_ref).values_list("name", flat=True).first() or sku
-    preps.insert(0, {"sku": sku, "entry_ref": entry_ref, "kind": "autolyse", "name": name,
-                     "quantity": number_text(paste_g), "unit": "g", "flour_pct": None})
-    prep_formulas[sku] = _current_formula(entry_ref)
+    value = number_text(paste_g)
+    placeholder = f"pending:{entry_ref}"
+    prepared.insert(0, {
+        "sku": sku, "name": name, "role": "other", "_recipe_entry_ref": entry_ref,
+        "recipe_version_ref": placeholder, "composition": "included",
+        "quantity": {"kind": "fixed", "minimum": value, "target": value,
+                     "maximum": value, "unit": "g"},
+    })
+    ingredient_formulas[placeholder] = _current_formula(entry_ref)
     return ""

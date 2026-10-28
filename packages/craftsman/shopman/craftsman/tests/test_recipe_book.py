@@ -19,27 +19,41 @@ from shopman.craftsman.services import recipe_book
 pytestmark = pytest.mark.django_db
 
 
-def flour_formula(*, water=700, preps=None, flour_sku="FARINHA-ANACONDA-PREMIUM"):
+def fixed(value, unit="g"):
+    return {"kind": "fixed", "minimum": value, "target": value, "maximum": value, "unit": unit}
+
+
+def ratio(value, *, minimum=None, maximum=None, basis=None):
+    return {"kind": "ratio", "minimum": value if minimum is None else minimum, "target": value,
+            "maximum": value if maximum is None else maximum,
+            "basis": basis or {"kind": "flour"}}
+
+
+def formula_ingredient(sku, name, role, quantity, **extra):
+    ref = extra.pop("ref", sku.lower())
+    return {"ref": ref, "sku": sku, "name": name, "role": role, "composition": "additional", "quantity": quantity, **extra}
+
+
+def flour_formula(*, water=700, ingredients=None, flour_sku="FARINHA-ANACONDA-PREMIUM"):
     return {
         "anchor": {"kind": "flour"},
         "basis_g": 1000,
         "standardized": True,
-        "items": [
-            {"sku": flour_sku, "name": "Farinha T55", "role": "flour", "quantity": 1000, "unit": "g"},
-            {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
-            {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
+        "ingredients": [
+            formula_ingredient(flour_sku, "Farinha T55", "flour", fixed(1000)),
+            formula_ingredient("AGUA-FILTRADA", "Água", "liquid", fixed(water)),
+            formula_ingredient("SAL-REFINADO", "Sal", "salt", fixed(20)),
+            *(ingredients or []),
         ],
-        "preps": preps or [],
     }
 
 
 LEVAIN_FORMULA = {
     "anchor": {"kind": "flour"},
-    "items": [
-        {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
-        {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "g"},
+    "ingredients": [
+        formula_ingredient("FARINHA-ANACONDA-PREMIUM", "Farinha T55", "flour", fixed(500)),
+        formula_ingredient("AGUA-FILTRADA", "Água", "liquid", fixed(500)),
     ],
-    "preps": [],
 }
 
 
@@ -84,14 +98,14 @@ class TestCreate:
 
     def test_invalid_formula_names_the_field(self, entry):
         formula = flour_formula()
-        formula["items"][1]["quantity"] = -1
+        formula["ingredients"][1]["quantity"]["target"] = -1
         with pytest.raises(RecipeBookError) as exc:
             recipe_book.create_version(entry, formula=formula, yield_quantity=1, yield_unit="kg")
         assert exc.value.code == "FORMULA_INVALID"
-        assert exc.value.data["field"] == "items[1].quantity"
+        assert exc.value.data["field"] == "ingredients[1].quantity.target"
 
     def test_the_model_refuses_the_same_formula(self, entry):
-        version = RecipeVersion(entry=entry, number=1, yield_quantity=1, yield_unit="kg", formula={"items": []})
+        version = RecipeVersion(entry=entry, number=1, yield_quantity=1, yield_unit="kg", formula={"ingredients": []})
         with pytest.raises(ValidationError) as exc:
             version.full_clean()
         assert "anchor" in exc.value.message_dict["formula"][0]
@@ -118,7 +132,7 @@ class TestCreate:
     def test_update_draft_only_touches_drafts(self, draft):
         recipe_book.update_draft(draft, formula=flour_formula(water=750), label="mais água", notes="teste")
         draft.refresh_from_db()
-        assert draft.formula["items"][1]["quantity"] == 750
+        assert draft.formula["ingredients"][1]["quantity"]["target"] == 750
         assert draft.label == "mais água"
 
         recipe_book.publish_version(draft)
@@ -214,35 +228,38 @@ class TestPublish:
         assert recipe.meta["version_ref"] == "massa-tradicao@2"
         assert recipe.items.get(input_sku="AGUA-FILTRADA").quantity == Decimal("750")
 
-    def test_publish_with_parts_consumes_the_parts_not_their_flour(self, entry, published_levain):
+    def test_publish_with_included_recipe_avoids_double_counting(self, entry, published_levain):
         """A defesa contra a dupla contagem: LEVAIN entra pronto e a farinha dele sai da base."""
         draft = recipe_book.create_version(
             entry,
-            formula=flour_formula(preps=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
+            formula=flour_formula(ingredients=[formula_ingredient(
+                "LEVAIN", "Levain", "other", ratio(20),
+                recipe_version_ref=published_levain.current_version.version_ref, composition="included",
+            )]),
             yield_quantity="1.7", yield_unit="kg",
         )
         recipe = recipe_book.publish_version(draft)
         items = {item.input_sku: item.quantity for item in recipe.items.all()}
         assert items == {
-            "FARINHA-ANACONDA-PREMIUM": Decimal("800"),
-            "AGUA-FILTRADA": Decimal("500"),
+            "FARINHA-ANACONDA-PREMIUM": Decimal("900"),
+            "AGUA-FILTRADA": Decimal("600"),
             "SAL-REFINADO": Decimal("20"),
-            "LEVAIN": Decimal("400"),
+            "LEVAIN": Decimal("200"),
         }
 
-    def test_old_dough_becomes_an_optional_line_with_the_cap(self, entry):
+    def test_old_dough_is_an_included_ingredient_with_a_maximum(self, entry):
         draft = recipe_book.create_version(
-            entry, formula=flour_formula(preps=[{"kind": "old_dough", "cap_pct": 20}]),
+            entry, formula=flour_formula(ingredients=[formula_ingredient(
+                "MASSA-VELHA-MASSA-TRADICAO", "Massa velha de Massa Tradição", "other",
+                ratio(20, minimum=0, maximum=20, basis={"kind": "total"}),
+                recipe_version_ref="massa-tradicao@1", composition="included",
+            )]),
             yield_quantity="1.7", yield_unit="kg",
         )
         recipe = recipe_book.publish_version(draft)
-        old_dough = recipe.items.get(input_sku="MASSA-TRADICAO")
-        assert old_dough.is_optional is True
-        assert old_dough.meta == {"role": "old_dough", "cap_pct": "20"}
-        assert old_dough.unit == "kg"
-        assert old_dough.quantity == Decimal("0.344")
-        # Fora do consumo: o BOM escalado da fornada não vê a massa velha.
-        assert {i.input_sku for i in recipe.items.filter(is_optional=False)} == {"FARINHA-ANACONDA-PREMIUM", "AGUA-FILTRADA", "SAL-REFINADO"}
+        reserved_dough = recipe.items.get(input_sku="MASSA-VELHA-MASSA-TRADICAO")
+        assert reserved_dough.quantity == Decimal("344")
+        assert reserved_dough.meta["recipe_version_ref"] == "massa-tradicao@1"
 
     def test_refuses_entry_without_sku(self):
         knowledge = recipe_book.create_entry(ref="ideia-de-pao", name="Ideia de pão")
@@ -253,12 +270,12 @@ class TestPublish:
 
     def test_refuses_item_without_sku(self, entry):
         formula = flour_formula()
-        formula["items"][2] = {"sku": "", "name": "sal grosso", "role": "salt", "quantity": 20, "unit": "g"}
+        formula["ingredients"][2] = formula_ingredient("", "sal grosso", "salt", fixed(20), ref="salt")
         draft = recipe_book.create_version(entry, formula=formula, yield_quantity=1, yield_unit="kg")
         with pytest.raises(RecipeBookError) as exc:
             recipe_book.publish_version(draft)
         assert exc.value.code == "ITEM_WITHOUT_SKU"
-        assert exc.value.data["field"] == "items[2].sku"
+        assert exc.value.data["field"] == "ingredients[2].sku"
 
     def test_refuses_a_version_that_is_not_a_draft(self, entry, draft):
         recipe_book.publish_version(draft)
@@ -266,15 +283,17 @@ class TestPublish:
             recipe_book.publish_version(draft)
         assert exc.value.code == "VERSION_NOT_DRAFT"
 
-    def test_refuses_prep_without_formula(self, entry):
+    def test_refuses_included_ingredient_without_frozen_formula(self, entry):
         draft = recipe_book.create_version(
-            entry, formula=flour_formula(preps=[{"sku": "LEVAIN", "kind": "preferment", "flour_pct": 20}]),
+            entry, formula=flour_formula(ingredients=[formula_ingredient(
+                "LEVAIN", "Levain", "other", ratio(20), recipe_version_ref="levain@99", composition="included",
+            )]),
             yield_quantity=1, yield_unit="kg",
         )
         with pytest.raises(RecipeBookError) as exc:
             recipe_book.publish_version(draft)
-        assert exc.value.code == "PREP_WITHOUT_FORMULA"
-        assert exc.value.data["field"] == "preps[0]"
+        assert exc.value.code == "INGREDIENT_RECIPE_NOT_FOUND"
+        assert exc.value.data["field"] == "ingredients[3].recipe_version_ref"
         assert Recipe.objects.filter(ref="massa-tradicao").exists() is False
 
     def test_the_mass_invariant_of_the_sheet_still_speaks(self, entry):
@@ -294,10 +313,11 @@ class TestOMesmoInsumoEmDuasLinhas:
     fornada consome a soma."""
 
     @staticmethod
-    def _bassinage(entry, preps=None):
-        formula = flour_formula(water=650, preps=preps)
-        formula["items"].append(
-            {"sku": "AGUA-FILTRADA", "name": "Água da bassinage", "role": "liquid", "quantity": 50, "unit": "g"},
+    def _bassinage(entry, ingredients=None):
+        formula = flour_formula(water=650, ingredients=ingredients)
+        formula["ingredients"][1]["ref"] = "water-mix"
+        formula["ingredients"].append(
+            formula_ingredient("AGUA-FILTRADA", "Água da bassinage", "liquid", fixed(50), ref="water-bassinage"),
         )
         return recipe_book.create_version(entry, formula=formula, yield_quantity="1.72", yield_unit="kg")
 
@@ -307,15 +327,18 @@ class TestOMesmoInsumoEmDuasLinhas:
         assert (water.quantity, water.unit) == (Decimal("700"), "g")
         assert sum(item.quantity for item in recipe.items.all()) == Decimal("1720")
 
-    def test_with_a_prep_the_sheet_gets_what_is_left_of_both(self, entry, published_levain):
+    def test_with_an_included_recipe_sheet_gets_what_is_left(self, entry, published_levain):
         recipe = recipe_book.publish_version(
-            self._bassinage(entry, preps=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
+            self._bassinage(entry, ingredients=[formula_ingredient(
+                "LEVAIN", "Levain", "other", ratio(20),
+                recipe_version_ref=published_levain.current_version.version_ref, composition="included",
+            )]),
         )
         assert {item.input_sku: item.quantity for item in recipe.items.all()} == {
-            "FARINHA-ANACONDA-PREMIUM": Decimal("800"),
-            "AGUA-FILTRADA": Decimal("500"),  # 650 + 50 − 200 do levain
+            "FARINHA-ANACONDA-PREMIUM": Decimal("900"),
+            "AGUA-FILTRADA": Decimal("600"),
             "SAL-REFINADO": Decimal("20"),
-            "LEVAIN": Decimal("400"),
+            "LEVAIN": Decimal("200"),
         }
 
     def test_the_batch_consumes_the_sum(self, entry):
@@ -328,16 +351,18 @@ class TestOMesmoInsumoEmDuasLinhas:
         assert water.quantity == Decimal("700")
 
 
-# ── Preps ───────────────────────────────────────────────────────────────────
+# ── Receita do ingrediente ──────────────────────────────────────────────────
 
 
-class TestPrepFormulas:
-    def test_by_entry_ref_then_by_output_sku(self, published_levain):
-        by_ref = recipe_book.prep_formulas_for({"preps": [{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment"}]})
-        by_sku = recipe_book.prep_formulas_for({"preps": [{"sku": "LEVAIN", "kind": "preferment"}]})
-        assert by_ref == {"LEVAIN": LEVAIN_FORMULA}
-        assert by_sku == {"LEVAIN": LEVAIN_FORMULA}
-        assert recipe_book.prep_formulas_for({"preps": [{"sku": "POOLISH", "kind": "preferment"}, {"kind": "old_dough", "cap_pct": 10}]}) == {}
+class TestIngredientFormulas:
+    def test_uses_frozen_version_and_never_guesses_by_sku(self, published_levain):
+        version_ref = published_levain.current_version.version_ref
+        formula = flour_formula(ingredients=[formula_ingredient(
+            "LEVAIN", "Levain", "other", ratio(20), recipe_version_ref=version_ref, composition="included",
+        )])
+        assert recipe_book.ingredient_formulas_for(formula) == {version_ref: LEVAIN_FORMULA}
+        formula["ingredients"][-1]["recipe_version_ref"] = ""
+        assert recipe_book.ingredient_formulas_for(formula) == {}
 
 
 # ── Diff ─────────────────────────────────────────────────────────────────────
@@ -347,8 +372,9 @@ class TestDiff:
     def test_versions_are_compared_on_the_same_basis(self, entry):
         first = recipe_book.create_version(entry, formula=flour_formula(), yield_quantity="1.7", yield_unit="kg")
         informed = flour_formula(water=750)
-        for item in informed["items"]:
-            item["quantity"] = item["quantity"] * 3  # escrita em 3 kg de farinha
+        for item in informed["ingredients"]:
+            for key in ("minimum", "target", "maximum"):
+                item["quantity"][key] *= 3
         informed.update(basis_g=None, standardized=False)
         second = recipe_book.create_version(entry, formula=informed, yield_quantity="5.3", yield_unit="kg")
 
@@ -371,7 +397,7 @@ class TestDiff:
     def test_ingredient_only_on_one_side_shows_up_with_none(self, entry):
         first = recipe_book.create_version(entry, formula=flour_formula(), yield_quantity=1, yield_unit="kg")
         with_malt = flour_formula()
-        with_malt["items"].append({"sku": "MALTE-EXTRATO", "name": "Malte", "role": "sugar", "quantity": 10, "unit": "g"})
+        with_malt["ingredients"].append(formula_ingredient("MALTE-EXTRATO", "Malte", "sugar", fixed(10)))
         second = recipe_book.create_version(entry, formula=with_malt, yield_quantity=1, yield_unit="kg")
         rows = {row.sku: row for row in recipe_book.diff_versions(first, second).rows}
         assert rows["MALTE-EXTRATO"].a_grams is None
@@ -401,7 +427,7 @@ def seeded_sheets():
 
 
 class TestBootstrap:
-    def test_dissolves_the_parts_into_the_base(self, seeded_sheets):
+    def test_keeps_recipe_backed_ingredients_in_one_collection(self, seeded_sheets):
         _, _, tradicao = seeded_sheets
         entry = recipe_book.bootstrap_entry_from_recipe(tradicao)
 
@@ -418,44 +444,28 @@ class TestBootstrap:
         assert version.origin["items"][0] == {"sku": "PASTA-AUTOLIZADA", "quantity": "8.400", "unit": "kg"}
 
         formula = version.formula
-        assert formula["anchor"] == {"kind": "flour"}
+        assert formula["anchor"] == {"kind": "total"}
         assert formula["basis_g"] is None
         assert formula["standardized"] is False
-        items = {item["sku"]: item for item in formula["items"]}
-        # A prep é a sua composição, proporcional aos insumos (a perda da ficha
-        # dela é do forno, não da fórmula): 8,4 kg de uma pasta 5000/3500 levam
-        # 4941,176 g de farinha; 1,5 kg de um levain 1:1:1 levam 500 g.
-        assert items["FARINHA-NOVARA-T55"]["quantity"] == "5441.176"
-        assert items["FARINHA-NOVARA-T55"]["role"] == "flour"
-        assert items["FARINHA-NOVARA-T55"]["unit"] == "g"
-        assert items["AGUA-FILTRADA"]["quantity"] == "3958.824"
-        assert items["LEVAIN-LIQUIDO"]["quantity"] == "500"
-        # A cultura (fermento natural) não é fermento biológico: fica fora da
-        # métrica de fermento e da faixa de 0,5 a 3%.
-        assert items["LEVAIN-LIQUIDO"]["role"] == "other"
-        assert items["SAL-REFINADO"]["quantity"] == "100"
+        ingredients = {item["sku"]: item for item in formula["ingredients"]}
+        assert ingredients["LEVAIN"]["recipe_version_ref"] == "creme-levain@1"
+        assert ingredients["LEVAIN"]["composition"] == "additional"
+        assert ingredients["LEVAIN"]["quantity"]["target"] == "1.5"
+        assert ingredients["PASTA-AUTOLIZADA"]["recipe_version_ref"] == "massa-pasta-autolizada@1"
+        assert ingredients["PASTA-AUTOLIZADA"]["quantity"]["target"] == "8.4"
+        assert ingredients["SAL-REFINADO"]["quantity"]["target"] == "100"
 
-        preps = {prep["sku"]: prep for prep in formula["preps"]}
-        assert preps["LEVAIN"]["entry_ref"] == "creme-levain"
-        assert preps["LEVAIN"]["kind"] == "preferment"
-        assert preps["LEVAIN"]["quantity"] == "1500"
-        assert preps["LEVAIN"]["flour_pct"] == "9.189"
-        assert preps["PASTA-AUTOLIZADA"]["kind"] == "autolyse"
-        assert preps["PASTA-AUTOLIZADA"]["quantity"] == "8400"
-        assert preps["PASTA-AUTOLIZADA"]["flour_pct"] == "90.811"
-
-        # As preps viraram entry antes, para o entry_ref existir.
+        # As receitas dos ingredientes nascem antes, para a versão congelada existir.
         assert RecipeEntry.objects.filter(ref__in=["creme-levain", "massa-pasta-autolizada"]).count() == 2
 
-    def test_the_base_derives_the_same_sheet_back(self, seeded_sheets):
-        """Ida e volta: a base dissolvida, analisada com as preps, dá o BOM da ficha original."""
+    def test_unified_formula_derives_the_same_sheet_back(self, seeded_sheets):
         _, _, tradicao = seeded_sheets
         entry = recipe_book.bootstrap_entry_from_recipe(tradicao)
         formula = entry.current_version.formula
-        bom = {line["sku"]: line for line in recipe_book.derive_bom(formula, recipe_book.prep_formulas_for(formula))}
+        bom = {line["sku"]: line for line in recipe_book.derive_bom(formula, recipe_book.ingredient_formulas_for(formula))}
         assert set(bom) == {"LEVAIN", "PASTA-AUTOLIZADA", "SAL-REFINADO"}
-        assert bom["LEVAIN"]["quantity"] == Decimal("1500")
-        assert bom["PASTA-AUTOLIZADA"]["quantity"] == Decimal("8400")
+        assert (bom["LEVAIN"]["quantity"], bom["LEVAIN"]["unit"]) == (Decimal("1.5"), "kg")
+        assert (bom["PASTA-AUTOLIZADA"]["quantity"], bom["PASTA-AUTOLIZADA"]["unit"]) == (Decimal("8.4"), "kg")
         assert bom["SAL-REFINADO"]["quantity"] == Decimal("100")
 
     def test_is_idempotent_and_does_not_touch_the_sheet(self, seeded_sheets):
@@ -501,8 +511,7 @@ class TestBootstrap:
         assert version.yield_unit == "un"
 
         formula = version.formula
-        assert formula["preps"] == []
-        assert [(item["sku"], item["quantity"], item["unit"]) for item in formula["items"]] == [
+        assert [(item["sku"], item["quantity"]["target"], item["quantity"]["unit"]) for item in formula["ingredients"]] == [
             ("MASSA-TRADICAO", "280", "g")
         ]
         # Sem farinha própria, a âncora é a massa total — e é a âncora que liga
@@ -516,9 +525,8 @@ class TestBootstrap:
         entry = recipe_book.bootstrap_entry_from_recipe(baguete)
         formula = entry.current_version.formula
 
-        analysis = recipe_book.analyze(formula, recipe_book.prep_formulas_for(formula))
+        analysis = recipe_book.analyze(formula, recipe_book.ingredient_formulas_for(formula))
         assert analysis.hydration_pct is None
-        assert analysis.prefermented_flour_pct is None
         assert analysis.salt_pct is None
         assert analysis.warnings == ()
         assert recipe_book.check_references(analysis, entry.kind) == []
@@ -533,17 +541,15 @@ class TestBootstrap:
                       [("MASSA-CROISSANT", "0.080"), ("CHOCOLATE-BATON-MEIOAMARGO", "0.020")], unit="un")
 
         formula = recipe_book.bootstrap_entry_from_recipe(peca).current_version.formula
-        assert formula["preps"] == []
-        assert {item["sku"]: item["quantity"] for item in formula["items"]} == {
+        assert {item["sku"]: item["quantity"]["target"] for item in formula["ingredients"]} == {
             "MASSA-CROISSANT": "80", "CHOCOLATE-BATON-MEIOAMARGO": "20",
         }
 
-    def test_a_formula_that_yields_mass_still_dissolves_its_parts(self, seeded_sheets):
-        """A régua é o que a ficha RENDE: fórmula continua com preps de verdade."""
+    def test_mass_formula_keeps_recipe_backed_ingredients(self, seeded_sheets):
         _, _, tradicao = seeded_sheets
         formula = recipe_book.bootstrap_entry_from_recipe(tradicao).current_version.formula
-        assert {prep["sku"] for prep in formula["preps"]} == {"LEVAIN", "PASTA-AUTOLIZADA"}
-        assert formula["anchor"] == {"kind": "flour"}
+        assert {item["sku"] for item in formula["ingredients"] if item.get("recipe_version_ref")} == {"LEVAIN", "PASTA-AUTOLIZADA"}
+        assert formula["anchor"] == {"kind": "total"}
 
     def test_the_command_orders_by_dependency_and_honors_dry_run(self, seeded_sheets):
         out = StringIO()
@@ -695,7 +701,6 @@ class TestWorkOrderSnapshot:
         snapshot = work_order.meta["_recipe_snapshot"]
         assert snapshot["version_ref"] == "massa-tradicao@1"
         assert {item["input_sku"] for item in snapshot["items"]} == {"FARINHA-ANACONDA-PREMIUM", "AGUA-FILTRADA", "SAL-REFINADO"}
-
     def test_a_sheet_without_a_version_carries_an_empty_stamp(self):
         recipe = Recipe.objects.create(ref="pao-simples", name="Pão simples", output_sku="PAO", batch_size=Decimal("1"))
         work_order = craft.plan(recipe, 1)

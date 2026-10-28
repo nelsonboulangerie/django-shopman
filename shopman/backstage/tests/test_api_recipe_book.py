@@ -76,17 +76,34 @@ def materials(db):
     return {sku: Material.objects.create(sku=sku, name=name, unit=unit) for sku, name, unit in rows}
 
 
-def flour_formula(*, water=700, flour=1000, preps=None):
+def formula_ingredient(sku, name, role, quantity, unit="g", *, ref=None, recipe_version_ref="",
+                       composition="additional", **extra):
+    return {
+        "ref": ref or f"ingredient-{sku.lower()}",
+        "sku": sku,
+        "name": name,
+        "role": role,
+        "recipe_version_ref": recipe_version_ref,
+        "composition": composition,
+        "quantity": quantity if isinstance(quantity, dict) else {
+            "kind": "fixed", "minimum": quantity, "target": quantity,
+            "maximum": quantity, "unit": unit,
+        },
+        **extra,
+    }
+
+
+def flour_formula(*, water=700, flour=1000, prepared=None):
     return {
         "anchor": {"kind": "flour"},
         "basis_g": None,
         "standardized": False,
-        "items": [
-            {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": flour, "unit": "g"},
-            {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
-            {"sku": "SAL-REFINADO", "name": "Sal", "role": "salt", "quantity": 20, "unit": "g"},
+        "ingredients": [
+            formula_ingredient("FARINHA-ANACONDA-PREMIUM", "Farinha T55", "flour", flour),
+            formula_ingredient("AGUA-FILTRADA", "Água", "liquid", water),
+            formula_ingredient("SAL-REFINADO", "Sal", "salt", 20),
+            *(prepared or []),
         ],
-        "preps": preps or [],
     }
 
 
@@ -119,11 +136,10 @@ def published_levain(db):
         levain,
         formula={
             "anchor": {"kind": "flour"},
-            "items": [
-                {"sku": "FARINHA-ANACONDA-PREMIUM", "name": "Farinha T55", "role": "flour", "quantity": 500, "unit": "g"},
-                {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 500, "unit": "ml"},
+            "ingredients": [
+                formula_ingredient("FARINHA-ANACONDA-PREMIUM", "Farinha T55", "flour", 500),
+                formula_ingredient("AGUA-FILTRADA", "Água", "liquid", 500, "ml"),
             ],
-            "preps": [],
         },
         yield_quantity=1000, yield_unit="g",
     )
@@ -417,12 +433,12 @@ def test_duplicate_entry_never_reuses_the_source_output_sku(client, editor, entr
 def test_create_entry_refuses_a_bad_draft_without_leaving_an_orphan(client, editor):
     client.force_login(editor)
     bad = version_payload()
-    bad["formula"]["items"][1]["quantity"] = -5
+    bad["formula"]["ingredients"][1]["quantity"]["target"] = -5
     response = _post(client, LIST_URL, {"name": "Errada", "kind": "bread", "output_sku": "", "notes": "", "version": bad})
     assert response.status_code == 400
     body = response.json()
-    assert body["field"] == "items[1].quantity"
-    assert body["errors"] == {"items[1].quantity": [body["detail"]]}
+    assert body["field"] == "ingredients[1].quantity.target"
+    assert body["errors"] == {"ingredients[1].quantity.target": [body["detail"]]}
     assert not RecipeEntry.objects.filter(name="Errada").exists()
 
 
@@ -443,8 +459,8 @@ def test_detail_carries_the_lens(client, viewer, entry):
     assert lens["anchor_label"] == "Farinhas totais"
     assert lens["anchor_total_display"] == "1 kg"
     assert lens["total_mass_display"] == "1,72 kg"
-    assert [item["pct_display"] for item in lens["items"]] == ["100%", "70%", "2%"]
-    assert lens["items"][0]["is_anchor"] is True
+    assert [item["pct_display"] for item in lens["ingredients"]] == ["100%", "70%", "2%"]
+    assert lens["ingredients"][0]["is_anchor"] is True
     hydration = next(metric for metric in lens["metrics"] if metric["code"] == "hydration_pct")
     assert hydration == {
         "code": "hydration_pct", "label": "Hidratação", "value_display": "70%",
@@ -464,6 +480,13 @@ def test_patch_entry(client, editor, entry):
     client.force_login(editor)
     response = _patch(client, f"{LIST_URL}{entry.ref}/", {
         "name": "Massa Tradição 2027", "kind": "viennoiserie", "output_sku": "MASSA-NOVA", "notes": "x", "is_active": False,
+        "ingredient_defaults": {
+            "quantity": {
+                "kind": "ratio", "minimum": 15, "target": 20, "maximum": 25,
+                "basis": {"kind": "flour"},
+            },
+            "composition": "included",
+        },
     })
     assert response.status_code == 200
     body = response.json()["entry"]
@@ -471,6 +494,13 @@ def test_patch_entry(client, editor, entry):
     assert body["kind"] == "viennoiserie"
     assert body["output_sku"] == "MASSA-NOVA"
     assert body["is_active"] is False
+    assert body["ingredient_defaults"] == {
+        "quantity": {
+            "kind": "ratio", "minimum": 15, "target": 20, "maximum": 25,
+            "basis": {"kind": "flour"},
+        },
+        "composition": "included",
+    }
     assert "access" not in response.json()
 
     assert _patch(client, f"{LIST_URL}{entry.ref}/", {"kind": "pizza"}).json()["field"] == "kind"
@@ -503,7 +533,7 @@ def test_new_version_with_from_version_and_a_formula_uses_the_formula(client, ed
     response = _post(client, f"{LIST_URL}{entry.ref}/versions/", payload)
     assert response.status_code == 201
     stored = RecipeVersion.objects.get(entry=entry, number=2)
-    assert stored.formula["items"][1]["quantity"] == 750
+    assert stored.formula["ingredients"][1]["quantity"]["target"] == 750
     assert stored.yield_quantity == Decimal("1.750")
     assert stored.source == {"kind": "manual"}
 
@@ -715,12 +745,12 @@ def test_publish_without_sku_names_the_field(client, editor):
 def test_publish_with_an_unmatched_item_names_the_line(client, editor):
     entry = craftsman.create_entry(ref="pao-solto", name="Pão solto", kind="bread", output_sku="PAO-SOLTO")
     formula = flour_formula()
-    formula["items"][2] = {"sku": "", "name": "sal grosso", "role": "salt", "quantity": 20, "unit": "g"}
+    formula["ingredients"][2] = formula_ingredient("", "sal grosso", "salt", 20, ref="ingredient-sal-grosso")
     craftsman.create_version(entry, formula=formula, yield_quantity=1, yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-solto/versions/1/publish/", {})
     assert response.status_code == 400
-    assert response.json()["field"] == "items[2].sku"
+    assert response.json()["field"] == "ingredients[2].sku"
 
 
 def test_publish_twice_is_a_state_conflict(client, editor, entry):
@@ -779,31 +809,37 @@ def test_publish_refuses_stale_version_and_entry_revisions(client, editor, entry
 
 def test_lens_preview(client, editor, published_levain):
     client.force_login(editor)
-    formula = flour_formula(preps=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}])
+    formula = flour_formula(prepared=[formula_ingredient(
+        "LEVAIN", "Levain", "other", {
+            "kind": "ratio", "minimum": 20, "target": 20, "maximum": 20,
+            "basis": {"kind": "flour"},
+        }, ref="ingredient-levain",
+        recipe_version_ref="creme-levain@1", composition="included",
+    )])
     response = _post(client, reverse("api-backstage-recipes-lens"), {"formula": formula, "kind": "bread"})
     assert response.status_code == 200, response.content
     lens = response.json()["lens"]
     assert lens["is_bakery"] is True
-    assert [p["quantity_display"] for p in lens["preps"]] == ["400 g"]
-    assert lens["preps"][0]["has_formula"] is True
-    assert lens["preps"][0]["kind_label"] == "Pré-fermento"
+    levain = next(item for item in lens["ingredients"] if item["sku"] == "LEVAIN")
+    assert levain["ref"] == "ingredient-levain"
+    assert levain["quantity_display"] == "200 g"
+    assert levain["quantity_rule_display"] == "Exata: 20% das farinhas"
+    assert levain["recipe_version_ref"] == "creme-levain@1"
+    assert levain["composition"] == "included"
     assert {item["sku"]: item["quantity_display"] for item in lens["final_mix"]} == {
-        "FARINHA-ANACONDA-PREMIUM": "800 g", "AGUA-FILTRADA": "500 g", "SAL-REFINADO": "20 g",
+        "FARINHA-ANACONDA-PREMIUM": "900 g", "AGUA-FILTRADA": "600 g", "SAL-REFINADO": "20 g",
     }
     assert [item["sku"] for item in lens["bom"]] == ["FARINHA-ANACONDA-PREMIUM", "AGUA-FILTRADA", "SAL-REFINADO", "LEVAIN"]
-    prefermented = next(m for m in lens["metrics"] if m["code"] == "prefermented_flour_pct")
-    assert prefermented["value_display"] == "20%"
-    assert prefermented["tone"] == "ok"
 
 
 def test_lens_preview_tolerates_an_unfinished_row(client, editor):
     """O editor manda a fórmula a cada tecla: uma linha em branco não pode virar 400."""
     client.force_login(editor)
     formula = flour_formula()
-    formula["items"].append({"sku": "", "name": "", "role": "other", "quantity": 0, "unit": "g", "note": ""})
+    formula["ingredients"].append(formula_ingredient("", "", "other", 0, ref="ingredient-empty", note=""))
     response = _post(client, reverse("api-backstage-recipes-lens"), {"formula": formula, "kind": "bread"})
     assert response.status_code == 200
-    assert len(response.json()["lens"]["items"]) == 4
+    assert len(response.json()["lens"]["ingredients"]) == 4
 
     bad = _post(client, reverse("api-backstage-recipes-lens"), {"formula": "x"})
     assert bad.status_code == 400
@@ -818,12 +854,15 @@ def test_standardize_to_the_house_basis(client, editor):
     body = response.json()
     assert body["formula"]["basis_g"] == 1000
     assert body["formula"]["standardized"] is True
-    assert [item["quantity"] for item in body["formula"]["items"]] == ["1000", "700", "6.667"]
+    assert [item["quantity"]["target"] for item in body["formula"]["ingredients"]] == ["1000", "700", "6.667"]
     assert body["lens"]["basis_display"] == "1000 g"
     assert body["lens"]["standardized"] is True
     assert body["lens"]["anchor_total_display"] == "1 kg"
 
-    without_flour = {"anchor": {"kind": "flour"}, "items": [{"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 1, "unit": "kg"}], "preps": []}
+    without_flour = {
+        "anchor": {"kind": "flour"},
+        "ingredients": [formula_ingredient("AGUA-FILTRADA", "Água", "liquid", 1, "kg")],
+    }
     refused = _post(client, reverse("api-backstage-recipes-standardize"), {"formula": without_flour})
     assert refused.status_code == 400
     assert refused.json()["field"] == "anchor"
@@ -871,11 +910,10 @@ def test_reference_by_kind(client, viewer):
     assert ranges["hydration_pct"]["low_display"] == "60%"
     assert ranges["hydration_pct"]["high_display"] == "85%"
     assert ranges["salt_pct"]["max_display"] == "2,5%"
-    assert ranges["prep_flour_pct:levain"]["label"] == "Farinha na prep: Levain"
 
     cream = client.get(reverse("api-backstage-recipes-reference"), {"kind": "cream"}).json()["reference"]
     codes = {r["code"] for r in cream["ranges"]}
-    assert "salt_pct" in codes and "hydration_pct" not in codes and "prep_flour_pct:levain" not in codes
+    assert "salt_pct" in codes and "hydration_pct" not in codes
 
     assert client.get(reverse("api-backstage-recipes-reference"), {"kind": "pizza"}).json()["field"] == "kind"
 
@@ -884,10 +922,11 @@ def test_ingredient_options_mix_materials_and_parts(client, viewer, materials, p
     client.force_login(viewer)
     url = reverse("api-backstage-recipes-ingredients")
     options = client.get(url, {"q": "lev"}).json()["options"]
-    prep = next(option for option in options if option["sku"] == "LEVAIN")
-    assert prep == {
+    recipe_ingredient = next(option for option in options if option["sku"] == "LEVAIN")
+    assert recipe_ingredient == {
         "sku": "LEVAIN", "name": "Levain", "unit": "g", "role": "other", "has_recipe": True,
-        "entry_ref": "creme-levain", "suggested_prep_kind": "preferment",
+        "recipe_version_ref": "creme-levain@1", "default_quantity": None,
+        "default_composition": "additional",
     }
 
     flours = client.get(url, {"q": "farinha"}).json()["options"]
@@ -988,7 +1027,10 @@ def test_capture_reads_a_french_note_and_matches_the_ingredients(client, editor,
     assert levain["sku"] == "LEVAIN"
     # Fermento natural não é fermento biológico: fica fora da métrica de fermento.
     assert levain["role"] == "other"
-    assert any(c["sku"] == "LEVAIN" and c["has_recipe"] and c["entry_ref"] == "creme-levain" for c in levain["candidates"])
+    assert any(
+        c["sku"] == "LEVAIN" and c["has_recipe"] and c["recipe_version_ref"] == "creme-levain@1"
+        for c in levain["candidates"]
+    )
 
     seeds = items["Sementes de girassol"]
     assert seeds["sku"] == ""
@@ -999,7 +1041,10 @@ def test_capture_reads_a_french_note_and_matches_the_ingredients(client, editor,
     assert formula["anchor"] == {"kind": "flour"}
     assert formula["standardized"] is False
     assert formula["basis_g"] is None
-    assert [(line["sku"], line["quantity"], line["unit"]) for line in formula["items"]] == [
+    assert [
+        (line["sku"], line["quantity"]["target"], line["quantity"]["unit"])
+        for line in formula["ingredients"]
+    ] == [
         ("FARINHA-NOVARA-T55", "1000", "g"), ("AGUA-FILTRADA", "700", "g"), ("SAL-REFINADO", "20", "g"), ("LEVAIN", "200", "g"),
     ]
 
@@ -1019,7 +1064,7 @@ def test_publish_writes_the_sheet_in_the_materials_unit(client, editor, material
     """A fórmula fala em grama e mililitro; o insumo é cadastrado em kg ou L, e a ficha fala a unidade do cadastro."""
     entry = craftsman.create_entry(ref="pao-em-gramas", name="Pão em gramas", kind="bread", output_sku="PAO-EM-GRAMAS")
     formula = flour_formula()
-    formula["items"][1] = {"sku": "AGUA-FILTRADA", "name": "Água", "role": "liquid", "quantity": 700, "unit": "ml"}
+    formula["ingredients"][1] = formula_ingredient("AGUA-FILTRADA", "Água", "liquid", 700, "ml")
     craftsman.create_version(entry, formula=formula, yield_quantity="1.7", yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-em-gramas/versions/1/publish/", {})
@@ -1047,17 +1092,17 @@ def test_publish_refuses_a_mass_line_for_a_liquid_without_declared_density_and_n
     """Leite em grama contra insumo em litro só atravessa com densidade declarada; sem ela, recusa apontando a linha."""
     entry = craftsman.create_entry(ref="pao-de-leite", name="Pão de leite", kind="bread", output_sku="PAO-DE-LEITE")
     formula = flour_formula()
-    formula["items"][1] = {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
+    formula["ingredients"][1] = formula_ingredient("LEITE-INTEGRAL-A", "Leite", "liquid", 680)
     craftsman.create_version(entry, formula=formula, yield_quantity="1.6", yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-de-leite/versions/1/publish/", {})
     assert response.status_code == 400, response.content
-    assert response.json()["field"] == "items[1].unit"
+    assert response.json()["field"] == "ingredients[1].quantity.unit"
     assert "(L)" in response.json()["detail"]
     assert not Recipe.objects.filter(ref="pao-de-leite").exists()
 
     # Com a densidade declarada na linha, a mesma fórmula publica em litro.
-    formula["items"][1]["density_g_per_ml"] = "1.03"
+    formula["ingredients"][1]["density_g_per_ml"] = "1.03"
     version = craftsman.update_draft(entry.versions.get(number=1), formula=formula)
     response = _post(client, f"{LIST_URL}pao-de-leite/versions/{version.number}/publish/", {})
     assert response.status_code == 200, response.content
@@ -1078,7 +1123,7 @@ def test_publish_carries_the_material_profile_into_new_sheet_lines(client, edito
     materials["LEITE-INTEGRAL-A"].save()
     entry = craftsman.create_entry(ref="pao-de-leite-2", name="Pão de leite", kind="bread", output_sku="PAO-DE-LEITE-2")
     formula = flour_formula()
-    formula["items"][1] = {"sku": "LEITE-INTEGRAL-A", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
+    formula["ingredients"][1] = formula_ingredient("LEITE-INTEGRAL-A", "Leite", "liquid", 680)
     craftsman.create_version(entry, formula=formula, yield_quantity="1.6", yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-de-leite-2/versions/1/publish/", {})

@@ -541,6 +541,7 @@ const RECIPE_DRAFTS = new Set();
 
 function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
   return {
+    ref: `ingredient-${sku || name}`,
     sku,
     name,
     role,
@@ -551,6 +552,10 @@ function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
     pct_display: pct,
     is_anchor: anchor,
     matched: true,
+    recipe_version_ref: "",
+    composition: "additional",
+    composition_label: "Adicional",
+    quantity_rule_display: "Exata",
   };
 }
 const LENS = {
@@ -561,7 +566,7 @@ const LENS = {
   standardized: true,
   anchor_total_display: "1.000 g",
   total_mass_display: "1.700 g",
-  items: [
+  ingredients: [
     lensItem("FARINHA-T65", "Farinha T65", "flour", "Farinha", 1000, "100%", true),
     lensItem("AGUA", "Água", "liquid", "Líquido", 660, "66%", false),
     lensItem("SAL", "Sal", "salt", "Sal", 20, "2%", false),
@@ -571,7 +576,6 @@ const LENS = {
   final_mix_differs: false,
   bom: [],
   bom_differs: false,
-  preps: [],
   metrics: [
     {
       code: "hydration",
@@ -823,11 +827,11 @@ const SHEETS = [
 ];
 
 const RECIPE_INGREDIENTS = [
-  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", has_recipe: false, entry_ref: "", suggested_prep_kind: "" },
-  { sku: "AGUA", name: "Água", unit: "kg", role: "liquid", has_recipe: false, entry_ref: "" },
-  { sku: "SAL", name: "Sal", unit: "kg", role: "salt", has_recipe: false, entry_ref: "" },
-  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", has_recipe: true, entry_ref: "levain", suggested_prep_kind: "preferment" },
-  { sku: "CREME-CONFEITEIRO", name: "Creme confeiteiro", unit: "g", role: "dairy", has_recipe: true, entry_ref: "creme-confeiteiro", suggested_prep_kind: "" },
+  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", has_recipe: false, recipe_version_ref: "", default_quantity: null, default_composition: "additional" },
+  { sku: "AGUA", name: "Água", unit: "kg", role: "liquid", has_recipe: false, recipe_version_ref: "", default_quantity: null, default_composition: "additional" },
+  { sku: "SAL", name: "Sal", unit: "kg", role: "salt", has_recipe: false, recipe_version_ref: "", default_quantity: null, default_composition: "additional" },
+  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", has_recipe: true, recipe_version_ref: "levain@4", default_quantity: { kind: "ratio", minimum: 20, target: 20, maximum: 20, basis: { kind: "flour" } }, default_composition: "included" },
+  { sku: "CREME-CONFEITEIRO", name: "Creme confeiteiro", unit: "g", role: "dairy", has_recipe: true, recipe_version_ref: "creme-confeiteiro@7", default_quantity: { kind: "fixed", minimum: 300, target: 300, maximum: 300, unit: "g" }, default_composition: "additional" },
 ];
 
 const RECIPE_REFERENCE = {

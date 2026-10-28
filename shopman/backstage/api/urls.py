@@ -270,6 +270,8 @@ from .operations import (
     ProductionWeighingView,
     StationProvisionView,
     WorkOrderFinishView,
+    WorkOrderFormulaDeviationView,
+    WorkOrderOldDoughView,
     WorkOrderOvenArmView,
     WorkOrderOvenConcludeView,
     WorkOrderPlanView,
@@ -1122,6 +1124,16 @@ urlpatterns = [
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
+    path(
+        "production/<int:wo_id>/old-dough/",
+        WorkOrderOldDoughView.as_view(),
+        name="api-backstage-wo-old-dough",
+    ),
+    path(
+        "production/<int:wo_id>/formula-deviation/",
+        WorkOrderFormulaDeviationView.as_view(),
+        name="api-backstage-wo-formula-deviation",
+    ),
     path("production/<int:wo_id>/finish/", WorkOrderFinishView.as_view(), name="api-backstage-wo-finish"),
     path(
         "production/quality-review/batch/",

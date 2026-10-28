@@ -72,7 +72,9 @@ from shopman.backstage.api._production_filters import (
 from shopman.backstage.api._production_mutations import (
     ProductionBlindCodeAllocationSerializer,
     ProductionFinishMutationSerializer,
+    ProductionFormulaDeviationMutationSerializer,
     ProductionMutationValidationError,
+    ProductionOldDoughMutationSerializer,
     ProductionOvenArmMutationSerializer,
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
@@ -4327,6 +4329,108 @@ class WorkOrderStartView(_ProductionActionBase):
                 "current": _current_work_order_projection(wo_ref),
             }
         )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register reusable old dough from a production lot",
+        responses={200: OpenApiResponse(description="Old dough stock lot registered.")},
+    ),
+)
+class WorkOrderOldDoughView(_ProductionActionBase):
+    required_production_capability = "can_start"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionOldDoughMutationSerializer,
+            projection_kind="kds",
+            action_kind="register_old_dough",
+            action_href=f"/api/v1/backstage/production/{wo_id}/old-dough/",
+            action_ref=f"register_old_dough:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            result = production_service.register_old_dough(
+                work_order_id=wo_id,
+                quantity=body["quantity"],
+                unit=body["unit"],
+                expiry_date=body["expiry_date"],
+                position_ref=body.get("position_ref", ""),
+                note=body.get("note", ""),
+                actor=_production_actor(request),
+                user=request.user,
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        except ValueError as exc:
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados da massa velha inválidos.",
+            )
+        return Response({"ok": True, **result})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Authorize an execution-only ingredient quantity deviation",
+        responses={200: OpenApiResponse(description="Deviation authorized and effective BOM recalculated.")},
+    ),
+)
+class WorkOrderFormulaDeviationView(_ProductionActionBase):
+    required_production_capability = "can_override_shortage"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionFormulaDeviationMutationSerializer,
+            projection_kind="kds",
+            action_kind="authorize_formula_deviation",
+            action_href=f"/api/v1/backstage/production/{wo_id}/formula-deviation/",
+            action_ref=f"authorize_formula_deviation:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            result = production_service.authorize_formula_deviation(
+                work_order_id=wo_id,
+                ingredient_ref=body["ingredient_ref"],
+                actual_quantity=body["actual_quantity"],
+                batch_ref=body.get("batch_ref", ""),
+                reason=body["reason"],
+                actor=_production_actor(request),
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        except ValueError as exc:
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados do desvio inválidos.",
+            )
+        return Response({"ok": True, **result})
 
 
 @extend_schema_view(
