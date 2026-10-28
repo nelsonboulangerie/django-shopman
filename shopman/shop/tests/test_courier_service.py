@@ -874,6 +874,7 @@ def test_auto_call_on_ready_waits_for_the_operator_when_the_card_machine_goes(sh
 ])
 def test_ride_asks_return_when_courier_brings_something_back(shop, payment, dispatch, expected):
     order = _delivery_order(ref="CR-1", payment=payment, dispatch=dispatch)
+    assert courier.needs_return(order) is expected
     assert courier.build_machine_payload(order)["retorno"] is expected
 
 
