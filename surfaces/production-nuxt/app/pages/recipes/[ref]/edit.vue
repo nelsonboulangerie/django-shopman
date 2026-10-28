@@ -866,7 +866,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     />
                   </NuxtFormField>
                 </template>
-                <OperatorFieldRow v-else :priority="ingredientDefaults.quantity.kind === 'ratio' ? 'context' : 'value'">
+                <OperatorFieldRow v-else>
                   <template #value>
                     <NuxtFormField label="Quantidade">
                       <NuxtInputNumber
@@ -1046,7 +1046,6 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
 
                   <OperatorFieldRow
                     v-if="quantityPreset(item.quantity) !== 'range'"
-                    :priority="item.quantity.kind === 'ratio' ? 'context' : 'value'"
                     data-ingredient-quantity-grid
                   >
                     <template #value>
