@@ -260,7 +260,7 @@ function submit() {
           @click="emit('update:open', false)"
         />
         <NuxtButton
-          color="warning"
+          color="primary"
           size="xl"
           block
           icon="i-lucide-shield-check"

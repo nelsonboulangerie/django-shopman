@@ -120,7 +120,7 @@ const BOM_COLUMNS = [
             <span v-else class="text-warning">Sem insumo vinculado no estoque</span>
           </span>
           <span v-if="row.original.recipe_version_ref" class="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-            <NuxtBadge color="neutral" variant="soft" label="Receita" />
+            <NuxtBadge color="neutral" label="Receita" />
             <span>{{ row.original.recipe_version_ref }}</span>
             <span v-if="row.original.composition_label">· {{ row.original.composition_label }}</span>
           </span>

@@ -57,10 +57,28 @@ const NuxtSelectStub = defineComponent({
   },
 });
 
+const UiDateFieldStub = defineComponent({
+  name: "UiDateField",
+  inheritAttrs: false,
+  props: { modelValue: { type: String, default: "" } },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h("input", {
+        ...attrs,
+        type: "date",
+        value: props.modelValue,
+        onInput: (event: Event) =>
+          emit("update:modelValue", (event.target as HTMLInputElement).value),
+      });
+  },
+});
+
 const stubs = {
   ...nuxtUiStubs,
   NuxtInputNumber: NuxtInputNumberStub,
   NuxtSelect: NuxtSelectStub,
+  UiDateField: UiDateFieldStub,
   Icon: true,
 };
 
@@ -73,7 +91,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("RegisterOldDoughDialog", () => {
-  it("sugere amanhã e converte kg para g sem resíduo no passo", async () => {
+  it("sugere amanhã e converte kg para g sem resíduo no incremento", async () => {
     const wrapper = mount(RegisterOldDoughDialog, {
       props: { open: true, workOrderLabel: "Pão Francês · lote #42" },
       global: { stubs },

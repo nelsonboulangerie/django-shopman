@@ -118,12 +118,10 @@ function submit() {
         </div>
 
         <NuxtFormField label="Validade" required class="mt-4">
-          <NuxtInput
+          <UiDateField
             v-model="expiryDate"
-            type="date"
             class="w-full"
-            size="xl"
-            :ui="{ base: 'bg-muted' }"
+            label="Validade da massa velha"
           />
         </NuxtFormField>
 

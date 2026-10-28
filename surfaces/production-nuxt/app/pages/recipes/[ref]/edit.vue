@@ -1009,7 +1009,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   />
                 </div>
                 <div v-if="item.recipe_version_ref" class="flex items-center gap-2 text-xs text-muted-foreground">
-                  <NuxtBadge color="neutral" variant="soft" label="Receita" />
+                  <NuxtBadge color="neutral" label="Receita" />
                   <span>Receita do ingrediente: {{ item.recipe_version_ref }}</span>
                 </div>
                 <div class="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
@@ -1125,12 +1125,11 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 </div>
                 <div v-if="item.sku && roleEditorIndex !== index" class="flex min-w-0 items-center gap-2">
                   <span class="text-xs text-muted-foreground">Papel na fórmula:</span>
-                  <NuxtBadge color="neutral" variant="soft" :label="roleLabel(item.role)" />
+                  <NuxtBadge color="neutral" :label="roleLabel(item.role)" />
                   <NuxtButton
                     class="ml-auto"
                     color="neutral"
                     variant="ghost"
-                    size="xs"
                     label="Alterar"
                     :aria-label="`Alterar papel na fórmula de ${item.name || 'ingrediente'}`"
                     @click="roleEditorIndex = index"

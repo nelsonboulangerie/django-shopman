@@ -2374,7 +2374,7 @@ const startedDescription = computed(() => {
               selectedDeviationAction?.enabled &&
               selectedStartedKdsCard?.formula_limits.length
             "
-            color="warning"
+            color="primary"
             variant="outline"
             icon="i-lucide-shield-check"
             label="Autorizar desvio"
