@@ -113,6 +113,15 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await page.getByRole("option", { name: /Levain/ }).click();
   const preparationBase = page.getByLabel("Quantidade", { exact: true }).last();
   await expect(preparationBase).toBeFocused();
+  const ratioQuantityGrid = page.locator("[data-ingredient-quantity-grid]").last();
+  await expect(ratioQuantityGrid).toBeVisible();
+  const ratioColumns = ratioQuantityGrid.locator(":scope > label");
+  const quantityColumnBox = await ratioColumns.first().boundingBox();
+  const basisColumnBox = await ratioColumns.last().boundingBox();
+  expect(quantityColumnBox).not.toBeNull();
+  expect(basisColumnBox).not.toBeNull();
+  expect(basisColumnBox!.width).toBeGreaterThan(quantityColumnBox!.width);
+  expect(await ratioQuantityGrid.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(page.getByText("Receita do ingrediente: levain@4", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Regra de quantidade de Levain")).toContainText("Exata");
   await preparationBase.fill("0,201");

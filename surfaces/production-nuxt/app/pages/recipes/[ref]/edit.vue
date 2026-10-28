@@ -1051,8 +1051,15 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     />
                   </label>
                 </div>
-                <div v-else class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
-                  <label :data-focus-target="`ingredient-${index}-quantity`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                <div
+                  v-else
+                  class="grid gap-2"
+                  :class="item.quantity.kind === 'ratio'
+                    ? 'grid-cols-[minmax(7rem,2fr)_minmax(0,3fr)]'
+                    : 'grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)]'"
+                  data-ingredient-quantity-grid
+                >
+                  <label :data-focus-target="`ingredient-${index}-quantity`" class="grid min-w-0 scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     {{ quantityPreset(item.quantity) === 'minimum' ? 'A partir de' : quantityPreset(item.quantity) === 'maximum' ? 'Até' : 'Quantidade' }}
                     <NuxtInputNumber
                       :key="`quantity-${item.sku || index}-${item.quantity.kind}-${item.quantity.unit || 'ratio'}`"
@@ -1068,7 +1075,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       @update:model-value="(value: number | null | undefined) => onItemQuantity(index, value)"
                     />
                   </label>
-                  <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+                  <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                     {{ item.quantity.kind === 'ratio' ? 'Base' : 'Unidade' }}
                     <NuxtSelect
                       v-if="item.quantity.kind === 'fixed'"
@@ -1079,12 +1086,12 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       :aria-label="`Unidade de ${item.name || 'ingrediente'}`"
                       @update:model-value="(unit: string) => onItemUnit(index, unit)"
                     />
-                    <span v-else class="grid gap-2">
+                    <span v-else class="grid min-w-0 gap-2">
                       <NuxtSelect
                         :model-value="item.quantity.basis?.kind ?? 'total'"
                         :items="anchors"
                         value-key="value"
-                        class="w-full"
+                        class="min-w-0 w-full"
                         :ui="{ base: 'bg-muted' }"
                         :aria-label="`Base percentual de ${item.name || 'ingrediente'}`"
                         @update:model-value="(kind: string) => onQuantityBasis(index, kind)"
@@ -1095,7 +1102,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                         :items="anchorCandidates"
                         value-key="value"
                         placeholder="Escolha o ingrediente"
-                        class="w-full"
+                        class="min-w-0 w-full"
                         aria-label="Ingrediente usado como base percentual"
                         @update:model-value="(sku: string) => onQuantityBasisSku(index, sku)"
                       />
