@@ -8583,6 +8583,8 @@
         "delivery.courier-handoff-charge",
         "delivery.courier-quote",
         "delivery.courier-return",
+        "delivery.courier-shared-ride",
+        "delivery.courier-shared-ride-eligibility",
         "shop.services-courier-courier-cancellation",
         "shop.services-courier-courier-status",
         "shop.services-courier-courier-sync"

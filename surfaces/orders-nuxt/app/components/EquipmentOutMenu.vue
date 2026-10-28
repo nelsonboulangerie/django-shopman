@@ -47,7 +47,9 @@ const backAction = (item: EquipmentOutProjection) =>
               label="Voltou"
               color="neutral"
               variant="outline"
-              :disabled="!backAction(item)?.enabled || props.isBusy(item.order_ref)"
+              :disabled="
+                !backAction(item)?.enabled || props.isBusy(item.order_ref)
+              "
               :title="backAction(item)?.reason || undefined"
               data-equipment-out-back
               @click="emit('back', item.order_ref)"

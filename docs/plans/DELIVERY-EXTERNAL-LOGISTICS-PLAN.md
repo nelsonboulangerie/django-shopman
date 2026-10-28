@@ -172,6 +172,15 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    pede o mesmo (`com_retorno`). É custo da casa: o frete do cliente não muda. A chave global
    `MACHINE_RETORNO` morreu. Pedido com maquininha ou troco não se chama sozinho no pronto
    automático: quem escolhe a maquininha é o operador.
+6. Corrida com várias paradas (Pablo, 2026-10-28): o Gestor oferece "Juntar N entregas" com
+   duas ou mais entregas prontas sem corrida, sem maquininha e sem troco da gaveta; uma
+   solicitação só na TaOn, uma parada por pedido, na ordem do percurso (vizinho mais
+   próximo a partir da loja; a API não ordena), até 4 pedidos. A leitura da corrida é uma
+   só e vale para todos; cancelar um pedido não cancela a corrida dos outros (aviso para
+   tirar a parada com a central). ⚠️ Pendências de homologação: a API não documenta os
+   valores de `stops[].status`, então cada pedido só vira "entregue" no `F` da corrida
+   inteira (com retorno, depois da volta à loja); o agrupamento automático da própria
+   TaOn (status `U`) segue valendo para corridas chamadas uma a uma.
 
 ## Referências
 - [STOREFRONT-GAPS-ACTION-PLAN](completed/STOREFRONT-GAPS-ACTION-PLAN.md) — WP-11 (entrega), slice 3 (teleporte)

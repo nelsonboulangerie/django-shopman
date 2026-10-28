@@ -794,6 +794,7 @@ export interface TwoZoneQueueProjection {
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
+  ride_candidates: string[];
   ifood_negotiation_orders: OrderCardProjection[];
   awareness: QueueAwarenessProjection | null;
 }

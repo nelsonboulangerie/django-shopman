@@ -1412,3 +1412,20 @@ export function equipmentOutLine(
     Number.isFinite(outMs) ? `saiu às ${clockHHMM(outMs)}` : "",
   );
 }
+
+// ── Uma corrida para várias entregas (cabeçalho do Gestor) ─────────────────
+
+/** Quantos pedidos uma corrida leva (espelho de `courier.MAX_RIDE_STOPS`). */
+export const MAX_RIDE_STOPS = 4;
+
+/** "Juntar 3 entregas": o rótulo do botão do cabeçalho. */
+export function courierRideLabel(count: number): string {
+  return `Juntar ${count} entregas`;
+}
+
+/** Uma entrega na escolha da corrida: "Pedido A47 · Maria". */
+export function courierRideLine(
+  card: Pick<OrderCardProjection, "ref" | "customer_name">,
+): string {
+  return joinFacts(`Pedido ${splitRef(card.ref).code}`, card.customer_name);
+}

@@ -831,6 +831,10 @@ class TwoZoneQueueProjection:
     # responder "onde está a maquininha" sem procurar card por card.
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
     equipment_available: tuple[EquipmentOptionProjection, ...] = ()
+    # Entregas prontas que podem ir juntas numa corrida da TaOn (uma parada por
+    # pedido): sem corrida, sem maquininha e sem troco da gaveta
+    # (``courier.group_refusal``). Com duas ou mais, a Saída oferece a corrida.
+    ride_candidates: tuple[str, ...] = ()
 
     ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
     # A coluna ao lado da Fila: o que o sistema fez nos últimos minutos e o estado
@@ -1772,6 +1776,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 
     return TwoZoneQueueProjection(
         equipment_out=_equipment_out(user=user, devices=devices),
+        ride_candidates=_ride_candidates(o for o in ready_orders if _is_delivery(o)),
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
@@ -2249,6 +2254,17 @@ def _trip_fields(order: Order) -> dict:
         else:
             lines.append(f"{_money(back.change_q)} de troco" if back.change_q else f"{_money(back.cash_q)} em dinheiro")
     return {"trip_with": others, "courier_return_orders": back.orders, "courier_return_lines": tuple(lines)}
+
+
+def _ride_candidates(orders) -> tuple[str, ...]:
+    """As entregas prontas que podem entrar juntas numa corrida (ordem da fila)."""
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.services import courier
+
+    orders = list(orders)
+    if len(orders) < 2 or get_adapter("courier") is None:
+        return ()
+    return tuple(order.ref for order in orders if not courier.group_refusal(order))
 
 
 def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:

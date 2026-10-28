@@ -410,7 +410,8 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "tracking_url": "",              // link de rastreio da parada (a partir de A); vai no aviso de saída e no botão "Acompanhar o entregador" da página do pedido
   "confirmation_code": "",
   "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": true},  // custo interno (centavos); `with_return` = cotada com `com_retorno`, o mesmo `retorno` que a abertura pede (`courier.needs_return`: cobrança na porta ou maquininha da casa)
-  "final_value_q": null,           // finished.final_value convertido p/ centavos
+  "final_value_q": null,           // finished.final_value convertido p/ centavos (corrida com várias paradas: o valor da corrida inteira, repetido em cada pedido)
+  "ride_orders": ["WEB-A47", "WEB-A51"],  // só na corrida com várias paradas: os pedidos dela na ordem das paradas; a leitura (`courier.sync`) roda no primeiro e aplica a todos; sai no arquivamento
   "door_charge": {"cash_q": 5800, "change_for_q": 10000, "card_q": 0},  // cobrança na porta registrada na coleta (E); a mesma régua da observação da corrida (`courier.door_charge`)
   "door_charge_note": "Pedido A47 · Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00",  // a observação que FOI à TaOn na abertura (recibo `dispatch_attempt.note`); a TaOn não altera corrida aberta, e `courier.charge_outdated` compara com a de agora para o aviso "O pedido mudou depois da chamada" (Gestor e PDV); sai no arquivamento
   "last_event_at": "iso",
@@ -1105,9 +1106,12 @@ Dedupe `order.handoff_commit:{order_ref}:{token}`.
 | `order_ref` | `string` | `courier.request_dispatch` | CourierDispatchHandler |
 | `channel_ref` | `string` | `courier.request_dispatch` | — (auditoria) |
 | `actor` | `string` | `courier.request_dispatch` (`lifecycle.on_ready` ou `operator:<nome>`) | CourierDispatchHandler (auditoria no evento) |
+| `order_refs` | `list[string]` | `courier.request_group_dispatch` (só na corrida com várias paradas; `order_ref` é o primeiro) | CourierDispatchHandler (abre UMA corrida, uma parada por pedido) |
+| `ride_members` | `dict[string, true]` | `courier.request_group_dispatch` | `courier.dispatch_task_filter` (acha a tarefa de qualquer pedido da corrida; chave consultável em SQLite e Postgres) |
 
 Write-back em `Order.data["courier"]` (ver detalhamento). `dedupe_key` =
-`courier.dispatch:{order_ref}:{tentativa}`.
+`courier.dispatch:{order_ref}:{tentativa}` (corrida com várias paradas:
+`courier.dispatch:{primeiro}:{tentativa}:{demais refs com +}`).
 
 `dispatch_attempt` (recibo da tentativa, escrito pelo handler): `state` ∈ `started`,
 `unknown`, `accepted`, `not_applied`, `inert`, `released`. `started`/`unknown`/`accepted`
@@ -2876,7 +2880,7 @@ cancelada, encolheu); o KDS o mostra como qualquer cancelamento, com "Recebi o c
 
 `Directive.payload.dispatch_attempt` é escrito pelo CourierDispatchHandler: `state`
 (`started`, `unknown`, `not_applied`, `accepted`, `inert`), `started_at`, `updated_at`,
-`fingerprint` do payload exato, `note` (a observação da parada que foi à TaOn, adotada em `courier.door_charge_note`) e, quando recebido, `courier_ref`. Não duplica endereço/
+`fingerprint` do payload exato, `note` (a observação da parada que foi à TaOn, adotada em `courier.door_charge_note`), `notes` (`{order_ref: observação}`, uma por parada) e `stops` (os pedidos na ordem das paradas que foi à TaOn, adotada em `courier.ride_orders`) e, quando recebido, `courier_ref`. Não duplica endereço/
 telefone. A tentativa started é persistida antes do POST; accepted com referência é
 persistido antes da adoção local. Retry de accepted só adota o fato; started/unknown
 não repete POST sem consulta confiável homologada. Sem essa consulta, alerta e detalhe do

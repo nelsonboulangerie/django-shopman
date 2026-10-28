@@ -4194,6 +4194,46 @@ class OrderVolumeCheckView(APIView):
         })
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="One courier ride for several orders (one stop per order)",
+        responses={200: OpenApiResponse(description="Ride dispatch queued.")},
+    ),
+)
+class OrderCourierRideView(APIView):
+    """Uma corrida da TaOn para vários pedidos: uma solicitação, uma parada por pedido.
+
+    ``refs``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``. Cada um entra só se
+    pudesse ser chamado sozinho e não leva maquininha nem troco da gaveta
+    (``courier.group_refusal``); a recusa diz qual pedido e por quê. Pedir de
+    novo a mesma corrida é recusado (a tarefa já está na fila).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request):
+        from shopman.orderman.models import Order
+
+        from shopman.shop.services import courier
+
+        refs = request.data.get("refs")
+        if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref.strip() for ref in refs):
+            return Response({"detail": "Escolha os pedidos da corrida.", "field": "refs",
+                             "errors": {"refs": ["Escolha os pedidos da corrida."]}}, status=400)
+        refs = list(dict.fromkeys(ref.strip()[:64] for ref in refs))
+        orders = list(Order.objects.filter(ref__in=refs))
+        by_ref = {order.ref: order for order in orders}
+        if len(by_ref) != len(refs):
+            return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+        try:
+            task = courier.request_group_dispatch([by_ref[ref] for ref in refs], actor=_actor(request))
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        return Response({"directive_id": task.pk, "status": task.status, "refs": refs})
+
+
 def _operator_identity(request) -> tuple[int, str]:
     """A quem creditar a retirada de um pedido — que é quem está logado.
 
