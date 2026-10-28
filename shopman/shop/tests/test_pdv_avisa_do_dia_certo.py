@@ -33,7 +33,7 @@ class TestTheWarningSaysWhichProblemItIs:
 
         assert "pausado" in _availability_shortfall({"is_paused": True})
         assert "fora do cardápio" in _availability_shortfall({"reason_code": "not_in_listing"})
-        assert "lote planejado" in _availability_shortfall({"is_planned": True})
+        assert _availability_shortfall({"is_planned": True}) == "planejado, ainda não feito."
         assert "em estoque" in _availability_shortfall({"available_qty": 2})
 
     def test_half_a_kilo_is_not_reported_as_zero(self):

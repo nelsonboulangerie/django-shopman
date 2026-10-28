@@ -72,6 +72,9 @@ const props = defineProps<{
   /** Sem o título da comanda na barra (edição de encomenda): o cabeçalho da tela
    *  já diz "Editando a encomenda PDV-…", e repetir a ref aqui espremia os chips. */
   hideTitle?: boolean;
+  /** Sem o seletor Balcão/Encomenda (edição de encomenda): a encomenda continua
+   *  encomenda, e um botão que nunca troca nada não fica na tela. */
+  hideSalesModes?: boolean;
   loading: boolean;
 }>();
 
@@ -197,7 +200,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
   <div class="flex min-w-0 flex-nowrap items-center gap-2">
     <!-- MODO DE ATENDIMENTO (v4): o seletor da suíte, o ligado `solid` (o ativo único
          da suíte), com ícone que dobra a leitura e `aria-pressed` para o leitor de tela. -->
-    <div v-if="!readOnly" class="inline-flex shrink-0 items-center gap-1 max-lg:hidden" role="group" aria-label="Modo de atendimento" data-pos-sales-modes>
+    <div v-if="!readOnly && !hideSalesModes" class="inline-flex shrink-0 items-center gap-1 max-lg:hidden" role="group" aria-label="Modo de atendimento" data-pos-sales-modes>
       <NuxtButton
         v-for="mode in SALES_MODES"
         :key="mode.ref"

@@ -1305,9 +1305,10 @@ def _availability_shortfall(decision: dict) -> str:
     if decision.get("is_planned"):
         # Não é falta: o que cobre a data é produção ainda por fazer. Quem lê
         # isto precisa combinar a espera com o cliente, não caçar unidade na
-        # prateleira. (Na tela de operador o objeto chama-se LOTE — decisão do
-        # dono, 22/09/2026 —, e "fornada" ficou só para a loja.)
-        return "ainda não está pronto: sai do lote planejado para a data."
+        # prateleira. "Planejado" é o estado do lote na Produção; "aguardando
+        # confirmação" colidiria com o Pix e não há o que confirmar (dono,
+        # 28/10/2026).
+        return "planejado, ainda não feito."
     available = decision.get("available_qty") or 0
     return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
 

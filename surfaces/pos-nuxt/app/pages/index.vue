@@ -1318,6 +1318,7 @@ onBeforeUnmount(() => {
               :customer-required="customerRequiredForSchedule"
               :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
               :hide-title="editing"
+              :hide-sales-modes="editing"
               :schedule-conflict="scheduleChipConflict"
               :schedule-conflict-reason="scheduleConflictReason"
               :loading="busy"
