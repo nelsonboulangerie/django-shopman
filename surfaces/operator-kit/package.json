@@ -24,7 +24,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.11.1",
     "globals": "^17.13.0",
-    "happy-dom": "^20.14.6",
+    "happy-dom": "^21.0.4",
     "nuxt": "4.6.2",
     "reka-ui": "^2.10.5",
     "typescript": "^6.0.3",
