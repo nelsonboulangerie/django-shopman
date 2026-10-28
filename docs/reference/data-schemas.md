@@ -1620,7 +1620,7 @@ Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketin
 Conta e fonte de dados do envio do catálogo ao Google pela Merchant API
 (`shop/adapters/catalog_projection_google.py`, plano
 `docs/plans/CATALOG-PUSH-GOOGLE-META-PLAN.md`). Dado da loja, não do deployment (ADR-042):
-o segredo (JSON da service account) fica em `GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON`.
+o segredo (JSON da service account, em base64) fica em `GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64`.
 
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|

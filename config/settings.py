@@ -1136,7 +1136,7 @@ if os.environ.get("META_CATALOG_PROJECTION", "").strip().lower() in ("1", "true"
 # Conta e fonte de dados são dado da loja (`Shop.defaults["google_merchant"]`, ADR-042);
 # aqui fica só o segredo (sem cofre por loja ainda) e o técnico.
 SHOPMAN_GOOGLE_MERCHANT = {
-    "service_account_json": os.environ.get("GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON", "").strip(),
+    "service_account_b64": os.environ.get("GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64", "").strip(),
     "api_base": os.environ.get("GOOGLE_MERCHANT_API_BASE", "https://merchantapi.googleapis.com"),
     "timeout": _env_int("GOOGLE_MERCHANT_TIMEOUT", 30),
 }
