@@ -12500,6 +12500,8 @@
             "EquipmentCustody",
             "equipment_custody",
             "mark_equipment_returned",
+            "_machine_heir",
+            "_hand_machine_over",
             "_holds_device",
             "_stamp_equipment_back",
             "machine_phrase",

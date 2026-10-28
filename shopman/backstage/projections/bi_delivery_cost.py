@@ -12,7 +12,9 @@ custa à casa.
   (``estimate.value_q``) e é contada em ``estimated_rides``. Corrida cancelada
   sem valor não custa nada e fica de fora; com valor (taxa de cancelamento),
   entra.
-- **Entregas** = as paradas da corrida (``ride_orders``, ou o próprio pedido).
+- **Entregas** = as paradas da corrida (``ride_orders``, ou o próprio pedido),
+  sem os pedidos cancelados. Pedido que aparece em duas corridas conta uma vez,
+  no dia da primeira.
 - **Frete cobrado** = a linha de frete (``__DELIVERY_FEE__``) dos pedidos
   levados, sem os cancelados. É o que o cliente pagou, não o que o modificador
   sugeriu.
@@ -99,7 +101,8 @@ def ride_cost_q(ride: dict) -> tuple[int, bool] | None:
     final = ride.get("final_value_q")
     if final is not None:
         return int(final), False
-    if ride.get("status") == "F":
+    # A cotação é de uma parada só: na corrida com várias, ela não vale.
+    if ride.get("status") == "F" and not ride.get("ride_orders"):
         estimate = ride.get("estimate") or {}
         if estimate.get("value_q") is not None:
             return int(estimate["value_q"]), True
@@ -158,9 +161,11 @@ def build_bi_delivery_cost(*, date_from: date | None = None, date_to: date | Non
     )
 
     days = []
+    counted: set[str] = set()
     for day in sorted(per_day):
         row = per_day[day]
-        refs = list(dict.fromkeys(row["refs"]))
+        refs = [ref for ref in dict.fromkeys(row["refs"]) if ref not in cancelled and ref not in counted]
+        counted.update(refs)
         days.append(BIDeliveryCostDay(
             date=day.isoformat(), rides=row["rides"], deliveries=len(refs), cost_q=row["cost_q"],
             fee_q=sum(int(fees.get(ref) or 0) for ref in refs),

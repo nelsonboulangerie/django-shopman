@@ -243,11 +243,13 @@ const negotiationCards = computed(
   () => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[],
 );
 // As entregas prontas que podem ir juntas numa corrida, como cards (ordem da fila).
+// A corrida junta pedido pronto e em preparo: o card de cada um vem da Saída
+// ou do Preparo.
 const rideCandidates = computed(() =>
-  rideChoices(
-    queue.value?.ride_candidates ?? [],
-    queue.value?.expedition_delivery ?? [],
-  ),
+  rideChoices(queue.value?.ride_candidates ?? [], [
+    ...(queue.value?.expedition_delivery ?? []),
+    ...(queue.value?.prep ?? []),
+  ]),
 );
 const allCards = computed<OrderCardProjection[]>(() =>
   zones.value.flatMap((z) => z.cards),

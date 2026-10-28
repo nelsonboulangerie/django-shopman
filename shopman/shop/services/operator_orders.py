@@ -736,6 +736,26 @@ def mark_equipment_returned(order: Order, *, actor: str, expected_revision: str 
     return equipment_custody(order)
 
 
+def _machine_heir(order: Order) -> Order | None:
+    """Outro pedido da mesma saída que leva a MESMA maquininha e ainda não a devolveu."""
+    device_ref = ((order.data or {}).get("dispatch") or {}).get("device_ref")
+    if not device_ref:
+        return None
+    for member in _locked_trip_members(order):
+        if member.pk == order.pk or member.status == Order.Status.CANCELLED:
+            continue
+        if ((member.data or {}).get("dispatch") or {}).get("device_ref") == device_ref and equipment_custody(member).pending:
+            return member
+    return None
+
+
+def _hand_machine_over(order: Order, heir: Order) -> None:
+    """O vínculo da maquininha passa de ``order`` para ``heir`` (a corrida segue com ela)."""
+    from shopman.shop.adapters import delivery_devices
+
+    delivery_devices.hand_over(order, heir)
+
+
 def _holds_device(order: Order) -> bool:
     from shopman.shop.adapters.delivery_devices import holds_device
 
@@ -1053,7 +1073,7 @@ _COLLECTED_STATUSES = frozenset({
 
 
 @transaction.atomic
-def return_partner_custody(order: Order, *, actor: str, reason: str) -> bool:
+def return_partner_custody(order: Order, *, actor: str, reason: str, ride_continues: bool = False) -> bool:
     """A corrida terminou sem coleta: o troco volta à gaveta e a maquininha é liberada.
 
     O inverso de :func:`record_partner_custody`, pelas peças do "Entregador
@@ -1067,6 +1087,11 @@ def return_partner_custody(order: Order, *, actor: str, reason: str) -> bool:
     já saiu (``_COLLECTED_STATUSES``) não devolve nada: a custódia foi com o
     entregador. Turno do troco já fechado: o dinheiro não entra sozinho num
     turno que não é o dele; aviso crítico ao operador, e a maquininha volta.
+
+    ``ride_continues``: o pedido saiu de uma corrida que segue com os outros
+    (cancelado antes da coleta). O troco dele volta; a maquininha que ele
+    divide com outro pedido da corrida NÃO volta: segue com o entregador, e
+    se este pedido era quem a segurava, o vínculo passa para o outro.
     """
     from shopman.cashman.models import Entry
 
@@ -1101,7 +1126,12 @@ def return_partner_custody(order: Order, *, actor: str, reason: str) -> bool:
             )
     equipment = list(equipment_custody(order).equipment)
     if equipment_custody(order).pending:
-        mark_equipment_returned(order, actor=actor)
+        heir = _machine_heir(order) if ride_continues else None
+        if heir is not None:
+            _hand_machine_over(order, heir)
+            _stamp_equipment_back(order, actor=actor)
+        else:
+            mark_equipment_returned(order, actor=actor)
         order.refresh_from_db()
     data = dict(order.data or {})
     kept = {k: v for k, v in dict(data.get("dispatch") or {}).items() if k not in _PARTNER_CUSTODY_KEYS}
@@ -1160,6 +1190,14 @@ def record_partner_custody(
     order.refresh_from_db()
     asks = partner_custody_asks(order)
     if asks["recorded"]:
+        dispatch = dict((order.data or {}).get("dispatch") or {})
+        if trip_ref and trip_ref != order.ref and dispatch.get("trip_ref") != trip_ref:
+            # A custódia de uma chamada anterior entra na saída da corrida nova:
+            # o "Voltou" e o "Entregador voltou" fecham este pedido com os outros.
+            data = dict(order.data or {})
+            data["dispatch"] = {**dispatch, "trip_ref": trip_ref}
+            order.data = data
+            order.save(update_fields=["data", "updated_at"])
         return {"recorded": False, "change_out_q": 0, "device_ref": "", "device_label": ""}
     suggested_q = asks["change_out_suggested_q"]
     if change_out_q is None and suggested_q > 0:

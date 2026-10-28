@@ -31,6 +31,12 @@ def release(order):
     return implementation(order)
 
 
+def hand_over(order, heir):
+    from shopman.backstage.services.delivery_devices import hand_over as implementation
+
+    return implementation(order, heir)
+
+
 def holds_device(order):
     from shopman.backstage.services.delivery_devices import holds_device as implementation
 

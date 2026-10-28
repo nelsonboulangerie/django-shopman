@@ -704,6 +704,13 @@ def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | N
     order.emit_event(event_type="courier_dispatch_released", actor=actor,
                      payload={"directive_id": task.pk, "previous_state": previous})
     logger.info("courier.dispatch_released order=%s directive=%s actor=%s", order.ref, task.pk, actor)
+    refs = [str(ref) for ref in payload.get("order_refs") or []]
+    if len(refs) > 1:
+        # A corrida que ficou sem resposta levava vários pedidos: chama a MESMA
+        # corrida de novo, com a custódia que já saiu (a mesma saída, a mesma
+        # maquininha). Chamar só este pedido deixaria os outros sem entregador.
+        by_ref = {other.ref: other for other in Order.objects.filter(ref__in=refs)}
+        return request_group_dispatch([by_ref[ref] for ref in refs if ref in by_ref], actor=actor)
     return redispatch(order, actor=actor)
 
 
@@ -786,6 +793,13 @@ def on_order_cancelled(order) -> None:
             # A corrida leva outros pedidos: cancelar a corrida tiraria o
             # entregador deles também. O operador tira a parada com a central.
             others = ", ".join(short_ref(other.ref) for other in companions)
+            if status == "E":
+                _alert_cancelled_order(order, f"O pedido {code} foi cancelado e já saiu na corrida de {others}: "
+                    "fale com a central. O troco e a maquininha dele voltam com o entregador.")
+                return
+            # Ainda não coletado: o troco dele volta à gaveta já, e a maquininha
+            # compartilhada segue com a corrida dos outros.
+            _return_custody(order, actor="lifecycle.on_cancelled", reason="order_cancelled", ride_continues=True)
             _alert_cancelled_order(order, f"O pedido {code} foi cancelado e está na mesma corrida de {others}: "
                 "fale com a central para tirar a parada dele, sem cancelar a corrida.")
             return
@@ -815,12 +829,12 @@ def on_order_cancelled(order) -> None:
         logger.exception("courier.on_order_cancelled_failed order=%s", order.ref)
 
 
-def _return_custody(order, *, actor: str, reason: str) -> None:
+def _return_custody(order, *, actor: str, reason: str, ride_continues: bool = False) -> None:
     """Devolve a custódia da chamada; nunca derruba o funil da corrida, mas grita."""
     from shopman.shop.services import operator_orders
 
     try:
-        operator_orders.return_partner_custody(order, actor=actor, reason=reason)
+        operator_orders.return_partner_custody(order, actor=actor, reason=reason, ride_continues=ride_continues)
     except Exception:
         logger.exception("courier.custody_return_failed order=%s reason=%s", order.ref, reason)
 
@@ -1157,6 +1171,16 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
                 changed = True
             if changed:
                 _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
+        elif snapshot.get("final_value_q") is not None:
+            # A leitura arquivou a corrida (N/C) antes de o valor ser gravado: a
+            # taxa que a TaOn fechou fica com a corrida arquivada, para o B.I.
+            attempts = [dict(attempt) for attempt in block.get("attempts") or []]
+            for attempt in attempts:
+                if attempt.get("id_mch") == ride_id and attempt.get("final_value_q") is None:
+                    attempt["final_value_q"] = int(snapshot["final_value_q"])
+                    block["attempts"] = attempts
+                    _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
+                    break
     if had_sync or str(get_block(order).get("status") or "") in TERMINAL_STATUSES or not get_block(order).get("id_mch"):
         _resolve_sync_alert(ride_id)
 

@@ -550,13 +550,17 @@ def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw:
                 shift = type(shift).objects.select_for_update().get(pk=shift.pk)
             directive = courier.request_group_dispatch(orders, actor=actor)
             trip = str(directive.payload["order_ref"])
-            shared = None
+            # Uma maquininha que já saiu numa chamada anterior de um destes
+            # pedidos (corrida que não abriu) é a maquininha da corrida.
+            shared = next((device for device in (operator_orders.trip_machine(order.ref) for order in orders) if device),
+                          None)
             for order in orders:
                 code = operator_orders.short_ref(order.ref)
+                wants_machine = operator_orders.partner_custody_asks(order)["needs_machine"]
                 try:
                     recorded = operator_orders.record_partner_custody(
                         order, actor=actor, change_out_q=change_out_q.get(order.ref), cash_shift=shift,
-                        equipment=[machine] if machine and shared is None else [],
+                        equipment=[machine] if machine and shared is None and wants_machine else [],
                         trip_ref=trip, shared_device=shared,
                     )
                 except operator_orders.ChangeOutRequired as exc:

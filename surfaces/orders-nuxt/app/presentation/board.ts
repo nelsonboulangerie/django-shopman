@@ -1408,11 +1408,17 @@ export function equipmentOutLabel(count: number): string {
 
 /** Com quem a maquininha está: "Pedido A47 · Maria · saiu às 14:20". */
 export function equipmentOutLine(
-  item: Pick<EquipmentOutProjection, "order_ref" | "customer_name" | "out_at">,
+  item: Pick<
+    EquipmentOutProjection,
+    "order_ref" | "customer_name" | "out_at" | "shared_with"
+  >,
 ): string {
   const outMs = item.out_at ? Date.parse(item.out_at) : Number.NaN;
+  const refs = [item.order_ref, ...(item.shared_with ?? [])].map(
+    (ref) => splitRef(ref).code,
+  );
   return joinFacts(
-    `Pedido ${splitRef(item.order_ref).code}`,
+    refs.length > 1 ? `Pedidos ${joinRefs(refs)}` : `Pedido ${refs[0]}`,
     item.customer_name,
     Number.isFinite(outMs) ? `saiu às ${clockHHMM(outMs)}` : "",
   );
@@ -1423,9 +1429,9 @@ export function equipmentOutLine(
 /** Quantos pedidos uma corrida leva (espelho de `courier.MAX_RIDE_STOPS`). */
 export const MAX_RIDE_STOPS = 4;
 
-/** "Juntar 3 entregas": o rótulo do botão do cabeçalho. */
+/** "3 entregas podem ir na mesma corrida.": quantas o operador pode juntar. */
 export function courierRideLabel(count: number): string {
-  return `Juntar ${count} entregas`;
+  return `${count} entregas podem ir na mesma corrida.`;
 }
 
 /** Uma entrega na escolha da corrida: "Pedido A47 · Maria". */
@@ -1435,12 +1441,10 @@ export function courierRideLine(
   return joinFacts(`Pedido ${splitRef(card.ref).code}`, card.customer_name);
 }
 
-/** Uma entrega da escolha da corrida, com o que a chamada pergunta dela. */
-export interface RideChoice {
+/** Uma entrega da escolha da corrida: o que o servidor diz dela e o card (as maquininhas). */
+export type RideChoice = RideCandidateProjection & {
   card: OrderCardProjection;
-  change_out_suggested_q: number;
-  needs_machine: boolean;
-}
+};
 
 /** As candidatas do servidor com o card de cada uma (a que sumiu da fila fica de fora). */
 export function rideChoices(
@@ -1449,15 +1453,7 @@ export function rideChoices(
 ): RideChoice[] {
   return candidates.flatMap((candidate) => {
     const card = cards.find((item) => item.ref === candidate.ref);
-    return card
-      ? [
-          {
-            card,
-            change_out_suggested_q: candidate.change_out_suggested_q,
-            needs_machine: candidate.needs_machine,
-          },
-        ]
-      : [];
+    return card ? [{ ...candidate, card }] : [];
   });
 }
 
@@ -1511,4 +1507,42 @@ export function courierRideCallLabel(
   return machineLabel === undefined
     ? base
     : `${base} com a ${machinePhrase(machineLabel)}`;
+}
+
+/** A linha de uma entrega que pode ir junto: "Pronto · Gleba Palhano · a 1,2 km · leva a maquininha". */
+export function rideOfferLine(
+  choice: Pick<
+    RideCandidateProjection,
+    | "stage"
+    | "place"
+    | "distance_label"
+    | "needs_machine"
+    | "change_out_suggested_q"
+  >,
+): string {
+  return joinFacts(
+    choice.stage,
+    choice.place,
+    choice.distance_label,
+    choice.needs_machine
+      ? "leva a maquininha"
+      : choice.change_out_suggested_q > 0
+        ? "leva troco"
+        : "",
+  );
+}
+
+/**
+ * A pergunta da chamada quando outros pedidos vão junto: quem a corrida leva,
+ * quem paga e, com cotação na tela, que ela é só do primeiro pedido.
+ */
+export function courierRideQuestion(
+  refs: readonly string[],
+  hasQuote: boolean,
+): string {
+  const codes = refs.map((ref) => splitRef(ref).code);
+  const quote = hasQuote
+    ? ` A cotação acima é só do pedido ${codes[0]}: com mais paradas, a corrida custa mais.`
+    : "";
+  return `Uma corrida da TaOn leva os pedidos ${joinRefs(codes)}, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.${quote}`;
 }

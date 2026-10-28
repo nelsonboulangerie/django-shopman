@@ -600,6 +600,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "allocate",
+            "hand_over",
             "has_available",
             "holds_device",
             "needs_card_machine",

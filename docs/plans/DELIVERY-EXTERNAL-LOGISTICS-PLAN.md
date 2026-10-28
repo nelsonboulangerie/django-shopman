@@ -187,7 +187,16 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    primeiro pedido de cartão a reserva e os outros entram nela (`dispatch.trip_ref` = o
    pedido da primeira escolha, o mesmo da saída do Gestor). O "Voltou" fecha todos os
    pedidos dela. Tudo na transação do pedido de corrida: recusa de um pedido não tira nada
-   da gaveta.
+   da gaveta. A oferta mora onde o operador age: a confirmação do "Chamar entregador" de
+   cada pedido pergunta "Vai junto nesta corrida?", com as entregas que podem ir (prontas
+   ou em preparo, encomenda de outro dia fora), as mais perto primeiro, com bairro e
+   distância; o "Juntar entregas" do quadro segue para quem quer escolher pelo quadro, sem
+   nada pré-marcado. A corrida que não abre (falha da TaOn, pedido que mudou antes do
+   trabalho, N/C pela leitura) devolve o troco e a maquininha de TODOS os pedidos e avisa;
+   "Chamar de novo" chama a mesma corrida. Pedido cancelado antes da coleta devolve o troco
+   dele e a maquininha compartilhada segue com a corrida (o vínculo passa a outro pedido).
+   ⚠️ Pendente: cotação da corrida com várias paradas (`/estimarSolicitacao` com
+   `latlng_paradas`); hoje a tela diz que a cotação é só do primeiro pedido.
 8. Custo de entrega no B.I. (Pablo, 2026-10-28): a seção "Entregas" soma o `final_value_q`
    de cada corrida UMA vez (`id_mch`; numa corrida com várias paradas cada pedido guarda o
    valor inteiro), com a cotação quando a corrida terminou sem valor final, e põe ao lado o

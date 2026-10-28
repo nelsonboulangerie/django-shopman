@@ -9,7 +9,7 @@ import {
   courierRideBody,
   courierRideCallLabel,
   courierRideLabel,
-  courierRideLine,
+  rideOfferLine,
   machinesOutSentence,
   MAX_RIDE_STOPS,
   rideChangeDefaults,
@@ -31,9 +31,9 @@ const failure = ref("");
 watch(open, (isOpen) => {
   if (!isOpen) return;
   failure.value = "";
-  picked.value = props.choices
-    .slice(0, MAX_RIDE_STOPS)
-    .map((choice) => choice.card.ref);
+  // Nada vem marcado: juntar é escolha do operador, que vê os bairros. Marcar
+  // tudo mandaria numa corrida só entregas de lados opostos da cidade.
+  picked.value = [];
   changeOut.value = rideChangeDefaults(props.choices);
   machineRef.value = undefined;
 });
@@ -104,7 +104,7 @@ const code = (ref_: string) => splitRef(ref_).code;
   >
     <NuxtButton
       icon="i-lucide-route"
-      :label="courierRideLabel(props.choices.length)"
+      label="Juntar entregas"
       color="neutral"
       variant="outline"
       data-courier-ride-menu
@@ -112,16 +112,16 @@ const code = (ref_: string) => splitRef(ref_).code;
     <template #content>
       <div class="w-96 space-y-3 p-4" data-courier-ride-panel>
         <p class="op-body">
-          Uma corrida da TaOn leva estas entregas, na ordem do percurso. O frete
-          do cliente não muda.
+          {{ courierRideLabel(props.choices.length) }} Uma corrida da TaOn leva
+          as que você marcar, na ordem do percurso. O frete do cliente não muda.
         </p>
         <div class="space-y-2">
           <NuxtCheckbox
             v-for="choice in props.choices"
             :key="choice.card.ref"
             :model-value="picked.includes(choice.card.ref)"
-            :label="courierRideLine(choice.card)"
-            :description="choice.card.delivery_address"
+            :label="choice.label"
+            :description="rideOfferLine(choice)"
             :disabled="
               !picked.includes(choice.card.ref) &&
               picked.length >= MAX_RIDE_STOPS
@@ -141,7 +141,8 @@ const code = (ref_: string) => splitRef(ref_).code;
         <NuxtFormField
           v-for="choice in asksChange"
           :key="`change-${choice.card.ref}`"
-          :label="`Troco do pedido ${code(choice.card.ref)}${choice.card.change_label ? ` (${choice.card.change_label})` : ''}`"
+          :label="`Troco do pedido ${code(choice.card.ref)}`"
+          :description="choice.change_label || undefined"
           data-courier-ride-change
         >
           <NuxtInput

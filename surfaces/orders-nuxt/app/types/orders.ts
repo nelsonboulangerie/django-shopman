@@ -13,6 +13,7 @@ import type {
   CustomerProfileProjection as CustomerProfileContract,
   OperatorOrderProjection as OperatorOrderContract,
   OrderCardProjection as OrderCardContract,
+  RideCandidateProjection,
   TwoZoneQueueProjection as TwoZoneQueueContract,
 } from "~/generated/ordersContract";
 
@@ -93,6 +94,8 @@ export type CourierBlock = {
     needs_machine: boolean;
     recorded: boolean;
   };
+  /** Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais perto primeiro. */
+  ride_offer?: RideCandidateProjection[];
   /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
   charge_outdated?: CourierChargeOutdated | null;
 };

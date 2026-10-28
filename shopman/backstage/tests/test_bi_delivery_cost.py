@@ -67,7 +67,21 @@ def test_archived_ride_keeps_its_cost_and_cancelled_order_has_no_fee():
 
     assert report.cost_q == 900 + 1300
     assert report.fee_q == 0
+    # O pedido cancelado não conta como entrega levada.
+    assert report.deliveries == 0
     assert len(report.days) == 2
+
+
+def test_shared_ride_never_falls_back_to_a_single_stop_estimate():
+    ride = _ride("940", estimate_q=900, ride_orders=["NB-H", "NB-I"])
+    assert bi_delivery_cost.ride_cost_q(ride) is None
+
+
+def test_an_order_in_two_rides_counts_its_fee_once():
+    first = _ride("950", final_value_q=1000, when=timezone.now() - timedelta(days=1))
+    _order("NB-J", ride={**_ride("951", final_value_q=1100), "attempts": [first]})
+    report = build_bi_delivery_cost()
+    assert (report.rides, report.deliveries, report.fee_q) == (2, 1, 800)
 
 
 def test_rides_outside_the_window_stay_out():
