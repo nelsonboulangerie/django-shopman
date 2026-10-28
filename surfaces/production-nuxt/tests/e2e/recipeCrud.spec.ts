@@ -73,6 +73,13 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByText("Ingrediente cadastrado", { exact: true })).toHaveCount(0);
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(1);
   await expect(page.getByTestId("add-ingredient-footer")).toBeVisible();
+  await expect(page.getByTestId("recipe-bom-items").locator(":scope > li").first()).toHaveAttribute("data-focus-target", "ingredient-0");
+  if (testInfo.project.name === "chromium-desktop") {
+    await expect(page.getByPlaceholder("Buscar ingrediente", { exact: true })).toBeFocused();
+  } else {
+    // Touch: a lista abre e a linha vai à régua de foco sem convocar o teclado virtual.
+    await expect(page.getByPlaceholder("Buscar ingrediente", { exact: true })).not.toBeFocused();
+  }
   const standardizeButton = page.getByRole("button", { name: /Padronizar para/ });
   await expect(standardizeButton).toHaveClass(/w-full/);
   await expect(standardizeButton).toHaveClass(/sm:w-auto/);
@@ -97,6 +104,10 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await page.getByRole("button", { name: "Adicionar ingrediente", exact: true }).click();
   const ingredientPickers = page.getByLabel("Ingrediente", { exact: true });
   await expect(ingredientPickers).toHaveCount(2);
+  await expect(page.getByTestId("recipe-bom-items").locator(":scope > li").last()).toHaveAttribute("data-focus-target", "ingredient-1");
+  if (testInfo.project.name === "chromium-desktop") {
+    await expect(page.getByPlaceholder("Buscar ingrediente", { exact: true })).toBeFocused();
+  }
   await page.getByPlaceholder("Buscar ingrediente", { exact: true }).fill("lev");
   await page.getByRole("option", { name: /Levain/ }).click();
   await expect(page.getByLabel("Função da receita usada como ingrediente")).toBeVisible();

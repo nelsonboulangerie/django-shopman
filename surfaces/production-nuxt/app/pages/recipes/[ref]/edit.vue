@@ -129,6 +129,7 @@ const massFactor: Partial<Record<FormulaUnit, number>> = { g: 1, kg: 1000 };
 const volumeFactor: Partial<Record<FormulaUnit, number>> = { ml: 1, L: 1000 };
 const roleEditorIndex = ref<number | null>(null);
 const newIngredientIndex = ref<number | null>(null);
+useNextFocus(() => newIngredientIndex.value === null ? null : `ingredient-${newIngredientIndex.value}`);
 const yieldQuantityNumber = computed<number | null>({
   get: () => {
     const value = Number(String(yieldQuantity.value).replace(",", "."));
@@ -801,7 +802,8 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               <li
                 v-for="(item, index) in formula.items"
                 :key="`item-${index}`"
-                class="grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                :data-focus-target="`ingredient-${index}`"
+                class="grid scroll-mt-20 gap-3 p-3 outline-none sm:grid-cols-[minmax(0,1fr)_auto]"
                 :class="item.role === 'flour' && anchorIsFlour ? 'bg-primary/5' : ''"
               >
                 <div class="grid gap-1 text-xs font-medium text-muted-foreground sm:col-span-2">
@@ -810,6 +812,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     :model-value="item.sku"
                     :matched-name="itemMatchedName(index)"
                     :auto-open="newIngredientIndex === index"
+                    data-focus-control
                     @update:model-value="onItemSku(index, $event)"
                     @select="onItemSelect(index, $event)"
                   />
