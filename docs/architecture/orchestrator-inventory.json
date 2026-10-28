@@ -8577,10 +8577,12 @@
       "out_of_extraction": false,
       "unit_ids": [
         "delivery.cancelled-order-ride-disposition",
+        "delivery.courier-auto-dispatch",
         "delivery.courier-charge-staleness",
         "delivery.courier-dispatch-eligibility",
         "delivery.courier-handoff-charge",
         "delivery.courier-quote",
+        "delivery.courier-return",
         "shop.services-courier-courier-cancellation",
         "shop.services-courier-courier-status",
         "shop.services-courier-courier-sync"

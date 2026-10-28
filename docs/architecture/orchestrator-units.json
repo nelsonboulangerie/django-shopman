@@ -8202,6 +8202,72 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-return",
+      "question": "A corrida precisa voltar à loja (retorno) porque o entregador traz dinheiro ou a maquininha?",
+      "owner": "delivery.ride-return",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.courier:needs_return",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:needs_return"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "needs_return"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_service.py::test_ride_asks_return_when_courier_brings_something_back"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-auto-dispatch",
+      "question": "O pronto automático pode chamar o entregador sozinho, ou o pedido leva maquininha ou troco e espera o operador?",
+      "owner": "delivery.ride-auto-dispatch",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:request_auto_dispatch",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:request_auto_dispatch"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "request_auto_dispatch"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_service.py::test_auto_call_on_ready_waits_for_the_operator_when_the_card_machine_goes"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "delivery.courier-charge-staleness",
       "question": "Quando a instrução de cobrança enviada ao entregador ficou diferente do pagamento atual?",
       "owner": "delivery.handoff-charge-staleness",

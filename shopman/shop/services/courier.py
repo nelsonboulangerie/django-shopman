@@ -177,6 +177,22 @@ def door_charge_note(order) -> str:
     return " · ".join(parts)
 
 
+def needs_return(order) -> bool:
+    """A corrida volta à loja: o entregador traz o que cobrou ou levou.
+
+    Cobrança na porta (dinheiro, com troco ou sem, e cartão na maquininha) ou
+    maquininha que saiu com ele: o entregador nunca fica com dinheiro nem com a
+    maquininha da casa, então a corrida pede ``retorno`` à TaOn. Pedido pago e
+    sem nada da casa vai só de ida. O retorno é custo da casa e não muda o que
+    o cliente paga (o frete segue nas faixas e zonas).
+    """
+    charge = door_charge(order)
+    if charge["cash_q"] > 0 or charge["card_q"] > 0:
+        return True
+    dispatch = (order.data or {}).get("dispatch") or {}
+    return bool(dispatch.get("equipment"))
+
+
 def ride_note(body: dict) -> str:
     """A observação que um corpo de ``/abrirSolicitacao`` leva ao entregador."""
     stops = body.get("paradas") if isinstance(body, dict) else None
@@ -272,7 +288,7 @@ def build_machine_payload(order) -> dict:
         "forma_pagamento": str(cfg.get("forma_pagamento") or "F"),
         "partida": partida,
         "paradas": [parada],
-        "retorno": bool(cfg.get("retorno")),
+        "retorno": needs_return(order),
     }
 
 
@@ -283,7 +299,8 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
     """Cotação da corrida (custo interno — o preço ao cliente segue nas faixas/zonas).
 
     Best-effort: sem adapter, sem coordenadas ou com a Machine fora → None.
-    Cache de 10 min por destino (a origem é sempre a loja). ``store=True``
+    Cota com o mesmo retorno que a abertura vai pedir (:func:`needs_return`).
+    Cache de 10 min por destino e retorno (a origem é sempre a loja). ``store=True``
     grava o resultado em ``Order.data["courier"]["estimate"]``.
     """
     base_revision = dispatch_revision(order) if store else None
@@ -299,7 +316,8 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
     if shop is None or None in (shop.latitude, shop.longitude, lat, lng):
         return None
 
-    cache_key = f"courier:est:{float(lat):.4f}:{float(lng):.4f}"
+    with_return = needs_return(order)
+    cache_key = f"courier:est:{float(lat):.4f}:{float(lng):.4f}:{'r' if with_return else 'i'}"
     estimate = cache.get(cache_key)
     if estimate is None:
         from shopman.shop.services.dispatch_handoff import build_dispatch_payload
@@ -324,13 +342,14 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
             "state": handoff["state_code"],
         }
         try:
-            result = adapter.estimate(pickup=pickup, dropoff=dropoff)
+            result = adapter.estimate(pickup=pickup, dropoff=dropoff, with_return=with_return)
         except CourierError as exc:
             logger.warning("courier.estimate_failed order=%s: %s", order.ref, exc)
             return None
         if result is None:
             return None
-        estimate = {"value_q": result.value_q, "minutes": result.minutes, "km": result.km}
+        estimate = {"value_q": result.value_q, "minutes": result.minutes, "km": result.km,
+                    "with_return": with_return}
         cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
 
     if store:
@@ -352,7 +371,7 @@ def store_estimate(order, estimate, *, expected_revision, require_quotable=False
     if require_quotable and not can_quote(order):
         raise OrderStateConflict("Confira o estado do pedido e da corrida antes de cotar.")
     block = dict(get_block(order))
-    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km")}
+    block["estimate"] = {key: estimate[key] for key in ("value_q", "minutes", "km", "with_return") if key in estimate}
     _save_block(order, block, emit={"kind": "estimate"})
 
 
@@ -424,6 +443,36 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     order.emit_event(event_type="courier_dispatch_requested", actor=actor)
     logger.info("courier.dispatch_requested order=%s actor=%s", order.ref, actor)
     return directive
+
+
+def request_auto_dispatch(order) -> Directive | None:
+    """A chamada automática do pronto (``fulfillment.courier="auto"``).
+
+    Pedido que leva troco da gaveta ou a maquininha da casa não se chama
+    sozinho: a maquininha só sai escolhida pelo operador (``delivery_devices``),
+    e o troco sai do turno de quem chama. Sem isso a TaOn coletaria com a
+    maquininha fora do registro, e o Gestor não saberia onde ela está. O
+    operador recebe o aviso e chama pelo "Chamar entregador" do Gestor, que
+    pergunta a custódia antes de abrir a corrida.
+    """
+    from shopman.shop.services.operator_orders import partner_custody_asks, short_ref
+
+    if not is_enabled_for(order):
+        return None
+    asks = partner_custody_asks(order)
+    if not asks["recorded"] and (asks["needs_machine"] or asks["change_out_suggested_q"] > 0):
+        what = "a maquininha" if asks["needs_machine"] else "troco da gaveta"
+        logger.info("courier.auto_dispatch_needs_custody order=%s", order.ref)
+        from shopman.shop.adapters import alert as alert_adapter
+
+        alert_adapter.create(
+            "courier_dispatch_failed", "warning",
+            f"O pedido {short_ref(order.ref)} está pronto e o entregador leva {what}: "
+            "chame o entregador pelo Gestor para registrar o que sai com ele.",
+            order_ref=order.ref,
+        )
+        return None
+    return request_dispatch(order, actor="lifecycle.on_ready")
 
 
 def dispatch_revision(order) -> str:

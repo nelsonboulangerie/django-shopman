@@ -167,6 +167,11 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    confirmação do cliente (benchmark iFood); "como foi a entrega?" = avaliação pós-entrega,
    feature separada (`customer_rating`).
 4. Falha de despacho: alerta + re-despacho manual (sem retry automático de corrida).
+5. Retorno por pedido (Pablo, 2026-10-28): a corrida pede `retorno` quando o entregador traz
+   algo de volta (cobrança na porta em dinheiro ou cartão, ou maquininha da casa), e a cotação
+   pede o mesmo (`com_retorno`). É custo da casa: o frete do cliente não muda. A chave global
+   `MACHINE_RETORNO` morreu. Pedido com maquininha ou troco não se chama sozinho no pronto
+   automático: quem escolhe a maquininha é o operador.
 
 ## Referências
 - [STOREFRONT-GAPS-ACTION-PLAN](completed/STOREFRONT-GAPS-ACTION-PLAN.md) — WP-11 (entrega), slice 3 (teleporte)

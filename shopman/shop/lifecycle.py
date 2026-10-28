@@ -624,7 +624,7 @@ def _on_ready(order, config: ChannelConfig) -> None:
     if config.fulfillment.courier == "auto":
         from shopman.shop.services import courier
 
-        courier.request_dispatch(order, actor="lifecycle.on_ready")
+        courier.request_auto_dispatch(order)
 
 
 def _on_dispatched(order, config: ChannelConfig) -> None:

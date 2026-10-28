@@ -1098,7 +1098,6 @@ SHOPMAN_MACHINE = {
     # Forma de pagamento da corrida junto à central: F=faturado, R=carteira de
     # créditos, D=dinheiro. Confirmar com a central junto com as credenciais.
     "forma_pagamento": os.environ.get("MACHINE_FORMA_PAGAMENTO", "F"),
-    "retorno": _env_bool("MACHINE_RETORNO", False),
     "timeout": int(os.environ.get("MACHINE_TIMEOUT", "15")),
     "cancel_reason_id": int(os.environ.get("MACHINE_CANCEL_REASON_ID", "1")),
     # Parte FIXA do link de rastreio do entregador (tudo antes do pedaço que muda por

@@ -409,7 +409,7 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "driver": {"name": "", "phone": "", "vehicle_plate": "", "vehicle_model": "", "vehicle_color": ""},  // a partir de A; a leitura da corrida atualiza (cor só pela listagem)
   "tracking_url": "",              // link de rastreio da parada (a partir de A); vai no aviso de saída e no botão "Acompanhar o entregador" da página do pedido
   "confirmation_code": "",
-  "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2},  // custo interno (centavos)
+  "estimate": {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": true},  // custo interno (centavos); `with_return` = cotada com `com_retorno`, o mesmo `retorno` que a abertura pede (`courier.needs_return`: cobrança na porta ou maquininha da casa)
   "final_value_q": null,           // finished.final_value convertido p/ centavos
   "door_charge": {"cash_q": 5800, "change_for_q": 10000, "card_q": 0},  // cobrança na porta registrada na coleta (E); a mesma régua da observação da corrida (`courier.door_charge`)
   "door_charge_note": "Pedido A47 · Cobrar R$ 58,00 em dinheiro · troco para R$ 100,00",  // a observação que FOI à TaOn na abertura (recibo `dispatch_attempt.note`); a TaOn não altera corrida aberta, e `courier.charge_outdated` compara com a de agora para o aviso "O pedido mudou depois da chamada" (Gestor e PDV); sai no arquivamento
