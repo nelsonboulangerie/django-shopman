@@ -885,7 +885,10 @@ def test_ingredient_options_mix_materials_and_parts(client, viewer, materials, p
     url = reverse("api-backstage-recipes-ingredients")
     options = client.get(url, {"q": "lev"}).json()["options"]
     part = next(option for option in options if option["sku"] == "LEVAIN")
-    assert part == {"sku": "LEVAIN", "name": "Levain", "unit": "g", "role": "other", "is_part": True, "entry_ref": "creme-levain"}
+    assert part == {
+        "sku": "LEVAIN", "name": "Levain", "unit": "g", "role": "other", "is_part": True,
+        "entry_ref": "creme-levain", "suggested_part_kind": "preferment",
+    }
 
     flours = client.get(url, {"q": "farinha"}).json()["options"]
     assert {option["sku"] for option in flours} >= {"FARINHA-ANACONDA-PREMIUM", "FARINHA-NOVARA-T55"}

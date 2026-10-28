@@ -74,6 +74,7 @@ __all__ = [
     "item_grams",
     "looks_like_flour",
     "part_formulas_for",
+    "part_kind_from_name",
     "publish_version",
     "reference_for",
     "scale",

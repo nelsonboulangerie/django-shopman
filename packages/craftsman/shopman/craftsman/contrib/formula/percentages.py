@@ -35,7 +35,7 @@ from shopman.craftsman.exceptions import RecipeBookError
 
 ROLES = ("flour", "liquid", "salt", "yeast", "fat", "sugar", "egg", "dairy", "inclusion", "other")
 ANCHOR_KINDS = ("flour", "total", "ingredient")
-PART_KINDS = ("preferment", "autolyse", "soaker", "old_dough")
+PART_KINDS = ("component", "preferment", "autolyse", "soaker", "old_dough")
 UNITS = ("g", "kg", "mg", "ml", "L", "un")
 
 _ZERO = Decimal("0")
@@ -128,7 +128,7 @@ _ROLE_KEYWORDS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
 )
 
 _PREFERMENT_NAMES = ("levain", "sourdough", "poolish", "biga", "fermento", "starter", "esponja", "sponge")
-_AUTOLYSE_NAMES = ("autoliz", "autolys")
+_AUTOLYSE_NAMES = ("autolis", "autoliz", "autolys")
 _SOAKER_NAMES = ("yudane", "tangzhong", "escald", "soaker", "mingau")
 
 
@@ -211,13 +211,20 @@ def looks_like_flour(name: str, sku: str = "") -> bool:
 
 
 def part_kind_from_name(*names: str) -> str:
-    """``kind`` de uma parte pelo que ela se chama (nome, ref, SKU)."""
+    """Sugere o uso de uma receita intermediária pelo nome, ref e SKU.
+
+    A inferência só reconhece preparações com vocabulário inequívoco. Todo o
+    restante é ``component``: uma linha normal de BOM, medida por quantidade.
+    Assim um recheio nunca vira pré-fermento apenas por também ter receita.
+    """
     text = normalize_text(" ".join(str(n or "") for n in names))
     if any(word in text for word in _AUTOLYSE_NAMES):
         return "autolyse"
     if any(word in text for word in _SOAKER_NAMES):
         return "soaker"
-    return "preferment"
+    if any(word in text for word in _PREFERMENT_NAMES):
+        return "preferment"
+    return "component"
 
 
 def part_reference_key(part: dict) -> str:
@@ -533,6 +540,19 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
                 sku=sku, entry_ref=str(raw_part.get("entry_ref") or ""), kind=kind, name=name,
                 quantity_g=None if declared_quantity is None else _grams_of(declared_quantity, unit),
                 unit=unit, flour_pct=declared_pct, flour_g=_ZERO, cap_pct=None, has_formula=False,
+            ))
+            continue
+
+        # Receita intermediária comum (recheio, creme, cobertura...): é uma
+        # linha hierárquica da BOM. Não reparte os insumos da fórmula-mãe e não
+        # participa da matemática de farinha; só declara quanto do item pronto
+        # esta receita consome.
+        if kind == "component":
+            quantity_g = None if declared_quantity is None else _grams_of(declared_quantity, unit)
+            parts.append(FormulaPartAnalysis(
+                sku=sku, entry_ref=str(raw_part.get("entry_ref") or ""), kind=kind, name=name,
+                quantity_g=None if quantity_g is None else quantize(quantity_g), unit=unit,
+                flour_pct=None, flour_g=_ZERO, cap_pct=None, has_formula=True,
             ))
             continue
 
@@ -1017,6 +1037,8 @@ def validate_formula(formula: Any) -> None:
             raise _invalid(f"{path}.sku", "O SKU da parte precisa ser texto.")
         flour_pct = part.get("flour_pct")
         quantity = part.get("quantity")
+        if kind == "component" and quantity in (None, ""):
+            raise _invalid(f"{path}.quantity", "Informe a quantidade desta receita usada como ingrediente.")
         if flour_pct in (None, "") and quantity in (None, ""):
             raise _invalid(f"{path}.flour_pct", "A parte precisa de flour_pct ou de quantity.")
         if flour_pct not in (None, ""):

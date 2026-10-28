@@ -42,6 +42,7 @@ from shopman.craftsman.services.recipe_book import (
     execution_in_sync,
     item_grams,
     part_formulas_for,
+    part_kind_from_name,
     reference_for,
     suggest_anchor_kind,
 )
@@ -80,6 +81,7 @@ ROLE_LABELS: dict[str, str] = {
 }
 
 PART_KIND_LABELS: dict[str, str] = {
+    "component": "Ingrediente preparado",
     "preferment": "Pré-fermento",
     "autolyse": "Autólise",
     "soaker": "Grãos hidratados",
@@ -223,7 +225,7 @@ class FormulaItemProjection:
 
 @dataclass(frozen=True)
 class FormulaPartProjection:
-    """A part of the base formula (preferment, autolyse, soaker, old dough)."""
+    """A recipe ingredient: ordinary component or a preparation that partitions the base."""
 
     sku: str
     entry_ref: str
@@ -684,6 +686,7 @@ class IngredientOptionProjection:
     role: str
     is_part: bool
     entry_ref: str
+    suggested_part_kind: str
 
 
 @dataclass(frozen=True)
@@ -1797,6 +1800,7 @@ def _part_option(entry: RecipeEntry) -> IngredientOptionProjection:
         role=candidate.role,
         is_part=True,
         entry_ref=entry.ref,
+        suggested_part_kind=part_kind_from_name(entry.name, entry.ref, entry.output_sku),
     )
 
 
@@ -1809,6 +1813,7 @@ def _material_option(candidate: IngredientCandidate, part_refs: dict[str, str]) 
         role=candidate.role,
         is_part=bool(entry_ref),
         entry_ref=entry_ref,
+        suggested_part_kind=part_kind_from_name(candidate.name, entry_ref, candidate.sku) if entry_ref else "",
     )
 
 

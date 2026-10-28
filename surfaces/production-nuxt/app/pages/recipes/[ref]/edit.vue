@@ -206,13 +206,14 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
   // antes de buscar, se o ingrediente é comprado ou produzido pela casa.
   if (option.is_part) {
     const partIndex = formula.value.parts.length;
+    const partKind = (option.suggested_part_kind || "component") as PartKind;
     const partUnit = formulaDefaultUnit(option.unit);
     const partQuantity = convertedQuantity(item.quantity, item.unit, partUnit) ?? item.quantity;
     const part = {
-      ...emptyPart("preferment"),
+      ...emptyPart(partKind),
       sku: option.sku,
       entry_ref: option.entry_ref,
-      quantity: anchorIsFlour.value ? null : partQuantity || null,
+      quantity: anchorIsFlour.value && partKind !== "component" ? null : partQuantity || null,
       unit: partUnit,
     };
     formula.value = addPart(removeItem(formula.value, index), part);
@@ -285,7 +286,17 @@ const editorTabs = [
 // ── Partes ──────────────────────────────────────────────────────────────────
 function onPartKind(index: number, kind: string) {
   const next = kind as PartKind;
-  formula.value = updatePart(formula.value, index, next === "old_dough" ? { kind: next, cap_pct: 20 } : { kind: next, cap_pct: null });
+  if (next === "old_dough") {
+    formula.value = updatePart(formula.value, index, { kind: next, cap_pct: 20, flour_pct: null, quantity: null });
+    return;
+  }
+  formula.value = updatePart(
+    formula.value,
+    index,
+    next === "component" || !anchorIsFlour.value
+      ? { kind: next, cap_pct: null, flour_pct: null }
+      : { kind: next, cap_pct: null, quantity: null },
+  );
 }
 function onPartSku(index: number, sku: string) {
   formula.value = updatePart(formula.value, index, { sku });
@@ -297,8 +308,18 @@ function onPartNumber(index: number, field: "flour_pct" | "quantity" | "cap_pct"
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
   formula.value = updatePart(formula.value, index, { [field]: raw ? Number(raw) || null : null });
 }
+function onPartQuantity(index: number, value: number | null | undefined) {
+  const part = formula.value.parts[index];
+  const unit = (part?.unit ?? "g") as FormulaUnit;
+  formula.value = updatePart(formula.value, index, { quantity: value == null ? null : normalizedQuantity(value, unit) });
+}
 function onPartUnit(index: number, unit: string) {
-  formula.value = updatePart(formula.value, index, { unit: unit as FormulaUnit });
+  const part = formula.value.parts[index];
+  if (!part) return;
+  const next = unit as FormulaUnit;
+  const current = part.quantity ?? null;
+  const converted = current == null ? null : convertedQuantity(current, part.unit ?? "g", next);
+  formula.value = updatePart(formula.value, index, { unit: next, quantity: converted ?? current });
 }
 function dropPart(index: number) {
   formula.value = removePart(formula.value, index);
@@ -903,13 +924,13 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               </li>
               <li v-for="(part, index) in formula.parts" :key="`recipe-${index}`" class="grid gap-2 p-3 sm:grid-cols-[auto_minmax(0,1.4fr)_auto_auto_auto]">
                 <label class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Função
+                  Uso na receita
                   <NuxtSelect
                     :model-value="part.kind"
                     :items="partKinds"
                     value-key="value"
                     class="w-44"
-                    aria-label="Função da receita usada como ingrediente"
+                    aria-label="Uso da receita como ingrediente"
                     :ui="{ base: 'bg-muted' }"
                     @update:model-value="(kind: string) => onPartKind(index, kind)"
                   />
@@ -931,25 +952,52 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       @select="onPartSelect(index, $event)"
                     />
                   </div>
-                  <label v-if="anchorIsFlour" :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
-                    Farinha (%)
-                    <NuxtInput data-focus-control :model-value="String(part.flour_pct ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'flour_pct', $event)" />
+                  <label v-if="anchorIsFlour && part.kind !== 'component'" :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
+                    Base de cálculo nesta preparação
+                    <NuxtInput
+                      data-focus-control
+                      :model-value="String(part.flour_pct ?? '')"
+                      type="number"
+                      inputmode="decimal"
+                      min="0.001"
+                      max="100"
+                      step="0.1"
+                      placeholder="0"
+                      class="w-full sm:w-40"
+                      :ui="{ base: 'bg-muted tabular-nums text-right' }"
+                      aria-label="Percentual da base de cálculo nesta preparação"
+                      @input="onPartNumber(index, 'flour_pct', $event)"
+                    >
+                      <template #trailing><span class="text-sm text-muted-foreground">%</span></template>
+                    </NuxtInput>
                   </label>
                   <label v-else :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
-                    <span class="flex items-center gap-1">
-                      <NuxtInput data-focus-control :model-value="String(part.quantity ?? '')" type="text" inputmode="decimal" class="w-20" :ui="{ base: 'bg-muted text-right' }" @input="onPartNumber(index, 'quantity', $event)" />
+                    <span class="grid grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)] gap-2">
+                      <NuxtInputNumber
+                        data-focus-control
+                        :key="`part-quantity-${part.sku || index}-${part.unit}`"
+                        :model-value="part.quantity ?? null"
+                        :min="quantityRule((part.unit ?? 'g') as FormulaUnit).min"
+                        :step="quantityRule((part.unit ?? 'g') as FormulaUnit).step"
+                        :format-options="{ maximumFractionDigits: quantityRule((part.unit ?? 'g') as FormulaUnit).maximumFractionDigits }"
+                        locale="pt-BR"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted tabular-nums' }"
+                        aria-label="Quantidade da receita usada como ingrediente"
+                        @update:model-value="(value: number | null | undefined) => onPartQuantity(index, value)"
+                      />
                       <NuxtSelect
                         :model-value="part.unit ?? 'g'"
                         :items="units"
-                        class="w-24"
+                        class="w-full"
                         aria-label="Unidade da parte"
                         :ui="{ base: 'bg-muted' }"
                         @update:model-value="(unit: string) => onPartUnit(index, unit)"
                       />
                     </span>
                   </label>
-                  <span v-if="anchorIsFlour" class="hidden sm:block" />
+                  <span v-if="anchorIsFlour && part.kind !== 'component'" class="hidden sm:block" />
                 </template>
                 <div class="flex items-end">
                   <!-- Remoção compacta pertence à linha editável; mantém o alinhamento da grade. -->

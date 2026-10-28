@@ -59,6 +59,7 @@ export function kindLabel(kind: string): string {
 }
 
 export const PART_KIND_OPTIONS: readonly { value: PartKind; label: string }[] = [
+  { value: "component", label: "Ingrediente preparado" },
   { value: "preferment", label: "Pré-fermento" },
   { value: "autolyse", label: "Autólise" },
   { value: "soaker", label: "Grãos hidratados" },
@@ -156,7 +157,7 @@ export function emptyItem(over: Partial<FormulaItem> = {}): FormulaItem {
   return { sku: "", name: "", role: "other", quantity: 0, unit: "g", note: "", ...over };
 }
 
-export function emptyPart(kind: PartKind = "preferment"): FormulaPart {
+export function emptyPart(kind: PartKind = "component"): FormulaPart {
   if (kind === "old_dough") return { kind, cap_pct: 20 };
   return { kind, sku: "", entry_ref: "", flour_pct: null, quantity: null, unit: "g" };
 }

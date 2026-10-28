@@ -17,6 +17,7 @@ from shopman.craftsman.contrib.formula.percentages import (
     derive_bom,
     item_grams,
     looks_like_flour,
+    part_kind_from_name,
     reference_for,
     scale,
     standardize,
@@ -131,6 +132,12 @@ class TestClassifyIngredient:
         assert looks_like_flour("", "FARINHA-CENTEIO-INTEGRAL-ORGANICA")
         assert not looks_like_flour("Leite integral", "LEITE-INTEGRAL-A")
 
+    def test_only_unambiguous_preparations_receive_bakery_math(self):
+        assert part_kind_from_name("Levain") == "preferment"
+        assert part_kind_from_name("Pasta autolisada") == "autolyse"
+        assert part_kind_from_name("Tangzhong") == "soaker"
+        assert part_kind_from_name("Creme confeiteiro") == "component"
+
 
 # ── Física do item ───────────────────────────────────────────────────────────
 
@@ -174,6 +181,29 @@ class TestAnalyze:
         assert levain.flour_g == Decimal("200")
         assert levain.flour_pct == Decimal("20")
         assert analysis.prefermented_flour_pct == Decimal("20")
+
+    def test_generic_recipe_component_is_a_quantity_line_not_a_flour_partition(self):
+        """Recheio é uma sub-BOM: entra pronto e não subtrai insumos da massa."""
+        filling = {
+            "anchor": {"kind": "total"},
+            "items": [
+                {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 800, "unit": "g"},
+                {"sku": "ACUCAR", "name": "Açúcar", "role": "sugar", "quantity": 200, "unit": "g"},
+            ],
+        }
+        analysis = analyze(
+            tradicao(parts=[{
+                "sku": "CREME-CONFEITEIRO", "entry_ref": "creme-confeiteiro",
+                "kind": "component", "quantity": 300, "unit": "g",
+            }]),
+            {"CREME-CONFEITEIRO": filling},
+        )
+
+        assert analysis.parts[0].quantity_g == Decimal("300")
+        assert analysis.parts[0].flour_pct is None
+        assert by_sku(analysis.final_mix)["FARINHA-ANACONDA-PREMIUM"].grams == Decimal("1000")
+        assert not any(w.code == "PART_EXCEEDS_BASE" for w in analysis.warnings)
+        assert {line["sku"] for line in analysis.bom} >= {"CREME-CONFEITEIRO", "FARINHA-ANACONDA-PREMIUM"}
 
     def test_a_quantity_that_says_the_same_as_the_percentage_wins_exactly(self):
         """flour_pct tem 3 casas; a quantidade declarada é a mesma declaração com mais casas."""
@@ -486,6 +516,15 @@ class TestValidateFormula:
     def test_liter_spelling_is_accepted(self):
         formula = tradicao()
         formula["items"][1].update(unit="l", quantity="0.7")
+        validate_formula(formula)
+
+    def test_generic_recipe_component_requires_a_quantity(self):
+        formula = tradicao(parts=[{"kind": "component", "sku": "CREME-CONFEITEIRO"}])
+        with pytest.raises(RecipeBookError) as exc:
+            validate_formula(formula)
+        assert exc.value.data["field"] == "parts[0].quantity"
+
+        formula["parts"][0].update(quantity=300, unit="g")
         validate_formula(formula)
 
 

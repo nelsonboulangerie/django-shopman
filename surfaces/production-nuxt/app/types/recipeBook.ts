@@ -95,7 +95,7 @@ export type IngredientRole =
 
 export type FormulaUnit = "g" | "kg" | "ml" | "L" | "un";
 
-export type PartKind = "preferment" | "autolyse" | "soaker" | "old_dough";
+export type PartKind = "component" | "preferment" | "autolyse" | "soaker" | "old_dough";
 
 export type YieldUnit = "kg" | "g" | "un" | "L" | "ml";
 
@@ -135,9 +135,9 @@ export interface FormulaPart {
   sku?: string;
   entry_ref?: string;
   kind: PartKind;
-  /** Âncora `flour`: % da farinha total que passa pela parte. */
+  /** Preparações de panificação: % da base de farinha que passa pela parte. */
   flour_pct?: number | null;
-  /** Sem âncora `flour`: a quantidade declarada. */
+  /** Componente comum, ou preparação sem base de farinha: quantidade declarada. */
   quantity?: number | null;
   unit?: FormulaUnit;
   /** Só `old_dough`: teto da fórmula inteira. */

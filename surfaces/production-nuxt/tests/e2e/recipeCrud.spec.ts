@@ -111,10 +111,20 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   }
   await page.getByPlaceholder("Buscar ingrediente", { exact: true }).fill("lev");
   await page.getByRole("option", { name: /Levain/ }).click();
-  await expect(page.getByLabel("Farinha (%)", { exact: true })).toBeFocused();
-  await expect(page.getByLabel("Função da receita usada como ingrediente")).toBeVisible();
+  const preparationBase = page.getByLabel("Percentual da base de cálculo nesta preparação", { exact: true });
+  await expect(preparationBase).toBeFocused();
+  await expect(page.getByText("Base de cálculo nesta preparação").first()).toBeVisible();
+  await expect(preparationBase.locator("xpath=..")).toContainText("%");
+  await expect(page.getByLabel("Uso da receita como ingrediente")).toContainText("Pré-fermento");
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(2);
   await expect(page.getByText("Receitas usadas como ingrediente", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Adicionar ingrediente", exact: true }).click();
+  await page.getByPlaceholder("Buscar ingrediente", { exact: true }).fill("creme");
+  await page.getByRole("option", { name: /Creme confeiteiro/ }).click();
+  await expect(page.getByLabel("Uso da receita como ingrediente").last()).toContainText("Ingrediente preparado");
+  await expect(page.getByLabel("Quantidade da receita usada como ingrediente", { exact: true })).toBeFocused();
+  await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(3);
 
   await page.getByRole("tab", { name: "Modo de preparo" }).click();
   await expect(page.getByRole("heading", { name: "Modo de preparo" })).toBeVisible();

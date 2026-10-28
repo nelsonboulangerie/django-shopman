@@ -68,7 +68,7 @@ export interface FormulaItemProjection {
   matched: boolean;
 }
 
-/** A part of the base formula (preferment, autolyse, soaker, old dough). */
+/** A recipe ingredient: ordinary component or a preparation that partitions the base. */
 export interface FormulaPartProjection {
   sku: string;
   entry_ref: string;
@@ -415,6 +415,7 @@ export interface IngredientOptionProjection {
   role: string;
   is_part: boolean;
   entry_ref: string;
+  suggested_part_kind: string;
 }
 
 /** One ingredient read from a note or a photo, with its matched material. */

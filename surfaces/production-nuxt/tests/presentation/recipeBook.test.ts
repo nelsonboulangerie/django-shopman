@@ -245,6 +245,7 @@ describe("emptyFormula and immutable edits", () => {
     expect(set.parts[0]).toMatchObject({ kind: "preferment", sku: "LEVAIN", flour_pct: 20 });
     expect(withPart.parts[0]?.sku).toBe("");
     expect(removePart(set, 0).parts).toHaveLength(0);
+    expect(emptyPart()).toMatchObject({ kind: "component", quantity: null, unit: "g" });
     expect(emptyPart("old_dough")).toEqual({ kind: "old_dough", cap_pct: 20 });
   });
 

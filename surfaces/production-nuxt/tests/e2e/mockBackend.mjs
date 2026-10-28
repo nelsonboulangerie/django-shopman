@@ -823,10 +823,11 @@ const SHEETS = [
 ];
 
 const RECIPE_INGREDIENTS = [
-  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", is_part: false, entry_ref: "" },
+  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", is_part: false, entry_ref: "", suggested_part_kind: "" },
   { sku: "AGUA", name: "Água", unit: "kg", role: "liquid", is_part: false, entry_ref: "" },
   { sku: "SAL", name: "Sal", unit: "kg", role: "salt", is_part: false, entry_ref: "" },
-  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", is_part: true, entry_ref: "levain" },
+  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", is_part: true, entry_ref: "levain", suggested_part_kind: "preferment" },
+  { sku: "CREME-CONFEITEIRO", name: "Creme confeiteiro", unit: "g", role: "dairy", is_part: true, entry_ref: "creme-confeiteiro", suggested_part_kind: "component" },
 ];
 
 function recipeIngredients(url) {
