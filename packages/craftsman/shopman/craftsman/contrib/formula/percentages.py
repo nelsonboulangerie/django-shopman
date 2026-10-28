@@ -491,18 +491,24 @@ def _resolve_target(raw: dict, base: list[dict], actual: Any = None) -> tuple[De
     return item_grams(fixed), unit, None
 
 
-def _global_composition(formula: dict, formulas: dict[str, dict], stack: tuple[str, ...] = ()) -> list[dict]:
+def _global_composition(
+    formula: dict,
+    formulas: dict[str, dict],
+    stack: tuple[str, ...] = (),
+    actuals: dict[str, Any] | None = None,
+) -> list[dict]:
     """Composição elementar da receita sem contar duas vezes ingredientes inclusos."""
     warnings: list[FormulaWarning] = []
     declared = list(formula.get("ingredients") or [])
-    base = _read_fixed(declared, warnings)
+    base = _read_fixed(declared, warnings, actuals)
     out = [dict(it) for it in base if it["grams"] is not None]
     for raw in declared:
         ref = str(raw.get("recipe_version_ref") or "")
         if not ref or raw.get("composition") != "additional" or ref in stack:
             continue
         child = formulas.get(ref)
-        target_g, _, _ = _resolve_target(raw, base)
+        actual = (actuals or {}).get(str(raw.get("ref") or ""))
+        target_g, _, _ = _resolve_target(raw, base, actual)
         if not child or target_g is None:
             continue
         child_items = _global_composition(child, formulas, (*stack, ref))
@@ -522,11 +528,16 @@ def analyze(formula: dict, ingredient_formulas: dict[str, dict] | None = None, *
     declared = list(formula.get("ingredients") or [])
     actual_quantities = actual_quantities or {}
     base = _read_fixed(declared, warnings, actual_quantities)
+    # Receitas adicionais também pertencem à composição global. A âncora e as
+    # métricas precisam enxergar a farinha, a água e os demais componentes que
+    # chegam por elas; receitas inclusas já estão representadas na base direta
+    # e não podem ser somadas outra vez.
+    composition = _global_composition(formula, ingredient_formulas, actuals=actual_quantities)
     anchor = formula.get("anchor") or {}
     anchor_kind = str(anchor.get("kind") or "total")
 
-    flour_total = _role_total(base, "flour")
-    total_mass = sum((it["grams"] for it in base if it["grams"] is not None), _ZERO)
+    flour_total = _role_total(composition, "flour")
+    total_mass = sum((it["grams"] for it in composition if it["grams"] is not None), _ZERO)
     if anchor_kind == "flour":
         anchor_total: Decimal | None = flour_total
     elif anchor_kind == "ingredient":
@@ -610,22 +621,20 @@ def analyze(formula: dict, ingredient_formulas: dict[str, dict] | None = None, *
         for it in base
     )
     bom = tuple(_bom_items(base, remaining, recipe_rows))
-    additional_mass = sum((row["target_g"] or _ZERO for row in recipe_rows if row.get("composition") == "additional"), _ZERO)
-
     metrics_on = anchor_kind == "flour" and anchor_total is not None and anchor_total > 0
     deviations = tuple(_quantity_deviation(raw, actual_quantities[str(raw.get("ref") or "")])
                        for raw in declared if str(raw.get("ref") or "") in actual_quantities)
     return FormulaAnalysis(
         anchor_kind=anchor_kind,
         anchor_total_g=None if anchor_total is None else quantize(anchor_total),
-        total_mass_g=quantize(total_mass + additional_mass),
+        total_mass_g=quantize(total_mass),
         ingredients=tuple(analyses),
-        hydration_pct=_pct(_role_total(base, "liquid"), anchor_total) if metrics_on else None,
-        salt_pct=_pct(_role_total(base, "salt"), anchor_total) if metrics_on else None,
-        yeast_pct=_pct(_role_total(base, "yeast"), anchor_total) if metrics_on else None,
-        fat_pct=_pct(_role_total(base, "fat"), anchor_total) if metrics_on else None,
-        sugar_pct=_pct(_role_total(base, "sugar"), anchor_total) if metrics_on else None,
-        egg_pct=_pct(_role_total(base, "egg"), anchor_total) if metrics_on else None,
+        hydration_pct=_pct(_role_total(composition, "liquid"), anchor_total) if metrics_on else None,
+        salt_pct=_pct(_role_total(composition, "salt"), anchor_total) if metrics_on else None,
+        yeast_pct=_pct(_role_total(composition, "yeast"), anchor_total) if metrics_on else None,
+        fat_pct=_pct(_role_total(composition, "fat"), anchor_total) if metrics_on else None,
+        sugar_pct=_pct(_role_total(composition, "sugar"), anchor_total) if metrics_on else None,
+        egg_pct=_pct(_role_total(composition, "egg"), anchor_total) if metrics_on else None,
         final_mix=final_mix,
         bom=bom,
         deviations=deviations,

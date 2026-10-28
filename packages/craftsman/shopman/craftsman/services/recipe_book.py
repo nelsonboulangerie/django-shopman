@@ -673,8 +673,19 @@ def bootstrap_entry_from_recipe(recipe):
         ingredients = [_formula_item(entry) for entry in base.values()] + produced
         for index, ingredient in enumerate(ingredients, start=1):
             ingredient["ref"] = f"ingredient-{index}"
-        flour_total = sum((g for g in (item_grams(it) for it in ingredients if it["role"] == "flour") if g is not None), _ZERO)
-        mass_total = sum((g for g in (item_grams(it) for it in ingredients) if g is not None), _ZERO)
+        provisional = {
+            "anchor": {"kind": "total"}, "basis_g": None,
+            "standardized": False, "ingredients": ingredients,
+        }
+        provisional_analysis = analyze(provisional, ingredient_formulas_for(provisional))
+        composition = provisional_analysis.ingredients
+        flour_total = sum((item.grams or _ZERO for item in composition if item.role == "flour"), _ZERO)
+        flour_total += sum(
+            (component.grams or _ZERO)
+            for item in composition for component in item.contents
+            if component.role == "flour"
+        )
+        mass_total = provisional_analysis.total_mass_g
         anchor_kind = suggest_anchor_kind(flour_total, mass_total, _entry_kind(recipe.ref, recipe.name))
         formula = {
             "anchor": {"kind": anchor_kind},

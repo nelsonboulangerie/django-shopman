@@ -50,8 +50,8 @@ def test_bootstrap_over_sheets_shaped_like_the_seed():
     cards = {card.ref: card for card in book.entries}
     assert set(cards) == {"creme-levain", "massa-pasta-autolizada", "massa-tradicao"}
     assert all(card.has_ficha and card.current_version_number == 1 for card in cards.values())
-    assert cards["massa-tradicao"].anchor_kind == "total"
-    assert cards["massa-tradicao"].hydration_display == ""
+    assert cards["massa-tradicao"].anchor_kind == "flour"
+    assert cards["massa-tradicao"].hydration_display
 
     detail = build_recipe_entry("massa-tradicao")
     (version,) = detail.versions
@@ -101,8 +101,8 @@ def test_a_piece_reaches_the_screen_as_the_sheet_declares_it():
     assert cards["baguete"].hydration_display == ""
     assert cards["baguete"].anchor_kind == "total"
     # A fórmula importada preserva a BOM imediata, sem inventar uma composição dissolvida.
-    assert cards["massa-tradicao"].anchor_kind == "total"
-    assert cards["massa-tradicao"].hydration_display == ""
+    assert cards["massa-tradicao"].anchor_kind == "flour"
+    assert cards["massa-tradicao"].hydration_display
 
 
 def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):

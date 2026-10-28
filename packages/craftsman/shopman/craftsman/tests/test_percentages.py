@@ -213,6 +213,11 @@ class TestAnalyze:
         assert bom["CREME"]["quantity"] == Decimal("300")
         assert bom["FARINHA-ANACONDA-PREMIUM"]["quantity"] == Decimal("1000")
         assert analysis.total_mass_g == Decimal("2020")
+        assert analysis.anchor_total_g == Decimal("1150")
+
+        executed = resolve_execution(tradicao([cream]), {"creme": 200}, INGREDIENT_FORMULAS)
+        assert executed.total_mass_g == Decimal("1920")
+        assert executed.anchor_total_g == Decimal("1100")
 
     def test_missing_frozen_version_is_explicit(self):
         formula = tradicao([included("LEVAIN", "Levain", "levain@99", ratio(20))])

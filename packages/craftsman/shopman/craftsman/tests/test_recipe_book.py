@@ -444,7 +444,7 @@ class TestBootstrap:
         assert version.origin["items"][0] == {"sku": "PASTA-AUTOLIZADA", "quantity": "8.400", "unit": "kg"}
 
         formula = version.formula
-        assert formula["anchor"] == {"kind": "total"}
+        assert formula["anchor"] == {"kind": "flour"}
         assert formula["basis_g"] is None
         assert formula["standardized"] is False
         ingredients = {item["sku"]: item for item in formula["ingredients"]}
@@ -549,7 +549,7 @@ class TestBootstrap:
         _, _, tradicao = seeded_sheets
         formula = recipe_book.bootstrap_entry_from_recipe(tradicao).current_version.formula
         assert {item["sku"] for item in formula["ingredients"] if item.get("recipe_version_ref")} == {"LEVAIN", "PASTA-AUTOLIZADA"}
-        assert formula["anchor"] == {"kind": "total"}
+        assert formula["anchor"] == {"kind": "flour"}
 
     def test_the_command_orders_by_dependency_and_honors_dry_run(self, seeded_sheets):
         out = StringIO()
