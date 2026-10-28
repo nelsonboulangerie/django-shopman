@@ -842,7 +842,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   />
                 </NuxtFormField>
                 <template v-if="quantityPreset(ingredientDefaults.quantity) === 'range'">
-                  <div class="grid grid-cols-3 gap-2">
+                  <div class="grid gap-2 sm:grid-cols-3">
                     <NuxtFormField v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" :label="field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo'">
                       <NuxtInputNumber
                         :model-value="ingredientDefaults.quantity[field]"
@@ -1084,7 +1084,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   </OperatorFieldRow>
 
                   <template v-else>
-                    <div class="grid grid-cols-3 gap-2">
+                    <div class="grid gap-2 sm:grid-cols-3" data-ingredient-quantity-range>
                       <label v-for="field in (['minimum', 'target', 'maximum'] as const)" :key="field" class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
                         {{ field === 'minimum' ? 'Mínimo' : field === 'target' ? 'Alvo' : 'Máximo' }}
                         <NuxtInputNumber

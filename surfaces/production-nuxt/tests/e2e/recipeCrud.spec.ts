@@ -142,7 +142,20 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   expect(gridBox).not.toBeNull();
   expect(detailBox!.width).toBe(gridBox!.width);
   await expect(page.getByText("Receita do ingrediente: levain@4", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Critério da quantidade de Levain")).toContainText("Exato");
+  const levainCriterion = page.getByLabel("Critério da quantidade de Levain");
+  await expect(levainCriterion).toContainText("Exato");
+  await levainCriterion.click();
+  await page.getByRole("option", { name: "Faixa", exact: true }).click();
+  const rangeFields = page.locator("[data-ingredient-quantity-range] > label");
+  await expect(rangeFields).toHaveCount(3);
+  if (testInfo.project.name === "chromium-mobile-manager") {
+    const rangeBoxes = await Promise.all([0, 1, 2].map((position) => rangeFields.nth(position).boundingBox()));
+    expect(rangeBoxes.every((box) => box !== null)).toBe(true);
+    expect(rangeBoxes[1]!.y).toBeGreaterThan(rangeBoxes[0]!.y);
+    expect(rangeBoxes[2]!.y).toBeGreaterThan(rangeBoxes[1]!.y);
+  }
+  await levainCriterion.click();
+  await page.getByRole("option", { name: "Exato", exact: true }).click();
   await preparationBase.fill("0,201");
   await preparationBase.blur();
   await expect(preparationBase).toHaveValue("0,2");
