@@ -57,7 +57,7 @@ def is_configured() -> bool:
     return True
 
 
-def estimate(*, pickup: dict, dropoff: dict) -> CourierEstimate | None:
+def estimate(*, pickup: dict, dropoff: dict, with_return: bool = False) -> CourierEstimate | None:
     if not all([pickup.get("lat"), pickup.get("lng"), dropoff.get("lat"), dropoff.get("lng")]):
         return None
     return CourierEstimate(value_q=1250, minutes=18.0, km=4.2)

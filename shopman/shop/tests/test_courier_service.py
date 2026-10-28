@@ -153,7 +153,7 @@ def test_dispatch_handler_opens_ride_and_schedules_sync(shop):
     assert block["id_mch"] == f"MOCK-{order.ref}"
     assert block["provider"] == "machine"
     assert block["status"] == "D"
-    assert block["estimate"] == {"value_q": 1250, "minutes": 18.0, "km": 4.2}
+    assert block["estimate"] == {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": False}
     assert Directive.objects.filter(topic=COURIER_SYNC, payload__order_ref=order.ref).exists()
 
     # payload enviado à Machine: partida = loja, parada = cliente
@@ -683,7 +683,7 @@ def test_sync_gives_up_on_a_ride_older_than_the_cap(shop):
 def test_estimate_for_order_caches_and_stores(shop):
     order = _delivery_order()
     est = courier.estimate_for_order(order, store=True)
-    assert est == {"value_q": 1250, "minutes": 18.0, "km": 4.2}
+    assert est == {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": False}
     order.refresh_from_db()
     assert courier.get_block(order)["estimate"] == est
     # segunda chamada vem do cache (adapter não é consultado)
@@ -848,6 +848,51 @@ def test_ride_observation_says_what_to_charge_at_the_door(shop, payment, expecte
     body = courier.build_machine_payload(order)
     assert body["paradas"][0]["observacao_parada"] == expected
     assert body["paradas"][0]["id_externo"] == "CR-1"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_auto_call_on_ready_waits_for_the_operator_when_the_card_machine_goes(shop):
+    """A maquininha só sai escolhida pelo operador: o pronto automático avisa, não chama."""
+    card = _delivery_order(ref="CR-CARD", payment={"method": "credit", "collection": "on_delivery"})
+    assert courier.request_auto_dispatch(card) is None
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref="CR-CARD").exists()
+    alert = OperatorAlert.objects.get(order_ref="CR-CARD", type="courier_dispatch_failed")
+    assert "maquininha" in alert.message
+
+    paid = _delivery_order(ref="CR-PAID", payment={"method": "pix", "status": "captured"})
+    assert courier.request_auto_dispatch(paid) is not None
+
+
+@pytest.mark.parametrize(("payment", "dispatch", "expected"), [
+    ({"method": "cash", "collection": "on_delivery", "change_for_q": 10000}, {}, True),
+    ({"method": "cash", "collection": "on_delivery"}, {}, True),
+    ({"method": "credit", "collection": "on_delivery"}, {}, True),
+    ({"method": "pix", "status": "captured"}, {}, False),
+    ({"method": "cash", "collection": "on_delivery", "cod_settled_at": "2026-10-13T12:00:00+00:00"}, {}, False),
+    # Pago, mas a maquininha da casa saiu com ele: ela tem de voltar.
+    ({"method": "pix", "status": "captured"}, {"equipment": ["card_machine"]}, True),
+])
+def test_ride_asks_return_when_courier_brings_something_back(shop, payment, dispatch, expected):
+    order = _delivery_order(ref="CR-1", payment=payment, dispatch=dispatch)
+    assert courier.build_machine_payload(order)["retorno"] is expected
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_quote_asks_the_same_return_the_ride_will_ask(shop, monkeypatch):
+    seen = []
+    real = courier_mock.estimate
+
+    def spy(**kwargs):
+        seen.append(kwargs["with_return"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(courier_mock, "estimate", spy)
+    paid = _delivery_order(ref="CR-PAID", payment={"method": "pix", "status": "captured"})
+    door = _delivery_order(ref="CR-DOOR", payment={"method": "cash", "collection": "on_delivery"})
+    assert courier.estimate_for_order(paid)["with_return"] is False
+    # Mesmo destino, outro retorno: o cache não serve a cotação só de ida.
+    assert courier.estimate_for_order(door)["with_return"] is True
+    assert seen == [False, True]
 
 
 def test_terminal_fact_recovers_local_failure_without_polling_provider(monkeypatch):

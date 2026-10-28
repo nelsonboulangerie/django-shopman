@@ -1311,6 +1311,9 @@ def _courier_block(order: Order) -> dict | None:
                 parts.append(f"{int(estimate['minutes'])} min")
             if estimate.get("km"):
                 parts.append(f"{float(estimate['km']):.1f} km".replace(".", ","))
+            if estimate.get("with_return"):
+                # A corrida volta à loja (cobrança na porta ou maquininha): o custo é de ida e volta.
+                parts.append("ida e volta")
             estimate_display = " · ".join(parts)
 
         position = None

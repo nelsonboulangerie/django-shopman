@@ -1481,6 +1481,12 @@ function printQueue() {
             @click="boardLayout.showAll()"
           />
         </template>
+        <!-- Onde está a maquininha: some quando todas estão na loja. -->
+        <EquipmentOutMenu
+          :items="queue?.equipment_out ?? []"
+          :is-busy="isBusy"
+          @back="equipmentBack"
+        />
         <!-- O som de pedido novo e o "Visto" que o cala formam um grupo só: o Visto
              aparece enquanto há pedido novo tocando e, reconhecido, some, deixando o
              botão do som sozinho. No posto Saída o Visto fica no ⋯. O som tem os

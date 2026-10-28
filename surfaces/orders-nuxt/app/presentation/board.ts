@@ -3,7 +3,10 @@
 // already screen-ready (status_label, timer_class, next_action_label, can_* flags
 // pre-resolved); this layer only derives the view shape, the functional-color tone,
 // and the action affordances. No status arithmetic (the backend owns the lifecycle).
-import type { EquipmentOptionProjection } from "~/generated/ordersContract";
+import type {
+  EquipmentOptionProjection,
+  EquipmentOutProjection,
+} from "~/generated/ordersContract";
 import type {
   OrderCardProjection,
   OrderTimerClass,
@@ -11,6 +14,7 @@ import type {
 } from "~/types/orders";
 // A custódia do entregador (troco, maquininha) mora no kit: o PDV chama o mesmo.
 import { freeMachines, moneyInput } from "../../../operator-kit/app/presentation/custody";
+import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
 // ── Status tone, ícone do canal e "fatos numa linha" ──────────────────────
 // Moram no kit (`operator-kit/app/presentation/orderDetail.ts`) porque o detalhe
@@ -1388,4 +1392,23 @@ export function stripSummary(
       return { text: cardClock(best.card, nowMs).text, tone: "warning" };
   }
   return { text: "", tone: "" };
+}
+
+// ── Maquininhas na rua (cabeçalho do Gestor) ───────────────────────────────
+
+/** "1 maquininha na rua", "2 maquininhas na rua": o rótulo do botão do cabeçalho. */
+export function equipmentOutLabel(count: number): string {
+  return count === 1 ? "1 maquininha na rua" : `${count} maquininhas na rua`;
+}
+
+/** Com quem a maquininha está: "Pedido A47 · Maria · saiu às 14:20". */
+export function equipmentOutLine(
+  item: Pick<EquipmentOutProjection, "order_ref" | "customer_name" | "out_at">,
+): string {
+  const outMs = item.out_at ? Date.parse(item.out_at) : Number.NaN;
+  return joinFacts(
+    `Pedido ${splitRef(item.order_ref).code}`,
+    item.customer_name,
+    Number.isFinite(outMs) ? `saiu às ${clockHHMM(outMs)}` : "",
+  );
 }

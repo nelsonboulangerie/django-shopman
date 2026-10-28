@@ -18,7 +18,6 @@ MACHINE = {
     "password": "pass-1",
     "api_key": "key-1",
     "forma_pagamento": "F",
-    "retorno": False,
     "timeout": 5,
     "cancel_reason_id": 1,
 }
@@ -101,6 +100,21 @@ def test_estimate_sends_the_address_the_delivery_api_requires():
         "cidade_desejado": "Londrina",
         "estado_desejado": "PR",
     }
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_estimate_with_return_asks_the_round_trip_price():
+    """``com_retorno`` é o retorno da cotação; sem ele a central cota só a ida."""
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_ok({"estimativa_valor": 18.0}),
+    ) as mock_request:
+        courier_machine.estimate(pickup={"lat": "-23.34", "lng": "-51.15"}, dropoff={"lat": "-23.31", "lng": "-51.16"})
+        assert "com_retorno" not in mock_request.call_args.kwargs["params"]
+        courier_machine.estimate(
+            pickup={"lat": "-23.34", "lng": "-51.15"}, dropoff={"lat": "-23.31", "lng": "-51.16"}, with_return=True,
+        )
+        assert mock_request.call_args.kwargs["params"]["com_retorno"] == "true"
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)

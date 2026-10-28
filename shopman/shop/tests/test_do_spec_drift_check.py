@@ -81,7 +81,6 @@ def test_machine_envs_born_from_the_file_are_declared_and_the_switch_is_not():
             ("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/api/integracao/v1"),
             ("MACHINE_FORMA_PAGAMENTO", "F"),
             ("MACHINE_CANCEL_REASON_ID", "1"),
-            ("MACHINE_RETORNO", "false"),
             ("MACHINE_TIMEOUT", "15"),
             ("MACHINE_API_USER", None),
             ("MACHINE_API_PASSWORD", None),
@@ -93,7 +92,7 @@ def test_machine_envs_born_from_the_file_are_declared_and_the_switch_is_not():
         {}, versioned, label="envs de app", expected_only_versioned=drift.EXPECTED_ONLY_VERSIONED
     )
     assert problems == []
-    assert len(expected) == 10
+    assert len(expected) == 9
     assert any("MACHINE_DETAILS_BASE" in line and "/api/integracao/v1" in line for line in expected)
 
     armed = {"SHOPMAN_COURIER_ADAPTER": _env("SHOPMAN_COURIER_ADAPTER", "shopman.shop.adapters.courier_machine")}
