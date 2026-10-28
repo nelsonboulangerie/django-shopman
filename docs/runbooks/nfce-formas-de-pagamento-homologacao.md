@@ -108,5 +108,5 @@ prioridade.
 | `03` crédito | PDV-261027-Z06 | 720 | autorizada (cStat 100), `<card><tpIntegra>2</tpIntegra></card>` |
 | `17` Pix da cobrança | PDV-261027-D55 | 721 | autorizada (cStat 100), `<card><tpIntegra>2</tpIntegra></card>` |
 | `01` dinheiro com troco | PDV-261027-J37 | 722 | autorizada (cStat 100), `vPag` 10,00, `vTroco` 1,00, `vNF` 9,00 |
-| `01` + `20` venda mista com "Recebi o Pix" | PDV-261027-N09 | sem nota | **rejeição 963** com o grupo `card` no `20`; corrigido no PR que acompanha esta tabela |
+| `01` + `20` venda mista com "Recebi o Pix" | PDV-261027-N09 | 723 | 27/10: **rejeição 963** com o grupo `card` no `20`. 28/10, depois do #2023 (o `20` sem grupo), "Reprocessar NFC-e" no Gestor: **autorizada** (protocolo 141260001773024), DANFE com "Dinheiro R$ 5,00" e "PIX Estático R$ 4,00" |
 | `99` outros | nenhum | nenhuma | não provado: o PDV não tem essa forma; sai de pedido iFood ou de cartão Stripe pré-pago |
