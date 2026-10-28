@@ -1041,7 +1041,7 @@ def partner_custody_asks(order: Order) -> dict:
 #: Chaves da custódia da chamada que saem do ``dispatch`` quando ela volta: a
 #: chamada seguinte registra a dela do zero, sem herdar a volta desta.
 _PARTNER_CUSTODY_KEYS = (
-    "collector", "custody_at", "custody_by", "equipment", "device_ref", "device_label",
+    "trip_ref", "collector", "custody_at", "custody_by", "equipment", "device_ref", "device_label",
     "equipment_out_at", "equipment_out_by", "equipment_back_at", "equipment_back_by",
 )
 
@@ -1131,6 +1131,8 @@ def record_partner_custody(
     change_out_q: int | None = None,
     cash_shift=None,
     equipment: list[str] | None = None,
+    trip_ref: str = "",
+    shared_device: dict | None = None,
 ) -> dict:
     """A custódia que sai com o entregador da TaOn, registrada na chamada.
 
@@ -1142,6 +1144,12 @@ def record_partner_custody(
     não lança nada de novo. ``dispatch.collector = "courier_partner"`` já fica
     gravado, para a trava de maquininha e para o acerto.
 
+    Corrida com várias paradas: ``trip_ref`` é a saída (o pedido da primeira
+    escolha), a mesma de :func:`trip_id`, e ``shared_device`` é a maquininha
+    que outro pedido da corrida já reservou (``{device_ref, device_label}``):
+    o pedido de cartão entra nela sem reservar outra. Um entregador, uma
+    maquininha, e o "Voltou" fecha todos os pedidos dela.
+
     Idempotente: com ``dispatch.custody_at`` gravado, não lança nada (a chamada
     repetida depois de uma corrida não aceita reaproveita a custódia).
     Pedido sem nada a levar (pago, sem troco, sem cartão) não grava nada.
@@ -1152,7 +1160,7 @@ def record_partner_custody(
     order.refresh_from_db()
     asks = partner_custody_asks(order)
     if asks["recorded"]:
-        return {"recorded": False, "change_out_q": 0, "device_ref": ""}
+        return {"recorded": False, "change_out_q": 0, "device_ref": "", "device_label": ""}
     suggested_q = asks["change_out_suggested_q"]
     if change_out_q is None and suggested_q > 0:
         raise ChangeOutRequired(suggested_q)
@@ -1164,14 +1172,16 @@ def record_partner_custody(
     from shopman.shop.adapters import delivery_devices
 
     taken, device_fields = [], {}
-    if asks["needs_machine"] or equipment:
+    if shared_device and asks["needs_machine"]:
+        taken, device_fields = ["card_machine"], dict(shared_device)
+    elif asks["needs_machine"] or equipment:
         taken = _clean_equipment(order, equipment)
         device = delivery_devices.allocate(order, taken, allowed=equipment_options(order.channel_ref or ""))
         if device:
             device_fields = {"device_ref": str(device.ref), "device_label": device.label}
             taken = [ref for ref in taken if not ref.startswith(delivery_devices.reference_prefix())] + ["card_machine"]
     if not taken and change_out <= 0:
-        return {"recorded": False, "change_out_q": 0, "device_ref": ""}
+        return {"recorded": False, "change_out_q": 0, "device_ref": "", "device_label": ""}
 
     now = timezone_now_iso()
     data = dict(order.data or {})
@@ -1180,6 +1190,7 @@ def record_partner_custody(
         "collector": "courier_partner",
         "custody_at": now,
         "custody_by": actor,
+        **({"trip_ref": trip_ref} if trip_ref and trip_ref != order.ref else {}),
         **({"equipment": taken, **device_fields, "equipment_out_at": now, "equipment_out_by": actor} if taken else {}),
     }
     order.data = data
@@ -1202,7 +1213,8 @@ def record_partner_custody(
         )
     order.emit_event(event_type="partner_custody_recorded", actor=actor,
         payload={"change_out_q": change_out, "equipment": taken, **device_fields})
-    return {"recorded": True, "change_out_q": change_out, "device_ref": device_fields.get("device_ref", "")}
+    return {"recorded": True, "change_out_q": change_out, "device_ref": device_fields.get("device_ref", ""),
+            "device_label": device_fields.get("device_label", "")}
 
 
 def courier_change_by_order(order_refs) -> dict[str, tuple[int, int | None]]:

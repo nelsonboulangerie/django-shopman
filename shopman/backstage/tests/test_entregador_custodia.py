@@ -302,3 +302,84 @@ def test_corrida_recusada_nao_tira_nada_da_gaveta(client, operator):
         orders_service.courier_dispatch(Order.objects.get(ref="DLV-0440"), actor="marina",
             operator=operator, change_out_raw="26,00")
     assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).exists()
+
+
+# ── Uma corrida para vários pedidos: a corrida é uma saída ─────────────────
+
+
+def _ride(client, refs, **body):
+    return client.post(reverse("api-backstage-order-courier-ride"), {"refs": refs, **body},
+        content_type="application/json")
+
+
+def test_corrida_conjunta_leva_troco_de_cada_pedido_e_uma_maquininha_so(client, operator, machines):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    _order("RIDE-C", method="debit")
+    azul = machines[0]
+
+    response = _ride(client, ["RIDE-A", "RIDE-B", "RIDE-C"],
+        change_out={"RIDE-B": "26,00"}, machine=f"{PREFIX}{azul.ref}")
+    assert response.status_code == 200, response.json()
+
+    # Uma solicitação, que pede retorno: a maquininha e o dinheiro voltam à loja.
+    CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
+    (ride,) = courier_mock.rides().values()
+    assert ride["payload"]["retorno"] is True
+    assert len(ride["payload"]["paradas"]) == 3
+
+    # O troco sai da gaveta só pelo pedido que pede, no turno de quem chamou.
+    (line,) = Entry.objects.filter(kind=Entry.Kind.COURIER_OUT)
+    assert (line.order_ref, line.amount_q) == ("RIDE-B", -2600)
+    # Uma maquininha para a corrida: o primeiro pedido de cartão a reserva, o
+    # outro entra nela. Os três pedidos são a mesma saída.
+    a, b, c = (Order.objects.get(ref=ref) for ref in ("RIDE-A", "RIDE-B", "RIDE-C"))
+    azul.refresh_from_db()
+    assert azul.current_order_id == a.pk
+    assert a.data["dispatch"]["device_ref"] == c.data["dispatch"]["device_ref"] == str(azul.ref)
+    assert "equipment" not in b.data["dispatch"]
+    assert {operator_orders.trip_id(order) for order in (a, b, c)} == {"RIDE-A"}
+
+    # A TaOn coleta: os três saem, sem lançar nada de novo.
+    for order in (a, b, c):
+        courier.apply_status(order, "E", source="webhook")
+        order.refresh_from_db()
+        assert order.status == "dispatched"
+    assert Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).count() == 1
+
+    # A maquininha volta uma vez, para os dois pedidos de cartão.
+    operator_orders.mark_equipment_returned(c, actor="operator:marina")
+    azul.refresh_from_db()
+    assert azul.current_order_id is None
+    for order in (a, c):
+        order.refresh_from_db()
+        assert operator_orders.equipment_custody(order).pending is False
+
+
+def test_corrida_conjunta_sem_maquininha_ou_sem_troco_nao_chama_nem_tira_da_gaveta(client, operator, machines):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+
+    response = _ride(client, ["RIDE-A", "RIDE-B"], change_out={"RIDE-B": "26,00"})
+    assert response.status_code == 409
+    assert "Pedido A" in response.json()["detail"]
+
+    response = _ride(client, ["RIDE-A", "RIDE-B"], machine=f"{PREFIX}{machines[0].ref}")
+    assert response.status_code == 409
+    assert response.json()["code"] == "change_out_required"
+    assert "O pedido B pede troco" in response.json()["detail"]
+
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).exists()
+    machines[0].refresh_from_db()
+    assert machines[0].current_order_id is None
+
+
+def test_fila_diz_o_que_cada_entrega_da_corrida_pergunta(client, operator):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    queue = client.get(reverse("api-backstage-orders")).json()["queue"]
+    assert queue["ride_candidates"] == [
+        {"ref": "RIDE-A", "change_out_suggested_q": 0, "needs_machine": True},
+        {"ref": "RIDE-B", "change_out_suggested_q": 2600, "needs_machine": False},
+    ]

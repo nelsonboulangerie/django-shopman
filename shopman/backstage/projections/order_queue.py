@@ -200,6 +200,20 @@ class EquipmentOutProjection:
 
 
 @dataclass(frozen=True)
+class RideCandidateProjection:
+    """Uma entrega pronta que pode entrar numa corrida da TaOn com outras.
+
+    O que a chamada pergunta dela (``partner_custody_asks``):
+    ``change_out_suggested_q`` é o troco sugerido da gaveta (zero: não
+    pergunta) e ``needs_machine`` diz que a corrida leva a maquininha.
+    """
+
+    ref: str
+    change_out_suggested_q: int = 0
+    needs_machine: bool = False
+
+
+@dataclass(frozen=True)
 class UndoProjection:
     """O que o sistema fez (ou o operador tocou) e ainda pode ser desfeito.
 
@@ -832,9 +846,9 @@ class TwoZoneQueueProjection:
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
     equipment_available: tuple[EquipmentOptionProjection, ...] = ()
     # Entregas prontas que podem ir juntas numa corrida da TaOn (uma parada por
-    # pedido): sem corrida, sem maquininha e sem troco da gaveta
-    # (``courier.group_refusal``). Com duas ou mais, a Saída oferece a corrida.
-    ride_candidates: tuple[str, ...] = ()
+    # pedido, ``courier.group_refusal``), com o troco e a maquininha que a
+    # chamada pergunta. Com duas ou mais, a Saída oferece a corrida.
+    ride_candidates: tuple[RideCandidateProjection, ...] = ()
 
     ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
     # A coluna ao lado da Fila: o que o sistema fez nos últimos minutos e o estado
@@ -2256,7 +2270,7 @@ def _trip_fields(order: Order) -> dict:
     return {"trip_with": others, "courier_return_orders": back.orders, "courier_return_lines": tuple(lines)}
 
 
-def _ride_candidates(orders) -> tuple[str, ...]:
+def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:
     """As entregas prontas que podem entrar juntas numa corrida (ordem da fila)."""
     from shopman.shop.adapters import get_adapter
     from shopman.shop.services import courier
@@ -2264,7 +2278,16 @@ def _ride_candidates(orders) -> tuple[str, ...]:
     orders = list(orders)
     if len(orders) < 2 or get_adapter("courier") is None:
         return ()
-    return tuple(order.ref for order in orders if not courier.group_refusal(order))
+    rows = []
+    for order in orders:
+        if courier.group_refusal(order):
+            continue
+        asks = operator_orders.partner_custody_asks(order)
+        rows.append(RideCandidateProjection(
+            ref=order.ref, change_out_suggested_q=int(asks["change_out_suggested_q"]),
+            needs_machine=bool(asks["needs_machine"]),
+        ))
+    return tuple(rows) if len(rows) >= 2 else ()
 
 
 def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:

@@ -113,6 +113,7 @@ from shopman.backstage.projections.order_queue import (
     OperatorOrderProjection,
     OrderCardProjection,
     OrderQueueProjection,
+    RideCandidateProjection,
     TwoZoneQueueProjection,
     UndoProjection,
 )
@@ -168,6 +169,7 @@ CONTRACT_DATACLASSES = (
     CancellationPresetGroupProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
+    RideCandidateProjection,
     ContactRequestProjection,
     CustomerProfileProjection,
     UndoProjection,

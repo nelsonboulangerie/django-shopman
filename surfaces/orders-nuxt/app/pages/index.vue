@@ -25,6 +25,7 @@ import {
   oneTapDispatch,
   realtimeIndicator,
   resolveShortcut,
+  rideChoices,
   rowsToCsv,
   SORT_OPTIONS,
   splitRef,
@@ -242,13 +243,12 @@ const negotiationCards = computed(
   () => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[],
 );
 // As entregas prontas que podem ir juntas numa corrida, como cards (ordem da fila).
-const rideCandidates = computed<OrderCardProjection[]>(() => {
-  const refs = queue.value?.ride_candidates ?? [];
-  const cards = queue.value?.expedition_delivery ?? [];
-  return refs
-    .map((ref_) => cards.find((card) => card.ref === ref_))
-    .filter((card): card is OrderCardProjection => Boolean(card));
-});
+const rideCandidates = computed(() =>
+  rideChoices(
+    queue.value?.ride_candidates ?? [],
+    queue.value?.expedition_delivery ?? [],
+  ),
+);
 const allCards = computed<OrderCardProjection[]>(() =>
   zones.value.flatMap((z) => z.cards),
 );
@@ -1490,7 +1490,7 @@ function printQueue() {
           />
         </template>
         <!-- Uma corrida da TaOn para várias entregas prontas: some com menos de duas. -->
-        <CourierRideMenu :candidates="rideCandidates" @done="refresh()" />
+        <CourierRideMenu :choices="rideCandidates" @done="refresh()" />
         <!-- Onde está a maquininha: some quando todas estão na loja. -->
         <EquipmentOutMenu
           :items="queue?.equipment_out ?? []"

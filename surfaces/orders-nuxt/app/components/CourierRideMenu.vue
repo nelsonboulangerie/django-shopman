@@ -1,31 +1,67 @@
 <script setup lang="ts">
 // Uma corrida da TaOn para várias entregas prontas: o botão do cabeçalho aparece
-// com duas ou mais que podem ir juntas (`ride_candidates`: sem corrida, sem
-// maquininha e sem troco da gaveta) e abre a escolha. A TaOn leva os pedidos numa
-// solicitação só, na ordem do percurso; o custo é da casa e o frete do cliente
-// não muda. A recusa do servidor (pedido que mudou) aparece aqui mesmo.
-import type { OrderCardProjection } from "~/types/orders";
+// com duas ou mais que podem ir juntas (`ride_candidates`) e abre a escolha. A
+// TaOn leva os pedidos numa solicitação só, na ordem do percurso; o custo é da
+// casa e o frete do cliente não muda. A corrida é uma saída: o troco sai da
+// gaveta pedido a pedido e a maquininha é uma só para todos os pedidos de
+// cartão (o "Voltou" fecha todos). A recusa do servidor aparece aqui mesmo.
 import {
+  courierRideBody,
+  courierRideCallLabel,
   courierRideLabel,
   courierRideLine,
+  machinesOutSentence,
   MAX_RIDE_STOPS,
+  rideChangeDefaults,
+  splitRef,
+  type RideChoice,
 } from "~/presentation/board";
+import { freeMachines } from "../../../operator-kit/app/presentation/custody";
 
-const props = defineProps<{ candidates: OrderCardProjection[] }>();
+const props = defineProps<{ choices: RideChoice[] }>();
 const emit = defineEmits<{ done: [] }>();
 
 const open = ref(false);
 const picked = ref<string[]>([]);
+const changeOut = ref<Record<string, string>>({});
+const machineRef = ref<string | undefined>();
 const sending = ref(false);
 const failure = ref("");
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
   failure.value = "";
-  picked.value = props.candidates
+  picked.value = props.choices
     .slice(0, MAX_RIDE_STOPS)
-    .map((card) => card.ref);
+    .map((choice) => choice.card.ref);
+  changeOut.value = rideChangeDefaults(props.choices);
+  machineRef.value = undefined;
 });
+
+const chosen = computed(() =>
+  props.choices.filter((choice) => picked.value.includes(choice.card.ref)),
+);
+const asksChange = computed(() =>
+  chosen.value.filter((choice) => choice.change_out_suggested_q > 0),
+);
+// As maquininhas do canal, como o despacho lê: do card de cartão escolhido.
+const machineCard = computed(
+  () => chosen.value.find((choice) => choice.needs_machine)?.card ?? null,
+);
+const needsMachine = computed(() => machineCard.value !== null);
+const machines = computed(() => machineCard.value?.equipment_options ?? []);
+const free = computed(() => freeMachines(machines.value));
+// Uma livre: vai ela. Duas ou mais: o operador escolhe pela cor.
+const machine = computed(() =>
+  !needsMachine.value
+    ? undefined
+    : free.value.length === 1
+      ? free.value[0]
+      : free.value.find((opt) => opt.ref === machineRef.value),
+);
+const canCall = computed(
+  () => picked.value.length >= 2 && (!needsMachine.value || !!machine.value),
+);
 
 function toggle(ref_: string, on: boolean) {
   picked.value = on
@@ -39,7 +75,12 @@ async function call() {
   try {
     await $fetch("/api/v1/backstage/orders/courier-ride/", {
       method: "POST",
-      body: { refs: picked.value },
+      body: courierRideBody(
+        picked.value,
+        props.choices,
+        changeOut.value,
+        machine.value?.ref,
+      ),
     });
     open.value = false;
     emit("done");
@@ -52,47 +93,95 @@ async function call() {
     sending.value = false;
   }
 }
+const code = (ref_: string) => splitRef(ref_).code;
 </script>
 
 <template>
   <NuxtPopover
-    v-if="props.candidates.length >= 2"
+    v-if="props.choices.length >= 2"
     v-model:open="open"
     :content="{ align: 'end' }"
   >
     <NuxtButton
       icon="i-lucide-route"
-      :label="courierRideLabel(props.candidates.length)"
+      :label="courierRideLabel(props.choices.length)"
       color="neutral"
       variant="outline"
       data-courier-ride-menu
     />
     <template #content>
-      <div class="w-80 space-y-3 p-4" data-courier-ride-panel>
+      <div class="w-96 space-y-3 p-4" data-courier-ride-panel>
         <p class="op-body">
           Uma corrida da TaOn leva estas entregas, na ordem do percurso. O frete
           do cliente não muda.
         </p>
         <div class="space-y-2">
           <NuxtCheckbox
-            v-for="card in props.candidates"
-            :key="card.ref"
-            :model-value="picked.includes(card.ref)"
-            :label="courierRideLine(card)"
-            :description="card.delivery_address"
+            v-for="choice in props.choices"
+            :key="choice.card.ref"
+            :model-value="picked.includes(choice.card.ref)"
+            :label="courierRideLine(choice.card)"
+            :description="choice.card.delivery_address"
             :disabled="
-              !picked.includes(card.ref) && picked.length >= MAX_RIDE_STOPS
+              !picked.includes(choice.card.ref) &&
+              picked.length >= MAX_RIDE_STOPS
             "
             data-courier-ride-order
-            @update:model-value="(on) => toggle(card.ref, Boolean(on))"
+            @update:model-value="(on) => toggle(choice.card.ref, Boolean(on))"
           />
         </div>
         <p
-          v-if="props.candidates.length > MAX_RIDE_STOPS"
+          v-if="props.choices.length > MAX_RIDE_STOPS"
           class="op-micro text-muted-foreground"
         >
           Uma corrida leva até {{ MAX_RIDE_STOPS }} pedidos.
         </p>
+
+        <!-- troco que o entregador leva da gaveta, por pedido que pede -->
+        <NuxtFormField
+          v-for="choice in asksChange"
+          :key="`change-${choice.card.ref}`"
+          :label="`Troco do pedido ${code(choice.card.ref)}${choice.card.change_label ? ` (${choice.card.change_label})` : ''}`"
+          data-courier-ride-change
+        >
+          <NuxtInput
+            v-model="changeOut[choice.card.ref]"
+            class="w-full"
+            type="text"
+            inputmode="decimal"
+            icon="i-lucide-circle-dollar-sign"
+            :aria-label="`Troco que o entregador leva no pedido ${code(choice.card.ref)}`"
+          />
+        </NuxtFormField>
+
+        <!-- a maquininha da corrida: uma só para todos os pedidos de cartão -->
+        <div
+          v-if="needsMachine && free.length >= 2"
+          class="flex flex-col gap-1.5"
+          data-courier-ride-machine
+        >
+          <p class="op-body font-medium">Qual maquininha vai na corrida?</p>
+          <div class="grid grid-cols-2 gap-2">
+            <NuxtButton
+              v-for="opt in free"
+              :key="opt.ref"
+              type="button"
+              :label="opt.label"
+              :color="machineRef === opt.ref ? 'primary' : 'neutral'"
+              :variant="machineRef === opt.ref ? 'solid' : 'outline'"
+              @click="machineRef = opt.ref"
+            />
+          </div>
+        </div>
+        <p
+          v-else-if="needsMachine && !free.length"
+          class="op-body"
+          data-courier-ride-no-machine
+        >
+          {{ machinesOutSentence(machines) }} Tire da corrida o pedido de cartão
+          ou espere a maquininha voltar.
+        </p>
+
         <NuxtAlert
           v-if="failure"
           color="error"
@@ -103,9 +192,14 @@ async function call() {
         <NuxtButton
           block
           icon="i-lucide-bike"
-          :label="`Chamar uma corrida para ${picked.length} pedidos`"
+          :label="
+            courierRideCallLabel(
+              picked.length,
+              machine ? machine.label : undefined,
+            )
+          "
           :loading="sending"
-          :disabled="picked.length < 2"
+          :disabled="!canCall"
           data-courier-ride-call
           @click="call"
         />

@@ -11,7 +11,11 @@ import {
   channelOptions,
   elapsedLabel,
   courierRideLabel,
+  courierRideBody,
+  courierRideCallLabel,
   courierRideLine,
+  rideChangeDefaults,
+  rideChoices,
   equipmentOutLabel,
   MAX_RIDE_STOPS,
   equipmentOutLine,
@@ -609,11 +613,17 @@ describe("rowsToCsv", () => {
   // `readingCsvText`, o mesmo do "Exportar CSV deste quadro").
   it("sai como a planilha em português lê: ';' entre colunas, vírgula no valor, BOM", () => {
     const csv = rowsToCsv([
-      { card: card({ ref: "A", total_display: "R$ 1.234,50" }), zoneKey: "intake" as const, zoneTitle: "Entrada" },
+      {
+        card: card({ ref: "A", total_display: "R$ 1.234,50" }),
+        zoneKey: "intake" as const,
+        zoneTitle: "Entrada",
+      },
     ]);
     expect(csv.startsWith("﻿")).toBe(true);
     const [header, line] = csv.slice(1).split("\n");
-    expect(header).toBe("Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente");
+    expect(header).toBe(
+      "Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente",
+    );
     expect(line!.split(";")).toHaveLength(8);
     expect(line).toContain(";R$ 1.234,50;");
   });
@@ -872,7 +882,9 @@ describe("situationAfterContinua: a situação depois de “<REF> continua” (d
     expect(situationAfterContinua("Pronto")).toBe("pronto");
   });
   it("“Saiu para entrega” é verbo: entra como o nome do estado, entre aspas, sem apelido", () => {
-    expect(situationAfterContinua("Saiu para entrega")).toBe("em “Saiu para entrega”");
+    expect(situationAfterContinua("Saiu para entrega")).toBe(
+      "em “Saiu para entrega”",
+    );
   });
   it("sem rótulo, sem situação", () => {
     expect(situationAfterContinua("")).toBe("");
@@ -904,5 +916,60 @@ describe("uma corrida para várias entregas", () => {
       "Pedido A47 · Maria",
     );
     expect(MAX_RIDE_STOPS).toBe(4);
+  });
+});
+
+describe("a corrida conjunta pergunta o troco e a maquininha", () => {
+  const card = (ref_: string) =>
+    ({ ref: ref_, customer_name: "" }) as unknown as OrderCardProjection;
+  const choices = rideChoices(
+    [
+      { ref: "WEB-A", change_out_suggested_q: 0, needs_machine: true },
+      { ref: "WEB-B", change_out_suggested_q: 2600, needs_machine: false },
+      { ref: "WEB-GONE", change_out_suggested_q: 0, needs_machine: false },
+    ],
+    [card("WEB-A"), card("WEB-B"), card("WEB-C")],
+  );
+
+  it("liga cada candidata ao seu card e sugere o troco", () => {
+    expect(choices.map((choice) => choice.card.ref)).toEqual([
+      "WEB-A",
+      "WEB-B",
+    ]);
+    expect(rideChangeDefaults(choices)).toEqual({ "WEB-B": "26,00" });
+  });
+
+  it("manda troco só de quem pede e a maquininha só com pedido de cartão", () => {
+    expect(
+      courierRideBody(
+        ["WEB-A", "WEB-B"],
+        choices,
+        { "WEB-B": " " },
+        "card_machine:1",
+      ),
+    ).toEqual({
+      refs: ["WEB-A", "WEB-B"],
+      change_out: { "WEB-B": "0" },
+      machine: "card_machine:1",
+    });
+    expect(
+      courierRideBody(
+        ["WEB-B"],
+        choices,
+        { "WEB-B": "30,00" },
+        "card_machine:1",
+      ),
+    ).toEqual({
+      refs: ["WEB-B"],
+      change_out: { "WEB-B": "30,00" },
+      machine: "",
+    });
+  });
+
+  it("o botão diz a maquininha que vai", () => {
+    expect(courierRideCallLabel(3)).toBe("Chamar uma corrida para 3 pedidos");
+    expect(courierRideCallLabel(2, "Azul")).toBe(
+      "Chamar uma corrida para 2 pedidos com a maquininha Azul",
+    );
   });
 });

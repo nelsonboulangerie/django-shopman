@@ -524,7 +524,7 @@ MAX_RIDE_STOPS = 4
 
 def group_refusal(order) -> str:
     """Por que este pedido não entra numa corrida com outros ("" quando entra)."""
-    from shopman.shop.services.operator_orders import partner_custody_asks, short_ref
+    from shopman.shop.services.operator_orders import short_ref
 
     code = short_ref(order.ref)
     if get_adapter("courier") is None:
@@ -539,10 +539,6 @@ def group_refusal(order) -> str:
         return f"O pedido {code} já tem corrida."
     if unresolved_dispatch(order) is not None:
         return f"O pedido {code} tem uma chamada sem resposta da TaOn. Confira na central antes."
-    asks = partner_custody_asks(order)
-    if not asks["recorded"] and (asks["needs_machine"] or asks["change_out_suggested_q"] > 0):
-        what = "a maquininha" if asks["needs_machine"] else "troco da gaveta"
-        return f"O pedido {code} leva {what}: chame o entregador dele pelo pedido."
     return ""
 
 
@@ -552,8 +548,9 @@ def request_group_dispatch(orders, *, actor: str) -> Directive:
 
     Junta entregas próximas e dilui o custo da casa (o frete do cliente não
     muda). Cada pedido entra só se pudesse ser chamado sozinho
-    (:func:`group_refusal`); o que leva maquininha ou troco da gaveta fica de
-    fora, porque a custódia é perguntada pedido a pedido. Uma tarefa
+    (:func:`group_refusal`). A custódia (troco da gaveta por pedido, uma
+    maquininha para a corrida) é de quem chama, na mesma transação
+    (``backstage.services.orders.courier_group_dispatch``). Uma tarefa
     ``courier.dispatch`` só, com ``ride_members``; a corrida aberta é gravada em
     cada pedido, com ``ride_orders`` na ordem das paradas.
     """
@@ -846,6 +843,11 @@ def _archive_current_ride(block: dict) -> None:
             "requested_at": block.get("requested_at", ""),
             "status_at": dict(block.get("status_at") or {}),
             "ended_at": timezone.now().isoformat(),
+            # O custo fica com a corrida: o B.I. soma o que a casa pagou à TaOn,
+            # inclusive a corrida que terminou antes de outra chamada.
+            **({"final_value_q": block["final_value_q"]} if block.get("final_value_q") is not None else {}),
+            **({"estimate": dict(block["estimate"])} if block.get("status") == "F" and block.get("estimate") else {}),
+            **({"ride_orders": list(block["ride_orders"])} if block.get("ride_orders") else {}),
         }
     )
     block["attempts"] = attempts

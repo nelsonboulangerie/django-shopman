@@ -420,12 +420,10 @@ def test_board_offers_one_ride_for_ready_deliveries_and_calls_it(client, operato
     paid = {"method": "pix", "status": "captured"}
     first = _delivery_order(ref="CRB-R1", payment=paid)
     second = _delivery_order(ref="CRB-R2", payment=paid)
-    # Cartão na porta leva a maquininha: fica fora da corrida conjunta.
-    _delivery_order(ref="CRB-R3", payment={"method": "credit", "collection": "on_delivery"})
     client.force_login(operator)
 
     queue = client.get(reverse("api-backstage-orders")).json()["queue"]
-    assert queue["ride_candidates"] == ["CRB-R1", "CRB-R2"]
+    assert [row["ref"] for row in queue["ride_candidates"]] == ["CRB-R1", "CRB-R2"]
 
     response = client.post(reverse("api-backstage-order-courier-ride"),
                            {"refs": ["CRB-R1", "CRB-R2"]}, content_type="application/json")

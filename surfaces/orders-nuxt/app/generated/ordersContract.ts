@@ -386,6 +386,13 @@ export interface EquipmentOutProjection {
   identified: boolean;
 }
 
+/** Uma entrega pronta que pode entrar numa corrida da TaOn com outras. */
+export interface RideCandidateProjection {
+  ref: string;
+  change_out_suggested_q: number;
+  needs_machine: boolean;
+}
+
 /** Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável. */
 export interface ContactRequestProjection {
   rating: number;
@@ -794,7 +801,7 @@ export interface TwoZoneQueueProjection {
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
-  ride_candidates: string[];
+  ride_candidates: RideCandidateProjection[];
   ifood_negotiation_orders: OrderCardProjection[];
   awareness: QueueAwarenessProjection | null;
 }

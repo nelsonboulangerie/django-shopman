@@ -8342,7 +8342,7 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_courier_group_ride.py::test_ride_refuses_an_order_that_takes_the_card_machine"
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_takes_an_order_that_takes_the_card_machine"
       ],
       "test_gap_reason": null,
       "policy": false,
