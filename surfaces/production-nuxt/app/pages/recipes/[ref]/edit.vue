@@ -119,9 +119,9 @@ const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.it
 
 // ── Itens ───────────────────────────────────────────────────────────────────
 const quantityRules: Record<FormulaUnit, { step: number; min: number; maximumFractionDigits: number }> = {
-  g: { step: 1, min: 0.001, maximumFractionDigits: 3 },
+  g: { step: 1, min: 1, maximumFractionDigits: 0 },
   kg: { step: 0.001, min: 0.001, maximumFractionDigits: 3 },
-  ml: { step: 1, min: 0.001, maximumFractionDigits: 3 },
+  ml: { step: 1, min: 1, maximumFractionDigits: 0 },
   L: { step: 0.001, min: 0.001, maximumFractionDigits: 3 },
   un: { step: 1, min: 1, maximumFractionDigits: 0 },
 };
@@ -132,13 +132,20 @@ const roleEditorIndex = ref<number | null>(null);
 function quantityRule(unit: FormulaUnit) {
   return quantityRules[unit];
 }
+function normalizedQuantity(value: number, unit: FormulaUnit): number {
+  const precision = quantityRules[unit].maximumFractionDigits;
+  const factor = 10 ** precision;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
 function convertedQuantity(quantity: number, from: FormulaUnit, to: FormulaUnit): number | null {
   const factors = massFactor[from] && massFactor[to] ? massFactor : volumeFactor[from] && volumeFactor[to] ? volumeFactor : null;
   if (!factors) return from === to ? quantity : null;
   return Number((quantity * (factors[from] ?? 1) / (factors[to] ?? 1)).toFixed(3));
 }
 function onItemQuantity(index: number, value: number | null | undefined) {
-  formula.value = updateItem(formula.value, index, { quantity: value ?? 0 });
+  const item = formula.value.items[index];
+  if (!item) return;
+  formula.value = updateItem(formula.value, index, { quantity: value == null ? 0 : normalizedQuantity(value, item.unit) });
 }
 function onItemUnit(index: number, unit: string) {
   const item = formula.value.items[index];
@@ -754,6 +761,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Quantidade
                     <NuxtInputNumber
+                      :key="`quantity-${item.sku || index}-${item.unit}`"
                       :model-value="item.quantity || null"
                       :min="quantityRule(item.unit).min"
                       :step="quantityRule(item.unit).step"

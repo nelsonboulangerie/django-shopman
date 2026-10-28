@@ -74,6 +74,13 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByText("Papel na fórmula:", { exact: true })).toBeVisible();
   await expect(page.getByText("Farinha", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Unidade de Farinha T65")).toContainText("kg");
+  const ingredientQuantity = page.getByLabel("Quantidade", { exact: true });
+  await ingredientQuantity.fill("0,002");
+  await page.getByLabel("Unidade de Farinha T65").click();
+  await page.getByRole("option", { name: "g", exact: true }).click();
+  await expect(ingredientQuantity).toHaveValue("2");
+  await page.getByRole("button", { name: "Incrementar", exact: true }).click();
+  await expect(ingredientQuantity).toHaveValue("3");
   await page.getByRole("button", { name: "Alterar papel na fórmula de Farinha T65" }).click();
   await expect(page.getByLabel("Papel na fórmula de Farinha T65")).toBeVisible();
 
