@@ -16,6 +16,7 @@ const props = defineProps<{
   candidates?: IngredientOptionProjection[];
   placeholder?: string;
   disabled?: boolean;
+  autoOpen?: boolean;
 }>();
 const emit = defineEmits<{
   "update:modelValue": [value: string];
@@ -26,6 +27,13 @@ const { options, pending, run, search, reset } = useIngredientSearch();
 const term = ref("");
 const open = ref(false);
 watch(term, (value) => search(value));
+watch(
+  () => props.autoOpen,
+  (shouldOpen) => {
+    if (shouldOpen) nextTick(() => { open.value = true; });
+  },
+  { immediate: true },
+);
 watch(open, (isOpen) => {
   if (isOpen && !props.candidates?.length && !options.value.length && !pending.value) void run("");
 });

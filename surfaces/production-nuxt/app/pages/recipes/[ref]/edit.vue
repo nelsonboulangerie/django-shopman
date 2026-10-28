@@ -128,6 +128,7 @@ const quantityRules: Record<FormulaUnit, { step: number; min: number; maximumFra
 const massFactor: Partial<Record<FormulaUnit, number>> = { g: 1, kg: 1000 };
 const volumeFactor: Partial<Record<FormulaUnit, number>> = { ml: 1, L: 1000 };
 const roleEditorIndex = ref<number | null>(null);
+const newIngredientIndex = ref<number | null>(null);
 const yieldQuantityNumber = computed<number | null>({
   get: () => {
     const value = Number(String(yieldQuantity.value).replace(",", "."));
@@ -150,6 +151,11 @@ function convertedQuantity(quantity: number, from: FormulaUnit, to: FormulaUnit)
   const factors = massFactor[from] && massFactor[to] ? massFactor : volumeFactor[from] && volumeFactor[to] ? volumeFactor : null;
   if (!factors) return from === to ? quantity : null;
   return Number((quantity * (factors[from] ?? 1) / (factors[to] ?? 1)).toFixed(3));
+}
+function formulaDefaultUnit(unit: string): FormulaUnit {
+  if (unit === "kg" || unit === "g") return "g";
+  if (unit === "L" || unit === "ml") return "ml";
+  return "un";
 }
 function onItemQuantity(index: number, value: number | null | undefined) {
   const item = formula.value.items[index];
@@ -197,7 +203,7 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
   // decide apenas qual estrutura o motor recebe. Não obriga o operador a saber,
   // antes de buscar, se o ingrediente é comprado ou produzido pela casa.
   if (option.is_part) {
-    const partUnit = UNIT_OPTIONS.includes(option.unit as FormulaUnit) ? option.unit as FormulaUnit : item.unit;
+    const partUnit = formulaDefaultUnit(option.unit);
     const partQuantity = convertedQuantity(item.quantity, item.unit, partUnit) ?? item.quantity;
     const part = {
       ...emptyPart("preferment"),
@@ -207,17 +213,17 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
       unit: partUnit,
     };
     formula.value = addPart(removeItem(formula.value, index), part);
+    newIngredientIndex.value = null;
     return;
   }
   const patch: Partial<typeof item> = { sku: option.sku, name: option.name };
   if (ROLE_OPTIONS.some((role) => role.value === option.role)) patch.role = option.role as IngredientRole;
-  if (UNIT_OPTIONS.includes(option.unit as FormulaUnit)) {
-    const nextUnit = option.unit as FormulaUnit;
-    patch.quantity = convertedQuantity(item.quantity, item.unit, nextUnit) ?? item.quantity;
-    patch.unit = nextUnit;
-  }
+  const nextUnit = formulaDefaultUnit(option.unit);
+  patch.quantity = convertedQuantity(item.quantity, item.unit, nextUnit) ?? item.quantity;
+  patch.unit = nextUnit;
   formula.value = updateItem(formula.value, index, patch);
   roleEditorIndex.value = null;
+  newIngredientIndex.value = null;
 }
 function itemMatchedName(index: number): string {
   const item = formula.value.items[index];
@@ -225,15 +231,18 @@ function itemMatchedName(index: number): string {
   return lens.value?.items.find((row) => row.sku === item.sku)?.name || item.name || item.sku;
 }
 function addIngredient() {
+  newIngredientIndex.value = formula.value.items.length;
   formula.value = addItem(formula.value, emptyItem());
 }
 function remove(index: number) {
   formula.value = removeItem(formula.value, index);
   roleEditorIndex.value = null;
+  newIngredientIndex.value = null;
 }
 function move(index: number, delta: number) {
   formula.value = moveItem(formula.value, index, index + delta);
   roleEditorIndex.value = null;
+  newIngredientIndex.value = null;
 }
 
 // ── Âncora ──────────────────────────────────────────────────────────────────
@@ -776,14 +785,19 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               <span class="text-xs tabular-nums text-muted-foreground">
                 base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
               </span>
-              <div class="w-full sm:ml-auto sm:w-auto">
-                <NuxtButton class="w-full justify-center sm:w-auto" color="primary" icon="i-lucide-plus" label="Adicionar ingrediente" @click="addIngredient" />
-              </div>
             </div>
-            <p v-if="!formula.items.length && !formula.parts.length" class="px-3 py-6 text-center text-sm text-muted-foreground">
-              Adicione o primeiro ingrediente da receita.
-            </p>
-            <ol v-else class="divide-y" data-testid="recipe-bom-items">
+            <div v-if="!formula.items.length && !formula.parts.length" class="grid gap-3 px-3 py-6 text-center">
+              <p class="text-sm text-muted-foreground">Adicione o primeiro ingrediente da receita.</p>
+              <NuxtButton
+                class="w-full justify-center sm:mx-auto sm:w-auto"
+                color="primary"
+                icon="i-lucide-plus"
+                label="Adicionar ingrediente"
+                @click="addIngredient"
+              />
+            </div>
+            <template v-else>
+            <ol class="divide-y" data-testid="recipe-bom-items">
               <li
                 v-for="(item, index) in formula.items"
                 :key="`item-${index}`"
@@ -795,6 +809,7 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   <IngredientPicker
                     :model-value="item.sku"
                     :matched-name="itemMatchedName(index)"
+                    :auto-open="newIngredientIndex === index"
                     @update:model-value="onItemSku(index, $event)"
                     @select="onItemSelect(index, $event)"
                   />
@@ -930,6 +945,16 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 </div>
               </li>
             </ol>
+            <div class="border-t p-3" data-testid="add-ingredient-footer">
+              <NuxtButton
+                class="w-full justify-center sm:w-auto"
+                color="primary"
+                icon="i-lucide-plus"
+                label="Adicionar ingrediente"
+                @click="addIngredient"
+              />
+            </div>
+            </template>
           </section>
 
           <section v-if="editorTab === 'preparation'" class="overflow-hidden rounded-md border bg-card">
