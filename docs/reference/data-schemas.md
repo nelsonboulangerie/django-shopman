@@ -61,7 +61,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `gift_message` | `string` | CheckoutView, API (`set_data`) | CommitService | Mensagem do presente para o destinatário. **Separada** de `order_notes` (operacional/cozinha). Opcional; só presente quando informada |
 | `gift_hide_values` | `bool` | CheckoutView, API (`set_data`) | CommitService, nota/etiqueta, KDS | `True` para ocultar valores na nota/etiqueta do presente. Só presente quando `True` (ausência = mostrar valores) |
 | `legal` | `dict` | CheckoutView do storefront (`presentation.legal.order_legal_snapshot`, via `set_data`) | ninguém edita; chega selado em `Order.snapshot["data"]["legal"]` (NÃO é copiado para `Order.data`) | Quais Termos e Privacidade valiam quando o pedido foi feito: `{version: "AAAA-MM-DD", archived: bool, privacy_url, terms_url, privacy_sha256?, terms_sha256?}`. URL = cópia permanente em `/documentos-legais/<privacidade\|termos>/<versão>.html` (append-only, `scripts/check_legal_archive.py`). Os `*_sha256` só existem com `archived: true` — a versão é arquivada depois do deploy, porque a lista de operadores depende do ambiente. Sem PII |
-| `customer_rating` | `dict` | `OrderRateView` (storefront tracking) | `OrderAdmin` (coluna + detalhe), dashboard do Admin (média móvel + comentários), alerta `low_rating` (nota ≤2) | Avaliação do pedido pelo cliente: `{rating, comment, submitted_at, source}`. Só presente após o cliente avaliar. Loop fechado (RATING-LOOP-PLAN): a loja lê a nota no Admin e é avisada em nota baixa. Ver [[project_customer_rating_intent]] |
+| `customer_rating` | `dict` | `OrderRateView` (storefront tracking) | `OrderAdmin` (coluna + detalhe), dashboard do Admin (média móvel + comentários), alerta `low_rating` (nota ≤2) | Avaliação do pedido pelo cliente: `{rating, comment, submitted_at, source}`. Só presente após o cliente avaliar. Loop fechado (RATING-LOOP-PLAN): a loja lê a nota no Admin e é avisada em nota baixa. **Ouvidoria** (27/10/2026, `shop/services/customer_contact.py`): nota até 3 oferece "Quero falar com o responsável"; aceito, vira o evento `customer_contact_requested` `{rating}` + aviso `orders`, fechado pelo "Resolvido" do Gestor (evento `customer_contact_resolved` `{note}`). O comentário NÃO é copiado para evento nem aviso: mora só aqui, e a exclusão de conta apaga `comment` (a nota fica). O convite para avaliar no Google (`search.google.com/local/writereview?placeid=` do `Shop.place_id`) aparece para TODA nota. Ver [[project_customer_rating_intent]] |
 
 #### Origem da coordenada do endereço
 
@@ -1620,7 +1620,7 @@ Política de Marketing da loja. Source-of-truth tipado em `shopman/shop/marketin
 Conta e fonte de dados do envio do catálogo ao Google pela Merchant API
 (`shop/adapters/catalog_projection_google.py`, plano
 `docs/plans/CATALOG-PUSH-GOOGLE-META-PLAN.md`). Dado da loja, não do deployment (ADR-042):
-o segredo (JSON da service account) fica em `GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON`.
+o segredo (JSON da service account, em base64) fica em `GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64`.
 
 | Chave | Tipo | Lido por | Descrição |
 |-------|------|----------|-----------|
@@ -1628,6 +1628,7 @@ o segredo (JSON da service account) fica em `GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSO
 | `google_merchant.data_source_id` | `string` | idem | Id da fonte de dados primária do tipo API. Ausente = envio inerte |
 | `google_merchant.content_language` | `string` | idem | ISO 639-1 dos produtos. Ausente = `pt` |
 | `google_merchant.feed_label` | `string` | idem | Rótulo do feed na conta. Ausente = `BR` |
+| `google_merchant.registration` | `dict` | `ShopIntegrationsAdmin.google_merchant_display` | `{gcp_ids, at}`: o último registro bem-sucedido do projeto do Google Cloud na conta (ação "Registrar o envio no Google", `catalog_projection_google.register_gcp`). Só leitura da tela; o envio não depende dela |
 
 ### Capacidade dos apps de operação — `Shop.defaults["operator_capacity"]`
 

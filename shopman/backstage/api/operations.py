@@ -924,10 +924,13 @@ class OperatorEligibleView(APIView):
 
 
 def _unlock_target_key(group, request):
-    """Chave de rate-limit pela conta-alvo do destrave por PIN.
+    """Chave de rate-limit pela conta-alvo do PIN (destrave, crachá perdido, troca).
 
     Mesma forma do ``_login_username_key``: lê form e JSON (o BFF manda JSON).
-    Crachá não nomeia conta, então cai num balde só, ``badge``.
+    Crachá não nomeia conta, então o balde é o da ESTAÇÃO que leu o crachá: um
+    balde global deixava qualquer dispositivo esgotar o crachá da loja inteira
+    (laudo S6). Sem ``operator_id``, a conta-alvo é quem está operando (a troca
+    de PIN depois do destrave), para que esse fluxo não divida um balde anônimo.
     """
     data = request.POST
     if not data and "json" in (request.content_type or ""):
@@ -938,8 +941,38 @@ def _unlock_target_key(group, request):
     if not hasattr(data, "get"):
         data = {}
     if str(data.get("badge") or "").strip():
-        return "badge"
-    return f"op:{str(data.get('operator_id') or '').strip() or 'anon'}"
+        station = station_trust.station_device_id(request) or station_trust.station_ref(request)
+        return f"badge:{station or 'sem-estacao'}"
+    operator_id = str(data.get("operator_id") or "").strip()
+    if not operator_id:
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated:
+            operator_id = str(user.pk)
+    return f"op:{operator_id or 'anon'}"
+
+
+#: O mesmo par de freios do destrave, para toda view em que errar o PIN conta.
+#: Por IP, 30/min (os dispositivos da loja dividem o IP); por conta-alvo, 5/min.
+_PIN_RATE_LIMITS = (
+    method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"),
+    method_decorator(ratelimit(key=_unlock_target_key, rate="5/m", method="POST", block=False), name="dispatch"),
+)
+
+
+def _pin_rate_limited(cls):
+    for decorator in reversed(_PIN_RATE_LIMITS):
+        cls = decorator(cls)
+    return cls
+
+
+def _pin_rate_limited_response() -> Response:
+    return Response(
+        {
+            "detail": "Muitas tentativas com PIN. Aguarde um minuto e tente de novo.",
+            "error": {"code": "operator_pin_rate_limited"},
+        },
+        status=429,
+    )
 
 
 @method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
@@ -1067,6 +1100,7 @@ class OperatorLockView(APIView):
         return Response({"ok": True})
 
 
+@_pin_rate_limited
 class OperatorBadgeLostView(APIView):
     """O operador declara que perdeu o crachá, provando o PIN.
 
@@ -1082,6 +1116,9 @@ class OperatorBadgeLostView(APIView):
 
     def post(self, request):
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return _pin_rate_limited_response()
 
         body = request.data or {}
         # Confirmação ANTES do PIN: um cliente que esqueceu a flag não pode
@@ -1143,6 +1180,7 @@ class OperatorBadgeLostView(APIView):
         return Response({"ok": True, **resultado})
 
 
+@_pin_rate_limited
 class OperatorPinChangeView(APIView):
     """Operator changes their OWN PIN, proving the current one.
 
@@ -1158,6 +1196,9 @@ class OperatorPinChangeView(APIView):
         from shopman.doorman.models import PinCredentialError
 
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return _pin_rate_limited_response()
 
         body = request.data or {}
         current_pin = str(body.get("current_pin") or "")
@@ -3978,6 +4019,42 @@ class OrderCourierReminderDismissView(_OrderActionBase):
         if err:
             return err
         courier_reminder.dismiss(order, actor=_actor(request))
+        return Response({"ok": True, "ref": order.ref})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Close the customer's contact request (ombudsman) with what the team did",
+        responses={
+            200: OpenApiResponse(description="Contact request resolved."),
+            400: OpenApiResponse(description="Missing note."),
+            409: OpenApiResponse(description="No open contact request."),
+        },
+    ),
+)
+class OrderCustomerContactResolveView(_OrderActionBase):
+    """"Resolvido" da ouvidoria: fecha o caso com a nota do que foi feito."""
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import customer_contact
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        note = str(request.data.get("note") or "").strip()
+        if not note:
+            return Response(
+                {"detail": "Conte em uma frase o que foi feito.", "field": "note"},
+                status=400,
+            )
+        try:
+            customer_contact.resolve(order, note=note, actor=_actor(request))
+        except customer_contact.ContactRequestNotOpen:
+            return Response(
+                {"detail": "Este pedido não tem pedido de contato em aberto.", "code": "contact_request_not_open"},
+                status=409,
+            )
         return Response({"ok": True, "ref": order.ref})
 
 

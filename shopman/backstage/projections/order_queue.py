@@ -553,6 +553,19 @@ class CustomerProfileProjection:
 
 
 @dataclass(frozen=True)
+class ContactRequestProjection:
+    """Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável.
+
+    Só existe enquanto o caso está aberto; o "Resolvido" (com a nota do que foi
+    feito) o fecha. Ver ``shop/services/customer_contact.py``.
+    """
+
+    rating: int
+    comment: str
+    requested_at_display: str
+
+
+@dataclass(frozen=True)
 class OperatorOrderProjection:
     """O detalhe de um pedido — o MESMO contrato para o Gestor e o PDV (``context``)."""
 
@@ -698,9 +711,10 @@ class OperatorOrderProjection:
     # lista do PDV (``pos._manager_cards``). Sem ela o diálogo canônico caía no
     # campo livre e o gerente tinha de DIGITAR o próprio nome no meio de um
     # cancelamento com o relógio do iFood correndo; nome digitado erra, e o
-    # servidor resolve a assinatura por ``username``. Exclui quem opera: a
-    # segunda assinatura existe para haver duas pessoas.
+    # servidor resolve a assinatura por ``username``. Quem opera vem em primeiro
+    # e assina com o próprio PIN (dono, 28/10/2026).
     managers: tuple[dict[str, str], ...] = ()
+    contact_request: ContactRequestProjection | None = None
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
@@ -993,6 +1007,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         managers=_approver_options(user),
+        contact_request=_contact_request(order),
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
@@ -2730,6 +2745,19 @@ def _fiscal_states_for(orders) -> _FiscalEvidence:
     return _FiscalEvidence(result, failed)
 
 
+def _contact_request(order: Order) -> ContactRequestProjection | None:
+    from shopman.shop.services import customer_contact
+
+    request = customer_contact.open_request(order)
+    if request is None:
+        return None
+    return ContactRequestProjection(
+        rating=request.rating,
+        comment=request.comment,
+        requested_at_display=_format_datetime(request.requested_at),
+    )
+
+
 def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
     """Telefone/e-mail/ref do cliente, prontos para a tela do operador.
 
@@ -2953,6 +2981,18 @@ _EVENT_LABELS = {
     "order_rescheduled": "Data combinada alterada",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
+    "fiscal_requeued": "NFC-e enviada de novo",
+    "courier_dispatch_requested": "Entregador da TaOn chamado",
+    "courier_ride_opened": "Corrida aberta na TaOn",
+    "courier_dispatch_released": "Chamada da TaOn feita de novo",
+    "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
+    "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
+    "fiscal_issue_override": "NFC-e emitida com autorização do gerente",
+    "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
+    "return_initiated": "Devolução iniciada",
+    "refund_processed": "Reembolso processado",
+    "volume_checked": "Volume conferido",
+    "volume_check_wrong_bag": "Sacola de outro pedido lida na conferência",
     # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
     "handoff_requested": "Saída tocada (janela de desfazer)",
     "handoff_undone": "Saída desfeita",
@@ -2965,6 +3005,8 @@ _EVENT_LABELS = {
     "ifood_accept_confirmed": "O iFood confirmou o pedido",
     "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
+    "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
+    "customer_contact_resolved": "Ouvidoria resolvida",
 }
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge

@@ -92,8 +92,7 @@ def test_anonymous_customer_cannot_apply_staff_coupon(client: Client, funcionari
     resp = _apply(client)
     assert resp.status_code == 400
     body = resp.json()
-    assert body["error_code"] == "coupon_not_eligible"
-    assert "conta" in body["detail"].lower()
+    assert body["error_code"] == "coupon_rejected"
 
 
 def test_non_staff_customer_cannot_apply_staff_coupon(client: Client, funcionario_coupon):
@@ -105,7 +104,7 @@ def test_non_staff_customer_cannot_apply_staff_coupon(client: Client, funcionari
     _fill_cart(client)
     resp = _apply(client)
     assert resp.status_code == 400
-    assert resp.json()["error_code"] == "coupon_not_eligible"
+    assert resp.json()["error_code"] == "coupon_rejected"
 
 
 def test_staff_customer_can_apply_staff_coupon(client: Client, funcionario_coupon):
@@ -118,3 +117,55 @@ def test_staff_customer_can_apply_staff_coupon(client: Client, funcionario_coupo
     resp = _apply(client)
     assert resp.status_code == 200
     assert "cart" in resp.json()
+
+
+# ── Laudo S8 (23/10): balde próprio do cupom, que conta só a recusa ──
+
+
+@pytest.fixture
+def _coupon_bucket():
+    from unittest.mock import patch
+
+    from django.core.cache import cache
+
+    cache.clear()
+    # Janela fixa: todas as tentativas caem no mesmo minuto do ratelimit.
+    with patch("django_ratelimit.core._get_window", return_value=2_000_000_000):
+        yield
+    cache.clear()
+
+
+def _try_code(client: Client, code: str):
+    return client.post("/api/v1/cart/coupon/", data=json.dumps({"code": code}), content_type="application/json")
+
+
+def test_guessing_codes_stops_at_the_tenth_rejection(client: Client, funcionario_coupon, _coupon_bucket):
+    _fill_cart(client)
+    for i in range(10):
+        resp = _try_code(client, f"CHUTE{i}")
+        assert resp.status_code == 400, i
+        assert resp.json()["error_code"] == "coupon_rejected"
+    resp = _try_code(client, "CHUTE10")
+    assert resp.status_code == 429
+    assert resp.json()["error_code"] == "rate_limited"
+
+
+def test_logged_customer_has_the_same_limit(client: Client, funcionario_coupon, _coupon_bucket):
+    customer = Customer.objects.create(ref="CUS-CHUTE-01", first_name="Cliente", phone="+5543988886666")
+    _login_as_customer(client, customer)
+    _fill_cart(client)
+    for i in range(10):
+        assert _try_code(client, f"CHUTE{i}").status_code == 400, i
+    assert _try_code(client, "CHUTE10").status_code == 429
+
+
+def test_valid_coupon_does_not_spend_the_bucket(client: Client, funcionario_coupon, _coupon_bucket):
+    now = timezone.now()
+    promo = Promotion.objects.create(
+        ref="aberto", name="Aberto", type=Promotion.PERCENT, value=5,
+        valid_from=now - timedelta(days=1), valid_until=now + timedelta(days=1),
+    )
+    Coupon.objects.create(code="ABERTO", promotion=promo, max_uses=0)
+    _fill_cart(client)
+    for _ in range(12):
+        assert _try_code(client, "ABERTO").status_code == 200

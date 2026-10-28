@@ -78,6 +78,7 @@ logger = logging.getLogger(__name__)
 
 CART_RATE_LIMIT_RETRY_SECONDS = 30
 REORDER_RATE_LIMIT_RETRY_SECONDS = 60
+COUPON_RATE_LIMIT_RETRY_SECONDS = 60
 
 
 def _unit_count_label(qty: int) -> str:
@@ -917,19 +918,51 @@ class CartCouponView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
+    # O balde próprio abaixo vale para anônimo E logado; o throttle anônimo
+    # padrão não somaria nada além disso.
+    throttle_classes = []
 
     ERROR_MESSAGES = {
         "empty_code": "Informe o código do cupom.",
         "no_cart": "Sacola vazia.",
-        "invalid_coupon": "Cupom não encontrado.",
-        "coupon_exhausted": "Este cupom já foi utilizado.",
-        "coupon_expired": "Cupom expirado.",
-        "coupon_wrong_channel": "Este cupom não vale nesta loja.",
-        "coupon_not_eligible": "Este cupom não está disponível para a sua conta.",
     }
+    #: Uma resposta só para todo cupom recusado (laudo S8, 23/10). Dizer "não
+    #: encontrado", "já utilizado", "expirado" ou "não vale para a sua conta" era
+    #: um oráculo: separava código que existe de código inventado, e permitia
+    #: varrer a base de cupons. O motivo real fica no log, não na resposta.
+    REJECTED_CODE = "coupon_rejected"
+    REJECTED_MESSAGE = "Não foi possível usar este cupom nesta compra."
+    #: Balde próprio, por conta logada ou por IP: conta só o cupom RECUSADO. Quem
+    #: aplica o cupom que recebeu nunca esbarra nele; quem chuta códigos para na
+    #: décima recusa do minuto.
+    RATE_LIMIT = "10/m"
+    RATE_LIMIT_GROUP = "storefront-api-coupon-rejected"
+
+    @classmethod
+    def _rejections(cls, request, *, increment: bool):
+        from django.conf import settings
+        from django_ratelimit.core import get_usage
+
+        if not getattr(settings, "RATELIMIT_ENABLE", True):
+            return None
+        return get_usage(
+            request,
+            group=cls.RATE_LIMIT_GROUP,
+            key="user_or_ip",
+            rate=cls.RATE_LIMIT,
+            method="POST",
+            increment=increment,
+        )
 
     def post(self, request):
         from shopman.storefront.cart import CartService
+
+        usage = self._rejections(request, increment=False)
+        if usage and usage["count"] >= usage["limit"]:
+            return _rate_limited_response(
+                detail="Muitas tentativas de cupom. Aguarde um minuto e tente de novo.",
+                retry_after_seconds=COUPON_RATE_LIMIT_RETRY_SECONDS,
+            )
 
         code = clean_text(request.data.get("code")) if hasattr(request, "data") else ""
         if not code:
@@ -943,11 +976,15 @@ class CartCouponView(APIView):
             return Response({"cart": _cart_payload(request)})
 
         error_key = result.get("error", "invalid_coupon")
+        if error_key in self.ERROR_MESSAGES:
+            return Response(
+                {"detail": self.ERROR_MESSAGES[error_key], "error_code": error_key},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        self._rejections(request, increment=True)
+        logger.info("cupom recusado: %s", error_key)
         return Response(
-            {
-                "detail": self.ERROR_MESSAGES.get(error_key, "Cupom inválido."),
-                "error_code": error_key,
-            },
+            {"detail": self.REJECTED_MESSAGE, "error_code": self.REJECTED_CODE},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

@@ -337,6 +337,13 @@ export function useOrderDetail(orderRef: string) {
     return act("courier-reminder-dismiss");
   }
 
+  // Ouvidoria: o "Resolvido" fecha o pedido de contato com a nota do que foi feito.
+  async function resolveContactRequest(note: string): Promise<boolean> {
+    const ok = await act("customer-contact/resolve", { note });
+    if (ok) useSonner.success("Atendimento registrado.");
+    return ok;
+  }
+
   async function courierCancel(): Promise<boolean> {
     const ok = await act("courier-cancel");
     if (ok)
@@ -378,6 +385,7 @@ export function useOrderDetail(orderRef: string) {
     courierDispatch,
     courierDispatchAgain,
     courierReminderDismiss,
+    resolveContactRequest,
     courierCancel,
     courierQuote,
     managerChallenge,

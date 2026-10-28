@@ -49,11 +49,15 @@ def test_detalhe_do_pedido_traz_a_lista_de_quem_assina(gerentes):
 
 
 @pytest.mark.django_db
-def test_quem_opera_nao_aparece_para_se_autorizar(gerentes):
-    """A segunda assinatura existe para haver duas pessoas."""
+def test_quem_opera_aparece_em_primeiro_para_assinar_com_o_PIN(gerentes):
+    """Decisão do dono, 28/10/2026: o gerente logado assina digitando o PIN de novo.
+
+    Tirá-lo da lista deixava a lista vazia quando ele era o único gerente do turno,
+    e o diálogo sem ninguém para escolher.
+    """
     joyce, pablo = gerentes
 
-    assert all(o["username"] != "pablo" for o in order_queue._approver_options(pablo))
+    assert [o["username"] for o in order_queue._approver_options(pablo)] == ["pablo", "joyce"]
 
 
 @pytest.mark.django_db

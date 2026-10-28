@@ -553,7 +553,11 @@ class TestShopAdminGoogleMerchant:
         assert response.status_code == 200
         assert b"google-merchant" in response.content
         assert b"5881119366" in response.content
-        assert admin.site._registry[ShopIntegrations].actions_detail == ("set_google_merchant",)
+        assert b"google-merchant-register" in response.content
+        assert admin.site._registry[ShopIntegrations].actions_detail == (
+            "set_google_merchant",
+            "register_google_merchant",
+        )
 
     def test_form_requires_numeric_ids(self, rf, shop):
         from shopman.shop.admin.shop import GoogleMerchantForm

@@ -38,7 +38,11 @@ class DoormanSettings:
     PIN_MIN_LENGTH: int = 4
     PIN_DIGITS_ONLY: bool = True
     PIN_MAX_ATTEMPTS: int = 5
+    # Janela da PRIMEIRA trava. Cada falha depois dela (a trava não zera o contador:
+    # só um acerto zera) dobra a janela até o teto. Fixo em 5 min, quem insistisse
+    # varria os 10 mil PINs de 4 dígitos em semanas; dobrando até 1 h, leva anos.
     PIN_LOCKOUT_MINUTES: int = 5
+    PIN_LOCKOUT_MAX_MINUTES: int = 60
     PIN_HMAC_KEY: str = ""  # empty → falls back to SECRET_KEY
 
     # Sender (shortcut — equivalent to a single-item DELIVERY_CHAIN)
@@ -189,6 +193,8 @@ def validate_settings() -> list[str]:
         errors.append("DOORMAN.PIN_MAX_ATTEMPTS must be > 0")
     if s.PIN_LOCKOUT_MINUTES < 0:
         errors.append("DOORMAN.PIN_LOCKOUT_MINUTES must be >= 0")
+    if s.PIN_LOCKOUT_MAX_MINUTES < s.PIN_LOCKOUT_MINUTES:
+        errors.append("DOORMAN.PIN_LOCKOUT_MAX_MINUTES must be >= PIN_LOCKOUT_MINUTES")
 
     return errors
 

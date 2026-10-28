@@ -193,6 +193,7 @@ _SURFACE_URL_KEYS = {"orders": "gestor"}
 _ORDER_DETAIL_ANCHORS = {
     "ifood_negotiation_open": "ifood-negotiations",
     "ifood_accept_not_delivered": "ifood-accept",
+    "customer_contact_requested": "customer-contact",
 }
 
 #: O rótulo do botão quando o aviso leva ao pedido: diz aonde leva, não "resolver".
@@ -200,6 +201,7 @@ _ORDER_LABELS = {
     "ifood_negotiation_open": "Responder",
     "card_authorization_expiring": "Aceitar ou recusar",
     "ifood_accept_not_delivered": "Abrir e tentar de novo",
+    "customer_contact_requested": "Falar com o cliente",
 }
 
 

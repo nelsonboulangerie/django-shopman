@@ -137,6 +137,21 @@ class TrackingCancellationRequestData:
 
 
 @dataclass(frozen=True)
+class TrackingRatingFollowupData:
+    """What follows the customer's rating: the ombudsman offer and the Google invite.
+
+    ``google_review_url`` vale para TODA nota (a política do Google proíbe convidar
+    só quem gostou); ``contact_offered`` segue ``policies/rating_contact.py``.
+    ``comment`` é o que o cliente escreveu, para a tela copiar no gesto do convite.
+    """
+
+    comment: str
+    google_review_url: str
+    contact_offered: bool
+    contact_requested: bool
+
+
+@dataclass(frozen=True)
 class TrackingFiscalNoteData:
     """A NFC-e AUTORIZADA do pedido, do jeito que o cliente pode abrir.
 
@@ -247,6 +262,7 @@ class TrackingData:
     cancellation_note: str = ""
     refund_status_key: str | None = None
     cancellation_request: TrackingCancellationRequestData | None = None
+    rating_followup: TrackingRatingFollowupData | None = None
     # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
     # existe. A notificação pode não chegar (janela do WhatsApp, número
     # trocado); esta tela não depende dela para o cliente saber que a fornada
@@ -330,6 +346,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     cancellation_note = "" if _is_payment_timeout_cancelled(order) else _cancellation_customer_text(order_data)
     refund_status_key = _refund_status_key(order)
     cancellation_request = _cancellation_request(order)
+    rating_followup = _rating_followup(order)
     progress_steps = _build_progress_steps(
         order,
         is_delivery=is_delivery,
@@ -367,6 +384,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         can_cancel=can_cancel,
         cancellation_requested=cancellation_request is not None,
         can_rate=customer_orders.can_rate(order),
+        can_request_contact=bool(rating_followup and rating_followup.contact_offered),
         can_mock_confirm_payment=can_mock_confirm_payment,
     )
 
@@ -377,6 +395,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         cancellation_note=cancellation_note,
         refund_status_key=refund_status_key,
         cancellation_request=cancellation_request,
+        rating_followup=rating_followup,
         order_ref=interaction.order_ref,
         status=order.status,
         display_status_key=_display_status_key(order),
@@ -570,6 +589,21 @@ def _cancellation_request(order) -> TrackingCancellationRequestData | None:
     )
 
 
+def _rating_followup(order) -> TrackingRatingFollowupData | None:
+    from shopman.shop.services import customer_contact
+
+    data = order.data if isinstance(order.data, dict) else {}
+    rating = data.get("customer_rating")
+    if not (isinstance(rating, dict) and rating.get("rating")):
+        return None
+    return TrackingRatingFollowupData(
+        comment=str(rating.get("comment") or ""),
+        google_review_url=customer_contact.google_review_url(),
+        contact_offered=customer_contact.contact_offered(order),
+        contact_requested=customer_contact.current(order) is not None,
+    )
+
+
 def _mock_confirmation_projection_value(order) -> bool:
     """Este pedido pode receber uma captura simulada AGORA?
 
@@ -671,6 +705,7 @@ def _build_order_actions(
     cancellation_requested: bool,
     can_rate: bool,
     can_mock_confirm_payment: bool,
+    can_request_contact: bool = False,
 ) -> tuple[Action, ...]:
     actions: list[Action] = []
     if can_cancel:
@@ -765,6 +800,25 @@ def _build_order_actions(
                     "properties": {
                         "rating": {"type": "integer", "minimum": 1, "maximum": 5},
                         "comment": {"type": "string", "maxLength": 500},
+                        "idempotency_key": {"type": "string"},
+                    },
+                },
+                idempotency="required",
+            )
+        )
+    if can_request_contact:
+        actions.append(
+            _action(
+                ref="request_contact",
+                kind="mutation",
+                label=_copy_title("TRACKING_RATING_CONTACT_CTA", "Quero falar com o responsável"),
+                priority="primary",
+                href=f"/api/v1/orders/{order.ref}/contact-request/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["idempotency_key"],
+                    "properties": {
                         "idempotency_key": {"type": "string"},
                     },
                 },
