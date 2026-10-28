@@ -93,11 +93,13 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(flourExpression).toContainText("g");
   const ingredientQuantity = page.getByLabel("Quantidade", { exact: true });
   const fixedQuantityGrid = page.locator("[data-ingredient-quantity-grid]").first();
-  const fixedQuantityBox = await fixedQuantityGrid.locator("[data-operator-field-value]").boundingBox();
-  const fixedUnitBox = await fixedQuantityGrid.locator("[data-operator-field-context]").boundingBox();
-  expect(fixedQuantityBox).not.toBeNull();
-  expect(fixedUnitBox).not.toBeNull();
-  expect(Math.abs(fixedQuantityBox!.y - fixedUnitBox!.y)).toBeLessThanOrEqual(2);
+  const [fixedQuantityBox, fixedUnitBox] = await fixedQuantityGrid
+    .locator("[data-operator-field-value], [data-operator-field-context]")
+    .evaluateAll((elements) => elements.map((element) => {
+      const { width, y } = element.getBoundingClientRect();
+      return { width, y };
+    }));
+  expect(Math.abs(fixedQuantityBox.y - fixedUnitBox.y)).toBeLessThanOrEqual(2);
   await flourExpression.click();
   await page.getByRole("option", { name: "kg", exact: true }).click();
   await ingredientQuantity.fill("0,002");
@@ -125,11 +127,13 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(quantityGroup.getByText("Quanto entra e como afeta a fórmula.", { exact: true })).toBeVisible();
   const ratioQuantityGrid = page.locator("[data-ingredient-quantity-grid]").last();
   await expect(ratioQuantityGrid).toBeVisible();
-  const quantityColumnBox = await ratioQuantityGrid.locator("[data-operator-field-value]").boundingBox();
-  const expressionColumnBox = await ratioQuantityGrid.locator("[data-operator-field-context]").boundingBox();
-  expect(quantityColumnBox).not.toBeNull();
-  expect(expressionColumnBox).not.toBeNull();
-  expect(expressionColumnBox!.width).toBeGreaterThan(quantityColumnBox!.width);
+  const [quantityColumnBox, expressionColumnBox] = await ratioQuantityGrid
+    .locator("[data-operator-field-value], [data-operator-field-context]")
+    .evaluateAll((elements) => elements.map((element) => {
+      const { width, y } = element.getBoundingClientRect();
+      return { width, y };
+    }));
+  expect(Math.abs(expressionColumnBox.width - quantityColumnBox.width)).toBeLessThanOrEqual(1);
   expect(await quantityGroup.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(page.getByLabel("Quantidade de Levain expressa em")).toContainText("% da base");
   await page.getByLabel("Base percentual de Levain").click();

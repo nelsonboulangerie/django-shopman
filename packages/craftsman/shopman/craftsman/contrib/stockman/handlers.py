@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 
+from django.apps import apps
 from django.dispatch import receiver
 from django.utils import timezone
 from shopman.craftsman.signals import production_changed, production_stock_shortfall
@@ -45,13 +46,8 @@ STOCK_REALIZED_KEY = "stock_realized_at"
 
 
 def _stockman_available() -> bool:
-    """Check if Stockman is installed."""
-    try:
-        from shopman.stockman.services.movements import StockMovements  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    """Check whether Stockman belongs to this Django installation."""
+    return apps.is_installed("shopman.stockman")
 
 
 @receiver(production_changed)
@@ -487,7 +483,7 @@ def consumable_quants(sku: str):
 
     from django.db.models import Case, DateField, F, IntegerField, Value, When
     from shopman.craftsman.conf import get_setting
-    from shopman.stockman.models import Batch
+    from shopman.stockman.models.batch import Batch
     from shopman.stockman.services.queries import StockQueries
 
     quants = StockQueries.list_quants(sku, include_empty=False)
