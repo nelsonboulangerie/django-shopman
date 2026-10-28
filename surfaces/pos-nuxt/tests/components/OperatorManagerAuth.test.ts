@@ -86,25 +86,17 @@ describe("OperatorManagerAuth — quem assina vem da lista", () => {
     expect(document.body.textContent).toContain(`Desconto acima de ${formatBRL(5000)}.`);
   });
 
-  // Lista vazia (leitura negada, nenhum gerente com PIN) não pode fechar a única
-  // porta: o balcão ficaria travado no meio de uma sangria.
-  it("cai no campo de texto quando a lista chega vazia", async () => {
+  // Lista vazia NUNCA vira campo de nome digitado (dono, 28/10/2026). No alpha a
+  // Joyce é a única gerente com PIN e a lista tira quem opera: o campo livre
+  // tinha virado o caminho normal de todo cancelamento do Gestor.
+  it("lista vazia diz que não há outro gerente e não abre campo de nome", async () => {
     const wrapper = await open({ managers: [] });
 
-    const input = document.querySelector<HTMLInputElement>('input[aria-label="Nome do gerente"]');
-    expect(input).not.toBeNull();
-
-    input!.value = "marina";
-    input!.dispatchEvent(new Event("input"));
-    await wrapper.vm.$nextTick();
-
-    // PIN de 4 dígitos: é o mínimo do servidor (`DOORMAN.PIN_MIN_LENGTH`), e a
-    // peça compartilhada passou a cobrar o mesmo. A regra antiga do diálogo
-    // aceitava qualquer tamanho e mandava o gerente tomar recusa garantida.
-    await typePin(wrapper, "9999");
-    await confirmPin(wrapper);
-
-    expect(wrapper.emitted("authorize")?.[0]).toEqual(["marina", "9999"]);
+    expect(document.querySelector("input")).toBeNull();
+    expect(document.querySelector('button[aria-label="Confirmar"]')).toBeNull();
+    expect(document.body.textContent).toContain("Nenhum outro gerente com PIN");
+    expect(document.body.textContent).toContain("Passe o crachá no leitor.");
+    expect(wrapper.emitted("authorize")).toBeUndefined();
   });
 
   // PIN errado limpa o PIN e SÓ o PIN. Reescolher o próprio nome a cada erro de

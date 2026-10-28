@@ -16,9 +16,14 @@
 // errada em `Entry.approved_by` — justamente a segunda assinatura que a sangria
 // existe para ter.
 //
-// O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia
-// (leitura negada, nenhum gerente com PIN provisionado): esconder a única porta
-// deixaria o balcão sem saída no meio de uma sangria.
+// ⚠️ Lista vazia NÃO vira campo de nome digitado. Ele existiu como "porta de
+// saída" e virou o caminho normal (ver `OperatorIdentify`, `emptyTitle`). Sem
+// outro gerente com PIN, a tela diz isso e o crachá continua valendo.
+//
+// ⚠️ Toda autorização de gerente da suíte passa por ESTE componente. Quem precisa
+// de contexto do ato (o motivo do cancelamento, o prazo) usa o slot `context`,
+// nunca uma moldura própria em volta do `OperatorIdentify` — a trava em
+// `operator-kit/tests/guardrails.managerAuth.test.ts` reprova.
 import type { HouseAccountLimitInput, ManagerAction } from "../presentation/managerAuth";
 import {
   managerAuthReason,
@@ -47,7 +52,7 @@ const props = defineProps<{
   reasons?: string[];
   /** Conta na casa acima do limite (`review.house_account_limit`): o diálogo diz saldo, limite e quanto passa. */
   houseAccountLimit?: HouseAccountLimitInput | null;
-  /** Quem pode assinar (`POSProjection.managers`). Vazio cai no campo livre. */
+  /** Quem pode assinar (`POSProjection.managers`). Vazio mostra que não há outro gerente. */
   managers?: ManagerOption[];
   busy?: boolean;
   error?: string;
@@ -127,14 +132,15 @@ function onBadge(token: string) {
           icon="i-lucide-shield-check"
           :title="`Você continua como ${operatorName}.`"
         />
+        <slot name="context" />
         <OperatorIdentify
           ref="identify"
           :people="managers"
           :busy="busy"
           :error="error"
           :badge-enabled="open"
-          allow-typed-name
-          name-label="Nome do gerente"
+          empty-title="Nenhum outro gerente com PIN"
+          empty-description="Quem opera não autoriza a própria exceção. Chame outro gerente com crachá, ou cadastre o PIN de mais um gerente no Admin."
           prompt="Quem autoriza?"
           change-label="Trocar gerente"
           @pin="onPin"

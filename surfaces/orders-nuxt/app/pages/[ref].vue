@@ -1559,8 +1559,8 @@ const outside = useOutsideStore(
     <!-- Segunda assinatura: o mesmo diálogo canônico do PDV, com a MESMA lista de
          gerentes (``managers`` da projeção de detalhe, montada por
          ``pos._manager_cards``). Selecionar, não digitar: nome digitado erra, e o
-         servidor resolve a assinatura por username. Lista vazia ainda cai no
-         campo livre — é a porta de saída, não o caminho normal. -->
+         servidor resolve a assinatura por username. Lista vazia diz que não
+         há outro gerente e deixa o crachá valendo; nunca vira campo de nome. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
       action="cancel_sale"
