@@ -128,6 +128,31 @@ def test_com_massa_velha_a_pesagem_traz_a_mistura_final_no_teto():
     assert "MASSA-MF" not in sem
 
 
+def test_massa_velha_reduz_tambem_as_preparacoes_sem_mudar_a_formula_global():
+    _publicar_levain()
+    recipe, _ = _publicar_massa([
+        {"sku": "LEVAIN-MF", "entry_ref": "levain-mf", "kind": "preferment", "flour_pct": 20},
+        {"kind": "old_dough", "cap_pct": 20},
+    ])
+    craft.plan(recipe, Decimal("1720"), date=date.today())
+
+    ticket = _ticket(recipe)
+    assert ticket.old_dough is not None
+    no_teto = {line.sku: Decimal(line.target_g) for line in ticket.old_dough.lines}
+
+    # A fórmula global continua 1000 g de farinha, 700 g de água e 20 g de sal.
+    # A massa velha fornece 20% dela; por isso TODO o BOM novo, inclusive o
+    # levain, cai para 80%. Não se recalculam nem se reescrevem os ingredientes.
+    assert no_teto == {
+        "FARINHA-T55": Decimal("640"),
+        "AGUA-FILTRADA": Decimal("400"),
+        "SAL-REFINADO": Decimal("16"),
+        "LEVAIN-MF": Decimal("320"),
+    }
+    assert Decimal(ticket.old_dough.old_dough_g) == Decimal("344")
+    assert sum(no_teto.values(), Decimal("0")) + Decimal(ticket.old_dough.old_dough_g) == Decimal("1720")
+
+
 def test_teto_fora_de_zero_a_cem_nao_vira_variante():
     recipe, _ = _publicar_massa([{"kind": "old_dough", "cap_pct": 20}])
     linha = recipe.items.get(is_optional=True)

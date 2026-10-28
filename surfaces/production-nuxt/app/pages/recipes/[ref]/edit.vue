@@ -128,6 +128,9 @@ const quantityRules: Record<FormulaUnit, { step: number; min: number; maximumFra
   L: { step: 0.001, min: 0.001, maximumFractionDigits: 3 },
   un: { step: 1, min: 1, maximumFractionDigits: 0 },
 };
+// Percentuais informados pelo operador usam uma única régua. Aceitar milésimos
+// com botões de décimo preservava um resíduo invisível (0,201 → 0,301).
+const percentageRule = { step: 0.1, min: 0.1, maximumFractionDigits: 1 } as const;
 const massFactor: Partial<Record<FormulaUnit, number>> = { g: 1, kg: 1000 };
 const volumeFactor: Partial<Record<FormulaUnit, number>> = { ml: 1, L: 1000 };
 const roleEditorIndex = ref<number | null>(null);
@@ -307,11 +310,9 @@ function onPartSku(index: number, sku: string) {
 function onPartSelect(index: number, option: IngredientOptionProjection) {
   formula.value = updatePart(formula.value, index, { sku: option.sku, entry_ref: option.entry_ref });
 }
-function onPartNumber(index: number, field: "flour_pct" | "quantity" | "cap_pct", event: Event) {
-  const raw = (event.target as HTMLInputElement).value.replace(",", ".");
-  const value = raw ? Number(raw) || null : null;
+function onPartPercentage(index: number, field: "flour_pct" | "cap_pct", value: number | null | undefined) {
   formula.value = updatePart(formula.value, index, {
-    [field]: value == null ? null : normalizedQuantity(value, "kg"),
+    [field]: value == null ? null : value,
   });
 }
 function onPartQuantity(index: number, value: number | null | undefined) {
@@ -955,21 +956,21 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   <p class="self-end pb-2 text-sm text-muted-foreground">Massa da própria receita, reservada da produção anterior.</p>
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Limite de substituição
-                    <NuxtInput
-                      :model-value="String(part.cap_pct ?? '')"
-                      type="number"
-                      inputmode="decimal"
-                      min="0.001"
-                      max="99.999"
-                      step="0.1"
-                      placeholder="0"
-                      class="w-full sm:w-40"
-                      :ui="{ base: 'bg-muted tabular-nums text-right' }"
-                      aria-label="Limite percentual de substituição por massa velha"
-                      @input="onPartNumber(index, 'cap_pct', $event)"
-                    >
-                      <template #trailing><span class="text-sm text-muted-foreground">%</span></template>
-                    </NuxtInput>
+                    <span class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:w-48">
+                      <NuxtInputNumber
+                        :model-value="part.cap_pct ?? null"
+                        :min="percentageRule.min"
+                        :max="99.9"
+                        :step="percentageRule.step"
+                        :format-options="{ maximumFractionDigits: percentageRule.maximumFractionDigits }"
+                        locale="pt-BR"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted tabular-nums' }"
+                        aria-label="Limite percentual de substituição por massa velha"
+                        @update:model-value="(value: number | null | undefined) => onPartPercentage(index, 'cap_pct', value)"
+                      />
+                      <span class="text-sm text-muted-foreground">%</span>
+                    </span>
                     <span v-if="partGuidance(index)" class="font-normal text-muted-foreground">{{ partGuidance(index) }}</span>
                   </label>
                 </template>
@@ -985,22 +986,22 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   </div>
                   <label v-if="anchorIsFlour && part.kind !== 'component'" :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">
                     Base de cálculo nesta preparação
-                    <NuxtInput
-                      data-focus-control
-                      :model-value="String(part.flour_pct ?? '')"
-                      type="number"
-                      inputmode="decimal"
-                      min="0.001"
-                      max="100"
-                      step="0.1"
-                      placeholder="0"
-                      class="w-full"
-                      :ui="{ base: 'bg-muted tabular-nums text-right' }"
-                      aria-label="Percentual da base de cálculo nesta preparação"
-                      @input="onPartNumber(index, 'flour_pct', $event)"
-                    >
-                      <template #trailing><span class="text-sm text-muted-foreground">%</span></template>
-                    </NuxtInput>
+                    <span class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                      <NuxtInputNumber
+                        data-focus-control
+                        :model-value="part.flour_pct ?? null"
+                        :min="percentageRule.min"
+                        :max="100"
+                        :step="percentageRule.step"
+                        :format-options="{ maximumFractionDigits: percentageRule.maximumFractionDigits }"
+                        locale="pt-BR"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted tabular-nums' }"
+                        aria-label="Percentual da base de cálculo nesta preparação"
+                        @update:model-value="(value: number | null | undefined) => onPartPercentage(index, 'flour_pct', value)"
+                      />
+                      <span class="text-sm text-muted-foreground">%</span>
+                    </span>
                     <span v-if="partGuidance(index)" class="font-normal text-muted-foreground">{{ partGuidance(index) }}</span>
                   </label>
                   <label v-else :data-focus-target="`part-${index}-amount`" class="grid scroll-mt-20 gap-1 text-xs font-medium text-muted-foreground">

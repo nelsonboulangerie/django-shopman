@@ -114,7 +114,12 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   const preparationBase = page.getByLabel("Percentual da base de cálculo nesta preparação", { exact: true });
   await expect(preparationBase).toBeFocused();
   await expect(page.getByText("Base de cálculo nesta preparação").first()).toBeVisible();
-  await expect(preparationBase.locator("xpath=..")).toContainText("%");
+  await expect(preparationBase.locator("xpath=../..")).toContainText("%");
+  await preparationBase.fill("0,201");
+  await preparationBase.blur();
+  await expect(preparationBase).toHaveValue("0,2");
+  await preparationBase.locator("xpath=..").getByRole("button", { name: "Incrementar", exact: true }).click();
+  await expect(preparationBase).toHaveValue("0,3");
   await expect(page.getByText("Referência técnica: 15% a 30%. Acima de 40%, revise a fórmula.", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Uso da receita como ingrediente")).toContainText("Pré-fermento");
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(2);
