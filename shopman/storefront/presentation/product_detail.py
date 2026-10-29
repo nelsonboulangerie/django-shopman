@@ -403,7 +403,10 @@ def build_product_detail(
 
 
 def _availability(sku: str, channel_ref: str) -> dict | None:
-    return catalog_context.availability_for_sku(sku, channel_ref=channel_ref)
+    # Produto simples já identificado acima: usa a mesma leitura em lote do
+    # cardápio. A leitura individual consultava holds uma vez por saldo e
+    # repetia o estoque para as datas futuras da fila de espera.
+    return catalog_context.availability_for_skus([sku], channel_ref=channel_ref).get(sku)
 
 
 def _sku_visible_in_channel(product: Any, channel_ref: str) -> bool:

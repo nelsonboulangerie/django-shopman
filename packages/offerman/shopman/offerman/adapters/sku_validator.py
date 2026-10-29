@@ -86,68 +86,46 @@ class SkuValidator:
         return result
 
     def get_sku_info(self, sku: str):
-        """Get SKU information."""
-        from shopman.offerman.models import Product
-        from shopman.stockman.protocols.sku import SkuInfo
-
-        try:
-            product = Product.objects.get(sku=sku)
-            primary_item = product.collection_items.filter(is_primary=True).first()
-            category = primary_item.collection.name if primary_item else None
-            return SkuInfo(
-                sku=product.sku,
-                name=product.name,
-                description=product.long_description,
-                is_published=product.is_active and product.is_published,
-                is_sellable=product.is_active and product.is_sellable,
-                unit=product.unit,
-                category=category,
-                base_price_q=product.base_price_q,
-                availability_policy=product.availability_policy,
-                shelflife_days=product.shelf_life_days,
-            )
-        except Product.DoesNotExist:
-            return None
+        """Informação de um SKU, pela mesma leitura canônica do lote."""
+        return self.get_sku_infos([sku])[sku]
 
     def get_sku_infos(self, skus: list[str]) -> dict:
-        """Get SKU information for multiple SKUs at once.
+        """Informações do lote em uma consulta, sem materializar models.
 
-        Batch counterpart of ``get_sku_info``: one product query plus a prefetch
-        of ``collection_items__collection``, then the primary collection is found
-        by scanning the prefetched rows in Python — ``.filter(is_primary=True)``
-        would re-query and defeat the prefetch.
+        Só o nome da coleção primária pertence ao contrato de estoque. O join
+        filtrado preserva produto sem coleção e coleção inativa; a restrição
+        de uma primária por produto impede multiplicar linhas. Não carrega as
+        demais coleções, metadados ou vínculos que esta leitura não usa.
         """
         from shopman.offerman.models import Product
         from shopman.stockman.protocols.sku import SkuInfo
 
-        products = Product.objects.filter(sku__in=skus).prefetch_related(
-            "collection_items__collection"
+        rows = Product.objects.filter(sku__in=skus).annotate(
+            primary_collection=models.FilteredRelation(
+                "collection_items", condition=models.Q(collection_items__is_primary=True),
+            ),
+            primary_category=models.F("primary_collection__collection__name"),
+        ).values(
+            "sku", "name", "long_description", "is_active", "is_published",
+            "is_sellable", "unit", "base_price_q", "availability_policy",
+            "shelf_life_days", "primary_category",
         )
-        found = {p.sku: p for p in products}
-
-        result: dict = {}
-        for sku in skus:
-            product = found.get(sku)
-            if product is None:
-                result[sku] = None
-                continue
-            primary_item = next(
-                (ci for ci in product.collection_items.all() if ci.is_primary), None
+        found = {
+            row["sku"]: SkuInfo(
+                sku=row["sku"],
+                name=row["name"],
+                description=row["long_description"],
+                is_published=row["is_active"] and row["is_published"],
+                is_sellable=row["is_active"] and row["is_sellable"],
+                unit=row["unit"],
+                category=row["primary_category"],
+                base_price_q=row["base_price_q"],
+                availability_policy=row["availability_policy"],
+                shelflife_days=row["shelf_life_days"],
             )
-            category = primary_item.collection.name if primary_item else None
-            result[sku] = SkuInfo(
-                sku=product.sku,
-                name=product.name,
-                description=product.long_description,
-                is_published=product.is_active and product.is_published,
-                is_sellable=product.is_active and product.is_sellable,
-                unit=product.unit,
-                category=category,
-                base_price_q=product.base_price_q,
-                availability_policy=product.availability_policy,
-                shelflife_days=product.shelf_life_days,
-            )
-        return result
+            for row in rows
+        }
+        return {sku: found.get(sku) for sku in skus}
 
     def search_skus(
         self,

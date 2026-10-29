@@ -579,3 +579,31 @@ class TestCrossSell:
         assert response.status_code == 200
         assert [item["sku"] for item in response.json()["recommendations"]["items"]] == [croissant.sku]
         assert client.get("/api/v1/storefront/products/MISSING/recommendations/").status_code == 404
+
+
+def test_pdp_hold_reads_do_not_grow_with_stock_lots(product, listing_item):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+    from shopman.stockman.models import Batch, Position, PositionKind, Quant
+
+    from shopman.shop.config import QUALITY_OK_GRADE_REFS
+    from shopman.shop.request_memo import request_memo_scope, stock_reads_scope
+
+    position = Position.objects.create(ref="pdp-lots", name="Vitrine", kind=PositionKind.PHYSICAL, is_saleable=True)
+    Batch.objects.create(sku=product.sku, ref="lot-0", quality_grade_ref=QUALITY_OK_GRADE_REFS[0])
+    Quant.objects.create(sku=product.sku, position=position, batch="lot-0", _quantity=10)
+
+    def measure():
+        with request_memo_scope(), stock_reads_scope(), CaptureQueriesContext(connection) as queries:
+            result = build_product_detail(sku=product.sku, channel_ref="web")
+        holds = [q for q in queries if '"stockman_hold"' in q["sql"]]
+        return result, len(holds)
+
+    first, few = measure()
+    for index in range(1, 12):
+        Batch.objects.create(sku=product.sku, ref=f"lot-{index}", quality_grade_ref=QUALITY_OK_GRADE_REFS[0])
+        Quant.objects.create(sku=product.sku, position=position, batch=f"lot-{index}", _quantity=10)
+    many, lots = measure()
+    assert first.available_qty == 10
+    assert many.available_qty == 120
+    assert lots == few == 1

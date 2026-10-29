@@ -117,7 +117,7 @@ class TestSkuValidatorQueryCount:
         assert small["P-000"].category == "Featured"
         assert big["P-029"].category == "Featured"
         assert len(thirty.captured_queries) == len(two.captured_queries)
-        assert len(thirty.captured_queries) <= 3
+        assert len(thirty.captured_queries) == 1
 
     def test_search_skus_query_count_does_not_grow_with_products(self):
         listing, collection = _listing_and_collection()
