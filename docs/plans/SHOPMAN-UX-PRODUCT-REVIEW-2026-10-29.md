@@ -1,6 +1,6 @@
 # Revisão de produto e UX dos apps Nuxt do Shopman
 
-**Estado: análise e proposta para discussão. Nenhuma decisão de produto aprovada.**
+**Estado: análise e prévias locais para discussão. Nenhuma variante aprovada.**
 
 Data: 29/10/2026. Base de análise: `origin/main`, commit `7288b44624d195d5cbf37431184fe49ee71a43e0`.
 Worktree: `shopman-ux-product-review`, branch `codex/shopman-ux-product-review`.
@@ -21,11 +21,12 @@ redesenhar o Admin nesta frente.
 O pedido estabelece três etapas distintas:
 
 1. Análise adversarial e planejamento, agora.
-2. Aprovações contra prévias locais, em etapa posterior.
+2. Aprovações contra prévias locais, autorizadas depois da análise em 29/10/2026.
 3. Implementação e deploy somente com autorização explícita posterior do dono.
 
 Aprovar uma hipótese, uma árvore de navegação ou uma prévia não autoriza a etapa 3.
-Esta branch contém documentação. A publicação em PR draft preserva a análise para
+Esta branch contém documentação e prévias locais isoladas, autorizadas pelo dono.
+A publicação em PR draft preserva a análise para
 revisão; não se pede merge automático, não se entra na fila e não se faz deploy.
 
 O Core mantém suas responsabilidades. Uma categoria de menu não determina um pacote
@@ -42,6 +43,10 @@ Python, um modelo ou um novo serviço. Toda eventual reorganização deve preser
 
 Não há recomendação de mudar DNS, consolidar serviços de deploy ou criar novos apps
 antes de validar a arquitetura de informação.
+
+As [prévias de Gestor e Compras](../previews/navigation-2026-10-29/README.md) comparam
+lateral única e dois níveis, incluindo navegação móvel, cabeçalho, Central e travessia
+entre apps. A preferência visual ainda aguarda avaliação do dono.
 
 ## 2 Evidência e grau de confiança
 
