@@ -721,6 +721,15 @@ envs:
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
   type: SECRET
+# Merchant: chaves já presentes no vivo (Watchman, 29/10/2026). O segredo
+# permanece no painel; a declaração evita apagá-lo num futuro update do spec.
+- key: GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64
+  scope: RUN_TIME
+  type: SECRET
+- key: GOOGLE_MERCHANT_PROJECTION
+  scope: RUN_TIME
+  value: '1'
+  type: GENERAL
 # Google Business Profile (posts do Marketing). API aprovada em 25/09/2026 para o
 # projeto 528240639893 (nelson-shopman-marketing, público Interno). Os dois IDs vêm de
 # accounts.list / locations.list; o cliente OAuth é o 'Nelson Shopman Marketing Server'.
