@@ -1,6 +1,6 @@
 # WP destacado: anatomia canônica do Nuxt UI
 
-**Estado:** executado localmente; aguardando aprovação da prévia antes de publicar
+**Estado:** executado e aprovado na prévia local; publicado na PR #2016
 **Origem:** prévia do CRUD humano do Compras, 23/10/2026
 **Alcance:** superfícies Nuxt de operador; Storefront fica fora
 
@@ -92,5 +92,5 @@ adaptadores de compatibilidade para uma peça oficial equivalente.
 - testes, lint, tipos e builds dos apps atingidos são a evidência de equivalência;
 - a prévia permanece somente local até a aprovação visual.
 
-Este WP não é mais uma fila de diagnóstico. A implementação está no branch local e não
-será enviada nem transformada em PR antes da aprovação da prévia.
+Este WP não é mais uma fila de diagnóstico. A implementação foi aprovada na prévia
+local e publicada na PR #2016.
