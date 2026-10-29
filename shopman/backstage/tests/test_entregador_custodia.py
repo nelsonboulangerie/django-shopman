@@ -125,6 +125,63 @@ def test_chamar_com_troco_leva_da_gaveta_e_a_coleta_nao_duplica(client, operator
     assert operator_orders.courier_change(order).back_q == 2600
 
 
+def test_cancelado_depois_da_coleta_devolve_o_troco_sem_registrar_a_venda_e_uma_vez(client, operator):
+    _order("DLV-CANCEL", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-CANCEL", change_out="26,00").status_code == 200
+    order = _collect("DLV-CANCEL")
+
+    # O cancelamento canônico preserva a custódia que já saiu com o entregador.
+    # O lifecycle e a autorização do cancelamento têm testes próprios; aqui o
+    # estado reproduz exatamente a fronteira posterior à coleta.
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+    order.refresh_from_db()
+
+    detail = _detail(client, order.ref)
+    action = next(action for action in detail["actions"] if action["ref"] == "courier-back")
+    assert detail["courier_return_lines"] == ["R$ 26,00 de troco"]
+    payload = {**action["payload_schema"], "idempotency_key": "cancelado-pos-coleta"}
+    url = reverse("api-backstage-order-courier-back", args=[order.ref])
+
+    first = client.post(url, payload, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancelado-pos-coleta")
+    replay = client.post(url, payload, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancelado-pos-coleta")
+    assert first.status_code == replay.status_code == 200
+    assert first.json()["closed"] == replay.json()["closed"] == [order.ref]
+
+    order.refresh_from_db()
+    change = operator_orders.courier_change(order)
+    assert order.status == Order.Status.CANCELLED
+    assert not order.data["payment"].get("cod_settled_at")
+    assert (change.out_q, change.back_q, change.pending) == (2600, 2600, False)
+    assert order.data["dispatch"]["courier_back_at"]
+    out = Entry.objects.get(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref)
+    (back,) = Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref=order.ref)
+    assert (back.amount_q, back.parent_id, back.payload) == (
+        2600,
+        out.pk,
+        {"courier_out_id": out.pk, "settled_by": "marina", "cancelled_after_collection": True},
+    )
+
+
+def test_cancelado_depois_da_coleta_exige_permissao_para_devolver_o_troco(client, operator):
+    _order("DLV-CANCEL-PERM", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-CANCEL-PERM", change_out="26,00").status_code == 200
+    order = _collect("DLV-CANCEL-PERM")
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+
+    without_permission = User.objects.create_user("sem-permissao", password="pw", is_staff=True)
+    client.force_login(without_permission)
+    response = client.post(
+        reverse("api-backstage-order-courier-back", args=[order.ref]),
+        {"expected_actor_id": without_permission.pk, "base_revision": "x", "idempotency_key": "sem-permissao"},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="sem-permissao",
+    )
+    assert response.status_code == 403
+    order.refresh_from_db()
+    assert operator_orders.courier_change(order).pending is True
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref=order.ref).exists()
+
+
 def test_chamar_com_cartao_reserva_a_maquininha_e_a_volta_libera(client, operator, machines):
     azul, _ = machines
     _order("DLV-0415")

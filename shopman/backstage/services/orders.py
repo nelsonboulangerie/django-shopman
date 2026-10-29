@@ -193,7 +193,14 @@ def courier_returned(order, *, actor: str, expected_revision=None):
     from shopman.backstage.services import pos as pos_service
     from shopman.backstage.services.exceptions import POSError, POSTerminalAmbiguous
 
-    needs_shift = any(operator_orders._cod_pending(m) for m in operator_orders.courier_return_members(order))
+    needs_shift = any(
+        (
+            operator_orders._cod_pending(member)
+            if member.status != member.Status.CANCELLED
+            else operator_orders.courier_change(member).pending
+        )
+        for member in operator_orders.courier_return_members(order)
+    )
     try:
         shift = pos_service.current_shift(strict=True) if needs_shift else None
     except POSTerminalAmbiguous as exc:
