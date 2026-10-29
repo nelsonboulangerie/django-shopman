@@ -1,0 +1,170 @@
+[
+  {
+    "surface": "kds-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "pos-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "storefront-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 10,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 10
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "bi-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "marketing-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "operator-kit",
+    "metadata": {
+      "info": 0,
+      "low": 10,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 10
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "orders-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "production-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "kitchensink-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "status-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 10,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 10
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "purchase-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  },
+  {
+    "surface": "hub-nuxt",
+    "metadata": {
+      "info": 0,
+      "low": 7,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 7
+    },
+    "leaf_advisories": [
+      "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+    ]
+  }
+]
