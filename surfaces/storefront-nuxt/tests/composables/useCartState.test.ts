@@ -52,6 +52,18 @@ describe('useCartState', () => {
     fetchMock.mockReset()
   })
 
+  it('a PDP pública sem sacola preserva o snapshot recebido pelo shell', async () => {
+    const store = await loadStore()
+    store.setFromServer(serverCart() as never)
+    const shellCart = store.cart.value
+
+    store.setFromServer(undefined)
+
+    expect(store.cart.value).toBe(shellCart)
+    expect(store.qtyForSku('CROISSANT')).toBe(2)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('optimistic update reconciles to server truth on drain', async () => {
     fetchMock.mockResolvedValue({ cart: serverCart() })
     const store = await loadStore()

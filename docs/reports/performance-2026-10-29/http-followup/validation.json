@@ -1,0 +1,54 @@
+{
+  "python": "/Users/pablovalentini/Dev/Claude/django-shopman/.venv/bin/python",
+  "pythonpath": "Current worktree root and each packages/* directory explicitly prepended",
+  "database": "Hermetic SQLite test database; DATABASE_URL and REDIS_URL empty",
+  "node": "22.x; npm ci from existing lock, no package changes",
+  "checks": [
+    {
+      "check": "Django API",
+      "command": "pytest shopman/storefront/tests/api -q -n 2",
+      "exit_code": 0,
+      "output_summary": [
+        "461 passed, 318 warnings in 33.78s"
+      ]
+    },
+    {
+      "check": "Nuxt unit",
+      "command": "npm run test:unit",
+      "exit_code": 0,
+      "output_summary": [
+        "Test Files  76 passed (76)",
+        "Tests  769 passed (769)",
+        "Duration  7.14s (transform 3.55s, setup 0ms, import 10.90s, tests 3.30s, environment 413ms)"
+      ]
+    },
+    {
+      "check": "Cart state",
+      "command": "npx vitest run --project component tests/composables/useCartState.test.ts",
+      "exit_code": 0,
+      "output_summary": [
+        "Test Files  1 passed (1)",
+        "Tests  24 passed (24)",
+        "Duration  4.33s (transform 2.59s, setup 117ms, import 128ms, tests 3.65s, environment 311ms)"
+      ]
+    },
+    {
+      "check": "Nuxt types",
+      "command": "npm run typecheck",
+      "exit_code": 0,
+      "output_summary": [
+        "Completed with exit code 0; no error output"
+      ]
+    },
+    {
+      "check": "Nuxt ESLint",
+      "command": "npx eslint server/utils/djangoProxy.ts app/types/shopman.ts tests/djangoProxyBehavior.test.ts tests/composables/useCartState.test.ts",
+      "exit_code": 0,
+      "output_summary": [
+        "Completed with exit code 0; no error output"
+      ]
+    }
+  ],
+  "ruff": "All checks passed!",
+  "git_diff_check": "Passed"
+}

@@ -1,0 +1,54 @@
+{
+  "method": "Isolated Django Client through middleware, cProfile enabled; READ ONLY transaction and rollback. Selected aggregate profiler rows, no response body or credentials persisted. Cumulative times overlap. Instrumented wall time is not an HTTP SLA.",
+  "catalog": {
+    "total_ms": 1619.02,
+    "projection_ms": 1597.83,
+    "availability_ms": 573.09,
+    "db_ms": 561.56,
+    "cache_ms": 57.36,
+    "bytes": 56731,
+    "selected_hot_self": [
+      {
+        "function": "psycopg.connection.wait",
+        "calls": 34,
+        "self_ms": 484.9
+      },
+      {
+        "function": "dict.clear",
+        "calls": 514,
+        "self_ms": 60.93
+      },
+      {
+        "function": "django.query.genexpr",
+        "calls": 850,
+        "self_ms": 47.47
+      }
+    ]
+  },
+  "pdp": {
+    "total_ms": 714.69,
+    "projection_ms": 707.11,
+    "db_ms": 181.75,
+    "cache_ms": 43.3,
+    "bytes": 4555,
+    "selected_hot_self": [
+      {
+        "function": "psycopg.connection.wait",
+        "calls": 27,
+        "self_ms": 115.55
+      },
+      {
+        "function": "sentry_sdk.scope.get_client",
+        "calls": 284,
+        "self_ms": 18.7
+      },
+      {
+        "function": "sentry_sdk.scope.start_span",
+        "calls": 36,
+        "self_ms": 15.19
+      }
+    ],
+    "sql_compilation_cumulative_ms": 203.38
+  },
+  "conclusion": "Most measured Django time remains inside projection. SQL transport, query compilation and Python all contribute; middleware wrapper cumulative time does not establish middleware overhead. Do not attribute all residual time to Sentry, TLS or cart."
+}
