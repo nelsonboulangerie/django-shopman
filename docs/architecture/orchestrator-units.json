@@ -8268,6 +8268,87 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-shared-ride",
+      "question": "Quais pedidos podem ir juntos numa corrida só da TaOn, em que ordem de paradas, e como a corrida chega a cada um?",
+      "owner": "delivery.shared-ride",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:request_group_dispatch",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:request_group_dispatch"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "MAX_RIDE_STOPS",
+            "_route",
+            "_stop",
+            "dispatch_task_filter",
+            "request_group_dispatch",
+            "ride_companions",
+            "ride_orders"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "COURIER_DISPATCH"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_group_ride.py::test_one_ride_carries_every_order_in_route_order",
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_needs_two_orders_and_no_order_called_twice"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-shared-ride-eligibility",
+      "question": "Este pedido pode entrar numa corrida com outros pedidos, ou leva maquininha, troco ou já tem corrida?",
+      "owner": "delivery.shared-ride-eligibility",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.courier:group_refusal",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:group_refusal"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "group_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_refuses_an_order_that_takes_the_card_machine"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "delivery.courier-charge-staleness",
       "question": "Quando a instrução de cobrança enviada ao entregador ficou diferente do pagamento atual?",
       "owner": "delivery.handoff-charge-staleness",

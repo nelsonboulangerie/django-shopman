@@ -47,6 +47,8 @@ class CourierSyncHandler:
         # F may already be durable while the local delivery/custody step failed.
         # Recover before deciding the terminal heartbeat has nothing left to do.
         courier.recover_local_status(order, ride_id=block["id_mch"])
+        for other in courier.ride_companions(order):
+            courier.recover_local_status(other, ride_id=block["id_mch"])
         if block.get("status") in TERMINAL_STATUSES:
             return
 
@@ -80,6 +82,9 @@ class CourierSyncHandler:
 
         if snapshot:
             courier.apply_snapshot(order, snapshot, source="poll")
+            # Corrida com várias paradas: a mesma leitura vale para os outros pedidos dela.
+            for other in courier.ride_companions(order):
+                courier.apply_snapshot(other, snapshot, source="poll")
 
         block = courier.get_block(order)
         still_active = bool(block.get("id_mch")) and block.get("status") not in TERMINAL_STATUSES

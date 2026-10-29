@@ -180,6 +180,7 @@ from .operations import (
     OrderCourierDispatchView,
     OrderCourierQuoteView,
     OrderCourierReminderDismissView,
+    OrderCourierRideView,
     OrderCustomerContactResolveView,
     OrderDanfeEscposView,
     OrderDetailView,
@@ -858,6 +859,7 @@ urlpatterns = [
     # Orders — operator actions
     # Antes do detalhe: "volume-check" não é ref de pedido.
     path("orders/volume-check/", OrderVolumeCheckView.as_view(), name="api-backstage-order-volume-check"),
+    path("orders/courier-ride/", OrderCourierRideView.as_view(), name="api-backstage-order-courier-ride"),
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path(
         "orders/<str:ref>/payment/check/",

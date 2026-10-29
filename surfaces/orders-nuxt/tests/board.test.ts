@@ -10,7 +10,10 @@ import {
   channelLabel,
   channelOptions,
   elapsedLabel,
+  courierRideLabel,
+  courierRideLine,
   equipmentOutLabel,
+  MAX_RIDE_STOPS,
   equipmentOutLine,
   flattenZones,
   lucideIcon,
@@ -891,5 +894,15 @@ describe("maquininhas na rua", () => {
     expect(
       equipmentOutLine({ order_ref: "WEB-A47", customer_name: "", out_at: "" }),
     ).toBe("Pedido A47");
+  });
+});
+
+describe("uma corrida para várias entregas", () => {
+  it("diz quantas entregas juntam e quem é cada uma", () => {
+    expect(courierRideLabel(3)).toBe("Juntar 3 entregas");
+    expect(courierRideLine({ ref: "WEB-A47", customer_name: "Maria" })).toBe(
+      "Pedido A47 · Maria",
+    );
+    expect(MAX_RIDE_STOPS).toBe(4);
   });
 });
