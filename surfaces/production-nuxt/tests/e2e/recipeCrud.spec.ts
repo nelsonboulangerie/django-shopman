@@ -87,8 +87,12 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByRole("option", { name: /Levain/ })).toBeVisible();
   await page.getByRole("option", { name: /Farinha T65/ }).click();
   await expect(page.getByLabel("Quantidade", { exact: true })).toBeFocused();
-  await expect(page.getByText("Papel na fórmula:", { exact: true })).toBeVisible();
-  await expect(page.getByText("Farinha", { exact: true })).toBeVisible();
+  await expect(page.getByText("Na fórmula", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Papel na fórmula de Farinha T65")).toContainText("Farinha");
+  const ingredientActions = page.locator("[data-ingredient-actions]").first();
+  await expect(ingredientActions.getByRole("button", { name: "Subir ingrediente" })).toBeVisible();
+  await expect(ingredientActions.getByRole("button", { name: "Descer ingrediente" })).toBeVisible();
+  await expect(ingredientActions.getByRole("button", { name: "Remover ingrediente" })).toBeVisible();
   const flourExpression = page.getByLabel("Quantidade de Farinha T65 expressa em");
   await expect(flourExpression).toContainText("g");
   const ingredientQuantity = page.getByLabel("Quantidade", { exact: true });
@@ -108,7 +112,6 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(ingredientQuantity).toHaveValue("2");
   await page.getByTestId("recipe-bom-items").getByRole("button", { name: "Incrementar", exact: true }).click();
   await expect(ingredientQuantity).toHaveValue("3");
-  await page.getByRole("button", { name: "Alterar papel na fórmula de Farinha T65" }).click();
   await expect(page.getByLabel("Papel na fórmula de Farinha T65")).toBeVisible();
 
   await page.getByRole("button", { name: "Adicionar ingrediente", exact: true }).click();
@@ -123,8 +126,22 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   const preparationBase = page.getByLabel("Quantidade", { exact: true }).last();
   await expect(preparationBase).toBeFocused();
   const quantityGroup = page.locator("[data-ingredient-quantity-group]").last();
-  await expect(quantityGroup.getByText("Quantidade do ingrediente", { exact: true })).toBeVisible();
-  await expect(quantityGroup.getByText("Quanto entra e como afeta a fórmula.", { exact: true })).toBeVisible();
+  const formulaGroup = page.locator("[data-ingredient-formula-group]").last();
+  await expect(quantityGroup.locator("legend")).toHaveText("Quantidade");
+  await expect(quantityGroup.getByText("Quanto entra na receita.", { exact: true })).toBeVisible();
+  await expect(formulaGroup.getByText("Na fórmula", { exact: true })).toBeVisible();
+  await expect(formulaGroup.getByText("Como este ingrediente participa.", { exact: true })).toBeVisible();
+  const quantityGroupBox = await quantityGroup.boundingBox();
+  const formulaGroupBox = await formulaGroup.boundingBox();
+  expect(quantityGroupBox).not.toBeNull();
+  expect(formulaGroupBox).not.toBeNull();
+  if (testInfo.project.name === "chromium-mobile-manager") {
+    expect(formulaGroupBox!.y).toBeGreaterThan(quantityGroupBox!.y);
+    expect(Math.abs(formulaGroupBox!.x - quantityGroupBox!.x)).toBeLessThanOrEqual(2);
+  } else {
+    expect(Math.abs(formulaGroupBox!.y - quantityGroupBox!.y)).toBeLessThanOrEqual(16);
+    expect(formulaGroupBox!.x).toBeGreaterThan(quantityGroupBox!.x + quantityGroupBox!.width - 2);
+  }
   const ratioQuantityGrid = page.locator("[data-ingredient-quantity-grid]").last();
   await expect(ratioQuantityGrid).toBeVisible();
   const [quantityColumnBox, expressionColumnBox] = await ratioQuantityGrid
@@ -145,7 +162,8 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   expect(detailBox).not.toBeNull();
   expect(gridBox).not.toBeNull();
   expect(detailBox!.width).toBe(gridBox!.width);
-  await expect(page.getByText("Receita do ingrediente: levain@4", { exact: true })).toBeVisible();
+  await expect(page.getByText("Prep", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("Versão 4", { exact: true })).toBeVisible();
   const levainCriterion = page.getByLabel("Critério da quantidade de Levain");
   await expect(levainCriterion).toContainText("Exato");
   await levainCriterion.click();
@@ -165,7 +183,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(preparationBase).toHaveValue("0,2");
   await preparationBase.locator("xpath=..").getByRole("button", { name: "Incrementar", exact: true }).click();
   await expect(preparationBase).toHaveValue("0,3");
-  await expect(page.getByText("Adicional aumenta a fórmula. Inclusa redistribui ingredientes já previstos nela.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Adicional soma à fórmula. Inclusa redistribui ingredientes já previstos.", { exact: true })).toBeVisible();
   await expect(page.getByText("Inclusa", { exact: true })).toBeVisible();
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(2);
   await expect(page.getByText("Receitas usadas como ingrediente", { exact: true })).toHaveCount(0);
@@ -174,7 +192,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await page.getByPlaceholder("Buscar ingrediente", { exact: true }).fill("creme");
   await page.getByRole("option", { name: /Creme confeiteiro/ }).click();
   await expect(page.getByLabel("Quantidade", { exact: true }).last()).toBeFocused();
-  await expect(page.getByText("Receita do ingrediente: creme-confeiteiro@7", { exact: true })).toBeVisible();
+  await expect(page.getByText("Versão 7", { exact: true })).toBeVisible();
   await expect(page.getByTestId("recipe-bom-items").locator(":scope > li")).toHaveCount(3);
 
   await page.getByRole("tab", { name: "Modo de preparo" }).click();
