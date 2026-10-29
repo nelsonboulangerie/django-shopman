@@ -32,9 +32,12 @@ que é ruído perto dos 25 g do arredondamento médio. Por isso a margem se orç
 se dilui. O colchão de três desvios existe para cobrir a cauda, e é ele que
 **encolhe em proporção** quando N cresce (``√N`` contra ``N``).
 
-E o que sobrar não é perda: **é massa velha de amanhã**, que a casa já modela
-como teto (``old_dough`` / ``cap_pct``). O alvo desta conta não é sobra zero —
-é sobra que caiba no teto do dia seguinte.
+E o que sobrar não é perda: pode virar **massa velha de amanhã**. A sobra
+aproveitável é pesada e registrada como lote real, com origem, validade e
+composição congelada. Quando uma receita a usa, a participação declara um
+máximo e a execução respeita o saldo disponível. O alvo desta conta não é
+sobra zero: é uma margem consciente, cuja sobra física nunca nasce por
+suposição no estoque.
 
 ⚠️ **A perda da masseira não se chuta para sempre.** Nesta rodada ela é
 declarada por ficha (``Recipe.meta["mixer_loss_g"]``) com padrão conservador. O

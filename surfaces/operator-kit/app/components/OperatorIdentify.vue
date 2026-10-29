@@ -35,25 +35,26 @@ const props = withDefaults(
     /** Rótulo do voltar. "Trocar operador" / "Trocar gerente". */
     changeLabel?: string;
     /**
-     * Rótulo do campo de nome livre. "Nome do gerente" diz de quem é o nome —
-     * num diálogo de autorização, "Nome" sozinho deixa o leitor de tela (e a
-     * pessoa apressada) sem saber se é o dela ou o de quem assina.
+     * Lista vazia: ninguém para escolher. NUNCA vira campo de nome digitado.
+     *
+     * ⚠️ Existiu um campo de nome livre aqui, "porta de saída" da lista vazia
+     * (19/08). Ele virou o caminho normal sem ninguém notar: no alpha a Joyce era
+     * a única gerente com PIN, a lista tirava quem está operando, e todo
+     * cancelamento do Gestor pedia o nome DIGITADO (dono, 28/10/2026: "erro
+     * crasso, já tínhamos resolvido"). Nome digitado não abre porta nenhuma: o
+     * servidor só aceita quem tem PIN e permissão, e esses estão na lista. Sem
+     * ninguém nela, o que resta é o crachá, e a tela diz isso.
      */
-    nameLabel?: string;
-    /**
-     * Lista vazia libera digitar o nome. É a ÚNICA porta quando ninguém foi
-     * provisionado ou a leitura falhou — esconder deixaria o balcão sem saída no
-     * meio de uma sangria.
-     */
-    allowTypedName?: boolean;
+    emptyTitle?: string;
+    emptyDescription?: string;
   }>(),
   {
     people: () => [],
     badgeEnabled: true,
     prompt: "Quem está operando?",
     changeLabel: "Trocar operador",
-    nameLabel: "Nome",
-    allowTypedName: false,
+    emptyTitle: "Ninguém para escolher",
+    emptyDescription: "",
   },
 );
 
@@ -63,14 +64,11 @@ const emit = defineEmits<{
 }>();
 
 const picked = ref<IdentifiablePerson | null>(null);
-const typedName = ref("");
 
 const hasList = computed(() => props.people.length > 0);
-const username = computed(() =>
-  (picked.value?.username ?? typedName.value).trim(),
-);
-// Sem lista o pad aparece de cara, junto do campo de nome: é o modo de emergência.
-const showPad = computed(() => !hasList.value || picked.value !== null);
+const username = computed(() => picked.value?.username ?? "");
+// O PIN só faz sentido depois de escolher DE QUEM é.
+const showPad = computed(() => picked.value !== null);
 const canSubmit = computed(() =>
   canSubmitPin(username.value || null, pin.value),
 );
@@ -154,7 +152,6 @@ function reset(keepPicked = false) {
   clear();
   if (keepPicked) return;
   picked.value = null;
-  typedName.value = "";
 }
 
 defineExpose({ reset });
@@ -209,6 +206,24 @@ defineExpose({ reset });
       />
     </template>
 
+    <!-- Ninguém na lista: diz por quê e deixa o crachá valendo. -->
+    <template v-if="!hasList">
+      <NuxtEmpty
+        variant="soft"
+        icon="i-lucide-user-x"
+        :title="emptyTitle"
+        :description="emptyDescription || undefined"
+        data-operator-identify-empty
+      />
+      <p
+        v-if="badgeEnabled !== false"
+        class="text-center text-xs text-muted-foreground"
+      >
+        Passe o crachá no leitor.
+      </p>
+      <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" />
+    </template>
+
     <!-- PIN -->
     <template v-if="showPad">
       <!-- Quem foi escolhido, no centro, e o voltar logo abaixo do nome: o
@@ -225,15 +240,6 @@ defineExpose({ reset });
           @click="unpick"
         />
       </div>
-      <NuxtInput
-        v-else-if="allowTypedName"
-        v-model="typedName"
-        class="w-full"
-        :placeholder="nameLabel"
-        :aria-label="nameLabel"
-        autocomplete="off"
-        size="xl"
-      />
 
       <OperatorPinPad
         :pin="pin"

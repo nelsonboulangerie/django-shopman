@@ -804,6 +804,8 @@ _PII_NESTED_KEYS: dict[str, frozenset[str]] = {
         {"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}
     ),
     "context": frozenset({"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}),
+    # O comentário da avaliação é texto do titular; a nota fica (é métrica da loja).
+    "customer_rating": frozenset({"comment"}),
 }
 
 # Handles que SÃO a pessoa. `pos_tab`, `table` e o código de pedido do iFood

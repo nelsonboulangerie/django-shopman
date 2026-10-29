@@ -4,9 +4,9 @@
 //
 // Em cima o ciclo do lote (Alt+1 a Alt+5, decisão #1433: Planejamento · Preparação ·
 // Abertura · Fechamento · Qualidade), e logo abaixo os Timers da bancada, com a
-// contagem de ativos no selo e o ponto quando um toca, e Ajustes: o que não é etapa
-// (Receitas, Relatórios, o Letreiro) mora na tela de Ajustes, e o pé da barra lateral
-// é o da suíte. A gaveta (☰) é o menu completo; a barra inferior do celular leva as
+// contagem de ativos no selo e o ponto quando um toca. Receitas, Relatórios e Letreiro
+// têm destinos diretos, e o pé da barra lateral é o da suíte. A gaveta (☰) é o menu
+// completo; a barra inferior do celular leva as
 // quatro primeiras etapas (`quick`) e o "Mais", que abre a gaveta.
 // Na barra inferior, Planejamento e Preparação aparecem como "Plano" e "Preparo": os
 // nomes cheios não cabem em 1/5 de um celular de 320px. O nome acessível é o cheio.
@@ -53,7 +53,7 @@ export function timersSection({ timersActive = 0, timersRinging = 0 }: Productio
   };
 }
 
-/** O que não é etapa do fluxo: na tela de Ajustes. */
+/** Ferramentas que não são etapas do fluxo, cada uma com destino direto. */
 export function toolSections({ canViewRecipes = false, canViewReports = false }: ProductionSectionsInput = {}): OperatorSection[] {
   const tools: OperatorSection[] = [];
   if (canViewRecipes) tools.push({ key: "recipes", label: "Receitas", icon: "lucide:book-open", to: "/recipes" });
@@ -63,23 +63,9 @@ export function toolSections({ canViewRecipes = false, canViewReports = false }:
 }
 
 /**
- * Ajustes: um item só (v4 `plano-porque4.html`, Qualidade legenda 8), logo depois de
- * Timers. Receitas, Relatórios e o Letreiro moram na tela de Ajustes (`/settings`).
- */
-export function settingsSection(): OperatorSection {
-  return {
-    key: "settings",
-    label: "Ajustes",
-    icon: "lucide:settings-2",
-    to: "/settings",
-    match: ["/recipes", "/reports", "/board"],
-  };
-}
-
-/**
- * O ciclo, um traço, Timers e Ajustes. O pé da barra lateral é o da suíte (Avisos,
- * Atalhos, Bloquear, o operador).
+ * O ciclo, um traço, Timers e as ferramentas diretas. O pé da barra lateral é o da
+ * suíte (Avisos, Atalhos, Bloquear, o operador).
  */
 export function productionSections(input: ProductionSectionsInput = {}): OperatorSection[] {
-  return [...stageSections(input), { ...timersSection(input), divider: true }, settingsSection()];
+  return [...stageSections(input), { ...timersSection(input), divider: true }, ...toolSections(input)];
 }

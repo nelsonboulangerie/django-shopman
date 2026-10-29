@@ -192,23 +192,23 @@ def _estimate_params(point: dict, suffix: str) -> dict:
     return params
 
 
-def estimate(*, pickup: dict, dropoff: dict) -> CourierEstimate | None:
+def estimate(*, pickup: dict, dropoff: dict, with_return: bool = False) -> CourierEstimate | None:
     """Cota a corrida (GET /estimarSolicitacao).
 
     ``pickup``/``dropoff``: dicts com ``lat``/``lng`` e o endereço
     (``street``, ``neighborhood``, ``city``, ``state``), que a API de entregas
-    exige. Retorna None quando inerte ou sem coordenadas: a cotação é sempre
-    best-effort.
+    exige. ``with_return``: a corrida volta à loja (``com_retorno``), o mesmo
+    ``retorno`` que a abertura vai pedir. Retorna None quando inerte ou sem
+    coordenadas: a cotação é sempre best-effort.
     """
     if _inert():
         return None
     if not all([pickup.get("lat"), pickup.get("lng"), dropoff.get("lat"), dropoff.get("lng")]):
         return None
-    response = _request(
-        "GET",
-        "/estimarSolicitacao",
-        params={**_estimate_params(pickup, "partida"), **_estimate_params(dropoff, "desejado")},
-    )
+    params = {**_estimate_params(pickup, "partida"), **_estimate_params(dropoff, "desejado")}
+    if with_return:
+        params["com_retorno"] = "true"
+    response = _request("GET", "/estimarSolicitacao", params=params)
     return CourierEstimate(
         value_q=_to_q(response.get("estimativa_valor")),
         minutes=float(response.get("estimativa_minutos") or 0),

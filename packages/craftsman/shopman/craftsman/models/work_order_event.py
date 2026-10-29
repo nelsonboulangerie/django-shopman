@@ -58,6 +58,14 @@ Canonical payload schemas per kind:
         impact: dict        — frozen shortage/order impact snapshot
         work_order_rev: int — authoritative revision after the mutation
 
+    formula_deviation:
+        ingredient_sku: str
+        expected: dict       — frozen minimum/target/maximum
+        actual: str
+        reason: str
+        impact: dict         — effective BOM after recalculation
+        work_order_rev: int
+
     quality_corrected:
         schema_version: int
         reason: str          — manager's required audit justification
@@ -102,6 +110,7 @@ class WorkOrderEvent(models.Model):
         OVEN_CONCLUDED = "oven_concluded", _("Retirado do forno")
         OVEN_ABANDONED = "oven_abandoned", _("Medição de forno abandonada")
         SHORTAGE_OVERRIDDEN = "shortage_overridden", _("Falta sobreposta")
+        FORMULA_DEVIATION = "formula_deviation", _("Desvio da fórmula autorizado")
         FINISHED = "finished", _("Fechamento")
         QUALITY_CORRECTED = "quality_corrected", _("Qualidade corrigida")
         QUALITY_REVIEWED = "quality_reviewed", _("Qualidade revisada")

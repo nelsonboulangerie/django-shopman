@@ -379,6 +379,7 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "DeveloperRegistration",
             "GoogleMerchantProjection",
             "GoogleMerchantRateLimitError",
             "_CONDITIONS",
@@ -392,6 +393,7 @@
             "_data_source",
             "_feed_label",
             "_get_config",
+            "_google_error",
             "_language",
             "_service_account",
             "_timeout",
@@ -399,7 +401,8 @@
             "_token_lock",
             "build_product_input",
             "logger",
-            "product_input_id"
+            "product_input_id",
+            "register_gcp"
           ]
         }
       ]
@@ -672,6 +675,7 @@
             "PAYMENT_METHOD_CODES",
             "PRODUCTION_URL",
             "_CARD_BY_GATEWAY",
+            "_DH_RECBTO",
             "_FUNDING_CODES",
             "_OTHER_DESCRIPTIONS",
             "_PREPAID_DESCRIPTION",
@@ -718,6 +722,7 @@
             "_shop_document",
             "_shop_name",
             "_sum_focus_money_q",
+            "_with_authorization_date",
             "logger"
           ]
         }
@@ -2072,6 +2077,7 @@
             "GOOGLE_MERCHANT_DEFAULT_LANGUAGE",
             "GOOGLE_MERCHANT_KEY",
             "GoogleMerchantForm",
+            "GoogleMerchantRegistrationForm",
             "MONTH_CHOICES",
             "NOTIFICATION_BACKEND_CHOICES",
             "NotificationTemplateAdmin",
@@ -7025,6 +7031,7 @@
             "TrackingPickupData",
             "TrackingProgressStepData",
             "TrackingPromiseData",
+            "TrackingRatingFollowupData",
             "TrackingStatusData",
             "TrackingTimelineEventData",
             "_COURIER_ENDED_STATUSES",
@@ -7071,6 +7078,7 @@
             "_progress_timestamp",
             "_promise",
             "_qr_image_src",
+            "_rating_followup",
             "_refund_status_key",
             "_reorder_action",
             "_shop_has_specific_address",
@@ -7349,6 +7357,20 @@
       "unit_ids": [
         "promotion.eligibility",
         "promotion.minimum-order-eligibility"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
+      "path": "shopman/shop/policies/rating_contact.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "rating.contact-offer"
       ],
       "responsibilities": [
         "decisão"
@@ -8291,6 +8313,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/customer_contact.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-customer-contact"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/catalog_identity.py",
       "touchpoints": [
         "outro"
@@ -8543,10 +8579,14 @@
       "out_of_extraction": false,
       "unit_ids": [
         "delivery.cancelled-order-ride-disposition",
+        "delivery.courier-auto-dispatch",
         "delivery.courier-charge-staleness",
         "delivery.courier-dispatch-eligibility",
         "delivery.courier-handoff-charge",
         "delivery.courier-quote",
+        "delivery.courier-return",
+        "delivery.courier-shared-ride",
+        "delivery.courier-shared-ride-eligibility",
         "shop.services-courier-courier-cancellation",
         "shop.services-courier-courier-status",
         "shop.services-courier-courier-sync"

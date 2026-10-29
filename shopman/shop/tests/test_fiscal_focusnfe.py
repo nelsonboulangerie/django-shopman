@@ -616,8 +616,11 @@ def test_pix_da_cobranca_sai_17_com_grupo_de_cartao():
     }]
 
 
-def test_pix_atestado_no_balcao_sai_20_estatico_com_grupo_de_cartao():
-    """ "Recebi o Pix" (QR fixo ou chave da loja) não teve cobrança com txid: é 20."""
+def test_pix_atestado_no_balcao_sai_20_estatico_sem_grupo_de_cartao():
+    """ "Recebi o Pix" (QR fixo ou chave da loja) não teve cobrança com txid: é 20.
+
+    Sem o grupo ``card``: a SEFAZ recusa o grupo no 20 (rejeição 963, medida em
+    homologação em 27/10/2026)."""
     payload = _emit_capturing({
         "method": "mixed",
         "amount_q": 1500,
@@ -629,7 +632,7 @@ def test_pix_atestado_no_balcao_sai_20_estatico_com_grupo_de_cartao():
 
     assert payload["formas_pagamento"] == [
         {"forma_pagamento": "01", "valor_pagamento": "5.00"},
-        {"forma_pagamento": "20", "valor_pagamento": "10.00", "tipo_integracao": "2"},
+        {"forma_pagamento": "20", "valor_pagamento": "10.00"},
     ]
 
 
@@ -723,3 +726,96 @@ def test_sem_troco_provado_a_nota_declara_o_liquido(payment):
 
     assert payload["formas_pagamento"][0]["valor_pagamento"] == "15.00"
     assert "valor_troco" not in payload
+
+
+# ── Hora da Autorização de Uso (prazo de cancelamento) ─────────────────────
+#
+# Medido em 28/10/2026 no alpha: a Focus responde a NFC-e sem `data_autorizacao`,
+# o pedido gravava `nfce_authorized_at` vazio, e o cancelamento 4 h depois foi à
+# SEFAZ e voltou "autorizada há mais de 30 minutos" em vez de abrir a nota de
+# estorno. A hora oficial é o `dhRecbto` do XML autorizado.
+
+_AUTHORIZED_XML = (
+    b'<nfeProc><NFe/><protNFe><infProt><tpAmb>2</tpAmb>'
+    b"<dhRecbto>2026-10-28T06:22:16-03:00</dhRecbto><nProt>141260001773024</nProt>"
+    b"<cStat>100</cStat></infProt></protNFe></nfeProc>"
+)
+
+
+def _authorized_response(**extra):
+    return {
+        "status": "autorizado",
+        "ref": "ORD-1",
+        "numero": "723",
+        "serie": "1",
+        "protocolo": "141260001773024",
+        "chave_nfe": "NFC-E-KEY",
+        "caminho_xml_nota_fiscal": "https://example.test/nota.xml",
+        **extra,
+    }
+
+
+class _XmlResponse:
+    def __init__(self, body: bytes):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return self.body
+
+
+def test_query_without_authorization_date_reads_dhRecbto_from_the_xml():
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    opened = []
+
+    def fake_urlopen(request, timeout):
+        opened.append(request.full_url)
+        return _XmlResponse(_AUTHORIZED_XML)
+
+    with (
+        patch("shopman.shop.adapters.fiscal_focusnfe._request", return_value=_authorized_response()),
+        patch("shopman.shop.adapters.fiscal_focusnfe.urlopen", side_effect=fake_urlopen),
+        override_settings(SHOPMAN_FOCUS_NFE=_settings()),
+    ):
+        result = FocusNFeBackend().query_status(reference="ORD-1")
+
+    assert result.success is True
+    assert result.authorization_date == "2026-10-28T06:22:16-03:00"
+    assert opened == ["https://example.test/nota.xml"]
+
+
+def test_authorization_date_from_the_response_skips_the_xml():
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    response = _authorized_response(data_autorizacao="2026-10-28T06:22:16-03:00")
+    with (
+        patch("shopman.shop.adapters.fiscal_focusnfe._request", return_value=response),
+        patch("shopman.shop.adapters.fiscal_focusnfe.urlopen") as xml_open,
+        override_settings(SHOPMAN_FOCUS_NFE=_settings()),
+    ):
+        result = FocusNFeBackend().query_status(reference="ORD-1")
+
+    assert result.authorization_date == "2026-10-28T06:22:16-03:00"
+    xml_open.assert_not_called()
+
+
+def test_unreadable_xml_keeps_the_note_authorized_without_the_date():
+    from urllib.error import URLError
+
+    from shopman.shop.adapters.fiscal_focusnfe import FocusNFeBackend
+
+    with (
+        patch("shopman.shop.adapters.fiscal_focusnfe._request", return_value=_authorized_response()),
+        patch("shopman.shop.adapters.fiscal_focusnfe.urlopen", side_effect=URLError("down")),
+        override_settings(SHOPMAN_FOCUS_NFE=_settings()),
+    ):
+        result = FocusNFeBackend().query_status(reference="ORD-1")
+
+    assert result.success is True
+    assert result.authorization_date is None

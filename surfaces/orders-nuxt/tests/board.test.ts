@@ -10,6 +10,11 @@ import {
   channelLabel,
   channelOptions,
   elapsedLabel,
+  courierRideLabel,
+  courierRideLine,
+  equipmentOutLabel,
+  MAX_RIDE_STOPS,
+  equipmentOutLine,
   flattenZones,
   lucideIcon,
   fulfillmentCounts,
@@ -872,5 +877,32 @@ describe("situationAfterContinua: a situação depois de “<REF> continua” (d
   it("sem rótulo, sem situação", () => {
     expect(situationAfterContinua("")).toBe("");
     expect(situationAfterContinua(undefined)).toBe("");
+  });
+});
+
+describe("maquininhas na rua", () => {
+  it("conta no rótulo e diz com qual pedido cada uma está", () => {
+    expect(equipmentOutLabel(1)).toBe("1 maquininha na rua");
+    expect(equipmentOutLabel(2)).toBe("2 maquininhas na rua");
+    expect(
+      equipmentOutLine({
+        order_ref: "WEB-A47",
+        customer_name: "Maria",
+        out_at: "2026-10-28T17:20:00Z",
+      }),
+    ).toBe("Pedido A47 · Maria · saiu às 14:20");
+    expect(
+      equipmentOutLine({ order_ref: "WEB-A47", customer_name: "", out_at: "" }),
+    ).toBe("Pedido A47");
+  });
+});
+
+describe("uma corrida para várias entregas", () => {
+  it("diz quantas entregas juntam e quem é cada uma", () => {
+    expect(courierRideLabel(3)).toBe("Juntar 3 entregas");
+    expect(courierRideLine({ ref: "WEB-A47", customer_name: "Maria" })).toBe(
+      "Pedido A47 · Maria",
+    );
+    expect(MAX_RIDE_STOPS).toBe(4);
   });
 });

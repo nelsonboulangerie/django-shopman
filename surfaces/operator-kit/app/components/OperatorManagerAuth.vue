@@ -16,9 +16,15 @@
 // errada em `Entry.approved_by` — justamente a segunda assinatura que a sangria
 // existe para ter.
 //
-// O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia
-// (leitura negada, nenhum gerente com PIN provisionado): esconder a única porta
-// deixaria o balcão sem saída no meio de uma sangria.
+// ⚠️ Lista vazia NÃO vira campo de nome digitado. Ele existiu como "porta de
+// saída" e virou o caminho normal (ver `OperatorIdentify`, `emptyTitle`). Sem
+// gerente com PIN, a tela diz isso e o crachá continua valendo. O gerente que
+// está operando aparece na lista (em primeiro) e assina com o próprio PIN.
+//
+// ⚠️ Toda autorização de gerente da suíte passa por ESTE componente. Quem precisa
+// de contexto do ato (o motivo do cancelamento, o prazo) usa o slot `context`,
+// nunca uma moldura própria em volta do `OperatorIdentify` — a trava em
+// `operator-kit/tests/guardrails.managerAuth.test.ts` reprova.
 import type { HouseAccountLimitInput, ManagerAction } from "../presentation/managerAuth";
 import {
   managerAuthReason,
@@ -34,7 +40,7 @@ const props = defineProps<{
    * ⚠️ É a linha que separa autorizar de logar, e é texto — não cor. As duas
    * telas pedem PIN num teclado igual, e o operador pode ler "digite o PIN"
    * como "sua sessão vai trocar". Não vai: `validate_manager_override` resolve o
-   * gerente, confere a permissão, recusa autoassinatura e devolve o objeto —
+   * gerente, confere a permissão e o PIN e devolve o objeto —
    * nunca chama `login()`. Dizer isso na tela é mais barato que consertar a
    * confusão depois, e vale para qualquer autorização (desconto, sangria,
    * destrave), não só a da gaveta.
@@ -47,7 +53,7 @@ const props = defineProps<{
   reasons?: string[];
   /** Conta na casa acima do limite (`review.house_account_limit`): o diálogo diz saldo, limite e quanto passa. */
   houseAccountLimit?: HouseAccountLimitInput | null;
-  /** Quem pode assinar (`POSProjection.managers`). Vazio cai no campo livre. */
+  /** Quem pode assinar (`POSProjection.managers`). Vazio mostra que não há outro gerente. */
   managers?: ManagerOption[];
   busy?: boolean;
   error?: string;
@@ -127,14 +133,15 @@ function onBadge(token: string) {
           icon="i-lucide-shield-check"
           :title="`Você continua como ${operatorName}.`"
         />
+        <slot name="context" />
         <OperatorIdentify
           ref="identify"
           :people="managers"
           :busy="busy"
           :error="error"
           :badge-enabled="open"
-          allow-typed-name
-          name-label="Nome do gerente"
+          empty-title="Nenhum gerente com PIN"
+          empty-description="Cadastre o PIN de um gerente no Admin, ou chame um gerente com crachá."
           prompt="Quem autoriza?"
           change-label="Trocar gerente"
           @pin="onPin"

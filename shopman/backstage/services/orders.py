@@ -559,4 +559,5 @@ def courier_quote(order) -> dict:
         "value_display": f"R$ {format_money(int(estimate['value_q']))}",
         "minutes": estimate["minutes"],
         "km": estimate["km"],
+        "with_return": bool(estimate.get("with_return")),
     }

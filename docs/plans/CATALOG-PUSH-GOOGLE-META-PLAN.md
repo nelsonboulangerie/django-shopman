@@ -49,7 +49,8 @@ que saiu do canal.
 1. Projeto no Google Cloud da conta da empresa; ativar a **Merchant API**.
 2. Criar uma **service account** e gerar a chave JSON.
 3. No Merchant Center (conta 5881119366), **Configurações → Pessoas e acesso**: adicionar
-   o e-mail da service account com acesso padrão.
+   o e-mail da service account com acesso de **Administrador** (o registro do passo 7
+   exige; ver a nota abaixo).
 4. No Merchant Center, **Fontes de dados**: criar uma fonte primária do tipo **API**
    (Brasil, português) e anotar o id. Depois **apagar a fonte do arquivo**
    (`/feed/google-shopping.xml`), para a API ser a única.
@@ -58,10 +59,24 @@ que saiu do canal.
    (os dois últimos já vêm preenchidos). Grava em `Shop.defaults["google_merchant"]`
    (dado da loja, ADR-042), e a página mostra a conta gravada no quadro
    "Google Merchant Center".
-6. No spec da DigitalOcean: `GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON` (tipo **SECRET**, o
-   JSON inteiro) e `GOOGLE_MERCHANT_PROJECTION=1`.
-7. `sync_platform_catalogs --dry-run --channel google-shopping` para conferir;
+6. No spec da DigitalOcean: `GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64` (tipo **SECRET**, o
+   JSON da chave em base64, numa linha: `base64 -i chave.json`; o editor de variáveis da
+   DigitalOcean recusa o JSON cru) e `GOOGLE_MERCHANT_PROJECTION=1`.
+7. **Registrar o envio, uma vez**: no Admin, página **Integrações**, botão **"Registrar o
+   envio no Google"**. Ele chama `developerRegistration:registerGcp` com a chave da service
+   account e liga o projeto do Google Cloud dela à conta. Sem esse registro, todo envio volta
+   **401 Unauthorized**. A tela mostra o projeto vinculado, ou a mensagem do Google quando
+   falha (falta de acesso de Administrador é a causa comum). Repetir é seguro.
+8. `sync_platform_catalogs --dry-run --channel google-shopping` para conferir;
    `sync_platform_catalogs --force` para o primeiro envio.
+
+> **Administrador depois do registro.** A documentação do Google exige `ADMIN` para a
+> chamada de registro e diz que o registro vale até alguém chamar `unregisterGcp`
+> ([registro](https://developers.google.com/merchant/api/guides/quickstart/registration)).
+> Ela não garante que o acesso **padrão** basta para os envios depois: o
+> [FAQ](https://developers.google.com/merchant/api/guides/quickstart/faq) fala em
+> identidades com `ADMIN`. Por isso a service account fica como Administrador. Rebaixar
+> para padrão só depois de um teste que prove o envio funcionando assim.
 
 ## Passos do operador (Meta)
 

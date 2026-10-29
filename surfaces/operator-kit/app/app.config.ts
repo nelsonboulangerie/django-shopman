@@ -143,8 +143,18 @@ export default defineAppConfig({
     // default: o `text-sm` fica. O `primary` ainda ficaria abaixo no claro (latão
     // sobre latão a 10%, 4,35:1) e usa a tinta `--primary-ink`, como o Badge e o
     // Button `soft`. A trava é `tests/alertContrast.test.ts`.
+    //
+    // Botões que empilham ocupam a largura toda (dono, 27/10/2026): no celular os botões
+    // do aviso vão um por linha, esticados; da tela `sm` para cima, seguem lado a lado no
+    // tamanho do texto. A régua é a tela e não o aviso: `@container` no aviso fixa a
+    // largura dele, e o aviso dentro de um popover (o "Por que espera" do quadro do
+    // Gestor) encolhia a zero e sumia.
     alert: {
-      slots: { description: "opacity-100" },
+      slots: {
+        description: "opacity-100",
+        root: "max-sm:flex-wrap max-sm:items-start",
+        actions: "max-sm:basis-full max-sm:flex-col max-sm:items-stretch",
+      },
       compoundVariants: [
         {
           color: "primary",

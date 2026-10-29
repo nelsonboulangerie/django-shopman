@@ -161,6 +161,143 @@ def test_start_retry_uses_frozen_attempt_before_mutable_position_lookup(recipe):
 
 
 @pytest.mark.django_db
+def test_register_old_dough_creates_one_traceable_stock_lot_and_replays(recipe):
+    work_order = craft.plan(recipe, 10, date=date.today())
+    _apply_start(work_order_id=work_order.pk, quantity="10", actor="production:ana")
+    work_order.refresh_from_db()
+    request = {
+        "work_order_id": work_order.pk,
+        "quantity": "1.250",
+        "unit": "kg",
+        "expiry_date": date.today() + timedelta(days=1),
+        "actor": "production:ana",
+        "expected_rev": work_order.rev,
+        "idempotency_key": "old-dough-timeout-retry",
+    }
+
+    first = production.register_old_dough(**request)
+    replay = production.register_old_dough(**request)
+
+    assert replay == {**first, "replayed": True}
+    assert first["sku"] == "MASSA-VELHA-SVC-PROD"
+    assert first["name"] == "Massa velha de Serviço Produção"
+    assert first["quantity_g"] == "1250"
+    batch = Batch.objects.get(ref=first["batch_ref"])
+    assert batch.metadata["source_work_order_ref"] == work_order.ref
+    assert batch.metadata["resource_kind"] == "old_dough"
+    quant = Quant.objects.get(sku=first["sku"], batch=batch.ref)
+    assert quant.quantity == Decimal("1250")
+    assert Move.objects.filter(quant=quant, kind=Move.Kind.MAKE).count() == 1
+
+
+@pytest.mark.django_db
+def test_register_old_dough_rejects_unopened_production(recipe):
+    work_order = craft.plan(recipe, 10, date=date.today())
+
+    with pytest.raises(ProductionConflict, match="durante ou depois"):
+        production.register_old_dough(
+            work_order_id=work_order.pk,
+            quantity="500",
+            unit="g",
+            expiry_date=date.today() + timedelta(days=1),
+            actor="production:ana",
+            expected_rev=work_order.rev,
+            idempotency_key="old-dough-before-start",
+        )
+
+
+@pytest.mark.django_db
+def test_manager_deviation_recalculates_included_composition_and_keeps_recipe_unchanged():
+    from shopman.craftsman.services import recipe_book
+
+    levain_entry = recipe_book.create_entry(ref="levain-desvio", name="Levain", kind="bread", output_sku="LEVAIN-DESVIO")
+    levain_version = recipe_book.create_version(
+        levain_entry,
+        formula={
+            "anchor": {"kind": "flour"},
+            "ingredients": [
+                {
+                    "ref": "farinha-levain", "sku": "FARINHA-DESVIO", "name": "Farinha", "role": "flour",
+                    "recipe_version_ref": "", "composition": "additional",
+                    "quantity": {"kind": "fixed", "minimum": 500, "target": 500, "maximum": 500, "unit": "g"},
+                },
+                {
+                    "ref": "agua-levain", "sku": "AGUA-DESVIO", "name": "Água", "role": "liquid",
+                    "recipe_version_ref": "", "composition": "additional",
+                    "quantity": {"kind": "fixed", "minimum": 500, "target": 500, "maximum": 500, "unit": "g"},
+                },
+            ],
+        },
+        yield_quantity=1000,
+        yield_unit="g",
+    )
+    recipe_book.publish_version(levain_version)
+    bread_entry = recipe_book.create_entry(
+        ref="pao-desvio", name="Pão com desvio", kind="bread", output_sku="PAO-DESVIO"
+    )
+    bread_formula = {
+        "anchor": {"kind": "flour"},
+        "ingredients": [
+            {
+                "ref": "farinha", "sku": "FARINHA-DESVIO", "name": "Farinha", "role": "flour",
+                "recipe_version_ref": "", "composition": "additional",
+                "quantity": {"kind": "fixed", "minimum": 1000, "target": 1000, "maximum": 1000, "unit": "g"},
+            },
+            {
+                "ref": "agua", "sku": "AGUA-DESVIO", "name": "Água", "role": "liquid",
+                "recipe_version_ref": "", "composition": "additional",
+                "quantity": {"kind": "fixed", "minimum": 700, "target": 700, "maximum": 700, "unit": "g"},
+            },
+            {
+                "ref": "levain", "sku": "LEVAIN-DESVIO", "name": "Levain", "role": "other",
+                "recipe_version_ref": levain_version.version_ref, "composition": "included",
+                "quantity": {
+                    "kind": "ratio", "minimum": 20, "target": 20, "maximum": 20,
+                    "basis": {"kind": "flour"},
+                },
+            },
+        ],
+    }
+    bread_version = recipe_book.create_version(
+        bread_entry, formula=bread_formula, yield_quantity=1700, yield_unit="g"
+    )
+    published = recipe_book.publish_version(bread_version)
+    work_order = craft.plan(published, 1700, date=date.today())
+    _apply_start(work_order_id=work_order.pk, quantity="1700", actor="production:ana")
+    work_order.refresh_from_db()
+    request = {
+        "work_order_id": work_order.pk,
+        "ingredient_ref": "levain",
+        "actual_quantity": "18",
+        "reason": "Levain disponível suficiente e fermentação ajustada pelo gerente.",
+        "actor": "production:gerente",
+        "expected_rev": work_order.rev,
+        "idempotency_key": "formula-deviation-18",
+    }
+
+    result = production.authorize_formula_deviation(**request)
+    replay = production.authorize_formula_deviation(**request)
+
+    assert result["ingredient_ref"] == "levain"
+    assert result["ingredient_sku"] == "LEVAIN-DESVIO"
+    assert result["expected"] == {"minimum": "20", "target": "20", "maximum": "20"}
+    assert result["actual"] == "18"
+    assert replay == {**result, "replayed": True}
+    work_order.refresh_from_db()
+    effective = {item["input_sku"]: Decimal(item["quantity"]) for item in work_order.meta["_recipe_snapshot"]["items"]}
+    assert effective == {
+        "FARINHA-DESVIO": Decimal("910"),
+        "AGUA-DESVIO": Decimal("610"),
+        "LEVAIN-DESVIO": Decimal("180"),
+    }
+    assert work_order.meta["_ingredient_actuals"] == {"levain": "18"}
+    assert bread_version.formula == bread_formula
+    event = WorkOrderEvent.objects.get(work_order=work_order, kind=WorkOrderEvent.Kind.FORMULA_DEVIATION)
+    assert event.actor == "production:gerente"
+    assert event.payload["reason"].startswith("Levain disponível")
+
+
+@pytest.mark.django_db
 def test_apply_planned_requires_explicit_duplicate_target(recipe):
     first = craft.plan(recipe, 20, date=date.today())
     second = craft.plan(recipe, 12, date=date.today())

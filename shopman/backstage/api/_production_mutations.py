@@ -53,6 +53,32 @@ class ProductionWorkOrderMutationSuccess:
 
 
 @dataclass(frozen=True)
+class ProductionOldDoughMutationSuccess:
+    ok: bool
+    sku: str
+    name: str
+    batch_ref: str
+    quantity_g: str
+    expiry_date: str
+    recipe_version_ref: str
+    replayed: bool
+
+
+@dataclass(frozen=True)
+class ProductionFormulaDeviationMutationSuccess:
+    ok: bool
+    ingredient_ref: str
+    ingredient_sku: str
+    ingredient_name: str
+    expected: dict
+    actual: str
+    reason: str
+    impact: dict
+    work_order_rev: int
+    replayed: bool
+
+
+@dataclass(frozen=True)
 class ProductionQualityReviewBatchMutationSuccess:
     ok: bool
     reviewed_count: int
@@ -378,6 +404,34 @@ class ProductionStartMutationSerializer(ExistingWorkOrderMutationSerializer):
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 
 
+class ProductionOldDoughMutationSerializer(ExistingWorkOrderMutationSerializer):
+    quantity = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        min_value=Decimal("0.001"),
+    )
+    unit = serializers.ChoiceField(choices=("g", "kg"), default="g")
+    expiry_date = serializers.DateField()
+    position_ref = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+    def validate_expiry_date(self, value):
+        if value < timezone.localdate():
+            raise serializers.ValidationError("A validade da massa velha não pode estar no passado.")
+        return value
+
+
+class ProductionFormulaDeviationMutationSerializer(ExistingWorkOrderMutationSerializer):
+    ingredient_ref = serializers.CharField(allow_blank=False, max_length=100)
+    actual_quantity = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        min_value=Decimal("0"),
+    )
+    batch_ref = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    reason = serializers.CharField(allow_blank=False, max_length=500)
+
+
 class ProductionPartitionGroupSerializer(StrictMutationSerializer):
     quantity = serializers.DecimalField(
         max_digits=12,
@@ -555,6 +609,22 @@ PRODUCTION_ACTION_SPECS = (
         "workOrderId",
     ),
     ProductionActionSpec(
+        "registerProductionOldDough",
+        "/api/v1/backstage/production/{workOrderId}/old-dough/",
+        "ProductionOldDoughMutationRequest",
+        ProductionOldDoughMutationSerializer,
+        ProductionOldDoughMutationSuccess,
+        "workOrderId",
+    ),
+    ProductionActionSpec(
+        "authorizeProductionFormulaDeviation",
+        "/api/v1/backstage/production/{workOrderId}/formula-deviation/",
+        "ProductionFormulaDeviationMutationRequest",
+        ProductionFormulaDeviationMutationSerializer,
+        ProductionFormulaDeviationMutationSuccess,
+        "workOrderId",
+    ),
+    ProductionActionSpec(
         "finishProductionWorkOrder",
         "/api/v1/backstage/production/{workOrderId}/finish/",
         "ProductionFinishMutationRequest",
@@ -636,6 +706,8 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionMutationCurrent,
     ProductionPlanMutationSuccess,
     ProductionWorkOrderMutationSuccess,
+    ProductionOldDoughMutationSuccess,
+    ProductionFormulaDeviationMutationSuccess,
     ProductionQualityReviewBatchMutationSuccess,
     ProductionVoidMutationSuccess,
     ProductionOvenArmMutationSuccess,

@@ -180,6 +180,8 @@ from .operations import (
     OrderCourierDispatchView,
     OrderCourierQuoteView,
     OrderCourierReminderDismissView,
+    OrderCourierRideView,
+    OrderCustomerContactResolveView,
     OrderDanfeEscposView,
     OrderDetailView,
     OrderEditPreviewView,
@@ -270,6 +272,8 @@ from .operations import (
     ProductionWeighingView,
     StationProvisionView,
     WorkOrderFinishView,
+    WorkOrderFormulaDeviationView,
+    WorkOrderOldDoughView,
     WorkOrderOvenArmView,
     WorkOrderOvenConcludeView,
     WorkOrderPlanView,
@@ -855,6 +859,7 @@ urlpatterns = [
     # Orders — operator actions
     # Antes do detalhe: "volume-check" não é ref de pedido.
     path("orders/volume-check/", OrderVolumeCheckView.as_view(), name="api-backstage-order-volume-check"),
+    path("orders/courier-ride/", OrderCourierRideView.as_view(), name="api-backstage-order-courier-ride"),
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path(
         "orders/<str:ref>/payment/check/",
@@ -947,6 +952,11 @@ urlpatterns = [
     path("orders/<str:ref>/assign/", OrderAssignView.as_view(), name="api-backstage-order-assign"),
     path("orders/<str:ref>/unassign/", OrderUnassignView.as_view(), name="api-backstage-order-unassign"),
     path("orders/<str:ref>/comment/", OrderCommentView.as_view(), name="api-backstage-order-comment"),
+    path(
+        "orders/<str:ref>/customer-contact/resolve/",
+        OrderCustomerContactResolveView.as_view(),
+        name="api-backstage-order-customer-contact-resolve",
+    ),
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
@@ -1122,6 +1132,16 @@ urlpatterns = [
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
+    path(
+        "production/<int:wo_id>/old-dough/",
+        WorkOrderOldDoughView.as_view(),
+        name="api-backstage-wo-old-dough",
+    ),
+    path(
+        "production/<int:wo_id>/formula-deviation/",
+        WorkOrderFormulaDeviationView.as_view(),
+        name="api-backstage-wo-formula-deviation",
+    ),
     path("production/<int:wo_id>/finish/", WorkOrderFinishView.as_view(), name="api-backstage-wo-finish"),
     path(
         "production/quality-review/batch/",

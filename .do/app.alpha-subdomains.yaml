@@ -456,10 +456,6 @@ envs:
   scope: RUN_TIME
   value: '1'
   type: GENERAL
-- key: MACHINE_RETORNO
-  scope: RUN_TIME
-  value: 'false'
-  type: GENERAL
 - key: MACHINE_TIMEOUT
   scope: RUN_TIME
   value: '15'

@@ -22,8 +22,8 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:80acfd05ed98ab0707290c459569ffea578be59c25b1cd9006a709903ab1bbf3",
-  "acceptedOn": "2026-10-27",
+  "themeFingerprint": "sha256:1ac497e6d7d317cbc3654498856659b715f07316099fcb1d956d4169262618d5",
+  "acceptedOn": "2026-10-28",
   "owner": "Pablo Valentini",
-  "note": "Aceite do dono (Pablo Valentini, 27/10/2026) após prévia local de Compras, PDV, Pedidos e B.I.: remoção do CSS do UiNativeSelect aposentado, sem consumidor de produção e sem mudança nos retratos canônicos. Aceite anterior (10/10/2026, regra do rótulo que cabe: \"rótulo de ação completo, curto escrito à mão, só ícone; texto de peça fixa reserva 2 linhas\"), PR #1637: operator-fit.css entra no tema; abas (pílula e sublinhada) rolam de lado em vez de cortar em reticência; o mês do calendário quebra linha."
+  "note": "Aceites do dono preservados na integração. Em 28/10/2026 (\"Aceito a mudança do tema\"), PR #2021: botões do aviso que empilham no celular ocupam a largura toda, rótulo centralizado; a régua é a tela (max-sm), não o aviso. Nenhuma baseline muda: os contratos visuais do PDV, KDS, B.I. e Marketing passaram na CI sem diferença. Em 27/10/2026, após prévia local de Compras, PDV, Pedidos e B.I.: remoção do CSS do UiNativeSelect aposentado, sem consumidor de produção e sem mudança nos retratos canônicos. Aceite anterior (10/10/2026), PR #1637: operator-fit.css entra no tema; abas (pílula e sublinhada) rolam de lado em vez de cortar em reticência; o mês do calendário quebra linha. Muda só onde o rótulo não cabia: as 4 baselines da prévia simulada do Marketing a 390 px, promovidas da CI no mesmo PR (o PDV não tem job visual na CI e não tem aba cortada). Aceite anterior (10/10/2026, \"1) aplica em todos\"): descrição do Alert à cor plena."
 }

@@ -10,6 +10,9 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, WorkOrder
+from shopman.craftsman.services import recipe_book
+from shopman.stockman.models import Batch
+from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.projections.production import (
@@ -96,6 +99,111 @@ def test_production_kds_projection_returns_started_cards_only(recipe, superuser)
     assert kds.cards[0].started_qty == "11"
     assert kds.cards[0].can_finish is True
     assert planned.ref not in [card.ref for card in kds.cards]
+
+
+@pytest.mark.django_db
+def test_kds_card_exposes_frozen_formula_limits_and_current_actual(superuser):
+    entry = recipe_book.create_entry(
+        ref="massa-com-limites",
+        name="Massa com limites",
+        kind="bread",
+        output_sku="MASSA-LIMITES",
+    )
+    version = recipe_book.create_version(
+        entry,
+        formula={
+            "anchor": {"kind": "flour"},
+            "ingredients": [
+                {
+                    "ref": "ingredient-flour",
+                    "sku": "FARINHA-T55",
+                    "name": "Farinha T55",
+                    "role": "flour",
+                    "composition": "additional",
+                    "quantity": {
+                        "kind": "fixed",
+                        "minimum": 900,
+                        "target": 1000,
+                        "maximum": 1100,
+                        "unit": "g",
+                    },
+                },
+                {
+                    "ref": "ingredient-levain",
+                    "sku": "LEVAIN",
+                    "name": "Levain",
+                    "role": "other",
+                    "composition": "additional",
+                    "quantity": {
+                        "kind": "ratio",
+                        "minimum": 10,
+                        "target": 15,
+                        "maximum": 20,
+                        "basis": {"kind": "total"},
+                    },
+                },
+                {
+                    "ref": "ingredient-old-dough",
+                    "sku": "MASSA-VELHA-PAO-FRANCES",
+                    "name": "Massa velha de Pão Francês",
+                    "role": "other",
+                    "composition": "additional",
+                    "quantity": {
+                        "kind": "ratio",
+                        "minimum": None,
+                        "target": 15,
+                        "maximum": 20,
+                        "basis": {"kind": "total"},
+                    },
+                },
+            ],
+        },
+        yield_quantity=1000,
+        yield_unit="g",
+    )
+    recipe = recipe_book.publish_version(version)
+    wo = craft.plan(recipe, 1000, date=date.today())
+    craft.start(wo, quantity=1000)
+    wo.refresh_from_db()
+    wo.meta = {**wo.meta, "_ingredient_actuals": {"ingredient-levain": "18"}}
+    wo.save(update_fields=["meta"])
+    available = Batch.objects.create(
+        ref="MV-AVAILABLE",
+        sku="MASSA-VELHA-PAO-FRANCES",
+        production_date=date.today(),
+        expiry_date=date.today() + timedelta(days=2),
+        metadata={"resource_kind": "old_dough"},
+    )
+    expired = Batch.objects.create(
+        ref="MV-EXPIRED",
+        sku="MASSA-VELHA-PAO-FRANCES",
+        production_date=date.today() - timedelta(days=3),
+        expiry_date=date.today() - timedelta(days=1),
+        metadata={"resource_kind": "old_dough"},
+    )
+    Batch.objects.create(
+        ref="MV-ZERO",
+        sku="MASSA-VELHA-PAO-FRANCES",
+        production_date=date.today(),
+        expiry_date=date.today() + timedelta(days=3),
+        metadata={"resource_kind": "old_dough"},
+    )
+    StockMovements.receive(Decimal("750"), available.sku, batch=available.ref, reason="Massa velha disponível")
+    StockMovements.receive(Decimal("500"), expired.sku, batch=expired.ref, reason="Massa velha vencida")
+
+    card = build_production_kds(selected_date=date.today()).cards[0]
+
+    assert [(row.ingredient_ref, row.unit, row.basis_label) for row in card.formula_limits] == [
+        ("ingredient-flour", "g", ""),
+        ("ingredient-levain", "%", "Fórmula"),
+        ("ingredient-old-dough", "%", "Fórmula"),
+    ]
+    levain = card.formula_limits[1]
+    assert (levain.minimum, levain.target, levain.maximum, levain.actual) == ("10", "15", "20", "18")
+    old_dough = card.formula_limits[2]
+    assert [(batch.ref, batch.quantity, batch.unit, batch.expiry_date) for batch in old_dough.available_batches] == [
+        ("MV-AVAILABLE", "750", "g", (date.today() + timedelta(days=2)).isoformat()),
+    ]
 
 
 @pytest.mark.django_db

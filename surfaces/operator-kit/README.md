@@ -117,6 +117,7 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorConfirmDialog.vue` | `<OperatorConfirmDialog>` | a caixa do `useConfirm`; montada UMA vez pelo `OperatorPwaRuntime`, nenhum app a monta |
 | `app/components/OperatorFormShell.vue` | `<OperatorFormShell>` | o casco canônico de um cadastro: seções, aviso do que não foi salvo, ação na base (salvar/descartar) e a pergunta antes de descartar (ver "Casco de cadastro") |
 | `app/components/OperatorFormSection.vue` | `<OperatorFormSection>` | a seção de um cadastro: título, descrição e a chave do próximo foco (`data-focus-target`) |
+| `app/components/OperatorFieldRow.vue` | `<OperatorFieldRow>` | linha responsiva de dois campos relacionados; a prioridade semântica distribui o espaço e o detalhe condicional ocupa uma nova linha inteira |
 | `app/composables/useDirtyForm.ts` | `useDirtyForm` | estado sujo de um cadastro: um retrato na abertura e as diferenças a partir dele |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
@@ -1852,6 +1853,11 @@ Contrato:
   `tabindex="-1"`; o título e a descrição são opcionais, e quem chama decide o chrome
   (um `NuxtCard` em volta, ou os campos direto na superfície do painel). O controle que
   deve receber o foco de teclado se marca com `data-focus-control`.
+- **Linhas de campos pelo significado.** `OperatorFieldRow` recebe `priority="value"`,
+  `priority="context"` ou `priority="balanced"`. O consumidor declara qual lado precisa
+  de leitura, não frações ou larguras. Os slots `value` e `context` dividem a primeira
+  linha; `detail` abre uma linha inteira quando uma escolha revela outro campo. Abaixo de
+  360 px os campos empilham. Assim, conteúdo condicional nunca é espremido numa coluna.
 - **Próximo foco por seção.** `active-section` é a chave do momento; quando ela muda, a
   página vai à seção (`useNextFocus`) e foca o controle marcado, ou a própria seção. O
   casco também expõe `reveal(alvo, opções)` para o foco fora do fluxo.

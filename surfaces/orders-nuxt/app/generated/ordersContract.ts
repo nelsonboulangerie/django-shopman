@@ -386,6 +386,13 @@ export interface EquipmentOutProjection {
   identified: boolean;
 }
 
+/** Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável. */
+export interface ContactRequestProjection {
+  rating: number;
+  comment: string;
+  requested_at_display: string;
+}
+
 /** Quem é este cliente, para o operador decidir como tratá-lo. */
 export interface CustomerProfileProjection {
   is_first_order: boolean;
@@ -699,6 +706,7 @@ export interface OperatorOrderProjection {
   undo: UndoProjection | null;
   notification_receipts: NotificationReceiptProjection[];
   managers: Record<string, string>[];
+  contact_request: ContactRequestProjection | null;
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
@@ -786,6 +794,7 @@ export interface TwoZoneQueueProjection {
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
+  ride_candidates: string[];
   ifood_negotiation_orders: OrderCardProjection[];
   awareness: QueueAwarenessProjection | null;
 }

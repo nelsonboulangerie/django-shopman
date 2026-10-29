@@ -211,7 +211,7 @@ def test_group_gated_coupon_rejected_for_anonymous(client):
     J.set_cart_qty(client, CROISSANT, 1)  # anonymous session
     status, body = J.apply_coupon(client, "FIEL10")
     assert status == 400, body
-    assert body["error_code"] == "coupon_not_eligible"
+    assert body["error_code"] == "coupon_rejected"
 
 
 def test_reorder_conflict_requires_mode_when_cart_has_items(client):
@@ -244,4 +244,4 @@ def test_exhausted_coupon_is_rejected(client):
     J.set_cart_qty(client, CROISSANT, 1)
     status, body = J.apply_coupon(client, "USADO")
     assert status == 400, body
-    assert body["error_code"] == "coupon_exhausted"
+    assert body["error_code"] == "coupon_rejected"

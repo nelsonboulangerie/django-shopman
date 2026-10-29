@@ -23,7 +23,7 @@
     ],
     "secret": [
       "DATABASE_URL",
-      "GOOGLE_MERCHANT_SERVICE_ACCOUNT_JSON",
+      "GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64",
       "SECRET_KEY"
     ],
     "structural": [
