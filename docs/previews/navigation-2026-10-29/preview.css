@@ -194,3 +194,10 @@ svg{stroke-width:2}.tag{border-radius:6px;line-height:16px}
 /* Botão do app: mesmo envelope dos demais controles do cabeçalho. */
 .suite-header{--header-control-size:32px}.suite-header>.icon-button{width:var(--header-control-size);height:var(--header-control-size);min-width:var(--header-control-size);min-height:var(--header-control-size);flex-shrink:0}.suite-header .current-app-home .app-mark{width:var(--header-control-size);height:var(--header-control-size)}
 @media(max-width:650px), (max-width:900px) and (orientation:portrait){.suite-header{--header-control-size:44px}}
+/* Identidade única e respiro entre regiões, também no desktop compacto. */
+.primary .app-logo{width:44px;height:44px;min-width:44px;padding:0;cursor:pointer}.primary .app-logo .app-mark{width:44px;height:44px}.application[data-view=overview] .content>.kpis{margin-top:24px}.content>.split{min-width:0}.content>.split>*{min-width:0}
+@media(min-width:901px), (min-width:651px) and (orientation:landscape){.application:not([data-hidden=true]) .suite-header .current-app-home{display:none}}
+/* Ferramentas pertencem a uma faixa de superfície, não a um card adicional. */
+.workspace{--workspace-bar-bg:var(--surface)}.content{--content-gutter:26px}.content:has(>.toolbar){padding-top:0}.content>.toolbar{width:calc(100% + 2 * var(--content-gutter));max-width:none;margin:0 calc(-1 * var(--content-gutter)) 16px;padding:8px var(--content-gutter);background:var(--workspace-bar-bg);border-bottom:1px solid var(--line);border-radius:0}.support-bottom{background:var(--workspace-bar-bg)}.content .split .toolbar{padding:8px 12px;background:var(--workspace-bar-bg);border-block:1px solid var(--line);border-radius:0}
+@media(max-width:1100px){.content{--content-gutter:20px}}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){.content{--content-gutter:15px}}

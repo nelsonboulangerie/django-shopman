@@ -263,3 +263,25 @@ complete-field-error-mobile.jpg e complete-confirmation-mobile.jpg. Galeria no r
 Integrações, permissões reais, servidor concorrente, validação fiscal, câmera, uploads,
 comunicação externa, estoque e pagamentos não foram executados. Nenhum fluxo está
 aprovado para substituição dos componentes maduros pelo esquema estático destes mocks.
+
+## Correção de duplicidade no desktop
+
+- Caso reproduzido em 870 × 548: apenas um ícone de app visível; conteúdo com padding
+  horizontal de 20 px e página sem transbordamento (largura 870). Ícone do rail abriu
+  Central e o retorno retomou Compras.
+- Desktop 1440 × 900: um ícone de app visível; padding 22px 26px 40px no conteúdo;
+  distância medida de 24 px entre o split de tarefas/atalhos e as métricas.
+- Mobile 390 × 844: rail fora da tela e ícone do cabeçalho presente. Abrir menu →
+  Central → Voltar a Compras retorna à página com gaveta fechada.
+- Captura desktop-identity-spacing.jpg. Correção somente na prévia.
+
+## Faixa de ferramentas e ancoragem mobile
+
+- 320 × 740: ícone do app em x=15, busca global em x=209 e menu em x=261; todos com
+  44 px. Ordem dos controles no DOM corresponde à visual.
+- Fundo computado da toolbar e do rodapé: rgb(255,255,255). Faixa de ferramentas com
+  61 px incluindo respiro e borda; antes ocupava o conteúdo com padding superior,
+  portanto não foi acrescentada uma segunda faixa fixa à área de trabalho.
+- As 20 telas foram revisitadas em 320 px: página e conteúdo sem overflow horizontal.
+- Abrir/fechar o menu continua operante após mudar seu posicionamento.
+- Galeria mobile atualizada para refletir o cabeçalho reposicionado e a nova faixa.

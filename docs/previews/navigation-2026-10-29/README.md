@@ -477,3 +477,24 @@ As funções compartilhadas da suíte (sessão/trava, tema, confiança do dispos
 instalação, notificações, atalhos e capacidade/conexão) também são obrigações de
 preservação do kit. A prévia de composição não reproduz esses runtimes nem autoriza
 removê-los. Aparência estática e mensagens de estado não substituem seus contratos.
+
+### Identidade e respiro no desktop
+
+Correção do caso apontado pelo dono: quando o rail está visível, só ele mostra o ícone
+do app, agora também como acesso funcional à Central. O cabeçalho mantém esse ícone
+quando o rail não está na tela, como no mobile. O botão de compactar a lateral é uma
+função distinta e permanece. O Painel de Compras mantém 24 px entre o bloco de tarefas/
+atalhos e as métricas, além do padding externo; esses blocos não devem se encostar.
+
+### Composição das ferramentas e posição da identidade no mobile
+
+Experimentação solicitada: a identidade do app ancora o canto esquerdo; busca global
+e menu do app ficam agrupados à direita. São funções distintas, com a mesma caixa de
+toque e ordem DOM igual à visual. O ícone oficial e sua cor não foram redesenhados.
+
+Filtro, busca e opções passam a ocupar uma faixa branca contínua, da mesma família
+do rodapé fixo. A faixa acompanha a largura útil da área rolável, sem radius de card
+ou sombra adicional. Ela continua rolando com o conteúdo; o pedido de uma superfície
+coesa não vira automaticamente mais uma barra fixa no mobile. A ordem dos controles
+permanece filtro → busca → opções. A composição usa os gutters da página nos três
+perfis, sem encolher controles ou criar overflow.
