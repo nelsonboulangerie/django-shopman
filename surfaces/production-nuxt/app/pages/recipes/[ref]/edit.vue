@@ -987,8 +987,8 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
               </label>
             </div>
             <div class="grid gap-2 border-b bg-muted/40 px-3 py-2 sm:flex sm:flex-wrap sm:items-center">
-              <span class="text-xs tabular-nums text-muted-foreground">
-                base {{ gramsLabel(localAnchorTotal) }} · massa total {{ gramsLabel(localTotal) }}
+              <span class="text-xs tabular-nums text-muted-foreground" data-testid="formula-summary">
+                Base {{ gramsLabel(localAnchorTotal) }} · Massa total {{ gramsLabel(localTotal) }}
               </span>
             </div>
             <div v-if="!formula.ingredients.length" class="grid gap-3 px-3 py-6 text-center">
@@ -1167,13 +1167,16 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                   </label>
                   </fieldset>
 
-                  <fieldset
+                  <NuxtCard
                     v-if="item.sku"
-                    class="grid min-w-0 content-start gap-3 border-t pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0"
+                    variant="soft"
                     data-ingredient-formula-group
                   >
-                    <legend class="text-sm font-semibold">Na fórmula</legend>
-                    <p class="text-xs text-muted-foreground">Como este ingrediente participa.</p>
+                    <div class="grid min-w-0 content-start gap-3">
+                    <div>
+                      <h3 class="text-sm font-semibold">Na fórmula</h3>
+                      <p class="text-xs text-muted-foreground">Como este ingrediente participa.</p>
+                    </div>
                     <dl v-if="pctOf(item, localAnchorTotal)" class="flex items-center justify-between gap-3 border-b pb-2 text-sm">
                       <dt class="text-xs text-muted-foreground">Participação</dt>
                       <dd class="font-medium tabular-nums">{{ pctOf(item, localAnchorTotal) }}% da base</dd>
@@ -1202,7 +1205,8 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                       />
                       <span class="font-normal">Adicional soma à fórmula. Inclusa redistribui ingredientes já previstos.</span>
                     </label>
-                  </fieldset>
+                    </div>
+                  </NuxtCard>
                 </div>
               </li>
             </ol>
