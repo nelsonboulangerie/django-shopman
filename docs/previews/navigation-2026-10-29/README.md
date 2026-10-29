@@ -4,12 +4,24 @@ Estado: proposta para avaliação. Nenhuma variante aprovada. Protótipo indepen
 autorizado pelo dono em 29/10/2026. Sem alteração dos apps, kit, Core, dados, baselines
 ou deploy. Dados fictícios e estado em memória; recarregar restaura a amostra.
 
+## Direção vigente: preservar o design amadurecido
+
+O dono esclareceu que o escopo é navegação e composição, não redesenho do design
+system. O silêncio sobre detalhes dos mocks não é aprovação. A proposta vigente
+restaura o rail bronze e usa o kit real como referência para botões, badges soft,
+cores, cards, avisos e receitas de overlay. As rodadas anteriores abaixo são histórico
+de experimentação; o menu inteiro claro da sexta rodada foi retirado.
+
+Abra o [roteiro completo](http://127.0.0.1:4186/review.html): 20 telas, 56 exemplos de
+composição de fluxo e seletor de estados. O mesmo caminho funciona no túnel corrente.
+O roteiro é ferramenta de revisão, sem entrar no produto proposto.
+
 ## Abrir
 
 Na raiz desta worktree:
 
 ```bash
-python3 -m http.server 4186 --bind 127.0.0.1 --directory docs/previews/navigation-2026-10-29
+python3 docs/previews/navigation-2026-10-29/serve.py
 ```
 
 - [Gestor lado a lado](http://127.0.0.1:4186/?app=gestor&view=catalog&compare=1).
@@ -360,3 +372,108 @@ pelo ícone; teclado virtual físico; leitor de tela e contraste formal; recuper
 falhas; proteção completa de edição ao fechar/cancelar. A prévia bloqueia próximo
 registro com edição pendente, mas ainda não cobre todas as saídas. A posição da lista
 e os filtros no endereço ainda precisam da mesma disciplina quando implementados.
+
+
+## Revisão integral de Gestor e Compras, sétima rodada
+
+### Fronteira de preservação
+
+Leitura confrontada com `origin/main` em `677f0e8ae` e com as fontes da worktree.
+Referências: `operator-kit/app/app.config.ts`, `assets/css/operator-theme.css`,
+`OperatorButton`, `OperatorMoreMenu`, `OperatorConfirmDialog`, `OperatorReadingCard`,
+`OperatorSonner`, `docs/reference/operator-kitchen-sink.md` e os componentes dos apps.
+
+| Preservar | Aplicação na proposta |
+|---|---|
+| Rail bronze | Desktop e menu mobile usam a cor de rail #8b6b2e; árvore em tela inteira conserva a identidade, com subitens leves |
+| Conjunto mínimo de botões | Principal sólido, neutro outline/ghost e destrutivo error; adaptação ao espaço sem cortar significado |
+| Badges soft | Estados com cores semânticas e texto, sem transformar badge em ação |
+| Cards e tipografia | Tokens e respiro da suíte como referência; nenhuma nova identidade de componentes é aprovada pelo mock |
+| Cinco receitas de overlay | Confirmação, formulário curto, workspace, detalhe e captura conservam propósitos distintos; cadastro longo deixa de caber numa caixa curta |
+| Confirmação segura | Voltar/continuar editando recebe foco antes do ato sensível; erro mantém o rascunho |
+| Fluxos atuais | A redistribuição conserva cadastros, estados, motivos, histórico, reversões, conversões e ações existentes |
+| Core/orquestrador/projeções | Nenhuma alteração; preview não chama serviço de negócio |
+
+Exceções explícitas pedidas nesta conversa: pontos verticais em vez da reticência
+horizontal do OperatorMoreMenu atual; opções do registro e dispensar sem borda; ordem
+filtro/busca/opções; ícone atual como acesso à Central; experimentação B desktop/árvore A
+mobile; composição das barras. O kit não foi alterado para impor essas exceções.
+A aparência estática é aproximação para avaliar composição, não um componente novo
+canônico nem uma aprovação de substituição das primitivas reais.
+
+### Correções funcionais da proposta
+
+- Unificações volta a ser histórico com desfazer. Comparar duplicidade fica no cliente.
+- Produto conserva Geral, Preço e config, Ingredientes e nutrição, Redes sociais,
+  Fiscal e Vínculos, além do tabelão, histórico e Permitir compra.
+- Cliente conserva cadastro, pedidos, endereços, preferências, fidelidade, edição,
+  etiquetas, grupos e unificação. Grupos têm membros, duplicação e edição.
+- Pedido conserva atendimento, motivo, saída/retirada, retorno, troco, maquininha,
+  pagamento, fiscal, nota e ouvidoria na distribuição dos acessos.
+- Canais conservam operação, pausa com duração/motivo, categorias e sincronização;
+  rotinas conservam evidência e dupla conferência; postos conservam cadastro e desativação.
+- Compras conserva pedido de compra/cancelamento, custo, fornecedor e unidade de compra.
+- Receber conserva NF por chave, captura/foto, sem NF, item/vínculo/conversão/validade/
+  volumes, diferença, ressalva, devolução e comprovante.
+- Insumos conservam identificação, situação, conversões, fornecedores/custos, mínimos,
+  duplicação, embalagem aberta e Permitir revenda; fornecedores conservam contatos e
+  condições comerciais; CSV conserva acesso à revisão/importação e exportação do recorte.
+- Contagem volta a mostrar o saldo do sistema e exige motivo da divergência, como no
+  app atual. A contagem cega tinha sido uma alteração não autorizada e foi retirada.
+  A revisão percorre os valores efetivamente digitados no formulário da amostra.
+
+Os 56 exemplos têm fonte registrada no [inventário de cobertura](coverage.json).
+Todo caminho de composição é acessível pelo roteiro. Funções contextuais também entram
+nas opções da página ou do registro. Esse acesso de revisão não equivale a afirmar que
+todas merecem o mesmo peso ou um menu enorme na implementação final.
+
+### Estados, fidelidade e limites
+
+O seletor do roteiro oferece normal, carregando, vazio, erro, sem permissão, sem conexão
+e conflito; os links abrem telas limpas. `scenario=` só existe no protótipo. Erro fica
+no topo, com Tentar novamente. Falhas de campo apontam o campo e mantêm o texto; conflito
+e falta de conexão não fingem salvamento. Fechar um formulário alterado abre a decisão
+de descartar, sem apagar o rascunho ao escolher Continuar editando.
+
+Não se está reimplementando toda regra ou integração dos apps em JavaScript estático:
+câmera/OCR, NF real, validação fiscal, estorno, contato externo, cotação de entrega,
+permissão real, concorrência do servidor, saldo/ledger, upload e exportação real estão
+fora. Os formulários mostram grupos de informação e decisões, com valores fictícios;
+seletores remotos, relações complexas e validações profundas continuam sendo os dos
+componentes existentes. Nenhuma redução de funcionalidade está autorizada. A futura
+implementação, se aprovada, deverá compor esses componentes e serviços, não substituir
+seus contratos pelos campos simplificados do protótipo.
+
+Antes de implementar, a prova de não regressão deve cruzar rota/ação/permissão/estado
+com o ledger canônico e testes dos apps. `coverage.json` registra fontes, não substitui
+`operator-component-ledger.json`, não muda status pending de nenhuma superfície e não
+é uma certificação de paridade funcional. Testes de dispositivo físico, leitor de tela,
+teclado virtual e contraste formal continuam pendentes.
+
+
+Passagem visual final: a lista de fornecedores passou a ter um alvo de navegação
+consistente por linha, sem o botão Abrir cair em linhas diferentes. No Painel de
+Compras, tarefas vêm antes das métricas e os atalhos de entrada com/sem NF substituem
+a explicação sobre a organização do app. Badges permanecem ajustados ao texto, sem
+virarem faixas de largura total. A instrução da contagem deixou de usar cor de aviso
+para uma ação normal. A nota de conversão de farinha só aparece quando o item está
+no recorte. Os ícones PWA reais de Gestor/Compras foram copiados sem alteração para
+os assets da prévia; o gesto de voltar à Central pelo ícone já existe no OperatorRail.
+
+A conferência com o main identificou quatro fontes de fluxo com alterações desde a
+base da worktree. As diferenças de composição foram lidas: em particular, formulários
+de insumo/fornecedor em papel quente com seções brancas foram refletidos nos exemplos.
+O inventário registra hashes da worktree e de origin/main, sem reescrever os arquivos
+reais. O mapa de cores de tempo de outra frente não foi modificado nem redefinido.
+
+
+Ajuste solicitado durante a revisão: o botão do ícone de app compartilha o envelope
+exato dos demais botões do cabeçalho (44 × 44 px no mobile; 32 × 32 px no desktop).
+O PNG oficial acompanha o envelope, sem um segundo tamanho independente. O servidor
+local agora envia Cache-Control no-store e assets versionados para evitar mistura de
+rodadas; os links internos preservam a revisão.
+
+As funções compartilhadas da suíte (sessão/trava, tema, confiança do dispositivo,
+instalação, notificações, atalhos e capacidade/conexão) também são obrigações de
+preservação do kit. A prévia de composição não reproduz esses runtimes nem autoriza
+removê-los. Aparência estática e mensagens de estado não substituem seus contratos.

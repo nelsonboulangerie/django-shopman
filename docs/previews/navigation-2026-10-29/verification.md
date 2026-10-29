@@ -198,3 +198,68 @@ Ajuste final da busca: painel ancorado ao alto e altura pelo conteúdo. Em 390 �
 a altura passou de 816 px (lista completa) para 292 px (Contagem), com o campo no
 mesmo y=107 nos dois estados; clientHeight e scrollHeight iguais. No desktop 1440,
 a busca teve 796 px sem rolagem externa. Captura polish-search-mobile.jpg atualizada.
+
+## Sétima rodada: revisão integral e preservação
+
+Escopo: composição estática dos dois apps, com fontes reais como referência. Não é
+execução dos apps Nuxt, do BFF ou dos serviços. Não altera o ledger canônico.
+
+Fontes confrontadas: app.config.ts, operator-theme.css, OperatorButton, OperatorMoreMenu,
+OperatorConfirmDialog, OperatorReadingCard e OperatorSonner; 32 arquivos de origem dos
+56 exemplos registrados em coverage.json. Hashes da worktree e de origin/main estão
+registrados; quatro arquivos de Compras divergiam e suas alterações de composição
+foram consultadas. Assets PWA foram copiados byte a byte, sem redesenho.
+
+### Matriz final, após corrigir cache do servidor
+
+- 320 × 740: 20 telas × 7 estados = 140 visitas. Título e conteúdo presentes; sem
+  transbordamento horizontal de página ou dos botões verificados.
+- 320 × 740: 56 fluxos, com 78 casos de abertura/seleção de seção. Diálogo aberto;
+  corpo e rodapé sem transbordamento horizontal na medição final.
+- 390 × 844: 20 telas e 56 fluxos = 76 visitas; página e corpo sem overflow horizontal.
+- 1440 × 900: os mesmos 76 exemplos, sem overflow horizontal da página/corpo.
+- Passagem visual nas 20 capturas mobile: corrigidos fornecedores com ações em linhas
+  variáveis, prioridade do painel de Compras, badges esticados, instrução de contagem
+  indevidamente tratada como aviso e nota de conversão fora do recorte.
+- Logs de erro retornados pela ferramenta na observação final: lista vazia. Isso não
+  redefine o registro histórico de instrumentação nas rodadas anteriores.
+
+Evidência por caso em review-evidence.json. As medidas demonstram a geometria visitada,
+não certificam a completude de domínio, contraste ou acessibilidade de todo o produto.
+
+### Interações percorridas
+
+- Produto: visitar Fiscal, voltar ao Geral e alterar nome; fechar → Continuar editando
+  preserva o valor; fechar → Descartar fecha o formulário. Salvar válido confirma a
+  operação local. Navegação de seções não apaga os campos.
+- Recusar pedido: motivo vazio aponta campo e aviso no topo. Motivo preenchido abre
+  confirmação, com foco em Voltar à revisão e ato destrutivo na cor error; voltar
+  preserva o texto.
+- Conflito no produto: tentar salvar mantém o rascunho e retorna mensagem de conflito.
+- Contagem: motivo ausente bloqueia revisão; quantidade 10 kg frente a 18 kg no sistema
+  com motivo preenchido aparece na revisão; confirmação chega ao resultado local.
+- Histórico de unificações: Desfazer → revisão → confirmação atualiza a amostra para
+  Desfeita e desabilita a repetição da mesma ação.
+- Rotinas: preencher evidência e confirmar atualiza 1 de 4 feitas.
+- Recebimento: resolver diferença altera a próxima ação para Confirmar entrada.
+- Menu: largura mobile completa e bronze rgb(139,107,46); os subitens continuam na árvore.
+
+O teste de transições encontrou e corrigiu uma colisão de atributo entre identificação
+do diálogo e acionadores de fluxo. Também foi detectado cache de scripts misturando
+rodadas. A validação final usou assets v=20261029-7b, URLs revision=7b e servidor com
+Cache-Control no-store. Os resultados anteriores a essa correção não são usados como
+substitutos desta matriz final.
+
+### Ajuste de tamanho solicitado durante a revisão
+
+icon-size-evidence.json: no mobile 390, menu, app Gestor e busca mediram 44 × 44 px;
+no desktop 1440, compactação, app Compras e busca mediram 32 × 32 px. Mesmo envelope
+por cabeçalho, sem um tamanho independente para o PNG.
+
+Capturas finais: complete-<app>-<view>-mobile.jpg para as 20 telas;
+complete-bronze-navigation-mobile.jpg, complete-product-workspace-mobile.jpg,
+complete-field-error-mobile.jpg e complete-confirmation-mobile.jpg. Galeria no roteiro.
+
+Integrações, permissões reais, servidor concorrente, validação fiscal, câmera, uploads,
+comunicação externa, estoque e pagamentos não foram executados. Nenhum fluxo está
+aprovado para substituição dos componentes maduros pelo esquema estático destes mocks.

@@ -6,8 +6,10 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="color-scheme" content="light">
   <title>Shopman · Estudo de navegação</title>
-  <link rel="stylesheet" href="preview.css">
-  <script defer src="preview.js"></script>
+  <link rel="stylesheet" href="preview.css?v=20261029-7b">
+  <script defer src="flows.js?v=20261029-7b"></script>
+  <script defer src="flow-engine.js?v=20261029-7b"></script>
+  <script defer src="preview.js?v=20261029-7b"></script>
 </head>
 <body>
   <a class="skip" href="#workspace">Pular para o conteúdo</a>
@@ -29,6 +31,8 @@
     </main>
   </div>
   <div id="options-popover" popover aria-label="Opções" role="dialog"></div>
+  <dialog id="discard-dialog" class="confirmation-dialog" aria-labelledby="discard-title"><div class="dialog-head"><h2 id="discard-title">Descartar alterações?</h2></div><div class="dialog-body"><p>O que você alterou ainda não foi salvo. Você pode continuar editando.</p></div><div class="dialog-foot"><button class="button" id="keep-editing">Continuar editando</button><button class="button danger" id="discard-editing">Descartar alterações</button></div></dialog>
+  <dialog id="action-confirm" class="confirmation-dialog" aria-labelledby="action-confirm-title"><div class="dialog-head"><h2 id="action-confirm-title">Confirmar</h2></div><div class="dialog-body"><p id="action-confirm-description"></p></div><div class="dialog-foot"><button class="button" id="action-confirm-back">Voltar à revisão</button><button class="button gold" id="action-confirm-act">Confirmar</button></div></dialog>
   <dialog id="detail" aria-labelledby="detail-title"><div id="dialog-content"></div></dialog>
 </body>
 </html>
