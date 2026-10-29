@@ -14516,7 +14516,9 @@
           "path": "shopman/shop/services/pos.py",
           "symbols": [
             "PosSaleReview",
-            "review_sale"
+            "review_sale",
+            "_started_lot_qty",
+            "_lot_stage"
           ]
         }
       ],
@@ -14524,6 +14526,7 @@
         "service"
       ],
       "domains": [
+        "craftsman",
         "orderman"
       ],
       "ports": [],

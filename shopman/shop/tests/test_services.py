@@ -259,6 +259,8 @@ class TestAvailabilityListingMembership:
     def test_check_reuses_loaded_availability_for_stockman_decision(
         self, mock_get_adapter, mock_decision
     ):
+        from shopman.stockman.protocols.sku import PromiseDecision
+
         from shopman.shop.services import availability
 
         stock_adapter = SimpleNamespace(
@@ -280,11 +282,13 @@ class TestAvailabilityListingMembership:
             }),
             get_promise_decision=MagicMock(),
         )
-        mock_decision.return_value = SimpleNamespace(
+        mock_decision.return_value = PromiseDecision(
             approved=True,
             sku="PAO-001",
             requested_qty=Decimal("1"),
             available_qty=Decimal("5"),
+            available=Decimal("5"),
+            expected=Decimal("5"),
             orderable_ceiling=Decimal("5"),
             is_tracked=True,
             reason_code=None,
