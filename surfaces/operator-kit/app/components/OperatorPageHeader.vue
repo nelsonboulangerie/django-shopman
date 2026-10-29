@@ -264,12 +264,27 @@ function deskToolbar() {
 }
 const filtersOpen = ref(false);
 const activeCount = computed(() => props.activeFilters.length);
-// Avisos da tela: um inteiro, o resto em "e mais N".
+// Avisos da tela: um inteiro, o resto em "e mais N". Fechar é só uma dispensa desta
+// montagem da página: não altera o estado do domínio nem persiste no navegador. Se a
+// causa continuar, o mesmo aviso volta no próximo carregamento.
 const alertsOpen = ref(false);
-const shownAlerts = computed(() =>
-  alertsOpen.value ? props.alerts : props.alerts.slice(0, SCREEN_ALERTS_VISIBLE),
+const dismissedAlertKeys = ref<string[]>([]);
+function alertKey(alert: OperatorScreenAlert): string {
+  return alert.id ?? alert.title;
+}
+const visibleAlerts = computed(() =>
+  props.alerts.filter((alert) => !dismissedAlertKeys.value.includes(alertKey(alert))),
 );
-const hiddenAlerts = computed(() => Math.max(0, props.alerts.length - SCREEN_ALERTS_VISIBLE));
+const shownAlerts = computed(() =>
+  alertsOpen.value ? visibleAlerts.value : visibleAlerts.value.slice(0, SCREEN_ALERTS_VISIBLE),
+);
+const hiddenAlerts = computed(() => Math.max(0, visibleAlerts.value.length - SCREEN_ALERTS_VISIBLE));
+function dismissAlert(alert: OperatorScreenAlert) {
+  const key = alertKey(alert);
+  if (!dismissedAlertKeys.value.includes(key)) {
+    dismissedAlertKeys.value = [...dismissedAlertKeys.value, key];
+  }
+}
 function headerAlertActions(alert: OperatorScreenAlert) {
   if (!alert.action) return [];
   // A saída do aviso é a principal dele: `solid` na cor do aviso (`alertActions`).
@@ -620,9 +635,10 @@ function clearAll() {
     <slot name="below" />
 
     <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
-         N". Lugar declarado: a tela não monta faixa de aviso própria. -->
+         N". A orientação vertical canônica mantém a ação sob o texto e o fechar no
+         canto superior direito. Lugar declarado: a tela não monta faixa própria. -->
     <div
-      v-if="alerts.length"
+      v-if="visibleAlerts.length"
       class="flex flex-col gap-2 px-4 py-2 sm:px-6"
       data-page-header-alerts
     >
@@ -635,9 +651,11 @@ function clearAll() {
         :title="alert.title"
         :description="alert.description"
         :actions="alertActions(alert.color, headerAlertActions(alert))"
-        orientation="horizontal"
+        :close="{ color: 'neutral', variant: 'ghost', size: 'md' }"
+        :ui="{ close: 'size-8' }"
         :role="alert.color === 'error' ? 'alert' : 'status'"
         data-page-header-alert
+        @update:open="(open: boolean) => { if (!open) dismissAlert(alert); }"
       />
       <NuxtButton
         v-if="hiddenAlerts && !alertsOpen"

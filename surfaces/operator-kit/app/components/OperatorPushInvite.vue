@@ -61,7 +61,6 @@ const actions = computed(() => [
     data-operator-push-invite
     color="info"
     variant="subtle"
-    orientation="horizontal"
     icon="i-lucide-bell-ring"
     title="Avisos mesmo com o app fechado"
     :description="`Ative neste dispositivo para receber só os avisos ${scope}.`"

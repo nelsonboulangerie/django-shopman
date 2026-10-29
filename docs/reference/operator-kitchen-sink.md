@@ -123,9 +123,9 @@ componentes, tokens e receitas continuam em `surfaces/operator-kit`.
 | `OperatorSplitter`         | panes redimensionáveis, teclado e persistência                  | lista/detalhe e editor/prévia no desktop | duas colunas comprimidas no celular |
 | Nuxt UI puro               | card, alert, empty, skeleton, table, form, badge, tabs, popover | composição direta com tokens do kit      | wrapper que apenas renomeia         |
 
-`UiButton` conserva somente a tradução legada de hierarquia e as alturas
-operacionais já usadas. Efeitos, gradientes e sombra skeuomórfica sem consumidor
-foram removidos. Eles não são variantes semânticas.
+As ações comuns usam `NuxtButton` diretamente, com o conjunto mínimo de cor,
+variante e tamanho definido no tema. O adaptador legado `UiButton` foi removido em
+23/10/2026 depois da migração dos últimos 69 usos do PDV.
 
 ## Anatomias
 

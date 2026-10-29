@@ -226,10 +226,10 @@ const segmentClass = (active: boolean) => (active ? "border-primary bg-primary/5
           <p v-if="preview.error" class="text-sm text-destructive" aria-live="polite">{{ preview.error }}</p>
 
           <div class="grid min-w-0 grid-cols-3 gap-1.5" aria-label="Teclado numérico">
-            <UiButton
+            <NuxtButton
               v-for="key in keypad"
               :key="key"
-              variant="outline"
+              color="neutral" variant="outline"
               class="h-14 min-w-0 px-0 text-xl tabular-nums"
               :class="key === 'Backspace' ? 'text-destructive' : ''"
               :aria-label="key === 'Backspace' ? 'Apagar' : key === ',' ? 'Vírgula' : key"
@@ -238,7 +238,7 @@ const segmentClass = (active: boolean) => (active ? "border-primary bg-primary/5
             >
               <Icon v-if="key === 'Backspace'" name="lucide:delete" class="size-5" />
               <template v-else>{{ key }}</template>
-            </UiButton>
+            </NuxtButton>
           </div>
         </template>
 
@@ -280,16 +280,16 @@ const segmentClass = (active: boolean) => (active ? "border-primary bg-primary/5
         :data-focus-target="step === 'confirm' ? 'weighed-confirm' : undefined"
         @keydown="onFooterKeydown"
       >
-        <UiButton variant="outline" size="lg" class="h-14 min-w-0" data-role="back" @click="back">Voltar</UiButton>
-        <UiButton
-          size="lg"
+        <NuxtButton color="neutral" variant="outline" size="xl" class="h-14 min-w-0" data-role="back" @click="back">Voltar</NuxtButton>
+        <NuxtButton
+          size="xl"
           class="h-14 min-w-0"
           :disabled="!preview.ok"
           :data-focus-control="step === 'confirm' ? '' : undefined"
           @click="primary"
         >
           {{ step === "entry" ? "Continuar" : "Confirmar" }}
-        </UiButton>
+        </NuxtButton>
       </div>
     </UiDialogContent>
   </UiDialog>

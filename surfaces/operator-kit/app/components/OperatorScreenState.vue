@@ -87,7 +87,6 @@ const retryActions = computed(() => [
     color="error"
     variant="subtle"
     icon="i-lucide-circle-alert"
-    orientation="horizontal"
     :title="title"
     :description="description || undefined"
     :actions="alertActions('error', retryActions)"

@@ -5,29 +5,18 @@
 import { formatQty, formatQtyDiff } from "~/presentation/purchase";
 import { plural } from "~/presentation/purchaseUi";
 
-const {
-  query,
-  suppliers,
-  metrics,
-  countFilteredRows,
-  countDivergentRows,
-  countTotals,
-  countReady,
-  countPending,
-  countForbidden,
-  countConfirmedAt,
-  setCountInput,
-  setCountReason,
-  resetCount,
-  confirmCount,
-  actionPending,
-  refresh,
-} = usePurchaseDesk();
+const { query, countFilteredRows, countDivergentRows, countTotals, countReady, countPending, countForbidden, countConfirmedAt, setCountInput, setCountReason, resetCount, confirmCount, actionPending, refresh } =
+  usePurchaseDesk();
 
 type CountRow = (typeof countFilteredRows.value)[number];
 
 const headerActions = [
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => void refresh(),
+  },
 ];
 const columns = [
   { id: "item", header: "Insumo", enableHiding: false },
@@ -52,50 +41,32 @@ async function submit() {
 }
 
 const summary = computed(() => {
-  const parts = [
-    plural(countTotals.value.filled, "contado", "contados"),
-    plural(countTotals.value.divergent, "divergência", "divergências"),
-  ];
+  const parts = [plural(countTotals.value.filled, "contado", "contados"), plural(countTotals.value.divergent, "divergência", "divergências")];
   if (countTotals.value.missingReason) parts.push(`${countTotals.value.missingReason} sem motivo`);
   return parts.join(" · ");
 });
 const blockedReason = computed(() =>
-  !countTotals.value.filled
-    ? "Informe o que contou em pelo menos um insumo."
-    : countTotals.value.missingReason
-      ? `Falta o motivo de ${plural(countTotals.value.missingReason, "divergência", "divergências")}.`
-      : "",
+  !countTotals.value.filled ? "Informe o que contou em pelo menos um insumo." : countTotals.value.missingReason ? `Falta o motivo de ${plural(countTotals.value.missingReason, "divergência", "divergências")}.` : "",
 );
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Base" :actions="headerActions" actions-label="Mais ações da Base">
+    <OperatorPageHeader title="Contar estoque" :actions="headerActions" actions-label="Mais ações da contagem">
       <template #status>
         <PurchaseReadStatus />
       </template>
       <template #search>
-        <OperatorSuiteSearch
-          v-model="query"
-          screen-label="filtrando a contagem"
-          placeholder="Buscar insumo ou SKU"
-          aria-label="Buscar insumo na contagem"
-        />
+        <OperatorSuiteSearch v-model="query" screen-label="filtrando a contagem" placeholder="Buscar insumo ou SKU" aria-label="Buscar insumo na contagem" />
       </template>
       <template #actions>
         <div v-if="!countForbidden" class="flex items-center gap-2 max-lg:hidden">
           <NuxtButton label="Limpar" color="neutral" variant="outline" :disabled="actionPending || !countTotals.filled" @click="resetCount()" />
-          <NuxtButton
-            icon="i-lucide-clipboard-check"
-            label="Lançar contagem"
-            :disabled="actionPending || countPending || !countReady"
-            data-count-submit
-            @click="openConfirm()"
-          />
+          <NuxtButton icon="i-lucide-clipboard-check" label="Lançar contagem" :disabled="actionPending || countPending || !countReady" data-count-submit @click="openConfirm()" />
         </div>
       </template>
       <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+        <NuxtButton to="/base/materials" label="Voltar aos insumos" icon="i-lucide-arrow-left" color="neutral" variant="outline" />
       </template>
       <template #filters-end>
         <span v-if="!countForbidden" class="text-xs text-muted tabular-nums">{{ summary }}</span>
@@ -131,7 +102,9 @@ const blockedReason = computed(() =>
           >
             <template #item-cell="{ row }">
               <span class="block font-semibold">{{ row.original.item.name }}</span>
-              <span class="block text-xs text-muted"><span class="font-mono">{{ row.original.item.sku }}</span> · {{ row.original.item.category }}</span>
+              <span class="block text-xs text-muted"
+                ><span class="font-mono">{{ row.original.item.sku }}</span> · {{ row.original.item.category }}</span
+              >
               <!-- Celular: Sistema, Diferença e Motivo somem como colunas e moram aqui e
                    sob o campo do contado. -->
               <span class="block text-xs text-muted tabular-nums sm:hidden">Sistema: {{ formatQty(row.original.item.systemQty, row.original.item.unit) }}</span>
@@ -209,11 +182,7 @@ const blockedReason = computed(() =>
       :context-value="summary"
     />
 
-    <NuxtModal
-      v-model:open="confirmOpen"
-      title="Lançar a contagem no estoque?"
-      description="Cada divergência vira um ajuste definitivo no livro de estoque, registrado com o seu usuário e o motivo informado."
-    >
+    <NuxtModal v-model:open="confirmOpen" title="Lançar a contagem no estoque?" description="Cada divergência vira um ajuste definitivo no livro de estoque, registrado com o seu usuário e o motivo informado.">
       <template #body>
         <ul v-if="countDivergentRows.length" class="max-h-64 space-y-2 overflow-y-auto">
           <li v-for="row in countDivergentRows" :key="row.item.sku">
@@ -222,19 +191,12 @@ const blockedReason = computed(() =>
                 <p class="text-sm font-semibold">{{ row.item.name }}</p>
                 <span class="text-sm font-semibold tabular-nums" :class="row.diff < 0 ? 'text-error' : 'text-warning'">{{ formatQtyDiff(row.diff, row.item.unit) }}</span>
               </div>
-              <p class="text-xs text-muted tabular-nums">
-                {{ formatQty(row.item.systemQty, row.item.unit) }} no sistema · {{ formatQty(row.counted ?? 0, row.item.unit) }} contado
-              </p>
+              <p class="text-xs text-muted tabular-nums">{{ formatQty(row.item.systemQty, row.item.unit) }} no sistema · {{ formatQty(row.counted ?? 0, row.item.unit) }} contado</p>
               <p class="mt-1 text-xs">{{ row.reason }}</p>
             </NuxtCard>
           </li>
         </ul>
-        <NuxtAlert
-          v-else
-          variant="subtle"
-          color="success"
-          title="Sem divergência: a contagem confirma o saldo do sistema e nenhum ajuste será lançado."
-        />
+        <NuxtAlert v-else variant="subtle" color="success" title="Sem divergência: a contagem confirma o saldo do sistema e nenhum ajuste será lançado." />
       </template>
       <template #footer>
         <div class="flex w-full justify-end gap-2">

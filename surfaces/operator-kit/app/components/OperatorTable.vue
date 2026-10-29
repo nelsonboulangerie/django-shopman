@@ -61,7 +61,7 @@ const props = withDefaults(
     rowClass?: (row: T) => string;
     /** A linha do registro aberto ao lado (detalhe que divide a tela). */
     activeKey?: string;
-    /** Abrir a linha (toque ou Enter nela). */
+    /** Abrir a linha (toque, clique ou Enter nela; a tabela também anuncia o gesto pelo cursor). */
     onSelect?: (row: T, event: Event) => void;
     loading?: boolean;
     error?: boolean;
@@ -185,6 +185,7 @@ const meta = computed(() => ({
     tr: (row: TableRow<T>) =>
       [
         props.rowClass?.(row.original) ?? "",
+        props.onSelect ? "cursor-pointer" : "",
         props.activeKey && props.rowKey(row.original) === props.activeKey
           ? "bg-elevated outline-2 -outline-offset-2 outline-primary"
           : "",

@@ -124,6 +124,7 @@ describe("OperatorTable", () => {
       },
     });
     expect(table().getAttribute("data-density")).toBe("compact");
+    expect(bodyRows()[0]!.className).not.toContain("cursor-pointer");
     expect(table().querySelector("td")!.className).toContain("py-1.5");
     const channelTh = [...table().querySelectorAll("th")].find((th) => th.textContent?.includes("Canal"))!;
     expect(channelTh.className).toContain("max-sm:hidden");
@@ -157,6 +158,7 @@ describe("OperatorTable", () => {
         }),
     });
     mounted = await mountSuspended(Host, { attachTo: document.body });
+    expect(bodyRows()[0]!.className).toContain("cursor-pointer");
     const box = document.querySelector<HTMLElement>("[data-operator-table-select][aria-label='Selecionar o pedido H59']")!;
     expect(box).not.toBeNull();
     box.click();

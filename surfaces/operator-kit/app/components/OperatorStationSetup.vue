@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useScreen } from "../composables/useScreen";
 // VINCULAR ESTE DISPOSITIVO A UM POSTO DE TRABALHO: uma vez por máquina, em qualquer app.
 //
 // Aparece para quem gere operadores, logado, num dispositivo que ainda não é posto.
@@ -71,9 +70,7 @@ async function confirmar() {
   if (await provision(escolhido.value, { confirm: pedeConfirmacao.value }))
     emit("done");
 }
-// No celular as ações vão para baixo do texto (orientação oficial do Alert); ao lado,
-// elas espremiam a frase numa coluna estreita.
-const { belowMd: phone } = useScreen();
+// A orientação vertical oficial preserva a frase e põe a ação abaixo em toda largura.
 </script>
 
 <template>
@@ -81,7 +78,6 @@ const { belowMd: phone } = useScreen();
     <NuxtAlert
       color="neutral"
       variant="soft"
-      :orientation="phone ? 'vertical' : 'horizontal'"
       icon="i-lucide-map-pin"
       :title="copy.setup_title"
       class="shrink-0"

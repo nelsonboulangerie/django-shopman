@@ -28,7 +28,6 @@
     "Instrument Sans", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
-
 @theme inline {
   /* Rail de operador (OperatorRail/RailItem) tem cor PRÓPRIA, desacoplada da ação:
      no escuro a ação é dourada-pop, mas o rail precisa recuar (chrome, não ação). */
@@ -200,51 +199,4 @@
   --ui-text-inverted: var(--primary-foreground);
   --ui-bg-inverted: var(--foreground);
   --ui-border-inverted: var(--foreground);
-}
-
-/* ============================================================================
-   <select> NATIVO — chevron próprio com respiro (pedido Pablo 2026-09-10)
-
-   `UiNativeSelect` centraliza altura, fundo, borda e foco, mas preserva um
-   `<select>` real como raiz. Esta regra global continua sendo a única responsável
-   pelo chevron: sem `appearance: none`, cada navegador desenharia uma seta
-   diferente e colada na borda direita. O `@tailwindcss/forms` roda em
-   `strategy: "class"` em todos os apps, portanto não interfere aqui.
-
-   Chevron: SVG inline em `background-image` (o `chevron-down` do Lucide, o mesmo
-   do UiSelect do storefront — os apps de operador não têm UiSelect), 1rem, a
-   0.625rem da borda direita. A cor é a de
-   `--muted-foreground` de cada tema, embutida no SVG — data URI não lê
-   `currentColor` nem custom property, por isso são DOIS SVGs (claro e `.dark`).
-   Alternativa descartada: `mask-image` + `background-color: currentColor` seguiria
-   a cor do texto, mas a máscara recorta o elemento INTEIRO (texto e borda
-   incluídos) e `<select>` não aceita pseudo-elemento para isolar o desenho.
-
-   `padding-inline-end: 2.25rem !important` reserva 1rem de ícone + 0.625rem de
-   margem + ~0.625rem de folga. O `!important` é necessário: `px-2`/`px-3` dos
-   call sites vivem na layer `utilities`, que vence a `base` por ordem de layer,
-   não por especificidade — sem ele o call site engoliria o espaço e o texto
-   passaria por baixo do chevron. Quem precisar de exceção usa `!pr-…`; quem
-   não quiser o chevron (ex.: select em barra invertida) usa `bg-none`.
-
-   Fora do escopo desta regra, de propósito: `background-color`, borda, altura e
-   raio pertencem ao `UiNativeSelect` (ou a uma exceção contextual do call site).
-   `[multiple]`/`[size]` ficam de fora (listbox, sem seta). `option`/`optgroup`
-   não são tocados: no dark o popup segue `color-scheme: dark` do app.
-   ============================================================================ */
-@layer base {
-  select:not([multiple]):not([size]) {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e5a48' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.625rem center;
-    background-size: 1rem;
-    padding-inline-end: 2.25rem !important;
-  }
-
-  .dark select:not([multiple]):not([size]) {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c2ae96' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  }
 }

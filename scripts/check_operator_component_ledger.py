@@ -30,9 +30,8 @@ MANUAL_OVERLAY = re.compile(
     re.DOTALL,
 )
 NATIVE_CONTROL = re.compile(r"<(?:button|select|textarea)(?:\s|>)")
-# `UiNativeSelect` está aposentado (dono, 08/10/2026, PR #1539): escolha numa lista
-# é `NuxtSelect` (curta e fixa) ou `NuxtSelectMenu` (longa ou que cresce). Os usos
-# de hoje são teto que só cai; nenhum uso novo.
+# `UiNativeSelect` foi removido: escolha numa lista é `NuxtSelect` (curta e fixa)
+# ou `NuxtSelectMenu` (longa ou que cresce). A métrica zerada impede reintrodução.
 UI_NATIVE_SELECT = re.compile(r"<UiNativeSelect(?:\s|>|/)")
 REKA_IMPORT = re.compile(r"(?:from\s+|import\s*\()\s*[\"']reka-ui[\"']")
 NUXT_UI_IMPORT = re.compile(r"(?:from\s+|import\s*\()\s*[\"']@nuxt/ui[\"']")

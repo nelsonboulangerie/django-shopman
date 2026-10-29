@@ -69,17 +69,17 @@
       <p class="text-xs leading-snug">{{ offer.warning }}</p>
       <p v-if="!confirmed" class="text-xs font-medium leading-tight">{{ offer.confirmPrompt }}</p>
       <div v-if="!confirmed" class="flex flex-wrap items-center gap-2">
-        <UiButton type="button" size="xs" @click="emit('update:confirmed', true)">
+        <NuxtButton type="button" size="md" @click="emit('update:confirmed', true)">
           Trocar CPF
-        </UiButton>
-        <UiButton
+        </NuxtButton>
+        <NuxtButton
           type="button"
-          size="xs"
-          variant="ghost"
+          size="md"
+          color="neutral" variant="ghost"
           @click="emit('update:checked', false)"
         >
           Manter CPF
-        </UiButton>
+        </NuxtButton>
       </div>
       <p v-else class="flex items-center gap-1.5 text-xs font-medium">
         <Icon name="lucide:check" class="size-3.5 shrink-0" />

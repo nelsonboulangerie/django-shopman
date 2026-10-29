@@ -79,17 +79,18 @@ function pickMethod(method: DeliveryPaymentMethod) {
       <div v-if="needsPaymentMethod" class="grid gap-2" data-order-edit-payment-method>
         <p class="text-sm font-medium">Como o entregador recebe o que falta?</p>
         <div class="grid grid-cols-3 gap-2">
-          <UiButton
+          <NuxtButton
             v-for="option in DELIVERY_PAYMENT_METHODS"
             :key="option.key"
             type="button"
-            :variant="deliveryPaymentMethod === option.key ? 'default' : 'outline'"
+            :color="deliveryPaymentMethod === option.key ? 'primary' : 'neutral'"
+            :variant="deliveryPaymentMethod === option.key ? 'solid' : 'outline'"
             :disabled="busy"
             :data-order-edit-method="option.key"
             @click="pickMethod(option.key)"
           >
             {{ option.label }}
-          </UiButton>
+          </NuxtButton>
         </div>
       </div>
 
@@ -113,9 +114,9 @@ function pickMethod(method: DeliveryPaymentMethod) {
           <Icon :name="taxIdFeedback.ok ? 'lucide:check' : 'lucide:triangle-alert'" class="size-3.5 shrink-0" />
           {{ taxIdFeedback.text }}
         </p>
-        <UiButton type="submit" variant="outline" :disabled="busy || !taxIdReady" data-order-edit-tax-id-apply>
+        <NuxtButton type="submit" color="neutral" variant="outline" :disabled="busy || !taxIdReady" data-order-edit-tax-id-apply>
           Calcular de novo com este documento
-        </UiButton>
+        </NuxtButton>
       </form>
 
       <template v-if="preview">
@@ -144,8 +145,8 @@ function pickMethod(method: DeliveryPaymentMethod) {
       </template>
 
       <UiDialogFooter>
-        <UiButton type="button" variant="outline" @click="emit('update:open', false)">Voltar à edição</UiButton>
-        <UiButton
+        <NuxtButton type="button" color="neutral" variant="outline" @click="emit('update:open', false)">Voltar à edição</NuxtButton>
+        <NuxtButton
           type="button"
           :disabled="busy || !preview || nothingChanged"
           :loading="busy && !!preview"
@@ -153,7 +154,7 @@ function pickMethod(method: DeliveryPaymentMethod) {
           @click="emit('confirm')"
         >
           Confirmar alterações
-        </UiButton>
+        </NuxtButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

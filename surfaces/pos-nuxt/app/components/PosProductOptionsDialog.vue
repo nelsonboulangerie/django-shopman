@@ -170,8 +170,8 @@ const optionClass = (active: boolean, available: boolean) => {
       </div>
 
       <div class="grid min-w-0 grid-cols-2 gap-2">
-        <UiButton variant="outline" size="lg" class="h-14 min-w-0" data-role="back" @click="emit('cancel')">Voltar</UiButton>
-        <UiButton size="lg" class="h-14 min-w-0" :disabled="!valid" data-role="confirm" @click="confirm">Lançar</UiButton>
+        <NuxtButton color="neutral" variant="outline" size="xl" class="h-14 min-w-0" data-role="back" @click="emit('cancel')">Voltar</NuxtButton>
+        <NuxtButton size="xl" class="h-14 min-w-0" :disabled="!valid" data-role="confirm" @click="confirm">Lançar</NuxtButton>
       </div>
     </UiDialogContent>
   </UiDialog>

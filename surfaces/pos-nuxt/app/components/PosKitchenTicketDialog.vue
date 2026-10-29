@@ -97,7 +97,7 @@ watch(
               <span v-if="item.notes" class="block pl-6 text-xs font-semibold">{{ item.notes }}</span>
             </li>
           </ul>
-          <UiButton
+          <NuxtButton
             v-if="canReady(ticket)"
             class="h-8 w-full text-base"
             :disabled="busy.has(ticket.pk)"
@@ -105,7 +105,7 @@ watch(
           >
             <Icon name="lucide:check" class="size-5" />
             Pronto
-          </UiButton>
+          </NuxtButton>
           <p v-else-if="!ticket.prints && statusOf(ticket) !== 'Pronto'" class="text-xs text-muted-foreground">
             {{ ticket.station_name }} tem tela: o pronto é dado lá.
           </p>

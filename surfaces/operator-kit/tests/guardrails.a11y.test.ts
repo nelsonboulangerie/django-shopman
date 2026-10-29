@@ -70,7 +70,7 @@ function readElement(source: string, start: number): { attrs: string; body: stri
 function mutePoints(file: string): number[] {
   const source = readFileSync(file, "utf8");
   const offenders: number[] = [];
-  const buttons = /<(?:button|UiButton)\b/g;
+  const buttons = /<(?:button|NuxtButton)\b/g;
   let match: RegExpExecArray | null;
 
   while ((match = buttons.exec(source))) {
@@ -100,8 +100,8 @@ describe("superfícies de operador: botão de ícone puro tem nome", () => {
 
       expect(
         offenders,
-        `Botão de ícone puro sem nome acessível (use <UiIconButton label="…"> ou ` +
-          `aria-label; o leitor de tela anuncia "botão" e mais nada):\n  ` +
+        `Botão de ícone puro sem nome acessível (use <NuxtButton icon="…" aria-label="…"> ` +
+          `ou UiIconButton; o leitor de tela anuncia "botão" e mais nada):\n  ` +
           offenders.join("\n  "),
       ).toEqual([]);
     });
