@@ -83,6 +83,7 @@ const {
   addComment,
   courierDispatch,
   courierDispatchAgain,
+  courierRide,
   courierReminderDismiss,
   resolveContactRequest,
   courierCancel,
@@ -1282,9 +1283,11 @@ const outside = useOutsideStore(
             "
             :quoting="quoting"
             :quote-error="quoteError"
+            :order-ref="order.ref"
             @quote="onCourierQuote"
             @dismiss-quote-error="quoteError = ''"
             @dispatch="courierDispatch"
+            @dispatch-ride="courierRide"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
             @dismiss-reminder="courierReminderDismiss"

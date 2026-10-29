@@ -339,6 +339,74 @@ def build_machine_payload(*orders) -> dict:
 # ── Cotação ─────────────────────────────────────────────────────────
 
 
+def _shop_point(shop) -> dict:
+    """A loja como ponto da cotação: coordenada e o endereço que a API exige."""
+    return {
+        "lat": str(shop.latitude),
+        "lng": str(shop.longitude),
+        "street": " ".join(p for p in (shop.route, shop.street_number) if p).strip() or shop.formatted_address,
+        "neighborhood": shop.neighborhood,
+        "city": shop.city,
+        "state": shop.state_code,
+    }
+
+
+def _handoff_point(handoff: dict) -> dict:
+    """Um endereço de entrega como ponto da cotação."""
+    return {
+        "lat": str(handoff["latitude"]),
+        "lng": str(handoff["longitude"]),
+        "street": " ".join(p for p in (handoff["route"], handoff["street_number"]) if p).strip()
+        or handoff["formatted_address"],
+        "neighborhood": handoff["neighborhood"],
+        "city": handoff["city"],
+        "state": handoff["state_code"],
+    }
+
+
+def estimate_for_ride(orders) -> dict | None:
+    """Cotação de UMA corrida com várias paradas, antes de chamar.
+
+    A mesma corrida que :func:`build_machine_payload` vai abrir: as paradas na
+    ordem do percurso (:func:`_route`), a última como destino e as outras em
+    ``stops``, e o retorno se qualquer pedido traz algo de volta. Custo interno
+    (o frete dos clientes não muda). Best-effort: sem adapter, loja ou pedido
+    sem coordenada, ou a TaOn fora → None. Cache de 10 min pelo percurso.
+    ``stops`` no resultado é a ordem das paradas (refs), para a tela dizer.
+    """
+    from shopman.shop.models import Shop
+    from shopman.shop.services.dispatch_handoff import build_dispatch_payload
+
+    adapter = get_adapter("courier")
+    shop = Shop.load()
+    if adapter is None or shop is None or None in (shop.latitude, shop.longitude) or len(orders) < 2:
+        return None
+    if any(get_fulfillment_type(order) != "delivery" for order in orders):
+        return None
+    handoffs = [(order, build_dispatch_payload(order)) for order in orders]
+    if any(handoff["latitude"] is None or handoff["longitude"] is None for _, handoff in handoffs):
+        return None
+    route = _route((float(shop.latitude), float(shop.longitude)), handoffs)
+    with_return = any(needs_return(order) for order in orders)
+    path = ":".join(f"{float(h['latitude']):.4f},{float(h['longitude']):.4f}" for _, h in route)
+    cache_key = f"courier:est-ride:{path}:{'r' if with_return else 'i'}"
+    estimate = cache.get(cache_key)
+    if estimate is None:
+        points = [_handoff_point(handoff) for _, handoff in route]
+        try:
+            result = adapter.estimate(pickup=_shop_point(shop), dropoff=points[-1], with_return=with_return,
+                                      stops=points[:-1])
+        except CourierError as exc:
+            logger.warning("courier.estimate_ride_failed orders=%s: %s", ",".join(o.ref for o in orders), exc)
+            return None
+        if result is None:
+            return None
+        estimate = {"value_q": result.value_q, "minutes": result.minutes, "km": result.km,
+                    "with_return": with_return}
+        cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
+    return {**estimate, "stops": [order.ref for order, _ in route]}
+
+
 def estimate_for_order(order, *, store: bool = False) -> dict | None:
     """Cotação da corrida (custo interno — o preço ao cliente segue nas faixas/zonas).
 
@@ -367,26 +435,8 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         from shopman.shop.services.dispatch_handoff import build_dispatch_payload
 
         handoff = build_dispatch_payload(order)
-        pickup = {
-            "lat": str(shop.latitude),
-            "lng": str(shop.longitude),
-            "street": " ".join(p for p in (shop.route, shop.street_number) if p).strip()
-            or shop.formatted_address,
-            "neighborhood": shop.neighborhood,
-            "city": shop.city,
-            "state": shop.state_code,
-        }
-        dropoff = {
-            "lat": str(lat),
-            "lng": str(lng),
-            "street": " ".join(p for p in (handoff["route"], handoff["street_number"]) if p).strip()
-            or handoff["formatted_address"],
-            "neighborhood": handoff["neighborhood"],
-            "city": handoff["city"],
-            "state": handoff["state_code"],
-        }
         try:
-            result = adapter.estimate(pickup=pickup, dropoff=dropoff, with_return=with_return)
+            result = adapter.estimate(pickup=_shop_point(shop), dropoff=_handoff_point(handoff), with_return=with_return)
         except CourierError as exc:
             logger.warning("courier.estimate_failed order=%s: %s", order.ref, exc)
             return None
@@ -524,7 +574,7 @@ MAX_RIDE_STOPS = 4
 
 def group_refusal(order) -> str:
     """Por que este pedido não entra numa corrida com outros ("" quando entra)."""
-    from shopman.shop.services.operator_orders import partner_custody_asks, short_ref
+    from shopman.shop.services.operator_orders import short_ref
 
     code = short_ref(order.ref)
     if get_adapter("courier") is None:
@@ -539,10 +589,6 @@ def group_refusal(order) -> str:
         return f"O pedido {code} já tem corrida."
     if unresolved_dispatch(order) is not None:
         return f"O pedido {code} tem uma chamada sem resposta da TaOn. Confira na central antes."
-    asks = partner_custody_asks(order)
-    if not asks["recorded"] and (asks["needs_machine"] or asks["change_out_suggested_q"] > 0):
-        what = "a maquininha" if asks["needs_machine"] else "troco da gaveta"
-        return f"O pedido {code} leva {what}: chame o entregador dele pelo pedido."
     return ""
 
 
@@ -552,8 +598,9 @@ def request_group_dispatch(orders, *, actor: str) -> Directive:
 
     Junta entregas próximas e dilui o custo da casa (o frete do cliente não
     muda). Cada pedido entra só se pudesse ser chamado sozinho
-    (:func:`group_refusal`); o que leva maquininha ou troco da gaveta fica de
-    fora, porque a custódia é perguntada pedido a pedido. Uma tarefa
+    (:func:`group_refusal`). A custódia (troco da gaveta por pedido, uma
+    maquininha para a corrida) é de quem chama, na mesma transação
+    (``backstage.services.orders.courier_group_dispatch``). Uma tarefa
     ``courier.dispatch`` só, com ``ride_members``; a corrida aberta é gravada em
     cada pedido, com ``ride_orders`` na ordem das paradas.
     """
@@ -707,6 +754,13 @@ def release_unresolved_dispatch(order, *, actor: str, expected_revision: str | N
     order.emit_event(event_type="courier_dispatch_released", actor=actor,
                      payload={"directive_id": task.pk, "previous_state": previous})
     logger.info("courier.dispatch_released order=%s directive=%s actor=%s", order.ref, task.pk, actor)
+    refs = [str(ref) for ref in payload.get("order_refs") or []]
+    if len(refs) > 1:
+        # A corrida que ficou sem resposta levava vários pedidos: chama a MESMA
+        # corrida de novo, com a custódia que já saiu (a mesma saída, a mesma
+        # maquininha). Chamar só este pedido deixaria os outros sem entregador.
+        by_ref = {other.ref: other for other in Order.objects.filter(ref__in=refs)}
+        return request_group_dispatch([by_ref[ref] for ref in refs if ref in by_ref], actor=actor)
     return redispatch(order, actor=actor)
 
 
@@ -789,6 +843,13 @@ def on_order_cancelled(order) -> None:
             # A corrida leva outros pedidos: cancelar a corrida tiraria o
             # entregador deles também. O operador tira a parada com a central.
             others = ", ".join(short_ref(other.ref) for other in companions)
+            if status == "E":
+                _alert_cancelled_order(order, f"O pedido {code} foi cancelado e já saiu na corrida de {others}: "
+                    "fale com a central. O troco e a maquininha dele voltam com o entregador.")
+                return
+            # Ainda não coletado: o troco dele volta à gaveta já, e a maquininha
+            # compartilhada segue com a corrida dos outros.
+            _return_custody(order, actor="lifecycle.on_cancelled", reason="order_cancelled", ride_continues=True)
             _alert_cancelled_order(order, f"O pedido {code} foi cancelado e está na mesma corrida de {others}: "
                 "fale com a central para tirar a parada dele, sem cancelar a corrida.")
             return
@@ -818,12 +879,12 @@ def on_order_cancelled(order) -> None:
         logger.exception("courier.on_order_cancelled_failed order=%s", order.ref)
 
 
-def _return_custody(order, *, actor: str, reason: str) -> None:
+def _return_custody(order, *, actor: str, reason: str, ride_continues: bool = False) -> None:
     """Devolve a custódia da chamada; nunca derruba o funil da corrida, mas grita."""
     from shopman.shop.services import operator_orders
 
     try:
-        operator_orders.return_partner_custody(order, actor=actor, reason=reason)
+        operator_orders.return_partner_custody(order, actor=actor, reason=reason, ride_continues=ride_continues)
     except Exception:
         logger.exception("courier.custody_return_failed order=%s reason=%s", order.ref, reason)
 
@@ -846,6 +907,11 @@ def _archive_current_ride(block: dict) -> None:
             "requested_at": block.get("requested_at", ""),
             "status_at": dict(block.get("status_at") or {}),
             "ended_at": timezone.now().isoformat(),
+            # O custo fica com a corrida: o B.I. soma o que a casa pagou à TaOn,
+            # inclusive a corrida que terminou antes de outra chamada.
+            **({"final_value_q": block["final_value_q"]} if block.get("final_value_q") is not None else {}),
+            **({"estimate": dict(block["estimate"])} if block.get("status") == "F" and block.get("estimate") else {}),
+            **({"ride_orders": list(block["ride_orders"])} if block.get("ride_orders") else {}),
         }
     )
     block["attempts"] = attempts
@@ -1155,6 +1221,16 @@ def apply_snapshot(order, snapshot: dict, *, source: str) -> None:
                 changed = True
             if changed:
                 _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
+        elif snapshot.get("final_value_q") is not None:
+            # A leitura arquivou a corrida (N/C) antes de o valor ser gravado: a
+            # taxa que a TaOn fechou fica com a corrida arquivada, para o B.I.
+            attempts = [dict(attempt) for attempt in block.get("attempts") or []]
+            for attempt in attempts:
+                if attempt.get("id_mch") == ride_id and attempt.get("final_value_q") is None:
+                    attempt["final_value_q"] = int(snapshot["final_value_q"])
+                    block["attempts"] = attempts
+                    _save_block(order, block, emit={"kind": "progress", "status": block.get("status", "")})
+                    break
     if had_sync or str(get_block(order).get("status") or "") in TERMINAL_STATUSES or not get_block(order).get("id_mch"):
         _resolve_sync_alert(ride_id)
 

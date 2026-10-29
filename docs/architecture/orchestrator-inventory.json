@@ -600,6 +600,7 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "allocate",
+            "hand_over",
             "has_available",
             "holds_device",
             "needs_card_machine",
@@ -8585,6 +8586,7 @@
         "delivery.courier-handoff-charge",
         "delivery.courier-quote",
         "delivery.courier-return",
+        "delivery.courier-ride-quote",
         "delivery.courier-shared-ride",
         "delivery.courier-shared-ride-eligibility",
         "shop.services-courier-courier-cancellation",

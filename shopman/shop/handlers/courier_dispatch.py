@@ -52,16 +52,16 @@ class CourierDispatchHandler:
         if state in {"not_applied", "inert", "released"}:
             return
         if len(orders) != len(refs):
-            self._set_attempt(message, "not_applied")
+            self._give_up(orders, message, "um pedido da corrida não existe mais")
             return
         if any(get_fulfillment_type(order) != "delivery" or order.status not in courier.RIDE_ORDER_STATUSES
                for order in orders):
-            self._set_attempt(message, "not_applied")
+            self._give_up(orders, message, "um pedido da corrida mudou antes de o entregador ser chamado")
             return
         if not all(courier.house_dispatches(order) for order in orders):
             # Entrega do marketplace (ou de dono desconhecido): nunca abre corrida
             # paga, nem com a tarefa já na fila antes da marca chegar.
-            self._set_attempt(message, "not_applied")
+            self._give_up(orders, message, "a entrega não é da casa")
             return
         if any(courier.has_active_ride(order) for order in orders):
             return
@@ -74,8 +74,7 @@ class CourierDispatchHandler:
         try:
             body = courier.build_machine_payload(*orders)
         except ValueError as exc:
-            self._set_attempt(message, "not_applied")
-            self._record_terminal_failure(orders, str(exc))
+            self._give_up(orders, message, str(exc), keep_single_custody=True)
             raise DirectiveTerminalError(str(exc)) from exc
 
         # Claim the exact attempt locally, then release all locks before I/O.
@@ -100,7 +99,7 @@ class CourierDispatchHandler:
             if not blocked:
                 if any(order.status not in courier.RIDE_ORDER_STATUSES or courier.has_active_ride(order)
                        for order in orders):
-                    self._set_attempt(message, "not_applied")
+                    self._give_up(orders, message, "um pedido da corrida mudou antes de o entregador ser chamado")
                     return
                 # Use the freshly locked orders, never the pre-estimate snapshot.
                 body = courier.build_machine_payload(*orders)
@@ -120,8 +119,7 @@ class CourierDispatchHandler:
         except CourierError as exc:
             if exc.outcome_unknown:
                 self._unknown(orders, message, str(exc))
-            self._set_attempt(message, "not_applied")
-            self._record_terminal_failure(orders, str(exc))
+            self._give_up(orders, message, str(exc), keep_single_custody=True)
             raise DirectiveTerminalError(str(exc)) from exc
         except Exception as exc:
             logger.warning("courier.dispatch_unknown orders=%s directive=%s", ",".join(refs), message.pk, exc_info=True)
@@ -141,6 +139,26 @@ class CourierDispatchHandler:
         """Os pedidos da tarefa, na ordem da tarefa (os que ainda existem)."""
         by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
         return [by_ref[ref] for ref in refs if ref in by_ref]
+
+    def _give_up(self, orders, message, explanation: str, *, keep_single_custody: bool = False) -> None:
+        """A tarefa desiste sem abrir corrida: o troco e a maquininha voltam, e o operador sabe.
+
+        Sem isto a custódia registrada na chamada ficava "fora" sem corrida
+        nenhuma (troco faltando na gaveta, maquininha presa), e a tela calada.
+        O pedido cancelado já devolveu a dele no cancelamento e não recebe aviso.
+        ``keep_single_custody``: a falha da TaOn numa corrida de um pedido só
+        mantém a custódia para o "Chamar entregador" de novo (a mesma saída); na
+        corrida com várias paradas ela volta, porque a próxima chamada pode
+        separar os pedidos.
+        """
+        from shopman.shop.services import courier
+
+        self._set_attempt(message, "not_applied")
+        live = [order for order in orders if order.status in courier.RIDE_ORDER_STATUSES]
+        if not (keep_single_custody and len(orders) == 1):
+            for order in live:
+                courier._return_custody(order, actor="courier.dispatch", reason="dispatch_not_applied")
+        self._record_terminal_failure(live, explanation)
 
     @staticmethod
     def _set_attempt(message, state, **values):

@@ -516,6 +516,70 @@ def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None
         raise OrderError(str(exc) or "Não foi possível despachar a corrida.") from exc
 
 
+def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw: dict | None = None, machine: str = ""):
+    """Uma corrida da TaOn para vários pedidos, com a custódia de cada um.
+
+    A corrida conjunta é uma saída (``trip_ref``, a mesma do despacho do
+    Gestor): o troco sai da gaveta pedido a pedido, como na chamada de um só,
+    e a maquininha é UMA para a corrida (``machine``), reservada pelo primeiro
+    pedido de cartão e compartilhada pelos outros. Tudo na transação do pedido
+    de corrida: se um pedido recusa (troco sem valor, maquininha que acabou de
+    sair), nada sai da gaveta e a corrida não é pedida.
+    """
+    from shopman.backstage.services.exceptions import POSError
+    from shopman.backstage.services.pos import parse_money_to_q
+    from shopman.shop.services import courier
+
+    change_out_q: dict[str, int] = {}
+    for ref, raw in (change_out_raw or {}).items():
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            change_out_q[str(ref)] = parse_money_to_q(str(raw))
+        except POSError as exc:
+            code = operator_orders.short_ref(ref)
+            raise OrderError(f"Troco do pedido {code}: {exc or 'valor inválido.'}") from exc
+    shift = None
+    if operator is not None and any(change_out_q.values()):
+        from shopman.backstage.services import pos as pos_service
+
+        shift = pos_service.current_shift()
+    try:
+        with transaction.atomic():
+            if shift is not None:
+                shift = type(shift).objects.select_for_update().get(pk=shift.pk)
+            directive = courier.request_group_dispatch(orders, actor=actor)
+            trip = str(directive.payload["order_ref"])
+            # Uma maquininha que já saiu numa chamada anterior de um destes
+            # pedidos (corrida que não abriu) é a maquininha da corrida.
+            shared = next((device for device in (operator_orders.trip_machine(order.ref) for order in orders) if device),
+                          None)
+            for order in orders:
+                code = operator_orders.short_ref(order.ref)
+                wants_machine = operator_orders.partner_custody_asks(order)["needs_machine"]
+                try:
+                    recorded = operator_orders.record_partner_custody(
+                        order, actor=actor, change_out_q=change_out_q.get(order.ref), cash_shift=shift,
+                        equipment=[machine] if machine and shared is None and wants_machine else [],
+                        trip_ref=trip, shared_device=shared,
+                    )
+                except operator_orders.ChangeOutRequired as exc:
+                    raise OrderChangeOutRequired(
+                        f"O pedido {code} pede troco: diga quanto o entregador leva.", suggested_q=exc.suggested_q,
+                    ) from exc
+                except OrderStateConflict as exc:
+                    raise OrderStateConflict(f"Pedido {code}: {exc}") from exc
+                except ValueError as exc:
+                    raise ValueError(f"Pedido {code}: {exc}") from exc
+                if recorded.get("device_ref") and shared is None:
+                    shared = {"device_ref": recorded["device_ref"], "device_label": recorded.get("device_label", "")}
+            return directive
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc) or "Não foi possível chamar a corrida.") from exc
+
+
 def courier_dispatch_again(order, *, actor: str, expected_revision=None):
     """"Chamar de novo": libera a chamada sem resposta da TaOn e chama outra."""
     from shopman.shop.services import courier

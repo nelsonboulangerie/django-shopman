@@ -281,6 +281,29 @@
           "status": "pending"
         },
         {
+          "id": "delivery",
+          "source_files": [
+            "app/pages/delivery.vue"
+          ],
+          "routes": [
+            "/delivery"
+          ],
+          "variants": [
+            "kpis",
+            "daily"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
           "id": "profiles",
           "source_files": [
             "app/pages/profiles.vue"

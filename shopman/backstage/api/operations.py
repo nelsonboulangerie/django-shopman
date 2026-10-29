@@ -4206,10 +4206,12 @@ class OrderVolumeCheckView(APIView):
 class OrderCourierRideView(APIView):
     """Uma corrida da TaOn para vários pedidos: uma solicitação, uma parada por pedido.
 
-    ``refs``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``. Cada um entra só se
-    pudesse ser chamado sozinho e não leva maquininha nem troco da gaveta
-    (``courier.group_refusal``); a recusa diz qual pedido e por quê. Pedir de
-    novo a mesma corrida é recusado (a tarefa já está na fila).
+    ``refs``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``, cada um podendo ser
+    chamado sozinho (``courier.group_refusal``). A custódia vem junto, como na
+    chamada de um pedido: ``change_out`` é ``{ref: "20,00"}`` para os pedidos
+    que pedem troco, e ``machine`` a maquininha da corrida (uma só, para todos
+    os pedidos de cartão). A recusa diz qual pedido e por quê. Pedir de novo a
+    mesma corrida é recusado (a tarefa já está na fila).
     """
 
     permission_classes = [HasBackstagePermission]
@@ -4218,22 +4220,69 @@ class OrderCourierRideView(APIView):
     def post(self, request):
         from shopman.orderman.models import Order
 
-        from shopman.shop.services import courier
-
         refs = request.data.get("refs")
         if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref.strip() for ref in refs):
             return Response({"detail": "Escolha os pedidos da corrida.", "field": "refs",
                              "errors": {"refs": ["Escolha os pedidos da corrida."]}}, status=400)
+        change_out = request.data.get("change_out") or {}
+        if not isinstance(change_out, dict) or any(
+            not isinstance(value, str | int | float) for value in change_out.values()
+        ):
+            return Response({"detail": "Troco inválido.", "field": "change_out"}, status=400)
+        machine = request.data.get("machine") or ""
+        if not isinstance(machine, str):
+            return Response({"detail": "Maquininha inválida.", "field": "machine"}, status=400)
         refs = list(dict.fromkeys(ref.strip()[:64] for ref in refs))
         orders = list(Order.objects.filter(ref__in=refs))
         by_ref = {order.ref: order for order in orders}
         if len(by_ref) != len(refs):
             return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
         try:
-            task = courier.request_group_dispatch([by_ref[ref] for ref in refs], actor=_actor(request))
-        except ValueError as exc:
+            task = orders_service.courier_group_dispatch(
+                [by_ref[ref] for ref in refs], actor=_actor(request), operator=request.user,
+                change_out_raw={str(ref): str(value) for ref, value in change_out.items()}, machine=machine.strip(),
+            )
+        except orders_service.OrderChangeOutRequired as exc:
+            return Response({"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q},
+                            status=409)
+        except OrderError as exc:
             return Response({"detail": str(exc)}, status=409)
         return Response({"directive_id": task.pk, "status": task.status, "refs": refs})
+
+
+class OrderCourierRideQuoteView(APIView):
+    """Quanto custa a corrida com estas paradas, antes de chamar.
+
+    ``?refs=A&refs=B``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``. A mesma
+    corrida que a chamada vai abrir (ordem do percurso, retorno), cotada na TaOn.
+    ``estimate`` nulo com ``detail`` quando não dá para cotar (pedido sem
+    endereço com coordenada, TaOn fora): a chamada continua possível.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.projections.order_queue import courier_estimate_display
+        from shopman.shop.services import courier
+        from shopman.shop.services.operator_orders import short_ref
+
+        refs = list(dict.fromkeys(ref.strip()[:64] for ref in request.GET.getlist("refs") if ref.strip()))
+        if not 2 <= len(refs) <= courier.MAX_RIDE_STOPS:
+            return Response({"detail": f"Escolha de 2 a {courier.MAX_RIDE_STOPS} pedidos.", "field": "refs"},
+                            status=400)
+        by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
+        if len(by_ref) != len(refs):
+            return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+        estimate = courier.estimate_for_ride([by_ref[ref] for ref in refs])
+        if estimate is None:
+            return Response({"estimate": None,
+                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+        order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
+        return Response({"estimate": {**estimate, "display": courier_estimate_display(estimate),
+                                      "route": order_line}})
 
 
 def _operator_identity(request) -> tuple[int, str]:

@@ -8077,6 +8077,44 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-ride-quote",
+      "question": "Quanto custa a corrida com várias paradas, na ordem que ela vai seguir?",
+      "owner": "delivery.courier-ride-quote",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:estimate_for_ride",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:estimate_for_ride"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "estimate_for_ride",
+            "_shop_point",
+            "_handoff_point"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_quote_follows_the_route_the_ride_will_take",
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_quote_needs_every_address_on_the_map"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.services-courier-courier-status",
       "question": "Qual progresso local de entrega corresponde ao status informado pelo entregador?",
       "owner": "delivery.courier.courier.status",
@@ -8342,7 +8380,7 @@
       "directives": [],
       "config_surface": [],
       "tests": [
-        "shopman/shop/tests/test_courier_group_ride.py::test_ride_refuses_an_order_that_takes_the_card_machine"
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_takes_an_order_that_takes_the_card_machine"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -12500,6 +12538,8 @@
             "EquipmentCustody",
             "equipment_custody",
             "mark_equipment_returned",
+            "_machine_heir",
+            "_hand_machine_over",
             "_holds_device",
             "_stamp_equipment_back",
             "machine_phrase",

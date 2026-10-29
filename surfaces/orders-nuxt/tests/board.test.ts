@@ -11,7 +11,13 @@ import {
   channelOptions,
   elapsedLabel,
   courierRideLabel,
+  courierRideBody,
+  courierRideCallLabel,
   courierRideLine,
+  rideChangeDefaults,
+  rideChoices,
+  rideOfferLine,
+  courierRideQuestion,
   equipmentOutLabel,
   MAX_RIDE_STOPS,
   equipmentOutLine,
@@ -609,11 +615,17 @@ describe("rowsToCsv", () => {
   // `readingCsvText`, o mesmo do "Exportar CSV deste quadro").
   it("sai como a planilha em português lê: ';' entre colunas, vírgula no valor, BOM", () => {
     const csv = rowsToCsv([
-      { card: card({ ref: "A", total_display: "R$ 1.234,50" }), zoneKey: "intake" as const, zoneTitle: "Entrada" },
+      {
+        card: card({ ref: "A", total_display: "R$ 1.234,50" }),
+        zoneKey: "intake" as const,
+        zoneTitle: "Entrada",
+      },
     ]);
     expect(csv.startsWith("﻿")).toBe(true);
     const [header, line] = csv.slice(1).split("\n");
-    expect(header).toBe("Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente");
+    expect(header).toBe(
+      "Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente",
+    );
     expect(line!.split(";")).toHaveLength(8);
     expect(line).toContain(";R$ 1.234,50;");
   });
@@ -872,7 +884,9 @@ describe("situationAfterContinua: a situação depois de “<REF> continua” (d
     expect(situationAfterContinua("Pronto")).toBe("pronto");
   });
   it("“Saiu para entrega” é verbo: entra como o nome do estado, entre aspas, sem apelido", () => {
-    expect(situationAfterContinua("Saiu para entrega")).toBe("em “Saiu para entrega”");
+    expect(situationAfterContinua("Saiu para entrega")).toBe(
+      "em “Saiu para entrega”",
+    );
   });
   it("sem rótulo, sem situação", () => {
     expect(situationAfterContinua("")).toBe("");
@@ -889,20 +903,135 @@ describe("maquininhas na rua", () => {
         order_ref: "WEB-A47",
         customer_name: "Maria",
         out_at: "2026-10-28T17:20:00Z",
+        shared_with: [],
       }),
     ).toBe("Pedido A47 · Maria · saiu às 14:20");
     expect(
-      equipmentOutLine({ order_ref: "WEB-A47", customer_name: "", out_at: "" }),
+      equipmentOutLine({
+        order_ref: "WEB-A47",
+        customer_name: "",
+        out_at: "",
+        shared_with: [],
+      }),
     ).toBe("Pedido A47");
+    // A maquininha da corrida com várias paradas: todos os pedidos dela.
+    expect(
+      equipmentOutLine({
+        order_ref: "WEB-A47",
+        customer_name: "Maria",
+        out_at: "",
+        shared_with: ["WEB-B12", "WEB-C03"],
+      }),
+    ).toBe("Pedidos A47, B12 e C03 · Maria");
   });
 });
 
 describe("uma corrida para várias entregas", () => {
   it("diz quantas entregas juntam e quem é cada uma", () => {
-    expect(courierRideLabel(3)).toBe("Juntar 3 entregas");
+    expect(courierRideLabel(3)).toBe("3 entregas podem ir na mesma corrida.");
     expect(courierRideLine({ ref: "WEB-A47", customer_name: "Maria" })).toBe(
       "Pedido A47 · Maria",
     );
     expect(MAX_RIDE_STOPS).toBe(4);
+  });
+});
+
+describe("a corrida conjunta pergunta o troco e a maquininha", () => {
+  const card = (ref_: string) =>
+    ({ ref: ref_, customer_name: "" }) as unknown as OrderCardProjection;
+  const candidate = (
+    ref_: string,
+    change_out_suggested_q: number,
+    needs_machine: boolean,
+  ) => ({
+    ref: ref_,
+    change_out_suggested_q,
+    needs_machine,
+    label: "",
+    place: "",
+    stage: "",
+    distance_label: "",
+    change_label: "",
+  });
+  const choices = rideChoices(
+    [
+      candidate("WEB-A", 0, true),
+      candidate("WEB-B", 2600, false),
+      candidate("WEB-GONE", 0, false),
+    ],
+    [card("WEB-A"), card("WEB-B"), card("WEB-C")],
+  );
+
+  it("liga cada candidata ao seu card e sugere o troco", () => {
+    expect(choices.map((choice) => choice.card.ref)).toEqual([
+      "WEB-A",
+      "WEB-B",
+    ]);
+    expect(rideChangeDefaults(choices)).toEqual({ "WEB-B": "26,00" });
+  });
+
+  it("manda troco só de quem pede e a maquininha só com pedido de cartão", () => {
+    expect(
+      courierRideBody(
+        ["WEB-A", "WEB-B"],
+        choices,
+        { "WEB-B": " " },
+        "card_machine:1",
+      ),
+    ).toEqual({
+      refs: ["WEB-A", "WEB-B"],
+      change_out: { "WEB-B": "0" },
+      machine: "card_machine:1",
+    });
+    expect(
+      courierRideBody(
+        ["WEB-B"],
+        choices,
+        { "WEB-B": "30,00" },
+        "card_machine:1",
+      ),
+    ).toEqual({
+      refs: ["WEB-B"],
+      change_out: { "WEB-B": "30,00" },
+      machine: "",
+    });
+  });
+
+  it("o botão diz a maquininha que vai", () => {
+    expect(courierRideCallLabel(3)).toBe("Chamar uma corrida para 3 pedidos");
+    expect(courierRideCallLabel(2, "Azul")).toBe(
+      "Chamar uma corrida para 2 pedidos com a maquininha Azul",
+    );
+  });
+});
+
+describe("quem pode ir junto na corrida", () => {
+  it("diz em que pé está, para onde vai, quão perto e o que leva", () => {
+    expect(
+      rideOfferLine({
+        stage: "Em preparo",
+        place: "Gleba Palhano",
+        distance_label: "a 1,2 km",
+        needs_machine: true,
+        change_out_suggested_q: 0,
+      }),
+    ).toBe("Em preparo · Gleba Palhano · a 1,2 km · leva a maquininha");
+    expect(
+      rideOfferLine({
+        stage: "Pronto",
+        place: "Centro",
+        distance_label: "",
+        needs_machine: false,
+        change_out_suggested_q: 2600,
+      }),
+    ).toBe("Pronto · Centro · leva troco");
+  });
+});
+
+describe("a pergunta da corrida com várias paradas", () => {
+  it("diz quem vai e quem paga", () => {
+    expect(courierRideQuestion(["WEB-A47", "WEB-B12", "WEB-C03"])).toBe(
+      "Uma corrida da TaOn leva os pedidos A47, B12 e C03, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.",
+    );
   });
 });

@@ -46,8 +46,12 @@ class CourierSyncHandler:
             return
         # F may already be durable while the local delivery/custody step failed.
         # Recover before deciding the terminal heartbeat has nothing left to do.
+        # Os outros pedidos da corrida, lidos ANTES da leitura: o N/C arquiva a
+        # corrida no primeiro pedido, e depois dele ninguém mais saberia quem
+        # estava nela (os outros ficariam presos "com corrida", com a custódia fora).
+        companions = courier.ride_companions(order)
         courier.recover_local_status(order, ride_id=block["id_mch"])
-        for other in courier.ride_companions(order):
+        for other in companions:
             courier.recover_local_status(other, ride_id=block["id_mch"])
         if block.get("status") in TERMINAL_STATUSES:
             return
@@ -83,7 +87,8 @@ class CourierSyncHandler:
         if snapshot:
             courier.apply_snapshot(order, snapshot, source="poll")
             # Corrida com várias paradas: a mesma leitura vale para os outros pedidos dela.
-            for other in courier.ride_companions(order):
+            for other in companions:
+                other.refresh_from_db()
                 courier.apply_snapshot(other, snapshot, source="poll")
 
         block = courier.get_block(order)

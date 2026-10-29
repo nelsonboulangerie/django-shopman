@@ -13,7 +13,7 @@ from shopman.orderman.models import Directive, Order
 
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.adapters import courier_mock
-from shopman.shop.directives import COURIER_DISPATCH, COURIER_SYNC
+from shopman.shop.directives import COURIER_SYNC
 from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
 from shopman.shop.handlers.courier_sync import CourierSyncHandler
 from shopman.shop.models import Shop
@@ -107,14 +107,12 @@ def test_one_reading_moves_every_order_of_the_ride(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def test_ride_refuses_an_order_that_takes_the_card_machine(shop):
+def test_ride_takes_an_order_that_takes_the_card_machine(shop):
     a = _at("CR-A", -23.30, -51.16)
     card = _at("CR-B", -23.335, -51.158, payment={"method": "credit", "collection": "on_delivery"})
+    # A maquininha não tira o pedido da corrida: a custódia é de quem chama.
     assert courier.group_refusal(a) == ""
-    assert courier.group_refusal(card) == "O pedido B leva a maquininha: chame o entregador dele pelo pedido."
-    with pytest.raises(ValueError, match="maquininha"):
-        courier.request_group_dispatch([a, card], actor="operator:ana")
-    assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+    assert courier.group_refusal(card) == ""
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -136,3 +134,26 @@ def test_cancelling_one_order_never_cancels_the_ride_of_the_others(shop):
     assert not Directive.objects.filter(topic="courier.cancel").exists()
     alert = OperatorAlert.objects.get(order_ref="CR-A")
     assert "tirar a parada" in alert.message
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_quote_follows_the_route_the_ride_will_take(shop):
+    far = _at("CR-A", -23.30, -51.16)
+    near = _at("CR-B", -23.335, -51.158, payment={"method": "cash", "collection": "on_delivery"})
+
+    quote = courier.estimate_for_ride([far, near])
+
+    # A mesma ordem da corrida aberta, uma parada no meio e o retorno do dinheiro.
+    assert quote["stops"] == ["CR-B", "CR-A"]
+    assert quote["with_return"] is True
+    assert quote["value_q"] == 1250 + 400
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ride_quote_needs_every_address_on_the_map(shop):
+    a = _at("CR-A", -23.30, -51.16)
+    b = _at("CR-B", -23.335, -51.158)
+    address = dict(b.data["delivery_address_structured"], latitude=None, longitude=None)
+    b.data = {**b.data, "delivery_address_structured": address}
+    b.save(update_fields=["data"])
+    assert courier.estimate_for_ride([a, b]) is None
