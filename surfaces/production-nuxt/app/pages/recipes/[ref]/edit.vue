@@ -27,7 +27,6 @@ import {
   pctOf,
   quantityPreset,
   removeItem,
-  roleLabel,
   setAnchor,
   stepsForPayload,
   totalMassOf,
@@ -121,7 +120,6 @@ const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.in
 // Percentuais informados pelo operador usam uma única régua. Aceitar milésimos
 // com botões de décimo preservava um resíduo invisível (0,201 → 0,301).
 const percentageRule = { step: 0.1, min: 0.1, maximumFractionDigits: 1 } as const;
-const roleEditorIndex = ref<number | null>(null);
 const newIngredientIndex = ref<number | null>(null);
 const ingredientFocusKey = ref<string | null>(null);
 useNextFocus(ingredientFocusKey);
@@ -193,7 +191,6 @@ function onYieldUnit(unit: string) {
 }
 function onItemRole(index: number, role: string) {
   formula.value = updateItem(formula.value, index, { role: role as IngredientRole });
-  roleEditorIndex.value = null;
 }
 function onItemGramsPerUnit(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value.replace(",", ".");
@@ -224,7 +221,6 @@ function onItemSelect(index: number, option: IngredientOptionProjection) {
     patch.composition = "additional";
   }
   formula.value = updateItem(formula.value, index, patch);
-  roleEditorIndex.value = null;
   newIngredientIndex.value = null;
   ingredientFocusKey.value = `ingredient-${index}-quantity`;
 }
@@ -241,15 +237,16 @@ function addIngredient() {
 }
 function remove(index: number) {
   formula.value = removeItem(formula.value, index);
-  roleEditorIndex.value = null;
   newIngredientIndex.value = null;
   ingredientFocusKey.value = null;
 }
 function move(index: number, delta: number) {
   formula.value = moveItem(formula.value, index, index + delta);
-  roleEditorIndex.value = null;
   newIngredientIndex.value = null;
   ingredientFocusKey.value = null;
+}
+function recipeVersionNumber(reference: string): string {
+  return reference.split("@").at(-1) || reference;
 }
 
 // ── Âncora ──────────────────────────────────────────────────────────────────
@@ -1010,26 +1007,44 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                 v-for="(item, index) in formula.ingredients"
                 :key="item.ref"
                 :data-focus-target="`ingredient-${index}-picker`"
-                class="grid scroll-mt-20 gap-3 rounded-md border bg-card p-3 outline-none"
+                class="scroll-mt-20 overflow-hidden rounded-md border bg-card outline-none"
               >
-                <div class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Ingrediente
-                  <IngredientPicker
-                    :model-value="item.sku"
-                    :matched-name="itemMatchedName(index)"
-                    :auto-open="newIngredientIndex === index"
-                    data-focus-control
-                    @update:model-value="onItemSku(index, $event)"
-                    @select="onItemSelect(index, $event)"
-                  />
-                </div>
-                <div v-if="item.recipe_version_ref" class="flex items-center gap-2 text-xs text-muted-foreground">
-                  <NuxtBadge color="neutral" label="Receita" />
-                  <span>Receita do ingrediente: {{ item.recipe_version_ref }}</span>
-                </div>
-                <fieldset class="grid min-w-0 gap-3 rounded-md border p-3" data-ingredient-quantity-group>
-                  <legend class="px-1 text-sm font-semibold">Quantidade do ingrediente</legend>
-                  <p class="text-xs text-muted-foreground">Quanto entra e como afeta a fórmula.</p>
+                <header class="grid gap-2 border-b p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <div class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">
+                    Ingrediente
+                    <IngredientPicker
+                      :model-value="item.sku"
+                      :matched-name="itemMatchedName(index)"
+                      :auto-open="newIngredientIndex === index"
+                      data-focus-control
+                      @update:model-value="onItemSku(index, $event)"
+                      @select="onItemSelect(index, $event)"
+                    />
+                  </div>
+                  <div class="grid grid-cols-3 gap-1 sm:flex sm:justify-end" data-ingredient-actions>
+                    <NuxtButton color="neutral" variant="ghost" aria-label="Subir ingrediente" :disabled="index === 0" @click="move(index, -1)">
+                      <NuxtIcon name="i-lucide-chevron-up" aria-hidden="true" />
+                      <span class="sm:sr-only">Subir</span>
+                    </NuxtButton>
+                    <NuxtButton color="neutral" variant="ghost" aria-label="Descer ingrediente" :disabled="index === formula.ingredients.length - 1" @click="move(index, 1)">
+                      <NuxtIcon name="i-lucide-chevron-down" aria-hidden="true" />
+                      <span class="sm:sr-only">Descer</span>
+                    </NuxtButton>
+                    <NuxtButton color="error" variant="ghost" aria-label="Remover ingrediente" @click="remove(index)">
+                      <NuxtIcon name="i-lucide-trash-2" aria-hidden="true" />
+                      <span class="sm:sr-only">Remover</span>
+                    </NuxtButton>
+                  </div>
+                  <div v-if="item.recipe_version_ref" class="flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
+                    <NuxtBadge color="neutral" label="Prep" />
+                    <span>Versão {{ recipeVersionNumber(item.recipe_version_ref) }}</span>
+                  </div>
+                </header>
+
+                <div class="grid gap-4 p-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)]">
+                  <fieldset class="grid min-w-0 content-start gap-3" data-ingredient-quantity-group>
+                    <legend class="text-sm font-semibold">Quantidade</legend>
+                    <p class="text-xs text-muted-foreground">Quanto entra na receita.</p>
 
                   <label class="grid gap-1 text-xs font-medium text-muted-foreground">
                     Critério
@@ -1138,64 +1153,57 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     </label>
                   </template>
 
-                  <label v-if="item.recipe_version_ref" class="grid gap-1 border-t pt-3 text-xs font-medium text-muted-foreground">
-                    Composição
-                    <NuxtSelect
-                      :model-value="item.composition"
-                      :items="compositionOptions"
-                      value-key="value"
+                  <label v-if="item.quantity.kind === 'fixed' && item.quantity.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground">
+                    Gramas por unidade
+                    <span class="font-normal">Necessário para incluir a contagem no peso da receita.</span>
+                    <NuxtInput
+                      :model-value="String(item.grams_per_unit ?? '')"
+                      type="text"
+                      inputmode="decimal"
                       class="w-full"
                       :ui="{ base: 'bg-muted' }"
-                      @update:model-value="(composition: string) => onComposition(index, composition)"
+                      @input="onItemGramsPerUnit(index, $event)"
                     />
-                    <span class="font-normal">Adicional aumenta a fórmula. Inclusa redistribui ingredientes já previstos nela.</span>
                   </label>
-                </fieldset>
-                <div class="flex items-center justify-end gap-1 border-t pt-2">
-                  <span class="mb-2 w-12 text-right text-sm tabular-nums text-muted-foreground" :title="'Percentual sobre a base do cálculo (prévia local)'">
-                    {{ pctOf(item, localAnchorTotal) ? `${pctOf(item, localAnchorTotal)}%` : "" }}
-                  </span>
-                  <!-- A microbarra da linha: ordenar e remover, ícones `ghost`. -->
-                  <NuxtButton icon="i-lucide-chevron-up" color="neutral" variant="ghost" square aria-label="Subir" :disabled="index === 0" @click="move(index, -1)" />
-                  <NuxtButton icon="i-lucide-chevron-down" color="neutral" variant="ghost" square aria-label="Descer" :disabled="index === formula.ingredients.length - 1" @click="move(index, 1)" />
-                  <NuxtButton icon="i-lucide-trash-2" color="error" variant="ghost" square aria-label="Remover ingrediente" @click="remove(index)" />
+                  </fieldset>
+
+                  <fieldset
+                    v-if="item.sku"
+                    class="grid min-w-0 content-start gap-3 border-t pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0"
+                    data-ingredient-formula-group
+                  >
+                    <legend class="text-sm font-semibold">Na fórmula</legend>
+                    <p class="text-xs text-muted-foreground">Como este ingrediente participa.</p>
+                    <dl v-if="pctOf(item, localAnchorTotal)" class="flex items-center justify-between gap-3 border-b pb-2 text-sm">
+                      <dt class="text-xs text-muted-foreground">Participação</dt>
+                      <dd class="font-medium tabular-nums">{{ pctOf(item, localAnchorTotal) }}% da base</dd>
+                    </dl>
+                    <label class="grid gap-1 text-xs font-medium text-muted-foreground">
+                      Papel
+                      <NuxtSelect
+                        :model-value="item.role"
+                        :items="roles"
+                        value-key="value"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted' }"
+                        :aria-label="`Papel na fórmula de ${item.name || 'ingrediente'}`"
+                        @update:model-value="(role: string) => onItemRole(index, role)"
+                      />
+                    </label>
+                    <label v-if="item.recipe_version_ref" class="grid gap-1 text-xs font-medium text-muted-foreground">
+                      Composição
+                      <NuxtSelect
+                        :model-value="item.composition"
+                        :items="compositionOptions"
+                        value-key="value"
+                        class="w-full"
+                        :ui="{ base: 'bg-muted' }"
+                        @update:model-value="(composition: string) => onComposition(index, composition)"
+                      />
+                      <span class="font-normal">Adicional soma à fórmula. Inclusa redistribui ingredientes já previstos.</span>
+                    </label>
+                  </fieldset>
                 </div>
-                <div v-if="item.sku && roleEditorIndex !== index" class="flex min-w-0 items-center gap-2">
-                  <span class="text-xs text-muted-foreground">Papel na fórmula:</span>
-                  <NuxtBadge color="neutral" :label="roleLabel(item.role)" />
-                  <NuxtButton
-                    class="ml-auto"
-                    color="neutral"
-                    variant="ghost"
-                    label="Alterar"
-                    :aria-label="`Alterar papel na fórmula de ${item.name || 'ingrediente'}`"
-                    @click="roleEditorIndex = index"
-                  />
-                </div>
-                <label v-else-if="item.sku" class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Papel na fórmula
-                  <span class="font-normal">Define como este ingrediente participa dos percentuais e conversões.</span>
-                  <NuxtSelect
-                    :model-value="item.role"
-                    :items="roles"
-                    value-key="value"
-                    class="w-full"
-                    :ui="{ base: 'bg-muted' }"
-                    :aria-label="`Papel na fórmula de ${item.name || 'ingrediente'}`"
-                    @update:model-value="(role: string) => onItemRole(index, role)"
-                  />
-                </label>
-                <label v-if="item.quantity.kind === 'fixed' && item.quantity.unit === 'un'" class="grid gap-1 text-xs font-medium text-muted-foreground">
-                  Gramas por unidade (sem isso a contagem fica fora da conta)
-                  <NuxtInput
-                    :model-value="String(item.grams_per_unit ?? '')"
-                    type="text"
-                    inputmode="decimal"
-                    class="w-28"
-                    :ui="{ base: 'bg-muted' }"
-                    @input="onItemGramsPerUnit(index, $event)"
-                  />
-                </label>
               </li>
             </ol>
             <div class="border-t p-3" data-testid="add-ingredient-footer">
