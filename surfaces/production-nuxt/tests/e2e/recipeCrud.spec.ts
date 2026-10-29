@@ -61,6 +61,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(addIngredientButton).toHaveClass(/sm:w-auto/);
   await expect(page.getByLabel("Base do cálculo (100%)")).toHaveClass(/w-full/);
   await expect(page.getByLabel("Base do cálculo (100%)")).toHaveClass(/sm:w-44/);
+  await expect(page.getByTestId("formula-summary")).toContainText(/Base .* · Massa total .*/);
   await expect(page.getByRole("button", { name: "Adicionar insumo", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Adicionar receita", exact: true })).toHaveCount(0);
   await addIngredientButton.click();
@@ -89,6 +90,8 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(page.getByLabel("Quantidade", { exact: true })).toBeFocused();
   await expect(page.getByText("Na fórmula", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Papel na fórmula de Farinha T65")).toContainText("Farinha");
+  await expect(page.locator("[data-ingredient-formula-group]").first()).toHaveAttribute("data-slot", "root");
+  await expect(page.locator("[data-ingredient-formula-group]").first().getByRole("combobox", { name: /^Composição/ })).toHaveCount(0);
   const ingredientActions = page.locator("[data-ingredient-actions]").first();
   await expect(ingredientActions.getByRole("button", { name: "Subir ingrediente" })).toBeVisible();
   await expect(ingredientActions.getByRole("button", { name: "Descer ingrediente" })).toBeVisible();
@@ -131,6 +134,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(quantityGroup.getByText("Quanto entra na receita.", { exact: true })).toBeVisible();
   await expect(formulaGroup.getByText("Na fórmula", { exact: true })).toBeVisible();
   await expect(formulaGroup.getByText("Como este ingrediente participa.", { exact: true })).toBeVisible();
+  await expect(formulaGroup.getByRole("combobox", { name: /^Composição/ })).toBeVisible();
   const quantityGroupBox = await quantityGroup.boundingBox();
   const formulaGroupBox = await formulaGroup.boundingBox();
   expect(quantityGroupBox).not.toBeNull();
