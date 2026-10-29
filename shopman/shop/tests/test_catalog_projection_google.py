@@ -264,6 +264,66 @@ class TestBackend:
         assert body["offerId"] == "PAO"
         assert headers["Authorization"] == "Bearer tok"
 
+    def _project_with_store(self, settings, item):
+        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, store_code="18102236950405822206")
+        calls = []
+
+        def fake_post(url, params=None, json=None, headers=None, timeout=None, data=None):
+            if "oauth2" in url:
+                return _Resp(200, {"access_token": "tok", "expires_in": 3600})
+            calls.append((url, json))
+            return _Resp(200)
+
+        with mock.patch.object(google.requests, "post", fake_post):
+            result = google.GoogleMerchantProjection().project([item], channel="google")
+        return result, calls
+
+    def test_store_code_sends_pickup_with_the_same_stock(self, token, settings, stocked):
+        result, calls = self._project_with_store(settings, self._item())
+        assert result.success is True and result.projected == 1
+        url, body = calls[1]
+        assert url == (
+            "https://merchant.mock.test/inventories/v1/accounts/5881119366/products/"
+            f"{google.product_input_id('PAO', _CFG)}/localInventories:insert"
+        )
+        assert body == {
+            "storeCode": "18102236950405822206",
+            "localInventoryAttributes": {
+                "availability": "IN_STOCK",
+                "price": {"amountMicros": "16000000", "currencyCode": "BRL"},
+                "pickupMethod": "BUY",
+                "pickupSla": "SAME_DAY",
+            },
+        }
+
+    def test_paused_pickup_is_out_of_stock(self, token, settings, stocked):
+        from shopman.backstage.services import feeds
+
+        feeds.set_item_paused("google", "PAO", paused=True)
+        _result, calls = self._project_with_store(settings, self._item())
+        assert calls[1][1]["localInventoryAttributes"]["availability"] == "OUT_OF_STOCK"
+
+    def test_hidden_item_gets_no_pickup(self, token, settings, stocked):
+        from shopman.backstage.services import feeds
+
+        feeds.set_item_hidden("google", "PAO", hidden=True)
+        result, calls = self._project_with_store(settings, self._item())
+        assert result.success is True
+        assert [url for url, _ in calls if "localInventories" in url] == []
+
+    def test_without_store_code_no_pickup(self, token, stocked):
+        calls = []
+
+        def fake_post(url, params=None, json=None, headers=None, timeout=None, data=None):
+            if "oauth2" in url:
+                return _Resp(200, {"access_token": "tok", "expires_in": 3600})
+            calls.append(url)
+            return _Resp(200)
+
+        with mock.patch.object(google.requests, "post", fake_post):
+            google.GoogleMerchantProjection().project([self._item()], channel="google")
+        assert len(calls) == 1 and "productInputs" in calls[0]
+
     def test_retract_deletes_and_missing_is_success(self, token):
         urls = []
 

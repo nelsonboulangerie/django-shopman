@@ -14,6 +14,11 @@ Contrato (Merchant API, ``products_v1``)
   ``feedLabel`` + ``offerId`` (o SKU). Não usamos ``productInputs.patch`` para
   preço e disponibilidade: a atualização rápida por atributo está restrita a contas
   liberadas pelo Google (developers.google.com/merchant/api/latest-updates).
+- **retirada na loja** → ``POST /inventories/v1/accounts/{conta}/products/{id}/localInventories:insert``
+  com o estoque da loja física (``storeCode`` do Perfil da Empresa): a MESMA
+  disponibilidade e o mesmo preço do item online, retirada grátis no mesmo dia
+  (``pickupMethod=BUY``, ``pickupSla=SAME_DAY``). É o que faz o Google mostrar
+  "Retirada na loja". Só vai para item visível; sem ``store_code`` não vai nada.
 - **retract** → ``DELETE /products/v1/accounts/{conta}/productInputs/{id}?dataSource=…``.
   Só para o item que SAIU da composição do canal. Pausado, oculto e esgotado
   continuam na conta, cada um com o seu estado, vindo de ``services/display_catalog``
@@ -37,6 +42,8 @@ Onde mora a config (ADR-042): o que é DADO DA LOJA fica em
         data_source_id:    id da fonte de dados do tipo API (primária).
         content_language:  ISO 639-1 dos produtos (default ``pt``).
         feed_label:        rótulo do feed (default ``BR``).
+        store_code:        código da loja no Perfil da Empresa (retirada na loja).
+                           Ausente = só o produto online, sem retirada.
     SHOPMAN_GOOGLE_MERCHANT:
         service_account_b64:   JSON da service account em base64 (segredo do deployment).
                                Base64 porque o editor de variáveis da DigitalOcean
@@ -167,6 +174,27 @@ def product_input_id(sku: str, cfg: dict) -> str:
     return base64.urlsafe_b64encode(plain.encode()).decode().rstrip("=")
 
 
+def _store_code(cfg: dict) -> str:
+    return str(cfg.get("store_code") or "").strip()
+
+
+def build_local_inventory(item: display_catalog.DisplayItem, cfg: dict) -> dict:
+    """O ``LocalInventory`` da loja física: o mesmo estoque do online, com retirada.
+
+    O estoque é um só; o Google só pede que a retirada chegue em outro recurso,
+    preso ao código da loja no Perfil da Empresa.
+    """
+    return {
+        "storeCode": _store_code(cfg),
+        "localInventoryAttributes": {
+            "availability": "IN_STOCK" if item.available else "OUT_OF_STOCK",
+            "price": {"amountMicros": str(int(item.price_q) * 10_000), "currencyCode": "BRL"},
+            "pickupMethod": "BUY",
+            "pickupSla": "SAME_DAY",
+        },
+    }
+
+
 def build_product_input(item: display_catalog.DisplayItem, cfg: dict) -> dict:
     """O ``ProductInput`` de um item, traduzido da decisão de ``display_catalog``."""
     attributes: dict = {
@@ -289,6 +317,7 @@ class GoogleMerchantProjection:
             )
         headers = {"Authorization": f"Bearer {_access_token(cfg)}", "Content-Type": "application/json"}
         url = f"{_base(cfg)}/products/v1/{_account(cfg)}/productInputs:insert"
+        store_code = _store_code(cfg)
         errors: list[str] = []
         projected = 0
         for item in items:
@@ -305,6 +334,15 @@ class GoogleMerchantProjection:
                     timeout=_timeout(cfg),
                 )
                 _check(resp)
+                if store_code and not decided.hidden:
+                    resp = requests.post(
+                        f"{_base(cfg)}/inventories/v1/{_account(cfg)}/products/"
+                        f"{product_input_id(decided.sku, cfg)}/localInventories:insert",
+                        json=build_local_inventory(decided, cfg),
+                        headers=headers,
+                        timeout=_timeout(cfg),
+                    )
+                    _check(resp)
                 projected += 1
             except GoogleMerchantRateLimitError:
                 raise
