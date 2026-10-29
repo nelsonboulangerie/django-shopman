@@ -463,6 +463,9 @@ def _authenticate_via_otp(page) -> None:
     page.locator("form:has(#login-phone) button[type='submit']").click()
 
     inputs = page.locator("form input[inputmode='numeric']")
+    # O telefone BR também é numeric. Antes da troca de etapa, esperar só o
+    # primeiro campo visível preenche o telefone e perde o primeiro dígito do OTP.
+    expect(inputs).to_have_count(6, timeout=15_000)
     expect(inputs.first).to_be_visible(timeout=15_000)
     code = ""
     for _ in range(50):
