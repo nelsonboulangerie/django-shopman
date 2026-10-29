@@ -173,3 +173,28 @@ rodada. Sem testes dos apps, Core, baselines ou deploy.
 Capturas atuais: mobile-first-catalog-320.jpg, mobile-first-catalog-390.jpg e
 mobile-first-receiving-390.jpg. Sem validação em dispositivo físico ou afirmação de
 que todos os fluxos de produto foram aprovados.
+
+## Sexta rodada: hierarquia e família visual
+
+- Em 320 px, ordem DOM e visual da toolbar: Filtrar e ordenar produtos, Buscar produto,
+  Mais opções do catálogo. Largura da página 320; borda computada das opções do registro
+  transparente. Três pontos verticais no SVG compartilhado.
+- Menu mobile inspecionado em 390 px: largura total; grupos e filhos juntos; destino
+  atual selecionado; fechamento sem borda. Captura polish-navigation-mobile.jpg.
+- Ícone Compras no cabeçalho → Central de apps; Voltar a Compras retoma a tela.
+  O antigo link limpo com variant=single também exibiu o cabeçalho consolidado.
+- Busca global → contagem: grupo Compras e destino Contagem / Estoque. Enter abriu
+  Contagem de estoque no outro app. Consulta zzzz exibiu o estado vazio.
+- Diálogo de busca com clientHeight=scrollHeight=818 em 390 × 844, sem rolagem externa;
+  resultados com área própria 640 px e conteúdo rolável 1278 px.
+- Escape com texto no campo fechou a busca em um acionamento; foco retornou ao botão
+  Buscar destino na suíte. Campo inicialmente focado; fundo do diálogo nativo inerte.
+- Filtro inspecionado em 320 px; form de Brioche inspecionado com campos e rodapé de
+  navegação/ações e fechamento discreto. Capturas polish-form-mobile.jpg e
+  polish-search-mobile.jpg. Demais overlays herdam a família, sem afirmar inspeção
+  individual de todos os estados de erro/permissão.
+
+Ajuste final da busca: painel ancorado ao alto e altura pelo conteúdo. Em 390 × 844,
+a altura passou de 816 px (lista completa) para 292 px (Contagem), com o campo no
+mesmo y=107 nos dois estados; clientHeight e scrollHeight iguais. No desktop 1440,
+a busca teve 796 px sem rolagem externa. Captura polish-search-mobile.jpg atualizada.

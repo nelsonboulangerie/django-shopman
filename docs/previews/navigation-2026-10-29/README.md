@@ -299,3 +299,64 @@ são acessíveis nas opções da página quando aplicáveis; não desaparecem po
 espaço. Botões primários do cabeçalho não quebram o rótulo; títulos longos podem ocupar
 duas linhas sem truncamento. As capturas da quinta rodada substituem as anteriores
 como referência de composição mobile, sem reescrever sua evidência histórica.
+
+## Consolidação visual e invariantes da proposta, sexta rodada
+
+Direção solicitada pelo dono: filtro → busca → opções; três pontos verticais; opções
+dos registros e controles de fechar/dispensar sem borda; experimentação de menu mobile em tela inteira;
+cabeçalho com hambúrguer para o app e ícone do app atual como acesso à Central. Saiu
+o botão com texto que abria a troca de apps e saiu o segundo acesso destacado à
+Central no cabeçalho. A Central continua nomeada dentro do menu, e suas tiles trocam
+os apps. A descoberta desse gesto pelo ícone precisa de teste com operador de primeiro
+uso: tooltip/aria ajudam, mas não substituem reconhecimento visual no celular.
+
+As telas limpas antigas, inclusive links com variante explícita, passam a seguir a
+composição responsiva consolidada. A/B permanecem no laboratório e seus iframes.
+
+A árvore mobile agora ocupa a largura toda, com fundo claro, grupos sem caixas,
+subitens recuados e apenas o destino atual com destaque de seleção. Evita deixar uma
+faixa sem utilidade da tela de fundo. O cabeçalho do menu identifica o app atual; o
+fechamento continua acessível por X e Escape; o restante da aplicação fica inerte.
+
+A família de overlays usa bordas suaves, espaçamento e campos consistentes, título
+claro, X discreto, corpo rolável e rodapé apenas quando há ações. No mobile, formulários
+curtos são painéis centrados; busca global usa um painel ancorado no alto, com altura conforme os resultados e
+resultados roláveis agrupados por app, nome do destino e assunto em linhas distintas.
+Busca inclui Gestor e Compras, aceita acentos/caixa e apresenta estado vazio. Enter
+abre o primeiro resultado e ArrowDown leva a ele. O campo permanece na mesma posição durante a filtragem. Não há dois scrolls no painel de busca.
+Os avisos de simulação foram retirados das telas limpas, sem alterar sua natureza local.
+
+### Invariantes para a revisão final do Shopman
+
+Estes critérios consolidam as decisões existentes de Omotenashi e os pedidos desta
+conversa. Não aprovam implementação nem substituem os contratos dos componentes reais.
+
+| Critério | O que reprova a proposta |
+|---|---|
+| Primeiro inequívoco, depois curto | Rótulo bonito mas ambíguo; depender de memória ou completar sentido; esconder unidade ou consequência |
+| Mobile como ponto de partida | Controles quebrando linha por herdar toolbar desktop; diminuir alvo de toque para caber; conteúdo atrás de barra |
+| Um conceito, um nome | Reabrir vocabulário canônico sem decisão; nomes distintos para o mesmo gesto ou grandeza |
+| Hierarquia de trabalho | Principal escondida nos três pontos; todas as ações com o mesmo peso; escolha sem relação com a tarefa |
+| Navegação previsível | Hambúrguer e ícone de app com o mesmo efeito; atalhos com destino variável; trocar de representação perde recorte |
+| Funções visíveis na medida certa | Mostrar grade em matriz comparativa; densidade como controle permanente; barra sem tarefa real |
+| Contexto preservado | Perder filtro, ordem ou posição ao consultar registro; navegar adiante descartando edição sem decisão |
+| Feedback preciso | Cor como único sinal; erro que some por tempo; sucesso que cobre a ação; problema sem caminho de correção |
+| Overlay operável | Foco atrás do painel; Escape inoperante; fechamento sem nome acessível; formulário com dupla rolagem desnecessária |
+| Beleza com propósito | Bordas em cada ícone; caixas aninhadas sem significado; contraste fraco; detalhe decorativo roubando espaço útil |
+| Coerência cross-system | Mesma função com composição e gesto incompatíveis sem motivo de tarefa, audiência ou dispositivo |
+| Produto separado do Core | Organização visual ditando dependências de domínio ou contornando orquestrador/projeções |
+
+Referências internas obrigatórias: [copy Omotenashi](../../reference/omotenashi-copy.md)
+e [vocabulário da suíte](../../reference/suite-vocabulary.md). A meta de 44 px é uma
+escolha de conforto desta proposta, não uma afirmação de que WCAG AA exige 44 px:
+o [critério mínimo da W3C](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)
+trata 24 px e exceções. Para foco, teclado e fundo inerte, consultar o
+[padrão de diálogo modal W3C](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
+
+O que não deve virar dogma: quantidade de colunas, altura de modal, grade em qualquer
+cadastro, número fixo de ações e menu sempre recolhido ou expandido. Essas são escolhas
+que devem responder à tarefa. O que ainda falta provar: descoberta do acesso à Central
+pelo ícone; teclado virtual físico; leitor de tela e contraste formal; recuperação de
+falhas; proteção completa de edição ao fechar/cancelar. A prévia bloqueia próximo
+registro com edição pendente, mas ainda não cobre todas as saídas. A posição da lista
+e os filtros no endereço ainda precisam da mesma disciplina quando implementados.
