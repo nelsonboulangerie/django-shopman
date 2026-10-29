@@ -1,0 +1,127 @@
+{
+  "method": "Texto acessível dos gráficos da DigitalOcean, Select Period=Last 7 days; faixas amostradas/agregadas, não séries brutas. Janela exibida em hora local, sem fuso explícito no gráfico. Não permitem calcular p50/p95 globais.",
+  "app_id": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f",
+  "metrics_api_attempt": {
+    "method": "GET",
+    "endpoint": "https://api.digitalocean.com/v2/monitoring/metrics/apps/cpu_percentage",
+    "app_component": "web-storefront",
+    "window_days": 7,
+    "http_status": 403,
+    "permissions_changed": false
+  },
+  "components": {
+    "web-storefront": {
+      "displayed_start": "2026-10-22 14:08:19",
+      "displayed_end": "2026-10-29 14:08:19",
+      "cpu_percent_range": [
+        0.4053018172259626,
+        26.44548289491023
+      ],
+      "memory_percent_range": [
+        1.7002105712890625,
+        32.72666931152344
+      ],
+      "restart_count_range": [
+        0,
+        1
+      ],
+      "ingress_request_rate_range": [
+        0,
+        0.4207988222222222
+      ],
+      "ingress_bucket_p95_ms_range": [
+        96.25,
+        10000
+      ],
+      "source": "https://cloud.digitalocean.com/apps/40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f/insights/web-storefront"
+    },
+    "storefront-nuxt": {
+      "displayed_start": "2026-10-22 14:09:33",
+      "displayed_end": "2026-10-29 14:09:33",
+      "cpu_percent_range": [
+        0.923594408457728,
+        16.349938769973143
+      ],
+      "memory_percent_range": [
+        3.7670135498046875,
+        12.570571899414062
+      ],
+      "restart_count_range": [
+        0,
+        1
+      ],
+      "ingress_request_rate_range": [
+        0,
+        1.4362138685611472
+      ],
+      "ingress_bucket_p95_ms_range": [
+        23.749999999999996,
+        9000
+      ],
+      "source": "https://cloud.digitalocean.com/apps/40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f/insights/storefront-nuxt"
+    },
+    "operator-floor": {
+      "displayed_start": "2026-10-22 14:10:07",
+      "displayed_end": "2026-10-29 14:10:07",
+      "cpu_percent_range": [
+        2.433374786314068,
+        24.433238041453727
+      ],
+      "memory_percent_range": [
+        15.794754028320312,
+        39.17236328125
+      ],
+      "restart_count_range": [
+        0,
+        1
+      ],
+      "ingress_request_rate_range": [
+        0,
+        5.0971532222222224
+      ],
+      "ingress_bucket_p95_ms_range": [
+        23.75,
+        10000
+      ],
+      "source": "https://cloud.digitalocean.com/apps/40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f/insights/operator-floor"
+    },
+    "operator-office": {
+      "displayed_start": "2026-10-22 14:10:52",
+      "displayed_end": "2026-10-29 14:10:52",
+      "cpu_percent_range": [
+        2.088049557947917,
+        9.432157467168167
+      ],
+      "memory_percent_range": [
+        20.583343505859375,
+        44.7021484375
+      ],
+      "restart_count_range": [
+        0,
+        1
+      ],
+      "ingress_request_rate_range": [
+        0,
+        4.454850802469136
+      ],
+      "ingress_bucket_p95_ms_range": [
+        23.749999999999996,
+        2425
+      ],
+      "source": "https://cloud.digitalocean.com/apps/40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f/insights/operator-office"
+    }
+  },
+  "second_web_storefront_snapshot": {
+    "displayed_start": "2026-10-22 14:13:37",
+    "displayed_end": "2026-10-29 14:13:37",
+    "cpu_percent_range": [
+      2.2087690378337586,
+      13.644998592156707
+    ],
+    "memory_percent_range": [
+      10.455322265625,
+      32.81517028808594
+    ],
+    "note": "Mudança do alinhamento/resolução da janela altera extremos; não interpretar como queda de carga causada por esta leitura."
+  }
+}
