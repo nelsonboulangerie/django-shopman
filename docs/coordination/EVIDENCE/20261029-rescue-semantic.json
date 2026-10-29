@@ -1,0 +1,138 @@
+{
+  "base": "7288b44624d195d5cbf37431184fe49ee71a43e0",
+  "rows": [
+    {
+      "ref": "origin/rescue/admin-ingress-staging-probe-20260914-uncommitted",
+      "head": "c049806e698eda82151507cfe46aff5c8d065a96",
+      "decision": "OBSOLETO",
+      "reason": "Sonda de ingresso temporária para a #671. A própria #671 foi encerrada após a solução de IP autenticado via BFF (#763/#768). Ajustes de nome de app e sender da sonda não são funcionalidade de produto.",
+      "evidence": "PR #671, comentário de encerramento"
+    },
+    {
+      "ref": "origin/rescue/admin-login-ip-contract-20260914",
+      "head": "3ff17dab131a4db47bb200f2a2093600b061bc61",
+      "decision": "REJEITADO",
+      "reason": "Trava por IP e observação temporária pertencem à proposta #655/#828 recusada tecnicamente. Não reintroduzir XFF sem contrato, nem bloquear todos por REMOTE_ADDR compartilhado.",
+      "evidence": "PR #828, encerramento; solução #763/#768"
+    },
+    {
+      "ref": "origin/rescue/ci638-visual-repro-20260915",
+      "head": "bff8f505ef570306c69144b11c14f67757939d38",
+      "decision": "ENTREGUE",
+      "reason": "O único patch não merge é equivalente ao main por git cherry: zero +, um -. O título aparece em aafd1362f. Baseline antiga não deve substituir a matriz atual.",
+      "evidence": "git cherry origin/main <ref>; aafd1362f"
+    },
+    {
+      "ref": "origin/rescue/go-live-638-baseline-uncommitted",
+      "head": "b1595d196281eebe62557c22cd77bb232700db76",
+      "decision": "ENTREGUE",
+      "reason": "O teste test_pos_gateway_handoff_boundary.py está no main. A versão atual acrescenta expected_total_q, PosCommittedSaleError e a regra fiscal posterior da retirada. A cópia antiga removeria essas garantias.",
+      "evidence": "Comparação do arquivo entre ref e main"
+    },
+    {
+      "ref": "origin/rescue/go-live-638-integration-validation-20260913",
+      "head": "fba971b5a25047c6631688442b21e65615f130ae",
+      "decision": "SUPERADO",
+      "reason": "16 patches equivalentes por git cherry. Os demais combinam a stack de readiness/maps/fiscal do bundle #686 com a trava Admin rejeitada. Correções de locks guestman, recuperação POS e pausa de catálogo têm sucessores no main. Não há motivo para carregar a stack inteira.",
+      "evidence": "Fechamentos #613/#651–#657 e #828; commits main 7d92d47d7, 459e251ff, f55cafbaa"
+    },
+    {
+      "ref": "origin/rescue/golive-rebase-integration-probe-20260914",
+      "head": "8abc92f0b2f4723422c4ab50341ffcefd4923d73",
+      "decision": "SUPERADO",
+      "reason": "Stack de ensaio de composição: cinco patches equivalentes; readiness/certificados/alertas/Maps absorvidos no #686 e telefone no #650. A peça Admin restante foi rejeitada. Os merges de composição não são uma feature autônoma.",
+      "evidence": "Fechamentos #650–#657/#828, bundle #686"
+    },
+    {
+      "ref": "origin/rescue/google-maps-credential-split-20260911",
+      "head": "8533444fcccce7480a1125dd5097581d078b191c",
+      "decision": "ENTREGUE",
+      "reason": "A separação de credencial server/browser pertence à cadeia #613 → #656 → #657, absorvida com patch cumulativo equivalente no #686. Não trocar settings atuais pelo snapshot.",
+      "evidence": "Comentário de fechamento da #613, patch-id 3e28651488eb6e591ef142a8a6cda47e3d50a3a0"
+    },
+    {
+      "ref": "origin/rescue/marketing-final-l7-probe-20260914",
+      "head": "a5ba4986bebddee227979a65aec79f93e510f6d0",
+      "decision": "SUPERADO",
+      "reason": "Composição do #614 com retenção/telemetria de L7. A #614 registra portabilidade em #1045/#1046/#1047 e contratos mais novos; a #742 foi substituída pela #830, preservando a rota do erro em vez de reduzir URL à origem. As propostas não aceitas permanecem históricas.",
+      "evidence": "Matriz de fechamento #614 e comentário #742"
+    },
+    {
+      "ref": "origin/rescue/marketing-r10-r12-replay-20260915",
+      "head": "4a38a26d92ed4cd3977b66d246595fe1690fd28c",
+      "decision": "SUPERADO",
+      "reason": "Mesmo núcleo legal/privacy acima e inventário antigo de capacidade. A oportunidade documental de evitar deploy por teste já foi tratada na política posterior de paths (#871). Não usar conclusões operacionais de setembro como prontidão atual.",
+      "evidence": "Matriz #614, sucessor #830, fechamento #870 em favor de #871"
+    },
+    {
+      "ref": "origin/rescue/orders-audit-base-5a3383c9-uncommitted",
+      "head": "4ced7839d68659dcb6f5cc126d9ed7486090a5ee",
+      "decision": "FERRAMENTA_HISTORICA",
+      "reason": "Apenas run_orders_lab.py, sete linhas: monta sys.path dos packages e chama pytest. Não contém regra de produto nem teste novo; o contrato atual de teste é Makefile com PYTHON/PYTHONPATH explícitos. Mantido como referência, sem promover runner paralelo.",
+      "evidence": "4ced7839d; leitura integral do arquivo"
+    },
+    {
+      "ref": "origin/rescue/pdv-execution-20260910-a1",
+      "head": "fd4f89ae21211ca9ed262f14624a41851d7c3a44",
+      "decision": "INSUMO_UX",
+      "reason": "Contratos de venda desconhecida/locks já têm sucessores. A execução de interação da lista tem ideias não equivalentes ao desenho atual: explicitar navegação/seleção e compactar rodapé. Encaminhada ao briefing da frente UX reservada pelo dono, sem implementação paralela.",
+      "evidence": "docs/reports/execution/pdv-20260910-a1-accordion-display.md na ref; briefing abaixo"
+    },
+    {
+      "ref": "origin/rescue/pdv-execution-20260910-a1-uncommitted",
+      "head": "efe302cc78cf84f8575a37721920f34569b6bcbf",
+      "decision": "INSUMO_UX",
+      "reason": "Contém a mesma stack anterior e OperatorKbd.vue local. Esse componente é idêntico byte a byte ao OperatorKbd.vue atual no kit; o delta útil potencial é o mesmo estudo de interação, não outro componente a instalar.",
+      "evidence": "efe302cc7; comparação de blobs; briefing abaixo"
+    },
+    {
+      "ref": "origin/rescue/pr614-pr634-composition-20260914",
+      "head": "bab407b825a6f812f0dd2236d5504a90be80e3c9",
+      "decision": "SUPERADO",
+      "reason": "Composição de cancelamento com legal/privacy. Cancelamento entregue #629; partes funcionais portadas #1045/#1046/#1047 e retenção/exportação já no main. A matriz da #614 lista explicitamente descartes de produto e confirma que a stack não deve mergear.",
+      "evidence": "Fechamento #614: tabela parte → destino"
+    },
+    {
+      "ref": "origin/rescue/print-layouts-20260912",
+      "head": "3ade610524e560106d18761551aa54127fdaa2ea",
+      "decision": "DECISAO_VISUAL_EXISTENTE",
+      "reason": "DANFE/XML funcional foi recuperado semanticamente na #1227. Tipografia, monograma e redesign de tickets foram deixados BLOCKED_HUMAN na #1120. Não há autorização nova de layout inferida da recuperação técnica.",
+      "evidence": "Fechamento #1120, inventário dos nove commits"
+    },
+    {
+      "ref": "origin/rescue/print-layouts-20260912-uncommitted",
+      "head": "d2f6ff3268f7ffe9f75ee3dadc317ce3ce0a714b",
+      "decision": "DECISAO_VISUAL_EXISTENTE",
+      "reason": "Mesma stack de impressão, mais inventário histórico de layouts. O conteúdo único é relatório; a intenção funcional segue #1227 e a proposta visual permanece preservada para decisão própria.",
+      "evidence": "d2f6ff326; fechamento #1120"
+    },
+    {
+      "ref": "origin/snapshot/operador-nuxtui-onda0-conjunto-minimo-20261011",
+      "head": "7e7508ef45c5b30f1443cefb1d2c63a1f71ea507",
+      "decision": "INSUMO_UX",
+      "reason": "Snapshot de catálogo visual e antigos UiButton/UiNativeSelect. Tema mínimo entrou pelo pouso #1555; os adapters foram depois aposentados. O showroom específico pode informar a nova auditoria, mas não deve reintroduzir componentes removidos nem alterar o tema atual.",
+      "evidence": "7e7508ef4; fechamento #1543: entrou pelo #1555"
+    },
+    {
+      "ref": "origin/snapshot/operator-kitchen-sink-20261011",
+      "head": "6292fbc737ba68eb1972d7bff6af75d441f16cd2",
+      "decision": "INSUMO_UX",
+      "reason": "A feature kitchen sink foi entregue #1512 e evoluiu no app interno atual. Snapshot acrescenta .look.cjs local com porta fixa e versões antigas de tema/showroom. São referência de demonstração; não há correção de domínio inédita.",
+      "evidence": "6292fbc73; #1512; leitura integral de .look.cjs"
+    },
+    {
+      "ref": "origin/snapshot/orders-canonical-recovery-20261011",
+      "head": "452bed2e70e2633e906e7e46a3aac007ec24656f",
+      "decision": "INSUMO_UX",
+      "reason": "Pilha de UI/harness antiga com 110 arquivos desde a base. A migração canônica seguiu #1518 por decisão do dono, encerrando #1516. Inventário funcional e laudo preservados são briefing útil; capturas antigas não são baseline CI autorizada.",
+      "evidence": "e5e3c13d1, 26b1a8fe4, 452bed2e7; fechamento #1516"
+    },
+    {
+      "ref": "origin/snapshot/select-chevron-and-controls-audit-20261011",
+      "head": "ed052e5f6d74ba1ce707504acc78a7ede08807e4",
+      "decision": "OBSOLETO",
+      "reason": "Delta de bg-none no select nativo e comentário do chevron. O WP de higiene já comprovou supersessão semântica; a superfície atual usa controles canônicos e o CSS de UiNativeSelect foi aposentado.",
+      "evidence": "ed052e5f6; WP-REPOSITORY-WORKTREE-BRANCH-HYGIENE §3.4"
+    }
+  ]
+}
