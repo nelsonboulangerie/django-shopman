@@ -746,7 +746,7 @@ function openRowMenu(row: ProductionMatrixRowProjection): OperatorMoreMenuItem[]
   const main: OperatorMoreMenuItem[] = [{ type: "label", label: rowLabel(row) }];
   if (row.started_orders.length)
     main.push({
-      label: "Ver lançamento",
+      label: "Detalhes do lote",
       icon: "i-lucide-receipt-text",
       onSelect: () => openStarted(row),
     });
@@ -1180,14 +1180,7 @@ const planDescription = computed(() => {
 const startedDescription = computed(() => {
   const wo = selectedStartedOrder.value;
   const sku = startedRow.value?.output_sku ?? "";
-  if (wo && wo.started_qty) {
-    const launched = wo.started_at_display
-      ? ` · lançado ${wo.started_at_display}`
-      : "";
-    return `#${wo.ref} · ${sku} · ${wo.started_qty} un. previstas seguem para o Fechamento${launched}`;
-  }
-  if (wo) return `#${wo.ref} · ${sku} · ${wo.planned_qty} un. planejadas`;
-  return "Selecione o lote.";
+  return wo ? `#${wo.ref} · ${sku}` : "Selecione o lote.";
 });
 </script>
 
@@ -1870,23 +1863,10 @@ const startedDescription = computed(() => {
                   data-open-confirm
                   @click="openStart(row)"
                 />
-                <!-- Lote aberto: o que foi lançado, a um toque (v3 "não mudaram"). -->
-                <NuxtButton
-                  v-else-if="row.started_orders.length"
-                  color="neutral"
-                  variant="outline"
-                  :size="docked ? 'xl' : 'md'"
-                  class="hidden sm:inline-flex"
-                  label="Ver lançamento"
-                  :aria-label="`Ver lançamento de ${rowLabel(row)}`"
-                  data-open-view-launch
-                  @click="openStarted(row)"
-                />
                 <!-- ⋯ da linha; no tablet deitado o mesmo menu abre ao segurar a linha. -->
                 <OperatorMoreMenu
                   :label="`Mais ações de ${rowLabel(row)}`"
                   :items="openRowMenu(row)"
-                  :class="docked ? 'lg:hidden' : ''"
                   data-open-row-menu
                 />
               </div>
@@ -1905,7 +1885,7 @@ const startedDescription = computed(() => {
           data-open-press-hint
         >
           <Icon name="lucide:pointer" class="size-4" />
-          Pressione e segure uma linha: Ver lançamento · Ver encomendas · Cancelar lote.
+          Pressione e segure uma linha: Detalhes do lote · Ver encomendas · Cancelar lote.
         </p>
         <p
           v-if="query && !stageRows.length"
@@ -2295,7 +2275,7 @@ const startedDescription = computed(() => {
     <!-- lote aberto: conferência e cancelamento, sem etapas, sem gestão -->
     <NuxtModal
       :open="startedRow != null"
-      :title="`${startedRow?.started_orders.length ? 'Lote aberto' : 'Lote planejado'} · ${startedRow ? rowLabel(startedRow) : ''}`"
+      :title="startedRow ? rowLabel(startedRow) : 'Detalhes do lote'"
       :description="startedDescription"
       @update:open="
         (v: boolean) => {
@@ -2333,6 +2313,41 @@ const startedDescription = computed(() => {
                 >{{ workOrder.started_qty || workOrder.planned_qty }} un.</span
               >
             </NuxtButton>
+          </div>
+
+          <div
+            v-if="selectedStartedOrder"
+            class="flex flex-col gap-2"
+            data-lot-summary
+          >
+            <p class="op-body text-muted-foreground">
+              {{
+                selectedStartedOrder.started_qty
+                  ? "Lote aberto"
+                  : "Lote planejado"
+              }}<template v-if="selectedStartedOrder.started_at_display">
+                · Aberto em
+                {{ selectedStartedOrder.started_at_display }}</template
+              >
+            </p>
+            <p class="text-3xl font-bold tabular-nums" data-lot-quantity>
+              {{
+                formatQtyUnit(
+                  selectedStartedOrder.started_qty ||
+                    selectedStartedOrder.planned_qty,
+                  startedRow?.output_unit,
+                )
+              }}
+              {{
+                selectedStartedOrder.started_qty ? "previstas" : "planejadas"
+              }}
+            </p>
+            <p
+              v-if="selectedStartedOrder.started_qty"
+              class="op-body text-muted-foreground"
+            >
+              Seguem para o Fechamento.
+            </p>
           </div>
 
           <template v-if="voidConfirming">
@@ -2397,7 +2412,7 @@ const startedDescription = computed(() => {
             color="neutral"
             variant="outline"
             class="ml-auto"
-            label="Voltar"
+            label="Fechar"
             @click="
               startedRow = null;
               selectedStartedPk = null;

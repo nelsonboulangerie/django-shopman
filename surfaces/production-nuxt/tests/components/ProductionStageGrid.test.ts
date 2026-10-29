@@ -849,7 +849,7 @@ describe("ProductionStageGrid — Abertura", () => {
     );
   });
 
-  it("linha aberta tem Ver lançamento e o ⋯ com Cancelar lote… (R12)", async () => {
+  it("linha aberta oferece Detalhes do lote somente no menu", async () => {
     boardRows.value = [
       row({
         started_qty: "30",
@@ -859,24 +859,26 @@ describe("ProductionStageGrid — Abertura", () => {
       }),
     ];
     const w = mountGrid();
-    expect(w.find("[data-open-view-launch]").text()).toBe("Ver lançamento");
+    expect(w.find("[data-open-view-launch]").exists()).toBe(false);
     expect(w.find("[data-open-row-menu]").exists()).toBe(true);
   });
 });
 
 describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", () => {
-  it("abre o lote aberto pelo número e cancela com motivo", async () => {
+  it("abre os detalhes pelo menu e cancela com motivo", async () => {
     boardRows.value = [
       row({
         started_qty: "30",
-        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30" })],
+        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30", started_at_display: "29/10 às 09:17" })],
       }),
     ];
     const w = mountGrid();
 
-    // A linha aberta mostra "Ver lançamento", que abre a conferência (R12).
-    await w.find("[data-open-view-launch]").trigger("click");
-    expect(w.text()).toContain("previstas seguem para o");
+    // O menu abre a conferência sem repetir a ação na linha.
+    await byText(w, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
+    expect(w.get("[data-lot-quantity]").text()).toBe("30 un. previstas");
+    expect(w.get("[data-lot-summary]").text()).toContain("Lote aberto");
+    expect(w.get("[data-lot-summary]").text()).toContain("Aberto em 29/10 às 09:17");
     expect(w.text()).toContain("Fechamento");
     expect(w.text()).not.toContain("Avançar");
 
@@ -920,13 +922,13 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     ];
     kdsActions.set("authorize_formula_deviation:7", { enabled: false });
     let wrapper = mountGrid();
-    await wrapper.find("[data-open-view-launch]").trigger("click");
+    await byText(wrapper, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
     expect(byText(wrapper, "button", "Autorizar desvio")).toBeUndefined();
 
     wrapper.unmount();
     kdsActions.set("authorize_formula_deviation:7", { enabled: true });
     wrapper = mountGrid();
-    await wrapper.find("[data-open-view-launch]").trigger("click");
+    await byText(wrapper, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
     expect(byText(wrapper, "button", "Autorizar desvio")).toBeDefined();
   });
 });
@@ -1231,7 +1233,7 @@ describe("ProductionStageGrid — menu da linha da Abertura", () => {
       context.element.querySelectorAll(':scope > [role="menu"] [role="menuitem"]'),
     ).map((el) => el.textContent?.trim());
 
-    expect(moreItems[0]).toBe("Ver lançamento");
+    expect(moreItems[0]).toBe("Detalhes do lote");
     expect(moreItems).toContain("Confirmar previsto");
     expect(moreItems.at(-1)).toBe("Cancelar lote…");
     expect(contextItems).toEqual(moreItems);
