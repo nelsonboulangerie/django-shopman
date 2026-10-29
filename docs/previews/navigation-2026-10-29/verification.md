@@ -152,3 +152,24 @@ Capturas: adaptive-grid-mobile.jpg, adaptive-list-desktop.jpg,
 adaptive-record-footer-mobile.jpg e adaptive-receiving-mobile.jpg.
 Os cenários da matriz de decisão não foram todos prototipados ou revalidados nesta
 rodada. Sem testes dos apps, Core, baselines ou deploy.
+
+## Quinta rodada: correção a partir do celular
+
+- Auditoria DOM dos 20 destinos em 320 × 740: largura da página 320 em todos;
+  nenhum botão visível com classe button transbordou sua caixa horizontalmente.
+  Essa verificação não equivale a aprovação visual integral dos 20 destinos.
+- Inspeção visual do Catálogo em 320 e 390 px; toolbar em uma única linha de 44 px,
+  contra os 95 px medidos na quarta rodada em 390. Preço, saldo e situação preservados.
+- Filtrar/ordenar → Maior preço → Aplicar: contagem mostra 9 produtos · Maior preço.
+- Opções → Grade: seis cards na página. Lista/grade e densidade acessíveis pelo popover
+  no mobile. Não há o seletor duplicado permanente de apresentação.
+- Recebimento inspecionado em 320 e 390: nota e aviso reorganizados; opções da página
+  mostram Ler outra nota. Escape fecha a camada.
+- Caixa externa de ação primária com 44 px em 320. Toolbar 44 px; clientHeight dos
+  botões 42 px mais bordas de 1 px em cada lado, total externo de 44 px.
+- Desktop 1440 × 900 conferido depois: variante double, sort e vista explícitos;
+  alternar grade produziu seis cards; largura da página sem transbordamento.
+
+Capturas atuais: mobile-first-catalog-320.jpg, mobile-first-catalog-390.jpg e
+mobile-first-receiving-390.jpg. Sem validação em dispositivo físico ou afirmação de
+que todos os fluxos de produto foram aprovados.

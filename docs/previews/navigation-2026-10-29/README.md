@@ -277,3 +277,25 @@ estrutura de navegação foi escolhida para experimentar.
 
 Aplicação crítica: usar esses princípios, sem copiar o excesso de controles de um ERP
 generalista. Nenhuma dependência Shopify/Odoo/Unfold foi adicionada ao protótipo ou apps.
+
+## Correção mobile-first, quinta rodada
+
+O dono apontou excesso de controles e quebras evitáveis no mobile. A correção parte
+agora de 320 px, antes de conferir o desktop. No catálogo móvel, a barra de ferramentas
+vira uma linha única: busca, acesso a filtrar/ordenar e opções. Coleção e ordenação
+ficam juntas no painel de filtros; a ordem aplicada permanece legível na contagem.
+Lista/grade e densidade ficam nas opções de apresentação, sem seletores permanentes
+competindo com a busca. No desktop, controles explícitos continuam disponíveis.
+
+Os cards da lista móvel foram recompostos: nome e SKU, coleção como informação
+secundária, preço e disponibilidade lado a lado, situação abaixo. Não é apenas redução
+de tamanho de fonte. A primeira linha de registro observada em 390 px tem 163 px.
+Alvos dos botões da toolbar, paginação e ação primária têm caixa de 44 px ou mais.
+
+Na conferência, a nota usa ícone e identificação em grade; a divergência diz diretamente
+Manteiga: faltam 2 kg / Na nota: 10 kg. Recebido: 8 kg. O botão redundante Ver divergências
+sai da composição móvel, já atendida pelos recortes. Ler outra nota e Rever critérios
+são acessíveis nas opções da página quando aplicáveis; não desaparecem por falta de
+espaço. Botões primários do cabeçalho não quebram o rótulo; títulos longos podem ocupar
+duas linhas sem truncamento. As capturas da quinta rodada substituem as anteriores
+como referência de composição mobile, sem reescrever sua evidência histórica.

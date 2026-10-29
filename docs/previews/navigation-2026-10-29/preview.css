@@ -126,3 +126,27 @@ body{height:100dvh;overflow:hidden;display:flex;flex-direction:column}.lab{flex-
 @media(max-width:650px), (max-width:900px) and (orientation:portrait){.suite-header .central-direct{width:auto;padding:7px;gap:5px;font-size:11px}.suite-header .central-direct span{display:inline}}
 @media(min-width:361px) and (max-width:650px), (min-width:361px) and (max-width:900px) and (orientation:portrait){.toolbar .sort-control select{width:125px}}
 .adaptive .primary-toggle{display:none}.adaptive .application[data-drawer=true] .primary-toggle{display:block}
+/* Mobile: uma linha de busca e ferramentas; apresentação sai da disputa com a tarefa. */
+.mobile-order-note,.mobile-collection,.mobile-presentation-options{display:none}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){
+ .application[data-view=catalog] .toolbar,.application[data-view=channel-catalog] .toolbar{display:grid;grid-template-columns:minmax(0,1fr) 44px 44px;gap:7px;align-items:center}
+ .application[data-view=catalog] .toolbar>.search,.application[data-view=channel-catalog] .toolbar>.search{min-width:0;max-width:none;width:100%;margin:0}
+ .application[data-view=catalog] .toolbar>.search input,.application[data-view=channel-catalog] .toolbar>.search input{min-width:0;font-size:12px;padding-right:8px}
+ .toolbar>.button[data-action=catalog-filters]{font-size:0;gap:0;width:44px;height:44px;padding:0;position:relative}.toolbar>.button[data-action=catalog-filters] svg{width:18px;height:18px}
+ .application[data-view=catalog] .toolbar>.sort-control,.application[data-view=channel-catalog] .toolbar>.sort-control,.toolbar>.view-toggle{display:none}
+ .mobile-presentation-options,.mobile-order-note{display:inline}.desktop-recut-note{display:none}.mobile-collection{display:block;color:var(--muted);font-size:11px;margin:4px 0 0 49px;line-height:1.4}
+ .application[data-view=catalog] tbody tr{gap:10px 14px;padding:14px;grid-template-columns:1fr 1fr}.application[data-view=catalog] tbody td:first-child{margin:0;padding-right:44px}.application[data-view=catalog] tbody td:nth-child(2){display:none}.application[data-view=catalog] tbody td:nth-child(3),.application[data-view=catalog] tbody td:nth-child(4){gap:3px}.application[data-view=catalog] tbody td:nth-child(5){grid-column:1/-1}.application[data-view=catalog] tbody td:nth-child(5)::before{display:none}.application[data-view=catalog] tbody td:last-child{top:11px;right:10px}
+ .application[data-view=catalog] tbody .record-link strong{font-size:14px}.application[data-view=catalog] tbody .product-icon{height:34px;width:34px}.application[data-view=catalog] tbody .record-name{gap:10px}.application[data-view=catalog] .count-note{margin-bottom:12px}
+ .application[data-view=catalog] .content[data-density=compact] tbody tr{gap:7px 12px;padding:12px}.application[data-view=catalog] .content[data-density=compact] .mobile-collection{margin-left:40px}
+ .adaptive .heading-row{align-items:flex-start;gap:10px}.adaptive .heading-row>div:first-child{min-width:0;flex:1}.adaptive .page-actions{flex-shrink:0}.adaptive .page-actions>.button.gold{white-space:nowrap;min-height:40px;padding:8px 11px}.adaptive .heading-row h1{line-height:1.2}
+ .product-card-top .icon-button{width:44px}.product-card{gap:9px}.product-card-bottom .tag{max-width:100%}
+}
+.mobile-page-options{display:none}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){
+ .mobile-page-options{display:grid}.application[data-view=receiving] .toolbar>.button,.application[data-view=divergences] .toolbar>.button{display:none}
+ .receipt-summary{padding:14px;gap:10px;align-items:flex-start}.receipt-summary .list-icon{width:34px;height:34px}.receipt-summary h2{font-size:15px}.receipt-summary p{font-size:11px;line-height:1.5}.receipt-summary .end{margin-left:44px}.receipt-summary .tag{font-size:10px}
+ .application[data-view=receiving] .banner,.application[data-view=divergences] .banner{padding:12px;gap:10px;flex-wrap:nowrap;margin-bottom:14px}.application[data-view=receiving] .banner strong,.application[data-view=divergences] .banner strong{font-size:13px}.application[data-view=receiving] .banner p,.application[data-view=divergences] .banner p{margin-top:4px;font-size:12px}
+ .local-options{gap:17px}.local-controls{gap:12px}.local-label{font-size:9px;flex-shrink:0}.local-options .filter-chip{white-space:nowrap}
+}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){.receipt-summary{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px 10px}.receipt-summary>.list-icon{grid-row:1/3}.receipt-summary>div{min-width:0}.receipt-summary>.end{grid-column:2;margin:0}.receipt-summary p{white-space:normal}.receipt-summary h2{margin-top:0}}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){.adaptive .page-actions>.button.gold{min-height:44px}.pagination .icon-button{width:44px;height:44px}.pagination>span{font-size:11px}}
