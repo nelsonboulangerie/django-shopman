@@ -54,6 +54,7 @@ const form = reactive({
   isActive: true,
   leadTimeDaysText: "",
   paymentTerm: "",
+  sendDirectly: false,
 });
 const contact = reactive({
   open: false,
@@ -102,6 +103,7 @@ function reset() {
     form.isActive = true;
     form.leadTimeDaysText = "";
     form.paymentTerm = "";
+    form.sendDirectly = false;
   } else if (isDuplicate.value) {
     form.ref = source.ref + "-2";
     form.name = source.name + " (cópia)";
@@ -112,6 +114,7 @@ function reset() {
     form.isActive = true;
     form.leadTimeDaysText = source.leadTimeDays ? String(source.leadTimeDays) : "";
     form.paymentTerm = source.paymentTerm;
+    form.sendDirectly = false;
   } else {
     form.ref = source.ref;
     form.name = source.name;
@@ -122,6 +125,7 @@ function reset() {
     form.isActive = source.isActive;
     form.leadTimeDaysText = source.leadTimeDays ? String(source.leadTimeDays) : "";
     form.paymentTerm = source.paymentTerm;
+    form.sendDirectly = source.sendDirectly;
   }
   resetContact();
 }
@@ -186,6 +190,7 @@ function submit() {
     isActive: form.isActive,
     leadTimeDays,
     paymentTerm: form.paymentTerm.trim(),
+    sendDirectly: form.sendDirectly,
   };
   if (isEdit.value) {
     emit("save", {
@@ -309,6 +314,14 @@ watch(
           <NuxtFormField label="Condição de pagamento">
             <NuxtInput v-model="form.paymentTerm" class="w-full" placeholder="28 dias" data-testid="supplier-payment-term" />
           </NuxtFormField>
+          <div class="sm:col-span-2">
+            <NuxtCheckbox
+              v-model="form.sendDirectly"
+              label="Enviar direto"
+              description="Use somente para fornecedor de confiança. Ligado, o pedido sai sem a etapa de revisão."
+              data-testid="supplier-send-directly"
+            />
+          </div>
         </div>
       </OperatorFormSection>
 

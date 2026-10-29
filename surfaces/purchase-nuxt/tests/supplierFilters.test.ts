@@ -24,6 +24,7 @@ function supplier(patch: Partial<Supplier>): Supplier {
     isActive: true,
     lastDeliveryAt: "",
     paymentTerm: "",
+    sendDirectly: false,
     ...patch,
   };
 }

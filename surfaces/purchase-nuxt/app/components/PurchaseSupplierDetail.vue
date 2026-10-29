@@ -55,6 +55,14 @@ const portfolio = computed(() =>
     </dl>
 
     <section class="border-t border-default pt-4">
+      <h3 class="text-sm font-semibold">Envio de pedidos</h3>
+      <p class="mt-1 text-xs text-muted">
+        <template v-if="supplier.sendDirectly">Enviar direto: o pedido sai ao tocar em Enviar pedido.</template>
+        <template v-else>Por revisão: o pedido só sai depois da confirmação do conteúdo.</template>
+      </p>
+    </section>
+
+    <section class="border-t border-default pt-4">
       <h3 class="text-sm font-semibold">Contatos</h3>
       <!-- A pergunta antes de apertar "enviar" é "vai para quem?". Responder depois do
            envio não serve. -->

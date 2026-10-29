@@ -92,6 +92,7 @@ function suppliers() {
     isActive: index !== 4,
     lastDeliveryAt: "2026-10-06",
     paymentTerm: term,
+    sendDirectly: false,
   }));
 }
 

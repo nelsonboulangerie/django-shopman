@@ -1061,7 +1061,7 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
     return build_purchase(), f"{material.name} está à venda no PDV."
 
 
-def send_purchase_request(material_sku: str, *, user=None) -> dict[str, Any]:
+def send_purchase_request(material_sku: str, *, reviewed: bool, user=None) -> dict[str, Any]:
     """Despacha o pedido ao fornecedor e marca o insumo como aguardando entrega.
 
     O pedido fica em aberto (`purchase.request_status = "sent"`) até o
@@ -1080,7 +1080,7 @@ def send_purchase_request(material_sku: str, *, user=None) -> dict[str, Any]:
         )
 
     with transaction.atomic():
-        dispatch = _queue_supplier_purchase_request(material, user=user)
+        dispatch = _queue_supplier_purchase_request(material, reviewed=reviewed, user=user)
 
         metadata = dict(material.metadata or {})
         purchase = dict(metadata.get("purchase") or {})
@@ -1129,7 +1129,7 @@ def _close_purchase_request(material) -> None:
     material.save(update_fields=["metadata", "updated_at"])
 
 
-def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
+def _queue_supplier_purchase_request(material, *, reviewed: bool, user=None) -> dict[str, str]:
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
 
     cost = (
@@ -1149,6 +1149,14 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
             "Fornecedor inativo não pode receber pedido de compra.",
             code="supplier_inactive",
             field="supplierRef",
+        )
+    supplier_purchase = dict((supplier.metadata or {}).get("purchase") or {})
+    if supplier_purchase.get("send_directly") is not True and not reviewed:
+        raise PurchaseError(
+            "Revise o pedido antes de enviar ao fornecedor.",
+            code="purchase_request_review_required",
+            field="reviewed",
+            status_code=409,
         )
 
     SupplierContact = apps.get_model("buyman", "SupplierContact")

@@ -664,7 +664,11 @@ def test_upsert_cost_and_request_status_actions(client, purchase_operator, mater
     assert cost_response.status_code == 200
     assert SupplierMaterialCost.objects.get(material=material, supplier=supplier).is_preferred is True
 
-    sent = client.post(reverse("api-backstage-purchase-request-send", args=[material.sku]))
+    sent = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": True},
+        content_type="application/json",
+    )
     assert sent.status_code == 200
     assert sent.json()["purchase"]["purchaseRequestStatuses"][material.sku] == "sent"
     material.refresh_from_db()
@@ -676,6 +680,60 @@ def test_upsert_cost_and_request_status_actions(client, purchase_operator, mater
     assert directive.payload["context"]["material_sku"] == material.sku
     assert directive.payload["context"]["supplier_ref"] == supplier.ref
     assert directive.payload["context"]["operator_username"] == purchase_operator.username
+
+
+@pytest.mark.django_db
+def test_purchase_request_requires_explicit_review_by_default(
+    client, purchase_operator, material, supplier, conversion,
+):
+    client.force_login(purchase_operator)
+    supplier.email = "pedidos@moinho.example"
+    supplier.save(update_fields=["email", "updated_at"])
+    SupplierMaterialCost.objects.create(
+        material=material,
+        supplier=supplier,
+        conversion=conversion,
+        cost_q=18000,
+        is_preferred=True,
+    )
+
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": False},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "purchase_request_review_required"
+    assert not Directive.objects.filter(topic=NOTIFICATION_SEND, payload__event="purchase_request").exists()
+    material.refresh_from_db()
+    assert material.metadata["purchase"].get("request_status") != "sent"
+
+
+@pytest.mark.django_db
+def test_trusted_supplier_can_send_directly_without_review(
+    client, purchase_operator, material, supplier, conversion,
+):
+    client.force_login(purchase_operator)
+    supplier.email = "pedidos@moinho.example"
+    supplier.metadata = {"purchase": {"send_directly": True}}
+    supplier.save(update_fields=["email", "metadata", "updated_at"])
+    SupplierMaterialCost.objects.create(
+        material=material,
+        supplier=supplier,
+        conversion=conversion,
+        cost_q=18000,
+        is_preferred=True,
+    )
+
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": False},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert Directive.objects.filter(topic=NOTIFICATION_SEND, payload__event="purchase_request").count() == 1
 
 
 @pytest.mark.django_db
@@ -692,7 +750,11 @@ def test_send_purchase_request_requires_supplier_contact(client, purchase_operat
         is_preferred=True,
     )
 
-    response = client.post(reverse("api-backstage-purchase-request-send", args=[material.sku]))
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": True},
+        content_type="application/json",
+    )
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "supplier_contact_missing"
@@ -1320,7 +1382,7 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
     # fornecedor antes de enviar o pedido."
     response = client.post(
         reverse("api-backstage-purchase-request-send", args=["ALECRIM-FRESCO"]),
-        data={},
+        data={"reviewed": True},
         content_type="application/json",
     )
     assert response.status_code == 200, response.json()

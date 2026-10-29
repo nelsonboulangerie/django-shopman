@@ -107,6 +107,7 @@ const suppliers: Supplier[] = [
     isActive: true,
     lastDeliveryAt: "2026-08-22",
     paymentTerm: "14 dias",
+    sendDirectly: false,
   },
   {
     ref: "SUP-COOP",
@@ -122,6 +123,7 @@ const suppliers: Supplier[] = [
     isActive: true,
     lastDeliveryAt: "2026-08-20",
     paymentTerm: "7 dias",
+    sendDirectly: false,
   },
 ];
 
