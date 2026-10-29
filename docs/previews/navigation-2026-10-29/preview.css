@@ -210,3 +210,14 @@ svg{stroke-width:2}.tag{border-radius:6px;line-height:16px}
 
 /* Opções da página encerram a linha do título, após a ação principal. */
 .adaptive .heading-row{gap:10px}.adaptive .heading-row>.page-flow-options{flex-shrink:0;margin-left:0}.adaptive .heading-row .page-actions:empty{display:none}
+
+/* Tabs: trilho horizontal, alvos estáveis e sem quebra, como as coleções da loja. */
+.local-controls{min-width:0;overflow:hidden}.local-label{flex-shrink:0}.local-options{display:flex!important;flex-wrap:nowrap!important;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scroll-behavior:smooth;touch-action:pan-x pan-y}.local-options>.filter-chip{flex:0 0 auto;white-space:nowrap}.local-options>.filter-chip:focus-visible{outline:2px solid var(--gold);outline-offset:-3px}
+.decision-options{border:0;padding:0;margin:16px 0;min-width:0}.decision-options legend{font-size:14px;font-weight:600;margin-bottom:10px}.decision-options label{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:10px;font-size:14px;line-height:1.5}.decision-options input{width:20px;height:20px;flex-shrink:0;accent-color:var(--gold);margin:0}.decision-options label:has(input:checked){background:var(--paper);border-color:var(--gold)}
+@media(min-width:901px), (min-width:651px) and (orientation:landscape){.adaptive .secondary{width:190px}.secondary-note{font-size:12px}}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){
+ .application:is([data-view=receiving],[data-view=divergences]) .receipt-summary{padding:12px;gap:10px;margin-bottom:12px;display:grid;grid-template-columns:34px minmax(0,1fr)}
+ .application:is([data-view=receiving],[data-view=divergences]) .receipt-summary>.list-icon{width:34px;height:34px}.application:is([data-view=receiving],[data-view=divergences]) .receipt-summary>.end{grid-column:2;margin:0}.application:is([data-view=receiving],[data-view=divergences]) .banner{padding:10px 12px;margin-bottom:12px}.application:is([data-view=receiving],[data-view=divergences]) .banner p{margin-top:2px}
+ #action-dock .floating-surface{display:flex;align-items:center;gap:10px;padding:10px 12px}#action-dock .floating-context{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;font-size:11px}#action-dock .floating-context strong{font-size:12px}#action-dock .floating-surface>.button{width:auto;min-height:44px;flex-shrink:0;margin-left:auto;font-size:12px;padding:8px}#action-dock .floating-surface:has(#dock-reason){flex-wrap:wrap}#dock-reason{width:100%;margin:0}
+}
+@media(prefers-reduced-motion:reduce){.local-options{scroll-behavior:auto}}

@@ -1,7 +1,8 @@
 /* Motor de composição da prévia. Sem backend, credenciais ou persistência. */
 let activeFlow=null,activeFlowContext={},dialogBaseline='',dialogGuard=false,discardNext=null;
 function flowButtons(ids){return ids.map(id=>{const f=FLOW_CATALOG.find(x=>x.id===id);return f?`<button class="button flow-link" data-flow="${id}">${icon(f.danger?'warning':'arrow')}<span>${esc(f.title)}</span></button>`:'';}).join('');}
-function pageFlowOptions(){return `<div class="flow-menu"><span class="option-heading">Funções de ${viewInfo[state.view][0]}</span>${flowButtons(FLOW_CATALOG.filter(f=>f.app===state.app&&f.view===state.view).map(f=>f.id))}</div>`;}
+const PAGE_FLOW_IDS=new Set(['catalog-bulk','receipt-remark','receipt-voucher','csv-import','csv-export']);
+function pageFlowOptions(){const ids=FLOW_CATALOG.filter(f=>f.app===state.app&&f.view===state.view&&PAGE_FLOW_IDS.has(f.id)).map(f=>f.id);return ids.length?`<div class="flow-menu"><span class="option-heading">Ferramentas da página</span>${flowButtons(ids)}</div>`:'';}
 function formFingerprint(){return JSON.stringify(Array.from(document.querySelectorAll('#detail input,#detail textarea,#detail select')).filter(e=>e.id!=='flow-section').map(e=>[e.name||e.id,e.type==='checkbox'?e.checked:e.value]));}
 function trackDialog(){dialogGuard=['form','workspace'].includes(document.querySelector('#detail').dataset.kind);dialogBaseline=formFingerprint();}
 function requestDialogClose(next=null){
@@ -45,7 +46,7 @@ function showFlow(id,context={}){
  if(f.facts)body+=f.facts.map(([label,value])=>`<div class="fact"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`).join('');
  body+=sections.map(([title,labels],i)=>`<section data-flow-section="${i}" ${i?'hidden':''}><h3>${esc(title)}</h3>${readOnly?labels.map(label=>`<p>${esc(label)}</p>`).join(''):labels.map(label=>inferredField(label,index++)).join('')}</section>`).join('');
  if(f.fields)body+=f.fields.map(([label,type,value,required])=>flowField(label,index++,type,value,required)).join('');
- if(f.actions)body+=`<section class="flow-related"><h3>Mais funções</h3>${flowButtons(f.actions)}</section>`;
+ if(f.actions&&!context.create)body+=`<section class="flow-related"><h3>Mais funções</h3>${flowButtons(f.actions)}</section>`;
  const footer=readOnly?'':button('Cancelar','close')+`<button class="button ${f.danger?'danger':'gold'}" data-flow-save>${esc(f.confirm||'Salvar')}</button>`;
  openDialog(context.create&&['product-editor','customer-editor','material-editor','supplier-editor'].includes(id)?'Cadastrar '+(id==='product-editor'?'produto':id==='customer-editor'?'cliente':id==='material-editor'?'insumo':'fornecedor'):context.title||(id==='product-editor'&&context.id?products.find(p=>p.id===context.id)?.name:'')||(readOnly&&context.name)||f.title,body,footer,readOnly?(sections.length?'record':'detail'):sections.length?'workspace':f.fields?'form':'confirm');
  if(id==='product-editor'&&context.id){const list=catalogList(),at=list.findIndex(p=>p.id===context.id);document.querySelector('#detail .dialog-foot').insertAdjacentHTML('afterbegin',`<nav class="record-pagination" aria-label="Produtos deste recorte"><button class="icon-button" data-flow-step="-1" aria-label="Produto anterior" ${at<=0?'disabled':''}>${icon('left')}</button><span>${at+1} de ${list.length}</span><button class="icon-button" data-flow-step="1" aria-label="Próximo produto" ${at===list.length-1?'disabled':''}>${icon('arrow')}</button></nav>`);}
@@ -100,7 +101,7 @@ function renderPreviewScenario(){
  if(scenario==='error')document.querySelector('#content').innerHTML=`<div class="semantic-alert error" role="alert"><span>Não foi possível carregar os dados desta página.</span><button class="button alert-action" data-review-state="ready">Tentar novamente</button></div>`;
 }
 document.addEventListener('click',event=>{
- const flow=event.target.closest('[data-flow]');if(flow){event.preventDefault();const context=flow.dataset.taskIndex!==undefined?{taskIndex:Number(flow.dataset.taskIndex)}:activeFlowContext;const next=()=>showFlow(flow.dataset.flow,context);if(document.querySelector('#detail').open)requestDialogClose(next);else next();return;}
+ const flow=event.target.closest('[data-flow]');if(flow){event.preventDefault();const context=flow.dataset.taskIndex!==undefined?{taskIndex:Number(flow.dataset.taskIndex)}:flow.closest('#options-popover')?{}:activeFlowContext;const next=()=>showFlow(flow.dataset.flow,context);if(document.querySelector('#detail').open)requestDialogClose(next);else next();return;}
  if(event.target.closest('[data-flow-save]')){commitFlow();return;}
  const step=event.target.closest('[data-flow-step]');if(step){const list=catalogList(),index=list.findIndex(p=>p.id===activeFlowContext.id),p=list[index+Number(step.dataset.flowStep)];if(p)requestDialogClose(()=>showFlow('product-editor',{id:p.id}));return;}
  if(event.target.closest('#keep-editing')){document.querySelector('#discard-dialog').close();return;}

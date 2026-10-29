@@ -301,3 +301,13 @@ Evidências: `captures/tools-fixed-vs-scroll-mobile.jpg` e `captures/tools-scrol
 Busca em card rolável é o padrão mobile de Gestor e Compras. Menu da página na extremidade direita da linha do título, depois da ação principal. Variante de cabeçalho permanece apenas como experimento explícito (`pageMenu=header`).
 
 Revisadas as 20 telas em 390 e 320 px: nenhum transbordamento horizontal nos cabeçalhos ou cards de ferramentas; nenhuma ferramenta no dock fixo nos destinos padrão; opções da página no último lugar da linha quando disponíveis. Evidência em `toolbar-consistency-evidence.json`. Galeria mobile das 20 telas atualizada. Telas sem busca não recebem card vazio. Comparação histórica da faixa fixa permanece acessível como experimento, sem alterar o padrão aprovado.
+
+## Refinamento após revisão adversarial
+
+Somente prévias. Menus gerais agora contêm ferramentas de página (tabelão, importação/exportação e documentos gerais da nota conforme destino); ações de registro ficam no contexto dos registros. Cadastro novo não mostra funções de registro salvo. Inventário completo de exemplos continua no índice de revisão, sem ser tratado como menu de produto.
+
+Decisão de recebimento usa rádios com texto integral em 320 px. Resumo da nota e ação flutuante compactados; a superfície da ação mede cerca de 64 px no exemplo 390 px. Removido atalho redundante de divergências. Segunda lateral desktop reduzida para 190 px. Busca global explicitamente nomeada “Buscar páginas e apps”. Busca, filtro, página e posição têm memória local por destino durante a sessão da prévia; não há persistência em servidor.
+
+Tabs mantêm a aparência aprovada, com overflow horizontal nativo, sem quebra, alvos estáveis, tab ativa visível, navegação por setas/Home/End e respeito a movimento reduzido. Referência consultada: trilho de coleções de `surfaces/storefront-nuxt/app/pages/menu.vue`. Nenhum arquivo do Storefront alterado.
+
+Verificação: 20 telas em 390 px e 20 em desktop de 1024 px, sem overflow no cabeçalho/ferramentas. Fluxos verificados: escopo do menu de catálogo, novo produto, erro em seção diferente, proteção de rascunho, retorno à busca Geleia e decisão de recebimento em 320 px. Evidências em `refinement-evidence.json` e galeria mobile atualizada. Teclado virtual real e zoom do sistema permanecem validações em dispositivo, não comprovadas por viewport simulado. Sem alteração de Core, apps, kit ou deploy.
