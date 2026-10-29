@@ -14,6 +14,15 @@ export type NutritionTable = {
   rows: NutritionTableRow[]
 }
 
+// Disponibilidade na loja física: o Google só mostra "retirada hoje" quando a
+// página do produto diz que o item está na loja. Só para estoque PRONTO hoje;
+// produção planejada ainda não está na prateleira e não promete retirada.
+export function inStorePickupLine (product: Pick<ProductDetailProjection, 'availability' | 'can_add_to_cart'>): string {
+  if (!product.can_add_to_cart) return ''
+  if (product.availability !== 'available' && product.availability !== 'low_stock') return ''
+  return 'Disponível hoje na loja, com retirada grátis.'
+}
+
 export function detailDescription (product: Pick<ProductDetailProjection, 'short_description' | 'long_description'>): string {
   if (!product.long_description) return ''
   return product.long_description === product.short_description ? '' : product.long_description

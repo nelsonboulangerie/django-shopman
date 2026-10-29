@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
+import { crossSellItems, detailDescription, galleryImages, inStorePickupLine, nutritionTable } from '~/presentation/product'
 import type { CatalogItemProjection, ProductNutritionProjection } from '~/types/shopman'
 
 function nutrition (overrides: Partial<ProductNutritionProjection> = {}): ProductNutritionProjection {
@@ -17,6 +17,15 @@ function nutrition (overrides: Partial<ProductNutritionProjection> = {}): Produc
 }
 
 describe('product presentation', () => {
+  it('says the item is in the store with free pickup only when stock is ready today', () => {
+    const line = 'Disponível hoje na loja, com retirada grátis.'
+    expect(inStorePickupLine({ availability: 'available', can_add_to_cart: true })).toBe(line)
+    expect(inStorePickupLine({ availability: 'low_stock', can_add_to_cart: true })).toBe(line)
+    expect(inStorePickupLine({ availability: 'planned_ok', can_add_to_cart: true })).toBe('')
+    expect(inStorePickupLine({ availability: 'unavailable', can_add_to_cart: false })).toBe('')
+    expect(inStorePickupLine({ availability: 'available', can_add_to_cart: false })).toBe('')
+  })
+
   it('suppresses the long description when it merely echoes the short one', () => {
     expect(detailDescription({ short_description: 'Crocante.', long_description: 'Crocante.' })).toBe('')
     expect(detailDescription({ short_description: 'Crocante.', long_description: 'Feito com levain.' })).toBe('Feito com levain.')

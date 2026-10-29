@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
-import { detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
+import { detailDescription, galleryImages, inStorePickupLine, nutritionTable } from '~/presentation/product'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -72,6 +72,7 @@ const similarItemsTo = computed(() => {
   return ref ? `/menu?secao=${encodeURIComponent(ref)}` : '/menu'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
+const pickupLine = computed(() => product.value ? inStorePickupLine(product.value) : '')
 // Carrossel: lista vazia = foto única (moldura estática de sempre). A principal
 // (image_url) abre o carrossel; o índice segue o scroll real do slider.
 const carouselImages = computed(() => product.value ? galleryImages(product.value) : [])
@@ -323,6 +324,10 @@ useHead({
                     {{ product.unit_weight_label }}
                   </p>
                 </div>
+                <p v-if="pickupLine" class="mt-1 flex items-center gap-1 shop-meta" data-pdp-in-store-pickup>
+                  <Icon name="lucide:store" class="size-3.5 shrink-0" />
+                  {{ pickupLine }}
+                </p>
                 <p v-if="hasOptionGroups(product.option_groups) && currentQty" class="shop-meta" data-product-options-in-cart>
                   {{ formatCount(currentQty, 'na sacola', 'na sacola') }}
                 </p>
