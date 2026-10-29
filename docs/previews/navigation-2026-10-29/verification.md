@@ -127,3 +127,28 @@ No desktop 1440 × 900: página sem transbordamento horizontal; conteúdo termin
 repetidos com o mesmo resultado. Captura catalog-controls-desktop.jpg.
 A rodada não revalida todos os destinos nem implementa o painel completo de filtros,
 ações em lote, retenção de filtros no endereço ou proteção completa ao fechar edição.
+
+## Quarta rodada: composição responsiva, vistas e opções
+
+- `layout=adaptive`: mesma aba em 1440 × 900 mostrou variante double; em 390 × 844
+  e 320 × 740 mostrou single. Gaveta mobile exibiu grupos e filhos na mesma árvore.
+- 390 px: cabeçalho sem laboratório, com Central explícita, troca de app, busca de
+  destinos e título. Toolbar de catálogo com 95 px após composição em duas linhas.
+- Grade e lista alternam sobre os mesmos dados. Filtro Viennoiseries + maior preço
+  manteve três resultados e Brioche primeiro ao mudar a representação.
+- Compacta aplicada nas opções: dataset compact preservado ao recarregar, junto com
+  display grid na URL. No desktop, confortável produziu linha de tabela de 65 px.
+- Opções de Brioche → Disponibilidade nos canais: detalhe Canais de Brioche.
+- Escape no popover fechou a camada e o foco voltou a Mais opções do catálogo.
+- Central direta exibiu Central de apps; Voltar a Gestor preservou layout adaptativo,
+  representação e densidade no endereço.
+- 1440 px: largura da página 1440, sem transbordamento; rodapé entre y=842 e y=900,
+  abaixo do conteúdo. 320 px: página e cabeçalho com largura 320, conteúdo rolável
+  de 460 px no Catálogo; sem transbordamento horizontal da página.
+- Compras mobile: flutuante com Nota 004821 / Resolver diferença; toque Reposição
+  abriu Reposição diretamente e gaveta continuou fechada.
+
+Capturas: adaptive-grid-mobile.jpg, adaptive-list-desktop.jpg,
+adaptive-record-footer-mobile.jpg e adaptive-receiving-mobile.jpg.
+Os cenários da matriz de decisão não foram todos prototipados ou revalidados nesta
+rodada. Sem testes dos apps, Core, baselines ou deploy.

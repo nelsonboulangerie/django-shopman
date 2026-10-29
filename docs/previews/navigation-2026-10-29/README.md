@@ -208,3 +208,72 @@ Referências oficiais: [ModelAdmin](https://unfoldadmin.com/docs/configuration/m
 e [filtros](https://unfoldadmin.com/docs/filters/introduction/).
 São pistas de responsabilidade e comportamento, não justificativa para trazer a
 organização por modelos ou a densidade do Admin para o posto de trabalho Nuxt.
+
+## Caminho escolhido para experimentar, quarta rodada
+
+Autorização do dono: experimentar B no desktop e árvore A no mobile, somente nas
+prévias. Use `layout=adaptive&clean=1`. A navegação muda no mesmo ponto em que a
+lateral permanente dá lugar à gaveta. Os links antigos com variante explícita seguem
+como comparação histórica. A composição responsiva tem um único mapa de assuntos.
+
+Cabeçalho: marca Shopman na lateral; app atual com troca; Central explícita; busca de
+destinos; título da página uma vez. Saiu a descrição fixa de cada página, o seletor
+de assunto redundante no mobile e a repetição do app e destino no breadcrumb. Uma
+única ação no cabeçalho controla a compactação da primária. A contextual mantém seu
+controle próprio. O retorno de uma travessia preserva sua faixa específica.
+
+Rodapé fixo: superfície clara contínua, borda sutil, contador e paginação agrupada.
+No detalhe, o navegador de registros e as ações usam a mesma família visual. Flutuante:
+superfície escura destacada e uma ação operacional. Ambos reservam espaço em fluxo;
+fixo descreve sua permanência durante a rolagem do conteúdo, não sobreposição sobre ele.
+
+O catálogo tem lista/grade reais e densidade Confortável/Compacta no menu de três
+pontos. Trocar representação preserva o recorte, ordem e página. Apresentação e densidade
+ficam no endereço; recorte e busca ainda são memória local. A matriz por canal mantém
+colunas e não oferece grade: cartões apagariam a comparação que dá sentido à tela.
+Menus por registro oferecem Editar produto e Disponibilidade nos canais. Abrir pelo
+nome continua direto. O menu geral contém densidade e edição de preços no tabelão;
+Novo produto continua visível. Escape fecha o popover e devolve o foco ao acionador.
+
+### Revisão adversarial da composição por tarefa
+
+| Caso de uso | Composição recomendada | Evitar / próxima prova |
+|---|---|---|
+| Pedidos em andamento | Quadro por etapa, busca e recortes de entrega; ação no pedido | Grade decorativa sem etapas; ordenar por beleza em vez de urgência |
+| Saída | Fila pela próxima ação, retirada/despacho claros | Esconder liberação ou divergência nos três pontos |
+| Histórico | Lista, período, canal, situação, paginação fixa | Quadro de etapas para pedido já encerrado |
+| Catálogo | Lista por padrão para preço/saldo; grade opcional para reconhecimento; filtros e ordenação coordenados | Grade só com ícones pouco agrega; avaliar com fotos reais antes de promovê-la a padrão |
+| Coleções | Cards de agrupamento, ordem e composição explícitas | Misturar agrupamento de vitrine com cadastro de produto |
+| Clientes e grupos | Lista, busca por nome/contato, detalhe e ações contextualizadas | Cards grandes sem informação útil; expor unificação como ação cotidiana sem consequência clara |
+| Unificações | Comparação lado a lado e revisão do resultado; aviso no topo | Ação destrutiva escondida num menu sem explicação |
+| Canais e matriz | Configuração por canal e tabela comparativa de publicação/disponibilidade | Confundir canal ativo, produto publicado e estoque disponível |
+| Rotinas e postos | Checklist para execução; lista de postos para configuração | Mesma tela para configurar o posto e trabalhar nele |
+| Visão geral de Compras | Exceções e tarefas acionáveis; links diretos ao contexto | Painel de números sem próxima ação |
+| Reposição | Lista comparável de necessidade, quantidade, unidade e fornecedor; ação de preparar compra | Grade de produtos que esconda unidade de compra/conversão |
+| Fornecedores e custos | Lista; detalhe do fornecedor; comparação de preço/unidade/período | Preço sem unidade ou histórico; seleção em lote com alcance ambíguo |
+| Recebimento | Documento, itens e diferenças; recortes; flutuante Resolver/Confirmar no mobile | Outra barra fixa com a mesma confirmação; reordenar itens durante conferência sem aviso |
+| Insumos | Lista, SKU, unidade, saldo e urgência; detalhe contextual | Inferir vendável do comprável; novo estoque paralelo para o mesmo SKU |
+| Contagem | Sequência de entrada, foco preservado, progresso e revisão | Campos compactos demais, saldo esperado enviesando a contagem ou atalhos de trocar layout durante digitação |
+
+Regras transversais: uma ação principal por contexto; três pontos só para secundárias;
+prioridade e bloqueio nunca dependem de abrir menu. Compacta reduz respiro, não tamanho
+de toque nem informação essencial. Densidade é preferência de leitura, não filtro.
+Busca/filtros/ordem/paginação devem formar um estado único quando houver implementação
+aprovada; nenhuma preferência deve vazar entre tarefas incompatíveis. Recolhimento de
+barras não pode esconder a localização. Evitar colocar todas as faixas em toda página.
+
+Próximas provas ainda necessárias: seleção em lote; centenas de registros; nomes longos;
+permissões; carregamento, falha e recuperação; alterações concorrentes; salvar/cancelar
+com edição pendente; teclado físico e virtual; contraste e leitores de tela; tablets
+intermediários. Não há aprovação global de componentes ou de fluxos só porque a
+estrutura de navegação foi escolhida para experimentar.
+
+### Benchmarks consultados
+
+- [Shopify: ResourceList](https://shopify.dev/docs/apps/build/app-home/migrate-from-polaris-react/resource-list): recomenda tabela quando comparar colunas é essencial; representação estreita adaptada ao dispositivo.
+- [Shopify: IndexFilters](https://shopify.dev/docs/apps/build/app-home/migrate-from-polaris-react/index-filters): busca, filtros, ordenação e vistas devem compartilhar o estado da consulta. Não simular vistas salvas como se fossem persistentes sem suporte real.
+- [Odoo: busca, filtros e agrupamento](https://www.odoo.com/documentation/19.0/applications/general/search.html): opções articuladas em torno do mesmo conjunto de registros.
+- [Odoo: vistas](https://www.odoo.com/documentation/19.0/applications/productivity/studio/views.html): distintas representações conforme o trabalho. Não confundir kanban de etapas com grade visual de catálogo.
+
+Aplicação crítica: usar esses princípios, sem copiar o excesso de controles de um ERP
+generalista. Nenhuma dependência Shopify/Odoo/Unfold foi adicionada ao protótipo ou apps.
