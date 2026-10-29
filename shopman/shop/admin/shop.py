@@ -293,13 +293,23 @@ class GoogleMerchantForm(BaseDialogForm):
         widget=UnfoldAdminTextInputWidget,
         help_text="O mesmo rótulo da fonte de dados. Para o Brasil, BR.",
     )
+    store_code = forms.CharField(
+        label="Código da loja (retirada)",
+        max_length=64,
+        required=False,
+        widget=UnfoldAdminTextInputWidget,
+        help_text=(
+            "O código da loja no Gerenciador de Perfis de Empresas. Com ele, o Google mostra "
+            "retirada grátis na loja no mesmo dia. Em branco, só a venda online."
+        ),
+    )
 
     def __init__(self, request, object_id=None, *args, **kwargs):
         super().__init__(request, object_id, *args, **kwargs)
         shop = Shop.objects.filter(pk=object_id).first() if object_id else None
         current = _shop_defaults(shop).get(GOOGLE_MERCHANT_KEY) if shop else None
         if isinstance(current, dict):
-            for name in ("account_id", "data_source_id", "content_language", "feed_label"):
+            for name in ("account_id", "data_source_id", "content_language", "feed_label", "store_code"):
                 if current.get(name):
                     self.fields[name].initial = str(current[name])
 
@@ -3268,6 +3278,7 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
             ["Fonte de dados (API)", str(current.get("data_source_id") or "")],
             ["Idioma dos produtos", str(current.get("content_language") or GOOGLE_MERCHANT_DEFAULT_LANGUAGE)],
             ["Rótulo do feed", str(current.get("feed_label") or GOOGLE_MERCHANT_DEFAULT_FEED_LABEL)],
+            ["Código da loja (retirada)", str(current.get("store_code") or "Sem retirada na loja")],
             ["Registro do envio", registered],
         ]
         return unfold_component(
@@ -3302,6 +3313,11 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
             name: form.cleaned_data[name]
             for name in ("account_id", "data_source_id", "content_language", "feed_label")
         })
+        # Em branco tira a retirada na loja; não grava código vazio.
+        if form.cleaned_data.get("store_code"):
+            merged["store_code"] = form.cleaned_data["store_code"]
+        else:
+            merged.pop("store_code", None)
         defaults[GOOGLE_MERCHANT_KEY] = merged
         obj.defaults = defaults
         obj.save(update_fields=["defaults"])

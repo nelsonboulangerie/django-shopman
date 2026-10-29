@@ -579,6 +579,18 @@ class TestShopAdminGoogleMerchant:
         assert form.fields["content_language"].initial == "pt"
         assert form.fields["feed_label"].initial == "BR"
 
+    def test_store_code_is_saved_and_blank_removes_it(self, rf, admin_user, shop, monkeypatch):
+        from shopman.shop.models import ShopIntegrations
+
+        model_admin = admin.site._registry[ShopIntegrations]
+        monkeypatch.setattr(model_admin, "message_user", lambda *args, **kwargs: None)
+        for code, expected in (("18102236950405822206", "18102236950405822206"), ("", None)):
+            request = rf.post("/", data={**self._DATA, "store_code": code})
+            request.user = admin_user
+            model_admin.set_google_merchant(request, object_id=str(shop.pk))
+            shop.refresh_from_db()
+            assert shop.defaults["google_merchant"].get("store_code") == expected
+
     def test_action_merges_into_defaults(self, rf, admin_user, shop, monkeypatch):
         from shopman.shop.adapters.catalog_projection_google import _get_config
         from shopman.shop.models import ShopIntegrations
