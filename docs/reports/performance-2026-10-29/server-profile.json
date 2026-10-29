@@ -1,0 +1,28 @@
+{
+  "source": "DigitalOcean console web-storefront, isolated cProfile process, transaction read only and rollback, no profiler attached to serving workers",
+  "captures": [
+    {
+      "utc": "2026-10-29T17:50:56Z",
+      "catalog_cprofile_ms": 432,
+      "availability_ms": 212,
+      "sql_driver_ms": 156,
+      "sql_calls": 36
+    },
+    {
+      "utc": "2026-10-29T17:51:36Z",
+      "catalog_projection_cprofile_ms": 547.19,
+      "items": 44,
+      "unique_skus": 40,
+      "availability_ms": 262.22,
+      "dynamic_sections_ms": 73.54
+    },
+    {
+      "utc": "2026-10-29T17:53:13Z",
+      "catalog_projection_cprofile_ms": 426.67,
+      "stock_multidate_ms": 140.77,
+      "django_models_from_db_count": 640,
+      "django_models_from_db_ms": 15.18
+    }
+  ],
+  "limitation": "Instrumented cold process, not HTTP latency or stable 1 second baseline; cumulative stages overlap."
+}
