@@ -144,7 +144,10 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
     expect(formulaGroupBox!.y).toBeGreaterThan(quantityGroupBox!.y);
     expect(Math.abs(formulaGroupBox!.x - quantityGroupBox!.x)).toBeLessThanOrEqual(2);
   } else {
-    expect(Math.abs(formulaGroupBox!.y - quantityGroupBox!.y)).toBeLessThanOrEqual(16);
+    // O fieldset inclui legend e o painel inclui padding. Mesma linha exige
+    // sobreposição vertical, sem igualar artificialmente o topo das caixas.
+    expect(formulaGroupBox!.y).toBeLessThan(quantityGroupBox!.y + quantityGroupBox!.height);
+    expect(formulaGroupBox!.y + formulaGroupBox!.height).toBeGreaterThan(quantityGroupBox!.y);
     expect(formulaGroupBox!.x).toBeGreaterThan(quantityGroupBox!.x + quantityGroupBox!.width - 2);
   }
   const ratioQuantityGrid = page.locator("[data-ingredient-quantity-grid]").last();
