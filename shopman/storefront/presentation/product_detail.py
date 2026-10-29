@@ -40,7 +40,7 @@ from .catalog import (
     _cart_qty_by_sku,
     _favorite_skus,
     _resolve_availability,
-    build_catalog_items_for_skus,
+    build_catalog_items_for_products,
     notify_subscribed_skus,
     pause_and_notifiability,
 )
@@ -200,13 +200,6 @@ class ProductDetailProjection:
     # Breadcrumb
     breadcrumb_category: CategoryProjection | None
 
-    # Cross-sell — lateral discovery via shared keywords, rendered with the
-    # canonical catalog card. Distinct from substitutes (which stay in the
-    # stock-error modal, AVAILABILITY-PLAN §5). Heading comes from the
-    # omotenashi registry (``PRODUCT_CROSS_SELL_HEADING``, admin-editable).
-    cross_sell: tuple[CatalogItemProjection, ...] = ()
-    cross_sell_heading: str = ""
-
     # Apresentação da coleção PRIMÁRIA (Collection.metadata): cor hex da paleta
     # NB e nome de ícone Lucide, para o hero-fallback da PDP sem foto (fundo
     # tintado + ícone + SKU). None sem coleção primária ou sem a chave.
@@ -358,12 +351,6 @@ def build_product_detail(
         allergens=allergen.allergens if allergen else (),
     )
 
-    cross_sell = build_catalog_items_for_skus(
-        catalog_context.related_skus(product.sku, limit=6),
-        channel_ref=channel_ref,
-        request=request,
-    )
-
     is_made_to_order = _is_made_to_order(product)
 
     return ProductDetailProjection(
@@ -404,8 +391,6 @@ def build_product_detail(
         mpn=identity.mpn,
         item_condition=identity.condition,
         breadcrumb_category=breadcrumb_category,
-        cross_sell=cross_sell,
-        cross_sell_heading=_cross_sell_heading(),
         category_color=str(primary_meta.get("color") or "") or None,
         category_icon=str(primary_meta.get("icon") or "") or None,
         option_groups=tuple(catalog_context.option_groups(product)),
@@ -743,3 +728,32 @@ def _money(value_q: int | None) -> str:
     if not value_q:
         return "R$ 0,00"
     return f"R$ {format_money(int(value_q))}"
+
+
+@dataclass(frozen=True)
+class ProductRecommendationsProjection:
+    sku: str
+    items: tuple[CatalogItemProjection, ...]
+    heading: str
+
+
+def build_product_recommendations(
+    *, sku: str, channel_ref: str, request: HttpRequest | None = None,
+) -> ProductRecommendationsProjection | None:
+    """Sugestões lidas ao chegar à seção, com o mesmo portão de acesso da PDP."""
+    product = catalog_context.get_published_product(sku)
+    if product is None or not _sku_visible_in_channel(product, channel_ref):
+        return None
+    collections = catalog_context.collection_refs_by_sku([sku]).get(sku, [])
+    if viewer_collection_access(request).hides_product(collections):
+        return None
+    return ProductRecommendationsProjection(
+        sku=sku,
+        items=build_catalog_items_for_products(
+            catalog_context.related_products(product, limit=6),
+            # A loja exibe quatro cards. O corte vem DEPOIS da seleção dos seis
+            # e do portão do canal, exatamente como a apresentação no cliente.
+            channel_ref=channel_ref, request=request, limit=4,
+        ),
+        heading=_cross_sell_heading(),
+    )

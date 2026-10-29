@@ -125,22 +125,24 @@ describe("rascunho do produto", () => {
   });
 
   it("fechar um rascunho requer descarte explícito e não salva", async () => {
+    archiveDialog = mount(OperatorConfirmDialog, { attachTo: document.body });
     const w = panel();
     await w.find('input[type="text"]').setValue("Meu rascunho");
     await w.find("[data-panel-discard]").trigger("click");
+    await flushPromises();
     expect(w.emitted("update:open")).toBeUndefined();
-    await w
-      .findAll("button")
-      .find((b) => b.text() === "Continuar editando")!
-      .trigger("click");
+    expect(document.body.textContent).toContain(
+      "Há alterações não salvas neste produto",
+    );
+    await archiveDialog.get("[data-operator-confirm-keep]").trigger("click");
+    await flushPromises();
     expect(
       (w.find('input[type="text"]').element as HTMLInputElement).value,
     ).toBe("Meu rascunho");
     await w.find("[data-panel-discard]").trigger("click");
-    await w
-      .findAll("button")
-      .find((b) => b.text() === "Descartar e fechar")!
-      .trigger("click");
+    await flushPromises();
+    await archiveDialog.get("[data-operator-confirm-act]").trigger("click");
+    await flushPromises();
     expect(w.emitted("update:open")).toEqual([[false]]);
     expect(w.emitted("save")).toBeUndefined();
   });

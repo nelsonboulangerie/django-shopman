@@ -875,10 +875,10 @@ describe('surface UX guardrails', () => {
     // Acordeão full-width no mobile: hairlines ponta a ponta; trigger alinhado
     // ao título e interior aberto com recuo extra (+16px sobre o trigger).
     expect(productRoute).toContain('class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4"')
-    expect(productRoute).toContain('data-product-cross-sell')
+    expect(productRoute).toContain('<ProductRecommendations :sku="sku"')
     // Título do cross-sell vem do registro omotenashi (PRODUCT_CROSS_SELL_HEADING).
-    expect(productRoute).toContain('cross_sell_heading')
-    expect(productRoute).toContain('<ProductListItem')
+    expect(read('app/components/ProductRecommendations.vue')).toContain('recommendations.heading')
+    expect(read('app/components/ProductRecommendations.vue')).toContain('<ProductListItem')
     expect(productRoute).toContain('% VD')
     expect(upsellRail).toContain('<UiItem variant="outline" size="sm" class="w-full items-stretch gap-3 rounded-none border-0 bg-card p-3">')
     expect(upsellRail).toContain('<UiItemHeader>')
@@ -1064,7 +1064,7 @@ describe('surface UX guardrails', () => {
     expect(security).toContain('deleteAccountAcknowledged')
     expect(security).toContain('crypto.randomUUID()')
     expect(security).toContain("'Idempotency-Key': deleteAccountIdempotencyKey.value")
-    expect(security).toContain('body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose }')
+    expect(security).toContain('body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose.value }')
     expect(security).toContain('Exportar meus dados')
     expect(security).toContain('Excluir minha conta')
     expect(security).toContain('privacy_requests_available')
@@ -1101,6 +1101,13 @@ describe('surface UX guardrails', () => {
     expect(security).toContain('profileIssueFrom')
     expect(security).toContain('phoneChangeIssue.actions')
 
+    // ⚠️ Antes do número novo, o ATUAL (laudo 23/10, S2): sem isto, quem recebeu um link
+    // encaminhado apontava a conta para o número dele. A troca abre pelo step-up e retoma
+    // o passo quando a confirmação vence no meio.
+    expect(security).toContain("void requireStepUp('phone', showPhoneChange)")
+    expect(security).toContain("data?.code !== 'step_up_required'")
+    expect(security).toContain('Antes de mudar o número, confirme que a conta é sua')
+
     // ⚠️ A tela nunca diz de quem é o número: quem pede a troca é um
     // desconhecido em relação ao dono, e aqui o número é a identidade de quem
     // entra. A frase vem do servidor, e o servidor não manda o dono.
@@ -1111,6 +1118,11 @@ describe('surface UX guardrails', () => {
     const profile = read('app/pages/conta/perfil.vue')
     expect(profile).toContain('/conta/seguranca')
     expect(profile).toContain('Leve a conta junto')
+
+    // Trocar o e-mail também pede o código no número atual, e só quando o e-mail MUDA.
+    expect(profile).toContain("body: { code: stepUpCodeStr.value, purpose: 'email' }")
+    expect(profile).toContain('if (emailChanges()) {')
+    expect(profile).toContain("apiPath('/api/auth/request-code/')")
   })
 
   it('lets authenticated customers manage addresses through the canonical AddressPicker', () => {

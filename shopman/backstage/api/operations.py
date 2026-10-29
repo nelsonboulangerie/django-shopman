@@ -72,7 +72,9 @@ from shopman.backstage.api._production_filters import (
 from shopman.backstage.api._production_mutations import (
     ProductionBlindCodeAllocationSerializer,
     ProductionFinishMutationSerializer,
+    ProductionFormulaDeviationMutationSerializer,
     ProductionMutationValidationError,
+    ProductionOldDoughMutationSerializer,
     ProductionOvenArmMutationSerializer,
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
@@ -922,10 +924,13 @@ class OperatorEligibleView(APIView):
 
 
 def _unlock_target_key(group, request):
-    """Chave de rate-limit pela conta-alvo do destrave por PIN.
+    """Chave de rate-limit pela conta-alvo do PIN (destrave, crachá perdido, troca).
 
     Mesma forma do ``_login_username_key``: lê form e JSON (o BFF manda JSON).
-    Crachá não nomeia conta, então cai num balde só, ``badge``.
+    Crachá não nomeia conta, então o balde é o da ESTAÇÃO que leu o crachá: um
+    balde global deixava qualquer dispositivo esgotar o crachá da loja inteira
+    (laudo S6). Sem ``operator_id``, a conta-alvo é quem está operando (a troca
+    de PIN depois do destrave), para que esse fluxo não divida um balde anônimo.
     """
     data = request.POST
     if not data and "json" in (request.content_type or ""):
@@ -936,8 +941,38 @@ def _unlock_target_key(group, request):
     if not hasattr(data, "get"):
         data = {}
     if str(data.get("badge") or "").strip():
-        return "badge"
-    return f"op:{str(data.get('operator_id') or '').strip() or 'anon'}"
+        station = station_trust.station_device_id(request) or station_trust.station_ref(request)
+        return f"badge:{station or 'sem-estacao'}"
+    operator_id = str(data.get("operator_id") or "").strip()
+    if not operator_id:
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated:
+            operator_id = str(user.pk)
+    return f"op:{operator_id or 'anon'}"
+
+
+#: O mesmo par de freios do destrave, para toda view em que errar o PIN conta.
+#: Por IP, 30/min (os dispositivos da loja dividem o IP); por conta-alvo, 5/min.
+_PIN_RATE_LIMITS = (
+    method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"),
+    method_decorator(ratelimit(key=_unlock_target_key, rate="5/m", method="POST", block=False), name="dispatch"),
+)
+
+
+def _pin_rate_limited(cls):
+    for decorator in reversed(_PIN_RATE_LIMITS):
+        cls = decorator(cls)
+    return cls
+
+
+def _pin_rate_limited_response() -> Response:
+    return Response(
+        {
+            "detail": "Muitas tentativas com PIN. Aguarde um minuto e tente de novo.",
+            "error": {"code": "operator_pin_rate_limited"},
+        },
+        status=429,
+    )
 
 
 @method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
@@ -1065,6 +1100,7 @@ class OperatorLockView(APIView):
         return Response({"ok": True})
 
 
+@_pin_rate_limited
 class OperatorBadgeLostView(APIView):
     """O operador declara que perdeu o crachá, provando o PIN.
 
@@ -1080,6 +1116,9 @@ class OperatorBadgeLostView(APIView):
 
     def post(self, request):
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return _pin_rate_limited_response()
 
         body = request.data or {}
         # Confirmação ANTES do PIN: um cliente que esqueceu a flag não pode
@@ -1141,6 +1180,7 @@ class OperatorBadgeLostView(APIView):
         return Response({"ok": True, **resultado})
 
 
+@_pin_rate_limited
 class OperatorPinChangeView(APIView):
     """Operator changes their OWN PIN, proving the current one.
 
@@ -1156,6 +1196,9 @@ class OperatorPinChangeView(APIView):
         from shopman.doorman.models import PinCredentialError
 
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return _pin_rate_limited_response()
 
         body = request.data or {}
         current_pin = str(body.get("current_pin") or "")
@@ -3982,6 +4025,42 @@ class OrderCourierReminderDismissView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Close the customer's contact request (ombudsman) with what the team did",
+        responses={
+            200: OpenApiResponse(description="Contact request resolved."),
+            400: OpenApiResponse(description="Missing note."),
+            409: OpenApiResponse(description="No open contact request."),
+        },
+    ),
+)
+class OrderCustomerContactResolveView(_OrderActionBase):
+    """"Resolvido" da ouvidoria: fecha o caso com a nota do que foi feito."""
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import customer_contact
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        note = str(request.data.get("note") or "").strip()
+        if not note:
+            return Response(
+                {"detail": "Conte em uma frase o que foi feito.", "field": "note"},
+                status=400,
+            )
+        try:
+            customer_contact.resolve(order, note=note, actor=_actor(request))
+        except customer_contact.ContactRequestNotOpen:
+            return Response(
+                {"detail": "Este pedido não tem pedido de contato em aberto.", "code": "contact_request_not_open"},
+                status=409,
+            )
+        return Response({"ok": True, "ref": order.ref})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Cancel the active external courier ride",
         responses={200: OpenApiResponse(description="Courier cancellation queued; remote outcome pending.")},
     ),
@@ -4115,6 +4194,95 @@ class OrderVolumeCheckView(APIView):
             "total": result.total,
             "complete": result.complete,
         })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="One courier ride for several orders (one stop per order)",
+        responses={200: OpenApiResponse(description="Ride dispatch queued.")},
+    ),
+)
+class OrderCourierRideView(APIView):
+    """Uma corrida da TaOn para vários pedidos: uma solicitação, uma parada por pedido.
+
+    ``refs``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``, cada um podendo ser
+    chamado sozinho (``courier.group_refusal``). A custódia vem junto, como na
+    chamada de um pedido: ``change_out`` é ``{ref: "20,00"}`` para os pedidos
+    que pedem troco, e ``machine`` a maquininha da corrida (uma só, para todos
+    os pedidos de cartão). A recusa diz qual pedido e por quê. Pedir de novo a
+    mesma corrida é recusado (a tarefa já está na fila).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request):
+        from shopman.orderman.models import Order
+
+        refs = request.data.get("refs")
+        if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref.strip() for ref in refs):
+            return Response({"detail": "Escolha os pedidos da corrida.", "field": "refs",
+                             "errors": {"refs": ["Escolha os pedidos da corrida."]}}, status=400)
+        change_out = request.data.get("change_out") or {}
+        if not isinstance(change_out, dict) or any(
+            not isinstance(value, str | int | float) for value in change_out.values()
+        ):
+            return Response({"detail": "Troco inválido.", "field": "change_out"}, status=400)
+        machine = request.data.get("machine") or ""
+        if not isinstance(machine, str):
+            return Response({"detail": "Maquininha inválida.", "field": "machine"}, status=400)
+        refs = list(dict.fromkeys(ref.strip()[:64] for ref in refs))
+        orders = list(Order.objects.filter(ref__in=refs))
+        by_ref = {order.ref: order for order in orders}
+        if len(by_ref) != len(refs):
+            return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+        try:
+            task = orders_service.courier_group_dispatch(
+                [by_ref[ref] for ref in refs], actor=_actor(request), operator=request.user,
+                change_out_raw={str(ref): str(value) for ref, value in change_out.items()}, machine=machine.strip(),
+            )
+        except orders_service.OrderChangeOutRequired as exc:
+            return Response({"detail": str(exc), "code": "change_out_required", "suggested_q": exc.suggested_q},
+                            status=409)
+        except OrderError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        return Response({"directive_id": task.pk, "status": task.status, "refs": refs})
+
+
+class OrderCourierRideQuoteView(APIView):
+    """Quanto custa a corrida com estas paradas, antes de chamar.
+
+    ``?refs=A&refs=B``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``. A mesma
+    corrida que a chamada vai abrir (ordem do percurso, retorno), cotada na TaOn.
+    ``estimate`` nulo com ``detail`` quando não dá para cotar (pedido sem
+    endereço com coordenada, TaOn fora): a chamada continua possível.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.projections.order_queue import courier_estimate_display
+        from shopman.shop.services import courier
+        from shopman.shop.services.operator_orders import short_ref
+
+        refs = list(dict.fromkeys(ref.strip()[:64] for ref in request.GET.getlist("refs") if ref.strip()))
+        if not 2 <= len(refs) <= courier.MAX_RIDE_STOPS:
+            return Response({"detail": f"Escolha de 2 a {courier.MAX_RIDE_STOPS} pedidos.", "field": "refs"},
+                            status=400)
+        by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
+        if len(by_ref) != len(refs):
+            return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+        estimate = courier.estimate_for_ride([by_ref[ref] for ref in refs])
+        if estimate is None:
+            return Response({"estimate": None,
+                             "detail": "A TaOn não cotou esta corrida agora. Dá para chamar mesmo assim."})
+        order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
+        return Response({"estimate": {**estimate, "display": courier_estimate_display(estimate),
+                                      "route": order_line}})
 
 
 def _operator_identity(request) -> tuple[int, str]:
@@ -4327,6 +4495,108 @@ class WorkOrderStartView(_ProductionActionBase):
                 "current": _current_work_order_projection(wo_ref),
             }
         )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register reusable old dough from a production lot",
+        responses={200: OpenApiResponse(description="Old dough stock lot registered.")},
+    ),
+)
+class WorkOrderOldDoughView(_ProductionActionBase):
+    required_production_capability = "can_start"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionOldDoughMutationSerializer,
+            projection_kind="kds",
+            action_kind="register_old_dough",
+            action_href=f"/api/v1/backstage/production/{wo_id}/old-dough/",
+            action_ref=f"register_old_dough:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            result = production_service.register_old_dough(
+                work_order_id=wo_id,
+                quantity=body["quantity"],
+                unit=body["unit"],
+                expiry_date=body["expiry_date"],
+                position_ref=body.get("position_ref", ""),
+                note=body.get("note", ""),
+                actor=_production_actor(request),
+                user=request.user,
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        except ValueError as exc:
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados da massa velha inválidos.",
+            )
+        return Response({"ok": True, **result})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Authorize an execution-only ingredient quantity deviation",
+        responses={200: OpenApiResponse(description="Deviation authorized and effective BOM recalculated.")},
+    ),
+)
+class WorkOrderFormulaDeviationView(_ProductionActionBase):
+    required_production_capability = "can_override_shortage"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionFormulaDeviationMutationSerializer,
+            projection_kind="kds",
+            action_kind="authorize_formula_deviation",
+            action_href=f"/api/v1/backstage/production/{wo_id}/formula-deviation/",
+            action_ref=f"authorize_formula_deviation:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            result = production_service.authorize_formula_deviation(
+                work_order_id=wo_id,
+                ingredient_ref=body["ingredient_ref"],
+                actual_quantity=body["actual_quantity"],
+                batch_ref=body.get("batch_ref", ""),
+                reason=body["reason"],
+                actor=_production_actor(request),
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        except ValueError as exc:
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados do desvio inválidos.",
+            )
+        return Response({"ok": True, **result})
 
 
 @extend_schema_view(

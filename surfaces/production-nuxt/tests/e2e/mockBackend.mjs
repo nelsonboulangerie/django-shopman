@@ -122,7 +122,7 @@ const FORECAST = {
     actions: [],
   },
 };
-const KDS = { kds: { cards: [], total_count: 0, late_count: 0 } };
+const KDS = { kds: { cards: [], actions: [], total_count: 0, late_count: 0 } };
 const MISE = { mise_en_place: { selected_date: "2026-07-06", lines: [] } };
 const ALERTS = { alerts: [], counts: { active: 0, critical: 0 } };
 const QC = {
@@ -537,9 +537,11 @@ const RECIPE_BOOK = {
   },
   access: RECIPE_ACCESS,
 };
+const RECIPE_DRAFTS = new Set();
 
 function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
   return {
+    ref: `ingredient-${sku || name}`,
     sku,
     name,
     role,
@@ -550,6 +552,10 @@ function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
     pct_display: pct,
     is_anchor: anchor,
     matched: true,
+    recipe_version_ref: "",
+    composition: "additional",
+    composition_label: "Adicional",
+    quantity_rule_display: "Exata",
   };
 }
 const LENS = {
@@ -560,7 +566,7 @@ const LENS = {
   standardized: true,
   anchor_total_display: "1.000 g",
   total_mass_display: "1.700 g",
-  items: [
+  ingredients: [
     lensItem("FARINHA-T65", "Farinha T65", "flour", "Farinha", 1000, "100%", true),
     lensItem("AGUA", "Água", "liquid", "Líquido", 660, "66%", false),
     lensItem("SAL", "Sal", "salt", "Sal", 20, "2%", false),
@@ -570,7 +576,6 @@ const LENS = {
   final_mix_differs: false,
   bom: [],
   bom_differs: false,
-  parts: [],
   metrics: [
     {
       code: "hydration",
@@ -620,6 +625,7 @@ function recipeVersion(number, status, statusLabel) {
 }
 
 function recipeDetail(card) {
+  const draft = RECIPE_DRAFTS.has(card.ref) ? recipeVersion(3, "draft", "Rascunho") : null;
   return {
     entry: {
       ref: card.ref,
@@ -654,7 +660,7 @@ function recipeDetail(card) {
       },
       is_favorite: card.is_favorite,
       versions: card.current_version_number
-        ? [recipeVersion(2, "published", "Publicada"), recipeVersion(1, "superseded", "Substituída")]
+        ? [...(draft ? [draft] : []), recipeVersion(2, "published", "Publicada"), recipeVersion(1, "superseded", "Substituída")]
         : [recipeVersion(1, "draft", "Rascunho")],
       usage: {
         date_from: "2026-06-06",
@@ -820,6 +826,35 @@ const SHEETS = [
   sheetDetail("molho-bechamel", "Molho bechamel", "MOLHO-BECHAMEL", { mode: "batch", unit: "kg", items: [sheetItem("LEITE-INTEGRAL", "Leite integral", "0.9", "kg")] }),
 ];
 
+const RECIPE_INGREDIENTS = [
+  { sku: "FARINHA-T65", name: "Farinha T65", unit: "kg", role: "flour", has_recipe: false, recipe_version_ref: "", default_quantity: null, default_composition: "additional" },
+  { sku: "AGUA", name: "Água", unit: "kg", role: "liquid", has_recipe: false, recipe_version_ref: "", default_quantity: null, default_composition: "additional" },
+  { sku: "SAL", name: "Sal", unit: "kg", role: "salt", has_recipe: false, recipe_version_ref: "", default_quantity: null, default_composition: "additional" },
+  { sku: "LEVAIN", name: "Levain", unit: "g", role: "other", has_recipe: true, recipe_version_ref: "levain@4", default_quantity: { kind: "ratio", minimum: 20, target: 20, maximum: 20, basis: { kind: "flour" } }, default_composition: "included" },
+  { sku: "CREME-CONFEITEIRO", name: "Creme confeiteiro", unit: "g", role: "dairy", has_recipe: true, recipe_version_ref: "creme-confeiteiro@7", default_quantity: { kind: "fixed", minimum: 300, target: 300, maximum: 300, unit: "g" }, default_composition: "additional" },
+];
+
+const RECIPE_REFERENCE = {
+  reference: {
+    kind: "bread",
+    kind_label: "Pão",
+    ranges: [
+      { code: "prep_flour_pct:levain", label: "Farinha na prep: Levain", low_display: "15%", high_display: "30%", max_display: "40%", note: "Farinha pré-fermentada no levain." },
+      { code: "prep_flour_pct:poolish", label: "Farinha na prep: Poolish", low_display: "20%", high_display: "40%", max_display: "50%", note: "" },
+      { code: "prep_flour_pct:biga", label: "Farinha na prep: Biga", low_display: "30%", high_display: "50%", max_display: "60%", note: "" },
+      { code: "prep_flour_pct:soaker", label: "Farinha na prep: Grãos hidratados", low_display: "10%", high_display: "20%", max_display: "30%", note: "" },
+      { code: "prep_flour_pct:autolyse", label: "Farinha na prep: Autólise", low_display: "0%", high_display: "100%", max_display: "100%", note: "" },
+      { code: "prep_flour_pct:old_dough", label: "Farinha na prep: Massa velha", low_display: "15%", high_display: "25%", max_display: "30%", note: "" },
+    ],
+  },
+};
+
+function recipeIngredients(url) {
+  const term = new URL(url, "http://mock").searchParams.get("q")?.trim().toLocaleLowerCase("pt-BR") ?? "";
+  const options = RECIPE_INGREDIENTS.filter((item) => !term || item.name.toLocaleLowerCase("pt-BR").includes(term) || item.sku.toLocaleLowerCase("pt-BR").includes(term));
+  return { options };
+}
+
 function sheetCard(sheet) {
   return {
     ref: sheet.ref,
@@ -870,6 +905,8 @@ function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
   if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
   if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
+  if (/\/recipes\/ingredients\/?(\?|$)/.test(url)) return recipeIngredients(url);
+  if (/\/recipes\/reference\/?(\?|$)/.test(url)) return RECIPE_REFERENCE;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
   const card = detail && RECIPE_CARDS.find((entry) => entry.ref === detail[1]);
   if (card) return recipeDetail(card);
@@ -942,6 +979,13 @@ const server = createServer((req, res) => {
       return json(res, 405, { detail: "Método não suportado no mock." });
     });
     return;
+  }
+  const createRecipeVersion = populated && req.method === "POST" && url.match(/\/recipes\/([\w-]+)\/versions\/?(\?|$)/);
+  if (createRecipeVersion) {
+    const card = RECIPE_CARDS.find((entry) => entry.ref === createRecipeVersion[1]);
+    if (!card) return json(res, 404, { detail: "Receita não encontrada." });
+    RECIPE_DRAFTS.add(card.ref);
+    return json(res, 200, { outcome: "applied", version: recipeVersion(3, "draft", "Rascunho") });
   }
   const populatedBody = populated ? populatedResponse(url) : null;
   if (populatedBody) return json(res, 200, populatedBody);

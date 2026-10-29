@@ -22,12 +22,11 @@ from django.db import models, transaction
 from django.utils import timezone
 from shopman.craftsman.contrib.formula.percentages import (
     ANCHOR_KINDS,
-    PART_KINDS,
+    COMPOSITIONS,
     REFERENCE_RANGES,
     ROLES,
     FormulaAnalysis,
     FormulaItemAnalysis,
-    FormulaPartAnalysis,
     FormulaWarning,
     analyze,
     check_references,
@@ -37,9 +36,9 @@ from shopman.craftsman.contrib.formula.percentages import (
     looks_like_flour,
     normalize_text,
     number_text,
-    part_kind_from_name,
     quantize,
     reference_for,
+    resolve_execution,
     scale,
     standardize,
     to_decimal,
@@ -50,7 +49,7 @@ from shopman.craftsman.exceptions import RecipeBookError
 __all__ = [
     "ANCHOR_KINDS",
     "BAKERY_KINDS",
-    "PART_KINDS",
+    "COMPOSITIONS",
     "REFERENCE_RANGES",
     "ROLES",
     "FormulaAnalysis",
@@ -58,7 +57,6 @@ __all__ = [
     "FormulaDiffMetric",
     "FormulaDiffRow",
     "FormulaItemAnalysis",
-    "FormulaPartAnalysis",
     "FormulaWarning",
     "RecipeBookError",
     "analyze",
@@ -73,9 +71,10 @@ __all__ = [
     "execution_in_sync",
     "item_grams",
     "looks_like_flour",
-    "part_formulas_for",
+    "ingredient_formulas_for",
     "publish_version",
     "reference_for",
+    "resolve_execution",
     "scale",
     "standardize",
     "suggest_anchor_kind",
@@ -86,7 +85,6 @@ __all__ = [
 _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _MASS_UNITS = ("kg", "g", "mg")
-_MAX_PART_DEPTH = 5
 
 
 # ── Diff ─────────────────────────────────────────────────────────────────────
@@ -220,8 +218,8 @@ def publish_version(version, *, actor: str = "", default_item_meta: dict[str, di
     """Publica a versão: escreve a ficha de execução e vira a atual da receita.
 
     Recusa (``RecipeBookError``): versão que não é rascunho, receita arquivada
-    ou sem SKU, ingrediente ou parte sem SKU, parte sem fórmula conhecida e
-    parte maior que a base. A unidade de cada item ainda passa pelo
+    ou sem SKU, ingrediente sem SKU, versão referenciada inexistente e
+    composição inclusa maior que a fórmula. A unidade de cada item ainda passa pelo
     ``RecipeItem.clean`` (a unidade do SKU no catálogo fala lá) e a ficha pelo
     invariante de massa do ``Recipe.save``.
 
@@ -241,16 +239,15 @@ def publish_version(version, *, actor: str = "", default_item_meta: dict[str, di
 
     formula = version.formula or {}
     validate_formula(formula)
-    for index, item in enumerate(formula.get("items") or []):
-        if not str(item.get("sku") or "").strip():
-            raise RecipeBookError("ITEM_WITHOUT_SKU", field=f"items[{index}].sku", name=item.get("name", ""))
-    for index, part in enumerate(formula.get("parts") or []):
-        if part.get("kind") != "old_dough" and not str(part.get("sku") or "").strip():
-            raise RecipeBookError("ITEM_WITHOUT_SKU", field=f"parts[{index}].sku", name=part.get("name", ""))
+    for index, ingredient in enumerate(formula.get("ingredients") or []):
+        if not str(ingredient.get("sku") or "").strip():
+            raise RecipeBookError(
+                "ITEM_WITHOUT_SKU", field=f"ingredients[{index}].sku", name=ingredient.get("name", ""),
+            )
 
-    analysis = analyze(formula, part_formulas_for(formula))
+    analysis = analyze(formula, ingredient_formulas_for(formula))
     for warning in analysis.warnings:
-        if warning.code in ("PART_WITHOUT_FORMULA", "PART_EXCEEDS_BASE"):
+        if warning.code in ("INGREDIENT_RECIPE_NOT_FOUND", "INCLUDED_COMPOSITION_EXCEEDS_FORMULA"):
             raise RecipeBookError(warning.code, field=warning.metric, message=warning.message)
 
     now = timezone.now()
@@ -421,15 +418,15 @@ def _first_validation_message(exc: ValidationError) -> tuple[str, str]:
 
 
 def _formula_field_for_sku(formula: dict, sku: str, attribute: str = "") -> str:
-    """O caminho na fórmula (``items[2].unit``, ``parts[0]``) do SKU que a ficha recusou."""
-    suffix = f".{attribute}" if attribute else ""
-    for index, item in enumerate(list((formula or {}).get("items") or [])):
-        if str(item.get("sku") or "").strip() == sku:
-            return f"items[{index}]{suffix}"
-    for index, part in enumerate(list((formula or {}).get("parts") or [])):
-        if str(part.get("sku") or "").strip() == sku:
-            return f"parts[{index}]{suffix}"
-    return "items"
+    """O caminho na fórmula unificada do SKU que a ficha recusou."""
+    suffix = {
+        "unit": ".quantity.unit",
+        "quantity": ".quantity.target",
+    }.get(attribute, f".{attribute}" if attribute else "")
+    for index, ingredient in enumerate(list((formula or {}).get("ingredients") or [])):
+        if str(ingredient.get("sku") or "").strip() == sku:
+            return f"ingredients[{index}]{suffix}"
+    return "ingredients"
 
 
 def _in_catalog_unit(sku: str, quantity: Decimal, unit: str, *,
@@ -485,22 +482,16 @@ def _density_for(line: dict, existing_meta: dict) -> Decimal | None:
 
 
 def _merge_bom_lines(bom, entry, version) -> list[dict]:
-    """Uma linha por SKU (a ficha tem ``unique(recipe, input_sku)``); massa velha ganha o SKU da própria receita."""
+    """Uma linha por SKU, porque a ficha tem ``unique(recipe, input_sku)``."""
     merged: dict[str, dict] = {}
     for line in bom:
         copy = dict(line)
-        if copy["meta"].get("role") == "old_dough":
-            copy["sku"] = entry.output_sku
-            if version.yield_unit in ("kg", "g"):
-                grams = copy["quantity"] if copy["unit"] == "g" else copy["quantity"] * Decimal(1000)
-                copy["quantity"] = quantize(grams / (Decimal(1000) if version.yield_unit == "kg" else Decimal(1)))
-                copy["unit"] = version.yield_unit
         sku = copy["sku"]
         if sku in merged:
             current = merged[sku]
             if current["unit"] != copy["unit"]:
                 raise RecipeBookError(
-                    "FORMULA_INVALID", field="items",
+                    "FORMULA_INVALID", field="ingredients",
                     message=f"O insumo {sku} aparece em duas unidades diferentes ({current['unit']} e {copy['unit']}).",
                 )
             current["quantity"] = quantize(current["quantity"] + copy["quantity"])
@@ -515,33 +506,26 @@ def _merge_bom_lines(bom, entry, version) -> list[dict]:
     return list(merged.values())
 
 
-# ── Partes ───────────────────────────────────────────────────────────────────
+# ── Receitas dos ingredientes ───────────────────────────────────────────────
 
 
-def part_formulas_for(formula: dict) -> dict[str, dict]:
-    """``sku`` de cada parte → fórmula da versão atual da receita da parte."""
-    from shopman.craftsman.models import RecipeEntry
+def ingredient_formulas_for(formula: dict) -> dict[str, dict]:
+    """Referência congelada de versão → fórmula; nunca consulta ``current_version``."""
+    from shopman.craftsman.models import RecipeVersion
 
     out: dict[str, dict] = {}
-    for part in list((formula or {}).get("parts") or []):
-        if part.get("kind") == "old_dough":
+    for ingredient in list((formula or {}).get("ingredients") or []):
+        version_ref = str(ingredient.get("recipe_version_ref") or "").strip()
+        if not version_ref or "@" not in version_ref:
             continue
-        sku = str(part.get("sku") or "").strip()
-        if not sku:
+        entry_ref, number_text_value = version_ref.rsplit("@", 1)
+        try:
+            number = int(number_text_value)
+        except ValueError:
             continue
-        entry = None
-        entry_ref = str(part.get("entry_ref") or "").strip()
-        if entry_ref:
-            entry = RecipeEntry.objects.filter(ref=entry_ref).select_related("current_version").first()
-        if entry is None or entry.current_version is None:
-            entry = (
-                RecipeEntry.objects.filter(output_sku=sku, current_version__isnull=False)
-                .select_related("current_version")
-                .order_by("pk")
-                .first()
-            )
-        if entry is not None and entry.current_version is not None:
-            out[sku] = entry.current_version.formula or {}
+        version = RecipeVersion.objects.filter(entry__ref=entry_ref, number=number).only("formula").first()
+        if version is not None:
+            out[version_ref] = version.formula or {}
     return out
 
 
@@ -555,7 +539,7 @@ def diff_versions(a, b) -> FormulaDiff:
     compara em grama e em % do padeiro. Senão, compara por % da massa total.
     """
     formula_a, formula_b = dict(a.formula or {}), dict(b.formula or {})
-    parts_a, parts_b = part_formulas_for(formula_a), part_formulas_for(formula_b)
+    formulas_a, formulas_b = ingredient_formulas_for(formula_a), ingredient_formulas_for(formula_b)
     both_flour = all(
         (f.get("anchor") or {}).get("kind") == "flour" and (analyze(f).anchor_total_g or _ZERO) > 0
         for f in (formula_a, formula_b)
@@ -566,12 +550,12 @@ def diff_versions(a, b) -> FormulaDiff:
         basis = "flour_1000"
     else:
         basis = "total_pct"
-    analysis_a = analyze(formula_a, parts_a)
-    analysis_b = analyze(formula_b, parts_b)
+    analysis_a = analyze(formula_a, formulas_a)
+    analysis_b = analyze(formula_b, formulas_b)
 
     def rows_of(analysis: FormulaAnalysis) -> dict[str, tuple[FormulaItemAnalysis, Decimal | None]]:
         out: dict[str, tuple[FormulaItemAnalysis, Decimal | None]] = {}
-        for item in analysis.items:
+        for item in analysis.ingredients:
             key = item.sku or f"name:{normalize_text(item.name)}"
             pct = item.pct if both_flour else _pct_of_total(item.grams, analysis.total_mass_g)
             if key in out:
@@ -602,7 +586,7 @@ def diff_versions(a, b) -> FormulaDiff:
     metrics = [
         FormulaDiffMetric(code, getattr(analysis_a, code), getattr(analysis_b, code),
                           _delta(getattr(analysis_a, code), getattr(analysis_b, code)))
-        for code in ("hydration_pct", "salt_pct", "prefermented_flour_pct")
+        for code in ("hydration_pct", "salt_pct")
     ]
     same_unit = a.yield_unit == b.yield_unit
     metrics.append(FormulaDiffMetric(
@@ -645,17 +629,10 @@ def bootstrap_entry_from_recipe(recipe):
     inativa ou sem unidade de saída declarada (catálogo ou
     ``meta["output_unit"]``); deduzir a unidade seria adivinhar.
 
-    **Peça não tem fórmula fabricada.** Quando a ficha rende UNIDADE, ela diz o
-    que entra numa peça, e o que entra na baguete é "280 g de Massa Tradição" —
-    ponto. Dissolver a massa ali dentro inventava uma fórmula que a ficha nunca
-    declarou: a baguete aparecia com a composição da Massa Tradição como se
-    fosse dela, com "farinha pré-fermentada 100%" e avisos de padaria que eram
-    puro artefato da dissolução. Parte é FRAÇÃO da fórmula; a 100% ela não é
-    parte, é o insumo — e uma peça, por natureza, é feita **de** massa, não
-    **com** farinha. A lente de padaria mora na fórmula (que é onde a farinha
-    está); a peça fala em processo. Fórmula que rende massa continua dissolvendo
-    normalmente: ali a parte é fração de verdade (a Massa Tradição leva 84% de
-    pasta autolizada e 15% de levain).
+    Quando uma linha tem receita própria, o bootstrap preserva a linha como um
+    ingrediente produzido e congela a versão encontrada. Ele não dissolve a
+    composição na fórmula-alvo: fazer isso apagaria a BOM imediata que a ficha
+    realmente declarou. Peças e fórmulas de massa seguem a mesma regra.
     """
     from shopman.craftsman.models import RecipeEntry, RecipeVersion
     from shopman.utils import units
@@ -672,42 +649,49 @@ def bootstrap_entry_from_recipe(recipe):
 
     with transaction.atomic():
         base: dict[tuple[str, str], dict] = {}
-        parts: list[dict] = []
+        produced: list[dict] = []
         origin_items: list[dict] = []
         for item in recipe.items.filter(is_optional=False).order_by("sort_order"):
             origin_items.append({"sku": item.input_sku, "quantity": str(item.quantity), "unit": item.unit})
             sub = None if rende_peca else _active_mass_recipe_for(item.input_sku, exclude_pk=recipe.pk)
-            grams = _mass_grams(item.quantity, item.unit)
-            if sub is not None and grams is not None:
-                part_entry = bootstrap_entry_from_recipe(sub)
-                flour_g = _dissolve(sub, grams, base, depth=1)
-                parts.append({
+            if sub is not None:
+                ingredient_entry = bootstrap_entry_from_recipe(sub)
+                produced.append({
                     "sku": item.input_sku,
-                    "entry_ref": part_entry.ref if part_entry is not None else sub.ref,
-                    "kind": part_kind_from_name(sub.name, sub.ref, sub.output_sku),
                     "name": sub.name,
-                    "quantity": number_text(grams),
-                    "unit": "g",
-                    "flour_pct": None,
-                    "_flour_g": flour_g,
+                    "role": classify_ingredient(sub.name, item.input_sku),
+                    "recipe_version_ref": ingredient_entry.current_version.version_ref if ingredient_entry and ingredient_entry.current_version else "",
+                    "composition": "additional",
+                    "quantity": {
+                        "kind": "fixed", "minimum": number_text(item.quantity),
+                        "target": number_text(item.quantity), "maximum": number_text(item.quantity), "unit": item.unit,
+                    },
                 })
             else:
                 _add_to_base(base, item.input_sku, item.quantity, item.unit, dict(item.meta or {}))
 
-        items = [_formula_item(entry) for entry in base.values()]
-        flour_total = sum((g for g in (item_grams(it) for it in items if it["role"] == "flour") if g is not None), _ZERO)
-        mass_total = sum((g for g in (item_grams(it) for it in items) if g is not None), _ZERO)
+        ingredients = [_formula_item(entry) for entry in base.values()] + produced
+        for index, ingredient in enumerate(ingredients, start=1):
+            ingredient["ref"] = f"ingredient-{index}"
+        provisional = {
+            "anchor": {"kind": "total"}, "basis_g": None,
+            "standardized": False, "ingredients": ingredients,
+        }
+        provisional_analysis = analyze(provisional, ingredient_formulas_for(provisional))
+        composition = provisional_analysis.ingredients
+        flour_total = sum((item.grams or _ZERO for item in composition if item.role == "flour"), _ZERO)
+        flour_total += sum(
+            (component.grams or _ZERO)
+            for item in composition for component in item.contents
+            if component.role == "flour"
+        )
+        mass_total = provisional_analysis.total_mass_g
         anchor_kind = suggest_anchor_kind(flour_total, mass_total, _entry_kind(recipe.ref, recipe.name))
-        for part in parts:
-            flour_g = part.pop("_flour_g")
-            if anchor_kind == "flour" and flour_g > 0:
-                part["flour_pct"] = number_text(flour_g / flour_total * _HUNDRED)
         formula = {
             "anchor": {"kind": anchor_kind},
             "basis_g": None,
             "standardized": False,
-            "items": items,
-            "parts": parts,
+            "ingredients": ingredients,
         }
         validate_formula(formula)
 
@@ -741,7 +725,7 @@ def bootstrap_entry_from_recipe(recipe):
 
 
 def _active_mass_recipe_for(sku: str, *, exclude_pk=None):
-    """A ficha ativa que produz ``sku`` em massa, ou ``None``: é o que faz de um item uma parte."""
+    """A ficha ativa que produz ``sku`` em massa, quando o ingrediente tem receita própria."""
     from shopman.craftsman.models import Recipe
     from shopman.utils import units
 
@@ -754,34 +738,6 @@ def _active_mass_recipe_for(sku: str, *, exclude_pk=None):
     if units.dimension(sub._declared_output_unit()) != units.MASS:
         return None
     return sub
-
-
-def _dissolve(sub, grams: Decimal, base: dict, *, depth: int) -> Decimal:
-    """Soma na base a composição de ``grams`` da parte, proporcional aos insumos dela.
-
-    A proporção é a da composição (soma dos insumos), não do ``batch_size``: a
-    perda da ficha da parte é do forno e da bacia, não da fórmula. Devolve a
-    farinha (g) que a parte trouxe.
-    """
-    components = list(sub.items.filter(is_optional=False).order_by("sort_order"))
-    weighed = []
-    for component in components:
-        as_dict = _formula_item(_base_line(component.input_sku, component.quantity, component.unit, dict(component.meta or {})))
-        weighed.append((component, as_dict, item_grams(as_dict)))
-    total = sum((g for _, _, g in weighed if g is not None), _ZERO)
-    if total <= 0:
-        return _ZERO
-    factor = grams / total
-    flour_g = _ZERO
-    for component, as_dict, component_grams in weighed:
-        nested = _active_mass_recipe_for(component.input_sku, exclude_pk=sub.pk) if depth < _MAX_PART_DEPTH else None
-        if nested is not None and component_grams is not None:
-            flour_g += _dissolve(nested, component_grams * factor, base, depth=depth + 1)
-            continue
-        _add_to_base(base, component.input_sku, component.quantity * factor, component.unit, dict(component.meta or {}))
-        if as_dict["role"] == "flour" and component_grams is not None:
-            flour_g += component_grams * factor
-    return flour_g
 
 
 def _base_line(sku: str, quantity: Decimal, unit: str, meta: dict) -> dict:
@@ -812,7 +768,13 @@ def _add_to_base(base: dict, sku: str, quantity: Decimal, unit: str, meta: dict)
 
 
 def _formula_item(line: dict) -> dict:
-    out = {**line, "quantity": number_text(line["quantity"])}
+    target = number_text(line["quantity"])
+    out = {
+        **line,
+        "quantity": {"kind": "fixed", "minimum": target, "target": target, "maximum": target, "unit": line["unit"]},
+        "composition": "additional",
+    }
+    out.pop("unit", None)
     for key in ("density_g_per_ml", "grams_per_unit"):
         if key in out:
             out[key] = number_text(to_decimal(out[key]))
@@ -920,8 +882,9 @@ def _origin_from(formula: dict, yield_quantity: Decimal, yield_unit: str) -> dic
     return {
         "items": [
             {"sku": str(it.get("sku") or ""), "name": str(it.get("name") or ""),
-             "quantity": str(it.get("quantity", "")), "unit": str(it.get("unit") or "")}
-            for it in list(formula.get("items") or [])
+             "quantity": str((it.get("quantity") or {}).get("target", "")),
+             "unit": str((it.get("quantity") or {}).get("unit") or "")}
+            for it in list(formula.get("ingredients") or [])
         ],
         "yield_quantity": str(yield_quantity),
         "yield_unit": yield_unit,

@@ -58,4 +58,27 @@ describe("usePosAction", () => {
     await expect(call("/x/")).rejects.toBeTruthy();
     expect(useOperatorSession().expired.value).toBe(false);
   });
+
+  it("toda chamada leva prazo (AbortSignal): o padrão e o pedido pelo chamador", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const { call } = usePosAction();
+    await call("/x/");
+    await call("/api/v1/backstage/pos/sale/close/", { timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS });
+    expect(timeout).toHaveBeenNthCalledWith(1, POS_REQUEST_TIMEOUT_MS);
+    expect(timeout).toHaveBeenNthCalledWith(2, POS_CLOSE_SALE_TIMEOUT_MS);
+    expect(fetchMock.mock.calls[0]![1].signal).toBeInstanceOf(AbortSignal);
+    timeout.mockRestore();
+  });
+
+  it("sem resposta, o servidor fica fora do alcance; a próxima resposta o devolve", async () => {
+    resetReachability();
+    const { call } = usePosAction();
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(call("/x/")).rejects.toBeTruthy();
+    expect(useReachability().reachable.value).toBe(false);
+
+    await call("/x/");
+    expect(useReachability().reachable.value).toBe(true);
+    resetReachability();
+  });
 });

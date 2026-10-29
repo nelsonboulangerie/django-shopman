@@ -2,7 +2,7 @@ import { nextTick, ref } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { LENS_DEBOUNCE_MS, useFormulaLens } from "~/composables/useFormulaLens";
-import { addItem, emptyFormula, emptyItem } from "~/presentation/recipeBook";
+import { addItem, emptyFormula, emptyItem, exactQuantity } from "~/presentation/recipeBook";
 import type { Formula } from "~/types/recipeBook";
 
 const env = installNuxtGlobals();
@@ -21,7 +21,7 @@ describe("useFormulaLens", () => {
   beforeEach(() => {
     env.reset();
     vi.useFakeTimers();
-    env.fetchMock.mockResolvedValue({ lens: { anchor_kind: "flour", items: [], metrics: [], warnings: [] } });
+    env.fetchMock.mockResolvedValue({ lens: { anchor_kind: "flour", ingredients: [], metrics: [], warnings: [] } });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -51,20 +51,20 @@ describe("useFormulaLens", () => {
     await settle();
     env.fetchMock.mockClear();
 
-    formula.value = addItem(formula.value, emptyItem({ name: "Farinha", role: "flour", quantity: 500 }));
+    formula.value = addItem(formula.value, emptyItem({ name: "Farinha", role: "flour", quantity: exactQuantity(500) }));
     await nextTick();
     await vi.advanceTimersByTimeAsync(100);
-    formula.value = addItem(formula.value, emptyItem({ name: "Água", role: "liquid", quantity: 350 }));
+    formula.value = addItem(formula.value, emptyItem({ name: "Água", role: "liquid", quantity: exactQuantity(350) }));
     await nextTick();
     await vi.advanceTimersByTimeAsync(100);
-    formula.value = addItem(formula.value, emptyItem({ name: "Sal", role: "salt", quantity: 10 }));
+    formula.value = addItem(formula.value, emptyItem({ name: "Sal", role: "salt", quantity: exactQuantity(10) }));
     await nextTick();
     expect(env.fetchMock).not.toHaveBeenCalled();
 
     await settle();
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
     const body = env.fetchMock.mock.calls[0]?.[1]?.body as { formula: Formula };
-    expect(body.formula.items).toHaveLength(3);
+    expect(body.formula.ingredients).toHaveLength(3);
   });
 
   it("recomputes when the kind changes (references depend on it)", async () => {
@@ -86,7 +86,7 @@ describe("useFormulaLens", () => {
     expect(lens.value).not.toBeNull();
 
     env.fetchMock.mockRejectedValueOnce({ status: 400, data: { detail: "Fórmula inválida.", field: "items" } });
-    formula.value = addItem(formula.value, emptyItem({ quantity: -1 }));
+    formula.value = addItem(formula.value, emptyItem({ quantity: exactQuantity(-1) }));
     await nextTick();
     await settle();
     expect(error.value).toBe("Fórmula inválida.");
@@ -99,7 +99,7 @@ describe("useFormulaLens", () => {
     const { standardize, lens } = useFormulaLens(formula, ref("bread"));
     await settle();
     const scaled = { ...emptyFormula(), basis_g: 1000, standardized: true };
-    env.fetchMock.mockResolvedValueOnce({ formula: scaled, lens: { anchor_kind: "flour", standardized: true, items: [], metrics: [], warnings: [] } });
+    env.fetchMock.mockResolvedValueOnce({ formula: scaled, lens: { anchor_kind: "flour", standardized: true, ingredients: [], metrics: [], warnings: [] } });
 
     const result = await standardize(1000);
     expect(env.fetchMock).toHaveBeenLastCalledWith(

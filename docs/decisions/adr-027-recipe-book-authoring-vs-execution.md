@@ -43,19 +43,43 @@ Duas opções foram consideradas:
    moram alérgenos, nutrição e densidade), desativa outra ficha ativa do mesmo SKU e
    carimba `Recipe.meta["version_ref"]`. A ficha continua **uma por SKU e com `ref`
    estável**: nada que hoje aponta por `ref` precisa mudar.
-3. **A fórmula é base-first** (modelo do dono, BBGA/Hamelman): `formula.items` é a receita
-   total com toda a farinha, `formula.parts` diz quanto passa por levain/autólise/yudane,
-   e a **mistura final e o BOM são derivados**, nunca digitados. É isso que evita a dupla
-   contagem da farinha quando a parte tem ordem de produção própria.
-4. **A lente de padaria vem do conteúdo, não de um modo.** Não há "modo padaria": a
+3. **A fórmula tem uma coleção única de ingredientes.** `formula.ingredients` contém tanto
+   insumos simples quanto ingredientes produzidos por outra receita. “Prep” é apenas o
+   jargão para um ingrediente que possui `recipe_version_ref`; não é tipo, coleção ou regra
+   matemática. A participação congela a versão usada, portanto publicar uma nova versão da
+   receita do ingrediente não altera fórmulas já publicadas.
+4. **Quantidade é alvo dentro de limites.** Toda participação declara `target` e pode
+   declarar `minimum` e `maximum`, com a invariante
+   `0 <= minimum <= target <= maximum`. Exata, mínima, máxima e faixa são apenas presets de
+   autoria dessa mesma estrutura, nunca modos persistidos. A execução procura a quantidade
+   viável mais próxima do alvo e congela a quantidade efetivamente usada.
+5. **Composição é `additional` ou `included`.** A composição adicional aumenta a fórmula.
+   A composição inclusa redistribui ingredientes já declarados na fórmula global; mistura
+   final e BOM são sempre derivadas. A operação interna é alocação, mas `allocated` não é
+   vocabulário do domínio nem se confunde com reserva de estoque.
+6. **A receita sugere; a receita-alvo decide.** A receita de um ingrediente pode oferecer
+   padrões de quantidade e composição. Ao inseri-lo, esses valores são copiados para a
+   receita-alvo e podem ser alterados ali. Não existe vínculo vivo nem atualização
+   retroativa do uso.
+7. **A lente de padaria vem do conteúdo, não de um modo.** Não há "modo padaria": a
    receita que tem farinha ganha âncora `flour` e as métricas do padeiro; a que não tem
    ganha âncora `total` ou um ingrediente-âncora. Uma tela, painéis condicionais.
-5. **A matemática é pura e mora na vertical de panificação** (`contrib/formula/percentages.py`,
+8. **A matemática é pura e mora na vertical de panificação** (`contrib/formula/percentages.py`,
    ADR-011): sem Django, só `Decimal`, testada isolada. O orquestrador só formata.
-6. **A `WorkOrder` carrega a versão executada** (`_recipe_snapshot.version_ref`), então o
+9. **A `WorkOrder` carrega a versão executada** (`_recipe_snapshot.version_ref`), então o
    B.I. cruza fornada × versão sem tabela nova.
-7. **Referências de literatura são ajuda, não gate.** A tela mostra a faixa e marca "fora
+10. **Referências de literatura são ajuda, não gate.** A tela mostra a faixa e marca "fora
    da faixa"; nunca recusa. O padeiro decide.
+11. **Desvio autorizado não reescreve a receita.** Quantidade fora dos limites interrompe a
+    execução comum, mas gerente ou dono pode autorizar o desvio com motivo. A execução
+    guarda alvo, quantidade real, autor, data, impacto e lotes; o motor recalcula pela
+    quantidade e composição reais. Inconsistência física, lote bloqueado ou trava sanitária
+    continuam não autorizáveis.
+12. **Massa velha é estoque, não um tipo de fórmula.** “Registrar massa velha” cria um lote
+    como “Massa velha de Pão Francês”, com quantidade, validade, origem na produção e
+    fotografia da composição executada. A receita a usa como qualquer ingrediente, em
+    geral com quantidade máxima e composição inclusa. O lote material encerra a explosão
+    da BOM e não cria referência recursiva à receita atual.
 
 ## Consequências
 
@@ -75,5 +99,5 @@ versão ao publicar, pega (a projection expõe `execution_in_sync` desde 30/09/2
 
 ## Fora desta decisão
 
-Saldo de massa velha do dia no planejamento; Admin/Unfold para os modelos novos; cofre.
-Estão listados no plano como pendências explícitas.
+Admin/Unfold para os modelos novos e cofre. Estão listados no plano como pendências
+explícitas.

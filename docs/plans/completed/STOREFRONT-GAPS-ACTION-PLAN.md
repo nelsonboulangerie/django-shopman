@@ -156,7 +156,7 @@ mapeamento pref→atributo — definir ao executar.
 ## Tier 2 — descoberta / PDP (specs prontas, só executar)
 
 ### WP-6 — "Talvez você também goste" na PDP  ✅ JÁ EXISTIA (backend)
-> `cross_sell` na projeção PDP via `related_skus` (scorer por keywords), copy correta. Só falta
+> `cross_sell` na projeção PDP via `related_products` (scorer por keywords), copy correta. Só falta
 > confirmar o render no Nuxt (já existe per o mapa).
 `project_pdp_veja_tambem_pending`: descoberta lateral (NÃO substituição). Reusar o scorer de
 `find_substitutes(require_available=False, exclude_self=True)`. Copy fixa: **"Talvez você também

@@ -78,8 +78,9 @@ def test_rejects_persona_ref_that_does_not_match_its_name():
     [
         {"activation": {"by": "operador", "reason": "forno parado"}},
         {"display": {"paused_skus": ["PAO-01"]}},
+        {"display": {"hidden_skus": ["PAO-01"]}},
     ],
-    ids=["activation", "paused_skus"],
+    ids=["activation", "paused_skus", "hidden_skus"],
 )
 def test_rejects_channel_operational_state(overrides):
     descriptor = _nelson()

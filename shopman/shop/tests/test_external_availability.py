@@ -50,7 +50,7 @@ def loja(db, settings):
     Channel.objects.create(ref="ifood", name="iFood", commerce_policy="order", is_active=True, shop=shop)
     display_channel("google", "Google", collections=["vitrine"], fmt="google_merchant", prices_from="web")
     display_channel("meta", "Meta", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
-    display_channel("meta-catalog", "Catálogo Meta", collections=["vitrine"], prices_from="web")
+    display_channel("meta-catalog", "Catálogo Meta", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
     return shop
 
 
@@ -199,20 +199,23 @@ class TestIFood:
 
 class TestMetaCatalog:
     def test_sold_out_goes_out_of_stock_and_pause_still_wins(self, pao, vitrine_pos):
-        from shopman.shop.adapters.catalog_projection_meta import build_batch_requests, stock_for
+        from shopman.backstage.services import feeds
+        from shopman.shop.adapters.catalog_projection_meta import build_batch_requests
+        from shopman.shop.handlers.catalog_projection import display_projected_item
 
-        def availability(item):
-            stock = stock_for([item], channel="meta-catalog")
-            return build_batch_requests([item], {}, stock=stock)[0]["data"]["availability"]
+        def availability():
+            item = display_projected_item("meta-catalog", "PAO")
+            return build_batch_requests([item], {})[0]["data"]["availability"]
 
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 2)
-        assert availability(_ifood_item()) == "in stock"
+        assert availability() == "in stock"
         _move(quant, -2, kind=Move.Kind.SELL)
-        assert availability(_ifood_item()) == "out of stock"
+        assert availability() == "out of stock"
         _move(quant, 1)
-        assert availability(_ifood_item()) == "in stock"
-        assert availability(_ifood_item(is_sellable=False)) == "out of stock"
+        assert availability() == "in stock"
+        feeds.set_item_paused("meta-catalog", "PAO", paused=True)
+        assert availability() == "out of stock"
 
 
 # ── Feed Google/Meta ──────────────────────────────────────────────────────────

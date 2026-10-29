@@ -527,7 +527,7 @@ _DISPLAY_META = {
 
 
 def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
-    """Canais de EXIBIÇÃO como colunas + índice {ref: {"members", "paused"}}.
+    """Canais de EXIBIÇÃO como colunas + índice {ref: {"members", "paused", "hidden"}}.
 
     ``members`` = SKUs que o canal exibe (união dos produtos das suas coleções).
     ``paused`` = pausa LOCAL do item neste canal (a global é do produto, gate por cima).
@@ -581,6 +581,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
         index[ch.ref] = {
             "members": members,
             "paused": {str(s) for s in (display.get("paused_skus") or [])},
+            "hidden": {str(s) for s in (display.get("hidden_skus") or [])},
             "pause_audit": display.get("pause_audit") or {},
             "channel": ch,
         }
@@ -830,23 +831,25 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
 
         cells: list[SurfaceCellProjection] = []
         for surface in surfaces:
-            # Feed (menuboard/plataforma): célula = pertence ao feed (via coleções) e
-            # pausa local; sem preço/publicação. A pausa global do produto gateia por cima.
+            # Feed (menuboard/plataforma): célula = pertence ao feed (via coleções),
+            # pausa e ocultação locais; sem preço. Os gestos globais do produto gateiam por cima.
             sync_status, sync_error, synced_at = _cell_sync(sync_map, product.sku, surface.sync_key or surface.ref)
             if surface.ref in display_index:
                 sc = display_index[surface.ref]
                 in_feed = product.sku in sc["members"]
                 paused_here = product.sku in sc["paused"]
+                hidden_here = product.sku in sc["hidden"]
                 cells.append(
                     SurfaceCellProjection(
                         surface_ref=surface.ref,
                         in_listing=in_feed,
-                        is_published=in_feed,
+                        is_published=in_feed and not hidden_here,
                         is_sellable=in_feed and not paused_here,
                         pause_audit=sc["pause_audit"].get(product.sku, "") if paused_here else "",
                         available=(
                             in_feed
                             and not paused_here
+                            and not hidden_here
                             and product.is_active
                             and product.is_published
                             and product.is_sellable

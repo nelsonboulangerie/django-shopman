@@ -1,4 +1,4 @@
-"""``import_recipe_versions``: versão nova por receita, levain antes da massa, pasta só quando fecha exata.
+"""``import_recipe_versions``: receita do ingrediente antes da massa; pasta só quando fecha exata.
 
 Números sintéticos: os da planilha do dono nunca entram no repositório.
 """
@@ -63,7 +63,7 @@ def spec(tmp_path, *, tradicao_water="1.5"):
                     {"name": "Água", "quantity": tradicao_water, "unit": "kg", "sku": "AGUA-FILTRADA"},
                     {"name": "Sal", "quantity": "0.04", "unit": "kg", "sku": "SAL-REFINADO"},
                     {"name": "LEVAIN", "quantity": "0.3", "unit": "kg",
-                     "part": {"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment"}},
+                     "recipe": {"sku": "LEVAIN", "entry_ref": "creme-levain"}},
                 ],
                 "total": {"quantity": str(Decimal("2.34") + Decimal(tradicao_water)), "unit": "kg"},
                 "autolyse": {"sku": "PASTA-AUTOLIZADA", "entry_ref": "massa-pasta-autolizada"},
@@ -134,9 +134,17 @@ def test_publish_goes_levain_first_and_supersedes(house, tmp_path):
         "AGUA-FILTRADA": Decimal("0.1"), "SAL-REFINADO": Decimal("0.04"),
     }
     assert Recipe.objects.get(ref="massa-tradicao").batch_size == Decimal("3840")
-    # O que o levain carrega entra na base da massa.
-    items = {i["sku"]: Decimal(i["quantity"]) for i in RecipeEntry.objects.get(ref="massa-tradicao").current_version.formula["items"]}
-    assert items["FARINHA-NOVARA-T55"] == Decimal("2066.667")  # 2000 + 300 × 400/1800, em três casas
+    formula = RecipeEntry.objects.get(ref="massa-tradicao").current_version.formula
+    ingredients = {item["sku"]: item for item in formula["ingredients"]}
+    # A participação congela a versão exata, sua composição e toda a regra de quantidade.
+    assert ingredients["LEVAIN"]["recipe_version_ref"] == "creme-levain@2"
+    assert ingredients["PASTA-AUTOLIZADA"]["recipe_version_ref"] == "massa-pasta-autolizada@1"
+    assert ingredients["LEVAIN"]["composition"] == "included"
+    assert ingredients["LEVAIN"]["quantity"] == {
+        "kind": "fixed", "minimum": "300", "target": "300", "maximum": "300", "unit": "g",
+    }
+    # O que o levain carrega entra na fórmula global da massa.
+    assert Decimal(ingredients["FARINHA-NOVARA-T55"]["quantity"]["target"]) == Decimal("2066.667")
 
 
 def test_rerun_is_idempotent(house, tmp_path):

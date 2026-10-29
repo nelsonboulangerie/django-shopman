@@ -83,13 +83,22 @@ const {
   addComment,
   courierDispatch,
   courierDispatchAgain,
+  courierRide,
   courierReminderDismiss,
+  resolveContactRequest,
   courierCancel,
   courierQuote,
   managerChallenge,
   authorize,
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
+
+// Ouvidoria: o cliente avaliou mal e pediu para falar com o responsável. O caso fica
+// aberto no pedido até alguém marcar "Resolvido", com uma frase do que foi feito.
+const contactResolveOpen = ref(false);
+async function onResolveContact(choice: { reason: string }) {
+  if (await resolveContactRequest(choice.reason)) contactResolveOpen.value = false;
+}
 
 // A Via Pedido (P2-19): o mesmo papel do PDV, pela impressora desta estação.
 const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
@@ -1039,6 +1048,44 @@ const outside = useOutsideStore(
         data-outside-band
       />
       <NuxtAlert
+        v-if="order?.contact_request"
+        id="customer-contact"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-message-circle-heart"
+        :description="order.contact_request.comment
+          ? `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Comentário: ${order.contact_request.comment}`
+          : `O cliente pediu para falar com o responsável (${order.contact_request.requested_at_display}). Não deixou comentário.`"
+        :actions="alertActions('warning', [
+          // O aviso manda chamar o cliente: o botão já leva à conversa.
+          !!order.customer_whatsapp_url && {
+            label: 'Chamar no WhatsApp',
+            icon: 'i-lucide-message-circle',
+            to: order.customer_whatsapp_url,
+            target: '_blank',
+          },
+          {
+            label: 'Resolvido',
+            onClick: () => { contactResolveOpen = true; },
+          },
+        ])"
+        data-contact-request
+      >
+        <!-- As estrelas dizem a nota de relance; o texto continua para o leitor de tela.
+             Glifo e não ícone: o modo CSS dos ícones é máscara, e máscara não preenche. -->
+        <template #title>
+          Ouvidoria aberta
+          <span class="ms-1 tracking-wider" aria-hidden="true">
+            <span
+              v-for="n in 5"
+              :key="n"
+              :class="n <= order.contact_request.rating ? 'text-warning' : 'text-muted opacity-50'"
+            >★</span>
+          </span>
+          <span class="sr-only">: nota {{ order.contact_request.rating }} de 5</span>
+        </template>
+      </NuxtAlert>
+      <NuxtAlert
         v-if="order && cardAuth"
         :color="cardAuth.tone"
         variant="subtle"
@@ -1236,9 +1283,11 @@ const outside = useOutsideStore(
             "
             :quoting="quoting"
             :quote-error="quoteError"
+            :order-ref="order.ref"
             @quote="onCourierQuote"
             @dismiss-quote-error="quoteError = ''"
             @dispatch="courierDispatch"
+            @dispatch-ride="courierRide"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
             @dismiss-reminder="courierReminderDismiss"
@@ -1327,6 +1376,18 @@ const outside = useOutsideStore(
 
     <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons,
          the canonical cancel list, or store presets + free text for reject) -->
+    <OperatorReasonDialog
+      v-model:open="contactResolveOpen"
+      title="Ouvidoria resolvida"
+      description="Conte em uma frase o que foi feito. Fica no histórico do pedido; o cliente não lê."
+      confirm-label="Marcar resolvido"
+      reason-label="O que foi feito"
+      placeholder="Ex.: falei com o cliente no WhatsApp, pedi desculpas e combinamos a troca."
+      :maxlength="500"
+      required
+      :busy="busy"
+      @confirm="onResolveContact"
+    />
     <OrderReasonDialog
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
@@ -1501,8 +1562,8 @@ const outside = useOutsideStore(
     <!-- Segunda assinatura: o mesmo diálogo canônico do PDV, com a MESMA lista de
          gerentes (``managers`` da projeção de detalhe, montada por
          ``pos._manager_cards``). Selecionar, não digitar: nome digitado erra, e o
-         servidor resolve a assinatura por username. Lista vazia ainda cai no
-         campo livre — é a porta de saída, não o caminho normal. -->
+         servidor resolve a assinatura por username. Lista vazia diz que não
+         há outro gerente e deixa o crachá valendo; nunca vira campo de nome. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
       action="cancel_sale"

@@ -152,6 +152,72 @@ def _formula(value: Any, *, required: bool) -> dict | None:
     return value
 
 
+def _ingredient_defaults(value: Any) -> dict:
+    """Validate the copied-on-use defaults of a recipe-backed ingredient."""
+    if value in (None, {}):
+        return {}
+    if not isinstance(value, dict):
+        raise _fail("O padrão de uso precisa ser um objeto.", field="ingredient_defaults")
+    composition = str(value.get("composition") or "").strip()
+    if composition not in {"additional", "included"}:
+        raise _fail(
+            "Composição precisa ser additional ou included.",
+            field="ingredient_defaults.composition",
+        )
+    quantity = value.get("quantity")
+    if not isinstance(quantity, dict):
+        raise _fail("Informe a quantidade padrão.", field="ingredient_defaults.quantity")
+    kind = str(quantity.get("kind") or "").strip()
+    if kind not in {"fixed", "ratio"}:
+        raise _fail("Quantidade precisa ser fixed ou ratio.", field="ingredient_defaults.quantity.kind")
+
+    def number(key: str, *, required: bool = False) -> Decimal | None:
+        raw = quantity.get(key)
+        if raw in (None, ""):
+            if required:
+                raise _fail("Informe o alvo da quantidade.", field=f"ingredient_defaults.quantity.{key}")
+            return None
+        try:
+            parsed = Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise _fail("Informe um número válido.", field=f"ingredient_defaults.quantity.{key}") from exc
+        if not parsed.is_finite() or parsed < 0 or (required and parsed == 0):
+            raise _fail("A quantidade precisa ser positiva.", field=f"ingredient_defaults.quantity.{key}")
+        return parsed
+
+    minimum, target, maximum = number("minimum"), number("target", required=True), number("maximum")
+    assert target is not None
+    if minimum is not None and minimum > target:
+        raise _fail("O mínimo não pode superar o alvo.", field="ingredient_defaults.quantity.minimum")
+    if maximum is not None and target > maximum:
+        raise _fail("O máximo não pode ficar abaixo do alvo.", field="ingredient_defaults.quantity.maximum")
+    normalized_quantity: dict[str, Any] = {
+        "kind": kind,
+        "minimum": None if minimum is None else str(minimum),
+        "target": str(target),
+        "maximum": None if maximum is None else str(maximum),
+    }
+    if kind == "fixed":
+        unit = str(quantity.get("unit") or "").strip()
+        if unit not in {"g", "kg", "ml", "L", "un"}:
+            raise _fail("Selecione uma unidade válida.", field="ingredient_defaults.quantity.unit")
+        normalized_quantity["unit"] = unit
+    else:
+        basis = quantity.get("basis")
+        if not isinstance(basis, dict) or basis.get("kind") not in {"flour", "total", "ingredient"}:
+            raise _fail("Selecione a base do percentual.", field="ingredient_defaults.quantity.basis")
+        normalized_basis = {"kind": str(basis["kind"])}
+        if basis["kind"] == "ingredient":
+            sku = str(basis.get("sku") or "").strip()
+            if not sku:
+                raise _fail(
+                    "Selecione o ingrediente-base.", field="ingredient_defaults.quantity.basis.sku"
+                )
+            normalized_basis["sku"] = sku
+        normalized_quantity["basis"] = normalized_basis
+    return {"quantity": normalized_quantity, "composition": composition}
+
+
 # ── Ref ──────────────────────────────────────────────────────────────────────
 
 
@@ -185,6 +251,7 @@ def create_entry_from_payload(data: dict, *, actor: str = "") -> tuple[RecipeEnt
     kind = _kind(data.get("kind"), allow_empty=True)
     output_sku = _text(data, "output_sku")
     notes = _text(data, "notes")
+    ingredient_defaults = _ingredient_defaults(data.get("ingredient_defaults")) if "ingredient_defaults" in data else {}
     version_data = data.get("version")
     if version_data is not None and not isinstance(version_data, dict):
         raise _fail("A versão precisa ser um objeto.", field="version")
@@ -198,6 +265,9 @@ def create_entry_from_payload(data: dict, *, actor: str = "") -> tuple[RecipeEnt
                 output_sku=output_sku,
                 notes=notes,
             )
+            if ingredient_defaults:
+                entry.meta = {**(entry.meta or {}), "ingredient_defaults": ingredient_defaults}
+                entry.save(update_fields=["meta", "updated_at"])
             version = None
             if version_data is not None:
                 version = create_version_from_payload(entry, version_data, actor=actor)
@@ -241,6 +311,14 @@ def _patch_entry_locked(entry: RecipeEntry, data: dict) -> RecipeEntry:
         if not isinstance(value, bool):
             raise _fail("Arquivar ou desarquivar aceita apenas sim ou não.", field="is_active")
         entry.is_active = value
+    if "ingredient_defaults" in data:
+        defaults = _ingredient_defaults(data.get("ingredient_defaults"))
+        meta = dict(entry.meta or {})
+        if defaults:
+            meta["ingredient_defaults"] = defaults
+        else:
+            meta.pop("ingredient_defaults", None)
+        entry.meta = meta
     if external_references.FIELD in data:
         references = external_references.validate(data.get(external_references.FIELD))
         meta = dict(entry.meta or {})
@@ -628,7 +706,7 @@ def material_profiles_for(formula: dict) -> dict[str, dict]:
 
     skus = {
         str(line.get("sku") or "").strip()
-        for line in [*list(formula.get("items") or []), *list(formula.get("parts") or [])]
+        for line in list(formula.get("ingredients") or [])
         if str(line.get("sku") or "").strip()
     }
     if not skus:

@@ -167,6 +167,46 @@ integração Machine — o despacho agora é API. O teleporte permanece como fal
    confirmação do cliente (benchmark iFood); "como foi a entrega?" = avaliação pós-entrega,
    feature separada (`customer_rating`).
 4. Falha de despacho: alerta + re-despacho manual (sem retry automático de corrida).
+5. Retorno por pedido (Pablo, 2026-10-28): a corrida pede `retorno` quando o entregador traz
+   algo de volta (cobrança na porta em dinheiro ou cartão, ou maquininha da casa), e a cotação
+   pede o mesmo (`com_retorno`). É custo da casa: o frete do cliente não muda. A chave global
+   `MACHINE_RETORNO` morreu. Pedido com maquininha ou troco não se chama sozinho no pronto
+   automático: quem escolhe a maquininha é o operador.
+6. Corrida com várias paradas (Pablo, 2026-10-28): o Gestor oferece "Juntar N entregas" com
+   duas ou mais entregas prontas sem corrida; uma
+   solicitação só na TaOn, uma parada por pedido, na ordem do percurso (vizinho mais
+   próximo a partir da loja; a API não ordena), até 4 pedidos. A leitura da corrida é uma
+   só e vale para todos; cancelar um pedido não cancela a corrida dos outros (aviso para
+   tirar a parada com a central). ⚠️ Pendências de homologação: a API não documenta os
+   valores de `stops[].status`, então cada pedido só vira "entregue" no `F` da corrida
+   inteira (com retorno, depois da volta à loja); o agrupamento automático da própria
+   TaOn (status `U`) segue valendo para corridas chamadas uma a uma.
+7. A corrida conjunta é uma saída (Pablo, 2026-10-28: "na realidade vai acontecer"): pedido
+   com maquininha ou troco entra nela. A escolha pergunta o troco de cada pedido que pede
+   (sai da gaveta pedido a pedido, `courier_out`) e UMA maquininha para a corrida: o
+   primeiro pedido de cartão a reserva e os outros entram nela (`dispatch.trip_ref` = o
+   pedido da primeira escolha, o mesmo da saída do Gestor). O "Voltou" fecha todos os
+   pedidos dela. Tudo na transação do pedido de corrida: recusa de um pedido não tira nada
+   da gaveta. A oferta mora onde o operador age: a confirmação do "Chamar entregador" de
+   cada pedido pergunta "Vai junto nesta corrida?", com as entregas que podem ir (prontas
+   ou em preparo, encomenda de outro dia fora), as mais perto primeiro, com bairro e
+   distância; o "Juntar entregas" do quadro segue para quem quer escolher pelo quadro, sem
+   nada pré-marcado. A corrida que não abre (falha da TaOn, pedido que mudou antes do
+   trabalho, N/C pela leitura) devolve o troco e a maquininha de TODOS os pedidos e avisa;
+   "Chamar de novo" chama a mesma corrida. Pedido cancelado antes da coleta devolve o troco
+   dele e a maquininha compartilhada segue com a corrida (o vínculo passa a outro pedido).
+   Cotação da corrida com várias paradas (`courier.estimate_for_ride`): a mesma corrida que a
+   chamada abre (ordem do percurso, retorno), com a última parada no destino e as do meio em
+   `latlng_paradas`. Marcada outra entrega, o cartão de cotação passa a cotar a corrida
+   inteira e diz a ordem ("Ordem: C03 → A47"); o "Juntar entregas" do quadro faz o mesmo.
+   ⚠️ Homologar com a TaOn: o separador entre latitude e longitude em `latlng_paradas` não
+   está na documentação (usamos "lat,lng|lat,lng").
+8. Custo de entrega no B.I. (Pablo, 2026-10-28): a seção "Entregas" soma o `final_value_q`
+   de cada corrida UMA vez (`id_mch`; numa corrida com várias paradas cada pedido guarda o
+   valor inteiro), com a cotação quando a corrida terminou sem valor final, e põe ao lado o
+   frete que os clientes pagaram nos pedidos levados (linha `__DELIVERY_FEE__`, sem os
+   cancelados). A corrida arquivada em `attempts` guarda o custo, para não sumir no
+   re-despacho. Não é lançamento contábil: é leitura, calculada na hora.
 
 ## Referências
 - [STOREFRONT-GAPS-ACTION-PLAN](completed/STOREFRONT-GAPS-ACTION-PLAN.md) — WP-11 (entrega), slice 3 (teleporte)

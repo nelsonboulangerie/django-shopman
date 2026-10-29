@@ -26,7 +26,7 @@ export interface ProductionActionApprovalRequirementProjection {
 /** A server-owned action offered by an operational projection. */
 export interface ProductionActionProjection {
   ref: string;
-  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "confirm_order" | "allocate_blind_codes" | "print_labels";
+  kind: "plan" | "start" | "finish" | "review_qc" | "review_qc_batch" | "correct_qc" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert" | "open_alert_context" | "confirm_order" | "allocate_blind_codes" | "print_labels" | "register_old_dough" | "authorize_formula_deviation";
   label: string;
   priority: number;
   enabled: boolean;
@@ -314,6 +314,29 @@ export interface ProductionBoardProjection {
   contract_version: number;
 }
 
+/** A physical, unexpired lot that can satisfy one formula ingredient. */
+export interface ProductionAvailableBatchProjection {
+  ref: string;
+  quantity: string;
+  unit: string;
+  expiry_date: string;
+}
+
+/** One frozen recipe participation available for execution adjustment. */
+export interface ProductionFormulaLimitProjection {
+  ingredient_ref: string;
+  sku: string;
+  name: string;
+  kind: string;
+  minimum: string;
+  target: string;
+  maximum: string;
+  unit: string;
+  basis_label: string;
+  actual: string;
+  available_batches: ProductionAvailableBatchProjection[];
+}
+
 /** A started work order card for the production KDS. */
 export interface ProductionKDSCardProjection {
   pk: number;
@@ -332,6 +355,7 @@ export interface ProductionKDSCardProjection {
   timer_tone: string;
   can_finish: boolean;
   order_refs: string[];
+  formula_limits: ProductionFormulaLimitProjection[];
 }
 
 /** Top-level read model for the production KDS. */
@@ -432,22 +456,6 @@ export interface ProductionWeighingIngredientProjection {
   accepted_max_g: string | null;
 }
 
-/** One ingredient of the final mix with old dough at the recipe's cap. */
-export interface ProductionWeighingOldDoughLineProjection {
-  sku: string;
-  target_display: string;
-  target_g: string | null;
-}
-
-/** A pesagem com massa velha no teto da ficha (``final_mix_at_cap``). */
-export interface ProductionWeighingOldDoughProjection {
-  cap_pct: string;
-  cap_display: string;
-  old_dough_display: string;
-  old_dough_g: string | null;
-  lines: ProductionWeighingOldDoughLineProjection[];
-}
-
 /** Closed printable row contract for one weighing ingredient. */
 export interface ProductionWeighingTableRowProjection {
   cols: string[];
@@ -493,7 +501,6 @@ export interface ProductionWeighingTicketProjection {
   expiry_display: string;
   validity_configured: boolean;
   validity_source: string;
-  old_dough: ProductionWeighingOldDoughProjection | null;
 }
 
 /** Printable weighing tickets for saved production planning. */
@@ -753,6 +760,32 @@ export interface ProductionWorkOrderMutationSuccess {
   current: ProductionMutationCurrent | null;
 }
 
+/** ProductionOldDoughMutationSuccess(ok: 'bool', sku: 'str', name: 'str', batch_ref: 'str', quantity_g: 'str', expiry_date: 'str', recipe_version_ref: 'str', replayed: 'bool') */
+export interface ProductionOldDoughMutationSuccess {
+  ok: boolean;
+  sku: string;
+  name: string;
+  batch_ref: string;
+  quantity_g: string;
+  expiry_date: string;
+  recipe_version_ref: string;
+  replayed: boolean;
+}
+
+/** ProductionFormulaDeviationMutationSuccess(ok: 'bool', ingredient_ref: 'str', ingredient_sku: 'str', ingredient_name: 'str', expected: 'dict', actual: 'str', reason: 'str', impact: 'dict', work_order_rev: 'int', replayed: 'bool') */
+export interface ProductionFormulaDeviationMutationSuccess {
+  ok: boolean;
+  ingredient_ref: string;
+  ingredient_sku: string;
+  ingredient_name: string;
+  expected: Record<string, unknown>;
+  actual: string;
+  reason: string;
+  impact: Record<string, unknown>;
+  work_order_rev: number;
+  replayed: boolean;
+}
+
 /** ProductionQualityReviewBatchMutationSuccess(ok: 'bool', reviewed_count: 'int', current: 'tuple[ProductionMutationCurrent, ...]') */
 export interface ProductionQualityReviewBatchMutationSuccess {
   ok: boolean;
@@ -974,6 +1007,37 @@ export interface ProductionStartMutationRequest {
   note?: string;
 }
 
+export interface ProductionOldDoughMutationRequest {
+  idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  expected_rev: number;
+  quantity: string;
+  unit?: "g" | "kg";
+  expiry_date: string;
+  position_ref?: string;
+  note?: string;
+}
+
+export interface ProductionFormulaDeviationMutationRequest {
+  idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  expected_rev: number;
+  ingredient_ref: string;
+  actual_quantity: string;
+  batch_ref?: string;
+  reason: string;
+}
+
 export interface ProductionFinishMutationRequest {
   idempotency_key: string;
   projection_generated_at: string;
@@ -1124,6 +1188,14 @@ export function planProduction(body: ProductionPlanMutationRequest): Promise<Pro
 
 export function startProductionWorkOrder(workOrderId: number, body: ProductionStartMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
   return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/start/`, body);
+}
+
+export function registerProductionOldDough(workOrderId: number, body: ProductionOldDoughMutationRequest): Promise<ProductionOldDoughMutationSuccess> {
+  return postProductionMutation<ProductionOldDoughMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/old-dough/`, body);
+}
+
+export function authorizeProductionFormulaDeviation(workOrderId: number, body: ProductionFormulaDeviationMutationRequest): Promise<ProductionFormulaDeviationMutationSuccess> {
+  return postProductionMutation<ProductionFormulaDeviationMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/formula-deviation/`, body);
 }
 
 export function finishProductionWorkOrder(workOrderId: number, body: ProductionFinishMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {

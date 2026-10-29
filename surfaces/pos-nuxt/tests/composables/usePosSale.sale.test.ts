@@ -44,6 +44,12 @@ function saleRouter(closePayment: Record<string, unknown> | null = null) {
   });
 }
 
+function closeBodiesOf(actionCall: ReturnType<typeof vi.fn>) {
+  return actionCall.mock.calls
+    .filter((call) => String(call[0]).includes("/sale/close/"))
+    .map((call) => (call[1] as { body: Record<string, unknown> }).body);
+}
+
 /** Carrinho pronto para checkout (2 pães = R$ 10,00, sem comanda). */
 function saleReadyForCheckout(actionCall: ReturnType<typeof vi.fn>) {
   const h = makeSale({ projection: freeCartProjection(), actionCall });
@@ -164,7 +170,9 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     h.handles.dispose();
   });
 
-  it("resposta perdida não afirma que o pedido deixou de ser criado", async () => {
+  it("resposta perdida de venda que espera (dinheiro): vai para a fila com a MESMA chave, sem travar", async () => {
+    // O wi-fi está de pé (`navigator.onLine` verdadeiro) e o link caiu: o
+    // navegador não sabe, e o PDV só descobre pela falta de resposta.
     const actionCall = vi.fn().mockImplementation(async (path: string) => {
       if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
       if (String(path).includes("/sale/close/")) throw new Error("network disconnected");
@@ -172,10 +180,134 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     });
     const h = saleReadyForCheckout(actionCall);
     await h.sale.submitSale();
+    const key = h.sale.cart.clientRequestId;
     await h.sale.submitSale();
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Não foi possível confirmar o resultado da venda. Mantenha esta tentativa e confira o pedido antes de reenviar.");
-    expect(h.sale.cart.items).toHaveLength(1);
+
+    expect(globalThis.navigator.onLine).toBe(true);
+    // Sem trava de resultado incerto: a dúvida passou para a fila.
+    expect(h.sale.closeOutcomeUncertain.value).toBe(false);
+    expect(storageValues.has("shopman:pos:close-outcome-uncertain")).toBe(false);
+    expect(h.sale.result.value?.offline?.id).toBe(key);
+    expect(h.sale.cart.items).toHaveLength(0);
+    // E a PRÓXIMA venda já nasce sem conexão: não espera outro prazo esgotar.
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.dismissResult();
+    h.sale.addProduct(pao);
+    await h.sale.submitSale();
+    expect(h.sale.review.value?.offline?.prices_at).toBeTruthy();
+    expect(actionCall.mock.calls.filter((call) => String(call[0]).includes("/sale/")).length).toBe(2);
+    h.handles.dispose();
+  });
+
+  it("o BFF sem o Django (502 upstream_unreachable) conta como link caído", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw {
+        status: 502,
+        data: { detail: "O servidor não respondeu.", error: { code: "upstream_unreachable" } },
+      };
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(h.sale.closeOutcomeUncertain.value).toBe(false);
+    expect(h.sale.result.value?.offline).toBeTruthy();
+    h.handles.dispose();
+  });
+
+  it("resposta perdida de venda que NÃO espera (Pix): trava, e Conferir agora reenvia o MESMO corpo e resolve", async () => {
+    let answer: "lost" | "ok" = "lost";
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) {
+        if (answer === "lost") throw new Error("network disconnected");
+        return { ok: true, order_ref: "PED-77", payment: null };
+      }
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    h.sale.addTender("pix");
+    await h.sale.submitSale();
+
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(h.sale.closeGuardNotice.value?.canRecheck).toBe(true);
+    expect(h.sale.closeGuardNotice.value?.body).toContain("Conferir agora");
+    const [first] = closeBodiesOf(actionCall);
+
+    answer = "ok";
+    await expect(h.sale.recheckUncertainClose()).resolves.toBe("resolved");
+
+    const bodies = closeBodiesOf(actionCall);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual(first);
+    expect(bodies[1]!.client_request_id).toBe(first!.client_request_id);
+    expect(h.sale.closeOutcomeUncertain.value).toBe(false);
+    expect(storageValues.has("shopman:pos:close-outcome-uncertain")).toBe(false);
+    expect(h.sale.result.value?.orderRef).toBe("PED-77");
+    h.handles.dispose();
+  });
+
+  it("Conferir agora sobrevive a recarregar: o corpo guardado com a trava é o que vai", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw { status: 500, data: { detail: "Erro interno." } };
+      return {};
+    });
+    const first = saleReadyForCheckout(actionCall);
+    await first.sale.submitSale();
+    await first.sale.submitSale();
+    expect(first.sale.closeOutcomeUncertain.value).toBe(true);
+    const [sent] = closeBodiesOf(actionCall);
+    first.handles.dispose();
+
+    const replay = vi.fn().mockResolvedValue({ ok: true, order_ref: "PED-88" });
+    const afterReload = makeSale({ projection: freeCartProjection(), actionCall: replay });
+    await afterReload.sale.restoreUncertainClose();
+    expect(afterReload.sale.closeGuardNotice.value?.canRecheck).toBe(true);
+
+    await expect(afterReload.sale.recheckUncertainClose()).resolves.toBe("resolved");
+    expect(replay).toHaveBeenCalledTimes(1);
+    expect((replay.mock.calls[0]![1] as { body: Record<string, unknown> }).body).toEqual(sent);
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Venda confirmada: pedido PED-88.");
+    expect(afterReload.sale.closeOutcomeUncertain.value).toBe(false);
+    afterReload.handles.dispose();
+  });
+
+  it("Conferir agora sem resposta mantém a trava e não cobra de novo", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw { status: 500, data: { detail: "Erro interno." } };
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    actionCall.mockRejectedValueOnce(new Error("network disconnected"));
+
+    await expect(h.sale.recheckUncertainClose()).resolves.toBe("unknown");
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    expect(storageValues.has("shopman:pos:close-outcome-uncertain")).toBe(true);
     expect(h.sale.result.value).toBeNull();
+    h.handles.dispose();
+  });
+
+  it("Conferir agora: nem um 4xx no reenvio solta a trava (a primeira pode ter fechado)", async () => {
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) throw { status: 502, data: null };
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    h.sale.addTender("pix");
+    await h.sale.submitSale();
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
+    actionCall.mockRejectedValueOnce({ status: 409, data: { detail: "O total mudou." } });
+
+    await expect(h.sale.recheckUncertainClose()).resolves.toBe("unknown");
+    expect(h.sale.closeOutcomeUncertain.value).toBe(true);
     h.handles.dispose();
   });
 
@@ -837,7 +969,7 @@ describe("usePosSale — PIX polling pós-venda", () => {
     h.handles.dispose();
   });
 
-  it("timeout (~10 min sem resolução) desiste com 'expired'", async () => {
+  it("sem prazo dito pelo servidor, desiste no teto de reserva (~10 min)", async () => {
     fetchMock.mockResolvedValue({}); // nunca is_paid/is_terminal
     const actionCall = saleRouter(pixProof);
     const h = saleReadyForCheckout(actionCall);
@@ -846,8 +978,28 @@ describe("usePosSale — PIX polling pós-venda", () => {
     await h.sale.submitSale();
     expect(h.sale.pixStatus.value).toBe("polling");
 
-    // 241 tentativas a 2,5s → passa do teto de 240 e desiste.
-    await vi.advanceTimersByTimeAsync(241 * 2500);
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 2500);
+    expect(h.sale.pixStatus.value).toBe("expired");
+    h.handles.dispose();
+  });
+
+  it("o prazo é o do servidor (expires_at): um Pix de 30 min não desiste aos 10", async () => {
+    fetchMock.mockResolvedValue({}); // o servidor ainda não decidiu
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    const actionCall = saleRouter({ ...pixProof, expires_at: expiresAt });
+    const h = saleReadyForCheckout(actionCall);
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+    expect(JSON.parse(storageValues.get("shopman:pos:pending-pix")!)).toEqual([
+      expect.objectContaining({ orderRef: "PED-1", expiresAt }),
+    ]);
+
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    expect(h.sale.pixStatus.value).toBe("polling"); // o QR ainda vale
+
+    // Passou do prazo e da folga do aviso do banco, sem o servidor responder.
+    await vi.advanceTimersByTimeAsync(16 * 60 * 1000 + 2500);
     expect(h.sale.pixStatus.value).toBe("expired");
     h.handles.dispose();
   });

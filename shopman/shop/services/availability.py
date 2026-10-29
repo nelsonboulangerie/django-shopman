@@ -69,6 +69,12 @@ def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
     Indefinite holds (``expires_at IS NULL`` — planned holds) are untouched:
     their TTL only starts after materialization (AVAILABILITY-PLAN §8).
 
+    Hold JÁ vencido também fica de fora: desde que venceu ele não conta no
+    saldo, e outra sacola pode ter reservado o mesmo pão. Estendê-lo antes do
+    ``release_expired`` passar o ressuscitaria por cima da reserva alheia, e o
+    mesmo item seria vendido duas vezes. O que ele cobria volta a faltar e
+    segue o caminho de sempre (o commit reserva de novo ou recusa).
+
     Returns the number of holds whose ``expires_at`` was bumped.
     """
     if not session_key:
@@ -82,12 +88,14 @@ def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
         logger.debug("availability.bump_session_hold_expiry degraded; returning 0", exc_info=True)
         return 0
 
-    new_expiry = timezone.now() + timedelta(minutes=ttl_minutes)
+    now = timezone.now()
+    new_expiry = now + timedelta(minutes=ttl_minutes)
     return (
         Hold.objects.filter(
             metadata__reference=session_key,
             status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
             expires_at__isnull=False,
+            expires_at__gte=now,
             expires_at__lt=new_expiry,
         )
         .update(expires_at=new_expiry)

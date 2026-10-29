@@ -23,6 +23,7 @@
     ],
     "secret": [
       "DATABASE_URL",
+      "GOOGLE_MERCHANT_SERVICE_ACCOUNT_B64",
       "SECRET_KEY"
     ],
     "structural": [
@@ -2145,6 +2146,7 @@
           "cashman.manage_operators",
           "cashman.operate_pos",
           "cashman.view_terminal",
+          "craftsman.change_recipe",
           "craftsman.view_recipe",
           "craftsman.view_recipeentry",
           "craftsman.view_recipeitem",
@@ -2268,7 +2270,6 @@
           "shop.view_qualitydefect",
           "shop.view_qualitygrade",
           "shop.view_reports",
-          "shop.view_retiredproduct",
           "shop.view_ruleconfig",
           "shop.view_shop",
           "shop.view_shopappearance",

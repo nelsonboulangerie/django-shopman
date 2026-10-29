@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from base64 import b64encode
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.error import HTTPError, URLError
@@ -33,13 +34,20 @@ PAYMENT_METHOD_CODES = {
     "credit": "03",
     "debit_card": "04",
     "debit": "04",
-    "store_credit": "05",
-    # Conta na casa (fiado do balcão): a nota sai antes de o dinheiro entrar,
-    # e a forma que a SEFAZ conhece para isso é "crédito loja". Confirmação
-    # do contador pendente (17/09/2026); até lá caía em "99 outros".
+    # 21 "Crédito em Loja": saldo que o cliente JÁ TEM na casa (pago antes, vale
+    # de devolução). Tabela de meios de pagamento da NT 2023.004 / IT 2024.002,
+    # válida desde 01/07/2024.
+    "store_credit": "21",
+    # Conta na casa (fiado do balcão): a nota sai antes de o dinheiro entrar. Na
+    # mesma tabela, 05 é "Cartão da Loja (Private Label)", descrito como "cartão
+    # da loja, na forma de crediário etc.": o crediário próprio é o fiado. O 21
+    # não serve: ele é crédito pago ANTES, o contrário da conta na casa.
     "account": "05",
     "house_account": "05",
     "boleto": "15",
+    # 17 "PIX Dinâmico" (QR com txid, gerado pela cobrança Efí). O Pix atestado
+    # no balcão ("Recebi o Pix", QR fixo ou chave da loja) é 20 "PIX Estático":
+    # ver ``_payment_form``.
     "pix": "17",
     "external": "99",
 }
@@ -120,7 +128,7 @@ class FocusNFeBackend:
                 error_message=str(exc),
             )
 
-        return _document_result(response, config)
+        return _with_authorization_date(_document_result(response, config), config)
 
     def query_status(self, *, reference: str) -> FiscalDocumentResult:
         config = _get_config()
@@ -136,7 +144,7 @@ class FocusNFeBackend:
             response = _request("GET", _nfce_path(reference, config, consult=True), None, config)
         except (HTTPError, URLError, TimeoutError) as exc:
             return _document_error_result(exc)
-        return _document_result(response, config)
+        return _with_authorization_date(_document_result(response, config), config)
 
     def send_email(self, *, reference: str, emails: list[str]) -> tuple[bool, str]:
         """Pede ao Focus o envio da nota por e-mail (DANFE + XML).
@@ -314,8 +322,8 @@ def _build_nfce_payload(
         "valor_produtos": _money_q(product_total_q),
         "valor_total": _money_q(note_total_q),
         "items": mapped_items,
-        "formas_pagamento": _payment_forms(payment),
     }
+    payload.update(_payment_group(payment))
     if home_delivery is not None:
         # Entrega a domicílio: indPres=4, frete no item (I15) e no total (W08).
         # A modalidade do frete (X02) diz QUEM transportou, e são dois casos —
@@ -703,6 +711,73 @@ def _map_item(number: int, item: dict, config: dict) -> dict:
     return mapped
 
 
+# Grupo do pagamento (``pag``/``detPag``) na API da Focus, conferido na
+# referência canônica deles (https://campos.focusnfe.com.br/nfe/FormaPagamentoXML.html
+# e NotaFiscalXML.html, 23/10/2026): ``forma_pagamento`` (tPag),
+# ``descricao_pagamento`` (xPag, 2 a 60 caracteres, só no 99),
+# ``valor_pagamento`` (vPag), ``tipo_integracao`` (tpIntegra),
+# ``cnpj_credenciadora`` (CNPJ), ``bandeira_operadora`` (tBand),
+# ``numero_autorizacao`` (cAut) e, no nível da NOTA, ``valor_troco`` (vTroco).
+# Formas que exigem o grupo de cartão (``card``) na NFC-e: a regra YA04-10
+# (rejeição 391) vale para cartão de crédito, de débito e Pix dinâmico (03, 04
+# e 17). O Pix estático (20) é o contrário: a SEFAZ do Paraná RECUSA o grupo
+# nele (rejeição 963, "Tipo de pagamento não aceita o grupo de cartões ou
+# boletos"), medido em homologação em 27/10/2026 na venda PDV-261027-N09.
+CARD_CODES = frozenset({"03", "04", "17"})
+# tpIntegra 2: "pagamento não integrado com o sistema de automação". O 1
+# (integrado: TEF ou comércio eletrônico) obriga CNPJ da instituição de
+# pagamento e o código de autorização (cAut, obrigatório em todas as UFs desde a
+# NT 2025.001), e o pedido ainda não grava o cAut do cartão da loja online. O 2
+# passa na regra da 391 sem mais campos; migrar a loja online para o 1 é passo
+# seguinte (docs/runbooks/nfce-formas-de-pagamento-homologacao.md, "tpIntegra").
+CARD_NOT_INTEGRATED = "2"
+
+# xPag do 99: o leiaute exige a descrição quando a forma é "outros". A frase diz
+# o que se sabe do pagamento, sem afirmar o que não se sabe.
+_OTHER_DESCRIPTIONS = {
+    "external": "Pagamento pelo intermediador da venda",
+    "card": "Cartão sem tipo informado pelo gateway",
+    "link": "Cartão sem tipo informado pelo gateway",
+}
+_PREPAID_DESCRIPTION = "Cartão pré-pago"
+
+
+def _payment_group(payment: dict) -> dict:
+    """``formas_pagamento`` e, quando houve troco em dinheiro, ``valor_troco``."""
+    payment = dict(payment or {})
+    forms = _payment_forms(payment)
+    group: dict = {"formas_pagamento": forms}
+    change_q = _declarable_change_q(payment, forms)
+    if change_q:
+        # vPag do dinheiro volta a ser o que veio na mão; a nota fecha por
+        # Σ vPag − vTroco = vNF. O valor_total continua o líquido.
+        cash = next(form for form in reversed(forms) if form["forma_pagamento"] == "01")
+        cash["valor_pagamento"] = _money_q(_money_to_q(cash["valor_pagamento"]) + change_q)
+        group["valor_troco"] = _money_q(change_q)
+    return group
+
+
+def _declarable_change_q(payment: dict, forms: list[dict]) -> int:
+    """Troco que a nota pode declarar, em centavos; 0 quando não fecha.
+
+    ``change_q`` e ``tendered_q`` são do PDV e do acerto de entrega
+    (``docs/reference/data-schemas.md``): o dinheiro que veio na mão e o que
+    voltou. Só se declara troco quando as três contas batem (dinheiro líquido da
+    nota + troco = dinheiro entregue). Sem essa prova, o vPag líquido sem
+    vTroco continua sendo uma nota válida, e inventar troco não é.
+    """
+    change_q = max(0, int(payment.get("change_q") or 0))
+    tendered_q = max(0, int(payment.get("tendered_q") or 0))
+    if not change_q or not tendered_q:
+        return 0
+    cash_q = sum(
+        _money_to_q(form["valor_pagamento"]) for form in forms if form["forma_pagamento"] == "01"
+    )
+    if not cash_q or cash_q + change_q != tendered_q:
+        return 0
+    return change_q
+
+
 def _payment_forms(payment: dict) -> list[dict]:
     payment = dict(payment or {})
     amount_q = int(payment.get("amount_q") or 0)
@@ -713,22 +788,43 @@ def _payment_forms(payment: dict) -> list[dict]:
             tender_amount_q = int(tender.get("amount_q") or 0)
             if tender_amount_q <= 0:
                 continue
-            forms.append({
-                "forma_pagamento": _payment_code(
-                    tender.get("method") or payment.get("method"),
-                    tender.get("card_funding") or payment.get("card_funding"),
-                ),
-                "valor_pagamento": _money_q(tender_amount_q),
-            })
+            forms.append(_payment_form(
+                tender.get("method") or payment.get("method"),
+                tender.get("card_funding") or payment.get("card_funding"),
+                tender_amount_q,
+                pix_attested=bool(tender.get("pix_confirmed_by")),
+            ))
         if forms:
             return forms
 
     if amount_q <= 0:
         raise FocusNFePayloadError("Pagamento fiscal exige payment.amount_q > 0.")
-    return [{
-        "forma_pagamento": _payment_code(payment.get("method"), payment.get("card_funding")),
-        "valor_pagamento": _money_q(amount_q),
-    }]
+    return [_payment_form(payment.get("method"), payment.get("card_funding"), amount_q)]
+
+
+def _payment_form(
+    method: object, card_funding: object, amount_q: int, *, pix_attested: bool = False,
+) -> dict:
+    code = _payment_code(method, card_funding)
+    if code == "17" and pix_attested:
+        # Atestado por gente no balcão: o Pix não passou por cobrança com txid.
+        code = "20"
+    form = {"forma_pagamento": code, "valor_pagamento": _money_q(amount_q)}
+    if code in CARD_CODES:
+        form["tipo_integracao"] = CARD_NOT_INTEGRATED
+    elif code == "99":
+        form["descricao_pagamento"] = _other_description(method, card_funding)
+    return form
+
+
+def _other_description(method: object, card_funding: object) -> str:
+    value = str(method or "").strip().lower()
+    if value in _CARD_BY_GATEWAY and str(card_funding or "").strip().lower() == "prepaid":
+        return _PREPAID_DESCRIPTION
+    if value in _OTHER_DESCRIPTIONS:
+        return _OTHER_DESCRIPTIONS[value]
+    label = str(method or "").strip()
+    return f"Outro meio: {label}"[:60] if label else "Outro meio de pagamento"
 
 
 def _payment_total_q(payment: dict) -> int:
@@ -797,6 +893,42 @@ def _shop_document() -> str:
     except Exception:
         logger.debug("focus_nfe_shop_document_lookup_failed", exc_info=True)
         return ""
+
+
+_DH_RECBTO = re.compile(r"<dhRecbto>([^<]+)</dhRecbto>")
+
+
+def _with_authorization_date(result: FiscalDocumentResult, config: dict) -> FiscalDocumentResult:
+    """Completa a hora da Autorização de Uso a partir do XML autorizado.
+
+    ⚠️ A resposta da Focus para NFC-e NÃO traz ``data_autorizacao`` nem
+    ``data_emissao`` (medido em homologação em 28/10/2026, nota 723 do alpha), e
+    o prazo de cancelamento do art. 35 conta dessa hora. Sem ela o
+    ``fiscal.cancellation_path`` não mede o prazo, o cancelamento fora da janela
+    ia à SEFAZ e voltava recusado ("autorizada há mais de 30 minutos"), em vez de
+    abrir a pendência da nota de estorno. A hora oficial é o ``dhRecbto`` do
+    protocolo, dentro do XML que a própria Focus publica.
+
+    Falha em ler o XML não derruba a emissão: a nota está autorizada, e a falta
+    da hora tem caminho próprio ("não deu para medir o prazo").
+    """
+    if not result.success or result.authorization_date or not result.xml_url:
+        return result
+    try:
+        with urlopen(
+            Request(result.xml_url, headers={"User-Agent": "django-shopman/focus-nfe"}),
+            timeout=int(config.get("timeout") or 30),
+        ) as response:
+            xml = response.read().decode("utf-8", errors="replace")
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        logger.warning("focus_nfe_authorization_date_unreadable xml_url=%s", result.xml_url, exc_info=True)
+        return result
+    match = _DH_RECBTO.search(xml)
+    if match is None:
+        logger.warning("focus_nfe_authorization_date_missing xml_url=%s", result.xml_url)
+        return result
+    result.authorization_date = match.group(1).strip()
+    return result
 
 
 def _document_result(response: dict, config: dict | None = None) -> FiscalDocumentResult:

@@ -45,18 +45,31 @@ const emit = defineEmits<{
   reset: [];
 }>();
 
-const fileName = ref("");
+const selectedFile = ref<File | null>(null);
+const fileName = computed(() => selectedFile.value?.name ?? "");
+
+const fileActionLabel = computed(() => {
+  if (props.previewBusy) return "Lendo arquivo CSV";
+  return fileName.value ? "Trocar arquivo CSV" : "Escolher arquivo CSV";
+});
+
+const fileDescription = computed(() => {
+  if (props.previewBusy) return "Aguarde enquanto a prévia é preparada.";
+  if (fileName.value) return "Solte outro arquivo aqui ou escolha no dispositivo.";
+  return "Solte o arquivo aqui ou escolha no dispositivo.";
+});
+
+const fileState = computed(() =>
+  fileName.value ? `Arquivo selecionado: ${fileName.value}` : "Nenhum arquivo selecionado.",
+);
 
 function reset() {
-  fileName.value = "";
+  selectedFile.value = null;
   emit("reset");
 }
 
-function onFile(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+function onFile(file: File | null | undefined) {
   if (!file) return;
-  fileName.value = file.name;
   const reader = new FileReader();
   reader.onload = () => emit("preview", String(reader.result ?? ""));
   reader.readAsText(file, "utf-8");
@@ -67,6 +80,15 @@ const totalLine = computed(() =>
     .map(([key, value]) => `${value} ${props.totalLabels[key] ?? key}`)
     .join(" · "),
 );
+
+const rowsRead = computed(() =>
+  props.preview?.rows === 1 ? "1 linha lida" : `${props.preview?.rows ?? 0} linhas lidas`,
+);
+
+const rowsWithError = computed(() => {
+  const count = props.preview?.errors.length ?? 0;
+  return count === 1 ? "1 linha com erro" : `${count} linhas com erro`;
+});
 </script>
 
 <template>
@@ -82,22 +104,44 @@ const totalLine = computed(() =>
       <div class="flex flex-col gap-4">
         <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" />
         <NuxtFormField label="Arquivo CSV" hint="Separador ponto e vírgula; vírgula decimal.">
-          <NuxtInput type="file" accept=".csv,text/csv" :disabled="previewBusy" data-import-pick @change="onFile" />
+          <div data-import-picker>
+            <NuxtFileUpload
+              v-model="selectedFile"
+              :label="fileActionLabel"
+              :description="fileDescription"
+              accept=".csv,text/csv"
+              layout="list"
+              position="outside"
+              reset
+              :file-image="false"
+              :disabled="previewBusy"
+              :highlight="Boolean(error)"
+              :color="error ? 'error' : 'primary'"
+              class="w-full"
+              @update:model-value="onFile"
+            />
+            <p
+              class="sr-only"
+              aria-live="polite"
+              data-import-file-state
+            >
+              {{ fileState }}
+            </p>
+          </div>
         </NuxtFormField>
-        <p v-if="fileName" class="text-sm text-muted-foreground">{{ fileName }}</p>
 
         <NuxtCard v-if="preview" variant="outline">
           <div class="flex flex-col gap-3">
             <div>
               <p class="text-sm font-medium">Prévia</p>
-              <p class="text-xs text-muted-foreground">{{ totalLine }} · {{ preview.rows }} linha(s) lida(s)</p>
+              <p class="text-xs text-muted-foreground">{{ totalLine }} · {{ rowsRead }}</p>
             </div>
             <NuxtAlert
               v-if="preview.errors.length"
               color="warning"
               variant="subtle"
               icon="i-lucide-triangle-alert"
-              :title="`${preview.errors.length} linha(s) com erro`"
+              :title="rowsWithError"
               description="Corrija o arquivo e leia de novo. Nada foi gravado."
             />
             <ul v-if="preview.errors.length" class="ml-4 list-disc text-xs text-muted-foreground">

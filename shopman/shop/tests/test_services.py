@@ -419,7 +419,7 @@ class TestStockService:
 
         # Adopted, not freshly created
         adapter.create_hold.assert_not_called()
-        mock_retag.assert_called_once_with("hold:42", order.ref)
+        mock_retag.assert_called_once_with("hold:42", order.ref, target_date=None)
         assert order.data["hold_ids"][0]["hold_id"] == "hold:42"
 
     @patch("shopman.shop.services.stock._retag_hold_for_order")

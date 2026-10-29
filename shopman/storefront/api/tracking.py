@@ -643,6 +643,92 @@ class OrderConfirmReceiptView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["tracking"],
+        summary="Ask the shop to contact the customer after a low rating",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="The rating does not offer a contact request."),
+        },
+    ),
+)
+class OrderContactRequestView(APIView):
+    """POST /api/v1/orders/{ref}/contact-request/ — a ouvidoria da avaliação."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-contact-request",
+            rate="10/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order = order_service.get_accessible_order(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            key = remote_mutations.idempotency_key_from_request(request, fallback=f"contact-request:{ref}")
+        except remote_mutations.RemoteMutationConflict as exc:
+            return Response(
+                {"detail": str(exc), "error_code": "idempotency_conflict"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        def execute_request() -> tuple[dict, int]:
+            from shopman.shop.services import customer_contact
+
+            try:
+                customer_contact.request_contact(order)
+            except customer_contact.ContactRequestUnavailable:
+                return (
+                    {
+                        "detail": "Este pedido não tem uma avaliação que peça contato.",
+                        "error_code": "contact_request_not_applicable",
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+            order.refresh_from_db()
+            response = OrderTrackingSerializer(_tracking_payload(order))
+            return dict(response.data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=remote_mutations.mutation_scope("order-contact-request", ref),
+                key=key,
+                fingerprint=remote_mutations.mutation_fingerprint({"order_ref": ref}),
+                execute=execute_request,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "O pedido de contato já está sendo registrado.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except remote_mutations.RemoteMutationConflict:
+            return Response(
+                {
+                    "detail": "Esta tentativa pertence a outra solicitação. Atualize e tente novamente.",
+                    "error_code": "idempotency_conflict",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
         summary="Rate completed order by ref",
         responses={
             200: OrderTrackingSerializer,

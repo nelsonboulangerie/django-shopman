@@ -676,6 +676,16 @@ def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
         stock.fulfill(hold_id, quantity=qty, kind=Move.Kind.SELL)
         return {"success": True, "error_code": None, "message": None}
     except StockError as e:
+        if getattr(e, "code", None) == "INVALID_STATUS":
+            # Baixa concorrente do MESMO pedido (on_paid e on_accepted no
+            # mesmo instante, sweep re-despachando): a outra chamada baixou
+            # entre a leitura acima e a trava do Stockman. Já está feito, e é
+            # sucesso; o alerta ``stock_fulfill_failed`` mandaria o operador
+            # contar e "corrigir" um estoque que está certo.
+            hold.refresh_from_db(fields=["status"])
+            if hold.status == HoldStatus.FULFILLED:
+                logger.info("fulfill_hold: %s já baixado por chamada concorrente", hold_id)
+                return {"success": True, "error_code": None, "message": None}
         return {
             "success": False,
             "error_code": e.code if hasattr(e, "code") else "fulfill_failed",

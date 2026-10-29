@@ -215,7 +215,7 @@ test("relatório populado mantém os controles compostos com alvo de 32 px", asy
   await expect(page.getByText("Exportação cancelada.", { exact: true })).toBeVisible();
 });
 
-test("Fechamento abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
+test("Finalização abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
   test.skip(
     Boolean(testInfo.project.metadata.board) ||
       testInfo.project.name === "chromium-mobile-manager",
@@ -286,7 +286,7 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
 for (const { route, endpoint, offset } of [
   { route: "/", endpoint: "/production/?", offset: 2 },
   { route: "/board", endpoint: "/production/forecast/?", offset: 2 },
-  // O Fechamento não anda para o futuro (não há lote para fechar): o dia é atrás.
+  // A Finalização não anda para o futuro (não há lote para fechar): o dia é atrás.
   { route: "/close", endpoint: "/production/qc/?", offset: -2 },
 ]) {
   test(`${route} usa o controle de período canônico sem depender de showPicker`, async ({

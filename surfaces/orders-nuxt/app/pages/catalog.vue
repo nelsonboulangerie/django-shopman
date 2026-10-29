@@ -33,6 +33,7 @@ import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bu
 import { filterBarActiveFilters } from "../../../operator-kit/app/presentation/filterBar";
 import type {
   AssistableField,
+  BulkCellsResponse,
   CatalogRowProjection,
   BulkCell,
   CatalogOrder,
@@ -559,7 +560,7 @@ watchEffect(() => {
   if (!bulkSurface.value && surfaces.value.length)
     bulkSurface.value = surfaces.value[0]!.ref;
 });
-// Feed só pausa/reativa em lote — sem publicar/reprecificar (não transaciona).
+// Feed pausa e oculta em lote como o canal, mas não reprecifica (não transaciona).
 const bulkSurfaceIsFeed = computed(() => {
   const s = surfaceByRef.value.get(bulkSurface.value);
   return !!s && !s.transactional;
@@ -650,8 +651,8 @@ function publicationState(value: Record<string, boolean>) {
 const priceOpen = ref(false);
 // A barra de seleção (OperatorBulkBar): "N selecionados | Canal | Pausar/Ativar |
 // Ocultar/Exibir | Preço | ×" (dono, 09/10/2026). Os pares opostos são um grupo só,
-// com o mesmo peso. Feed só pausa e reativa (não transaciona): sem Ocultar/Exibir nem
-// Preço. A barra existe em dois lugares (toolbar na mesa, base abaixo do `lg`); o
+// com o mesmo peso. Feed pausa e oculta como o canal, mas não transaciona: sem Preço.
+// A barra existe em dois lugares (toolbar na mesa, base abaixo do `lg`); o
 // painel do preço abre só no da largura da vez, senão abririam os dois.
 const { belowLg: bulkAtBase } = useScreen();
 const [DefineBulkPrice, ReuseBulkPrice] = createReusableTemplate();
@@ -673,23 +674,23 @@ function bulkItems(placement: "toolbar" | "base"): OperatorBulkItem[] {
         onSelect: () => bulk({ is_sellable: true }),
       },
     ],
+    [
+      {
+        label: "Ocultar",
+        icon: "i-lucide-eye-off",
+        disabled: busy,
+        onSelect: () => bulk({ is_published: false }),
+      },
+      {
+        label: "Exibir",
+        icon: "i-lucide-eye",
+        disabled: busy,
+        onSelect: () => bulk({ is_published: true }),
+      },
+    ],
     ...(bulkSurfaceIsFeed.value
       ? []
       : [
-          [
-            {
-              label: "Ocultar",
-              icon: "i-lucide-eye-off",
-              disabled: busy,
-              onSelect: () => bulk({ is_published: false }),
-            },
-            {
-              label: "Exibir",
-              icon: "i-lucide-eye",
-              disabled: busy,
-              onSelect: () => bulk({ is_published: true }),
-            },
-          ],
           {
             label: "Preço…",
             icon: "i-lucide-tag",
@@ -801,7 +802,7 @@ const headerMenuItems = computed(() => [
       onSelect: () => refresh(),
     },
     {
-      label: "Exportar CSV",
+      label: "Exportar esta página em CSV",
       icon: "i-lucide-download",
       onSelect: exportCatalog,
     },
@@ -1341,6 +1342,7 @@ async function applyImportCsv() {
 }
 // Tabelão: o lote inteiro numa ida. O recibo linha a linha volta no toast/erro.
 const bulkGridOpen = ref(false);
+const bulkCellsReceipt = ref<BulkCellsResponse | null>(null);
 const bulkArchiveReceipt = ref<ProductArchiveReceipt | null>(null);
 // (c) "Só compro (insumo)": não cria Product; conduz ao cadastro de compra.
 function goPurchase() {
@@ -1353,8 +1355,12 @@ function goPurchase() {
 }
 
 async function saveBulkCells(cells: BulkCell[]) {
+  bulkCellsReceipt.value = null;
   const result = await saveCells(cells);
-  if (result) bulkGridOpen.value = false;
+  if (!result) return;
+  bulkCellsReceipt.value = result;
+  if (!result.conflicts.length && !result.errors.length)
+    bulkGridOpen.value = false;
 }
 
 async function setBulkActive(
@@ -2106,7 +2112,7 @@ useHead({ title: "Catálogo" });
                   >{{ cell.pause_audit }}</span
                 >
 
-                <!-- Feed não vende: sem divisória nem preço — só a pausa por item. -->
+                <!-- Feed não vende: sem divisória nem preço. Ocultar fica na barra de seleção. -->
                 <template v-if="isCellTransactional(cell)">
                   <!-- divisória: deixa claro que toggle e preço são controles distintos -->
                   <NuxtSeparator orientation="vertical" class="h-5" />
@@ -2394,12 +2400,14 @@ useHead({ title: "Catálogo" });
       :surfaces="surfaces"
       :busy="isBusy('catalog:cells')"
       :error="errorMsg"
+      :receipt="bulkCellsReceipt"
       :archive-busy="isBusy('catalog:products-active')"
       :archive-receipt="bulkArchiveReceipt"
       @update:open="
         (value) => {
           if (!value) {
             bulkGridOpen = false;
+            bulkCellsReceipt = null;
             bulkArchiveReceipt = null;
           }
         }
@@ -2419,7 +2427,7 @@ useHead({ title: "Catálogo" });
         update: 'atualizado(s)',
         skip: 'sem mudança',
       }"
-      description="O arquivo tem as colunas do export. Use ponto e vírgula e vírgula decimal."
+      description="Exporte esta página, edite Produto, Preço, Publicado ou À venda e importe o mesmo arquivo. Coleção e canais servem apenas como referência."
       :preview-busy="importPreviewBusy"
       :busy="isBusy('catalog:product-import')"
       :error="errorMsg"

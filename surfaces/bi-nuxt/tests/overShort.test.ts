@@ -265,12 +265,13 @@ describe("as outras respostas", () => {
 });
 
 describe("seções do rail", () => {
-  it("oito leituras, com os ícones da prévia", () => {
+  it("nove leituras, com os ícones da prévia", () => {
     expect(BI_SECTIONS.map((s) => s.label)).toEqual([
       "Produção",
       "Vendas",
       "Caixa",
       "Clientes",
+      "Entregas",
       "Perfis",
       "Explorar",
       "Projeção",
@@ -355,13 +356,14 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     expect(carryContext({ summary: { short: 0, over: 1, right: 0 } } as never).value).toBe("1 produto");
   });
 
-  it("as oito leituras seguem na casca da suíte, na mesma ordem e com a janela na query", () => {
+  it("as nove leituras seguem na casca da suíte, na mesma ordem e com a janela na query", () => {
     const sections = biSections("period=28d");
     expect(sections.map((section) => section.label)).toEqual([
       "Produção",
       "Vendas",
       "Caixa",
       "Clientes",
+      "Entregas",
       "Perfis",
       "Explorar",
       "Projeção",

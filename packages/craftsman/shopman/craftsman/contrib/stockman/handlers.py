@@ -22,7 +22,9 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 
+from django.apps import apps
 from django.dispatch import receiver
+from django.utils import timezone
 from shopman.craftsman.signals import production_changed, production_stock_shortfall
 
 logger = logging.getLogger(__name__)
@@ -44,13 +46,8 @@ STOCK_REALIZED_KEY = "stock_realized_at"
 
 
 def _stockman_available() -> bool:
-    """Check if Stockman is installed."""
-    try:
-        from shopman.stockman.services.movements import StockMovements  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    """Check whether Stockman belongs to this Django installation."""
+    return apps.is_installed("shopman.stockman")
 
 
 @receiver(production_changed)
@@ -394,7 +391,7 @@ def _handle_started(work_order, product_ref, date):
         position=position,
         target_date=date,
         batch=STARTED_BATCH,
-        reason=f"Abertura de lote: {work_order.ref}",
+        reason=f"Produção do lote: {work_order.ref}",
         kind="make",  # Move.Kind.MAKE
     )
     logger.info(
@@ -482,20 +479,60 @@ def consumable_quants(sku: str):
     seja o mesmo. Com ``CONSUME_FROM_SALEABLE_POSITIONS`` ligado, a vitrine
     entra, sempre por último. Dentro de cada grupo: presente antes de futuro.
     """
-    from django.db.models import Case, F, IntegerField, Value, When
+    from datetime import date
+
+    from django.db.models import Case, DateField, F, IntegerField, Value, When
     from shopman.craftsman.conf import get_setting
+    from shopman.stockman.models.batch import Batch
     from shopman.stockman.services.queries import StockQueries
 
     quants = StockQueries.list_quants(sku, include_empty=False)
+    today = timezone.localdate()
+    batches = list(Batch.objects.filter(sku=sku).values_list("ref", "expiry_date"))
+    expired_refs = [ref for ref, expiry in batches if expiry is not None and expiry < today]
+    if expired_refs:
+        quants = quants.exclude(batch__in=expired_refs)
     if not get_setting("CONSUME_FROM_SALEABLE_POSITIONS"):
         quants = quants.exclude(position__is_saleable=True)
+    expiry_order = [
+        When(batch=ref, then=Value(expiry))
+        for ref, expiry in batches
+        if expiry is not None and expiry >= today
+    ]
     return quants.annotate(
         _shop_window=Case(
             When(position__is_saleable=True, then=Value(1)),
             default=Value(0),
             output_field=IntegerField(),
-        )
-    ).order_by("_shop_window", F("target_date").asc(nulls_first=True), "pk")
+        ),
+        _batch_expiry=Case(
+            *expiry_order,
+            default=Value(date.max),
+            output_field=DateField(),
+        ),
+    ).order_by("_shop_window", F("target_date").asc(nulls_first=True), "_batch_expiry", "pk")
+
+
+def _selected_ingredient_batches(work_order) -> dict[str, str]:
+    """Return the exact stock lot explicitly frozen for each ingredient.
+
+    Most ingredients keep using FEFO.  A formula deviation may, however,
+    identify the physical old-dough lot actually weighed by the operator.  In
+    that case consuming another lot would break the authorization trail even
+    if both lots share the same SKU.
+    """
+    snapshot = ((work_order.meta or {}).get("_recipe_snapshot") or {})
+    selected: dict[str, str] = {}
+    for item in snapshot.get("items") or []:
+        sku = str(item.get("input_sku") or "").strip()
+        batch_ref = str((item.get("meta") or {}).get("batch_ref") or "").strip()
+        if not sku or not batch_ref:
+            continue
+        previous = selected.get(sku)
+        if previous and previous != batch_ref:
+            raise ValueError(f"Ingrediente {sku} aponta para dois lotes diferentes.")
+        selected[sku] = batch_ref
+    return selected
 
 
 def _consume_materials(work_order, *, fail_closed: bool):
@@ -524,6 +561,7 @@ def _consume_materials(work_order, *, fail_closed: bool):
     from shopman.stockman.services.movements import StockMovements
 
     shortfalls = []
+    selected_batches = _selected_ingredient_batches(work_order)
     approved_shortage_by_sku: dict[str, Decimal] = {}
     for payload in WorkOrderEvent.objects.filter(
         work_order=work_order,
@@ -544,6 +582,9 @@ def _consume_materials(work_order, *, fail_closed: bool):
             continue
 
         quants = consumable_quants(item.item_ref)
+        selected_batch = selected_batches.get(item.item_ref)
+        if selected_batch:
+            quants = quants.filter(batch=selected_batch)
         for quant in quants:
             if remaining <= 0:
                 break
@@ -951,7 +992,7 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
                 to_position=to_position,
                 from_position=from_position,
                 from_batch=from_batch,
-                reason=f"Fechamento de lote: {work_order.ref}",
+                reason=f"Finalização do lote: {work_order.ref}",
                 to_batch=leg_batch,
                 to_quality_grade_ref=leg_grade_ref,
             )

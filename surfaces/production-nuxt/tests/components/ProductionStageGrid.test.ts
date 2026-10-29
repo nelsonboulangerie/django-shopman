@@ -15,9 +15,9 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 // ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds).
 // Sem runtime Nuxt: reatividade Vue real como globais + os composables stubados com refs
 // que controlamos. Os helpers de presentation (~/presentation) rodam de VERDADE
-// (resolvidos pelo alias). O finish saiu do grid: fechar o lote é o Fechamento
+// (resolvidos pelo alias). O finish saiu do grid: fechar o lote é a Finalização
 // (quiosque de QC), que mira UMA WorkOrder por cartão: o bug do aproveitamento de
-// 200% (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Abertura a
+// 200% (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Produção a
 // ação é uma só — Confirmar, o mesmo verbo do Planejamento (16/09/2026); a
 // diferença para o planejado é
 // rendimento e não pede motivo; o modal de etapas ("Avançar para Fermentação")
@@ -95,6 +95,8 @@ const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
 const boardInitialDateSpy = vi.fn();
 const recipeBookCanView = ref(true);
+const kdsCards = ref<Record<string, unknown>[]>([]);
+const kdsActions = new Map<string, Record<string, unknown>>();
 
 function installGlobals() {
   vi.stubGlobal("computed", computed);
@@ -133,14 +135,17 @@ function installGlobals() {
     };
   });
   vi.stubGlobal("useProductionKds", () => ({
-    cards: ref([]),
+    cards: kdsCards,
     totalCount: ref(0),
     lateCount: ref(0),
     pending: ref(false),
     error: ref(null),
     refresh: vi.fn(),
+    actionFor: (actionRef: string) => kdsActions.get(actionRef),
     isBusy: () => false,
     voidOrder: voidSpy,
+    registerOldDough: vi.fn(),
+    authorizeFormulaDeviation: vi.fn(),
   }));
   vi.stubGlobal("useOvenTimers", () => ({
     arm: vi.fn(),
@@ -223,7 +228,7 @@ const stubs = {
 
 function mountGrid(stage: "plan" | "open" = "open") {
   return mount(ProductionStageGrid, {
-    props: { stage, title: "Abertura" },
+    props: { stage, title: "Produção" },
     global: { stubs, components: { PlanReasonCard } },
   });
 }
@@ -302,6 +307,8 @@ beforeEach(() => {
   boardRefresh.mockClear();
   boardInitialDateSpy.mockClear();
   recipeBookCanView.value = true;
+  kdsCards.value = [];
+  kdsActions.clear();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -639,7 +646,7 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
   });
 });
 
-describe("ProductionStageGrid — Abertura", () => {
+describe("ProductionStageGrid — Produção", () => {
   it("mostra Planejado → Previsto com uma ação só: Confirmar", () => {
     boardRows.value = [
       row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
@@ -842,7 +849,7 @@ describe("ProductionStageGrid — Abertura", () => {
     );
   });
 
-  it("linha aberta tem Ver lançamento e o ⋯ com Cancelar lote… (R12)", async () => {
+  it("linha aberta oferece Detalhes do lote somente no menu", async () => {
     boardRows.value = [
       row({
         started_qty: "30",
@@ -852,25 +859,27 @@ describe("ProductionStageGrid — Abertura", () => {
       }),
     ];
     const w = mountGrid();
-    expect(w.find("[data-open-view-launch]").text()).toBe("Ver lançamento");
+    expect(w.find("[data-open-view-launch]").exists()).toBe(false);
     expect(w.find("[data-open-row-menu]").exists()).toBe(true);
   });
 });
 
 describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", () => {
-  it("abre o lote aberto pelo número e cancela com motivo", async () => {
+  it("abre os detalhes pelo menu e cancela com motivo", async () => {
     boardRows.value = [
       row({
         started_qty: "30",
-        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30" })],
+        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30", started_at_display: "29/10 às 09:17" })],
       }),
     ];
     const w = mountGrid();
 
-    // A linha aberta mostra "Ver lançamento", que abre a conferência (R12).
-    await w.find("[data-open-view-launch]").trigger("click");
-    expect(w.text()).toContain("previstas seguem para o");
-    expect(w.text()).toContain("Fechamento");
+    // O menu abre a conferência sem repetir a ação na linha.
+    await byText(w, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
+    expect(w.get("[data-lot-quantity]").text()).toBe("30 un. previstas");
+    expect(w.get("[data-lot-summary]").text()).toContain("Lote aberto");
+    expect(w.get("[data-lot-summary]").text()).toContain("Aberto em 29/10 às 09:17");
+    expect(w.text()).toContain("Finalização");
     expect(w.text()).not.toContain("Avançar");
 
     await byText(w, "button", "Cancelar lote…")!.trigger("click");
@@ -879,6 +888,48 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
       .setValue("queimou");
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
+  });
+
+  it("oferece Autorizar desvio só à gestão e somente com limites projetados", async () => {
+    boardRows.value = [
+      row({
+        started_qty: "30",
+        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30" })],
+      }),
+    ];
+    kdsCards.value = [
+      {
+        pk: 7,
+        ref: "WO-007",
+        rev: 2,
+        recipe_name: "Pão",
+        formula_limits: [
+          {
+            ingredient_ref: "levain",
+            sku: "LEVAIN",
+            name: "Levain",
+            kind: "ratio",
+            minimum: "18",
+            target: "20",
+            maximum: "22",
+            unit: "%",
+            basis_label: "Farinhas totais",
+            actual: "20",
+            available_batches: [],
+          },
+        ],
+      },
+    ];
+    kdsActions.set("authorize_formula_deviation:7", { enabled: false });
+    let wrapper = mountGrid();
+    await byText(wrapper, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
+    expect(byText(wrapper, "button", "Autorizar desvio")).toBeUndefined();
+
+    wrapper.unmount();
+    kdsActions.set("authorize_formula_deviation:7", { enabled: true });
+    wrapper = mountGrid();
+    await byText(wrapper, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
+    expect(byText(wrapper, "button", "Autorizar desvio")).toBeDefined();
   });
 });
 
@@ -1033,7 +1084,7 @@ describe("ProductionStageGrid — previsto abaixo das encomendas", () => {
 
   function mountWithShortageDialog() {
     return mount(ProductionStageGrid, {
-      props: { stage: "open", title: "Abertura" },
+      props: { stage: "open", title: "Produção" },
       global: {
         stubs: { ...stubs, ShortageDialog: false },
         components: { ShortageDialog },
@@ -1146,7 +1197,7 @@ describe("ProductionStageGrid — Planejamento vazio leva ao livro de receitas",
   });
 });
 
-describe("ProductionStageGrid — menu da linha da Abertura", () => {
+describe("ProductionStageGrid — menu da linha da Produção", () => {
   // O ⋯ (OperatorMoreMenu) e o menu de contexto da linha (NuxtContextMenu, que abre
   // ao segurar a linha no toque ou no clique direito) desenham a MESMA lista.
   function openRows() {
@@ -1182,7 +1233,7 @@ describe("ProductionStageGrid — menu da linha da Abertura", () => {
       context.element.querySelectorAll(':scope > [role="menu"] [role="menuitem"]'),
     ).map((el) => el.textContent?.trim());
 
-    expect(moreItems[0]).toBe("Ver lançamento");
+    expect(moreItems[0]).toBe("Detalhes do lote");
     expect(moreItems).toContain("Confirmar previsto");
     expect(moreItems.at(-1)).toBe("Cancelar lote…");
     expect(contextItems).toEqual(moreItems);

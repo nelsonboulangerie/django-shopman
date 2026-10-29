@@ -48,6 +48,7 @@ from shopman.storefront.presentation import (
     notify_subscribed_skus,
     present_cart_date_mismatch,
 )
+from shopman.storefront.presentation.product_detail import build_product_recommendations
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
     CartMutationNotFound,
@@ -60,7 +61,11 @@ from shopman.storefront.services.cart_mutations import (
 
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
-from .public_cache import PublicEdgeCacheMixin, PublicReadMixin
+from .public_cache import (
+    RECOMMENDATIONS_EDGE_CACHE_CONTROL,
+    PublicEdgeCacheMixin,
+    PublicReadMixin,
+)
 from .serializers import (
     AddCartLineSerializer,
     CartLineNotesSerializer,
@@ -73,6 +78,7 @@ logger = logging.getLogger(__name__)
 
 CART_RATE_LIMIT_RETRY_SECONDS = 30
 REORDER_RATE_LIMIT_RETRY_SECONDS = 60
+COUPON_RATE_LIMIT_RETRY_SECONDS = 60
 
 
 def _unit_count_label(qty: int) -> str:
@@ -442,95 +448,6 @@ class StorefrontSiteView(PublicReadMixin, ServerTimingMixin, APIView):
         return Response({"site": projection_data(site)})
 
 
-def _gone_products() -> dict:
-    """{sku apagado: {"collection": ref, "collection_name": nome}} — o 410 da loja.
-
-    Produto apagado nao deixa rastro no banco, e o 404 mentiria por omissao:
-    diria "nunca existiu" sobre um endereco que o Google indexou. A lapide
-    (``RetiredProduct``) guarda que existiu e de que prateleiras ele saiu.
-
-    Sai a PRIMEIRA coleccao que ainda existe e ainda tem produto publicado. A
-    prateleira vazia nao vira destino: a colecao "Combos" ficou sem nenhum item
-    quando o combo saiu, em 23/09/2026.
-
-    A lapide vale enquanto o SKU nao EXISTIR no catalogo — e existir aqui inclui
-    o despublicado. Codigo pode renascer fora da vitrine (a geleia `GL` sai hoje
-    e volta como dois produtos), e dizer "nao existe mais" sobre algo que existe
-    seria mentira: para esse a resposta e o 404, que e reversivel.
-    """
-    from shopman.shop.models import RetiredProduct
-    from shopman.shop.projections import catalog_context
-    from shopman.shop.projections.exclusive_collections import access_for_tiers
-
-    # Rota pública: a lápide não aponta para coleção exclusiva de grupo (é 404 ao anônimo).
-    escondidas = access_for_tiers(()).hidden
-
-    def primeira_viva(refs):
-        for ref in refs:
-            if ref in escondidas:
-                continue
-            colecao = catalog_context.get_active_collection(ref)
-            if colecao is None:
-                continue
-            if catalog_context.filter_by_collection(catalog_context.published_products(), ref).exists():
-                return ref, colecao.name
-        return "", ""
-
-    existentes = frozenset(catalog_context.products_queryset().values_list("sku", flat=True))
-    saida = {}
-    for lapide in RetiredProduct.objects.all():
-        if lapide.sku in existentes:
-            continue
-        ref, nome = primeira_viva(lapide.refs)
-        saida[lapide.sku] = {"collection": ref, "collection_name": nome}
-    return saida
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=["storefront"],
-        summary="Retired product codes and where they went",
-        responses={200: OpenApiResponse(description="{'redirects': {sku aposentado: sku de hoje}}")},
-    ),
-)
-class StorefrontSkuRedirectsView(ServerTimingMixin, APIView):
-    """GET /api/v1/storefront/sku-redirects/ — o que a loja precisa para dar 301.
-
-    A URL do produto é o SKU, e o catálogo trocou de código duas vezes
-    (``CROISSANT`` → ``CT`` → ``CRO``). Sem este mapa, endereço que o Google
-    indexou vira 404 e a página recomeça do zero na busca.
-
-    Só sai o código que chega a produto VIVO (``retired_skus``): quem não chega
-    não tem destino honesto, e mandar a pessoa para outro 404 é pior que dizer
-    que não existe.
-
-    Público e sem sessão, como o resto do que a loja mostra a quem não entrou. O
-    ``Cache-Control`` é curto de propósito: rename é raro, mas quando acontece a
-    loja tem de acompanhar no mesmo dia.
-    """
-
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def get(self, request):
-        from shopman.shop.projections import catalog_context
-        from shopman.shop.services.sku_history import retired_skus
-
-        # "Existe" para a LOJA e "existe" para o catalogo nao sao a mesma coisa:
-        # produto despublicado continua no catalogo (o `MIB` saiu da vitrine em
-        # 23/09/2026 e fica para a encomenda do restaurante), mas a loja responde
-        # 404 nele. Passar o catalogo inteiro como destino mandaria `MINI-BAGUETE`
-        # para o `MIB`, que e 404 — um 301 para lugar nenhum, pior que o 404 do
-        # comeco. O destino de um 301 da loja tem de ser pagina que a loja mostra.
-        published = frozenset(catalog_context.published_products().values_list("sku", flat=True))
-        response = Response({
-            "redirects": retired_skus(published),
-            "gone": _gone_products(),
-        })
-        response["Cache-Control"] = "public, max-age=300"
-        return response
-
-
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
@@ -669,6 +586,40 @@ class StorefrontProductView(ServerTimingMixin, APIView):
             "product": projection_data(product),
             "cart": _cart_payload(request),
         })
+
+
+class StorefrontProductRecommendationsView(ServerTimingMixin, APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, sku: str):
+        recommendations = build_product_recommendations(
+            sku=sku, channel_ref=STOREFRONT_CHANNEL_REF, request=request,
+        )
+        if recommendations is None:
+            return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"recommendations": projection_data(recommendations)})
+
+
+class StorefrontPublicProductRecommendationsView(
+    PublicEdgeCacheMixin, StorefrontProductRecommendationsView
+):
+    """GET /api/v1/storefront/public/products/{sku}/recommendations/ — cacheável.
+
+    A gêmea existe porque este é o ÚNICO request que a PDP faz depois do SSR, e
+    ele pagava TTFB inteiro (~0,72 s medidos) para o mesmo corpo que todo visitante
+    anônimo recebe: o rail mostra o que se parece com o produto, e para quem não
+    tem sessão o corpo é idêntico por construção. Sem cookie, a borda serve a
+    seção por 60 s (``RECOMMENDATIONS_EDGE_CACHE_CONTROL``).
+
+    O que é pessoal (favorito, quantidade na sacola) não se perde: o request
+    anônimo já vem com ``is_favorite=false`` e ``qty_in_cart=0``, e o cliente
+    sobrescreve os dois a partir do estado que recebeu no shell. Quem tem sessão
+    continua na rota privada de sempre: o BFF só manda para a gêmea o GET sem
+    cookie de sessão (``djangoProxy.ts``).
+    """
+
+    edge_cache_control = RECOMMENDATIONS_EDGE_CACHE_CONTROL
 
 
 @extend_schema_view(
@@ -967,19 +918,51 @@ class CartCouponView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
+    # O balde próprio abaixo vale para anônimo E logado; o throttle anônimo
+    # padrão não somaria nada além disso.
+    throttle_classes = []
 
     ERROR_MESSAGES = {
         "empty_code": "Informe o código do cupom.",
         "no_cart": "Sacola vazia.",
-        "invalid_coupon": "Cupom não encontrado.",
-        "coupon_exhausted": "Este cupom já foi utilizado.",
-        "coupon_expired": "Cupom expirado.",
-        "coupon_wrong_channel": "Este cupom não vale nesta loja.",
-        "coupon_not_eligible": "Este cupom não está disponível para a sua conta.",
     }
+    #: Uma resposta só para todo cupom recusado (laudo S8, 23/10). Dizer "não
+    #: encontrado", "já utilizado", "expirado" ou "não vale para a sua conta" era
+    #: um oráculo: separava código que existe de código inventado, e permitia
+    #: varrer a base de cupons. O motivo real fica no log, não na resposta.
+    REJECTED_CODE = "coupon_rejected"
+    REJECTED_MESSAGE = "Não foi possível usar este cupom nesta compra."
+    #: Balde próprio, por conta logada ou por IP: conta só o cupom RECUSADO. Quem
+    #: aplica o cupom que recebeu nunca esbarra nele; quem chuta códigos para na
+    #: décima recusa do minuto.
+    RATE_LIMIT = "10/m"
+    RATE_LIMIT_GROUP = "storefront-api-coupon-rejected"
+
+    @classmethod
+    def _rejections(cls, request, *, increment: bool):
+        from django.conf import settings
+        from django_ratelimit.core import get_usage
+
+        if not getattr(settings, "RATELIMIT_ENABLE", True):
+            return None
+        return get_usage(
+            request,
+            group=cls.RATE_LIMIT_GROUP,
+            key="user_or_ip",
+            rate=cls.RATE_LIMIT,
+            method="POST",
+            increment=increment,
+        )
 
     def post(self, request):
         from shopman.storefront.cart import CartService
+
+        usage = self._rejections(request, increment=False)
+        if usage and usage["count"] >= usage["limit"]:
+            return _rate_limited_response(
+                detail="Muitas tentativas de cupom. Aguarde um minuto e tente de novo.",
+                retry_after_seconds=COUPON_RATE_LIMIT_RETRY_SECONDS,
+            )
 
         code = clean_text(request.data.get("code")) if hasattr(request, "data") else ""
         if not code:
@@ -993,11 +976,15 @@ class CartCouponView(APIView):
             return Response({"cart": _cart_payload(request)})
 
         error_key = result.get("error", "invalid_coupon")
+        if error_key in self.ERROR_MESSAGES:
+            return Response(
+                {"detail": self.ERROR_MESSAGES[error_key], "error_code": error_key},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        self._rejections(request, increment=True)
+        logger.info("cupom recusado: %s", error_key)
         return Response(
-            {
-                "detail": self.ERROR_MESSAGES.get(error_key, "Cupom inválido."),
-                "error_code": error_key,
-            },
+            {"detail": self.REJECTED_MESSAGE, "error_code": self.REJECTED_CODE},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

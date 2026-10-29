@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Fechamento de um único lote. Os quatro botões são buckets de qualidade
+// Finalização de um único lote. Os quatro botões são buckets de qualidade
 // disjuntos; o grau padrão recebe automaticamente o saldo que não foi lançado
 // nos demais graus nem em Perda.
 import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
@@ -64,9 +64,9 @@ type SheetQuestion =
 // seu nome. A tela pergunta; nunca escreve o motivo pelo operador. A lista
 // curta cobre os casos de sempre e o texto continua editável.
 const CORRECTION_REASONS = [
-  "Defeito visto depois do fechamento",
-  "Contagem errada no fechamento",
-  "Grau ou motivo trocado no fechamento",
+  "Defeito visto depois da finalização",
+  "Contagem errada na finalização",
+  "Grau ou motivo trocado na finalização",
 ] as const;
 
 function quantityOf(group: QcPartitionGroup): number {
@@ -513,7 +513,7 @@ function discardQuestion(action: "leave" | "switch") {
     : {
         title: "Descartar as quantidades e os motivos informados?",
         description:
-          "O lote continua aberto no Fechamento, sem nada do que você digitou.",
+          "O lote continua aberto na Finalização, sem nada do que você digitou.",
         confirmLabel,
       };
 }

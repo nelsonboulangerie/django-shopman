@@ -38,11 +38,16 @@ const emit = defineEmits<{
 // quase a tela inteira, em pé, no celular. Uma foto só perde metade do assunto
 // num dos dois. O `<picture>` deixa o navegador baixar SÓ a que couber, então
 // a segunda não custa peso.
+//
+// A versão do celular tem teto de ~120 KB (laudo 23/10, U9): a primeira foto é a
+// maior pintura da home no 4G, e 313 KB atrasavam o LCP. As de pé (facade6,
+// facade4) já são só do celular; as quadradas ganharam irmã `-phone`, menor, e a
+// original segue para a faixa larga e para o resto da home.
 const HERO_IMAGES = {
   greeting: { phone: '/img/home/facade6.webp', wide: '/img/home/facade2.webp' },
-  order: { phone: '/img/home/selfservice.webp', wide: '/img/home/selfservice.webp' },
+  order: { phone: '/img/home/selfservice-phone.webp', wide: '/img/home/selfservice.webp' },
   reorder: { phone: '/img/home/facade4.webp', wide: '/img/home/interior.webp' },
-  handmade: { phone: '/img/home/baguette.webp', wide: '/img/home/baguette.webp' }
+  handmade: { phone: '/img/home/baguette-phone.webp', wide: '/img/home/baguette.webp' }
 } as const
 
 const menuTo = computed(() => props.primaryAction?.href || '/menu')

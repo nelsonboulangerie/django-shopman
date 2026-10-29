@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// Conferência (/recipes/review) — a passada do padeiro, ficha por ficha
+// Receitas a conferir (/recipes/review) — a passada do padeiro, ficha por ficha
 // (WP-RECEITAS-DA-CASA F2). Só aparecem as receitas cuja versão em uso ninguém
 // da casa conferiu, na ordem do que mais sai. A massa da peça vem em destaque:
-// foi ali que as seis fichas erraram em 22/09. "Está certa" assina a
-// conferência; "Corrigir" abre a receita para uma nova versão.
+// foi ali que as seis fichas erraram em 22/09. A pessoa abre a ficha técnica,
+// lê o conteúdo e só então registra a conferência na própria receita.
 import { isStale } from "~/presentation/production";
 import { provenanceIcon } from "~/presentation/recipeBook";
 
-useHead({ title: "Conferência de receitas" });
+useHead({ title: "Receitas a conferir" });
 
-const { queue, items, canEdit, forbidden, pending, error, refresh, confirm, busyRef } = useRecipeReview();
+const { queue, items, canEdit, forbidden, pending, error, refresh } = useRecipeReview();
 
 const stale = computed(() => isStale({ error: !!error.value, hasData: items.value.length > 0 }));
 const progress = computed(() => {
@@ -18,21 +18,18 @@ const progress = computed(() => {
   return `${q.confirmed_total} de ${q.recipe_total} conferidas`;
 });
 
-async function onConfirm(ref: string, name: string, versionNumber: number) {
-  if (await confirm(ref, versionNumber)) useSonner.success(`${name}: conferida.`);
-}
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <RecipeHeader title="Conferência" :subtitle="progress" back="/recipes" :pending="pending" @refresh="refresh()" />
+    <RecipeHeader title="Receitas a conferir" :subtitle="progress" back="/recipes" :pending="pending" @refresh="refresh()" />
 
     <section v-if="forbidden" class="grid flex-1 place-items-center p-6 text-center">
       <div class="grid max-w-md gap-2 rounded-md border border-dashed p-10">
         <Icon name="lucide:lock" class="mx-auto size-8 text-muted-foreground" />
         <p class="text-base font-semibold">Área da produção</p>
         <p class="text-sm text-muted-foreground">
-          O inventário de receitas pede uma permissão que este operador não tem. Peça a liberação a quem administra
+          As receitas pedem uma permissão que este operador não tem. Peça a liberação a quem administra
           a loja.
         </p>
       </div>
@@ -62,7 +59,7 @@ async function onConfirm(ref: string, name: string, versionNumber: number) {
 
       <template v-else>
         <p class="mb-3 text-sm text-muted-foreground">
-          Do que mais sai para o que menos sai. Confira a massa primeiro.
+          Do que mais sai para o que menos sai. Abra a ficha técnica e confira ingredientes, rendimento e modo de preparo.
         </p>
         <ol class="grid w-full max-w-3xl grid-cols-1 gap-3" data-review-queue>
           <li v-for="item in items" :key="item.ref" class="min-w-0">
@@ -94,18 +91,10 @@ async function onConfirm(ref: string, name: string, versionNumber: number) {
 
               <div class="flex flex-wrap items-center gap-2 pt-1">
                 <NuxtButton
-                  v-if="canEdit"
-                  icon="i-lucide-check"
-                  label="Está certa"
-                  :loading="busyRef === item.ref"
-                  :disabled="!!busyRef && busyRef !== item.ref"
-                  @click="onConfirm(item.ref, item.name, item.version_number)"
-                />
-                <NuxtButton
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-pencil-line"
-                  :label="canEdit ? 'Corrigir' : 'Abrir'"
+                  :color="canEdit ? 'primary' : 'neutral'"
+                  :variant="canEdit ? 'solid' : 'outline'"
+                  icon="i-lucide-book-open"
+                  label="Revisar receita"
                   :to="`/recipes/${item.ref}?v=${item.version_number}`"
                 />
               </div>

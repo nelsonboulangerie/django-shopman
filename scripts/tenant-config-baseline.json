@@ -1,0 +1,539 @@
+{
+  "_doc": "Baseline da trava de multi-loja (ADR-042). Contagem por arquivo de leituras de configuração por loja: settings = settings.<PREFIXO>; env = os.environ/os.getenv em runtime; settings_env = variável de ambiente por loja lida em config/settings*.py. Só diminui. Regere com: python scripts/check_tenant_config.py --update",
+  "prefixes": [
+    "SHOPMAN_",
+    "EFI",
+    "FOCUS",
+    "STRIPE",
+    "MANYCHAT",
+    "IFOOD",
+    "COMTELE",
+    "MACHINE",
+    "TAON"
+  ],
+  "totals": {
+    "settings": 313,
+    "env": 22,
+    "settings_env": 175
+  },
+  "files": {
+    "config/asgi.py": {
+      "env": 1
+    },
+    "config/gc_tuning.py": {
+      "env": 1
+    },
+    "config/instance_descriptors.py": {
+      "settings": 1
+    },
+    "config/management/commands/purge_synthetic_data.py": {
+      "settings": 1
+    },
+    "config/management/commands/relocate_product_images.py": {
+      "env": 1
+    },
+    "config/management/commands/seed.py": {
+      "settings": 2,
+      "env": 2
+    },
+    "config/media_storage.py": {
+      "env": 1
+    },
+    "config/settings.py": {
+      "settings_env": 174
+    },
+    "config/settings_test.py": {
+      "settings_env": 1
+    },
+    "config/urls.py": {
+      "settings": 1
+    },
+    "config/wsgi.py": {
+      "env": 1
+    },
+    "packages/cashman/shopman/cashman/models/terminal.py": {
+      "settings": 1
+    },
+    "packages/craftsman/shopman/craftsman/conf.py": {
+      "settings": 1
+    },
+    "packages/craftsman/shopman/craftsman/contrib/admin_unfold/admin.py": {
+      "settings": 1
+    },
+    "packages/guestman/shopman/guestman/contrib/consent/service.py": {
+      "settings": 1
+    },
+    "packages/guestman/shopman/guestman/contrib/manychat/resolver.py": {
+      "settings": 11
+    },
+    "packages/guestman/shopman/guestman/contrib/manychat/views.py": {
+      "settings": 1
+    },
+    "packages/watchman/shopman/watchman/expiry.py": {
+      "env": 1
+    },
+    "shopman/backstage/admin/closing.py": {
+      "settings": 1
+    },
+    "shopman/backstage/admin/kds.py": {
+      "settings": 1
+    },
+    "shopman/backstage/admin/navigation.py": {
+      "settings": 6
+    },
+    "shopman/backstage/api/catalog_bindings.py": {
+      "settings": 1
+    },
+    "shopman/backstage/constants.py": {
+      "settings": 1
+    },
+    "shopman/backstage/management/commands/check_integration_drift.py": {
+      "settings": 1
+    },
+    "shopman/backstage/middleware_2fa.py": {
+      "settings": 1
+    },
+    "shopman/backstage/projections/bi_sales.py": {
+      "settings": 2
+    },
+    "shopman/backstage/projections/catalog_bindings.py": {
+      "settings": 2
+    },
+    "shopman/backstage/projections/channel_health.py": {
+      "settings": 4
+    },
+    "shopman/backstage/projections/hub.py": {
+      "settings": 1
+    },
+    "shopman/backstage/projections/hub_queue.py": {
+      "settings": 1
+    },
+    "shopman/backstage/projections/order_queue.py": {
+      "settings": 1
+    },
+    "shopman/backstage/projections/pos.py": {
+      "settings": 2
+    },
+    "shopman/backstage/projections/pos_agent.py": {
+      "settings": 2
+    },
+    "shopman/backstage/services/admin_session.py": {
+      "settings": 2
+    },
+    "shopman/backstage/services/catalog.py": {
+      "settings": 2
+    },
+    "shopman/backstage/services/gateway_smoke.py": {
+      "settings": 3
+    },
+    "shopman/backstage/services/integration_readiness.py": {
+      "settings": 17
+    },
+    "shopman/backstage/services/operator_session.py": {
+      "settings": 2
+    },
+    "shopman/backstage/services/pos.py": {
+      "settings": 2
+    },
+    "shopman/backstage/services/production.py": {
+      "settings": 1
+    },
+    "shopman/backstage/services/purchase.py": {
+      "settings": 3
+    },
+    "shopman/backstage/services/sign_in_audit.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/__init__.py": {
+      "settings": 2
+    },
+    "shopman/shop/adapters/_external.py": {
+      "settings": 2
+    },
+    "shopman/shop/adapters/baskets.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/catalog_projection_google.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/catalog_projection_ifood.py": {
+      "settings": 2
+    },
+    "shopman/shop/adapters/catalog_projection_meta.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/courier_machine.py": {
+      "settings": 2
+    },
+    "shopman/shop/adapters/fiscal_focusnfe.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/marketing_delivery_console.py": {
+      "settings": 3
+    },
+    "shopman/shop/adapters/marketing_delivery_google.py": {
+      "settings": 2
+    },
+    "shopman/shop/adapters/marketing_delivery_meta.py": {
+      "settings": 3
+    },
+    "shopman/shop/adapters/marketing_delivery_tiktok.py": {
+      "settings": 2
+    },
+    "shopman/shop/adapters/marketing_delivery_whatsapp.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/notification_manychat.py": {
+      "settings": 2
+    },
+    "shopman/shop/adapters/notification_sms.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/notification_whatsapp.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/otp_manychat.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/otp_sms_comtele.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/otp_sms_twilio.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/payment_efi.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/payment_mock.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/payment_stripe.py": {
+      "settings": 1
+    },
+    "shopman/shop/adapters/purchase_invoice_nfe.py": {
+      "settings": 2
+    },
+    "shopman/shop/admin/campaign.py": {
+      "settings": 1
+    },
+    "shopman/shop/admin/price_tier.py": {
+      "settings": 1
+    },
+    "shopman/shop/admin/shop.py": {
+      "settings": 2
+    },
+    "shopman/shop/backup/drive.py": {
+      "settings": 2
+    },
+    "shopman/shop/checks.py": {
+      "settings": 31
+    },
+    "shopman/shop/config.py": {
+      "settings": 1
+    },
+    "shopman/shop/environment.py": {
+      "settings": 1
+    },
+    "shopman/shop/eventstream.py": {
+      "settings": 2
+    },
+    "shopman/shop/fiscal.py": {
+      "settings": 1
+    },
+    "shopman/shop/fiscal_intermediary.py": {
+      "settings": 1
+    },
+    "shopman/shop/fiscal_resolvers.py": {
+      "settings": 1
+    },
+    "shopman/shop/handlers/__init__.py": {
+      "settings": 5
+    },
+    "shopman/shop/handlers/campaign.py": {
+      "settings": 1
+    },
+    "shopman/shop/handlers/notification.py": {
+      "settings": 1
+    },
+    "shopman/shop/handlers/notification_push.py": {
+      "settings": 1
+    },
+    "shopman/shop/management/commands/bootstrap_admin.py": {
+      "env": 3
+    },
+    "shopman/shop/management/commands/check_directive_health.py": {
+      "settings": 5
+    },
+    "shopman/shop/management/commands/configure_shop_contact.py": {
+      "env": 4
+    },
+    "shopman/shop/management/commands/efi_webhook.py": {
+      "settings": 3
+    },
+    "shopman/shop/management/commands/machine_register_webhook.py": {
+      "settings": 1
+    },
+    "shopman/shop/management/commands/manychat_flows.py": {
+      "settings": 1
+    },
+    "shopman/shop/management/commands/process_marketing_delivery.py": {
+      "settings": 3
+    },
+    "shopman/shop/management/commands/process_marketing_outbox.py": {
+      "settings": 2
+    },
+    "shopman/shop/management/commands/run_marketing_publication_canary.py": {
+      "settings": 3
+    },
+    "shopman/shop/menuboard_access.py": {
+      "settings": 1
+    },
+    "shopman/shop/middleware.py": {
+      "settings": 6
+    },
+    "shopman/shop/migration_safety.py": {
+      "env": 1
+    },
+    "shopman/shop/models/rules.py": {
+      "settings": 1
+    },
+    "shopman/shop/policies/catalog_identity.py": {
+      "settings": 1
+    },
+    "shopman/shop/pool_liveness.py": {
+      "settings": 1
+    },
+    "shopman/shop/privacy_inventory.py": {
+      "settings": 1
+    },
+    "shopman/shop/projections/order_tracking.py": {
+      "settings": 1
+    },
+    "shopman/shop/realtime.py": {
+      "settings": 1
+    },
+    "shopman/shop/rules/engine.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/auth.py": {
+      "settings": 1,
+      "env": 1
+    },
+    "shopman/shop/services/campaign.py": {
+      "settings": 2
+    },
+    "shopman/shop/services/channel_policy.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/channel_switch.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/courier.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/critical_alerts.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/customer.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/danfe_xml.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/delivery_readiness.py": {
+      "settings": 5
+    },
+    "shopman/shop/services/fiscal.py": {
+      "settings": 3
+    },
+    "shopman/shop/services/fiscal_catalog.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/geocoding.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_auth.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_callbacks.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_cancellation.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_catalog_capture.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_catalog_categories.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_events.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_handshake.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_http.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_merchant.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/ifood_orders.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/manychat_flows.py": {
+      "settings": 3
+    },
+    "shopman/shop/services/manychat_marketing_safety.py": {
+      "settings": 3
+    },
+    "shopman/shop/services/marketing_ai.py": {
+      "settings": 3
+    },
+    "shopman/shop/services/marketing_delivery_ledger.py": {
+      "settings": 2
+    },
+    "shopman/shop/services/marketing_delivery_runtime.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/marketing_media_probe.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/marketing_time.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/marketing_url_policy.py": {
+      "settings": 3
+    },
+    "shopman/shop/services/meta_auth.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/notification.py": {
+      "settings": 2
+    },
+    "shopman/shop/services/operator_links.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/operator_passkey.py": {
+      "settings": 2
+    },
+    "shopman/shop/services/payment.py": {
+      "settings": 6
+    },
+    "shopman/shop/services/pix_policy.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/pos.py": {
+      "settings": 2
+    },
+    "shopman/shop/services/pos_links.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/product_enrichment.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/sku_records.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/staging_autopilot.py": {
+      "settings": 3
+    },
+    "shopman/shop/services/storefront_links.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/substitutes.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/unhandled_errors.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/user_notifications.py": {
+      "settings": 1
+    },
+    "shopman/shop/services/whatsapp_verify.py": {
+      "settings": 1
+    },
+    "shopman/shop/views/admin_host.py": {
+      "settings": 1
+    },
+    "shopman/shop/views/fiscal_danfe.py": {
+      "settings": 1
+    },
+    "shopman/shop/views/health.py": {
+      "settings": 4
+    },
+    "shopman/shop/watchman_infrastructure.py": {
+      "env": 5
+    },
+    "shopman/shop/webhooks/efi.py": {
+      "settings": 1
+    },
+    "shopman/shop/webhooks/ifood.py": {
+      "settings": 1
+    },
+    "shopman/shop/webhooks/ifood_events.py": {
+      "settings": 2
+    },
+    "shopman/shop/webhooks/machine.py": {
+      "settings": 1
+    },
+    "shopman/shop/webhooks/stripe.py": {
+      "settings": 1
+    },
+    "shopman/storefront/checks.py": {
+      "settings": 2
+    },
+    "shopman/storefront/concierge/agent.py": {
+      "settings": 1
+    },
+    "shopman/storefront/concierge/dialogue.py": {
+      "settings": 1
+    },
+    "shopman/storefront/concierge/intent_benchmark.py": {
+      "settings": 1
+    },
+    "shopman/storefront/concierge/intent_pilot.py": {
+      "settings": 1
+    },
+    "shopman/storefront/concierge/intents.py": {
+      "settings": 1
+    },
+    "shopman/storefront/concierge/reply_eval.py": {
+      "settings": 2
+    },
+    "shopman/storefront/concierge/service.py": {
+      "settings": 1
+    },
+    "shopman/storefront/concierge/tools.py": {
+      "settings": 5
+    },
+    "shopman/storefront/concierge/transport.py": {
+      "settings": 1
+    },
+    "shopman/storefront/constants.py": {
+      "settings": 2
+    },
+    "shopman/storefront/continuum.py": {
+      "settings": 1
+    },
+    "shopman/storefront/management/commands/concierge_check.py": {
+      "settings": 2
+    },
+    "shopman/storefront/management/commands/run_intent_pilot.py": {
+      "settings": 1
+    },
+    "shopman/storefront/perf.py": {
+      "settings": 1
+    },
+    "shopman/storefront/presentation/checkout.py": {
+      "settings": 1
+    },
+    "shopman/storefront/presentation/home.py": {
+      "settings": 1
+    },
+    "shopman/storefront/services/account_privacy.py": {
+      "settings": 4
+    }
+  }
+}

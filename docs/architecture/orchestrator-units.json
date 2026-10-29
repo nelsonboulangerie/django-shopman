@@ -1352,7 +1352,8 @@
             "_sender_lock",
             "_record_outcome",
             "_channel_or_feed_active",
-            "_get_projected_item"
+            "_get_projected_item",
+            "display_projected_item"
           ]
         }
       ],
@@ -1363,12 +1364,16 @@
         "offerman",
         "orderman"
       ],
-      "ports": [],
+      "ports": [
+        "shopman.offerman.protocols.projection"
+      ],
       "events": [],
       "directives": [
         "CATALOG_PROJECT_SKU"
       ],
-      "config_surface": [],
+      "config_surface": [
+        "SHOPMAN_STOREFRONT_BASE_URL"
+      ],
       "tests": [
         "shopman/shop/tests/test_handler_entrypoints.py::test_catalog_project_handler_skips_when_no_backend_is_configured"
       ],
@@ -1396,6 +1401,7 @@
             "on_price_changed",
             "on_availability_changed",
             "enqueue_project",
+            "enqueue_display_skus",
             "_enqueue_project"
           ]
         }
@@ -6835,6 +6841,89 @@
       ]
     },
     {
+      "id": "shop.services-customer-contact",
+      "question": "Ouvidoria da avaliação: o cliente que avaliou mal pede que a loja fale com ele?",
+      "owner": "order.rating.contact",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.customer_contact:request_contact",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/customer_contact.py",
+          "symbols": [
+            "REQUESTED_EVENT",
+            "RESOLVED_EVENT",
+            "ALERT_TYPE",
+            "GOOGLE_REVIEW_URL",
+            "ContactRequestUnavailable",
+            "ContactRequestNotOpen",
+            "ContactRequest",
+            "google_review_url",
+            "current",
+            "open_request",
+            "operational_message",
+            "request_contact",
+            "resolve",
+            "_rating",
+            "contact_offered"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_rating_contact_resolve.py::test_resolve_closes_the_case_and_the_alert"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.customer_contact:request_contact"
+      ]
+    },
+    {
+      "id": "rating.contact-offer",
+      "question": "Esta avaliação oferece o contato da ouvidoria?",
+      "owner": "order.rating.contact-offer",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.rating_contact:can_request_contact",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/rating_contact.py",
+          "symbols": [
+            "CONTACT_MAX_RATING",
+            "can_request_contact"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "scripts/tests/test_rating_contact_policy.py::test_rating_contact_truth_table"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.policies.rating_contact:can_request_contact"
+      ]
+    },
+    {
       "id": "shop.services-card-authorization",
       "question": "Cartão autorizado esperando aceite: o prazo que o Stripe dá e quem o vigia?",
       "owner": "payment.card-authorization-deadline",
@@ -7988,6 +8077,44 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-ride-quote",
+      "question": "Quanto custa a corrida com várias paradas, na ordem que ela vai seguir?",
+      "owner": "delivery.courier-ride-quote",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:estimate_for_ride",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:estimate_for_ride"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "estimate_for_ride",
+            "_shop_point",
+            "_handoff_point"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_quote_follows_the_route_the_ride_will_take",
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_quote_needs_every_address_on_the_map"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.services-courier-courier-status",
       "question": "Qual progresso local de entrega corresponde ao status informado pelo entregador?",
       "owner": "delivery.courier.courier.status",
@@ -8113,6 +8240,153 @@
       "out_of_extraction": false
     },
     {
+      "id": "delivery.courier-return",
+      "question": "A corrida precisa voltar à loja (retorno) porque o entregador traz dinheiro ou a maquininha?",
+      "owner": "delivery.ride-return",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.courier:needs_return",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:needs_return"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "needs_return"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_service.py::test_ride_asks_return_when_courier_brings_something_back"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-auto-dispatch",
+      "question": "O pronto automático pode chamar o entregador sozinho, ou o pedido leva maquininha ou troco e espera o operador?",
+      "owner": "delivery.ride-auto-dispatch",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:request_auto_dispatch",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:request_auto_dispatch"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "request_auto_dispatch"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_service.py::test_auto_call_on_ready_waits_for_the_operator_when_the_card_machine_goes"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-shared-ride",
+      "question": "Quais pedidos podem ir juntos numa corrida só da TaOn, em que ordem de paradas, e como a corrida chega a cada um?",
+      "owner": "delivery.shared-ride",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.courier:request_group_dispatch",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:request_group_dispatch"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "MAX_RIDE_STOPS",
+            "_route",
+            "_stop",
+            "dispatch_task_filter",
+            "request_group_dispatch",
+            "ride_companions",
+            "ride_orders"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [
+        "COURIER_DISPATCH"
+      ],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_group_ride.py::test_one_ride_carries_every_order_in_route_order",
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_needs_two_orders_and_no_order_called_twice"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "delivery.courier-shared-ride-eligibility",
+      "question": "Este pedido pode entrar numa corrida com outros pedidos, ou leva maquininha, troco ou já tem corrida?",
+      "owner": "delivery.shared-ride-eligibility",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.courier:group_refusal",
+      "authoritative_symbols": [
+        "shopman.shop.services.courier:group_refusal"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/courier.py",
+          "symbols": [
+            "group_refusal"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [
+        "adapter:courier"
+      ],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_courier_group_ride.py::test_ride_takes_an_order_that_takes_the_card_machine"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "delivery.courier-charge-staleness",
       "question": "Quando a instrução de cobrança enviada ao entregador ficou diferente do pagamento atual?",
       "owner": "delivery.handoff-charge-staleness",
@@ -8158,7 +8432,9 @@
           "path": "shopman/shop/services/critical_alerts.py",
           "symbols": [
             "enqueue",
-            "deliver"
+            "deliver",
+            "deliver_now",
+            "deliver_pending"
           ]
         }
       ],
@@ -12262,6 +12538,8 @@
             "EquipmentCustody",
             "equipment_custody",
             "mark_equipment_returned",
+            "_machine_heir",
+            "_hand_machine_over",
             "_holds_device",
             "_stamp_equipment_back",
             "machine_phrase",

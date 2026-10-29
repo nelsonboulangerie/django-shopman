@@ -52,6 +52,7 @@ const OperatorTableStub = defineComponent({
 
 function item(over: Partial<FormulaItemProjection> = {}): FormulaItemProjection {
   return {
+    ref: "ingredient-flour",
     sku: "FARINHA-T65",
     name: "Farinha T65",
     role: "flour",
@@ -62,6 +63,10 @@ function item(over: Partial<FormulaItemProjection> = {}): FormulaItemProjection 
     pct_display: "100%",
     is_anchor: true,
     matched: true,
+    recipe_version_ref: "",
+    composition: "additional",
+    composition_label: "Adicional",
+    quantity_rule_display: "Exata",
     ...over,
   };
 }
@@ -75,21 +80,20 @@ function lens(over: Partial<FormulaLensProjection> = {}): FormulaLensProjection 
     standardized: true,
     anchor_total_display: "1000 g",
     total_mass_display: "1720 g",
-    items: [
+    ingredients: [
       item(),
-      item({ sku: "AGUA", name: "Água", role: "liquid", role_label: "Líquido", quantity_display: "700 g", quantity_g: "700", pct_display: "70%", is_anchor: false }),
-      item({ sku: "", name: "castanha", role: "inclusion", role_label: "Inclusão", quantity_display: "50 g", quantity_g: "50", pct_display: "5%", is_anchor: false, matched: false }),
+      item({ ref: "ingredient-water", sku: "AGUA", name: "Água", role: "liquid", role_label: "Líquido", quantity_display: "700 g", quantity_g: "700", pct_display: "70%", is_anchor: false }),
+      item({ ref: "ingredient-nut", sku: "", name: "castanha", role: "inclusion", role_label: "Inclusão", quantity_display: "50 g", quantity_g: "50", pct_display: "5%", is_anchor: false, matched: false }),
     ],
     final_mix: [],
     final_mix_differs: false,
     bom: [],
     bom_differs: false,
-    parts: [],
     metrics: [
       { code: "hydration", label: "Hidratação", value_display: "70%", low_display: "68%", high_display: "80%", max_display: "", tone: "ok", note: "" },
       { code: "salt", label: "Sal", value_display: "3,0%", low_display: "1,8%", high_display: "2,2%", max_display: "2,5%", tone: "warning", note: "" },
     ],
-    warnings: [{ code: "part_without_formula", message: "O levain ainda não tem fórmula publicada.", tone: "warning" }],
+    warnings: [{ code: "prep_without_formula", message: "O levain ainda não tem fórmula publicada.", tone: "warning" }],
     ...over,
   };
 }
@@ -139,31 +143,33 @@ describe("FormulaLens", () => {
     expect(w.text()).toContain("Como informada");
   });
 
-  it("parts, final mix and BOM appear only when served — and never in compact mode", () => {
+  it("shows recipe-backed ingredients in the unified list; final mix and BOM stay out of compact mode", () => {
     const served = lens({
-      parts: [{ sku: "LEVAIN", entry_ref: "levain", name: "Levain", kind: "preferment", kind_label: "Pré-fermento", flour_pct_display: "20%", quantity_display: "400 g", cap_pct_display: "", has_formula: true }],
+      ingredients: [
+        ...lens().ingredients,
+        item({ ref: "ingredient-levain", sku: "LEVAIN", name: "Levain", recipe_version_ref: "levain@4", composition: "included", composition_label: "Inclusa", quantity_rule_display: "Exata", quantity_display: "400 g", pct_display: "20%", is_anchor: false }),
+      ],
       final_mix: [item({ quantity_display: "800 g" })],
       final_mix_differs: true,
       bom: [item({ sku: "LEVAIN", name: "Levain", quantity_display: "400 g" })],
       bom_differs: true,
     });
     const full = mountLens({ lens: served });
-    expect(full.text()).toContain("Partes");
-    expect(full.text()).toContain("20% da farinha");
+    expect(full.text()).toContain("levain@4");
+    expect(full.text()).toContain("Inclusa");
     expect(full.text()).toContain("Mistura final");
-    expect(full.text()).toContain("Ficha técnica (BOM)");
+    expect(full.text()).toContain("Consumo de insumos");
 
     const compact = mountLens({ lens: served, compact: true });
-    expect(compact.text()).toContain("Partes");
+    expect(compact.text()).toContain("levain@4");
     expect(compact.text()).not.toContain("Mistura final");
     expect(compact.text()).not.toContain("BOM");
 
-    const bare = mountLens({ lens: lens() });
-    expect(bare.text()).not.toContain("Partes");
+    expect(full.text()).not.toContain("Preps");
   });
 
   it("hides the final mix and the sheet when they only repeat the base formula", () => {
-    // Sem partes as três tabelas são a mesma coisa; repeti-las ensina a não ler.
+    // Sem redistribuição as três tabelas são a mesma coisa; repeti-las ensina a não ler.
     const repeated = lens({
       final_mix: [item({ quantity_display: "1000 g" })],
       final_mix_differs: false,
@@ -176,9 +182,9 @@ describe("FormulaLens", () => {
   });
 
   it("never renders a blank screen: empty, pending and error states are explicit", () => {
-    expect(mountLens({ lens: null }).text()).toContain("Sem prévia ainda");
+    expect(mountLens({ lens: null }).text()).toContain("Adicione ingredientes para ver o resumo da fórmula.");
     expect(mountLens({ lens: null, pending: true }).text()).toContain("Calculando…");
     expect(mountLens({ lens: lens(), error: "Não foi possível calcular a prévia." }).text()).toContain("Não foi possível calcular a prévia.");
-    expect(mountLens({ lens: lens({ items: [] }) }).text()).toContain("Nenhum ingrediente ainda.");
+    expect(mountLens({ lens: lens({ ingredients: [] }) }).text()).toContain("Nenhum ingrediente ainda.");
   });
 });

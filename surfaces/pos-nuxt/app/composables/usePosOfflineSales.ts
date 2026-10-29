@@ -15,7 +15,8 @@ let wired = false;
  *
  * No cliente, abre o IndexedDB, carrega o que sobrou de antes (recarregou a tela,
  * reiniciou o dispositivo) e reenvia sozinha: ao voltar a conexão
- * (`useConnectivity().onReconnect`), ao abrir a tela e a cada 30 s enquanto houver
+ * (`useConnectivity().onReconnect`, que conta também a volta do servidor
+ * quando só o link tinha caído), ao abrir a tela e a cada 30 s enquanto houver
  * venda pendente. No servidor (SSR) a fila existe vazia, na memória, e não envia.
  */
 export function usePosOfflineSales() {
@@ -46,7 +47,9 @@ export function usePosOfflineSales() {
             if (queue) queue.state.durable = store.durable;
           })
         : memoryOfflineSaleStore(),
-      send: (body) => action.call(CLOSE_SALE_PATH, { body }),
+      // A MESMA chave do fechamento interrompido: o servidor devolve o pedido se
+      // ele já nasceu. O prazo é o do fechamento (`POS_CLOSE_SALE_TIMEOUT_MS`).
+      send: (body) => action.call(CLOSE_SALE_PATH, { body, timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS }),
       readFailure: (error) => httpError(error),
       withLock: async (run) => {
         const locks = globalThis.navigator?.locks;
@@ -56,7 +59,7 @@ export function usePosOfflineSales() {
     });
     if (client) {
       void queue.load().then(() => {
-        if (globalThis.navigator?.onLine !== false && queue?.pending.value.length) void flushAndTell();
+        if (isOnline.value && queue?.pending.value.length) void flushAndTell();
       });
     }
   }
@@ -71,7 +74,9 @@ export function usePosOfflineSales() {
     setInterval(() => {
       const current = queue;
       if (!current || current.state.sending || !current.pending.value.length) return;
-      if (globalThis.navigator?.onLine === false) return;
+      // Sem conexão (rede OU servidor fora do alcance), quem dispara o envio é a
+      // volta (`onReconnect`, pela sonda do `useReachability`), não o relógio.
+      if (!isOnline.value) return;
       void flushAndTell();
     }, RETRY_EVERY_MS);
   }

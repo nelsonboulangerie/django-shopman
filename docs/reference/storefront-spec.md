@@ -248,7 +248,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   devolvem `is_notify_subscribed` e `stock_alert_noted`; falha de leitura (disponibilidade,
   consentimento, inscrição) salva o favorito, não cria aviso e é relatada em `logger.warning`.
 - **WP-5 — Preferência alimentar.** Aviso dietético (badge) + filtro "só compatível"; conservador.
-- **WP-6 — "Talvez você também goste".** cross_sell via `related_skus` (já existia).
+- **WP-6 — "Talvez você também goste".** cross_sell via `related_products` (já existia).
 - **WP-7 — Alérgenos/dieta via Recipe/BOM.** Derivados da receita (`aggregate_dietary_from_recipe`),
   não digitados; ADR-008 destravado.
 - **WP-8 — Gate browser-QA Omotenashi** (loja Nuxt + operador Django) de volta no CI (workflow dedicado).

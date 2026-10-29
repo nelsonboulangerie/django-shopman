@@ -1,4 +1,4 @@
-import type { CatalogItemProjection, ProductDetailProjection, ProductNutritionProjection } from '~/types/shopman'
+import type { CatalogItemProjection, ProductDetailProjection, ProductRecommendationsProjection, ProductNutritionProjection } from '~/types/shopman'
 
 // Transforms puros da PDP: descrição sem eco, tabela nutricional com %VD e
 // a lista "Veja também" (cross_sell por keywords compartilhadas).
@@ -42,8 +42,24 @@ export function galleryImages (product: Pick<ProductDetailProjection, 'image_url
   return unique.length > 1 ? unique : []
 }
 
-export function crossSellItems (product: Pick<ProductDetailProjection, 'cross_sell' | 'sku'>, limit = 4): CatalogItemProjection[] {
-  return (product.cross_sell || [])
+// O rail mostra no máximo quatro cards: o servidor corta em 4 e o cliente corta
+// de novo aqui. O número é UM só porque o placeholder de carregamento reserva
+// exatamente essa altura: se o teto subir no servidor, a reserva sobe junto.
+export const CROSS_SELL_LIMIT = 4
+
+// Quanto a seção de sugestões antecipa a leitura antes de entrar na viewport.
+//
+// 0px é o contrato literal: o request parte quando a seção aparece, não antes.
+// Com 240px (o valor anterior) o pedido partia entre 1,07 s e 1,73 s com
+// scrollY=0 numa viewport de 390x844: o "lazy" não adiava nada no mobile e a
+// PDP pagava dois TTFB em série (~0,78 s do SSR + ~0,72 s do rail). Folga maior
+// não compra nada aqui: o rail fica no pé da página, depois do conteúdo que
+// decide a compra (preço, opções, adicionar), e a reserva de altura já evita o
+// pulo enquanto a resposta não chega.
+export const RECOMMENDATIONS_ROOT_MARGIN = '0px'
+
+export function crossSellItems (product: Pick<ProductRecommendationsProjection, 'items' | 'sku'>, limit = CROSS_SELL_LIMIT): CatalogItemProjection[] {
+  return (product.items || [])
     .filter(item => item.sku !== product.sku)
     .slice(0, limit)
 }

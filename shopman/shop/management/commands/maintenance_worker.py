@@ -35,6 +35,10 @@ manutenção num loop (default: a cada 5 minutos):
   run_alias_benchmark       — placar semanal do de-para de produto (B.I.)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
+Cada tarefa tem prazo (``COMMAND_TIMEOUT_SECONDS``, com exceções em
+``COMMAND_TIMEOUTS``): a que estoura é interrompida, registrada como erro, e o
+ciclo segue. Em loop, um watchdog encerra o processo (código diferente de 0) se
+nem o prazo conseguir interromper a tarefa, para a DO reiniciar o componente.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
 
 Uso:
@@ -46,11 +50,17 @@ Uso:
 from __future__ import annotations
 
 import logging
+import signal
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from time import monotonic as _monotonic
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
-from django.db import close_old_connections
+from django.db import close_old_connections, connections
+from shopman.orderman.management.commands.process_directives import Watchdog
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +93,10 @@ MAINTENANCE_COMMANDS = (
     # Logo depois de liberar reservas: reserva que expira sai por update em
     # massa, sem signal, então é aqui que a volta do produto é percebida.
     "reconcile_shelf_outages",
+    # Rede de segurança do envio ao Google e à Meta: reenvia o SKU cujo último
+    # envio passou de 24h (o Google expira produto sem reenvio em 30 dias) e retira
+    # o que saiu do canal. Sem envio ligado, volta calado; a cadência é do comando.
+    "sync_platform_catalogs",
     # O expediente do dia que terminou vira denominador congelado: sem isso,
     # mexer no horário da loja reescreveria as métricas do passado.
     "stamp_business_days",
@@ -242,6 +256,59 @@ MAINTENANCE_COMMANDS = (
 
 MAINTENANCE_WORKER = "maintenance_worker"
 
+#: Prazo de cada tarefa do ciclo (O5 do laudo de 23/10). Antes, uma tarefa
+#: pendurada (HTTP sem timeout, lock no banco) congelava as ~45 do ciclo e o
+#: heartbeat junto, sem nada cair. O prazo é largo: as tarefas comuns levam
+#: segundos; ele existe para "nunca", não para "lento".
+COMMAND_TIMEOUT_SECONDS = 300
+#: Tarefas que carregam a própria janela noturna e fazem trabalho de minutos.
+COMMAND_TIMEOUTS = {
+    "compute_product_affinity": 900,
+    "recalculate_customer_insights": 900,
+}
+#: Folga do watchdog sobre o prazo de cada passo: se o prazo da tarefa não
+#: conseguiu interrompê-la (preso em código C que não devolve o controle), o
+#: processo sai e a DO o reinicia.
+WATCHDOG_GRACE_SECONDS = 120
+
+
+class CommandTimedOut(BaseException):
+    """Prazo da tarefa estourado.
+
+    Deriva de ``BaseException`` de propósito: um ``except Exception`` dentro da
+    tarefa não pode engolir o prazo e continuar rodando.
+    """
+
+
+@contextmanager
+def _time_limit(seconds: float) -> Iterator[None]:
+    """Interrompe o bloco com ``CommandTimedOut`` depois de ``seconds``.
+
+    ``SIGALRM`` na thread principal: interrompe espera de rede e de banco (o
+    psycopg devolve o controle ao Python no sinal), sem thread paralela segurando
+    conexão. Fora da thread principal (ou sem ``setitimer``) não há prazo, e o
+    watchdog continua de guarda. Um timer que já estava armado (por exemplo o do
+    pytest-timeout) é rearmado com o que lhe restava.
+    """
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def _on_alarm(signum, frame):
+        raise CommandTimedOut(seconds)
+
+    previous_handler = signal.signal(signal.SIGALRM, _on_alarm)
+    old_delay, old_interval = signal.setitimer(signal.ITIMER_REAL, seconds)
+    started = _monotonic()
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if old_delay:
+            remaining = max(old_delay - (_monotonic() - started), 0.001)
+            signal.setitimer(signal.ITIMER_REAL, remaining, old_interval)
+
 #: Comandos cuja divergência volta IGUAL a cada ciclo até alguém resolver, e que
 #: gritam SOZINHOS, uma vez, quando a divergência nasce. O
 #: `reconcile_financial_day` re-reconcilia ontem a cada 5 min e, enquanto a
@@ -265,9 +332,25 @@ class Command(BaseCommand):
         parser.add_argument("--interval", type=int, default=300, help="Segundos entre ciclos (default 300).")
         parser.add_argument("--once", action="store_true", help="Roda um único ciclo e sai.")
 
+    _watchdog: Watchdog | None = None
+
+    def _alive(self, within_seconds: float) -> None:
+        if self._watchdog is not None:
+            self._watchdog.feed(within_seconds)
+
     def handle(self, *args, **options):
         interval = max(30, int(options["interval"]))
         once = bool(options["once"])
+        if not once:
+            self._watchdog = Watchdog(MAINTENANCE_WORKER).start()
+        try:
+            self._loop(interval, once)
+        finally:
+            if self._watchdog is not None:
+                self._watchdog.stop()
+                self._watchdog = None
+
+    def _loop(self, interval: int, once: bool) -> None:
         while True:
             # Um ciclo NUNCA derruba o worker. Durante o sleep ocioso (default 5
             # min) a conexão de banco/cache é reciclada pelo pooler; se a primeira
@@ -289,6 +372,7 @@ class Command(BaseCommand):
             elapsed = time.monotonic() - started
             remaining = interval - elapsed
             if remaining > 0:
+                self._alive(remaining + WATCHDOG_GRACE_SECONDS)
                 time.sleep(remaining)
             else:
                 # Ciclo mais lento que o intervalo: não dormir nada, e dizer. Silêncio
@@ -306,6 +390,7 @@ class Command(BaseCommand):
         # Postgres. Após o sleep ela já passou do CONN_MAX_AGE e/ou foi derrubada
         # pelo pooler (PgBouncer). Sem este close, TODA query do ciclo falharia
         # até um restart — a manutenção viraria no-op silencioso.
+        self._alive(COMMAND_TIMEOUT_SECONDS + WATCHDOG_GRACE_SECONDS)
         close_old_connections()
         worker_heartbeat.beat(MAINTENANCE_WORKER)
         for entrada in MAINTENANCE_COMMANDS:
@@ -313,11 +398,24 @@ class Command(BaseCommand):
             # opção — o `call_command` aceita as duas formas, e assim não é
             # preciso um comando-embrulho só para passar uma flag.
             command, kwargs = entrada if isinstance(entrada, tuple) else (entrada, {})
+            timeout = COMMAND_TIMEOUTS.get(command, COMMAND_TIMEOUT_SECONDS)
+            self._alive(timeout + WATCHDOG_GRACE_SECONDS)
             try:
-                if command == "process_marketing_outbox":
-                    call_command(command, quiet_disabled=True, **kwargs)
-                else:
-                    call_command(command, **kwargs)
+                with _time_limit(timeout):
+                    if command == "process_marketing_outbox":
+                        call_command(command, quiet_disabled=True, **kwargs)
+                    else:
+                        call_command(command, **kwargs)
+            except CommandTimedOut:
+                # Falha observável (Sentry pega o error): o nome e o prazo dizem
+                # qual tarefa não dá conta. A conexão pode ter ficado no meio de
+                # uma consulta; fechar faz a próxima tarefa reconectar limpo.
+                logger.error(
+                    "maintenance_worker: %s estourou o prazo de %ds e foi interrompido "
+                    "(ciclo continua)",
+                    command, timeout,
+                )
+                connections.close_all()
             except CommandError as exc:
                 if command in DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO:
                     logger.warning(

@@ -28,7 +28,6 @@ export type {
   FormulaItemProjection,
   FormulaLensProjection,
   FormulaMetricProjection,
-  FormulaPartProjection,
   FormulaWarningProjection,
   ExecutionSheetProjection,
   IngredientOptionProjection,
@@ -95,8 +94,6 @@ export type IngredientRole =
 
 export type FormulaUnit = "g" | "kg" | "ml" | "L" | "un";
 
-export type PartKind = "preferment" | "autolyse" | "soaker" | "old_dough";
-
 export type YieldUnit = "kg" | "g" | "un" | "L" | "ml";
 
 /** `RecipeUsageProjection.bake_loss_basis`: "" = receita sem ficha ativa. */
@@ -118,12 +115,17 @@ export interface FormulaAnchor {
 }
 
 export interface FormulaItem {
+  /** Identidade estável da participação; SKU pode se repetir na mesma fórmula. */
+  ref: string;
   /** "" = ingrediente ainda não casado com insumo (permitido em rascunho). */
   sku: string;
   name: string;
   role: IngredientRole;
-  quantity: number;
-  unit: FormulaUnit;
+  quantity: FormulaQuantity;
+  /** Versão congelada da receita que produz o ingrediente; ausente para insumo simples. */
+  recipe_version_ref?: string;
+  /** Adicional aumenta a fórmula; inclusa redistribui componentes já previstos nela. */
+  composition: "additional" | "included";
   note?: string;
   /** Contagem (`un`) só entra na conta com gramas por unidade. */
   grams_per_unit?: number | null;
@@ -131,25 +133,32 @@ export interface FormulaItem {
   density_g_per_ml?: number | null;
 }
 
-export interface FormulaPart {
+export interface FormulaQuantityBasis {
+  kind: AnchorKind;
   sku?: string;
-  entry_ref?: string;
-  kind: PartKind;
-  /** Âncora `flour`: % da farinha total que passa pela parte. */
-  flour_pct?: number | null;
-  /** Sem âncora `flour`: a quantidade declarada. */
-  quantity?: number | null;
+}
+
+/** O alvo guia o planejamento; mínimo e máximo formam o intervalo admissível. */
+export interface FormulaQuantity {
+  kind: "fixed" | "ratio";
+  minimum: number | null;
+  target: number;
+  maximum: number | null;
   unit?: FormulaUnit;
-  /** Só `old_dough`: teto da fórmula inteira. */
-  cap_pct?: number | null;
+  basis?: FormulaQuantityBasis;
+}
+
+/** Sugestão copiada ao inserir esta receita como ingrediente; nunca é vínculo vivo. */
+export interface IngredientDefaults {
+  quantity: FormulaQuantity;
+  composition: "additional" | "included";
 }
 
 export interface Formula {
   anchor: FormulaAnchor;
   basis_g: number | null;
   standardized: boolean;
-  items: FormulaItem[];
-  parts: FormulaPart[];
+  ingredients: FormulaItem[];
 }
 
 /**
@@ -217,6 +226,7 @@ export interface EntryPatch {
   notes?: string;
   is_active?: boolean;
   external_references?: ExternalReferenceInput[];
+  ingredient_defaults?: IngredientDefaults | null;
   expectedRevision?: string;
 }
 

@@ -18,6 +18,7 @@ from shopman.backstage.permissions import CASH_AUDIT_PERMISSION, can_audit_cash
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_change import build_bi_change
 from shopman.backstage.projections.bi_customers import build_bi_customers
+from shopman.backstage.projections.bi_delivery_cost import build_bi_delivery_cost
 from shopman.backstage.projections.bi_delivery_timing import build_bi_delivery_timing
 from shopman.backstage.projections.bi_explore import (
     AUDIT_ONLY_FAMILIES,
@@ -94,6 +95,24 @@ class BIDeliveryTimingView(_BIBase):
 
     def get(self, request):
         report = build_bi_delivery_timing(
+            date_from=_query_date(request, "date_from"),
+            date_to=_query_date(request, "date_to"),
+        )
+        return _bi_reading(report)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="B.I. delivery cost: what the house pays the courier partner per ride, against the delivery fee charged",
+        responses={200: OpenApiResponse(description="B.I. delivery cost report.")},
+    ),
+)
+class BIDeliveryCostView(_BIBase):
+    """Quanto a casa paga à TaOn pelas entregas, e quanto o frete cobre."""
+
+    def get(self, request):
+        report = build_bi_delivery_cost(
             date_from=_query_date(request, "date_from"),
             date_to=_query_date(request, "date_to"),
         )

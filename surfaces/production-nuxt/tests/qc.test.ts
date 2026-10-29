@@ -78,7 +78,7 @@ describe("a escala", () => {
   });
 });
 
-describe("a âncora do fechamento (o que entrou no forno É o previsto daqui)", () => {
+describe("a âncora da finalização (o que entrou no forno É o previsto daqui)", () => {
   it("sem started, o planejado ancora sozinho", () => {
     expect(ovenAnchor(10, null)).toEqual({ anchor: 10 });
   });

@@ -697,25 +697,45 @@ def refund(
         )
 
     try:
-        cob = _request("GET", f"/v2/cob/{txid}")
+        # O Pix que pagou tem identidade própria (`e2e_id`), gravada no intent
+        # quando o webhook confirmou. Ela é a que a Efí pede para devolver, e
+        # vale mesmo quando a cobrança já não está CONCLUIDA (cobrança removida
+        # depois de um cancelamento, Pix que chegou tarde). O `pix[0]` da
+        # cobrança é só o plano B: com dois Pix na mesma cobrança ele devolvia o
+        # primeiro, não o que o Payman registrou.
+        e2eid = str((intent.gateway_data or {}).get("e2e_id") or "").strip()
+        if e2eid:
+            if amount_q:
+                amount = f"{amount_q / 100:.2f}"
+            else:
+                balance_q = PaymentService.captured_total(intent_ref) - PaymentService.refunded_total(intent_ref)
+                if balance_q <= 0:
+                    return PaymentResult(
+                        success=False,
+                        error_code="already_refunded",
+                        message="Não há saldo do Pix a devolver",
+                    )
+                amount = f"{balance_q / 100:.2f}"
+        else:
+            cob = _request("GET", f"/v2/cob/{txid}")
 
-        if cob.get("status") != "CONCLUIDA":
-            return PaymentResult(
-                success=False,
-                error_code="not_paid",
-                message="Cobrança não foi paga",
-            )
+            if cob.get("status") != "CONCLUIDA":
+                return PaymentResult(
+                    success=False,
+                    error_code="not_paid",
+                    message="Cobrança não foi paga",
+                )
 
-        pix_list = cob.get("pix", [])
-        if not pix_list:
-            return PaymentResult(
-                success=False,
-                error_code="no_payment",
-                message="Pagamento não encontrado",
-            )
+            pix_list = cob.get("pix", [])
+            if not pix_list:
+                return PaymentResult(
+                    success=False,
+                    error_code="no_payment",
+                    message="Pagamento não encontrado",
+                )
 
-        e2eid = pix_list[0].get("endToEndId", "")
-        amount = f"{amount_q / 100:.2f}" if amount_q else cob["valor"]["original"]
+            e2eid = pix_list[0].get("endToEndId", "")
+            amount = f"{amount_q / 100:.2f}" if amount_q else cob["valor"]["original"]
         if idempotency_key:
             dev_id = hashlib.sha256(idempotency_key.encode()).hexdigest()[:35]
         else:

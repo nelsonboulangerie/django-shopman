@@ -38,6 +38,21 @@ export const STOREFRONT_PERMISSIONS_POLICY = [
   'usb=()',
 ].join(', ')
 
+// Documentos HTML que carregam dado de UMA pessoa no SSR (laudo 23/10, U7): o
+// pedido, a conta, a sacola, o checkout, a entrada e o link de acesso. Sem
+// `private, no-store`, um cache compartilhado (borda, proxy corporativo) ou o
+// histórico do navegador num dispositivo emprestado podia servir o pedido de um
+// cliente a outro. O cardápio, a home, o produto e as páginas legais ficam de
+// fora: são públicos e continuam cacheáveis.
+const PERSONAL_DOCUMENT_PREFIXES = ['/pedido', '/conta'] as const
+const PERSONAL_DOCUMENT_PATHS = new Set(['/sacola', '/finalizar', '/entrar', '/a'])
+
+export function isPersonalDocumentPath(pathname: string): boolean {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  if (PERSONAL_DOCUMENT_PATHS.has(path)) return true
+  return PERSONAL_DOCUMENT_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`))
+}
+
 export function storefrontResponseHeaders(secure: boolean, pathname = ''): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Security-Policy': STOREFRONT_CONTENT_SECURITY_POLICY,
@@ -54,6 +69,9 @@ export function storefrontResponseHeaders(secure: boolean, pathname = ''): Recor
     headers['Cache-Control'] = 'private, no-store, max-age=0'
     headers.Pragma = 'no-cache'
     headers['Referrer-Policy'] = 'no-referrer'
+  }
+  if (isPersonalDocumentPath(pathname)) {
+    headers['Cache-Control'] = 'private, no-store'
   }
   if (pathname === '/sw.js') {
     headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'

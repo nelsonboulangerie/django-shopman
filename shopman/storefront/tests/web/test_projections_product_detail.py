@@ -21,6 +21,7 @@ from shopman.storefront.presentation.product_detail import (
     AllergenInfoProjection,
     ConservationInfoProjection,
     ProductDetailProjection,
+    build_product_recommendations,
 )
 
 pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
@@ -476,19 +477,105 @@ class TestCrossSell:
         product.keywords.add("fermentação natural")
         croissant.keywords.add("fermentação natural")
 
-        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        proj = build_product_recommendations(sku=product.sku, channel_ref="web")
         assert proj is not None
-        cross_sell_skus = {item.sku for item in proj.cross_sell}
+        cross_sell_skus = {item.sku for item in proj.items}
         assert croissant.sku in cross_sell_skus
         assert product.sku not in cross_sell_skus  # never recommends itself
         # Título via registro omotenashi (PRODUCT_CROSS_SELL_HEADING) — o
         # operador reescreve no Admin sem tocar na tela.
-        assert proj.cross_sell_heading == "Você também pode gostar"
+        assert proj.heading == "Você também pode gostar"
 
     def test_cross_sell_empty_without_shared_keywords(self, listing, product, croissant):
         _publish_on_listing(listing, product)
         _publish_on_listing(listing, croissant)
         # No keywords → nothing to relate on.
-        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        proj = build_product_recommendations(sku=product.sku, channel_ref="web")
         assert proj is not None
-        assert proj.cross_sell == ()
+        assert proj.items == ()
+
+    def test_main_product_does_not_build_recommendations(self, listing, product, monkeypatch):
+        from shopman.shop.projections import catalog_context
+        _publish_on_listing(listing, product)
+        def forbidden(*args, **kwargs):
+            raise AssertionError("PDP principal não deve ler recomendações")
+        monkeypatch.setattr(catalog_context, "related_products", forbidden)
+        assert build_product_detail(sku=product.sku, channel_ref="web") is not None
+
+    def test_recommendations_require_a_visible_product(self, listing, product):
+        assert build_product_recommendations(sku=product.sku, channel_ref="web") is None
+        _publish_on_listing(listing, product)
+        product.is_published = False
+        product.save(update_fields=["is_published"])
+        assert build_product_recommendations(sku=product.sku, channel_ref="web") is None
+
+    def test_keyword_queries_are_bounded_as_candidates_grow(self, product, django_assert_num_queries):
+        from django.contrib.contenttypes.models import ContentType
+
+        from shopman.shop.projections.catalog_context import related_products
+        ContentType.objects.get_for_model(Product)
+        product.keywords.add("comum", "principal")
+        for index in range(24):
+            candidate = Product.objects.create(
+                sku=f"REC-{index}", name=f"Sugestão {index:02}", base_price_q=500,
+                is_published=True, is_sellable=True,
+            )
+            candidate.keywords.add("comum")
+        with django_assert_num_queries(4):
+            result = related_products(product, limit=6)
+        assert len(result) == 6
+        assert product.sku not in [p.sku for p in result]
+
+    @pytest.mark.parametrize("hidden_count", [0, 1, 3])
+    def test_reuses_selected_products_with_identical_cards(self, listing, product, monkeypatch, hidden_count):
+        from shopman.offerman.service import CatalogService
+
+        from shopman.shop.projections import catalog_context
+        from shopman.storefront.api.projections import projection_data
+        from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+
+        _publish_on_listing(listing, product)
+        product.keywords.add("comum", "principal")
+        for index in range(26):
+            candidate = Product.objects.create(
+                sku=f"REUSE-{index}", name=f"Sugestão {index:02}", base_price_q=500 + index,
+                is_published=index != 3, is_sellable=index != 4,
+            )
+            candidate.keywords.add("comum", *(["principal"] if index % 2 else []))
+            _publish_on_listing(listing, candidate)
+        # Referência anterior: limita os candidatos ANTES de pontuar, e mantém
+        # a ordem natural nos empates. O candidato 25 não pode furar esse limite.
+        keywords = set(product.keywords.names())
+        candidates = CatalogService.search(keywords=list(keywords), limit=24)
+        scored = [
+            (len(keywords & set(p.keywords.names())), p.sku)
+            for p in candidates if p.sku != product.sku
+        ]
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        expected_skus = [sku for score, sku in scored[:6] if score]
+        ListingItem.objects.filter(
+            listing=listing, product__sku__in=expected_skus[:hidden_count],
+        ).update(is_published=False)
+        expected = projection_data(build_catalog_items_for_skus(expected_skus, channel_ref="web")[:4])
+
+        def reread(*args, **kwargs):
+            raise AssertionError("Recomendações não devem reler os produtos selecionados")
+
+        monkeypatch.setattr(catalog_context, "products_by_sku", reread)
+        actual = build_product_recommendations(sku=product.sku, channel_ref="web")
+        assert actual is not None
+        assert [item.sku for item in actual.items] == [item["sku"] for item in expected]
+        assert projection_data(actual.items) == expected
+
+    def test_api_separates_detail_from_recommendations(self, client, listing, product, croissant):
+        _publish_on_listing(listing, product)
+        _publish_on_listing(listing, croissant)
+        product.keywords.add("comum")
+        croissant.keywords.add("comum")
+        response = client.get(f"/api/v1/storefront/products/{product.sku}/")
+        assert response.status_code == 200
+        assert "cross_sell" not in response.json()["product"]
+        response = client.get(f"/api/v1/storefront/products/{product.sku}/recommendations/")
+        assert response.status_code == 200
+        assert [item["sku"] for item in response.json()["recommendations"]["items"]] == [croissant.sku]
+        assert client.get("/api/v1/storefront/products/MISSING/recommendations/").status_code == 404

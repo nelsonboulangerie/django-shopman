@@ -611,8 +611,49 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     assert _paused_skus("tv-salao") == set()
 
 
+def _hidden_skus(ref: str) -> set[str]:
+    channel = Channel.objects.get(ref=ref)
+    return {str(x) for x in ((channel.config or {}).get("display") or {}).get("hidden_skus") or []}
+
+
+def test_feed_cell_hide_routes_to_feed(client, operator, catalog_with_display):
+    """Ocultar a célula grava em config.display.hidden_skus, separado da pausa."""
+    client.force_login(operator)
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_published": False})
+    assert resp.status_code == 200
+    assert resp.json()["is_published"] is False
+    assert resp.json()["is_sellable"] is True
+    assert _hidden_skus("tv-salao") == {"BOLO"}
+    assert _paused_skus("tv-salao") == set()
+
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    bolo_tv = next(
+        c for r in matrix["rows"] if r["sku"] == "BOLO" for c in r["cells"] if c["surface_ref"] == "tv-salao"
+    )
+    assert bolo_tv["is_published"] is False
+    assert bolo_tv["is_sellable"] is True
+    assert bolo_tv["available"] is False
+
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_published": True})
+    assert resp.status_code == 200
+    assert _hidden_skus("tv-salao") == set()
+
+
+def test_feed_bulk_hide(client, operator, catalog_with_display):
+    client.force_login(operator)
+    resp = _post_price_intention(client,
+        BULK_URL,
+        data={"surface_ref": "tv-salao", "skus": ["BOLO"], "is_published": False},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 1
+    assert _hidden_skus("tv-salao") == {"BOLO"}
+    assert _paused_skus("tv-salao") == set()
+
+
 def test_feed_cell_price_rejected(client, operator, catalog_with_display):
-    """Feed não aceita preço/publicação — só pausar/ativar."""
+    """Feed não aceita preço — só pausar/ativar e ocultar/exibir."""
     client.force_login(operator)
     resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "price_q": 100})
     assert resp.status_code == 400

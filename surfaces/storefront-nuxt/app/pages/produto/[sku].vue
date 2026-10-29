@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
-import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
+import { detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -27,33 +27,15 @@ const { data, pending, error, refresh } = await useFetch<ProductResponse>(
 )
 usePageContentPending(pending)
 
-async function missingProductError (missingSku: string) {
-  const retired = await fetchRetiredProduct(apiPath('/api/v1/storefront/sku-redirects/'), missingSku)
-  if (retired) {
-    return createError({
-      statusCode: 410,
-      statusMessage: 'Este item saiu do cardápio',
-      fatal: true,
-      data: retired
-    })
-  }
-  return createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
-}
-
-// SKU inexistente: 404 de verdade (SSR responde 404 + noindex via error.vue),
-// não uma página-fantasma 200 indexável. No cliente a busca é lazy para montar
-// a rota imediatamente; o watcher preserva a mesma semântica quando ela termina.
-// Antes do 404, verificamos se este código já foi um produto nosso (410).
+// Pré-go-live não há redirecionamento de SKU antigo.
 if (import.meta.server && error.value?.statusCode === 404) {
-  throw await missingProductError(sku.value)
+  throw createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true })
 }
-
 if (import.meta.client) {
-  watch(error, async (failure) => {
-    if (failure?.statusCode !== 404) return
-    const missingSku = sku.value
-    const pageError = await missingProductError(missingSku)
-    if (sku.value === missingSku) showError(pageError)
+  watch(error, (failure) => {
+    if (failure?.statusCode === 404) {
+      showError(createError({ statusCode: 404, statusMessage: 'Produto não encontrado', fatal: true }))
+    }
   })
 }
 // Backend fora do ar: 503, nunca 200 com a casca vazia — ver `useContentGuard`.
@@ -112,7 +94,6 @@ function goToSlide (index: number) {
   sliderEl.value?.scrollTo({ left: slideIndex.value * (sliderEl.value?.clientWidth || 0) })
 }
 const nutrition = computed(() => nutritionTable(product.value?.nutrition || null))
-const crossSell = computed(() => product.value ? crossSellItems(product.value) : [])
 
 const canonicalUrl = computed(() => `${requestUrl.origin}${route.path}`)
 // A coleção do produto entra na trilha só quando tem página própria
@@ -421,18 +402,7 @@ useHead({
           </div>
         </article>
 
-        <section v-if="crossSell.length" class="mt-8" data-product-cross-sell>
-          <h2 class="shop-heading">{{ product?.cross_sell_heading || 'Você também pode gostar' }}</h2>
-          <div class="mt-1 grid grid-cols-1 gap-x-8 md:grid-cols-2">
-            <ProductListItem
-              v-for="item in crossSell"
-              :key="item.sku"
-              :item="item"
-              framed
-              class="border-b last:border-b-0 md:[&:nth-last-child(2)]:border-b-0"
-            />
-          </div>
-        </section>
+        <ProductRecommendations :sku="sku" />
 
         <div
           class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"

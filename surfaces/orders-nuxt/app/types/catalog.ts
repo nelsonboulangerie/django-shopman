@@ -593,6 +593,15 @@ export interface ImportPreview {
   changes: ImportPreviewChange[];
   base_revision: string;
 }
+export interface ImportReceipt {
+  ok: boolean;
+  outcome: "applied" | "not_applied";
+  detail?: string;
+  dry_run: boolean;
+  rows: number;
+  totals: Record<string, number>;
+  errors: { row: number; detail: string }[];
+}
 export interface PhotoEnhanceResponse {
   provider: string;
   media_type: string;

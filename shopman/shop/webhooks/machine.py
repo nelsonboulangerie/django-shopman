@@ -131,16 +131,18 @@ class MachineWebhookView(APIView):
             # Chegada ao local, parada finalizada etc.: não é a letra da corrida.
             # A chegada (AP) entra no progresso (na loja antes da coleta, no
             # cliente depois) e pede uma leitura completa já.
-            order = Order.objects.filter(data__courier__id_mch=str(ride_ref)).first()
-            if order is not None and ride_status == "AP":
+            orders = list(Order.objects.filter(data__courier__id_mch=str(ride_ref)).order_by("pk"))
+            if orders and ride_status == "AP":
                 from shopman.shop.services import courier
 
-                courier.record_arrival(order, at=_first(event, ("datetime",)) or None)
-                courier.schedule_sync(order, delay_seconds=0)
+                for order in orders:
+                    courier.record_arrival(order, at=_first(event, ("datetime",)) or None)
+                courier.schedule_sync(orders[0], delay_seconds=0)
             return Response({"status": "ok", "kind": "event", "code": ride_status}, status=http.HTTP_200_OK)
 
-        order = Order.objects.filter(data__courier__id_mch=str(ride_ref)).first()
-        if order is None:
+        # Corrida com várias paradas: o mesmo id em cada pedido dela.
+        orders = list(Order.objects.filter(data__courier__id_mch=str(ride_ref)).order_by("pk"))
+        if not orders:
             logger.warning("machine.webhook: corrida sem pedido id_mch=%s", ride_ref)
             return Response({"status": "ok", "kind": "unknown_ride"}, status=http.HTTP_200_OK)
 
@@ -156,10 +158,22 @@ class MachineWebhookView(APIView):
         try:
             from shopman.shop.services import courier
 
-            courier.apply_status(order, ride_status, source="webhook", details=event)
+            details = event
+            if len(orders) > 1 and ride_status in ("A", "F"):
+                # Corrida com várias paradas: os detalhes (entregador, valor final)
+                # vêm da central UMA vez, não uma consulta por pedido.
+                from shopman.shop.adapters import get_adapter
+
+                adapter = get_adapter("courier")
+                try:
+                    details = {**event, **(adapter.get_details(str(ride_ref)) if adapter else {})}
+                except Exception:  # silêncio-deliberado: cada pedido busca sozinho, como antes
+                    logger.warning("machine.webhook: detalhes da corrida id_mch=%s", ride_ref, exc_info=True)
+            for order in orders:
+                courier.apply_status(order, ride_status, source="webhook", details=details)
             # O aviso traz só a letra; a leitura completa (entregador, previsão
             # de chegada, coleta, viagem) vem da batida, agora, não daqui a 1 min.
-            courier.schedule_sync(order, delay_seconds=0)
+            courier.schedule_sync(orders[0], delay_seconds=0)
             webhook_idempotency.mark_done(
                 claim,
                 response_body={"status": "processed", "id_mch": str(ride_ref), "ride_status": ride_status},

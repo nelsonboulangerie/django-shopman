@@ -305,6 +305,7 @@ class TestDefaultGroupsExist(TestCase):
         self.assertTrue(self._has_perm(g, "view_reports"))
         self.assertTrue(self._has_perm(g, "manage_customers"))
         self.assertTrue(self._has_perm(g, "operate_kds"))
+        self.assertTrue(self._has_perm(g, "change_recipe", "craftsman"))
 
     def test_catalog_admin_group_exists_with_perms(self):
         g = Group.objects.get(name="Admin de Catálogo")

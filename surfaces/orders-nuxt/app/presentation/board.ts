@@ -3,14 +3,23 @@
 // already screen-ready (status_label, timer_class, next_action_label, can_* flags
 // pre-resolved); this layer only derives the view shape, the functional-color tone,
 // and the action affordances. No status arithmetic (the backend owns the lifecycle).
-import type { EquipmentOptionProjection } from "~/generated/ordersContract";
+import type {
+  EquipmentOptionProjection,
+  EquipmentOutProjection,
+  RideCandidateProjection,
+} from "~/generated/ordersContract";
 import type {
   OrderCardProjection,
   OrderTimerClass,
   TwoZoneQueueProjection,
 } from "~/types/orders";
 // A custódia do entregador (troco, maquininha) mora no kit: o PDV chama o mesmo.
-import { freeMachines, moneyInput } from "../../../operator-kit/app/presentation/custody";
+import {
+  freeMachines,
+  machinePhrase,
+  moneyInput,
+} from "../../../operator-kit/app/presentation/custody";
+import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
 
 // ── Status tone, ícone do canal e "fatos numa linha" ──────────────────────
 // Moram no kit (`operator-kit/app/presentation/orderDetail.ts`) porque o detalhe
@@ -792,7 +801,16 @@ export function flattenZones(zones: ZoneView[]): FlatRow[] {
  *  ";" entre colunas e BOM, como a planilha em português lê. */
 export function rowsToCsv(rows: FlatRow[]): string {
   return readingCsvText({
-    header: ["Código", "Situação", "Canal", "Cliente", "Itens", "Total", "Tempo", "Atendente"],
+    header: [
+      "Código",
+      "Situação",
+      "Canal",
+      "Cliente",
+      "Itens",
+      "Total",
+      "Tempo",
+      "Atendente",
+    ],
     rows: rows.map((r) => [
       r.card.ref,
       r.zoneTitle,
@@ -809,11 +827,7 @@ export function rowsToCsv(rows: FlatRow[]): string {
 // ── Keyboard shortcuts (Arc 3) ──────────────────────────────────────────────
 
 export type BoardShortcut =
-  | "focus-search"
-  | "refresh"
-  | "toggle-view"
-  | "cycle-sort"
-  | "clear-filters";
+  "focus-search" | "refresh" | "toggle-view" | "cycle-sort" | "clear-filters";
 
 /** Map a keydown's `key` to a board shortcut, or null if none. Pure so the
  *  mapping is testable; the page owns the side effects (focus, refresh, …) and
@@ -1041,12 +1055,7 @@ export function appendTag(current: string, tag: string): string {
 // Aqui se decide só a palavra e o tom; o ciclo continua do servidor.
 
 export type SealTone =
-  | "primary"
-  | "info"
-  | "success"
-  | "warning"
-  | "error"
-  | "muted";
+  "primary" | "info" | "success" | "warning" | "error" | "muted";
 
 export interface CardSeal {
   label: string;
@@ -1388,4 +1397,143 @@ export function stripSummary(
       return { text: cardClock(best.card, nowMs).text, tone: "warning" };
   }
   return { text: "", tone: "" };
+}
+
+// ── Maquininhas na rua (cabeçalho do Gestor) ───────────────────────────────
+
+/** "1 maquininha na rua", "2 maquininhas na rua": o rótulo do botão do cabeçalho. */
+export function equipmentOutLabel(count: number): string {
+  return count === 1 ? "1 maquininha na rua" : `${count} maquininhas na rua`;
+}
+
+/** Com quem a maquininha está: "Pedido A47 · Maria · saiu às 14:20". */
+export function equipmentOutLine(
+  item: Pick<
+    EquipmentOutProjection,
+    "order_ref" | "customer_name" | "out_at" | "shared_with"
+  >,
+): string {
+  const outMs = item.out_at ? Date.parse(item.out_at) : Number.NaN;
+  const refs = [item.order_ref, ...(item.shared_with ?? [])].map(
+    (ref) => splitRef(ref).code,
+  );
+  return joinFacts(
+    refs.length > 1 ? `Pedidos ${joinRefs(refs)}` : `Pedido ${refs[0]}`,
+    item.customer_name,
+    Number.isFinite(outMs) ? `saiu às ${clockHHMM(outMs)}` : "",
+  );
+}
+
+// ── Uma corrida para várias entregas (cabeçalho do Gestor) ─────────────────
+
+/** Quantos pedidos uma corrida leva (espelho de `courier.MAX_RIDE_STOPS`). */
+export const MAX_RIDE_STOPS = 4;
+
+/** "3 entregas podem ir na mesma corrida.": quantas o operador pode juntar. */
+export function courierRideLabel(count: number): string {
+  return `${count} entregas podem ir na mesma corrida.`;
+}
+
+/** Uma entrega na escolha da corrida: "Pedido A47 · Maria". */
+export function courierRideLine(
+  card: Pick<OrderCardProjection, "ref" | "customer_name">,
+): string {
+  return joinFacts(`Pedido ${splitRef(card.ref).code}`, card.customer_name);
+}
+
+/** Uma entrega da escolha da corrida: o que o servidor diz dela e o card (as maquininhas). */
+export type RideChoice = RideCandidateProjection & {
+  card: OrderCardProjection;
+};
+
+/** As candidatas do servidor com o card de cada uma (a que sumiu da fila fica de fora). */
+export function rideChoices(
+  candidates: readonly RideCandidateProjection[],
+  cards: readonly OrderCardProjection[],
+): RideChoice[] {
+  return candidates.flatMap((candidate) => {
+    const card = cards.find((item) => item.ref === candidate.ref);
+    return card ? [{ ...candidate, card }] : [];
+  });
+}
+
+/** O troco sugerido de cada escolhida que pede troco, no formato do campo. */
+export function rideChangeDefaults(
+  choices: readonly RideChoice[],
+): Record<string, string> {
+  return Object.fromEntries(
+    choices
+      .filter((choice) => choice.change_out_suggested_q > 0)
+      .map((choice) => [
+        choice.card.ref,
+        moneyInput(choice.change_out_suggested_q),
+      ]),
+  );
+}
+
+/**
+ * O pedido da corrida: o troco só dos escolhidos que pedem troco (campo vazio
+ * vai como zero, "levou sem troco") e a maquininha só quando algum é de cartão.
+ */
+export function courierRideBody(
+  picked: readonly string[],
+  choices: readonly RideChoice[],
+  changeOut: Record<string, string>,
+  machineRef: string | undefined,
+): { refs: string[]; change_out: Record<string, string>; machine: string } {
+  const chosen = choices.filter((choice) => picked.includes(choice.card.ref));
+  return {
+    refs: [...picked],
+    change_out: Object.fromEntries(
+      chosen
+        .filter((choice) => choice.change_out_suggested_q > 0)
+        .map((choice) => [
+          choice.card.ref,
+          (changeOut[choice.card.ref] ?? "").trim() || "0",
+        ]),
+    ),
+    machine: chosen.some((choice) => choice.needs_machine)
+      ? (machineRef ?? "")
+      : "",
+  };
+}
+
+/** "Chamar uma corrida para 3 pedidos" (com a maquininha, quando ela vai). */
+export function courierRideCallLabel(
+  count: number,
+  machineLabel?: string,
+): string {
+  const base = `Chamar uma corrida para ${count} pedidos`;
+  return machineLabel === undefined
+    ? base
+    : `${base} com a ${machinePhrase(machineLabel)}`;
+}
+
+/** A linha de uma entrega que pode ir junto: "Pronto · Gleba Palhano · a 1,2 km · leva a maquininha". */
+export function rideOfferLine(
+  choice: Pick<
+    RideCandidateProjection,
+    | "stage"
+    | "place"
+    | "distance_label"
+    | "needs_machine"
+    | "change_out_suggested_q"
+  >,
+): string {
+  return joinFacts(
+    choice.stage,
+    choice.place,
+    choice.distance_label,
+    choice.needs_machine
+      ? "leva a maquininha"
+      : choice.change_out_suggested_q > 0
+        ? "leva troco"
+        : "",
+  );
+}
+
+/** A pergunta da chamada quando outros pedidos vão junto: quem a corrida leva e quem paga. */
+export function courierRideQuestion(refs: readonly string[]): string {
+  const codes = refs.map((ref) => splitRef(ref).code);
+  return `Uma corrida da TaOn leva os pedidos ${joinRefs(codes)}, na ordem do percurso. A corrida é paga pela casa e o frete dos clientes não muda.`;
 }

@@ -197,6 +197,32 @@ class EquipmentOutProjection:
     out_at: str
     actions: tuple[Action, ...] = ()
     identified: bool = False
+    #: Os outros pedidos que levam a MESMA maquininha (corrida ou saída com vários).
+    shared_with: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RideCandidateProjection:
+    """Uma entrega pronta que pode entrar numa corrida da TaOn com outras.
+
+    O que a chamada pergunta dela (``partner_custody_asks``):
+    ``change_out_suggested_q`` é o troco sugerido da gaveta (zero: não
+    pergunta) e ``needs_machine`` diz que a corrida leva a maquininha.
+    """
+
+    ref: str
+    change_out_suggested_q: int = 0
+    needs_machine: bool = False
+    #: "Pedido B12 · Maria": quem é, como o balcão fala.
+    label: str = ""
+    #: Para onde vai, curto: o bairro (ou o endereço, sem bairro).
+    place: str = ""
+    #: "Pronto" ou "Em preparo": a corrida pode sair antes do pronto.
+    stage: str = ""
+    #: "a 1,2 km": distância até o pedido que está sendo chamado (só no painel dele).
+    distance_label: str = ""
+    #: "Troco para R$ 100,00": a frase do troco do card, quando há.
+    change_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -553,6 +579,19 @@ class CustomerProfileProjection:
 
 
 @dataclass(frozen=True)
+class ContactRequestProjection:
+    """Ouvidoria aberta: o cliente avaliou mal e pediu para falar com o responsável.
+
+    Só existe enquanto o caso está aberto; o "Resolvido" (com a nota do que foi
+    feito) o fecha. Ver ``shop/services/customer_contact.py``.
+    """
+
+    rating: int
+    comment: str
+    requested_at_display: str
+
+
+@dataclass(frozen=True)
 class OperatorOrderProjection:
     """O detalhe de um pedido — o MESMO contrato para o Gestor e o PDV (``context``)."""
 
@@ -698,9 +737,10 @@ class OperatorOrderProjection:
     # lista do PDV (``pos._manager_cards``). Sem ela o diálogo canônico caía no
     # campo livre e o gerente tinha de DIGITAR o próprio nome no meio de um
     # cancelamento com o relógio do iFood correndo; nome digitado erra, e o
-    # servidor resolve a assinatura por ``username``. Exclui quem opera: a
-    # segunda assinatura existe para haver duas pessoas.
+    # servidor resolve a assinatura por ``username``. Quem opera vem em primeiro
+    # e assina com o próprio PIN (dono, 28/10/2026).
     managers: tuple[dict[str, str], ...] = ()
+    contact_request: ContactRequestProjection | None = None
     ifood_cancellation_notice: str = ""
     ifood_payment_summary: tuple[str, ...] = ()
     ifood_operation_summary: tuple[str, ...] = ()
@@ -817,6 +857,10 @@ class TwoZoneQueueProjection:
     # responder "onde está a maquininha" sem procurar card por card.
     equipment_out: tuple[EquipmentOutProjection, ...] = ()
     equipment_available: tuple[EquipmentOptionProjection, ...] = ()
+    # Entregas prontas que podem ir juntas numa corrida da TaOn (uma parada por
+    # pedido, ``courier.group_refusal``), com o troco e a maquininha que a
+    # chamada pergunta. Com duas ou mais, a Saída oferece a corrida.
+    ride_candidates: tuple[RideCandidateProjection, ...] = ()
 
     ifood_negotiation_orders: tuple[OrderCardProjection, ...] = ()
     # A coluna ao lado da Fila: o que o sistema fez nos últimos minutos e o estado
@@ -993,6 +1037,7 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         payment_method=method,
         payment_method_label="iFood" if order.channel_ref == "ifood" else payment_method_label,
         managers=_approver_options(user),
+        contact_request=_contact_request(order),
         ifood_cancellation_notice=ifood_projection.cancellation_notice(order),
         ifood_payment_summary=ifood_projection.payment_summary(order),
         ifood_operation_summary=ifood_projection.operation_summary(order),
@@ -1289,14 +1334,7 @@ def _courier_block(order: Order) -> dict | None:
         order_can_ride = order.status in RIDE_ORDER_STATUSES
 
         estimate = block.get("estimate") if isinstance(block.get("estimate"), dict) else {}
-        estimate_display = ""
-        if estimate.get("value_q") is not None:
-            parts = [_money(int(estimate["value_q"]))]
-            if estimate.get("minutes"):
-                parts.append(f"{int(estimate['minutes'])} min")
-            if estimate.get("km"):
-                parts.append(f"{float(estimate['km']):.1f} km".replace(".", ","))
-            estimate_display = " · ".join(parts)
+        estimate_display = courier_estimate_display(estimate)
 
         position = None
         if active and block.get("id_mch"):
@@ -1357,6 +1395,10 @@ def _courier_block(order: Order) -> dict | None:
             # O que a chamada pergunta: troco da gaveta e maquininha da casa
             # que vão com o entregador da TaOn (``partner_custody_asks``).
             "custody": operator_orders.partner_custody_asks(order),
+            # Quem pode ir na mesma corrida (o "Vai junto?" da chamada), os mais
+            # perto primeiro. Só enquanto este pedido pode ser chamado.
+            "ride_offer": (_ride_offer(order) if adapter_on and house and not active and order_can_ride
+                           and unresolved is None else []),
             # O pedido mudou depois da chamada e a observação da corrida (o que
             # cobrar na porta) ficou para trás: ``{sent, current, collected}``.
             "charge_outdated": charge_outdated(order),
@@ -1754,6 +1796,7 @@ def build_two_zone_queue(*, user=None) -> TwoZoneQueueProjection:
 
     return TwoZoneQueueProjection(
         equipment_out=_equipment_out(user=user, devices=devices),
+        ride_candidates=_ride_candidates([*ready_orders, *prep_orders]),
         equipment_available=tuple(EquipmentOptionProjection(ref=PREFIX + str(device.ref), label=device.label)
                                   for device in devices if device.active and device.current_order_id is None),
         ifood_negotiation_orders=tuple(
@@ -2105,7 +2148,7 @@ def _build_card(
         card_authorization_expires_iso=_card_authorization_expires_iso(order, method, payment_status),
         channel_display_id=_channel_display_id(order),
         courier_status=_card_courier_status(order),
-        courier_status_label=COURIER_STATUS_LABELS.get(_card_courier_status(order), ""),
+        courier_status_label=_card_courier_label(order),
         is_preorder=is_preorder,
         commitment_date=commitment.isoformat() if commitment else "",
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
@@ -2233,6 +2276,99 @@ def _trip_fields(order: Order) -> dict:
     return {"trip_with": others, "courier_return_orders": back.orders, "courier_return_lines": tuple(lines)}
 
 
+def courier_estimate_display(estimate: dict | None) -> str:
+    """"R$ 14,90 · 18 min · 4,2 km · ida e volta": a cotação numa linha ("" sem valor)."""
+    estimate = estimate or {}
+    if estimate.get("value_q") is None:
+        return ""
+    parts = [_money(int(estimate["value_q"]))]
+    if estimate.get("minutes"):
+        parts.append(f"{int(estimate['minutes'])} min")
+    if estimate.get("km"):
+        parts.append(f"{float(estimate['km']):.1f} km".replace(".", ","))
+    if estimate.get("with_return"):
+        # A corrida volta à loja (cobrança na porta ou maquininha): o custo é de ida e volta.
+        parts.append("ida e volta")
+    return " · ".join(parts)
+
+
+def _ride_candidates(orders) -> tuple[RideCandidateProjection, ...]:
+    """As entregas que podem entrar juntas numa corrida (prontas primeiro, depois em preparo).
+
+    A TaOn se chama também antes do pronto (o lembrete de chamar vem no preparo),
+    então a corrida junta pedido pronto e pedido em preparo. Encomenda de outro
+    dia fica de fora.
+    """
+    from shopman.shop.adapters import get_adapter
+
+    orders = sorted(orders, key=lambda order: order.status != "ready")
+    if len(orders) < 2 or get_adapter("courier") is None:
+        return ()
+    rows = [_ride_candidate(order) for order in orders if _rides_with_others(order)]
+    return tuple(rows) if len(rows) >= 2 else ()
+
+
+def _rides_with_others(order: Order) -> bool:
+    from shopman.shop.services import courier
+
+    return _is_delivery(order) and not _is_future_preorder(order) and not courier.group_refusal(order)
+
+
+def _ride_candidate(order: Order, *, near: Order | None = None) -> RideCandidateProjection:
+    asks = operator_orders.partner_custody_asks(order)
+    data = order.data or {}
+    customer = str((data.get("customer") or {}).get("name") or "").strip()
+    address = data.get("delivery_address_structured") or {}
+    place = str(address.get("neighborhood") or data.get("delivery_address") or address.get("formatted_address") or "")
+    change = _courier_change_fields(order).get("change_label", "") if asks["change_out_suggested_q"] else ""
+    km = _km_between(near, order) if near is not None else None
+    return RideCandidateProjection(
+        ref=order.ref, change_out_suggested_q=int(asks["change_out_suggested_q"]),
+        needs_machine=bool(asks["needs_machine"]),
+        label=" · ".join(part for part in (f"Pedido {operator_orders.short_ref(order.ref)}", customer) if part),
+        place=place.strip(), stage="Pronto" if order.status == "ready" else "Em preparo",
+        distance_label="" if km is None else f"a {km:.1f} km".replace(".", ","),
+        change_label=change,
+    )
+
+
+def _km_between(a: Order, b: Order) -> float | None:
+    """Distância em linha reta entre dois endereços de entrega (haversine), ou ``None``."""
+    import math
+
+    def point(order):
+        address = (order.data or {}).get("delivery_address_structured") or {}
+        try:
+            return float(address["latitude"]), float(address["longitude"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    p, q = point(a), point(b)
+    if p is None or q is None:
+        return None
+    lat1, lon1, lat2, lon2 = map(math.radians, (*p, *q))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(h))
+
+
+def _ride_offer(order: Order) -> list[dict]:
+    """As entregas que podem ir na MESMA corrida deste pedido, as mais perto primeiro.
+
+    É a oferta do "Chamar entregador": o operador está chamando este pedido e
+    vê, ali, quem pode ir junto. Até ``MAX_RIDE_STOPS - 1``; sem coordenada vai
+    ao fim. Vazio quando este pedido não pode ir com outros.
+    """
+    from shopman.shop.adapters import get_adapter
+    from shopman.shop.services import courier
+
+    if get_adapter("courier") is None or not _rides_with_others(order):
+        return []
+    pool = [other for other in Order.objects.filter(status__in=("accepted", "preparing", "ready")).exclude(pk=order.pk)
+            if _rides_with_others(other)]
+    pool.sort(key=lambda other: (_km_between(order, other) is None, _km_between(order, other) or 0.0))
+    return [asdict(_ride_candidate(other, near=order)) for other in pool[: courier.MAX_RIDE_STOPS - 1]]
+
+
 def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, ...]:
     from shopman.backstage.models import DeliveryDevice
 
@@ -2250,8 +2386,19 @@ def _equipment_out(*, user=None, devices=None) -> tuple[EquipmentOutProjection, 
             ref=ref, label=label, identified=identified, order_ref=order.ref, customer_name=str(customer.get("name") or ""),
             out_at=operator_orders.equipment_custody(order).out_at,
             actions=tuple(action for action in operator_orders.operational_actions(order, user=user) if action.ref == "equipment-back"),
+            shared_with=_machine_shared_with(order) if identified else (),
         ))
     return tuple(rows)
+
+
+def _machine_shared_with(order: Order) -> tuple[str, ...]:
+    """Os pedidos da mesma saída que dividem a maquininha deste e ainda não a devolveram."""
+    device_ref = ((order.data or {}).get("dispatch") or {}).get("device_ref")
+    return tuple(
+        member.ref for member in operator_orders.trip_members(order)
+        if member.pk != order.pk and ((member.data or {}).get("dispatch") or {}).get("device_ref") == device_ref
+        and operator_orders.equipment_custody(member).pending
+    )
 
 
 def _courier_change_fields(order: Order, by_order: dict[str, tuple[int, int | None]] | None = None) -> dict:
@@ -2307,6 +2454,19 @@ def _card_courier_status(order: Order) -> str:
     if not isinstance(block, dict):
         return ""
     return str(block.get("status") or "")
+
+
+def _card_courier_label(order: Order) -> str:
+    """"Entregador a caminho" e, na corrida com várias paradas, com quem ela vai:
+    "Entregador a caminho · corrida com B12, C03". O card diz a corrida inteira
+    sem o operador abrir pedido por pedido."""
+    label = COURIER_STATUS_LABELS.get(_card_courier_status(order), "")
+    if not label:
+        return ""
+    from shopman.shop.services import courier
+
+    others = [operator_orders.short_ref(ref) for ref in courier.ride_orders(order) if ref != order.ref]
+    return f"{label} · corrida com {', '.join(others)}" if others else label
 
 
 def _awaiting_work_orders(order: Order) -> tuple[AwaitingWorkOrderProjection, ...]:
@@ -2730,6 +2890,19 @@ def _fiscal_states_for(orders) -> _FiscalEvidence:
     return _FiscalEvidence(result, failed)
 
 
+def _contact_request(order: Order) -> ContactRequestProjection | None:
+    from shopman.shop.services import customer_contact
+
+    request = customer_contact.open_request(order)
+    if request is None:
+        return None
+    return ContactRequestProjection(
+        rating=request.rating,
+        comment=request.comment,
+        requested_at_display=_format_datetime(request.requested_at),
+    )
+
+
 def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
     """Telefone/e-mail/ref do cliente, prontos para a tela do operador.
 
@@ -2953,6 +3126,18 @@ _EVENT_LABELS = {
     "order_rescheduled": "Data combinada alterada",
     "order_edited": "Encomenda editada",
     "card_machine_refund_recorded": "Estorno na maquininha registrado",
+    "fiscal_requeued": "NFC-e enviada de novo",
+    "courier_dispatch_requested": "Entregador da TaOn chamado",
+    "courier_ride_opened": "Corrida aberta na TaOn",
+    "courier_dispatch_released": "Chamada da TaOn feita de novo",
+    "courier_cancel_requested": "Cancelamento da corrida pedido à TaOn",
+    "courier_reminder_dismissed": "Lembrete de chamar o entregador dispensado",
+    "fiscal_issue_override": "NFC-e emitida com autorização do gerente",
+    "cash_refund_recorded": "Devolução em dinheiro registrada no caixa",
+    "return_initiated": "Devolução iniciada",
+    "refund_processed": "Reembolso processado",
+    "volume_checked": "Volume conferido",
+    "volume_check_wrong_bag": "Sacola de outro pedido lida na conferência",
     # UX-G2: a saída tocada fica na janela de desfazer antes de ser gravada.
     "handoff_requested": "Saída tocada (janela de desfazer)",
     "handoff_undone": "Saída desfeita",
@@ -2965,6 +3150,8 @@ _EVENT_LABELS = {
     "ifood_accept_confirmed": "O iFood confirmou o pedido",
     "concierge_discount": "Desconto da Concierge",
     "concierge_cancelled": "Cancelado pela Concierge a pedido do cliente",
+    "customer_contact_requested": "Cliente avaliou mal e pediu para falar com o responsável",
+    "customer_contact_resolved": "Ouvidoria resolvida",
 }
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge

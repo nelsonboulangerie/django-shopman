@@ -234,6 +234,124 @@ describe("useCatalogMatrix — lote + reordenação", () => {
   });
 });
 
+describe("useCatalogMatrix — recibo do tabelão", () => {
+  beforeEach(() => env.reset());
+
+  it("descreve com precisão o sucesso parcial", async () => {
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      applied: [
+        {
+          index: 0,
+          sku: "PAO",
+          surface_ref: "web",
+          price_q: 750,
+          is_published: true,
+          is_sellable: true,
+        },
+      ],
+      conflicts: [
+        {
+          index: 1,
+          sku: "BOLO",
+          surface_ref: "web",
+          detail: "O preço mudou.",
+          conflicting_fields: ["price_q"],
+        },
+      ],
+      errors: [],
+    });
+    const matrix = useCatalogMatrix();
+
+    const result = await matrix.saveCells([
+      { sku: "PAO", surface_ref: "web", price_q: 750 },
+      { sku: "BOLO", surface_ref: "web", price_q: 825 },
+    ]);
+
+    expect(result?.applied).toHaveLength(1);
+    expect(matrix.errorMsg.value).toBe(
+      "1 célula foi salva. 1 célula não foi salva; corrija as marcações no tabelão e salve novamente.",
+    );
+    expect(env.sonner.success).not.toHaveBeenCalled();
+  });
+
+  it("confirma o lote completo com plural correto", async () => {
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      applied: [
+        { index: 0, sku: "PAO", surface_ref: "web" },
+        { index: 1, sku: "BOLO", surface_ref: "web" },
+      ],
+      conflicts: [],
+      errors: [],
+    });
+    const matrix = useCatalogMatrix();
+
+    await matrix.saveCells([
+      { sku: "PAO", surface_ref: "web", price_q: 750 },
+      { sku: "BOLO", surface_ref: "web", price_q: 825 },
+    ]);
+
+    expect(env.sonner.success).toHaveBeenCalledWith("2 células atualizadas.");
+  });
+});
+
+describe("useCatalogMatrix — importação CSV", () => {
+  beforeEach(() => env.reset());
+
+  const preview = {
+    dry_run: true,
+    rows: 1,
+    totals: { new: 1 },
+    errors: [],
+    changes: [],
+    base_revision: "preview-assinada",
+  };
+
+  it("só confirma sucesso quando o recibo declara aplicação", async () => {
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      outcome: "applied",
+      dry_run: false,
+      rows: 1,
+      totals: { new: 1 },
+      errors: [],
+    });
+    const matrix = useCatalogMatrix();
+
+    expect(await matrix.applyImport("csv", preview)).toMatchObject({
+      ok: true,
+      outcome: "applied",
+    });
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+    expect(env.sonner.success).toHaveBeenCalledWith("Importação aplicada.");
+  });
+
+  it("mantém o fluxo aberto quando o recibo não aplicou as linhas", async () => {
+    env.fetchMock.mockRejectedValueOnce({
+      status: 422,
+      data: {
+        ok: false,
+        outcome: "not_applied",
+        detail:
+          "Nenhum produto foi importado. Confira a linha 2: Preço inválido",
+        dry_run: true,
+        rows: 1,
+        totals: { invalid: 1 },
+        errors: [{ row: 2, detail: "Preço inválido" }],
+      },
+    });
+    const matrix = useCatalogMatrix();
+
+    expect(await matrix.applyImport("csv", preview)).toBeNull();
+    expect(env.refresh).not.toHaveBeenCalled();
+    expect(matrix.errorMsg.value).toContain("linha 2: Preço inválido");
+    expect(env.sonner.success).not.toHaveBeenCalled();
+  });
+});
+
 describe("useCatalogMatrix — sync + PIM (Arc H)", () => {
   beforeEach(() => {
     env.reset();

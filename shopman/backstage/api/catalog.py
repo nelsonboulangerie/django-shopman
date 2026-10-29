@@ -510,7 +510,8 @@ class _CatalogPreviewMutationView(_CatalogBase):
 
             def execute():
                 try:
-                    return self.apply_command(payload, actor_id=request.user.pk), 200
+                    body = self.apply_command(payload, actor_id=request.user.pk)
+                    return body, 422 if body.get("outcome") == "not_applied" else 200
                 except CatalogConflict as exc:
                     return {"outcome": "not_applied", "detail": str(exc), "error": {"code": "catalog_changed"}}, 409
                 except (CatalogError, ValidationError) as exc:

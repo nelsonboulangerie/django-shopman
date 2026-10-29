@@ -99,13 +99,18 @@ def _realign_mirrors(refs) -> None:
         listing_mirror.realign(ref)
 
 
+#: O que uma célula de exibição aceita: pausar (``paused_skus``) e ocultar (``hidden_skus``).
+_DISPLAY_FLAGS = frozenset({"is_published", "is_sellable"})
+
+
 def _is_display_surface(surface_ref: str) -> bool:
     """A superfície EXIBE sem transacionar (TV, feed) e não vende?
 
     A pergunta é sobre POLÍTICA COMERCIAL, não sobre qual tabela guarda a linha —
     é o que a ADR-018 conseguiu ao absorver o `Feed`: a mesma tabela, e o que
     distingue é `commerce_policy`. Uma célula de exibição não tem preço para
-    escrever, então pausar ali grava em `display.paused_skus`, não num ListingItem.
+    escrever, então pausar ali grava em `display.paused_skus` e ocultar em
+    `display.hidden_skus`, não num ListingItem.
     """
     from shopman.shop.models import Channel
 
@@ -121,7 +126,8 @@ def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None,
     if display is not None:
         config = (display.config or {}).get("display") or {}
         context = {"display_id": display.pk, "collections": config.get("collections") or []}
-        values = {"is_sellable": sku not in (config.get("paused_skus") or [])}
+        values = {"is_published": sku not in (config.get("hidden_skus") or []),
+            "is_sellable": sku not in (config.get("paused_skus") or [])}
     elif item is not None:
         context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty), "unit": item.product.unit}
         values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q", "min_qty")}
@@ -198,16 +204,24 @@ def set_cell(
 
         from shopman.backstage.services import feeds as display_service
 
-        if set(patch) != {"is_sellable"}:
-            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
+        if not patch or not set(patch) <= _DISPLAY_FLAGS:
+            raise CatalogError("Feed aceita apenas pausar/ativar e ocultar/exibir.")
         if expected_revisions is not None and not any(group.product_queryset().filter(pk=product.pk).exists() for group in groups):
             from shopman.backstage.services.exceptions import CatalogConflict
 
             raise CatalogConflict("O produto não pertence mais ao recorte desta superfície. Atualize o catálogo.")
-        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, display=channel), expected_revisions,
-            {"is_sellable": sku not in (((channel.config or {}).get("display") or {}).get("paused_skus") or [])})
-        display_service.set_item_paused(surface_ref, sku, paused=not patch["is_sellable"])
-        return SimpleNamespace(is_published=True, is_sellable=patch["is_sellable"], price_q=None)
+        current = cell_field_revisions(sku, surface_ref, display=channel)
+        display_config = (channel.config or {}).get("display") or {}
+        _check_cell_revisions(patch, current, expected_revisions,
+            {"is_published": sku not in (display_config.get("hidden_skus") or []),
+             "is_sellable": sku not in (display_config.get("paused_skus") or [])})
+        if "is_sellable" in patch:
+            display_service.set_item_paused(surface_ref, sku, paused=not patch["is_sellable"])
+        if "is_published" in patch:
+            display_service.set_item_hidden(surface_ref, sku, hidden=not patch["is_published"])
+        display_config = (Channel.objects.get(pk=channel.pk).config or {}).get("display") or {}
+        return SimpleNamespace(is_published=sku not in (display_config.get("hidden_skus") or []),
+            is_sellable=sku not in (display_config.get("paused_skus") or []), price_q=None)
     _refuse_mirror_surface(surface_ref)
     listing = Listing.objects.select_for_update().filter(ref=surface_ref).first()
     item = ListingItem.objects.select_for_update().filter(listing=listing, product=product).order_by("min_qty", "pk").first()
@@ -433,9 +447,9 @@ def bulk_set(
     if not skus:
         return 0
     if _is_display_surface(surface_ref):
-        # Feed: bulk só pausa/ativa (is_sellable). Sem preço/publicação.
-        if is_sellable is None:
-            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
+        # Feed: bulk pausa/ativa e oculta/exibe. Sem preço.
+        if is_sellable is None and is_published is None:
+            raise CatalogError("Feed aceita apenas pausar/ativar e ocultar/exibir.")
         from django.contrib.admin.models import CHANGE, LogEntry
         from django.contrib.auth import get_user_model
         from django.utils import timezone
@@ -444,20 +458,33 @@ def bulk_set(
 
         with transaction.atomic():
             channel = Channel.objects.select_for_update().get(ref=surface_ref)
-            before = sorted(((channel.config or {}).get("display") or {}).get("paused_skus") or [])
-            count = display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
+
+            def _lists() -> dict[str, list[str]]:
+                display = (channel.config or {}).get("display") or {}
+                return {key: sorted(display.get(key) or []) for key in ("paused_skus", "hidden_skus")}
+
+            before = _lists()
+            count = 0
+            if is_sellable is not None:
+                count += display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
+            if is_published is not None:
+                count += display_service.set_items_hidden(surface_ref, skus, hidden=not is_published)
             if count:
                 channel.refresh_from_db()
-                after = sorted(((channel.config or {}).get("display") or {}).get("paused_skus") or [])
+                after = _lists()
                 audit_user = get_user_model().objects.filter(username=actor).first() if actor else None
                 if audit_user:
+                    message = {"action": "catalog.bulk_set", "surface_ref": surface_ref, "skus": sorted(skus),
+                        "before": before["paused_skus"], "after": after["paused_skus"]}
+                    if is_published is not None:
+                        message |= {"hidden_before": before["hidden_skus"], "hidden_after": after["hidden_skus"]}
                     LogEntry.objects.log_actions(user_id=audit_user.pk, queryset=[channel], action_flag=CHANGE,
-                        change_message=json.dumps({"action": "catalog.bulk_set", "surface_ref": surface_ref,
-                            "skus": sorted(skus), "before": before, "after": after}))
+                        change_message=json.dumps(message))
                 display = dict((channel.config or {}).get("display") or {})
                 provenance = dict(display.get("pause_audit") or {})
-                for sku in set(before) ^ set(after):
-                    if sku in after:
+                paused_before, paused_after = set(before["paused_skus"]), set(after["paused_skus"])
+                for sku in paused_before ^ paused_after:
+                    if sku in paused_after:
                         provenance[sku] = f"Pausado por {actor or 'sistema'} em {timezone.localtime():%d/%m/%Y %H:%M}"
                     else:
                         provenance.pop(sku, None)
@@ -2496,15 +2523,15 @@ def _publication_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> d
     display = channels[0] if len(channels) == 1 and channels[0].commerce_policy == Channel.CommercePolicy.DISPLAY else None
     cells, skipped = [], []
     if display is not None:
-        if set(patch) != {"is_sellable"}:
-            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
         membership = {sku for group in groups for sku in group.product_queryset().filter(sku__in=skus).values_list("sku", flat=True)}
-        paused = ((display.config or {}).get("display") or {}).get("paused_skus") or []
+        display_config = (display.config or {}).get("display") or {}
+        paused = display_config.get("paused_skus") or []
+        hidden = display_config.get("hidden_skus") or []
         for sku in skus:
             if sku not in membership:
                 skipped.append({"sku": sku, "surface_ref": display.ref, "reason": "Produto fora do recorte do feed."})
                 continue
-            before = {"is_sellable": sku not in paused}
+            before = {"is_published": sku not in hidden, "is_sellable": sku not in paused}
             cells.append(CatalogPublicationCell(sku=sku, surface_ref=display.ref, tier="", before=before, after={**before, **patch}))
     else:
         by_product = {product.pk: product for product in products}
@@ -2612,6 +2639,12 @@ def apply_resync_intention(data: dict) -> dict:
 # roda em ``dry_run`` — o erro é POR LINHA e nada é gravado antes de confirmar.
 
 _IMPORT_FLAGS = ("is_published", "is_sellable")
+_PRODUCT_IMPORT_SALT = "catalog.product-import.v1"
+_IMPORT_HEADERS = {
+    "SKU": "sku", "Produto": "name", "Preço (R$)": "base_price_q",
+    "Publicado": "is_published", "À venda": "is_sellable",
+}
+_IMPORT_INFORMATIONAL_HEADERS = {"Coleção (informativa)"}
 _IMPORT_BOOL_TOKENS = {
     "sim": "1", "s": "1", "verdadeiro": "1", "true": "1",
     "não": "0", "nao": "0", "n": "0", "falso": "0", "false": "0",
@@ -2649,16 +2682,24 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
     first = text.splitlines()[0]
     delimiter = ";" if first.count(";") >= first.count(",") and ";" in first else ","
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    headers = [str(field).strip() for field in (reader.fieldnames or [])]
-    if "sku" not in headers:
-        raise CatalogError("O CSV precisa da coluna sku (o mesmo modelo do export).")
+    source_headers = [str(field).strip() for field in (reader.fieldnames or [])]
+    if len(source_headers) != len(set(source_headers)):
+        raise CatalogError("O cabeçalho do CSV tem colunas repetidas.")
+    unknown = [header for header in source_headers if header not in _IMPORT_HEADERS
+               and header not in _IMPORT_INFORMATIONAL_HEADERS and not header.startswith("Canal: ")]
+    if unknown:
+        raise CatalogError(f"O CSV tem colunas desconhecidas: {', '.join(unknown)}. Use o arquivo exportado pelo Catálogo.")
+    if "SKU" not in source_headers:
+        raise CatalogError("O CSV precisa da coluna SKU. Use o arquivo exportado pelo Catálogo.")
+    headers = [_IMPORT_HEADERS[header] for header in source_headers if header in _IMPORT_HEADERS]
     dataset = tablib.Dataset()
     dataset.headers = headers
     parsed = []
     for raw in reader:
-        row = {str(key).strip(): (value if value is not None else "") for key, value in raw.items() if key}
-        if not any(str(value).strip() for value in row.values()):
+        source_row = {str(key).strip(): (value if value is not None else "") for key, value in raw.items() if key}
+        if not any(str(value).strip() for value in source_row.values()):
             continue
+        row = {_IMPORT_HEADERS[source]: source_row.get(source, "") for source in source_headers if source in _IMPORT_HEADERS}
         if "base_price_q" in row:
             row["base_price_q"] = _import_price_q(row["base_price_q"])
         for flag in _IMPORT_FLAGS:
@@ -2695,6 +2736,20 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
     return payload
 
 
+def _product_import_state(csv_text, *, lock: bool = False) -> list[list]:
+    """Estado importável dos produtos-alvo, incluindo a ausência do SKU."""
+    from shopman.offerman.models import Product
+
+    preview = _run_product_import(csv_text, dry_run=True)
+    skus = sorted({change["sku"] for change in preview["changes"] if change["sku"]})
+    queryset = Product.objects.filter(sku__in=skus).order_by("sku")
+    if lock:
+        queryset = queryset.select_for_update()
+    existing = {product.sku: product for product in queryset}
+    fields = ("name", "base_price_q", "unit", "availability_policy", "is_published", "is_sellable", "shelf_life_days")
+    return [[sku, *([getattr(existing[sku], field) for field in fields] if sku in existing else [None])] for sku in skus]
+
+
 def _import_changes(parsed: list[dict]) -> list[dict]:
     from shopman.offerman.models import Product
 
@@ -2720,19 +2775,44 @@ def _import_changes(parsed: list[dict]) -> list[dict]:
 
 def preview_product_import(data: dict, *, actor_id: int) -> dict:
     """Prévia do CSV: valida linha a linha e mostra o que muda. Não grava nada."""
+    from django.core import signing
+
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     csv_text = data.get("csv") if isinstance(data, dict) else None
     result = _run_product_import(csv_text, dry_run=True)
-    # A revisão da prévia é o que a confirmação carrega: o apply não inventa uma.
-    result["base_revision"] = mutation_fingerprint(
-        {"operation": "catalog.product-import", "csv": str(csv_text or "")}
+    result["base_revision"] = signing.dumps(
+        {"actor": actor_id, "csv": mutation_fingerprint(str(csv_text or "")), "state": _product_import_state(csv_text)},
+        salt=_PRODUCT_IMPORT_SALT,
+        compress=True,
     )
     return result
 
 
 @transaction.atomic
 def apply_product_import(data: dict, *, actor_id: int) -> dict:
-    """Aplica o CSV pelo MESMO recurso do Admin; o erro é por linha."""
-    result = _run_product_import(data.get("csv") if isinstance(data, dict) else None, dry_run=False)
+    """Aplica o CSV validado sem sobrescrever uma prévia obsoleta."""
+    from django.core import signing
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    csv_text = data.get("csv") if isinstance(data, dict) else None
+    try:
+        receipt = signing.loads(data.get("base_revision", ""), salt=_PRODUCT_IMPORT_SALT, max_age=1800)
+    except (signing.BadSignature, TypeError):
+        raise CatalogConflict("Refaça a prévia antes de importar.") from None
+    expected = {"actor": actor_id, "csv": mutation_fingerprint(str(csv_text or "")), "state": _product_import_state(csv_text, lock=True)}
+    if receipt != expected:
+        raise CatalogConflict("O catálogo mudou desde a prévia. Refaça a prévia antes de importar.")
+    validation = _run_product_import(csv_text, dry_run=True)
+    if validation["errors"]:
+        first = validation["errors"][0]
+        detail = f"Nenhum produto foi importado. Confira a linha {first['row']}: {first['detail']}"
+        return {"ok": False, "outcome": "not_applied", "detail": detail, **validation}
+    result = _run_product_import(csv_text, dry_run=False)
+    if result["errors"]:
+        first = result["errors"][0]
+        detail = f"Nenhum produto foi importado. Confira a linha {first['row']}: {first['detail']}"
+        return {"ok": False, "outcome": "not_applied", "detail": detail, **result}
     return {"ok": True, "outcome": "applied", **result}

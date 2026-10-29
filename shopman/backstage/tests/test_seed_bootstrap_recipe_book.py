@@ -51,14 +51,17 @@ def test_bootstrap_over_sheets_shaped_like_the_seed():
     assert set(cards) == {"creme-levain", "massa-pasta-autolizada", "massa-tradicao"}
     assert all(card.has_ficha and card.current_version_number == 1 for card in cards.values())
     assert cards["massa-tradicao"].anchor_kind == "flour"
-    assert cards["massa-tradicao"].hydration_display != ""
+    assert cards["massa-tradicao"].hydration_display
 
     detail = build_recipe_entry("massa-tradicao")
     (version,) = detail.versions
     assert version.source_kind == "ficha"
     assert tuple(step.name for step in version.steps) == ("Pesagem", "Mistura", "Fermentação")
-    assert {part.entry_ref for part in version.lens.parts} == {"creme-levain", "massa-pasta-autolizada"}
-    assert all(part.has_formula for part in version.lens.parts)
+    recipe_ingredients = {
+        item.recipe_version_ref for item in version.lens.ingredients if item.recipe_version_ref
+    }
+    assert recipe_ingredients == {"creme-levain@1", "massa-pasta-autolizada@1"}
+    assert all(item.composition == "additional" for item in version.lens.ingredients)
     assert {item.sku for item in version.lens.bom} == {"PASTA-AUTOLIZADA", "LEVAIN", "SAL-REFINADO"}
 
     # Idempotente: rodar de novo não duplica nem toca a ficha.
@@ -88,9 +91,8 @@ def test_a_piece_reaches_the_screen_as_the_sheet_declares_it():
     assert version.yield_unit == "un"
     assert version.lens.is_bakery is False
     assert version.lens.anchor_kind == "total"
-    assert version.lens.parts == ()
     assert version.lens.warnings == ()
-    assert [(item.sku, item.quantity_g) for item in version.lens.items] == [("MASSA-TRADICAO", "280")]
+    assert [(item.sku, item.quantity_g) for item in version.lens.ingredients] == [("MASSA-TRADICAO", "280")]
     assert [item.sku for item in version.lens.bom] == ["MASSA-TRADICAO"]
     assert all(metric.value_display == "" for metric in version.lens.metrics)
 
@@ -98,9 +100,9 @@ def test_a_piece_reaches_the_screen_as_the_sheet_declares_it():
     cards = {card.ref: card for card in build_recipe_book().entries}
     assert cards["baguete"].hydration_display == ""
     assert cards["baguete"].anchor_kind == "total"
-    # E a fórmula continua com a lente: ali a parte é fração de verdade.
+    # A fórmula importada preserva a BOM imediata, sem inventar uma composição dissolvida.
     assert cards["massa-tradicao"].anchor_kind == "flour"
-    assert cards["massa-tradicao"].hydration_display != ""
+    assert cards["massa-tradicao"].hydration_display
 
 
 def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):
@@ -135,7 +137,6 @@ def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):
         (versao,) = build_recipe_entry(ref).versions
         assert versao.yield_quantity == "1", f"{ref} não rende uma unidade"
         assert versao.lens.is_bakery is False, f"{ref} acusa lente de padaria"
-        assert versao.lens.parts == (), f"{ref} ganhou parte fabricada"
         assert versao.lens.warnings == (), f"{ref}: {versao.lens.warnings}"
     massa = build_recipe_entry("massa-tradicao")
     assert massa.versions[0].lens.is_bakery is True

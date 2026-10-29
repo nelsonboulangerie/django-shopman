@@ -35,6 +35,12 @@ artefatos de build.
   mock do cenário da venda (`tests/visual/mockBackend.mjs`, `MOCK_SCENARIO=sale
   MOCK_DIRECT=1`), que o `mockBackend.mjs` sobe na porta seguinte à dele.
 
+- **`link-down-sale.spec.ts`** — o link cai com o wi-fi de pé (sem `setOffline`: só a
+  rota `/api/v1/**` é cortada no navegador). A venda de dinheiro com o fechamento em voo
+  vai para a fila com a mesma chave, a próxima já nasce guardada, e a sonda leve do kit
+  envia as duas quando a rota volta. O Pix que perde a resposta trava, e "Conferir
+  agora" reenvia o mesmo corpo com a mesma chave. Mesmo cookie e mock da venda sem conexão.
+
 ## Fora daqui (precisa de Django real — reviewer local)
 
 Fluxos que exigem uma Projeção de terminal com dados:

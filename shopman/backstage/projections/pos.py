@@ -860,12 +860,11 @@ def _eligible_operator_cards() -> tuple[dict, ...]:
 def _manager_cards(operator=None) -> tuple[dict, ...]:
     """Gerentes que podem autorizar exceção, para o diálogo de PIN oferecer a lista.
 
-    ⚠️ Sem ``operator``, a lista mostrava o próprio operador quando ele era
-    gerente. A Joyce (grupo Gerente do seed, tem ``operate_pos`` E
-    ``adjust_shift``) se escolhia em "Quem autoriza?", digitava o próprio PIN e
-    a exceção saía com as duas assinaturas dela. A segunda assinatura existe
-    para haver DUAS pessoas; quem opera não se autoriza. O servidor recusa de
-    qualquer jeito (``_verify_manager_pin``); esta lista só evita oferecer.
+    ⚠️ O gerente que está operando ENTRA na lista, em primeiro (decisão do dono,
+    28/10/2026). Ele assina a própria exceção digitando o PIN de novo: é uma
+    fricção curta, e é a que segura quem estiver usando a sessão dele. Antes ele
+    era tirado da lista, e com uma gerente só no turno a lista chegava vazia e
+    nenhuma exceção saía.
 
     Existe porque a tela pedia o nome do gerente DIGITADO, e nome digitado erra: o
     servidor resolve o usuário por ``username`` e valida o PIN contra a credencial
@@ -879,13 +878,13 @@ def _manager_cards(operator=None) -> tuple[dict, ...]:
     from shopman.backstage.services.operator import ADJUST_SHIFT, eligible_operators
 
     operator_pk = getattr(operator, "pk", None)
+    users = sorted(eligible_operators(perm=ADJUST_SHIFT), key=lambda user: user.pk != operator_pk)
     return tuple(
         {
             "username": user.get_username(),
             "name": user.get_full_name().strip() or user.get_username(),
         }
-        for user in eligible_operators(perm=ADJUST_SHIFT)
-        if operator_pk is None or user.pk != operator_pk
+        for user in users
     )
 
 

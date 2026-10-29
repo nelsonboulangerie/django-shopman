@@ -1,5 +1,9 @@
 # Feeds de catálogo — Google Merchant & Meta (Frente 5)
 
+> ⚠️ **Sucedido em 24/10/2026** por [CATALOG-PUSH-GOOGLE-META-PLAN](../CATALOG-PUSH-GOOGLE-META-PLAN.md):
+> o envio pela API vira o escritor único de cada plataforma, e o feed XML sai quando os
+> dois envios estiverem no ar. A decisão de cada item mora em `services/display_catalog.py`.
+
 > Superfícies **FEED** (`capability="feed"`) do hub cross-channel. Um feed é uma
 > superfície alimentada por uma coleção (manual ou smart) que expõe um **feed RSS
 > 2.0 público** que Google Merchant Center e Meta Commerce Manager buscam por
@@ -24,7 +28,24 @@
 3. **Google Merchant Center**: Produtos → Fontes → busca agendada → `https://<dom>/feed/<ref>.xml`.
 4. **Meta Commerce Manager**: Catálogo → Fontes → feed agendado → `https://<dom>/feed/<ref>.xml?platform=meta`.
 
-## Spec verificada — Google (fontes primárias `support.google.com/merchants`)
+## Ocultar × Pausar no feed (23/10/2026)
+
+O Catálogo do Gestor tem dois gestos por produto e por superfície, e os dois valem
+também na coluna do feed (célula e barra de seleção):
+
+| Gesto no Catálogo | Onde grava | Google Merchant | Meta | Menuboard |
+|---|---|---|---|---|
+| **Pausar** (à mostra, sem compra) | `display.paused_skus` ou `Product.is_sellable=false` | `g:availability out_of_stock` | `g:availability out of stock` ("esgotado" na loja, fora dos anúncios) | item apagado |
+| **Ocultar** (some do canal) | `display.hidden_skus` ou `Product.is_published=false` | item fica no XML com `g:excluded_destination` repetido: Shopping_ads, Display_ads, Local_inventory_ads, Free_listings, Free_local_listings, Youtube_affiliate, Youtube_merchandise | `<status>archived</status>` (sem prefixo `g:`, campo fora da spec Google) | item sai da tela |
+
+Ocultar vence Pausar. O item oculto **continua no XML** de propósito: tirá-lo apaga o
+produto na plataforma, e mostrar de novo viraria cadastro novo, com nova revisão. O
+`g:pause` do Google não serve para isso: com `all` ele arquiva o produto depois de 14
+dias. Fontes: support.google.com/merchants/answer/6324486 (excluded_destination),
+/answer/11909930 (pause), developers.facebook.com/docs/marketing-api/catalog/reference
+(`status` active|archived; atributo fora da spec Google vai sem prefixo).
+
+ (fontes primárias `support.google.com/merchants`)
 - Formato: RSS 2.0, `xmlns:g="http://base.google.com/ns/1.0"`, `channel` → `item` com `g:`.
 - Obrigatórios: `g:id`, `g:title` (≤150), `g:description` (≤5000), `g:link`, `g:image_link`,
   `g:availability` (`in_stock`|`out_of_stock`), `g:price` (`12.00 BRL`, ponto decimal).
@@ -75,4 +96,5 @@ tipo de catálogo. (Ver relatórios de pesquisa 2026-07-01.)
 
 ## Estado
 Feed pull ✅ (platform-aware Google+Meta; 6 testes; verificado ao vivo com o catálogo Nelson).
-Push ⏳ (Pablo: credenciais Google Cloud/Merchant + Meta Business/System User).
+Push: implementado (Google pela Merchant API, Meta alinhada ao Ocultar = `archived`); ligar
+depende das credenciais. Ver [CATALOG-PUSH-GOOGLE-META-PLAN](../CATALOG-PUSH-GOOGLE-META-PLAN.md).

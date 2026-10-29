@@ -348,6 +348,29 @@ export interface BICustomersReport {
   average_ticket_q: number;
 }
 
+/** Um dia: corridas, entregas, custo da TaOn e frete cobrado. */
+export interface BIDeliveryCostDay {
+  date: string;
+  rides: number;
+  deliveries: number;
+  cost_q: number;
+  fee_q: number;
+}
+
+/** BIDeliveryCostReport(date_from: 'str', date_to: 'str', rides: 'int', deliveries: 'int', cost_q: 'int', estimated_rides: 'int', fee_q: 'int', balance_q: 'int', cost_per_delivery_q: 'int', days: 'tuple[BIDeliveryCostDay, ...]') */
+export interface BIDeliveryCostReport {
+  date_from: string;
+  date_to: string;
+  rides: number;
+  deliveries: number;
+  cost_q: number;
+  estimated_rides: number;
+  fee_q: number;
+  balance_q: number;
+  cost_per_delivery_q: number;
+  days: BIDeliveryCostDay[];
+}
+
 /** BIExploreRow(key: 'str', label: 'str', key2: 'str', label2: 'str', value: 'float') */
 export interface BIExploreRow {
   key: string;
