@@ -39,7 +39,7 @@ RUN addgroup --system shopman \
 #   2. `check_geoip_freshness` — no ciclo do maintenance_worker, avisa o operador aos 21
 #      dias e, aos 90, a cidade deixa de aparecer na tela.
 # Ver docs/guides/geolite2-city.md.
-ARG GEOLITE2_SNAPSHOT=2026-09-29
+ARG GEOLITE2_SNAPSHOT=2026-10-27
 
 # ⚠️ A chave entra por `ARG`. Quem a passa, no deploy vivo, é o GitHub Actions
 # (`.github/workflows/deploy-images.yml`, segredo `MAXMIND_LICENSE_KEY` do repositório):
