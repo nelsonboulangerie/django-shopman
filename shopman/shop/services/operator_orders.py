@@ -873,10 +873,23 @@ def _trip_open(order: Order) -> bool:
 
 def courier_return_members(order: Order) -> list[Order]:
     """Os pedidos que "Entregador voltou" fecha a partir deste; vazio se não há o que voltar."""
-    if not _trip_open(order):
+    def return_open(member: Order) -> bool:
+        # O cancelamento posterior à coleta não transforma a venda em
+        # recebimento. O troco e a maquininha que já saíram, porém, continuam
+        # sendo custódia física da loja e precisam fechar o ciclo.
+        return _trip_open(member) or (
+            member.status == Order.Status.CANCELLED
+            and (courier_change(member).pending or equipment_custody(member).pending)
+            and not ((member.data or {}).get("dispatch") or {}).get("courier_back_at")
+        )
+
+    if not return_open(order):
         return []
-    members = [m for m in trip_members(order) if _trip_open(m)]
-    return members if any(must_come_back(m) for m in members) else []
+    members = [m for m in trip_members(order) if return_open(m)]
+    return members if any(
+        must_come_back(m) if m.status != Order.Status.CANCELLED else return_open(m)
+        for m in members
+    ) else []
 
 
 def trip_revision(order: Order) -> str:
@@ -907,7 +920,11 @@ def courier_return(order: Order) -> CourierReturn:
         if custody.pending:
             label = str(((member.data or {}).get("dispatch") or {}).get("device_label") or "")
             machine = machine or label or "maquininha"
-    parts = tuple((m.ref, cash_due_on_delivery_q(m)) for m in members if _cod_pending(m) and cash_due_on_delivery_q(m) > 0)
+    parts = tuple(
+        (m.ref, cash_due_on_delivery_q(m))
+        for m in members
+        if m.status != Order.Status.CANCELLED and _cod_pending(m) and cash_due_on_delivery_q(m) > 0
+    )
     change_q = sum(courier_change(m).out_q for m in members if courier_change(m).pending)
     return CourierReturn(
         orders=tuple(m.ref for m in members), machine=machine,
@@ -941,7 +958,39 @@ def courier_returned(order: Order, *, actor: str, cash_shift=None, expected_revi
         if member.status == Order.Status.DISPATCHED:
             advance_order(member, actor=actor)
             member.refresh_from_db()
-        if _cod_pending(member):
+        if member.status == Order.Status.CANCELLED:
+            # Venda cancelada não entra no caixa. Só o troco que já saiu volta,
+            # como ``courier_in`` ligado à saída original.
+            change = courier_change(member)
+            if change.pending:
+                if cash_shift is None or not getattr(cash_shift, "is_open", False):
+                    raise ValueError("Abra um turno de caixa para receber o troco que voltou.")
+                from shopman.cashman import services as cash_ledger
+                from shopman.cashman.models import Entry
+
+                courier_out = Entry.objects.filter(
+                    kind=Entry.Kind.COURIER_OUT, order_ref=member.ref,
+                ).order_by("-id").first()
+                receiver = _user_for_actor(actor) or cash_shift.opened_by
+                cash_ledger.record(
+                    Entry.Kind.COURIER_IN,
+                    shift=cash_shift,
+                    operator=receiver,
+                    amount_q=change.out_q,
+                    order_ref=member.ref,
+                    parent=(
+                        courier_out
+                        if courier_out is not None and courier_out.shift_id == cash_shift.pk
+                        else None
+                    ),
+                    payload={
+                        "courier_out_id": courier_out.pk if courier_out else None,
+                        "settled_by": actor,
+                        "cancelled_after_collection": True,
+                    },
+                )
+            member.refresh_from_db()
+        elif _cod_pending(member):
             change = courier_change(member)
             settle_delivery_cash(member, cash_shift=cash_shift, actor=actor,
                                  change_back_q=change.out_q if change.pending else None)
@@ -2272,7 +2321,7 @@ def operational_actions(order: Order, *, user=None, waitlist_state: str | None =
         ))
     # "Entregador voltou": um gesto fecha a saída inteira (entrega, dinheiro,
     # troco e maquininha). Só existe quando o entregador tem algo a devolver.
-    if order.status in (Order.Status.DISPATCHED, Order.Status.DELIVERED) and courier_return_members(order):
+    if courier_return_members(order):
         actions.append(Action(
             ref="courier-back", kind="mutation", label="Entregador voltou", priority="primary",
             enabled=authorized, reason="" if authorized else permission_reason,

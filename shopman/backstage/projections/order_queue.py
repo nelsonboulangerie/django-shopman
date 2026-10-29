@@ -2256,7 +2256,7 @@ machine_phrase = operator_orders.machine_phrase
 
 def _trip_fields(order: Order) -> dict:
     """A saída deste pedido: com quem saiu junto e o que "Entregador voltou" deve conferir."""
-    if order.status not in ("dispatched", "delivered"):
+    if not operator_orders.courier_return_members(order):
         return {}
     others = tuple(m.ref for m in operator_orders.trip_members(order) if m.pk != order.pk)
     back = operator_orders.courier_return(order)
