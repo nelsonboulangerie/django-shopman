@@ -31,6 +31,8 @@ pytestmark = pytest.mark.django_db
 # anônimo é o mesmo para todo mundo: é ele que mais paga o TTFB do Django.
 RECOMMENDATIONS_TWIN = "/api/v1/storefront/public/products/PAO-FRANCES/recommendations/"
 RECOMMENDATIONS_PRIVATE = "/api/v1/storefront/products/PAO-FRANCES/recommendations/"
+PRODUCT_TWIN = "/api/v1/storefront/public/products/PAO-FRANCES/"
+PRODUCT_PRIVATE = "/api/v1/storefront/products/PAO-FRANCES/"
 
 PUBLIC_TWINS = {
     "/api/v1/storefront/public/home/": "/api/v1/storefront/home/",
@@ -38,6 +40,7 @@ PUBLIC_TWINS = {
     "/api/v1/storefront/public/catalog/": "/api/v1/storefront/catalog/",
     "/api/v1/storefront/public/catalog/paes/": "/api/v1/storefront/catalog/paes/",
     RECOMMENDATIONS_TWIN: RECOMMENDATIONS_PRIVATE,
+    PRODUCT_TWIN: PRODUCT_PRIVATE,
 }
 PUBLIC_IN_PLACE = ("/api/v1/storefront/site/", "/api/v1/storefront/legal/")
 # A gêmea do rail tem TTL próprio: a lista muda com o catálogo, não com a venda.
@@ -191,7 +194,10 @@ def test_public_twin_is_the_anonymous_projection_not_a_new_one(client):
     _seed_surface(stock_qty=Decimal("20"))
 
     for twin, private in PUBLIC_TWINS.items():
-        assert client.get(twin).json() == Client().get(private).json(), twin
+        expected = Client().get(private).json()
+        if twin == PRODUCT_TWIN:
+            expected.pop("cart")
+        assert client.get(twin).json() == expected, twin
 
 
 @pytest.mark.parametrize("path", PUBLIC_IN_PLACE)
@@ -228,3 +234,57 @@ def test_read_routes_no_longer_hand_out_csrf_cookie(client, path):
 
     assert response.status_code == 200
     assert "csrftoken" not in response.cookies
+
+
+def test_public_product_does_not_build_or_include_a_cart(client, monkeypatch):
+    from shopman.storefront.api import surface
+
+    _seed_surface(stock_qty=Decimal("20"))
+
+    def unexpected_cart(*args, **kwargs):
+        raise AssertionError("a PDP pública tentou montar sacola")
+
+    monkeypatch.setattr(surface, "_cart_payload", unexpected_cart)
+    response = client.get(PRODUCT_TWIN)
+    assert response.status_code == 200
+    assert set(response.json()) == {"product"}
+    assert response.json()["product"]["qty_in_cart"] == 0
+    assert response.json()["product"]["is_favorite"] is False
+    assert response["Cache-Control"] == PUBLIC_EDGE_CACHE_CONTROL
+
+
+def test_public_product_keeps_personalized_state_in_the_private_path():
+    _seed_surface(stock_qty=Decimal("20"))
+    customer_client, customer = _customer_client()
+    private = customer_client.get(PRODUCT_PRIVATE)
+    public = Client().get(PRODUCT_TWIN)
+    assert private.status_code == public.status_code == 200
+    assert private.json()["product"]["qty_in_cart"] == 2
+    assert private.json()["product"]["is_favorite"] is True
+    assert private.json()["cart"]["items_count"] == 2
+    assert private["Cache-Control"] == "private, no-store"
+    assert public.json()["product"]["qty_in_cart"] == 0
+    assert public.json()["product"]["is_favorite"] is False
+    assert "cart" not in public.json()
+    assert customer.ref not in public.content.decode()
+    assert customer_client.get(PRODUCT_TWIN).status_code == 400
+
+
+def test_public_product_does_not_cache_missing_or_unpublished_products(client):
+    product = _seed_surface()
+    for sku in ("UNKNOWN", product.sku):
+        if sku == product.sku:
+            product.is_published = False
+            product.save(update_fields=["is_published"])
+        response = client.get(f"/api/v1/storefront/public/products/{sku}/")
+        assert response.status_code == 404
+        assert response["Cache-Control"] == "private, no-store"
+
+
+def test_public_product_head_has_the_same_cache_policy(client):
+    _seed_surface()
+    response = client.head(PRODUCT_TWIN)
+    assert response.status_code == 200
+    assert response.content == b""
+    assert response["Cache-Control"] == PUBLIC_EDGE_CACHE_CONTROL
+    assert not response.cookies

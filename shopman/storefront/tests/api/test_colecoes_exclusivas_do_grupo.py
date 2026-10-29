@@ -296,3 +296,12 @@ def test_portao_da_sacola_tem_custo_fixo_para_o_anonimo(cardapio):
     common = list(Product.objects.exclude(sku__in=DOCES).values_list("sku", flat=True))
     assert len(common) >= 10
     assert cost(common[:1]) == cost(common)
+
+
+def test_pdp_publica_nao_expoe_produto_de_colecao_exclusiva(cardapio):
+    hidden = Client().get("/api/v1/storefront/public/products/BRIGADEIRO/")
+    common = Client().get("/api/v1/storefront/public/products/PAO-FRANCES/")
+    assert hidden.status_code == 404
+    assert hidden["Cache-Control"] == "private, no-store"
+    assert common.status_code == 200
+    assert set(common.json()) == {"product"}

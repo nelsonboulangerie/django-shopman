@@ -1,0 +1,131 @@
+{
+  "label": "before-2053-bff",
+  "captured_utc": "2026-10-29T18:43:26.762799+00:00",
+  "surface": "bff",
+  "public": false,
+  "method": "Sequential curl, reuse allowed, 1 transfer/s maximum; no cookies or auth",
+  "samples": [
+    {
+      "url_effective": "https://www.nelsonboulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 0.035577,
+      "time_connect": 0.064952,
+      "time_appconnect": 0.10671,
+      "time_pretransfer": 0.107395,
+      "time_starttransfer": 1.494524,
+      "time_total": 1.673002,
+      "num_connects": 1,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=618.67, availability;dur=155.49, personalization;dur=17.16, shadow;dur=0.00, db;dur=155.12, connect;dur=4.59;desc=\"1\", cache;dur=16.16;desc=\"3\", gc;dur=2.41;desc=\"9\", bff;dur=799.59",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private, no-store"
+      }
+    },
+    {
+      "url_effective": "https://www.nelsonboulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 1.1e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 5e-05,
+      "time_starttransfer": 0.378999,
+      "time_total": 0.443688,
+      "num_connects": 0,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=618.67, availability;dur=155.49, personalization;dur=17.16, shadow;dur=0.00, db;dur=155.12, connect;dur=4.59;desc=\"1\", cache;dur=16.16;desc=\"3\", gc;dur=2.41;desc=\"9\", bff;dur=17.88",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private, no-store"
+      }
+    },
+    {
+      "url_effective": "https://www.nelsonboulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 1.9e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 8.9e-05,
+      "time_starttransfer": 0.375485,
+      "time_total": 0.420375,
+      "num_connects": 0,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=618.67, availability;dur=155.49, personalization;dur=17.16, shadow;dur=0.00, db;dur=155.12, connect;dur=4.59;desc=\"1\", cache;dur=16.16;desc=\"3\", gc;dur=2.41;desc=\"9\", bff;dur=30.88",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private, no-store"
+      }
+    },
+    {
+      "url_effective": "https://www.nelsonboulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 8.9e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.000257,
+      "time_starttransfer": 1.111375,
+      "time_total": 1.111795,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=516.17, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=91.17, connect;dur=3.68;desc=\"1\", cache;dur=55.40;desc=\"5\", gc;dur=0.65;desc=\"1\", bff;dur=562.77",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private, no-store"
+      }
+    },
+    {
+      "url_effective": "https://www.nelsonboulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 1.8e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 6.4e-05,
+      "time_starttransfer": 2.911414,
+      "time_total": 2.912106,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=487.64, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=88.69, connect;dur=3.70;desc=\"1\", cache;dur=43.25;desc=\"4\", gc;dur=0.60;desc=\"1\", bff;dur=533.62",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private, no-store"
+      }
+    },
+    {
+      "url_effective": "https://www.nelsonboulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 1.3e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 5.6e-05,
+      "time_starttransfer": 0.783552,
+      "time_total": 0.784209,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=443.63, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=84.37, connect;dur=3.93;desc=\"1\", cache;dur=46.19;desc=\"4\", gc;dur=0.54;desc=\"1\", bff;dur=483.48",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private, no-store"
+      }
+    }
+  ],
+  "summary": {
+    "catalog": {
+      "n": 3,
+      "p50_total_ms": 443.69,
+      "p50_ttfb_ms": 379.0,
+      "maximum_total_ms": 1673.0
+    },
+    "pdp": {
+      "n": 3,
+      "p50_total_ms": 1111.8,
+      "p50_ttfb_ms": 1111.38,
+      "maximum_total_ms": 2912.11
+    }
+  }
+}

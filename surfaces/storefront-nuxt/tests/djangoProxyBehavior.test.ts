@@ -83,6 +83,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
       ['/api/v1/storefront/shell/', `${DJANGO}/api/v1/storefront/public/shell/`],
       ['/api/v1/storefront/catalog', `${DJANGO}/api/v1/storefront/public/catalog/`],
       ['/api/v1/storefront/catalog/paes/', `${DJANGO}/api/v1/storefront/public/catalog/paes/`],
+      ['/api/v1/storefront/products/PAO-FRANCES/', `${DJANGO}/api/v1/storefront/public/products/PAO-FRANCES/`],
       // O rail de sugestões da PDP é o único request que a página faz depois do
       // SSR: vai para a gêmea de 60 s, e sem o cookie do visitante.
       ['/api/v1/storefront/products/PAO-FRANCES/recommendations/', `${DJANGO}/api/v1/storefront/public/products/PAO-FRANCES/recommendations/`]
@@ -95,15 +96,15 @@ describe('proxyDjangoPath — transporte do BFF', () => {
       expect(calls[0]!.options.headers.cookie).toBeUndefined()
     })
 
-    it('quem tem sessão fica na rota privada, com o cookie dele', async () => {
+    it.each(['/api/v1/storefront/home/', '/api/v1/storefront/products/PAO-FRANCES/'])('quem tem sessão fica em %s, com o cookie dele', async (path) => {
       const { event } = makeEvent({
-        path: '/api/v1/storefront/home/',
+        path,
         headers: { cookie: 'csrftoken=tok; sessionid=s1' }
       })
 
-      await proxyDjangoPath(event, '/api/v1/storefront/home/')
+      await proxyDjangoPath(event, path)
 
-      expect(calls[0]!.url).toBe(`${DJANGO}/api/v1/storefront/home/`)
+      expect(calls[0]!.url).toBe(`${DJANGO}${path}`)
       expect(calls[0]!.options.headers.cookie).toContain('sessionid=s1')
     })
 
@@ -112,9 +113,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
         '/api/v1/storefront/home/?channel=whatsapp',
         '/api/v1/storefront/menu/',
         '/api/v1/storefront/cart/',
-        // A PDP em si NÃO tem gêmea: o corpo dela carrega a sacola de quem está
-        // comprando (ver shopman/storefront/api/surface.py). O rail tem.
-        '/api/v1/storefront/products/PAO/',
+        '/api/v1/storefront/products/PAO/?channel=whatsapp',
         '/api/v1/storefront/products/PAO/recommendations/?channel=whatsapp'
       ]) {
         const { event } = makeEvent({ path })
@@ -125,7 +124,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
         `${DJANGO}/api/v1/storefront/home/?channel=whatsapp`,
         `${DJANGO}/api/v1/storefront/menu/`,
         `${DJANGO}/api/v1/storefront/cart/`,
-        `${DJANGO}/api/v1/storefront/products/PAO/`,
+        `${DJANGO}/api/v1/storefront/products/PAO/?channel=whatsapp`,
         `${DJANGO}/api/v1/storefront/products/PAO/recommendations/?channel=whatsapp`
       ])
     })
@@ -161,6 +160,20 @@ describe('proxyDjangoPath — transporte do BFF', () => {
       expect(JSON.stringify(options.headers)).not.toContain('tok-123')
     })
 
+    it('a leitura pública da PDP não substitui a sacola recebida pelo shell', async () => {
+      const product = { sku: 'PAO-FRANCES', qty_in_cart: 0, is_favorite: false }
+      vi.stubGlobal('$fetch', Object.assign(vi.fn(), {
+        raw: vi.fn().mockResolvedValue(upstream(200, { product }))
+      }))
+      const { event, res } = makeEvent({ path: '/api/v1/storefront/products/PAO-FRANCES/' })
+
+      const body = await proxyDjangoPath(event, '/api/v1/storefront/products/PAO-FRANCES/')
+
+      expect(body).toEqual({ product })
+      expect(body).not.toHaveProperty('cart')
+      expect(res.getHeader('cache-control')).toBe('private, no-store')
+    })
+
     it('mutação nunca vai para a gêmea', () => {
       expect(publicTwinPath('POST', '/api/v1/storefront/home/', undefined, false)).toBeNull()
       expect(publicTwinPath('GET', '/api/v1/storefront/home/', undefined, false)).toBe('/api/v1/storefront/public/home/')
@@ -178,8 +191,8 @@ describe('proxyDjangoPath — transporte do BFF', () => {
       expect(publicTwinPath('GET', rail, undefined, true)).toBeNull()
       expect(publicTwinPath('HEAD', rail, undefined, false)).toBe(twin)
       expect(publicTwinPath('POST', rail, undefined, false)).toBeNull()
-      // A PDP não tem gêmea: o corpo dela carrega a sacola.
-      expect(publicTwinPath('GET', '/api/v1/storefront/products/PAO-FRANCES/', undefined, false)).toBeNull()
+      // A PDP pública separa o produto da sacola que vem no shell.
+      expect(publicTwinPath('GET', '/api/v1/storefront/products/PAO-FRANCES/', undefined, false)).toBe('/api/v1/storefront/public/products/PAO-FRANCES/')
     })
   })
 

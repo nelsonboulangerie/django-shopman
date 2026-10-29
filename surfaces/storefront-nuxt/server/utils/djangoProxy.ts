@@ -125,12 +125,10 @@ async function ensureDjangoCsrfCookie (event: H3Event, djangoBaseUrl: string, co
 // URL: a gêmea recusa cookie, e o corpo dela é o do anônimo para todos. Ver
 // shopman/storefront/api/public_cache.py.
 //
-// O rail de sugestões da PDP entra na lista porque é o único request que a página
-// faz DEPOIS do SSR: o corpo do anônimo é o mesmo para todo mundo, então a borda
-// pode servir a seção sem pagar o TTFB do Django a cada visita. A PDP em si fica
-// de fora: ela carrega a projeção da sacola (shopman/storefront/api/surface.py),
-// que é de quem está comprando.
-const PUBLIC_TWIN_PATH = /^\/api\/v1\/storefront\/(home|shell|catalog(?:\/[-a-zA-Z0-9_]+)?|products\/[^/]+\/recommendations)\/?$/
+// A PDP pública devolve só o produto: a sacola vem do shell. A mesma cerca
+// de sessão protege preço, favorito e quantidade do cliente; o TTL é o mesmo
+// do catálogo. O rail de sugestões mantém sua própria gêmea de 60 s.
+const PUBLIC_TWIN_PATH = /^\/api\/v1\/storefront\/(home|shell|catalog(?:\/[-a-zA-Z0-9_]+)?|products\/[^/]+(?:\/recommendations)?)\/?$/
 // O Django identifica o cliente só pela sessão (SESSION_COOKIE_NAME, travado em
 // shopman/storefront/tests/api/test_public_edge_cache.py). Sem ela, é anônimo.
 const DJANGO_SESSION_COOKIE = 'sessionid'

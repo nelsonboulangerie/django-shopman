@@ -720,7 +720,8 @@ export interface CatalogResponse {
 
 export interface ProductResponse {
   product: ProductDetailProjection
-  cart: CartProjection
+  // A leitura pública não inclui sacola; o shell continua sendo seu dono.
+  cart?: CartProjection
 }
 
 export interface CartResponse {

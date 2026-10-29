@@ -1,0 +1,327 @@
+{
+  "label": "before-2053",
+  "captured_utc": "2026-10-29T18:38:38.170301+00:00",
+  "surface": "origin",
+  "public": false,
+  "method": "Sequential curl, reuse allowed, 1 transfer/s maximum; no cookies or auth",
+  "samples": [
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 0.002721,
+      "time_connect": 0.033785,
+      "time_appconnect": 0.062906,
+      "time_pretransfer": 0.062967,
+      "time_starttransfer": 1.07112,
+      "time_total": 1.118594,
+      "num_connects": 1,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=730.55, availability;dur=205.11, personalization;dur=30.59, shadow;dur=0.00, db;dur=172.05, connect;dur=3.54;desc=\"1\", cache;dur=27.06;desc=\"4\", gc;dur=7.69;desc=\"10\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 730.55,
+        "availability": 205.11,
+        "personalization": 30.59,
+        "shadow": 0.0,
+        "db": 172.05,
+        "connect": 3.54,
+        "cache": 27.06,
+        "gc": 7.69
+      },
+      "body_ms": 47.47,
+      "residual_ms": 277.6
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 1.4e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 5.7e-05,
+      "time_starttransfer": 0.973941,
+      "time_total": 1.020899,
+      "num_connects": 0,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=705.59, availability;dur=198.01, personalization;dur=32.51, shadow;dur=0.00, db;dur=172.22, connect;dur=3.20;desc=\"1\", cache;dur=25.98;desc=\"3\", gc;dur=8.64;desc=\"9\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 705.59,
+        "availability": 198.01,
+        "personalization": 32.51,
+        "shadow": 0.0,
+        "db": 172.22,
+        "connect": 3.2,
+        "cache": 25.98,
+        "gc": 8.64
+      },
+      "body_ms": 46.96,
+      "residual_ms": 268.29
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 1.5e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 5.4e-05,
+      "time_starttransfer": 0.80766,
+      "time_total": 0.854589,
+      "num_connects": 0,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=569.19, availability;dur=156.95, personalization;dur=12.91, shadow;dur=0.00, db;dur=123.18, connect;dur=3.64;desc=\"1\", cache;dur=20.23;desc=\"3\", gc;dur=4.52;desc=\"10\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 569.19,
+        "availability": 156.95,
+        "personalization": 12.91,
+        "shadow": 0.0,
+        "db": 123.18,
+        "connect": 3.64,
+        "cache": 20.23,
+        "gc": 4.52
+      },
+      "body_ms": 46.93,
+      "residual_ms": 238.42
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 3.7e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.000146,
+      "time_starttransfer": 0.93536,
+      "time_total": 0.982352,
+      "num_connects": 0,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=663.85, availability;dur=184.50, personalization;dur=13.63, shadow;dur=0.00, db;dur=152.06, connect;dur=3.81;desc=\"1\", cache;dur=23.11;desc=\"3\", gc;dur=4.49;desc=\"10\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 663.85,
+        "availability": 184.5,
+        "personalization": 13.63,
+        "shadow": 0.0,
+        "db": 152.06,
+        "connect": 3.81,
+        "cache": 23.11,
+        "gc": 4.49
+      },
+      "body_ms": 46.99,
+      "residual_ms": 271.36
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/catalog/",
+      "http_code": 200,
+      "time_namelookup": 5e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.000228,
+      "time_starttransfer": 0.866057,
+      "time_total": 0.910032,
+      "num_connects": 0,
+      "size_download": 56731,
+      "headers": {
+        "server-timing": "projection;dur=628.14, availability;dur=170.97, personalization;dur=13.79, shadow;dur=0.00, db;dur=161.45, connect;dur=4.61;desc=\"1\", cache;dur=21.94;desc=\"3\", gc;dur=5.03;desc=\"9\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 628.14,
+        "availability": 170.97,
+        "personalization": 13.79,
+        "shadow": 0.0,
+        "db": 161.45,
+        "connect": 4.61,
+        "cache": 21.94,
+        "gc": 5.03
+      },
+      "body_ms": 43.97,
+      "residual_ms": 237.69
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 6.5e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.000282,
+      "time_starttransfer": 0.732448,
+      "time_total": 0.733982,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=519.27, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=126.32, connect;dur=5.54;desc=\"1\", cache;dur=54.88;desc=\"4\", gc;dur=0.73;desc=\"1\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 519.27,
+        "availability": 0.0,
+        "personalization": 0.0,
+        "shadow": 0.0,
+        "db": 126.32,
+        "connect": 5.54,
+        "cache": 54.88,
+        "gc": 0.73
+      },
+      "body_ms": 1.53,
+      "residual_ms": 212.9
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 3e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.000253,
+      "time_starttransfer": 0.977619,
+      "time_total": 0.979405,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=530.16, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=83.29, connect;dur=4.06;desc=\"1\", cache;dur=53.92;desc=\"4\", gc;dur=0.43;desc=\"1\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 530.16,
+        "availability": 0.0,
+        "personalization": 0.0,
+        "shadow": 0.0,
+        "db": 83.29,
+        "connect": 4.06,
+        "cache": 53.92,
+        "gc": 0.43
+      },
+      "body_ms": 1.79,
+      "residual_ms": 447.21
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 0.000465,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.00079,
+      "time_starttransfer": 0.699251,
+      "time_total": 0.699848,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=512.97, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=84.07, connect;dur=4.24;desc=\"1\", cache;dur=64.26;desc=\"4\", gc;dur=0.58;desc=\"1\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 512.97,
+        "availability": 0.0,
+        "personalization": 0.0,
+        "shadow": 0.0,
+        "db": 84.07,
+        "connect": 4.24,
+        "cache": 64.26,
+        "gc": 0.58
+      },
+      "body_ms": 0.6,
+      "residual_ms": 185.49
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 0.00016,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.002038,
+      "time_starttransfer": 0.674626,
+      "time_total": 0.674945,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=473.40, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=94.91, connect;dur=4.18;desc=\"1\", cache;dur=44.89;desc=\"4\", gc;dur=0.56;desc=\"1\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 473.4,
+        "availability": 0.0,
+        "personalization": 0.0,
+        "shadow": 0.0,
+        "db": 94.91,
+        "connect": 4.18,
+        "cache": 44.89,
+        "gc": 0.56
+      },
+      "body_ms": 0.32,
+      "residual_ms": 199.19
+    },
+    {
+      "url_effective": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "http_code": 200,
+      "time_namelookup": 9.1e-05,
+      "time_connect": 0.0,
+      "time_appconnect": 0.0,
+      "time_pretransfer": 0.000356,
+      "time_starttransfer": 0.735562,
+      "time_total": 0.736111,
+      "num_connects": 0,
+      "size_download": 4555,
+      "headers": {
+        "server-timing": "projection;dur=531.77, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=90.51, connect;dur=3.94;desc=\"1\", cache;dur=58.64;desc=\"4\", gc;dur=0.42;desc=\"1\"",
+        "cf-cache-status": "BYPASS",
+        "age": "",
+        "cache-control": "private"
+      },
+      "stages_ms": {
+        "projection": 531.77,
+        "availability": 0.0,
+        "personalization": 0.0,
+        "shadow": 0.0,
+        "db": 90.51,
+        "connect": 3.94,
+        "cache": 58.64,
+        "gc": 0.42
+      },
+      "body_ms": 0.55,
+      "residual_ms": 203.44
+    }
+  ],
+  "summary": {
+    "catalog": {
+      "n": 5,
+      "p50_total_ms": 982.35,
+      "p50_ttfb_ms": 935.36,
+      "maximum_total_ms": 1118.59,
+      "p50_projection_ms": 663.85,
+      "p50_residual_ms": 268.29
+    },
+    "pdp": {
+      "n": 5,
+      "p50_total_ms": 733.98,
+      "p50_ttfb_ms": 732.45,
+      "maximum_total_ms": 979.4,
+      "p50_projection_ms": 519.27,
+      "p50_residual_ms": 203.44
+    }
+  }
+}

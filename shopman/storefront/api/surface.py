@@ -62,6 +62,7 @@ from shopman.storefront.services.cart_mutations import (
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
 from .public_cache import (
+    PRIVATE_NO_STORE,
     RECOMMENDATIONS_EDGE_CACHE_CONTROL,
     PublicEdgeCacheMixin,
     PublicReadMixin,
@@ -573,6 +574,7 @@ class StorefrontProductView(ServerTimingMixin, APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    include_cart = True
 
     def get(self, request, sku: str):
         product = build_product_detail(
@@ -582,10 +584,32 @@ class StorefrontProductView(ServerTimingMixin, APIView):
         )
         if product is None:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
-        return Response({
-            "product": projection_data(product),
-            "cart": _cart_payload(request),
-        })
+        payload = {"product": projection_data(product)}
+        if self.include_cart:
+            payload["cart"] = _cart_payload(request)
+        response = Response(payload)
+        response["Cache-Control"] = PRIVATE_NO_STORE
+        return response
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
+        summary="Public storefront product detail projection",
+        responses={
+            200: OpenApiResponse(description="Product detail projection without cart projection."),
+            404: DetailSerializer,
+        },
+    ),
+)
+class StorefrontPublicProductView(PublicEdgeCacheMixin, StorefrontProductView):
+    """PDP do visitante sem sessão, com o mesmo TTL do catálogo público.
+
+    A sacola vem do shell: não pertence ao corpo compartilhado do produto.
+    Cookie, credencial e parâmetros são recusados pelo mixin canônico.
+    """
+
+    include_cart = False
 
 
 class StorefrontProductRecommendationsView(ServerTimingMixin, APIView):
