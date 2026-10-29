@@ -393,10 +393,10 @@ function onMapCancel() {
     <template #body>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
-          <UiButton
+          <NuxtButton
             v-for="option in fulfillmentOptions"
             :key="option.ref"
-            variant="outline"
+            color="neutral" variant="outline"
             class="h-auto justify-start whitespace-normal px-3 py-2 text-left"
             :class="fulfillmentConfirmed && fulfillmentType === option.ref ? 'border-primary bg-primary/5' : ''"
             @click="$emit('update:fulfillmentType', option.ref as 'pickup' | 'delivery'); $emit('update:fulfillmentConfirmed', true)"
@@ -406,22 +406,22 @@ function onMapCancel() {
               <span class="block text-sm font-semibold">{{ option.label }}</span>
               <span class="block text-xs opacity-80">{{ option.description }}</span>
             </span>
-          </UiButton>
+          </NuxtButton>
         </div>
 
         <div v-if="fulfillmentType === 'delivery'" class="grid gap-3">
           <div v-if="savedAddresses.length" class="flex flex-wrap gap-2">
-            <UiButton
+            <NuxtButton
               v-for="address in savedAddresses"
               :key="address.id"
               type="button"
-              variant="outline"
-              size="sm"
+              color="neutral" variant="outline"
+              size="md"
               class="h-auto justify-start whitespace-normal px-2 py-1 text-left"
               @click="$emit('pickSavedAddress', address)"
             >
               <span class="max-w-48 truncate">{{ address.label || address.formatted_address }}</span>
-            </UiButton>
+            </NuxtButton>
           </div>
           <!-- OS PASSOS DA LOJA: buscar (CEP ou endereço) → a sugestão preenche
                os campos → número, complemento, referência. Cada campo é um bloco
@@ -550,7 +550,7 @@ function onMapCancel() {
              o dado sempre viajou no intent; só a tela o escondia. -->
         <label class="grid gap-1 text-sm">
           <span class="font-medium text-muted-foreground">Observações</span>
-          <UiTextarea :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
+          <NuxtTextarea class="w-full" :model-value="orderNotes" :rows="2" placeholder="Instruções do pedido, referência, recado" @update:model-value="$emit('update:orderNotes', String($event || ''))" />
         </label>
       </div>
       <PosAddressMapDialog

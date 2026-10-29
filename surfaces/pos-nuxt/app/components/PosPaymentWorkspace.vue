@@ -1652,16 +1652,16 @@ defineExpose({
               v-if="noticeActions(note).length"
               class="flex w-full flex-wrap gap-2"
             >
-              <UiButton
+              <NuxtButton
                 v-for="action in noticeActions(note)"
                 :key="action.label"
-                size="lg"
-                variant="outline"
+                size="xl"
+                color="neutral" variant="outline"
                 class="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
                 @click="action.run()"
               >
                 {{ action.label }}
-              </UiButton>
+              </NuxtButton>
             </div>
           </li>
         </ul>
@@ -2054,8 +2054,8 @@ defineExpose({
              setinha de todas as telas do sistema — e um segundo botão de voltar
              ao lado do que FECHA a venda é o clique errado do balcão cheio.
              O Esc continua valendo. -->
-        <UiButton
-          size="lg"
+        <NuxtButton
+          size="xl"
           class="h-14 w-full shrink-0 gap-2 text-base"
           :disabled="ctaDisabled"
           :loading="(loading || needsReview) && !reviewFailed"
@@ -2063,7 +2063,7 @@ defineExpose({
         >
           {{ ctaLabel }}
           <OperatorKbd variant="inverse" aria-hidden="true">Enter</OperatorKbd>
-        </UiButton>
+        </NuxtButton>
       </div>
     </div>
 
@@ -2239,11 +2239,11 @@ defineExpose({
           <!-- Cada preset mostra QUANTO FICA CADA PARTE. Sem isso o operador
                escolhe o número e só descobre o valor ao lançar a primeira
                forma — com o cliente já perguntando "quanto deu o meu?". -->
-          <UiButton
+          <NuxtButton
             v-for="n in SPLIT_PRESETS"
             :key="n"
             type="button"
-            variant="outline"
+            color="neutral" variant="outline"
             class="h-14 flex-col gap-0.5 p-0 tabular-nums"
             :class="splitCount === n ? 'border-primary bg-primary/5' : ''"
             :disabled="hasLinkTender"
@@ -2253,7 +2253,7 @@ defineExpose({
           >
             <span class="text-lg font-semibold leading-none">{{ n }}</span>
             <span class="text-xs font-normal leading-none text-muted-foreground">{{ splitShareLabel(n) }}</span>
-          </UiButton>
+          </NuxtButton>
         </div>
       </div>
     </template>
@@ -2287,31 +2287,31 @@ defineExpose({
     <template #body>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
-            <UiButton
+            <NuxtButton
               v-for="option in discountTypes"
               :key="option.ref"
-              variant="outline"
+              color="neutral" variant="outline"
               :class="discountType === option.ref ? 'border-primary bg-primary/5' : ''"
               @click="$emit('update:discountType', option.ref === 'fixed' ? 'fixed' : 'percent')"
             >
               {{ option.label }}
-            </UiButton>
+            </NuxtButton>
           </div>
           <label class="grid gap-1 text-xs">
             <span class="font-medium text-muted-foreground">{{ discountType === "fixed" ? "Valor (R$)" : "Percentual (%)" }}</span>
             <UiInput :model-value="discountValue" inputmode="decimal" placeholder="0" @update:model-value="$emit('update:discountValue', String($event || ''))" />
           </label>
           <div v-if="discountReasons.length" class="flex flex-wrap gap-2">
-            <UiButton
+            <NuxtButton
               v-for="reason in discountReasons"
               :key="reason.ref"
-              variant="outline"
-              size="sm"
+              color="neutral" variant="outline"
+              size="md"
               :class="discountReason === reason.ref ? 'border-primary bg-primary/5' : ''"
               @click="$emit('update:discountReason', reason.ref)"
             >
               {{ reason.label }}
-            </UiButton>
+            </NuxtButton>
           </div>
         </div>
     </template>

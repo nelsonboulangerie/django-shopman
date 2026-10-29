@@ -132,7 +132,7 @@ describe("design-system: o núcleo comum não volta para dentro dos apps", () =>
 
 // --- A armadilha do @source: caminho relativo AO ARQUIVO que o declara.
 // Errar não quebra o build — o CSS compila e as classes usadas só nos componentes
-// do kit (OperatorRail, RailItem, RailToggle, OfflineBanner, UiNativeSelect) somem
+// do kit (OperatorRail, RailItem, RailToggle, OfflineBanner) somem
 // do bundle em silêncio. Medido: um @source errado derruba ~14 KB do CSS do
 // production-nuxt sem uma linha de erro. Este teste resolve o caminho declarado e
 // exige que ele ainda alcance os componentes.
@@ -144,7 +144,7 @@ describe("design-system: o @source da base alcança os componentes do kit", () =
     expect(declared, "operator-base.css não declara @source").not.toBeNull();
 
     const resolved = resolve(KIT_CSS_DIR, declared![1]);
-    for (const component of ["OperatorRail", "RailItem", "RailToggle", "OfflineBanner", "UiNativeSelect"]) {
+    for (const component of ["OperatorRail", "RailItem", "RailToggle", "OfflineBanner"]) {
       expect(
         existsSync(join(resolved, "components", `${component}.vue`)),
         `@source "${declared![1]}" → ${resolved} não alcança ${component}.vue`,

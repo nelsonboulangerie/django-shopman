@@ -493,7 +493,7 @@ cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 | Cartão (Card) | `outline` no topo; `soft` para cartão dentro de outro cartão (só fundo, sem borda dupla) | `outline` é o default; o aninhado escreve `variant="soft"` na chamada. `subtle` e `solid` não entram. Destaque navegável é `NuxtPageCard` |
 | Aviso (Alert) | `subtle` × `info`, `success`, `warning`, `error` | fundo opaco pré-composto no tema (compoundVariants). `primary` e `neutral` ainda têm uso e morrem com a migração deles; `secondary` saiu |
 | Cores geradas | `primary`, `info`, `success`, `warning`, `error` (e o `neutral`, que o Nuxt UI sempre gera) | `theme.colors` no módulo: cor que não é gerada não existe no tipo do `color` |
-| Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. `UiNativeSelect` está aposentado |
+| Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. O antigo adaptador nativo foi removido |
 | Texto | 5 tamanhos: `text-xs` 12 (rótulo e meta), `text-sm` 14 (texto corrido e controles), `text-base` 16 (título de cartão), `text-xl` (título de tela), `text-2xl` (figura); 2 pesos: `font-medium` e `font-semibold` | nenhum tamanho arbitrário novo (`text-[13px]`, `text-[0.625rem]`); a trava conta os que existem. Os papéis `op-*` de `operator-suite.css` ainda não foram reduzidos a esses cinco |
 | Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+". Toda contagem é o **chip de contagem** (`OperatorCountChip`, ver abaixo); selo com número não existe |
 | Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Barra lateral em três estados" abaixo |
@@ -795,11 +795,8 @@ rolagem escondida, o painel abre, o recorte vira chip e sai pelo ×).
 
 ### Escolha numa lista: `NuxtSelect` e `NuxtSelectMenu`
 
-`UiNativeSelect` **está aposentado** (dono, 08/10/2026): nada de lista do sistema, em
-nenhum dispositivo. Os usos de hoje (43, nos apps ainda não migrados) são teto no ledger
-(`ui_native_select_occurrences` em `docs/reference/operator-component-ledger.json`,
-conferido por `scripts/check_operator_component_ledger.py`): o número só cai, e nenhum
-uso novo passa. Escolha nova nasce em Nuxt UI:
+O adaptador nativo foi removido em 23/10/2026, depois de chegar a zero usos de
+produção. Escolha nova nasce em Nuxt UI:
 
 - **Lista curta e fixa:** `NuxtSelect`.
 - **Lista longa ou que cresce:** `NuxtSelectMenu` com busca. A busca recebe o foco ao
@@ -2003,9 +2000,9 @@ Do `UiSelect`, três coisas que valem a leitura:
   `<span id>` e passe `labelledBy`. Isto é memória de um defeito pago no recebimento do
   Compras; o teste que a prende vive em `tests/components/UiChoicePrimitives.test.ts`.
 
-O `UiNativeSelect` **está aposentado** e o `UiSelect` saiu do conjunto (dono,
-08/10/2026): escolha nova é `NuxtSelect` ou `NuxtSelectMenu`. Ver "Conjunto mínimo da
-suíte", acima.
+O select nativo foi removido e o `UiSelect` saiu do conjunto (dono, 08/10/2026):
+escolha nova é `NuxtSelect` ou `NuxtSelectMenu`. Ver "Conjunto mínimo da suíte",
+acima.
 
 ### `UiToggleChip` — escolha múltipla desenhada como pílula
 
@@ -2289,7 +2286,7 @@ Marketing (piloto do ADR-038). Os outros cinco apps não têm tail.
 ⚠️ **A armadilha do `@source`:** o caminho é relativo ao arquivo que o declara. Na
 base, `../..` é a raiz `operator-kit/app`. Errar não quebra o build — o CSS compila
 e as classes usadas só nos componentes do kit (`OperatorRail`, `RailItem`,
-`RailToggle`, `OfflineBanner`, `UiNativeSelect`) somem do bundle em silêncio.
+`RailToggle`, `OfflineBanner`) somem do bundle em silêncio.
 Medido: um `@source` errado derrubou 14 KB do CSS do `production-nuxt` com exit 0 e
 zero avisos. `tests/guardrails.test.ts` resolve o caminho declarado e exige que ele
 ainda alcance esses componentes; o mesmo arquivo recusa que qualquer app volte a
@@ -2411,7 +2408,7 @@ Duas consequências que valem a leitura:
   regra acusaria cada um deles. É o mesmo que o preset do Nuxt faz nos apps.
 - **`Ui*.vue` do kit NÃO herda o afrouxamento de `any`.** O bloco
   `app/components/Ui/**` da base existe para as primitivas VENDADAS do ui-thing/reka-ui;
-  no kit os `Ui*.vue` são planos (`app/components/UiNativeSelect.vue`) e escritos aqui.
+  no kit os `Ui*.vue` são planos e escritos aqui.
   O glob da base não os alcança, e isso é deliberado: `@typescript-eslint/no-explicit-any`
   continua **erro** neles.
 

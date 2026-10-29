@@ -46,12 +46,59 @@ describe("Compras no shell da suíte (fase 2)", () => {
     expect(shell).not.toContain("<nav");
   });
 
-  it("cada seção é uma rota; a Base tem as quatro sub-seções com rota em inglês", () => {
+  it("cada seção é uma rota; a Base separa cadastros das tarefas, sempre em rota inglesa", () => {
     for (const page of ["pages/index.vue", "pages/buy.vue", "pages/receive.vue", "pages/base/materials.vue", "pages/base/suppliers.vue", "pages/base/costs.vue", "pages/base/count.vue"]) {
       const source = app(page);
       expect(source, page).toContain("<OperatorPageHeader");
       expect(source, page).toContain("<PurchaseReadStatus");
     }
     expect(app("pages/base/index.vue")).toContain('redirect: "/base/materials"');
+  });
+});
+
+describe("CRUD humano da Base", () => {
+  it("o detalhe móvel é página, não gaveta, e a lista sai do caminho", () => {
+    const materials = app("pages/base/materials.vue");
+    const material = app("pages/base/materials/[sku].vue");
+    const suppliers = app("pages/base/suppliers.vue");
+    const supplier = app("pages/base/suppliers/[ref].vue");
+
+    expect(materials).toContain("max-xl:hidden");
+    expect(suppliers).toContain("max-xl:hidden");
+    expect(material).toContain("data-material-page");
+    expect(supplier).toContain("data-supplier-page");
+    expect(material).not.toContain("<NuxtSlideover");
+    expect(supplier).not.toContain("<NuxtSlideover");
+  });
+
+  it("a leitura usa a barra inferior; a edição mantém a barra Salvar/Descartar do casco", () => {
+    for (const detail of ["pages/base/materials/[sku].vue", "pages/base/suppliers/[ref].vue"]) {
+      const source = app(detail);
+      expect(source, detail).toContain("<OperatorActionBar");
+      expect(source, detail).toContain(':secondary="previousAction"');
+      expect(source, detail).toContain(':action="nextAction"');
+    }
+    const shell = readFileSync(resolve(__dirname, "../../operator-kit/app/components/OperatorFormShell.vue"), "utf8");
+    expect(shell).toContain("<OperatorActionBar");
+    expect(shell).toContain(':secondary="discardAction()"');
+  });
+
+  it("formulários usam página neutra, cards claros e não alternam blocos elevados", () => {
+    for (const form of ["components/PurchaseMaterialFormPanel.vue", "components/PurchaseSupplierFormPanel.vue"]) {
+      const source = app(form);
+      expect(source, form).toContain("data-crud-form-surface");
+      expect(source, form).toContain("bg-background");
+      expect(source, form).toContain("rounded-md border bg-card p-4");
+      expect(source, form).not.toContain("bg-elevated/60");
+    }
+  });
+
+  it("custos e contagem têm nome de tarefa e volta explícita aos insumos", () => {
+    const costs = app("pages/base/costs.vue");
+    const count = app("pages/base/count.vue");
+    expect(costs).toContain('title="Lançar custos"');
+    expect(count).toContain('title="Contar estoque"');
+    expect(costs).toContain('label="Voltar aos insumos"');
+    expect(count).toContain('label="Voltar aos insumos"');
   });
 });

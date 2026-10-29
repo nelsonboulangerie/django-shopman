@@ -130,10 +130,10 @@ async function copyLink() {
       >
       <div v-if="proof.copyPaste" class="grid gap-1.5">
         <p class="break-all rounded-md border bg-background/70 px-2.5 py-2 font-mono text-xs">{{ proof.copyPaste }}</p>
-        <UiButton variant="outline" size="sm" class="gap-2" @click="copyCode">
+        <NuxtButton color="neutral" variant="outline" size="md" class="gap-2" @click="copyCode">
           <Icon name="lucide:copy" class="size-4" />
           Copiar código PIX
-        </UiButton>
+        </NuxtButton>
       </div>
     </template>
 
@@ -151,18 +151,18 @@ async function copyLink() {
          e o botão sai pela borda. -->
     <div v-else-if="proof.isLink && proof.checkoutUrl" class="flex min-w-0 items-center gap-2">
       <p class="min-w-0 flex-1 truncate rounded-md border bg-background/70 px-2.5 py-2 font-mono text-xs">{{ proof.checkoutUrl }}</p>
-      <UiButton variant="outline" size="sm" class="shrink-0 gap-2" @click="copyLink">
+      <NuxtButton color="neutral" variant="outline" size="md" class="shrink-0 gap-2" @click="copyLink">
         <Icon name="lucide:copy" class="size-4" />
         Copiar link
-      </UiButton>
+      </NuxtButton>
     </div>
 
     <!-- O servidor escolhe o template e informa se o gesto seguro é enviar ou
          reenviar. A UI não presume canal nem afirma entrega antes do adapter. -->
-    <UiButton
+    <NuxtButton
       v-if="delivery?.action"
-      variant="outline"
-      size="sm"
+      color="neutral" variant="outline"
+      size="md"
       class="gap-2"
       :disabled="resending"
       data-action="send-payment-notice"
@@ -170,7 +170,7 @@ async function copyLink() {
     >
       <Icon :name="resending ? 'lucide:loader-circle' : 'lucide:send'" class="size-4" :class="resending && 'animate-spin'" />
       {{ delivery.action_label }}
-    </UiButton>
+    </NuxtButton>
 
     <!-- Card: hosted checkout link (delegated; no capture here) -->
     <a

@@ -100,6 +100,21 @@ export function alertActionProblems(source: string): string[] {
   return problems;
 }
 
+export function horizontalAlertProblems(source: string): string[] {
+  const problems: string[] = [];
+  const pattern = /<(NuxtAlert|UAlert)\b/g;
+  for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
+    const end = openingTagEnd(source, match.index);
+    const tag = source.slice(match.index, end + 1);
+    const orientation = attribute(tag, "orientation");
+    if (orientation?.value.includes("horizontal")) {
+      const line = source.slice(0, match.index).split("\n").length;
+      problems.push(`linha ${line}: aviso horizontal disputa a linha entre texto, ação e fechar`);
+    }
+  }
+  return problems;
+}
+
 /**
  * Dívida conhecida, corrigida no PR de apps logo depois deste (a varredura passou de 15
  * arquivos de app). Só pode encolher: arquivo que sai daqui não volta, e arquivo novo
@@ -144,6 +159,8 @@ describe("ação dentro de aviso acompanha a cor do aviso", () => {
         `<NuxtAlert color="info"><template #actions><NuxtButton color="info" /></template></NuxtAlert>`,
       ),
     ).toEqual([]);
+    expect(horizontalAlertProblems(`<NuxtAlert color="info" />`)).toEqual([]);
+    expect(horizontalAlertProblems(`<NuxtAlert orientation="horizontal" />`)).toHaveLength(1);
   });
 
   it("o kit e os apps de operador seguem a regra", () => {
@@ -162,5 +179,17 @@ describe("ação dentro de aviso acompanha a cor do aviso", () => {
     // A dívida só encolhe: o que já está na regra sai da lista.
     const paid = Object.keys(KNOWN_APP_DEBT).filter((path) => (found[path]?.length ?? 0) < KNOWN_APP_DEBT[path]!);
     expect(paid).toEqual([]);
+  });
+
+  it("o kit e os apps mantêm ação abaixo do texto nos avisos", () => {
+    const dirs = ["operator-kit", ...OPERATOR_KIT_SURFACES];
+    const found: Record<string, string[]> = {};
+    for (const dir of dirs) {
+      for (const path of vueFiles(join(surfacesDir, dir, "app"))) {
+        const problems = horizontalAlertProblems(readFileSync(path, "utf8"));
+        if (problems.length) found[relative(surfacesDir, path)] = problems;
+      }
+    }
+    expect(found).toEqual({});
   });
 });

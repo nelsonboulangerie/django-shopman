@@ -27,7 +27,7 @@ describe("OperatorPwaUpdatePrompt", () => {
     expect(wrapper.text()).toContain("Nova versão disponível");
     expect(wrapper.text()).toContain("A tela será recarregada");
     const alert = wrapper.get("[data-operator-pwa-update]");
-    expect(alert.attributes("data-orientation")).toBe("horizontal");
+    expect(alert.attributes("data-orientation")).toBe("vertical");
     expect(alert.classes()).toContain(
       "bg-[color-mix(in_srgb,var(--info)_10%,var(--card))]",
     );

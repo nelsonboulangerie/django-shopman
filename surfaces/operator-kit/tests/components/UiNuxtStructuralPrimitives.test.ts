@@ -3,7 +3,6 @@ import { parseTime } from "@internationalized/date";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineComponent, h, nextTick, ref } from "vue";
 
-import UiButton from "../../app/components/UiButton.vue";
 import UiDateField from "../../app/components/UiDateField.vue";
 import UiDateRangeField from "../../app/components/UiDateRangeField.vue";
 import UiDateTimeField from "../../app/components/UiDateTimeField.vue";
@@ -23,38 +22,6 @@ afterEach(() => {
 });
 
 describe("primitivas estruturais Nuxt UI com identidade Shopman", () => {
-  it("mantém o contrato de botão, o alvo canônico e o estado de carregamento", async () => {
-    mounted = await mountSuspended(UiButton, {
-      attachTo: document.body,
-      props: {
-        loading: true,
-        text: "Salvar campanha",
-      },
-    });
-
-    const button = document.body.querySelector<HTMLButtonElement>("button")!;
-    expect(button).not.toBeNull();
-    expect(button.disabled).toBe(true);
-    expect(button.className).toContain("h-8");
-    expect(button.className).toContain("bg-primary");
-    expect(button.className).toContain("disabled:opacity-75");
-    expect(button.className).not.toContain("disabled:opacity-50");
-    expect(button.textContent).toContain("Salvar campanha");
-  });
-
-  it("entrega as variantes ao Nuxt UI sem empilhar o sólido sobre o contorno", async () => {
-    mounted = await mountSuspended(UiButton, {
-      attachTo: document.body,
-      props: { variant: "outline", text: "Cancelar" },
-    });
-
-    const button = document.body.querySelector<HTMLButtonElement>("button")!;
-    expect(button.className).toContain("text-default");
-    expect(button.className).toContain("ring-accented");
-    expect(button.className).not.toContain("text-inverted");
-    expect(button.className).not.toContain("bg-primary");
-  });
-
   it("guia uma sequência com o tema canônico do Nuxt UI e os tokens Shopman", async () => {
     mounted = await mountSuspended(UiStepper, {
       attachTo: document.body,

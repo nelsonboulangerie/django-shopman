@@ -76,8 +76,7 @@ const description = computed(() => {
   return "Cadastra a empresa com quem se compra, com os contatos e as condições.";
 });
 const saveLabel = computed(() => (isDuplicate.value ? "Duplicar fornecedor" : isEdit.value ? "Salvar fornecedor" : "Criar fornecedor"));
-const duplicateNote =
-  "A cópia traz os contatos e as condições comerciais (prazo e pagamento). Não traz o CNPJ nem o de-para de nota: confira antes de usar.";
+const duplicateNote = "A cópia traz os contatos e as condições comerciais (prazo e pagamento). Não traz o CNPJ nem o de-para de nota: confira antes de usar.";
 
 function resetContact() {
   contact.open = false;
@@ -127,7 +126,10 @@ function reset() {
   resetContact();
 }
 
-const { dirty, changedKeys, capture } = useDirtyForm(() => ({ ...form, contact: { ...contact } }));
+const { dirty, changedKeys, capture } = useDirtyForm(() => ({
+  ...form,
+  contact: { ...contact },
+}));
 const activeSection = ref<string | null>("identity");
 
 watch(
@@ -148,9 +150,7 @@ const leadTimeNumber = computed(() => {
   return Number.isInteger(value) && value >= 0 && value <= 3650 ? value : null;
 });
 const leadTimeInvalid = computed(() => form.leadTimeDaysText.trim() !== "" && leadTimeNumber.value === null);
-const sameSourceRef = computed(
-  () => isDuplicate.value && Boolean(props.source) && form.ref.trim().toLowerCase() === props.source!.ref.trim().toLowerCase(),
-);
+const sameSourceRef = computed(() => isDuplicate.value && Boolean(props.source) && form.ref.trim().toLowerCase() === props.source!.ref.trim().toLowerCase());
 const valid = computed(() => {
   if (isDuplicate.value && !form.ref.trim()) return false;
   if (isDuplicate.value && sameSourceRef.value) return false;
@@ -168,7 +168,7 @@ const saveDisabledReason = computed(() => {
 
 function submit() {
   if (!valid.value) return;
-  const leadTimeDays = leadTimeInvalid.value ? 0 : leadTimeNumber.value ?? 0;
+  const leadTimeDays = leadTimeInvalid.value ? 0 : (leadTimeNumber.value ?? 0);
   if (isDuplicate.value) {
     emit("save", {
       ref: form.ref.trim(),
@@ -218,9 +218,7 @@ function editContact(person: SupplierContact) {
   contact.isActive = person.isActive;
   activeSection.value = "contacts";
 }
-const contactValid = computed(
-  () => contact.name.trim() !== "" && (contact.email.trim() !== "" || contact.phone.trim() !== ""),
-);
+const contactValid = computed(() => contact.name.trim() !== "" && (contact.email.trim() !== "" || contact.phone.trim() !== ""));
 const contactDisabledReason = computed(() => {
   if (!contact.name.trim()) return "Informe o nome do contato.";
   if (!contact.email.trim() && !contact.phone.trim()) return "Informe e-mail ou telefone: sem isso a mensagem não chega.";
@@ -273,18 +271,11 @@ watch(
     @update:open="(value: boolean) => emit('update:open', value)"
     @save="submit"
   >
-    <div class="flex flex-col gap-4" data-supplier-form>
+    <div class="-m-4 flex min-h-full flex-col gap-4 bg-background p-4" data-supplier-form data-crud-form-surface>
       <NuxtAlert v-if="error" color="error" variant="subtle" icon="i-lucide-circle-alert" :description="error" />
-      <NuxtAlert
-        v-if="isDuplicate"
-        color="info"
-        variant="subtle"
-        icon="i-lucide-copy"
-        title="O que a cópia traz"
-        :description="duplicateNote"
-      />
+      <NuxtAlert v-if="isDuplicate" color="info" variant="subtle" icon="i-lucide-copy" title="O que a cópia traz" :description="duplicateNote" />
 
-      <OperatorFormSection section-key="identity" title="Identificação" description="A empresa, do jeito que ela aparece na nota.">
+      <OperatorFormSection class="rounded-md border bg-card p-4" section-key="identity" title="Identificação" description="A empresa, do jeito que ela aparece na nota.">
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="Referência" :required="isDuplicate" description="Identificador curto, sem acento. Vazio gera do nome.">
             <NuxtInput v-model="form.ref" :disabled="isEdit" class="w-full" placeholder="moinho-sp" data-testid="supplier-ref" data-focus-control />
@@ -310,12 +301,7 @@ watch(
         </div>
       </OperatorFormSection>
 
-      <OperatorFormSection
-        v-if="!isDuplicate"
-        section-key="commercial"
-        title="Condições comerciais"
-        description="O que o pedido de compra e a reposição usam."
-      >
+      <OperatorFormSection v-if="!isDuplicate" class="rounded-md border bg-card p-4" section-key="commercial" title="Condições comerciais" description="O que o pedido de compra e a reposição usam.">
         <div class="grid gap-3 sm:grid-cols-2">
           <NuxtFormField label="Prazo de entrega (dias)">
             <NuxtInput v-model="form.leadTimeDaysText" class="w-full" inputmode="numeric" placeholder="3" data-testid="supplier-lead-time" />
@@ -326,12 +312,7 @@ watch(
         </div>
       </OperatorFormSection>
 
-      <OperatorFormSection
-        v-if="isEdit && source"
-        section-key="contacts"
-        title="Contatos"
-        description="As pessoas do fornecedor, e para qual assunto cada uma atende."
-      >
+      <OperatorFormSection v-if="isEdit && source" class="rounded-md border bg-card p-4" section-key="contacts" title="Contatos" description="As pessoas do fornecedor, e para qual assunto cada uma atende.">
         <ul v-if="contacts.length" class="flex flex-col divide-y divide-default">
           <li v-for="person in contacts" :key="person.id" class="flex items-start justify-between gap-2 py-2">
             <span class="min-w-0">
@@ -351,7 +332,7 @@ watch(
         </ul>
         <p v-else class="text-xs text-muted">Nenhum contato. O pedido de compra cai na central do fornecedor.</p>
 
-        <form v-if="contact.open" class="mt-2 flex flex-col gap-3 rounded-lg bg-elevated/60 p-3" data-testid="contact-form" @submit.prevent="submitContact()">
+        <form v-if="contact.open" class="mt-2 flex flex-col gap-3 border-t pt-3" data-testid="contact-form" @submit.prevent="submitContact()">
           <div class="grid gap-3 sm:grid-cols-2">
             <NuxtFormField label="Nome" required>
               <NuxtInput v-model="contact.name" class="w-full" data-testid="contact-name" />
@@ -374,27 +355,12 @@ watch(
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <NuxtButton
-              type="submit"
-              :label="contact.id ? 'Salvar contato' : 'Adicionar contato'"
-              :disabled="!contactValid || busy"
-              data-testid="contact-submit"
-            />
+            <NuxtButton type="submit" :label="contact.id ? 'Salvar contato' : 'Adicionar contato'" :disabled="!contactValid || busy" data-testid="contact-submit" />
             <NuxtButton label="Cancelar" color="neutral" variant="outline" @click="resetContact()" />
             <span v-if="contactDisabledReason" class="text-xs text-muted">{{ contactDisabledReason }}</span>
           </div>
         </form>
-        <NuxtButton
-          v-else
-          label="Adicionar contato"
-          icon="i-lucide-plus"
-          color="neutral"
-          variant="outline"
-          class="self-start"
-          :disabled="busy"
-          data-testid="contact-add"
-          @click="newContact()"
-        />
+        <NuxtButton v-else label="Adicionar contato" icon="i-lucide-plus" color="neutral" variant="outline" class="self-start" :disabled="busy" data-testid="contact-add" @click="newContact()" />
       </OperatorFormSection>
     </div>
   </OperatorFormShell>
