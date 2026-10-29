@@ -1,0 +1,62 @@
+{
+  "app_log_destinations_count": 0,
+  "component_log_destinations": [
+    {
+      "name": "web-operator",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "web-storefront",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "storefront-nuxt",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "operator-floor",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "operator-office",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "directive-worker",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "maintenance-worker",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "ifood-poll-worker",
+      "count": 0,
+      "types": []
+    },
+    {
+      "name": "release",
+      "count": 0,
+      "types": []
+    }
+  ],
+  "previous_deployment_runtime_log_error": {
+    "status": 400,
+    "deployment_id": "7df4f20e-0f20-4afb-911b-484495e48b72",
+    "message": "cannot get running logs from deployment in phase final_cleanup"
+  },
+  "sentry": {
+    "global_dsn_configured": true,
+    "traces_sample_rate_in_spec": false,
+    "code_default": 0,
+    "source": "config/settings.py:2517; app spec env key presence only; no DSN/token persisted",
+    "limitation": "Spec e default não substituem leitura de runtime. Sentry de erros não é arquivo completo de access logs ou traces."
+  }
+}

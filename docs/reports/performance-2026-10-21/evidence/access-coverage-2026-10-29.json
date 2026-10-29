@@ -1,0 +1,443 @@
+[
+  {
+    "deployment_id": "872bd271-0ab9-4684-aa80-e15bd610b5e5",
+    "created_at": "2026-10-29T17:00:36Z",
+    "exit_code": 0,
+    "raw_line_count": 84,
+    "safe_access_rows": [
+      {
+        "timestamp": "2026-10-29T17:05:44.192787Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 229,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:05:44.410028Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 223,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:05:45.227499Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 704,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:06:12.675543Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 223,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:06:12.850096Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 407,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:06:14.436560Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/cart/",
+        "http_status": 200,
+        "duration_ms": 49,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:06:37.026441Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/menu/",
+        "http_status": 200,
+        "duration_ms": 1134,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:06:37.634678Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/cart/",
+        "http_status": 200,
+        "duration_ms": 44,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:06:37.754224Z",
+        "http_method": "POST",
+        "http_route": "/api/v1/checkout/",
+        "http_status": 403,
+        "duration_ms": 65,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:06:38.981625Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 595,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:21.898020Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 295,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:21.999907Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 352,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:22.869512Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/",
+        "http_status": 200,
+        "duration_ms": 769,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:25.283442Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/",
+        "http_status": 200,
+        "duration_ms": 588,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:27.784748Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/",
+        "http_status": 200,
+        "duration_ms": 699,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:30.426873Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/",
+        "http_status": 200,
+        "duration_ms": 699,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:32.958828Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/",
+        "http_status": 200,
+        "duration_ms": 700,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:35.043435Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/",
+        "http_status": 200,
+        "duration_ms": 745,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:37.211151Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/recommendations/",
+        "http_status": 200,
+        "duration_ms": 636,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:39.276062Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/recommendations/",
+        "http_status": 200,
+        "duration_ms": 759,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:41.437342Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/recommendations/",
+        "http_status": 200,
+        "duration_ms": 894,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:43.771333Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/products/<str:sku>/recommendations/",
+        "http_status": 200,
+        "duration_ms": 762,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:10:48.850896Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/catalog/",
+        "http_status": 200,
+        "duration_ms": 1086,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:11:01.601262Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 233,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:11:01.695623Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 301,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:11:02.283468Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 693,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:13:39.187059Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 223,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:13:39.429292Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 457,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:13:40.358727Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/cart/",
+        "http_status": 200,
+        "duration_ms": 51,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:18:28.000024Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 200,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:18:28.197088Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 343,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:18:28.847584Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 523,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:23:18.927523Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 267,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:23:19.060863Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 371,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:23:19.906579Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/cart/",
+        "http_status": 200,
+        "duration_ms": 43,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:28:48.095403Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 278,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:28:48.207476Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 340,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:28:49.001079Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 599,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:28:52.180505Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/account/orders/active/",
+        "http_status": 200,
+        "duration_ms": 87,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:31:25.900720Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 287,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:31:26.163364Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 526,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:31:27.036669Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 741,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:33:23.064553Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 188,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:33:23.261507Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 312,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:33:24.146000Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 654,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:34:54.393718Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 539,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:34:54.471633Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 600,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:34:55.319290Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/products/<str:sku>/",
+        "http_status": 200,
+        "duration_ms": 692,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:35:10.970898Z",
+        "http_method": "GET",
+        "http_route": "-",
+        "http_status": 404,
+        "duration_ms": 27,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:36:00.007238Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/shell/",
+        "http_status": 200,
+        "duration_ms": 415,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:36:00.020175Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/site/",
+        "http_status": 200,
+        "duration_ms": 427,
+        "streaming": false
+      },
+      {
+        "timestamp": "2026-10-29T17:36:01.081981Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/fomo/<str:sku>/events/",
+        "http_status": 200,
+        "duration_ms": 4,
+        "streaming": true
+      },
+      {
+        "timestamp": "2026-10-29T17:36:01.151646Z",
+        "http_method": "GET",
+        "http_route": "/api/v1/storefront/public/home/",
+        "http_status": 200,
+        "duration_ms": 1024,
+        "streaming": false
+      }
+    ],
+    "error_type": null
+  },
+  {
+    "deployment_id": "7df4f20e-0f20-4afb-911b-484495e48b72",
+    "created_at": "2026-10-29T16:51:49Z",
+    "exit_code": 1,
+    "raw_line_count": 0,
+    "safe_access_rows": [],
+    "error_type": "doctl_command_failed"
+  }
+]
