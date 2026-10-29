@@ -220,7 +220,7 @@ export function startableWorkOrder(
 }
 
 /**
- * A fornada planejada que esta linha AJUSTARIA, a mesma confirmada na Abertura.
+ * A fornada planejada que esta linha AJUSTARIA, a mesma confirmada na Produção.
  *
  * Mesmo objeto, nome diferente: quem planeja não está pensando em iniciar, e é dela
  * que sai o `rev` que o ajuste devolve ao servidor. Duas leituras do mesmo fato pedem
@@ -315,7 +315,7 @@ export function dayContextLine(
 
 // ── Etiqueta do lote (R19) ───────────────────────────────────────────────────
 // A etiqueta de preparo leva um QR com `shopman-lote:<SKU>` (impressa pelo relay
-// em ESC/POS e pelo navegador). O Fechamento lê e abre o lote daquele produto.
+// em ESC/POS e pelo navegador). A Finalização lê e abre o lote daquele produto.
 // Aceita também o código do lote ("WO-2026-00020") e o SKU puro, digitados ou
 // lidos de outra etiqueta.
 export const LOT_LABEL_PREFIX = "shopman-lote:";

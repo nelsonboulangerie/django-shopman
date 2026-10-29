@@ -11,11 +11,11 @@ export function isLowerQualityGrade(gradeRef: string): boolean {
   return LOWER_QUALITY_GRADE_REFS.has(gradeRef);
 }
 
-// ── Estado da tela de fechamento ────────────────────────────────────────────
+// ── Estado da tela de finalização ────────────────────────────────────────────
 
 export interface QcEntryState {
   /**
-   * A âncora do fechamento: o que ENTROU no forno (started quando existe,
+   * A âncora da finalização: o que ENTROU no forno (started quando existe,
    * senão o previsto da ordem — ver ovenAnchor). null = fornada avulsa
    * (nasce sem expectativa).
    */
@@ -40,7 +40,7 @@ export interface QcEntryState {
  * A âncora do modelo subtrativo é a fornada REAL que entrou no forno
  * (QC-FORNADA §1: "a quantidade prevista que chega ao forno é quente").
  *
- * E, no Fechamento, essa É a quantidade prevista: o que entrou no forno é o
+ * E, na Finalização, essa É a quantidade prevista: o que entrou no forno é o
  * que se espera que saia dele, salvo ocorrência. O plano da produção
  * (planejou 10, enfornou 11) já cumpriu seu papel na tela anterior — aqui
  * ele não é mais informação, é ruído; e ancorar nele pré-preencheria 10,
@@ -165,7 +165,7 @@ export function finishedTotal(state: QcEntryState): number {
   return state.fullQty + state.discountQty;
 }
 
-/** Total contabilizado no fechamento: vendável + perda declarada. */
+/** Total contabilizado na finalização: vendável + perda declarada. */
 export function reportedTotal(state: QcEntryState): number {
   return finishedTotal(state) + lossQty(state);
 }

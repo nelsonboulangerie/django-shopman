@@ -15,9 +15,9 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 // ProductionStageGrid é dirigido por composables (useProductionBoard/useProductionKds).
 // Sem runtime Nuxt: reatividade Vue real como globais + os composables stubados com refs
 // que controlamos. Os helpers de presentation (~/presentation) rodam de VERDADE
-// (resolvidos pelo alias). O finish saiu do grid: fechar o lote é o Fechamento
+// (resolvidos pelo alias). O finish saiu do grid: fechar o lote é a Finalização
 // (quiosque de QC), que mira UMA WorkOrder por cartão: o bug do aproveitamento de
-// 200% (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Abertura a
+// 200% (pré-preencher o agregado contra a WO[0]) morreu por construção. Na Produção a
 // ação é uma só — Confirmar, o mesmo verbo do Planejamento (16/09/2026); a
 // diferença para o planejado é
 // rendimento e não pede motivo; o modal de etapas ("Avançar para Fermentação")
@@ -228,7 +228,7 @@ const stubs = {
 
 function mountGrid(stage: "plan" | "open" = "open") {
   return mount(ProductionStageGrid, {
-    props: { stage, title: "Abertura" },
+    props: { stage, title: "Produção" },
     global: { stubs, components: { PlanReasonCard } },
   });
 }
@@ -646,7 +646,7 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
   });
 });
 
-describe("ProductionStageGrid — Abertura", () => {
+describe("ProductionStageGrid — Produção", () => {
   it("mostra Planejado → Previsto com uma ação só: Confirmar", () => {
     boardRows.value = [
       row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
@@ -879,7 +879,7 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     expect(w.get("[data-lot-quantity]").text()).toBe("30 un. previstas");
     expect(w.get("[data-lot-summary]").text()).toContain("Lote aberto");
     expect(w.get("[data-lot-summary]").text()).toContain("Aberto em 29/10 às 09:17");
-    expect(w.text()).toContain("Fechamento");
+    expect(w.text()).toContain("Finalização");
     expect(w.text()).not.toContain("Avançar");
 
     await byText(w, "button", "Cancelar lote…")!.trigger("click");
@@ -1084,7 +1084,7 @@ describe("ProductionStageGrid — previsto abaixo das encomendas", () => {
 
   function mountWithShortageDialog() {
     return mount(ProductionStageGrid, {
-      props: { stage: "open", title: "Abertura" },
+      props: { stage: "open", title: "Produção" },
       global: {
         stubs: { ...stubs, ShortageDialog: false },
         components: { ShortageDialog },
@@ -1197,7 +1197,7 @@ describe("ProductionStageGrid — Planejamento vazio leva ao livro de receitas",
   });
 });
 
-describe("ProductionStageGrid — menu da linha da Abertura", () => {
+describe("ProductionStageGrid — menu da linha da Produção", () => {
   // O ⋯ (OperatorMoreMenu) e o menu de contexto da linha (NuxtContextMenu, que abre
   // ao segurar a linha no toque ou no clique direito) desenham a MESMA lista.
   function openRows() {

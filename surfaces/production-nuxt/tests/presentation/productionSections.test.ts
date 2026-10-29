@@ -20,8 +20,8 @@ describe("seções da Produção no rail", () => {
     expect(stages).toEqual([
       ["/plan", "Planejamento", "Alt+1"],
       ["/mise-en-place", "Preparação", "Alt+2"],
-      ["/", "Abertura", "Alt+3"],
-      ["/close", "Fechamento", "Alt+4"],
+      ["/", "Produção", "Alt+3"],
+      ["/close", "Finalização", "Alt+4"],
       ["/quality", "Qualidade", "Alt+5"],
     ]);
   });

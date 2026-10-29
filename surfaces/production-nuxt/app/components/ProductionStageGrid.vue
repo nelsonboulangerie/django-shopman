@@ -3,15 +3,15 @@
 //   PRODUTO | leitura | AÇÃO — cada lente tem UMA coluna de leitura e UMA de
 //   ação com verbo no cabeçalho:
 //   · plan (Planejamento): SUGERIDO  | PLANEJADO  (todos os SKUs);
-//   · open (Abertura):     PLANEJADO | PREVISTO   (só linhas com número).
-// O fechamento (PREVISTO → REALIZADO) mora na página /close, no quiosque de QC.
+//   · open (Produção):     PLANEJADO | PREVISTO   (só linhas com número).
+// A finalização (PREVISTO → REALIZADO) mora na página /close, no quiosque de QC.
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
-// Na Abertura a ação é UMA só: "Confirmar" (o mesmo verbo do Planejamento)
-// diz o previsto, que segue para o Fechamento, já preenchido com o planejado
+// Na Produção a ação é UMA só: "Confirmar" (o mesmo verbo do Planejamento)
+// diz o previsto, que segue para a Finalização, já preenchido com o planejado
 // (decisão Pablo 2026-09-16); o número fica na coluna Planejado, não no botão.
 // A diferença para o planejado é rendimento da massa, não perda: fica nos dois
-// números da ordem, sem pedir motivo; motivo se pede no Fechamento, onde há
+// números da ordem, sem pedir motivo; motivo se pede na Finalização, onde há
 // produto pronto que pode sumir. Sem "iniciar", sem subetapas, sem máquina de
 // estados: fermentação e afins são ferramenta (timer), nunca fluxo.
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
@@ -170,7 +170,7 @@ const lens = computed(() => {
   } as const;
 });
 
-// Linhas por lente: Planejamento vê TODOS os SKUs; Abertura só quem tem
+// Linhas por lente: Planejamento vê TODOS os SKUs; Produção só quem tem
 // número relevante (higiene de foco na bancada).
 const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
   let base = rows.value.filter((r) => matchesRowQuery(r, query.value));
@@ -410,7 +410,7 @@ function onReasonOutside(event: Event) {
 }
 
 // Ao fechar (Esc, Fechar, fora), o foco volta ao "Por quê" da linha. Se o
-// fechamento foi para planejar, o foco é do diálogo de planejamento.
+// finalização foi para planejar, o foco é do diálogo de planejamento.
 function returnReasonFocus(event: Event, outputSku: string) {
   const trigger = reasonTriggers.get(outputSku);
   if (!trigger) return;
@@ -864,7 +864,7 @@ function cellQty(value: string): string {
 }
 
 // Progresso do dia, no cabeçalho: "4 de 28 planejados" (Planejamento) ou "5 de 8
-// abertos" (Abertura), com a barra do quanto o dia andou. Conta produtos (linhas),
+// abertos" (Produção), com a barra do quanto o dia andou. Conta produtos (linhas),
 // como a prévia v4: o número e a barra falam da mesma coisa.
 const headerCount = computed(() => {
   if (props.stage === "plan") {
@@ -1230,7 +1230,7 @@ const startedDescription = computed(() => {
           v-else
           :model-value="openFilter"
           :items="openFilterTabs"
-          label="Recorte da Abertura"
+          label="Recorte da Produção"
           data-open-filters
           @update:model-value="(value) => (openFilter = (Array.isArray(value) ? value[0] : value) as OpenFilter)"
         />
@@ -1737,7 +1737,7 @@ const startedDescription = computed(() => {
           </p>
         </div>
 
-        <!-- ── Abertura ─────────────────────────────────────────────────────── -->
+        <!-- ── Produção ─────────────────────────────────────────────────────── -->
         <div
           v-else
           class="overflow-hidden rounded-lg border border-border bg-card"
@@ -1911,7 +1911,7 @@ const startedDescription = computed(() => {
             {{ rowLabel(startRow) }}
           </h2>
           <p class="op-micro text-muted-foreground">
-            {{ startRow.output_sku }} · esta quantidade segue para o Fechamento.
+            {{ startRow.output_sku }} · esta quantidade segue para a Finalização.
           </p>
         </div>
         <NuxtButton
@@ -2164,11 +2164,11 @@ const startedDescription = computed(() => {
       </template>
     </NuxtModal>
 
-    <!-- Confirmar: o previsto abre o lote e segue para o Fechamento (evento interno: start) -->
+    <!-- Confirmar: o previsto abre o lote e segue para a Finalização (evento interno: start) -->
     <NuxtModal
       :open="startRow != null && !docked"
       :title="`Quanto está previsto? · ${startRow ? rowLabel(startRow) : ''}`"
-      :description="`${startRow?.output_sku ?? ''} · esta quantidade abre o lote e segue para o Fechamento.`"
+      :description="`${startRow?.output_sku ?? ''} · esta quantidade abre o lote e segue para a Finalização.`"
       :ui="{ content: 'sm:max-w-sm' }"
       @update:open="
         (v: boolean) => {
@@ -2346,7 +2346,7 @@ const startedDescription = computed(() => {
               v-if="selectedStartedOrder.started_qty"
               class="op-body text-muted-foreground"
             >
-              Seguem para o Fechamento.
+              Seguem para a Finalização.
             </p>
           </div>
 

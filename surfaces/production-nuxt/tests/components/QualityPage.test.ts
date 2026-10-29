@@ -269,7 +269,7 @@ describe("Qualidade — aba própria", () => {
     expect(nativeConfirm).not.toHaveBeenCalled();
   });
 
-  it("o atalho dos lotes não fechados leva ao Fechamento", async () => {
+  it("o atalho dos lotes não fechados leva à Finalização", async () => {
     navigate.mockClear();
 
     const wrapper = mountPage();
@@ -324,10 +324,10 @@ describe("Qualidade — a correção do lote mora na URL", () => {
 
     wrapper
       .findComponent({ name: "QcCloseScreen" })
-      .vm.$emit("confirm", { partition: [], reason: "Contagem errada no fechamento" });
+      .vm.$emit("confirm", { partition: [], reason: "Contagem errada na finalização" });
     await flushPromises();
 
-    expect(correctQuality).toHaveBeenCalledWith(2, 1, [], "Contagem errada no fechamento");
+    expect(correctQuality).toHaveBeenCalledWith(2, 1, [], "Contagem errada na finalização");
     expect(navigate).toHaveBeenLastCalledWith({ path: "/quality", query: {} }, { replace: true });
     expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(false);
   });

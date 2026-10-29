@@ -1,4 +1,4 @@
-// Quiosque de QC — read/write do fechamento de fornada (ADR-017 §9).
+// Quiosque de QC — read/write da finalização de fornada (ADR-017 §9).
 //   - useFetch da projection do quiosque (GET /api/v1/backstage/production/qc/);
 //   - poll calmo de 30s (o quiosque é quem ESCREVE o estado; o poll só traz
 //     fornadas fechadas por outras telas);
@@ -33,7 +33,7 @@ export interface QcActResult {
 
 export function useQcKiosk(initialDate = "") {
   // "" = hoje (default do backend). Outra data serve à fornada esquecida de
-  // ontem — o fechamento aceita qualquer dia com ordem aberta.
+  // ontem — a finalização aceita qualquer dia com ordem aberta.
   const selectedDate = ref(initialDate);
 
   const { data, pending, error, refresh } = useFetch<ProductionQCResponse>(
