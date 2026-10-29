@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   countdownLabel,
   elapsedLabel,
+  forecastTimeTone,
   fullDateLabel,
   isoForOffset,
   matchesRowQuery,
@@ -75,13 +76,20 @@ const row = (
 
 describe("timerTone / chips", () => {
   it("maps semantic timer status to urgency", () => {
-    expect(timerTone("on_time")).toBe("ok");
+    expect(timerTone("on_time")).toBe("neutral");
     expect(timerTone("warning")).toBe("warning");
     expect(timerTone("late")).toBe("late");
   });
+  it("reserva vermelho ao atraso do painel e não pinta Confirmado de verde", () => {
+    expect(forecastTimeTone("delayed")).toBe("late");
+    expect(forecastTimeTone("scheduled")).toBe("neutral");
+    expect(forecastTimeTone("in_progress")).toBe("neutral");
+    expect(forecastTimeTone("arrived")).toBe("neutral");
+  });
   it("timerChip carries saturated meaning only when late/warning", () => {
     expect(timerChip("late")).toContain("red");
-    expect(timerChip("ok")).toContain("muted");
+    expect(timerChip("neutral")).toContain("muted");
+    expect(timerChip("ready")).toContain("success");
   });
 });
 

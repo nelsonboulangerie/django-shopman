@@ -141,19 +141,15 @@ describe("deadlineTone", () => {
   const now = Date.parse("2026-09-19T18:50:00Z");
   const em = (seconds: number) => new Date(now + seconds * 1000).toISOString();
 
-  it("fica vermelho no último minuto", () => {
-    expect(deadlineTone(em(60), now)).toBe("late");
-    expect(deadlineTone(em(5), now)).toBe("late");
-  });
-
-  it("avisa em âmbar nos três minutos finais", () => {
-    expect(deadlineTone(em(61), now)).toBe("warning");
+  it("avisa em âmbar nos três minutos finais, sem chamar futuro de atraso", () => {
+    expect(deadlineTone(em(5), now)).toBe("warning");
+    expect(deadlineTone(em(60), now)).toBe("warning");
     expect(deadlineTone(em(180), now)).toBe("warning");
   });
 
   it("fica calmo com folga", () => {
-    expect(deadlineTone(em(181), now)).toBe("ok");
-    expect(deadlineTone(em(3600), now)).toBe("ok");
+    expect(deadlineTone(em(181), now)).toBe("neutral");
+    expect(deadlineTone(em(3600), now)).toBe("neutral");
   });
 
   it("prazo vencido é o mais urgente que existe, não some", () => {
@@ -161,17 +157,17 @@ describe("deadlineTone", () => {
   });
 
   it("sem prazo ou com data ilegível não pinta alarme", () => {
-    expect(deadlineTone("", now)).toBe("muted");
-    expect(deadlineTone("amanhã cedo", now)).toBe("muted");
+    expect(deadlineTone("", now)).toBe("neutral");
+    expect(deadlineTone("amanhã cedo", now)).toBe("neutral");
   });
 });
 
 describe("timerTone", () => {
   it("maps timer_class to urgency", () => {
-    expect(timerTone("timer-ok")).toBe("ok");
+    expect(timerTone("timer-ok")).toBe("neutral");
     expect(timerTone("timer-warning")).toBe("warning");
     expect(timerTone("timer-urgent")).toBe("late");
-    expect(timerTone("timer-muted")).toBe("muted");
+    expect(timerTone("timer-muted")).toBe("neutral");
   });
 });
 

@@ -29,7 +29,7 @@ describe("queueItems", () => {
     ], NOW);
     expect(items.map((i) => i.card.ref)).toEqual(["A-1-R7K", "A-1-F15", "A-1-NEW"]);
     expect(items[0]).toMatchObject({ timeLabel: "27 min", goalLabel: "meta 30", tone: "warning" });
-    expect(items[1]).toMatchObject({ timeLabel: "6 min", goalLabel: "no balcão", tone: "ok" });
+    expect(items[1]).toMatchObject({ timeLabel: "6 min", goalLabel: "no balcão", tone: "neutral" });
   });
 
   it("o mesmo pedido em duas listas (quadro e encomendas) entra uma vez", () => {
@@ -39,8 +39,8 @@ describe("queueItems", () => {
   it("tom contra a meta", () => {
     expect(goalTone(8 * 60, 5)).toBe("late");
     expect(goalTone(4 * 60, 5)).toBe("warning");
-    expect(goalTone(60, 5)).toBe("ok");
-    expect(goalTone(600, 0)).toBe("ok");
+    expect(goalTone(60, 5)).toBe("neutral");
+    expect(goalTone(600, 0)).toBe("neutral");
     expect(minutesLabel(3900)).toBe("1h 5 min");
   });
 });

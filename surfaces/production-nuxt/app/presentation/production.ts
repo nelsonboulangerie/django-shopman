@@ -5,21 +5,31 @@
 // functional-color tone. No lifecycle arithmetic (the backend owns the
 // WorkOrder lifecycle).
 import type {
+  ForecastStatus,
   OrderCommitmentProjection,
   ProductionMatrixRowProjection,
   ProductionShortageError,
   ProductionTimerStatusCode,
   WorkOrderCardProjection,
 } from "~/types/production";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
 
 // ── Timer tone (urgency of the started clock) ──────────────────────────────
 
-export type TimerTone = "ok" | "warning" | "late";
+export type TimerTone = TimeTone;
 
 export function timerTone(status: ProductionTimerStatusCode): TimerTone {
-  if (status === "late") return "late";
-  if (status === "warning") return "warning";
-  return "ok";
+  if (status === "late") return timeTone("late");
+  if (status === "warning") return timeTone("warning");
+  return timeTone("on_time");
+}
+
+/** O painel mantém Planejado, Previsto e Confirmado neutros; só Atrasado é tempo vermelho. */
+export function forecastTimeTone(status: ForecastStatus): TimerTone {
+  return timeTone(status === "delayed" ? "late" : "on_time");
 }
 
 /** Tonal chip classes for the live timer. Calm by default; only warning/late
@@ -30,6 +40,8 @@ export function timerChip(tone: TimerTone): string {
       return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
     case "warning":
       return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    case "ready":
+      return "border-success/40 bg-success/10 text-success";
     default:
       return "border-border bg-muted text-muted-foreground";
   }

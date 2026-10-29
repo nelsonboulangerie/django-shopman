@@ -20,6 +20,10 @@ import {
   moneyInput,
 } from "../../../operator-kit/app/presentation/custody";
 import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
 
 // ── Status tone, ícone do canal e "fatos numa linha" ──────────────────────
 // Moram no kit (`operator-kit/app/presentation/orderDetail.ts`) porque o detalhe
@@ -37,25 +41,23 @@ export type { Tone } from "../../../operator-kit/app/presentation/orderDetail";
 
 // ── Timer tone (urgency of the elapsed clock) ──────────────────────────────
 
-export type TimerTone = "ok" | "warning" | "late" | "muted";
+export type TimerTone = TimeTone;
 
 export function timerTone(timerClass: OrderTimerClass): TimerTone {
-  if (timerClass === "timer-urgent") return "late";
-  if (timerClass === "timer-warning") return "warning";
-  if (timerClass === "timer-muted") return "muted";
-  return "ok";
+  if (timerClass === "timer-urgent") return timeTone("late");
+  if (timerClass === "timer-warning") return timeTone("warning");
+  return timeTone("on_time");
 }
 
-/** Tonal chip classes for the live timer. Atenção ao tempo é número com intensidade,
- *  sempre no âmbar (G03): o vermelho é só "bloqueado com motivo", nunca o relógio. */
+/** Classes do relógio vivo segundo o mapa único do tempo. */
 export function timerChip(tone: TimerTone): string {
   switch (tone) {
     case "late":
-      return "border-warning/60 bg-warning/20 font-bold text-warning";
+      return "border-destructive/60 bg-destructive/15 font-bold text-destructive";
     case "warning":
       return "border-warning/40 bg-warning/10 text-warning";
-    case "muted":
-      return "border-transparent bg-transparent text-muted-foreground";
+    case "ready":
+      return "border-success/40 bg-success/10 text-success";
     default:
       return "border-border bg-muted text-muted-foreground";
   }
@@ -96,13 +98,13 @@ export function elapsedLabel(seconds: number): string {
  * qualquer canal: o prazo do iFood e o timer da casa pedem a mesma leitura.
  */
 export function deadlineTone(deadlineIso: string, nowMs: number): TimerTone {
-  if (!deadlineIso) return "muted";
+  if (!deadlineIso) return timeTone("on_time");
   const deadlineMs = Date.parse(deadlineIso);
-  if (Number.isNaN(deadlineMs)) return "muted";
+  if (Number.isNaN(deadlineMs)) return timeTone("on_time");
   const secondsLeft = (deadlineMs - nowMs) / 1000;
-  if (secondsLeft <= 60) return "late";
-  if (secondsLeft <= 180) return "warning";
-  return "ok";
+  if (secondsLeft < 0) return timeTone("late");
+  if (secondsLeft <= 180) return timeTone("warning");
+  return timeTone("on_time");
 }
 
 export function confirmationRemainingLabel(
@@ -1171,7 +1173,7 @@ export function cardClock(card: ClockSource, nowMs: number): CardClock {
   if (ready !== null)
     return {
       text: ready < 60 ? "pronto agora" : `pronto ${agoLabel(ready)}`,
-      tone,
+      tone: timeTone("ready"),
       countdown: false,
     };
   const road = secondsSince(card.dispatched_at_iso, nowMs);

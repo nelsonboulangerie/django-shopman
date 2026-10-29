@@ -361,7 +361,7 @@ describe("KdsTicketCard — o canon do kit", () => {
     const w = mountCard({ ticket: ticket(), next: true });
     const classes = w.get("article").classes();
     expect(classes.some((c) => c.startsWith("ring"))).toBe(false);
-    expect(classes).toContain("border-primary");
+    expect(classes).toContain("border-border");
   });
 
   // A trava do servidor não cria ticket para pedido de teste; este card só

@@ -92,7 +92,8 @@ describe("kds board presentation", () => {
   it("maps timer class to a functional tone", () => {
     expect(ticketTone("timer-late")).toBe("late");
     expect(ticketTone("timer-warning")).toBe("warning");
-    expect(ticketTone("timer-ok")).toBe("ok");
+    expect(ticketTone("timer-ok")).toBe("neutral");
+    expect(ticketTone("timer-late", "done")).toBe("ready");
   });
 
   it("shapes the board view + counts", () => {
@@ -217,23 +218,25 @@ describe("kds board presentation", () => {
   it("maps tone to a solid bar fill and a tonal timer chip", () => {
     expect(toneBar("late")).toContain("red");
     expect(toneBar("warning")).toContain("amber");
-    expect(toneBar("ok")).not.toMatch(/red|amber|green/); // no prazo = cinza calmo
+    expect(toneBar("neutral")).not.toMatch(/red|amber|green/); // no prazo = cinza calmo
+    expect(toneBar("ready")).toContain("success");
     expect(toneTimer("late")).toContain("red");
-    expect(toneTimer("ok")).toContain("muted-foreground");
+    expect(toneTimer("neutral")).toContain("muted-foreground");
   });
 
   it("pinta o próximo no tom do próprio semáforo (v4: borda de 2px, tinta e halo)", () => {
     expect(toneNextSurface("late")).toContain("border-destructive");
     expect(toneNextSurface("warning")).toContain("border-warning");
-    expect(toneNextSurface("ok")).toContain("border-primary");
-    expect(toneNextSurface("ok")).not.toMatch(/destructive|warning/);
+    expect(toneNextSurface("neutral")).toContain("border-border");
+    expect(toneNextSurface("neutral")).not.toMatch(/destructive|warning|success/);
   });
 
   it("o relógio do card: atrasado é o único sólido; perto da meta, âmbar; no prazo, neutro", () => {
     expect(toneTimerChip("late")).toContain("bg-destructive");
     expect(toneTimerChip("warning")).toContain("text-warning");
     expect(toneTimerChip("warning")).not.toContain("bg-");
-    expect(toneTimerChip("ok")).toContain("border-border");
+    expect(toneTimerChip("neutral")).toContain("border-border");
+    expect(toneTimerChip("ready")).toContain("success");
   });
 
   it("a pílula do card diz o estado num estilo só", () => {
@@ -248,7 +251,7 @@ describe("kds board presentation", () => {
 
   it("destaque do próximo é borda + tint: ring fica reservado ao foco de teclado", () => {
     // Canon do kit (operator-base.css, "SELEÇÃO / ATIVO").
-    for (const tone of ["late", "warning", "ok"] as const) {
+    for (const tone of ["late", "warning", "neutral", "ready"] as const) {
       expect(toneNextSurface(tone)).not.toContain("ring");
       expect(toneNextSurface(tone)).toContain("border-");
     }
