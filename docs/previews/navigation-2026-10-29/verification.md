@@ -66,6 +66,36 @@ essa API. As interações acima concluíram; este registro não declara o consol
 livre de erros nem atribui a causa sem stack. A verificação funcional documentada é
 do protótipo, não uma certificação dos apps Nuxt.
 
+## Segunda rodada: atalhos e composição
+
+Conferido no navegador após a revisão das barras:
+
+- Mobile 390 × 844: os seis atalhos de destino da tabela do README foram acionados
+  individualmente nas duas variantes. Cada toque abriu o título esperado, com
+  `data-drawer=false`. Não houve etapa adicional em B.
+- Desktop 1440 × 900 com `quick=1`: repetido o mesmo percurso dos seis atalhos nas
+  duas variantes, com os mesmos títulos.
+- Composição no celular: mover recortes para baixo ocultou a faixa superior e
+  manteve exatamente três controles de filtro, sem duplicação.
+- Catálogo: próxima página mudou de 1–6 de 9 para 7–9 de 9 produtos.
+- Comparação: os dois iframes receberam `local=bottom` e `quick=1` na configuração.
+- Recebimento: resolver a diferença mudou a ação flutuante para Confirmar entrada.
+  No desktop padrão, a mesma decisão atualizou a ação do cabeçalho; dock oculto.
+- Troca Gestor → Compras pelo cabeçalho abriu Conferência de recebimento. Retorno
+  à Central pelo mesmo controle exibiu a Central e seus apps.
+- Mobile 320 × 740: largura observada 320, sem transbordamento da página; conteúdo
+  rolável com 252 px no estado inicial de Contagem. Ao editar uma quantidade, dock
+  oculto e foco preservado no campo. Ao sair, Revisar contagem habilitado e progresso
+  de 1 de 6 insumos. Ajustada a posição do estado Registrado para não disputar espaço
+  com o nome do insumo.
+- Mobile 390 × 844 e desktop 1440 × 900: conteúdo, ação contextual e atalhos ocupam
+  regiões sucessivas em fluxo, sem sobreposição fixa.
+
+As capturas individuais de A/B e de Compras mobile foram atualizadas. As capturas
+anteriores de comparação e de Central registram a primeira rodada. Não foi executado
+ensaio em dispositivo físico com teclado virtual, leitor de tela ou zoom de 200%.
+Os perfis tablet da seção anterior pertencem à primeira rodada, sem revalidação nesta.
+
 ## Estado de aprovação
 
 Prévia entregue para avaliação do dono. Não há preferência aprovada entre A e B.

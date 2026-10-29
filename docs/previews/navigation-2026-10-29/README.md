@@ -67,6 +67,58 @@ Há uma travessia concreta: buscar **Geleia**, abrir o produto e escolher **Abri
 em Compras**. SKU e saldo são os mesmos. O retorno pelo cabeçalho restaura busca e
 detalhe do produto de origem.
 
+## Rodada de composição das barras
+
+O controle **Composição** (ícone de ajustes no celular) permite mover os recortes
+entre a barra superior secundária e a inferior secundária, mostrar os atalhos
+inferiores também no desktop e experimentar a ação flutuante no desktop.
+A configuração acompanha os dois quadros da comparação. São alternativas para
+avaliação, não preferências finais do produto.
+
+Os atalhos abaixo abrem diretamente o mesmo destino em A e B, com um toque:
+
+| App | Atalho | Destino |
+|---|---|---|
+| Gestor | Pedidos | Em andamento |
+| Gestor | Produtos | Catálogo |
+| Gestor | Clientes | Clientes |
+| Compras | Visão geral | Visão geral |
+| Compras | Reposição | Reposição |
+| Compras | Receber | Conferência de recebimento |
+
+**Mais** abre a navegação completa em ambas. Os atalhos são estáveis; o destaque
+indica o assunto atual, sem transformar o toque em abertura de submenu na variante B.
+
+| Recurso | Responsabilidade proposta |
+|---|---|
+| Cabeçalho | App atual, localização, Central, troca de app e ações da página no desktop |
+| Lateral ou gaveta | Organização completa por assuntos e destinos |
+| Superior secundária | Recortes locais do conteúdo, sem duplicar navegação entre páginas |
+| Inferior secundária | Paginação e posição na lista; alternativa para recortes próximos ao polegar |
+| Inferior principal | Atalhos estáveis para destinos frequentes |
+| Flutuante contextual | Uma próxima ação da tarefa, acompanhada do contexto necessário |
+
+A recomendação inicial é recortes no topo, paginação embaixo e atalhos inferiores
+no mobile. A ação flutuante aparece quando há tarefa para concluir, como recebimento
+ou contagem. No desktop, essa ação fica no cabeçalho por padrão. Ela não cobre o
+conteúdo: fica em fluxo entre a área rolável e os atalhos; durante edição de campos
+no mobile, sai de cena. O teclado virtual de dispositivo físico ainda precisa de
+validação. Seleção em lote deve substituir a faixa contextual existente, conforme o
+OperatorBulkBar, e não criar outra camada fixa. Esse cenário não é simulado aqui.
+
+A lateral A ganhou superfície clara no assunto expandido, ícones e seleção com o
+mesmo cuidado visual de B. O catálogo tem nove produtos fictícios, em páginas de seis,
+para tornar o rodapé testável. A conferência troca Resolver diferença por Confirmar
+entrada após a decisão; a contagem explica por que Revisar está indisponível.
+
+A inspiração do Admin foi a separação entre navegação, ações da lista, ações de cada
+registro e conclusão do formulário. Referências: [ações do ModelAdmin](https://unfoldadmin.com/docs/configuration/modeladmin/),
+[tabs de listagem](https://unfoldadmin.com/docs/tabs/changelist/) e
+[submit line](https://unfoldadmin.com/docs/actions/changeform-submitline/).
+A semântica de salvar antes de executar do Admin não foi transportada para Nuxt.
+A composição respeita como referência os componentes existentes
+`OperatorActionBar.vue` e `OperatorBulkBar.vue` do operator-kit, sem editá-los.
+
 ## Roteiro para avaliação
 
 1. Localizar um pedido concluído sem passar por Ajustes.

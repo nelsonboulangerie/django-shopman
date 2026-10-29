@@ -30,3 +30,69 @@ body{height:100dvh;overflow:hidden;display:flex;flex-direction:column}.lab{flex-
 @media(max-width:650px), (max-width:900px) and (orientation:portrait){.card-grid{grid-template-columns:1fr}}
 /* A mudança de largura é imediata nesta comparação A/B. */
 .primary,.secondary{transition:none}
+/* A: o grupo aberto é uma superfície contextual, com o mesmo cuidado visual de B. */
+.primary .navgroup:has(.group-title[aria-expanded=true]){background:#fffcf5;border:1px solid #ffffff80;border-radius:10px;overflow:hidden;margin-bottom:12px;box-shadow:0 3px 10px #3b2a1e08}
+.primary .group-title{min-height:42px;font-size:13px;padding:10px 12px;gap:9px}
+.primary .group-title[aria-expanded=true]{color:var(--gold-ink);background:#f6eddf;border-bottom:1px solid #e9decc}
+.primary .group-title[aria-expanded=true] .caret{opacity:.8}
+.primary .navgroup>div{padding:5px 7px 7px}
+.primary .navitem.indent{margin:3px 0;padding:10px 11px;min-height:38px;border:0;border-radius:7px;color:var(--muted);gap:9px;font-size:12px}
+.primary .navitem.indent.active{background:#ece0c9;color:var(--gold-ink);box-shadow:none;border:0;font-weight:650}
+.primary .navitem.indent:hover{background:#f2e8d8;color:var(--gold-ink)}
+.primary .navitem.indent .navcount{background:#e8ddca;color:var(--muted)}
+.application[data-compact=true] .primary .navgroup{background:transparent;border:0;box-shadow:none}
+.application[data-compact=true] .primary .group-title[aria-expanded=true]{background:#ffffff1e;border:0;color:#fff}
+.application[data-compact=true] .primary .navgroup>div{padding:0}
+/* As faixas são irmãs do conteúdo rolável, não camadas que o tapam. */
+.workspace{padding-bottom:0!important;display:flex;flex-direction:column;overflow:hidden;min-height:0}.workspace>.content{flex:1;min-height:0;overflow:auto;width:100%;margin:0 auto}.workspace>.pagehead{flex-shrink:0;position:static}
+.local-bar,.support-bottom,.action-dock,.quicknav{flex-shrink:0}
+.local-bar{background:#fff;border-bottom:1px solid var(--line);padding:0 26px;min-height:43px}
+.local-controls{display:flex;align-items:center;gap:15px;min-height:43px;min-width:0}
+.local-label{font-size:10px;color:var(--muted);flex-shrink:0}
+.local-options{display:flex;align-items:stretch;gap:19px;overflow:auto;scrollbar-width:thin;min-width:0}
+.local-options .filter-chip{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;padding:10px 0 9px;min-height:43px;color:var(--muted);font-size:12px;font-weight:500;white-space:nowrap;flex-shrink:0}
+.local-options .filter-chip.active{border-bottom-color:var(--gold);color:var(--gold-ink);font-weight:650}
+.support-bottom{background:#fff;border-top:1px solid var(--line);padding:0 26px}
+.support-bottom .local-controls{border-bottom:1px solid var(--line)}
+.support-bottom .local-controls:last-child{border-bottom:0}
+.list-navigation{display:flex;justify-content:space-between;align-items:center;gap:15px;min-height:47px;font-size:11px;color:var(--muted)}
+.pagination{display:flex;gap:10px;align-items:center;font-variant-numeric:tabular-nums}
+.pagination .icon-button{width:29px;height:29px}.pagination svg{width:14px;height:14px}
+.list-location{font-size:10px;color:#9a8773}
+.action-dock{display:none;padding:8px 16px 12px;background:var(--paper)}
+.floating-surface{background:var(--ink);color:#fff;border-radius:12px;padding:12px;box-shadow:0 5px 20px #3b2a1e22;max-width:720px;margin:0 auto}
+.floating-context{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12px;margin-bottom:10px;line-height:1.4}
+.floating-context strong{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.floating-surface>.button{width:100%;min-height:44px;font-size:13px;font-weight:600}
+.floating-surface p{margin:9px 0 0;font-size:11px;line-height:1.5;color:#f0e3d5}
+.desktop-task{display:flex;flex-direction:column;gap:4px;align-items:flex-end}.desktop-task small{font-size:10px;max-width:200px;line-height:1.4;color:var(--muted)}
+.quicknav{position:static!important;inset:auto;min-width:0}
+.desktop-shortcuts .quicknav{display:flex;justify-content:center;gap:5px;background:#fff;border-top:1px solid var(--line);padding:5px 14px}
+.desktop-shortcuts .quicknav button{display:flex;align-items:center;justify-content:center;gap:7px;min-width:110px;min-height:38px;padding:6px 13px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:12px}
+.desktop-shortcuts .quicknav button.active{background:#f4ebdb;color:var(--gold-ink);font-weight:600}
+.desktop-dock .action-dock{display:block}.desktop-dock .desktop-task{display:none}
+.layout-check{display:flex;align-items:flex-start;gap:10px;font-size:12px;line-height:1.6;margin:15px 0}.layout-check input{accent-color:var(--gold);width:16px;height:16px;margin-top:3px;flex-shrink:0}
+.bar-roles{border-top:1px solid var(--line);margin-top:20px;padding-top:8px}.bar-roles p{font-size:12px;line-height:1.6;margin:13px 0}.bar-roles strong{display:block;color:var(--ink);font-size:12px}
+@media(max-width:1250px){.lab .preview-tag{display:none}}
+@media(max-width:1023px){.action-dock{display:block}.desktop-task{display:none}}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){
+ .lab>.composition{order:0;min-width:34px;width:34px;min-height:34px;padding:6px}.lab>.composition .button-label{display:none}.lab>[data-action=map]{display:none}
+ .primary .navitem.indent{margin:3px 0!important;padding:11px 12px!important;border-radius:7px;font-size:13px!important;min-height:44px!important}
+ .primary .group-title{min-height:45px!important}.primary .navgroup>div{padding:5px 7px 7px}
+ .application[data-drawer=true] .primary .group-title[aria-expanded=true]{color:var(--gold-ink);background:#f6eddf}
+ .application[data-drawer=true] .primary .navgroup{border:1px solid #ffffff80;background:#fffcf5;box-shadow:none}
+ .application[data-drawer=true] .primary .navgroup:has(.group-title[aria-expanded=false]){border-color:transparent;background:transparent}
+ .workspace{padding-bottom:0!important}.pagehead{padding-top:10px;padding-bottom:12px}.heading-row{margin-top:10px}.heading-row p{font-size:11px;line-height:1.4}
+ .head-top .context-switch{margin:0;flex:1;min-width:0;display:flex}.head-top .context-switch>.button{margin:0;min-height:40px;padding:7px 8px;width:100%;background:transparent;border-color:var(--line);gap:4px;font-size:11px}
+ .head-top .context-switch>.button>svg{width:12px}.head-top>.head-spacer{display:none}.head-utility{margin-left:auto}.head-top{gap:6px}.app-switch{padding:6px 8px;min-height:40px;font-size:11px}.app-switch>svg:first-child{display:none}
+ .head-top .icon-button{width:40px;height:40px}.local-bar,.support-bottom{padding:0 15px}.local-controls{gap:12px;min-height:44px}.local-options{gap:18px}.local-options .filter-chip{min-height:44px;font-size:12px;padding:11px 0 9px}
+ .list-navigation{min-height:44px;font-size:11px}.pagination .icon-button{width:38px;height:38px}.pagination{gap:8px}
+ .quicknav,.desktop-shortcuts .quicknav{display:flex;justify-content:space-around;gap:0;padding:4px 5px calc(4px + env(safe-area-inset-bottom,0px));min-height:64px}
+ .quicknav button,.desktop-shortcuts .quicknav button{min-width:0;max-width:125px;min-height:52px;flex:1;flex-direction:column;gap:5px;padding:7px 2px;font-size:10px}
+ .action-dock{padding:7px 12px 9px}.floating-surface{padding:11px 12px;border-radius:12px}.floating-context{font-size:11px;margin-bottom:9px}.floating-context strong{font-size:12px}.desktop-task{display:none}
+ .support-bottom .list-location{display:none}.content{padding-top:16px;padding-bottom:20px}.dialog-body .layout-check{font-size:12px}
+ body[data-editing=true] .action-dock{display:none}
+}
+
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){.head-utility .desktop-control{display:none}.head-top .icon-button{width:44px;height:44px}.head-top .context-switch>.button,.app-switch{min-height:44px}}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){.application[data-view=count] tbody td:last-child{position:static;grid-column:1/-1}.application[data-view=count] tbody td:first-child{padding-right:0}.application[data-view=count] tbody td:last-child::before{display:none}}
