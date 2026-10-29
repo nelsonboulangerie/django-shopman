@@ -462,14 +462,14 @@ function refreshAll() {
         <template #position-cell="{ row }">{{ row.original.position_ref || "—" }}</template>
         <template #started-cell="{ row }">
           {{ row.original.qty_started || "—" }}
-          <!-- Fechamento sem abertura: o previsto não foi declarado, foi assumido igual
+          <!-- Finalização sem confirmação do previsto: o previsto não foi declarado, foi assumido igual
                ao planejado. A tela não o apresenta como fato. -->
           <NuxtBadge
             v-if="row.original.started_assumed"
             color="warning"
             class="ml-1"
             label="assumido"
-            title="Fechado sem abertura: previsto assumido igual ao planejado"
+            title="Fechado sem confirmação do previsto: previsto assumido igual ao planejado"
           />
         </template>
         <template #finished-cell="{ row }">{{ row.original.qty_finished || "—" }}</template>
@@ -478,7 +478,7 @@ function refreshAll() {
         <template #duration-cell="{ row }">{{ row.original.duration_minutes || "—" }}</template>
         <template v-if="historyRows.some((row) => row.started_assumed) || (pagination && pagination.total)" #footer>
           <p v-if="historyRows.some((row) => row.started_assumed)" class="mb-2 text-xs text-muted-foreground">
-            <b class="font-medium text-warning">assumido</b>: o lote foi fechado sem abertura, e o
+            <b class="font-medium text-warning">assumido</b>: o lote foi fechado sem confirmação do previsto, e o
             previsto foi assumido igual ao planejado. Ninguém o declarou.
           </p>
           <ReportPagination

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Casca da Produção (prod.). Duas classes de tela:
-//   · telas de OPERADOR (planejamento, preparação, abertura, fechamento, qualidade,
+//   · telas de OPERADOR (planejamento, preparação, produção, finalização, qualidade,
 //     timers, ajustes) → o shell da suíte (`OperatorSuiteShell` do kit), como o Gestor
 //     e o B.I.: barra lateral em três estados na mesa, gaveta pelo ☰ e barra inferior
 //     de 3 a 5 vagas no celular;

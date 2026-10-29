@@ -3,7 +3,7 @@
 // acesso); aqui só se monta a lista.
 //
 // Em cima o ciclo do lote (Alt+1 a Alt+5, decisão #1433: Planejamento · Preparação ·
-// Abertura · Fechamento · Qualidade), e logo abaixo os Timers da bancada, com a
+// Produção · Finalização · Qualidade), e logo abaixo os Timers da bancada, com a
 // contagem de ativos no selo e o ponto quando um toca. Receitas, Relatórios e Letreiro
 // têm destinos diretos, e o pé da barra lateral é o da suíte. A gaveta (☰) é o menu
 // completo; a barra inferior do celular leva as
@@ -27,8 +27,8 @@ export interface ProductionSectionsInput {
 export const PRODUCTION_STAGES: readonly OperatorSection[] = [
   { key: "plan", label: "Planejamento", shortLabel: "Plano", icon: "lucide:layout-grid", to: "/plan", shortcut: "Alt+1", quick: true },
   { key: "mise-en-place", label: "Preparação", shortLabel: "Preparo", icon: "lucide:scale", to: "/mise-en-place", shortcut: "Alt+2", quick: true },
-  { key: "open", label: "Abertura", icon: "lucide:flame", to: "/", shortcut: "Alt+3", quick: true },
-  { key: "close", label: "Fechamento", icon: "lucide:package-check", to: "/close", shortcut: "Alt+4", quick: true },
+  { key: "open", label: "Produção", icon: "lucide:flame", to: "/", shortcut: "Alt+3", quick: true },
+  { key: "close", label: "Finalização", icon: "lucide:package-check", to: "/close", shortcut: "Alt+4", quick: true },
   { key: "quality", label: "Qualidade", icon: "lucide:badge-check", to: "/quality", shortcut: "Alt+5" },
 ];
 

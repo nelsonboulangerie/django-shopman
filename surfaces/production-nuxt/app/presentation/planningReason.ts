@@ -7,7 +7,7 @@
 // e a falta de insumo; esta camada só escolhe as palavras e o que mostrar.
 //
 // Regra do sinal único (uma prioridade, nunca dois selos na linha):
-//   1. falta insumo: o número não sai do forno como está, e o fechamento vai
+//   1. falta insumo: o número não sai do forno como está, e a finalização vai
 //      recusar (mesma régua do guardrail). É o único que muda o que é possível.
 //   2. acabou cedo: esgotou em metade ou mais dos dias usados na conta. A
 //      procura é maior do que a venda mostrou.

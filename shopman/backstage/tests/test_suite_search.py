@@ -206,6 +206,18 @@ def test_screens_by_name_without_accent(client):
     assert screen["url"] == "https://prod.example.test/reports"
 
 
+@pytest.mark.parametrize(
+    ("query", "title", "path"),
+    [("preparacao", "Preparação", "/mise-en-place"), ("finalizacao", "Finalização", "/close")],
+)
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_production_stages_use_the_ui_vocabulary_in_suite_search(client, query, title, path):
+    screens = _group(_search(client, _admin(), query), "screens")
+    [screen] = [screen for screen in screens if screen["app"] == "production"]
+    assert screen["title"] == f"Produção › {title}"
+    assert screen["url"] == f"https://prod.example.test{path}"
+
+
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_groups_follow_the_type_order_and_count_per_app(client, maria_order):
     Customer.objects.create(ref="CLI-MARIA", first_name="Maria", last_name="Santos")

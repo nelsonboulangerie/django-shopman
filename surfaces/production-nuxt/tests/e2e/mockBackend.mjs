@@ -122,7 +122,7 @@ const FORECAST = {
     actions: [],
   },
 };
-const KDS = { kds: { cards: [], total_count: 0, late_count: 0 } };
+const KDS = { kds: { cards: [], actions: [], total_count: 0, late_count: 0 } };
 const MISE = { mise_en_place: { selected_date: "2026-07-06", lines: [] } };
 const ALERTS = { alerts: [], counts: { active: 0, critical: 0 } };
 const QC = {

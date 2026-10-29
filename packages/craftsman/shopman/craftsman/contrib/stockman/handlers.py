@@ -391,7 +391,7 @@ def _handle_started(work_order, product_ref, date):
         position=position,
         target_date=date,
         batch=STARTED_BATCH,
-        reason=f"Abertura de lote: {work_order.ref}",
+        reason=f"Produção do lote: {work_order.ref}",
         kind="make",  # Move.Kind.MAKE
     )
     logger.info(
@@ -992,7 +992,7 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
                 to_position=to_position,
                 from_position=from_position,
                 from_batch=from_batch,
-                reason=f"Fechamento de lote: {work_order.ref}",
+                reason=f"Finalização do lote: {work_order.ref}",
                 to_batch=leg_batch,
                 to_quality_grade_ref=leg_grade_ref,
             )

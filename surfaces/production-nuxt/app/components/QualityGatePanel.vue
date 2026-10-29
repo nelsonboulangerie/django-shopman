@@ -277,14 +277,14 @@ function closedLine(order: QCOrderCardProjection): string {
                   "lotes ainda no forno ou sem fechar. Entram",
                 )
               }}
-              aqui depois do Fechamento.
+              aqui depois da Finalização.
             </span>
           </p>
           <NuxtButton
             color="neutral"
             variant="ghost"
             class="shrink-0"
-            label="Fechamento"
+            label="Finalização"
             trailing-icon="i-lucide-arrow-right"
             @click="emit('go-close')"
           />

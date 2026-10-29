@@ -761,7 +761,7 @@ def _board_actions(
                 _production_action(
                     ref=f"start:{order.pk}",
                     kind="start",
-                    label="Confirmar abertura",
+                    label="Confirmar previsto",
                     priority=20,
                     enabled=access.can_start,
                     reason="Sem capacidade para abrir lotes.",
@@ -913,11 +913,11 @@ def _qc_actions(
             _production_action(
                 ref=f"finish:{card.pk}",
                 kind="finish",
-                label="Confirmar fechamento",
+                label="Confirmar finalização",
                 priority=10,
                 enabled=card.can_close,
                 reason=(
-                    "Confirme a abertura do lote antes do QC."
+                    "Confirme o previsto do lote na Produção antes da Finalização."
                     if card.status == WorkOrder.Status.PLANNED and not access.can_start
                     else "Sem capacidade para fechar o lote."
                 ),
@@ -3587,7 +3587,7 @@ def _suggestion_material_checks(
 
     Mesma régua do guardrail que recusa o fechamento (``INVENTORY_BACKEND``,
     ``check_finish_materials``): quem planeja vê a falta onde decide, e não na
-    recusa do Fechamento. Só matéria-prima (pré-preparo é feito na hora, como
+    recusa da Finalização. Só matéria-prima (pré-preparo é feito na hora, como
     na lista de separação) e só linhas ainda sem lote na data (``skip_skus``):
     a linha já planejada mostra o estado dela. Sem backend, ou com falha de
     leitura, devolve vazio: o aviso some, a sugestão não muda.
