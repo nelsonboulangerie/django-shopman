@@ -1,0 +1,16 @@
+{
+  "coverage_first_utc": "2026-10-29T17:05:44.192787Z",
+  "coverage_last_utc": "2026-10-29T17:36:01.151646Z",
+  "all_rows": 53,
+  "nonstreaming_rows": 52,
+  "nonstreaming_p50_ms": 421.0,
+  "nonstreaming_p95_nearest_rank_ms": 1024,
+  "nonstreaming_max_ms": 1134,
+  "nonstreaming_ge_10000ms": 0,
+  "statuses": {
+    "200": 51,
+    "403": 1,
+    "404": 1
+  },
+  "limitation": "Amostra disponível do deployment atual; inclui sondas e não representa tráfego de sete dias. 404 é sonda desta investigação com URL incorreta; 403 de checkout é evento separado do 403 da exportação."
+}

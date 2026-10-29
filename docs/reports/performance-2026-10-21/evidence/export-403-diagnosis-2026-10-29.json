@@ -1,0 +1,20 @@
+{
+  "admin_context": "shopman-do-app-admin",
+  "http_status": 403,
+  "error_id": "Forbidden",
+  "message": "You are not authorized to perform this operation",
+  "observed_scopes": [
+    "actions:read",
+    "regions:read",
+    "sizes:read",
+    "app:read",
+    "database:read",
+    "registry:read",
+    "app:update",
+    "database:view_credentials"
+  ],
+  "missing_scope": "monitoring:read",
+  "scope_source": "DigitalOcean API Tokens > shopman-do-app-admin-2026-10 > View Scopes, 2026-10-29",
+  "resolution": "Exportação por DIGITALOCEAN_READ_TOKEN já configurado no Watchman, dentro da CI, sem extração ou mudança de credencial/permissão. Todas as 12 consultas retornaram status success.",
+  "run_url": "https://github.com/nelsonboulangerie/django-shopman/actions/runs/40922403473"
+}

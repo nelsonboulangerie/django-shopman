@@ -14,7 +14,6 @@ concurrency:
 
 jobs:
   read-only-contract:
-    if: github.ref_name != 'docs/perf-handoff-20261021'
     name: Contrato vivo somente leitura
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -164,27 +163,4 @@ jobs:
           name: watchman-infrastructure-${{ github.run_id }}
           path: watchman-infrastructure.json
           if-no-files-found: warn
-          retention-days: 30
-
-  phase-a-export:
-    name: Fase A exportação somente leitura
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'docs/perf-handoff-20261021'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: Export documented monitoring metrics
-        env:
-          DO_READ_TOKEN: ${{ secrets.DIGITALOCEAN_READ_TOKEN }}
-        run: python docs/reports/performance-2026-10-21/export_monitoring_readonly.py
-      - uses: actions/upload-artifact@v7
-        with:
-          name: phase-a-monitoring-${{ github.run_id }}
-          path: phase-a-monitoring.json
-          if-no-files-found: error
           retention-days: 30

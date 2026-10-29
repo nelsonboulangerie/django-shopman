@@ -4,14 +4,17 @@ Atualização: **29/10/2026**. Esta revisão substitui a proposta inicial de 21/
 A avaliação desta frente foi somente leitura no ambiente vivo. Não houve aumento de
 plano, mudança de configuração, instalação de extensão, limpeza de dados ou teste
 concorrente. A documentação pode ser publicada; o aceite integral da Fase A ainda
-está **pendente**, pelos itens explicitados na seção 7.
+está **parcial**: recursos e causa do 403 estão fechados; atribuição histórica da
+cauda HTTP e hit ratio real não podem ser certificados com a cobertura recuperada
+(seção 7). Não declarar essas lacunas como resolvidas.
 
 ## 1. Decisão para o dono
 
 **Não há base suficiente para comprar capacidade agora.** As faixas amostradas de
 CPU/RAM não mostram saturação sustentada nos quatro serviços, mas a cauda do
-ingresso chega a 9–10 s em intervalos da semana. É preciso correlacionar essa cauda
-com rota, status, deploy e estágios do servidor antes de escolher uma intervenção.
+ingresso chega a 9–10 s em intervalos da semana. A correlação recuperada descarta deploy como explicação universal, mas não
+identifica a rota de todos os picos. O histórico por requisição não está arquivado
+no App Platform; ver seção 6.1 antes de escolher uma intervenção.
 Baixa CPU agregada não prova que CPU deixou de participar do atraso.
 
 Os gargalos de código comprovados em 21/10 já tiveram correções publicadas:
@@ -71,9 +74,38 @@ cumulativa de falhas nem prova de ausência de OOM; requer correlação com even
 
 O maior valor de um P95 por intervalo **não é o P95 global da semana**. Não se
 calcula P50/P95 global ou média de CPU a partir dos limites de um gráfico. A
-exportação oficial de CPU pela API retornou **403** com o contexto existente;
-a [API de Monitoring](https://docs.digitalocean.com/products/monitoring/reference/api/)
-documenta `monitoring:read`. Não foi criado token nem ampliado escopo.
+exportação inicialmente retornou **403** porque o token `shopman-do-app-admin`
+não tem `monitoring:read`. A tela View Scopes mostrou seus oito escopos; nenhum
+é Monitoring. O erro da API foi `Forbidden: You are not authorized to perform
+this operation`. **Causa fechada**, sem relação demonstrada com carga, CORS ou
+checkout. [Evidência](evidence/export-403-diagnosis-2026-10-29.json).
+
+A exportação foi concluída usando `DIGITALOCEAN_READ_TOKEN`, já configurado no
+Watchman, dentro da CI. Nenhum segredo saiu da CI e nenhuma permissão foi ampliada.
+As 12 consultas foram bem-sucedidas no
+[run 40922403473](https://github.com/nelsonboulangerie/django-shopman/actions/runs/40922403473).
+O job temporário foi retirado da revisão final da PR; nenhum workflow novo será
+implantado. [Séries exportadas](evidence/monitoring-7d-2026-10-29.json) e
+[resumo por série](evidence/monitoring-summary-2026-10-29.json).
+
+Janela exportada: **22/10 17:36:59 a 29/10 17:36:59 UTC**. A API retornou 401
+pontos da série `*-0` por métrica, espaçados por 1.512 s (25,2 min). Mediana e P95
+nearest-rank desses pontos, em **percentual de recurso**, abaixo. Não são percentis
+de latência, nem amostragem de todas as requisições, nem garantia sobre picos entre
+pontos. As séries `*-1`, com 30–48 pontos em CPU/RAM, permanecem separadas no JSON;
+não foram somadas nem confundidas com duas instâncias permanentes.
+
+| App, série *-0 | CPU P50 | CPU P95 | RAM P50 | RAM P95 |
+| --- | ---: | ---: | ---: | ---: |
+| web-storefront | 3,57% | 4,78% | 25,67% | 32,45% |
+| storefront-nuxt | 3,11% | 4,30% | 9,42% | 11,84% |
+| operator-floor | 3,11% | 5,84% | 31,20% | 37,14% |
+| operator-office | 2,95% | 3,41% | 34,29% | 44,38% |
+
+Restart count foi zero nos 401 pontos exportados de cada série `*-0`; o painel
+mais detalhado mostrou faixa 0–1. Resoluções diferentes não permitem declarar
+que nenhum restart transitório ocorreu. A exportação remove o bloqueio do 403,
+mas não fornece o histograma histórico de latência ou os contadores do CDN.
 
 ## 4. Amostra HTTP atual e cache
 
@@ -164,13 +196,77 @@ construção canônica de catálogo/PDP ainda custa aproximadamente 1 s na amost
 e a cauda de ingresso precisa de atribuição por rota. O tempo fora de `db_ms`
 inclui cache, Python, serialização e espera; não é prova isolada de CPU.
 
+## 6.1. Investigação dos picos de 10 s
+
+[Evidência de correlação](evidence/peak-correlation-2026-10-29.json),
+[deployments](evidence/deployments-2026-10-29.json),
+[access logs saneados](evidence/access-coverage-2026-10-29.json) e
+[resumo da amostra](evidence/access-summary-2026-10-29.json).
+
+No gráfico de sete dias do `web-storefront`, a linha renderizada tem 1.009 pontos,
+espaçados por dez minutos, e três pontos no valor de 10.000 ms. Horários abaixo
+são derivados da posição no SVG e dos extremos do eixo, em UTC, **aproximados**;
+não são timestamps de requests ou tooltips. A largura real da agregação não foi
+exposta. Não é possível inferir rota ou timeout individual a partir dessa linha.
+
+| Ponto aproximado UTC | Relação com deploy mais próximo | Recurso mais próximo na exportação |
+| --- | --- | --- |
+| 23/10 16:11 | 12 min 26 s antes do início do próximo deploy | CPU 2,98%, RAM 28,02%, amostra 6 min 41 s depois |
+| 27/10 01:01 | 16 h 35 min antes do próximo deploy | CPU 4,61%, RAM 31,11%, amostra 4 min 55 s antes |
+| 29/10 17:41 | 34 min 56 s após o fim do último deploy | CPU 4,05%, RAM 24,10%, amostra 4 min 07 s antes |
+
+**Deploy não explica todos os picos.** A granularidade dos recursos não exclui
+picos breves, fila, contenção ou espera de rede. Tampouco comprova falta de CPU ou
+RAM. Os timeouts canônicos de fetch normal nos BFFs são **25 s**, não 10 s
+(`surfaces/storefront-nuxt/server/utils/djangoProxy.ts:30` e
+`surfaces/operator-kit/server/utils/djangoProxy.ts:61`). Não há prova de que o teto
+de 10 s seja um timeout ou bucket interno do provedor; essas hipóteses ficam sem
+confirmação, não viram diagnóstico.
+
+Dos logs disponíveis do deployment atual, recuperaram-se 53 access events entre
+17:05:44 e 17:36:01 UTC em 29/10: 52 não streaming, P50 **421 ms**, P95 nearest-rank
+**1.024 ms**, máximo **1.134 ms**, nenhuma duração ≥10 s. São logs do Django, com
+sondas incluídas, não latência externa ou amostra representativa da semana. Houve
+51 respostas 200, um 403 de checkout (evento distinto do 403 de exportação) e um
+404 da primeira sonda desta investigação, que usou prefixo incorreto e foi corrigida.
+Não há 5xx nessa amostra; isso não prova ausência de 5xx na semana.
+
+Uma única sonda pública de SSE entregou cabeçalhos em **678,59 ms** e primeiro byte
+em **678,69 ms**, mantendo conexão por **12.681,78 ms** até encerramento voluntário.
+No Django, o mesmo tipo de request apareceu como `streaming=true`, abertura **4 ms**.
+[Evidência SSE](evidence/sse-readonly-2026-10-29.json). Esse experimento demonstra
+que duração de conexão e abertura/primeiro byte medem coisas diferentes. O ponto
+mais recente de 10 s está na vizinhança temporal da sonda, portanto está também
+contaminado por investigação. **Não prova que os picos históricos eram SSE**, e
+não deve ser usado como incidente espontâneo nem como ganho de desempenho.
+
+A tentativa de ler o deployment anterior retornou **400: cannot get running logs
+from deployment in phase final_cleanup**. O spec não tem `log_destinations` no app
+nem nos componentes. Há Sentry de erros configurado, mas não há taxa de tracing
+no spec e o default do código é zero; não é arquivo completo de access logs.
+[Evidência de retenção](evidence/log-retention-2026-10-29.json).
+A [documentação de logs da DigitalOcean](https://docs.digitalocean.com/products/app-platform/how-to/view-logs/)
+orienta forwarding para retenção de runtime logs. Nenhum forwarding, tracing,
+permissão ou configuração foi ativado nesta investigação.
+
+**Conclusão de atribuição:** o responsável individual pelos picos antigos de 10 s
+permanece indeterminado. A evidência permite rejeitar a atribuição automática a
+RAM, a deploy ou a SSE. Não há registro recuperado com rota/status/duração para
+fechar causalidade retrospectiva. Mais exportações de CPU não recompõem logs que
+não foram arquivados. O gargalo atual comprovado continua sendo **construção da
+projection canônica do catálogo/PDP (~1 s nas observações)**, com custo também fora
+do SQL, e o custo de origem no MISS. Isso sustenta perfil de código, não aumento
+de plano. Não atribuir os 10 s a essa projection sem correlação.
+
 ## 7. Pendências reais antes de encerrar o aceite da Fase A
 
 1. **P50/P95 histórico por endpoint e por app**, em janela com cobertura conhecida,
-   incluindo hora de pico, 5xx e timeouts. O painel só forneceu faixas de P95 por
-   intervalo; as duas observações de catálogo não substituem isso.
-2. Exportar séries brutas de CPU/RAM/restarts e correlacionar os intervalos de
-   P95 9–10 s com deploy, status e fila. API 403; não ampliar escopo nesta frente.
+   incluindo hora de pico, 5xx e timeouts. O painel fornece P95 por intervalo;
+   53 eventos recentes e duas observações de catálogo não recompõem a semana.
+   Não há como certificar esse histórico com o material recuperado.
+2. **Exportação de CPU/RAM/restarts e causa do 403 concluídas.** Correlação temporal
+   realizada no storefront; atribuição por rota/fila permanece sem histórico
+   recuperável nesta coleta. Não ampliar escopo ou ativar coleta no ambiente vivo.
 3. Hit ratio real da borda por host/rota, com denominador e janela definidos.
    Funcionamento de HIT foi provado; taxa representativa não foi medida.
 4. Revalidar CLS vivo com conteúdo abaixo do rail. Não refazer os testes locais
@@ -212,6 +308,9 @@ python3 docs/reports/performance-2026-10-21/capture_do_readonly.py \
 O segundo script usa o contexto já existente do `doctl`, lê app/logs, não troca
 contexto nem imprime credenciais. Spec completo e linhas arbitrárias de log não
 são salvos. Não usar `--trace`, publicar envs ou token, nem alterar autenticação
-para contornar o 403. A coleta HTTP é curta, sequencial e aborta em 5xx; não é um
+para repetir a tentativa sem o escopo necessário. A alternativa que funcionou foi
+a execução isolada em CI com a credencial de leitura já existente, sem extraí-la.
+O coletor `export_monitoring_readonly.py` usa apenas GETs documentados e calcula
+percentis por série; o JSON do run está preservado nesta PR. A coleta HTTP é curta, sequencial e aborta em 5xx; não é um
 teste de carga. A proposta original permanece recuperável no histórico Git da PR
 #1973, commit `03ac2b80986afdda9c406765a38dc6250be05645`.
