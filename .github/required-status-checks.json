@@ -8,7 +8,7 @@
     "Conferir contra o vivo: python scripts/check_canonical_docs.py --live-required-checks"
   ],
   "branch": "main",
-  "read_at": "2026-09-30T08:47:34Z",
+  "read_at": "2026-10-29T17:00:00Z",
   "command": "gh api repos/nelsonboulangerie/django-shopman/branches/main/protection/required_status_checks",
   "strict": false,
   "app_id": 15368,
@@ -35,6 +35,7 @@
     "Storefront E2E (Playwright)",
     "Admin/Unfold gate",
     "Admin CSP (production settings)",
-    "Gate da meia-correção"
+    "Gate da meia-correção",
+    "Coverage Gate"
   ]
 }
