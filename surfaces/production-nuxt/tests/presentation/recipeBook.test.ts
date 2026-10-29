@@ -286,6 +286,21 @@ describe("local percentages (editor feedback only)", () => {
     expect(formatNumber(72.456, 1)).toBe("72,5");
     expect(gramsLabel(1719.6)).toBe("1720 g");
   });
+
+  it("pctOf preserves a percentage quantity instead of treating it as grams", () => {
+    const levain = emptyItem({
+      quantity: {
+        kind: "ratio",
+        minimum: 20,
+        target: 20,
+        maximum: 20,
+        basis: { kind: "flour" },
+      },
+    });
+    expect(pctOf(levain, 1000)).toBe("20,0");
+    expect(pctOf({ ...levain, quantity: { ...levain.quantity, target: 200 } }, 1000)).toBe("200,0");
+    expect(pctOf({ ...levain, quantity: { ...levain.quantity, target: 0 } }, 1000)).toBe("");
+  });
 });
 
 // ── Captura → fórmula ───────────────────────────────────────────────────────

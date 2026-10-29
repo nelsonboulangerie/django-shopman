@@ -281,8 +281,13 @@ export function totalMassOf(formula: Formula): number {
   return formula.ingredients.reduce((sum, item) => sum + itemGrams(item), 0);
 }
 
-/** Percentual de um item sobre a âncora, já formatado ("70,0"); "" sem âncora. */
+/** Percentual exibido no editor. Razão preserva o percentual informado; peso é
+ *  convertido sobre a âncora local. Retorna "" quando não há valor calculável. */
 export function pctOf(item: FormulaItem, anchorTotal: number): string {
+  if (item.quantity.kind === "ratio") {
+    const ratio = Number(item.quantity.target) || 0;
+    return ratio > 0 ? formatNumber(ratio, 1) : "";
+  }
   if (!anchorTotal || anchorTotal <= 0) return "";
   const grams = itemGrams(item);
   if (!grams) return "";

@@ -134,6 +134,7 @@ test("cadastros de receita cabem, explicam o efeito e preservam a revisão", asy
   await expect(quantityGroup.getByText("Quanto entra na receita.", { exact: true })).toBeVisible();
   await expect(formulaGroup.getByText("Na fórmula", { exact: true })).toBeVisible();
   await expect(formulaGroup.getByText("Como este ingrediente participa.", { exact: true })).toBeVisible();
+  await expect(formulaGroup.getByText("20,0% da base", { exact: true })).toBeVisible();
   await expect(formulaGroup.getByRole("combobox", { name: /^Composição/ })).toBeVisible();
   const quantityGroupBox = await quantityGroup.boundingBox();
   const formulaGroupBox = await formulaGroup.boundingBox();
