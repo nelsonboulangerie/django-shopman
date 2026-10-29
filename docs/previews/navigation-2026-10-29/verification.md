@@ -96,6 +96,13 @@ anteriores de comparação e de Central registram a primeira rodada. Não foi ex
 ensaio em dispositivo físico com teclado virtual, leitor de tela ou zoom de 200%.
 Os perfis tablet da seção anterior pertencem à primeira rodada, sem revalidação nesta.
 
+## Modo sem controles do laboratório
+
+No perfil 390 × 844, `clean=1` resultou em laboratório com display none, aplicação
+iniciando em y=0 e conteúdo rolável de 501 px na Conferência. O toque em Reposição
+preservou `clean=1` na URL. Captura: `captures/compras-mobile-clean.jpg`.
+O script atualizado também foi obtido com sucesso pelo túnel público temporário.
+
 ## Estado de aprovação
 
 Prévia entregue para avaliação do dono. Não há preferência aprovada entre A e B.

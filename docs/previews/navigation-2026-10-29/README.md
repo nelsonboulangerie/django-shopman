@@ -23,6 +23,14 @@ O servidor escuta somente em loopback e entrega apenas este diretório. A polít
 página impede conexão de dados (`connect-src 'none'`). Fonte, script e estilos são
 locais. Não há configuração nem credencial de serviço real.
 
+## Tela proposta sem controles de comparação
+
+Use **Ver tela proposta** no laboratório ou nos quadros da comparação. O parâmetro
+`clean=1` remove toda a faixa de estudo, sem acrescentar controle flutuante de teste.
+O cabeçalho restante pertence à proposta do produto. O modo é preservado durante
+navegação, troca de app e retorno à Central. A/B e composição ficam no laboratório,
+acessível removendo `clean=1` do endereço ou voltando à aba de comparação.
+
 ## Comparação justa e organização por assuntos
 
 As variantes têm os mesmos destinos, dados de partida e conteúdo. A lateral única

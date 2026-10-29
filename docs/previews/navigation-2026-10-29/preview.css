@@ -96,3 +96,7 @@ body{height:100dvh;overflow:hidden;display:flex;flex-direction:column}.lab{flex-
 
 @media(max-width:650px), (max-width:900px) and (orientation:portrait){.head-utility .desktop-control{display:none}.head-top .icon-button{width:44px;height:44px}.head-top .context-switch>.button,.app-switch{min-height:44px}}
 @media(max-width:650px), (max-width:900px) and (orientation:portrait){.application[data-view=count] tbody td:last-child{position:static;grid-column:1/-1}.application[data-view=count] tbody td:first-child{padding-right:0}.application[data-view=count] tbody td:last-child::before{display:none}}
+
+/* Modo de avaliação sem ferramentas do laboratório. */
+.clean .lab{display:none}.clean .application{height:auto;flex:1;min-height:0}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){.lab>.clean-link{font-size:11px;min-height:34px}}
