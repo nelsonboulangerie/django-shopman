@@ -675,6 +675,7 @@
             "PAYMENT_METHOD_CODES",
             "PRODUCTION_URL",
             "_CARD_BY_GATEWAY",
+            "_DH_RECBTO",
             "_FUNDING_CODES",
             "_OTHER_DESCRIPTIONS",
             "_PREPAID_DESCRIPTION",
@@ -721,6 +722,7 @@
             "_shop_document",
             "_shop_name",
             "_sum_focus_money_q",
+            "_with_authorization_date",
             "logger"
           ]
         }
