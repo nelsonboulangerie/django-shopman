@@ -123,8 +123,8 @@ async function send(sku: string) {
                   />
                   <OperatorButton
                     v-else
-                    label="Enviar pedido"
-                    short-label="Enviar"
+                    :label="row.supplier?.sendDirectly ? 'Enviar pedido' : 'Revisar pedido'"
+                    :short-label="row.supplier?.sendDirectly ? 'Enviar' : 'Revisar'"
                     icon="i-lucide-send"
                     block
                     :loading="sendingSku === row.material.sku"

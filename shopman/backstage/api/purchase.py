@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.api.projections import projection_data
+from shopman.backstage.parsing import as_bool
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.backstage.projections.purchase_count import build_purchase_count
 from shopman.backstage.services import purchase as purchase_service
@@ -395,8 +396,13 @@ class PurchaseRequestSendView(APIView):
         responses={200: OpenApiResponse(description="Request marked as sent.")},
     )
     def post(self, request, material_sku: str):
+        reviewed = as_bool(dict(request.data or {}), "reviewed", default=False)
         try:
-            projection = purchase_service.send_purchase_request(material_sku, user=request.user)
+            projection = purchase_service.send_purchase_request(
+                material_sku,
+                reviewed=reviewed,
+                user=request.user,
+            )
         except PurchaseError as exc:
             return _error_response(exc)
         return _purchase_response(projection, message="Pedido enviado ao canal do fornecedor.")

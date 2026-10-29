@@ -147,6 +147,9 @@ class SupplierProjection:
     isActive: bool
     lastDeliveryAt: str
     paymentTerm: str
+    #: Fornecedor de confiança pode pular a revisão humana do pedido.
+    #: False é o padrão seguro, inclusive para cadastros antigos.
+    sendDirectly: bool
     #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
     revision: str = ""
 
@@ -796,6 +799,7 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
         isActive=bool(supplier.is_active),
         lastDeliveryAt=_meta_str(meta, "last_delivery_at", "lastDeliveryAt") or last_delivery_at,
         paymentTerm=_meta_str(meta, "payment_term", "paymentTerm") or "A combinar",
+        sendDirectly=meta.get("send_directly") is True,
         revision=supplier.updated_at.isoformat() if supplier.updated_at else "",
     )
 

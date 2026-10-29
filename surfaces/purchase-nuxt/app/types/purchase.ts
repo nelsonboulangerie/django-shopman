@@ -145,6 +145,8 @@ export interface Supplier {
   isActive: boolean;
   lastDeliveryAt: string;
   paymentTerm: string;
+  /** Fornecedor de confiança pode pular a revisão humana do pedido. */
+  sendDirectly: boolean;
   revision?: string;
 }
 
@@ -556,6 +558,11 @@ export interface PurchaseRequestActionPayload {
   materialSku: string;
 }
 
+export interface PurchaseRequestSendPayload extends PurchaseRequestActionPayload {
+  /** Confirma que uma pessoa reviu este pedido antes do envio. */
+  reviewed: boolean;
+}
+
 export interface PurchaseConversionDeclarePayload {
   materialSku: string;
   supplierRef: string;
@@ -778,6 +785,7 @@ export interface PurchaseSupplierUpsertPayload {
   isActive: boolean;
   leadTimeDays: number;
   paymentTerm: string;
+  sendDirectly: boolean;
 }
 
 /** Editar não muda a referência: renomear identificador é gesto do Admin. */

@@ -162,7 +162,7 @@ def test_purchase_request_greets_the_person_by_first_name(supplier, material, pr
         email="marcelo@tamura.example",
     )
 
-    send_purchase_request(material.sku)
+    send_purchase_request(material.sku, reviewed=True)
 
     directive = Directive.objects.get(topic=NOTIFICATION_SEND, payload__event="purchase_request")
     context = directive.payload["context"]
@@ -181,7 +181,7 @@ def test_purchase_request_greets_the_person_by_first_name(supplier, material, pr
 def test_purchase_request_greets_the_house_when_nobody_is_registered(supplier, material, preferred_cost):
     _deposito()
 
-    send_purchase_request(material.sku)
+    send_purchase_request(material.sku, reviewed=True)
 
     directive = Directive.objects.get(topic=NOTIFICATION_SEND, payload__event="purchase_request")
     body = BODY_TEMPLATES["purchase_request"].format_map(derive_context(directive.payload["context"]))
@@ -193,7 +193,7 @@ def test_estimated_total_carries_the_thousands_separator(supplier, material, pre
     """``R$ 1185,00`` lê como número de sistema; ``R$ 1.185,00`` lê como preço."""
     _deposito()
 
-    send_purchase_request(material.sku)
+    send_purchase_request(material.sku, reviewed=True)
 
     directive = Directive.objects.get(topic=NOTIFICATION_SEND, payload__event="purchase_request")
     total = directive.payload["context"]["estimated_total"]

@@ -75,6 +75,9 @@ _SUPPLIER_COPY_BLOCKED_META = frozenset(
         "created_from",
         "last_delivery_at",
         "lastDeliveryAt",
+        # Confiança para pular a revisão é decisão sobre ESTA empresa. Uma
+        # cópia nunca nasce autorizada a enviar pedido direto.
+        "send_directly",
     }
 )
 
@@ -223,7 +226,13 @@ def _material_metadata(metadata: Any, *, category: str | None) -> dict[str, Any]
     return _write_purchase_meta(meta, purchase)
 
 
-def _supplier_metadata(metadata: Any, *, lead_time_days: int | None, payment_term: str | None) -> dict[str, Any]:
+def _supplier_metadata(
+    metadata: Any,
+    *,
+    lead_time_days: int | None,
+    payment_term: str | None,
+    send_directly: bool | None = None,
+) -> dict[str, Any]:
     meta, purchase = _purchase_meta(metadata)
     if lead_time_days is not None:
         if lead_time_days > 0:
@@ -235,6 +244,11 @@ def _supplier_metadata(metadata: Any, *, lead_time_days: int | None, payment_ter
             purchase["payment_term"] = payment_term
         else:
             purchase.pop("payment_term", None)
+    if send_directly is not None:
+        if send_directly:
+            purchase["send_directly"] = True
+        else:
+            purchase.pop("send_directly", None)
     return _write_purchase_meta(meta, purchase)
 
 
@@ -488,6 +502,7 @@ def create_supplier(data: dict[str, Any], *, user=None) -> tuple[dict[str, Any],
             {},
             lead_time_days=_lead_time(data.get("leadTimeDays")),
             payment_term=_text(data.get("paymentTerm"), field="paymentTerm", label="a condição de pagamento", max_length=80),
+            send_directly=_as_flag(data, "sendDirectly", default=False),
         ),
     )
     try:
@@ -529,7 +544,7 @@ def update_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, A
         supplier.phone = _text(data.get("phone"), field="phone", label="o telefone", max_length=32)
     if "isActive" in data:
         supplier.is_active = _as_flag(data, "isActive", default=supplier.is_active)
-    if "leadTimeDays" in data or "paymentTerm" in data:
+    if "leadTimeDays" in data or "paymentTerm" in data or "sendDirectly" in data:
         lead_time_days = _lead_time(data.get("leadTimeDays")) if "leadTimeDays" in data else None
         payment_term = (
             _text(data.get("paymentTerm"), field="paymentTerm", label="a condição de pagamento", max_length=80)
@@ -537,7 +552,14 @@ def update_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, A
             else None
         )
         supplier.metadata = _supplier_metadata(
-            supplier.metadata, lead_time_days=lead_time_days, payment_term=payment_term,
+            supplier.metadata,
+            lead_time_days=lead_time_days,
+            payment_term=payment_term,
+            send_directly=(
+                _as_flag(data, "sendDirectly", default=False)
+                if "sendDirectly" in data
+                else None
+            ),
         )
 
     try:

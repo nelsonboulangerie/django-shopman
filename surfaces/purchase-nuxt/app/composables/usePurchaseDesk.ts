@@ -39,9 +39,11 @@ import {
   countRows,
   countSummary,
   enrichMaterial,
+  formatMoney,
   invoiceProbe,
   isApproximateCost,
   parseMoneyInput,
+  purchaseSuggestionLabel,
   quotePreview as buildQuotePreview,
   receiptConferenceTally,
   receiptDefaultConversionId,
@@ -1201,7 +1203,24 @@ export function usePurchaseDesk() {
     const status = purchaseRequestStatus(sku);
     if (status === "sent") return;
     if (!requireBackend("enviar o pedido ao fornecedor")) return;
-    await runBackendAction(() => api.sendRequest({ materialSku: sku }));
+    const row = reorderRows.value.find((item) => item.material.sku === sku);
+    const supplier = row?.supplier ?? null;
+    if (!row || !supplier) return;
+
+    let reviewed = false;
+    if (!supplier.sendDirectly) {
+      const estimated = row.estimatedCostQ == null ? "sem custo estimado" : formatMoney(row.estimatedCostQ);
+      reviewed = await confirm({
+        title: `Revisar pedido de ${row.material.name}?`,
+        description:
+          `${supplier.displayName}: ${purchaseSuggestionLabel(row.material, row.suggestedQty)}, ` +
+          `${estimated}. Confirme para enviar ao fornecedor agora.`,
+        confirmLabel: "Enviar ao fornecedor",
+        cancelLabel: "Continuar revisando",
+      });
+      if (!reviewed) return;
+    }
+    await runBackendAction(() => api.sendRequest({ materialSku: sku, reviewed }));
   }
 
   // O recebimento do insumo já fecha o pedido sozinho. Cancelar é para o pedido

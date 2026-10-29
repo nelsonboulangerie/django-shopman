@@ -93,6 +93,7 @@ const moinho: Supplier = {
   isActive: true,
   lastDeliveryAt: "2026-10-06",
   paymentTerm: "28 dias",
+  sendDirectly: false,
 };
 
 function mountMaterial(props: Record<string, unknown>) {
@@ -222,7 +223,16 @@ describe("PurchaseSupplierFormPanel", () => {
       isActive: true,
       leadTimeDays: 0,
       paymentTerm: "",
+      sendDirectly: false,
     });
+  });
+
+  it("editar: permite enviar direto somente por decisão do fornecedor", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho });
+    await wrapper.find('[data-testid="supplier-send-directly"]').trigger("click");
+    await wrapper.find('[data-testid="shell-save"]').trigger("click");
+
+    expect(wrapper.emitted("save")![0][0]).toMatchObject({ sendDirectly: true });
   });
 
   it("duplicar: sugere ref e nome, e recusa repetir a referência", async () => {

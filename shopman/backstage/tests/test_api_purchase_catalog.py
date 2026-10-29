@@ -309,6 +309,8 @@ def test_create_supplier_derives_ref_from_the_name(client, purchase_operator):
     assert supplier.trade_name == "Tamura"
     assert supplier.metadata["purchase"]["lead_time_days"] == 3
     assert supplier.metadata["purchase"]["payment_term"] == "21 dias"
+    assert "send_directly" not in supplier.metadata["purchase"]
+    assert response.json()["purchase"]["suppliers"][0]["sendDirectly"] is False
     assert response.json()["message"] == "Fornecedor cadastrado."
     assert response.json()["resource"] == {"kind": "supplier", "ref": "tamura"}
 
@@ -387,7 +389,12 @@ def test_update_supplier_changes_commercial_terms(client, purchase_operator, sup
     response = _post(
         client,
         "api-backstage-purchase-supplier",
-        {"tradeName": "Moinho SP", "leadTimeDays": 5, "paymentTerm": "28 dias"},
+        {
+            "tradeName": "Moinho SP",
+            "leadTimeDays": 5,
+            "paymentTerm": "28 dias",
+            "sendDirectly": True,
+        },
         args=[supplier.ref],
     )
 
@@ -396,6 +403,9 @@ def test_update_supplier_changes_commercial_terms(client, purchase_operator, sup
     assert supplier.trade_name == "Moinho SP"
     assert supplier.metadata["purchase"]["lead_time_days"] == 5
     assert supplier.metadata["purchase"]["payment_term"] == "28 dias"
+    assert supplier.metadata["purchase"]["send_directly"] is True
+    projected = next(row for row in response.json()["purchase"]["suppliers"] if row["ref"] == supplier.ref)
+    assert projected["sendDirectly"] is True
     # O de-para de nota continua sendo história daquele fornecedor.
     assert supplier.metadata["purchase"]["invoice_product_map"] == {"FAR-25": "FARINHA-NOVARA-T55"}
 
@@ -426,6 +436,8 @@ def test_duplicate_supplier_copies_contacts_and_terms_but_not_document(client, p
         supplier=supplier, name="Cláudia Ramos", role="sales",
         email="claudia@moinho.example", is_primary=True,
     )
+    supplier.metadata["purchase"]["send_directly"] = True
+    supplier.save(update_fields=["metadata", "updated_at"])
     client.force_login(purchase_operator)
 
     response = _post(
@@ -442,6 +454,7 @@ def test_duplicate_supplier_copies_contacts_and_terms_but_not_document(client, p
     assert copy.document == ""
     assert copy.metadata["purchase"]["lead_time_days"] == 2
     assert "invoice_product_map" not in copy.metadata["purchase"]
+    assert "send_directly" not in copy.metadata["purchase"]
     contacts = list(copy.contacts.all())
     assert len(contacts) == 1
     assert contacts[0].name == "Cláudia Ramos"
