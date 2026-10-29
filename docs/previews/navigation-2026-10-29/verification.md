@@ -295,3 +295,9 @@ Faixa fixa ocupa uma região própria abaixo das tabs. Faixa rolável é um card
 Desktop: controle único “Menus laterais”, com escolhas independentes para assuntos (expandido, ícones, oculto) e opções do assunto (visíveis, recolhidas). Modos serializados na URL; sem alternância cíclica entre regiões. Inspeção confirmou larguras de 190/76/0 px na primária e 218/0 px na secundária.
 
 Evidências: `captures/tools-fixed-vs-scroll-mobile.jpg` e `captures/tools-scroll-card-mobile.jpg`. Nenhum código de produto, Core ou deploy alterado.
+
+## Consolidação aprovada nas prévias
+
+Busca em card rolável é o padrão mobile de Gestor e Compras. Menu da página na extremidade direita da linha do título, depois da ação principal. Variante de cabeçalho permanece apenas como experimento explícito (`pageMenu=header`).
+
+Revisadas as 20 telas em 390 e 320 px: nenhum transbordamento horizontal nos cabeçalhos ou cards de ferramentas; nenhuma ferramenta no dock fixo nos destinos padrão; opções da página no último lugar da linha quando disponíveis. Evidência em `toolbar-consistency-evidence.json`. Galeria mobile das 20 telas atualizada. Telas sem busca não recebem card vazio. Comparação histórica da faixa fixa permanece acessível como experimento, sem alterar o padrão aprovado.
