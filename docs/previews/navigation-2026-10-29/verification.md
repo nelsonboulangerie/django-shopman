@@ -285,3 +285,13 @@ aprovado para substituição dos componentes maduros pelo esquema estático dest
 - As 20 telas foram revisitadas em 320 px: página e conteúdo sem overflow horizontal.
 - Abrir/fechar o menu continua operante após mudar seu posicionamento.
 - Galeria mobile atualizada para refletir o cabeçalho reposicionado e a nova faixa.
+
+## Comparação de ferramentas e controles de navegação
+
+Somente protótipo: `?app=gestor&view=catalog&layout=adaptive&compareTools=1&revision=7b` e `?app=compras&view=materials&layout=adaptive&compareTools=1&revision=7b`. Seletor Mobile/Desktop, abertura limpa e rolagem conjunta. Busca e estado de navegação sincronizados entre exemplos.
+
+Faixa fixa ocupa uma região própria abaixo das tabs. Faixa rolável é um card branco com borda e margens alinhadas ao conteúdo. Em 390 × 844, no catálogo, após rolar 320 px: área disponível de 489 px na fixa e 550 px na rolável. Medidas pertencem a esse exemplo. Card rolável sem transbordamento; três pontos da página são o último controle à direita (limite direito em 375 px, respeitando margem de 15 px). Alternativa antes do título disponível em Composição.
+
+Desktop: controle único “Menus laterais”, com escolhas independentes para assuntos (expandido, ícones, oculto) e opções do assunto (visíveis, recolhidas). Modos serializados na URL; sem alternância cíclica entre regiões. Inspeção confirmou larguras de 190/76/0 px na primária e 218/0 px na secundária.
+
+Evidências: `captures/tools-fixed-vs-scroll-mobile.jpg` e `captures/tools-scroll-card-mobile.jpg`. Nenhum código de produto, Core ou deploy alterado.
