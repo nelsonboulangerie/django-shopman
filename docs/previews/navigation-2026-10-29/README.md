@@ -153,3 +153,58 @@ continua fora desta rodada. As capturas são da prévia, não são baselines dos
 - [Compras em dois níveis](captures/compras-double.jpg).
 - [Gaveta móvel em uma árvore](captures/gestor-mobile-single.jpg).
 - [Gaveta móvel em dois níveis](captures/gestor-mobile-two-levels.jpg).
+
+## Avaliação crítica com telas limpas, terceira rodada
+
+Recomendação de desenho, ainda sem aprovação: B no desktop e árvore agrupada A no
+mobile, com a mesma taxonomia e os mesmos destinos/atalhos. A escolha é da apresentação
+por largura e tarefa, não duas arquiteturas de informação concorrentes.
+
+| Variante | Desktop | Mobile |
+|---|---|---|
+| A | Economiza largura e aproxima assunto/destino; a árvore longa pode exigir rolagem e acordeões esconderem alternativas | Expõe assunto e destino no mesmo percurso; exige grupos curtos e destaque claro da localização |
+| B | Explicita contexto e escala melhor com muitos destinos; duas colunas podem roubar espaço de tabelas e ficar vazias em assuntos pequenos | Drill-down exige ida/volta e memória de contexto; não traz o ganho de duas colunas simultâneas |
+
+B não deve impor uma segunda coluna vazia nem duas colunas expandidas em largura
+intermediária. Preservar o último destino por assunto é um refinamento a avaliar.
+O fluxo da tarefa tem mais peso que a preferência visual pela variante.
+
+Refinamentos recomendados, sem transformar todos em controles adicionais:
+
+- Cabeçalho: reduzir repetição do nome do app em marca/chip/breadcrumb, distinguir
+  busca na suíte da busca na lista e testar um acesso inequívoco à Central. No mobile,
+  validar se seletor de assunto e menu se complementam ou competem. Descrição longa
+  de página não precisa consumir altura fixa durante toda a rolagem.
+- Faixa superior secundária: manter recortes úteis e curtos, estado ativo inequívoco
+  e overflow visível. Não colocar ações de salvar, destinos de apps e filtros avançados
+  na mesma fila. Os controles Todos/À venda/Esgotados são filtros de uma lista com
+  aparência de tabs, não navegação entre páginas; essa distinção precisa permanecer.
+- Filtros: busca direta, recortes frequentes à vista, demais critérios em painel com
+  Aplicar/Limpar, critérios ativos legíveis e contagem. Próximos cenários: período,
+  fornecedor, múltiplos critérios, vazio, carregamento e falha de carregamento.
+- Ordenação: explícita e estável. Mudar recorte ou ordem volta à primeira página.
+  Preservar busca, filtros, ordem, página e posição ao abrir/fechar registro; ainda
+  falta persistir esses estados no endereço para compartilhamento/reload.
+- Rodapé fixo da lista: paginação e posição. Rodapé fixo do registro: anterior/próximo
+  no recorte atual e ações do registro. Não empilhar uma barra flutuante de salvar
+  sobre outro rodapé que já salva o mesmo registro.
+- Seleção em lote: a faixa de seleção deve substituir o contexto de ações, com
+  quantidade e alcance da seleção claros, sem acrescentar uma terceira barra inferior.
+  Ainda não simulada.
+- Feedback: confirmação de resultado em verde, erro em vermelho, aviso em âmbar, no
+  topo do contexto que originou a mensagem, com texto e fechamento explícito. Erros
+  não devem desaparecer por temporizador. Erro de campo também deve estar associado
+  ao campo; esse vínculo e proteção completa ao fechar edição ainda estão pendentes.
+
+Exemplos disponíveis no Catálogo: filtro por coleção, ordenação Nome/Menor preço/
+Maior preço, paginação fixa de seis itens, detalhe com anterior/próximo no recorte
+filtrado e ordenado, ações de registro em rodapé fixo e erro de preço no topo do detalhe.
+Alterar o preço e tentar próximo exibe aviso sem descartar a edição. Salvar válido
+exibe confirmação verde no topo da lista. Tudo é memória local.
+
+O Admin/Unfold ensina a separar ações da lista, da linha, do detalhe e da conclusão;
+a oferecer filtros horizontais ou em painel e aplicar filtros que exigem preenchimento.
+Referências oficiais: [ModelAdmin](https://unfoldadmin.com/docs/configuration/modeladmin/)
+e [filtros](https://unfoldadmin.com/docs/filters/introduction/).
+São pistas de responsabilidade e comportamento, não justificativa para trazer a
+organização por modelos ou a densidade do Admin para o posto de trabalho Nuxt.

@@ -107,3 +107,23 @@ O script atualizado também foi obtido com sucesso pelo túnel público temporá
 
 Prévia entregue para avaliação do dono. Não há preferência aprovada entre A e B.
 Implementação e deploy continuam dependendo de autorização explícita posterior.
+
+## Terceira rodada: ferramentas de lista e registro
+
+No mobile 390 × 844:
+
+- Coleção Viennoiseries aplicada: três produtos. Maior preço ordenou Brioche (22),
+  Pain au Chocolat (15,50), Croissant (13), em reais.
+- Abrir Brioche e próximo: Pain au Chocolat, posição 2 de 3, respeitando filtro e ordem.
+- Preço zero e salvar: mensagem vermelha no topo do detalhe com role alert.
+- Edição pendente e próximo: aviso de alterações; mesmo registro permanece aberto.
+- Preço válido e salvar: confirmação no topo da lista; fechamento manual disponível.
+- Limpar filtro e ordenar por nome: nove produtos. Próxima página: 7–9 de 9.
+  Esgotados: primeira e única página, um produto.
+- Capturas catalog-controls-mobile.jpg e product-error-mobile.jpg.
+
+No desktop 1440 × 900: página sem transbordamento horizontal; conteúdo termina em
+852 px, rodapé começa em 852 e termina em 900. Filtro, ordenação e registro seguinte
+repetidos com o mesmo resultado. Captura catalog-controls-desktop.jpg.
+A rodada não revalida todos os destinos nem implementa o painel completo de filtros,
+ações em lote, retenção de filtros no endereço ou proteção completa ao fechar edição.

@@ -119,7 +119,7 @@ const state = {
   view:params.get('view') || (params.get('app')==='compras'?'receiving':'catalog'),
   compact:params.get('compact')==='1'||matchMedia('(min-width:651px) and (max-width:1100px) and (orientation:landscape)').matches,hidden:false,secondary:true,
   clean:params.get('clean')==='1',embedded:params.get('embedded')==='1',compare:params.get('compare')==='1',
-  page:1,localPlacement:params.get('local')==='bottom'?'bottom':'top',desktopQuick:params.get('quick')==='1',desktopDock:params.get('dock')==='1',drawer:false,drawerGroup:null,central:params.get('screen')==='central',trail:null,lastViews:{gestor:'catalog',compras:'receiving'},search:'',filter:'all',closed:new Set(),done:new Set(),counted:{},
+  sort:'name',collection:'all',page:1,localPlacement:params.get('local')==='bottom'?'bottom':'top',desktopQuick:params.get('quick')==='1',desktopDock:params.get('dock')==='1',drawer:false,drawerGroup:null,central:params.get('screen')==='central',trail:null,lastViews:{gestor:'catalog',compras:'receiving'},search:'',filter:'all',closed:new Set(),done:new Set(),counted:{},
 };
 if (!applications[state.app].groups.some(g=>g.children.some(c=>c[0]===state.view))) state.view=applications[state.app].home;
 state.lastViews[state.app]=state.view;
@@ -143,6 +143,7 @@ function href(overrides={}){
   return `?${q}`;
 }
 function route(view, notify=true){
+  $('#toast').hidden=true;
   if(!applications[state.app].groups.some(g=>g.children.some(c=>c[0]===view)))return;
   state.central=false;state.view=view;state.search='';state.filter='all';state.page=1;state.drawer=false;state.drawerGroup=null;state.lastViews[state.app]=view;
   state.closed=new Set(applications[state.app].groups.filter(g=>g.id!==currentGroup().id).map(g=>g.id));
@@ -150,7 +151,11 @@ function route(view, notify=true){
   render();history[notify?'pushState':'replaceState'](null,'',href());
   if(state.embedded&&notify)parent.postMessage({type:'shopman-preview-route',app:state.app,view:state.view},location.origin);
 }
-function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,4000);}
+function toast(message,tone='success'){
+  const target=$('#detail').open?$('#dialog-feedback'):$('#toast');
+  target.className='semantic-alert '+tone;target.setAttribute('role',tone==='error'?'alert':'status');target.innerHTML=`<span>${esc(message)}</span><button class="icon-button" data-action="dismiss-feedback" aria-label="Fechar mensagem">${icon('close')}</button>`;target.hidden=false;
+}
+
 function renderLab(){
   $('#lab').innerHTML=`<div class="lab-brand"><span class="mark">s</span><div class="lab-title">Shopman <small>Estudo de navegação</small></div></div><div class="segments" aria-label="Aplicativo"><button data-app="gestor" aria-pressed="${state.app==='gestor'}">Gestor</button><button data-app="compras" aria-pressed="${state.app==='compras'}">Compras</button></div><span class="preview-tag">Prévia local · dados fictícios</span><div class="segments variant" aria-label="Modelo de navegação"><button data-variant="single" aria-pressed="${state.variant==='single'&&!state.compare}">A · Lateral única</button><button data-variant="double" aria-pressed="${state.variant==='double'&&!state.compare}">B · Dois níveis</button></div><a class="button clean-link" href="${href({compare:false,embedded:false,clean:true})}">Ver tela proposta</a><button class="button composition" data-action="composition" aria-label="Composição da página">${icon('settings')}<span class="button-label">Composição</span></button><button class="button compare ${state.compare?'active':''}" data-action="compare">${icon('compare')}Comparar</button><button class="icon-button" data-action="map" aria-label="Ver organização por assuntos">${icon('grid')}</button>`;
 }
@@ -203,9 +208,9 @@ function renderSupportBars(){
   top.innerHTML=state.localPlacement==='top'?recuts:'';top.hidden=!top.innerHTML;
   let summary='';
   if(['catalog','channel-catalog'].includes(state.view)){
-    const list=products.filter(product=>matching(product.name+' '+product.id+' '+product.collection)&&(state.filter==='all'||state.filter==='available'&&product.status==='À venda'||state.filter==='out'&&product.stock===0));
+    const list=catalogList();
     const pages=Math.max(1,Math.ceil(list.length/6));
-    summary=`<div class="list-navigation"><span>${list.length?((state.page-1)*6+1)+'–'+Math.min(state.page*6,list.length):'0'} de ${list.length} produtos</span><nav class="pagination" aria-label="Páginas do catálogo"><button class="icon-button" data-action="page-prev" aria-label="Página anterior" ${state.page===1?'disabled':''}>${icon('left')}</button><span>${state.page} de ${pages}</span><button class="icon-button" data-action="page-next" aria-label="Próxima página" ${state.page===pages?'disabled':''}>${icon('arrow')}</button></nav></div>`;
+    summary=`<div class="list-navigation"><span>${list.length?((state.page-1)*6+1)+'–'+Math.min(state.page*6,list.length):'0'} de ${list.length} ${list.length===1?'produto':'produtos'}</span><nav class="pagination" aria-label="Páginas do catálogo"><button class="icon-button" data-action="page-prev" aria-label="Página anterior" ${state.page===1?'disabled':''}>${icon('left')}</button><span>${state.page} de ${pages}</span><button class="icon-button" data-action="page-next" aria-label="Próxima página" ${state.page===pages?'disabled':''}>${icon('arrow')}</button></nav></div>`;
     $('#content .panel-footer')?.remove();
   }else if(['materials','costs','customers','suppliers','history'].includes(state.view)){
     const count=$$('#content tbody tr:not(.no-results)').length||$$('#content>.panel>.list-row').length;
@@ -232,12 +237,17 @@ const table=(heads,rows,label)=>`<div class="table-scroll"><table aria-label="${
 const record=(name,sub,symbol='box',action='')=>`<div class="record-name"><span class="product-icon">${icon(symbol)}</span><button class="record-link" data-action="${action}"><strong>${esc(name)}</strong><small>${esc(sub)}</small></button></div>`;
 const matching=(text)=>text.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu,'').includes(state.search.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/\p{Diacritic}/gu,''));
 
+function catalogList(){
+  const list=products.filter(p=>matching(p.name+' '+p.id+' '+p.collection)&&(state.collection==='all'||p.collection===state.collection)&&(state.filter==='all'||state.filter==='available'&&p.status==='À venda'||state.filter==='out'&&p.stock===0));
+  return list.sort((a,b)=>state.sort==='price-asc'?a.price-b.price||a.id.localeCompare(b.id):state.sort==='price-desc'?b.price-a.price||a.id.localeCompare(b.id):a.name.localeCompare(b.name,'pt-BR')||a.id.localeCompare(b.id));
+}
+function catalogTools(){return button('Filtros'+(state.collection!=='all'?' · 1':''),'catalog-filters','settings')+`<label class="sort-control">Ordenar<select id="catalog-sort" aria-label="Ordenar produtos"><option value="name" ${state.sort==='name'?'selected':''}>Nome A–Z</option><option value="price-asc" ${state.sort==='price-asc'?'selected':''}>Menor preço</option><option value="price-desc" ${state.sort==='price-desc'?'selected':''}>Maior preço</option></select></label>`;}
 function catalogContent(channel=false){
-  const list=products.filter(p=>matching(p.name+' '+p.id+' '+p.collection)&&(state.filter==='all'||(state.filter==='available'&&p.status==='À venda')||(state.filter==='out'&&p.stock===0)));
+  const list=catalogList();
   state.page=Math.min(state.page,Math.max(1,Math.ceil(list.length/6)));
   const pageList=list.slice((state.page-1)*6,state.page*6);
   const rows=pageList.map(p=>`<tr><td>${record(p.name,p.id,p.icon,'product:'+p.id)}</td>${channel?`<td>${tag(p.status==='Pausado'?'Pausado':'Ativo',p.status==='Pausado'?'':'green')}</td><td>${tag(p.stock===0?'Esgotado':p.status==='Pausado'?'Pausado':'Ativo',p.stock===0?'amber':p.status==='Pausado'?'':'green')}</td><td>${tag(p.id==='CAF'?'Não publicado':p.status==='Pausado'?'Pausado':'Ativo',p.id==='CAF'||p.status==='Pausado'?'':'green')}</td>`:`<td>${esc(p.collection)}</td><td class="numeric">${money(p.price)}</td><td class="numeric">${p.stock===null?'Na hora':number(p.stock)+' un.'}</td><td>${tag(p.status,p.tone,true)}</td>`}<td class="numeric"><button class="icon-button" data-action="product:${p.id}" aria-label="Abrir ${p.name}">${icon('arrow')}</button></td></tr>`).join('');
-  return `${toolbar('Buscar produto ou SKU',filterButton('Todos','all')+filterButton('À venda','available')+filterButton('Esgotados','out'))}<p class="count-note">${list.length} ${list.length===1?'produto':'produtos'} neste recorte</p><div class="panel">${table(channel?['Produto','PDV','Loja online','iFood','']:['Produto','Coleção','Preço','Disponível','Situação',''],rows,channel?'Disponibilidade por canal':'Produtos do catálogo')}<div class="panel-footer"><span>Exibindo ${list.length} de ${products.length} produtos da demonstração</span><button class="text-link" data-action="map">Entender a organização</button></div></div>${channel?'<p class="subtle">Canal ativo e produto disponível são condições distintas. Um produto esgotado pode continuar publicado.</p>':''}`;
+  return `${toolbar('Buscar produto ou SKU',filterButton('Todos','all')+filterButton('À venda','available')+filterButton('Esgotados','out')+catalogTools())}<p class="count-note">${state.collection!=='all'?`Coleção: ${esc(state.collection)} · `:''}${list.length} ${list.length===1?'produto':'produtos'} neste recorte</p><div class="panel">${table(channel?['Produto','PDV','Loja online','iFood','']:['Produto','Coleção','Preço','Disponível','Situação',''],rows,channel?'Disponibilidade por canal':'Produtos do catálogo')}<div class="panel-footer"><span>Exibindo ${list.length} de ${products.length} produtos da demonstração</span><button class="text-link" data-action="map">Entender a organização</button></div></div>${channel?'<p class="subtle">Canal ativo e produto disponível são condições distintas. Um produto esgotado pode continuar publicado.</p>':''}`;
 }
 function orderCard(o){return `<article class="order-card ${o.ref==='N099'?'urgent':''}" data-order="${o.ref}"><div class="order-top"><strong>${o.ref}</strong>${tag(o.channel,o.channel==='iFood'?'blue':'')}<time>${o.time}</time></div><h3>${o.name}</h3><p>${o.items}</p><div class="order-foot"><span>${o.delivery}</span><strong>${money(o.total)}</strong></div>${button(o.stage===2?'Ver retirada ou despacho':'Abrir pedido','order:'+o.ref,o.stage===2?'truck':'arrow',o.stage===2?'gold small':'small')}</article>`;}
 function queueContent(exit=false){
@@ -312,7 +322,7 @@ function render(){
 }
 function openDialog(title,body,footer=''){
   previousFocus=document.activeElement;
-  $('#dialog-content').innerHTML=`<div class="dialog-head"><div><span class="section-label">${applications[state.app].label}</span><h2 id="detail-title">${title}</h2></div><button class="icon-button" data-action="close" aria-label="Fechar detalhe">${icon('close')}</button></div><div class="dialog-body">${body}</div><div class="dialog-foot">${footer||button('Fechar','close')}</div>`;
+  $('#dialog-content').innerHTML=`<div class="dialog-head"><div><span class="section-label">${applications[state.app].label}</span><h2 id="detail-title">${title}</h2></div><button class="icon-button" data-action="close" aria-label="Fechar detalhe">${icon('close')}</button></div><div id="dialog-feedback" class="semantic-alert" hidden></div><div class="dialog-body">${body}</div><div class="dialog-foot">${footer||button('Fechar','close')}</div>`;
   $$('table',$('#dialog-content')).forEach(t=>{const labels=$$('thead th',t).map(h=>h.textContent);$$('tbody tr',t).forEach(r=>$$('td',r).forEach((td,i)=>td.dataset.label=labels[i]||''));});
   $('#detail').showModal();
 }
@@ -349,15 +359,20 @@ function act(action){
     case 'alerts':openDialog('O que pede atenção',`<div class="stack"><button class="button" data-action="jump:gestor:exit">Retirada N099 esperando há 24 minutos ${icon('arrow')}</button><button class="button" data-action="jump:compras:divergences">Diferença no recebimento da nota 004821 ${icon('arrow')}</button><button class="button" data-action="jump:compras:replenishment">Farinha para menos de um dia ${icon('arrow')}</button></div>${previewNote}`);break;
     case 'jump':if($('#detail').open)$('#detail').close();state.lastViews[state.app]=state.view;state.app=parts[0];route(parts[1]);break;
     case 'search-suite':openDialog('Ir direto ao assunto',`<label class="field">Buscar destino<input id="suite-search" placeholder="Ex.: catálogo, contagem, fornecedor" autofocus></label><div id="suite-results" class="stack">${applications[state.app].groups.flatMap(g=>g.children.map(c=>button(`${g.label} · ${c[1]}`,'jump:'+state.app+':'+c[0],'arrow'))).join('')}</div>`);break;
-    case 'product':{const p=products.find(x=>x.id===id);formDialog(p.name,[['Nome do produto','product-name',`value="${esc(p.name)}"`],['Preço em reais','price',`type="number" step="0.01" min="0.01" value="${p.price/100}"`]],'save-product:'+p.id);if(p.id==='GEL')$('.dialog-body').insertAdjacentHTML('beforeend',button('Abrir insumo em Compras','cross-product','link'));break;}
-    case 'save-product':{const p=products.find(x=>x.id===id);const value=Number($('[name=price]').value);const newName=$('[name=product-name]').value.trim();if(!Number.isFinite(value)||value<=0||!newName){toast('Informe um nome e um preço maior que zero.');break;}p.name=newName;p.price=Math.round(value*100);$('#detail').close();renderContent();toast('Produto atualizado somente nesta prévia.');break;}
+    case 'dismiss-feedback':$('#toast').hidden=true;if($('#dialog-feedback'))$('#dialog-feedback').hidden=true;break;
+    case 'catalog-filters':openDialog('Filtrar produtos',`<label class="field">Coleção<select id="filter-collection" class="button"><option value="all">Todas as coleções</option>${[...new Set(products.map(p=>p.collection))].map(c=>`<option value="${esc(c)}" ${state.collection===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><p>Combina com a busca e o recorte selecionado na barra superior.</p>`,button('Limpar filtros','clear-filters')+button('Aplicar filtros','apply-filters','check','gold'));break;
+    case 'apply-filters':state.collection=$('#filter-collection').value;state.page=1;$('#detail').close();renderContent();break;
+    case 'clear-filters':state.collection='all';state.page=1;$('#detail').close();renderContent();break;
+    case 'record-step':{const current=products.find(p=>p.id===parts[0]);if($('[name=product-name]').value!==current.name||Number($('[name=price]').value)!==current.price/100){toast('Há alterações neste produto. Salve antes de passar ao próximo registro ou cancele a edição.','warning');break;}const list=catalogList();const index=list.findIndex(p=>p.id===parts[0]);const next=list[index+Number(parts[1])];if(next){$('#detail').close();act('product:'+next.id);}break;}
+    case 'product':{const p=products.find(x=>x.id===id);formDialog(p.name,[['Nome do produto','product-name',`value="${esc(p.name)}"`],['Preço em reais','price',`type="number" step="0.01" min="0.01" value="${p.price/100}"`]],'save-product:'+p.id);const records=catalogList(),index=records.findIndex(item=>item.id===p.id);$('.dialog-foot').insertAdjacentHTML('afterbegin',`<nav class="record-pagination" aria-label="Navegar pelos produtos do recorte"><button class="icon-button" data-action="record-step:${p.id}:-1" aria-label="Produto anterior" ${index<=0?'disabled':''}>${icon('left')}</button><span>${index+1} de ${records.length}</span><button class="icon-button" data-action="record-step:${p.id}:1" aria-label="Próximo produto" ${index<0||index===records.length-1?'disabled':''}>${icon('arrow')}</button></nav>`);if(p.id==='GEL')$('.dialog-body').insertAdjacentHTML('beforeend',button('Abrir insumo em Compras','cross-product','link'));break;}
+    case 'save-product':{const p=products.find(x=>x.id===id);const value=Number($('[name=price]').value);const newName=$('[name=product-name]').value.trim();if(!Number.isFinite(value)||value<=0||!newName){toast('Informe um nome e um preço maior que zero.','error');break;}p.name=newName;p.price=Math.round(value*100);$('#detail').close();renderContent();toast('Produto atualizado somente nesta prévia.');break;}
     case 'catalog-grid':openDialog('Tabelão do catálogo',`<p>O mesmo cadastro pode ser editado em lote. A navegação proposta mantém esse acesso dentro de Produtos.</p>${table(['Produto','Preço'],products.map(p=>`<tr><td>${p.name}</td><td>${money(p.price)}</td></tr>`).join(''),'Amostra do tabelão')}${previewNote}`);break;
     case 'new-product':formDialog('Novo produto',[['Nome','name','placeholder="Ex.: Pão de campanha"'],['Preço em reais','price','type="number" min="0.01" step="0.01"']],'simulate-save');break;
     case 'new-collection':formDialog('Nova coleção',[['Nome da coleção','name','placeholder="Ex.: Pães do dia"']],'simulate-save');break;
     case 'new-customer':formDialog('Novo cliente',[['Nome','name',''],['Telefone','phone','inputmode="tel"']],'simulate-save');break;
     case 'new-supplier':formDialog('Novo fornecedor',[['Nome','name',''],['Contato','phone','inputmode="tel"']],'simulate-save');break;
     case 'new-material':formDialog('Novo insumo',[['Nome','name',''],['SKU','sku',''],['Unidade de estoque','unit','placeholder="Ex.: kg"']],'simulate-save');break;
-    case 'simulate-save':if(!$('[name=name]')?.value.trim()){toast('Preencha o nome antes de continuar.');break;}$('#detail').close();toast('Simulação concluída. O cadastro de demonstração permanece igual.');break;
+    case 'simulate-save':if(!$('[name=name]')?.value.trim()){toast('Preencha o nome antes de continuar.','error');break;}$('#detail').close();toast('Simulação concluída. O cadastro de demonstração permanece igual.');break;
     case 'collection':route('catalog');state.search=id;renderContent();break;
     case 'order':{const o=orders.find(x=>x.ref===id);openDialog('Pedido '+o.ref,`<div class="fact"><span>Cliente</span><strong>${o.name}</strong></div><div class="fact"><span>Recebimento</span><strong>${o.delivery}</strong></div><div class="fact"><span>Canal</span><strong>${o.channel}</strong></div><p>${o.items}</p><div class="fact total"><span>Total</span><strong>${money(o.total)}</strong></div>${tag(o.stage===2?'Pronto para sair':o.stage===1?'Em preparo':'Na entrada',o.stage===2?'green':'amber')}${previewNote}`,button('Voltar à lista','close')+(o.stage===2?button('Simular entrega','deliver:'+id,'check','gold'):''));break;}
     case 'deliver':$('#detail').close();toast('Entrega simulada. O pedido continua na amostra para comparar as variantes.');break;
@@ -410,6 +425,7 @@ document.addEventListener('input',event=>{
   if(event.target.matches('[data-count]')){const key=event.target.dataset.count;const value=event.target.value;if(value==='')delete state.counted[key];else if(Number(value)>=0)state.counted[key]=Number(value);renderSupportBars();renderHead();}
 });
 document.addEventListener('change',event=>{
+  if(event.target.id==='catalog-sort'){state.sort=event.target.value;state.page=1;renderContent();$('#catalog-sort').focus();return;}
   if(event.target.id==='mobile-destinations'||event.target.id==='compare-destination'){route(event.target.value);return;}
   if(event.target.matches('[data-task]')){const id=Number(event.target.dataset.task);event.target.checked?state.done.add(id):state.done.delete(id);renderContent();}
 });

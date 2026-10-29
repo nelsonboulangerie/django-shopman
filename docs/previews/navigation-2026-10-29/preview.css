@@ -100,3 +100,9 @@ body{height:100dvh;overflow:hidden;display:flex;flex-direction:column}.lab{flex-
 /* Modo de avaliação sem ferramentas do laboratório. */
 .clean .lab{display:none}.clean .application{height:auto;flex:1;min-height:0}
 @media(max-width:650px), (max-width:900px) and (orientation:portrait){.lab>.clean-link{font-size:11px;min-height:34px}}
+
+/* Exemplos de listas e feedback semântico, apenas no protótipo. */
+.sort-control{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.sort-control select{margin:0;min-width:135px}.record-pagination{display:flex;align-items:center;gap:8px;margin-right:auto;font-size:11px;color:var(--muted)}
+#dialog-content{display:flex;flex-direction:column;max-height:calc(100dvh - 32px)}.dialog-head,.dialog-foot{flex-shrink:0}.dialog-body{overflow:auto;min-height:0}.dialog-foot{position:static;flex-wrap:wrap}.record-pagination .icon-button{width:40px;height:40px}
+.semantic-alert{position:static;transform:none;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:#eaf5ee;color:#235e3a;border-bottom:1px solid #b8d8c3;font-size:13px;line-height:1.5}.semantic-alert.error{background:#fff0ef;color:#982d2a;border-color:#ecc2bf}.semantic-alert.warning{background:#fff6e7;color:#885c13;border-color:#e8d0a3}.semantic-alert .icon-button{background:transparent;color:inherit;border-color:currentColor;width:32px;height:32px}
+@media(max-width:650px), (max-width:900px) and (orientation:portrait){.sort-control{margin-left:auto;font-size:11px}.sort-control select{font-size:12px;min-height:44px;max-width:150px}.record-pagination{width:100%;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:3px}.semantic-alert{padding:10px 15px}.semantic-alert .icon-button{width:44px;height:44px}}
