@@ -467,7 +467,7 @@ Esse escopo e para desenvolvimento local. Antes de PR, rode `make admin` sem `ur
 ## Como Rodar
 
 ```bash
-make test              # Todos os testes (~6.500: ~2.200 cores + ~4.250 framework + tools)
+make test              # Todos os testes; consulte a coleta da suíte para a contagem atual
 make test-offerman     # Apenas offerman
 make test-stockman     # Apenas stockman
 make test-framework    # Orquestrador + integration + e2e
