@@ -62,7 +62,7 @@ const ref_ = computed(() =>
   props.ticket ? splitRef(props.ticket.order_ref) : { prefix: "", code: "" },
 );
 const tone = computed(() =>
-  props.ticket ? ticketTone(props.ticket.timer_class) : "ok",
+  props.ticket ? ticketTone(props.ticket.timer_class, props.ticket.status) : "neutral",
 );
 const timerClasses = computed(() => toneTimer(tone.value));
 const barFill = computed(() => toneBar(tone.value));

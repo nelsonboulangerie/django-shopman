@@ -1,4 +1,4 @@
-// V6-GESTOR (auditoria v4): recortes da Fila, "+N" pela atenção, tempo sempre âmbar,
+// V6-GESTOR (auditoria v4): recortes da Fila, "+N" pela atenção, mapa único do tempo,
 // prazo duro na frente e a previsão "próximo pronto em ~N min". Travas das classes
 // de divergência que podem voltar (G01, G02, G03, G10, G11).
 import { readFileSync } from "node:fs";
@@ -15,7 +15,6 @@ import {
   queueToneClass,
   restLine,
   workingOrders,
-  type QueueTone,
 } from "../app/presentation/queue";
 import type { OrderCardProjection } from "../app/types/orders";
 
@@ -51,21 +50,26 @@ describe("P1-8: o tempo da Lista corre com o relógio, como a Grade", () => {
   });
 });
 
-describe("G03: o tempo nunca é vermelho", () => {
-  it("atraso é âmbar com intensidade; vermelho é só do bloqueio", () => {
-    for (const tone of ["ok", "warning", "late"] as QueueTone[]) {
-      expect(queueToneClass(tone)).not.toMatch(/destructive|red-/);
-    }
-    expect(queueToneClass("late")).toContain("text-warning");
+describe("mapa único da cor do tempo", () => {
+  it("atraso é vermelho, proximidade é âmbar e dentro do prazo é neutro", () => {
+    expect(queueToneClass("late")).toContain("text-destructive");
     expect(queueToneClass("late")).toContain("font-bold");
-    for (const tone of ["ok", "warning", "late", "muted"] as const) expect(timerChip(tone)).not.toMatch(/destructive|red-/);
+    expect(queueToneClass("warning")).toContain("text-warning");
+    expect(queueToneClass("neutral")).toBe("text-foreground");
+    expect(timerChip("late")).toContain("destructive");
+    expect(timerChip("warning")).toContain("warning");
+    expect(timerChip("neutral")).toContain("muted");
+    expect(timerChip("ready")).toContain("success");
   });
 
-  it("a Fila e o cartão não pintam o relógio de vermelho", () => {
+  it("a Fila e o cartão reservam o vermelho ao atraso do relógio", () => {
     const queueView = readFileSync(new URL("../app/components/QueueView.vue", import.meta.url), "utf8");
     expect(queueView).not.toMatch(/data-queue-time[^>]*destructive/);
     const orderCard = readFileSync(new URL("../app/components/OrderCard.vue", import.meta.url), "utf8");
-    expect(orderCard).not.toMatch(/clock\.tone === 'late' \? '[^']*text-destructive/);
+    expect(orderCard).toContain("clock.tone === 'late'");
+    expect(orderCard).toContain("? 'error'");
+    expect(orderCard).toContain("clock.tone === 'ready'");
+    expect(orderCard).toContain("? 'success'");
   });
 });
 

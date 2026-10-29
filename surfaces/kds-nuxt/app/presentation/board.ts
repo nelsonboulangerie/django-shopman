@@ -4,14 +4,19 @@
 // only derives the view shape + the functional-color tone for the semaphore. No
 // time/SLA arithmetic (the backend owns elapsed/target/timer_class).
 import type { KDSBoardProjection, KDSChangeKind, KDSTicketProjection, KDSTimerClass } from "~/types/kds";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
 
 /** Functional tone for a ticket's urgency (cor só onde tem significado). */
-export type KDSTone = "ok" | "warning" | "late";
+export type KDSTone = TimeTone;
 
-export function ticketTone(timerClass: KDSTimerClass): KDSTone {
-  if (timerClass === "timer-late") return "late";
-  if (timerClass === "timer-warning") return "warning";
-  return "ok";
+export function ticketTone(timerClass: KDSTimerClass, status = ""): KDSTone {
+  if (status === "done") return timeTone("ready");
+  if (timerClass === "timer-late") return timeTone("late");
+  if (timerClass === "timer-warning") return timeTone("warning");
+  return timeTone("on_time");
 }
 
 /** Fill for the time-to-SLA bar by tone — o ÚNICO elemento de cor de urgência do
@@ -21,6 +26,7 @@ export function ticketTone(timerClass: KDSTimerClass): KDSTone {
 export function toneBar(tone: KDSTone): string {
   if (tone === "late") return "bg-red-500";
   if (tone === "warning") return "bg-amber-500";
+  if (tone === "ready") return "bg-success";
   return "bg-muted-foreground/30";
 }
 
@@ -37,7 +43,9 @@ export function toneNextSurface(tone: KDSTone): string {
     return "border-2 border-destructive bg-destructive/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_15%,transparent)]";
   if (tone === "warning")
     return "border-2 border-warning bg-warning/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--warning)_15%,transparent)]";
-  return "border-2 border-primary bg-primary/5 shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_12%,transparent)]";
+  if (tone === "ready")
+    return "border-2 border-success bg-success/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--success)_15%,transparent)]";
+  return "border-2 border-border bg-muted/40 shadow-[0_0_0_4px_color-mix(in_oklab,var(--foreground)_8%,transparent)]";
 }
 
 /** O relógio do card na v4 (`.tm`): o tempo contra a meta num número só. Atrasado é
@@ -46,6 +54,7 @@ export function toneNextSurface(tone: KDSTone): string {
 export function toneTimerChip(tone: KDSTone): string {
   if (tone === "late") return "border border-destructive bg-destructive text-destructive-foreground";
   if (tone === "warning") return "border border-warning/60 text-warning";
+  if (tone === "ready") return "border border-success/60 text-success";
   return "border border-border text-foreground";
 }
 
@@ -92,10 +101,11 @@ export function toneTimer(tone: KDSTone): string {
   if (tone === "late") return "border-red-500/40 bg-red-500/15 text-red-300";
   if (tone === "warning")
     return "border-amber-500/40 bg-amber-500/15 text-amber-300";
+  if (tone === "ready") return "border-success/40 bg-success/15 text-success";
   return "border-white/10 bg-white/5 text-muted-foreground";
 }
 
-const TONE_RANK: Record<KDSTone, number> = { late: 0, warning: 1, ok: 2 };
+const TONE_RANK: Record<KDSTone, number> = { late: 0, warning: 1, neutral: 2, ready: 3 };
 
 /** Segundos até o prazo do ticket (negativo quando passou): a hora combinada com o
  *  cliente quando há uma; sem ela, a meta da estação contada desde que o ticket

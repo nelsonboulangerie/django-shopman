@@ -2040,7 +2040,7 @@ function printQueue() {
             <!-- O relógio vivo do kit (useNowTick), como a Grade: P1-8. -->
             <NuxtBadge
               :color="
-                liveAge(row.original.card, nowMs).tone === 'ok'
+                liveAge(row.original.card, nowMs).tone === 'neutral'
                   ? 'neutral'
                   : 'warning'
               "

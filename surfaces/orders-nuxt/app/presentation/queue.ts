@@ -10,8 +10,12 @@ import {
   splitRef,
   type Affordance,
 } from "./board";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
 
-export type QueueTone = "ok" | "warning" | "late";
+export type QueueTone = Exclude<TimeTone, "ready">;
 
 /** O recorte da Fila (v4): "Precisa de você" (o padrão), "Todos" e "Atrasados". */
 export type QueueScope = "attention" | "all" | "late";
@@ -66,17 +70,16 @@ export function minutesLabel(seconds: number): string {
 
 /** O tom do número: passou da meta é atraso; a partir de 80% dela, atenção. */
 export function goalTone(seconds: number, goalMinutes: number): QueueTone {
-  if (!goalMinutes) return "ok";
+  if (!goalMinutes) return timeTone("on_time");
   const ratio = seconds / (goalMinutes * 60);
-  if (ratio >= 1) return "late";
-  if (ratio >= 0.8) return "warning";
-  return "ok";
+  if (ratio >= 1) return timeTone("late");
+  if (ratio >= 0.8) return timeTone("warning");
+  return timeTone("on_time");
 }
 
-/** A cor do tempo (G03). Atenção ao tempo é um número com INTENSIDADE, sempre no âmbar:
- *  vermelho é só "bloqueado com motivo" (a pílula do cadeado), nunca o relógio. */
+/** A cor do tempo: vermelho atrasado, âmbar perto da meta, neutro no prazo. */
 export function queueToneClass(tone: QueueTone): string {
-  if (tone === "late") return "font-bold text-warning";
+  if (tone === "late") return "font-bold text-destructive";
   if (tone === "warning") return "text-warning";
   return "text-foreground";
 }
@@ -125,7 +128,7 @@ function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
       seconds,
       timeLabel: minutesLabel(seconds),
       goalLabel: card.status_label,
-      tone: "ok",
+      tone: timeTone("on_time"),
       urgency: 0,
       cancelsIn: null,
     };

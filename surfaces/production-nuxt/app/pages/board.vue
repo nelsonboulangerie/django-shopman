@@ -12,6 +12,7 @@
 //   posição; confirmados saem pelo TTL.
 import type { ForecastStatus } from "~/types/production";
 import {
+  forecastTimeTone,
   fullDateLabel,
   isStale,
   isoForOffset,
@@ -94,13 +95,15 @@ async function toggleFullscreen() {
   else await kiosk.enter();
 }
 
-// ── Status → cor (uma cor, um significado) ─────────────────────────────────
-const STATUS_TONE: Record<ForecastStatus, string> = {
-  scheduled: "tone-neutral",
-  in_progress: "tone-cyan",
-  delayed: "tone-amber",
-  arrived: "tone-green",
+// ── Status → cor do tempo (o mesmo mapa do Gestor e da Cozinha) ────────────
+const TIME_TONE_CLASS: Record<ReturnType<typeof forecastTimeTone>, string> = {
+  late: "tone-red",
+  warning: "tone-amber",
+  neutral: "tone-neutral",
+  ready: "tone-green",
 };
+const statusToneClass = (status: ForecastStatus) =>
+  TIME_TONE_CLASS[forecastTimeTone(status)];
 
 const NAME_CHARS = 22; // maior nome atual: "Pão de Forma Artesanal"
 const QTY_CHARS = 6; // "999 UN"
@@ -228,10 +231,8 @@ const STATUS_CHARS = 10; // CONFIRMADO
                 class="board-flap"
                 :class="
                   row.status === 'delayed'
-                    ? 'tone-amber'
-                    : row.eta_is_actual
-                      ? 'tone-green'
-                      : ''
+                    ? 'tone-red'
+                    : 'tone-neutral'
                 "
               />
               <SplitFlap
@@ -239,7 +240,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
                 :chars="STATUS_CHARS"
                 align="right"
                 class="board-flap"
-                :class="STATUS_TONE[row.status]"
+                :class="statusToneClass(row.status)"
                 :pulse="row.status === 'delayed' ? respinTick : 0"
               />
             </article>
@@ -404,6 +405,9 @@ const STATUS_CHARS = 10; // CONFIRMADO
 }
 .tone-amber :deep(.flap-cell) {
   color: var(--board-amber);
+}
+.tone-red :deep(.flap-cell) {
+  color: var(--destructive);
 }
 .tone-cyan :deep(.flap-cell) {
   color: var(--board-cyan);

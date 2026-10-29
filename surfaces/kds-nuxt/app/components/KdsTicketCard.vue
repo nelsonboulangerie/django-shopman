@@ -91,7 +91,7 @@ const props = withDefaults(
 );
 const emit = defineEmits<{ start: []; finish: []; seen: []; locked: []; undo: []; open: []; hold: [] }>();
 
-const tone = computed(() => ticketTone(props.ticket.timer_class));
+const tone = computed(() => ticketTone(props.ticket.timer_class, props.ticket.status));
 const code = computed(() => splitRef(props.ticket.order_ref).code);
 const overline = computed(() => ticketOverline(props.ticket));
 const startLine = computed(() => ticketStartLine(props.ticket));
@@ -294,7 +294,7 @@ const d = computed(() => ({
               <Icon
                 :name="ticket.due_clock_display ? 'lucide:calendar-clock' : 'lucide:timer'"
                 class="size-5 shrink-0"
-                :class="tone === 'ok' ? 'text-muted-foreground' : ''"
+                :class="tone === 'neutral' ? 'text-muted-foreground' : ''"
               />
               <span data-kds-clock>{{ ticketClockLabel(ticket) }}</span>
             </span>

@@ -522,10 +522,12 @@ function nuxtIcon(icon: string): string {
               v-if="clock.countdown"
               :color="
                 clock.tone === 'late'
-                  ? 'warning'
+                  ? 'error'
                   : clock.tone === 'warning'
                     ? 'warning'
-                    : 'neutral'
+                    : clock.tone === 'ready'
+                      ? 'success'
+                      : 'neutral'
               "
               :title="
                 card.confirmation_action === 'cancel'
@@ -540,10 +542,12 @@ function nuxtIcon(icon: string): string {
               v-else
               :color="
                 clock.tone === 'late'
-                  ? 'warning'
+                  ? 'error'
                   : clock.tone === 'warning'
                     ? 'warning'
-                    : 'neutral'
+                    : clock.tone === 'ready'
+                      ? 'success'
+                      : 'neutral'
               "
               :label="`${seal.label !== card.status_label && !card.ready_at_iso && !card.dispatched_at_iso ? `${card.status_label} · ` : ''}${clock.text}`"
               data-card-clock

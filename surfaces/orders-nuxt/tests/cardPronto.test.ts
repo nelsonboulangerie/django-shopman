@@ -19,8 +19,8 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
 
 describe("cardClock com a hora do pronto e da saída", () => {
   it("pronto conta desde o pronto, não desde a chegada", () => {
-    expect(cardClock(card({ ready_at_iso: ago(360) }), NOW).text).toBe("pronto há 6 min");
-    expect(cardClock(card({ ready_at_iso: ago(20) }), NOW).text).toBe("pronto agora");
+    expect(cardClock(card({ ready_at_iso: ago(360) }), NOW)).toMatchObject({ text: "pronto há 6 min", tone: "ready" });
+    expect(cardClock(card({ ready_at_iso: ago(20) }), NOW)).toMatchObject({ text: "pronto agora", tone: "ready" });
   });
 
   it("na rua conta desde a saída", () => {

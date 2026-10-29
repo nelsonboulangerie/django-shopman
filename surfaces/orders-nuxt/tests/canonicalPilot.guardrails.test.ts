@@ -859,17 +859,21 @@ describe("Gestor canônico em Nuxt UI", () => {
     );
     expect(queue).not.toContain('size="xl"');
     expect(pageHeader).toContain("flex-nowrap overflow-x-auto no-scrollbar");
-    expect(
-      [
-        board,
-        readFileSync(
-          new URL("../app/components/OrderCard.vue", import.meta.url),
-          "utf8",
-        ),
-      ]
-        .join("\n")
-        .replaceAll(/\s+/g, " "),
-    ).not.toMatch(/tone[^?]{0,80}=== ['"]late['"][^?]{0,80}\? ['"]error['"]/);
+    const timeSurfaces = [
+      board,
+      readFileSync(
+        new URL("../app/components/OrderCard.vue", import.meta.url),
+        "utf8",
+      ),
+    ]
+      .join("\n")
+      .replaceAll(/\s+/g, " ");
+    expect(timeSurfaces).toMatch(
+      /clock\.tone === ['"]late['"][^?]{0,80}\? ['"]error['"]/,
+    );
+    expect(timeSurfaces).not.toMatch(
+      /clock\.tone === ['"]late['"][^?]{0,80}\? ['"]warning['"]/,
+    );
   });
 
   it("não mistura o estado da visão com a fileira de botões do cabeçalho", () => {
