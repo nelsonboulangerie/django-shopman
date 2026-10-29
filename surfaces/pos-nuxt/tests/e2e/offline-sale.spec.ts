@@ -47,6 +47,8 @@ test.describe("PDV — venda sem conexão", () => {
     await page.getByRole("button", { name: "Validar" }).click();
 
     await expect(page.locator("[data-sale-result-offline]")).toBeVisible();
+    // A prova acompanha o envio na tela; um toque cancela o auto-avanço de 5 s.
+    await page.locator("[data-sale-result-offline]").click();
     await expect(page.getByText("1 venda esperando envio.", { exact: true })).toBeVisible();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/pdvoff-guardada-${page.viewportSize()?.width}.png` });
     await page.getByRole("button", { name: "Ver vendas guardadas" }).click();
