@@ -65,4 +65,17 @@ describe("autorização de gerente: uma estrutura só", () => {
       .map(rel);
     expect(offenders).toEqual([]);
   });
+
+  // A autorização é `NuxtModal`. Gaveta ou diálogo antigo (`UiSheet`/`UiDialog`,
+  // overlay em z-50) na mesma tela a cobre: em 29/10/2026 as Últimas vendas do PDV
+  // abriam o "emitir a nota" e o "cancelar" escuros, sem clique, por baixo da gaveta.
+  it("tela que abre a autorização não usa gaveta nem diálogo antigo", () => {
+    const offenders = files
+      .filter((path) => {
+        const source = readFileSync(path, "utf8");
+        return /<(OperatorManagerAuth|PosCancelSaleDialog)\b/.test(source) && /<Ui(Sheet|Dialog)\b/.test(source);
+      })
+      .map(rel);
+    expect(offenders).toEqual([]);
+  });
 });

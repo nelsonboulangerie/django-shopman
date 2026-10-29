@@ -343,19 +343,26 @@ function fiscalChipClass(status: string): string {
 </script>
 
 <template>
-  <UiSheet :open="open" @update:open="(v) => emit('update:open', v)">
-    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg" :title="undefined">
-      <div class="flex items-center justify-between border-b border-border px-5 py-4">
-        <div>
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Balcão</p>
-          <h2 class="text-lg font-semibold text-foreground">Últimas vendas</h2>
-        </div>
-        <UiButton type="button" variant="outline" size="sm" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
-          <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
-        </UiButton>
-      </div>
+  <!-- A gaveta é o `NuxtSlideover`, da mesma família do `OperatorManagerAuth`:
+       com a gaveta antiga (`UiSheet`, overlay em z-50) as duas autorizações de
+       gerente abertas daqui (cancelar, emitir a nota) nasciam POR BAIXO dela,
+       escuras e sem clique (achado no alpha, 29/10/2026). -->
+  <NuxtSlideover
+    :open="open"
+    title="Últimas vendas"
+    description="Vendas do balcão nas últimas 24 horas, e encomendas retiradas ou entregues."
+    :ui="{ content: 'sm:max-w-lg' }"
+    data-recent-sales-sheet
+    @update:open="(v) => emit('update:open', v)"
+  >
+    <template #actions>
+      <UiButton type="button" variant="outline" size="sm" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
+        <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
+      </UiButton>
+    </template>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <template #body>
+      <div>
         <p v-if="!loading && !sales.length" class="py-8 text-center text-sm text-muted-foreground">
           Nenhuma venda nas últimas 24 horas, nem encomenda retirada ou entregue.
         </p>
@@ -515,8 +522,8 @@ function fiscalChipClass(status: string): string {
           </li>
         </ul>
       </div>
-    </UiSheetContent>
-  </UiSheet>
+    </template>
+  </NuxtSlideover>
 
   <!-- Confirmação destrutiva + desafio gerencial — o MESMO diálogo da tela de
        venda; a janela anunciada é a do contrato e o servidor a valida de novo. -->
