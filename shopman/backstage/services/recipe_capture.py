@@ -202,8 +202,8 @@ def _coerce_choice(value: Any, allowed: tuple[str, ...], label: str) -> tuple[st
     return "other", f"{label} '{value}' fora da lista; marcado como other"
 
 
-def _join_notes(*parts: str) -> str:
-    return "; ".join(part.strip() for part in parts if part and part.strip())
+def _join_notes(*preps: str) -> str:
+    return "; ".join(prep.strip() for prep in preps if prep and prep.strip())
 
 
 class CaptureItem(BaseModel):
@@ -306,7 +306,7 @@ def parse_response(raw: str) -> CapturedRecipe:
         payload = CapturePayload.model_validate(data)
     except ValidationError as exc:
         first = exc.errors()[0] if exc.errors() else {}
-        where = ".".join(str(part) for part in first.get("loc", ())) or "resposta"
+        where = ".".join(str(prep) for prep in first.get("loc", ())) or "resposta"
         raise RecipeCaptureError(
             f"A resposta do assistente não tem o formato esperado em '{where}': {first.get('msg', '')}."
         ) from exc

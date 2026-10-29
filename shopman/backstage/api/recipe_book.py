@@ -612,7 +612,7 @@ class RecipeVersionPublishView(_RecipeBookBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Formula lens preview (baker's percentages, metrics, parts, final mix, BOM)",
+        summary="Formula lens preview (baker's percentages, metrics, preps, final mix, BOM)",
         responses={200: OpenApiResponse(description="The lens over the given formula.")},
     ),
 )

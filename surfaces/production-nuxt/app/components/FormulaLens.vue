@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // A lente de uma fórmula — a mesma tela para pão e para creme; o que muda é a
 // âncora e os painéis que aparecem (§1): métricas de padaria só com âncora
-// `flour`; partes só quando há parte; mistura final e BOM só quando o servidor os
-// devolveu. Tudo já vem formatado (ADR-014): este componente não faz conta. Os
+// `flour`; ingredientes com receita continuam na mesma lista; mistura final e
+// BOM só quando o servidor os devolveu. Tudo já vem formatado (ADR-014). Os
 // avisos e o "fora da faixa" são tom calmo — referência, nunca bloqueio.
 import type { FormulaLensProjection } from "~/types/recipeBook";
 import { toneChip, toneClass, unmatchedItems } from "~/presentation/recipeBook";
@@ -15,9 +15,8 @@ const props = defineProps<{
   compact?: boolean;
 }>();
 
-const unmatched = computed(() => (props.lens ? unmatchedItems(props.lens.items) : []));
+const unmatched = computed(() => (props.lens ? unmatchedItems(props.lens.ingredients) : []));
 const showMetrics = computed(() => !!props.lens?.is_bakery && (props.lens?.metrics.length ?? 0) > 0);
-const showParts = computed(() => (props.lens?.parts.length ?? 0) > 0);
 const showFinalMix = computed(
   () => !props.compact && !!props.lens?.final_mix_differs && (props.lens?.final_mix.length ?? 0) > 0,
 );
@@ -104,9 +103,9 @@ const BOM_COLUMNS = [
 
       <!-- Tabela g / % (a tabela da suíte; o ingrediente fica, o papel é de apoio) -->
       <OperatorTable
-        :data="lens.items"
+        :data="lens.ingredients"
         :columns="ITEM_COLUMNS"
-        :row-key="(row) => row.sku || row.name"
+        :row-key="(row) => row.ref"
         :row-class="(row) => (row.is_anchor ? 'bg-primary/5' : '')"
         pinned="ingredient"
         empty-title="Nenhum ingrediente ainda."
@@ -120,9 +119,15 @@ const BOM_COLUMNS = [
             <span v-if="row.original.sku" class="font-mono">{{ row.original.sku }}</span>
             <span v-else class="text-warning">Sem insumo vinculado no estoque</span>
           </span>
+          <span v-if="row.original.recipe_version_ref" class="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            <NuxtBadge color="neutral" label="Receita" />
+            <span>{{ row.original.recipe_version_ref }}</span>
+            <span v-if="row.original.composition_label">· {{ row.original.composition_label }}</span>
+          </span>
         </template>
         <template #quantity-cell="{ row }">
           <span>{{ row.original.quantity_display }}</span>
+          <span v-if="row.original.quantity_rule_display" class="ml-1 text-xs text-muted-foreground">{{ row.original.quantity_rule_display }}</span>
           <span v-if="row.original.quantity_g && row.original.unit !== 'g'" class="ml-1 text-xs text-muted-foreground"
             >({{ row.original.quantity_g }} g)</span
           >
@@ -154,31 +159,6 @@ const BOM_COLUMNS = [
           </p>
           <p v-if="metric.note" class="mt-0.5 text-xs text-muted-foreground">{{ metric.note }}</p>
         </div>
-      </div>
-
-      <!-- Partes -->
-      <div v-if="showParts" class="overflow-hidden rounded-md border">
-        <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Partes
-        </p>
-        <ul class="divide-y text-sm">
-          <li
-            v-for="(part, index) in lens.parts"
-            :key="`${part.kind}-${part.sku}-${index}`"
-            class="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2"
-          >
-            <span class="font-medium">{{ part.name || part.kind_label }}</span>
-            <NuxtBadge color="neutral" :label="part.kind_label" />
-            <span v-if="part.flour_pct_display" class="tabular-nums text-muted-foreground">
-              {{ part.flour_pct_display }} da farinha
-            </span>
-            <span v-if="part.quantity_display" class="tabular-nums text-muted-foreground">{{ part.quantity_display }}</span>
-            <span v-if="part.cap_pct_display" class="tabular-nums text-muted-foreground">teto {{ part.cap_pct_display }}</span>
-            <span v-if="part.sku && !part.has_formula" class="text-xs text-warning">
-              sem fórmula publicada
-            </span>
-          </li>
-        </ul>
       </div>
 
       <!-- Mistura final (calculada, nunca digitada) -->

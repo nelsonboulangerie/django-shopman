@@ -95,6 +95,8 @@ const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
 const boardInitialDateSpy = vi.fn();
 const recipeBookCanView = ref(true);
+const kdsCards = ref<Record<string, unknown>[]>([]);
+const kdsActions = new Map<string, Record<string, unknown>>();
 
 function installGlobals() {
   vi.stubGlobal("computed", computed);
@@ -133,14 +135,17 @@ function installGlobals() {
     };
   });
   vi.stubGlobal("useProductionKds", () => ({
-    cards: ref([]),
+    cards: kdsCards,
     totalCount: ref(0),
     lateCount: ref(0),
     pending: ref(false),
     error: ref(null),
     refresh: vi.fn(),
+    actionFor: (actionRef: string) => kdsActions.get(actionRef),
     isBusy: () => false,
     voidOrder: voidSpy,
+    registerOldDough: vi.fn(),
+    authorizeFormulaDeviation: vi.fn(),
   }));
   vi.stubGlobal("useOvenTimers", () => ({
     arm: vi.fn(),
@@ -302,6 +307,8 @@ beforeEach(() => {
   boardRefresh.mockClear();
   boardInitialDateSpy.mockClear();
   recipeBookCanView.value = true;
+  kdsCards.value = [];
+  kdsActions.clear();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -879,6 +886,48 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
       .setValue("queimou");
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
+  });
+
+  it("oferece Autorizar desvio só à gestão e somente com limites projetados", async () => {
+    boardRows.value = [
+      row({
+        started_qty: "30",
+        started_orders: [wo({ pk: 7, ref: "WO-007", started_qty: "30" })],
+      }),
+    ];
+    kdsCards.value = [
+      {
+        pk: 7,
+        ref: "WO-007",
+        rev: 2,
+        recipe_name: "Pão",
+        formula_limits: [
+          {
+            ingredient_ref: "levain",
+            sku: "LEVAIN",
+            name: "Levain",
+            kind: "ratio",
+            minimum: "18",
+            target: "20",
+            maximum: "22",
+            unit: "%",
+            basis_label: "Farinhas totais",
+            actual: "20",
+            available_batches: [],
+          },
+        ],
+      },
+    ];
+    kdsActions.set("authorize_formula_deviation:7", { enabled: false });
+    let wrapper = mountGrid();
+    await wrapper.find("[data-open-view-launch]").trigger("click");
+    expect(byText(wrapper, "button", "Autorizar desvio")).toBeUndefined();
+
+    wrapper.unmount();
+    kdsActions.set("authorize_formula_deviation:7", { enabled: true });
+    wrapper = mountGrid();
+    await wrapper.find("[data-open-view-launch]").trigger("click");
+    expect(byText(wrapper, "button", "Autorizar desvio")).toBeDefined();
   });
 });
 
