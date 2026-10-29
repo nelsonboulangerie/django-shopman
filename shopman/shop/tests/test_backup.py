@@ -126,14 +126,30 @@ def test_roundtrip_restores_deleted_and_mutated_rows(curated, tmp_path):
 
 
 def _formula(water: int) -> dict:
+    def ingredient(ref: str, sku: str, name: str, role: str, quantity: int) -> dict:
+        return {
+            "ref": ref,
+            "sku": sku,
+            "name": name,
+            "role": role,
+            "composition": "additional",
+            "quantity": {
+                "kind": "fixed",
+                "minimum": quantity,
+                "target": quantity,
+                "maximum": quantity,
+                "unit": "g",
+            },
+        }
+
     return {
         "anchor": {"kind": "flour"},
         "basis_g": 1000,
-        "items": [
-            {"sku": "FARINHA", "name": "Farinha", "role": "flour", "quantity": 1000, "unit": "g"},
-            {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
+        "standardized": True,
+        "ingredients": [
+            ingredient("ingredient-flour", "FARINHA", "Farinha", "flour", 1000),
+            ingredient("ingredient-water", "AGUA", "Água", "liquid", water),
         ],
-        "parts": [],
     }
 
 

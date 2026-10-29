@@ -809,6 +809,29 @@ class TimelineSpeaksPortugueseTests(TestCase):
         order.events.create(seq=99, type=event_type, actor="system", payload=payload)
         return build_operator_order(order).timeline[-1]
 
+    def test_every_emitted_event_type_has_a_label(self) -> None:
+        """Todo ``emit_event(event_type="...")`` do código tem rótulo em português.
+
+        Medido em 28/10/2026: o "Reprocessar NFC-e" do Gestor gravava
+        ``fiscal_requeued`` e o histórico mostrava "Fiscal requeued".
+        """
+        import re
+        from pathlib import Path
+
+        from shopman.backstage.projections.order_queue import _EVENT_LABELS, _STATUS_EVENT_TYPES
+
+        root = Path(__file__).resolve().parents[3]
+        pattern = re.compile(r'emit_event\(\s*event_type="([a-z_]+)"')
+        emitted = set()
+        for base in (root / "shopman", root / "packages"):
+            for path in base.rglob("*.py"):
+                if "tests" in path.parts or "migrations" in path.parts:
+                    continue
+                emitted.update(pattern.findall(path.read_text(encoding="utf-8")))
+
+        self.assertTrue(emitted)
+        self.assertEqual(sorted(emitted - set(_EVENT_LABELS) - _STATUS_EVENT_TYPES), [])
+
     def test_creation_event_is_named_in_portuguese(self) -> None:
         event = self._with_event("TL-1", "created", {"from_session": "SESS-ABC"})
 

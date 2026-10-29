@@ -100,6 +100,15 @@ class Batch(models.Model):
         verbose_name=_("Observações"),
     )
 
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_("Metadados"),
+        help_text=_(
+            "Proveniência imutável do lote, como ordem de produção, versão da receita e composição executada."
+        ),
+    )
+
     # Qualidade (ADR-017): o LOTE é o dono do fato comercial congelado. O grau
     # continua opaco para o Stockman; quem decide quais refs um canal aceita é
     # o orquestrador. Motivo explica causa e nunca serve como proxy do grau.

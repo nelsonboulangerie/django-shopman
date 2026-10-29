@@ -238,7 +238,12 @@ export function useOrderDetail(orderRef: string) {
     act("reject", { reason, cancellation_code });
   // Cancelar: o motivo é a chave da lista única (`reason_key`, obrigatória fora do
   // iFood); o texto é a observação interna. No iFood, `reason` + código do iFood.
-  const cancel = (choice: { reasonKey: string; internalNote: string; reason: string; cancellationCode: string }) =>
+  const cancel = (choice: {
+    reasonKey: string;
+    internalNote: string;
+    reason: string;
+    cancellationCode: string;
+  }) =>
     act("cancel", {
       reason_key: choice.reasonKey,
       internal_note: choice.internalNote,
@@ -324,6 +329,43 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
+  // Uma corrida para este pedido e os que vão junto (o "Vai junto?" da chamada):
+  // a mesma rota do "Juntar entregas" do quadro, com a custódia de cada um.
+  async function courierRide(body: {
+    refs: string[];
+    change_out: Record<string, string>;
+    machine: string;
+  }): Promise<boolean> {
+    if (busy.value) return false;
+    busy.value = true;
+    mutationError.value = "";
+    try {
+      await $fetch("/api/v1/backstage/orders/courier-ride/", {
+        method: "POST",
+        body,
+      });
+    } catch (error) {
+      mutationError.value = httpErrorMessage(
+        error,
+        "Não foi possível chamar a corrida. Atualize o pedido.",
+      );
+      useSonner.error(mutationError.value);
+      return false;
+    } finally {
+      busy.value = false;
+    }
+    useSonner.success(
+      `Uma corrida para ${body.refs.length} pedidos enviada à central.`,
+    );
+    try {
+      await refresh();
+    } catch {
+      mutationError.value =
+        "Corrida pedida. A leitura atualizada falhou; atualize antes da próxima ação.";
+    }
+    return true;
+  }
+
   // "Chamar de novo": a última chamada ficou sem resposta da TaOn. Libera a
   // chamada pendente e chama outra (a confirmação é da página).
   async function courierDispatchAgain(): Promise<boolean> {
@@ -384,6 +426,7 @@ export function useOrderDetail(orderRef: string) {
     addComment,
     courierDispatch,
     courierDispatchAgain,
+    courierRide,
     courierReminderDismiss,
     resolveContactRequest,
     courierCancel,

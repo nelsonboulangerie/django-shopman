@@ -25,6 +25,7 @@ import {
   oneTapDispatch,
   realtimeIndicator,
   resolveShortcut,
+  rideChoices,
   rowsToCsv,
   SORT_OPTIONS,
   splitRef,
@@ -240,6 +241,15 @@ watch(
 
 const negotiationCards = computed(
   () => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[],
+);
+// As entregas prontas que podem ir juntas numa corrida, como cards (ordem da fila).
+// A corrida junta pedido pronto e em preparo: o card de cada um vem da Saída
+// ou do Preparo.
+const rideCandidates = computed(() =>
+  rideChoices(queue.value?.ride_candidates ?? [], [
+    ...(queue.value?.expedition_delivery ?? []),
+    ...(queue.value?.prep ?? []),
+  ]),
 );
 const allCards = computed<OrderCardProjection[]>(() =>
   zones.value.flatMap((z) => z.cards),
@@ -1481,6 +1491,14 @@ function printQueue() {
             @click="boardLayout.showAll()"
           />
         </template>
+        <!-- Uma corrida da TaOn para várias entregas prontas: some com menos de duas. -->
+        <CourierRideMenu :choices="rideCandidates" @done="refresh()" />
+        <!-- Onde está a maquininha: some quando todas estão na loja. -->
+        <EquipmentOutMenu
+          :items="queue?.equipment_out ?? []"
+          :is-busy="isBusy"
+          @back="equipmentBack"
+        />
         <!-- O som de pedido novo e o "Visto" que o cala formam um grupo só: o Visto
              aparece enquanto há pedido novo tocando e, reconhecido, some, deixando o
              botão do som sozinho. No posto Saída o Visto fica no ⋯. O som tem os

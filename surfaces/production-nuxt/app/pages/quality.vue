@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Qualidade = a revisão do gestor sobre o lote já fechado (quality_reviewed /
-// quality_corrected). A classificação continua acontecendo no Fechamento
+// quality_corrected). A classificação continua acontecendo na Finalização
 // (ADR-017 §9): o lote sai do forno classificado, e aqui o gestor confere por
 // exceção (QualityGatePanel), confirma o conjunto sem exceção num ato só ou
 // corrige a partição de um lote (QcCloseScreen em modo de correção). Mesma
-// projeção do Fechamento (o quiosque de QC), outra pergunta.
+// projeção da Finalização (o quiosque de QC), outra pergunta.
 import type { QCOrderCardProjection } from "~/types/production";
 import { isStale, isoForOffset } from "~/presentation/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
@@ -49,7 +49,7 @@ watch(
   },
 );
 
-// Mesmo "Período" do Fechamento: o lote de ontem se revisa a um toque de ‹.
+// Mesmo "Período" da Finalização: o lote de ontem se revisa a um toque de ‹.
 const todayISO = isoForOffset(0);
 const period = computed<PeriodSelection>({
   get: () => periodOfDay("day", selectedDate.value, todayISO),
@@ -178,7 +178,7 @@ async function confirmQualityBatch() {
     );
 }
 
-// O atalho dos lotes ainda abertos leva ao Fechamento, no mesmo dia.
+// O atalho dos lotes ainda abertos leva à Finalização, no mesmo dia.
 function goClose() {
   navigateTo({
     path: "/close",
@@ -188,7 +188,7 @@ function goClose() {
 
 // ── Correção da partição de um lote fechado ─────────────────────────────────
 // O lote em correção mora na URL (`?lot=<pk>`, com o dia e a busca), como no
-// Fechamento: o voltar do navegador volta ao portão, e o anterior e o próximo
+// Finalização: o voltar do navegador volta ao portão, e o anterior e o próximo
 // andam entre os lotes que o portão mostra com Corrigir.
 const QUALITY_LOTS_TRAIL = "production-quality-lots";
 const correcting = ref<QCOrderCardProjection | null>(null);

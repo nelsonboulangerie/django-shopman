@@ -34,7 +34,7 @@
     "@nuxt/eslint": "^1.17.0",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
-    "happy-dom": "^20.14.6",
+    "happy-dom": "^21.0.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.12"

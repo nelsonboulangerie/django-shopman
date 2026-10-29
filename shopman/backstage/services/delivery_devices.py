@@ -48,6 +48,17 @@ def allocate(order, equipment, *, allowed):
     return device
 
 
+def hand_over(order, heir):
+    """A maquininha que ``order`` segura passa a ser de ``heir``, que vai com ela na mesma corrida.
+
+    O pedido saiu da corrida (cancelado antes da coleta) e a maquininha segue
+    com o entregador para os outros. Sem vínculo de ``order``, nada muda.
+    """
+    ref = ((order.data or {}).get("dispatch") or {}).get("device_ref")
+    if ref:
+        DeliveryDevice.objects.select_for_update().filter(ref=ref, current_order=order).update(current_order=heir)
+
+
 def holds_device(order):
     """Este pedido é o vínculo da maquininha (e não um que a compartilha na mesma saída)."""
     return DeliveryDevice.objects.filter(current_order=order).exists()

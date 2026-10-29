@@ -125,7 +125,7 @@ describe("ProductionHeader — o ⋯ como dados", () => {
   it("as ações da tela vêm antes de Atualizar, que leva a tecla R", () => {
     wrapper?.unmount();
     const onSelect = vi.fn();
-    wrapper = mountHeader({ title: "Fechamento", actions: [{ label: "Lote avulso", icon: "i-lucide-plus", onSelect }] });
+    wrapper = mountHeader({ title: "Finalização", actions: [{ label: "Lote avulso", icon: "i-lucide-plus", onSelect }] });
     expect(headerActions.map((action) => action.label)).toEqual(["Lote avulso", "Atualizar"]);
     expect(headerActions[1]!.kbds).toEqual(["R"]);
     headerActions[1]!.onSelect?.();
@@ -154,7 +154,7 @@ describe("ProductionHeader — toolbar e estado", () => {
 
   it("dado velho: o ao vivo fala por extenso", () => {
     wrapper?.unmount();
-    wrapper = mountHeader({ title: "Abertura", stale: true });
+    wrapper = mountHeader({ title: "Produção", stale: true });
     const live = wrapper.find("[data-status] [data-live]");
     expect(live.attributes("data-tone")).toBe("late");
     expect(live.text()).toBe("Sem atualizar");
@@ -163,7 +163,7 @@ describe("ProductionHeader — toolbar e estado", () => {
   it("a tela acrescenta ao #status o que é dela (o anterior e o próximo do lote)", () => {
     wrapper?.unmount();
     wrapper = mountHeader(
-      { title: "Fechamento" },
+      { title: "Finalização" },
       { status: '<span data-record-nav>3 de 8</span>' },
     );
     const status = wrapper.find("[data-status]");

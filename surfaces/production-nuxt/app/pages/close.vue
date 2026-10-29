@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// Fechamento = o lote sai do forno já classificado (ADR-017 §9 / QC-FORNADA §5):
+// Finalização = o lote sai do forno já classificado (ADR-017 §9 / QC-FORNADA §5):
 // painel de LOTES abertos do dia (o lote traz forno, horário e previsto; é o
-// previsto que fecha o lote normal em poucos toques) e a tela de fechamento com
+// previsto que fecha o lote normal em poucos toques) e a tela de finalização com
 // partição (QcCloseScreen). A revisão do gestor sobre o lote já fechado mora na
 // aba Qualidade (/quality). No formato das demais telas: ProductionHeader +
 // rail; o miolo é o quiosque.
@@ -49,7 +49,7 @@ const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
 );
 
-useHead({ title: "Fechamento" });
+useHead({ title: "Finalização" });
 
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
 watch(
@@ -78,7 +78,7 @@ const period = computed<PeriodSelection>({
 });
 // O lote avulso (a exceção) mora no ⋯ do cabeçalho, fora de evidência.
 
-// ── Navegação interna (painel ⇄ fechamento) ─────────────────────────────────
+// ── Navegação interna (painel ⇄ finalização) ─────────────────────────────────
 // O lote aberto mora na URL (`?lot=<pk>`, com o dia e a busca): o voltar do
 // navegador volta ao painel, e o anterior e o próximo do lote são links de
 // verdade. O lote avulso (receita sem previsto) não é registro: fica na tela.
@@ -217,7 +217,7 @@ function backToBoard() {
   if (routeLot.value) leaveLot();
 }
 
-// ── Fechamento (com retry de force no shortage, como no restante do app) ────
+// ── Finalização (com retry de force no shortage, como no restante do app) ────
 const shortage = ref<ProductionShortageError | null>(null);
 interface QcClosePayload {
   quantity: string;
@@ -295,7 +295,7 @@ const screenPlanned = computed(() => {
   return Number.isFinite(value) ? Math.round(value) : null;
 });
 // A fornada real que entrou no forno (started): quando diverge do previsto,
-// é ELA que ancora o fechamento — ver `ovenAnchor` em presentation/qc.ts.
+// é ELA que ancora a finalização — ver `ovenAnchor` em presentation/qc.ts.
 const screenStarted = computed(() => {
   if (!selectedOrder.value?.started_qty) return null;
   const value = Number(selectedOrder.value.started_qty);
@@ -382,9 +382,9 @@ onMounted(() => {
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onTimerKeydown));
 
-// ── O lote da URL vira a tela de fechamento ─────────────────────────────────
+// ── O lote da URL vira a tela de finalização ─────────────────────────────────
 // Entrar no lote é o gesto produtivo: se o forno ainda está declarado, abrir o
-// fechamento declara "retirou" (o timer apenas lembra; o fato físico pertence à
+// finalização declara "retirou" (o timer apenas lembra; o fato físico pertence à
 // ação de finalizar a fornada, nunca ao Visto do alarme). Vale para o toque no
 // painel, para o leitor de etiqueta, para o link e para o anterior/próximo. Só
 // depois de montar: o SSR desenha o painel, e o cliente abre o lote.
@@ -571,7 +571,7 @@ function onTimerKeydown(event: KeyboardEvent) {
   <main class="flex min-h-0 flex-1 flex-col">
     <ProductionHeader
       v-model:query="query"
-      title="Fechamento"
+      title="Finalização"
       :count="openOrders.length"
       count-label="para finalizar"
       :progress="
@@ -612,7 +612,7 @@ function onTimerKeydown(event: KeyboardEvent) {
       </template>
     </ProductionHeader>
 
-    <!-- Tela de fechamento. -->
+    <!-- Tela de finalização. -->
     <QcCloseScreen
       v-if="(selectedOrder || selectedRecipe) && kiosk"
       ref="closeScreen"
@@ -659,7 +659,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         v-else-if="kiosk && !openOrders.length"
         class="py-10 text-center text-muted-foreground"
       >
-        Nenhum lote aguardando fechamento.
+        Nenhum lote aguardando finalização.
       </p>
 
       <p v-if="openOrders.length" class="op-eyebrow text-muted-foreground">

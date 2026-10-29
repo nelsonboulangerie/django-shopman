@@ -76,8 +76,29 @@ def test_authorized_values_ignore_mutable_order_shop_and_environment(emitted_ord
     assert "Cadastro alterado" not in paper
 
 
+def _grant(user, app_label, codename):
+    from django.contrib.auth.models import Permission
+
+    user.user_permissions.add(Permission.objects.get(content_type__app_label=app_label, codename=codename))
+    return User.objects.get(pk=user.pk)
+
+
+def test_staff_without_order_or_cash_permission_cannot_read_the_note(client, emitted_order):
+    """Laudo S7: `is_staff` sozinho abria a nota (nome, CPF, itens) de qualquer pedido."""
+    user = User.objects.create_user("producao", is_staff=True)
+    client.force_login(user)
+    assert client.get("/fiscal/danfe/WEB-1/").status_code == 404
+
+
+@pytest.mark.parametrize(("app_label", "codename"), [("shop", "manage_orders"), ("cashman", "operate_pos")])
+def test_orders_or_cash_permission_opens_the_note(client, emitted_order, app_label, codename):
+    user = _grant(User.objects.create_user(f"op-{codename}", is_staff=True), app_label, codename)
+    client.force_login(user)
+    assert client.get("/fiscal/danfe/WEB-1/").status_code == 200
+
+
 def test_view_requires_staff_and_never_falls_back_to_mutable_data(client, emitted_order, monkeypatch):
-    user = User.objects.create_user("plain", is_staff=False)
+    user = _grant(User.objects.create_user("plain", is_staff=False), "shop", "manage_orders")
     client.force_login(user)
     assert client.get("/fiscal/danfe/WEB-1/").status_code == 404
 

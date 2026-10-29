@@ -22,8 +22,8 @@
       "baselines": "surfaces/pos-nuxt/tests/visual/baselines"
     }
   ],
-  "themeFingerprint": "sha256:93f7bedd03189808ed1ee47bb3b0899c06e18ab2c86141b65c08b4e63104b425",
-  "acceptedOn": "2026-10-10",
+  "themeFingerprint": "sha256:a2d7f0cfb12f98f53e20eb616a82e9cdff151f22eeaef9f6f98e0e4764c5c916",
+  "acceptedOn": "2026-10-28",
   "owner": "Pablo Valentini",
-  "note": "Aceite do dono (Pablo Valentini, 10/10/2026, regra do rótulo que cabe: \"rótulo de ação completo, curto escrito à mão, só ícone; texto de peça fixa reserva 2 linhas\"), PR #1637: operator-fit.css entra no tema; abas (pílula e sublinhada) rolam de lado em vez de cortar em reticência; o mês do calendário quebra linha. Muda só onde o rótulo não cabia: as 4 baselines da prévia simulada do Marketing a 390 px, promovidas da CI no mesmo PR (o PDV não tem job visual na CI e não tem aba cortada). Aceite anterior (10/10/2026, \"1) aplica em todos\"): descrição do Alert à cor plena."
+  "note": "Aceite do dono (Pablo Valentini, 28/10/2026, \"Aceito a mudança do tema\"), PR #2021: botões do aviso que empilham no celular ocupam a largura toda, rótulo centralizado; a régua é a tela (max-sm), não o aviso. Nenhuma baseline muda: os contratos visuais do PDV, KDS, B.I. e Marketing passaram na CI sem diferença. Aceite anterior (10/10/2026), PR #1637: operator-fit.css entra no tema; abas (pílula e sublinhada) rolam de lado em vez de cortar em reticência; o mês do calendário quebra linha. Muda só onde o rótulo não cabia: as 4 baselines da prévia simulada do Marketing a 390 px, promovidas da CI no mesmo PR (o PDV não tem job visual na CI e não tem aba cortada). Aceite anterior (10/10/2026, \"1) aplica em todos\"): descrição do Alert à cor plena."
 }

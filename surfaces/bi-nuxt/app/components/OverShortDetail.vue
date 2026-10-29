@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // "Ver lotes e vendas" (prévia `bi-sobra4.html`, pino 7): aprofundar sem trocar de tela.
-// Os lotes do dia (o registro de onde o "fez" saiu, cada um leva ao Fechamento da
+// Os lotes do dia (o registro de onde o "fez" saiu, cada um leva à Finalização da
 // Produção daquele dia, e o lote que o plano tinha e não fechou), as vendas por hora
 // (cheio = vendido; tracejado = a estimativa depois que acabou) e o que aconteceu
 // depois: quando os canais tiraram o produto do ar, quantos pediram "Me avise", e os
@@ -28,7 +28,7 @@ const props = defineProps<{
   row: BIOverShortRow;
   day: string;
   compare: string;
-  /** Link do Fechamento da Produção daquele dia (os lotes moram lá). */
+  /** Link da Finalização da Produção daquele dia (os lotes moram lá). */
   closeUrl: string;
   /** Base do Gestor: "Abrir os N pedidos" abre o Histórico daquele dia, só com o produto. */
   ordersUrl: string;
@@ -82,7 +82,7 @@ const historyEntries = computed(() =>
         trailing-icon="i-lucide-arrow-up-right"
         block
         class="justify-start"
-        :aria-label="`Lote ${lot.ref}, ${formatQty(lot.qty)} unidades: abrir o Fechamento da Produção`"
+        :aria-label="`Lote ${lot.ref}, ${formatQty(lot.qty)} unidades: abrir a Finalização da Produção`"
         data-over-short-lot
       >
         <span class="font-mono text-primary">{{ lot.ref }}</span>

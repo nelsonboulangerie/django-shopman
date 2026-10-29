@@ -20,7 +20,7 @@ Fonte: referência canônica da Focus NFe,
 | Cartão de crédito (balcão `credit`, Stripe com `card_funding=credit`) | `03` | `tipo_integracao: "2"` (tpIntegra, maquininha não integrada) |
 | Cartão de débito (balcão `debit`, Stripe com `card_funding=debit`) | `04` | `tipo_integracao: "2"` |
 | Pix da cobrança (QR com txid gerado pela Efí, no PDV ou na loja online) | `17` (PIX Dinâmico) | `tipo_integracao: "2"` |
-| Pix atestado no balcão ("Recebi o Pix", QR fixo ou chave da loja) | `20` (PIX Estático) | `tipo_integracao: "2"` |
+| Pix atestado no balcão ("Recebi o Pix", QR fixo ou chave da loja) | `20` (PIX Estático) | nenhum (a SEFAZ recusa o grupo de cartão no 20: rejeição 963) |
 | Conta na casa (`account`, fiado) | `05` (Cartão da Loja, crediário) | nenhum |
 | Saldo do cliente na casa (`store_credit`) | `21` (Crédito em Loja) | nenhum |
 | Outros (iFood `external`, Stripe `prepaid`/`unknown`) | `99` | `descricao_pagamento` (xPag, 2 a 60 caracteres) |
@@ -56,7 +56,7 @@ DANFE no pedido. Repita para as seis: `03`, `04`, `17`, `20`, `99` e `01` com tr
 No XML autorizado (link `caminho_xml_nota_fiscal` da resposta da Focus):
 
 1. **Status autorizado**, com protocolo. Rejeição é o achado: anote código e motivo.
-2. `03`/`04`/`17`/`20`: dentro de `<detPag>`, o grupo `<card>` com `<tpIntegra>2</tpIntegra>`.
+2. `03`/`04`/`17`: dentro de `<detPag>`, o grupo `<card>` com `<tpIntegra>2</tpIntegra>`.
    A rejeição que este grupo evita é a **391** (regra YA04-10), que na NFC-e vale para
    cartão E Pix.
 3. `99`: `<xPag>` presente, com a frase do adapter.
@@ -76,9 +76,11 @@ vem da tabela de meios de pagamento da NT 2023.004, atualizada pelo Informe Téc
   dinâmicos, isto é, a cobrança com txid que a Efí gera. `20` "PIX Estático" é o "PIX
   realizado com QR Code estático ou por meio de transferência", que é o "Recebi o Pix"
   atestado pelo operador (`tenders[].pix_confirmed_by`).
-- **Pix leva o grupo de cartão.** A regra YA04-10 (rejeição 391) exige o grupo `card` na
-  NFC-e para `03`, `04`, `17` e `20`. Antes desta decisão o Pix saía sem o grupo, o que
-  seria recusado em produção.
+- **Pix dinâmico leva o grupo de cartão; o estático, não.** A regra YA04-10 (rejeição
+  391) exige o grupo `card` na NFC-e para `03`, `04` e `17`. No `20` a SEFAZ do Paraná
+  recusa o grupo (rejeição 963, "Tipo de pagamento não aceita o grupo de cartões ou
+  boletos"), medido em homologação em 27/10/2026. Uma das fontes de 24/10 dizia que o 20
+  também levava o grupo: estava errada.
 - **Conta na casa: 05.** A tabela descreve o `05` como "Cartão da loja, na forma de
   crediário etc.", que é o fiado. O `21` é "Crédito em loja decorrente de valor pago
   anteriormente, de devolução de mercadoria", o contrário da conta na casa; ele fica para
@@ -97,3 +99,14 @@ usar o `e2e_id` do Pix Efí como `cAut`, com o CNPJ da instituição (Efí S.A.,
 o da Stripe a conferir), e então mandar `tipo_integracao: "1"` nessas duas formas. Se a
 SEFAZ do Paraná exigir vinculação do pagamento eletrônico antes disso, este passo sobe de
 prioridade.
+
+## Prova em homologação (27/10/2026, alpha)
+
+| Forma | Pedido | NFC-e | Resultado |
+|---|---|---|---|
+| `04` débito | PDV-261027-Z64 | 719 | autorizada (cStat 100), `<card><tpIntegra>2</tpIntegra></card>` |
+| `03` crédito | PDV-261027-Z06 | 720 | autorizada (cStat 100), `<card><tpIntegra>2</tpIntegra></card>` |
+| `17` Pix da cobrança | PDV-261027-D55 | 721 | autorizada (cStat 100), `<card><tpIntegra>2</tpIntegra></card>` |
+| `01` dinheiro com troco | PDV-261027-J37 | 722 | autorizada (cStat 100), `vPag` 10,00, `vTroco` 1,00, `vNF` 9,00 |
+| `01` + `20` venda mista com "Recebi o Pix" | PDV-261027-N09 | 723 | 27/10: **rejeição 963** com o grupo `card` no `20`. 28/10, depois do #2023 (o `20` sem grupo), "Reprocessar NFC-e" no Gestor: **autorizada** (protocolo 141260001773024), DANFE com "Dinheiro R$ 5,00" e "PIX Estático R$ 4,00" |
+| `99` outros | nenhum | nenhuma | não provado: o PDV não tem essa forma; sai de pedido iFood ou de cartão Stripe pré-pago |

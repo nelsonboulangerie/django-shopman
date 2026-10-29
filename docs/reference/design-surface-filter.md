@@ -18,8 +18,11 @@ passa quando parece inevitável, isto é, quando cada tamanho, espaçamento,
   agora. Elementos secundários existem, mas não competem com a ação principal.
 - **Um jeito canônico**: não criar variantes visuais para a mesma intenção.
   Um tipo de botão, badge, campo, modal, card e navegação por propósito.
-- **Mobile-first real**: a tela deve funcionar apertada antes de funcionar
-  larga. Desktop pode redistribuir espaço, nunca inventar outro produto.
+- **Mobile-first real, desktop deliberado**: a tela é resolvida primeiro no
+  menor viewport suportado. Depois, há uma segunda passagem obrigatória de
+  composição para desktop. Esticar a solução mobile ou deixar espaço útil
+  ocioso não conta como responsividade. Desktop pode redistribuir espaço,
+  reduzir scroll e favorecer comparação, sem inventar outro produto.
 - **WhatsApp-first quando cliente final**: telefone, status, recuperação e
   contato devem respeitar o WhatsApp como canal preferencial, sem bloquear SMS
   ou internacional quando o negócio exige.
@@ -196,7 +199,17 @@ Checklist:
 
 - Mobile-first: uma coluna, foco, CTA claro, alvo de toque mínimo.
 - Desktop: usar espaço para reduzir scroll e melhorar comparação, sem apertar
-  componentes na mesma linha.
+  componentes na mesma linha. Mobile excelente não justifica desktop medíocre.
+- Toda tarefa de UX/UI passa por duas revisões explícitas, nesta ordem:
+  1. mobile real, com conteúdo extremo, teclado, área segura, sticky e toque;
+  2. desktop real, com hierarquia, densidade, leitura transversal e uso
+     intencional da largura disponível.
+- Não aceitar como adaptação desktop apenas aumentar `max-width`, alongar
+  campos ou manter uma pilha alta quando duas regiões relacionadas podem ser
+  comparadas lado a lado.
+- A evidência de aceite deve incluir pelo menos o menor viewport mobile
+  suportado e um desktop representativo. Ambos precisam passar sem overflow,
+  colisão, truncamento enganoso ou desperdício estrutural de espaço.
 - Backstage pode ser mais denso que storefront, mas não pode ser confuso.
 - Cozinha e balcão pedem leitura à distância, contraste forte e ações grandes.
 - Listas operacionais devem priorizar ordenação, filtros e status, não ornamento.

@@ -3,15 +3,15 @@
 //   PRODUTO | leitura | AÇÃO — cada lente tem UMA coluna de leitura e UMA de
 //   ação com verbo no cabeçalho:
 //   · plan (Planejamento): SUGERIDO  | PLANEJADO  (todos os SKUs);
-//   · open (Abertura):     PLANEJADO | PREVISTO   (só linhas com número).
-// O fechamento (PREVISTO → REALIZADO) mora na página /close, no quiosque de QC.
+//   · open (Produção):     PLANEJADO | PREVISTO   (só linhas com número).
+// A finalização (PREVISTO → REALIZADO) mora na página /close, no quiosque de QC.
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
-// Na Abertura a ação é UMA só: "Confirmar" (o mesmo verbo do Planejamento)
-// diz o previsto, que segue para o Fechamento, já preenchido com o planejado
+// Na Produção a ação é UMA só: "Confirmar" (o mesmo verbo do Planejamento)
+// diz o previsto, que segue para a Finalização, já preenchido com o planejado
 // (decisão Pablo 2026-09-16); o número fica na coluna Planejado, não no botão.
 // A diferença para o planejado é rendimento da massa, não perda: fica nos dois
-// números da ordem, sem pedir motivo; motivo se pede no Fechamento, onde há
+// números da ordem, sem pedir motivo; motivo se pede na Finalização, onde há
 // produto pronto que pode sumir. Sem "iniciar", sem subetapas, sem máquina de
 // estados: fermentação e afins são ferramenta (timer), nunca fluxo.
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
@@ -54,10 +54,15 @@ import {
   type OperatorMoreMenuItem,
 } from "../../../operator-kit/app/presentation/moreMenu";
 import type {
+  ProductionKDSCardProjection,
   ProductionMatrixRowProjection,
   ProductionShortageError,
   WorkOrderCardProjection,
 } from "~/types/production";
+import type {
+  AuthorizeFormulaDeviationInput,
+  AuthorizeFormulaDeviationResponse,
+} from "~/composables/useProductionKds";
 import { defaultPlanningDate } from "~/composables/useProductionBoard";
 
 const props = defineProps<{
@@ -165,7 +170,7 @@ const lens = computed(() => {
   } as const;
 });
 
-// Linhas por lente: Planejamento vê TODOS os SKUs; Abertura só quem tem
+// Linhas por lente: Planejamento vê TODOS os SKUs; Produção só quem tem
 // número relevante (higiene de foco na bancada).
 const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
   let base = rows.value.filter((r) => matchesRowQuery(r, query.value));
@@ -249,6 +254,9 @@ const startedRow = ref<ProductionMatrixRowProjection | null>(null);
 const selectedStartedPk = ref<number | null>(null);
 const voidReason = ref("");
 const voidConfirming = ref(false);
+const oldDoughOrder = ref<WorkOrderCardProjection | null>(null);
+const deviationCard = ref<ProductionKDSCardProjection | null>(null);
+const deviationResult = ref<AuthorizeFormulaDeviationResponse | null>(null);
 const commitmentsRow = ref<ProductionMatrixRowProjection | null>(null);
 const shortage = ref<ProductionShortageError | null>(null);
 // De onde veio a recusa: "Revisar quantidade" devolve o operador ao diálogo que
@@ -293,6 +301,24 @@ const selectedStartedOrder = computed<WorkOrderCardProjection | null>(
       (candidate) => candidate.pk === selectedStartedPk.value,
     ) ?? null,
 );
+const selectedOldDoughAction = computed(() => {
+  const workOrder = selectedStartedOrder.value;
+  return workOrder
+    ? kds.actionFor(`register_old_dough:${workOrder.pk}`)
+    : undefined;
+});
+const selectedStartedKdsCard = computed(() => {
+  const workOrder = selectedStartedOrder.value;
+  return workOrder
+    ? kds.cards.value.find((card) => card.pk === workOrder.pk)
+    : undefined;
+});
+const selectedDeviationAction = computed(() => {
+  const workOrder = selectedStartedOrder.value;
+  return workOrder
+    ? kds.actionFor(`authorize_formula_deviation:${workOrder.pk}`)
+    : undefined;
+});
 
 // Diferente do planejado? A tela diz, mas não pergunta: rendimento da massa
 // é número, e os dois números ficam na ordem.
@@ -384,7 +410,7 @@ function onReasonOutside(event: Event) {
 }
 
 // Ao fechar (Esc, Fechar, fora), o foco volta ao "Por quê" da linha. Se o
-// fechamento foi para planejar, o foco é do diálogo de planejamento.
+// finalização foi para planejar, o foco é do diálogo de planejamento.
 function returnReasonFocus(event: Event, outputSku: string) {
   const trigger = reasonTriggers.get(outputSku);
   if (!trigger) return;
@@ -655,6 +681,63 @@ async function confirmVoid() {
   }
 }
 
+function openOldDoughRegistration() {
+  const workOrder = selectedStartedOrder.value;
+  if (!workOrder || !selectedOldDoughAction.value?.enabled) return;
+  oldDoughOrder.value = workOrder;
+  startedRow.value = null;
+  selectedStartedPk.value = null;
+}
+
+async function registerOldDough(input: {
+  quantity: string;
+  unit: "g" | "kg";
+  expiryDate: string;
+  positionRef?: string;
+  note?: string;
+}) {
+  const workOrder = oldDoughOrder.value;
+  if (!workOrder) return;
+  const result = await kds.registerOldDough(workOrder.pk, workOrder.rev, input);
+  if (!result.ok) return;
+  oldDoughOrder.value = null;
+  refresh();
+  useSonner.success(
+    result.data?.batch_ref
+      ? `Massa velha registrada: lote ${result.data.batch_ref}`
+      : "Massa velha registrada.",
+  );
+}
+
+function openFormulaDeviation() {
+  const card = selectedStartedKdsCard.value;
+  if (
+    !card ||
+    !card.formula_limits.length ||
+    !selectedDeviationAction.value?.enabled
+  )
+    return;
+  deviationCard.value = card;
+  deviationResult.value = null;
+  startedRow.value = null;
+  selectedStartedPk.value = null;
+}
+
+async function authorizeFormulaDeviation(input: AuthorizeFormulaDeviationInput) {
+  const card = deviationCard.value;
+  if (!card) return;
+  const result = await kds.authorizeFormulaDeviation(card.pk, card.rev, input);
+  if (!result.ok || !result.data) return;
+  deviationResult.value = result.data;
+  refresh();
+  useSonner.success("Desvio autorizado. A fórmula do lote foi recalculada.");
+}
+
+function closeFormulaDeviation() {
+  deviationCard.value = null;
+  deviationResult.value = null;
+}
+
 // ── ⋯ da linha aberta (R12) e "pressione e segure" no tablet deitado (R13) ──
 // As ações da linha são DADOS, uma fonte só: o ⋯ (`OperatorMoreMenu`) e o menu de
 // contexto da linha (`NuxtContextMenu`, que abre ao segurar a linha no toque e no
@@ -663,7 +746,7 @@ function openRowMenu(row: ProductionMatrixRowProjection): OperatorMoreMenuItem[]
   const main: OperatorMoreMenuItem[] = [{ type: "label", label: rowLabel(row) }];
   if (row.started_orders.length)
     main.push({
-      label: "Ver lançamento",
+      label: "Detalhes do lote",
       icon: "i-lucide-receipt-text",
       onSelect: () => openStarted(row),
     });
@@ -781,7 +864,7 @@ function cellQty(value: string): string {
 }
 
 // Progresso do dia, no cabeçalho: "4 de 28 planejados" (Planejamento) ou "5 de 8
-// abertos" (Abertura), com a barra do quanto o dia andou. Conta produtos (linhas),
+// abertos" (Produção), com a barra do quanto o dia andou. Conta produtos (linhas),
 // como a prévia v4: o número e a barra falam da mesma coisa.
 const headerCount = computed(() => {
   if (props.stage === "plan") {
@@ -1097,14 +1180,7 @@ const planDescription = computed(() => {
 const startedDescription = computed(() => {
   const wo = selectedStartedOrder.value;
   const sku = startedRow.value?.output_sku ?? "";
-  if (wo && wo.started_qty) {
-    const launched = wo.started_at_display
-      ? ` · lançado ${wo.started_at_display}`
-      : "";
-    return `#${wo.ref} · ${sku} · ${wo.started_qty} un. previstas seguem para o Fechamento${launched}`;
-  }
-  if (wo) return `#${wo.ref} · ${sku} · ${wo.planned_qty} un. planejadas`;
-  return "Selecione o lote.";
+  return wo ? `#${wo.ref} · ${sku}` : "Selecione o lote.";
 });
 </script>
 
@@ -1154,7 +1230,7 @@ const startedDescription = computed(() => {
           v-else
           :model-value="openFilter"
           :items="openFilterTabs"
-          label="Recorte da Abertura"
+          label="Recorte da Produção"
           data-open-filters
           @update:model-value="(value) => (openFilter = (Array.isArray(value) ? value[0] : value) as OpenFilter)"
         />
@@ -1661,7 +1737,7 @@ const startedDescription = computed(() => {
           </p>
         </div>
 
-        <!-- ── Abertura ─────────────────────────────────────────────────────── -->
+        <!-- ── Produção ─────────────────────────────────────────────────────── -->
         <div
           v-else
           class="overflow-hidden rounded-lg border border-border bg-card"
@@ -1787,23 +1863,10 @@ const startedDescription = computed(() => {
                   data-open-confirm
                   @click="openStart(row)"
                 />
-                <!-- Lote aberto: o que foi lançado, a um toque (v3 "não mudaram"). -->
-                <NuxtButton
-                  v-else-if="row.started_orders.length"
-                  color="neutral"
-                  variant="outline"
-                  :size="docked ? 'xl' : 'md'"
-                  class="hidden sm:inline-flex"
-                  label="Ver lançamento"
-                  :aria-label="`Ver lançamento de ${rowLabel(row)}`"
-                  data-open-view-launch
-                  @click="openStarted(row)"
-                />
                 <!-- ⋯ da linha; no tablet deitado o mesmo menu abre ao segurar a linha. -->
                 <OperatorMoreMenu
                   :label="`Mais ações de ${rowLabel(row)}`"
                   :items="openRowMenu(row)"
-                  :class="docked ? 'lg:hidden' : ''"
                   data-open-row-menu
                 />
               </div>
@@ -1822,7 +1885,7 @@ const startedDescription = computed(() => {
           data-open-press-hint
         >
           <Icon name="lucide:pointer" class="size-4" />
-          Pressione e segure uma linha: Ver lançamento · Ver encomendas · Cancelar lote.
+          Pressione e segure uma linha: Detalhes do lote · Ver encomendas · Cancelar lote.
         </p>
         <p
           v-if="query && !stageRows.length"
@@ -1848,7 +1911,7 @@ const startedDescription = computed(() => {
             {{ rowLabel(startRow) }}
           </h2>
           <p class="op-micro text-muted-foreground">
-            {{ startRow.output_sku }} · esta quantidade segue para o Fechamento.
+            {{ startRow.output_sku }} · esta quantidade segue para a Finalização.
           </p>
         </div>
         <NuxtButton
@@ -2101,11 +2164,11 @@ const startedDescription = computed(() => {
       </template>
     </NuxtModal>
 
-    <!-- Confirmar: o previsto abre o lote e segue para o Fechamento (evento interno: start) -->
+    <!-- Confirmar: o previsto abre o lote e segue para a Finalização (evento interno: start) -->
     <NuxtModal
       :open="startRow != null && !docked"
       :title="`Quanto está previsto? · ${startRow ? rowLabel(startRow) : ''}`"
-      :description="`${startRow?.output_sku ?? ''} · esta quantidade abre o lote e segue para o Fechamento.`"
+      :description="`${startRow?.output_sku ?? ''} · esta quantidade abre o lote e segue para a Finalização.`"
       :ui="{ content: 'sm:max-w-sm' }"
       @update:open="
         (v: boolean) => {
@@ -2212,7 +2275,7 @@ const startedDescription = computed(() => {
     <!-- lote aberto: conferência e cancelamento, sem etapas, sem gestão -->
     <NuxtModal
       :open="startedRow != null"
-      :title="`${startedRow?.started_orders.length ? 'Lote aberto' : 'Lote planejado'} · ${startedRow ? rowLabel(startedRow) : ''}`"
+      :title="startedRow ? rowLabel(startedRow) : 'Detalhes do lote'"
       :description="startedDescription"
       @update:open="
         (v: boolean) => {
@@ -2252,6 +2315,41 @@ const startedDescription = computed(() => {
             </NuxtButton>
           </div>
 
+          <div
+            v-if="selectedStartedOrder"
+            class="flex flex-col gap-2"
+            data-lot-summary
+          >
+            <p class="op-body text-muted-foreground">
+              {{
+                selectedStartedOrder.started_qty
+                  ? "Lote aberto"
+                  : "Lote planejado"
+              }}<template v-if="selectedStartedOrder.started_at_display">
+                · Aberto em
+                {{ selectedStartedOrder.started_at_display }}</template
+              >
+            </p>
+            <p class="text-3xl font-bold tabular-nums" data-lot-quantity>
+              {{
+                formatQtyUnit(
+                  selectedStartedOrder.started_qty ||
+                    selectedStartedOrder.planned_qty,
+                  startedRow?.output_unit,
+                )
+              }}
+              {{
+                selectedStartedOrder.started_qty ? "previstas" : "planejadas"
+              }}
+            </p>
+            <p
+              v-if="selectedStartedOrder.started_qty"
+              class="op-body text-muted-foreground"
+            >
+              Seguem para a Finalização.
+            </p>
+          </div>
+
           <template v-if="voidConfirming">
             <NuxtAlert
               color="warning"
@@ -2276,6 +2374,28 @@ const startedDescription = computed(() => {
       <template #footer>
         <div class="flex w-full flex-wrap gap-2">
           <NuxtButton
+            v-if="selectedStartedOrder && selectedOldDoughAction"
+            color="primary"
+            variant="outline"
+            icon="i-lucide-package-plus"
+            label="Registrar massa velha"
+            :disabled="!selectedOldDoughAction.enabled"
+            :title="selectedOldDoughAction.reason || undefined"
+            @click="openOldDoughRegistration"
+          />
+          <NuxtButton
+            v-if="
+              selectedStartedOrder &&
+              selectedDeviationAction?.enabled &&
+              selectedStartedKdsCard?.formula_limits.length
+            "
+            color="primary"
+            variant="outline"
+            icon="i-lucide-shield-check"
+            label="Autorizar desvio"
+            @click="openFormulaDeviation"
+          />
+          <NuxtButton
             v-if="selectedStartedOrder && !voidConfirming"
             color="error"
             variant="outline"
@@ -2292,7 +2412,7 @@ const startedDescription = computed(() => {
             color="neutral"
             variant="outline"
             class="ml-auto"
-            label="Voltar"
+            label="Fechar"
             @click="
               startedRow = null;
               selectedStartedPk = null;
@@ -2302,6 +2422,33 @@ const startedDescription = computed(() => {
         </div>
       </template>
     </NuxtModal>
+
+    <RegisterOldDoughDialog
+      :open="oldDoughOrder != null"
+      :work-order-label="
+        oldDoughOrder
+          ? `${oldDoughOrder.recipe_name} · lote #${oldDoughOrder.ref}`
+          : 'Lote'
+      "
+      :position-ref="oldDoughOrder?.position_ref"
+      :busy="oldDoughOrder ? kds.isBusy(oldDoughOrder.pk) : false"
+      @update:open="(open: boolean) => { if (!open) oldDoughOrder = null }"
+      @submit="registerOldDough"
+    />
+
+    <AuthorizeFormulaDeviationDialog
+      :open="deviationCard != null"
+      :work-order-label="
+        deviationCard
+          ? `${deviationCard.recipe_name} · lote #${deviationCard.ref}`
+          : 'Lote'
+      "
+      :limits="deviationCard?.formula_limits ?? []"
+      :result="deviationResult"
+      :busy="deviationCard ? kds.isBusy(deviationCard.pk) : false"
+      @update:open="(open: boolean) => { if (!open) closeFormulaDeviation() }"
+      @submit="authorizeFormulaDeviation"
+    />
 
     <!-- pedidos vinculados -->
     <NuxtModal

@@ -90,7 +90,6 @@ EXPECTED_ONLY_VERSIONED: dict[str, str] = {
             ("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/api/integracao/v1"),
             ("MACHINE_FORMA_PAGAMENTO", "F"),
             ("MACHINE_CANCEL_REASON_ID", "1"),
-            ("MACHINE_RETORNO", "false"),
             ("MACHINE_TIMEOUT", "15"),
         )
     },

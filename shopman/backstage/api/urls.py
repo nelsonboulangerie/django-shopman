@@ -15,6 +15,7 @@ from .bi import (
     BIChangeView,
     BIConsumptionProfilesView,
     BICustomersView,
+    BIDeliveryCostView,
     BIDeliveryTimingView,
     BIExploreView,
     BIForecastView,
@@ -180,6 +181,8 @@ from .operations import (
     OrderCourierDispatchView,
     OrderCourierQuoteView,
     OrderCourierReminderDismissView,
+    OrderCourierRideQuoteView,
+    OrderCourierRideView,
     OrderCustomerContactResolveView,
     OrderDanfeEscposView,
     OrderDetailView,
@@ -271,6 +274,8 @@ from .operations import (
     ProductionWeighingView,
     StationProvisionView,
     WorkOrderFinishView,
+    WorkOrderFormulaDeviationView,
+    WorkOrderOldDoughView,
     WorkOrderOvenArmView,
     WorkOrderOvenConcludeView,
     WorkOrderPlanView,
@@ -710,6 +715,7 @@ urlpatterns = [
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
+    path("bi/delivery-cost/", BIDeliveryCostView.as_view(), name="api-backstage-bi-delivery-cost"),
     path("bi/delivery-timing/", BIDeliveryTimingView.as_view(), name="api-backstage-bi-delivery-timing"),
     path("bi/over-short/", BIOverShortView.as_view(), name="api-backstage-bi-over-short"),
     path("bi/over-short/carry/", BIOverShortCarryView.as_view(), name="api-backstage-bi-over-short-carry"),
@@ -856,6 +862,9 @@ urlpatterns = [
     # Orders — operator actions
     # Antes do detalhe: "volume-check" não é ref de pedido.
     path("orders/volume-check/", OrderVolumeCheckView.as_view(), name="api-backstage-order-volume-check"),
+    path("orders/courier-ride/", OrderCourierRideView.as_view(), name="api-backstage-order-courier-ride"),
+    path("orders/courier-ride/quote/", OrderCourierRideQuoteView.as_view(),
+         name="api-backstage-order-courier-ride-quote"),
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path(
         "orders/<str:ref>/payment/check/",
@@ -1128,6 +1137,16 @@ urlpatterns = [
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
+    path(
+        "production/<int:wo_id>/old-dough/",
+        WorkOrderOldDoughView.as_view(),
+        name="api-backstage-wo-old-dough",
+    ),
+    path(
+        "production/<int:wo_id>/formula-deviation/",
+        WorkOrderFormulaDeviationView.as_view(),
+        name="api-backstage-wo-formula-deviation",
+    ),
     path("production/<int:wo_id>/finish/", WorkOrderFinishView.as_view(), name="api-backstage-wo-finish"),
     path(
         "production/quality-review/batch/",

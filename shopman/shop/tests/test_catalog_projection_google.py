@@ -38,12 +38,12 @@ pytestmark = pytest.mark.django_db
 
 _STORE = {"account_id": "5881119366", "data_source_id": "999", "content_language": "pt", "feed_label": "BR"}
 _SETTINGS = {
-    "service_account_json": json.dumps({
+    "service_account_b64": base64.b64encode(json.dumps({
         "client_email": "shopman@projeto.iam.gserviceaccount.com",
         # A assinatura do JWT é mockada nos testes: a chave nunca é lida.
         "private_key": "chave-de-teste",
         "token_uri": "https://oauth2.mock.test/token",
-    }),
+    }).encode()).decode(),
     "api_base": "https://merchant.mock.test",
     "timeout": 5,
 }
@@ -232,12 +232,18 @@ class TestBackend:
         return display_projected_item("google", "PAO")
 
     def test_inert_without_configuration(self, settings, stocked):
-        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_json="")
+        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
         with mock.patch.object(google.requests, "post") as post:
             result = google.GoogleMerchantProjection().project([self._item()], channel="google")
         assert result.success is False
         assert "não configurado" in result.errors[0]
         post.assert_not_called()
+
+    def test_raw_json_secret_is_refused(self):
+        """O segredo é o JSON em base64; o JSON cru não passa, nem por engano."""
+        raw = base64.b64decode(_SETTINGS["service_account_b64"]).decode()
+        assert google._service_account({"service_account_b64": raw}) is None
+        assert google._service_account(_SETTINGS)["client_email"] == "shopman@projeto.iam.gserviceaccount.com"
 
     def test_project_inserts_into_the_api_data_source(self, token, stocked):
         calls = []
@@ -282,6 +288,107 @@ class TestBackend:
             with pytest.raises(google.GoogleMerchantRateLimitError) as exc:
                 google.GoogleMerchantProjection().project([self._item()], channel="google")
         assert exc.value.retry_after == 17
+
+
+# ── registro do projeto no Merchant Center (developerRegistration) ───────────
+
+
+class TestDeveloperRegistration:
+    """Sem o registro, toda chamada da Merchant API volta 401."""
+
+    def _post(self, status, body=None):
+        def fake_post(url, params=None, json=None, headers=None, timeout=None, data=None):
+            if "oauth2" in url:
+                return _Resp(200, {"access_token": "tok", "expires_in": 3600})
+            fake_post.calls.append((url, json, headers))
+            resp = _Resp(status, body)
+            resp.content = b"x" if body else b""
+            resp.text = ""
+            return resp
+
+        fake_post.calls = []
+        return fake_post
+
+    def test_registers_the_project_and_returns_gcp_ids(self, token):
+        fake = self._post(200, {"name": "accounts/5881119366/developerRegistration", "gcpIds": ["123456789"]})
+        with mock.patch.object(google.requests, "post", fake):
+            result = google.register_gcp()
+        assert result.ok is True and result.gcp_ids == ("123456789",)
+        url, body, headers = fake.calls[0]
+        assert url == "https://merchant.mock.test/accounts/v1/accounts/5881119366/developerRegistration:registerGcp"
+        assert body == {}
+        assert headers["Authorization"] == "Bearer tok"
+
+    def test_repeating_is_safe(self, token):
+        fake = self._post(200, {"gcpIds": ["123456789"]})
+        with mock.patch.object(google.requests, "post", fake):
+            first, second = google.register_gcp(), google.register_gcp()
+        assert first == second and first.ok
+
+    def test_google_error_message_is_shown_with_the_access_hint(self, token):
+        fake = self._post(403, {"error": {
+            "code": 403, "message": "The caller does not have permission", "status": "PERMISSION_DENIED",
+        }})
+        with mock.patch.object(google.requests, "post", fake):
+            result = google.register_gcp()
+        assert result.ok is False
+        assert "The caller does not have permission (PERMISSION_DENIED)" in result.error
+        assert "acesso de Administrador" in result.error
+
+    def test_without_account_or_key_nothing_is_called(self, settings, loja):
+        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
+        with mock.patch.object(google.requests, "post") as post:
+            result = google.register_gcp()
+        assert result.ok is False and "chave da service account" in result.error
+        post.assert_not_called()
+
+    def test_admin_action_registers_and_shows_the_project(self, token, rf, monkeypatch):
+        from django.contrib import admin
+        from django.contrib.auth.models import User
+
+        from shopman.shop.models import Shop, ShopIntegrations
+
+        user = User.objects.create_superuser("gerente", "g@loja.test", "x")
+        shop = Shop.objects.get()
+        request = rf.post("/", data={"_form_submitted": "1"})
+        request.user = user
+        model_admin = admin.site._registry[ShopIntegrations]
+        said = []
+        monkeypatch.setattr(model_admin, "message_user", lambda request, message, **kw: said.append(message))
+        fake = self._post(200, {"gcpIds": ["123456789"]})
+
+        with mock.patch.object(google.requests, "post", fake):
+            response = model_admin.register_google_merchant(request, object_id=str(shop.pk))
+
+        assert response.status_code == 302
+        assert said == ["Envio registrado no Google. Projeto vinculado: 123456789."]
+        shop.refresh_from_db()
+        assert shop.defaults["google_merchant"]["registration"]["gcp_ids"] == ["123456789"]
+        assert shop.defaults["google_merchant"]["account_id"] == "5881119366"
+        assert "123456789" in str(model_admin.google_merchant_display(shop))
+
+    def test_admin_action_shows_google_error_and_keeps_defaults(self, token, rf, monkeypatch):
+        from django.contrib import admin
+        from django.contrib.auth.models import User
+
+        from shopman.shop.models import Shop, ShopIntegrations
+
+        user = User.objects.create_superuser("gerente", "g@loja.test", "x")
+        shop = Shop.objects.get()
+        before = dict(shop.defaults)
+        request = rf.post("/", data={"_form_submitted": "1"})
+        request.user = user
+        model_admin = admin.site._registry[ShopIntegrations]
+        said = []
+        monkeypatch.setattr(model_admin, "message_user", lambda request, message, **kw: said.append(message))
+        fake = self._post(401, {"error": {"message": "Request had invalid authentication", "status": "UNAUTHENTICATED"}})
+
+        with mock.patch.object(google.requests, "post", fake):
+            model_admin.register_google_merchant(request, object_id=str(shop.pk))
+
+        assert said and said[0].startswith("O Google não registrou o envio: Request had invalid authentication")
+        shop.refresh_from_db()
+        assert shop.defaults == before
 
 
 # ── gatilhos e handler ────────────────────────────────────────────────────────
@@ -386,7 +493,7 @@ class TestDailySync:
         assert [(d.payload["sku"], d.payload["trigger"]) for d in _queued()] == [("SUMIU", "left_channel")]
 
     def test_dry_run_prints_the_api_payload_without_credentials(self, settings, stocked):
-        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_json="")
+        settings.SHOPMAN_GOOGLE_MERCHANT = dict(_SETTINGS, service_account_b64="")
         out = StringIO()
         call_command("sync_platform_catalogs", "--dry-run", "--channel", "google", stdout=out)
         output = out.getvalue()

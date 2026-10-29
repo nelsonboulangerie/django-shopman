@@ -11,18 +11,30 @@ import {
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import {
+  courierRideCallLabel,
+  courierRideQuestion,
   machinesOutSentence,
+  MAX_RIDE_STOPS,
+  rideOfferLine,
+  splitRef,
 } from "~/presentation/board";
-import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
+import {
+  freeMachines,
+  machinePhrase,
+  moneyInput,
+} from "../../../operator-kit/app/presentation/custody";
 import type {
   Action,
   EquipmentOptionProjection,
 } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
+import { useRideQuote } from "~/composables/useRideQuote";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
 
 const props = defineProps<{
+  /** O pedido deste painel: a primeira parada da corrida quando outros vão junto. */
+  orderRef: string;
   courier: CourierBlock;
   busy: boolean;
   cancelAction?: Action;
@@ -41,6 +53,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   quote: [];
   dispatch: [custody: { change_out?: string; equipment?: string[] }];
+  /** Este pedido e os que vão junto, numa corrida só. */
+  dispatchRide: [
+    body: {
+      refs: string[];
+      change_out: Record<string, string>;
+      machine: string;
+    },
+  ];
   cancel: [];
   dispatchAgain: [];
   dismissReminder: [];
@@ -123,12 +143,60 @@ const custody = computed(() => props.courier.custody);
 const asksChange = computed(
   () => (custody.value?.change_out_suggested_q ?? 0) > 0,
 );
-const asksMachine = computed(() => Boolean(custody.value?.needs_machine));
-const asksCustody = computed(() => asksChange.value || asksMachine.value);
+// "Vai junto nesta corrida?": as entregas que podem ir com este pedido, as mais
+// perto primeiro (`ride_offer`). Escolhida uma, a chamada vira uma corrida com
+// várias paradas; a maquininha continua UMA, para todos os pedidos de cartão.
+const offer = computed(() => props.courier.ride_offer ?? []);
+const together = ref<string[]>([]);
+const companionChanges = ref<Record<string, string>>({});
+const companions = computed(() =>
+  offer.value.filter((choice) => together.value.includes(choice.ref)),
+);
+const companionsAskingChange = computed(() =>
+  companions.value.filter((choice) => choice.change_out_suggested_q > 0),
+);
+const offerItems = computed(() =>
+  offer.value.map((choice) => ({
+    value: choice.ref,
+    label: choice.label,
+    description: rideOfferLine(choice),
+    disabled:
+      !together.value.includes(choice.ref) &&
+      together.value.length + 1 >= MAX_RIDE_STOPS,
+  })),
+);
+function updateTogether(next: string[]) {
+  for (const choice of offer.value) {
+    if (
+      next.includes(choice.ref) &&
+      choice.change_out_suggested_q > 0 &&
+      companionChanges.value[choice.ref] === undefined
+    ) {
+      companionChanges.value = {
+        ...companionChanges.value,
+        [choice.ref]: moneyInput(choice.change_out_suggested_q),
+      };
+    }
+  }
+  together.value = next;
+}
+const asksMachine = computed(
+  () =>
+    Boolean(custody.value?.needs_machine) ||
+    companions.value.some((choice) => choice.needs_machine),
+);
+const asksCustody = computed(
+  () =>
+    asksChange.value ||
+    asksMachine.value ||
+    companionsAskingChange.value.length > 0,
+);
 const free = computed(() => freeMachines(props.equipmentOptions ?? []));
 const changeOut = ref("");
 const machineRef = ref("");
 function armCustody() {
+  together.value = [];
+  companionChanges.value = {};
   changeOut.value = asksChange.value
     ? moneyInput(custody.value?.change_out_suggested_q ?? 0)
     : "";
@@ -146,6 +214,24 @@ function requestDispatch() {
   }
   if (machineMissing.value) return;
   confirmingDispatch.value = false;
+  if (together.value.length) {
+    emit("dispatchRide", {
+      refs: [props.orderRef, ...together.value],
+      change_out: {
+        ...(asksChange.value
+          ? { [props.orderRef]: changeOut.value.trim() || "0" }
+          : {}),
+        ...Object.fromEntries(
+          companionsAskingChange.value.map((choice) => [
+            choice.ref,
+            (companionChanges.value[choice.ref] ?? "").trim() || "0",
+          ]),
+        ),
+      },
+      machine: asksMachine.value ? machineRef.value : "",
+    });
+    return;
+  }
   emit("dispatch", {
     ...(asksChange.value ? { change_out: changeOut.value.trim() || "0" } : {}),
     ...(asksMachine.value ? { equipment: [machineRef.value] } : {}),
@@ -183,18 +269,50 @@ const reminderActions = computed(() => [
 ]);
 
 function blurDispatch() {
-  // Com campos a preencher, sair do botão não desarma: o operador está
-  // conferindo o troco ou a maquininha. "Voltar" desarma.
-  if (!asksCustody.value) confirmingDispatch.value = false;
+  // Com campos a preencher (ou entregas para juntar), sair do botão não
+  // desarma: o operador está conferindo. "Voltar" desarma.
+  if (!asksCustody.value && !offer.value.length)
+    confirmingDispatch.value = false;
 }
+const confirmLabel = computed(() =>
+  together.value.length
+    ? courierRideCallLabel(together.value.length + 1)
+    : "Confirmar chamada",
+);
 
 // A cotação antes da corrida: valor, tempo e distância numa linha forte, com o
 // "Chamar entregador" logo abaixo como a ação do momento. Com corrida aberta, o
 // valor volta ao cabeçalho (é o custo dela, não uma proposta).
+// Com outras entregas marcadas, o cartão cota a CORRIDA inteira (mesma ordem e
+// retorno da chamada); sem elas, a entrega deste pedido.
+const rideRefs = computed(() =>
+  together.value.length ? [props.orderRef, ...together.value] : [],
+);
+const rideQuote = useRideQuote(rideRefs);
+const quoteTitle = computed(() =>
+  together.value.length
+    ? `Cotação da corrida com ${together.value.length + 1} paradas`
+    : "Cotação da entrega",
+);
+const quoteValue = computed(() => {
+  if (!together.value.length)
+    return props.quoting
+      ? "Cotando a entrega…"
+      : props.courier.estimate_display;
+  if (rideQuote.pending.value) return "Cotando a corrida…";
+  return rideQuote.quote.value?.display ?? "";
+});
+const quoteNote = computed(() => {
+  if (!together.value.length) return "";
+  if (rideQuote.quote.value) return `Ordem: ${rideQuote.quote.value.route}`;
+  return rideQuote.failure.value;
+});
 const showQuote = computed(
   () =>
     !hasRide.value &&
-    (props.quoting || Boolean(props.courier.estimate_display)),
+    (together.value.length > 0 ||
+      props.quoting ||
+      Boolean(props.courier.estimate_display)),
 );
 const quoteActions = computed(() => [
   {
@@ -260,7 +378,9 @@ const vehicle = computed(() =>
           {{ courier.attempts_count }}ª corrida não concluída
         </span>
         <span
-          v-if="hasRide && (courier.final_value_display || courier.estimate_display)"
+          v-if="
+            hasRide && (courier.final_value_display || courier.estimate_display)
+          "
           class="ms-auto text-sm tabular-nums text-muted-foreground"
         >
           {{ courier.final_value_display || courier.estimate_display }}
@@ -273,7 +393,11 @@ const vehicle = computed(() =>
         class="flex flex-col gap-0.5"
         data-testid="courier-progress"
       >
-        <p v-if="progress.pickup" class="font-medium tabular-nums" role="status">
+        <p
+          v-if="progress.pickup"
+          class="font-medium tabular-nums"
+          role="status"
+        >
           {{ progress.pickup }}
         </p>
         <!-- Depois da coleta a entrega prevista é a linha principal. -->
@@ -323,8 +447,7 @@ const vehicle = computed(() =>
           variant="subtle"
           icon="i-lucide-circle-help"
           :title="
-            courier.error?.message ||
-            'A TaOn não respondeu à última chamada.'
+            courier.error?.message || 'A TaOn não respondeu à última chamada.'
           "
           data-courier-no-answer
         >
@@ -424,7 +547,9 @@ const vehicle = computed(() =>
             class="flex items-center gap-1.5 text-muted-foreground"
           >
             <Icon name="lucide:key-round" class="size-4" /> Código:
-            <strong class="tabular-nums">{{ courier.confirmation_code }}</strong>
+            <strong class="tabular-nums">{{
+              courier.confirmation_code
+            }}</strong>
           </span>
         </div>
       </div>
@@ -448,37 +573,68 @@ const vehicle = computed(() =>
         v-if="showQuote"
         variant="soft"
         data-courier-quote
-        :aria-busy="quoting || undefined"
+        :aria-busy="quoting || rideQuote.pending.value || undefined"
       >
         <div class="flex flex-col items-center gap-1 text-center">
-          <p class="text-xs text-muted-foreground">Cotação da entrega</p>
+          <p class="text-xs text-muted-foreground">{{ quoteTitle }}</p>
           <p
+            v-if="quoteValue"
             class="text-lg font-semibold tabular-nums"
             role="status"
             data-courier-quote-value
           >
-            {{ quoting ? "Cotando a entrega…" : courier.estimate_display }}
+            {{ quoteValue }}
+          </p>
+          <p
+            v-if="quoteNote"
+            class="text-sm text-muted-foreground"
+            data-courier-ride-quote-note
+          >
+            {{ quoteNote }}
           </p>
         </div>
       </NuxtCard>
 
-      <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
+      <template
+        v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel"
+      >
         <div
           v-if="confirmingDispatch"
           class="flex flex-col gap-3"
           data-testid="courier-dispatch-confirm"
         >
           <p
-            v-if="dispatchQuestion"
+            v-if="together.length || dispatchQuestion"
             class="text-sm"
             role="status"
             data-testid="courier-dispatch-question"
           >
-            {{ dispatchQuestion }}
+            {{
+              together.length
+                ? courierRideQuestion([orderRef, ...together])
+                : dispatchQuestion
+            }}
           </p>
+          <!-- outras entregas que podem ir na mesma corrida, as mais perto primeiro -->
+          <NuxtFormField
+            v-if="offer.length"
+            label="Vai junto nesta corrida?"
+            data-testid="courier-ride-offer"
+          >
+            <NuxtCheckboxGroup
+              :model-value="together"
+              :items="offerItems"
+              variant="table"
+              @update:model-value="(next) => updateTogether(next as string[])"
+            />
+          </NuxtFormField>
           <NuxtFormField
             v-if="asksChange"
-            label="Troco que o entregador leva da gaveta"
+            :label="
+              together.length
+                ? `Troco do pedido ${splitRef(orderRef).code}`
+                : 'Troco que o entregador leva da gaveta'
+            "
             data-testid="courier-custody-change"
           >
             <NuxtInput
@@ -490,10 +646,30 @@ const vehicle = computed(() =>
               aria-label="Troco que o entregador leva da gaveta, em reais"
             />
           </NuxtFormField>
+          <NuxtFormField
+            v-for="choice in companionsAskingChange"
+            :key="`ride-change-${choice.ref}`"
+            :label="`Troco do pedido ${splitRef(choice.ref).code}`"
+            :description="choice.change_label || undefined"
+            data-testid="courier-ride-change"
+          >
+            <NuxtInput
+              v-model="companionChanges[choice.ref]"
+              class="w-40"
+              type="text"
+              inputmode="decimal"
+              icon="i-lucide-circle-dollar-sign"
+              :aria-label="`Troco que o entregador leva no pedido ${splitRef(choice.ref).code}, em reais`"
+            />
+          </NuxtFormField>
           <template v-if="asksMachine">
             <NuxtFormField
               v-if="free.length >= 2"
-              label="Qual maquininha vai junto?"
+              :label="
+                together.length
+                  ? 'Qual maquininha vai na corrida?'
+                  : 'Qual maquininha vai junto?'
+              "
               data-testid="courier-custody-machine"
             >
               <NuxtRadioGroup
@@ -544,7 +720,7 @@ const vehicle = computed(() =>
             "
             :label="
               confirmingDispatch
-                ? 'Confirmar chamada'
+                ? confirmLabel
                 : hasRide || courier.attempts_count > 0
                   ? 'Chamar outro entregador'
                   : 'Chamar entregador'
@@ -553,7 +729,7 @@ const vehicle = computed(() =>
             @click="requestDispatch"
           />
           <NuxtButton
-            v-if="confirmingDispatch && asksCustody"
+            v-if="confirmingDispatch && (asksCustody || offer.length)"
             type="button"
             label="Voltar"
             color="neutral"
@@ -561,7 +737,11 @@ const vehicle = computed(() =>
             @click="confirmingDispatch = false"
           />
           <NuxtButton
-            v-if="courier.can_quote && !confirmingDispatch && !(quoteError && !quoting)"
+            v-if="
+              courier.can_quote &&
+              !confirmingDispatch &&
+              !(quoteError && !quoting)
+            "
             type="button"
             :loading="quoting"
             :disabled="busy || quoting || !quoteAction?.enabled"
@@ -572,14 +752,18 @@ const vehicle = computed(() =>
                 : 'Atualize o pedido para conferir esta ação.')
             "
             icon="i-lucide-calculator"
-            :label="courier.estimate_display ? 'Cotar de novo' : 'Cotar entrega'"
+            :label="
+              courier.estimate_display ? 'Cotar de novo' : 'Cotar entrega'
+            "
             data-courier-quote-button
             color="neutral"
             variant="outline"
             @click="emit('quote')"
           />
           <NuxtButton
-            v-if="courier.can_cancel && (!chargeOffersCancel || confirmingCancel)"
+            v-if="
+              courier.can_cancel && (!chargeOffersCancel || confirmingCancel)
+            "
             type="button"
             :disabled="busy || !cancelAction?.enabled"
             icon="i-lucide-ban"

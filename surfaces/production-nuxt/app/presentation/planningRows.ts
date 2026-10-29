@@ -17,8 +17,8 @@
 // Recortes: Todos (os três grupos), A planejar (tudo sem plano, um a um), Com ressalva
 // (só o que tem sinal) e Planejados.
 //
-// Abertura: A confirmar (há lote planejado esperando o previsto) e Abertos (o previsto
-// já foi dito e o lote segue para o Fechamento).
+// Produção: A confirmar (há lote planejado esperando o previsto) e Abertos (o previsto
+// já foi dito e o lote segue para a Finalização).
 import type { ProductionMatrixRowProjection } from "~/types/production";
 import { rowCommittedUnits } from "~/presentation/production";
 import { suggestionSignal } from "~/presentation/planningReason";
@@ -135,7 +135,7 @@ export function cleanPreview(
   return rest > 0 ? `${head.join(", ")} e mais ${rest}` : head.join(", ");
 }
 
-// ── Abertura ───────────────────────────────────────────────────────────────
+// ── Produção ───────────────────────────────────────────────────────────────
 
 export function openRowPending(row: ProductionMatrixRowProjection): boolean {
   return row.planned_orders.length > 0;

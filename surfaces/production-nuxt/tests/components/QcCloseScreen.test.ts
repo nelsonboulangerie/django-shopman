@@ -560,7 +560,7 @@ describe("QcCloseScreen — correção auditável", () => {
     expect(wrapper.text()).toContain(
       "Por que a qualidade deste lote está sendo corrigida?",
     );
-    await buttonByText(wrapper, "Contagem errada no fechamento")!.trigger(
+    await buttonByText(wrapper, "Contagem errada na finalização")!.trigger(
       "click",
     );
     await wrapper
@@ -596,7 +596,7 @@ describe("QcCloseScreen — correção auditável", () => {
       ],
       yield_deviation_confirmed: false,
       yield_deviation_reason: "",
-      reason: "Contagem errada no fechamento",
+      reason: "Contagem errada na finalização",
     });
     expect(payload.partition.filter((group) => group.loss)).toEqual([
       { quantity: "8", quality_defect_ref: "shape", loss: true },

@@ -324,7 +324,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       status_label: "Rascunho",
       label: "",
       yield_display: "",
-      lens: { items: [] },
+      lens: { ingredients: [] },
       steps: [],
       notes: "",
       revision: "2026-10-14T02:03:04+00:00",

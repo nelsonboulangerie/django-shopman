@@ -103,7 +103,7 @@ test.describe("Produção — gate de operador", () => {
     test.skip(testInfo.project.name !== "chromium-desktop");
     await context.addCookies([authed]);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Abertura" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Produção" })).toBeVisible();
     await context.clearCookies();
     await page.reload();
     await expect(
@@ -188,7 +188,7 @@ test.describe("Produção — roteamento", () => {
   });
 
   // Pré go-live, zero legado (decisão do dono, 03/10/2026): os nomes antigos do
-  // fechamento e as rotas pt-br não redirecionam; respondem como qualquer rota
+  // finalização e as rotas pt-br não redirecionam; respondem como qualquer rota
   // inexistente.
   for (const path of ["/expedite", "/expedicao", "/planejamento", "/preparacao", "/painel"]) {
     test(`${path} não existe mais`, async ({ page, context }) => {

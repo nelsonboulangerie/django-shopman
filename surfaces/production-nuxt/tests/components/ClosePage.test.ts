@@ -198,7 +198,7 @@ const OperatorRecordNavStub = {
   props: ["trail", "current", "to", "previousLabel", "nextLabel"],
   template: "<nav data-record-nav />",
 };
-// A tela de fechamento é auto-importada pelo Nuxt; aqui, um stub com nome e props, e
+// A tela de finalização é auto-importada pelo Nuxt; aqui, um stub com nome e props, e
 // a pergunta de descarte que a tela expõe para a página.
 type RouteGuard = (to: { query: Record<string, string> }) => boolean | Promise<boolean>;
 let routeGuard: RouteGuard | null = null;
@@ -227,7 +227,7 @@ const mountPage = () => {
   return wrapper;
 };
 
-describe("Fechamento", () => {
+describe("Finalização", () => {
   it("mostra só os lotes abertos, sem a revisão de qualidade", () => {
     const wrapper = mountPage();
 
@@ -240,11 +240,11 @@ describe("Fechamento", () => {
     );
   });
 
-  it("o cabeçalho diz Fechamento e conta os lotes para finalizar", () => {
+  it("o cabeçalho diz Finalização e conta os lotes para finalizar", () => {
     const wrapper = mountPage();
     const header = wrapper.findComponent({ name: "ProductionHeader" });
 
-    expect(header.props("title")).toBe("Fechamento");
+    expect(header.props("title")).toBe("Finalização");
     expect(header.props("count")).toBe(2);
     expect(header.props("countLabel")).toBe("para finalizar");
   });
@@ -272,7 +272,7 @@ describe("Fechamento", () => {
   });
 });
 
-describe("Fechamento — o lote mora na URL", () => {
+describe("Finalização — o lote mora na URL", () => {
   it("o painel grava a trilha dos lotes que se fecham daqui, na ordem dele", () => {
     mountPage();
 
@@ -295,7 +295,7 @@ describe("Fechamento — o lote mora na URL", () => {
     });
   });
 
-  it("aberto pela URL, mostra o fechamento do lote e o anterior/próximo no cabeçalho", async () => {
+  it("aberto pela URL, mostra a finalização do lote e o anterior/próximo no cabeçalho", async () => {
     route.query = { lot: "4" };
     const wrapper = mountPage();
     await flushPromises();
@@ -360,7 +360,7 @@ describe("Fechamento — o lote mora na URL", () => {
     expect(wrapper.findComponent({ name: "OperatorRecordNav" }).exists()).toBe(false);
   });
 
-  it("abrir o lote declara a retirada do forno antes do fechamento", async () => {
+  it("abrir o lote declara a retirada do forno antes da finalização", async () => {
     ovenConcludeEnabled.value = true;
     route.query = { lot: "1" };
     const wrapper = mountPage();

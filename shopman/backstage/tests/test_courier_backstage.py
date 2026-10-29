@@ -410,3 +410,41 @@ def test_detail_says_the_ride_carries_the_old_charge(client, operator, shop):
         "collected": False,
     }
     assert block["can_cancel"] is True
+
+
+# ── Uma corrida para várias entregas ────────────────────────────────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_board_offers_one_ride_for_ready_deliveries_and_calls_it(client, operator, shop):
+    paid = {"method": "pix", "status": "captured"}
+    first = _delivery_order(ref="CRB-R1", payment=paid)
+    second = _delivery_order(ref="CRB-R2", payment=paid)
+    client.force_login(operator)
+
+    queue = client.get(reverse("api-backstage-orders")).json()["queue"]
+    assert [row["ref"] for row in queue["ride_candidates"]] == ["CRB-R1", "CRB-R2"]
+
+    response = client.post(reverse("api-backstage-order-courier-ride"),
+                           {"refs": ["CRB-R1", "CRB-R2"]}, content_type="application/json")
+    assert response.status_code == 200, response.content
+    task = Directive.objects.get(pk=response.json()["directive_id"])
+    assert task.payload["order_refs"] == ["CRB-R1", "CRB-R2"]
+
+    # A mesma corrida de novo é recusada, com o motivo.
+    again = client.post(reverse("api-backstage-order-courier-ride"),
+                        {"refs": [first.ref, second.ref]}, content_type="application/json")
+    assert again.status_code == 409
+    assert "sendo chamado" in again.json()["detail"]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_one_ride_refuses_the_order_with_the_card_machine_by_name(client, operator, shop):
+    _delivery_order(ref="CRB-R1", payment={"method": "pix", "status": "captured"})
+    _delivery_order(ref="CRB-R3", payment={"method": "credit", "collection": "on_delivery"})
+    client.force_login(operator)
+    response = client.post(reverse("api-backstage-order-courier-ride"),
+                           {"refs": ["CRB-R1", "CRB-R3"]}, content_type="application/json")
+    assert response.status_code == 409
+    assert "maquininha" in response.json()["detail"]
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()

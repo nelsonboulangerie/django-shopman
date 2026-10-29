@@ -328,6 +328,10 @@ class GoogleMerchantForm(BaseDialogForm):
         return value
 
 
+class GoogleMerchantRegistrationForm(BaseDialogForm):
+    """Confirmação do registro do envio no Google: não pede nada além do clique."""
+
+
 #: No Admin, cada motivo é uma linha; o grupo vem antes, separado por esta barra.
 CANCELLATION_PRESET_GROUP_SEPARATOR = "|"
 
@@ -3244,18 +3248,27 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
     form = _section_form(_INTEGRATIONS_FIELDSETS)
     fieldsets = _INTEGRATIONS_FIELDSETS
     readonly_fields = ("channel_refs_display", "marketing_ceremony_display", "google_merchant_display")
-    actions_detail = ("set_google_merchant",)
+    actions_detail = ("set_google_merchant", "register_google_merchant")
 
     @admin.display(description="Conta gravada")
     def google_merchant_display(self, obj):
         current = _shop_defaults(obj).get(GOOGLE_MERCHANT_KEY) if obj else None
         if not isinstance(current, dict) or not current.get("account_id"):
             return "Nenhuma conta gravada. O envio ao Google fica parado até ela existir."
+        registration = current.get("registration") if isinstance(current.get("registration"), dict) else {}
+        if registration.get("gcp_ids"):
+            registered = (
+                f"Registrado em {registration.get('at', '')}, projeto "
+                f"{', '.join(str(gcp) for gcp in registration['gcp_ids'])}"
+            )
+        else:
+            registered = "Ainda não registrado neste Admin. Use “Registrar o envio no Google”."
         rows = [
             ["Conta do Merchant Center", str(current.get("account_id") or "")],
             ["Fonte de dados (API)", str(current.get("data_source_id") or "")],
             ["Idioma dos produtos", str(current.get("content_language") or GOOGLE_MERCHANT_DEFAULT_LANGUAGE)],
             ["Rótulo do feed", str(current.get("feed_label") or GOOGLE_MERCHANT_DEFAULT_FEED_LABEL)],
+            ["Registro do envio", registered],
         ]
         return unfold_component(
             "unfold/components/table.html",
@@ -3293,6 +3306,50 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         obj.defaults = defaults
         obj.save(update_fields=["defaults"])
         self.message_user(request, "Conta do Google Merchant Center salva.", level=messages.SUCCESS)
+        return HttpResponseRedirect(reverse("admin:shop_shopintegrations_change", args=[obj.pk]))
+
+    @action(
+        description="Registrar o envio no Google",
+        url_path="google-merchant-register",
+        icon="how_to_reg",
+        permissions=["change"],
+        dialog={
+            "title": "Registrar o envio no Google",
+            "description": (
+                "Liga, uma vez, o projeto do Google Cloud da chave do sistema à conta do "
+                "Merchant Center. Sem isso, o Google recusa todo envio do catálogo. A chave "
+                "precisa estar em Pessoas e acesso do Merchant Center com acesso de "
+                "Administrador. Registrar de novo não desfaz nada."
+            ),
+            "form_class": GoogleMerchantRegistrationForm,
+            "form_submit_text": "Registrar",
+        },
+    )
+    def register_google_merchant(self, request, form, object_id):
+        from shopman.shop.adapters import catalog_projection_google
+
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Loja não encontrada.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopintegrations_changelist"))
+        result = catalog_projection_google.register_gcp()
+        if not result.ok:
+            self.message_user(request, f"O Google não registrou o envio: {result.error}", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopintegrations_change", args=[obj.pk]))
+        defaults = dict(_shop_defaults(obj))
+        current = defaults.get(GOOGLE_MERCHANT_KEY)
+        merged = dict(current) if isinstance(current, dict) else {}
+        merged["registration"] = {
+            "gcp_ids": list(result.gcp_ids),
+            "at": timezone.localtime().strftime("%d/%m/%Y %H:%M"),
+        }
+        defaults[GOOGLE_MERCHANT_KEY] = merged
+        obj.defaults = defaults
+        obj.save(update_fields=["defaults"])
+        projects = ", ".join(result.gcp_ids) or "sem número informado"
+        self.message_user(
+            request, f"Envio registrado no Google. Projeto vinculado: {projects}.", level=messages.SUCCESS,
+        )
         return HttpResponseRedirect(reverse("admin:shop_shopintegrations_change", args=[obj.pk]))
 
     @admin.display(description="A conta, com os números de hoje")

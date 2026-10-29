@@ -12,9 +12,9 @@
     "TAON"
   ],
   "totals": {
-    "settings": 312,
+    "settings": 313,
     "env": 22,
-    "settings_env": 176
+    "settings_env": 175
   },
   "files": {
     "config/asgi.py": {
@@ -40,10 +40,13 @@
       "env": 1
     },
     "config/settings.py": {
-      "settings_env": 175
+      "settings_env": 174
     },
     "config/settings_test.py": {
       "settings_env": 1
+    },
+    "config/urls.py": {
+      "settings": 1
     },
     "config/wsgi.py": {
       "env": 1
