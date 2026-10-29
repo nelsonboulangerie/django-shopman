@@ -254,13 +254,14 @@ def test_same_day_order_mode_never_hands_goods_over_implicitly(source):
     assert order.status == Order.Status.ACCEPTED
 
 
-def test_pos_order_mode_waits_for_human_acceptance_even_on_immediate_channel():
+def test_pos_order_mode_is_accepted_without_human_acceptance():
+    """Quem registra a encomenda no PDV é o operador: não há aceite a pedir."""
     from datetime import timedelta
 
     from django.utils import timezone
 
     order = _counter_order(
-        ref="PDV-ORDER-MANUAL",
+        ref="PDV-ORDER-IMMEDIATE",
         status=Order.Status.NEW,
         data_extra={
             "pos": {"sales_mode": "order"},
@@ -271,7 +272,8 @@ def test_pos_order_mode_waits_for_human_acceptance_even_on_immediate_channel():
     lifecycle._handle_confirmation(order, ChannelConfig.for_channel("pdv"))
 
     order.refresh_from_db()
-    assert order.status == Order.Status.NEW
+    # Encomenda de amanhã: aceita agora, o trabalho físico espera o dia.
+    assert order.status == Order.Status.ACCEPTED
 
 
 def test_pos_counter_mode_keeps_immediate_confirmation():

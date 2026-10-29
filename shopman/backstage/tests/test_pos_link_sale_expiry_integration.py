@@ -142,8 +142,9 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
     def test_link_sale_for_today_stays_open_with_the_deadline_armed(self) -> None:
         order, screen = self._close_with_link()
 
-        # 1. Não é entrega de balcão: fica aguardando o cliente pagar.
-        self.assertEqual(order.status, Order.Status.NEW)
+        # 1. Não é entrega de balcão: nasce aceita (quem registrou é o operador)
+        #    e fica aguardando o cliente pagar.
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
         # 2. O prazo é UM, e chega a todo mundo: pedido, Payman, tela, Directive.
         payment = order.data["payment"]
@@ -214,7 +215,7 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         self._run_timeout(directive, at=expires_at - timedelta(hours=1))
 
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.NEW)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
         directive.refresh_from_db()
         self.assertEqual(directive.status, Directive.Status.QUEUED)
         self.assertEqual(directive.available_at, expires_at)

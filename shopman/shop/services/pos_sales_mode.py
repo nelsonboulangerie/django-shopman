@@ -60,14 +60,6 @@ def is_pos_counter_order(order) -> bool:
     return origin == "pos" and order_sales_mode(order) == "counter"
 
 
-def is_pos_order_mode(order) -> bool:
-    """True para encomenda/entrega registrada pelo operador no PDV."""
-    data = getattr(order, "data", None) or {}
-    snapshot_data = (getattr(order, "snapshot", None) or {}).get("data") or {}
-    origin = data.get("origin_channel") or snapshot_data.get("origin_channel")
-    return origin == "pos" and order_sales_mode(order) == "order"
-
-
 def validate_sales_mode(payload: dict, *, require_ready: bool) -> None:
     """Rascunho vazio pode completar o funil; itens exigem combinado completo."""
     mode = payload.get("sales_mode")

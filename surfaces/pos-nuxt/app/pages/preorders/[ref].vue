@@ -156,7 +156,7 @@ function goBack() {
 </script>
 
 <template>
-  <PosPreordersShell :pos="pos" :pending="posPending || pending" wide @refresh="refreshPos(); refresh()">
+  <PosPreordersShell :pos="pos" :pending="posPending || pending" :title="`Encomenda ${ref_}`" wide @refresh="refreshPos(); refresh()">
     <div class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">
       <div>
         <NuxtButton
@@ -202,9 +202,9 @@ function goBack() {
             data-preorder-counter-panel
           >
             <!-- QUEM e QUANTO: o que o balcão lê primeiro ("vim buscar a encomenda
-                 da Ana"). O número e o canal já estão no resumo do pedido. -->
+                 da Ana"). O número da encomenda é o título da tela. -->
             <header class="grid min-w-0 gap-1" data-preorder-detail>
-              <h1 class="break-words text-lg font-semibold">{{ customerLine(card) }}</h1>
+              <h2 class="break-words text-lg font-semibold">{{ customerLine(card) }}</h2>
               <p class="flex flex-wrap items-center gap-2">
                 <!-- A mesma régua da linha da lista: a etiqueta só quando diz o que o
                      saldo não diz (Pronto, Saiu para entrega, Entregue). "A pagar",

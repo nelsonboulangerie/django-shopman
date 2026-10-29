@@ -32,7 +32,10 @@ const props = withDefaults(defineProps<{
   phoneActions?: OperatorHeaderAction[];
   alerts?: OperatorScreenAlert[];
   activeFilters?: OperatorActiveFilter[];
+  /** O título do cabeçalho; o detalhe diz qual encomenda ("Encomenda PDV-…"). */
+  title?: string;
 }>(), {
+  title: "Encomendas",
   wide: false,
   actions: () => [],
   phoneActions: undefined,
@@ -56,7 +59,7 @@ const headerPhoneActions = computed<OperatorHeaderAction[] | undefined>(() =>
 <template>
   <main class="flex min-h-0 flex-1 flex-col" data-preorders-shell>
     <OperatorPageHeader
-      title="Encomendas"
+      :title="title"
       :actions="headerActions"
       :phone-actions="headerPhoneActions"
       actions-label="Mais ações das Encomendas"

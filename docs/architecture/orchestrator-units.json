@@ -14516,7 +14516,9 @@
           "path": "shopman/shop/services/pos.py",
           "symbols": [
             "PosSaleReview",
-            "review_sale"
+            "review_sale",
+            "_started_lot_qty",
+            "_lot_stage"
           ]
         }
       ],
@@ -14524,6 +14526,7 @@
         "service"
       ],
       "domains": [
+        "craftsman",
         "orderman"
       ],
       "ports": [],
@@ -14914,7 +14917,6 @@
             "payment_method_sales_modes",
             "order_sales_mode",
             "is_pos_counter_order",
-            "is_pos_order_mode",
             "validate_sales_mode",
             "session_sales_payload",
             "SALES_MODES",

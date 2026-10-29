@@ -565,7 +565,9 @@ describe("Detalhe — o painel do Balcão (S5 do redesenho)", () => {
     const panel = layout.find("[data-preorder-counter-panel]");
     expect(panel.attributes("aria-label")).toBe("Balcão");
     expect(panel.classes()).toEqual(expect.arrayContaining(["lg:sticky", "lg:col-start-2", "lg:row-start-1"]));
-    expect(panel.find("h1").text()).toBe("Ana Souza");
+    // O número da encomenda é o título da tela (antes só se descobria pela URL).
+    expect(wrapper.find("[data-preorders-shell] h1").text()).toContain("Encomenda NB-7");
+    expect(panel.find("h2").text()).toBe("Ana Souza");
     expect(panel.find("[data-preorder-money]").text()).toBe("A receber R$ 36,00");
     expect(panel.find("[data-preorder-hand-over]").exists()).toBe(true);
     // O detalhe do kit fica sem o que é do balcão (o PDV não usa #summary nem #actions).

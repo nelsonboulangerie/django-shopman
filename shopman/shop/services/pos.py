@@ -1097,15 +1097,28 @@ def review_sale(
         channel_ref=channel.ref,
         target_date=target_date,
     )
-    for (item, sku, _qty), decision in zip(checked, decisions, strict=True):
-        if decision.get("approved"):
-            continue
+    not_ready: list[tuple[str, str, Decimal]] = []
+    for (item, sku, qty), decision in zip(checked, decisions, strict=True):
         name = str(item.get("name") or sku)
+        if decision.get("approved"):
+            # Prometido, mas parte sai de lote: o operador combina a espera.
+            ready = decision.get("ready_qty")
+            if decision.get("orderable_ceiling") is not None and ready is not None and qty > ready:
+                not_ready.append((name, sku, qty - ready))
+            continue
         warnings.append({
             "code": "item_low_stock",
             "field": "items",
             "message": f"{name}: {_availability_shortfall(decision)}",
         })
+    if not_ready:
+        started = _started_lot_qty([sku for _name, sku, _missing in not_ready], target_date)
+        for name, sku, missing in not_ready:
+            warnings.append({
+                "code": "item_not_ready",
+                "field": "items",
+                "message": f"{name}: {_lot_stage(started.get(sku, Decimal('0')), missing)}, não pronto",
+            })
 
     return PosSaleReview(
         intent_version=POS_SALE_INTENT_VERSION,
@@ -1290,10 +1303,35 @@ def _qty_display(value) -> str:
     return (text or "0").replace(".", ",")
 
 
+def _started_lot_qty(skus: list[str], target_date) -> dict[str, Decimal]:
+    """Quanto dos lotes da data já foi aberto na Produção, por SKU (uma consulta)."""
+    from django.db.models import Sum
+    from shopman.craftsman.models import WorkOrder
+
+    rows = (
+        WorkOrder.objects.filter(
+            output_sku__in=skus, status=WorkOrder.Status.STARTED, target_date__lte=target_date,
+        )
+        .values("output_sku")
+        .annotate(total=Sum("quantity"))
+    )
+    return {row["output_sku"]: row["total"] or Decimal("0") for row in rows}
+
+
+def _lot_stage(started_qty: Decimal, missing: Decimal) -> str:
+    """Em que ponto da Produção está o que ainda falta ficar pronto.
+
+    Os nomes são as quantidades da Produção: *previsto* é lote já aberto,
+    *planejado* é lote que ainda não começou (dono, 28/10/2026). Se o aberto
+    não cobre o que falta, parte depende do que nem começou: planejado.
+    """
+    return "Previsto" if started_qty >= missing else "Planejado"
+
+
 def _availability_shortfall(decision: dict) -> str:
     """Por que este item não foi aprovado — na língua do balcão.
 
-    Quatro causas distintas saíam com a MESMA frase ("só N em estoque"), o que
+    Três causas distintas saíam com a MESMA frase ("só N em estoque"), o que
     mandava o operador conferir a gôndola quando o problema era o produto estar
     pausado ou fora do cardápio do PDV. E ``int(available_qty)`` truncava: meio
     quilo de queijo virava "só 0 em estoque" numa venda que estava correta.
@@ -1302,12 +1340,6 @@ def _availability_shortfall(decision: dict) -> str:
         return "pausado no cardápio do balcão. A venda vale; confira o cadastro."
     if decision.get("reason_code") == "not_in_listing":
         return "fora do cardápio do balcão. A venda vale; confira o cadastro."
-    if decision.get("is_planned"):
-        # Não é falta: o que cobre a data é produção ainda por fazer. Quem lê
-        # isto precisa combinar a espera com o cliente, não caçar unidade na
-        # prateleira. (Na tela de operador o objeto chama-se LOTE — decisão do
-        # dono, 22/09/2026 —, e "fornada" ficou só para a loja.)
-        return "ainda não está pronto: sai do lote planejado para a data."
     available = decision.get("available_qty") or 0
     return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
 
