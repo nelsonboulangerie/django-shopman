@@ -952,10 +952,7 @@ SHOPMAN_WA_VERIFY = {
 }
 
 # ── iFood (Marketplace F16) ────────────────────────────────────────
-# Same rule as EFI: webhook_token is mandatory in every environment (including
-# local dev). No skip flag. See shopman/shop/webhooks/efi.py for the pattern.
 SHOPMAN_IFOOD = {
-    "webhook_token": os.environ.get("IFOOD_WEBHOOK_TOKEN", ""),
     "merchant_id": os.environ.get("IFOOD_MERCHANT_ID", ""),
     "catalog_id": os.environ.get("IFOOD_CATALOG_ID", "").strip(),
     "catalog_context": os.environ.get("IFOOD_CATALOG_CONTEXT", "DEFAULT").strip(),

@@ -6,7 +6,7 @@
 
 ## Realidade vs. o que tínhamos
 
-O webhook atual ([`shopman/shop/webhooks/ifood.py`](../../shopman/shop/webhooks/ifood.py))
+O webhook antigo (`/api/webhooks/ifood/`, removido em 30/10/2026)
 era um **stub de hub**: espera um payload **já normalizado** (items/customer/delivery inline)
 e autentica por **token compartilhado**. **Não é** o protocolo cru do iFood. O iFood direto:
 
@@ -58,7 +58,7 @@ ver [webhook-auth-status-codes](../reference/webhook-auth-status-codes.md)).
   `webhooks/ifood_events.py`, rota `POST /api/webhooks/ifood/events/`: valida `X-IFood-Signature` =
   HMAC-SHA256(raw body, `webhook_hmac_secret` [default=client_secret]) hex via `compare_digest`,
   **401** se inválido/sem secret; reusa `ifood_events.process_events()` (mesmo caminho do polling).
-  A view de simulação legada (`IFoodWebhookView`) fica intacta. Inerte até o secret ser setado.
+  Inerte até o secret ser setado. O webhook antigo por token compartilhado foi removido em 30/10/2026.
 - **WP-6 — Homologação.** Rodar os cenários de teste do iFood, ajustar, submeter à certificação.
 
 ## O que depende do Pablo (fora do código)
@@ -67,7 +67,7 @@ ver [webhook-auth-status-codes](../reference/webhook-auth-status-codes.md)).
 2. **Merchant** associado ao app (merchant_id / UUID da loja).
 3. **Escopos/módulos** habilitados (Order, Catalog, Merchant).
 4. **Homologação** — passar a certificação do iFood (eles testam o fluxo). É o gate de produção.
-5. (Se webhook) registrar a URL HTTPS — hoje `https://api.boulangerie.com.br/api/webhooks/ifood/`.
+5. (Se webhook) registrar a URL HTTPS — hoje `https://api.boulangerie.com.br/api/webhooks/ifood/events/`.
 
 ## ✅ Verificado AO VIVO (2026-06-30) — app de teste + loja "Teste - Nelson Boulangerie"
 

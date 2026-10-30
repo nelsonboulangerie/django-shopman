@@ -38,7 +38,6 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W004  Listing.ref has no matching Channel.ref
   SHOPMAN_W005  OFFERMAN pricing backend not configured
   SHOPMAN_W006  Mock payment adapter explicitly allowed outside DEBUG
-  SHOPMAN_W008  iFood webhook token is not configured (integration webhook unauthenticated)
   SHOPMAN_W009  Manychat webhook secret is not configured
   SHOPMAN_W010  Machine courier enabled without webhook token (status via polling only)
   SHOPMAN_W011  Piloto automático de staging ligado (pedidos andam sozinhos)
@@ -220,57 +219,27 @@ def check_webhook_tokens(app_configs, **kwargs):
 
     Every endpoint already fails CLOSED without a token (rejects all requests —
     there is no bypass). The severity here reflects the CONSEQUENCE of a missing
-    token, not a security risk:
-
-    - EFI (``critical=True``) → **Error**: the PIX confirmation webhook is in
-      active use; without the token real payments silently never confirm. Block
-      the deploy.
-    - iFood (``critical=False``) → **Warning**: fail-closed, mas NÃO é "opcional"
-      se você recebe pedidos por webhook. ``/api/webhooks/ifood/`` ingere o pedido
-      no canal iFood; sem o token, TODO callback do iFood toma 401 e nenhum pedido
-      entra. É Warning (não Error) só porque um deployment que não usa iFood deve
-      poder subir sem ele — mas se usa, este token é obrigatório.
+    token, not a security risk: the EFI PIX confirmation webhook is in active
+    use; without the token real payments silently never confirm. Block the
+    deploy.
     """
     messages = []
     if settings.DEBUG:
         return messages
 
-    # (settings_attr, persona, env_var, critical)
-    integrations = [
-        ("SHOPMAN_EFI_WEBHOOK", "EFI", "EFI_WEBHOOK_TOKEN", True),
-        ("SHOPMAN_IFOOD", "iFood", "IFOOD_WEBHOOK_TOKEN", False),
-    ]
-    for attr, name, env_var, critical in integrations:
-        cfg = getattr(settings, attr, {}) or {}
-        if cfg.get("webhook_token"):
-            continue
-        if critical:
-            messages.append(
-                Error(
-                    f"{attr}['webhook_token'] não está configurado em produção.",
-                    hint=(
-                        f"{name} confirma pagamento real via webhook; sem o token "
-                        f"a confirmação nunca chega e o pagamento trava. Defina "
-                        f"{env_var} via variável de ambiente."
-                    ),
-                    id="SHOPMAN_E004",
-                )
+    cfg = getattr(settings, "SHOPMAN_EFI_WEBHOOK", {}) or {}
+    if not cfg.get("webhook_token"):
+        messages.append(
+            Error(
+                "SHOPMAN_EFI_WEBHOOK['webhook_token'] não está configurado em produção.",
+                hint=(
+                    "EFI confirma pagamento real via webhook; sem o token "
+                    "a confirmação nunca chega e o pagamento trava. Defina "
+                    "EFI_WEBHOOK_TOKEN via variável de ambiente."
+                ),
+                id="SHOPMAN_E004",
             )
-        else:
-            messages.append(
-                Warning(
-                    f"{attr}['webhook_token'] não configurado — o webhook {name} "
-                    f"(/api/webhooks/ifood/) rejeita TODO callback com 401.",
-                    hint=(
-                        f"Se você recebe pedidos {name} por webhook, eles NÃO entram "
-                        f"sem este token — o endpoint ingere o pedido no canal {name}, "
-                        f"mas sem {env_var} (igual ao configurado no portal {name}) "
-                        f"todo callback toma 401. Defina {env_var}. Deixe vazio só se "
-                        f"não usa o webhook {name}."
-                    ),
-                    id="SHOPMAN_W008",
-                )
-            )
+        )
     return messages
 
 

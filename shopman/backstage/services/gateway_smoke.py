@@ -45,7 +45,6 @@ _SMOKE_SKU = "GATEWAY-SMOKE-SKU"
 _SMOKE_PRICE_Q = 1000
 
 _LOCAL_EFI_WEBHOOK = {"webhook_token": "gateway-smoke-efi-token"}
-_LOCAL_IFOOD = {"webhook_token": "gateway-smoke-ifood-token", "merchant_id": "gateway-smoke-merchant"}
 _LOCAL_STRIPE = {
     "secret_key": "sk_test_gateway_smoke",
     "webhook_secret": "whsec_gateway_smoke",
@@ -179,7 +178,6 @@ def _run_local_fixtures(*, rollback: bool) -> tuple[GatewaySmokeCheck, ...]:
             # even when the real runtime is configured for production.
             SHOPMAN_EFI={"sandbox": True},
             SHOPMAN_EFI_WEBHOOK=_LOCAL_EFI_WEBHOOK,
-            SHOPMAN_IFOOD=_LOCAL_IFOOD,
             SHOPMAN_PAYMENT_ADAPTERS=_LOCAL_PAYMENT_ADAPTERS,
             SHOPMAN_STRIPE=_LOCAL_STRIPE,
         ),
@@ -196,7 +194,6 @@ def _run_local_fixtures(*, rollback: bool) -> tuple[GatewaySmokeCheck, ...]:
                 ("efi", "pix_late_after_cancel_refund", _smoke_efi_late_after_cancel_refund),
                 ("stripe", "payment_succeeded_duplicate_webhook", _smoke_stripe_duplicate_capture),
                 ("stripe", "refund_cumulative_out_of_order", _smoke_stripe_refund_cumulative_out_of_order),
-                ("ifood", "order_duplicate_webhook", _smoke_ifood_duplicate_order),
             ):
                 checks.append(_execute_local_check(provider, name, func))
             if rollback:
@@ -238,7 +235,6 @@ def _execute_local_check(provider: str, name: str, func) -> GatewaySmokeCheck:
 
 def _ensure_channels() -> None:
     Channel.objects.get_or_create(ref="web", defaults={"name": "Web", "is_active": True})
-    Channel.objects.get_or_create(ref="ifood", defaults={"name": "iFood", "is_active": True})
 
 
 def _ensure_catalog() -> None:
@@ -422,30 +418,6 @@ def _smoke_stripe_refund_cumulative_out_of_order() -> dict:
     }
 
 
-def _smoke_ifood_duplicate_order() -> dict:
-    client = APIClient()
-    order_id = "IFOOD-SMOKE-DUPLICATE"
-    payload = _ifood_payload(order_id)
-
-    first = _post_ifood(client, payload)
-    second = _post_ifood(client, payload)
-    order_count = Order.objects.filter(channel_ref="ifood", external_ref=order_id).count()
-    order_ref = Order.objects.filter(channel_ref="ifood", external_ref=order_id).values_list("ref", flat=True).first()
-
-    _expect(first.status_code == 200, "iFood first webhook did not return 200", response=_response(first))
-    _expect(second.status_code == 200, "iFood duplicate webhook did not return 200", response=_response(second))
-    _expect(first.data.get("status") == "accepted", "iFood first webhook was not accepted", response=_response(first))
-    _expect(order_count == 1, "iFood duplicate created more than one order", order_count=order_count)
-    _expect(bool(order_ref), "iFood accepted webhook did not create an order")
-
-    return {
-        "order_ref": str(order_ref),
-        "external_ref": order_id,
-        "order_count": order_count,
-        "idempotency_rows": IdempotencyKey.objects.filter(scope="webhook:ifood").count(),
-    }
-
-
 def _create_order_with_payment(*, payment_method: str) -> Order:
     session = session_service.create_session(
         "web",
@@ -532,16 +504,6 @@ def _post_efi(client: APIClient, payload: dict):
     )
 
 
-def _post_ifood(client: APIClient, payload: dict):
-    return client.post(
-        "/api/webhooks/ifood/",
-        payload,
-        format="json",
-        HTTP_HOST="localhost",
-        HTTP_X_IFOOD_WEBHOOK_TOKEN=_LOCAL_IFOOD["webhook_token"],
-    )
-
-
 def _post_stripe(client: APIClient, event):
     payload = json.dumps({"id": event.id, "type": event.type}).encode()
     with patch("shopman.shop.adapters.payment_stripe.construct_webhook_event", return_value=event):
@@ -589,22 +551,6 @@ def _stripe_charge_refunded_event(
             )
         ),
     )
-
-
-def _ifood_payload(order_id: str) -> dict:
-    return {
-        "order_id": order_id,
-        "merchant_id": _LOCAL_IFOOD["merchant_id"],
-        "status": "PLACED",
-        "total": 1500,
-        "created_at": timezone.now().isoformat(),
-        "customer": {"name": "Cliente Smoke", "phone": "+5543999999999"},
-        "delivery": {"type": "DELIVERY", "address": "Rua Smoke, 123"},
-        "items": [
-            {"sku": _SMOKE_SKU, "name": "Smoke", "qty": 1, "unit_price_q": 1500},
-        ],
-        "notes": "gateway smoke",
-    }
 
 
 def _sandbox_readiness_checks(*, mode: str = "staging") -> tuple[GatewaySmokeCheck, ...]:
@@ -721,7 +667,7 @@ def _manychat_readiness_check() -> GatewaySmokeCheck:
 def _missing_ifood_credentials() -> list[str]:
     cfg = getattr(settings, "SHOPMAN_IFOOD", {}) or {}
     # O caminho primário de produção/staging é polling OAuth
-    # (``ifood_events.poll``), não o webhook legado por token compartilhado.
+    # (``ifood_events.poll``).
     # Sem client_id/client_secret o worker fica ocioso e nenhum evento real entra.
     return [
         env_name

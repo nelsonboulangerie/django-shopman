@@ -50,27 +50,13 @@ def test_efi_certificate_can_be_materialized_from_base64_env(tmp_path, monkeypat
     assert path.stat().st_mode & 0o777 == 0o600
 
 
-@override_settings(
-    DEBUG=False,
-    SHOPMAN_EFI_WEBHOOK={"webhook_token": ""},
-    SHOPMAN_IFOOD={"webhook_token": ""},
-)
-def test_webhook_tokens_efi_blocks_ifood_warns():
-    # EFI (pagamento real) → Error bloqueante; iFood-legado (fail-closed) → Warning.
+@override_settings(DEBUG=False, SHOPMAN_EFI_WEBHOOK={"webhook_token": ""})
+def test_webhook_tokens_efi_blocks():
     messages = checks.check_webhook_tokens(None)
-    by_id = {m.id: type(m).__name__ for m in messages}
-    assert by_id.get("SHOPMAN_E004") == "Error"  # EFI bloqueia
-    assert by_id.get("SHOPMAN_W008") == "Warning"  # iFood só avisa
-    from django.core.checks import Error as CheckError
-
-    assert not any(m.id == "SHOPMAN_W008" and isinstance(m, CheckError) for m in messages)
+    assert [(m.id, type(m).__name__) for m in messages] == [("SHOPMAN_E004", "Error")]
 
 
-@override_settings(
-    DEBUG=False,
-    SHOPMAN_EFI_WEBHOOK={"webhook_token": "efi-tok"},
-    SHOPMAN_IFOOD={"webhook_token": "ifood-tok"},
-)
+@override_settings(DEBUG=False, SHOPMAN_EFI_WEBHOOK={"webhook_token": "efi-tok"})
 def test_webhook_tokens_all_set_no_messages():
     assert checks.check_webhook_tokens(None) == []
 

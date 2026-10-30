@@ -44,7 +44,7 @@ make deploy-check target=1   # imprime o equivalente no vivo, sem executar
 - `SHOPMAN_E001`: `DJANGO_SECRET_KEY` ausente ou igual ao segredo de desenvolvimento.
 - `SHOPMAN_E002`: `DJANGO_ALLOWED_HOSTS` vazio ou com `*` em produção.
 - `SHOPMAN_E003`: adapter de pagamento `pix` ou `card` apontando para mock em produção.
-- `SHOPMAN_E004`: webhook EFI ou iFood sem token.
+- `SHOPMAN_E004`: webhook EFI sem token.
 - `SHOPMAN_E005`: webhook ManyChat sem segredo HMAC.
 - `SHOPMAN_E006`: cache compartilhado Redis ausente em produção.
 - `SHOPMAN_E007`: SQLite fora de `DEBUG`.
@@ -79,7 +79,6 @@ Pagamentos e webhooks:
 - `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET`, se cartão Stripe estiver ativo.
 - `EFI_CLIENT_ID`, `EFI_CLIENT_SECRET`, `EFI_CERTIFICATE_PATH`,
   `EFI_PIX_KEY` e `EFI_WEBHOOK_TOKEN`, se Pix EFI estiver ativo.
-- `IFOOD_WEBHOOK_TOKEN`, se iFood estiver ativo.
 
 Mensageria e autenticação externa:
 
@@ -144,13 +143,13 @@ Backstage:
 Webhooks:
 
 - EFI rejeita token ausente/incorreto.
-- iFood rejeita token ausente/incorreto.
+- iFood (push `/ifood/events/`) rejeita assinatura `X-IFood-Signature` ausente/incorreta com 401.
 - ManyChat exige HMAC quando `MANYCHAT_WEBHOOK_SECRET` está configurado.
 - Stripe depende de `STRIPE_WEBHOOK_SECRET` para validação de assinatura.
 - Replay/idempotencia e duravel em banco:
   - Stripe deduplica por id de evento assinado ou hash do payload.
   - EFI PIX deduplica por `endToEndId` ou `txid`.
-  - iFood deduplica por `order_id`/`order_code`; `channel_ref + external_ref`
+  - iFood deduplica por id de evento; `channel_ref + external_ref`
     tambem e unico em `Order`.
 - Evento duplicado retorna o corpo canonico ja salvo; evento simultaneo em
   processamento retorna `409` para permitir retry do provedor.
