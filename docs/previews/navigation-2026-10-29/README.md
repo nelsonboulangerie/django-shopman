@@ -1,3 +1,13 @@
+## Nova rodada do PDV por tarefa
+
+Entrada para avaliar: `pos-review.html`. Prévia limpa: `pos.html` (quadro), `pos.html?scene=sale&tab=12` (lançamento), `pos.html?scene=payment&tab=12` (pagamento). Fonte local das anatomias: PosTabBoard, PosProductGrid/Tile, PosTabHeader, PosCartPanel, PosPaymentWorkspace/Result, PosSaleResult, PosDrawerPulseCard e contratos. Não deriva dos cards de `suite.html`.
+
+Recorte interativo: quadro, próxima livre, busca, grade/lista; produtos com coleções favoritas, escolhas, peso e esgotado; comanda lateral de altura inteira no desktop e folha no mobile; editor/numérico contextual; seleção, observação, envio, revisão de reenvio, desconto e transferência fictícios; pagamento em dinheiro/cartão/Pix, misto, resultado com troco congelado e Pix pendente. Menu lateral e largura da comanda têm controles separados.
+
+A prévia reconstrói composição com estado fictício em memória, não renderiza componentes reais nem prova equivalência funcional completa. Cliente/conflitos, endereço/taxa, agenda, autorização, encomendas completas, caixa/periféricos e fechamento detalhado permanecem explicitamente fora do recorte funcional. A contagem cega não apresenta esperado ou diferença. A aritmética é apenas de fixtures, não política de negócio do produto. Nada foi alterado nos apps, kit, Core ou backend.
+
+PDV é a primeira rodada. KDS e Gestor continuam pela análise por tarefa antes de novas composições.
+
 ## Estado da revisão após retorno do dono
 
 A rodada transversal genérica foi retirada da recomendação de aprovação. Entrada atual: `operator-review.html#pdv`, com análise por tarefa na ordem PDV → KDS → Gestor. `operator-preservation.json` registra o inventário de preservação e os cenários. Essa página é análise de fonte/contratos, não uma nova prévia fiel dos apps ou teste de runtime.

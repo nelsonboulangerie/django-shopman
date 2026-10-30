@@ -327,3 +327,15 @@ Inventário de preservação por tarefa, começando pelo PDV e incluindo leitura
 A rodada transversal é explicitamente retirada da recomendação. Exemplo de fechamento com esperado/diferença removido da prévia por contrariar contagem cega. Preservados arquivos históricos e decisões visuais explícitas. A nova página é análise documental por tarefa, não comprovação de equivalência funcional ou screenshot do app atual. Nenhum app local Nuxt respondeu nas portas 3002/3003/3004 durante a inspeção; não foi alegado teste do runtime atual.
 
 Próxima comparação começa no PDV, baseada no quadro de comandas, grade de lançamento, coluna/folha, cozinha e pagamento existentes. Não há novos mocks operacionais apresentados como substitutos neste passo.
+
+## Prévia PDV por tarefa
+
+Entrada `pos-review.html`; telas limpas em `pos.html`. Reconstrução estática a partir das anatomias existentes, não screenshot do runtime nem substituição integral de componentes. Recorte: quadro → lançamento → coluna/folha → edição/seleção/cozinha → pagamento → resultado.
+
+25 composições verificadas em 320×740, 390×844, 768×1024, 1024×768 e 1440×900 (quadro, venda, pagamento, caixa, fechamento demonstrativo), sem overflow de página/cabeçalho/conteúdo. Na última inspeção, console sem erros. Evidência em `pdv-evidence.json` e capturas `pdv-*.jpg`.
+
+Fluxos exercitados pelo navegador: observação só na linha escolhida; duas linhas selecionadas com pagamento da comanda inteira; transferência revisada Comanda 12 → Mesa 5; quantidade por numérico; dinheiro 27/50 com troco 23 congelado no resultado; pagamento misto 13 em dinheiro recebido com 20 + 14 no cartão com troco 7; Pix aguardando e continuação com selo pendente; peso 0,25 kg com valor 24 e sem somar kg à contagem de itens; divisória 340→360 px por teclado e menu lateral expandido independente (170 px). Contexto no mobile de 390 px cabe na faixa (scrollWidth=clientWidth=390), com rótulos acessíveis dos chips compactos.
+
+Coluna de comanda com 900 px de altura a 1440×900; folha mobile com papel modal/foco contido e fechamento por fundo. Numérico aparece apenas na edição por toque. Menu da comanda distingue transferência integral de seleção.
+
+Limites: sem integração, auth, cobrança, estoque, impressora ou journal offline. Cliente/conflitos, endereço/taxa, agenda, encomendas completas, autorização real e fechamento por cédula/produto/destino não são reproduzidos integralmente. As portas são preservadas e os limites estão declarados. Aritmética só de fixtures em memória. Teste de teclado virtual real/periféricos continua pendente. Nenhuma alteração nos apps, operator-kit, Core ou deploy.
